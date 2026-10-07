@@ -34,12 +34,18 @@ export class Runner extends EventEmitter {
     this.procs.set(name, proc)
   }
 
-  // Removing the entry first means a deliberate stop never emits 'exit'.
+  // Removing the entry first means a deliberate stop never emits 'exit'. Resolves once the process is gone (or
+  // after 3 s), for when what it leaves behind matters: a transcript it finishes writing as it goes.
   stop(name) {
     const proc = this.procs.get(name)
-    if (!proc) return
+    if (!proc) return Promise.resolve()
     this.procs.delete(name)
+    const gone = new Promise((resolve) => {
+      proc.p.onExit(() => resolve())
+      setTimeout(resolve, 3000)
+    })
     proc.p.kill()
+    return gone
   }
 
   stopAll() {
