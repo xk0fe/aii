@@ -342,6 +342,123 @@ const SHOTS = {
     await save(win, `chat-below-${theme}`)
     win.destroy()
   },
+  // marc splits its work: two sub-agents start, step through their tools, and finish.
+  async subsGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await sleep(300)
+    const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + 40), width: Math.round(r.width) + 80, height: Math.round(r.height - 200) }")
+    const step = (code) => js(win, `const s = window.__crewState; const m = s.agents.find((a) => a.name === 'marc'); ${code}; window.__crewEmit('state', s)`)
+    await record(win, 'subagents', {
+      clip: panel, ms: 9000, width: 760,
+      during: async () => {
+        await step("s.agents.forEach((a) => (a.subs = [])); m.subs = []")
+        await sleep(800)
+        await step("m.subs.push({ id: 'm1', type: 'Explore', description: 'Collect the brand palette', started: Date.now(), ended: null, tools: 0, activity: '' })")
+        await sleep(500)
+        await step("m.subs.push({ id: 'm2', type: 'general-purpose', description: 'Sketch three hero layouts', started: Date.now(), ended: null, tools: 0, activity: '' })")
+        const acts = [['m1', 'Glob · **/*.css'], ['m2', 'Read · onboarding.md'], ['m1', 'Grep · --brand-'], ['m2', 'image_gen · layout A'], ['m1', 'Read · tokens.css'], ['m2', 'image_gen · layout B']]
+        for (const [id, act] of acts) {
+          await sleep(650)
+          await step(`const x = m.subs.find((y) => y.id === '${id}'); x.tools += 1; x.activity = ${JSON.stringify(act)}`)
+        }
+        await sleep(700)
+        await step("Object.assign(m.subs[0], { ended: Date.now(), activity: '' })")
+        await sleep(1500)
+        await step("Object.assign(m.subs[1], { ended: Date.now(), activity: '' })")
+        await sleep(1500)
+        await step('m.subs = []')
+        await sleep(600)
+      },
+    })
+    win.destroy()
+  },
+  // A reply that used sub-agents, its list opened.
+  async subsReply(theme) {
+    const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await js(win, "document.querySelector('#m-f8 details summary').click()")
+    await sleep(400)
+    await js(win, "document.querySelector('#m-f8').scrollIntoView({ block: 'end' }); document.querySelector('.feed').scrollTop += 12")
+    await sleep(400)
+    await save(win, `subs-reply-${theme}`)
+    win.destroy()
+  },
+  // @ in the message box: the crew pops up, filtered as you type.
+  async mention(theme) {
+    const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    const type = (text) => js(win, `const ta = document.querySelector('.composer textarea'); ta.focus(); ta.value = ${JSON.stringify(text)}; ta.setSelectionRange(ta.value.length, ta.value.length); ta.dispatchEvent(new Event('input', { bubbles: true }))`)
+    await type('Can you two check the payload? @')
+    await sleep(500)
+    await save(win, `mention-${theme}`)
+    await type('Can you two check the payload? @ar')
+    await sleep(400)
+    await save(win, `mention-filter-${theme}`)
+    win.destroy()
+  },
+  async mentionGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await sleep(300)
+    const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + r.height - 440), width: Math.round(r.width), height: 440 }")
+    const key = async (keyCode) => {
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode })
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode })
+      await sleep(260)
+    }
+    const typeOut = async (text) => {
+      for (const ch of text) {
+        win.webContents.sendInputEvent({ type: 'char', keyCode: ch })
+        await sleep(55)
+      }
+    }
+    await record(win, 'mentions', {
+      clip: panel, ms: 7800, width: 800,
+      during: async () => {
+        await js(win, "document.querySelector('.composer textarea').focus()")
+        await sleep(300)
+        await typeOut('Pair on the payload ')
+        await typeOut('@')
+        await sleep(700)
+        await typeOut('da')
+        await sleep(600)
+        await key('Return')
+        await sleep(300)
+        await typeOut('and ')
+        await typeOut('@')
+        await sleep(500)
+        await key('Down')
+        await key('Down')
+        await key('Down')
+        await sleep(300)
+        await key('Tab')
+        await sleep(1000)
+      },
+    })
+    win.destroy()
+  },
+  // The Tasks bar: @ assigns, from the same list.
+  async taskMention(theme) {
+    const win = await dashboard(theme, 'tasks')
+    await sleep(1000)
+    await js(win, "const ta = document.querySelector('[data-add]'); ta.focus(); ta.value = 'Pause menu flickers on resume @g'; ta.setSelectionRange(ta.value.length, ta.value.length); ta.dispatchEvent(new Event('input', { bubbles: true }))")
+    await sleep(500)
+    await save(win, `task-mention-${theme}`)
+    win.destroy()
+  },
   // An agent's own context limit: joseph's 1M window held to 250k.
   async limit(theme) {
     const win = await dashboard(theme, 'crew')

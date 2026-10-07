@@ -2,7 +2,7 @@
 // Add a task in the bar (or from the chat). Starting one hands it to its owner in a fresh conversation, so
 // tasks don't pile into one long context; you review what comes back. Board or list, filtered by kind, owner
 // or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via crew.call('task').
-/* global ownerIn, crew, store, esc, avatarHTML, agentColor, statusText, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented */
+/* global ownerIn, mountMentions, crew, store, esc, avatarHTML, agentColor, statusText, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented */
 
 const STATUS = [
   { id: 'new', label: 'To do' },
@@ -236,6 +236,7 @@ function mountTasks(root, { onTerminal }) {
     syncAdd()
   }
   add.addEventListener('input', syncAdd)
+  mountMentions(add, { agents: () => state?.agents ?? [], box: $('.tk-add'), place: 'below', heading: () => 'Assign to' })
   add.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault()

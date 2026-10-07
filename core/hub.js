@@ -20,6 +20,8 @@ const at = (file) => path.join(HOME, file)
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit']
 const RESERVED = new Set(['you', 'any', 'crew'])
+const SUB_TOOLS = new Set(['Agent', 'Task']) // Claude Code's sub-agent tool ("Task" in older versions)
+const SUB_LINGER = 6000 // a finished sub-agent stays in the live view this long
 const FEED_KEEP = 300
 const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
@@ -206,6 +208,8 @@ export class Hub extends EventEmitter {
   launch(a, fresh = false) {
     this.forgetAsks(a.name)
     a.relaunch = false
+    a.subs = new Map() // sub-agents don't outlive their process
+    a.subPending = []
     clearTimeout(a.readyTimer)
     if (fresh) this.saveSession(a.name, null)
     const provider = this.providerOf(a)
@@ -413,7 +417,16 @@ export class Hub extends EventEmitter {
         a.turnStart = Date.now()
         this.readCodexContext(a, e)
         return this.setStatus(a, 'working')
+      case 'PreToolUse': // only for the Agent tool (see adapters.js): what the next sub-agent is for
+        if (SUB_TOOLS.has(e.tool_name) && !e.agent_id) (a.subPending ??= []).push({ description: String(e.tool_input?.description ?? ''), type: String(e.tool_input?.subagent_type ?? '') })
+        return
+      case 'SubagentStart':
+        return this.subStart(a, e)
+      case 'SubagentStop':
+        return this.subStop(a, e)
       case 'PostToolUse':
+        if (e.agent_id) return this.subTool(a, e) // a sub-agent's own step: it's the sub-agent that's busy
+        if (SUB_TOOLS.has(e.tool_name)) this.subLaunched(a, e)
         a.activity = describe(e)
         this.record(name, { tools: 1 })
         this.readCodexContext(a, e)
@@ -428,15 +441,91 @@ export class Hub extends EventEmitter {
         a.activity = ''
         a.turnStart = null
         return this.setStatus(a, 'idle')
-      case 'Stop':
+      case 'Stop': {
         a.activity = ''
         this.readCodexContext(a, e)
         if (a.turnStart) this.record(name, { turns: 1, turnMs: Date.now() - a.turnStart })
         a.turnStart = null
-        if (e.last_assistant_message) this.post({ kind: 'reply', from: name, text: e.last_assistant_message.slice(0, 4000), ...(a.current && { re: a.current }) })
+        const subs = this.subsThisTurn(a, e.background_tasks)
+        if (e.last_assistant_message) this.post({ kind: 'reply', from: name, text: e.last_assistant_message.slice(0, 4000), ...(a.current && { re: a.current }), ...(subs.length && { subs }) })
         hold(a, 600)
         return this.setStatus(a, 'idle')
+      }
     }
+  }
+
+  // ---- sub-agents: Claude Code's Agent tool ------------------------------------------------------
+  // An agent can hand parts of its work to sub-agents, several at once, and they may keep running after its turn
+  // ends (in the background). Its hooks tell Crew: PreToolUse for Agent says what one is for, SubagentStart and
+  // SubagentStop bracket it (agent_id), and each tool the sub-agent uses arrives with that agent_id. Each agent
+  // keeps a.subs: agent_id -> { id, type, description, started, ended, tools, activity, result }.
+
+  subStart(a, e) {
+    const subs = (a.subs ??= new Map())
+    const known = subs.get(e.agent_id)
+    if (known) {
+      Object.assign(known, { ended: null, told: false, started: Date.now() }) // resumed
+      return this.changed()
+    }
+    // the oldest Agent call of this type that hasn't started yet is this one
+    const pending = a.subPending ?? []
+    const i = pending.findIndex((p) => !p.type || p.type === e.agent_type)
+    const call = i >= 0 ? pending.splice(i, 1)[0] : pending.shift()
+    subs.set(e.agent_id, { id: e.agent_id, type: String(e.agent_type || call?.type || 'agent'), description: call?.description ?? '', started: Date.now(), ended: null, tools: 0, activity: '', result: '' })
+    this.changed()
+  }
+
+  subOf(a, id, type) {
+    const subs = (a.subs ??= new Map())
+    if (!subs.has(id)) subs.set(id, { id, type: String(type || 'agent'), description: '', started: Date.now(), ended: null, tools: 0, activity: '', result: '' })
+    return subs.get(id)
+  }
+
+  subTool(a, e) {
+    const sub = this.subOf(a, e.agent_id, e.agent_type)
+    sub.tools += 1
+    sub.activity = describe(e)
+    this.record(a.name, { tools: 1 })
+    this.changed()
+  }
+
+  // The Agent call returns with the sub-agent's id: when it runs in the background, right away; otherwise once
+  // it's done. Either way it names the sub-agent for sure.
+  subLaunched(a, e) {
+    const r = e.tool_response ?? {}
+    if (!r.agentId) return
+    const sub = this.subOf(a, r.agentId, e.tool_input?.subagent_type)
+    if (!sub.description) sub.description = String(e.tool_input?.description ?? r.description ?? '')
+    if (r.status === 'completed' && !sub.ended) sub.ended = Date.now()
+  }
+
+  subStop(a, e) {
+    const sub = this.subOf(a, e.agent_id, e.agent_type)
+    sub.ended = Date.now()
+    sub.activity = ''
+    sub.result = String(e.last_assistant_message ?? '').slice(0, 600)
+    this.changed()
+    setTimeout(() => this.changed(), SUB_LINGER + 100) // so a finished one leaves the live view
+  }
+
+  // The sub-agents for this turn's reply in the feed: the ones still running, and the ones that finished since the
+  // last reply. Stop lists those still running in the background: any other that never reported its end is over.
+  subsThisTurn(a, background) {
+    const subs = a.subs
+    if (!subs?.size) return []
+    if (Array.isArray(background)) {
+      const running = new Set(background.filter((t) => t?.type === 'subagent' && t.status === 'running').map((t) => t.id))
+      for (const t of background) if (t?.type === 'subagent' && t.status === 'running' && !subs.has(t.id)) subs.set(t.id, { id: t.id, type: String(t.agent_type || 'agent'), description: String(t.description ?? ''), started: Date.now(), ended: null, tools: 0, activity: '', result: '' })
+      for (const sub of subs.values()) if (!sub.ended && !running.has(sub.id)) sub.ended = Date.now()
+    }
+    const now = Date.now()
+    for (const [id, sub] of subs) if (sub.ended && now - sub.ended > 10 * 60000) subs.delete(id) // long gone
+    return [...subs.values()]
+      .filter((sub) => !sub.ended || !sub.told)
+      .map((sub) => {
+        if (sub.ended) sub.told = true
+        return { type: sub.type, description: sub.description, tools: sub.tools, ms: (sub.ended ?? now) - sub.started, running: !sub.ended }
+      })
   }
 
   // ---- questions, answered in the chat ----------------------------------------------------------
@@ -1004,6 +1093,8 @@ export class Hub extends EventEmitter {
         convo: this.convos[a.name] ? { ...this.convos[a.name], context: againstLimit(this.convos[a.name].context, a.contextLimit) } : null,
         contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : null, onContextLimit: a.onContextLimit === 'notify' ? 'notify' : 'fresh',
         freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
+        // its sub-agents: the running ones, and ones that just finished
+        subs: [...(a.subs?.values() ?? [])].filter((x) => !x.ended || Date.now() - x.ended < SUB_LINGER).map(({ id, type, description, started, ended, tools, activity }) => ({ id, type, description, started, ended, tools, activity })),
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
       tasks: {

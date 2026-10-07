@@ -489,6 +489,70 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .tr-go { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 650; color: #fff; background: var(--waiting); }
 .tr-go svg { width: 11px; height: 11px; }
 
+/* ---- sub-agents (Claude Code's Agent tool) ----
+   While they run, dots circle their agent's creature (one per sub-agent), and the agent's line in the chat grows
+   a branch per sub-agent: its kind, its job, what it's doing, its steps and time. */
+.orbit { position: absolute; inset: -4px; pointer-events: none; animation: orbit 2.6s linear infinite; }
+.orbit i { position: absolute; inset: 0; transform: rotate(calc(var(--k) * 360deg / var(--n))); }
+.orbit i::before { content: ''; position: absolute; left: 50%; top: 0; width: var(--dot, 5px); height: var(--dot, 5px); margin-left: calc(var(--dot, 5px) / -2); border-radius: 50%; background: var(--c, var(--accent)); box-shadow: 0 0 0 1.5px var(--orbit-ring, var(--surface)); }
+@keyframes orbit { to { transform: rotate(360deg); } }
+.agent-av .orbit { inset: -5px; --dot: 6.5px; }
+.subs-chip { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 17px; padding: 0 6px 0 5px; border-radius: 999px; font: 650 10px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--c, var(--accent)) 70%, var(--fg)); background: color-mix(in srgb, var(--c, var(--accent)) 14%, transparent); cursor: help; }
+.subs-chip svg { width: 11px; height: 11px; }
+.typing-row .face { position: relative; }
+.typing-row .tr-what.quiet { font-family: inherit; font-size: 12px; }
+.sub-tree { position: relative; display: flex; flex-direction: column; gap: 1px; margin: -2px 0 3px 17px; padding-left: 12px; cursor: pointer; }
+.sub-tree::before { content: ''; position: absolute; left: 0; top: -3px; bottom: 19px; width: 1.5px; border-radius: 1px; background: color-mix(in srgb, var(--c) 40%, var(--line)); }
+.sub-row { position: relative; display: flex; align-items: center; gap: 7px; min-height: 38px; padding: 3px 8px 3px 4px; border-radius: 9px; font-size: 11.5px; color: var(--fg2); white-space: nowrap; transition: opacity .5s, background .15s; animation: sub-in .45s var(--bounce) both; }
+.sub-row::before { content: ''; position: absolute; left: -12px; top: 50%; width: 10px; height: 1.5px; border-radius: 1px; background: color-mix(in srgb, var(--c) 40%, var(--line)); }
+@keyframes sub-in { from { opacity: 0; transform: translateX(-6px) scale(.97); } }
+.sub-row:hover { background: var(--btn); }
+.sub-face { flex: none; width: 16px; height: 16px; display: grid; place-items: center; line-height: 0; }
+.sub-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sub-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sub-done { width: 14px; height: 14px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--working); animation: check-in .35s var(--spring); }
+.sub-done svg { width: 9px; height: 9px; stroke-width: 3.4; }
+.sub-kind { flex: none; padding: 1px 6px; border-radius: 5px; font-size: 10px; font-weight: 700; letter-spacing: .02em; color: color-mix(in oklab, var(--c) 70%, var(--fg)); background: color-mix(in srgb, var(--c) 12%, transparent); }
+.sub-job { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-weight: 600; color: var(--fg); }
+.sub-doing { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 10.5px/1.3 var(--mono); color: var(--fg3); }
+.sub-meta { flex: none; font-size: 10.5px; line-height: 1.35; text-align: right; color: var(--fg3); font-variant-numeric: tabular-nums; }
+.sub-row.done { opacity: .62; }
+.sub-row.done .sub-doing { font-family: inherit; font-size: 11px; color: var(--working-ink); }
+/* under a reply: the sub-agents that helped, folded */
+.subs-used { margin-top: 5px; max-width: 100%; font-size: 12px; color: var(--fg2); user-select: none; }
+.subs-used summary { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 6px; border-radius: 999px; list-style: none; cursor: pointer; font-weight: 600; color: color-mix(in oklab, var(--c) 62%, var(--fg)); background: color-mix(in srgb, var(--c) 10%, transparent); transition: background .15s; }
+.subs-used summary::-webkit-details-marker { display: none; }
+.subs-used summary:hover { background: color-mix(in srgb, var(--c) 16%, transparent); }
+.subs-used summary svg { width: 13px; height: 13px; flex: none; }
+.subs-used summary::after { content: ''; width: 5px; height: 5px; margin-left: 2px; border: solid currentColor; border-width: 0 1.6px 1.6px 0; transform: translateY(-2px) rotate(45deg); transition: transform .3s var(--out); }
+.subs-used[open] summary::after { transform: translateY(1px) rotate(-135deg); }
+.subs-list { margin-top: 6px; padding: 7px 10px; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line-strong); display: flex; flex-direction: column; gap: 5px; animation: hint-in .25s var(--out); }
+.subs-item { display: flex; align-items: center; gap: 7px; min-width: 0; white-space: nowrap; }
+.subs-item .sub-job { font-size: 12px; font-weight: 560; }
+.subs-item .sub-meta br { display: none; }
+.subs-item.running .sub-meta { color: var(--working-ink); }
+
+/* ---- @mentions (mountMentions in common.js) ---- */
+.mentions { position: fixed; z-index: 60; display: flex; flex-direction: column; min-height: 0; padding: 6px; border-radius: 14px; background: var(--card); color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong), 0 18px 44px -14px rgba(0, 0, 0, .38), 0 4px 12px -6px rgba(0, 0, 0, .14); animation: mn-in .16s var(--out); }
+@keyframes mn-in { from { opacity: 0; transform: translateY(4px) scale(.985); } }
+.mn-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 8px 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--fg3); }
+.mn-keys { display: inline-flex; align-items: center; gap: 3px; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11px; }
+.mn-keys span { margin-left: 3px; }
+.mn-keys kbd { font: 600 10px/1 var(--mono); padding: 2px 4px; border-radius: 4px; background: var(--btn); color: var(--fg2); box-shadow: inset 0 -1px 0 var(--line); }
+.mn-list { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.mn-item { flex: none; display: flex; align-items: center; gap: 9px; height: 36px; padding: 0 10px 0 6px; border-radius: 9px; cursor: pointer; font-size: 13px; }
+.mn-item.on { background: color-mix(in srgb, var(--c) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 30%, transparent); }
+.mn-item .av { flex: none; }
+.mn-name { flex: none; font-weight: 650; }
+.mn-name mark { background: none; color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--c) 70%, transparent); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.mn-area { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg3); }
+.mn-state { flex: none; font-size: 11px; font-weight: 600; color: var(--fg3); }
+.mn-state.working { color: var(--working-ink); }
+.mn-state.waiting { color: var(--waiting-ink); }
+.mn-state.starting { color: var(--starting); }
+.mn-sep { padding: 7px 8px 3px; font-size: 10.5px; font-weight: 600; color: var(--fg3); }
+.mn-item.off { opacity: .45; cursor: default; }
+
 /* ---- composer ----
    Who it's for on one line (names, or just faces once the crew outgrows the line), then the message box with its
    tools underneath, so the text gets the whole width. */
