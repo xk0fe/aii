@@ -309,6 +309,75 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .event.alert { color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 12%, transparent); }
 .event .who { font-weight: 650; cursor: pointer; }
 
+/* ---- an agent's question, answered right here (askCard in common.js) ----
+   Open: a warm ring that breathes until you answer. Answered: a quiet line saying what happened. */
+.ask-card {
+  min-width: 250px; max-width: 100%; padding: 12px 14px 11px; border-radius: 18px; border-bottom-left-radius: 6px;
+  background: color-mix(in srgb, var(--c, transparent) 8%, var(--bubble)); font-size: 13.5px; line-height: 1.4; user-select: text;
+}
+.item.ask.open .ask-card { animation: ask-ring 2.2s ease-in-out infinite; }
+@keyframes ask-ring { 0%, 100% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 45%, transparent); } 50% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 75%, transparent), 0 0 0 5px color-mix(in srgb, var(--waiting) 14%, transparent); } }
+.ask-card.sending { opacity: .55; pointer-events: none; transition: opacity .2s; }
+.ask-title { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.ask-title svg { flex: none; width: 24px; height: 24px; padding: 4px; border-radius: 8px; color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 16%, transparent); }
+.ask-code { margin: 9px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--code-bg); font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 11em; overflow: auto; }
+.ask-detail { margin-top: 6px; color: var(--fg2); font-size: 12.5px; }
+.ask-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.ask-actions .btn { padding: 6px 13px; }
+.ask-actions .btn.deny { color: var(--danger); }
+.ask-always { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.ask-always button { border: 0; border-radius: 999px; padding: 4px 10px; background: var(--btn); color: var(--fg2); font-size: 11.5px; font-weight: 600; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background .15s, color .15s, transform .25s var(--bounce); }
+.ask-always button::before { content: '✓ '; color: var(--working-ink); }
+.ask-always button:hover { background: var(--btn-hover); color: var(--fg); }
+.ask-always button:active { transform: scale(.95); }
+.ask-actions .btn.deny:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.ask-note, .ask-other {
+  display: block; width: 100%; margin-top: 8px; padding: 7px 11px; border: 0; border-radius: 10px; outline: 0;
+  background: color-mix(in srgb, var(--surface) 65%, transparent); box-shadow: inset 0 0 0 1px var(--line); font-size: 12.5px; user-select: text;
+  transition: box-shadow .15s;
+}
+.ask-note:focus, .ask-other:focus { box-shadow: inset 0 0 0 1.5px var(--c, var(--accent)); }
+.ask-note::placeholder, .ask-other::placeholder { color: var(--fg3); }
+.ask-foot { margin-top: 7px; }
+.ask-elsewhere { all: unset; font-size: 11.5px; color: var(--fg3); }
+button.ask-elsewhere { cursor: pointer; color: var(--fg2); text-decoration: underline; text-underline-offset: 2px; }
+button.ask-elsewhere:hover { color: var(--fg); }
+.ask-actions .ask-elsewhere { margin-left: 4px; }
+.ask-error { color: var(--danger); font-size: 12px; }
+.ask-error:not(:empty) { margin-top: 6px; }
+.ask-q + .ask-q { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.ask-head { display: flex; gap: 6px; align-items: center; }
+.ask-head:empty { display: none; }
+.ask-chip { font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 14%, transparent); }
+.ask-multi { font-size: 11px; color: var(--fg3); }
+.ask-question { margin: 6px 0 9px; font-size: 14px; font-weight: 650; }
+.ask-options { display: flex; flex-direction: column; gap: 6px; }
+.ask-option {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 34px 8px 12px; text-align: left;
+  border: 0; border-radius: 12px; cursor: pointer; background: color-mix(in srgb, var(--surface) 70%, transparent); box-shadow: inset 0 0 0 1.5px var(--line);
+  transition: box-shadow .15s, background .15s, transform .25s var(--bounce);
+}
+.ask-option b { font-weight: 650; font-size: 13.5px; }
+.ask-option span { font-size: 12px; color: var(--fg2); }
+.ask-option:hover { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c, var(--accent)) 60%, transparent); }
+.ask-option:active { transform: scale(.98); }
+.ask-option.on { background: color-mix(in srgb, var(--c, var(--accent)) 14%, var(--surface)); box-shadow: inset 0 0 0 2px var(--c, var(--accent)); }
+.ask-option.on::after { content: '✓'; position: absolute; right: 12px; top: 50%; translate: 0 -50%; font-weight: 800; color: var(--c, var(--accent)); animation: chip-on .35s var(--spring); }
+.ask-plan { margin-top: 9px; padding: 10px 12px; border-radius: 12px; max-height: 18em; overflow: auto; background: color-mix(in srgb, var(--surface) 65%, transparent); box-shadow: inset 0 0 0 1px var(--line); font-size: 13px; }
+.ask-plan > * { margin: 0; }
+.ask-plan > * + * { margin-top: 7px; }
+.ask-plan h4 { font-size: 13.5px; }
+.ask-plan ul, .ask-plan ol { padding-left: 18px; }
+.ask-plan code { font: 12px var(--mono); background: rgba(127, 127, 127, .18); padding: 1px 4px; border-radius: 5px; }
+.ask-card.done { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; padding: 8px 13px; font-size: 12.5px; color: var(--fg2); }
+.ask-card.done b { color: var(--fg); font-weight: 650; }
+.ask-what { color: var(--fg3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-what::before { content: '· '; }
+.ask-mark { font-weight: 800; color: var(--fg3); }
+.ask-mark.ok { color: var(--working-ink); }
+.ask-mark.no { color: var(--danger); }
+.ask-answer { display: flex; align-items: baseline; gap: 7px; flex-basis: 100%; }
+
 /* who's on it right now: a typing bubble per busy agent, under the last message */
 .typing-row { display: flex; align-items: flex-end; gap: 8px; max-width: 92%; cursor: pointer; animation: item-in .45s var(--bounce) both; }
 .typing-row .face { width: 30px; flex: none; line-height: 0; }

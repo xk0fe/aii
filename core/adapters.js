@@ -3,6 +3,13 @@
 
 // Every hook forwards its JSON payload to the crew hub, which turns it into status + feed entries.
 const HOOK = 'curl -s -m 2 -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/hook/$CREW_AGENT" >/dev/null 2>&1 || true'
+// Permission prompts, questions and plan approvals: the hook waits for your answer in the chat and prints it as
+// its decision. No answer (Crew gone, handed to the terminal) prints nothing, and the agent asks as usual.
+const ASK = (seconds) => `curl -s -m ${seconds} -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/ask/$CREW_AGENT" 2>/dev/null || true`
+// Claude shows its own dialog while the hook waits (answer in either place), so the hook can wait a long time.
+// Codex shows nothing until the hook is done: after half an hour it asks in its terminal.
+const CLAUDE_WAIT = 86400
+const CODEX_WAIT = 1800
 
 const prompt = (a) => `You are "${a.name}", one of several AI agents working side by side in terminals as a crew, coordinated by the user.
 Your area: ${a.area || 'general'}.
@@ -29,7 +36,7 @@ export const adapters = {
       hooks: {
         SessionStart: on(),
         UserPromptSubmit: on(),
-        PreToolUse: on('AskUserQuestion'),
+        PermissionRequest: [{ hooks: [{ type: 'command', command: ASK(CLAUDE_WAIT), timeout: CLAUDE_WAIT }] }], // AskUserQuestion and ExitPlanMode come here too
         PostToolUse: on('*'),
         Notification: on(),
         Stop: on(),
@@ -53,7 +60,8 @@ export const adapters = {
   },
 
   codex(a, { resume }) {
-    const events = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PermissionRequest', 'Stop', 'Interrupt']
+    const events = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'Interrupt']
+    const ask = `[{hooks=[{type="command",command=${toml(ASK(CODEX_WAIT))},timeout=${CODEX_WAIT},statusMessage="Waiting for your answer in Crew's chat"}]}]`
     return {
       file: 'codex',
       readyAfter: 3000, // Codex fires SessionStart with the first prompt, not at launch
@@ -67,6 +75,7 @@ export const adapters = {
         '-c', `developer_instructions=${toml(prompt(a))}`,
         '-c', 'check_for_update_on_startup=false',
         ...events.flatMap((e) => ['-c', `hooks.${e}=[{hooks=[{type="command",command=${toml(HOOK)}}]}]`]),
+        '-c', `hooks.PermissionRequest=${ask}`,
         // Command-line hooks would otherwise wait on a "trust these hooks" prompt every launch.
         '--dangerously-bypass-hook-trust',
       ],

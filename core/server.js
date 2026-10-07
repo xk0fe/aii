@@ -9,6 +9,9 @@ export function serve(hub) {
     note: (q, body) => hub.note(q.from || 'you', body),
     who: () => hub.who(),
     board: () => hub.board(),
+    // An agent's PermissionRequest hook, held open until you answer in the chat; the reply is its decision
+    // (empty: no decision, the agent asks in its terminal). `closed` fires if the hook gives up first.
+    ask: (q, body, name, closed) => hub.ask(name, JSON.parse(body || '{}'), closed),
   }
 
   const server = http.createServer(async (req, res) => {
@@ -19,8 +22,10 @@ export function serve(hub) {
     res.setHeader('content-type', 'text/plain; charset=utf-8')
     if (req.headers['x-crew'] !== hub.token) return res.writeHead(403).end('bad token, is crew running?\n')
     if (!Object.hasOwn(routes, route)) return res.writeHead(404).end('unknown command, try: crew help\n')
+    const closed = new AbortController()
+    res.on('close', () => res.writableEnded || closed.abort())
     try {
-      res.end((await routes[route](Object.fromEntries(url.searchParams), body, arg)) ?? 'ok\n') // a send to another computer resolves later
+      res.end((await routes[route](Object.fromEntries(url.searchParams), body, arg, closed.signal)) ?? 'ok\n') // a send to another computer resolves later
     } catch (e) {
       res.writeHead(400).end(`${e.message}\n`)
     }

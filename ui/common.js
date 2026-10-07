@@ -43,6 +43,9 @@ const ICONS = {
   export: svg('<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4.5 15v2.5A2.5 2.5 0 0 0 7 20h10a2.5 2.5 0 0 0 2.5-2.5V15"/>'),
   computers: svg('<rect x="2.5" y="4" width="13" height="9.5" rx="1.8"/><path d="M6 17h6M9 13.5V17"/><rect x="17.5" y="7" width="4.5" height="10" rx="1.2"/>'),
   plane: svg('<path d="M21 3 3 10.4l7.2 2.4L12.6 20 21 3z"/><path d="m10.2 12.8 4.6-4.6"/>'),
+  shield: svg('<path d="M12 3 5 6v5.5c0 4.3 3 7.9 7 9.5 4-1.6 7-5.2 7-9.5V6l-7-3z"/><path d="m9 12 2 2 4-4"/>'),
+  ask: svg('<path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.7A8 8 0 0 1 4 12z"/><path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.9c0 1.5-2.2 1.9-2.2 3.1M12 16.6v.1"/>'),
+  plan: svg('<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>'),
   bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.5 4.8 13.2c-.4.5 0 1.2.6 1.2H11l-1.2 7.1c-.1.6.7.9 1 .4l8.8-10.7c.4-.5 0-1.2-.6-1.2H13.4l1.2-7.1c.1-.6-.7-.9-1-.4z"/></svg>',
 }
 
@@ -340,10 +343,10 @@ const mergeSends = (feed) => {
 
 // What the feed shows: the last `limit` entries after merging, and their HTML. Replies to any copy of a
 // merged send link to the copy that's shown.
-const feedView = (feed, agents, open, limit) => {
+const feedView = (feed, agents, open, limit, drafts = new Map()) => {
   const { shown, as } = mergeSends(feed)
   const items = shown.slice(-limit)
-  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, open }
+  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, open, drafts }
   for (const e of feed) if (e.re) (ctx.repliesTo[as[e.re]?.id ?? e.re] ??= []).push(e)
   return { items, html: () => items.map((e, i) => feedItem(e, items[i - 1], ctx)).join('') }
 }
@@ -362,17 +365,21 @@ function feedItem(e, prev, ctx) {
   // ...and a message you sent links forward to the agents' replies.
   const answers = repliesTo[e.id] ?? []
   const replied = answers.length
-    ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">↪ ${[...new Set(answers.map((r) => `@${esc(r.from)}`))].join(', ')} ${answers.some((r) => r.kind === 'reply') ? 'replied' : 'handed it on'}</button>`
+    ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">↪ ${[...new Set(answers.map((r) => `@${esc(r.from)}`))].join(', ')} ${answers.some((r) => r.kind === 'reply') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</button>`
     : ''
   const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}" data-id="${e.id}">${md(e.text)}</div>`
   const cap = (html) => (repeat && !tags ? '' : `<div class="cap">${html}${tags}</div>`)
   // Agents talk with their little face next to the bubble, like a group chat.
-  const said = (cls, capHTML, rest = '') =>
-    `<div class="item said ${cls}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"><span class="face" data-agent="${esc(e.from)}">${repeat ? '' : avatarHTML(agent(e.from), { size: 30, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${bubble}${rest}${replied}</div></div>`
+  const said = (cls, capHTML, rest = '', body = bubble) =>
+    `<div class="item said ${cls}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"><span class="face" data-agent="${esc(e.from)}">${repeat ? '' : avatarHTML(agent(e.from), { size: 30, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div></div>`
 
   if (e.kind === 'event') return `<div class="event ${e.alert ? 'alert' : ''}" id="m-${e.id}" title="${time}">${who(e.from)} ${esc(e.text)}</div>`
   if (e.kind === 'note') return said('note', `${who(e.from)} shared a note`)
   if (e.kind === 'reply') return said('', who(e.from))
+  if (e.kind === 'ask') {
+    const verb = { permission: 'needs your OK', question: 'asks', plan: 'has a plan for you' }[e.ask?.type] ?? 'asks'
+    return said(`ask ${e.answer ? 'answered' : 'open'}`, `${who(e.from)} ${verb}`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`)
+  }
   if (e.from === 'you') return `<div class="item me" id="m-${e.id}" title="${time}">${cap(`to ${(e.cc ?? [e.to]).map(who).join(' ')}`)}${bubble}${replied}</div>`
   const actions = e.held
     ? `<div class="actions"><button class="btn primary" data-act="approve" data-id="${e.id}">Send it</button><button class="btn" data-act="drop" data-id="${e.id}">Drop</button></div>`
@@ -380,20 +387,85 @@ function feedItem(e, prev, ctx) {
   return said(`handoff ${e.dropped ? 'dropped' : ''}`, `${who(e.from)} → ${who(e.to)}`, actions)
 }
 
+// An agent's question as a card you answer right in the chat (see hub.ask): a permission prompt, its own
+// multiple-choice questions, or a plan to approve. Answered, it folds into a line saying what happened.
+// draft: what you've picked or typed so far, kept across re-renders.
+function askCard(e, draft = {}) {
+  const q = e.ask ?? {}
+  const name = esc(String(e.from).split('@')[0])
+  const icon = ICONS[{ permission: 'shield', question: 'ask', plan: 'plan' }[q.type] ?? 'ask']
+  if (e.answer) return `<div class="ask-card done" data-ask="${e.id}">${askSummary(q, e.answer)}</div>`
+  const code = q.code ? `<pre class="ask-code"><code>${esc(q.code)}</code></pre>` : ''
+  const note = (placeholder) => `<input class="ask-note" data-note value="${esc(draft.note ?? '')}" placeholder="${placeholder}" spellcheck="false">`
+  const elsewhere = e.cli === 'codex'
+    ? `<button class="ask-elsewhere" data-answer="terminal" title="${name} shows its own prompt once you hand it over">Answer in its terminal instead</button>`
+    : '<span class="ask-elsewhere">or answer in its terminal</span>'
+  if (q.type === 'question') {
+    const picked = (qi, label) => [].concat(draft.picks?.[qi] ?? []).includes(label)
+    const ready = q.questions.every((x, qi) => draft.other?.[qi]?.trim() || [].concat(draft.picks?.[qi] ?? []).length)
+    const quick = q.questions.length === 1 && !q.questions[0].multiSelect // one tap answers
+    return `<div class="ask-card" data-ask="${e.id}">${q.questions.map((x, qi) => `
+      <div class="ask-q">
+        <div class="ask-head">${x.header ? `<span class="ask-chip">${esc(x.header)}</span>` : ''}${x.multiSelect ? '<span class="ask-multi">pick any</span>' : ''}</div>
+        <div class="ask-question">${esc(x.question)}</div>
+        <div class="ask-options">${x.options.map((o) => `<button class="ask-option ${picked(qi, o.label) ? 'on' : ''}" data-pick="${qi}" data-label="${esc(o.label)}"><b>${esc(o.label)}</b>${o.description ? `<span>${esc(o.description)}</span>` : ''}</button>`).join('')}</div>
+        <input class="ask-other" data-other="${qi}" value="${esc(draft.other?.[qi] ?? '')}" placeholder="Something else…" spellcheck="false">
+      </div>`).join('')}
+      <div class="ask-actions">${quick ? '' : `<button class="btn primary" data-answer="send" ${ready ? '' : 'disabled'}>Send ${q.questions.length > 1 ? 'answers' : 'answer'}</button>`}${elsewhere}</div>
+      <div class="ask-error"></div>
+    </div>`
+  }
+  if (q.type === 'plan') {
+    return `<div class="ask-card" data-ask="${e.id}">
+      <div class="ask-title">${icon}<span>Plan</span></div>
+      <div class="ask-plan">${md(q.plan)}</div>
+      <div class="ask-actions"><button class="btn primary" data-answer="allow">Approve plan</button><button class="btn" data-answer="deny">Keep planning</button>${elsewhere}</div>
+      ${note(`What should ${name} change?`)}
+      <div class="ask-error"></div>
+    </div>`
+  }
+  return `<div class="ask-card" data-ask="${e.id}">
+    <div class="ask-title">${icon}<span>${esc(q.title ?? 'Use a tool')}</span></div>
+    ${code}${q.detail ? `<div class="ask-detail">${esc(q.detail)}</div>` : ''}
+    <div class="ask-actions"><button class="btn primary" data-answer="allow">Allow</button><button class="btn deny" data-answer="deny">Deny</button></div>
+    ${q.always?.length ? `<div class="ask-always">${q.always.map((s) => `<button data-answer="always" data-i="${s.i}" title="Allow, and don't ask again">${esc(s.label)}</button>`).join('')}</div>` : ''}
+    ${note(`Or tell ${name} what to do instead… (Enter)`)}
+    <div class="ask-foot">${elsewhere}</div>
+    <div class="ask-error"></div>
+  </div>`
+}
+
+// An answered card, in one line or two.
+function askSummary(q, a) {
+  const what = q.type === 'question' ? '' : `<span class="ask-what">${esc(q.type === 'plan' ? 'the plan' : q.title ?? '')}</span>`
+  if (a.stale) return `<span class="ask-mark">·</span><span>No longer waiting</span>${what}`
+  if (a.by === 'terminal') return `<span class="ask-mark">⌨</span><span>${a.handedOver ? 'Handed to its terminal' : 'Answered in the terminal'}</span>${what}`
+  if (q.type === 'question') return Object.entries(a.answers ?? {}).map(([k, v]) => `<div class="ask-answer"><span class="ask-mark ok">✓</span><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')
+  if (q.type === 'plan') return a.allow ? `<span class="ask-mark ok">✓</span><span>Plan approved</span>` : `<span class="ask-mark no">↺</span><span>Keep planning${a.note ? `: “${esc(a.note)}”` : ''}</span>`
+  if (a.allow) return `<span class="ask-mark ok">✓</span><span>Allowed${a.always ? ` · ${esc(a.always)}` : ''}</span>${what}`
+  return `<span class="ask-mark no">✕</span><span>Said no${a.note ? `: “${esc(a.note)}”` : ''}</span>${what}`
+}
+
 // Who's on it right now, under the last message: dots while an agent works, an orange nudge when it needs you.
-const typingHTML = (agents) =>
+// asks: agent -> its open question's id, so the nudge can point at the card instead of the terminal.
+const typingHTML = (agents, asks = new Map()) =>
   agents
     .filter((a) => a.on && (a.status === 'working' || a.status === 'waiting'))
-    .map((a) => `<div class="typing-row ${a.status}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}" title="${a.status === 'waiting' ? 'Open its terminal to answer' : 'Open its terminal'}">
+    .map((a) => {
+      const card = a.status === 'waiting' && asks.get(a.name)
+      return `<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : a.status === 'waiting' ? 'Open its terminal to answer' : 'Open its terminal'}">
       <span class="face">${avatarHTML(a, { size: 30 })}</span>
       <div class="stack"><span class="cap"><b>${esc(a.name)}</b>${a.activity ? ` · ${esc(a.activity)}` : ''}</span>${
-        a.status === 'waiting' ? '<span class="typing">needs you · answer in its terminal</span>' : '<span class="typing"><i></i><i></i><i></i></span>'
-      }</div></div>`)
+        card ? '<span class="typing">waiting for your answer ↑</span>' : a.status === 'waiting' ? '<span class="typing">needs you · answer in its terminal</span>' : '<span class="typing"><i></i><i></i><i></i></span>'
+      }</div></div>`
+    })
     .join('')
 
 function mountFeed(el, { onAgent, limit = 200 } = {}) {
   const open = new Set()
   const seen = new Set()
+  const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
+  let shown = new Map() // id -> feed entry on screen
   let key = ''
   let first = true
   // Pinned while you're at the bottom: new messages, typing rows and folding long bubbles keep it there.
@@ -431,6 +503,10 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
     }
     const to = ev.target.closest('[data-jump]')
     if (to) return jump(to.dataset.jump)
+    const pick = ev.target.closest('[data-pick]')
+    if (pick) return choose(pick)
+    const ans = ev.target.closest('[data-answer]')
+    if (ans) return answerFrom(ans.closest('[data-ask]'), ans.dataset.answer, ans.dataset.i)
     const agent = ev.target.closest('[data-agent]')
     if (agent) return onAgent?.(agent.dataset.agent)
     const act = ev.target.closest('[data-act]')
@@ -452,6 +528,74 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
     const bubble = ev.target.closest('.bubble.long')
     if (bubble && !getSelection().toString()) toggle(bubble)
   })
+  // ---- answering a question card (see askCard) ----
+  const draftOf = (id) => (drafts.has(id) ? drafts.get(id) : drafts.set(id, {}).get(id))
+  const answersOf = (e, d) =>
+    Object.fromEntries(e.ask.questions.map((x, qi) => [x.question, d.other?.[qi]?.trim() || (x.multiSelect ? (d.picks?.[qi] ?? []) : d.picks?.[qi]?.[0])]).filter(([, v]) => v?.length))
+  const syncSend = (card) => {
+    const e = shown.get(card.dataset.ask)
+    const send = card.querySelector('[data-answer="send"]')
+    if (send) send.disabled = Object.keys(answersOf(e, draftOf(e.id))).length < e.ask.questions.length
+  }
+  const answer = async (card, reply) => {
+    const id = card.dataset.ask
+    card.classList.add('sending')
+    card.querySelector('.ask-error').textContent = ''
+    try {
+      await crew.call('answer', id, reply)
+      drafts.delete(id)
+    } catch (err) {
+      card.classList.remove('sending')
+      card.querySelector('.ask-error').textContent = err.message
+    }
+  }
+  const answerFrom = (card, how, i) => {
+    const e = card && shown.get(card.dataset.ask)
+    if (!e || e.answer) return
+    const d = draftOf(e.id)
+    if (how === 'allow') return answer(card, { allow: true })
+    if (how === 'always') return answer(card, { allow: true, always: Number(i) })
+    if (how === 'deny') return answer(card, { allow: false, note: d.note ?? '' })
+    if (how === 'terminal') return answer(card, { terminal: true })
+    if (how === 'send') return answer(card, { answers: answersOf(e, d) })
+  }
+  // One question with one answer: a tap sends it. Otherwise taps pick (several, for "pick any") until Send.
+  const choose = (button) => {
+    const card = button.closest('[data-ask]')
+    const e = shown.get(card.dataset.ask)
+    const qi = Number(button.dataset.pick)
+    const x = e.ask.questions[qi]
+    const label = button.dataset.label
+    if (e.ask.questions.length === 1 && !x.multiSelect) return answer(card, { answers: { [x.question]: label } })
+    const d = draftOf(e.id)
+    d.picks ??= {}
+    const now = new Set(d.picks[qi] ?? [])
+    if (x.multiSelect) now.has(label) ? now.delete(label) : now.add(label)
+    else (now.clear(), now.add(label))
+    d.picks[qi] = [...now]
+    for (const b of card.querySelectorAll(`[data-pick="${qi}"]`)) b.classList.toggle('on', now.has(b.dataset.label))
+    syncSend(card)
+  }
+  el.addEventListener('input', (ev) => {
+    const card = ev.target.closest('[data-ask]')
+    if (!card) return
+    const d = draftOf(card.dataset.ask)
+    if ('note' in ev.target.dataset) d.note = ev.target.value
+    if ('other' in ev.target.dataset) (d.other ??= {})[ev.target.dataset.other] = ev.target.value
+    syncSend(card)
+  })
+  el.addEventListener('keydown', (ev) => {
+    const card = ev.target.closest('[data-ask]')
+    if (!card || ev.key !== 'Enter' || ev.isComposing) return
+    const e = shown.get(card.dataset.ask)
+    if ('note' in ev.target.dataset && ev.target.value.trim()) answerFrom(card, 'deny') // "no, and here's what to do instead"
+    else if ('other' in ev.target.dataset && ev.target.value.trim()) {
+      if (e.ask.questions.length === 1) answer(card, { answers: { [e.ask.questions[0].question]: ev.target.value.trim() } })
+      else syncSend(card)
+    } else return
+    ev.preventDefault()
+  })
+
   const toggle = (bubble) => {
     if (!bubble) return
     bubble.classList.toggle('open')
@@ -480,13 +624,18 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
   }).observe(el)
   return {
     render({ feed, agents }) {
-      const view = feedView(feed, agents, open, limit)
-      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar]))
-      const busy = typingHTML(agents)
+      const view = feedView(feed, agents, open, limit, drafts)
+      shown = new Map(view.items.map((e) => [e.id, e]))
+      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar]))
+      const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
+      const busy = typingHTML(agents, asks)
       let added = false
       if (!view.items.length) next += busy ? ':busy' : ':empty' // the empty-feed hint shows only when nobody's busy
       if (next !== key) {
         key = next
+        // a re-render mustn't take away what you're typing into a question card
+        const active = list.contains(document.activeElement) && document.activeElement.closest('[data-ask]') ? document.activeElement : null
+        const keep = active && { id: active.closest('[data-ask]').dataset.ask, field: 'note' in active.dataset ? '[data-note]' : `[data-other="${active.dataset.other}"]`, from: active.selectionStart, to: active.selectionEnd }
         list.innerHTML = view.items.length || busy ? view.html() : `<div class="empty">${ICONS.mark}<span>Tasks, hand-offs and replies show up here.</span></div>`
         // New messages pop in; the ones already on screen stay put.
         for (const e of view.items) {
@@ -494,6 +643,8 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
           seen.add(e.id)
           if (!first) (list.querySelector(`#m-${CSS.escape(e.id)}`)?.classList.add('enter'), (added = true))
         }
+        const back = keep && list.querySelector(`[data-ask="${CSS.escape(keep.id)}"] ${keep.field}`)
+        if (back) (back.focus({ preventScroll: true }), back.setSelectionRange(keep.from, keep.to))
         measure()
       }
       morph(typing, busy)

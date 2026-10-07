@@ -255,9 +255,9 @@ export class Crew extends EventEmitter {
     return `${await l.peer.call('addAgent', [{ ...fields, images: await this.toHome(fields.images, l) }])}@${l.slug}`
   }
 
-  feedAction(id, fn) {
+  feedAction(id, fn, ...args) {
     const { l, base } = this.where(id)
-    return l ? l.peer.call(fn, [base]) : this.hub[fn](base)
+    return l ? l.peer.call(fn, [base, ...args]) : this.hub[fn](base, ...args)
   }
 
   draftPrompt({ home, ...agent }) {
@@ -278,6 +278,7 @@ export class Crew extends EventEmitter {
       },
       approve: (id) => h.approve(id),
       drop: (id) => h.drop(id),
+      answer: (id, reply) => h.answer(id, reply),
       update: (names, patch) => h.update(names, patch),
       draftPrompt: (agent) => h.draftPrompt(agent),
       addAgent: (fields) => h.addAgent(fields),
