@@ -133,7 +133,9 @@ FEED.push(
   { id: 'b5', kind: 'task', type: 'bug', act: 'fixed', from: 'david', ticket: 5, title: 'Double jump fires twice on gamepad', text: 'Held buttons were read every frame. Debounced the jump input so a press fires once.', ts: t(0.2) },
 )
 
-const state = { autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, tasks: { tickets: TICKETS, triage: 'arie', autofix: false } }
+// what you've read: david's replies, but not joseph's or arie's latest
+const READS = { since: 0, agents: { david: now - 18 * min } }
+const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, tasks: { tickets: TICKETS, triage: 'arie', autofix: false } }
 const emit = () => setTimeout(() => window.__crewEmit('state', state), 30)
 let nextTask = 14
 
@@ -211,6 +213,20 @@ window.__crewState = state
 window.crew = {
   call: async (action, ...args) => {
     if (action === 'state') return state
+    // sending from the chat: your message lands in the feed (Auto goes to joseph), threaded when it's a reply
+    if (action === 'send') {
+      const [to, text, , opts = {}] = args
+      const names = String(to || 'joseph').split(',').filter(Boolean)
+      const group = names.length > 1 && { cc: names, sendId: `s${Date.now()}` }
+      for (const n of names) state.feed.push({ id: `u${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text, ts: Date.now(), ...group, ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }) })
+      emit()
+      return `sent to ${names.map((n) => `@${n}`).join(' ')}\n`
+    }
+    if (action === 'read') {
+      for (const [n, ts] of Object.entries(args[0] ?? {})) READS.agents[n] = Math.max(READS.agents[n] ?? 0, ts)
+      emit()
+      return undefined
+    }
     // window.__crewBufferDelay holds the replay back, so its ribbon can be captured
     if (action === 'buffer') return new Promise((r) => setTimeout(() => r({ data: TERM, cols: 100, rows: 30 }), window.__crewBufferDelay ?? 0))
     if (action === 'answer') {

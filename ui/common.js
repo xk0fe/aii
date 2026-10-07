@@ -50,6 +50,7 @@ const ICONS = {
   shield: svg('<path d="M12 3 5 6v5.5c0 4.3 3 7.9 7 9.5 4-1.6 7-5.2 7-9.5V6l-7-3z"/><path d="m9 12 2 2 4-4"/>'),
   ask: svg('<path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.7A8 8 0 0 1 4 12z"/><path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.9c0 1.5-2.2 1.9-2.2 3.1M12 16.6v.1"/>'),
   plan: svg('<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>'),
+  reply: svg('<path d="M9.5 14.5 4 9l5.5-5.5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5V20"/>'),
   subs: svg('<circle cx="5.5" cy="5.5" r="2.5"/><circle cx="18.5" cy="11" r="2.5"/><circle cx="18.5" cy="19" r="2.5"/><path d="M5.5 8v7a4 4 0 0 0 4 4H16M5.5 11H16"/>'),
   thread: svg('<path d="M5 4v6.5A3.5 3.5 0 0 0 8.5 14H19M15 10l4 4-4 4"/>'),
   arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>', 'stroke-width="2.2"'),
@@ -170,7 +171,7 @@ const nameHTML = (a) => (a.home ? `${esc(a.seed)}<span class="at" title="runs on
 const tokenCount = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n ?? 0))
 // calm: plenty of room. warm: past half, start fresh before unrelated work. hot: compaction is close.
 const ctxLevel = (pct) => (pct >= 80 ? 'hot' : pct >= 50 ? 'warm' : 'calm')
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`
 
 function contextTip(a) {
   const c = a.convo
@@ -219,7 +220,7 @@ function agentCard(a, providers) {
     ? `<div class="activity">${a.activity && a.on ? `<span class="${a.status === 'working' ? 'shimmer' : ''}">${esc(a.activity)}</span>` : '<span></span>'}${subsChip(a)}${a.queue && a.on ? `<span class="queue">${a.queue} queued</span>` : ''}${later}</div>`
     : ''
   return `<div class="agent hop ${a.on ? a.status : 'off'}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}">
-    <div class="agent-av">${avatarHTML(a, { size: 38 })}${orbitHTML(a)}</div>
+    <div class="agent-av">${avatarHTML(a, { size: 38 })}${orbitHTML(a)}${unreadBadge(a.unread)}</div>
     <div class="agent-body">
       <div class="agent-top"><span class="name">${nameHTML(a)}</span><span class="state ${a.status}">${esc(statusText(a))}</span><span class="grow"></span>${powerSwitch(a)}</div>
       <div class="area" title="${esc(a.area)}">${esc(a.area || 'No area yet')}</div>
@@ -229,15 +230,23 @@ function agentCard(a, providers) {
   </div>`
 }
 
+// ---- unread: agents' replies you haven't seen yet ------------------------------------------------------
+// state.reads (core/hub.js read): up to when you've read each agent; `since` keeps history from before the first
+// run from counting as new. Only replies count: questions, hand-offs and notes have their own ways to get your eye.
+const isUnread = (e, reads) => e.kind === 'reply' && e.from !== 'you' && Boolean(reads) && e.ts > Math.max(reads.since ?? 0, reads.agents?.[e.from] ?? 0)
+const unreadBadge = (n) => (n ? `<span class="unread-badge" title="${plural(n, 'new reply', 'new replies')}">${n > 9 ? '9+' : n}</span>` : '')
+
 // "2 working · 1 needs you" as little pills, for the headers of every view.
-function crewSummary(state) {
+// unread: also count new replies (the dashboard's wide titlebar; narrow headers have the pill's badge instead)
+function crewSummary(state, { unread = false } = {}) {
   const on = state.agents.filter((a) => a.on)
   const working = on.filter((a) => a.status === 'working').length
   const waiting = on.filter((a) => a.status === 'waiting').length
   const pill = (cls, text, dot = cls) => `<span class="sum ${cls}">${dot ? `<i class="dot ${dot}"></i>` : ''}${text}</span>`
   if (!state.agents.length) return ''
   if (!on.length) return pill('', 'all off', 'off')
-  return (working ? pill('working', `${working} working`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting ? '' : pill('idle', on.length > 1 ? `all ${on.length} free` : 'free'))
+  const fresh = unread ? state.agents.reduce((n, a) => n + (a.unread ?? 0), 0) : 0
+  return (working ? pill('working', `${working} working`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting ? '' : pill('idle', on.length > 1 ? `all ${on.length} free` : 'free')) + (fresh ? pill('unread', `${fresh} new`) : '')
 }
 
 // Segmented control: marks the segment that isOn() picks and slides the thumb to it (see .seg in common.css).
@@ -404,13 +413,15 @@ const mergeSends = (feed) => {
 
 // What the feed shows: the last `limit` entries after merging, and their HTML. Replies to any copy of a
 // merged send link to the copy that's shown.
-const feedView = (feed, agents, open, limit, drafts = new Map()) => {
+// reads: what you've read (state.reads); divider: the message the "New" line goes above.
+const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider } = {}) => {
   const { shown, as } = mergeSends(feed)
   // the last `limit` entries, plus questions still waiting for you from before them
   const items = [...shown.slice(0, -limit).filter((e) => e.kind === 'ask' && !e.answer), ...shown.slice(-limit)]
-  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, open, drafts }
+  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, open, drafts, reads }
   for (const e of feed) if (e.re) (ctx.repliesTo[as[e.re]?.id ?? e.re] ??= []).push(e)
-  return { items, html: () => items.map((e, i) => feedItem(e, items[i - 1], ctx)).join('') }
+  const line = '<div class="new-line" aria-label="New replies"><span>New</span></div>'
+  return { items, html: () => items.map((e, i) => (e.id === divider ? line : '') + feedItem(e, items[i - 1], ctx)).join('') }
 }
 
 // ---- tasks (ui/tasks.js) in the chat -------------------------------------------------------------------
@@ -474,7 +485,7 @@ function feedItem(e, prev, ctx) {
   // ...and a message you sent links forward to the agents' replies.
   const answers = repliesTo[e.id] ?? []
   const replied = answers.length
-    ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">${ICONS.thread}<span>${[...new Set(answers.map((r) => `@${esc(r.from)}`))].join(', ')} ${answers.some((r) => r.kind === 'reply') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</span></button>`
+    ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">${ICONS.thread}<span>${[...new Set(answers.map((r) => (r.from === 'you' ? 'You' : `@${esc(r.from)}`)))].join(', ')} ${answers.some((r) => r.kind === 'reply' || r.from === 'you') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</span></button>`
     : ''
   // @names in the text take their agent's color; one nobody here has stays a plain word
   const text = md(e.text).replace(/<span class="mention" data-m="([^"]+)">([^<]*)<\/span>/g, (_, n, at) => {
@@ -483,9 +494,13 @@ function feedItem(e, prev, ctx) {
   })
   const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}" data-id="${e.id}">${text}</div>`
   const cap = (html) => (cont ? '' : `<div class="cap">${html}${tags}<span class="time">${time}</span></div>`)
+  // hover a message for its tools: Reply (the chat's message box then answers it)
+  const tools = `<div class="msg-tools"><button class="msg-tool" data-reply="${e.id}" title="Reply to this message">${ICONS.reply}<span>Reply</span></button></div>`
+  const fresh = isUnread(e, ctx.reads)
+  const seen = e.kind === 'reply' ? ` data-from="${esc(e.from)}" data-ts="${e.ts}"` : ''
   // Agents talk with their little face next to the bubble, like a group chat.
-  const said = (cls, capHTML, rest = '', body = bubble) =>
-    `<div class="item said ${cls}${cont}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"><span class="face" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: 28, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div></div>`
+  const said = (cls, capHTML, rest = '', body = bubble, withTools = true) =>
+    `<div class="item said ${cls}${cont}${fresh ? ' unread' : ''}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"${seen}><span class="face" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: 28, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div>${withTools ? tools : ''}</div>`
 
   if (e.kind === 'task' || e.kind === 'bug') return taskEvent(e, who)
   // a new conversation starts: a line across the feed, so what came before is visibly "before"
@@ -502,9 +517,9 @@ function feedItem(e, prev, ctx) {
   if (e.kind === 'reply') return said(e.subs?.length ? 'with-subs' : '', name(e.from), subsUsed(e, open))
   if (e.kind === 'ask') {
     const verb = { permission: 'needs your OK', question: 'asks', plan: 'has a plan for you' }[e.ask?.type] ?? 'asks'
-    return said(`ask ${e.answer ? 'answered' : 'open'}`, `${name(e.from)} <span>${verb}</span>`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`)
+    return said(`ask ${e.answer ? 'answered' : 'open'}`, `${name(e.from)} <span>${verb}</span>`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`, false)
   }
-  if (e.from === 'you') return `<div class="item me${cont}" id="m-${e.id}" title="${time}">${cap(`to ${(e.cc ?? [e.to]).map(who).join(' ')}`)}${bubble}${replied}</div>`
+  if (e.from === 'you') return `<div class="item me${cont}" id="m-${e.id}" title="${time}">${cap(`to ${(e.cc ?? [e.to]).map(who).join(' ')}`)}${bubble}${replied}${tools}</div>`
   const actions = e.held
     ? `<div class="actions"><button class="btn primary" data-act="approve" data-id="${e.id}">Send it</button><button class="btn" data-act="drop" data-id="${e.id}">Drop</button></div>`
     : ''
@@ -615,13 +630,14 @@ function subsUsed(e, open) {
     <div class="subs-list">${e.subs.map((s) => `<div class="subs-item ${s.running ? 'running' : ''}"><span class="sub-kind">${esc(subType(s.type))}</span><span class="sub-job">${esc(s.description || 'sub-agent')}</span><span class="sub-meta">${s.tools ? `${plural(s.tools, 'step')} · ` : ''}${duration(s.ms)}${s.running ? ' · working' : ''}</span></div>`).join('')}</div></details>`
 }
 
-function mountFeed(el, { onAgent, onTicket = (key) => crew.call('dashboard', `task:${key}`), limit = 200 } = {}) {
+function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), limit = 200 } = {}) {
   const open = new Set()
   const seen = new Set()
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
   const sending = new Set() // cards whose answer is on its way: one answer each, even with a held Enter
   let shown = new Map() // id -> feed entry on screen
   let key = ''
+  let last = null // the state last drawn, to redraw when the "New" line goes
   let first = true
   // Pinned while you're at the bottom: new messages, typing rows and folding long bubbles keep it there.
   let pinned = true
@@ -663,6 +679,8 @@ function mountFeed(el, { onAgent, onTicket = (key) => crew.call('dashboard', `ta
     }
     const to = ev.target.closest('[data-jump]')
     if (to) return jump(to.dataset.jump)
+    const re = ev.target.closest('[data-reply]')
+    if (re) return onReply?.(shown.get(re.dataset.reply))
     const pick = ev.target.closest('[data-pick]')
     if (pick) return choose(pick)
     const ans = ev.target.closest('[data-answer]')
@@ -790,11 +808,46 @@ function mountFeed(el, { onAgent, onTicket = (key) => crew.call('dashboard', `ta
     measure()
     pin()
   }).observe(el)
+  // ---- unread: a reply counts as read once it has been on screen for a moment while this window has focus ----
+  const onScreen = new Map() // element id -> { from, ts } of unread replies at least 60% visible
+  let readTimer = null
+  const markSeen = () => {
+    if (!onScreen.size || !document.hasFocus() || document.hidden || !el.offsetParent) return
+    const seenUpTo = {}
+    for (const v of onScreen.values()) seenUpTo[v.from] = Math.max(seenUpTo[v.from] ?? 0, v.ts)
+    crew.call('read', seenUpTo).catch(() => {})
+  }
+  const soon = () => {
+    clearTimeout(readTimer)
+    if (onScreen.size) readTimer = setTimeout(markSeen, 900)
+  }
+  const watch = new IntersectionObserver((entries) => {
+    for (const x of entries) {
+      if (x.isIntersecting) onScreen.set(x.target.id, { from: x.target.dataset.from, ts: Number(x.target.dataset.ts) })
+      else onScreen.delete(x.target.id)
+    }
+    soon()
+  }, { root: el, threshold: 0.6 })
+  addEventListener('focus', soon)
+  document.addEventListener('visibilitychange', soon)
+  // The "New" line stays above the first reply that was unread until a few seconds after you've caught up, so
+  // you can see where the new ones began even though looking at them reads them.
+  let divider = null
+  let dividerTimer = null
+
   return {
-    render({ feed, agents }) {
-      const view = feedView(feed, agents, open, limit, drafts)
+    jump,
+    render({ feed, agents, reads }) {
+      const unread = feed.filter((e) => isUnread(e, reads))
+      if (unread.length) {
+        clearTimeout(dividerTimer)
+        dividerTimer = null
+        if (!divider || !feed.some((e) => e.id === divider)) divider = unread[0].id
+      } else if (divider && !dividerTimer) dividerTimer = setTimeout(() => ((divider = null), (key = ''), this.render(last)), 4000)
+      last = { feed, agents, reads }
+      const view = feedView(feed, agents, open, limit, drafts, { reads, divider })
       shown = new Map(view.items.map((e) => [e.id, e]))
-      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar]))
+      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       const busy = typingHTML(agents, asks)
       let added = false
@@ -812,6 +865,9 @@ function mountFeed(el, { onAgent, onTicket = (key) => crew.call('dashboard', `ta
           if (!first) (list.querySelector(`#m-${CSS.escape(e.id)}`)?.classList.add('enter'), (added = true))
         }
         for (const id of sending) list.querySelector(`[data-ask="${CSS.escape(id)}"]`)?.classList.add('sending')
+        watch.disconnect()
+        onScreen.clear()
+        for (const item of list.querySelectorAll('.item.unread')) watch.observe(item)
         const back = keep && list.querySelector(`[data-ask="${CSS.escape(keep.id)}"] ${keep.field}`)
         if (back) (back.focus({ preventScroll: true }), back.setSelectionRange(keep.from, keep.to))
         measure()
@@ -1061,7 +1117,10 @@ function mountInk(field, { agents, strict = () => true }) {
   field.addEventListener('input', paint)
   field.addEventListener('scroll', () => (ink.scrollTop = field.scrollTop), { passive: true })
   for (const ev of ['keyup', 'click', 'focus', 'blur']) field.addEventListener(ev, paint)
-  new ResizeObserver(place).observe(field)
+  // the field moves when something appears above it in its box (a reply preview, thumbnails)
+  const moved = new ResizeObserver(place)
+  moved.observe(field)
+  moved.observe(field.parentElement)
   paint()
   return { paint }
 }
@@ -1070,6 +1129,7 @@ function mountComposer(el, { dropZone = el } = {}) {
   el.classList.add('composer')
   el.innerHTML = `<div class="chips" role="group" aria-label="Send to"></div>
     <div class="input">
+      <div class="reply-to hidden"></div>
       <div class="thumbs hidden"></div>
       <textarea rows="1"></textarea>
       <div class="input-bar">
@@ -1094,6 +1154,56 @@ function mountComposer(el, { dropZone = el } = {}) {
   // New conversation: the task starts with a clean slate instead of joining everything the agent did before.
   let fresh = store.get('crew.fresh') === '1'
   let agents = []
+  let feed = []
+  // Replying: to a message in the feed (its Reply button), and then staying in that thread, each message answering
+  // the newest one in it. A message sent into a new conversation starts a thread too, so what you send next goes
+  // on in that conversation. Esc, ×, or picking someone on the To line leaves it.
+  let reply = null // { to: [names], id, from, text, ids: thread ids it answers, freshConvo }
+  let follow = null // just sent: { at, to } until the next state shows the message, which the thread then answers
+  const replyBox = el.querySelector('.reply-to')
+  const quoteOf = (e) => (e.ticket !== undefined ? `#${String(e.ticket).split('@')[0]} ${e.title ?? ''}` : snippet(e.text))
+  const short = (n) => String(n).split('@')[0]
+  const listed = (names) => (names.length > 2 ? `${names.slice(0, -1).map(short).join(', ')} and ${short(names.at(-1))}` : names.map(short).join(' and '))
+  const replyTo = (e) => {
+    if (!e || !['reply', 'handoff', 'note', 'msg', 'task'].includes(e.kind) || e.ticket !== undefined && e.from !== 'you') return
+    reply = { to: e.from === 'you' ? [...(e.cc ?? [e.to])] : [e.from], id: e.id, from: e.from, text: quoteOf(e) }
+    follow = null
+    draw()
+    ta.focus()
+  }
+  const stopReply = () => {
+    if (!reply && !follow) return false
+    reply = null
+    follow = null
+    draw()
+    return true
+  }
+  // the thread moves on: what you just sent, then the newest answer to it
+  const advance = () => {
+    if (follow) {
+      const mine = feed.findLast((e) => e.from === 'you' && e.kind === 'msg' && e.ts >= follow.at - 1500 && (!follow.to || (e.cc ?? [e.to]).some((n) => follow.to.includes(n))))
+      if (mine) {
+        reply = { to: [...(mine.cc ?? [mine.to])], id: mine.id, from: 'you', text: quoteOf(mine), freshConvo: Boolean(mine.fresh) || Boolean(reply?.freshConvo && follow.to) }
+        follow = null
+      } else if (Date.now() - follow.at > 20000) follow = null
+    }
+    if (!reply) return
+    const copies = (e) => (e.sendId ? feed.filter((x) => x.sendId === e.sendId).map((x) => x.id) : [e.id])
+    for (let ids = copies(reply), next; (next = feed.findLast((e) => ids.includes(e.re) && ['reply', 'handoff', 'msg'].includes(e.kind) && e.id !== reply.id)); ids = copies(next)) {
+      reply = { ...reply, id: next.id, from: next.from, text: quoteOf(next) }
+    }
+  }
+  const drawReply = () => {
+    replyBox.classList.toggle('hidden', !reply)
+    if (!reply) return
+    const color = reply.from === 'you' ? 'var(--accent)' : agentColor(agents.find((a) => a.name === reply.from) ?? { name: reply.from })
+    const others = reply.to.filter((n) => n !== reply.from)
+    const head = reply.from === 'you'
+      ? `Continuing ${reply.freshConvo ? 'the new conversation ' : ''}with ${esc(listed(reply.to))}`
+      : `Replying to ${esc(short(reply.from))}${others.length ? `<span> · also to ${esc(listed(others))}</span>` : ''}`
+    morph(replyBox, `<span class="rt-bar" style="--qc:${color}"></span><span class="rt-text"><b>${head}</b><span class="rt-quote">${reply.from === 'you' ? 'You: ' : ''}${esc(reply.text)}</span></span><button class="rt-close" data-stop-reply title="Stop replying (Esc)" aria-label="Stop replying">${ICONS.close}</button>`)
+  }
+  replyBox.addEventListener('click', (e) => e.target.closest('[data-stop-reply]') && (stopReply(), ta.focus()))
   const attach = mountAttach({
     zone: dropZone,
     field: ta,
@@ -1121,13 +1231,15 @@ function mountComposer(el, { dropZone = el } = {}) {
       chip('auto', '', `${ICONS.sparkles}<span class="label">Auto</span>`, 'Auto', 'picks by area, prefers whoever is free') +
       chip('task', 'task-chip', `${ICONS.task}<span class="label">Task</span>`, 'Task', 'adds it to the Tasks board, @name assigns it') +
       '<span class="chip-sep"></span>' +
-      agents.filter((a) => a.on).map((a) => chip(a.name, 'agent', `${avatarHTML(a, { size: 22 })}<span class="label">${nameHTML(a)}</span>`, a.name, statusText(a), agentColor(a))).join(''))
+      agents.filter((a) => a.on).map((a) => chip(a.name, 'agent', `${avatarHTML(a, { size: 22 })}<span class="label">${nameHTML(a)}</span>${unreadBadge(a.unread)}`, a.name, `${statusText(a)}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}`, agentColor(a))).join(''))
     fitRail()
     el.classList.toggle('task-mode', task)
     freshBtn.setAttribute('aria-pressed', String(fresh))
     freshBtn.title = fresh ? 'On: the agent starts this task in a new conversation, with a clean slate (click to turn off)' : 'Start this task in a new conversation, with a clean slate instead of everything the agent did before'
+    drawReply()
     const who = target.split('@')[0]
     ta.placeholder = task ? 'Add a task… @name assigns it'
+      : reply ? `Reply to ${listed(reply.to)}…`
       : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : 'Message the crew, Auto picks who…')
       : fresh ? `New conversation with ${who}…` : `Message ${who}…`
   }
@@ -1169,13 +1281,20 @@ function mountComposer(el, { dropZone = el } = {}) {
     if (!text && !images.length) return
     // The chip stays a recipient; the hub adds any @mentions to it.
     const to = target === 'auto' ? undefined : target
+    const sentAt = Date.now()
     try {
       const kind = kindIn(text)
       if (kind) {
         const { owner, text: what } = ownerIn(text.replace(TASK_PREFIX, ''), agents)
         say((await crew.call('task', 'file', null, { text: what, images, kind, ...(owner && { owner }) })).trim())
       }
-      else say((await crew.call('send', to, text, images, { fresh })).trim().split('\n').join(' · '))
+      else {
+        say((await crew.call('send', reply ? reply.to.join(',') : to, text, images, { fresh, ...(reply && { re: reply.id }) })).trim().split('\n').join(' · '))
+        // New conversation is for one message: what you send next goes on in that conversation, as a reply
+        if (fresh || reply) follow = { at: sentAt, to: reply?.to ?? (to ? [to] : null) }
+        if (fresh) (fresh = false), store.set('crew.fresh', '0')
+        draw()
+      }
       ta.value = ''
       attach.set([])
       autosize()
@@ -1187,6 +1306,7 @@ function mountComposer(el, { dropZone = el } = {}) {
   chips.addEventListener('click', (e) => {
     const picked = e.target.closest('[data-to]')
     if (!picked) return
+    stopReply() // picking someone else leaves the thread
     setTarget(picked.dataset.to)
     tip.classList.remove('on')
     ta.focus()
@@ -1233,6 +1353,7 @@ function mountComposer(el, { dropZone = el } = {}) {
   const mentions = mountMentions(ta, { agents: () => agents, box: el.querySelector('.input'), heading: () => (el.classList.contains('task-mode') ? 'Assign to' : 'Mention: they get it too') })
   ta.addEventListener('keydown', (e) => {
     if (voice?.key(e)) return
+    if (e.key === 'Escape' && !e.isComposing && stopReply()) return void (e.preventDefault(), e.stopPropagation())
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault()
       submit()
@@ -1247,10 +1368,13 @@ function mountComposer(el, { dropZone = el } = {}) {
   return {
     render(state) {
       agents = state.agents
+      feed = state.feed ?? []
+      advance()
       draw()
       ink.paint() // someone switched on, off, or joined
     },
     setTarget,
+    replyTo,
     focus: () => ta.focus(),
     // true when it stopped a dictation (so Esc can stop that first, and close things on the next press)
     stopVoice: () => Boolean(voice?.busy() && (voice.stop(), true)),
@@ -1298,8 +1422,15 @@ function themeButton(btn) {
 
 // Every view: fetch state once, then re-render on pushes and every 15s so "working · 3m" stays fresh.
 async function live(render) {
-  let state = await crew.call('state')
+  // every view gets each agent's count of unread replies as a.unread
+  const counted = (s) => {
+    const n = {}
+    for (const e of s.feed ?? []) if (isUnread(e, s.reads)) n[e.from] = (n[e.from] ?? 0) + 1
+    for (const a of s.agents) a.unread = n[a.name] ?? 0
+    return s
+  }
+  let state = counted(await crew.call('state'))
   render(state)
-  crew.onState((next) => render((state = next)))
+  crew.onState((next) => render((state = counted(next))))
   setInterval(() => render(state), 15000)
 }

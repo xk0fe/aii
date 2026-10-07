@@ -9,7 +9,7 @@ const THEME = {
 }
 
 const terms = new Map() // name -> { tile, head, term, fit, ready }
-const feed = mountFeed($('.feed'), { onAgent: (name) => select(name), onTicket: (key) => openTask(key) })
+const feed = mountFeed($('.feed'), { onAgent: (name) => select(name), onTicket: (key) => openTask(key), onReply: (e) => composer.replyTo(e) })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat') })
 const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name), onImport: () => importPack() })
 const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
@@ -272,7 +272,7 @@ const ready = live((next) => {
   morph($('.side .agents'), state.agents.map((a) => agentCard(a, state.providers)).join(''))
   $('.autopilot .switch').checked = state.autopilot
   $('.side-count').textContent = state.agents.length ? `${on.length} of ${state.agents.length} on` : ''
-  morph($('.titlebar .sums'), crewSummary(state))
+  morph($('.titlebar .sums'), crewSummary(state, { unread: true }))
   highlight(terms.has(selected) ? selected : on[0]?.name)
   drawBlank()
   feed.render(state)

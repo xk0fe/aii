@@ -226,8 +226,13 @@ export class Crew extends EventEmitter {
 
   // ---- actions from this computer's UI -----------------------------------------------------------
 
-  // opts.fresh: deliver into a new conversation.
-  async send(to, text, images = [], { fresh = false } = {}) {
+  // opts.fresh: deliver into a new conversation. opts.re: the message you're replying to (an id from the feed
+  // shown here: on this computer, or id@computer). Each computer links what it has and quotes the rest.
+  async send(to, text, images = [], { fresh = false, re } = {}) {
+    const quoted = re ? this.snapshot().feed.find((e) => e.id === re) : undefined
+    const quote = quoted && { from: quoted.from, text: quoted.ticket !== undefined ? `#${String(quoted.ticket).split('@')[0]} ${quoted.title ?? ''}` : quoted.text }
+    const here = (slug) => (id) => (slug ? (id?.endsWith(`@${slug}`) ? id.slice(0, -slug.length - 1) : undefined) : id && !id.includes('@') ? id : undefined)
+    const unq = (slug) => (name) => (slug && String(name).endsWith(`@${slug}`) ? String(name).slice(0, -slug.length - 1) : name)
     let names = addressees(to, text).map((n) => this.resolve(n))
     if (!names.length) {
       const ready = this.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'away'].includes(a.status))
@@ -237,10 +242,11 @@ export class Crew extends EventEmitter {
     }
     const out = []
     for (const [home, bases] of this.group(names)) {
-      if (!home) out.push(await this.hub.send({ to: bases.join(','), text, images, mentions: false, fresh }))
+      const reply = quoted ? { re: here(home)(re), quote: { ...quote, from: unq(home)(quote.from) } } : {}
+      if (!home) out.push(await this.hub.send({ to: bases.join(','), text, images, mentions: false, fresh, ...reply }))
       else {
         const l = this.link(home)
-        out.push(await l.peer.call('deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh }]))
+        out.push(await l.peer.call('deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...reply }]))
       }
     }
     return out.join('')
