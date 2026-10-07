@@ -149,8 +149,11 @@ export class Crew extends EventEmitter {
     }
     feed.sort((x, y) => x.ts - y.ts)
     const hidden = new Set(this.settings.hidden ?? [])
+    // the last 200 entries, plus any question still waiting for an answer from before them
+    const recent = feed.slice(-200)
+    const open = feed.slice(0, -200).filter((e) => e.kind === 'ask' && !e.answer)
     return {
-      ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.name)), feed: feed.slice(-200), computers: this.computers(),
+      ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.name)), feed: [...open, ...recent], computers: this.computers(),
       bugs: { ...s.bugs, tickets },
     }
   }
@@ -301,9 +304,9 @@ export class Crew extends EventEmitter {
     }
   }
 
-  feedAction(id, fn) {
+  feedAction(id, fn, ...args) {
     const { l, base } = this.where(id)
-    return l ? l.peer.call(fn, [base]) : this.hub[fn](base)
+    return l ? l.peer.call(fn, [base, ...args]) : this.hub[fn](base, ...args)
   }
 
   draftPrompt({ home, ...agent }) {
@@ -324,6 +327,7 @@ export class Crew extends EventEmitter {
       },
       approve: (id) => h.approve(id),
       drop: (id) => h.drop(id),
+      answer: (id, reply) => h.answer(id, reply),
       update: (names, patch) => h.update(names, patch),
       draftPrompt: (agent) => h.draftPrompt(agent),
       addAgent: (fields) => h.addAgent(fields),

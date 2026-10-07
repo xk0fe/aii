@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { adapters } from './adapters.js'
+import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, BUG_HELP } from './tickets.js'
@@ -40,6 +40,8 @@ export class Hub extends EventEmitter {
     this.sessions = readJSON(at('sessions.json')) ?? {}
     this.stats = readJSON(at('stats.json')) ?? {}
     this.feed = loadFeed()
+    this.asks = new Map() // feed id of an open question -> { resolve, name, cli, input }
+    this.saving = Promise.resolve() // feed.jsonl appends, one after another (an answer must land after its card)
     this.tickets = new Tickets(at('tickets.json'))
     // Each agent's current conversation: when it started, tasks in it, compactions, and how full it is.
     this.convos = readJSON(at('conversations.json')) ?? {}
@@ -77,6 +79,7 @@ export class Hub extends EventEmitter {
     const names = new Set(this.config.agents.map((c) => c.name))
     for (const name of this.agents.keys()) {
       if (names.has(name)) continue
+      this.forgetAsks(name)
       this.runner.stop(name)
       this.agents.delete(name)
     }
@@ -200,6 +203,7 @@ export class Hub extends EventEmitter {
   // ---- lifecycle ---------------------------------------------------------
 
   launch(a, fresh = false) {
+    this.forgetAsks(a.name)
     a.relaunch = false
     clearTimeout(a.readyTimer)
     if (fresh) this.saveSession(a.name, null)
@@ -317,6 +321,7 @@ export class Hub extends EventEmitter {
   onExit(name, code, ms) {
     const a = this.agents.get(name)
     if (!a) return
+    this.forgetAsks(name)
     this.setStatus(a, 'stopped')
     if (a.resumed && code !== 0 && ms < 5000) {
       this.post({ kind: 'event', from: name, text: "couldn't resume the previous session, starting a fresh one" })
@@ -371,18 +376,17 @@ export class Hub extends EventEmitter {
         a.turnStart = Date.now()
         this.readCodexContext(a, e)
         return this.setStatus(a, 'working')
-      case 'PreToolUse': // only AskUserQuestion is hooked
-        return this.needsYou(a, `asks: ${e.tool_input?.questions?.[0]?.question ?? 'a question'}`)
       case 'PostToolUse':
         a.activity = describe(e)
         this.record(name, { tools: 1 })
         this.readCodexContext(a, e)
         return this.setStatus(a, 'working')
       case 'Notification':
+        // Permission prompts come with a card in the chat (see ask), which alerts on its own; both hooks fire at
+        // the same moment, so this one may even arrive first.
+        if (e.notification_type === 'permission_prompt' || this.asking(name)) return
         if (a.status === 'working') this.needsYou(a, e.message || 'needs your input')
         return
-      case 'PermissionRequest':
-        return this.needsYou(a, `wants to run ${describe(e)}`)
       case 'Interrupt':
         a.activity = ''
         a.turnStart = null
@@ -396,6 +400,72 @@ export class Hub extends EventEmitter {
         hold(a, 600)
         return this.setStatus(a, 'idle')
     }
+  }
+
+  // ---- questions, answered in the chat ----------------------------------------------------------
+  // Permission prompts, AskUserQuestion and plan approvals reach the agent's PermissionRequest hook, which waits
+  // on the /ask route (core/server.js) for your answer: a card in the feed here, and answer() sends it back.
+  // Claude keeps its own dialog up meanwhile, so either place works: the first answer wins, and answering in
+  // the terminal cancels the hook (`closed`). Codex waits on the hook instead, so its card can hand the
+  // question back to the terminal (and typing there does too). Agents on other computers answer through
+  // core/crew.js, by the card's id; so would a phone.
+  ask(name, payload, closed) {
+    const a = this.agents.get(name)
+    if (!a) return ''
+    const cli = this.providerOf(a)?.cli ?? 'claude'
+    const input = { ...payload, tool_input: payload?.tool_input ?? {}, permission_suggestions: payload?.permission_suggestions ?? [] }
+    let ask
+    try {
+      ask = askOf(input, cli)
+    } catch {
+      return '' // something we can't show: the agent asks in its terminal as usual
+    }
+    const e = this.post({ kind: 'ask', from: name, to: 'you', ask, cli, ...(a.current && { re: a.current }) })
+    this.record(name, { waits: 1 })
+    this.emit('alert', a, ask.alert)
+    this.setStatus(a, 'waiting')
+    const started = Date.now()
+    return new Promise((resolve) => {
+      this.asks.set(e.id, { resolve, name, cli, input, entry: e })
+      // The hook went away before you answered. Claude: mostly you answered its dialog (it cancels the hook);
+      // after a day of waiting, its dialog is simply still up. Codex: its hook ran out, or it was interrupted,
+      // and either way it's its terminal's turn now.
+      closed?.addEventListener('abort', () => {
+        const ranOut = Date.now() - started > ((ASK_WAIT[cli] ?? 0) - 15) * 1000
+        if (cli === 'codex' || ranOut) this.settle(e.id, '', { by: 'terminal', handedOver: true }, true)
+        else this.settle(e.id, '', { by: 'terminal' })
+      }, { once: true })
+    })
+  }
+
+  // reply: { allow, always?, note? } for a permission or plan, { answers: { question: label(s) or text } } for
+  // questions, or { terminal: true } to answer in the agent's terminal instead.
+  answer(id, reply = {}) {
+    const q = this.asks.get(id)
+    if (!q) throw new Error('that question has already been answered')
+    if (reply.terminal) return this.settle(id, '', { by: 'terminal', handedOver: true }, true)
+    const { output, answer } = decide(q.entry.ask, q.input, q.cli, reply)
+    this.settle(id, JSON.stringify(output), { by: 'you', ...answer })
+  }
+
+  settle(id, output, answer, stillWaiting = false) {
+    const q = this.asks.get(id)
+    if (!q) return
+    this.asks.delete(id)
+    q.resolve(output)
+    this.amend(q.entry, { answer: { ...answer, at: Date.now() } })
+    const a = this.agents.get(q.name)
+    if (a?.status === 'waiting' && !stillWaiting && !this.asking(q.name)) this.setStatus(a, 'working')
+  }
+
+  asking(name) {
+    return [...this.asks.values()].some((q) => q.name === name)
+  }
+
+  // An agent that exits, restarts or goes away isn't waiting on its questions any more (even if a hook
+  // process outlives it, nothing would read the answer).
+  forgetAsks(name) {
+    for (const [id, q] of this.asks) if (q.name === name) this.settle(id, '', { stale: true }, true)
   }
 
   needsYou(a, text) {
@@ -471,6 +541,9 @@ export class Hub extends EventEmitter {
   input(name, data) {
     const a = this.agents.get(name)
     if (!a) return
+    // Codex waits on its hook while a question is in the chat: typing in its terminal hands the question over.
+    // Only real keys count, not what the terminal reports by itself (focus in/out, cursor position, mouse).
+    if (typed(data)) for (const [id, q] of this.asks) if (q.name === name && q.cli === 'codex') this.answer(id, { terminal: true })
     hold(a, 3000)
     this.runner.write(name, data)
     if (a.status === 'waiting' && data === '\r') this.setStatus(a, 'working')
@@ -843,9 +916,20 @@ export class Hub extends EventEmitter {
     const e = { id: randomUUID().slice(0, 8), ts: Date.now(), ...entry }
     this.feed.push(e)
     if (this.feed.length > FEED_KEEP) this.feed.splice(0, this.feed.length - FEED_KEEP)
-    fs.appendFile(at('feed.jsonl'), JSON.stringify(e) + '\n', () => {})
+    this.save(e)
     this.changed()
     return e
+  }
+
+  // A later change to a feed entry (a question's answer), saved after it so it survives a restart.
+  amend(e, patch) {
+    Object.assign(e, patch)
+    this.save({ amend: e.id, ...patch })
+    this.changed()
+  }
+
+  save(line) {
+    this.saving = this.saving.then(() => fs.promises.appendFile(at('feed.jsonl'), JSON.stringify(line) + '\n')).catch(() => {})
   }
 
   changed() {
@@ -866,7 +950,7 @@ export class Hub extends EventEmitter {
         queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a),
         convo: this.convos[a.name] ?? null, freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
       })),
-      feed: this.feed.slice(-200),
+      feed: withOpenAsks(this.feed.slice(-200), this.asks),
       bugs: {
         tickets: [...this.tickets.open(), ...this.tickets.all.filter((t) => t.status === 'done').sort((x, y) => x.updated - y.updated).slice(-60)],
         triage: this.config.triage ?? null,
@@ -918,13 +1002,107 @@ function loadFeed() {
     lines = lines.slice(-FEED_KEEP)
     fs.writeFileSync(at('feed.jsonl'), lines.join('\n') + '\n')
   }
-  return lines.slice(-FEED_KEEP).flatMap((line) => {
+  const feed = []
+  const byId = new Map()
+  for (const line of lines) {
+    let e
     try {
-      return [{ ...JSON.parse(line), queued: false, held: false }]
+      e = JSON.parse(line)
     } catch {
-      return []
+      continue
     }
-  })
+    if (e.amend) {
+      const { amend, ...patch } = e
+      Object.assign(byId.get(amend) ?? {}, patch)
+      continue
+    }
+    const entry = { ...e, queued: false, held: false }
+    feed.push(entry)
+    byId.set(entry.id, entry)
+  }
+  // An unanswered question's hook ended with the last run: the agent isn't waiting on it any more.
+  for (const e of feed) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true }
+  return feed.slice(-FEED_KEEP) // amendments don't count against the history kept
+}
+
+// ---- questions: what the agent wants, as a card; your answer, as its hook's decision ----------------
+
+// What a terminal sends without anyone typing: focus in/out, cursor position and device replies, mouse reports,
+// OSC replies. Anything else is a key.
+const typed = (data) => !/^(?:\x1b\[(?:I|O|\d+;\d+R|[?>][\d;]*c|<[\d;]+[Mm])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\))+$/.test(String(data))
+
+// A question that's still open stays on screen however long it waits, even past the last 200 entries.
+const withOpenAsks = (recent, asks) => {
+  const older = [...asks.values()].map((q) => q.entry).filter((e) => !recent.includes(e))
+  return older.length ? [...older, ...recent] : recent
+}
+
+const clip = (text, max = 4000) => (String(text ?? '').length > max ? `${String(text).slice(0, max)}\n…` : String(text ?? ''))
+const firstLines = (text, n) => clip(String(text ?? '').split('\n').slice(0, n).join('\n'))
+
+// The card for a PermissionRequest hook payload (Claude or Codex), plus the line for the notification.
+function askOf({ tool_name: tool = '', tool_input: input = {}, permission_suggestions: suggestions = [] } = {}, cli) {
+  if (tool === 'AskUserQuestion') {
+    const questions = (input.questions ?? []).slice(0, 4).map((q) => ({
+      question: String(q.question ?? ''),
+      header: q.header ? String(q.header) : '',
+      multiSelect: Boolean(q.multiSelect),
+      options: (q.options ?? []).map((o) => ({ label: String(o.label ?? ''), ...(o.description && { description: String(o.description) }) })),
+    }))
+    return { type: 'question', questions, alert: `asks: ${questions[0]?.question ?? 'a question'}` }
+  }
+  if (tool === 'ExitPlanMode') return { type: 'plan', plan: clip(input.plan, 20000), alert: 'has a plan for you to approve' }
+  const file = input.file_path ?? input.notebook_path
+  const name = file ? path.basename(file) : ''
+  const shown = {
+    Bash: { title: 'Run a command', code: clip(input.command), detail: input.description },
+    Edit: { title: `Edit ${name}`, code: firstLines(`- ${String(input.old_string ?? '').split('\n').join('\n- ')}\n+ ${String(input.new_string ?? '').split('\n').join('\n+ ')}`, 40), detail: file },
+    MultiEdit: { title: `Edit ${name}`, code: firstLines((input.edits ?? []).map((x) => `- ${x.old_string}\n+ ${x.new_string}`).join('\n'), 40), detail: file },
+    Write: { title: `Write ${name}`, code: firstLines(input.content, 30), detail: file },
+    NotebookEdit: { title: `Edit ${name}`, code: firstLines(input.new_source, 30), detail: file },
+    Read: { title: `Read ${name || 'a file'}`, code: file },
+    WebFetch: { title: 'Open a web page', code: input.url, detail: input.prompt },
+    WebSearch: { title: 'Search the web', code: input.query },
+  }[tool] ?? { title: tool.startsWith('mcp__') ? `Use ${tool.split('__').slice(1).join(' › ')}` : `Use ${tool || 'a tool'}`, code: clip(JSON.stringify(input, null, 2), 2000) }
+  // Claude's "yes, and don't ask again" choices for this request; Codex has none.
+  const always = cli === 'claude' ? suggestions.map((s, i) => ({ i, label: alwaysLabel(s) })).filter((s) => s.label) : []
+  const gist = String(shown.code ?? '').split('\n')[0].slice(0, 80) // the notification says what, not just "a command"
+  const alert = `wants to ${shown.title.charAt(0).toLowerCase()}${shown.title.slice(1)}${gist && tool !== 'Edit' && tool !== 'MultiEdit' && tool !== 'Write' ? `: ${gist}` : ''}`
+  return { type: 'permission', tool, ...shown, ...(shown.detail && { detail: clip(shown.detail, 400) }), always, alert }
+}
+
+function alwaysLabel(s) {
+  const when = s.destination === 'session' ? ' this session' : ''
+  if (s.type === 'addRules' && s.behavior === 'allow' && s.rules?.length) return `Always allow ${s.rules.map((r) => (r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName)).join(', ')}${when}`
+  if (s.type === 'addDirectories' && s.directories?.length) return `Always allow in ${s.directories.map((d) => path.basename(d)).join(', ')}${when}`
+  if (s.type === 'setMode' && s.mode === 'acceptEdits') return 'Allow all edits this session'
+  return null
+}
+
+// Your reply as a PermissionRequest decision. Claude and Codex share its shape; only Claude takes
+// updatedInput (answers, the approved plan) and updatedPermissions (an "always" choice).
+function decide(ask, input, cli, reply) {
+  const out = (decision) => ({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } })
+  const note = String(reply.note ?? '').trim().slice(0, 2000)
+  if (ask.type === 'question') {
+    const answers = {}
+    for (const q of ask.questions) {
+      const v = reply.answers?.[q.question]
+      const text = Array.isArray(v) ? v.filter(Boolean).join(', ') : String(v ?? '').trim()
+      if (text) answers[q.question] = text
+    }
+    if (!Object.keys(answers).length) throw new Error('pick an answer first')
+    return { output: out({ behavior: 'allow', updatedInput: { ...input.tool_input, answers } }), answer: { answers } }
+  }
+  if (reply.allow) {
+    const decision = { behavior: 'allow' }
+    if (cli === 'claude' && ask.type === 'plan') decision.updatedInput = input.tool_input // it has to see the plan approved
+    const always = cli === 'claude' && Number.isInteger(reply.always) ? input.permission_suggestions?.[reply.always] : null
+    if (always) decision.updatedPermissions = [always]
+    return { output: out(decision), answer: { allow: true, ...(always && { always: alwaysLabel(always) }) } }
+  }
+  const message = ask.type === 'plan' ? `The user wants you to keep planning${note ? `: ${note}` : '.'}` : note ? `The user said no: ${note}` : 'The user said no.'
+  return { output: out({ behavior: 'deny', message }), answer: { allow: false, ...(note && { note }) } }
 }
 
 const expand = (dir) => (dir ? dir.replace(/^~(?=\/|$)/, os.homedir()) : os.homedir())

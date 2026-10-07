@@ -6,6 +6,15 @@ import path from 'node:path'
 
 // Every hook forwards its JSON payload to the crew hub, which turns it into status + feed entries.
 const HOOK = 'curl -s -m 2 -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/hook/$CREW_AGENT" >/dev/null 2>&1 || true'
+// Permission prompts, questions and plan approvals: the hook waits for your answer in the chat and prints it as
+// its decision. No answer (Crew gone, an error, handed to the terminal, time's up) prints nothing, and the agent
+// asks as usual. curl gives up 10 s before the agent would kill the hook, so the hook always ends cleanly.
+const ASK = (seconds) => `curl -sf -m ${seconds - 10} -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/ask/$CREW_AGENT" 2>/dev/null || true`
+// How long each CLI's hook waits, in seconds. Claude shows its own dialog meanwhile (answer in either place), so
+// it can wait a day. Codex shows nothing until the hook is done: after half an hour it asks in its terminal.
+export const ASK_WAIT = { claude: 86400, codex: 1800 }
+const CLAUDE_WAIT = ASK_WAIT.claude
+const CODEX_WAIT = ASK_WAIT.codex
 // Claude Code's status line tells Crew how full the context is (bin/crew-status). Yours keeps showing if you
 // have one: it would otherwise be replaced by the one given on the command line.
 const STATUS_LINE = 'crew-status'
@@ -45,7 +54,7 @@ export const adapters = {
       hooks: {
         SessionStart: on(),
         UserPromptSubmit: on(),
-        PreToolUse: on('AskUserQuestion'),
+        PermissionRequest: [{ hooks: [{ type: 'command', command: ASK(CLAUDE_WAIT), timeout: CLAUDE_WAIT }] }], // AskUserQuestion and ExitPlanMode come here too
         PostToolUse: on('*'),
         Notification: on(),
         Stop: on(),
@@ -71,7 +80,8 @@ export const adapters = {
   },
 
   codex(a, { resume }) {
-    const events = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PermissionRequest', 'Stop', 'Interrupt']
+    const events = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'Interrupt']
+    const ask = `[{hooks=[{type="command",command=${toml(ASK(CODEX_WAIT))},timeout=${CODEX_WAIT},statusMessage="Waiting for your answer in Crew's chat"}]}]`
     return {
       file: 'codex',
       readyAfter: 3000, // Codex fires SessionStart with the first prompt, not at launch
@@ -85,6 +95,7 @@ export const adapters = {
         '-c', `developer_instructions=${toml(prompt(a))}`,
         '-c', 'check_for_update_on_startup=false',
         ...events.flatMap((e) => ['-c', `hooks.${e}=[{hooks=[{type="command",command=${toml(HOOK)}}]}]`]),
+        '-c', `hooks.PermissionRequest=${ask}`,
         // Command-line hooks would otherwise wait on a "trust these hooks" prompt every launch.
         '--dangerously-bypass-hook-trust',
       ],

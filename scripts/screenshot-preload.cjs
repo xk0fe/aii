@@ -15,7 +15,7 @@ none.last = undefined
 
 const AGENTS = [
   { name: 'joseph', area: 'Senior Backend SWE', provider: 'claude', model: 'opus', effort: 'medium', yolo: true, status: 'working', since: now - 3 * min, activity: 'Edit core/hub.js', queue: 0, stats: stats(48, 31, 412, 312, 940, 12, 3, 41, [2, 4, 3, 0, 5, 6, 2, 4, 7, 3, 1, 5, 4, 2]) },
-  { name: 'david', area: 'Executive SWE (frontend, mobile apps)', provider: 'claude', model: 'opus', effort: 'high', yolo: true, status: 'idle', since: now - 9 * min, stats: stats(39, 22, 377, 402, 811, 9, 5, 64, [1, 3, 2, 4, 0, 3, 5, 2, 3, 4, 2, 6, 3, 1]) },
+  { name: 'david', area: 'Executive SWE (frontend, mobile apps)', provider: 'claude', model: 'opus', effort: 'high', yolo: true, status: 'waiting', since: now - min, stats: stats(39, 22, 377, 402, 811, 9, 5, 64, [1, 3, 2, 4, 0, 3, 5, 2, 3, 4, 2, 6, 3, 1]) },
   { name: 'gal', area: 'Executive UI/UX Designer', provider: 'claude', model: 'fable', effort: 'xhigh', yolo: false, status: 'waiting', since: now - min, activity: 'Bash: npm run build', stats: stats(11, 9, 96, 523, 214, 4, 6, 22, [0, 0, 1, 0, 2, 1, 0, 0, 3, 1, 0, 2, 1, 0]), avatar: { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true } },
   { name: 'ye', area: 'marketing analytical mastermind, using posthog to get analytics', provider: 'claude', model: 'haiku', effort: 'medium', yolo: true, status: 'off', on: false, stats: stats(4, 4, 18, 270, 40, 0, 1, 12, [0, 0, 0, 1, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0]), avatar: { body: 'bean', color: 'purple', eyes: 'sparkle', mouth: 'none', hat: 'glasses', cheeks: true } },
   { name: 'marc', area: 'artist, makes images', provider: 'codex', model: '', effort: 'high', tier: 'fast', fast: true, yolo: true, status: 'working', since: now - 12 * min, activity: 'image_gen: hero illustration, pastel', queue: 2, stats: stats(17, 12, 141, 488, 160, 2, 0, 140, [0, 1, 2, 0, 1, 3, 0, 2, 1, 2, 0, 1, 3, 1]), avatar: { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false } },
@@ -72,11 +72,15 @@ const FEED = [
   { id: 'f1', kind: 'task', from: 'you', to: 'joseph', cc: ['joseph', 'david'], sendId: 's1', text: 'The feed merges multi-recipient sends. Can you two make sure replies thread back to the right bubble?', ts: t(26) },
   { id: 'f2', kind: 'task', from: 'you', to: 'david', cc: ['joseph', 'david'], sendId: 's1', text: 'The feed merges multi-recipient sends. Can you two make sure replies thread back to the right bubble?', ts: t(26) },
   { id: 'f3', kind: 'reply', from: 'david', to: 'you', re: 'f2', text: 'Done on the client side. Replies now link to the **first visible copy**, so `mergeSends` stays the single source of truth.', ts: t(19) },
+  { id: 'f3b', kind: 'ask', from: 'joseph', to: 'you', cli: 'claude', re: 'f1', ts: t(17), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm test', always: [] }, answer: { by: 'you', allow: true, always: 'Always allow Bash(npm test:*)', at: t(16.5) } },
   { id: 'f4', kind: 'handoff', from: 'joseph', to: 'gal', re: 'f1', text: 'Can you sanity-check the quote styling for threaded replies? It looks cramped on narrow panels.', ts: t(14) },
   { id: 'f5', kind: 'note', from: 'arie', text: 'Standup moved to 10:30. Release branch is cut tomorrow.', ts: t(9) },
   { id: 'f6', kind: 'handoff', from: 'gal', to: 'marc', held: true, text: 'Need three pastel hero illustrations for the onboarding, one per crew role. Soft felt look, like our creatures.', ts: t(5) },
-  { id: 'f7', kind: 'event', from: 'gal', alert: true, text: 'needs you: approve `npm run build`', ts: t(1) },
+  { id: 'f7', kind: 'ask', from: 'gal', to: 'you', cli: 'claude', re: 'f4', ts: t(1), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'rm -rf dist && npm run build', detail: 'Clean the build folder and rebuild the app', alert: 'wants to run a command',
+    always: [{ i: 0, label: 'Always allow Bash(npm run build:*)' }, { i: 1, label: 'Allow all edits this session' }] } },
   { id: 'f8', kind: 'reply', from: 'joseph', to: 'you', re: 'f1', text: 'Server side is threaded too:\n\n| path | status |\n|---|---|\n| hub.send | ✓ sendId |\n| hub.reply | ✓ re |\n\nRan the suite, 42 passing.', ts: t(0.5) },
+  { id: 'f9', kind: 'ask', from: 'david', to: 'you', cli: 'claude', re: 'f2', ts: t(0.3), ask: { type: 'question', alert: 'asks: Which navigation pattern?', questions: [
+    { question: 'Which navigation pattern should the mobile app use?', header: 'Navigation', multiSelect: false, options: [{ label: 'Tab bar', description: 'Five tabs at the bottom, like iOS apps' }, { label: 'Drawer', description: 'A side menu behind a hamburger' }, { label: 'Both', description: 'Tabs for the main areas, a drawer for settings' }] }] } },
 ]
 
 const PROVIDERS = {
@@ -191,6 +195,16 @@ window.crew = {
   call: async (action, ...args) => {
     if (action === 'state') return state
     if (action === 'buffer') return { data: TERM, cols: 100, rows: 30 }
+    if (action === 'answer') {
+      const [id, reply] = args
+      const e = state.feed.find((x) => x.id === id)
+      const always = e.ask.always?.find((x) => x.i === reply.always)?.label
+      e.answer = reply.terminal ? { by: 'terminal', handedOver: true } : reply.answers ? { by: 'you', answers: Object.fromEntries(Object.entries(reply.answers).map(([k, v]) => [k, [].concat(v).join(', ')])) } : { by: 'you', allow: Boolean(reply.allow), ...(always && { always }), ...(reply.note && { note: reply.note }) }
+      const a = state.agents.find((x) => x.name === e.from)
+      if (a && !reply.terminal) Object.assign(a, { status: 'working', since: Date.now() })
+      setTimeout(() => window.__crewEmit('state', state), 30)
+      return undefined
+    }
     if (action.startsWith('voice')) return voiceCall(action)
     if (action === 'update') {
       const [names, patch] = args

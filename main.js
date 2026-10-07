@@ -220,6 +220,8 @@ const actions = {
   saveImage: (name, type, bytes) => hub.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
   approve: (id) => crew.feedAction(id, 'approve'),
   drop: (id) => crew.feedAction(id, 'drop'),
+  // Answer an agent's question (a permission prompt, AskUserQuestion, a plan) from the chat; see hub.ask.
+  answer: (id, reply) => crew.feedAction(id, 'answer', reply),
   autopilot: (on) => hub.setAutopilot(on),
   update: (names, patch) => crew.update(names, patch),
   draftPrompt: (agent) => crew.draftPrompt(agent),

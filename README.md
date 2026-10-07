@@ -81,7 +81,13 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
 - **Rich text.** Replies render Markdown: bold, italics, `code`, code blocks, lists, quotes, links and pipe tables (links open in your browser). Tables need a header and delimiter row with matching column counts; alignment colons are supported. Escape literal pipes as `\|`, including inside inline code. Wide tables scroll horizontally; multiline cells are not supported. Long replies fold with a fade; click to unfold.
 - **Autopilot off** makes hand-offs between agents wait in the feed until you click **Send it** or **Drop**.
 - **Who's on it.** While an agent works, a typing bubble under the last message in the feed shows what it's doing. Click it to open its terminal.
-- **Needs you.** On a permission prompt or a question, the agent's creature wiggles with a `!`, its feed bubble turns orange and you get a notification. Answer it in its terminal.
+- **Answer from the chat.** When an agent stops to ask you something, the question shows up in the chat as a card, its creature wiggles with a `!`, and you get a notification. The agent waits, and you answer right there:
+  - **Permission prompts:** what it wants to run or change, with **Allow** and **Deny**. Claude's "don't ask again" options are there too, such as *Always allow Bash(npm test:\*)*. Type in the note box to say no and tell it what to do instead.
+  - **Its own questions** (Claude's multiple choice): tap an option, pick several where it says *pick any*, or type *something else*.
+  - **Plans** (Claude's plan mode): read the plan, then **Approve plan** or **Keep planning** with what should change.
+  - **The terminal still works:** Claude keeps its own dialog up as well, and whichever you answer first wins (the card then says it was answered in the terminal). Codex waits for the chat. Its card has *Answer in its terminal instead*, and typing in its terminal does the same.
+  - **Works everywhere:** cards from agents on your other computers work the same way, and answered cards stay in the history.
+  - **Mobile-ready:** the answer is one call, `answer(id, reply)`. It runs on whichever computer the agent lives on, so the same call works from a phone app.
 - **On/off** is saved. An agent you turn off stays off after a restart and resumes its session when you turn it back on.
 - **⚡ Fast** (Codex agents) uses Codex's fast service tier. It's a ⚡ chip on the agent's row and a toggle in the editor; until you set it, it follows `service_tier` in your Codex config.
 - **YOLO** skips every permission prompt. Claude gets `--dangerously-skip-permissions`; Codex gets `--dangerously-bypass-approvals-and-sandbox`.
@@ -185,7 +191,8 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 - `core/voice.js` runs voice input. It builds `native/crew-voice.swift` (Apple's on-device `DictationTranscriber`) into `dist/crew-voice` on first use, streams the chat window's microphone audio into it, and returns what it hears as live events.
 - `core/promptgen.js` drafts an agent's instructions headlessly with `claude -p` or `codex exec`, with no tools and nothing saved to your session history.
 - `core/hub.js` is the logic, with no Electron in it:
-  - status from hooks (start → free, prompt → working, stop → free plus the reply into the feed, permission → needs you);
+  - status from hooks (start → free, prompt → working, stop → free plus the reply into the feed);
+  - questions: an agent's `PermissionRequest` hook (permission prompts, AskUserQuestion, plan approval) waits on the `/ask` route until you answer the card in the chat (`ask`, `answer`), and prints your answer as its decision;
   - inboxes, routing, the feed and notes;
   - `update()`, the single edit path behind the editor and bulk edits.
 - `core/runner.js` owns the pseudo-terminals.
@@ -194,7 +201,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 - `core/pack.js` reads and writes agent packs (`.crew` files).
 - `core/tickets.js` is the Bugs board: tickets, their history, and the briefs that triage and fixing agents get.
 - `core/context.js` reads how full a conversation is, from Claude Code's status line or Codex's session log.
-- `core/server.js` is a tiny local HTTP API for the hooks and `bin/crew`. Every request needs a per-launch token.
+- `core/server.js` is a tiny local HTTP API for the hooks and `bin/crew`. Every request needs a per-launch token. `/ask` holds the request open until you answer, and notices when the hook gives up.
 - `ui/` is plain HTML, CSS and JS with no build step. The main files:
   - `avatar.js` draws the creatures;
   - `voice.js` is dictation in the composer: the mic button, hold-to-talk, live text and the language switch (`voice-worklet.js` turns the microphone into 16 kHz audio);
