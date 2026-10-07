@@ -58,6 +58,26 @@ const ICONS = {
   dash: svg('<path d="M7 12h10"/>', 'stroke-width="2.8"'),
   keyboard: svg('<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h1M10.5 10h1M14.5 10h1M6.5 14h11"/>', 'stroke-width="2.2"'),
   sparkles: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 3.5l1.9 5.4 5.4 1.9-5.4 1.9L10 18.1l-1.9-5.4-5.4-1.9 5.4-1.9z"/><path d="M18.5 13.6l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z"/></svg>',
+  folder: svg('<path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2h8A1.5 1.5 0 0 1 20.5 9v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/>'),
+  chevron: svg('<path d="M9 6l6 6-6 6"/>', 'stroke-width="2.2"'),
+  search: svg('<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>', 'stroke-width="2"'),
+  desktop: svg('<rect x="3" y="4" width="18" height="12.5" rx="2"/><path d="M9 20.5h6M12 16.5v4"/>'),
+  laptop: svg('<path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h11A1.5 1.5 0 0 1 19 6.5V16H5z"/><path d="M2.5 16h19l-1 2.5a1.5 1.5 0 0 1-1.4 1H4.9a1.5 1.5 0 0 1-1.4-1z"/>'),
+  terminal: svg('<rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="m7.5 10 3 2.5-3 2.5M13 15.5h3.5"/>'),
+  more: svg('<circle cx="5.5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="18.5" cy="12" r="1.2" fill="currentColor"/>'),
+  move: svg('<path d="M14 5h5v5M19 5l-7 7"/><path d="M11 5H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/>'),
+  grid: svg('<rect x="4" y="4" width="7" height="7" rx="1.8"/><rect x="13" y="4" width="7" height="7" rx="1.8"/><rect x="4" y="13" width="7" height="7" rx="1.8"/><rect x="13" y="13" width="7" height="7" rx="1.8"/>'),
+  tiles: svg('<rect x="3.5" y="3.5" width="4.5" height="4.5" rx="1.2"/><rect x="9.75" y="3.5" width="4.5" height="4.5" rx="1.2"/><rect x="16" y="3.5" width="4.5" height="4.5" rx="1.2"/><rect x="3.5" y="9.75" width="4.5" height="4.5" rx="1.2"/><rect x="9.75" y="9.75" width="4.5" height="4.5" rx="1.2"/><rect x="16" y="9.75" width="4.5" height="4.5" rx="1.2"/><rect x="3.5" y="16" width="4.5" height="4.5" rx="1.2"/><rect x="9.75" y="16" width="4.5" height="4.5" rx="1.2"/><rect x="16" y="16" width="4.5" height="4.5" rx="1.2"/>'),
+  table: svg('<path d="M4 6h16M4 12h16M4 18h16M9 4v16"/>'),
+  focus: svg('<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/>'),
+  dice: svg('<rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="9" cy="9" r="1.1" fill="currentColor"/><circle cx="15" cy="15" r="1.1" fill="currentColor"/><circle cx="15" cy="9" r="1.1" fill="currentColor"/><circle cx="9" cy="15" r="1.1" fill="currentColor"/><circle cx="12" cy="12" r="1.1" fill="currentColor"/>'),
+  brain: svg('<path d="M9 4.5a2.8 2.8 0 0 0-2.8 2.8A3 3 0 0 0 4 10.2a3 3 0 0 0 .9 2.2A3.2 3.2 0 0 0 6.6 18a2.8 2.8 0 0 0 5.4.8V5.6A2.8 2.8 0 0 0 9 4.5zM15 4.5a2.8 2.8 0 0 1 2.8 2.8 3 3 0 0 1 2.2 2.9 3 3 0 0 1-.9 2.2 3.2 3.2 0 0 1-1.7 5.6 2.8 2.8 0 0 1-5.4.8"/>'),
+  doc: svg('<path d="M7 3.5h7l4.5 4.5v11A1.5 1.5 0 0 1 17 20.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M13.5 3.5V8.5h5M9 12.5h6M9 16h6"/>'),
+  palette: svg('<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.9 1.4-1.9-.5-1.2.3-2.4 1.6-2.4h1.7a3.8 3.8 0 0 0 3.8-3.8C20.5 7.6 16.7 3.5 12 3.5z"/><circle cx="7.8" cy="11" r="1.2" fill="currentColor"/><circle cx="10.5" cy="7.5" r="1.2" fill="currentColor"/><circle cx="15" cy="7.8" r="1.2" fill="currentColor"/>'),
+  chart: svg('<path d="M4 20h16"/><rect x="5.5" y="11" width="3" height="6.5" rx="1"/><rect x="10.5" y="6.5" width="3" height="11" rx="1"/><rect x="15.5" y="13.5" width="3" height="4" rx="1"/>'),
+  trash: svg('<path d="M4.5 7h15M10 11v6M14 11v6M6.5 7l.8 11.2A2 2 0 0 0 9.3 20h5.4a2 2 0 0 0 2-1.8L17.5 7M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/>'),
+  crown: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 8.2 8 12l4-6.5 4 6.5 4.5-3.8-1.6 10.3H5.1z"/></svg>',
+  snail: svg('<path d="M3 18.5h14.5a3.5 3.5 0 0 0 3.5-3.5V11"/><circle cx="11" cy="12.5" r="5"/><path d="M11 12.5a1.8 1.8 0 1 1 1.8-1.8"/><path d="M19.5 11 18.5 7.5M21.5 11l1-3.5"/>'),
   bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.5 4.8 13.2c-.4.5 0 1.2.6 1.2H11l-1.2 7.1c-.1.6.7.9 1 .4l8.8-10.7c.4-.5 0-1.2-.6-1.2H13.4l1.2-7.1c.1-.6-.7-.9-1-.4z"/></svg>',
 }
 
@@ -213,21 +233,99 @@ const subsChip = (a) => {
   return subs.length ? `<span class="subs-chip" title="${esc(`${plural(subs.length, 'sub-agent')} working:\n${subsTip(subs)}`)}">${ICONS.subs}${subs.length}</span>` : ''
 }
 
-function agentCard(a, providers) {
-  const doing = a.on && (a.activity || a.queue || runningSubs(a).length)
-  const later = a.freshPending ? '<span class="pending" title="It finishes what it is doing first">✦ new conversation when free</span>' : a.pending ? '<span class="pending" title="It restarts with your changes as soon as it is free">↻ restarts when free</span>' : ''
-  const activity = doing || later
-    ? `<div class="activity">${a.activity && a.on ? `<span class="${a.status === 'working' ? 'shimmer' : ''}">${esc(a.activity)}</span>` : '<span></span>'}${subsChip(a)}${a.queue && a.on ? `<span class="queue">${a.queue} queued</span>` : ''}${later}</div>`
-    : ''
-  return `<div class="agent hop ${a.on ? a.status : 'off'}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}">
-    <div class="agent-av">${avatarHTML(a, { size: 38 })}${orbitHTML(a)}${unreadBadge(a.unread)}</div>
-    <div class="agent-body">
-      <div class="agent-top"><span class="name">${nameHTML(a)}</span><span class="state ${a.status}">${esc(statusText(a))}</span><span class="grow"></span>${powerSwitch(a)}</div>
-      <div class="area" title="${esc(a.area)}">${esc(a.area || 'No area yet')}</div>
-      <div class="agent-foot"><span class="brain" title="${esc(brainLabel(a, providers))}">${esc(brainShort(a, providers))}</span>${a.convo?.context?.pct >= 50 ? contextRing(a, { label: false }) : ''}${modeChips(a)}</div>
-      ${activity}
-    </div>
+// ---- the crew roster: the sidebar and the menu bar ------------------------------------------------------
+// Agents grouped by the computer they run on (once there's more than one), each group in your own order, so a
+// row never jumps when an agent changes status. Agents that are off fold into one line at the end of their group.
+// Every row is one glance: the creature (it hops while working, wiggles with a "!" when it needs you, sleeps
+// when off), the name, and one line of what it's doing. Modes that are on show as small marks; the switches
+// for them, and power, appear over the row's end on hover, so nothing shifts.
+
+// [{ key, name, here, online, agents }], this computer first, then linked ones in the order they were linked.
+function crewGroups(state) {
+  const c = state.computers ?? { me: {}, links: [] }
+  const groups = new Map([['', { key: '', name: c.me?.name || 'This computer', here: true, online: true, agents: [] }]])
+  for (const l of c.links ?? []) groups.set(l.slug, { key: l.slug, name: l.name, online: Boolean(l.online), agents: [] })
+  for (const a of state.agents) {
+    const k = a.home ?? ''
+    if (!groups.has(k)) groups.set(k, { key: k, name: a.homeName ?? k, online: a.status !== 'away', agents: [] })
+    groups.get(k).agents.push(a)
+  }
+  return [...groups.values()]
+}
+// Groups are worth a header once a second computer is linked or runs agents.
+const grouped = (groups) => groups.filter((g) => g.agents.length || !g.here).length > 1
+
+// What it's doing, in a few words: its current step while it works, otherwise how it is.
+function rowLine(a) {
+  if (!a.on) return { text: 'off', cls: 'off' }
+  if (a.status === 'working') return { text: a.activity || statusText(a), cls: a.activity ? 'working mono' : 'working' }
+  if (a.status === 'waiting') return { text: a.activity ? `needs you · ${a.activity}` : 'needs you', cls: 'waiting' }
+  if (a.status === 'idle' && runningSubs(a).length) return { text: `free · ${plural(runningSubs(a).length, 'sub-agent')} working`, cls: 'idle' }
+  return { text: statusText(a), cls: a.status }
+}
+
+// Modes that are on, as marks beside the name: YOLO (red) and Fast (amber).
+const modeMarks = (a) =>
+  (a.yolo ? '<i class="mark-yolo" title="YOLO: skips every permission prompt">YOLO</i>' : '') +
+  (a.fast ? `<i class="mark-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</i>` : '')
+
+function crewRow(a, { selected = false } = {}) {
+  const line = rowLine(a)
+  const later = a.freshPending ? 'new conversation when free' : a.pending ? 'restarts when free' : ''
+  const tip = [`${a.name}${a.area ? ` · ${a.area}` : ''}`, statusText(a), later, a.queue ? `${a.queue} queued` : ''].filter(Boolean).join('\n')
+  return `<div class="crow ${a.on ? a.status : 'off'} ${selected ? 'on' : ''}" data-agent="${esc(a.name)}" draggable="true" style="--c:${agentColor(a)}" title="${esc(tip)}">
+    <span class="crow-av">${avatarHTML(a, { size: 30 })}${orbitHTML(a)}${unreadBadge(a.unread)}</span>
+    <span class="crow-main">
+      <span class="crow-top"><b>${esc(a.seed ?? a.name)}</b>${modeMarks(a)}</span>
+      <span class="crow-line ${line.cls}">${esc(line.text)}</span>
+    </span>
+    <span class="crow-end">${a.queue && a.on ? `<i class="crow-queue" title="${plural(a.queue, 'message')} queued">${a.queue}</i>` : ''}${later ? `<i class="crow-later" title="${esc(later)}">${a.freshPending ? ICONS.fresh : ICONS.restart}</i>` : ''}${a.convo?.context?.pct >= 50 ? contextRing(a, { label: false }) : ''}</span>
+    <span class="crow-acts">${modeChips(a)}${powerSwitch(a)}</span>
   </div>`
+}
+
+// A few creatures overlapping, for folded groups: who's in there at a glance.
+const faceStack = (agents, n = 5) =>
+  `<span class="faces">${agents.slice(0, n).map((a) => avatarHTML(a, { size: 20, mood: 'still' })).join('')}${agents.length > n ? `<i>+${agents.length - n}</i>` : ''}</span>`
+
+// Little counts for a group's header: who works, who needs you. Empty when everyone's free.
+function groupCounts(agents) {
+  const on = agents.filter((a) => a.on)
+  const working = on.filter((a) => a.status === 'working').length
+  const waiting = on.filter((a) => a.status === 'waiting').length
+  return (working ? `<i class="gc working" title="${working} working">${working}</i>` : '') + (waiting ? `<i class="gc waiting" title="${waiting} need${waiting > 1 ? '' : 's'} you">${waiting}</i>` : '')
+}
+
+// folds: 'group:<key>' for computers you folded away, 'off:<key>' for the off agents you unfolded.
+// filter: text to match names and areas (a match shows through any fold).
+function rosterHTML(state, { folds = new Set(), selected, filter = '' } = {}) {
+  const q = filter.trim().toLowerCase()
+  const match = (a) => !q || `${a.name} ${a.area ?? ''}`.toLowerCase().includes(q)
+  const groups = crewGroups(state)
+  const headed = grouped(groups)
+  const html = groups.map((g) => {
+    const agents = g.agents.filter(match)
+    if (q && !agents.length) return ''
+    if (!headed && !agents.length) return ''
+    const folded = headed && !q && folds.has(`group:${g.key}`)
+    const on = agents.filter((a) => a.on)
+    const off = agents.filter((a) => !a.on)
+    const offOpen = q || folds.has(`off:${g.key}`)
+    const head = headed
+      ? `<div class="cgroup-head" data-fold="group:${esc(g.key)}" title="${esc(g.here ? `${g.name}: this computer` : `${g.name}: ${g.online ? 'linked' : 'unreachable, it reconnects on its own'}`)}">
+          <span class="chev">${ICONS.chevron}</span><span class="cg-icon ${g.online ? '' : 'away'}">${g.here ? ICONS.desktop : ICONS.laptop}</span>
+          <b>${esc(g.name)}</b>${g.online ? '' : '<span class="cg-tag away">offline</span>'}
+          <span class="grow"></span>${folded ? faceStack(on.length ? on : agents) : ''}${groupCounts(g.agents)}
+        </div>`
+      : ''
+    const rows = on.map((a) => crewRow(a, { selected: a.name === selected })).join('')
+    const offRow = off.length
+      ? `<div class="crow-fold ${offOpen ? 'open' : ''}" data-fold="off:${esc(g.key)}"><span class="chev">${ICONS.chevron}</span>${faceStack(off, 4)}<span>${off.length} off</span></div>${offOpen ? off.map((a) => crewRow(a, { selected: a.name === selected })).join('') : ''}`
+      : ''
+    const empty = !agents.length ? `<div class="cgroup-empty">${g.online ? 'No agents here yet' : 'No agents'}</div>` : ''
+    return `<section class="cgroup ${folded ? 'folded' : ''} ${g.online ? '' : 'away'}" data-home="${esc(g.key)}">${head}<div class="cgroup-body">${folded ? '' : rows + offRow + empty}</div></section>`
+  }).join('')
+  return html || `<div class="roster-none">${q ? `No one matches “${esc(filter.trim())}”` : 'No agents yet'}</div>`
 }
 
 // ---- unread: agents' replies you haven't seen yet ------------------------------------------------------
@@ -589,25 +687,38 @@ function askSummary(q, a) {
 // Who's on it right now, under the last message: one slim line per busy agent with what it's doing, and an
 // orange Answer button when it needs you. asks: agent -> its open question's id, so the line can point at the
 // card instead of the terminal.
-const typingHTML = (agents, asks = new Map()) =>
-  agents
-    .filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || a.subs?.length))
-    .map((a) => {
-      const card = a.status === 'waiting' && asks.get(a.name)
-      const waiting = a.status === 'waiting'
-      const busy = waiting || a.status === 'working'
-      const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : busy ? a.activity || 'working…' : 'free, its sub-agents are still working'
-      const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : busy ? '<span class="typing"><i></i><i></i><i></i></span>' : ''
-      return `<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
-      <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${end}</div>${subTree(a)}`
-    })
-    .join('')
+// With a big crew the line would push the chat off screen, so it shows the agents waiting on you first, then
+// who's working, up to three, and folds the rest into one line of faces (click it for all of them).
+const TYPING_ROWS = 3
+function typingHTML(agents, asks = new Map(), { all = false } = {}) {
+  const active = agents.filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || a.subs?.length))
+  const ordered = [...active.filter((a) => a.status === 'waiting'), ...active.filter((a) => a.status !== 'waiting')]
+  const many = ordered.length > TYPING_ROWS + 1
+  const shown = many && !all ? ordered.slice(0, TYPING_ROWS) : ordered
+  const rest = many && !all ? ordered.slice(TYPING_ROWS) : []
+  const rows = shown.map((a) => {
+    const card = a.status === 'waiting' && asks.get(a.name)
+    const waiting = a.status === 'waiting'
+    const busy = waiting || a.status === 'working'
+    const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : busy ? a.activity || 'working…' : 'free, its sub-agents are still working'
+    const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : busy ? '<span class="typing"><i></i><i></i><i></i></span>' : ''
+    return `<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
+    <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${end}</div>${subTree(a, many ? 2 : 4)}`
+  }).join('')
+  const waitingLeft = rest.filter((a) => a.status === 'waiting').length
+  const what = [waitingLeft && `${waitingLeft} more need${waitingLeft > 1 ? '' : 's'} you`, rest.length - waitingLeft && `${rest.length - waitingLeft} more at work`].filter(Boolean).join(' · ')
+  const more = rest.length
+    ? `<div class="typing-row typing-more" data-typing="all" title="Show everyone at work">${faceStack(rest, 6)}<span class="tr-what quiet">${what}</span><span class="chev">${ICONS.chevron}</span></div>`
+    : many ? `<div class="typing-row typing-more open" data-typing="less"><span class="tr-what quiet">Show fewer</span><span class="chev">${ICONS.chevron}</span></div>` : ''
+  return rows + more
+}
 
 // Its sub-agents, as branches under its line: each one's kind and job, what it's doing, how many steps and how
 // long. Finished ones tick off and fade out.
-function subTree(a) {
-  const subs = a.subs ?? []
-  if (!subs.length) return ''
+function subTree(a, cap = 4) {
+  const all = a.subs ?? []
+  if (!all.length) return ''
+  const subs = all.length > cap ? all.slice(0, cap - 1) : all
   const look = { ...a, avatar: avatarOf(a), status: 'working' } // its helpers are little copies of it
   return `<div class="sub-tree" style="--c:${agentColor(a)}" data-agent="${esc(a.name)}" title="Open its terminal">${subs.map((s) => {
     const done = Boolean(s.ended)
@@ -619,7 +730,7 @@ function subTree(a) {
       </span>
       <span class="sub-meta">${s.tools ? `${plural(s.tools, 'step')}<br>` : ''}${duration((s.ended ?? Date.now()) - s.started)}</span>
     </div>`
-  }).join('')}</div>`
+  }).join('')}${all.length > subs.length ? `<div class="sub-row sub-more"><span class="sub-face"></span><span class="sub-doing">+${all.length - subs.length} more</span></div>` : ''}</div>`
 }
 
 // Under a reply: the sub-agents it used for that turn, folded into one line until you open it.
@@ -634,6 +745,7 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
   const open = new Set()
   const seen = new Set()
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
+  let typingAll = false // the who's-on-it line, unfolded
   const sending = new Set() // cards whose answer is on its way: one answer each, even with a held Enter
   let shown = new Map() // id -> feed entry on screen
   let key = ''
@@ -676,6 +788,11 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
     if (link) {
       ev.preventDefault()
       return crew.call('openUrl', link.href)
+    }
+    const fold = ev.target.closest('[data-typing]')
+    if (fold) {
+      typingAll = fold.dataset.typing === 'all'
+      return last && api.render(last)
     }
     const to = ev.target.closest('[data-jump]')
     if (to) return jump(to.dataset.jump)
@@ -835,7 +952,7 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
   let divider = null
   let dividerTimer = null
 
-  return {
+  const api = {
     jump,
     render({ feed, agents, reads }) {
       const unread = feed.filter((e) => isUnread(e, reads))
@@ -843,13 +960,13 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
         clearTimeout(dividerTimer)
         dividerTimer = null
         if (!divider || !feed.some((e) => e.id === divider)) divider = unread[0].id
-      } else if (divider && !dividerTimer) dividerTimer = setTimeout(() => ((divider = null), (key = ''), this.render(last)), 4000)
+      } else if (divider && !dividerTimer) dividerTimer = setTimeout(() => ((divider = null), (key = ''), api.render(last)), 4000)
       last = { feed, agents, reads }
       const view = feedView(feed, agents, open, limit, drafts, { reads, divider })
       shown = new Map(view.items.map((e) => [e.id, e]))
       let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
-      const busy = typingHTML(agents, asks)
+      const busy = typingHTML(agents, asks, { all: typingAll })
       let added = false
       if (!view.items.length) next += busy ? ':busy' : ':empty' // the empty-feed hint shows only when nobody's busy
       if (next !== key) {
@@ -877,6 +994,7 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
       first = false
     },
   }
+  return api
 }
 
 const fileURL = (p) => `file://${String(p).split('/').map(encodeURIComponent).join('/')}`
@@ -1418,6 +1536,56 @@ function themeButton(btn) {
     btn.innerHTML = ICONS[icon]
     btn.title = `${label} (click for ${NEXT_THEME[theme] === 'system' ? 'auto' : NEXT_THEME[theme]})`
   }
+}
+
+// A small pop-up menu (right-click on an agent, the More button): items are { label, icon, act, danger, hint,
+// disabled } or '-' for a line. Picks call onPick(act). Closes on a pick, Esc, a click elsewhere or a scroll.
+let openMenu = null
+function popMenu(at, items, onPick) {
+  openMenu?.close()
+  const el = document.createElement('div')
+  el.className = 'menu'
+  el.setAttribute('role', 'menu')
+  el.innerHTML = items.map((it) => (it === '-' ? '<hr>' : it.head ? `<div class="menu-head">${esc(it.head)}</div>`
+    : `<button role="menuitem" class="${it.danger ? 'danger' : ''}" data-menu-act="${esc(it.act)}" ${it.disabled ? 'disabled' : ''}>${it.icon ?? '<i></i>'}<span>${esc(it.label)}</span>${it.hint ? `<small>${esc(it.hint)}</small>` : ''}</button>`)).join('')
+  // inside a modal dialog it has to be in the dialog too, or the dialog's top layer would cover it
+  ;((at instanceof Element && at.closest('dialog[open]')) || document.body).append(el)
+  const r = at instanceof Element ? at.getBoundingClientRect() : { left: at.x, right: at.x, top: at.y, bottom: at.y }
+  const w = el.offsetWidth
+  const h = el.offsetHeight
+  el.style.left = `${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`
+  el.style.top = `${r.bottom + 4 + h > innerHeight - 8 ? Math.max(8, r.top - h - 4) : r.bottom + 4}px`
+  const close = () => {
+    el.remove()
+    removeEventListener('pointerdown', outside, true)
+    removeEventListener('keydown', key, true)
+    removeEventListener('blur', close)
+    document.removeEventListener('scroll', close, true)
+    if (openMenu?.el === el) openMenu = null
+  }
+  const outside = (e) => !el.contains(e.target) && close()
+  const key = (e) => {
+    if (e.key === 'Escape') return void (e.preventDefault(), e.stopPropagation(), close())
+    if (!['ArrowDown', 'ArrowUp'].includes(e.key)) return
+    e.preventDefault()
+    const all = [...el.querySelectorAll('button:not(:disabled)')]
+    const i = all.indexOf(document.activeElement)
+    all[(i + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % all.length]?.focus()
+  }
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-menu-act]')
+    if (!b) return
+    close()
+    onPick(b.dataset.menuAct)
+  })
+  setTimeout(() => {
+    addEventListener('pointerdown', outside, true)
+    addEventListener('keydown', key, true)
+    addEventListener('blur', close)
+    document.addEventListener('scroll', close, true)
+  })
+  openMenu = { el, close }
+  return openMenu
 }
 
 // Every view: fetch state once, then re-render on pushes and every 15s so "working · 3m" stays fresh.

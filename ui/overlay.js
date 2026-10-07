@@ -95,6 +95,7 @@ crew.onToggle((opts = {}) => {
 // Tap a creature in the pill to talk to that agent; with replies you haven't read, the chat opens on the first.
 let state = null
 $('.dots').addEventListener('click', (e) => {
+  if (e.target.closest('[data-more-faces]')) return setOpen(true)
   const face = e.target.closest('[data-agent]')
   if (!face) return
   composer.setTarget(face.dataset.agent)
@@ -109,10 +110,21 @@ live((next) => {
   const working = on.filter((a) => a.status === 'working').length
   document.body.classList.toggle('busy', working > 0)
   document.body.classList.toggle('alert', state.agents.some((a) => a.status === 'waiting'))
-  morph($('.dots'), on.map((a) => {
+  // A big crew doesn't fit along a screen edge: the pill keeps the ones that need a look (waiting on you, new
+  // replies, at work) in their usual order, and the rest become "+N", which opens the chat.
+  const flat = ['above', 'below'].includes(document.body.dataset.side)
+  const room = Math.max(4, Math.min(14, Math.floor(((flat ? screen.availWidth : screen.availHeight) * 0.72 - 90) / 32)))
+  let shown = on
+  if (on.length > room) {
+    const look = new Set(on.filter((a) => a.status === 'waiting' || a.unread || a.status === 'working').slice(0, room - 1).map((a) => a.name))
+    for (const a of on) if (look.size < room - 1) look.add(a.name)
+    shown = on.filter((a) => look.has(a.name))
+  }
+  const hidden = on.length - shown.length
+  morph($('.dots'), shown.map((a) => {
     const subs = runningSubs(a).length
     return `<span class="face" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}" title="${esc(`${a.name}: ${statusText(a)}${subs ? ` · ${plural(subs, 'sub-agent')} working` : ''}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}`)}">${avatarHTML(a, { size: 30 })}${orbitHTML(a)}${unreadBadge(a.unread)}</span>`
-  }).join(''))
+  }).join('') + (hidden ? `<button class="more-faces" data-more-faces title="${esc(`${plural(hidden, 'more agent')}: ${on.filter((a) => !shown.includes(a)).map((a) => a.name).join(', ')}`)}">+${hidden}</button>` : ''))
   celebrate($('.dots'), state.agents)
   morph($('.sums'), crewSummary(state))
   // the mark in the pill counts every reply you haven't read

@@ -1,5 +1,5 @@
-// Full-screen view: the crew collection, every agent's live terminal, and the crew feed.
-/* global themeButton, orbitHTML, subsChip, nameHTML, contextRing, mountTasks, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
+// Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
+/* global themeButton, orbitHTML, subsChip, nameHTML, contextRing, mountTasks, crew, live, store, morph, rosterHTML, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -11,15 +11,34 @@ const THEME = {
 const terms = new Map() // name -> { tile, head, term, fit, ready }
 const feed = mountFeed($('.feed'), { onAgent: (name) => select(name), onTicket: (key) => openTask(key), onReply: (e) => composer.replyTo(e) })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat') })
-const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name), onImport: () => importPack() })
+const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home) })
 const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
-let view = store.get('crew.view') === 'bugs' ? 'tasks' : store.get('crew.view') || 'crew'
+// Views: Crew, Tasks and Terminals, the terminals laid out as a grid or one big one. Older saves said grid,
+// focus or bugs.
+const saved = store.get('crew.view')
+let view = saved === 'bugs' ? 'tasks' : saved === 'grid' || saved === 'focus' ? 'terminals' : ['crew', 'tasks', 'terminals'].includes(saved) ? saved : 'crew'
+let layout = saved === 'focus' || (saved !== 'grid' && store.get('crew.layout') === 'focus') ? 'focus' : 'grid'
+let show = store.get('crew.show') === 'busy' ? 'busy' : 'all' // the grid: every terminal, or the busy ones
 let selected = null
 let state = { agents: [], providers: {} }
+// the roster's folds: computers you folded away, and the "off" lines you opened
+const folds = new Set((() => {
+  try {
+    return JSON.parse(store.get('crew.folds') || '[]')
+  } catch {
+    return []
+  }
+})())
+let find = ''
 
 $('.titlebar .logo').outerHTML = markSVG('0 6 24 16')
 $('.blank .blank-mark').outerHTML = ICONS.mark
-$('.titlebar [data-act=add]').innerHTML = `${ICONS.plus}Agent`
+const VIEW_LABEL = { crew: [markSVG('0 4 24 18'), 'Crew'], tasks: [ICONS.task, 'Tasks'], terminals: [ICONS.terminal, 'Terminals'] }
+for (const b of document.querySelectorAll('.seg.views button')) b.innerHTML = `${VIEW_LABEL[b.dataset.view][0]}<span>${VIEW_LABEL[b.dataset.view][1]}</span>${b.dataset.view === 'tasks' ? '<i class="seg-badge"></i>' : ''}`
+$('[data-layout=grid]').innerHTML = `${ICONS.grid}Grid`
+$('[data-layout=focus]').innerHTML = `${ICONS.focus}Focus`
+$('.find-icon').outerHTML = ICONS.search
+$('.side-top [data-act=add]').innerHTML = ICONS.plus
 $('.side .autopilot .glyph').innerHTML = ICONS.plane
 $('[data-act=config]').innerHTML = ICONS.braces
 $('#link .h-icon').innerHTML = ICONS.computers
@@ -34,6 +53,7 @@ function createTile(name) {
   tile.dataset.name = name
   tile.innerHTML = '<div class="tile-head"></div><div class="ribbon"></div><div class="term"></div>'
   $('.terms').append(tile)
+  drawShow()
 
   const term = new Terminal({ theme: THEME, fontFamily: '"SF Mono", Menlo, monospace', fontSize: 12, lineHeight: 1.12, cursorBlink: true, macOptionIsMeta: true, scrollback: 5000 })
   const fit = new FitAddon.FitAddon()
@@ -127,9 +147,7 @@ function tileHead(a) {
   return `<span class="tile-av">${avatarHTML(a, { size: 24 })}${orbitHTML(a)}</span><b>${nameHTML(a)}</b>
     <span class="state ${a.status}" ${busy ? 'data-act="markIdle" title="Stuck? Click to mark it free"' : ''}>${esc(statusText(a))}</span>
     <span class="activity">${esc(a.activity)}</span>
-    ${subsChip(a)}${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}
-    ${a.fast ? `<span class="tag fast-tag" title="Fast: Codex's fast service tier">${ICONS.bolt}</span>` : ''}
-    ${a.yolo ? '<span class="tag yolo-tag" title="Skips all permission prompts">YOLO</span>' : ''}
+    ${subsChip(a)}${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}${modeMarks(a)}
     ${contextRing(a)}
     <span class="tile-acts">
       <button class="icon" data-act="fresh" aria-pressed="${Boolean(a.freshPending)}" title="${a.freshPending ? 'Starts a new conversation when it finishes this task' : 'New conversation: a clean slate for its next task (the old one stays in its history)'}">${ICONS.fresh}</button>
@@ -157,7 +175,7 @@ $('.terms').addEventListener('dblclick', (e) => {
   const head = e.target.closest('.tile-head')
   if (head && !e.target.closest('button')) {
     highlight(head.parentElement.dataset.name)
-    setView(view === 'focus' ? 'grid' : 'focus')
+    setLayout(layout === 'focus' ? 'grid' : 'focus')
   }
 })
 
@@ -166,7 +184,7 @@ $('.terms').addEventListener('dblclick', (e) => {
 function highlight(name) {
   selected = name
   for (const [n, t] of terms) t.tile.classList.toggle('on', n === name)
-  for (const el of document.querySelectorAll('.side .agent')) el.classList.toggle('on', el.dataset.agent === name)
+  for (const el of document.querySelectorAll('.roster .crow')) el.classList.toggle('on', el.dataset.agent === name)
 }
 
 // Show an agent's terminal and aim the composer at it. Agents that are off have no terminal: open their card.
@@ -174,58 +192,222 @@ function select(name) {
   if (!terms.has(name)) return edit(name)
   highlight(name)
   composer.setTarget(name)
-  setView('focus')
+  layout = 'focus'
+  store.set('crew.layout', layout)
+  setView('terminals')
   terms.get(name).term.focus()
 }
 
 function edit(name) {
-  setView('crew')
+  if (view !== 'crew') setView('crew')
   collection.open(name)
 }
 
+// grid and focus are still accepted, for ⌘3 / ⌘4 and older callers
 function setView(next) {
+  if (next === 'grid' || next === 'focus') {
+    layout = next
+    store.set('crew.layout', layout)
+    next = 'terminals'
+  }
   view = next
   store.set('crew.view', next)
   if (!terms.has(selected)) highlight(terms.keys().next().value)
-  const crewView = view === 'crew'
-  const tasksView = view === 'tasks'
-  $('.collection').classList.toggle('hidden', !crewView)
-  $('.tasks-view').classList.toggle('hidden', !tasksView)
-  $('.terms').classList.toggle('hidden', crewView || tasksView)
-  $('.terms').classList.toggle('focus', view === 'focus')
-  drawBlank()
+  $('.collection').classList.toggle('hidden', view !== 'crew')
+  $('.tasks-view').classList.toggle('hidden', view !== 'tasks')
+  $('.terms-view').classList.toggle('hidden', view !== 'terminals')
+  $('.terms').classList.toggle('focus', layout === 'focus')
   segmented($('.seg.views'), (b) => b.dataset.view === view)
+  segmented($('[data-layout]'), (b) => b.dataset.layout === layout)
+  $('[data-show]').classList.toggle('hidden', layout === 'focus')
+  drawShow()
+  drawBlank()
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 }
+const setLayout = (next) => setView(next)
 
 function drawBlank() {
   const on = state.agents.filter((a) => a.on).length
-  $('.blank').classList.toggle('hidden', view === 'crew' || view === 'tasks' || on > 0)
+  $('.blank').classList.toggle('hidden', view !== 'terminals' || on > 0)
   $('.blank b').textContent = state.agents.length ? 'All agents are off' : 'No agents yet'
-  $('.blank span').textContent = state.agents.length ? 'Flip one on in the sidebar, it picks up its last session.' : 'Make your first one in the Crew view.'
+  $('.blank span').textContent = state.agents.length ? 'Turn one on in the sidebar: it picks up its last session.' : 'Make your first one in the Crew view.'
 }
 
-$('.seg.views').addEventListener('click', (e) => e.target.dataset.view && setView(e.target.dataset.view))
-// ⌘1 ⌘2 ⌘3: Crew, Grid, Focus
-const VIEWS = ['crew', 'tasks', 'grid', 'focus']
+// The grid shows every terminal, or just the busy ones (working, or waiting on you).
+const busy = (a) => a && (a.status === 'working' || a.status === 'waiting' || a.status === 'starting')
+function drawShow() {
+  segmented($('[data-show]'), (b) => b.dataset.show === show)
+  let shown = 0
+  for (const t of terms.values()) {
+    const hide = show === 'busy' && !busy(t.agent)
+    t.tile.classList.toggle('filtered', hide)
+    if (!hide) shown++
+  }
+  const none = $('.terms .terms-none')
+  if (show === 'busy' && !shown && terms.size) {
+    if (!none) $('.terms').insertAdjacentHTML('beforeend', '<p class="terms-none">Nobody is busy right now</p>')
+  } else none?.remove()
+  $('.tv-count').textContent = layout === 'focus' ? '' : show === 'busy' ? `${shown} of ${plural(terms.size, 'terminal')}` : plural(terms.size, 'terminal')
+}
+
+$('.seg.views').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-view]')
+  if (b) setView(b.dataset.view)
+})
+$('[data-layout]').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-layout]')
+  if (b?.dataset.layout) setLayout(b.dataset.layout)
+})
+$('[data-show]').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-show]')
+  if (!b?.dataset.show) return
+  show = b.dataset.show
+  store.set('crew.show', show)
+  drawShow()
+  requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
+})
+// ⌘1 Crew, ⌘2 Tasks, ⌘3 the terminals side by side, ⌘4 one big; ⌘F finds an agent, ⌘N makes one
+const KEYS = { 1: 'crew', 2: 'tasks', 3: 'grid', 4: 'focus' }
 document.querySelectorAll('.seg.views button').forEach((b, i) => (b.title += ` (⌘${i + 1})`))
 document.addEventListener('keydown', (e) => {
-  const n = Number(e.key)
-  if (!e.metaKey || e.altKey || e.ctrlKey || !(n >= 1 && n <= VIEWS.length)) return
-  e.preventDefault()
-  setView(VIEWS[n - 1])
+  if (!e.metaKey || e.altKey || e.ctrlKey) return
+  if (KEYS[e.key]) return void (e.preventDefault(), setView(KEYS[e.key]))
+  if (e.key === 'f' && !e.shiftKey) return void (e.preventDefault(), $('[data-find]').focus(), $('[data-find]').select())
+  if (e.key === 'n' && !e.shiftKey) return void (e.preventDefault(), addAgent())
 })
-$('.side .agents').addEventListener('click', (e) => {
+
+// ---- the roster: every agent, by computer ------------------------------------
+
+function drawRoster() {
+  morph($('.roster'), rosterHTML(state, { folds, selected, filter: find }))
+  $('[data-find]').placeholder = state.agents.length > 1 ? `Search ${state.agents.length} agents` : 'Search'
+  if (dragging) document.querySelector(`.roster .crow[data-agent="${CSS.escape(dragging.name)}"]`)?.classList.add('dragging')
+}
+
+function toggleFold(key) {
+  folds.has(key) ? folds.delete(key) : folds.add(key)
+  store.set('crew.folds', JSON.stringify([...folds]))
+  drawRoster()
+}
+
+const findBox = $('[data-find]')
+findBox.addEventListener('input', () => {
+  find = findBox.value
+  drawRoster()
+})
+findBox.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    findBox.value = find = ''
+    drawRoster()
+    findBox.blur()
+  }
+  if (e.key === 'Enter') {
+    const first = $('.roster .crow')
+    if (first) (view === 'crew' ? edit : select)(first.dataset.agent)
+  }
+})
+
+$('.roster').addEventListener('click', (e) => {
   if (e.target.closest('.mode, .switch')) return
-  const card = e.target.closest('.agent')
-  if (card) (view === 'crew' ? edit : select)(card.dataset.agent)
+  const fold = e.target.closest('[data-fold]')
+  if (fold) return toggleFold(fold.dataset.fold)
+  const row = e.target.closest('.crow')
+  if (row) (view === 'crew' ? edit : select)(row.dataset.agent)
 })
+$('.roster').addEventListener('dblclick', (e) => {
+  const row = e.target.closest('.crow')
+  if (row && !e.target.closest('.mode, .switch') && terms.has(row.dataset.agent)) select(row.dataset.agent)
+})
+
+// Right-click an agent (in the roster, a card, a terminal) for everything you can do with it, moving it to
+// another computer included.
+function agentMenu(name, at) {
+  const a = state.agents.find((x) => x.name === name)
+  if (!a) return
+  const here = a.home ?? ''
+  const places = crewGroups(state).filter((g) => g.key !== here)
+  popMenu(at, [
+    { head: a.seed ?? a.name },
+    { label: 'Message', icon: ICONS.reply, act: 'message', disabled: !a.on },
+    { label: 'Open terminal', icon: ICONS.terminal, act: 'terminal', disabled: !terms.has(name) },
+    { label: 'Edit…', icon: ICONS.edit, act: 'edit' },
+    { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a.on || a.freshPending },
+    ...(places.length ? ['-', ...places.map((g) => ({ label: `Move to ${g.name}`, icon: g.here ? ICONS.desktop : ICONS.laptop, act: `move:${g.key}`, disabled: !g.online, hint: g.online ? '' : 'offline' }))] : []),
+    '-',
+    { label: a.on ? 'Turn off' : 'Turn on', icon: ICONS.power, act: 'power' },
+    { label: 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
+  ], async (act) => {
+    try {
+      if (act === 'message') {
+        composer.setTarget(name)
+        composer.focus()
+      }
+      if (act === 'terminal') select(name)
+      if (act === 'edit') edit(name)
+      if (act === 'fresh') await crew.call('freshStart', name)
+      if (act.startsWith('move:')) moveSheet(name, act.slice(5))
+      if (act === 'power') {
+        if (a.on && busy(a) && !confirm(`${a.seed ?? a.name} is in the middle of something. Turn it off anyway?`)) return
+        await crew.call('update', name, { off: a.on })
+      }
+      if (act === 'remove' && confirm(`Remove ${a.seed ?? a.name}? Its session stops (the transcript stays with the CLI).`)) await crew.call('removeAgent', name)
+    } catch (err) {
+      alert(err.message)
+    }
+  })
+}
+document.addEventListener('contextmenu', (e) => {
+  const el = e.target.closest('.roster .crow, .pcard[data-name], .tile-head')
+  if (!el) return
+  e.preventDefault()
+  agentMenu(el.dataset.agent ?? el.dataset.name ?? el.closest('.tile').dataset.name, { x: e.clientX, y: e.clientY })
+})
+
+// Drag an agent onto another computer to move it there (the move sheet asks where its folder is).
+let dragging = null
+const roster = $('.roster')
+roster.addEventListener('dragstart', (e) => {
+  const row = e.target.closest('.crow')
+  dragging = row && state.agents.find((a) => a.name === row.dataset.agent)
+  if (!dragging) return
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('application/x-crew-agent', dragging.name)
+  row.classList.add('dragging')
+  const online = new Map(crewGroups(state).map((g) => [g.key, g.online]))
+  for (const g of roster.querySelectorAll('.cgroup')) g.classList.toggle('drop-ok', g.dataset.home !== (dragging.home ?? '') && online.get(g.dataset.home))
+})
+roster.addEventListener('dragover', (e) => {
+  const g = e.target.closest('.cgroup.drop-ok')
+  if (!g || !dragging) return
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'move'
+  for (const x of roster.querySelectorAll('.cgroup.over')) x.classList.toggle('over', x === g)
+  g.classList.add('over')
+})
+roster.addEventListener('dragleave', (e) => {
+  const g = e.target.closest('.cgroup')
+  if (g && !g.contains(e.relatedTarget)) g.classList.remove('over')
+})
+roster.addEventListener('drop', (e) => {
+  const g = e.target.closest('.cgroup.drop-ok')
+  if (!g || !dragging) return
+  e.preventDefault()
+  const name = dragging.name
+  endDrag()
+  moveSheet(name, g.dataset.home)
+})
+const endDrag = () => {
+  dragging = null
+  for (const x of roster.querySelectorAll('.drop-ok, .over, .dragging')) x.classList.remove('drop-ok', 'over', 'dragging')
+}
+roster.addEventListener('dragend', endDrag)
+
 $('.autopilot .switch').addEventListener('change', (e) => crew.call('autopilot', e.target.checked))
 $('[data-act=config]').addEventListener('click', () => crew.call('config'))
 for (const b of document.querySelectorAll('[data-act=add]')) b.addEventListener('click', addAgent)
 
 function addAgent() {
-  setView('crew')
+  if (view !== 'crew') setView('crew')
   collection.create()
 }
 
@@ -268,12 +450,13 @@ const ready = live((next) => {
     morph(t.head, tileHead(a))
     drawRibbon(t)
   }
-
-  morph($('.side .agents'), state.agents.map((a) => agentCard(a, state.providers)).join(''))
+  if (!terms.has(selected)) selected = on[0]?.name
+  drawRoster()
   $('.autopilot .switch').checked = state.autopilot
-  $('.side-count').textContent = state.agents.length ? `${on.length} of ${state.agents.length} on` : ''
-  morph($('.titlebar .sums'), crewSummary(state, { unread: true }))
-  highlight(terms.has(selected) ? selected : on[0]?.name)
+  $('.autopilot small').textContent = state.autopilot ? 'Hand-offs go through' : 'Hand-offs wait for you'
+  morph($('.tb-left .sums'), crewSummary(state, { unread: true }))
+  highlight(selected)
+  drawShow()
   drawBlank()
   feed.render(state)
   composer.render(state)
@@ -284,7 +467,7 @@ const ready = live((next) => {
   el.textContent = badge.review || badge.open || ''
   el.classList.toggle('review', badge.review > 0)
   el.title = badge.review ? `${badge.review} waiting for your review` : badge.open ? `${badge.open} open` : ''
-  celebrate($('.side .agents'), state.agents) // after the cards, so a visible card gets the confetti
+  celebrate($('.roster'), state.agents) // after the rows, so a visible one gets the confetti
 })
 
 // ---- Computers (Crew Link) -------------------------------------------------------
@@ -344,10 +527,10 @@ function linkHTML(l) {
     ${l.agents.length ? `<ul class="pc-agents">${l.agents.map((a) => `
       <li class="${a.hidden ? 'unused' : ''}">${avatarHTML(a, { size: 30, mood: 'still' })}
         <span class="who"><b>${esc(a.seed)}</b><small>${esc(a.area || 'no area')}</small></span>
-        ${l.online ? `<button class="btn small" data-move="${esc(a.name)}" title="Run it on this computer instead, with its instructions, look and work experience">Move here</button>` : ''}
+        ${l.online ? `<button class="btn small pc-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
         <label class="use"><input type="checkbox" class="switch" data-use="${esc(a.name)}" ${a.hidden ? '' : 'checked'}>Use</label>
       </li>`).join('')}</ul>
-      ${l.agents.length > 1 ? `<div class="ls-row small"><span>using ${used} of ${l.agents.length}</span><span><button class="btn small" data-use-all="${esc(l.slug)}">All</button> <button class="btn small" data-use-none="${esc(l.slug)}">None</button></span></div>` : ''}`
+      ${l.agents.length > 1 ? `<div class="ls-row small"><span>using ${used} of ${l.agents.length} · drag one onto a computer in the sidebar to move it</span><span><button class="btn small" data-use-all="${esc(l.slug)}">All</button> <button class="btn small" data-use-none="${esc(l.slug)}">None</button></span></div>` : ''}`
     : `<p>${l.online ? 'No agents there yet.' : ''}</p>`}
   </section>`
 }
@@ -398,12 +581,15 @@ linkDialog.addEventListener('click', async (e) => {
     const all = t.closest('[data-use-all]')?.dataset.useAll
     const none = t.closest('[data-use-none]')?.dataset.useNone
     if (all || none) await crew.call('link', 'hide', linked(all || none).agents.map((a) => a.name), Boolean(none))
-    const move = t.closest('[data-move]')?.dataset.move
+    const move = t.closest('[data-move]')
     if (move) {
-      // the agent's card, set to run here: its folder on this computer can be checked before saving
-      linkDialog.close()
-      setView('crew')
-      collection.open(move, { home: '' })
+      const name = move.dataset.move
+      const from = state.agents.find((a) => a.name === name)?.home ?? ''
+      const places = crewGroups(state).filter((g) => g.key !== from)
+      popMenu(move, [{ head: 'Move to' }, ...places.map((g) => ({ label: g.name, icon: g.here ? ICONS.desktop : ICONS.laptop, act: g.key || ':here', disabled: !g.online, hint: g.here ? 'this Mac' : g.online ? '' : 'offline' }))], (home) => {
+        linkDialog.close()
+        moveSheet(name, home === ':here' ? '' : home)
+      })
     }
   } catch (x) {
     fail(x.message)
@@ -426,6 +612,129 @@ linkDialog.addEventListener('change', async (e) => {
   }
 })
 linkDialog.addEventListener('keydown', (e) => e.key === 'Enter' && e.target.matches('[data-me-name]') && e.target.blur())
+
+// ---- moving an agent to another computer ------------------------------------------
+// From any computer, to any linked one: drag it onto a computer in the sidebar, pick Move to… on it, or choose
+// Runs on in its card. Its conversation and its part of the chat go along; what it had running (servers,
+// simulators, builds) can't, and the sheet says so. The folder is a path on the other computer, checked there.
+
+const moveDialog = $('#move')
+let moving = null // { name, home, folder, check }
+
+async function moveSheet(name, home) {
+  const a = state.agents.find((x) => x.name === name)
+  const groups = crewGroups(state)
+  const from = groups.find((g) => g.key === (a?.home ?? ''))
+  const to = groups.find((g) => g.key === home)
+  if (!a || !to || !from || from.key === to.key) return
+  moving = { name, home, folder: a.cwd || '~', check: null, seq: 0 }
+  const who = esc(a.seed ?? a.name)
+  const working = busy(a)
+  moveDialog.querySelector('.mv-body').innerHTML = `
+    <div class="mv-route" style="--c:${agentColor(a)}">
+      <span class="mv-pc">${from.here ? ICONS.desktop : ICONS.laptop}<b>${esc(from.name)}</b></span>
+      <span class="mv-path"><i></i><span class="mv-av">${avatarHTML(a, { size: 46 })}</span><i></i></span>
+      <span class="mv-pc to">${to.here ? ICONS.desktop : ICONS.laptop}<b>${esc(to.name)}</b></span>
+    </div>
+    <h3>Move ${who} to ${esc(to.name)}</h3>
+    <label class="mv-folder"><span>Folder on ${esc(to.name)}</span>
+      <span class="mv-field"><input data-mv-folder value="${esc(moving.folder)}" spellcheck="false" autocomplete="off">${to.here ? '<button class="btn small" data-mv-pick>Choose…</button>' : ''}</span>
+      <span class="mv-check" data-mv-check></span>
+    </label>
+    <div class="mv-sugs" data-mv-sugs></div>
+    <ul class="mv-carry">
+      <li class="yes">${ICONS.check}<span>Its conversation and its messages in the chat</span></li>
+      <li class="yes">${ICONS.check}<span>Instructions, brain, look and work experience</span></li>
+      <li class="no">${ICONS.close}<span>Anything it has running on ${esc(from.name)}: servers, simulators, builds</span></li>
+    </ul>
+    ${working ? `<p class="mv-busy">${who} is ${a.status === 'waiting' ? 'waiting on you' : 'working'} right now. It stops on ${esc(from.name)} and picks the task back up on ${esc(to.name)}.</p>` : ''}
+    <p class="err" data-mv-err></p>`
+  const go = moveDialog.querySelector('[data-mv-go]')
+  go.disabled = false
+  go.textContent = `Move to ${to.name}`
+  moveDialog.showModal()
+  checkFolder()
+  crew.call('folders', home).then((list) => {
+    if (moving?.name !== name) return
+    moveDialog.querySelector('[data-mv-sugs]').innerHTML = (list ?? []).map((f) => `<button class="mv-sug ${f.path === moving.folder ? 'on' : ''}" data-mv-sug="${esc(f.path)}" title="${esc(f.path)}">${ICONS.folder}${esc(f.label || f.path)}</button>`).join('')
+  }, () => {})
+}
+
+// Is the folder there on that computer? Asked as you type (a little after you stop).
+let checkTimer = null
+function checkFolder() {
+  clearTimeout(checkTimer)
+  const box = moveDialog.querySelector('[data-mv-check]')
+  if (!moving || !box) return
+  const seq = ++moving.seq
+  box.className = 'mv-check'
+  box.textContent = ''
+  checkTimer = setTimeout(async () => {
+    try {
+      const info = await crew.call('folderInfo', moving.home, moving.folder)
+      if (seq !== moving?.seq) return
+      moving.check = info
+      box.className = `mv-check ${info?.exists ? 'ok' : 'bad'}`
+      box.innerHTML = info?.exists ? `${ICONS.check}<span>Found${info.path && info.path !== moving.folder ? `: ${esc(info.path)}` : ''}</span>` : `${ICONS.close}<span>Not on that computer${info?.path ? `: ${esc(info.path)}` : ''}</span>`
+    } catch {
+      box.textContent = ''
+    }
+  }, 250)
+}
+
+moveDialog.addEventListener('input', (e) => {
+  if (!('mvFolder' in e.target.dataset)) return
+  moving.folder = e.target.value.trim()
+  for (const b of moveDialog.querySelectorAll('[data-mv-sug]')) b.classList.toggle('on', b.dataset.mvSug === moving.folder)
+  checkFolder()
+})
+moveDialog.addEventListener('click', async (e) => {
+  if (e.target.closest('[data-close]') || e.target === moveDialog) return moveDialog.close()
+  const sug = e.target.closest('[data-mv-sug]')
+  if (sug) {
+    moving.folder = moveDialog.querySelector('[data-mv-folder]').value = sug.dataset.mvSug
+    for (const b of moveDialog.querySelectorAll('[data-mv-sug]')) b.classList.toggle('on', b === sug)
+    return checkFolder()
+  }
+  if (e.target.closest('[data-mv-pick]')) {
+    const dir = await crew.call('pickFolder', moving.home).catch(() => null)
+    if (dir) (moving.folder = moveDialog.querySelector('[data-mv-folder]').value = dir), checkFolder()
+    return
+  }
+  const go = e.target.closest('[data-mv-go]')
+  if (!go || !moving) return
+  const err = moveDialog.querySelector('[data-mv-err]')
+  if (moving.check && !moving.check.exists && !confirm(`${moving.folder} isn't on that computer. Move it anyway? It won't start until the folder exists.`)) return
+  go.disabled = true
+  go.textContent = 'Moving…'
+  err.textContent = ''
+  try {
+    const res = await crew.call('moveAgent', moving.name, moving.home, moving.folder)
+    // where it went is in view: its computer unfolds, and its row is the selected one
+    if (folds.delete(`group:${moving.home}`)) store.set('crew.folds', JSON.stringify([...folds]))
+    if (res?.name) selected = res.name
+    const to = crewGroups(state).find((g) => g.key === moving.home)?.name ?? 'there'
+    const who = state.agents.find((a) => a.name === moving.name)?.seed ?? moving.name
+    moveDialog.close()
+    toast(res?.conversation === 'fresh'
+      ? `${who} moved to ${to}. Its conversation couldn't come along${res.reason ? ` (${res.reason})` : ''}, so it starts a new one.`
+      : `${who} moved to ${to}, conversation and all.`, res?.conversation === 'fresh')
+  } catch (x) {
+    err.textContent = x.message
+    go.disabled = false
+    go.textContent = 'Try again'
+  }
+})
+moveDialog.addEventListener('close', () => (moving = null))
+
+// A note at the bottom of the window for things that happened out of view.
+function toast(text, warn = false) {
+  const el = $('.toast')
+  el.textContent = text
+  el.className = `toast show ${warn ? 'warn' : ''}`
+  clearTimeout(toast.timer)
+  toast.timer = setTimeout(() => el.classList.remove('show'), warn ? 7000 : 4200)
+}
 
 // ---- import: a .crew file, picked or dropped ------------------------------------------
 

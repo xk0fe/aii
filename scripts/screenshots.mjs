@@ -18,7 +18,7 @@ const BACKDROP = {
   desktop: { light: 'linear-gradient(135deg, #dfe7f5, #f1e4f1)', dark: 'linear-gradient(135deg, #1c2233, #2a1f2e)' },
 }
 
-async function open(file, { theme, width, height, backdrop }) {
+async function open(file, { theme, width, height, backdrop, fixture }) {
   if (nativeTheme.themeSource !== theme) {
     nativeTheme.themeSource = theme
     await sleep(300)
@@ -28,7 +28,7 @@ async function open(file, { theme, width, height, backdrop }) {
     webPreferences: { preload: path.join(root, 'scripts', 'screenshot-preload.cjs'), contextIsolation: false, sandbox: false, backgroundThrottling: false },
   })
   win.webContents.on('console-message', (e) => e.level === 'error' && console.error(`${file}: ${e.message}`))
-  await win.loadFile(path.join(root, 'ui', file))
+  await win.loadFile(path.join(root, 'ui', file), fixture ? { query: { fixture } } : {})
   if (backdrop) await win.webContents.insertCSS(`html { background: ${BACKDROP[backdrop][theme]} !important; }`)
   return win
 }
@@ -128,6 +128,7 @@ const SHOTS = {
     await js(win, click('[data-mode=cards]'))
     win.destroy()
   },
+  // The agent's sheet: no scrolling, one tab at a time.
   async detail(theme) {
     const win = await dashboard(theme, 'crew')
     await js(win, click('[data-mode=cards]'))
@@ -135,9 +136,52 @@ const SHOTS = {
     await js(win, click('.pcard[data-name=gal]'))
     await sleep(1200)
     await save(win, `detail-${theme}`)
-    await js(win, "document.querySelector('.col-card').scrollTop = 99999")
-    await sleep(500)
-    await save(win, `detail-bottom-${theme}`)
+    for (const tab of ['instructions', 'look', 'stats']) {
+      await js(win, click(`.ed-tabs [data-tab=${tab}]`))
+      await sleep(600)
+      await save(win, `detail-${tab}-${theme}`)
+    }
+    await js(win, click('.ed-tabs [data-tab=setup]'))
+    win.destroy()
+  },
+  // A new agent: a random creature and an empty name to type.
+  async create(theme) {
+    const win = await dashboard(theme, 'crew')
+    await sleep(300)
+    await js(win, click('.col-head [data-act=new]'))
+    await sleep(1000)
+    await save(win, `create-${theme}`)
+    win.destroy()
+  },
+  // Moving an agent to another computer: the sheet that asks where its folder is there.
+  async move(theme) {
+    const win = await dashboard(theme, 'crew', { fixture: 'big' })
+    await sleep(900)
+    await js(win, "moveSheet('gal', 'mac-mini')")
+    await sleep(900)
+    await save(win, `move-${theme}`)
+    win.destroy()
+  },
+  // Computers: this one shared, the Mac mini linked, the Air asleep.
+  async computers(theme) {
+    const win = await dashboard(theme, 'crew', { fixture: 'big' })
+    await sleep(900)
+    await js(win, click('.link-chip'))
+    await sleep(800)
+    await save(win, `computers-${theme}`)
+    win.destroy()
+  },
+  // Right-click an agent: everything you can do with it, Move to… included.
+  async menu(theme) {
+    const win = await dashboard(theme, 'grid', { fixture: 'big' })
+    await sleep(1200)
+    const at = await center(win, '.roster .crow[data-agent=marc]')
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(at.x), y: Math.round(at.y) })
+    await sleep(200)
+    win.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(at.x), y: Math.round(at.y), button: 'right', clickCount: 1 })
+    win.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(at.x), y: Math.round(at.y), button: 'right', clickCount: 1 })
+    await sleep(600)
+    await save(win, `menu-${theme}`)
     win.destroy()
   },
   async select(theme) {
@@ -185,9 +229,10 @@ const SHOTS = {
     await sleep(300)
     await js(win, click('.pcard[data-name=gal]'))
     await sleep(1200)
-    await js(win, "const c = document.querySelector('.col-card'); c.scrollTop = document.querySelector('.convo').offsetTop - 120")
-    await sleep(500)
-    await save(win, `conversation-${theme}`)
+    const box = await js(win, "const r = document.querySelector('.ed').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
+    const img = await win.webContents.capturePage(box)
+    fs.writeFileSync(path.join(out, `conversation-${theme}.png`), img.toPNG())
+    console.log('saved', `conversation-${theme}.png`)
     win.destroy()
   },
   async chatTask(theme) {
@@ -590,9 +635,10 @@ const SHOTS = {
     await sleep(300)
     await js(win, click('.pcard[data-name=joseph]'))
     await sleep(1200)
-    await js(win, "const c = document.querySelector('.col-card'); c.scrollTop = document.querySelector('.convo').offsetTop - 140")
-    await sleep(500)
-    await save(win, `limit-${theme}`)
+    const box = await js(win, "const r = document.querySelector('.ed').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
+    const img = await win.webContents.capturePage(box)
+    fs.writeFileSync(path.join(out, `limit-${theme}.png`), img.toPNG())
+    console.log('saved', `limit-${theme}.png`)
     win.destroy()
   },
   // Setting one: gal is already past 150k, so the note says what happens on Save; then "Just tell me".
@@ -602,9 +648,7 @@ const SHOTS = {
     await sleep(300)
     await js(win, click('.pcard[data-name=gal]'))
     await sleep(1200)
-    await js(win, "const c = document.querySelector('.col-card'); c.scrollTop = document.querySelector('.convo').offsetTop - 140")
-    await sleep(500)
-    const box = await js(win, "const r = document.querySelector('.convo').getBoundingClientRect(); const l = document.querySelector('.limit').getBoundingClientRect(); return { x: Math.round(r.x) - 16, y: Math.round(r.y) - 40, width: Math.round(r.width) + 32, height: Math.round(l.bottom - r.y) + 56 }")
+    const box = await js(win, "const r = document.querySelector('.limit').getBoundingClientRect(); return { x: Math.round(r.x) - 16, y: Math.round(r.y) - 40, width: Math.round(r.width) + 32, height: Math.round(r.height) + 56 }")
     await record(win, 'context-limit', {
       clip: box, ms: 6400, width: 900,
       during: async () => {
@@ -721,18 +765,45 @@ const SHOTS = {
     })
     win.destroy()
   },
+  // A crew of 24 on three computers: every view has to hold up with many agents.
+  async big(theme) {
+    for (const view of ['crew', 'tasks', 'grid']) {
+      const win = await dashboard(theme, view, { fixture: 'big', reset: ['crew.collection'] })
+      await sleep(1400)
+      await save(win, `big-${view}-${theme}`)
+      win.destroy()
+    }
+    const chat = await open('overlay.html', { theme, width: 520, height: 900, backdrop: 'desktop', fixture: 'big' })
+    await sleep(400)
+    await js(chat, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(chat)
+    await save(chat, `big-chat-${theme}`)
+    chat.destroy()
+    const tray = await open('tray.html', { theme, width: 340, height: 900, backdrop: 'popover', fixture: 'big' })
+    await sleep(500)
+    await fitToContent(tray)
+    await save(tray, `big-tray-${theme}`)
+    tray.destroy()
+  },
   // Opening a card and going back.
   async detailGif() {
     const win = await dashboard('light', 'crew')
     await js(win, click('[data-mode=cards]'))
     await sleep(1200)
     await record(win, 'card-open', {
-      ms: 3200, width: 900,
+      ms: 6200, width: 900,
       during: async () => {
         await sleep(400)
         await js(win, click('.pcard[data-name=gal]'))
         await sleep(1500)
-        await js(win, click('.pd-back'))
+        await js(win, click('.ed-tabs [data-tab=look]'))
+        await sleep(900)
+        await js(win, click('.opt[data-look=hat][data-v=crown]'))
+        await sleep(900)
+        await js(win, click('.ed-tabs [data-tab=setup]'))
+        await sleep(700)
+        await js(win, click('.ed-close'))
         await sleep(900)
       },
     })
@@ -740,9 +811,9 @@ const SHOTS = {
   },
 }
 
-async function dashboard(theme, view, { width = 1440, height = 880 } = {}) {
-  const win = await open('dashboard.html', { theme, width, height })
-  await js(win, `localStorage.setItem('crew.view', '${view}')`)
+async function dashboard(theme, view, { width = 1440, height = 880, fixture, reset = [] } = {}) {
+  const win = await open('dashboard.html', { theme, width, height, fixture })
+  await js(win, `localStorage.setItem('crew.view', '${view}'); localStorage.removeItem('crew.edTab'); ${reset.map((k) => `localStorage.removeItem('${k}');`).join(' ')}`)
   win.webContents.reload()
   await new Promise((r) => win.webContents.once('did-finish-load', r))
   await sleep(500)

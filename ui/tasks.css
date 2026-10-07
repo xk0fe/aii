@@ -166,7 +166,7 @@
 .tl-group[data-lane=check] { --k: var(--waiting); }
 .tl-group[data-lane=done] { --k: var(--working); }
 .tl-group + .tl-group { margin-top: 10px; }
-.tl-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 10px; background: color-mix(in srgb, var(--btn) 80%, var(--bg)); backdrop-filter: blur(12px); font-size: 12.5px; }
+.tl-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, var(--bg)); font-size: 12.5px; }
 .tl-head b { font-weight: 720; }
 .tl-none { margin: 6px 12px; color: var(--fg3); font-size: 12px; }
 .tr { display: grid; grid-template-columns: 22px 34px 18px minmax(0, 1fr) 128px 96px 38px; align-items: center; column-gap: 8px; height: 42px; padding: 0 10px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .15s; }

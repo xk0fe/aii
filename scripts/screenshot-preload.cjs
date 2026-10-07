@@ -47,6 +47,43 @@ AGENTS.find((a) => a.name === 'arie').subs = [{ id: 's3', type: 'Plan', descript
 Object.assign(AGENTS[0], { contextLimit: 250000, onContextLimit: 'fresh' })
 AGENTS[0].convo.context = { used: 160000, size: 250000, window: 1000000, limit: 250000, pct: 64 }
 
+// ?fixture=big: a crew of 24 on three computers (the Mac mini linked and online, the Air asleep), for checking
+// how every view holds up with many agents.
+const BIG = new URLSearchParams(location.search).get('fixture') === 'big'
+if (BIG) {
+  const more = [
+    ['nova', 'Android client, Kotlin and Compose', 'claude', 'sonnet', 'high', 'working', 'Edit app/src/main/ShopScreen.kt', { body: 'cat', color: 'mint', eyes: 'sparkle', mouth: 'cat', hat: 'none', cheeks: true }],
+    ['kai', 'CI, build pipelines and release tooling', 'codex', '', 'medium', 'idle', '', { body: 'bean', color: 'orange', eyes: 'dot', mouth: 'grin', hat: 'party', cheeks: false }],
+    ['lena', 'docs, changelogs and help center articles', 'claude', 'haiku', 'low', 'idle', '', { body: 'bunny', color: 'peach', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true }],
+    ['otto', 'performance profiling and frame pacing', 'claude', 'opus', 'high', 'working', 'Bash: xcrun xctrace record', { body: 'frog', color: 'lime', eyes: 'googly', mouth: 'grin', hat: 'none', cheeks: false }],
+    ['pia', 'localization: 14 languages, string freezes', 'codex', '', 'low', 'off', '', { body: 'heart', color: 'red', eyes: 'dot', mouth: 'smile', hat: 'none', cheeks: true }],
+    ['rex', 'security review, auth and secrets', 'claude', 'opus', 'xhigh', 'waiting', 'Bash: gitleaks detect', { body: 'blob', color: 'blue', eyes: 'line', mouth: 'none', hat: 'glasses', cheeks: false }],
+    ['sol', 'data pipelines and the analytics warehouse', 'codex', '', 'high', 'off', '', { body: 'drop', color: 'sky', eyes: 'sleepy', mouth: 'smile', hat: 'none', cheeks: false }],
+  ].map(([name, area, provider, model, effort, status, activity, avatar]) => ({ name, area, provider, model, effort, status, activity, avatar }))
+  const remote = (home, homeName) => ([seed, area, provider, model, effort, status, activity, avatar]) => ({ name: `${seed}@${home}`, seed, home, homeName, area, provider, model, effort, status, activity, avatar })
+  const mini = [
+    ['bo', 'iOS builds and TestFlight', 'claude', 'sonnet', 'medium', 'working', 'Bash: xcodebuild archive', { body: 'mochi', color: 'teal', eyes: 'dot', mouth: 'smile', hat: 'headphones', cheeks: false }],
+    ['fin', 'store screenshots and listings', 'codex', '', 'medium', 'idle', '', { body: 'cat', color: 'yellow', eyes: 'happy', mouth: 'cat', hat: 'none', cheeks: true }],
+    ['ivy', 'release manager, keeps the train on time', 'claude', 'opus', 'medium', 'waiting', '', { body: 'bunny', color: 'lilac', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true }],
+    ['max', 'load tests against staging', 'codex', '', 'high', 'working', 'Bash: k6 run soak.js', { body: 'blob', color: 'red', eyes: 'googly', mouth: 'grin', hat: 'sprout', cheeks: false }],
+    ['uma', 'backend API, Postgres and queues', 'claude', 'opus', 'high', 'idle', '', { body: 'bean', color: 'purple', eyes: 'dot', mouth: 'smile', hat: 'none', cheeks: true }],
+    ['zed', 'analytics dashboards', 'claude', 'haiku', 'low', 'off', '', { body: 'drop', color: 'mint', eyes: 'line', mouth: 'none', hat: 'none', cheeks: false }],
+  ].map(remote('mac-mini', 'Mac mini'))
+  const air = [
+    ['mo', 'design assets and icon sets', 'claude', 'sonnet', 'medium', 'idle', '', { body: 'heart', color: 'orange', eyes: 'sparkle', mouth: 'cat', hat: 'beret', cheeks: true }],
+    ['tess', 'marketing copy and the website', 'claude', 'haiku', 'medium', 'idle', '', { body: 'mochi', color: 'pink', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true }],
+    ['vic', 'quick prototypes', 'codex', '', 'medium', 'idle', '', { body: 'frog', color: 'sky', eyes: 'dot', mouth: 'grin', hat: 'crown', cheeks: false }],
+  ].map(remote('air', 'MacBook Air')).map((a) => ({ ...a, status: 'away' }))
+  const spark = (n) => Array.from({ length: 14 }, (_, i) => (i * 7 + n) % 4)
+  for (const [i, a] of [...more, ...mini, ...air].entries()) {
+    AGENTS.push({
+      on: a.status !== 'off', queue: a.name === 'nova' ? 1 : 0, pending: false, args: '', cwd: '~/code/app', prompt: '', images: [], yolo: i % 3 === 0, fast: a.provider === 'codex' ? i % 2 === 0 : undefined,
+      since: now - (2 + i) * min, stats: stats(3 + i * 2, 2 + i, 20 + i * 9, 200 + i * 20, 30 + i * 12, i % 4, i % 3, 10 + i * 3, spark(i)),
+      convo: a.status === 'off' ? null : convo(2 + (i % 5), 8 + ((i * 13) % 70), 200000), ticket: null, ...a,
+    })
+  }
+}
+
 // A made-up game screenshot for the tasks that come with one.
 const SHOT = require('path').join(require('os').tmpdir(), 'crew-shots-level2.svg')
 require('fs').writeFileSync(SHOT, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8ec5ff"/><stop offset="1" stop-color="#d9f0ff"/></linearGradient></defs><rect width="320" height="200" fill="url(#s)"/><circle cx="262" cy="42" r="20" fill="#ffe27a"/><rect y="150" width="320" height="50" fill="#6fcf6a"/><rect x="40" y="112" width="70" height="12" rx="6" fill="#a86b3c"/><rect x="190" y="96" width="80" height="12" rx="6" fill="#a86b3c"/><circle cx="72" cy="140" r="11" fill="#ff7eb6"/><circle cx="68" cy="137" r="2" fill="#222"/><circle cx="76" cy="137" r="2" fill="#222"/><rect x="110" y="60" width="100" height="44" rx="10" fill="rgba(0,0,0,.55)"/><text x="160" y="88" font-family="Helvetica" font-size="16" fill="#fff" text-anchor="middle">PAUSED</text></svg>`)
@@ -123,7 +160,17 @@ const TERM = [
   `${ESC}38;5;209m✻${ESC}0m Threading replies… ${ESC}2m(esc to interrupt)${ESC}0m`,
 ].join('\r\n')
 
-const COMPUTERS = { me: { name: 'Studio Mac', slug: 'studio-mac', sharing: false, agents: AGENTS.length }, links: [] }
+// Linked computers, as Crew.computers() reports them: what each one runs.
+const linked = (slug, name, online) => ({
+  slug, name, online, saved: true, status: online ? { address: '192.168.1.24' } : { error: 'unreachable, it reconnects on its own' },
+  agents: AGENTS.filter((a) => a.home === slug).map((a) => ({ name: a.name, seed: a.seed, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: false })),
+})
+const COMPUTERS = {
+  me: { name: 'Studio Mac', slug: 'studio-mac', sharing: true, agents: AGENTS.filter((a) => !a.home).length, port: 7787, code: 'crew1.eyJuYW1lIjoiU3R1ZGlvIE1hYyJ9.k3y', hosts: [{ address: '192.168.1.20', via: 'Wi-Fi' }, { address: 'studio-mac.tail1234.ts.net', via: 'Tailscale' }] },
+  links: [linked('mac-mini', 'Mac mini', true), ...(BIG ? [linked('air', 'MacBook Air', false)] : [])],
+}
+// Folders each computer has, for moving an agent there (folderInfo / folders in main.js).
+const FOLDERS = { '': ['~/code/app', '~/code/site', '~'], 'mac-mini': ['~/code/app', '~/builds', '~'], air: ['~/code/app', '~'] }
 // The task flow in the chat: added, triaged, started in a new conversation, done.
 FEED.push(
   { id: 'b1', kind: 'task', type: 'bug', act: 'filed', from: 'you', ticket: 12, title: 'Jump does nothing after unpausing', ts: t(0.45) },
@@ -250,6 +297,19 @@ window.crew = {
       setTimeout(() => window.__crewEmit('state', state), 30)
     }
     if (action === 'task') return taskAction(...args)
+    // moving an agent to another computer: its folders there, then the move itself
+    if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? ['~']).map((p) => ({ path: p, label: p === '~' ? 'Home folder' : p.split('/').pop() }))
+    if (action === 'folderInfo') return { exists: (FOLDERS[args[0] ?? ''] ?? []).includes(args[1]), path: String(args[1]).replace(/^~/, '/Users/you') }
+    if (action === 'pickFolder') return '~/code/site'
+    if (action === 'moveAgent') {
+      const [name, home] = args
+      const a = state.agents.find((x) => x.name === name)
+      const link = COMPUTERS.links.find((l) => l.slug === home)
+      const seed = a.seed ?? a.name
+      Object.assign(a, { name: home ? `${seed}@${home}` : seed, seed, home: home || null, homeName: link?.name ?? null, cwd: args[2] ?? a.cwd })
+      emit()
+      return { name: a.name, conversation: 'moved' }
+    }
     if (action === 'freshStart') {
       const a = state.agents.find((x) => x.name === args[0])
       // like the hub: a busy agent finishes its task first
