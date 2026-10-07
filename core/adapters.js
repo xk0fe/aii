@@ -4,12 +4,14 @@
 // Every hook forwards its JSON payload to the crew hub, which turns it into status + feed entries.
 const HOOK = 'curl -s -m 2 -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/hook/$CREW_AGENT" >/dev/null 2>&1 || true'
 // Permission prompts, questions and plan approvals: the hook waits for your answer in the chat and prints it as
-// its decision. No answer (Crew gone, handed to the terminal) prints nothing, and the agent asks as usual.
-const ASK = (seconds) => `curl -s -m ${seconds} -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/ask/$CREW_AGENT" 2>/dev/null || true`
-// Claude shows its own dialog while the hook waits (answer in either place), so the hook can wait a long time.
-// Codex shows nothing until the hook is done: after half an hour it asks in its terminal.
-const CLAUDE_WAIT = 86400
-const CODEX_WAIT = 1800
+// its decision. No answer (Crew gone, an error, handed to the terminal, time's up) prints nothing, and the agent
+// asks as usual. curl gives up 10 s before the agent would kill the hook, so the hook always ends cleanly.
+const ASK = (seconds) => `curl -sf -m ${seconds - 10} -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/ask/$CREW_AGENT" 2>/dev/null || true`
+// How long each CLI's hook waits, in seconds. Claude shows its own dialog meanwhile (answer in either place), so
+// it can wait a day. Codex shows nothing until the hook is done: after half an hour it asks in its terminal.
+export const ASK_WAIT = { claude: 86400, codex: 1800 }
+const CLAUDE_WAIT = ASK_WAIT.claude
+const CODEX_WAIT = ASK_WAIT.codex
 
 const prompt = (a) => `You are "${a.name}", one of several AI agents working side by side in terminals as a crew, coordinated by the user.
 Your area: ${a.area || 'general'}.

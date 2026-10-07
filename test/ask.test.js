@@ -207,3 +207,76 @@ test('the /ask route holds the hook open until you answer, and notices when the 
     server.close()
   }
 })
+
+// ---- found in review ----
+
+test('a Codex terminal reporting focus or the cursor is not typing: the question stays in the chat', { timeout: 5000 }, async () => {
+  const waiting = hub.ask('marc', CODEX)
+  for (const report of ['\x1b[I', '\x1b[O', '\x1b[24;80R', '\x1b[?1;2c', '\x1b[<0;10;5M', '\x1b]11;rgb:0f0f/1010/1212\x07']) hub.input('marc', report)
+  assert.equal(card().answer, undefined, 'clicking the notification focuses the terminal; that must not hand it over')
+  hub.input('marc', '\r') // a real key does
+  assert.equal(await waiting, '')
+  assert.equal(card().answer.handedOver, true)
+})
+
+test("a payload with nulls still makes a card (it mustn't turn into an error the agent reads as a decision)", { timeout: 5000 }, async () => {
+  const waiting = hub.ask('joseph', { hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: null, permission_suggestions: null })
+  assert.equal(card().ask.title, 'Run a command')
+  assert.deepEqual(card().ask.always, [])
+  hub.answer(card().id, { allow: true })
+  assert.equal(decision(await waiting).behavior, 'allow')
+})
+
+test("a Codex hook that goes away has handed over to its terminal: the agent still needs you there", { timeout: 5000 }, async () => {
+  const closed = new AbortController()
+  const waiting = hub.ask('marc', CODEX, closed.signal)
+  closed.abort()
+  assert.equal(await waiting, '')
+  assert.deepEqual([card().answer.by, card().answer.handedOver], ['terminal', true])
+  assert.equal(hub.agents.get('marc').status, 'waiting')
+})
+
+test('an agent that exits, restarts or is removed takes its open questions with it', { timeout: 5000 }, async () => {
+  let waiting = hub.ask('joseph', BASH)
+  runner.emit('exit', 'joseph', 0, 60000)
+  assert.equal(await waiting, '')
+  assert.deepEqual(card().answer.stale, true)
+  assert.equal(hub.asking('joseph'), false)
+  waiting = hub.ask('marc', CODEX)
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'joseph', area: 'backend' }] })) // marc removed
+  hub.loadConfig()
+  assert.equal(await waiting, '')
+  assert.equal(hub.asking('marc'), false)
+  assert.throws(() => hub.answer(card().id, { allow: true }), /already been answered/)
+})
+
+test("Claude's permission notification is dropped even when it beats the card", { timeout: 5000 }, async () => {
+  const before = hub.feed.length
+  hub.onHook('joseph', { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
+  assert.equal(hub.feed.length, before)
+  assert.equal(alerts.length, 0)
+  hub.onHook('joseph', { hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'Claude is waiting for your input' })
+  assert.equal(alerts.length, 1, 'other notifications still need you')
+})
+
+test('a question waiting for hours stays answerable after 200 newer entries', { timeout: 5000 }, async () => {
+  const waiting = hub.ask('joseph', BASH)
+  const id = card().id
+  for (let i = 0; i < 320; i++) hub.post({ kind: 'event', from: 'crew', text: `busy ${i}` })
+  assert.ok(hub.snapshot().feed.some((e) => e.id === id), 'still on screen')
+  hub.answer(id, { allow: true })
+  assert.equal(decision(await waiting).behavior, 'allow')
+})
+
+test('the hook prints nothing on an HTTP error and always ends before the agent would kill it', { timeout: 5000 }, async () => {
+  const { adapters, ASK_WAIT } = await import('../core/adapters.js')
+  const claude = adapters.claude({ name: 'joseph' }, { session: 'x', attachments: '/tmp' })
+  const settings = JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
+  const hook = settings.hooks.PermissionRequest[0].hooks[0]
+  assert.match(hook.command, /curl -sf -m 86390 /)
+  assert.equal(hook.timeout, ASK_WAIT.claude)
+  assert.equal(settings.hooks.PreToolUse, undefined, 'AskUserQuestion comes through PermissionRequest now')
+  const codex = adapters.codex({ name: 'marc' }, {}).args.find((a) => a.startsWith('hooks.PermissionRequest='))
+  assert.match(codex, /curl -sf -m 1790 /)
+  assert.match(codex, /timeout=1800/)
+})

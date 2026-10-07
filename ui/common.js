@@ -345,7 +345,8 @@ const mergeSends = (feed) => {
 // merged send link to the copy that's shown.
 const feedView = (feed, agents, open, limit, drafts = new Map()) => {
   const { shown, as } = mergeSends(feed)
-  const items = shown.slice(-limit)
+  // the last `limit` entries, plus questions still waiting for you from before them
+  const items = [...shown.slice(0, -limit).filter((e) => e.kind === 'ask' && !e.answer), ...shown.slice(-limit)]
   const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, open, drafts }
   for (const e of feed) if (e.re) (ctx.repliesTo[as[e.re]?.id ?? e.re] ??= []).push(e)
   return { items, html: () => items.map((e, i) => feedItem(e, items[i - 1], ctx)).join('') }
@@ -465,6 +466,7 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
   const open = new Set()
   const seen = new Set()
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
+  const sending = new Set() // cards whose answer is on its way: one answer each, even with a held Enter
   let shown = new Map() // id -> feed entry on screen
   let key = ''
   let first = true
@@ -539,14 +541,20 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
   }
   const answer = async (card, reply) => {
     const id = card.dataset.ask
+    if (sending.has(id)) return
+    sending.add(id)
     card.classList.add('sending')
     card.querySelector('.ask-error').textContent = ''
     try {
       await crew.call('answer', id, reply)
       drafts.delete(id)
     } catch (err) {
-      card.classList.remove('sending')
-      card.querySelector('.ask-error').textContent = err.message
+      const now = list.querySelector(`[data-ask="${CSS.escape(id)}"]`) ?? card // it may have been re-rendered meanwhile
+      now.classList.remove('sending')
+      const box = now.querySelector('.ask-error')
+      if (box) box.textContent = err.message
+    } finally {
+      sending.delete(id)
     }
   }
   const answerFrom = (card, how, i) => {
@@ -643,6 +651,7 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
           seen.add(e.id)
           if (!first) (list.querySelector(`#m-${CSS.escape(e.id)}`)?.classList.add('enter'), (added = true))
         }
+        for (const id of sending) list.querySelector(`[data-ask="${CSS.escape(id)}"]`)?.classList.add('sending')
         const back = keep && list.querySelector(`[data-ask="${CSS.escape(keep.id)}"] ${keep.field}`)
         if (back) (back.focus({ preventScroll: true }), back.setSelectionRange(keep.from, keep.to))
         measure()

@@ -131,7 +131,10 @@ export class Crew extends EventEmitter {
     }
     feed.sort((x, y) => x.ts - y.ts)
     const hidden = new Set(this.settings.hidden ?? [])
-    return { ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.name)), feed: feed.slice(-200), computers: this.computers() }
+    // the last 200 entries, plus any question still waiting for an answer from before them
+    const recent = feed.slice(-200)
+    const open = feed.slice(0, -200).filter((e) => e.kind === 'ask' && !e.answer)
+    return { ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.name)), feed: [...open, ...recent], computers: this.computers() }
   }
 
   // Where an agent lives: { l, base } for a linked computer, { l: null, base } for this one.

@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { adapters } from './adapters.js'
+import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
 
@@ -74,6 +74,7 @@ export class Hub extends EventEmitter {
     const names = new Set(this.config.agents.map((c) => c.name))
     for (const name of this.agents.keys()) {
       if (names.has(name)) continue
+      this.forgetAsks(name)
       this.runner.stop(name)
       this.agents.delete(name)
     }
@@ -191,6 +192,7 @@ export class Hub extends EventEmitter {
   // ---- lifecycle ---------------------------------------------------------
 
   launch(a, fresh = false) {
+    this.forgetAsks(a.name)
     a.relaunch = false
     clearTimeout(a.readyTimer)
     if (fresh) this.saveSession(a.name, null)
@@ -227,6 +229,7 @@ export class Hub extends EventEmitter {
   onExit(name, code, ms) {
     const a = this.agents.get(name)
     if (!a) return
+    this.forgetAsks(name)
     this.setStatus(a, 'stopped')
     if (a.resumed && code !== 0 && ms < 5000) {
       this.post({ kind: 'event', from: name, text: "couldn't resume the previous session, starting a fresh one" })
@@ -270,8 +273,11 @@ export class Hub extends EventEmitter {
         a.activity = describe(e)
         this.record(name, { tools: 1 })
         return this.setStatus(a, 'working')
-      case 'Notification': // a question already in the chat (see ask) has said so
-        if (a.status === 'working' && !this.asking(name)) this.needsYou(a, e.message || 'needs your input')
+      case 'Notification':
+        // Permission prompts come with a card in the chat (see ask), which alerts on its own; both hooks fire at
+        // the same moment, so this one may even arrive first.
+        if (e.notification_type === 'permission_prompt' || this.asking(name)) return
+        if (a.status === 'working') this.needsYou(a, e.message || 'needs your input')
         return
       case 'Interrupt':
         a.activity = ''
@@ -294,18 +300,32 @@ export class Hub extends EventEmitter {
   // the terminal cancels the hook (`closed`). Codex waits on the hook instead, so its card can hand the
   // question back to the terminal (and typing there does too). Agents on other computers answer through
   // core/crew.js, by the card's id; so would a phone.
-  ask(name, input, closed) {
+  ask(name, payload, closed) {
     const a = this.agents.get(name)
     if (!a) return ''
     const cli = this.providerOf(a)?.cli ?? 'claude'
-    const ask = askOf(input, cli)
+    const input = { ...payload, tool_input: payload?.tool_input ?? {}, permission_suggestions: payload?.permission_suggestions ?? [] }
+    let ask
+    try {
+      ask = askOf(input, cli)
+    } catch {
+      return '' // something we can't show: the agent asks in its terminal as usual
+    }
     const e = this.post({ kind: 'ask', from: name, to: 'you', ask, cli, ...(a.current && { re: a.current }) })
     this.record(name, { waits: 1 })
     this.emit('alert', a, ask.alert)
     this.setStatus(a, 'waiting')
+    const started = Date.now()
     return new Promise((resolve) => {
-      this.asks.set(e.id, { resolve, name, cli, input })
-      closed?.addEventListener('abort', () => this.settle(e.id, '', { by: 'terminal' }), { once: true })
+      this.asks.set(e.id, { resolve, name, cli, input, entry: e })
+      // The hook went away before you answered. Claude: mostly you answered its dialog (it cancels the hook);
+      // after a day of waiting, its dialog is simply still up. Codex: its hook ran out, or it was interrupted,
+      // and either way it's its terminal's turn now.
+      closed?.addEventListener('abort', () => {
+        const ranOut = Date.now() - started > ((ASK_WAIT[cli] ?? 0) - 15) * 1000
+        if (cli === 'codex' || ranOut) this.settle(e.id, '', { by: 'terminal', handedOver: true }, true)
+        else this.settle(e.id, '', { by: 'terminal' })
+      }, { once: true })
     })
   }
 
@@ -315,9 +335,7 @@ export class Hub extends EventEmitter {
     const q = this.asks.get(id)
     if (!q) throw new Error('that question has already been answered')
     if (reply.terminal) return this.settle(id, '', { by: 'terminal', handedOver: true }, true)
-    const e = this.feed.find((m) => m.id === id)
-    if (!e) return this.settle(id, '', { by: 'terminal' }) // its card scrolled out of the feed: the terminal has it
-    const { output, answer } = decide(e.ask, q.input, q.cli, reply)
+    const { output, answer } = decide(q.entry.ask, q.input, q.cli, reply)
     this.settle(id, JSON.stringify(output), { by: 'you', ...answer })
   }
 
@@ -326,14 +344,19 @@ export class Hub extends EventEmitter {
     if (!q) return
     this.asks.delete(id)
     q.resolve(output)
-    const e = this.feed.find((m) => m.id === id)
-    if (e) this.amend(e, { answer: { ...answer, at: Date.now() } })
+    this.amend(q.entry, { answer: { ...answer, at: Date.now() } })
     const a = this.agents.get(q.name)
     if (a?.status === 'waiting' && !stillWaiting && !this.asking(q.name)) this.setStatus(a, 'working')
   }
 
   asking(name) {
     return [...this.asks.values()].some((q) => q.name === name)
+  }
+
+  // An agent that exits, restarts or goes away isn't waiting on its questions any more (even if a hook
+  // process outlives it, nothing would read the answer).
+  forgetAsks(name) {
+    for (const [id, q] of this.asks) if (q.name === name) this.settle(id, '', { stale: true }, true)
   }
 
   needsYou(a, text) {
@@ -409,7 +432,8 @@ export class Hub extends EventEmitter {
     const a = this.agents.get(name)
     if (!a) return
     // Codex waits on its hook while a question is in the chat: typing in its terminal hands the question over.
-    for (const [id, q] of this.asks) if (q.name === name && q.cli === 'codex') this.answer(id, { terminal: true })
+    // Only real keys count, not what the terminal reports by itself (focus in/out, cursor position, mouse).
+    if (typed(data)) for (const [id, q] of this.asks) if (q.name === name && q.cli === 'codex') this.answer(id, { terminal: true })
     hold(a, 3000)
     this.runner.write(name, data)
     if (a.status === 'waiting' && data === '\r') this.setStatus(a, 'working')
@@ -614,7 +638,7 @@ export class Hub extends EventEmitter {
         args: (a.args ?? []).join(' '), avatar: a.avatar, status: a.status, since: a.since, activity: a.activity,
         queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a),
       })),
-      feed: this.feed.slice(-200),
+      feed: withOpenAsks(this.feed.slice(-200), this.asks),
     }
   }
 }
@@ -663,7 +687,7 @@ function loadFeed() {
   }
   const feed = []
   const byId = new Map()
-  for (const line of lines.slice(-FEED_KEEP)) {
+  for (const line of lines) {
     let e
     try {
       e = JSON.parse(line)
@@ -681,10 +705,20 @@ function loadFeed() {
   }
   // An unanswered question's hook ended with the last run: the agent isn't waiting on it any more.
   for (const e of feed) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true }
-  return feed
+  return feed.slice(-FEED_KEEP) // amendments don't count against the history kept
 }
 
 // ---- questions: what the agent wants, as a card; your answer, as its hook's decision ----------------
+
+// What a terminal sends without anyone typing: focus in/out, cursor position and device replies, mouse reports,
+// OSC replies. Anything else is a key.
+const typed = (data) => !/^(?:\x1b\[(?:I|O|\d+;\d+R|[?>][\d;]*c|<[\d;]+[Mm])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\))+$/.test(String(data))
+
+// A question that's still open stays on screen however long it waits, even past the last 200 entries.
+const withOpenAsks = (recent, asks) => {
+  const older = [...asks.values()].map((q) => q.entry).filter((e) => !recent.includes(e))
+  return older.length ? [...older, ...recent] : recent
+}
 
 const clip = (text, max = 4000) => (String(text ?? '').length > max ? `${String(text).slice(0, max)}\n…` : String(text ?? ''))
 const firstLines = (text, n) => clip(String(text ?? '').split('\n').slice(0, n).join('\n'))
