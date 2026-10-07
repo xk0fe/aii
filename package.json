@@ -8,6 +8,7 @@
   "scripts": {
     "start": "node scripts/build-app.mjs --open",
     "dev": "electron .",
+    "test": "node --test test/*.test.js",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper bin/crew 2>/dev/null || true",
     "app": "node scripts/build-app.mjs",
     "icon": "electron scripts/make-icon.mjs"
@@ -15,7 +16,8 @@
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",

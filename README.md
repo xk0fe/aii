@@ -46,23 +46,48 @@ npm start        # opens Crew.app (builds it the first time)
 ## How you use it
 
 - **Message one agent.** Click its chip in the composer, or start with `@david …`.
+- **Message several agents.** Use bare `@mentions` anywhere in the message, such as `@david @joseph fix the payload`. Mentions add to the selected composer chip; choose **Auto** to address only the mentioned agents. Each recipient gets one copy, regardless of repeated mentions or capitalization, with the original message and a note naming the other recipients. Emails, package paths, possessives such as `@david's`, and text in backticks do not address agents. An unknown, turned-off, or self recipient rejects the whole send before anything is delivered. With Autopilot off, each teammate hand-off waits for its own approval.
 - **Add images** to any message: paste them (⌘V), drop them on the chat, or use the **+** button. They're saved in `~/.crew/attachments` and sent to the agent as file paths. Claude Code and Codex both open them, with no permission prompt. Click a picture in the feed to open it.
-- **Message "Auto".** Crew picks the agent whose area matches the task, and prefers whoever is free.
+- **Message "Auto".** Without explicit recipients, Crew scores the task against agents' areas, then prefers whoever is free. Coordination wording such as “orchestrate multiple agents”, “organise the crew” and “keep things in working order” also matches an organiser area such as Arie's. This uses a fixed vocabulary of stems and phrases, not unrestricted language understanding; unfamiliar wording can miss, and incidental coordination language can favor the organiser. Use a chip or `@mention` to choose explicitly.
 - **Busy agent?** The message is queued and typed in for you the moment that agent finishes.
+- **One request, one bubble.** A new multi-recipient message from you appears once in the feed, addressed to everyone who received it. Replies from each recipient link back to that bubble. Separate sends remain separate, even with identical text. Older history without a send identifier stays unmerged; teammate hand-offs remain separate for approval.
 - **Agents delegate.** Each agent knows its teammates and can run:
-  - `crew send <name> "task"` to hand off work;
+  - `crew send <name> "task"` to hand off work, or `crew send david,joseph "task"` for several recipients;
   - `crew note "fact"` to share context;
   - `crew who` to see the crew;
   - `crew board` to read shared notes.
 
   Every hand-off and reply shows up in the feed, with the agent's face beside it.
 - **Threads.** Each reply, and each hand-off an agent makes while working on your request, quotes the message it answers ("↩ you: …"). Click the quote to jump back. Your messages link forward too ("↪ @joseph replied"), so with several messages and several agents in flight you can always tell what answers what. Prompts you type directly into an agent's terminal show up in the feed too, tagged *in terminal*.
-- **Rich text.** Replies render Markdown: bold, italics, `code`, code blocks, lists, quotes and links (links open in your browser). Long replies fold with a fade; click to unfold.
+- **Rich text.** Replies render Markdown: bold, italics, `code`, code blocks, lists, quotes, links and pipe tables (links open in your browser). Tables need a header and delimiter row with matching column counts; alignment colons are supported. Escape literal pipes as `\|`, including inside inline code. Wide tables scroll horizontally; multiline cells are not supported. Long replies fold with a fade; click to unfold.
 - **Autopilot off** makes hand-offs between agents wait in the feed until you click **Send it** or **Drop**.
 - **Needs you.** On a permission prompt or a question, the agent's creature wiggles with a `!` and you get a notification. Answer it in its terminal.
 - **On/off** is saved. An agent you turn off stays off after a restart and resumes its session when you turn it back on.
 - **⚡ Fast** (Codex agents) uses Codex's fast service tier. It's a checkmark on the agent card and a toggle in the editor; until you set it, it follows `service_tier` in your Codex config.
 - **YOLO** skips every permission prompt. Claude gets `--dangerously-skip-permissions`; Codex gets `--dangerously-bypass-approvals-and-sandbox`.
+
+## Crew Link: one crew, all your computers
+
+Your agents, terminals and history stay on one Mac (the host). Your other computers connect to it and get a live window into the same crew.
+
+1. **On the Mac that runs your agents:** click **Link** in the dashboard titlebar, turn on **Share this crew**, and **Copy** the pairing code.
+2. **On your other computer:** click **Link**, paste the code, and **Connect**. Crew restarts connected, and the titlebar chip says **on ‹host›**.
+
+From the other computer you can do everything:
+- chat with agents, with replies threaded to your messages;
+- follow hand-offs and stats;
+- edit agents;
+- watch and type into terminals;
+- attach images.
+
+Theme, notifications and opening files stay per computer.
+
+- **Networks:** the same Wi-Fi, or Tailscale. The code lists every address of the host (LAN IP, Tailscale IP and MagicDNS name), and the client uses whichever one answers. The default port is 7787; to change it, set `"port"` in `~/.crew/link/link.json`.
+- **Security:** the link is TLS with the host's own certificate, pinned by the code. The secret key in the code is only sent after the certificate checks out, so a fake host on the same network can't take it. **New code** revokes the old one, and sharing is off until you turn it on. Anyone with the code can run your agents, so keep it to your own machines.
+- **Good to know:**
+  - The host has to stay awake. Crew keeps itself running while sharing, but closing the lid still sleeps the Mac.
+  - While connected, the other computer's own agents are paused, and they resume when you **Disconnect**.
+  - Agent folders are paths on the host, so type them; the folder picker can't browse another computer.
 
 ## Work experience
 
@@ -105,6 +130,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `config.json`: your agents, custom providers and theme. The UI writes it, you can edit it by hand (the `{ }` button), and changes apply live.
 - `sessions.json`: which session each agent resumes.
 - `stats.json`: each agent's work experience.
+- `link/`: Crew Link settings, the host certificate and key, and a cache of images from a remote crew.
 - `board.md`: shared notes (`crew note`).
 - `feed.jsonl`: the feed history.
 - `attachments/`: images you've attached to messages and instructions.
@@ -141,6 +167,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
   - inboxes, routing, the feed and notes;
   - `update()`, the single edit path behind the editor and bulk edits.
 - `core/runner.js` owns the pseudo-terminals.
+- `core/link.js` is Crew Link: pairing codes, the TLS host, and a client that looks like a local crew to the rest of the app.
 - `core/server.js` is a tiny local HTTP API for the hooks and `bin/crew`. Every request needs a per-launch token.
 - `ui/` is plain HTML, CSS and JS with no build step. The main files:
   - `avatar.js` draws the creatures;

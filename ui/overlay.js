@@ -49,7 +49,8 @@ live((state) => {
   document.body.classList.toggle('busy', working > 0)
   document.body.classList.toggle('alert', state.agents.some((a) => a.status === 'waiting'))
   morph($('.dots'), on.map((a) => `<span class="face" data-agent="${esc(a.name)}" title="${esc(`${a.name}: ${statusText(a)}`)}">${avatarHTML(a, { size: 30 })}</span>`).join(''))
-  $('.sub').textContent = on.length ? `${working} of ${on.length} working` : ''
+  const where = state.link?.mode === 'remote' ? ` · on ${state.link.name}` : ''
+  $('.sub').textContent = (on.length ? `${working} of ${on.length} working` : '') + where
   feed.render(state)
   composer.render(state)
   fit()

@@ -35,6 +35,7 @@ const ICONS = {
   up: svg('<path d="M12 19V5M5 12l7-7 7 7"/>', 'stroke-width="2.4"'),
   edit: svg('<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4"/>'),
   back: svg('<path d="M15 5l-7 7 7 7"/>', 'stroke-width="2.4"'),
+  link: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2"/>'),
   copy: svg('<rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/>'),
   check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.4"'),
 }
@@ -171,9 +172,29 @@ function md(src) {
     }
     html += `<li>${inline(body)}</li>`
   }
-  for (const line of text.split('\n')) {
+  // GFM tables: a pipe row, then a --- delimiter row with the same column count, then rows until a blank line.
+  // `\|` keeps a literal pipe inside a cell.
+  const cells = (row) => row.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '').split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'))
+  const isRule = (row) => row.includes('|') && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(row)
+  const isRow = (row) => row.includes('|') && row.trim() && !/^\s*\u0000\d+\u0000\s*$/.test(row)
+  const table = (head, rule, rows) => {
+    const align = rule.map((c) => (c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : c.startsWith(':') ? 'left' : ''))
+    const tr = (row, tag) => `<tr>${align.map((a, i) => `<${tag}${a ? ` style="text-align:${a}"` : ''}>${inline(row[i] ?? '')}</${tag}>`).join('')}</tr>`
+    return `<div class="tbl"><table><thead>${tr(head, 'th')}</thead>${rows.length ? `<tbody>${rows.map((r) => tr(r, 'td')).join('')}</tbody>` : ''}</table></div>`
+  }
+  const lines = text.split('\n')
+  for (let n = 0; n < lines.length; n++) {
+    const line = lines[n]
     let m
-    if (/^\s*\u0000\d+\u0000\s*$/.test(line)) (flush(), close(), (html += line.trim()))
+    if (isRow(line) && isRule(lines[n + 1] ?? '') && cells(line).length === cells(lines[n + 1]).length) {
+      flush()
+      close()
+      const rule = cells(lines[n + 1])
+      const rows = []
+      n += 1
+      while (isRow(lines[n + 1] ?? '')) rows.push(cells(lines[++n]))
+      html += table(cells(line), rule, rows)
+    } else if (/^\s*\u0000\d+\u0000\s*$/.test(line)) (flush(), close(), (html += line.trim()))
     else if ((m = line.match(/^(#{1,4})\s+(.*)/))) (flush(), close(), (html += `<h4>${inline(m[2])}</h4>`))
     else if ((m = line.match(/^\s*[-*•]\s+(.*)/))) item('ul', m[1])
     else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) item('ol', m[1])
@@ -187,7 +208,39 @@ function md(src) {
 }
 
 // One line of a message, for "replying to" quotes.
-const snippet = (text) => String(text ?? '').replace(/```[\s\S]*?```/g, '[code]').replace(/[*_`#>~]/g, '').replace(/\s+/g, ' ').trim().slice(0, 90)
+const snippet = (text) => String(text ?? '').replace(/```[\s\S]*?```/g, '[code]').replace(/^[\s|:-]*-[\s|:-]*$/gm, '').replace(/[*_`#>~|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90)
+
+// The hub stores a message you send to several agents once per recipient, each with its own delivery,
+// and stamps every copy with the same sendId. The feed shows it once, at its first visible copy,
+// addressed to all of them. Hand-offs between agents stay separate: each one is approved or dropped on
+// its own. `as` maps every feed id to the entry that shows it.
+const mergeSends = (feed) => {
+  const shown = []
+  const as = {}
+  const bySend = {}
+  for (const e of feed) {
+    const lead = e.from === 'you' && e.sendId ? bySend[e.sendId] : undefined
+    if (lead) {
+      if (e.queued) lead.queued = true
+      as[e.id] = lead
+      continue
+    }
+    const x = e.from === 'you' && e.sendId ? (bySend[e.sendId] = { ...e }) : e
+    shown.push(x)
+    as[e.id] = x
+  }
+  return { shown, as }
+}
+
+// What the feed shows: the last `limit` entries after merging, and their HTML. Replies to any copy of a
+// merged send link to the copy that's shown.
+const feedView = (feed, agents, open, limit) => {
+  const { shown, as } = mergeSends(feed)
+  const items = shown.slice(-limit)
+  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, open }
+  for (const e of feed) if (e.re) (ctx.repliesTo[as[e.re]?.id ?? e.re] ??= []).push(e)
+  return { items, html: () => items.map((e, i) => feedItem(e, items[i - 1], ctx)).join('') }
+}
 
 function feedItem(e, prev, ctx) {
   const { byName, byId, repliesTo, open } = ctx
@@ -214,7 +267,7 @@ function feedItem(e, prev, ctx) {
   if (e.kind === 'event') return `<div class="event ${e.alert ? 'alert' : ''}" id="m-${e.id}" title="${time}">${who(e.from)} ${esc(e.text)}</div>`
   if (e.kind === 'note') return said('note', `${who(e.from)} shared a note`)
   if (e.kind === 'reply') return said('', who(e.from))
-  if (e.from === 'you') return `<div class="item me" id="m-${e.id}" title="${time}">${cap(`to ${who(e.to)}`)}${bubble}${replied}</div>`
+  if (e.from === 'you') return `<div class="item me" id="m-${e.id}" title="${time}">${cap(`to ${(e.cc ?? [e.to]).map(who).join(' ')}`)}${bubble}${replied}</div>`
   const actions = e.held
     ? `<div class="actions"><button class="btn primary" data-act="approve" data-id="${e.id}">Send it</button><button class="btn" data-act="drop" data-id="${e.id}">Drop</button></div>`
     : ''
@@ -286,16 +339,12 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
   new ResizeObserver(() => measure()).observe(el)
   return {
     render({ feed, agents }) {
-      const items = feed.slice(-limit)
-      const next = items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar]))
+      const view = feedView(feed, agents, open, limit)
+      const next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar]))
       if (next === key) return
       key = next
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
-      const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: Object.fromEntries(feed.map((e) => [e.id, e])), repliesTo: {}, open }
-      for (const e of feed) if (e.re) (ctx.repliesTo[e.re] ??= []).push(e)
-      el.innerHTML = items.length
-        ? items.map((e, i) => feedItem(e, items[i - 1], ctx)).join('')
-        : '<div class="empty">Tasks, hand-offs and replies show up here.</div>'
+      el.innerHTML = view.items.length ? view.html() : '<div class="empty">Tasks, hand-offs and replies show up here.</div>'
       measure()
       if (atBottom) el.scrollTop = el.scrollHeight
     },
@@ -397,7 +446,7 @@ function mountComposer(el, { dropZone = el } = {}) {
     morph(chips,
       `<button class="chip ${target === 'auto' ? 'on' : ''}" data-to="auto" title="Picks by area, prefers whoever is free">✦ Auto</button>` +
       agents.filter((a) => a.on).map((a) => `<button class="chip ${target === a.name ? 'on' : ''}" data-to="${esc(a.name)}" title="${esc(statusText(a))}">${avatarHTML(a, { size: 20 })}${esc(a.name)}</button>`).join(''))
-    ta.placeholder = target === 'auto' ? 'Describe a task, crew picks who' : `Message @${target}…`
+    ta.placeholder = target === 'auto' ? 'Describe a task, crew picks who (or @mention someone)' : `Message @${target}… (@mention more to add them)`
   }
   const autosize = () => {
     ta.style.height = 'auto'
@@ -409,7 +458,8 @@ function mountComposer(el, { dropZone = el } = {}) {
     hint.textContent = text
     hint.className = `hint ${error ? 'error' : ''}`
     clearTimeout(say.timer)
-    say.timer = setTimeout(() => (hint.textContent = ''), 4000)
+    // A rejected send (e.g. an @name that isn't a teammate) stays up until the draft is edited.
+    if (!error) say.timer = setTimeout(() => (hint.textContent = ''), 4000)
   }
   const setTarget = (name) => {
     target = name
@@ -420,9 +470,10 @@ function mountComposer(el, { dropZone = el } = {}) {
     const text = ta.value.trim()
     const images = attach.get()
     if (!text && !images.length) return
-    const to = target === 'auto' || /^@[\w-]+\s/.test(text) ? undefined : target
+    // The chip stays a recipient; the hub adds any @mentions to it.
+    const to = target === 'auto' ? undefined : target
     try {
-      say((await crew.call('send', to, text, images)).trim())
+      say((await crew.call('send', to, text, images)).trim().split('\n').join(' · '))
       ta.value = ''
       attach.set([])
       autosize()
@@ -437,7 +488,10 @@ function mountComposer(el, { dropZone = el } = {}) {
     setTarget(chip.dataset.to)
     ta.focus()
   })
-  ta.addEventListener('input', autosize)
+  ta.addEventListener('input', () => {
+    autosize()
+    if (hint.classList.contains('error')) say('')
+  })
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault()

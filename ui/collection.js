@@ -446,9 +446,13 @@ function mountCollection(root, { onTerminal }) {
       syncSave()
     }
     if (act === 'pick') {
-      const dir = await crew.call('pickFolder')
-      if (dir) card.querySelector('[data-k=cwd]').value = draft.cwd = dir
-      syncSave()
+      try {
+        const dir = await crew.call('pickFolder')
+        if (dir) card.querySelector('[data-k=cwd]').value = draft.cwd = dir
+        syncSave()
+      } catch (err) {
+        card.querySelector('.pd-msg').textContent = err.message // e.g. a remote crew's folders are on its host
+      }
     }
     if (act === 'terminal') onTerminal(editing)
     if (act === 'remove' && confirm(`Remove ${editing}? Its session stops (the transcript stays with the CLI).`)) {

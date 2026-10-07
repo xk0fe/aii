@@ -17,6 +17,7 @@ let selected = null
 let state = { agents: [], providers: {} }
 
 $('[data-act=config]').innerHTML = ICONS.braces
+$('#link .h-icon').innerHTML = ICONS.link
 const drawTheme = themeButton($('[data-act=theme]'))
 
 // ---- terminals -------------------------------------------------------------
@@ -172,6 +173,7 @@ crew.onFocus(handleFocus)
 const ready = live((next) => {
   state = next
   drawTheme(state.theme)
+  drawLink(state)
   // Terminals only for agents that are on; the sidebar lists everyone so off agents are one click from coming back.
   const on = state.agents.filter((a) => a.on)
   const names = new Set(on.map((a) => a.name))
@@ -193,6 +195,89 @@ const ready = live((next) => {
   feed.render(state)
   composer.render(state)
   collection.render(state)
+})
+
+// ---- Crew Link -------------------------------------------------------------------
+
+const linkDialog = $('#link')
+let linkKey = ''
+
+function drawLink(state) {
+  const l = state.link ?? { mode: 'local' }
+  const chip = $('.link-chip')
+  chip.classList.toggle('on', l.mode === 'remote' || l.sharing)
+  chip.innerHTML =
+    l.mode === 'remote'
+      ? `<span class="dot ${l.connected ? 'working' : 'waiting'}"></span>${l.connected ? `on ${esc(l.name)}` : `Reconnecting to ${esc(l.name)}…`}`
+      : l.sharing
+        ? `<span class="dot working"></span>Sharing${l.clients ? ` · ${l.clients}` : ''}`
+        : `${ICONS.link}Link`
+  const next = JSON.stringify(l)
+  if (next === linkKey) return
+  linkKey = next
+  const typed = linkDialog.querySelector('[data-link-code]')?.value ?? ''
+  linkDialog.querySelector('.link-body').innerHTML = l.mode === 'remote' ? remoteHTML(l) : localHTML(l)
+  const box = linkDialog.querySelector('[data-link-code]')
+  if (box) box.value = typed
+}
+
+const localHTML = (l) => `
+  <section class="ls">
+    <label class="ls-row"><div><b>Share this crew</b><p>Let your other computers use the agents on this Mac.</p></div><input type="checkbox" class="switch" data-link-share ${l.sharing ? 'checked' : ''}></label>
+    ${l.sharing ? `
+      <div class="code-box"><code>${esc(l.code)}</code><button class="btn" data-link-copy>Copy</button></div>
+      <p>On your other computer: <b>Crew Link → paste → Connect</b>. Anyone with this code can run your agents, so keep it to your own machines.</p>
+      <div class="addr">${l.hosts.map((h) => `<span><b>${esc(h.address)}</b> ${esc(h.via)}</span>`).join('')}</div>
+      <div class="ls-row small"><span>${l.clients ? `${l.clients} computer${l.clients > 1 ? 's' : ''} connected` : 'Nobody connected yet'} · port ${l.port}</span><button class="btn" data-link-reset title="Makes a new code; computers using the old one are disconnected">New code</button></div>`
+    : l.error ? `<p class="err">${esc(l.error)}</p>` : ''}
+  </section>
+  <section class="ls">
+    <b>Use a crew from another computer</b>
+    <p>Paste the pairing code from the Mac that runs your agents. This Mac's own agents stop while you're connected, and come back when you disconnect.</p>
+    <div class="code-in"><textarea data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Connect</button></div>
+    <p class="err" data-link-err></p>
+  </section>`
+
+const remoteHTML = (l) => `
+  <section class="ls">
+    <div class="remote-card"><span class="dot ${l.connected ? 'working' : 'waiting'}"></span><div><b>${l.connected ? 'Connected to' : 'Reconnecting to'} ${esc(l.name)}</b><p>${l.connected ? `via ${esc(l.address)}` : esc(l.error ?? 'trying…')}</p></div></div>
+    <p>Agents, terminals and history live on ${esc(l.name)}; everything you do here happens there.</p>
+    <div class="ls-row small"><span>Back to this Mac's own crew</span><button class="btn" data-link-disconnect>Disconnect</button></div>
+  </section>`
+
+$('.link-chip').addEventListener('click', () => linkDialog.showModal())
+linkDialog.addEventListener('click', async (e) => {
+  const t = e.target
+  if (t.closest('[data-close]') || t === linkDialog) return linkDialog.close()
+  const err = linkDialog.querySelector('[data-link-err]')
+  try {
+    if (t.closest('[data-link-copy]')) {
+      await crew.call('copy', linkDialog.querySelector('.code-box code').textContent)
+      t.closest('[data-link-copy]').textContent = 'Copied ✓'
+    }
+    if (t.closest('[data-link-reset]') && confirm('Make a new code? Computers using the current one are disconnected.')) await crew.call('link', 'reset')
+    if (t.closest('[data-link-connect]')) {
+      const code = linkDialog.querySelector('[data-link-code]').value.trim()
+      if (!code) return void (err.textContent = 'Paste the code from the other Mac first')
+      const running = state.agents.filter((a) => a.on).length
+      if (running && !confirm(`Connect? The ${running} agent${running > 1 ? 's' : ''} running on this Mac stop until you disconnect, then pick up where they left off.`)) return
+      await crew.call('link', 'connect', code) // Crew restarts connected
+    }
+    if (t.closest('[data-link-disconnect]') && confirm("Disconnect and go back to this Mac's own crew?")) await crew.call('link', 'disconnect')
+  } catch (x) {
+    if (err) err.textContent = x.message
+    else alert(x.message)
+  }
+})
+linkDialog.addEventListener('change', async (e) => {
+  if (!('linkShare' in e.target.dataset)) return
+  try {
+    await crew.call('link', 'share', e.target.checked)
+  } catch (x) {
+    e.target.checked = false
+    linkKey = ''
+    alert(`Couldn't start sharing: ${x.message}`)
+  }
 })
 
 ready.then(() => {

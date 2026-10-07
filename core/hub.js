@@ -383,25 +383,40 @@ export class Hub extends EventEmitter {
     return file
   }
 
+  // Who gets a message: the `to` field (a name, several names, or "any") plus every @name in the text.
+  // Explicit recipients skip routing. All of them are checked before anything is posted, so one unknown,
+  // turned-off or self recipient rejects the whole send rather than reaching half the crew.
   send({ from = 'you', to, text, images = [] }) {
     text = String(text ?? '').trim()
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
-    const mention = !to && text.match(/^@([\w-]+)\s+([\s\S]*)$/)
-    if (mention) [, to, text] = mention
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
     if (!text) throw new Error('nothing to send')
-    const named = to && to !== 'any'
-    const a = named ? this.agents.get(to) : this.route(text, from)
-    if (!a) throw new Error(named ? `no agent named "${to}" (try: crew who)` : 'no agents to send to')
-    if (a.name === from) throw new Error("that's you, pick a teammate (crew who)")
-    if (a.off) throw new Error(`@${a.name} is turned off, turn it on first`)
+    const names = addressees(to, text)
+    const targets = names.length ? this.recipients(names, from) : [this.route(text, from)]
+    if (!targets[0]) throw new Error('no agents to send to')
 
     const held = from !== 'you' && !this.config.autopilot
     const re = this.agents.get(from)?.current // a hand-off points at the request that led to it
-    if (this.agents.has(from)) this.record(from, { handoffs: 1 })
-    const msg = this.post({ kind: 'msg', from, to: a.name, text, ...(images.length && { images }), ...(re && { re }), queued: !held, held })
-    if (held) return `waiting for the user to approve this hand-off to @${a.name}\n`
-    return this.enqueue(a, msg)
+    if (this.agents.has(from)) this.record(from, { handoffs: targets.length })
+    // Copies of one send share `cc` and `sendId`, so the feed can show them as one message. Each copy keeps its own
+    // id, queue state and approval.
+    const group = targets.length > 1 && { cc: targets.map((a) => a.name), sendId: randomUUID().slice(0, 8) }
+    const msgs = targets.map((a) =>
+      this.post({ kind: 'msg', from, to: a.name, text, ...group, ...(images.length && { images }), ...(re && { re }), queued: !held, held }),
+    )
+    if (held) return `waiting for the user to approve this hand-off to ${targets.map((a) => `@${a.name}`).join(' ')}\n`
+    return targets.map((a, i) => this.enqueue(a, msgs[i])).join('')
+  }
+
+  recipients(names, from) {
+    const list = (xs) => xs.map((n) => `@${n}`).join(', ')
+    const after = names.length > 1 ? ' (nothing was sent)' : ''
+    const unknown = names.filter((n) => !this.agents.has(n))
+    if (unknown.length) throw new Error(`no agent named ${unknown.map((n) => `"${n}"`).join(', ')} (try: crew who)${after}`)
+    if (names.includes(from)) throw new Error(`${names.length > 1 ? `@${from} is you, leave yourself off` : "that's you, pick a teammate (crew who)"}${after}`)
+    const off = names.filter((n) => this.agents.get(n).off)
+    if (off.length) throw new Error(`${list(off)} ${off.length > 1 ? 'are' : 'is'} turned off, turn ${off.length > 1 ? 'them' : 'it'} on first${after}`)
+    return names.map((n) => this.agents.get(n))
   }
 
   enqueue(a, msg) {
@@ -428,10 +443,16 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
-  // Best agent for an un-addressed task: area keyword match first, then whoever is free, then the shortest queue.
+  // Best agent for an un-addressed task: area match first, then whoever is free, then the shortest queue.
+  // An area matches on shared words and on shared intents (see INTENTS), so "keep the crew in working order"
+  // finds the organiser even though none of its words are in "admin work, assistant, organiser".
   route(text, from) {
     const words = new Set(tokens(text))
-    const score = (a) => [...new Set(tokens(`${a.name} ${a.area ?? ''}`))].filter((w) => words.has(w)).length
+    const asks = intents(text)
+    const score = (a) => {
+      const own = `${a.name} ${a.area ?? ''}`
+      return [...new Set(tokens(own))].filter((w) => words.has(w)).length + 2 * [...intents(own)].filter((i) => asks.has(i)).length
+    }
     const free = (a) => Number(a.status === 'idle' && !a.inbox.length)
     return [...this.agents.values()]
       .filter((a) => a.name !== from && this.runner.running(a.name))
@@ -449,9 +470,13 @@ export class Hub extends EventEmitter {
     }
     const msg = a.inbox.shift()
     msg.queued = false
-    const text = withImages(msg.from === 'you' ? msg.text : `[from @${msg.from}] ${msg.text}`, msg.images)
-    this.runner.submit(a.name, text)
-    a.expect = { id: msg.id, text } // matched against the prompt the agent reports, even if it shows up late
+    const also = msg.cc?.filter((n) => n !== a.name).map((n) => `@${n}`).join(' ')
+    const tag = [msg.from !== 'you' && `from @${msg.from}`, also && `also sent to ${also}, split the work`].filter(Boolean).join(', ')
+    const text = tag ? `[${tag}] ${msg.text}` : msg.text
+    this.runner.submit(a.name, withImages(text, msg.images))
+    // Matched against the prompt the agent reports, even if it shows up late. Only the words count:
+    // Claude Code turns attached image paths into "[Image #1]" and moves them around.
+    a.expect = { id: msg.id, text }
     this.record(a.name, { [msg.from === 'you' ? 'fromYou' : 'fromTeam']: 1, delivered: 1, queuedMs: Date.now() - msg.ts })
     this.awaitPickup(a)
     this.setStatus(a, 'working')
@@ -544,7 +569,7 @@ function clean(patch) {
 
 // Does the prompt an agent reports match what we typed into it? (Whitespace can differ.)
 const squash = (s) => String(s ?? '').replace(/\s+/g, ' ').trim()
-const samePrompt = (reported, sent) => reported === undefined || squash(reported).includes(squash(sent).slice(0, 80))
+const samePrompt = (reported, sent) => reported === undefined || squash(reported).includes(squash(sent).slice(0, 60))
 
 // Agents get images as file paths (Claude Code and Codex can both open local images).
 const withImages = (text, images) =>
@@ -586,6 +611,36 @@ const expand = (dir) => (dir ? dir.replace(/^~(?=\/|$)/, os.homedir()) : os.home
 
 const tokens = (s) =>
   (s.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => w.length > 1 && !STOP_WORDS.has(w)).map((w) => w.replace(/(?<=...)s$/, ''))
+
+// Kinds of work an area can own beyond its literal words. A word counts when it starts with one of the stems;
+// phrases are matched as written. A fixed list, so it only knows the intents spelled out here.
+const INTENTS = {
+  coordination: {
+    stems: ['organi', 'orchestrat', 'coordinat', 'delegat', 'dispatch', 'triag', 'assign', 'reassign', 'prioriti', 'admin', 'assistant', 'crew', 'roster', 'handoff'],
+    phrases: ['hand off', 'hand-off', 'working order', 'multiple agents', 'several agents', 'other agents', 'all agents', 'which agent', 'who should', 'who does what', 'split the work'],
+  },
+}
+
+const intents = (s) => {
+  const text = String(s).toLowerCase().replace(/\s+/g, ' ')
+  const words = text.match(/[a-z0-9]+/g) ?? []
+  return new Set(
+    Object.entries(INTENTS)
+      .filter(([, { stems, phrases }]) => words.some((w) => stems.some((st) => w.startsWith(st))) || phrases.some((p) => text.includes(p)))
+      .map(([name]) => name),
+  )
+}
+
+// Who a message is addressed to: `to` (one name, "david,joseph", "david joseph", or "any"/empty) plus every
+// bare @name in the text, wherever it is. The text itself is left as written. Not addresses: @words glued to
+// something (someone@example.com, @types/node, @david's), code in backticks, and @any/@you/@crew.
+// Names are case-insensitive and come back lowercase, without duplicates, in the order they appear.
+export function addressees(to, text) {
+  const prose = String(text).replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ')
+  const mentions = [...prose.matchAll(/(?<![\w.@/'-])@([\w-]+)(?![\w@/'-]|\.\w)/g)].map((m) => m[1])
+  const names = [...String(to ?? '').split(/[\s,]+/), ...mentions].map((n) => n.toLowerCase())
+  return [...new Set(names)].filter((n) => n && !RESERVED.has(n) && n !== 'auto')
+}
 
 function describe({ tool_name: tool, tool_input: input = {} }) {
   const arg = input.file_path ? path.basename(input.file_path) : (input.command ?? input.pattern ?? input.url ?? input.description ?? '')

@@ -26,7 +26,8 @@ live((state) => {
     : '<div class="empty">No agents yet. Add one per area of work, like onboarding or the 3D character.</div>')
   const on = state.agents.filter((a) => a.on)
   const working = on.filter((a) => a.status === 'working').length
-  $('.summary').textContent = state.agents.length ? `${working} of ${on.length} working` : ''
+  const where = state.link?.mode === 'remote' ? ` · on ${state.link.name}${state.link.connected ? '' : ' (reconnecting)'}` : ''
+  $('.summary').textContent = (state.agents.length ? `${working} of ${on.length} working` : '') + where
   $('.autopilot .switch').checked = state.autopilot
   crew.fit(340, document.body.scrollHeight)
 })
