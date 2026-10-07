@@ -35,7 +35,9 @@ export class Crew extends EventEmitter {
     this.me = { name: this.settings.name || computerName, slug: slug(this.settings.name || computerName) }
     this.runner = new Runner()
     this.hub = new Hub(this.runner, { bin })
-    this.hub.relay = (from, names, text, images) => this.relay(from, names, text, images)
+    this.hub.relay = (from, names, text, images, extra) => this.relay(from, names, text, images, extra)
+    this.hub.relayBug = (host, from, args) => this.link(host).peer.call('bug', [`${from}@${this.me.slug}`, args])
+    this.hub.self = this.me.slug
     this.hub.directory = () => this.snapshot().agents.filter((a) => a.home)
     this.hub.elsewhere = (name) => {
       const there = this.hub.directory().filter((a) => a.seed === name)
@@ -72,6 +74,7 @@ export class Crew extends EventEmitter {
         this.changed()
       }, 50)
     })
+    this.hub.on('notice', (n) => this.emit('notice', n))
     this.hub.on('alert', (a, text) => {
       this.emit('alert', a.name, text)
       pushAll('alert', a.name, text)
@@ -87,6 +90,7 @@ export class Crew extends EventEmitter {
     }
     this.sharing?.stop()
     this.hub.saveStats()
+    this.hub.saveConvos(true)
     this.runner.stopAll()
   }
 
@@ -117,21 +121,38 @@ export class Crew extends EventEmitter {
     const s = this.hub.snapshot()
     const agents = s.agents.map((a) => ({ ...a, home: null }))
     const feed = [...s.feed]
+    const tickets = s.bugs.tickets.map((t) => ({ ...t, key: String(t.id), home: null }))
     const providers = {}
     for (const l of this.links.values()) {
       if (!l.state) continue
       const q = this.qualifier(l)
       Object.assign(providers, l.state.providers)
       for (const a of l.state.agents) {
-        agents.push({ ...a, name: q(a.name), seed: a.name, home: l.slug, homeName: l.name, status: l.peer ? a.status : 'away', images: a.images?.map((p) => this.fetchImage(l, p)) })
+        agents.push({
+          ...a, name: q(a.name), seed: a.name, home: l.slug, homeName: l.name, status: l.peer ? a.status : 'away', images: a.images?.map((p) => this.fetchImage(l, p)),
+          ticket: a.ticket == null ? null : q(String(a.ticket)),
+        })
       }
       for (const e of l.state.feed) {
-        feed.push({ ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && `${e.re}@${l.slug}`, images: e.images?.map((p) => this.fetchImage(l, p)) })
+        feed.push({
+          ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && `${e.re}@${l.slug}`, images: e.images?.map((p) => this.fetchImage(l, p)),
+          ...(e.ticket !== undefined && { ticket: q(String(e.ticket)) }), ...((e.act === 'fixing' || e.act === 'triaged') && e.text && { text: q(e.text) }),
+        })
+      }
+      // Bugs filed there: #12 there is 12@that-computer here.
+      for (const t of l.state.bugs?.tickets ?? []) {
+        tickets.push({
+          ...t, key: `${t.id}@${l.slug}`, home: l.slug, homeName: l.name, owner: q(t.owner), fixer: q(t.fixer), by: q(t.by),
+          images: t.images.map((p) => this.fetchImage(l, p)), log: t.log.map((x) => ({ ...x, by: q(x.by) })),
+        })
       }
     }
     feed.sort((x, y) => x.ts - y.ts)
     const hidden = new Set(this.settings.hidden ?? [])
-    return { ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.name)), feed: feed.slice(-200), computers: this.computers() }
+    return {
+      ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.name)), feed: feed.slice(-200), computers: this.computers(),
+      bugs: { ...s.bugs, tickets },
+    }
   }
 
   // Where an agent lives: { l, base } for a linked computer, { l: null, base } for this one.
@@ -202,7 +223,8 @@ export class Crew extends EventEmitter {
 
   // ---- actions from this computer's UI -----------------------------------------------------------
 
-  async send(to, text, images = []) {
+  // opts.fresh: deliver into a new conversation.
+  async send(to, text, images = [], { fresh = false } = {}) {
     let names = addressees(to, text).map((n) => this.resolve(n))
     if (!names.length) {
       const ready = this.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'away'].includes(a.status))
@@ -212,22 +234,26 @@ export class Crew extends EventEmitter {
     }
     const out = []
     for (const [home, bases] of this.group(names)) {
-      if (!home) out.push(await this.hub.send({ to: bases.join(','), text, images, mentions: false }))
+      if (!home) out.push(await this.hub.send({ to: bases.join(','), text, images, mentions: false, fresh }))
       else {
         const l = this.link(home)
-        out.push(await l.peer.call('deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l) }]))
+        out.push(await l.peer.call('deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh }]))
       }
     }
     return out.join('')
   }
 
   // A local agent's `crew send` to agents on other computers.
-  async relay(from, names, text, images) {
+  // A local agent's `crew send` (or a bug sent to its fixer) to agents on other computers.
+  async relay(from, names, text, images, extra = {}) {
     const out = []
     for (const [home, bases] of this.group(names)) {
       if (!home) throw new Error(`${bases.join(', ')}: that's this computer, leave off the @${this.me.slug}`)
       const l = this.link(home)
-      out.push(await l.peer.call('deliver', [{ from: `${from}@${this.me.slug}`, to: bases.join(','), text, images: await this.toHome(images, l) }]))
+      // a bug's number, as that computer names it
+      const ticket = extra.ticket !== undefined ? { ticket: `${extra.ticket}@${this.me.slug}` } : {}
+      const sender = from === 'you' ? 'you' : `${from}@${this.me.slug}`
+      out.push(await l.peer.call('deliver', [{ ...extra, ...ticket, from: sender, to: bases.join(','), text, images: await this.toHome(images, l) }]))
     }
     return out.join('')
   }
@@ -253,6 +279,26 @@ export class Crew extends EventEmitter {
     if (!home) return this.hub.addAgent(fields)
     const l = this.link(home)
     return `${await l.peer.call('addAgent', [{ ...fields, images: await this.toHome(fields.images, l) }])}@${l.slug}`
+  }
+
+  // A Bugs lane action. Bugs live on the computer they were filed on: 12@air is #12 on Air.
+  async ticket(op, key, arg) {
+    if (op === 'file') return this.hub.fileBug(arg)
+    const { l, base } = this.where(String(key))
+    if (!l) return this.hub.ticket(op, base, arg)
+    if (arg?.owner) arg = { ...arg, owner: this.qualifierFor(l)(arg.owner) }
+    if (arg?.images) arg = { ...arg, images: await this.toHome(arg.images, l) } // screenshots live with the bug
+    return l.peer.call('ticket', [op, base, op === 'dispatch' && arg?.to ? { ...arg, to: this.qualifierFor(l)(arg.to) } : arg])
+  }
+
+  // Names as another computer sees them: its agents bare, ours as name@this-computer.
+  qualifierFor(l) {
+    return (n) => {
+      if (!n) return n
+      const at = n.lastIndexOf('@')
+      if (at >= 0 && n.slice(at + 1) === l.slug) return n.slice(0, at)
+      return at >= 0 ? n : `${n}@${this.me.slug}`
+    }
   }
 
   feedAction(id, fn) {
@@ -291,6 +337,9 @@ export class Crew extends EventEmitter {
         return this.runner.buffer(name)
       },
       exportAgents: (names, opts) => packAgents(h, names, opts),
+      freshStart: (name) => h.freshStart(name),
+      bug: (from, args) => h.bug(from, args),
+      ticket: (op, id, arg) => h.ticket(op, id, arg),
       importAgents: (pack, choices) => unpackAgents(h, pack, choices),
     }
     if (!Object.hasOwn(allowed, fn)) throw new Error(`"${fn}" isn't available over Crew Link`)
@@ -520,6 +569,7 @@ export class Crew extends EventEmitter {
     if (!name) throw new Error('give this computer a name')
     this.settings.name = name
     this.me = { name, slug: slug(name) }
+    this.hub.self = this.me.slug
     this.saveSettings()
     // other computers learn the new name when they reconnect
     if (this.sharing) this.stopSharing(), this.startSharing().catch(() => {})

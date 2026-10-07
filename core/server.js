@@ -9,6 +9,10 @@ export function serve(hub) {
     note: (q, body) => hub.note(q.from || 'you', body),
     who: () => hub.who(),
     board: () => hub.board(),
+    // `crew bug <op> <args...>`: the words arrive NUL-separated, so any text survives intact
+    bug: (q, body) => hub.bug(q.from || 'you', body.split('\0').slice(0, -1)),
+    // Claude Code's status line: how full the context is; the answer is the line it shows
+    status: (q, body, name) => hub.onStatusLine(name, JSON.parse(body || '{}')),
   }
 
   const server = http.createServer(async (req, res) => {

@@ -149,6 +149,95 @@ const SHOTS = {
     await save(win, `select-${theme}`)
     win.destroy()
   },
+  async bugs(theme) {
+    const win = await dashboard(theme, 'bugs')
+    await sleep(1000)
+    await save(win, `bugs-${theme}`)
+    await js(win, click('.tk[data-name="12"]'))
+    await sleep(900)
+    await save(win, `bug-panel-${theme}`)
+    await js(win, click('.tp [data-tp=close]'))
+    await sleep(500)
+    await js(win, click('.tk[data-name="5"]'))
+    await sleep(900)
+    await js(win, click('.tp [data-tp=broken]'))
+    await sleep(700)
+    await save(win, `bug-check-${theme}`)
+    win.destroy()
+  },
+  async conversation(theme) {
+    const win = await dashboard(theme, 'crew')
+    await js(win, click('[data-mode=cards]'))
+    await sleep(300)
+    await js(win, click('.pcard[data-name=gal]'))
+    await sleep(1200)
+    await js(win, "const c = document.querySelector('.col-card'); c.scrollTop = document.querySelector('.convo').offsetTop - 120")
+    await sleep(500)
+    await save(win, `conversation-${theme}`)
+    win.destroy()
+  },
+  async chatBug(theme) {
+    const win = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(600)
+    await js(win, `${click('.chip.bug-chip')}; const ta = document.querySelector('.composer textarea'); ta.value = 'Shop button is hidden behind the coins counter on iPhone SE'; ta.dispatchEvent(new Event('input'))`)
+    await sleep(500)
+    await fitToContent(win)
+    await save(win, `chat-bug-${theme}`)
+    win.destroy()
+  },
+  // Report a bug, send it off in a new conversation, then check a fix: the board's whole loop.
+  async bugsGif() {
+    const win = await dashboard('light', 'bugs')
+    await sleep(1200)
+    await record(win, 'bugs-loop', {
+      ms: 11000, width: 1000,
+      during: async () => {
+        let at = { x: 900, y: 500 }
+        at = await glide(win, at, await center(win, '.capture textarea'), 600)
+        await tap(win, at)
+        await sleep(300)
+        const text = 'Coins vanish when you collect two at once'
+        for (let i = 1; i <= text.length; i++) {
+          await js(win, `const ta = document.querySelector('.capture textarea'); ta.value = ${JSON.stringify(text)}.slice(0, ${i}); ta.dispatchEvent(new Event('input'))`)
+          await sleep(28)
+        }
+        await sleep(350)
+        win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+        win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
+        await sleep(1300)
+        at = await glide(win, at, await center(win, '.tk[data-name="13"] [data-tk=dispatch]'), 700)
+        await sleep(200)
+        await tap(win, at)
+        await sleep(2600)
+        at = await glide(win, at, await center(win, '.tk[data-name="5"] [data-tk=works]'), 900)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(1600)
+        await glide(win, at, { x: at.x + 200, y: at.y + 120 }, 400)
+      },
+    })
+    win.destroy()
+  },
+  // A long conversation, then a clean slate: the gauge drains and the feed marks where the new one starts.
+  async freshGif() {
+    const win = await dashboard('light', 'grid')
+    await sleep(1500)
+    const tile = await js(win, "const r = document.querySelector('.tile[data-name=david]').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
+    await record(win, 'fresh-start', {
+      clip: { x: tile.x, y: tile.y, width: tile.width, height: 46 }, ms: 4200, width: 900,
+      during: async () => {
+        let at = { x: tile.x + tile.width - 300, y: tile.y + 23 }
+        await sleep(500)
+        at = await glide(win, at, await center(win, '.tile[data-name=david] [data-act=fresh]'), 700)
+        await sleep(600)
+        await tap(win, at)
+        await sleep(2000)
+      },
+    })
+    win.destroy()
+  },
   async grid(theme) {
     const win = await dashboard(theme, 'grid')
     await sleep(1500)

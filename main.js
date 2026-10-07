@@ -211,7 +211,12 @@ function showDock() {
 // so an agent on another computer (gal@mac-mini) is handled there.
 const actions = {
   state: () => crew.snapshot(),
-  send: (to, text, images) => crew.send(to, text, images),
+  send: (to, text, images, opts) => crew.send(to, text, images, opts),
+  // A new conversation for an agent (after its current task, if it's busy).
+  freshStart: (name) => crew.at(name, 'freshStart'),
+  // The Bugs lane: bug('file', null, { text, images }), bug('dispatch', '12'), bug('works', '12@air')…
+  bug: (op, key, arg) => crew.ticket(op, key, arg),
+  bugSettings: (patch) => hub.setBugSettings(patch),
   saveImage: (name, type, bytes) => hub.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
   approve: (id) => crew.feedAction(id, 'approve'),
   drop: (id) => crew.feedAction(id, 'drop'),
@@ -331,6 +336,13 @@ function wire() {
   crew.on('alert', (name, text) => {
     const note = new Notification({ title: `${name} needs you`, body: text })
     note.on('click', () => openDashboard(name))
+    note.show()
+  })
+
+  // e.g. "@david fixed #12": click to check it in the Bugs lane
+  crew.on('notice', ({ title, body, focus }) => {
+    const note = new Notification({ title, body })
+    note.on('click', () => openDashboard(focus))
     note.show()
   })
 }

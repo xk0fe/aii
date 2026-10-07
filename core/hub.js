@@ -7,6 +7,8 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { adapters } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
+import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, BUG_HELP } from './tickets.js'
+import { fromStatusLine, fromCodexLog, codexLog, tokens as tokenCount } from './context.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
 export const CONFIG = path.join(HOME, 'config.json')
@@ -38,6 +40,9 @@ export class Hub extends EventEmitter {
     this.sessions = readJSON(at('sessions.json')) ?? {}
     this.stats = readJSON(at('stats.json')) ?? {}
     this.feed = loadFeed()
+    this.tickets = new Tickets(at('tickets.json'))
+    // Each agent's current conversation: when it started, tasks in it, compactions, and how full it is.
+    this.convos = readJSON(at('conversations.json')) ?? {}
     this.loadConfig()
     runner.on('exit', (name, code, ms) => this.onExit(name, code, ms))
   }
@@ -149,6 +154,12 @@ export class Hub extends EventEmitter {
     this.saveSession(from, null) // also writes the moved session
     if (this.stats[from]) [this.stats[to], this.stats[from]] = [this.stats[from], undefined] // experience moves with the name
     this.saveStats()
+    // so do its conversation's numbers and the bugs it owns or is fixing
+    if (this.convos[from]) [this.convos[to], this.convos[from]] = [this.convos[from], undefined]
+    this.saveConvos()
+    for (const t of this.tickets.all) for (const k of ['owner', 'fixer']) if (t[k] === from) t[k] = to
+    this.tickets.save()
+    if (this.config.triage === from) this.config.triage = to
     this.saveConfig() // stops `from`, starts `to` resuming the same conversation
     return to
   }
@@ -202,12 +213,13 @@ export class Hub extends EventEmitter {
     if (!adapter) return fail(`unknown provider "${a.provider}", define it under "providers" in config.json`)
     if (provider.missing.length) return fail(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const resume = this.sessions[a.name]
-    const { file, args, readyAfter } = adapter(a, { resume, session: randomUUID(), attachments: ATTACHMENTS })
+    const { file, args, readyAfter, env: extraEnv } = adapter(a, { resume, session: randomUUID(), attachments: ATTACHMENTS })
     a.resumed = Boolean(resume)
+    if (!resume) this.newConvo(a)
     try {
       const cwd = expand(a.cwd)
       if (!fs.existsSync(cwd)) throw new Error(`folder not found: ${cwd}`)
-      const env = { ...expandEnv(provider.env), PATH: `${this.bin}:${process.env.PATH}`, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME }
+      const env = { ...expandEnv(provider.env), ...extraEnv, PATH: `${this.bin}:${process.env.PATH}`, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME }
       this.runner.start(a.name, { file, args: [...args, ...(provider.args ?? []), ...(a.args ?? [])], cwd, env })
       this.setStatus(a, 'starting')
       if (readyAfter) a.readyTimer = setTimeout(() => a.status === 'starting' && this.setStatus(a, 'idle'), readyAfter)
@@ -220,6 +232,86 @@ export class Hub extends EventEmitter {
   restart(name, fresh = false) {
     const a = this.agents.get(name)
     if (a) this.launch(a, fresh)
+  }
+
+  // ---- conversations: starting fresh, and how full the current one is ------------------------------
+
+  // A new conversation for an agent, so a new task doesn't share its context with the last ten. Its
+  // instructions, folder and the crew's notes stay; the old conversation stays in the CLI's history.
+  // A busy agent finishes what it's doing first.
+  freshStart(name) {
+    const a = this.agents.get(name)
+    if (!a) throw new Error(`no agent named "${name}"`)
+    if (a.off) {
+      this.saveSession(name, null)
+      this.newConvo(a)
+      this.post({ kind: 'event', from: name, text: 'starts a new conversation when it comes back on', fresh: true })
+      return
+    }
+    if (a.status === 'working' || a.status === 'waiting') {
+      a.freshPending = true
+      return this.changed()
+    }
+    this.startFresh(a)
+  }
+
+  startFresh(a, why = '') {
+    a.freshPending = false
+    if (a.inbox[0]?.fresh) a.freshFor = a.inbox[0].id // this new conversation is the one that task waits for
+    this.post({ kind: 'event', from: a.name, text: `started a new conversation${why}`, fresh: true })
+    this.launch(a, true)
+  }
+
+  // Every way a new conversation starts (fresh start, no session to resume, /clear) comes through here,
+  // so what the old one was about (a bug it was fixing) never carries over.
+  newConvo(a) {
+    this.convos[a.name] = { since: Date.now(), tasks: 0, compactions: 0 }
+    this.saveConvos()
+  }
+
+  convoOf(a) {
+    return (this.convos[a.name] ??= { since: Date.now(), tasks: 0, compactions: 0 })
+  }
+
+  // Debounced: the status line reports often. `now` on quit, so the last numbers aren't lost.
+  saveConvos(now = false) {
+    clearTimeout(this.convoTimer)
+    const write = () => fs.writeFileSync(at('conversations.json'), JSON.stringify(this.convos))
+    if (now) write()
+    else this.convoTimer = setTimeout(write, 1000)
+  }
+
+  setContext(a, context) {
+    const c = this.convoOf(a)
+    if (JSON.stringify(c.context) === JSON.stringify(context)) return
+    c.context = context
+    this.saveConvos()
+    this.changed()
+  }
+
+  // Claude Code's status line: remember how full the context is, and answer with the line it shows.
+  onStatusLine(name, s) {
+    const a = this.agents.get(name)
+    if (!a) return ''
+    const context = fromStatusLine(s)
+    // Before the first message of a resumed session there's no usage yet: keep what we knew.
+    if (context && (s.context_window.current_usage || !this.convoOf(a).context)) this.setContext(a, context)
+    const c = this.convoOf(a)
+    if (!c.context) return ''
+    const { pct, used, size } = c.context
+    const color = pct >= 85 ? '31' : pct >= 60 ? '33' : '2'
+    return `\x1b[${color}mcontext ${pct}% · ${tokenCount(used)} of ${tokenCount(size)}\x1b[0m\x1b[2m · ${c.tasks} task${c.tasks === 1 ? '' : 's'} in this conversation\x1b[0m`
+  }
+
+  // Codex writes its token counts to its session log; read the newest after each step.
+  readCodexContext(a, e) {
+    if (this.providerOf(a)?.cli !== 'codex') return
+    const now = Date.now()
+    if (e.hook_event_name === 'PostToolUse' && now - (a.contextAt ?? 0) < 5000) return
+    a.contextAt = now
+    const file = e.transcript_path || codexLog(e.session_id ?? this.sessions[a.name])
+    const context = file && fromCodexLog(file)
+    if (context) this.setContext(a, context)
   }
 
   onExit(name, code, ms) {
@@ -247,7 +339,20 @@ export class Hub extends EventEmitter {
     a.hookAt = Date.now()
     switch (e.hook_event_name) {
       case 'SessionStart': // Claude: at launch. Codex: with the first prompt, so only "starting" counts.
-        if (e.source === 'compact' || a.status !== 'starting') return
+        if (e.source === 'compact') {
+          // The CLI summarized the conversation to make room: older details are now fuzzy.
+          this.convoOf(a).compactions += 1
+          this.saveConvos()
+          this.post({ kind: 'event', from: name, text: 'ran out of room and compacted its conversation (older details are summarized now)' })
+          return
+        }
+        if (e.source === 'clear') {
+          // /clear typed in its terminal
+          this.newConvo(a)
+          this.post({ kind: 'event', from: name, text: 'started a new conversation (/clear)', fresh: true })
+          return this.setStatus(a, 'idle')
+        }
+        if (a.status !== 'starting') return
         hold(a, 2000) // the prompt box isn't ready the moment the session starts
         return this.setStatus(a, 'idle')
       case 'UserPromptSubmit':
@@ -262,13 +367,16 @@ export class Hub extends EventEmitter {
           a.expect = null
         } else if (e.prompt && !e.prompt.startsWith('/')) a.current = this.post({ kind: 'msg', from: 'you', to: name, text: e.prompt.slice(0, 4000), via: 'terminal' }).id
         this.record(name, { tasks: 1 })
+        if (!e.prompt?.startsWith('/')) (this.convoOf(a).tasks += 1), this.saveConvos()
         a.turnStart = Date.now()
+        this.readCodexContext(a, e)
         return this.setStatus(a, 'working')
       case 'PreToolUse': // only AskUserQuestion is hooked
         return this.needsYou(a, `asks: ${e.tool_input?.questions?.[0]?.question ?? 'a question'}`)
       case 'PostToolUse':
         a.activity = describe(e)
         this.record(name, { tools: 1 })
+        this.readCodexContext(a, e)
         return this.setStatus(a, 'working')
       case 'Notification':
         if (a.status === 'working') this.needsYou(a, e.message || 'needs your input')
@@ -281,6 +389,7 @@ export class Hub extends EventEmitter {
         return this.setStatus(a, 'idle')
       case 'Stop':
         a.activity = ''
+        this.readCodexContext(a, e)
         if (a.turnStart) this.record(name, { turns: 1, turnMs: Date.now() - a.turnStart })
         a.turnStart = null
         if (e.last_assistant_message) this.post({ kind: 'reply', from: name, text: e.last_assistant_message.slice(0, 4000), ...(a.current && { re: a.current }) })
@@ -303,6 +412,7 @@ export class Hub extends EventEmitter {
       if (a.status === 'waiting') this.record(a.name, { waitMs: spent })
       Object.assign(a, { status, since: Date.now() })
     }
+    if (status === 'idle' && a.freshPending) return this.startFresh(a)
     if (status === 'idle' && a.relaunch) return this.launch(a)
     if (status === 'idle') this.pump(a)
     this.changed()
@@ -388,7 +498,8 @@ export class Hub extends EventEmitter {
   // turned-off or self recipient rejects the whole send rather than reaching half the crew.
   // Names on another computer (gal@mac-mini) go to `relay`, which main.js wires to Crew Link; `mentions: false`
   // means `to` is final (the message was already addressed on another computer).
-  send({ from = 'you', to, text, images = [], mentions = true }) {
+  // `fresh`: deliver into a new conversation (started when it's this message's turn). `ticket`: the bug it's about.
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, triage = false }) {
     text = String(text ?? '').trim()
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -398,7 +509,8 @@ export class Hub extends EventEmitter {
     const away = all.filter((n) => n.includes('@'))
     const names = all.filter((n) => !n.includes('@'))
     if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and Crew Link isn't on`)
-    if (away.length && !names.length) return this.relay(from, away, text, images)
+    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title }), ...(triage && { triage: true }) }
+    if (away.length && !names.length) return this.relay(from, away, text, images, extra)
     const targets = names.length ? this.recipients(names, from) : [this.route(text, from)]
     if (!targets[0]) throw new Error('no agents to send to')
 
@@ -409,11 +521,11 @@ export class Hub extends EventEmitter {
     // id, queue state and approval.
     const group = targets.length > 1 && { cc: targets.map((a) => a.name), sendId: randomUUID().slice(0, 8) }
     const msgs = targets.map((a) =>
-      this.post({ kind: 'msg', from, to: a.name, text, ...group, ...(images.length && { images }), ...(re && { re }), queued: !held, held }),
+      this.post({ kind: 'msg', from, to: a.name, text, ...group, ...extra, ...(images.length && { images }), ...(re && { re }), queued: !held, held }),
     )
     if (held) return `waiting for the user to approve this hand-off to ${targets.map((a) => `@${a.name}`).join(' ')}\n`
     const here = targets.map((a, i) => this.enqueue(a, msgs[i])).join('')
-    return away.length ? this.relay(from, away, text, images).then((there) => here + there) : here
+    return away.length ? this.relay(from, away, text, images, extra).then((there) => here + there) : here
   }
 
   recipients(names, from) {
@@ -469,8 +581,14 @@ export class Hub extends EventEmitter {
       a.timer = setTimeout(() => this.pump(a), wait)
       return
     }
+    // A task meant for a fresh conversation: start one, and deliver once it's up.
+    if (a.inbox[0].fresh && a.freshFor !== a.inbox[0].id) {
+      a.freshFor = a.inbox[0].id
+      return this.startFresh(a, a.inbox[0].ticket !== undefined ? ` for bug #${a.inbox[0].ticket}` : ' for its next task')
+    }
     const msg = a.inbox.shift()
     msg.queued = false
+    if (msg.ticket !== undefined && !msg.triage) (this.convoOf(a).ticket = msg.ticket), this.saveConvos() // this conversation is about that bug now
     const also = msg.cc?.filter((n) => n !== a.name).map((n) => `@${n}`).join(' ')
     const tag = [msg.from !== 'you' && `from @${msg.from}`, also && `also sent to ${also}, split the work`].filter(Boolean).join(', ')
     const text = tag ? `[${tag}] ${msg.text}` : msg.text
@@ -494,6 +612,199 @@ export class Hub extends EventEmitter {
       this.runner.write(a.name, '\r')
       this.awaitPickup(a, rest)
     }, ms)
+  }
+
+  // ---- bugs -------------------------------------------------------------------------------------
+
+  // You call out a bug (in the chat or the Bugs lane). The triage agent, if you picked one, makes it a proper
+  // ticket and assigns it; otherwise it goes to whoever's area it matches. With Auto-fix on, the owner gets it
+  // right away, in a fresh conversation.
+  fileBug({ text, images = [], by = 'you' }) {
+    images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
+    if (!String(text ?? '').trim() && images.length) text = 'See the screenshot'
+    const t = this.tickets.add({ text, images, by })
+    const triage = this.triager()
+    if (!triage) {
+      const owner = ownerFor(`${t.title} ${t.body}`, this.teammates())
+      if (owner) this.tickets.edit(t.id, { owner: owner.name }, 'crew')
+    }
+    this.postBug(t, by, 'filed')
+    if (triage) this.send({ from: 'you', to: triage, text: triagePrompt(t, t.id), images: t.images, mentions: false, ticket: t.id, title: t.title, triage: true })
+    else if (this.config.autofix && t.owner) this.autoDispatch(t)
+    return `filed #${t.id}${triage ? `, @${triage} is triaging it` : t.owner ? ` for @${t.owner}` : ''}\n`
+  }
+
+  // The triage agent you picked, if it's around to do it.
+  triager() {
+    const a = this.agents.get(this.config.triage)
+    return a && !a.off ? a.name : null
+  }
+
+  // Everyone who can own a bug: agents here that are on, and the ones on linked computers.
+  teammates() {
+    const here = [...this.agents.values()].filter((a) => !a.off).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.inbox.length }))
+    return [...here, ...(this.directory?.() ?? []).filter((a) => a.on).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.queue ?? 0 }))]
+  }
+
+  // A bug goes to its owner in a fresh conversation with just this bug in it. If the owner is still in the
+  // conversation where it fixed this bug, "still broken" goes back there, with everything it already tried.
+  async dispatch(id, opts) {
+    const { to, note } = opts ?? {} // over Crew Link a missing argument arrives as null
+    const t = this.tickets.get(id)
+    const owner = this.agentName(to || t.owner || ownerFor(`${t.title} ${t.body}`, this.teammates())?.name)
+    if (!owner) throw new Error(`who should fix #${t.id}? Pick an owner first`)
+    const here = this.agents.get(owner)
+    // a double click, or Auto-fix and you at once: it's already on its way
+    if (!note && here?.inbox.some((m) => m.ticket === t.id && !m.triage)) return `#${t.id} is already queued for @${owner}\n`
+    const again = t.fixer === owner && this.stillOn(owner, t.id)
+    const ref = owner.includes('@') ? `${t.id}@${this.self}` : String(t.id)
+    const out = await this.send({ from: 'you', to: owner, text: fixPrompt(t, ref, note, again), images: again ? [] : t.images, mentions: false, fresh: !again, ticket: t.id, title: t.title })
+    if (owner !== t.owner) this.tickets.edit(t.id, { owner }, 'you')
+    t.fixer = owner
+    this.tickets.move(t.id, 'fixing', 'you', again ? `sent it back to @${owner}` : `sent it to @${owner}, in a new conversation`)
+    this.postBug(t, 'you', 'fixing', owner)
+    return out
+  }
+
+  // Is `name`'s current conversation the one about bug `id`, with nothing else lined up to start fresh first?
+  stillOn(name, id) {
+    const a = this.agents.get(name)
+    if (a) return this.convos[name]?.ticket === id && !a.freshPending && !a.inbox.some((m) => m.fresh)
+    const there = (this.directory?.() ?? []).find((x) => x.name === name) // an agent on a linked computer
+    return Boolean(there) && String(there.ticket) === String(id) && !there.freshPending && !there.queue
+  }
+
+  autoDispatch(t) {
+    this.dispatch(t.id).catch((e) => this.post({ kind: 'event', from: 'crew', text: `couldn't send bug #${t.id} on: ${e.message}` }))
+  }
+
+  // A name for an owner: an agent here, or (bare or name@computer) one on a linked computer.
+  agentName(name) {
+    if (!name) return null
+    name = String(name).trim().replace(/^@/, '').toLowerCase()
+    if (this.agents.has(name)) return name
+    const there = (this.directory?.() ?? []).map((a) => a.name)
+    if (there.includes(name)) return name
+    const found = this.elsewhere?.(name)
+    if (found) return found
+    throw new Error(`no agent named "${name}" (try: crew who)`)
+  }
+
+  postBug(t, from, act, text) {
+    this.post({ kind: 'bug', from, ticket: t.id, title: t.title, act, ...(text && { text }) })
+  }
+
+  // `crew bug ...` from an agent (or your terminal). args are the words after `crew bug`.
+  bug(from, args) {
+    const [op = 'help', ...rest] = args
+    const flags = {}
+    const words = []
+    for (let i = 0; i < rest.length; i++) {
+      const m = rest[i].match(/^--(owner|severity|title|details)(?:=(.*))?$/)
+      if (m) flags[m[1]] = m[2] ?? rest[++i]
+      else words.push(rest[i])
+    }
+    // 12 is a bug here; 12@air one filed on another computer (12@<this computer> is a bug here too)
+    const split = (r) => {
+      const [id, host] = String(r ?? '').replace(/^#/, '').split('@')
+      return { id, host: host && host !== this.self ? host : null }
+    }
+    const withId = ['show', 'fixed', 'note', 'triage', 'dup'].includes(op)
+    const { id: ref, host } = withId ? split(words[0]) : { id: '', host: null }
+    const original = op === 'dup' ? split(words[1]) : null
+    if (original && !original.id) throw new Error('usage: crew bug dup <n> <original>')
+    if (original && original.host !== host) throw new Error('both bugs must be on the same computer')
+    if (host) {
+      // the same command on the computer the bug lives on, with the bug numbers as it knows them
+      if (!this.relayBug) throw new Error(`#${words[0]} is on another computer, and Crew Link isn't on`)
+      const there = rest.map((w) => (w === words[0] ? ref : original && w === words[1] ? original.id : w))
+      return this.relayBug(host, from, [op, ...there])
+    }
+    if (original) words[1] = original.id
+    const t = withId ? this.tickets.get(ref) : null
+    const text = words.slice(1).join(' ')
+    switch (op) {
+      case 'list': {
+        const open = this.tickets.open()
+        return open.length ? open.map(ticketLine).join('\n') + '\n' : '(no open bugs)\n'
+      }
+      case 'show':
+        return ticketText(t)
+      case 'report': {
+        const owner = flags.owner ? this.agentName(flags.owner) : null
+        const n = this.tickets.add({ title: words[0], body: flags.details ?? words.slice(1).join(' '), by: from, owner, severity: flags.severity })
+        this.postBug(n, from, 'filed')
+        return `filed #${n.id}\n`
+      }
+      case 'triage': {
+        const owner = flags.owner ? this.agentName(flags.owner) : undefined
+        this.tickets.edit(t.id, { owner, severity: flags.severity, title: flags.title, body: flags.details, triaged: true }, from)
+        this.postBug(t, from, 'triaged', t.owner)
+        if (this.config.autofix && t.status === 'new' && t.owner) this.autoDispatch(t)
+        return `#${t.id}: ${t.severity}, ${t.owner ? `for @${t.owner}` : 'unassigned'}${this.config.autofix && t.owner ? ', sent to them' : ''}\n`
+      }
+      case 'fixed':
+        if (!text) throw new Error(`usage: crew bug fixed ${ref} "what was wrong, what you changed, how you checked"`)
+        if (t.status === 'done') throw new Error(`#${t.id} is already closed${t.dupOf ? ` (same as #${t.dupOf})` : ''}`)
+        Object.assign(t, { fix: text, fixer: from })
+        this.tickets.move(t.id, 'check', from, `fixed it: ${text}`)
+        this.postBug(t, from, 'fixed', text)
+        this.emit('notice', { title: `@${from} fixed #${t.id}`, body: `${t.title}. Check it`, focus: `bug:${t.id}` })
+        return `#${t.id} is waiting for the user to check it\n`
+      case 'note':
+        this.tickets.note(t.id, from, text)
+        this.postBug(t, from, 'note', text)
+        return `noted on #${t.id}\n`
+      case 'dup': {
+        const original = this.tickets.dup(t.id, words[1], from)
+        this.postBug(t, from, 'dup', `#${original.id}`)
+        return `#${t.id} is #${original.id} (seen ${original.seen}x now)\n`
+      }
+      default:
+        return BUG_HELP
+    }
+  }
+
+  // What the Bugs lane can do. op: file, edit, note, dispatch, works, broken, move, dup, remove.
+  async ticket(op, id, arg) {
+    if (op === 'file') return this.fileBug(arg)
+    const t = this.tickets.get(id)
+    switch (op) {
+      case 'edit':
+        if (arg.owner) arg = { ...arg, owner: this.agentName(arg.owner) }
+        if (arg.images) arg = { ...arg, images: arg.images.filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep)) }
+        return void this.tickets.edit(t.id, arg, 'you')
+      case 'note':
+        this.tickets.note(t.id, 'you', arg)
+        return void this.postBug(t, 'you', 'note', arg)
+      case 'dispatch':
+        return this.dispatch(t.id, arg)
+      case 'works':
+        this.tickets.move(t.id, 'done', 'you', 'checked it: works')
+        return void this.postBug(t, 'you', 'done')
+      case 'broken':
+        if (arg?.trim()) this.tickets.note(t.id, 'you', `still broken: ${arg.trim()}`)
+        if (t.fixer) return this.dispatch(t.id, { to: t.fixer, note: arg?.trim() })
+        this.tickets.move(t.id, 'new', 'you', 'reopened it')
+        return void this.postBug(t, 'you', 'reopened')
+      case 'move':
+        if (arg === t.status) return
+        if (arg === 'fixing') return this.dispatch(t.id)
+        if (arg === 'done') return this.ticket('works', id)
+        this.tickets.move(t.id, arg, 'you', arg === 'check' ? 'marked it fixed' : 'moved it back to new')
+        return void this.postBug(t, 'you', arg === 'check' ? 'fixed' : 'reopened')
+      case 'dup':
+        return void this.postBug(t, 'you', 'dup', `#${this.tickets.dup(t.id, arg, 'you').id}`)
+      case 'remove':
+        return void this.tickets.remove(t.id)
+    }
+    throw new Error(`unknown bug action "${op}"`)
+  }
+
+  setBugSettings({ triage, autofix }) {
+    if (triage !== undefined) this.config.triage = triage || undefined
+    if (autofix !== undefined) this.config.autofix = Boolean(autofix) || undefined
+    this.saveConfig()
   }
 
   note(from, text) {
@@ -553,8 +864,14 @@ export class Hub extends EventEmitter {
         tier: a.tier, fast: this.providerOf(a)?.fastByDefault === undefined ? undefined : a.tier ? a.tier === 'fast' : this.providerOf(a).fastByDefault,
         args: (a.args ?? []).join(' '), avatar: a.avatar, status: a.status, since: a.since, activity: a.activity,
         queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a),
+        convo: this.convos[a.name] ?? null, freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
       })),
       feed: this.feed.slice(-200),
+      bugs: {
+        tickets: [...this.tickets.open(), ...this.tickets.all.filter((t) => t.status === 'done').sort((x, y) => x.updated - y.updated).slice(-60)],
+        triage: this.config.triage ?? null,
+        autofix: Boolean(this.config.autofix),
+      },
     }
   }
 }
@@ -649,14 +966,26 @@ export function addressees(to, text) {
 // The best agent for an un-addressed task: area match first, then whoever is free, then the shortest queue.
 // agents: [{ name, area, status, queue }], already narrowed to the ones that can take work.
 export function bestFor(text, agents) {
+  const score = areaScore(text)
+  const free = (a) => Number(a.status === 'idle' && !a.queue)
+  return [...agents].sort((x, y) => score(y) - score(x) || free(y) - free(x) || x.queue - y.queue)[0]
+}
+
+// How well each agent's name and area match a piece of text: shared words, plus shared intents counted double.
+function areaScore(text) {
   const words = new Set(tokens(text))
   const asks = intents(text)
-  const score = (a) => {
+  return (a) => {
     const own = `${a.name.split('@')[0]} ${a.area ?? ''}`
     return [...new Set(tokens(own))].filter((w) => words.has(w)).length + 2 * [...intents(own)].filter((i) => asks.has(i)).length
   }
-  const free = (a) => Number(a.status === 'idle' && !a.queue)
-  return [...agents].sort((x, y) => score(y) - score(x) || free(y) - free(x) || x.queue - y.queue)[0]
+}
+
+// Who owns a bug by area: the best match, only if its area actually matches (no "whoever's free" fallback).
+export function ownerFor(text, agents) {
+  const score = areaScore(text)
+  const best = bestFor(text, agents)
+  return best && score(best) > 0 ? best : null
 }
 
 function describe({ tool_name: tool, tool_input: input = {} }) {
