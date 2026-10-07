@@ -3,6 +3,7 @@
 
 const $ = (s) => document.querySelector(s)
 $('.home').innerHTML = markSVG('0 6 24 16')
+$('.panel header .logo').outerHTML = markSVG('0 6 24 16')
 $('[data-act=dashboard]').innerHTML = ICONS.expand
 $('[data-act=close]').innerHTML = ICONS.close
 

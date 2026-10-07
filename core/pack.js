@@ -22,6 +22,8 @@ export function packAgents(hub, names, { stats = false } = {}) {
       effort: c.effort,
       tier: c.tier,
       yolo: c.yolo,
+      contextLimit: c.contextLimit,
+      onContextLimit: c.onContextLimit,
       args: c.args,
       avatar: { seed: c.avatar?.seed ?? c.name, ...c.avatar }, // looks partly come from the name: keep them if it's renamed
       folder: c.cwd ? path.basename(expand(c.cwd)) : undefined, // a hint for whoever imports it
@@ -69,6 +71,8 @@ export function unpackAgents(hub, pack, choices) {
       effort: a.effort,
       tier: a.tier,
       yolo: a.yolo,
+      contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : undefined,
+      onContextLimit: a.onContextLimit === 'notify' ? 'notify' : undefined,
       args: (a.args ?? []).join(' '),
       avatar: a.avatar,
       cwd: choice.folder,

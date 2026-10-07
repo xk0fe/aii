@@ -50,6 +50,12 @@ const ICONS = {
   shield: svg('<path d="M12 3 5 6v5.5c0 4.3 3 7.9 7 9.5 4-1.6 7-5.2 7-9.5V6l-7-3z"/><path d="m9 12 2 2 4-4"/>'),
   ask: svg('<path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.7A8 8 0 0 1 4 12z"/><path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.9c0 1.5-2.2 1.9-2.2 3.1M12 16.6v.1"/>'),
   plan: svg('<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>'),
+  thread: svg('<path d="M5 4v6.5A3.5 3.5 0 0 0 8.5 14H19M15 10l4 4-4 4"/>'),
+  arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>', 'stroke-width="2.2"'),
+  undo: svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', 'stroke-width="2.4"'),
+  dash: svg('<path d="M7 12h10"/>', 'stroke-width="2.8"'),
+  keyboard: svg('<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h1M10.5 10h1M14.5 10h1M6.5 14h11"/>', 'stroke-width="2.2"'),
+  sparkles: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 3.5l1.9 5.4 5.4 1.9-5.4 1.9L10 18.1l-1.9-5.4-5.4-1.9 5.4-1.9z"/><path d="M18.5 13.6l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z"/></svg>',
   bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.5 4.8 13.2c-.4.5 0 1.2.6 1.2H11l-1.2 7.1c-.1.6.7.9 1 .4l8.8-10.7c.4-.5 0-1.2-.6-1.2H13.4l1.2-7.1c.1-.6-.7-.9-1-.4z"/></svg>',
 }
 
@@ -122,7 +128,7 @@ function statusText(a) {
     case 'idle': return 'free'
     case 'starting': return Date.now() - a.since > 15000 ? 'starting… check its terminal' : 'starting…'
     case 'off': return 'off'
-    case 'away': return `${a.homeName ?? 'its computer'} is unreachable`
+    case 'away': return 'unreachable'
     default: return 'exited'
   }
 }
@@ -168,7 +174,13 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 function contextTip(a) {
   const c = a.convo
   if (!c) return ''
-  const parts = [c.context ? `Context ${c.context.pct}% full: ${tokenCount(c.context.used)} of ${tokenCount(c.context.size)} tokens` : 'Context: not measured yet', `${plural(c.tasks, 'task')} in this conversation`]
+  const x = c.context
+  const parts = [
+    !x ? 'Context: not measured yet'
+      : x.limit ? `Context ${x.pct}% of its ${tokenCount(x.limit)} limit: ${tokenCount(x.used)} used (${tokenCount(x.window)} window)`
+      : `Context ${x.pct}% full: ${tokenCount(x.used)} of ${tokenCount(x.size)} tokens`,
+    `${plural(c.tasks, 'task')} in this conversation`,
+  ]
   if (c.compactions) parts.push(`compacted ${c.compactions}× (older details are summaries)`)
   if (c.context?.pct >= 50 || c.compactions) parts.push('a new conversation gives it a clean slate')
   return parts.join(' · ')
@@ -424,25 +436,33 @@ function taskEvent(e, who) {
 function feedItem(e, prev, ctx) {
   const { byName, byId, repliesTo, open } = ctx
   const agent = (n) => byName[n] ?? { name: n }
-  const who = (n) => (n === 'you' ? 'you' : `<span class="who" data-agent="${esc(n)}" style="color:${agentColor(agent(n))}">@${esc(n)}</span>`)
+  const tint = (n) => (n === 'you' ? 'var(--accent)' : agentColor(agent(n)))
+  const who = (n) => (n === 'you' ? 'you' : `<span class="who" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">@${esc(n)}</span>`)
+  // In captions an agent goes by its plain name, like a group chat; one on another computer keeps its @computer.
+  const label = (n) => {
+    const [base, home] = String(n).split('@')
+    return `${esc(base)}${home ? `<span class="at">@${esc(home)}</span>` : ''}`
+  }
+  const name = (n) => (n === 'you' ? 'You' : `<span class="who" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">${label(n)}</span>`)
   const time = new Date(e.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const repeat = prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && e.ts - prev.ts < 120000 && !e.re
   const tags = (e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
+  const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
   const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
-  // A reply quotes the message it answers; click to jump back to it.
+  // A reply quotes the message it answers, with a bar in the quoted sender's color; click to jump back to it.
   const orig = e.re && byId[e.re]
-  const quoted = orig?.ticket !== undefined ? `bug #${String(orig.ticket).split('@')[0]} ${orig.title ?? ''}` : snippet(orig?.text)
-  const quote = orig ? `<button class="quote" data-jump="${orig.id}" title="Jump to the message this answers">↩ ${orig.from === 'you' ? 'you' : `@${esc(orig.from)}`}: ${esc(quoted)}</button>` : ''
+  const quoted = orig?.ticket !== undefined ? `#${String(orig.ticket).split('@')[0]} ${orig.title ?? ''}` : snippet(orig?.text)
+  const quote = orig ? `<button class="quote" data-jump="${orig.id}" style="--qc:${tint(orig.from)}" title="Jump to the message this answers"><b>${orig.from === 'you' ? 'You' : label(orig.from)}</b> ${esc(quoted)}</button>` : ''
   // ...and a message you sent links forward to the agents' replies.
   const answers = repliesTo[e.id] ?? []
   const replied = answers.length
-    ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">↪ ${[...new Set(answers.map((r) => `@${esc(r.from)}`))].join(', ')} ${answers.some((r) => r.kind === 'reply') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</button>`
+    ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">${ICONS.thread}<span>${[...new Set(answers.map((r) => `@${esc(r.from)}`))].join(', ')} ${answers.some((r) => r.kind === 'reply') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</span></button>`
     : ''
   const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}" data-id="${e.id}">${md(e.text)}</div>`
-  const cap = (html) => (repeat && !tags ? '' : `<div class="cap">${html}${tags}</div>`)
+  const cap = (html) => (cont ? '' : `<div class="cap">${html}${tags}<span class="time">${time}</span></div>`)
   // Agents talk with their little face next to the bubble, like a group chat.
   const said = (cls, capHTML, rest = '', body = bubble) =>
-    `<div class="item said ${cls}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"><span class="face" data-agent="${esc(e.from)}">${repeat ? '' : avatarHTML(agent(e.from), { size: 30, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div></div>`
+    `<div class="item said ${cls}${cont}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"><span class="face" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: 28, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div></div>`
 
   if (e.kind === 'task' || e.kind === 'bug') return taskEvent(e, who)
   // a new conversation starts: a line across the feed, so what came before is visibly "before"
@@ -452,20 +472,20 @@ function feedItem(e, prev, ctx) {
   if (e.ticket !== undefined && e.from === 'you') {
     const key = String(e.ticket)
     const why = e.triage ? '<span class="tag">to triage</span>' : e.fresh ? '<span class="tag fresh">new conversation</span>' : ''
-    return `<div class="item me ticket-msg" id="m-${e.id}" title="${time}"><div class="cap">to ${who(e.to)}${why}${tags}</div>
+    return `<div class="item me ticket-msg" id="m-${e.id}" title="${time}"><div class="cap">to ${who(e.to)}${why}${tags}<span class="time">${time}</span></div>
       <button class="bubble ticket-bubble" data-ticket="${esc(key)}" data-id="${e.id}"><span class="tb-icon">${ICONS[e.type ?? 'bug'] ?? ICONS.task}</span><b>#${esc(key.split('@')[0])}</b> ${esc(e.title ?? '')}</button>${replied}</div>`
   }
-  if (e.kind === 'note') return said('note', `${who(e.from)} shared a note`)
-  if (e.kind === 'reply') return said('', who(e.from))
+  if (e.kind === 'note') return said('note', `${name(e.from)} <span>shared a note</span>`)
+  if (e.kind === 'reply') return said('', name(e.from))
   if (e.kind === 'ask') {
     const verb = { permission: 'needs your OK', question: 'asks', plan: 'has a plan for you' }[e.ask?.type] ?? 'asks'
-    return said(`ask ${e.answer ? 'answered' : 'open'}`, `${who(e.from)} ${verb}`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`)
+    return said(`ask ${e.answer ? 'answered' : 'open'}`, `${name(e.from)} <span>${verb}</span>`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`)
   }
-  if (e.from === 'you') return `<div class="item me" id="m-${e.id}" title="${time}">${cap(`to ${(e.cc ?? [e.to]).map(who).join(' ')}`)}${bubble}${replied}</div>`
+  if (e.from === 'you') return `<div class="item me${cont}" id="m-${e.id}" title="${time}">${cap(`to ${(e.cc ?? [e.to]).map(who).join(' ')}`)}${bubble}${replied}</div>`
   const actions = e.held
     ? `<div class="actions"><button class="btn primary" data-act="approve" data-id="${e.id}">Send it</button><button class="btn" data-act="drop" data-id="${e.id}">Drop</button></div>`
     : ''
-  return said(`handoff ${e.dropped ? 'dropped' : ''}`, `${who(e.from)} → ${who(e.to)}`, actions)
+  return said(`handoff ${e.dropped ? 'dropped' : ''}`, `${name(e.from)}<span class="via" title="handed off to">${ICONS.arrow}</span>${name(e.to)}`, actions)
 }
 
 // An agent's question as a card you answer right in the chat (see hub.ask): a permission prompt, its own
@@ -509,7 +529,7 @@ function askCard(e, draft = {}) {
     <div class="ask-title">${icon}<span>${esc(q.title ?? 'Use a tool')}</span></div>
     ${code}${q.detail ? `<div class="ask-detail">${esc(q.detail)}</div>` : ''}
     <div class="ask-actions"><button class="btn primary" data-answer="allow">Allow</button><button class="btn deny" data-answer="deny">Deny</button></div>
-    ${q.always?.length ? `<div class="ask-always">${q.always.map((s) => `<button data-answer="always" data-i="${s.i}" title="Allow, and don't ask again">${esc(s.label)}</button>`).join('')}</div>` : ''}
+    ${q.always?.length ? `<div class="ask-always">${q.always.map((s) => `<button data-answer="always" data-i="${s.i}" title="Allow, and don't ask again">${ICONS.check}${esc(s.label)}</button>`).join('')}</div>` : ''}
     ${note(`Or tell ${name} what to do instead… (Enter)`)}
     <div class="ask-foot">${elsewhere}</div>
     <div class="ask-error"></div>
@@ -519,26 +539,28 @@ function askCard(e, draft = {}) {
 // An answered card, in one line or two.
 function askSummary(q, a) {
   const what = q.type === 'question' ? '' : `<span class="ask-what">${esc(q.type === 'plan' ? 'the plan' : q.title ?? '')}</span>`
-  if (a.stale) return `<span class="ask-mark">·</span><span>No longer waiting</span>${what}`
-  if (a.by === 'terminal') return `<span class="ask-mark">⌨</span><span>${a.handedOver ? 'Handed to its terminal' : 'Answered in the terminal'}</span>${what}`
-  if (q.type === 'question') return Object.entries(a.answers ?? {}).map(([k, v]) => `<div class="ask-answer"><span class="ask-mark ok">✓</span><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')
-  if (q.type === 'plan') return a.allow ? `<span class="ask-mark ok">✓</span><span>Plan approved</span>` : `<span class="ask-mark no">↺</span><span>Keep planning${a.note ? `: “${esc(a.note)}”` : ''}</span>`
-  if (a.allow) return `<span class="ask-mark ok">✓</span><span>Allowed${a.always ? ` · ${esc(a.always)}` : ''}</span>${what}`
-  return `<span class="ask-mark no">✕</span><span>Said no${a.note ? `: “${esc(a.note)}”` : ''}</span>${what}`
+  const mark = (cls, icon) => `<span class="ask-mark ${cls}">${ICONS[icon]}</span>`
+  if (a.stale) return `${mark('', 'dash')}<span>No longer waiting</span>${what}`
+  if (a.by === 'terminal') return `${mark('', 'keyboard')}<span>${a.handedOver ? 'Handed to its terminal' : 'Answered in the terminal'}</span>${what}`
+  if (q.type === 'question') return Object.entries(a.answers ?? {}).map(([k, v]) => `<div class="ask-answer">${mark('ok', 'check')}<span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')
+  if (q.type === 'plan') return a.allow ? `${mark('ok', 'check')}<span>Plan approved</span>` : `${mark('', 'undo')}<span>Keep planning${a.note ? `: “${esc(a.note)}”` : ''}</span>`
+  if (a.allow) return `${mark('ok', 'check')}<span>Allowed${a.always ? ` · ${esc(a.always)}` : ''}</span>${what}`
+  return `${mark('no', 'close')}<span>Said no${a.note ? `: “${esc(a.note)}”` : ''}</span>${what}`
 }
 
-// Who's on it right now, under the last message: dots while an agent works, an orange nudge when it needs you.
-// asks: agent -> its open question's id, so the nudge can point at the card instead of the terminal.
+// Who's on it right now, under the last message: one slim line per busy agent with what it's doing, and an
+// orange Answer button when it needs you. asks: agent -> its open question's id, so the line can point at the
+// card instead of the terminal.
 const typingHTML = (agents, asks = new Map()) =>
   agents
     .filter((a) => a.on && (a.status === 'working' || a.status === 'waiting'))
     .map((a) => {
       const card = a.status === 'waiting' && asks.get(a.name)
-      return `<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : a.status === 'waiting' ? 'Open its terminal to answer' : 'Open its terminal'}">
-      <span class="face">${avatarHTML(a, { size: 30 })}</span>
-      <div class="stack"><span class="cap"><b>${esc(a.name)}</b>${a.activity ? ` · ${esc(a.activity)}` : ''}</span>${
-        card ? '<span class="typing">waiting for your answer ↑</span>' : a.status === 'waiting' ? '<span class="typing">needs you · answer in its terminal</span>' : '<span class="typing"><i></i><i></i><i></i></span>'
-      }</div></div>`
+      const waiting = a.status === 'waiting'
+      const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : a.activity || 'working…'
+      const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : '<span class="typing"><i></i><i></i><i></i></span>'
+      return `<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
+      <span class="face">${avatarHTML(a, { size: 22 })}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what">${esc(what)}</span>${end}</div>`
     })
     .join('')
 
@@ -726,7 +748,7 @@ function mountFeed(el, { onAgent, onTicket = (key) => crew.call('dashboard', `ta
         // a re-render mustn't take away what you're typing into a question card
         const active = list.contains(document.activeElement) && document.activeElement.closest('[data-ask]') ? document.activeElement : null
         const keep = active && { id: active.closest('[data-ask]').dataset.ask, field: 'note' in active.dataset ? '[data-note]' : `[data-other="${active.dataset.other}"]`, from: active.selectionStart, to: active.selectionEnd }
-        list.innerHTML = view.items.length || busy ? view.html() : `<div class="empty">${ICONS.mark}<span>Tasks, hand-offs and replies show up here.</span></div>`
+        list.innerHTML = view.items.length || busy ? view.html() : `<div class="empty">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
         // New messages pop in; the ones already on screen stay put.
         for (const e of view.items) {
           if (seen.has(e.id)) continue
@@ -816,14 +838,25 @@ function mountAttach({ zone, field, tray, button, onChange, onError }) {
 
 function mountComposer(el, { dropZone = el } = {}) {
   el.classList.add('composer')
-  el.innerHTML = `<div class="chips"></div>
-    <div class="thumbs hidden"></div>
-    <div class="input"><button class="attach" title="Add images (you can also paste or drop them)">${ICONS.plus}</button><textarea rows="1"></textarea><button class="fresh-toggle" aria-pressed="false">${ICONS.fresh}</button><button class="mic" aria-label="Dictate"></button><button class="send" disabled title="Send (Enter)">${ICONS.up}</button></div>
-    <div class="hint"></div>`
+  el.innerHTML = `<div class="chips" role="group" aria-label="Send to"></div>
+    <div class="input">
+      <div class="thumbs hidden"></div>
+      <textarea rows="1"></textarea>
+      <div class="input-bar">
+        <button class="attach" title="Add images (or paste or drop them)">${ICONS.plus}</button>
+        <button class="fresh-toggle" aria-pressed="false">${ICONS.fresh}<span>New conversation</span></button>
+        <span class="grow"></span>
+        <button class="mic" aria-label="Dictate"></button>
+        <button class="send" disabled title="Send (Enter)" aria-label="Send">${ICONS.up}</button>
+      </div>
+    </div>
+    <div class="hint"></div>
+    <div class="rail-tip" aria-hidden="true"></div>`
   const chips = el.querySelector('.chips')
   const ta = el.querySelector('textarea')
   const send = el.querySelector('.send')
   const hint = el.querySelector('.hint')
+  const tip = el.querySelector('.rail-tip')
   const freshBtn = el.querySelector('.fresh-toggle')
   // Task mode lasts while you're adding tasks, not across launches: Auto again next time.
   let target = store.get('crew.target') || 'auto'
@@ -846,20 +879,39 @@ function mountComposer(el, { dropZone = el } = {}) {
     const m = String(text).match(TASK_PREFIX)
     return m ? (m[1] ?? m[2]).toLowerCase() : target === 'task' ? 'task' : null
   }
+  // Who it's for, on one line: Auto, Task, then the crew. Each chip carries a tooltip (data-tip), since a big
+  // crew shows only faces.
+  const chip = (to, cls, inner, tipText, sub, c) =>
+    `<button class="chip ${cls} ${target === to ? 'on' : ''}" data-to="${esc(to)}" aria-pressed="${target === to}" aria-label="${esc(tipText)}" data-tip="${esc(tipText)}" data-sub="${esc(sub)}"${c ? ` style="--c:${c}"` : ''}>${inner}</button>`
   const draw = () => {
     if (!['auto', 'task'].includes(target) && agents.length && !agents.some((a) => a.on && a.name === target)) target = 'auto'
     const task = Boolean(kindIn(ta.value))
     morph(chips,
-      `<button class="chip ${target === 'auto' ? 'on' : ''}" data-to="auto" title="Picks by area, prefers whoever is free. @mention names to pick them yourself">✦ Auto</button>` +
-      `<button class="chip task-chip ${target === 'task' ? 'on' : ''}" data-to="task" title="Add to the Tasks board instead of messaging an agent (or start with task:, bug: or feature:). @name assigns it">${ICONS.task}Task</button>` +
-      agents.filter((a) => a.on).map((a) => `<button class="chip ${target === a.name ? 'on' : ''}" data-to="${esc(a.name)}" title="${esc(statusText(a))}">${avatarHTML(a, { size: 20 })}${nameHTML(a)}</button>`).join(''))
+      '<span class="chips-label">To</span>' +
+      chip('auto', '', `${ICONS.sparkles}<span class="label">Auto</span>`, 'Auto', 'picks by area, prefers whoever is free') +
+      chip('task', 'task-chip', `${ICONS.task}<span class="label">Task</span>`, 'Task', 'adds it to the Tasks board, @name assigns it') +
+      '<span class="chip-sep"></span>' +
+      agents.filter((a) => a.on).map((a) => chip(a.name, 'agent', `${avatarHTML(a, { size: 22 })}<span class="label">${nameHTML(a)}</span>`, a.name, statusText(a), agentColor(a))).join(''))
+    fitRail()
     el.classList.toggle('task-mode', task)
     freshBtn.setAttribute('aria-pressed', String(fresh))
-    freshBtn.title = fresh ? 'New conversation: on. The agent starts this task with a clean slate (click to turn off)' : 'New conversation: start this task with a clean slate instead of adding to everything the agent did before'
-    // short enough to sit beside the ✦, mic and send buttons on one line
+    freshBtn.title = fresh ? 'On: the agent starts this task in a new conversation, with a clean slate (click to turn off)' : 'Start this task in a new conversation, with a clean slate instead of everything the agent did before'
+    const who = target.split('@')[0]
     ta.placeholder = task ? 'Add a task… @name assigns it'
-      : target === 'auto' ? (fresh ? 'Fresh task, the crew picks who…' : 'Any task: the crew picks who…')
-      : fresh ? `Fresh task for @${target}…` : `Message @${target}…`
+      : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : 'Message the crew, Auto picks who…')
+      : fresh ? `New conversation with ${who}…` : `Message ${who}…`
+  }
+  // Names while they fit on the line, faces only once they don't (the same for every chip, so picking one never
+  // moves the others), then Auto and Task as icons; past that the line scrolls, with a fade where it continues.
+  const railEnd = () => chips.classList.toggle('at-end', chips.scrollLeft + chips.clientWidth >= chips.scrollWidth - 2)
+  const fitRail = () => {
+    if (!chips.clientWidth) return
+    const over = () => chips.scrollWidth > chips.clientWidth + 1
+    chips.classList.remove('compact', 'tight')
+    if (over()) chips.classList.add('compact')
+    if (over()) chips.classList.add('tight')
+    chips.classList.toggle('overflow', over())
+    railEnd()
   }
   const autosize = () => {
     ta.style.height = 'auto'
@@ -902,9 +954,35 @@ function mountComposer(el, { dropZone = el } = {}) {
   }
 
   chips.addEventListener('click', (e) => {
-    const chip = e.target.closest('[data-to]')
-    if (!chip) return
-    setTarget(chip.dataset.to)
+    const picked = e.target.closest('[data-to]')
+    if (!picked) return
+    setTarget(picked.dataset.to)
+    tip.classList.remove('on')
+    ta.focus()
+  })
+  new ResizeObserver(fitRail).observe(chips)
+  chips.addEventListener('scroll', () => (railEnd(), tip.classList.remove('on')), { passive: true })
+  chips.addEventListener('wheel', (e) => {
+    if (!chips.classList.contains('overflow') || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return
+    chips.scrollLeft += e.deltaY
+    e.preventDefault()
+  }, { passive: false })
+  chips.addEventListener('pointerover', (e) => {
+    const c = e.target.closest('[data-tip]')
+    if (!c) return
+    tip.innerHTML = `${esc(c.dataset.tip)}<small>${esc(c.dataset.sub)}</small>`
+    const r = c.getBoundingClientRect()
+    const box = el.getBoundingClientRect()
+    const half = tip.offsetWidth / 2
+    tip.style.left = `${Math.min(Math.max(r.left - box.left + r.width / 2, half + 6), box.width - half - 6)}px`
+    tip.style.top = `${r.top - box.top - 5}px`
+    tip.classList.add('on')
+  })
+  chips.addEventListener('pointerleave', () => tip.classList.remove('on'))
+  // the whole box is the text field: a click on its empty parts puts the cursor in
+  el.querySelector('.input').addEventListener('mousedown', (e) => {
+    if (e.target.closest('button, textarea, .thumbs')) return
+    e.preventDefault()
     ta.focus()
   })
   ta.addEventListener('input', () => {

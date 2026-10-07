@@ -7,13 +7,20 @@
   --fg2: rgba(0, 0, 0, 0.56);
   --fg3: rgba(0, 0, 0, 0.36);
   --line: rgba(0, 0, 0, 0.09);
+  --line-strong: rgba(0, 0, 0, 0.12);
   --track: rgba(0, 0, 0, 0.08);
   --btn: rgba(0, 0, 0, 0.055);
   --btn-hover: rgba(0, 0, 0, 0.1);
   --seg-on: #ffffff;
-  --bubble: rgba(0, 0, 0, 0.055);
-  --bubble-me: #0a84ff;
+  --bubble: #eeeef1;
+  --bubble-me: #0a7cff;
   --surface: #ffffff;
+  /* the chat (floating panel and the dashboard's column): one solid sheet, cards and the message box on top */
+  --panel: #f9f9fb;
+  --card: #ffffff;
+  --field: #ffffff;
+  --tip: #1d1d1f;
+  --tip-fg: #ffffff;
   --glass: rgba(250, 250, 252, 0.9);
   --link: #2563eb;
   --code-bg: rgba(0, 0, 0, 0.05);
@@ -57,13 +64,19 @@
     --fg2: rgba(255, 255, 255, 0.58);
     --fg3: rgba(255, 255, 255, 0.36);
     --line: rgba(255, 255, 255, 0.09);
+    --line-strong: rgba(255, 255, 255, 0.12);
     --track: rgba(255, 255, 255, 0.1);
     --btn: rgba(255, 255, 255, 0.08);
     --btn-hover: rgba(255, 255, 255, 0.14);
     --seg-on: rgba(255, 255, 255, 0.16);
-    --bubble: rgba(255, 255, 255, 0.08);
-    --bubble-me: #0a7cf0;
+    --bubble: #2c2c30;
+    --bubble-me: #0a72e8;
     --surface: #242528;
+    --panel: #1c1c1f;
+    --card: #26262a;
+    --field: #252529;
+    --tip: #f2f2f4;
+    --tip-fg: #1d1d1f;
     --glass: rgba(38, 38, 42, 0.9);
     --link: #7aa2ff;
     --code-bg: rgba(0, 0, 0, 0.28);
@@ -261,114 +274,135 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .burst i { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 2px; background: var(--b); animation: burst .8s var(--out) forwards; }
 @keyframes burst { 0% { transform: translate(0, 0) scale(.4) rotate(0); opacity: 1; } 100% { transform: translate(var(--x), var(--y)) scale(1) rotate(var(--r)); opacity: 0; } }
 
-/* ---- feed ---- */
-.feed { overflow-x: hidden; overflow-y: auto; padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 6px; user-select: text; }
+/* ---- feed ----
+   A group chat: agents on the left beside their creature, you on the right in blue, crew events centered and
+   quiet. Messages in a row from one sender stack under one face and name. */
+.feed {
+  overflow-x: hidden; overflow-y: auto; padding: 16px 14px 14px; display: flex; flex-direction: column; gap: 14px; user-select: text;
+  /* messages soften into the edges instead of being cut off by a hard line */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 10px), transparent);
+}
 .feed-list { display: contents; }
-.feed .empty { margin: auto; color: var(--fg3); text-align: center; padding: 24px; display: grid; justify-items: center; gap: 10px; }
-.feed .empty .mark { width: 54px; height: 36px; color: var(--fg3); opacity: .5; }
-.item { display: flex; flex-direction: column; align-items: flex-start; max-width: 88%; }
-.item.me { align-self: flex-end; align-items: flex-end; }
+.feed .empty { margin: auto; padding: 24px; max-width: 250px; display: grid; justify-items: center; gap: 6px; text-align: center; color: var(--fg3); font-size: 12.5px; line-height: 1.45; }
+.feed .empty .mark { width: 56px; height: 37px; color: var(--fg3); opacity: .45; margin-bottom: 6px; }
+.feed .empty b { color: var(--fg); font-size: 14px; font-weight: 650; }
+.item { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; }
+.item.me { align-self: flex-end; align-items: flex-end; max-width: 86%; }
+.item.cont { margin-top: -10px; }
 .item.enter { animation: item-in .5s var(--bounce) backwards; }
 .item.me.enter { animation-name: item-in-me; }
-@keyframes item-in { from { opacity: 0; transform: translateY(14px) scale(.96); transform-origin: 0 100%; } }
-@keyframes item-in-me { from { opacity: 0; transform: translateY(14px) scale(.96); transform-origin: 100% 100%; } }
-.item .cap { font-size: 11px; color: var(--fg2); margin: 6px 6px 3px; display: flex; gap: 6px; align-items: center; }
-.item .cap .who { font-weight: 650; cursor: pointer; }
-.item .cap .who:hover { text-decoration: underline; }
+@keyframes item-in { from { opacity: 0; transform: translateY(12px) scale(.97); transform-origin: 0 0; } }
+@keyframes item-in-me { from { opacity: 0; transform: translateY(12px) scale(.97); transform-origin: 100% 100%; } }
+/* who and when, above the bubble */
+.item .cap { display: flex; align-items: baseline; gap: 6px; max-width: 100%; min-width: 0; margin: 0 2px 4px; font-size: 12px; color: var(--fg3); white-space: nowrap; }
+.item .cap .time { font-size: 11px; font-variant-numeric: tabular-nums; }
+.item .cap .who { font-size: 12.5px; }
+.item .cap .via { display: inline-flex; align-self: center; color: var(--fg3); }
+.item .cap .via svg { width: 12px; height: 12px; }
+/* names take their creature's color, darkened (or lightened) until they read on the background */
+.feed .who { --c: var(--fg2); color: color-mix(in oklab, var(--c) 62%, var(--fg)); font-weight: 650; cursor: pointer; }
+.feed .who:hover { text-decoration: underline; text-underline-offset: 2px; }
+.item.said { flex-direction: row; align-items: flex-start; gap: 10px; }
+.item.said .face { width: 28px; flex: none; padding-top: 1px; cursor: pointer; line-height: 0; }
+.item.said .stack { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
 .bubble {
-  background: var(--bubble); border-radius: 18px; padding: 9px 14px; max-width: 100%; min-width: 0;
-  font-size: 14px; line-height: 1.42; overflow-wrap: anywhere; max-height: 22em; overflow: hidden;
+  background: var(--bubble); border-radius: 16px; padding: 8px 12px; max-width: 100%; min-width: 0;
+  font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; max-height: 22em; overflow: hidden;
 }
-.item.said .stack { max-width: 100%; }
-/* agents' bubbles carry a hint of their creature's color */
-.item.said .bubble { background: color-mix(in srgb, var(--c, transparent) 9%, var(--bubble)); border-bottom-left-radius: 6px; }
-.more { all: unset; cursor: pointer; margin: 4px 6px 0; font-size: 12px; font-weight: 650; color: var(--link); }
-.more:hover { text-decoration: underline; }
+.item.said .bubble { border-top-left-radius: 6px; }
+/* your messages: a blue bubble, like any chat */
+.me .bubble { background: var(--bubble-me); color: #fff; border-top-right-radius: 6px; }
+.me .bubble a { color: #fff; }
+.me .bubble code { background: rgba(255, 255, 255, .22); }
+.me .bubble pre { background: rgba(0, 0, 0, .18); }
+.me .bubble blockquote { border-color: rgba(255, 255, 255, .4); color: rgba(255, 255, 255, .85); }
+/* long messages fold with a fade; the toggle sits under them with a chevron that turns */
 .bubble.open { max-height: none; }
 .bubble.long { cursor: pointer; }
-.bubble.long:not(.open) { -webkit-mask-image: linear-gradient(#000 calc(100% - 3.5em), transparent); }
+.bubble.long:not(.open) { -webkit-mask-image: linear-gradient(#000 calc(100% - 4.5em), transparent); }
+.more { all: unset; display: inline-flex; align-items: center; gap: 6px; margin: 5px 3px 0; font-size: 12px; font-weight: 600; color: var(--fg2); cursor: pointer; }
+.more::after { content: ''; width: 5px; height: 5px; border: solid currentColor; border-width: 0 1.6px 1.6px 0; transform: translateY(-2px) rotate(45deg); transition: transform .3s var(--out); }
+.bubble.open + .more::after { transform: translateY(1px) rotate(-135deg); }
+.more:hover { color: var(--fg); }
 
 /* rendered Markdown inside bubbles */
 .bubble > * { margin: 0; }
 .bubble > * + * { margin-top: 8px; }
-.bubble b { font-weight: 700; }
-.bubble h4 { font-size: 14.5px; font-weight: 750; }
+.bubble b { font-weight: 650; }
+.bubble h4 { font-size: 14px; font-weight: 700; }
 .bubble ul, .bubble ol { padding-left: 20px; }
 .bubble li + li { margin-top: 3px; }
 .bubble li::marker { color: var(--fg3); }
-.bubble code { font: 12.5px var(--mono); background: rgba(127, 127, 127, .2); padding: 1px 5px; border-radius: 6px; }
+.bubble code { font: 12px var(--mono); background: rgba(127, 127, 127, .16); padding: 1px 5px; border-radius: 5px; }
 /* code blocks wrap in chat: never wider than the bubble */
-.bubble pre { position: relative; padding: 10px 40px 10px 12px; border-radius: 12px; background: var(--code-bg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubble pre { position: relative; padding: 10px 40px 10px 12px; border-radius: 10px; background: var(--code-bg); white-space: pre-wrap; overflow-wrap: anywhere; }
 .copy { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 8px; background: var(--btn); color: var(--fg2); display: grid; place-items: center; cursor: pointer; opacity: .75; transition: opacity .15s, background .15s, transform .25s var(--bounce); }
 .copy:hover { opacity: 1; background: var(--btn-hover); color: var(--fg); }
 .copy:active { transform: scale(.85); }
 .copy svg { width: 14px; height: 14px; }
 .copy.done { opacity: 1; color: var(--working); }
 .bubble pre code { background: none; padding: 0; font-size: 12px; white-space: inherit; }
-.bubble blockquote { padding-left: 10px; border-left: 3px solid var(--line); color: var(--fg2); }
-.bubble a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+.bubble blockquote { padding-left: 10px; border-left: 2px solid var(--line-strong); color: var(--fg2); }
+.bubble a { color: var(--link); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 /* a wide table scrolls inside the bubble instead of being clipped by it */
-.bubble .tbl { max-width: 100%; overflow-x: auto; }
-.bubble table { border-collapse: collapse; font-size: 13px; line-height: 1.35; }
+.bubble .tbl { max-width: 100%; overflow-x: auto; border-radius: 8px; box-shadow: 0 0 0 1px var(--line); }
+.bubble table { border-collapse: collapse; font-size: 12.5px; line-height: 1.35; }
 /* the bubble's overflow-wrap: anywhere would squeeze every column to one character */
 .bubble th, .bubble td { padding: 5px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: normal; min-width: 3em; }
+.bubble tr > :first-child { border-left: 0; }
+.bubble tr > :last-child { border-right: 0; }
+.bubble thead tr:first-child > * { border-top: 0; }
+.bubble tbody tr:last-child > * { border-bottom: 0; }
 .bubble th { font-weight: 650; background: var(--btn); }
 
-/* threads: a reply quotes what it answers, a message links to its replies */
+/* threads: a reply quotes what it answers (a bar in the quoted sender's color), a message links to its replies */
 .quote, .replied { all: unset; box-sizing: border-box; cursor: pointer; max-width: 100%; font-size: 12px; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quote { margin: 0 0 4px; padding: 5px 10px; border-radius: 12px; background: var(--btn); border-left: 3px solid var(--fg3); }
-.replied { margin-top: 4px; padding: 1px 4px; font-weight: 600; }
-.quote:hover, .replied:hover { color: var(--fg); }
-.item.flash > .bubble, .item.flash .stack > .bubble { animation: flash 1.4s ease-out; }
-@keyframes flash { 0%, 30% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
-/* your messages: a blue bubble, like any chat */
-.me .bubble { background: var(--bubble-me); color: #fff; border-bottom-right-radius: 6px; }
-.me .bubble a { color: #fff; }
-.me .bubble code { background: rgba(255, 255, 255, .22); }
-.me .bubble pre { background: rgba(0, 0, 0, .18); }
-.me .bubble blockquote { border-color: rgba(255, 255, 255, .4); color: rgba(255, 255, 255, .85); }
-.item.said { flex-direction: row; align-items: flex-end; gap: 8px; max-width: 92%; }
-.item.said .face { width: 30px; flex: none; cursor: pointer; line-height: 0; }
-.item.said .stack { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
-.item.note .bubble { background: transparent; box-shadow: inset 0 0 0 1px var(--line); font-style: italic; }
-.item.handoff .bubble { box-shadow: inset 3px 0 0 var(--c); }
-.item.dropped .bubble { opacity: .4; text-decoration: line-through; }
-.item .tag { font-size: 10.5px; padding: 1px 6px; border-radius: 6px; background: var(--btn); color: var(--fg2); }
-.item .actions { display: flex; gap: 6px; margin-top: 6px; }
-.event { align-self: center; font-size: 11.5px; color: var(--fg2); padding: 4px 12px; text-align: center; max-width: 92%; border-radius: 999px; }
-.event.alert { color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 12%, transparent); }
-.event .who { font-weight: 650; cursor: pointer; }
+.quote { --qc: var(--fg3); position: relative; display: block; margin: 0 0 4px; padding: 5px 10px 5px 14px; border-radius: 10px; background: color-mix(in srgb, var(--qc) 9%, transparent); transition: background .15s, color .15s; }
+.quote::before { content: ''; position: absolute; left: 5px; top: 5px; bottom: 5px; width: 3px; border-radius: 2px; background: var(--qc); }
+.quote b { font-weight: 650; color: color-mix(in oklab, var(--qc) 62%, var(--fg)); }
+.quote:hover { background: color-mix(in srgb, var(--qc) 15%, transparent); color: var(--fg); }
+.replied { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 1px 3px; font-weight: 600; color: var(--fg3); transition: color .15s; }
+.replied svg { width: 13px; height: 13px; flex: none; }
+.replied span { overflow: hidden; text-overflow: ellipsis; }
+.replied:hover { color: var(--fg); }
+.item.flash > .bubble, .item.flash .stack > .bubble, .item.flash .ask-card { animation: flash 1.4s ease-out; }
+@keyframes flash { 0%, 30% { box-shadow: 0 0 0 3px var(--ring); } 100% { box-shadow: 0 0 0 3px transparent; } }
+.item.note .bubble { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--fg2); }
+.item.dropped .bubble { opacity: .45; text-decoration: line-through; }
+.item .tag { align-self: center; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 6px; background: var(--btn); color: var(--fg2); }
+.item .actions { display: flex; gap: 6px; margin-top: 8px; }
+.event { align-self: center; max-width: 92%; padding: 0 8px; text-align: center; font-size: 11.5px; line-height: 1.4; color: var(--fg3); }
+.event.alert { color: var(--waiting-ink); font-weight: 560; }
 
 /* ---- an agent's question, answered right here (askCard in common.js) ----
-   Open: a warm ring that breathes until you answer. Answered: a quiet line saying what happened. */
+   Open: a raised card with a warm edge until you answer. Answered: a quiet line saying what happened. */
 .ask-card {
-  min-width: 250px; max-width: 100%; padding: 12px 14px 11px; border-radius: 18px; border-bottom-left-radius: 6px;
-  background: color-mix(in srgb, var(--c, transparent) 8%, var(--bubble)); font-size: 13.5px; line-height: 1.4; user-select: text;
+  min-width: 250px; max-width: 100%; padding: 12px 14px; border-radius: 16px; border-top-left-radius: 6px;
+  background: var(--card); box-shadow: 0 0 0 1px var(--line-strong), 0 2px 8px -4px rgba(0, 0, 0, .12); font-size: 13px; line-height: 1.4; user-select: text;
 }
-.item.ask.open .ask-card { animation: ask-ring 2.2s ease-in-out infinite; }
-@keyframes ask-ring { 0%, 100% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 45%, transparent); } 50% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 75%, transparent), 0 0 0 5px color-mix(in srgb, var(--waiting) 14%, transparent); } }
+.item.ask.open .ask-card { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 60%, transparent), 0 6px 18px -8px color-mix(in srgb, var(--waiting) 50%, transparent); animation: ask-ring 2.4s ease-in-out infinite; }
+@keyframes ask-ring { 50% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 80%, transparent), 0 0 0 5px color-mix(in srgb, var(--waiting) 12%, transparent), 0 6px 18px -8px color-mix(in srgb, var(--waiting) 50%, transparent); } }
 .ask-card.sending { opacity: .55; pointer-events: none; transition: opacity .2s; }
-.ask-title { display: flex; align-items: center; gap: 8px; font-weight: 700; }
-.ask-title svg { flex: none; width: 24px; height: 24px; padding: 4px; border-radius: 8px; color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 16%, transparent); }
-.ask-code { margin: 9px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--code-bg); font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 11em; overflow: auto; }
+.ask-title { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; }
+.ask-title svg { flex: none; width: 24px; height: 24px; padding: 4px; border-radius: 7px; color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 16%, transparent); }
+.ask-code { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--code-bg); font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 11em; overflow: auto; }
 .ask-detail { margin-top: 6px; color: var(--fg2); font-size: 12.5px; }
-.ask-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
-.ask-actions .btn { padding: 6px 13px; }
+.ask-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.ask-actions .btn { padding: 6px 14px; }
 .ask-actions .btn.deny { color: var(--danger); }
-.ask-always { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
-.ask-always button { border: 0; border-radius: 999px; padding: 4px 10px; background: var(--btn); color: var(--fg2); font-size: 11.5px; font-weight: 600; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background .15s, color .15s, transform .25s var(--bounce); }
-.ask-always button::before { content: '✓ '; color: var(--working-ink); }
+.ask-actions .btn.deny:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.ask-always { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.ask-always button { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 999px; padding: 4px 10px 4px 8px; background: var(--btn); color: var(--fg2); font-size: 11.5px; font-weight: 600; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background .15s, color .15s, transform .25s var(--bounce); }
+.ask-always button svg { width: 12px; height: 12px; flex: none; color: var(--working-ink); }
 .ask-always button:hover { background: var(--btn-hover); color: var(--fg); }
 .ask-always button:active { transform: scale(.95); }
-.ask-actions .btn.deny:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .ask-note, .ask-other {
-  display: block; width: 100%; margin-top: 8px; padding: 7px 11px; border: 0; border-radius: 10px; outline: 0;
-  background: color-mix(in srgb, var(--surface) 65%, transparent); box-shadow: inset 0 0 0 1px var(--line); font-size: 12.5px; user-select: text;
-  transition: box-shadow .15s;
+  display: block; width: 100%; margin-top: 8px; padding: 7px 11px; border: 0; border-radius: 9px; outline: 0;
+  background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 12.5px; user-select: text; transition: box-shadow .15s;
 }
-.ask-note:focus, .ask-other:focus { box-shadow: inset 0 0 0 1.5px var(--c, var(--accent)); }
+.ask-note:focus, .ask-other:focus { box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
 .ask-note::placeholder, .ask-other::placeholder { color: var(--fg3); }
-.ask-foot { margin-top: 7px; }
+.ask-foot { margin-top: 8px; }
 .ask-elsewhere { all: unset; font-size: 11.5px; color: var(--fg3); }
 button.ask-elsewhere { cursor: pointer; color: var(--fg2); text-decoration: underline; text-underline-offset: 2px; }
 button.ask-elsewhere:hover { color: var(--fg); }
@@ -378,100 +412,147 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .ask-q + .ask-q { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .ask-head { display: flex; gap: 6px; align-items: center; }
 .ask-head:empty { display: none; }
-.ask-chip { font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 14%, transparent); }
+.ask-chip { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 14%, transparent); }
 .ask-multi { font-size: 11px; color: var(--fg3); }
-.ask-question { margin: 6px 0 9px; font-size: 14px; font-weight: 650; }
+.ask-question { margin: 6px 0 10px; font-size: 13.5px; font-weight: 650; }
 .ask-options { display: flex; flex-direction: column; gap: 6px; }
 .ask-option {
   position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 34px 8px 12px; text-align: left;
-  border: 0; border-radius: 12px; cursor: pointer; background: color-mix(in srgb, var(--surface) 70%, transparent); box-shadow: inset 0 0 0 1.5px var(--line);
+  border: 0; border-radius: 10px; cursor: pointer; background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong);
   transition: box-shadow .15s, background .15s, transform .25s var(--bounce);
 }
-.ask-option b { font-weight: 650; font-size: 13.5px; }
+.ask-option b { font-weight: 650; font-size: 13px; }
 .ask-option span { font-size: 12px; color: var(--fg2); }
-.ask-option:hover { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c, var(--accent)) 60%, transparent); }
+.ask-option:hover { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
 .ask-option:active { transform: scale(.98); }
-.ask-option.on { background: color-mix(in srgb, var(--c, var(--accent)) 14%, var(--surface)); box-shadow: inset 0 0 0 2px var(--c, var(--accent)); }
-.ask-option.on::after { content: '✓'; position: absolute; right: 12px; top: 50%; translate: 0 -50%; font-weight: 800; color: var(--c, var(--accent)); animation: chip-on .35s var(--spring); }
-.ask-plan { margin-top: 9px; padding: 10px 12px; border-radius: 12px; max-height: 18em; overflow: auto; background: color-mix(in srgb, var(--surface) 65%, transparent); box-shadow: inset 0 0 0 1px var(--line); font-size: 13px; }
+.ask-option.on { background: color-mix(in srgb, var(--accent) 10%, var(--field)); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.ask-option.on::after { content: ''; position: absolute; right: 14px; top: 50%; width: 5px; height: 10px; margin-top: -7px; border: solid var(--accent); border-width: 0 2px 2px 0; transform: rotate(45deg); animation: check-in .35s var(--spring); }
+@keyframes check-in { from { scale: 0; } }
+.ask-plan { margin-top: 10px; padding: 10px 12px; border-radius: 10px; max-height: 18em; overflow: auto; background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 12.5px; }
 .ask-plan > * { margin: 0; }
 .ask-plan > * + * { margin-top: 7px; }
-.ask-plan h4 { font-size: 13.5px; }
+.ask-plan h4 { font-size: 13px; }
 .ask-plan ul, .ask-plan ol { padding-left: 18px; }
-.ask-plan code { font: 12px var(--mono); background: rgba(127, 127, 127, .18); padding: 1px 4px; border-radius: 5px; }
-.ask-card.done { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; padding: 8px 13px; font-size: 12.5px; color: var(--fg2); }
+.ask-plan code { font: 11.5px var(--mono); background: rgba(127, 127, 127, .16); padding: 1px 4px; border-radius: 5px; }
+.ask-card.done { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; padding: 7px 12px; border-radius: 12px; background: var(--btn); box-shadow: none; font-size: 12.5px; color: var(--fg2); }
 .ask-card.done b { color: var(--fg); font-weight: 650; }
 .ask-what { color: var(--fg3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ask-what::before { content: '· '; }
-.ask-mark { font-weight: 800; color: var(--fg3); }
-.ask-mark.ok { color: var(--working-ink); }
-.ask-mark.no { color: var(--danger); }
-.ask-answer { display: flex; align-items: baseline; gap: 7px; flex-basis: 100%; }
+.ask-mark { display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: 50%; color: var(--fg3); background: var(--btn); }
+.ask-mark svg { width: 10px; height: 10px; stroke-width: 3; }
+.ask-mark.ok { color: #fff; background: var(--working); }
+.ask-mark.no { color: #fff; background: var(--danger); }
+.ask-answer { display: flex; align-items: center; gap: 7px; flex-basis: 100%; }
 /* a new conversation: a soft rule across the feed */
-.fresh-ev { display: flex; align-items: center; gap: 10px; margin: 6px 4px; color: var(--fg3); font-size: 11.5px; }
-.fresh-ev::before, .fresh-ev::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--line) 30%, var(--line) 70%, transparent); }
+.fresh-ev { display: flex; align-items: center; gap: 10px; margin: 2px 4px; color: var(--fg3); font-size: 11.5px; }
+.fresh-ev::before, .fresh-ev::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--line-strong) 30%, var(--line-strong) 70%, transparent); }
 .fresh-ev span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .fresh-ev svg { width: 13px; height: 13px; color: var(--accent); }
-.fresh-ev .who { font-weight: 650; cursor: pointer; }
 
-/* tasks in the feed: one tappable line each, tinted by kind */
-.task-ev { --k: var(--task); align-self: center; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 7px; align-items: center; max-width: 94%; padding: 5px 12px 5px 7px; border-radius: 14px; background: color-mix(in srgb, var(--k) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 15%, transparent); cursor: pointer; font-size: 12px; color: var(--fg2); transition: background .15s, transform .3s var(--bounce); }
+/* tasks in the feed: one tappable line each, the kind in its icon's color */
+.task-ev { --k: var(--task); align-self: center; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: center; max-width: 100%; padding: 5px 12px 5px 5px; border-radius: 12px; background: var(--btn); cursor: pointer; font-size: 12px; color: var(--fg2); transition: background .15s, transform .3s var(--bounce); }
 .task-ev.type-bug { --k: var(--bug); }
 .task-ev.type-feature { --k: var(--feature); }
-.task-ev:hover { background: color-mix(in srgb, var(--k) 12%, transparent); }
+.task-ev:hover { background: var(--btn-hover); }
 .task-ev:active { transform: scale(.98); }
-.task-ev-icon { width: 20px; height: 20px; border-radius: 7px; display: grid; place-items: center; color: #fff; background: var(--k); }
+.task-ev-icon { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; color: #fff; background: var(--k); }
 .task-ev-icon svg { width: 13px; height: 13px; }
 .task-ev-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-ev-line b { color: color-mix(in srgb, var(--k) 80%, var(--fg)); font-weight: 700; font-variant-numeric: tabular-nums; }
+.task-ev-line b { color: color-mix(in oklab, var(--k) 75%, var(--fg)); font-weight: 650; font-variant-numeric: tabular-nums; }
 .task-ev-title { color: var(--fg); font-weight: 560; }
-.task-ev-text { grid-column: 2; font-size: 11.5px; color: var(--fg3); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-ev .who { font-weight: 650; }
-.task-ev.act-fixed { background: color-mix(in srgb, var(--working) 9%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--working) 22%, transparent); }
-.task-ev.act-fixed .task-ev-icon { background: var(--working); }
-.task-ev.act-done { opacity: .75; }
+.task-ev-text { grid-column: 2; font-size: 11.5px; color: var(--fg3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-ev.act-fixed .task-ev-icon, .task-ev.act-done .task-ev-icon { background: var(--working); }
+.task-ev.act-done { color: var(--fg3); }
 /* a task handed to an agent: the ticket, not its whole brief */
-.ticket-bubble { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 8px 13px 8px 9px; border-radius: 18px; border-bottom-right-radius: 6px; background: var(--bubble-me); color: #fff; font-size: 13.5px; transition: filter .15s, transform .3s var(--bounce); }
+.ticket-bubble { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 7px 12px 7px 8px; border-radius: 16px; border-top-right-radius: 6px; background: var(--bubble-me); color: #fff; font-size: 13.5px; transition: filter .15s, transform .3s var(--bounce); }
 .ticket-bubble:hover { filter: brightness(1.08); }
 .ticket-bubble:active { transform: scale(.97); }
-.ticket-bubble .tb-icon { width: 20px; height: 20px; border-radius: 7px; display: grid; place-items: center; background: rgba(255, 255, 255, .22); flex: none; }
+.ticket-bubble .tb-icon { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; background: rgba(255, 255, 255, .22); flex: none; }
 .ticket-bubble svg { width: 13px; height: 13px; }
 .ticket-bubble b { font-variant-numeric: tabular-nums; }
 .item .tag.fresh { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
-/* who's on it right now: a typing bubble per busy agent, under the last message */
-.typing-row { display: flex; align-items: flex-end; gap: 8px; max-width: 92%; cursor: pointer; animation: item-in .45s var(--bounce) both; }
-.typing-row .face { width: 30px; flex: none; line-height: 0; }
-.typing-row .stack { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
-.typing-row .cap { font-size: 11px; color: var(--fg3); margin: 0 6px 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
-.typing-row .cap b { font-family: -apple-system, sans-serif; font-weight: 650; }
-.typing { display: inline-flex; gap: 4px; align-items: center; padding: 12px 14px; border-radius: 18px; border-bottom-left-radius: 6px; background: color-mix(in srgb, var(--c) 9%, var(--bubble)); }
-.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); opacity: .5; animation: typing 1.2s ease-in-out infinite; }
+/* who's on it right now: one slim line per busy agent under the last message, what it's doing in mono */
+.feed-list.typing-list { display: flex; flex-direction: column; gap: 2px; margin: -4px -6px 0; }
+.feed-list.typing-list:empty { display: none; }
+.typing-row { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 3px 8px 3px 6px; border-radius: 10px; cursor: pointer; font-size: 12.5px; color: var(--fg2); animation: item-in .45s var(--bounce) both; transition: background .15s; }
+.typing-row:hover { background: var(--btn); }
+.typing-row .face { width: 22px; flex: none; line-height: 0; }
+.typing-row .tr-name { flex: none; font-weight: 650; color: color-mix(in oklab, var(--c) 62%, var(--fg)); }
+.typing-row .tr-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px var(--mono); color: var(--fg3); }
+.typing { flex: none; display: inline-flex; gap: 3px; align-items: center; padding: 0 2px; }
+.typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--c); animation: typing 1.2s ease-in-out infinite; }
 .typing i:nth-child(2) { animation-delay: .15s; }
 .typing i:nth-child(3) { animation-delay: .3s; }
-@keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-4px); opacity: 1; } }
-.typing-row.waiting .typing { background: color-mix(in srgb, var(--waiting) 16%, var(--bubble)); color: var(--waiting-ink); font-weight: 650; font-size: 12.5px; padding: 8px 13px; }
+@keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: .35; } 30% { transform: translateY(-3px); opacity: 1; } }
+.typing-row.waiting .tr-what { font-family: inherit; font-size: 12px; color: var(--waiting-ink); }
+.tr-go { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 650; color: #fff; background: var(--waiting); }
+.tr-go svg { width: 11px; height: 11px; }
 
-/* ---- composer ---- */
-.composer { position: relative; padding: 8px 12px 12px; border-top: 1px solid var(--line); }
-.chips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+/* ---- composer ----
+   Who it's for on one line (names, or just faces once the crew outgrows the line), then the message box with its
+   tools underneath, so the text gets the whole width. */
+.composer { position: relative; padding: 8px 12px 12px; }
+.chips { position: relative; display: flex; align-items: center; gap: 4px; height: 30px; margin: 0 -2px 8px; padding: 0 2px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chips.overflow:not(.at-end) { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+.chips-label { flex: none; margin: 0 3px 0 4px; font-size: 12px; font-weight: 560; color: var(--fg3); }
+.chip-sep { flex: none; width: 1px; height: 16px; margin: 0 3px; background: var(--line-strong); }
 .chip {
-  border: 0; border-radius: 12px; padding: 3px 9px 3px 7px; background: var(--btn); cursor: pointer;
-  display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--fg2);
-  transition: background .2s, color .2s, transform .3s var(--bounce);
+  --c: var(--fg3); flex: none; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px 0 4px; border: 0; border-radius: 999px;
+  background: none; box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 12.5px; font-weight: 560; color: var(--fg2); white-space: nowrap; cursor: pointer;
+  transition: background .2s, color .2s, box-shadow .2s, transform .3s var(--bounce);
 }
-.chip:hover { background: var(--btn-hover); color: var(--fg); }
+.chip:hover { background: var(--btn); color: var(--fg); }
 .chip:active { transform: scale(.92); }
-.chip .dot { width: 7px; height: 7px; }
-.chip .av { margin: -4px -1px -4px -4px; }
-.chip.on { background: var(--fg); color: var(--surface); animation: chip-on .4s var(--spring); }
+.chip > svg { width: 14px; height: 14px; flex: none; margin-left: 4px; color: color-mix(in oklab, var(--c) 80%, var(--fg)); }
+.chip .av { margin: -3px 0; }
+.chip .at { display: none; }
+.chip.on { color: var(--fg); background: color-mix(in srgb, var(--c) 14%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c) 70%, transparent); animation: chip-on .4s var(--spring); }
 @keyframes chip-on { 40% { transform: scale(1.08); } }
-.chip.on .dot.idle { box-shadow: inset 0 0 0 1.5px var(--surface); }
-.input { display: flex; align-items: flex-end; gap: 8px; background: var(--bubble); border-radius: 20px; padding: 6px; transition: box-shadow .2s, background .2s; }
-.input:focus-within { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 50%, transparent), 0 0 0 5px color-mix(in srgb, var(--accent) 12%, transparent); }
-.attach { width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; background: var(--btn); color: var(--fg2); font-size: 19px; font-weight: 300; line-height: 1; cursor: pointer; flex: none; display: grid; place-items: center; transition: background .15s, transform .3s var(--bounce); }
-.attach:hover { background: var(--btn-hover); color: var(--fg); transform: rotate(90deg); }
-.attach svg { width: 15px; height: 15px; }
+.chip[data-to=auto] { --c: var(--accent); }
+.chip.task-chip { --c: var(--task); }
+/* a big crew: faces only, every chip one size, so picking one never moves the rest; a bigger one also folds
+   Auto and Task down to their icons */
+.chips.compact { gap: 2px; }
+.chips.compact .chip.agent, .chips.tight .chip { width: 28px; padding: 0; justify-content: center; }
+.chips.compact .chip.agent .label, .chips.tight .chip .label { display: none; }
+.chips.compact .chip.agent:not(.on), .chips.tight .chip:not(.on) { box-shadow: none; }
+.chips.compact .chips-label { display: none; }
+.chips.tight .chip > svg { margin: 0; }
+.rail-tip { position: absolute; z-index: 5; top: 6px; left: 0; padding: 3px 8px; border-radius: 7px; background: var(--tip); color: var(--tip-fg); font-size: 11.5px; font-weight: 600; white-space: nowrap; pointer-events: none; opacity: 0; transform: translate(-50%, calc(-100% + 3px)); transition: opacity .12s, transform .2s var(--out); }
+.rail-tip.on { opacity: 1; transform: translate(-50%, -100%); }
+.rail-tip small { font-weight: 500; opacity: .7; margin-left: 4px; }
+
+.input { display: flex; flex-direction: column; border-radius: 16px; background: var(--field); box-shadow: 0 0 0 1px var(--line-strong), 0 1px 3px rgba(0, 0, 0, .05); transition: box-shadow .2s; }
+.input:focus-within { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 0 0 4px color-mix(in srgb, var(--accent) 13%, transparent); }
+.input textarea {
+  display: block; width: 100%; border: 0; outline: 0; background: none; resize: none; padding: 10px 13px 4px;
+  font-size: 13.5px; line-height: 1.4; max-height: 160px; overflow-y: hidden; user-select: text;
+}
+.input textarea::placeholder { color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.input-bar { display: flex; align-items: center; gap: 4px; padding: 4px 6px 6px; }
+.attach { width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; background: none; color: var(--fg2); cursor: pointer; flex: none; display: grid; place-items: center; transition: background .15s, color .15s, transform .3s var(--bounce); }
+.attach:hover { background: var(--btn); color: var(--fg); transform: rotate(90deg); }
+.attach svg { width: 16px; height: 16px; }
+/* new conversation: a labeled toggle, so what it does is never a guess */
+.fresh-toggle { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px 0 7px; border: 0; border-radius: 999px; flex: none; background: none; color: var(--fg2); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .2s, color .2s, box-shadow .2s, transform .35s var(--spring); }
+.fresh-toggle:hover { background: var(--btn); color: var(--fg); }
+.fresh-toggle:active { transform: scale(.94); }
+.fresh-toggle svg { width: 15px; height: 15px; flex: none; }
+.fresh-toggle[aria-pressed=true] { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); animation: mode-on .45s var(--spring); }
+.composer.task-mode .fresh-toggle { visibility: hidden; }
+.send { width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; background: var(--accent); color: #fff; cursor: pointer; display: grid; place-items: center; flex: none; transition: transform .35s var(--spring), background .2s, color .2s; }
+.send:hover:not(:disabled) { transform: scale(1.08); }
+.send:active:not(:disabled) { transform: scale(.88); }
+.send:disabled { background: var(--btn-hover); color: var(--fg3); cursor: default; }
+.send svg { width: 15px; height: 15px; }
+/* adding a task: the composer takes the Tasks color */
+.composer.task-mode .input:focus-within { box-shadow: 0 0 0 1px color-mix(in srgb, var(--task) 60%, transparent), 0 0 0 4px color-mix(in srgb, var(--task) 13%, transparent); }
+.composer.task-mode .send:not(:disabled) { background: var(--task); }
+.hint { font-size: 11.5px; color: var(--fg2); margin: 7px 4px 0; min-height: 0; }
+.hint:empty { display: none; }
+.hint.error { color: var(--danger); }
 
 /* ---- dictation (ui/voice.js) ----
    The mic sits next to send. Listening, it grows into a red pill with a meter that follows your voice and a
@@ -501,13 +582,15 @@ button.ask-elsewhere:hover { color: var(--fg); }
 @keyframes meter { from { scale: 1 .55; } to { scale: 1 1; } }
 .voice-starting .mic, .voice-finishing .mic { background: color-mix(in srgb, var(--rec) 55%, var(--btn-hover)); }
 .voice-starting .mic .meter i, .voice-finishing .mic .meter i { height: 3px; animation-duration: .45s; }
-.voice-on .input { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--rec) 55%, transparent), 0 0 0 5px color-mix(in srgb, var(--rec) 12%, transparent); }
+.voice-on .input { box-shadow: 0 0 0 1px color-mix(in srgb, var(--rec) 60%, transparent), 0 0 0 4px color-mix(in srgb, var(--rec) 12%, transparent); }
 .voice-on .input textarea { caret-color: var(--rec); }
 .voice-listening .voice-hint .av-in { animation: av-listen 1.5s ease-in-out infinite; }
 @keyframes av-listen { 0%, 100% { transform: rotate(-7deg) scale(1.04); } 50% { transform: rotate(5deg) scale(1.04, 1.08); } }
+/* the status line takes the recipients' line (which keeps its space), so nothing moves when you start */
 .voice-note .chips { visibility: hidden; }
-.voice-hint { position: absolute; top: 8px; left: 14px; right: 14px; height: 24px; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--fg2); animation: hint-in .3s var(--out); white-space: nowrap; overflow: hidden; }
-.voice-hint .to { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 2px 8px 2px 5px; border-radius: 999px; background: var(--btn); color: var(--fg); font-weight: 600; }
+.voice-hint { position: absolute; top: 8px; left: 14px; right: 14px; height: 30px; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--fg2); animation: hint-in .3s var(--out); white-space: nowrap; overflow: hidden; }
+.voice-hint .to { display: inline-flex; align-items: center; gap: 4px; min-width: 0; height: 22px; padding: 0 8px 0 5px; border-radius: 999px; background: var(--btn); color: var(--fg); font-weight: 600; }
+.voice-hint .to svg { width: 13px; height: 13px; }
 .voice-hint .to .av { margin: -4px 0 -4px -2px; }
 .voice-hint .keys { flex: none; color: var(--fg3); }
 @keyframes hint-in { from { opacity: 0; transform: translateY(-3px); } }
@@ -523,42 +606,17 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .voice-hint.error button { flex: none; border: 0; border-radius: 8px; padding: 3px 10px; background: var(--btn); color: var(--fg); font-weight: 600; font-size: 11.5px; cursor: pointer; }
 .voice-hint.error button:hover { background: var(--btn-hover); }
 
-/* image attachments */
+/* image attachments: thumbnails sit inside the message box, above the text */
 .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.thumb { position: relative; width: 58px; height: 58px; border-radius: 12px; overflow: hidden; background: var(--btn); animation: thumb-in .35s var(--bounce); }
+.input .thumbs { margin: 0; padding: 8px 8px 0; }
+.thumb { position: relative; width: 56px; height: 56px; border-radius: 10px; overflow: hidden; background: var(--btn); box-shadow: 0 0 0 1px var(--line); animation: thumb-in .35s var(--bounce); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; display: block; }
-.thumb button { position: absolute; top: 3px; right: 3px; width: 19px; height: 19px; border-radius: 50%; border: 0; padding: 0; background: rgba(0, 0, 0, .62); color: #fff; font-size: 13px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.thumb button { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 50%; border: 0; padding: 0; background: rgba(0, 0, 0, .62); color: #fff; font-size: 13px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
 @keyframes thumb-in { from { opacity: 0; transform: scale(.6) rotate(-6deg); } }
 .dropping { outline: 2px dashed var(--accent); outline-offset: -4px; background-color: color-mix(in srgb, var(--accent) 8%, transparent); }
-.pics { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 5px; }
+.pics { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; }
 .item.me .pics { justify-content: flex-end; }
-.pics img { max-width: 170px; max-height: 130px; border-radius: 14px; object-fit: cover; cursor: zoom-in; display: block; }
-.input textarea {
-  flex: 1; border: 0; outline: 0; background: none; resize: none; padding: 5px 0;
-  font-size: 14px; line-height: 1.35; max-height: 160px; overflow-y: hidden; user-select: text; min-width: 0;
-}
-.input textarea::placeholder { color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* one line, however many buttons share the row */
-.send { width: 28px; height: 28px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; cursor: pointer; display: grid; place-items: center; flex: none; transition: transform .35s var(--spring), opacity .2s, background .2s; }
-.send:hover:not(:disabled) { transform: scale(1.08); }
-.send:active:not(:disabled) { transform: scale(.88); }
-.send:disabled { opacity: 1; background: var(--btn-hover); color: var(--fg3); cursor: default; transform: scale(.9); }
-.send svg { width: 15px; height: 15px; }
-/* new conversation toggle: a sparkle bubble that lights up */
-.fresh-toggle { width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; flex: none; display: grid; place-items: center; background: none; color: var(--fg3); cursor: pointer; transition: background .2s, color .2s, transform .35s var(--spring), opacity .2s; }
-.fresh-toggle:hover { background: var(--btn); color: var(--fg2); }
-.fresh-toggle:active { transform: scale(.85); }
-.fresh-toggle svg { width: 17px; height: 17px; }
-.fresh-toggle[aria-pressed=true] { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); animation: mode-on .45s var(--spring); }
-.composer.task-mode .fresh-toggle { visibility: hidden; }
-/* adding a task: the composer takes the Tasks color */
-.chip.task-chip svg { width: 13px; height: 13px; color: var(--task); transition: color .2s; }
-.chip.task-chip.on { background: var(--task); color: #fff; }
-.chip.task-chip.on svg { color: #fff; }
-.composer.task-mode .input:focus-within { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--task) 55%, transparent), 0 0 0 5px color-mix(in srgb, var(--task) 12%, transparent); }
-.composer.task-mode .send:not(:disabled) { background: var(--task); }
-.hint { font-size: 11.5px; color: var(--fg2); margin: 6px 4px 0; min-height: 0; }
-.hint:empty { display: none; }
-.hint.error { color: var(--danger); }
+.pics img { max-width: 170px; max-height: 130px; border-radius: 12px; object-fit: cover; cursor: zoom-in; display: block; box-shadow: 0 0 0 1px var(--line); }
 
 /* ---- avatars (ui/avatar.js) ---- */
 .av { position: relative; display: inline-block; width: var(--size); height: var(--size); flex: none; }

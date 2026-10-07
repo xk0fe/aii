@@ -21,6 +21,8 @@ const AGENTS = [
   { name: 'marc', area: 'artist, makes images', provider: 'codex', model: '', effort: 'high', tier: 'fast', fast: true, yolo: true, status: 'working', since: now - 12 * min, activity: 'image_gen: hero illustration, pastel', queue: 2, stats: stats(17, 12, 141, 488, 160, 2, 0, 140, [0, 1, 2, 0, 1, 3, 0, 2, 1, 2, 0, 1, 3, 1]), avatar: { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false } },
   { name: 'arie', area: 'admin work, assistant, organiser', provider: 'codex', model: '', effort: 'medium', fast: false, yolo: true, status: 'idle', since: now - 30 * min, stats: stats(26, 14, 120, 210, 300, 21, 1, 30, [3, 1, 2, 2, 4, 1, 0, 3, 2, 1, 2, 3, 1, 1]), avatar: { body: 'bunny', color: 'lilac', eyes: 'sparkle', mouth: 'grin', hat: 'crown', cheeks: true } },
   { name: 'jeff', area: 'technical support, professional yapper, good to talk to about anything else', provider: 'codex', model: '', effort: 'medium', fast: true, yolo: false, status: 'starting', since: now - 2000, stats: none, avatar: { body: 'blob', color: 'teal', eyes: 'dot', mouth: 'none', hat: 'headphones', cheeks: false } },
+  // runs on a linked computer: its terminal is a mirror streamed over Crew Link
+  { name: 'scarlett@mac-mini', seed: 'scarlett', home: 'mac-mini', homeName: 'Mac mini', area: 'QA, play-tests every build', provider: 'claude', model: 'sonnet', effort: 'medium', yolo: false, status: 'working', since: now - 6 * min, activity: 'Bash: npm run e2e', stats: stats(9, 5, 70, 300, 120, 1, 1, 20, [0, 1, 0, 2, 1, 0, 1, 0, 2, 1, 0, 1, 0, 0]), avatar: { body: 'mochi', color: 'yellow', eyes: 'dot', mouth: 'smile', hat: 'sprout', cheeks: true } },
 ].map((a) => ({ on: true, queue: 0, activity: '', pending: false, args: '', cwd: '~/code/app', prompt: '', images: [], ...a }))
 
 // How full each conversation is (the context gauges) and which bug each fixer's conversation is about.
@@ -35,6 +37,9 @@ const CONVOS = {
   jeff: [{ since: now - 3000, tasks: 0, compactions: 0 }, 8],
 }
 for (const a of AGENTS) [a.convo, a.ticket] = CONVOS[a.name] ?? [null, null]
+// joseph's 1M window is held to 250k: the hub reports its numbers against the limit (core/context.js againstLimit)
+Object.assign(AGENTS[0], { contextLimit: 250000, onContextLimit: 'fresh' })
+AGENTS[0].convo.context = { used: 160000, size: 250000, window: 1000000, limit: 250000, pct: 64 }
 
 // A made-up game screenshot for the tasks that come with one.
 const SHOT = require('path').join(require('os').tmpdir(), 'crew-shots-level2.svg')
@@ -79,6 +84,8 @@ const FEED = [
   { id: 'f4', kind: 'handoff', from: 'joseph', to: 'gal', re: 'f1', text: 'Can you sanity-check the quote styling for threaded replies? It looks cramped on narrow panels.', ts: t(14) },
   { id: 'f5', kind: 'note', from: 'arie', text: 'Standup moved to 10:30. Release branch is cut tomorrow.', ts: t(9) },
   { id: 'f6', kind: 'handoff', from: 'gal', to: 'marc', held: true, text: 'Need three pastel hero illustrations for the onboarding, one per crew role. Soft felt look, like our creatures.', ts: t(5) },
+  { id: 'f6b', kind: 'handoff', from: 'david', to: 'arie', text: 'PUBLISHED: `083c613` is on GitHub. Branch and PR both read back the same commit.', ts: t(4.5) },
+  { id: 'f6c', kind: 'reply', from: 'arie', to: 'you', re: 'f6b', ts: t(4), text: "**Release blocker closed.** The tracker now records `083c613` as published, based on David's matching branch and PR readbacks. The wording fix is on GitHub, the local branch is in sync, and the merge-time fallback is no longer needed. Jeff has been told.\n\nThe remaining sequence is unchanged:\n\n1. Merge **#4645**, then **#4647**. Both are open and unmerged.\n2. Verify the cleanup in a store build.\n3. Joseph retires flag `928775`.\n4. Gal signs off the onboarding art.\n\nI'll post here when #4645 lands." },
   { id: 'f7', kind: 'ask', from: 'gal', to: 'you', cli: 'claude', re: 'f4', ts: t(1), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'rm -rf dist && npm run build', detail: 'Clean the build folder and rebuild the app', alert: 'wants to run a command',
     always: [{ i: 0, label: 'Always allow Bash(npm run build:*)' }, { i: 1, label: 'Allow all edits this session' }] } },
   { id: 'f8', kind: 'reply', from: 'joseph', to: 'you', re: 'f1', text: 'Server side is threaded too:\n\n| path | status |\n|---|---|\n| hub.send | ✓ sendId |\n| hub.reply | ✓ re |\n\nRan the suite, 42 passing.', ts: t(0.5) },
@@ -198,7 +205,8 @@ window.__crewState = state
 window.crew = {
   call: async (action, ...args) => {
     if (action === 'state') return state
-    if (action === 'buffer') return { data: TERM, cols: 100, rows: 30 }
+    // window.__crewBufferDelay holds the replay back, so its ribbon can be captured
+    if (action === 'buffer') return new Promise((r) => setTimeout(() => r({ data: TERM, cols: 100, rows: 30 }), window.__crewBufferDelay ?? 0))
     if (action === 'answer') {
       const [id, reply] = args
       const e = state.feed.find((x) => x.id === id)

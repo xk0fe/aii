@@ -8,7 +8,7 @@ import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf } from './tickets.js'
-import { fromStatusLine, fromCodexLog, codexLog, tokens as tokenCount } from './context.js'
+import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount } from './context.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
 export const CONFIG = path.join(HOME, 'config.json')
@@ -18,7 +18,7 @@ const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif
 const at = (file) => path.join(HOME, file)
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
-const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar']
+const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit']
 const RESERVED = new Set(['you', 'any', 'crew'])
 const FEED_KEEP = 300
 const STOP_WORDS = new Set(
@@ -145,6 +145,7 @@ export class Hub extends EventEmitter {
     for (const n of names) {
       const a = this.agents.get(n)
       if (a && this.runner.running(n) && this.launchKey(a) !== before.get(n)) this.relaunchWhenFree(a)
+      if (a && ('contextLimit' in fields || 'onContextLimit' in fields)) this.checkLimit(a) // a lower limit may be passed already
     }
   }
 
@@ -259,8 +260,9 @@ export class Hub extends EventEmitter {
     this.startFresh(a)
   }
 
-  startFresh(a, why = '') {
+  startFresh(a, why = a.freshWhy ?? '') {
     a.freshPending = false
+    a.freshWhy = undefined
     if (a.inbox[0]?.fresh) a.freshFor = a.inbox[0].id // this new conversation is the one that task waits for
     this.post({ kind: 'event', from: a.name, text: `started a new conversation${why}`, fresh: true })
     this.launch(a, true)
@@ -295,6 +297,36 @@ export class Hub extends EventEmitter {
     if (JSON.stringify(c.context) === JSON.stringify(context)) return
     c.context = context
     this.saveConvos()
+    this.checkLimit(a)
+    this.changed()
+  }
+
+  // An agent's own context limit (contextLimit, in tokens), for a model whose window is bigger than you want
+  // it to use: once its conversation passes the limit, it starts a new one as soon as it's free (the default),
+  // or Crew just tells you (onContextLimit: 'notify'). Once per conversation; it re-arms if the conversation
+  // shrinks back under the limit (the CLI compacted it).
+  checkLimit(a) {
+    const c = this.convoOf(a)
+    const limit = Number(a.contextLimit)
+    if (!(limit > 0) || !c.context || a.off || a.status === 'stopped') return
+    if (c.context.used < limit) {
+      if (c.limitHit) delete c.limitHit
+      return
+    }
+    if (c.limitHit === limit) return
+    c.limitHit = limit
+    this.saveConvos()
+    const passed = `passed its ${tokenCount(limit)} context limit (${tokenCount(c.context.used)} used)`
+    if (a.onContextLimit === 'notify') {
+      this.post({ kind: 'event', from: a.name, text: `${passed}. Start a new conversation when it suits you`, alert: true })
+      this.emit('notice', { title: `@${a.name} ${passed}`, body: 'Start a new conversation from its terminal or its card when it suits you.', focus: a.name })
+      return this.changed()
+    }
+    const why = ` (it passed its ${tokenCount(limit)} context limit)`
+    if (a.status === 'idle') return this.startFresh(a, why)
+    a.freshPending = true
+    a.freshWhy = why
+    this.post({ kind: 'event', from: a.name, text: `${passed}, so it starts a new conversation when it finishes this task` })
     this.changed()
   }
 
@@ -307,9 +339,9 @@ export class Hub extends EventEmitter {
     if (context && (s.context_window.current_usage || !this.convoOf(a).context)) this.setContext(a, context)
     const c = this.convoOf(a)
     if (!c.context) return ''
-    const { pct, used, size } = c.context
+    const { pct, used, size, limit } = againstLimit(c.context, a.contextLimit)
     const color = pct >= 85 ? '31' : pct >= 60 ? '33' : '2'
-    return `\x1b[${color}mcontext ${pct}% · ${tokenCount(used)} of ${tokenCount(size)}\x1b[0m\x1b[2m · ${c.tasks} task${c.tasks === 1 ? '' : 's'} in this conversation\x1b[0m`
+    return `\x1b[${color}mcontext ${pct}% · ${tokenCount(used)} of ${tokenCount(size)}${limit ? ' limit' : ''}\x1b[0m\x1b[2m · ${c.tasks} task${c.tasks === 1 ? '' : 's'} in this conversation\x1b[0m`
   }
 
   // Codex writes its token counts to its session log; read the newest after each step.
@@ -968,7 +1000,10 @@ export class Hub extends EventEmitter {
         tier: a.tier, fast: this.providerOf(a)?.fastByDefault === undefined ? undefined : a.tier ? a.tier === 'fast' : this.providerOf(a).fastByDefault,
         args: (a.args ?? []).join(' '), avatar: a.avatar, status: a.status, since: a.since, activity: a.activity,
         queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a),
-        convo: this.convos[a.name] ?? null, freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
+        // how full, measured against its own context limit when it has one
+        convo: this.convos[a.name] ? { ...this.convos[a.name], context: againstLimit(this.convos[a.name].context, a.contextLimit) } : null,
+        contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : null, onContextLimit: a.onContextLimit === 'notify' ? 'notify' : 'fresh',
+        freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
       tasks: {
