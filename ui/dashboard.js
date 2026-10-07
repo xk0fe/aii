@@ -702,9 +702,11 @@ async function moveSheet(name, home) {
   go.textContent = `Move to ${to.name}`
   moveDialog.showModal()
   checkFolder()
-  crew.call('folders', home).then((list) => {
+  crew.call('folders', home, name).then((list) => {
     if (moving?.name !== name) return
-    moveDialog.querySelector('[data-mv-sugs]').innerHTML = (list ?? []).map((f) => `<button class="mv-sug ${f.path === moving.folder ? 'on' : ''}" data-mv-sug="${esc(f.path)}" title="${esc(f.path)}">${ICONS.folder}${esc(f.label || f.path)}</button>`).join('')
+    // each one by its folder's name, with who works there (or "same folder as now") beside it
+    const short = (f) => (f.label === 'home folder' ? 'Home' : f.path.split('/').filter(Boolean).pop() || f.path)
+    moveDialog.querySelector('[data-mv-sugs]').innerHTML = (list ?? []).map((f) => `<button class="mv-sug ${f.path === moving.folder ? 'on' : ''}" data-mv-sug="${esc(f.path)}" title="${esc(f.path)}">${ICONS.folder}<span>${esc(short(f))}</span>${f.label && f.label !== 'home folder' ? `<small>${esc(f.label)}</small>` : ''}</button>`).join('')
   }, () => {})
 }
 
@@ -765,7 +767,7 @@ moveDialog.addEventListener('click', async (e) => {
     const who = state.agents.find((a) => a.name === moving.name)?.seed ?? moving.name
     moveDialog.close()
     toast(res?.conversation === 'fresh'
-      ? `${who} moved to ${to}. Its conversation couldn't come along${res.reason ? ` (${res.reason})` : ''}, so it starts a new one.`
+      ? `${who} moved to ${to}. Its conversation couldn't come along (${res.older ? `${to} runs an older Crew` : res.reason ?? 'not found'}), so it starts a new one there.`
       : `${who} moved to ${to}, conversation and all.`, res?.conversation === 'fresh')
   } catch (x) {
     err.textContent = x.message

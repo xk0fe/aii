@@ -170,7 +170,12 @@ const COMPUTERS = {
   links: [linked('mac-mini', 'Mac mini', true), ...(BIG ? [linked('air', 'MacBook Air', false)] : [])],
 }
 // Folders each computer has, for moving an agent there (folderInfo / folders in main.js).
-const FOLDERS = { '': ['~/code/app', '~/code/site', '~'], 'mac-mini': ['~/code/app', '~/builds', '~'], air: ['~/code/app', '~'] }
+// [path, label] as folders() in core/move.js labels them: the agent's own path there, who works where, home.
+const FOLDERS = {
+  '': [['/Users/you/code/app', 'same folder as now'], ['/Users/you/code/site', 'lena, tess'], ['/Users/you', 'home folder']],
+  'mac-mini': [['/Users/you/code/app', 'same folder as now'], ['/Users/you/builds', 'bo, fin'], ['/Users/you', 'home folder']],
+  air: [['/Users/you/code/app', 'same folder as now'], ['/Users/you', 'home folder']],
+}
 // The task flow in the chat: added, triaged, started in a new conversation, done.
 FEED.push(
   { id: 'b1', kind: 'task', type: 'bug', act: 'filed', from: 'you', ticket: 12, title: 'Jump does nothing after unpausing', ts: t(0.45) },
@@ -298,8 +303,11 @@ window.crew = {
     }
     if (action === 'task') return taskAction(...args)
     // moving an agent to another computer: its folders there, then the move itself
-    if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? ['~']).map((p) => ({ path: p, label: p === '~' ? 'Home folder' : p.split('/').pop() }))
-    if (action === 'folderInfo') return { exists: (FOLDERS[args[0] ?? ''] ?? []).includes(args[1]), path: String(args[1]).replace(/^~/, '/Users/you') }
+    if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? []).map(([path, label]) => ({ path, label }))
+    if (action === 'folderInfo') {
+      const full = String(args[1]).replace(/^~/, '/Users/you')
+      return { exists: (FOLDERS[args[0] ?? ''] ?? []).some(([p]) => p === full), path: full }
+    }
     if (action === 'pickFolder') return '~/code/site'
     if (action === 'moveAgent') {
       const [name, home] = args

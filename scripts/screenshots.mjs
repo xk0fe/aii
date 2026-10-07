@@ -763,7 +763,7 @@ const SHOTS = {
         await sleep(300)
         await tap(win, at)
         await sleep(1600)
-        at = await glide(win, at, await center(win, '[data-mv-sug="~/builds"]'), 700)
+        at = await glide(win, at, await center(win, '[data-mv-sug="/Users/you/builds"]'), 700)
         await sleep(300)
         await tap(win, at)
         await sleep(900)
