@@ -117,11 +117,11 @@ test('export from both computers, import onto either', async () => {
 
 test('moving an agent takes its definition and work experience, from either side', async () => {
   await studio.run(`(crew.hub.stats.gal = { first: 1, days: {}, tasks: 3 }, crew.hub.saveStats(), 1)`)
-  assert.equal(await air.run(`crew.moveAgent('gal@studio-mac', '', '~')`), 'gal')
+  assert.deepEqual(await air.run(`crew.moveAgent('gal@studio-mac', '', '~')`), { name: 'gal', conversation: 'fresh', reason: "it hadn't started a conversation yet" })
   await sleep(200)
   assert.equal(await studio.run(`crew.hub.agents.has('gal')`), false)
   assert.equal(await air.run(`crew.hub.stats.gal.tasks`), 3)
-  assert.equal(await studio.run(`crew.moveAgent('gal@air', '')`), 'gal')
+  assert.equal((await studio.run(`crew.moveAgent('gal@air', '')`)).name, 'gal')
   await sleep(200)
   assert.deepEqual((await names(air)).filter((n) => n.startsWith('gal')), ['gal-copy@studio-mac', 'gal@studio-mac'])
 })

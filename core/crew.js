@@ -10,6 +10,7 @@ import { Runner } from './runner.js'
 import { serve } from './server.js'
 import { LinkHost, LinkClient, identity, addresses, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
 import { packAgents, unpackAgents } from './pack.js'
+import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, folderInfo, folders } from './move.js'
 
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
@@ -135,7 +136,7 @@ export class Crew extends EventEmitter {
       }
       for (const e of l.state.feed) {
         feed.push({
-          ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && `${e.re}@${l.slug}`, images: e.images?.map((p) => this.fetchImage(l, p)),
+          ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && q(e.re), images: e.images?.map((p) => this.fetchImage(l, p)),
           ...(e.ticket !== undefined && { ticket: q(String(e.ticket)) }), ...((e.act === 'fixing' || e.act === 'triaged') && e.text && { text: q(e.text) }),
         })
       }
@@ -352,6 +353,17 @@ export class Crew extends EventEmitter {
       bug: (from, args) => h.taskCommand(from, args), // a computer on the previous version
       ticket: (op, id, arg) => h.ticket(op, id, arg),
       importAgents: (pack, choices) => unpackAgents(h, pack, choices),
+      // moving an agent with its conversation (see moveAgent): the computer it leaves, the one it goes to, the rest
+      moveOut: (name) => moveOut(h, name),
+      moveRead: (token, i, offset) => moveRead(h, token, i, offset),
+      moveEnd: (token, done) => moveEnd(h, token, done),
+      moveWrite: (token, i, offset, bytes) => moveWrite(token, i, offset, bytes),
+      moveIn: (token, out, pick) => moveIn(h, token, out, pick, this.me.name),
+      moveDrop: (token) => moveDrop(token),
+      agentMoved: (move) => agentMoved(h, move),
+      // folders there, for picking where an agent works
+      folderInfo: (dir) => folderInfo(dir),
+      folders: (like) => folders(h, like),
     }
     if (!Object.hasOwn(allowed, fn)) throw new Error(`"${fn}" isn't available over Crew Link`)
     return allowed[fn](...args)
@@ -398,18 +410,93 @@ export class Crew extends EventEmitter {
     return choices.map((c) => added.get(c))
   }
 
-  // Moves an agent to another computer with its definition, look and work experience. Its conversation
-  // stays behind (transcripts are files on the old computer), so it starts fresh there.
+  // Moves an agent to another computer (home: a linked computer, '' for this one), from whichever computer it's on,
+  // with its definition, look, work experience, queued messages, its lines in the chat and its conversation: the
+  // CLI's session files go along and it resumes there (core/move.js). Everything passes through this computer, so
+  // the two needn't be linked to each other. A computer on an older Crew can only take the agent, not its
+  // conversation (`older`). -> { name, conversation: 'moved' | 'fresh', reason?, older? }
   async moveAgent(name, home, folder) {
+    home ??= ''
     const src = this.where(name)
     const from = src.l?.slug ?? ''
-    if (from === (home ?? '')) throw new Error('it already lives there')
+    if (from === home) throw new Error('it already lives there')
     const agent = this.snapshot().agents.find((a) => a.name === name)
+    if (!agent) throw new Error(`no agent named "${name}"`)
+    folder = String(folder ?? '').trim() || agent.cwd || '~'
+    const on = (h, fn, ...args) => (h ? this.link(h).peer.call(fn, args) : this.serve(fn, args))
+    const label = (h) => (h ? this.links.get(h)?.name ?? h : this.me.name)
+    const move = { from: from || this.me.slug, to: home || this.me.slug, old: src.base, name: this.freeName(src.base, home) }
+    const older = (e) => /isn't available over Crew Link/.test(e.message)
+    // A running agent needs its folder there; and a computer on an older Crew says so here, before anything stops.
+    let there
+    try {
+      there = await on(home, 'folderInfo', folder)
+    } catch (e) {
+      if (older(e)) return this.packMove(src, home, folder, agent, move, label(home))
+      throw e
+    }
+    if (agent.on && !there.exists) throw new Error(`there's no folder ${there.path} on ${label(home)}`)
+    let out
+    try {
+      out = await on(from, 'moveOut', src.base)
+    } catch (e) {
+      if (older(e)) return this.packMove(src, home, folder, agent, move, label(from))
+      throw e
+    }
+    const token = crypto.randomUUID()
+    let res
+    try {
+      for (const [i, f] of out.files.entries()) {
+        let offset = 0
+        do {
+          const bytes = await on(from, 'moveRead', out.token, i, offset)
+          await on(home, 'moveWrite', token, i, offset, bytes)
+          if (!bytes.length) break
+          offset += bytes.length
+        } while (offset < f.size)
+      }
+      res = await on(home, 'moveIn', token, out, { name: move.name, folder, on: Boolean(agent.on), from: { slug: move.from, name: label(from) } })
+    } catch (e) {
+      await on(home, 'moveDrop', token).catch(() => {})
+      await on(from, 'moveEnd', out.token, null).catch(() => {}) // it carries on where it was
+      throw e
+    }
+    try {
+      await on(from, 'moveEnd', out.token, { to: move.to, name: res.name })
+    } catch (e) {
+      this.hub.post({ kind: 'event', from: 'crew', text: `${src.base} moved to ${label(home)}, but ${label(from)} still has it (${e.message}): remove it there` })
+    }
+    this.tellMoved({ ...move, name: res.name }, [from, home])
+    return { name: home ? `${res.name}@${home}` : res.name, conversation: res.conversation, ...(res.reason && { reason: res.reason }) }
+  }
+
+  // The move from before conversations could travel, for a computer on an older Crew: the agent goes, its
+  // conversation and its lines in the chat stay where they were.
+  async packMove(src, home, folder, agent, move, who) {
     const pack = src.l ? await src.l.peer.call('exportAgents', [[src.base], { stats: true }]) : packAgents(this.hub, [src.base], { stats: true })
-    const pick = [{ index: 0, name: this.freeName(src.base, home), folder: folder ?? agent?.cwd, on: Boolean(agent?.on) }]
+    const pick = [{ index: 0, name: move.name, folder, on: Boolean(agent.on) }]
     const [moved] = home ? await this.link(home).peer.call('importAgents', [pack, pick]) : unpackAgents(this.hub, pack, pick)
     await (src.l ? src.l.peer.call('removeAgent', [src.base]) : this.hub.removeAgent(src.base))
-    return home ? `${moved}@${home}` : moved
+    this.tellMoved({ ...move, name: moved }, [])
+    return { name: home ? `${moved}@${home}` : moved, conversation: 'fresh', reason: `${who} runs an older Crew`, older: true }
+  }
+
+  // Every computer within reach (this one too) but `skip` writes the agent by its new name from now on.
+  tellMoved(move, skip) {
+    if (!skip.includes('')) agentMoved(this.hub, move)
+    for (const l of this.links.values()) if (l.peer && !skip.includes(l.slug)) l.peer.call('agentMoved', [move]).catch(() => {})
+  }
+
+  // Folders on any computer (home '' = this one): the folder picker only browses this one.
+  // folderInfo -> { exists, path }; folders -> [{ path, label }], with the folder at the same path as where the agent
+  // `name` works now, if it's there.
+  folderInfo(home, dir) {
+    return home ? this.link(home).peer.call('folderInfo', [dir]) : folderInfo(dir)
+  }
+
+  folders(home, name) {
+    const like = name ? (this.snapshot().agents.find((a) => a.name === name)?.cwd ?? null) : null
+    return home ? this.link(home).peer.call('folders', [like]) : folders(this.hub, like)
   }
 
   // ---- computers: sharing this one, linking others, choosing which agents to use -------------

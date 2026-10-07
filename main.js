@@ -273,8 +273,15 @@ const actions = {
     return { file: name, pack, agents: crew.importPreview(pack) }
   },
   importAgents: (pack, choices) => crew.importAgents(pack, choices),
+  // Moves an agent to another computer (home: a computer's slug, '' for this one), conversation and all:
+  // -> { name, conversation: 'moved' | 'fresh', reason?, older? } (older: that computer runs an older Crew).
   moveAgent: (name, home, folder) => crew.moveAgent(name, home, folder),
   freeName: (name, home) => crew.freeName(name, home),
+  // Folders on any computer (home '' = this one), since pickFolder only browses this one:
+  // folderInfo -> { exists, path } (path written out); folders -> [{ path, label }] to offer, `name` being the
+  // agent you're placing (the folder at its current path comes first, if it's there).
+  folderInfo: (home, dir) => crew.folderInfo(home, dir),
+  folders: (home, name) => crew.folders(home, name),
 
   // Crew Link: share this computer, link others, choose which of their agents to use here.
   link: async (op, ...args) => {

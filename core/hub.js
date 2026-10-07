@@ -205,13 +205,17 @@ export class Hub extends EventEmitter {
       moved = true
     }
     if (!moved) return
+    this.saveReads()
+    this.changed()
+  }
+
+  saveReads() {
     clearTimeout(this.readsTimer)
     this.readsTimer = setTimeout(() => {
       try {
         fs.writeFileSync(at('reads.json'), JSON.stringify(this.reads))
       } catch {}
     }, 500)
-    this.changed()
   }
 
   setTheme(theme) {
@@ -404,6 +408,8 @@ export class Hub extends EventEmitter {
     const a = this.agents.get(name)
     if (!a) return
     a.hookAt = Date.now()
+    // where its CLI keeps this conversation, so a move to another computer can take it along (core/move.js)
+    if (e.transcript_path && e.session_id && !e.agent_id) a.transcript = { id: e.session_id, path: String(e.transcript_path) }
     switch (e.hook_event_name) {
       case 'SessionStart': // Claude: at launch. Codex: with the first prompt, so only "starting" counts.
         if (e.source === 'compact') {
@@ -773,6 +779,8 @@ export class Hub extends EventEmitter {
     if (names.includes(from)) throw new Error(`${names.length > 1 ? `@${from} is you, leave yourself off` : "that's you, pick a teammate (crew who)"}${after}`)
     const off = names.filter((n) => this.agents.get(n).off)
     if (off.length) throw new Error(`${list(off)} ${off.length > 1 ? 'are' : 'is'} turned off, turn ${off.length > 1 ? 'them' : 'it'} on first${after}`)
+    const moving = names.filter((n) => this.agents.get(n).moving)
+    if (moving.length) throw new Error(`${list(moving)} ${moving.length > 1 ? 'are' : 'is'} moving to another computer, send it again in a moment${after}`)
     return names.map((n) => this.agents.get(n))
   }
 
@@ -828,12 +836,16 @@ export class Hub extends EventEmitter {
     if (msg.ticket !== undefined && !msg.triage) (this.convoOf(a).ticket = msg.ticket), this.saveConvos() // this conversation is about that bug now
     const also = msg.cc?.filter((n) => n !== a.name).map((n) => `@${n}`).join(' ')
     const tag = [msg.from !== 'you' && `from @${msg.from}`, msg.replying, also && `also sent to ${also}, split the work`].filter(Boolean).join(', ')
-    const text = tag ? `[${tag}] ${msg.text}` : msg.text
+    // A line Crew owes the agent (it moved to this computer while free) goes on top of the next message it gets.
+    const note = this.convos[a.name]?.note
+    if (note) delete this.convos[a.name].note, this.saveConvos()
+    const text = [note, tag ? `[${tag}] ${msg.text}` : msg.text].filter(Boolean).join('\n\n')
     this.runner.submit(a.name, withImages(text, msg.images))
     // Matched against the prompt the agent reports, even if it shows up late. Only the words count:
     // Claude Code turns attached image paths into "[Image #1]" and moves them around.
     a.expect = { id: msg.id, text }
-    this.record(a.name, { [msg.from === 'you' ? 'fromYou' : 'fromTeam']: 1, delivered: 1, queuedMs: Date.now() - msg.ts })
+    // (Crew's own prompts, like "you were moved here", aren't messages anyone sent it)
+    if (!msg.crew) this.record(a.name, { [msg.from === 'you' ? 'fromYou' : 'fromTeam']: 1, delivered: 1, queuedMs: Date.now() - msg.ts })
     this.awaitPickup(a)
     this.setStatus(a, 'working')
   }
@@ -1109,6 +1121,51 @@ export class Hub extends EventEmitter {
 
   save(line) {
     this.saving = this.saving.then(() => fs.promises.appendFile(at('feed.jsonl'), JSON.stringify(line) + '\n')).catch(() => {})
+  }
+
+  // ---- an agent moving between computers (core/move.js) ---------------------------------------------
+
+  // feed.jsonl, written anew: it only ever grows, but lines leave with an agent that moves away and arrive (older
+  // than what's here) with one that moves in. The lines are taken now, so one posted meanwhile lands after them.
+  rewriteFeed() {
+    const text = this.feed.map((e) => JSON.stringify(e) + '\n').join('')
+    this.saving = this.saving.then(() => fs.promises.writeFile(at('feed.jsonl'), text)).catch(() => {})
+  }
+
+  // Lines from another computer, for an agent that moved here: merged in by time.
+  adoptFeed(entries) {
+    const have = new Set(this.feed.map((e) => e.id))
+    this.feed.push(...entries.filter((e) => !have.has(e.id)))
+    this.feed.sort((x, y) => x.ts - y.ts)
+    if (this.feed.length > FEED_KEEP) this.feed.splice(0, this.feed.length - FEED_KEEP)
+    this.rewriteFeed()
+    this.changed()
+  }
+
+  // An agent goes by another name now (it moved to another computer, or here): `from` and `to` as this computer
+  // writes them (gal, gal@air). Lines in the chat, the Tasks board and what you've read follow it.
+  // Returns whether the feed changed (the caller rewrites it).
+  renameRefs(from, to) {
+    if (!from || !to || from === to) return false
+    let feed = false
+    let board = false
+    for (const e of this.feed) {
+      for (const k of ['from', 'to']) if (e[k] === from) (e[k] = to), (feed = true)
+      if (e.cc?.includes(from)) (e.cc = e.cc.map((n) => (n === from ? to : n))), (feed = true)
+      if ((e.act === 'fixing' || e.act === 'triaged') && e.text === from) (e.text = to), (feed = true)
+    }
+    for (const t of this.tickets.all) {
+      for (const k of ['owner', 'fixer', 'by']) if (t[k] === from) (t[k] = to), (board = true)
+      for (const l of t.log ?? []) if (l.by === from) (l.by = to), (board = true)
+    }
+    if (board) this.tickets.save()
+    if (this.reads.agents[from] !== undefined) {
+      this.reads.agents[to] = Math.max(this.reads.agents[to] ?? 0, this.reads.agents[from])
+      delete this.reads.agents[from]
+      this.saveReads()
+    }
+    this.changed()
+    return feed
   }
 
   changed() {

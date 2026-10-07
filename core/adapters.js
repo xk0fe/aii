@@ -90,7 +90,9 @@ export const adapters = {
       file: 'codex',
       readyAfter: 3000, // Codex fires SessionStart with the first prompt, not at launch
       args: [
-        ...(resume ? ['resume', resume] : []),
+        // Resumed in the agent's folder even when the session was started elsewhere (it moved here from another
+        // computer): otherwise Codex stops to ask which folder to use.
+        ...(resume ? ['resume', resume, '-c', 'tui.resume_cwd="current"'] : []),
         ...(a.model ? ['-m', a.model] : []),
         ...(a.effort ? ['-c', `model_reasoning_effort=${toml(a.effort)}`] : []),
         ...(a.tier ? ['-c', `service_tier=${toml(a.tier)}`] : []), // "fast" = fast mode
