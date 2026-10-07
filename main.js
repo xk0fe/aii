@@ -242,6 +242,7 @@ const actions = {
   removeAgent: (name) => crew.at(name, 'removeAgent'),
   restart: (name) => crew.at(name, 'restart'),
   markIdle: (name) => crew.at(name, 'markIdle'),
+  dismiss: (name) => crew.at(name, 'dismiss'), // send a clone away
   resize: (name, cols, rows) => crew.at(name, 'resize', cols, rows),
   buffer: (name) => crew.at(name, 'buffer'),
 
@@ -348,7 +349,7 @@ function wire() {
   crew.changed()
 
   crew.on('alert', (name, text) => {
-    const note = new Notification({ title: `${name} needs you`, body: text })
+    const note = new Notification({ title: `${name.replace(/\.(\d+)(?=@|$)/, ' (clone $1)')} needs you`, body: text })
     note.on('click', () => openDashboard(name))
     note.show()
   })
@@ -387,10 +388,12 @@ function wireVoice() {
   if (key && !globalShortcut.register(key, dictate)) hub.post({ kind: 'event', from: 'crew', text: `voice hotkey ${key} is taken, set another "voiceHotkey" in config.json` })
 }
 
+// "2/5": agents at work out of those on; one counts as working while it or any of its clones is.
 function trayTitle(state) {
-  const agents = state.agents.filter((a) => a.on)
-  const waiting = agents.filter((a) => a.status === 'waiting').length
-  const working = agents.filter((a) => a.status === 'working').length
+  const on = state.agents.filter((a) => a.on)
+  const agents = on.filter((a) => !a.cloneOf)
+  const waiting = on.filter((a) => a.status === 'waiting').length
+  const working = agents.filter((a) => [a, ...on.filter((c) => c.cloneOf === a.name)].some((x) => x.status === 'working')).length
   return waiting ? ` ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? ` ${working}/${agents.length}` : ''
 }
 

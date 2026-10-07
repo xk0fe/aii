@@ -1,5 +1,5 @@
 // Floating pill on the screen edge; click it (or press the hotkey) for the chat panel.
-/* global crew, live, morph, esc, statusText, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS */
+/* global crew, live, morph, esc, statusText, displayName, cloneTag, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS */
 
 const $ = (s) => document.querySelector(s)
 $('.home').innerHTML = markSVG('0 6 24 16')
@@ -105,7 +105,8 @@ live((state) => {
   const working = on.filter((a) => a.status === 'working').length
   document.body.classList.toggle('busy', working > 0)
   document.body.classList.toggle('alert', state.agents.some((a) => a.status === 'waiting'))
-  morph($('.dots'), on.map((a) => `<span class="face" data-agent="${esc(a.name)}" title="${esc(`${a.name}: ${statusText(a)}`)}">${avatarHTML(a, { size: 30 })}</span>`).join(''))
+  // a clone pops out next to its original, a little smaller, with its number
+  morph($('.dots'), on.map((a) => `<span class="face${a.cloneOf ? ' clone' : ''}" data-agent="${esc(a.name)}" title="${esc(`${displayName(a)}${a.cloneOf ? ` (a clone of ${a.cloneOf})` : ''}: ${statusText(a)}`)}">${avatarHTML(a, { size: a.cloneOf ? 24 : 30 })}${cloneTag(a)}</span>`).join(''))
   celebrate($('.dots'), state.agents)
   morph($('.sums'), crewSummary(state))
   feed.render(state)

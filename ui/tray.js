@@ -1,5 +1,5 @@
 // Menu bar popover: who's doing what, autopilot, and the way into everything else.
-/* global themeButton, crew, live, morph, agentCard, crewSummary, celebrate, markSVG, ICONS */
+/* global themeButton, crew, live, morph, agentCard, clonesOf, crewSummary, celebrate, markSVG, ICONS */
 
 const $ = (s) => document.querySelector(s)
 $('.logo').outerHTML = markSVG('0 6 24 16')
@@ -12,6 +12,8 @@ $('[data-act=quit]').innerHTML = ICONS.power
 
 document.addEventListener('click', (e) => {
   if (e.target.closest('.mode, .switch')) return
+  const clone = e.target.closest('[data-clone]')
+  if (clone) return crew.call('dashboard', clone.dataset.clone) // its terminal
   const card = e.target.closest('.agent')
   if (card) return crew.call('dashboard', card.dataset.agent)
   const el = e.target.closest('[data-act]')
@@ -34,7 +36,7 @@ opened()
 live((state) => {
   drawTheme(state.theme)
   morph($('.agents'), state.agents.length
-    ? state.agents.map((a) => agentCard(a, state.providers)).join('')
+    ? state.agents.filter((a) => !a.cloneOf).map((a) => agentCard(a, state.providers, clonesOf(state.agents, a))).join('')
     : '<div class="empty">No agents yet. Add one per area of work, like onboarding or the 3D character.</div>')
   celebrate($('.agents'), state.agents)
   morph($('.sums'), crewSummary(state))

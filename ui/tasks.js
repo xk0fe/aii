@@ -98,6 +98,8 @@ function mountTasks(root, { onTerminal }) {
   let showAllDone = false
 
   const agent = (n) => (n ? (state.agents.find((a) => a.name === n) ?? { name: n, seed: n.split('@')[0], on: false, status: 'off' }) : null)
+  // Who is on a task right now: its owner, or the clone of it that took the task.
+  const worker = (t) => (t.fixer ? (state.agents.find((a) => (a.name === t.fixer || a.cloneOf === t.fixer) && String(a.ticket) === t.key) ?? agent(t.fixer)) : null)
   const ticket = (key) => tickets.find((t) => t.key === key)
   const who = (n) => (n === 'you' ? 'You' : n === 'crew' ? 'Crew' : `@${esc(n)}`)
   const call = async (...args) => {
@@ -159,7 +161,7 @@ function mountTasks(root, { onTerminal }) {
     })
   }
   const ownerItems = (current) => [
-    ...state.agents.filter((a) => a.on || a.name === current).map((a) => ({ value: a.name, label: a.home ? `${a.seed}@${a.home}` : a.name, hint: a.area, icon: avatarHTML(a, { size: 20, mood: 'still' }), on: a.name === current })),
+    ...state.agents.filter((a) => !a.cloneOf && (a.on || a.name === current)).map((a) => ({ value: a.name, label: a.home ? `${a.seed}@${a.home}` : a.name, hint: a.area, icon: avatarHTML(a, { size: 20, mood: 'still' }), on: a.name === current })),
     { value: '', label: 'Nobody', icon: '<i class="tk-nobody">?</i>', on: !current },
   ]
   const statusItems = (t) => STATUS.map((s) => ({ value: s.id, label: s.label, icon: STATUS_ICON[s.id], on: t.status === s.id, hint: s.id === 'fixing' && t.status !== 'fixing' ? 'starts it' : '' }))
@@ -188,7 +190,7 @@ function mountTasks(root, { onTerminal }) {
     const el = openPop(anchor, `
       <div class="tk-flow-pop">
         <label class="tk-flow-row"><span><b>Triage</b><small>An agent that makes what you add clear (steps, priority, kind), gives it to the right agent and spots duplicates. Without one, tasks go to whoever's area they match.</small></span>
-          <select data-triage><option value="">Nobody</option>${state.agents.filter((a) => !a.home).map((a) => `<option value="${esc(a.name)}" ${state.tasks.triage === a.name ? 'selected' : ''}>${esc(a.name)}${a.on ? '' : ' (off)'}</option>`).join('')}</select></label>
+          <select data-triage><option value="">Nobody</option>${state.agents.filter((a) => !a.home && !a.cloneOf).map((a) => `<option value="${esc(a.name)}" ${state.tasks.triage === a.name ? 'selected' : ''}>${esc(a.name)}${a.on ? '' : ' (off)'}</option>`).join('')}</select></label>
         <label class="tk-flow-row"><span><b>Auto-start</b><small>A task goes to its owner as soon as it has one, in a fresh conversation. Off: you start each one.</small></span>
           <input type="checkbox" class="switch sm" data-autofix ${state.tasks.autofix ? 'checked' : ''}></label>
       </div>`, { width: 360 })
@@ -294,7 +296,7 @@ function mountTasks(root, { onTerminal }) {
 
   // What its agent is up to with it: on it, starting fresh, finishing something else first, waiting on you.
   function live(t) {
-    const a = agent(t.fixer)
+    const a = worker(t)
     if (!a || !a.on) return { cls: 'off', text: a?.status === 'away' ? 'unreachable' : 'off' }
     if (String(a.ticket) === t.key) {
       if (a.status === 'working') return { cls: 'working', text: a.activity || `on it · ${ago(a.since)}`, since: ago(a.since), shimmer: Boolean(a.activity) }
@@ -311,7 +313,7 @@ function mountTasks(root, { onTerminal }) {
     return `<span class="tk-face" data-agent="${esc(n)}" title="@${esc(n)}">${avatarHTML(a, { size, mood: moving ? undefined : 'still' })}</span>`
   }
   const ownerHTML = (t) => {
-    const n = t.fixer ?? t.owner
+    const n = (t.status === 'fixing' && worker(t)?.name) || t.fixer || t.owner // a clone on it shows as itself: gal ②
     if (!n) return `<button class="tk-assign" data-menu="owner" title="Who does it?"><i class="tk-nobody">?</i><span>Assign</span></button>`
     return `<span class="tk-owner">${face(n, { live: t.status === 'fixing' })}<span class="tk-owner-name">${nameHTML(agent(n))}</span></span>`
   }
@@ -327,7 +329,7 @@ function mountTasks(root, { onTerminal }) {
     }
     if (t.status === 'fixing') {
       const s = live(t)
-      return `${ownerHTML(t)}<span class="grow"></span>${contextRing(agent(t.fixer) ?? {}, { label: false })}<span class="tk-state ${s.cls}"><i class="dot ${s.cls === 'queued' ? 'idle' : s.cls}"></i>${esc(s.since ?? s.text)}</span>`
+      return `${ownerHTML(t)}<span class="grow"></span>${contextRing(worker(t) ?? {}, { label: false })}<span class="tk-state ${s.cls}"><i class="dot ${s.cls === 'queued' ? 'idle' : s.cls}"></i>${esc(s.since ?? s.text)}</span>`
     }
     if (t.status === 'check') return `<div class="tk-verdict"><button class="tk-btn" data-act="sendBack" title="Tell @${esc(t.fixer ?? 'them')} what's ${t.kind === 'bug' ? 'still broken' : 'missing'}">Send back</button><button class="tk-btn good" data-act="accept" title="It's done">${ICONS.check}Accept</button></div>`
     return `${ownerHTML(t)}<span class="grow"></span><span class="tk-age">${t.dupOf ? `same as #${t.dupOf}` : esc(ago(t.updated))}</span>`
@@ -354,7 +356,7 @@ function mountTasks(root, { onTerminal }) {
     const s = t.status === 'fixing' && live(t)
     const right =
       t.status === 'new' && t.owner ? `<button class="tk-btn go" data-act="start">${ICONS.fresh}Start</button>`
-      : t.status === 'fixing' ? `${contextRing(agent(t.fixer) ?? {}, { label: false })}<span class="tk-state ${s.cls}"><i class="dot ${s.cls === 'queued' ? 'idle' : s.cls}"></i>${esc(s.since ?? s.text)}</span>`
+      : t.status === 'fixing' ? `${contextRing(worker(t) ?? {}, { label: false })}<span class="tk-state ${s.cls}"><i class="dot ${s.cls === 'queued' ? 'idle' : s.cls}"></i>${esc(s.since ?? s.text)}</span>`
       : t.status === 'check' ? `<button class="tk-btn only" data-act="sendBack" title="Send back">${BACK}</button><button class="tk-btn good" data-act="accept">${ICONS.check}Accept</button>`
       : ''
     return `<div class="tr st-${t.status}${selected === t.key ? ' sel' : ''}" data-name="${esc(t.key)}" draggable="true">
@@ -522,7 +524,7 @@ function mountTasks(root, { onTerminal }) {
       }
       if (act === 'sendBack') return open(t.key, { sendBack: true })
     }
-    if (e.target.closest('.tk-face') && t?.status === 'fixing') return onTerminal(t.fixer)
+    if (e.target.closest('.tk-face') && t?.status === 'fixing') return onTerminal(worker(t)?.name ?? t.fixer)
     // a folded Done lane opens when you click it
     if (e.target.closest('.done-folded [data-lane=done]')) return void ((doneOpen = true), store.set('crew.tasks.done', '1'), draw())
     if (t) open(t.key)
@@ -581,7 +583,7 @@ function mountTasks(root, { onTerminal }) {
   // While it's being worked on: who, what they're doing right now, how full their conversation is.
   function liveHTML(t) {
     if (t.status !== 'fixing' || !t.fixer) return ''
-    const a = agent(t.fixer)
+    const a = worker(t)
     const s = live(t)
     return `<div class="tp-live ${s.cls}" style="--c:${agentColor(a)}">
       <span class="tp-live-av" data-agent="${esc(a.name)}">${avatarHTML(a, { size: 38 })}</span>
@@ -724,7 +726,7 @@ function mountTasks(root, { onTerminal }) {
     if (!t) return
     const m = e.target.closest('[data-menu]')
     if (m) return pick(t, m.dataset.menu, m)
-    if (e.target.closest('.tp-live-av')) return onTerminal(t.fixer)
+    if (e.target.closest('.tp-live-av')) return onTerminal(worker(t)?.name ?? t.fixer)
     if (e.target.closest('a[href]')) return
     const op = e.target.closest('[data-tp]')?.dataset.tp
     if (!op) return
@@ -747,7 +749,7 @@ function mountTasks(root, { onTerminal }) {
       await call('dispatch', t.key).catch(() => {})
       return toast(`#${t.id} went to @${t.owner}, in a new conversation`)
     }
-    if (op === 'terminal') return onTerminal(t.fixer)
+    if (op === 'terminal') return onTerminal(worker(t)?.name ?? t.fixer)
     if (op === 'mark-done') return call('move', t.key, 'check').catch(() => {})
     if (op === 'accept') {
       burst(e.target.closest('[data-tp]'))

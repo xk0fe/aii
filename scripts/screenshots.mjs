@@ -385,6 +385,57 @@ const SHOTS = {
     })
     win.destroy()
   },
+  // Clones: marc is busy, so its clones took the two tasks that would have waited in its queue. The sidebar lists
+  // them under marc, and each has a terminal of its own right after marc's.
+  async clones(theme) {
+    const win = await dashboard(theme, 'grid')
+    await sleep(1500)
+    await js(win, "document.querySelector('.tile[data-name=marc]').scrollIntoView({ block: 'start' }); document.querySelector('.side .agents').parentElement.scrollTop = document.querySelector('.agent[data-agent=marc]').offsetTop - 120")
+    await sleep(600)
+    await save(win, `clones-${theme}`)
+    win.destroy()
+  },
+  // The Clones setting on an agent's card, with the clones at work right now.
+  async clonesEditor(theme) {
+    const win = await dashboard(theme, 'crew')
+    await js(win, click('[data-mode=cards]'))
+    await sleep(300)
+    await js(win, click('.pcard[data-name=marc]'))
+    await sleep(1200)
+    await js(win, "const c = document.querySelector('.col-card'); c.scrollTop = document.querySelector('.clones-set').offsetTop - 260")
+    await sleep(500)
+    await save(win, `clones-editor-${theme}`)
+    win.destroy()
+  },
+  // Two messages for a busy marc: each one pops a clone out of it in the pill, and the chat says who took it.
+  async clonesGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 560, height: 760, backdrop: 'desktop' })
+    await sleep(400)
+    // start from marc alone, busy
+    await js(win, "const s = window.__crewState; s.agents = s.agents.filter((a) => !a.cloneOf); window.__crewEmit('state', s); window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(900)
+    await fitToContent(win)
+    await sleep(300)
+    await record(win, 'clones', {
+      ms: 9000, width: 760,
+      during: async () => {
+        const say = async (text) => {
+          for (let i = 1; i <= text.length; i++) {
+            await js(win, `const ta = document.querySelector('.composer textarea'); ta.value = ${JSON.stringify(text)}.slice(0, ${i}); ta.dispatchEvent(new Event('input'))`)
+            await sleep(24)
+          }
+          await sleep(350)
+          await js(win, "document.querySelector('.composer .send').click()")
+        }
+        await sleep(500)
+        await say('@marc an illustration for the empty Tasks board too')
+        await sleep(2600)
+        await say('@marc and a pastel palette sheet for the brand guide')
+        await sleep(3000)
+      },
+    })
+    win.destroy()
+  },
   async focus(theme) {
     const win = await dashboard(theme, 'focus')
     await sleep(1500)

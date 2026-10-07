@@ -231,6 +231,29 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .agent .pending { font-size: 10.5px; color: var(--fg3); white-space: nowrap; }
 .agent.off .agent-av, .agent.off .name, .agent.off .area, .agent.off .brain { opacity: .45; }
 
+/* ---- clones: an agent busy with one task takes the next on a clone of itself ----
+   A clone looks like its original and goes by its name plus a number (gal ②). Under the agent's row, one
+   slim line per clone says what it's on; click it for the clone's terminal. */
+.clone-no {
+  display: inline-grid; place-items: center; box-sizing: border-box; min-width: 1.5em; height: 1.5em; padding: 0 .32em; margin-left: .35em; border-radius: 999px;
+  vertical-align: .1em; font: 800 max(9px, .64em)/1 var(--rounded); font-variant-numeric: tabular-nums; letter-spacing: 0; color: var(--fg2);
+  background: color-mix(in srgb, var(--c, var(--fg3)) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--fg3)) 32%, transparent);
+}
+.clone-lines { display: flex; flex-direction: column; gap: 1px; margin: 6px 0 0 -4px; }
+.clone-line {
+  display: flex; align-items: center; gap: 5px; height: 24px; padding: 0 6px 0 3px; border-radius: 8px; min-width: 0;
+  font: 10.5px/1.3 var(--mono); color: var(--fg2); cursor: pointer; transition: background .15s;
+  animation: clone-in .5s var(--bounce) backwards;
+}
+.clone-line:hover, .clone-line.on { background: var(--btn-hover); }
+.clone-line .clone-av { flex: none; line-height: 0; }
+.clone-line .clone-no { flex: none; margin: 0 2px 0 0; height: 16px; min-width: 16px; font-size: 9px; }
+.clone-line .clone-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clone-line.waiting .clone-what { color: var(--waiting-ink); }
+.clone-line.starting .clone-what { color: var(--starting); }
+.clone-line.idle .clone-what { color: var(--fg3); }
+@keyframes clone-in { from { opacity: 0; transform: translate(-10px, -6px) scale(.9); } }
+
 /* mode chips: YOLO and Fast, toggled in place */
 .mode {
   all: unset; box-sizing: border-box; flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 2px;

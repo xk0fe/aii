@@ -71,6 +71,13 @@
     .dots .face:hover { transform: scale(1.32); z-index: 1; }
     .dots .face:hover + .face, .dots .face:has(+ .face:hover) { transform: scale(1.12); }
     .dots .face:active { transform: scale(1.05); }
+    /* a clone pops out of its original (the creature before it), a little smaller, with its number */
+    .dots .face { position: relative; }
+    .dots .face.clone { margin-top: -3px; animation: clone-pop .6s var(--bounce) backwards; }
+    [data-side=above] .dots .face.clone, [data-side=below] .dots .face.clone { margin: 0 0 0 -3px; animation-name: clone-pop-x; }
+    .dots .clone-no { position: absolute; right: -4px; bottom: -2px; margin: 0; height: 13px; min-width: 13px; padding: 0 3px; font-size: 8.5px; color: var(--fg); background: var(--card); box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgba(0, 0, 0, .18); }
+    @keyframes clone-pop { from { opacity: 0; transform: translateY(-75%) scale(.3); } }
+    @keyframes clone-pop-x { from { opacity: 0; transform: translateX(-75%) scale(.3); } }
   </style>
 </head>
 <body>

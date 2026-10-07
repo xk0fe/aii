@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { BUILT_IN } from './providers.js'
+import { MAX_CLONES } from './hub.js'
 
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const expand = (dir) => (dir ? dir.replace(/^~(?=\/|$)/, os.homedir()) : os.homedir())
@@ -24,6 +25,7 @@ export function packAgents(hub, names, { stats = false } = {}) {
       yolo: c.yolo,
       contextLimit: c.contextLimit,
       onContextLimit: c.onContextLimit,
+      clones: c.clones,
       args: c.args,
       avatar: { seed: c.avatar?.seed ?? c.name, ...c.avatar }, // looks partly come from the name: keep them if it's renamed
       folder: c.cwd ? path.basename(expand(c.cwd)) : undefined, // a hint for whoever imports it
@@ -73,6 +75,7 @@ export function unpackAgents(hub, pack, choices) {
       yolo: a.yolo,
       contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : undefined,
       onContextLimit: a.onContextLimit === 'notify' ? 'notify' : undefined,
+      clones: Math.min(Math.max(0, Math.floor(Number(a.clones) || 0)), MAX_CLONES) || undefined,
       args: (a.args ?? []).join(' '),
       avatar: a.avatar,
       cwd: choice.folder,
