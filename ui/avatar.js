@@ -160,20 +160,48 @@ function ensureDefs() {
 const MOODS = { working: 'working', waiting: 'waiting', starting: 'starting', off: 'sleep', stopped: 'sleep' }
 const colorOf = (spec) => COLORS[spec.color] ?? spec.color
 
+// How far each kind of eye reaches above and below its center (Chrome's tight bounds of the shapes in EYES), so the
+// blink squeezes about the middle of the eyes.
+const EYE_EXTENT = { dot: [-5, 5], sparkle: [-5.9, 5.9], googly: [-8, 8], happy: [-1.5, 1.6], sleepy: [-1, 1.3], line: [0, 0] }
+
+// The same agent, look, size and mood always draw the same creature, and the views redraw often: built once.
+const avatarCache = new Map()
+
 // agent: anything with a name (+ optional avatar/status). Big avatars get the felt filter; tiny ones skip it.
 function avatarHTML(agent, { size = 48, mood } = {}) {
   ensureDefs()
+  mood ??= MOODS[agent.status] ?? 'idle'
+  const key = `${agent.name}\u0000${agent.seed ?? ''}\u0000${size}\u0000${mood}\u0000${agent.avatar ? JSON.stringify(agent.avatar) : ''}`
+  let html = avatarCache.get(key)
+  if (html === undefined) {
+    if (avatarCache.size > 2000) avatarCache.clear()
+    avatarCache.set(key, (html = creatureHTML(agent, size, mood)))
+  }
+  return html
+}
+
+// The eyes are an <svg> of their own in a <span>, between the cheeks and the mouth, so the blink is a transform on an
+// HTML element rather than inside an SVG (Chrome only plays those on the compositor): a page full of blinking
+// creatures costs no main-thread frames. Same picture as one face <svg>: three layers drawn in the same order, and
+// the eyes and what's drawn over them (.av-eye, .av-front) are layered as Chrome layers a blinking SVG group, so
+// they land on the same pixels as before (see common.css).
+function creatureHTML(agent, size, mood) {
   const s = avatarOf(agent)
   const b = BODIES[s.body] ?? BODIES.blob
   const color = COLORS[s.color] ?? s.color
-  mood ??= MOODS[agent.status] ?? 'idle'
   const asleep = mood === 'sleep'
   const shape = `${b.extra ?? ''}<path d="${b.d}"/>`
-  const eye = EYES[asleep ? 'sleepy' : s.eyes] ?? EYES.dot
+  const look = asleep ? 'sleepy' : EYES[s.eyes] ? s.eyes : 'dot'
+  const eye = EYES[look]
   const [[x1, y1], [x2, y2]] = b.eyes
   const cheeks = s.cheeks
     ? `<ellipse cx="${x1 - 6}" cy="${y1 + 7}" rx="5" ry="3" fill="#ff5c9d" opacity=".42"/><ellipse cx="${x2 + 6}" cy="${y2 + 7}" rx="5" ry="3" fill="#ff5c9d" opacity=".42"/>`
     : ''
+  const [lo, hi] = EYE_EXTENT[look]
+  const pivot = +((Math.min(x1, x2) + Math.max(x1, x2)) / 2).toFixed(3) + '% ' + +((Math.min(y1, y2) + lo + Math.max(y1, y2) + hi) / 2).toFixed(3) + '%'
+  const eyes = s.hat === 'shades' ? '' : `<span class="av-face av-eyes" style="transform-origin:${pivot}"><svg viewBox="0 0 100 100" aria-hidden="true"><g class="av-eye">${eye(x1, y1)}${eye(x2, y2)}</g></svg></span>`
+  const front = `${(MOUTHS[s.mouth] ?? MOUTHS.none)(...b.mouth)}${FACEWEAR[s.hat]?.(b) ?? ''}`
+  const over = front && `<g class="av-front">${front}</g>`
   const delay = -((hash(agent.name) % 4000) / 1000).toFixed(2)
   const sig = hash(JSON.stringify([s, mood, size])) // lets morph() keep a running avatar untouched
   return `<span class="av ${mood}" data-sig="${sig}" style="--size:${size}px;--delay:${delay}s" title="${String(agent.name).replace(/"/g, '')}">
@@ -185,12 +213,7 @@ function avatarHTML(agent, { size = 48, mood } = {}) {
           ${HATS[s.hat]?.(b.top, b) ?? ''}
         </g>
       </svg>
-      <svg viewBox="0 0 100 100" class="av-face" aria-hidden="true">
-        ${cheeks}
-        ${s.hat === 'shades' ? '' : `<g class="av-eyes">${eye(x1, y1)}${eye(x2, y2)}</g>`}
-        ${(MOUTHS[s.mouth] ?? MOUTHS.none)(...b.mouth)}
-        ${FACEWEAR[s.hat]?.(b) ?? ''}
-      </svg>
+      ${cheeks ? `<svg viewBox="0 0 100 100" class="av-face" aria-hidden="true">${cheeks}</svg>` : ''}${eyes}${over ? `<svg viewBox="0 0 100 100" class="av-face" aria-hidden="true">${over}</svg>` : ''}
     </span>
     ${mood === 'waiting' ? '<span class="av-bang">!</span>' : ''}${asleep ? '<span class="av-z">z</span>' : ''}
   </span>`

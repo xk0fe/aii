@@ -337,9 +337,15 @@ function wire() {
   })
 
   // Windows size themselves to their content; the overlay is placed so its pill stays put (core/pill.js).
+  // (The menu bar popover asks on every state push; it's resized only when that changes its size.)
   ipcMain.on('fit', (e, width, height, focus, inside) => {
     const win = BrowserWindow.fromWebContents(e.sender)
-    if (win !== overlay) return win?.setContentSize(width, Math.min(height, screen.getDisplayMatching(win.getBounds()).workArea.height - 20))
+    if (win !== overlay) {
+      if (!win) return
+      const size = [width, Math.min(height, screen.getDisplayMatching(win.getBounds()).workArea.height - 20)]
+      const [w, h] = win.getContentSize()
+      return (w !== size[0] || h !== size[1]) && win.setContentSize(...size)
+    }
     pill.fit(width, height, inside)
     if (focus) {
       app.focus({ steal: true })
@@ -349,10 +355,13 @@ function wire() {
 
   crew.on('pty', (name, data) => dash?.webContents.send('pty', name, data))
 
+  // The menu bar's title redraws the status item, so it's set only when it reads differently.
+  let title = null
   crew.on('state', (state) => {
     if (nativeTheme.themeSource !== state.theme) nativeTheme.themeSource = state.theme
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('state', state)
-    tray.setTitle(trayTitle(state), { fontType: 'monospacedDigit' })
+    const next = trayTitle(state)
+    if (next !== title) tray.setTitle((title = next), { fontType: 'monospacedDigit' })
     keepAwake()
   })
   crew.changed()
