@@ -1,5 +1,5 @@
 // Full-screen view: the crew collection, every agent's live terminal, and the crew feed.
-/* global themeButton, crew, live, store, morph, agentCard, statusText, brainLabel, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
+/* global themeButton, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -16,6 +16,10 @@ let view = store.get('crew.view') || 'crew'
 let selected = null
 let state = { agents: [], providers: {} }
 
+$('.titlebar .logo').outerHTML = markSVG('0 6 24 16')
+$('.blank .blank-mark').outerHTML = ICONS.mark
+$('.titlebar [data-act=add]').innerHTML = `${ICONS.plus}Agent`
+$('.side .autopilot .glyph').innerHTML = ICONS.plane
 $('[data-act=config]').innerHTML = ICONS.braces
 $('#link .h-icon').innerHTML = ICONS.link
 const drawTheme = themeButton($('[data-act=theme]'))
@@ -74,8 +78,9 @@ crew.onPty((name, data) => {
 
 function tileHead(a) {
   const busy = a.status === 'working' || a.status === 'waiting'
-  return `${avatarHTML(a, { size: 26 })}<b>${esc(a.name)}</b><span class="model">${esc(brainLabel(a, state.providers))}</span>
+  return `${avatarHTML(a, { size: 26 })}<b>${esc(a.name)}</b><span class="model" title="${esc(brainLabel(a, state.providers))}">${esc(brainShort(a, state.providers))}</span>
     <span class="state ${a.status}" ${busy ? 'data-act="markIdle" title="Stuck? Click to mark it free"' : ''}>${esc(statusText(a))}</span>
+    ${a.fast ? `<span class="tag fast-tag" title="Fast: Codex's fast service tier">${ICONS.bolt}</span>` : ''}
     ${a.yolo ? '<span class="tag yolo-tag" title="Skips all permission prompts">YOLO</span>' : ''}
     <span class="activity">${esc(a.activity)}</span>
     ${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}
@@ -136,7 +141,7 @@ function setView(next) {
   $('.terms').classList.toggle('hidden', crewView)
   $('.terms').classList.toggle('focus', view === 'focus')
   drawBlank()
-  for (const b of document.querySelectorAll('.seg button')) b.classList.toggle('on', b.dataset.view === view)
+  segmented($('.seg.views'), (b) => b.dataset.view === view)
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 }
 
@@ -147,9 +152,18 @@ function drawBlank() {
   $('.blank span').textContent = state.agents.length ? 'Flip one on in the sidebar, it picks up its last session.' : 'Make your first one in the Crew view.'
 }
 
-document.querySelector('.seg').addEventListener('click', (e) => e.target.dataset.view && setView(e.target.dataset.view))
+$('.seg.views').addEventListener('click', (e) => e.target.dataset.view && setView(e.target.dataset.view))
+// ⌘1 ⌘2 ⌘3: Crew, Grid, Focus
+const VIEWS = ['crew', 'grid', 'focus']
+document.querySelectorAll('.seg.views button').forEach((b, i) => (b.title += ` (⌘${i + 1})`))
+document.addEventListener('keydown', (e) => {
+  const n = Number(e.key)
+  if (!e.metaKey || e.altKey || e.ctrlKey || !(n >= 1 && n <= 3)) return
+  e.preventDefault()
+  setView(VIEWS[n - 1])
+})
 $('.side .agents').addEventListener('click', (e) => {
-  if (e.target.closest('.yolo, .switch')) return
+  if (e.target.closest('.mode, .switch')) return
   const card = e.target.closest('.agent')
   if (card) (view === 'crew' ? edit : select)(card.dataset.agent)
 })
@@ -183,18 +197,22 @@ const ready = live((next) => {
     t.tile.remove()
     terms.delete(name)
   }
-  for (const a of on) morph((terms.get(a.name) ?? createTile(a.name)).head, tileHead(a))
+  for (const a of on) {
+    const t = terms.get(a.name) ?? createTile(a.name)
+    t.tile.style.setProperty('--c', agentColor(a))
+    morph(t.head, tileHead(a))
+  }
 
   morph($('.side .agents'), state.agents.map((a) => agentCard(a, state.providers)).join(''))
   $('.autopilot .switch').checked = state.autopilot
-  const working = on.filter((a) => a.status === 'working').length
-  const waiting = on.filter((a) => a.status === 'waiting').length
-  $('.sub').textContent = on.length ? `${working} of ${on.length} working${waiting ? ` · ${waiting} need you` : ''}` : ''
+  $('.side-count').textContent = state.agents.length ? `${on.length} of ${state.agents.length} on` : ''
+  morph($('.titlebar .sums'), crewSummary(state))
   highlight(terms.has(selected) ? selected : on[0]?.name)
   drawBlank()
   feed.render(state)
   composer.render(state)
   collection.render(state)
+  celebrate($('.side .agents'), state.agents) // after the cards, so a visible card gets the confetti
 })
 
 // ---- Crew Link -------------------------------------------------------------------

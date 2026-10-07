@@ -38,6 +38,9 @@ const ICONS = {
   link: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2"/>'),
   copy: svg('<rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/>'),
   check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.4"'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>', 'stroke-width="2.2"'),
+  plane: svg('<path d="M21 3 3 10.4l7.2 2.4L12.6 20 21 3z"/><path d="m10.2 12.8 4.6-4.6"/>'),
+  bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.5 4.8 13.2c-.4.5 0 1.2.6 1.2H11l-1.2 7.1c-.1.6.7.9 1 .4l8.8-10.7c.4-.5 0-1.2-.6-1.2H13.4l1.2-7.1c.1-.6-.7-.9-1-.4z"/></svg>',
 }
 
 // Update el's children to match html without recreating unchanged nodes. Avatars (data-sig) are left alone
@@ -89,6 +92,8 @@ function levelOf(stats = {}) {
 
 // "Claude · opus · high"
 const brainLabel = (a, providers = {}) => [providers[a.provider]?.label ?? a.provider, a.model || 'default', a.effort, a.fast && 'fast'].filter(Boolean).join(' · ')
+// The same without the filler, for tight rows: "Codex · high" (Fast has its own chip).
+const brainShort = (a, providers = {}) => [providers[a.provider]?.label ?? a.provider, a.model, a.effort].filter(Boolean).join(' · ')
 
 const store = {
   get: (k) => { try { return localStorage.getItem(k) } catch { return null } },
@@ -111,28 +116,123 @@ function statusText(a) {
   }
 }
 
-function yoloBox(a) {
-  const tip = a.pending ? 'Restarts in YOLO mode as soon as it is free' : 'Skip all permission prompts (--dangerously-skip-permissions)'
-  return `<label class="yolo" title="${tip}"><input type="checkbox" data-yolo="${esc(a.name)}" ${a.yolo ? 'checked' : ''}>YOLO</label>`
+// A chip you just clicked keeps its new value until the state agrees, so a push that was already on its way
+// doesn't flip it back for a moment. "name:mode" -> { on, at }
+const flips = new Map()
+function flipped(name, mode, actual) {
+  const f = flips.get(`${name}:${mode}`)
+  if (f && f.on !== actual && Date.now() - f.at < 8000) return f.on
+  flips.delete(`${name}:${mode}`)
+  return actual
 }
 
-// Codex agents only: its fast service tier.
-const fastBox = (a) =>
-  a.fast === undefined ? '' : `<label class="yolo fast" title="Codex fast mode (the fast service tier)"><input type="checkbox" data-fast="${esc(a.name)}" ${a.fast ? 'checked' : ''}>FAST</label>`
+// YOLO and Fast as chips that toggle in place. Modes that are off only show up when you hover the row.
+function modeChips(a) {
+  const turn = (on) => `Click to turn ${on ? 'off' : 'on'}`
+  const yolo = flipped(a.name, 'yolo', Boolean(a.yolo))
+  const yoloTip = a.pending ? 'Restarts with the new YOLO setting as soon as it is free' : `YOLO ${yolo ? 'on' : 'off'}: skip every permission prompt. ${turn(yolo)}`
+  // Codex agents only: its fast service tier.
+  const on = a.fast === undefined ? undefined : flipped(a.name, 'fast', Boolean(a.fast))
+  const fast = on === undefined ? '' : `<button class="mode fast" data-fast="${esc(a.name)}" aria-pressed="${on}" title="Fast ${on ? 'on' : 'off'}: Codex's fast service tier. ${turn(on)}">${ICONS.bolt}</button>`
+  return `${fast}<button class="mode yolo" data-yolo="${esc(a.name)}" aria-pressed="${yolo}" title="${yoloTip}">YOLO</button>`
+}
 
 function powerSwitch(a) {
   const busy = a.status === 'working' || a.status === 'waiting'
   return `<input type="checkbox" class="switch sm" data-power="${esc(a.name)}" ${busy ? 'data-busy' : ''} ${a.on ? 'checked' : ''} title="${a.on ? 'Turn off (stays off after restarts)' : 'Turn on (resumes its session)'}">`
 }
 
+// One row per agent: name and status / what it owns / brain and modes, plus what it's doing while it works.
 function agentCard(a, providers) {
-  const more = a.on && (a.activity || a.queue)
-  return `<div class="agent hop ${a.on ? '' : 'off'}" data-agent="${esc(a.name)}">
-    <div class="row">${avatarHTML(a, { size: 40 })}<div class="ident"><span class="name">${esc(a.name)}</span><span class="model">${esc(brainLabel(a, providers))}</span></div><span class="grow"></span>${powerSwitch(a)}</div>
-    <div class="row meta"><span class="area" title="${esc(a.area)}">${esc(a.area || 'no area set')}</span><span class="state ${a.status}">${esc(statusText(a))}${a.pending ? ' · restarts when free' : ''}</span>${fastBox(a)}${yoloBox(a)}</div>
-    <div class="bar ${a.status}" style="--c:${agentColor(a)}"><i></i></div>
-    ${more ? `<div class="row meta"><span class="activity">${esc(a.activity)}</span>${a.queue ? `<span>${a.queue} queued</span>` : ''}</div>` : ''}
+  const doing = a.on && (a.activity || a.queue)
+  const activity = doing || a.pending
+    ? `<div class="activity">${a.activity && a.on ? `<span class="${a.status === 'working' ? 'shimmer' : ''}">${esc(a.activity)}</span>` : '<span></span>'}${a.queue && a.on ? `<span class="queue">${a.queue} queued</span>` : ''}${a.pending ? '<span class="pending" title="It restarts with your changes as soon as it is free">↻ restarts when free</span>' : ''}</div>`
+    : ''
+  return `<div class="agent hop ${a.on ? a.status : 'off'}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}">
+    <div class="agent-av">${avatarHTML(a, { size: 38 })}</div>
+    <div class="agent-body">
+      <div class="agent-top"><span class="name">${esc(a.name)}</span><span class="state ${a.status}">${esc(statusText(a))}</span><span class="grow"></span>${powerSwitch(a)}</div>
+      <div class="area" title="${esc(a.area)}">${esc(a.area || 'No area yet')}</div>
+      <div class="agent-foot"><span class="brain" title="${esc(brainLabel(a, providers))}">${esc(brainShort(a, providers))}</span>${modeChips(a)}</div>
+      ${activity}
+    </div>
   </div>`
+}
+
+// "2 working · 1 needs you" as little pills, for the headers of every view.
+function crewSummary(state) {
+  const on = state.agents.filter((a) => a.on)
+  const working = on.filter((a) => a.status === 'working').length
+  const waiting = on.filter((a) => a.status === 'waiting').length
+  const pill = (cls, text, dot = cls) => `<span class="sum ${cls}">${dot ? `<i class="dot ${dot}"></i>` : ''}${text}</span>`
+  const link = state.link?.mode === 'remote' ? pill(state.link.connected ? '' : 'waiting', `on ${esc(state.link.name)}${state.link.connected ? '' : '…'}`, '') : ''
+  if (!state.agents.length) return link
+  if (!on.length) return pill('', 'all off', 'off') + link
+  return (working ? pill('working', `${working} working`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting ? '' : pill('idle', on.length > 1 ? `all ${on.length} free` : 'free')) + link
+}
+
+// Segmented control: marks the segment that isOn() picks and slides the thumb to it (see .seg in common.css).
+function segmented(el, isOn) {
+  const buttons = [...el.querySelectorAll('button')]
+  const i = Math.max(0, buttons.findIndex(isOn))
+  buttons.forEach((b, j) => {
+    b.classList.toggle('on', j === i)
+    b.setAttribute('aria-pressed', String(j === i))
+  })
+  el.style.setProperty('--n', buttons.length)
+  el.style.setProperty('--i', i)
+  // no slide on first paint, only when you switch
+  if (!el.classList.contains('ready')) requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('ready')))
+}
+
+// Replays an avatar's one-shot animation (cheer, pop), then lets it go back to breathing.
+function bounce(av, cls = 'cheer') {
+  if (!av) return
+  av.classList.remove(cls)
+  void av.offsetWidth
+  av.classList.add(cls)
+  av.addEventListener('animationend', () => av.classList.remove(cls), { once: true })
+}
+
+// A little burst of confetti from an element: a few sparkles in one color, or a big multicolor one.
+function burst(el, { count = 7, color, spread = 26 } = {}) {
+  const r = el.getBoundingClientRect()
+  if (!r.width || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  const party = ['#ff5aa8', '#ffc61f', '#3db8ff', '#72d63a', '#8b5cf6', '#ff8a1f']
+  const b = document.createElement('span')
+  b.className = 'burst'
+  b.style.left = `${r.left + r.width / 2}px`
+  b.style.top = `${r.top + r.height * 0.4}px`
+  b.innerHTML = Array.from({ length: count }, (_, i) => {
+    const angle = (i / count) * Math.PI * 2 + Math.random() * 0.6
+    const d = spread * (0.75 + Math.random() * 0.6)
+    return `<i style="--x:${(Math.cos(angle) * d).toFixed(1)}px;--y:${(Math.sin(angle) * d - 8).toFixed(1)}px;--r:${Math.round(Math.random() * 540)}deg;--b:${color ?? party[i % party.length]}"></i>`
+  }).join('')
+  document.body.append(b)
+  setTimeout(() => b.remove(), 900)
+}
+
+// Finished a task: the creature jumps and a few sparkles pop. Levelled up: real confetti.
+// Remembers what each view (root) last showed, so it only celebrates changes it saw happen.
+const celebrated = new WeakMap()
+const burstAt = new Map() // agent name -> when its last burst played, so two views of it don't both throw one
+function celebrate(root, agents) {
+  const last = celebrated.get(root)
+  const now = new Map(agents.map((a) => [a.name, { status: a.status, lv: levelOf(a.stats).lv }]))
+  celebrated.set(root, now)
+  if (!last) return
+  for (const a of agents) {
+    const was = last.get(a.name)
+    if (!was) continue
+    const levelUp = now.get(a.name).lv > was.lv
+    if (!levelUp && !(was.status === 'working' && a.status === 'idle')) continue
+    const av = root.querySelector(`[data-agent="${CSS.escape(a.name)}"] .av, [data-name="${CSS.escape(a.name)}"] .av`)
+    if (!av || !av.getClientRects().length) continue // a hidden view remembers, but doesn't save the party for later
+    bounce(av)
+    if (Date.now() - (burstAt.get(a.name) ?? 0) < 1500) continue
+    burstAt.set(a.name, Date.now())
+    burst(av, levelUp ? { count: 18, spread: 52 } : { color: agentColor(a) })
+  }
 }
 
 // Just enough Markdown for agent replies: code, bold/italic/strike, headings, lists, quotes and links.
@@ -261,8 +361,8 @@ function feedItem(e, prev, ctx) {
   const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}" data-id="${e.id}">${md(e.text)}</div>`
   const cap = (html) => (repeat && !tags ? '' : `<div class="cap">${html}${tags}</div>`)
   // Agents talk with their little face next to the bubble, like a group chat.
-  const said = (cls, capHTML, rest = '', style = '') =>
-    `<div class="item said ${cls}" id="m-${e.id}" style="${style}" title="${time}"><span class="face" data-agent="${esc(e.from)}">${repeat ? '' : avatarHTML(agent(e.from), { size: 30, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${bubble}${rest}${replied}</div></div>`
+  const said = (cls, capHTML, rest = '') =>
+    `<div class="item said ${cls}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"><span class="face" data-agent="${esc(e.from)}">${repeat ? '' : avatarHTML(agent(e.from), { size: 30, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${bubble}${rest}${replied}</div></div>`
 
   if (e.kind === 'event') return `<div class="event ${e.alert ? 'alert' : ''}" id="m-${e.id}" title="${time}">${who(e.from)} ${esc(e.text)}</div>`
   if (e.kind === 'note') return said('note', `${who(e.from)} shared a note`)
@@ -271,12 +371,44 @@ function feedItem(e, prev, ctx) {
   const actions = e.held
     ? `<div class="actions"><button class="btn primary" data-act="approve" data-id="${e.id}">Send it</button><button class="btn" data-act="drop" data-id="${e.id}">Drop</button></div>`
     : ''
-  return said(`handoff ${e.dropped ? 'dropped' : ''}`, `${who(e.from)} → ${who(e.to)}`, actions, `--c:${agentColor(agent(e.from))}`)
+  return said(`handoff ${e.dropped ? 'dropped' : ''}`, `${who(e.from)} → ${who(e.to)}`, actions)
 }
+
+// Who's on it right now, under the last message: dots while an agent works, an orange nudge when it needs you.
+const typingHTML = (agents) =>
+  agents
+    .filter((a) => a.on && (a.status === 'working' || a.status === 'waiting'))
+    .map((a) => `<div class="typing-row ${a.status}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}" title="${a.status === 'waiting' ? 'Open its terminal to answer' : 'Open its terminal'}">
+      <span class="face">${avatarHTML(a, { size: 30 })}</span>
+      <div class="stack"><span class="cap"><b>${esc(a.name)}</b>${a.activity ? ` · ${esc(a.activity)}` : ''}</span>${
+        a.status === 'waiting' ? '<span class="typing">needs you · answer in its terminal</span>' : '<span class="typing"><i></i><i></i><i></i></span>'
+      }</div></div>`)
+    .join('')
 
 function mountFeed(el, { onAgent, limit = 200 } = {}) {
   const open = new Set()
+  const seen = new Set()
   let key = ''
+  let first = true
+  // Pinned while you're at the bottom: new messages, typing rows and folding long bubbles keep it there.
+  let pinned = true
+  let gliding = false
+  const atEnd = () => el.scrollHeight - el.scrollTop - el.clientHeight < 60
+  const pin = (smooth = false) => {
+    const top = el.scrollHeight - el.clientHeight
+    if (!pinned || Math.abs(top - el.scrollTop) < 1) return
+    gliding = smooth
+    el.scrollTo({ top, behavior: smooth ? 'smooth' : 'instant' })
+  }
+  // A smooth glide fires scroll events on the way down; judge where you are once it (or your own scroll) ends.
+  el.addEventListener('scroll', () => gliding || (pinned = atEnd()), { passive: true })
+  el.addEventListener('scrollend', () => {
+    gliding = false
+    pinned = atEnd()
+  })
+  el.innerHTML = '<div class="feed-list"></div><div class="feed-list typing-list"></div>'
+  const list = el.firstElementChild
+  const typing = el.lastElementChild
   const jump = (id) => {
     const target = el.querySelector(`#m-${CSS.escape(id)}`)
     if (!target) return
@@ -336,17 +468,31 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
       else more.textContent = b.classList.contains('open') ? 'Show less' : 'Show more'
     }
   }
-  new ResizeObserver(() => measure()).observe(el)
+  new ResizeObserver(() => {
+    measure()
+    pin()
+  }).observe(el)
   return {
     render({ feed, agents }) {
       const view = feedView(feed, agents, open, limit)
-      const next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar]))
-      if (next === key) return
-      key = next
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
-      el.innerHTML = view.items.length ? view.html() : '<div class="empty">Tasks, hand-offs and replies show up here.</div>'
-      measure()
-      if (atBottom) el.scrollTop = el.scrollHeight
+      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar]))
+      const busy = typingHTML(agents)
+      let added = false
+      if (!view.items.length) next += busy ? ':busy' : ':empty' // the empty-feed hint shows only when nobody's busy
+      if (next !== key) {
+        key = next
+        list.innerHTML = view.items.length || busy ? view.html() : `<div class="empty">${ICONS.mark}<span>Tasks, hand-offs and replies show up here.</span></div>`
+        // New messages pop in; the ones already on screen stay put.
+        for (const e of view.items) {
+          if (seen.has(e.id)) continue
+          seen.add(e.id)
+          if (!first) (list.querySelector(`#m-${CSS.escape(e.id)}`)?.classList.add('enter'), (added = true))
+        }
+        measure()
+      }
+      morph(typing, busy)
+      pin(added)
+      first = false
     },
   }
 }
@@ -424,7 +570,7 @@ function mountComposer(el, { dropZone = el } = {}) {
   el.classList.add('composer')
   el.innerHTML = `<div class="chips"></div>
     <div class="thumbs hidden"></div>
-    <div class="input"><button class="attach" title="Add images (you can also paste or drop them)">+</button><textarea rows="1"></textarea><button class="send" disabled title="Send (Enter)">${ICONS.up}</button></div>
+    <div class="input"><button class="attach" title="Add images (you can also paste or drop them)">${ICONS.plus}</button><textarea rows="1"></textarea><button class="send" disabled title="Send (Enter)">${ICONS.up}</button></div>
     <div class="hint"></div>`
   const chips = el.querySelector('.chips')
   const ta = el.querySelector('textarea')
@@ -444,9 +590,9 @@ function mountComposer(el, { dropZone = el } = {}) {
   const draw = () => {
     if (target !== 'auto' && agents.length && !agents.some((a) => a.on && a.name === target)) target = 'auto'
     morph(chips,
-      `<button class="chip ${target === 'auto' ? 'on' : ''}" data-to="auto" title="Picks by area, prefers whoever is free">✦ Auto</button>` +
+      `<button class="chip ${target === 'auto' ? 'on' : ''}" data-to="auto" title="Picks by area, prefers whoever is free. @mention names to pick them yourself">✦ Auto</button>` +
       agents.filter((a) => a.on).map((a) => `<button class="chip ${target === a.name ? 'on' : ''}" data-to="${esc(a.name)}" title="${esc(statusText(a))}">${avatarHTML(a, { size: 20 })}${esc(a.name)}</button>`).join(''))
-    ta.placeholder = target === 'auto' ? 'Describe a task, crew picks who (or @mention someone)' : `Message @${target}… (@mention more to add them)`
+    ta.placeholder = target === 'auto' ? 'Describe a task, the crew picks who…' : `Message @${target}…`
   }
   const autosize = () => {
     ta.style.height = 'auto'
@@ -511,11 +657,23 @@ function mountComposer(el, { dropZone = el } = {}) {
   }
 }
 
-// Agent cards appear on several views; one listener handles their YOLO checkbox and on/off switch.
+// Agent rows appear on several views; these listeners handle their mode chips and on/off switch.
+// A chip flips right away and the next state push confirms it.
+document.addEventListener('click', (e) => {
+  const chip = e.target.closest?.('.mode[data-yolo], .mode[data-fast]')
+  if (!chip) return
+  const on = chip.getAttribute('aria-pressed') !== 'true'
+  const [name, mode] = chip.dataset.yolo ? [chip.dataset.yolo, 'yolo'] : [chip.dataset.fast, 'fast']
+  chip.setAttribute('aria-pressed', String(on))
+  flips.set(`${name}:${mode}`, { on, at: Date.now() })
+  crew.call('update', name, mode === 'yolo' ? { yolo: on } : { tier: on ? 'fast' : 'default' }).catch((err) => {
+    flips.delete(`${name}:${mode}`)
+    chip.setAttribute('aria-pressed', String(!on))
+    alert(`Couldn't change ${name}: ${err.message}`)
+  })
+})
 document.addEventListener('change', (e) => {
-  const { yolo, power, fast } = e.target.dataset ?? {}
-  if (yolo) crew.call('update', yolo, { yolo: e.target.checked })
-  if (fast) crew.call('update', fast, { tier: e.target.checked ? 'fast' : 'default' })
+  const { power } = e.target.dataset ?? {}
   if (!power) return
   if (!e.target.checked && 'busy' in e.target.dataset && !confirm(`${power} is in the middle of something. Turn it off anyway?`)) {
     e.target.checked = true

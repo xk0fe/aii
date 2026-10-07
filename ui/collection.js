@@ -1,6 +1,6 @@
 // The crew as a collection: a Pokédex of agent cards. Click a card to open it and edit everything about
 // the agent (brain, folder, flags, look). "Select" turns on bulk mode to change many agents at once.
-/* global crew, store, esc, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, duration, levelOf, ago, PARTS, COLORS, ICONS */
+/* global crew, store, esc, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, PARTS, COLORS, ICONS */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -14,7 +14,7 @@ function mountCollection(root, { onTerminal }) {
         <div><h2>Your crew</h2><p class="col-sub"></p></div><span class="grow"></span>
         <div class="seg" data-mode-switch><button data-mode="cards">Cards</button><button data-mode="stats">Stats</button></div>
         <button class="btn" data-act="select">Select</button>
-        <button class="btn primary" data-act="new">+ New agent</button>
+        <button class="btn primary" data-act="new">${ICONS.plus}New agent</button>
       </header>
       <div class="col-grid"></div>
       <div class="col-stats"></div>
@@ -25,7 +25,10 @@ function mountCollection(root, { onTerminal }) {
   const grid = $('.col-grid')
   const card = $('.col-card')
   const bulk = $('.bulk')
+  const list = $('.col-list')
   const picked = new Set()
+  // View Transitions move the creature from its card into the editor and back; without them, a plain fade.
+  const canMorph = typeof document.startViewTransition === 'function'
   let state = null
   let gridKey = ''
   let selecting = false
@@ -35,6 +38,7 @@ function mountCollection(root, { onTerminal }) {
   let original = null
   let draft = null
   let reopen = null // name to open once it shows up in state (after add/rename)
+  let transitioning = false
 
   const agentNamed = (name) => state.agents.find((a) => a.name === name)
   const providerOf = (id) => state.providers[id] ?? { label: id, models: [], efforts: [] }
@@ -44,35 +48,57 @@ function mountCollection(root, { onTerminal }) {
 
   function cardHTML(a, i) {
     const look = avatarOf(a)
-    const chips = [providerOf(a.provider).label, [a.model, a.effort, a.fast && '⚡ fast'].filter(Boolean).join(' · ')].filter(Boolean).map((c) => `<span>${esc(c)}</span>`).join('')
-    return `<button class="pcard hop ${LIGHT.has(look.color) ? 'light' : ''} ${a.on ? '' : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)};--i:${i}">
+    const chips = [providerOf(a.provider).label, [a.model, a.effort].filter(Boolean).join(' · ')].filter(Boolean).map((c) => `<span>${esc(c)}</span>`).join('')
+    const modes = (a.fast ? `<span class="pc-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</span>` : '') + (a.yolo ? '<span class="pc-yolo" title="YOLO: skips every permission prompt">YOLO</span>' : '')
+    const doing = a.on && a.activity && (a.status === 'working' || a.status === 'waiting') ? `<span class="pc-doing">${esc(a.activity)}</span>` : ''
+    return `<button class="pcard hop ${LIGHT.has(look.color) ? 'light' : ''} ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}">
       <span class="pc-mark">${ICONS.mark}</span>
-      <span class="pc-no">Lv ${levelOf(a.stats).lv} · #${pad(i + 1)}</span>
+      <span class="pc-no"><b title="${levelOf(a.stats).xp} XP">Lv ${levelOf(a.stats).lv}</b><span>#${pad(i + 1)}</span></span>
       <span class="pc-name">${esc(a.name)}</span>
       <span class="pc-area" title="${esc(a.area)}">${esc(a.area || 'No area yet. Open the card to set one.')}</span>
-      ${a.yolo ? '<span class="pc-yolo" title="Skips every permission prompt">YOLO</span>' : ''}
+      ${modes ? `<span class="pc-modes">${modes}</span>` : ''}
       <span class="pc-chips">${chips}</span>
-      <span class="pc-state" title="${esc(statusText(a))}"><span class="dot ${a.status}"></span><span>${esc(statusText(a))}</span></span>
+      <span class="pc-state" title="${esc(statusText(a))}"><span><span class="dot ${a.status}"></span><span>${esc(statusText(a))}</span></span>${doing}</span>
       <span class="pc-av">${avatarHTML(a, { size: 104 })}</span>
       <span class="pc-check">✓</span>
     </button>`
   }
 
   function drawGrid() {
+    if (transitioning) return
     root.classList.toggle('stats-mode', mode === 'stats')
-    for (const b of root.querySelectorAll('[data-mode]')) b.classList.toggle('on', b.dataset.mode === mode)
+    segmented($('[data-mode-switch]'), (b) => b.dataset.mode === mode)
     if (mode === 'stats') drawStatsTable()
-    const next = JSON.stringify([selecting, [...picked], state.agents.map((a) => [a.name, a.status, a.provider, a.model, a.effort, a.yolo, a.on, a.avatar, levelOf(a.stats).lv])])
+    const next = JSON.stringify([selecting, [...picked], state.agents.map((a) => [a.name, a.status, a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, levelOf(a.stats).lv])])
     if (next === gridKey) return
     gridKey = next
-    morph(grid, state.agents.map(cardHTML).join('') + '<button class="pcard add" data-act="new"><b>+</b>New agent</button>')
-    requestAnimationFrame(() => grid.classList.add('entered')) // the staggered entrance plays once
+    morph(grid, state.agents.map(cardHTML).join('') + `<button class="pcard add" data-act="new"><b>${ICONS.plus}</b>New agent</button>`)
+    celebrate(grid, state.agents)
     const on = state.agents.filter((a) => a.on).length
     $('.col-sub').textContent = state.agents.length ? `${state.agents.length} agents · ${on} on` : 'Start with one agent per area of work'
     root.classList.toggle('selecting', selecting)
     $('[data-act=select]').textContent = selecting ? 'Done' : 'Select'
     drawBulkCount()
   }
+
+  // The hovered card tilts toward the pointer (see .pcard:hover). The position lives on the grid, which morph()
+  // never rewrites, so a state push mid-hover doesn't snap the card back.
+  grid.addEventListener('pointermove', (e) => {
+    const c = e.target.closest('.pcard:not(.add)')
+    if (!c) return
+    const r = c.getBoundingClientRect()
+    grid.style.setProperty('--mx', ((e.clientX - r.left) / r.width).toFixed(3))
+    grid.style.setProperty('--my', ((e.clientY - r.top) / r.height).toFixed(3))
+  })
+  // ...and the creature in the open card watches the pointer.
+  card.addEventListener('pointermove', (e) => {
+    const hero = card.querySelector('.pd-hero')
+    if (!hero) return
+    const r = hero.getBoundingClientRect()
+    hero.style.setProperty('--mx', Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)).toFixed(3))
+    hero.style.setProperty('--my', Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)).toFixed(3))
+  })
+  list.addEventListener('scroll', () => list.classList.toggle('scrolled', list.scrollTop > 4), { passive: true })
 
   grid.addEventListener('click', (e) => {
     const c = e.target.closest('.pcard')
@@ -132,9 +158,10 @@ function mountCollection(root, { onTerminal }) {
     const marks = Object.fromEntries(METRICS.map((m) => [m.key, standouts(m)]))
     const maxOf = Object.fromEntries(METRICS.map((m) => [m.key, Math.max(0, ...state.agents.map((a) => a.stats[m.key] || 0))]))
     const sparkMax = Math.max(1, ...state.agents.flatMap((a) => a.stats.days.map((d) => d.tasks)))
-    $('.col-stats').innerHTML = `<table class="stats-table"><thead><tr><th>Agent</th>${METRICS.map((m) => `<th data-sort="${m.key}" class="${m.key === sortBy ? 'on' : ''}" title="${m.better === 'high' ? 'more is better' : 'less is better'}">${m.label}</th>`).join('')}<th>14 days</th></tr></thead><tbody>${
+    // morph, not innerHTML: rows animate in once, and bars glide to new values instead of redrawing
+    morph($('.col-stats'), `<table class="stats-table"><thead><tr><th>Agent</th>${METRICS.map((m) => `<th data-sort="${m.key}" class="${m.key === sortBy ? 'on' : ''}" title="${m.better === 'high' ? 'more is better' : 'less is better'}">${m.label}</th>`).join('')}<th>14 days</th></tr></thead><tbody>${
       rows.map((a) => `<tr data-name="${esc(a.name)}" class="${a.on ? '' : 'off'}" style="--c:${colorOf(avatarOf(a))}">
-        <td class="who" title="${esc(a.area)}">${avatarHTML(a, { size: 34, mood: 'still' })}<span><b>${esc(a.name)}</b><small>Lv ${levelOf(a.stats).lv} · ${!a.stats.last ? 'no work yet' : Date.now() - a.stats.last < 60000 ? 'active just now' : `active ${ago(a.stats.last)} ago`}</small></span></td>
+        <td class="who" title="${esc(a.area)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span><b>${esc(a.name)}</b><small title="last active">Lv ${levelOf(a.stats).lv} · ${!a.stats.last ? 'no work yet' : Date.now() - a.stats.last < 60000 ? 'just now' : `${ago(a.stats.last)} ago`}</small></span></td>
         ${METRICS.map((m) => {
           const s = a.stats
           const has = (m.has ?? (() => true))(s)
@@ -143,7 +170,7 @@ function mountCollection(root, { onTerminal }) {
         }).join('')}
         <td>${sparkline(a.stats.days, sparkMax)}</td></tr>`).join('')
     }</tbody></table>
-    <p class="stats-note">👑 best in the column · 🐢 slowest · bars compare against the busiest agent · counted since each agent's first task</p>`
+    <p class="stats-note">👑 best in the column · 🐢 slowest · bars compare against the busiest agent · counted since each agent's first task</p>`)
   }
 
   $('.col-stats').addEventListener('click', (e) => {
@@ -219,7 +246,7 @@ function mountCollection(root, { onTerminal }) {
   // Little celebratory hop on cards that just changed.
   function cheer(names) {
     setTimeout(() => {
-      for (const n of names) grid.querySelector(`.pcard[data-name="${CSS.escape(n)}"] .av`)?.classList.add('pop')
+      for (const n of names) bounce(grid.querySelector(`.pcard[data-name="${CSS.escape(n)}"] .av`), 'pop')
     }, 120)
   }
 
@@ -235,16 +262,53 @@ function mountCollection(root, { onTerminal }) {
       : { name: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar() }
     editing = a ? a.name : ':new'
     if (selecting) setSelecting(false)
-    drawCard()
-    root.classList.add('detail')
-    card.scrollTop = 0
+    morphTo(a?.name, 'open', () => {
+      drawCard()
+      root.classList.add('detail')
+      card.scrollTop = 0
+    })
     if (!a) setTimeout(() => card.querySelector('.pd-name')?.focus(), 250)
   }
 
   function close() {
     if (dirty() && !confirm('Discard your changes?')) return
+    const name = editing
     editing = null
-    root.classList.remove('detail')
+    morphTo(name, 'close', () => root.classList.remove('detail'))
+  }
+
+  // Card <-> editor as one motion: the card grows into the editor's header and its creature travels with it.
+  // Elements share a view-transition-name only for the length of the transition.
+  function morphTo(name, dir, update) {
+    const tile = name && mode === 'cards' ? grid.querySelector(`.pcard[data-name="${CSS.escape(name)}"]`) : null
+    const already = dir === 'open' && root.classList.contains('detail') // e.g. reopening after Save
+    if (!canMorph || !tile?.getClientRects().length || already || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      update()
+      if (dir === 'open' && !already) card.querySelector('.pd')?.classList.add('enter') // the plain fade-up
+      return
+    }
+    const parts = (inCard) => (inCard
+      ? [[tile, 'pd-hero'], [tile.querySelector('.av'), 'pd-av']]
+      : [[card.querySelector('.pd-hero'), 'pd-hero'], [card.querySelector('.pd-av .av'), 'pd-av']])
+    const tag = (pairs, on) => pairs.forEach(([el, n]) => el && (el.style.viewTransitionName = on ? n : ''))
+    if (dir === 'close' && tile.offsetTop < list.scrollTop) list.scrollTop = Math.max(0, tile.offsetTop - 90)
+    let from = parts(dir === 'open')
+    tag(from, true)
+    transitioning = true // a redraw now would drop the names or swap the creature out from under the snapshot
+    root.classList.add('vt')
+    const t = document.startViewTransition(() => {
+      tag(from, false)
+      update()
+      from = parts(dir !== 'open')
+      tag(from, true)
+    })
+    t.finished.finally(() => {
+      tag(from, false)
+      root.classList.remove('vt')
+      transitioning = false
+      gridKey = ''
+      drawGrid()
+    })
   }
 
   const dirty = () => (original ? JSON.stringify(draft) !== JSON.stringify(original) : Boolean(draft?.name.trim()))
@@ -279,7 +343,7 @@ function mountCollection(root, { onTerminal }) {
           <div class="look"></div>
           <footer class="pd-foot">
             ${live ? `<button class="btn" data-act="terminal">Open terminal</button><button class="btn danger" data-act="remove">Remove</button>` : ''}
-            <span class="grow"></span><span class="pd-msg"></span>
+            <span class="grow"></span><span class="pd-msg"></span><span class="pd-dirty">Unsaved changes</span>
             <button class="btn" data-act="back">Cancel</button>
             <button class="btn primary" data-act="save">${live ? 'Save' : 'Add to crew'}</button>
           </footer>
@@ -351,9 +415,9 @@ function mountCollection(root, { onTerminal }) {
             : '<em>set by the model</em>'
         }</div>
         <label class="stat wide"><span>Folder</span><div class="pick"><input data-k="cwd" value="${esc(d.cwd)}" placeholder="~/code/my-app" autocomplete="off"><button type="button" class="btn" data-act="pick">Choose…</button></div></label>
-        ${p.fastByDefault === undefined ? '' : `<label class="stat toggle"><span>⚡ Fast mode<small>Codex's fast service tier${d.tier ? '' : ' (following your Codex config)'}</small></span><input type="checkbox" class="switch" data-fast-tier ${(d.tier ? d.tier === 'fast' : p.fastByDefault) ? 'checked' : ''}></label>`}
-        <label class="stat toggle"><span>YOLO<small>skip every permission prompt</small></span><input type="checkbox" class="switch" data-k="yolo" ${d.yolo ? 'checked' : ''}></label>
-        <label class="stat toggle"><span>Power<small>on now and after restarts</small></span><input type="checkbox" class="switch" data-k="on" ${d.on ? 'checked' : ''}></label>
+        ${p.fastByDefault === undefined ? '' : `<label class="stat toggle fast"><span><i class="glyph">${ICONS.bolt}</i><span>Fast mode<small>Codex's fast service tier${d.tier ? '' : ' (following your Codex config)'}</small></span></span><input type="checkbox" class="switch" data-fast-tier ${(d.tier ? d.tier === 'fast' : p.fastByDefault) ? 'checked' : ''}></label>`}
+        <label class="stat toggle yolo"><span><i class="glyph">!</i><span>YOLO<small>skip every permission prompt</small></span></span><input type="checkbox" class="switch" data-k="yolo" ${d.yolo ? 'checked' : ''}></label>
+        <label class="stat toggle"><span><i class="glyph">${ICONS.power}</i><span>Power<small>on now and after restarts</small></span></span><input type="checkbox" class="switch" data-k="on" ${d.on ? 'checked' : ''}></label>
         <label class="stat wide"><span>Extra flags</span><input data-k="args" value="${esc(d.args)}" placeholder="passed straight to the CLI" autocomplete="off"></label>
       </div>`
   }
@@ -371,7 +435,7 @@ function mountCollection(root, { onTerminal }) {
       `<div class="look-row"><span>Blush</span><div class="opts"><input type="checkbox" class="switch" data-look="cheeks" ${s.cheeks ? 'checked' : ''}></div></div>`
   }
 
-  function drawAvatar(bounce = false) {
+  function drawAvatar(hop = false) {
     const pd = card.querySelector('.pd')
     pd.style.setProperty('--c', colorOf(draft.avatar))
     pd.classList.toggle('light', LIGHT.has(draft.avatar.color))
@@ -379,15 +443,13 @@ function mountCollection(root, { onTerminal }) {
     const host = card.querySelector('.pd-av')
     const mood = live?.status === 'working' || live?.status === 'waiting' ? undefined : 'idle'
     host.innerHTML = avatarHTML({ name: draft.name || 'new', avatar: draft.avatar, status: live?.status }, { size: 200, mood })
-    if (!bounce) return
-    const av = host.querySelector('.av')
-    av.classList.add('pop')
-    av.addEventListener('animationend', () => av.classList.remove('pop'), { once: true })
+    if (hop) bounce(host.querySelector('.av'), 'pop')
   }
 
   function syncSave() {
     const btn = card.querySelector('[data-act=save]')
     if (btn) btn.disabled = !dirty()
+    card.querySelector('.pd-foot')?.classList.toggle('dirty', Boolean(original) && dirty())
   }
 
   card.addEventListener('input', (e) => {

@@ -8,19 +8,20 @@
   <style>
     html, body { background: transparent; overflow: hidden; }
     .wrap { display: inline-flex; align-items: center; gap: 8px; padding: 12px; }
-    .glass { background: var(--glass); border: 1px solid var(--line); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3); }
+    .glass { background: var(--glass); backdrop-filter: blur(24px) saturate(1.6); border: 1px solid var(--line); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, .25); }
 
-    .panel { display: none; width: 390px; height: 580px; border-radius: 22px; flex-direction: column; overflow: hidden; }
-    .open .panel { display: flex; }
+    .panel { display: none; width: 390px; height: 580px; border-radius: 24px; flex-direction: column; overflow: hidden; transform-origin: 100% 50%; }
+    .open .panel { display: flex; animation: panel-in .38s var(--bounce); }
+    @keyframes panel-in { from { opacity: 0; transform: translateX(14px) scale(.94); } }
     .panel header { display: flex; align-items: center; gap: 8px; padding: 12px 10px 10px 16px; border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
-    .panel header b { font-size: 14px; }
-    .panel header .sub { color: var(--fg2); font-size: 12px; }
-    .panel header button { -webkit-app-region: no-drag; }
+    .panel header b { font-size: 14.5px; font-weight: 750; }
+    .panel header button, .panel header .sums { -webkit-app-region: no-drag; }
     .panel .feed { flex: 1; }
 
-    .pill { width: 54px; border-radius: 27px; padding: 12px 0 13px; display: flex; flex-direction: column; align-items: center; gap: 11px; -webkit-app-region: drag; transition: box-shadow .3s, border-color .3s; }
-    .home { -webkit-app-region: no-drag; width: 40px; height: 36px; border: 0; background: none; color: var(--fg); cursor: pointer; padding: 4px 3px; border-radius: 14px; }
+    .pill { width: 56px; border-radius: 28px; padding: 12px 0 13px; display: flex; flex-direction: column; align-items: center; gap: 10px; -webkit-app-region: drag; transition: box-shadow .3s, border-color .3s; }
+    .home { -webkit-app-region: no-drag; width: 40px; height: 36px; border: 0; background: none; color: var(--fg); cursor: pointer; padding: 4px 3px; border-radius: 14px; transition: background .15s, transform .3s var(--bounce); }
     .home:hover { background: var(--btn); }
+    .home:active { transform: scale(.9); }
     .home svg { width: 100%; height: 100%; display: block; overflow: visible; }
     /* while anyone works, the three buddies hop in a little wave */
     .home path { transform-box: fill-box; transform-origin: 50% 100%; }
@@ -28,17 +29,21 @@
     .busy .home .m1 { animation-delay: .14s; }
     .busy .home .m2 { animation-delay: .28s; }
     @keyframes buddy-hop { 0%, 55%, 100% { translate: 0 0; } 25% { translate: 0 -2.4px; } }
-    .alert .pill { border-color: rgba(255, 159, 10, 0.7); box-shadow: 0 0 0 3px rgba(255, 159, 10, 0.18), 0 8px 22px rgba(0, 0, 0, 0.35); }
-    /* the crew lives in the pill: one little creature per agent, hopping while it works */
+    .alert .pill { border-color: rgba(255, 159, 10, 0.7); animation: pill-alert 1.8s ease-in-out infinite; }
+    @keyframes pill-alert { 0%, 100% { box-shadow: 0 0 0 3px rgba(255, 159, 10, 0.12), 0 10px 28px rgba(0, 0, 0, 0.3); } 50% { box-shadow: 0 0 0 6px rgba(255, 159, 10, 0.24), 0 10px 28px rgba(0, 0, 0, 0.3); } }
+    /* the crew lives in the pill: one little creature per agent, hopping while it works, magnified like the Dock */
     .dots { display: flex; flex-direction: column; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
-    .dots .face { cursor: pointer; line-height: 0; }
+    .dots .face { cursor: pointer; line-height: 0; transition: transform .3s var(--spring); transform-origin: 70% 50%; }
+    .dots .face:hover { transform: scale(1.32); z-index: 1; }
+    .dots .face:hover + .face, .dots .face:has(+ .face:hover) { transform: scale(1.12); }
+    .dots .face:active { transform: scale(1.05); }
   </style>
 </head>
 <body>
   <div class="wrap">
     <section class="panel glass">
       <header>
-        <b>Crew</b><span class="sub"></span><span class="grow"></span>
+        <b>Crew</b><span class="sums"></span><span class="grow"></span>
         <button class="icon" data-act="dashboard" title="Open dashboard"></button>
         <button class="icon" data-act="close" title="Close (Esc)"></button>
       </header>

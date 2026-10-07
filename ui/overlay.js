@@ -1,5 +1,5 @@
 // Floating pill on the screen edge; click it (or press the hotkey) for the chat panel.
-/* global crew, live, morph, esc, statusText, mountFeed, mountComposer, avatarHTML, markSVG, ICONS */
+/* global crew, live, morph, esc, statusText, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS */
 
 const $ = (s) => document.querySelector(s)
 $('.home').innerHTML = markSVG('0 6 24 16')
@@ -49,8 +49,8 @@ live((state) => {
   document.body.classList.toggle('busy', working > 0)
   document.body.classList.toggle('alert', state.agents.some((a) => a.status === 'waiting'))
   morph($('.dots'), on.map((a) => `<span class="face" data-agent="${esc(a.name)}" title="${esc(`${a.name}: ${statusText(a)}`)}">${avatarHTML(a, { size: 30 })}</span>`).join(''))
-  const where = state.link?.mode === 'remote' ? ` · on ${state.link.name}` : ''
-  $('.sub').textContent = (on.length ? `${working} of ${on.length} working` : '') + where
+  celebrate($('.dots'), state.agents)
+  morph($('.sums'), crewSummary(state))
   feed.render(state)
   composer.render(state)
   fit()

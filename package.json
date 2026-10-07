@@ -11,7 +11,8 @@
     "test": "node --test test/*.test.js",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper bin/crew 2>/dev/null || true",
     "app": "node scripts/build-app.mjs",
-    "icon": "electron scripts/make-icon.mjs"
+    "icon": "electron scripts/make-icon.mjs",
+    "shots": "electron scripts/screenshots.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
