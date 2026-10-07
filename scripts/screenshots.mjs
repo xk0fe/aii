@@ -244,6 +244,15 @@ const SHOTS = {
     await save(win, `grid-${theme}`)
     win.destroy()
   },
+  // Dictation: the composer while it listens (scripted words, a tone for a voice; no microphone).
+  async voice(theme) {
+    const win = await dashboard(theme, 'crew')
+    await sleep(600)
+    await tap(win, await center(win, '.chat .mic'))
+    await sleep(2600)
+    await save(win, `voice-${theme}`)
+    win.destroy()
+  },
   // The Cards/Stats switch: the header must not move.
   async tabsGif() {
     const win = await dashboard('light', 'crew')

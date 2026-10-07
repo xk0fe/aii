@@ -1,5 +1,5 @@
 // Shared rendering for the three views. Plain functions and template strings; views re-render on every state push.
-/* global crew, avatarHTML, agentColor */
+/* global crew, avatarHTML, agentColor, mountVoice */
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
@@ -641,7 +641,7 @@ function mountComposer(el, { dropZone = el } = {}) {
   el.classList.add('composer')
   el.innerHTML = `<div class="chips"></div>
     <div class="thumbs hidden"></div>
-    <div class="input"><button class="attach" title="Add images (you can also paste or drop them)">${ICONS.plus}</button><textarea rows="1"></textarea><button class="fresh-toggle" aria-pressed="false">${ICONS.fresh}</button><button class="send" disabled title="Send (Enter)">${ICONS.up}</button></div>
+    <div class="input"><button class="attach" title="Add images (you can also paste or drop them)">${ICONS.plus}</button><textarea rows="1"></textarea><button class="fresh-toggle" aria-pressed="false">${ICONS.fresh}</button><button class="mic" aria-label="Dictate"></button><button class="send" disabled title="Send (Enter)">${ICONS.up}</button></div>
     <div class="hint"></div>`
   const chips = el.querySelector('.chips')
   const ta = el.querySelector('textarea')
@@ -675,9 +675,10 @@ function mountComposer(el, { dropZone = el } = {}) {
     el.classList.toggle('bug-mode', bug)
     freshBtn.setAttribute('aria-pressed', String(fresh))
     freshBtn.title = fresh ? 'New conversation: on. The agent starts this task with a clean slate (click to turn off)' : 'New conversation: start this task with a clean slate instead of adding to everything the agent did before'
-    ta.placeholder = bug
-      ? 'What went wrong? Paste a screenshot too…'
-      : `${fresh ? 'New conversation: ' : ''}${target === 'auto' ? (fresh ? 'describe the task…' : 'Describe a task, the crew picks who…') : `${fresh ? 'a task for' : 'Message'} @${target}…`}`
+    // short enough to sit beside the ✦, mic and send buttons on one line
+    ta.placeholder = bug ? 'What went wrong?'
+      : target === 'auto' ? (fresh ? 'Fresh task, the crew picks who…' : 'Any task: the crew picks who…')
+      : fresh ? `Fresh task for @${target}…` : `Message @${target}…`
   }
   const autosize = () => {
     ta.style.height = 'auto'
@@ -698,6 +699,7 @@ function mountComposer(el, { dropZone = el } = {}) {
     draw()
   }
   const submit = async () => {
+    if (voice?.busy()) return voice.stop({ send: true }) // sends once the last words are in
     const text = ta.value.trim()
     const images = attach.get()
     if (!text && !images.length) return
@@ -732,12 +734,16 @@ function mountComposer(el, { dropZone = el } = {}) {
     ta.focus()
   })
   ta.addEventListener('keydown', (e) => {
+    if (voice?.key(e)) return
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault()
       submit()
     }
   })
   send.addEventListener('click', submit)
+  // Dictation (ui/voice.js): the mic button fills in the message as you talk.
+  const voice = typeof mountVoice === 'function' && crew.onVoice ? mountVoice({ composer: el, textarea: ta, button: el.querySelector('.mic'), changed: autosize, submit }) : null
+  if (!voice) el.querySelector('.mic').remove()
   draw()
 
   return {
@@ -747,6 +753,8 @@ function mountComposer(el, { dropZone = el } = {}) {
     },
     setTarget,
     focus: () => ta.focus(),
+    // true when it stopped a dictation (so Esc can stop that first, and close things on the next press)
+    stopVoice: () => Boolean(voice?.busy() && (voice.stop(), true)),
   }
 }
 
