@@ -46,6 +46,12 @@ const CONVOS = {
   jeff: [{ since: now - 3000, tasks: 0, compactions: 0 }, 8],
 }
 for (const a of AGENTS) [a.convo, a.ticket] = CONVOS[a.name] ?? [null, null]
+// sub-agents at work: joseph has two going, arie finished its turn while one keeps working in the background
+AGENTS[0].subs = [
+  { id: 's1', type: 'Explore', description: 'Find every reply path', started: now - 50000, ended: null, tools: 7, activity: 'Grep · sendId' },
+  { id: 's2', type: 'general-purpose', description: 'Run the test suite', started: now - 21000, ended: null, tools: 2, activity: 'Bash · npm test' },
+]
+AGENTS.find((a) => a.name === 'arie').subs = [{ id: 's3', type: 'Plan', description: 'Draft the release checklist', started: now - 95000, ended: null, tools: 4, activity: 'Read · RELEASE.md' }]
 // joseph's 1M window is held to 250k: the hub reports its numbers against the limit (core/context.js againstLimit)
 Object.assign(AGENTS[0], { contextLimit: 250000, onContextLimit: 'fresh' })
 AGENTS[0].convo.context = { used: 160000, size: 250000, window: 1000000, limit: 250000, pct: 64 }
@@ -91,7 +97,7 @@ const FEED = [
   { id: 'f3', kind: 'reply', from: 'david', to: 'you', re: 'f2', text: 'Done on the client side. Replies now link to the **first visible copy**, so `mergeSends` stays the single source of truth.', ts: t(19) },
   { id: 'f3b', kind: 'ask', from: 'joseph', to: 'you', cli: 'claude', re: 'f1', ts: t(17), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm test', always: [] }, answer: { by: 'you', allow: true, always: 'Always allow Bash(npm test:*)', at: t(16.5) } },
   { id: 'f4', kind: 'handoff', from: 'joseph', to: 'gal', re: 'f1', text: 'Can you sanity-check the quote styling for threaded replies? It looks cramped on narrow panels.', ts: t(14) },
-  { id: 'f5', kind: 'note', from: 'arie', text: 'Standup moved to 10:30. Release branch is cut tomorrow.', ts: t(9) },
+  { id: 'f5', kind: 'note', from: 'arie', text: 'Standup moved to 10:30. @joseph cuts the release branch tomorrow.', ts: t(9) },
   { id: 'f6', kind: 'handoff', from: 'gal', to: 'marc', held: true, text: 'Need three pastel hero illustrations for the onboarding, one per crew role. Soft felt look, like our creatures.', ts: t(5) },
   { id: 'f6b', kind: 'handoff', from: 'david', to: 'arie', text: 'PUBLISHED: `083c613` is on GitHub. Branch and PR both read back the same commit.', ts: t(4.5) },
   { id: 'f6c', kind: 'reply', from: 'arie', to: 'you', re: 'f6b', ts: t(4), text: "**Release blocker closed.** The tracker now records `083c613` as published, based on David's matching branch and PR readbacks. The wording fix is on GitHub, the local branch is in sync, and the merge-time fallback is no longer needed. Jeff has been told.\n\nThe remaining sequence is unchanged:\n\n1. Merge **#4645**, then **#4647**. Both are open and unmerged.\n2. Verify the cleanup in a store build.\n3. Joseph retires flag `928775`.\n4. Gal signs off the onboarding art.\n\nI'll post here when #4645 lands." },
@@ -99,7 +105,7 @@ const FEED = [
     always: [{ i: 0, label: 'Always allow Bash(npm run build:*)' }, { i: 1, label: 'Allow all edits this session' }] } },
   { id: 'c1', kind: 'msg', from: 'you', to: 'marc.2', text: 'An illustration for the empty Tasks board too, same felt look', ts: t(4.2) },
   { id: 'c2', kind: 'msg', from: 'you', to: 'marc.3', text: 'And a pastel palette sheet for the brand guide', ts: t(1.1) },
-  { id: 'f8', kind: 'reply', from: 'joseph', to: 'you', re: 'f1', text: 'Server side is threaded too:\n\n| path | status |\n|---|---|\n| hub.send | ✓ sendId |\n| hub.reply | ✓ re |\n\nRan the suite, 42 passing.', ts: t(0.5) },
+  { id: 'f8', kind: 'reply', from: 'joseph', to: 'you', re: 'f1', subs: [{ type: 'Explore', description: 'Find every reply path', tools: 9, ms: 41000, running: false }, { type: 'general-purpose', description: 'Run the test suite', tools: 3, ms: 64000, running: false }], text: 'Server side is threaded too:\n\n| path | status |\n|---|---|\n| hub.send | ✓ sendId |\n| hub.reply | ✓ re |\n\nRan the suite, 42 passing.', ts: t(0.5) },
   { id: 'f9', kind: 'ask', from: 'david', to: 'you', cli: 'claude', re: 'f2', ts: t(0.3), ask: { type: 'question', alert: 'asks: Which navigation pattern?', questions: [
     { question: 'Which navigation pattern should the mobile app use?', header: 'Navigation', multiSelect: false, options: [{ label: 'Tab bar', description: 'Five tabs at the bottom, like iOS apps' }, { label: 'Drawer', description: 'A side menu behind a hamburger' }, { label: 'Both', description: 'Tabs for the main areas, a drawer for settings' }] }] } },
 ]

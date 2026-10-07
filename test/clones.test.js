@@ -169,6 +169,19 @@ test('...but not while a teammate is still working on what it asked', () => {
   assert.equal(agent('gal.2'), undefined)
 })
 
+test('...nor while its own sub-agents are still running after its turn', () => {
+  busy('gal')
+  hub.send({ to: 'gal', text: 'one' })
+  ready('gal.2')
+  hub.onHook('gal.2', { hook_event_name: 'SubagentStart', agent_id: 'sa1', agent_type: 'Explore' })
+  hub.onHook('gal.2', { hook_event_name: 'Stop' })
+  mock.timers.tick(600 + LINGER)
+  assert.ok(agent('gal.2'), 'still there while its sub-agent works')
+  hub.onHook('gal.2', { hook_event_name: 'SubagentStop', agent_id: 'sa1' })
+  mock.timers.tick(LINGER)
+  assert.equal(agent('gal.2'), undefined)
+})
+
 test('fewer clones allowed: a spare one goes as soon as it is free', () => {
   busy('gal')
   hub.send({ to: 'gal', text: 'one' })

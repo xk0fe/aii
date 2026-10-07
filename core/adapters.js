@@ -58,6 +58,10 @@ export const adapters = {
         UserPromptSubmit: on(),
         PermissionRequest: [{ hooks: [{ type: 'command', command: ASK(CLAUDE_WAIT), timeout: CLAUDE_WAIT }] }], // AskUserQuestion and ExitPlanMode come here too
         PostToolUse: on('*'),
+        // sub-agents: what each is for, when it starts and stops (its own tool calls come through PostToolUse)
+        PreToolUse: on('Agent|Task'),
+        SubagentStart: on(),
+        SubagentStop: on(),
         Notification: on(),
         Stop: on(),
       },

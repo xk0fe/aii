@@ -1,5 +1,5 @@
 // Full-screen view: the crew collection, every agent's live terminal, and the crew feed.
-/* global themeButton, nameHTML, displayName, clonesOf, contextRing, mountTasks, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
+/* global themeButton, orbitHTML, subsChip, nameHTML, displayName, clonesOf, contextRing, mountTasks, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -125,10 +125,10 @@ crew.onPty((name, data) => {
 // terminal size live in the ribbon below, so this line never crowds.
 function tileHead(a) {
   const busy = a.status === 'working' || a.status === 'waiting'
-  return `${avatarHTML(a, { size: 24 })}<b>${nameHTML(a)}</b>
+  return `<span class="tile-av">${avatarHTML(a, { size: 24 })}${orbitHTML(a)}</span><b>${nameHTML(a)}</b>
     <span class="state ${a.status}" ${busy ? 'data-act="markIdle" title="Stuck? Click to mark it free"' : ''}>${esc(statusText(a))}</span>
     <span class="activity">${esc(a.activity)}</span>
-    ${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}
+    ${subsChip(a)}${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}
     ${a.fast ? `<span class="tag fast-tag" title="Fast: Codex's fast service tier">${ICONS.bolt}</span>` : ''}
     ${a.yolo ? '<span class="tag yolo-tag" title="Skips all permission prompts">YOLO</span>' : ''}
     ${contextRing(a)}

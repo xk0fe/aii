@@ -64,7 +64,7 @@
     /* the crew lives in the pill: one little creature per agent, hopping while it works, magnified like the Dock */
     .dots { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     /* creatures magnify away from the screen edge */
-    .dots .face { cursor: pointer; line-height: 0; transition: transform .3s var(--spring); transform-origin: 70% 50%; }
+    .dots .face { position: relative; cursor: pointer; line-height: 0; transition: transform .3s var(--spring); transform-origin: 70% 50%; --orbit-ring: var(--panel); --dot: 6px; }
     [data-side=right] .dots .face { transform-origin: 30% 50%; }
     [data-side=below] .dots .face { transform-origin: 50% 25%; }
     [data-side=above] .dots .face { transform-origin: 50% 75%; }

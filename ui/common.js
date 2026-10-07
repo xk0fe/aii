@@ -1,5 +1,5 @@
 // Shared rendering for the three views. Plain functions and template strings; views re-render on every state push.
-/* global crew, avatarHTML, agentColor, mountVoice */
+/* global crew, avatarHTML, avatarOf, agentColor, mountVoice */
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
@@ -50,6 +50,7 @@ const ICONS = {
   shield: svg('<path d="M12 3 5 6v5.5c0 4.3 3 7.9 7 9.5 4-1.6 7-5.2 7-9.5V6l-7-3z"/><path d="m9 12 2 2 4-4"/>'),
   ask: svg('<path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.7A8 8 0 0 1 4 12z"/><path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.9c0 1.5-2.2 1.9-2.2 3.1M12 16.6v.1"/>'),
   plan: svg('<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/>'),
+  subs: svg('<circle cx="5.5" cy="5.5" r="2.5"/><circle cx="18.5" cy="11" r="2.5"/><circle cx="18.5" cy="19" r="2.5"/><path d="M5.5 8v7a4 4 0 0 0 4 4H16M5.5 11H16"/>'),
   thread: svg('<path d="M5 4v6.5A3.5 3.5 0 0 0 8.5 14H19M15 10l4 4-4 4"/>'),
   arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>', 'stroke-width="2.2"'),
   undo: svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', 'stroke-width="2.4"'),
@@ -223,14 +224,30 @@ function contextRing(a, { label = true, size = 15 } = {}) {
     `${label ? `<b>${ctx.pct}%</b>` : ''}</span>`
 }
 
+// ---- sub-agents: the helpers an agent hands parts of its work to (Claude Code's Agent tool) -----------
+
+const runningSubs = (a) => (a.on ? (a.subs ?? []).filter((s) => !s.ended) : [])
+// "general-purpose" is Claude Code's default helper; the rest keep their names (Explore, Plan, code-reviewer…)
+const subType = (t) => (t === 'general-purpose' ? 'general' : String(t || 'agent'))
+const subsTip = (subs) => subs.map((s) => `${subType(s.type)}${s.description ? `: ${s.description}` : ''}`).join('\n')
+// Little dots circling the creature while its sub-agents run, one per sub-agent (up to four).
+const orbitHTML = (a) => {
+  const n = Math.min(4, runningSubs(a).length)
+  return n ? `<span class="orbit" style="--n:${n}" aria-hidden="true">${Array.from({ length: n }, (_, k) => `<i style="--k:${k}"></i>`).join('')}</span>` : ''
+}
+const subsChip = (a) => {
+  const subs = runningSubs(a)
+  return subs.length ? `<span class="subs-chip" title="${esc(`${plural(subs.length, 'sub-agent')} working:\n${subsTip(subs)}`)}">${ICONS.subs}${subs.length}</span>` : ''
+}
+
 function agentCard(a, providers, clones = []) {
-  const doing = a.on && (a.activity || a.queue)
+  const doing = a.on && (a.activity || a.queue || runningSubs(a).length)
   const later = a.freshPending ? '<span class="pending" title="It finishes what it is doing first">✦ new conversation when free</span>' : a.pending ? '<span class="pending" title="It restarts with your changes as soon as it is free">↻ restarts when free</span>' : ''
   const activity = doing || later
-    ? `<div class="activity">${a.activity && a.on ? `<span class="${a.status === 'working' ? 'shimmer' : ''}">${esc(a.activity)}</span>` : '<span></span>'}${a.queue && a.on ? `<span class="queue">${a.queue} queued</span>` : ''}${later}</div>`
+    ? `<div class="activity">${a.activity && a.on ? `<span class="${a.status === 'working' ? 'shimmer' : ''}">${esc(a.activity)}</span>` : '<span></span>'}${subsChip(a)}${a.queue && a.on ? `<span class="queue">${a.queue} queued</span>` : ''}${later}</div>`
     : ''
   return `<div class="agent hop ${a.on ? a.status : 'off'}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}">
-    <div class="agent-av">${avatarHTML(a, { size: 38 })}</div>
+    <div class="agent-av">${avatarHTML(a, { size: 38 })}${orbitHTML(a)}</div>
     <div class="agent-body">
       <div class="agent-top"><span class="name">${nameHTML(a)}</span><span class="state ${a.status}">${esc(statusText(a))}</span><span class="grow"></span>${powerSwitch(a)}</div>
       <div class="area" title="${esc(a.area)}">${esc(a.area || 'No area yet')}</div>
@@ -330,6 +347,7 @@ function md(src) {
       .replace(/__(?=\S)(.+?)__/g, '<b>$1</b>')
       .replace(/(^|[\s(])[*_](?=\S)([^*_]+?)[*_](?=[\s).,!?:;]|$)/g, '$1<i>$2</i>')
       .replace(/~~(.+?)~~/g, '<s>$1</s>')
+      .replace(/(?<![\w.@/'-]|&#\d+;)@([\w-]+(?:@[\w-]+)?)(?![\w@/'-]|\.\w|&#39;)/g, (m, n) => (NOT_NAMES.has(n.toLowerCase()) ? m : `<span class="mention" data-m="${n.toLowerCase()}">@${n}</span>`))
       .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>')
       .replace(/(^|[\s(])(https?:\/\/[^\s<)]*[^\s<).,!?:;])/g, '$1<a href="$2">$2</a>')
       .replace(/\u0001(\d+)\u0001/g, (_, i) => `<code>${codes[i]}</code>`)
@@ -490,7 +508,12 @@ function feedItem(e, prev, ctx) {
   const replied = answers.length
     ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">${ICONS.thread}<span>${[...new Set(answers.map((r) => `@${at(r.from)}`))].join(', ')} ${answers.some((r) => r.kind === 'reply') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</span></button>`
     : ''
-  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}" data-id="${e.id}">${md(e.text)}</div>`
+  // @names in the text take their agent's color; one nobody here has stays a plain word
+  const text = md(e.text).replace(/<span class="mention" data-m="([^"]+)">([^<]*)<\/span>/g, (_, n, at) => {
+    const a = mentioned(n, Object.values(byName))
+    return a ? `<span class="mention" style="--c:${agentColor(a)}">${at}</span>` : at
+  })
+  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}" data-id="${e.id}">${text}</div>`
   const cap = (html) => (cont ? '' : `<div class="cap">${html}${tags}<span class="time">${time}</span></div>`)
   // Agents talk with their little face next to the bubble, like a group chat.
   const said = (cls, capHTML, rest = '', body = bubble) =>
@@ -508,7 +531,7 @@ function feedItem(e, prev, ctx) {
       <button class="bubble ticket-bubble" data-ticket="${esc(key)}" data-id="${e.id}"><span class="tb-icon">${ICONS[e.type ?? 'bug'] ?? ICONS.task}</span><b>#${esc(key.split('@')[0])}</b> ${esc(e.title ?? '')}</button>${replied}</div>`
   }
   if (e.kind === 'note') return said('note', `${name(e.from)} <span>shared a note</span>`)
-  if (e.kind === 'reply') return said('', name(e.from))
+  if (e.kind === 'reply') return said(e.subs?.length ? 'with-subs' : '', name(e.from), subsUsed(e, open))
   if (e.kind === 'ask') {
     const verb = { permission: 'needs your OK', question: 'asks', plan: 'has a plan for you' }[e.ask?.type] ?? 'asks'
     return said(`ask ${e.answer ? 'answered' : 'open'}`, `${name(e.from)} <span>${verb}</span>`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`)
@@ -585,16 +608,45 @@ function askSummary(q, a) {
 // card instead of the terminal.
 const typingHTML = (agents, asks = new Map()) =>
   agents
-    .filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || (a.cloneOf && a.status === 'starting'))) // a new clone shows up right away
+    .filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || a.subs?.length || (a.cloneOf && a.status === 'starting'))) // a new clone shows up right away
     .map((a) => {
       const card = a.status === 'waiting' && asks.get(a.name)
       const waiting = a.status === 'waiting'
-      const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : a.status === 'starting' ? 'starting up to take it…' : a.activity || 'working…'
-      const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : '<span class="typing"><i></i><i></i><i></i></span>'
+      const starting = a.cloneOf && a.status === 'starting'
+      const busy = waiting || a.status === 'working' || starting
+      const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : starting ? 'starting up to take it…' : busy ? a.activity || 'working…' : 'free, its sub-agents are still working'
+      const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : busy ? '<span class="typing"><i></i><i></i><i></i></span>' : ''
       return `<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
-      <span class="face">${avatarHTML(a, { size: 22 })}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what">${esc(what)}</span>${end}</div>`
+      <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${end}</div>${subTree(a)}`
     })
     .join('')
+
+// Its sub-agents, as branches under its line: each one's kind and job, what it's doing, how many steps and how
+// long. Finished ones tick off and fade out.
+function subTree(a) {
+  const subs = a.subs ?? []
+  if (!subs.length) return ''
+  const look = { ...a, avatar: avatarOf(a), status: 'working' } // its helpers are little copies of it
+  return `<div class="sub-tree" style="--c:${agentColor(a)}" data-agent="${esc(a.name)}" title="Open its terminal">${subs.map((s) => {
+    const done = Boolean(s.ended)
+    return `<div class="sub-row ${done ? 'done' : 'running'}" data-sub="${esc(s.id)}">
+      <span class="sub-face">${done ? `<span class="sub-done">${ICONS.check}</span>` : avatarHTML({ ...look, name: `${a.name}·${s.id}` }, { size: 16, mood: 'working' })}</span>
+      <span class="sub-body">
+        <span class="sub-line"><span class="sub-kind">${esc(subType(s.type))}</span><span class="sub-job">${esc(s.description || 'sub-agent')}</span></span>
+        <span class="sub-doing">${esc(done ? 'done' : s.activity || 'starting…')}</span>
+      </span>
+      <span class="sub-meta">${s.tools ? `${plural(s.tools, 'step')}<br>` : ''}${duration((s.ended ?? Date.now()) - s.started)}</span>
+    </div>`
+  }).join('')}</div>`
+}
+
+// Under a reply: the sub-agents it used for that turn, folded into one line until you open it.
+function subsUsed(e, open) {
+  if (!e.subs?.length) return ''
+  const running = e.subs.filter((s) => s.running).length
+  return `<details class="subs-used" data-subs="${e.id}" ${open.has(`subs:${e.id}`) ? 'open' : ''}><summary>${ICONS.subs}<span>Used ${plural(e.subs.length, 'sub-agent')}${running ? ` · ${running} still working` : ''}</span></summary>
+    <div class="subs-list">${e.subs.map((s) => `<div class="subs-item ${s.running ? 'running' : ''}"><span class="sub-kind">${esc(subType(s.type))}</span><span class="sub-job">${esc(s.description || 'sub-agent')}</span><span class="sub-meta">${s.tools ? `${plural(s.tools, 'step')} · ` : ''}${duration(s.ms)}${s.running ? ' · working' : ''}</span></div>`).join('')}</div></details>`
+}
 
 function mountFeed(el, { onAgent, onTicket = (key) => crew.call('dashboard', `task:${key}`), limit = 200 } = {}) {
   const open = new Set()
@@ -631,6 +683,11 @@ function mountFeed(el, { onAgent, onTicket = (key) => crew.call('dashboard', `ta
     void target.offsetWidth // restart the flash animation
     target.classList.add('flash')
   }
+  // a reply's sub-agent list stays open across re-renders ('toggle' doesn't bubble, so catch it on the way down)
+  el.addEventListener('toggle', (ev) => {
+    const d = ev.target.closest?.('details[data-subs]')
+    if (d) open[d.open ? 'add' : 'delete'](`subs:${d.dataset.subs}`)
+  }, true)
   el.addEventListener('click', (ev) => {
     const link = ev.target.closest('a[href]')
     if (link) {
@@ -868,6 +925,180 @@ function mountAttach({ zone, field, tray, button, onChange, onError }) {
   }
 }
 
+// @mentions, like Slack or Discord: type @ and the crew pops up, filtered as you type (name first, then area).
+// ↑↓ move, Enter or Tab picks, Esc closes; a click picks too. Picking writes the agent's full name (gal@mac-mini
+// for one on another computer) and a space. Agents that are off are listed but can't be picked: a message to one
+// would be refused. field: the textarea. box: what the list lines up with. place: 'above' or 'below' it.
+// Register it before the field's own keydown (Enter to send), so a pick doesn't also send.
+function mountMentions(field, { agents, box = field, place = 'above', heading = () => 'Agents' }) {
+  const list = document.createElement('div')
+  list.className = 'mentions hidden'
+  list.setAttribute('role', 'listbox')
+  document.body.append(list)
+  let items = []
+  let active = 0
+  let at = null // the "@query" being typed: { start, end, q }
+  // "@jo" right before the cursor, at the start or after a space or bracket; not in an email, not in `code`
+  const find = () => {
+    if (field.selectionStart !== field.selectionEnd) return null
+    const before = field.value.slice(0, field.selectionStart)
+    const m = before.match(/(?:^|[\s([{,;])@([\w-]*(?:@[\w-]*)?)$/)
+    if (!m) return null
+    if (((before.slice(before.lastIndexOf('\n') + 1).match(/`/g)) ?? []).length % 2) return null
+    return { start: before.length - m[1].length - 1, end: before.length, q: m[1].toLowerCase() }
+  }
+  // the start of its name first; from two letters on, anywhere in its name, then a word in its area
+  const rank = (a, q) => {
+    if (!q) return 0
+    const n = String(a.name).toLowerCase()
+    if (n.startsWith(q) || String(a.seed ?? '').toLowerCase().startsWith(q)) return 0
+    if (q.length < 2) return -1
+    if (n.includes(q)) return 1
+    return String(a.area ?? '').toLowerCase().split(/[^a-z0-9]+/).some((w) => w.startsWith(q)) ? 2 : -1
+  }
+  const label = (a, q) => {
+    const [base, home] = String(a.name).split('@')
+    const hit = q && base.toLowerCase().startsWith(q.split('@')[0]) ? q.split('@')[0].length : 0
+    return `<mark>${esc(base.slice(0, hit))}</mark>${esc(base.slice(hit))}${home ? `<span class="at">@${esc(home)}</span>` : ''}`
+  }
+  const row = (a, i) =>
+    `<div class="mn-item ${i === active ? 'on' : ''} ${i < 0 ? 'off' : ''}" ${i >= 0 ? `data-i="${i}" id="mn-${i}"` : ''} role="option" aria-selected="${i === active}" style="--c:${agentColor(a)}">${avatarHTML(a, { size: 24 })}<span class="mn-name">${label(a, at.q)}</span><span class="mn-area">${esc(a.area ?? '')}</span><span class="mn-state ${i < 0 ? 'off' : a.status}">${esc(i < 0 ? 'off' : statusText(a))}</span></div>`
+  const close = () => {
+    at = null
+    list.classList.add('hidden')
+  }
+  const place_ = () => {
+    const r = box.getBoundingClientRect()
+    Object.assign(list.style, { left: `${r.left}px`, width: `${r.width}px` })
+    if (place === 'above') Object.assign(list.style, { top: '', bottom: `${innerHeight - r.top + 6}px`, maxHeight: `${Math.max(140, r.top - 14)}px` })
+    else Object.assign(list.style, { bottom: '', top: `${r.bottom + 6}px`, maxHeight: `${Math.max(140, innerHeight - r.bottom - 14)}px` })
+  }
+  const draw = () => {
+    const was = at?.q
+    at = find()
+    if (!at) return close()
+    const all = agents().filter((a) => !a.cloneOf) // agents, not their clones: @gal reaches whichever of them is free
+    items = all.map((a, i) => [rank(a, at.q), i, a]).filter(([r, , a]) => r >= 0 && a.on).sort((x, y) => x[0] - y[0] || x[1] - y[1]).map(([, , a]) => a)
+    const off = all.filter((a) => !a.on && rank(a, at.q) >= 0)
+    if (!items.length && !off.length) return close()
+    if (at.q !== was) active = 0
+    active = Math.min(active, Math.max(0, items.length - 1))
+    list.innerHTML = `<div class="mn-head"><span>${esc(heading())}</span><span class="mn-keys"><kbd>↑</kbd><kbd>↓</kbd><kbd>⏎</kbd><span>to pick</span></span></div>
+      <div class="mn-list">${items.map(row).join('')}${off.length ? `<div class="mn-sep">Off · turn them on to message them</div>${off.map((a) => row(a, -1)).join('')}` : ''}</div>`
+    place_()
+    list.classList.remove('hidden')
+    list.querySelector('.mn-item.on')?.scrollIntoView({ block: 'nearest' })
+  }
+  const highlight = () => {
+    for (const el of list.querySelectorAll('[data-i]')) {
+      const on = Number(el.dataset.i) === active
+      el.classList.toggle('on', on)
+      el.setAttribute('aria-selected', String(on))
+    }
+    list.querySelector('.mn-item.on')?.scrollIntoView({ block: 'nearest' })
+  }
+  const pick = (i) => {
+    const a = items[i]
+    if (!a || !at) return
+    const after = field.value.slice(at.end)
+    const text = `@${a.name}${/^\s/.test(after) ? '' : ' '}`
+    field.value = field.value.slice(0, at.start) + text + after
+    const caret = at.start + text.length
+    field.focus()
+    field.setSelectionRange(caret, caret)
+    close()
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  field.addEventListener('keydown', (e) => {
+    if (!at || e.isComposing) return
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key]
+    if (step && items.length) (active = (active + step + items.length) % items.length), highlight()
+    else if ((e.key === 'Enter' || e.key === 'Tab') && items.length && !e.shiftKey) pick(active)
+    else if (e.key === 'Escape') close()
+    else return
+    e.preventDefault()
+    e.stopImmediatePropagation() // the field's own Enter (send) and the window's Esc (close) stay out of it
+  })
+  field.addEventListener('input', draw)
+  field.addEventListener('click', draw)
+  field.addEventListener('keyup', (e) => ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key) && draw())
+  field.addEventListener('blur', () => setTimeout(() => document.activeElement !== field && close(), 100))
+  list.addEventListener('mousedown', (e) => {
+    e.preventDefault() // keep the cursor in the field
+    const it = e.target.closest('[data-i]')
+    if (it) pick(Number(it.dataset.i))
+  })
+  list.addEventListener('mousemove', (e) => {
+    const it = e.target.closest('[data-i]')
+    if (it && Number(it.dataset.i) !== active) (active = Number(it.dataset.i)), highlight()
+  })
+  addEventListener('resize', close)
+  return { close, open: () => Boolean(at) }
+}
+
+// What counts as an @mention: the hub's rule (addressees in core/hub.js), so the box colors exactly what will be
+// delivered. Not one: @words glued to something (a@b.com, @types/node, @david's), code in backticks, @you/@any/@crew.
+const MENTION = /(?<![\w.@/'-])@([\w-]+(?:@[\w-]+)?)(?![\w@/'-]|\.\w)/g
+const NOT_NAMES = new Set(['you', 'any', 'crew', 'auto'])
+// code spans blanked out, same length, so positions still line up with the text
+const proseOf = (text) => String(text).replace(/```[\s\S]*?```/g, (m) => ' '.repeat(m.length)).replace(/`[^`\n]*`/g, (m) => ' '.repeat(m.length))
+// @gal is the gal here, or the only gal on a linked computer (as the hub resolves it)
+function mentioned(name, agents) {
+  const n = name.toLowerCase()
+  const exact = agents.find((a) => a.name === n)
+  if (exact || n.includes('@')) return exact
+  const there = agents.filter((a) => a.seed === n)
+  return there.length === 1 ? there[0] : undefined
+}
+
+// Mentions in color, right in the message box. A textarea can't color part of its text, so a copy of the text
+// sits under it (same font, padding and wrapping) with each @mention painted in its agent's color, and the
+// textarea's own letters are transparent (the caret and selection stay). A name nobody on the crew has gets a red
+// underline and one that's off an amber one, since the hub would refuse the send; the name still being typed
+// stays plain. strict(): whether unknown names matter here (a task's @owner doesn't refuse anything).
+function mountInk(field, { agents, strict = () => true }) {
+  const ink = document.createElement('div')
+  ink.className = 'ink'
+  ink.setAttribute('aria-hidden', 'true')
+  field.before(ink)
+  field.classList.add('inked')
+  if (getComputedStyle(field.parentElement).position === 'static') field.parentElement.style.position = 'relative'
+  const cs = getComputedStyle(field)
+  for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing', 'textTransform', 'textIndent', 'tabSize', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'boxSizing', 'wordBreak', 'overflowWrap']) ink.style[k] = cs[k]
+  const place = () => {
+    Object.assign(ink.style, { left: `${field.offsetLeft}px`, top: `${field.offsetTop}px`, width: `${field.offsetWidth}px`, height: `${field.offsetHeight}px` })
+    // a scrollbar in the field narrows its text: narrow the copy the same, so lines break in the same places
+    const bar = field.offsetWidth - field.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth)
+    ink.style.paddingRight = `${parseFloat(cs.paddingRight) + Math.max(0, bar)}px`
+    ink.scrollTop = field.scrollTop
+  }
+  const paint = () => {
+    const text = field.value
+    const caret = document.activeElement === field ? field.selectionEnd : -1
+    const crew = agents()
+    let html = ''
+    let last = 0
+    for (const m of proseOf(text).matchAll(MENTION)) {
+      if (NOT_NAMES.has(m[1].toLowerCase())) continue
+      const end = m.index + m[0].length
+      const a = mentioned(m[1], crew)
+      const cls = a ? (a.on ? 'ok' : 'off') : end !== caret && strict() && crew.length ? 'unknown' : ''
+      if (!cls) continue
+      html += `${esc(text.slice(last, m.index))}<span class="mention ${cls}"${a ? ` style="--c:${agentColor(a)}"` : ''}>${esc(text.slice(m.index, end))}</span>`
+      last = end
+    }
+    // a trailing newline only gets its line in the copy if something follows it
+    ink.innerHTML = `${html}${esc(text.slice(last))}​`
+    place()
+  }
+  field.addEventListener('input', paint)
+  field.addEventListener('scroll', () => (ink.scrollTop = field.scrollTop), { passive: true })
+  for (const ev of ['keyup', 'click', 'focus', 'blur']) field.addEventListener(ev, paint)
+  new ResizeObserver(place).observe(field)
+  paint()
+  return { paint }
+}
+
 function mountComposer(el, { dropZone = el } = {}) {
   el.classList.add('composer')
   el.innerHTML = `<div class="chips" role="group" aria-label="Send to"></div>
@@ -954,6 +1185,7 @@ function mountComposer(el, { dropZone = el } = {}) {
     ta.style.height = `${ta.scrollHeight}px`
     ta.style.overflowY = ta.scrollHeight > 160 ? 'auto' : 'hidden'
     send.disabled = !ta.value.trim() && !attach?.get().length
+    ink?.paint() // dictation and sending change the text without an input event
   }
   const say = (text, error = false) => {
     hint.textContent = text
@@ -1032,6 +1264,10 @@ function mountComposer(el, { dropZone = el } = {}) {
     draw()
     ta.focus()
   })
+  // mentions in their agent's color as you type
+  const ink = mountInk(ta, { agents: () => agents, strict: () => !el.classList.contains('task-mode') })
+  // @name opens the crew list; in task mode a mention assigns the task
+  const mentions = mountMentions(ta, { agents: () => agents, box: el.querySelector('.input'), heading: () => (el.classList.contains('task-mode') ? 'Assign to' : 'Mention: they get it too') })
   ta.addEventListener('keydown', (e) => {
     if (voice?.key(e)) return
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -1049,6 +1285,7 @@ function mountComposer(el, { dropZone = el } = {}) {
     render(state) {
       agents = state.agents
       draw()
+      ink.paint() // someone switched on, off, or joined
     },
     setTarget,
     focus: () => ta.focus(),

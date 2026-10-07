@@ -59,7 +59,7 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
 ## How you use it
 
 - **Message one agent.** Pick it on the **To** line above the message box, or start with `@david …`. With a big crew the line shows just the creatures (hover one for its name and status), and scrolls once even those don't fit.
-- **Message several agents.** Use bare `@mentions` anywhere in the message, such as `@david @joseph fix the payload`. Mentions add to the selected composer chip; choose **Auto** to address only the mentioned agents. Each recipient gets one copy, regardless of repeated mentions or capitalization, with the original message and a note naming the other recipients. Emails, package paths, possessives such as `@david's`, and text in backticks do not address agents. An unknown, turned-off, or self recipient rejects the whole send before anything is delivered. With Autopilot off, each teammate hand-off waits for its own approval.
+- **Message several agents.** Use bare `@mentions` anywhere in the message, such as `@david @joseph fix the payload`. Type `@` and the crew pops up, filtered as you type (by name, then by area). Use ↑↓ to move and Enter or Tab to pick, or click one. The Tasks bar has the same list for assigning a task. Mentions add to the selected composer chip; choose **Auto** to address only the mentioned agents. Each recipient gets one copy, regardless of repeated mentions or capitalization, with the original message and a note naming the other recipients. Emails, package paths, possessives such as `@david's`, and text in backticks do not address agents. An unknown, turned-off, or self recipient rejects the whole send before anything is delivered. With Autopilot off, each teammate hand-off waits for its own approval.
 - **Talk instead of typing.** Click the 🎙 mic next to send and just talk. Your words appear in the message box as you speak, and it fixes them up as it goes. Or press `⌥⇧D` from any app: the chat opens and starts listening.
   - **Hold the mic** to talk and let go to stop, or click once to start and once to stop.
   - **Enter** stops and sends once the last words are in. **Esc** stops and leaves the text for you to edit. If it's slow to finish, a second Esc stops waiting and keeps what it has. In the floating chat the next Esc closes the panel.
@@ -135,6 +135,16 @@ crew task dup <n> <original>      the same as another task
 ```
 
 `crew bug …` works too, with its old words (`fixed`, `report`).
+
+## Sub-agents: when an agent splits up the work
+
+A Claude Code agent can hand parts of a task to sub-agents (its Agent tool), several at once, and they can keep working after its own turn ends. Crew shows them as they happen:
+
+- **In the chat**, the agent's line grows a branch per sub-agent: its kind (Explore, Plan, general…), its job, the step it's on, how many steps it has taken and for how long. Finished ones tick off and fade. An agent whose turn is over but whose sub-agents are still busy reads "free, its sub-agents are still working".
+- **Around its creature**, in the pill, the sidebar and the terminal header, little dots circle it, one per running sub-agent. The sidebar row and the terminal header also get a count you can hover for their jobs.
+- **Under its reply**, "Used 2 sub-agents" opens into what each one did, with steps and time.
+
+It comes from Claude Code's hooks (the Agent tool's PreToolUse, SubagentStart and SubagentStop, and each sub-agent's own tool calls), so it needs a Claude Code recent enough to send those; older ones just don't show sub-agents. Codex agents don't report sub-agents.
 
 ## Conversations: how full they are, and starting fresh
 
