@@ -1,5 +1,5 @@
 // Renders every view with a made-up crew (scripts/screenshot-preload.cjs) and saves PNGs, plus short GIFs of
-// the animations. Nothing starts and ~/.crew is untouched. Run: npm run shots [-- out-dir [shot names...]]
+// the animations. Nothing starts and ~/.crew is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp]
 import { app, BrowserWindow, nativeTheme } from 'electron'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -18,13 +18,13 @@ const BACKDROP = {
   desktop: { light: 'linear-gradient(135deg, #dfe7f5, #f1e4f1)', dark: 'linear-gradient(135deg, #1c2233, #2a1f2e)' },
 }
 
-async function open(file, { theme, width, height, backdrop, fixture }) {
+async function open(file, { theme, width, height, backdrop, fixture, transparent = false }) {
   if (nativeTheme.themeSource !== theme) {
     nativeTheme.themeSource = theme
     await sleep(300)
   }
   const win = new BrowserWindow({
-    width, height, show: false, paintWhenInitiallyHidden: true, useContentSize: true, frame: false,
+    width, height, show: false, paintWhenInitiallyHidden: true, useContentSize: true, frame: false, transparent,
     webPreferences: { preload: path.join(root, 'scripts', 'screenshot-preload.cjs'), contextIsolation: false, sandbox: false, backgroundThrottling: false },
   })
   win.webContents.on('console-message', (e) => e.level === 'error' && console.error(`${file}: ${e.message}`))
@@ -71,6 +71,11 @@ async function record(win, name, { clip, ms, during, width = 760 }) {
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'list.txt'),
     '-vf', `fps=30,scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle`, gif])
   console.log('saved', `${name}.gif`, `(${frames.length} frames)`)
+  // --webp: an animated WebP from the same frames too, full color and a fraction of the GIF's size (the README uses these)
+  if (!process.argv.includes('--webp')) return
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'list.txt'),
+    '-vf', `fps=25,scale=${width}:-1:flags=lanczos`, '-c:v', 'libwebp_anim', '-q:v', '80', '-compression_level', '6', '-loop', '0', path.join(out, `${name}.webp`)])
+  console.log('saved', `${name}.webp`)
 }
 
 const click = (sel) => `document.querySelector(${JSON.stringify(sel)})?.click()`
@@ -93,6 +98,14 @@ async function tap(win, at) {
 }
 
 const SHOTS = {
+  // The README's cover (scripts/cover.html): one picture, with see-through rounded corners.
+  async cover(theme) {
+    if (theme !== 'light') return
+    const win = await open('../scripts/cover.html', { theme, width: 1280, height: 640, transparent: true })
+    await sleep(800)
+    await save(win, 'cover')
+    win.destroy()
+  },
   async tray(theme) {
     const win = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
     await sleep(500)
@@ -253,14 +266,16 @@ const SHOTS = {
     win.webContents.reload()
     await new Promise((r) => win.webContents.once('did-finish-load', r))
     await sleep(1200)
+    // the sidebar and the board, without the chat column, so the cards stay readable
+    const board = await js(win, "return { x: 0, y: 0, width: Math.round(document.querySelector('.chat').getBoundingClientRect().x), height: innerHeight }")
     await record(win, 'tasks-loop', {
-      ms: 11500, width: 1000,
+      clip: board, ms: 11500, width: 1000,
       during: async () => {
         let at = { x: 900, y: 500 }
         at = await glide(win, at, await center(win, '.tk-add textarea'), 600)
         await tap(win, at)
         await sleep(300)
-        const text = 'Coins vanish when you collect two at once @david'
+        const text = 'Coins vanish when you collect two at once @david ' // the space closes the @ picker, so Enter adds the task
         for (let i = 1; i <= text.length; i++) {
           await js(win, `const ta = document.querySelector('.tk-add textarea'); ta.value = ${JSON.stringify(text)}.slice(0, ${i}); ta.dispatchEvent(new Event('input'))`)
           await sleep(26)
