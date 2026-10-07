@@ -332,6 +332,16 @@ const SHOTS = {
     })
     win.destroy()
   },
+  // The pill at the top of the screen: it lies flat and the chat opens below it.
+  async chatBelow(theme) {
+    const win = await open('overlay.html', { theme, width: 640, height: 760, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('place', { side: 'below', align: 'center' }); window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(800)
+    await fitToContent(win)
+    await save(win, `chat-below-${theme}`)
+    win.destroy()
+  },
   // An agent's own context limit: joseph's 1M window held to 250k.
   async limit(theme) {
     const win = await dashboard(theme, 'crew')
