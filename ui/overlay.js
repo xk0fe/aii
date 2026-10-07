@@ -20,6 +20,7 @@ function fit(focus = false) {
 
 // focus=false opens the chat without pulling you out of the app you're in (e.g. after closing the dashboard).
 function setOpen(open, focus = open) {
+  if (!open) composer.stopVoice() // closing the panel ends dictation, keeping what it heard
   document.body.classList.toggle('open', open)
   fit(focus)
   if (!open) return
@@ -30,7 +31,7 @@ function setOpen(open, focus = open) {
 $('.home').addEventListener('click', () => setOpen(!document.body.classList.contains('open')))
 $('[data-act=close]').addEventListener('click', () => setOpen(false))
 $('[data-act=dashboard]').addEventListener('click', () => crew.call('dashboard'))
-document.addEventListener('keydown', (e) => e.key === 'Escape' && setOpen(false))
+document.addEventListener('keydown', (e) => e.key === 'Escape' && !composer.stopVoice() && setOpen(false))
 crew.onToggle((opts = {}) => {
   const open = opts.open ?? !document.body.classList.contains('open')
   setOpen(open, opts.focus ?? open)

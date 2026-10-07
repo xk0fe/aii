@@ -7,7 +7,7 @@ Claude Code and Codex are built in. GLM and local open-weight models work too, a
 You get three views:
 
 - **Menu bar** (three little buddies): every agent with its area, status and brain, its on/off switch and YOLO/⚡ Fast chips, and Autopilot. Modes that are on always show; hover a row to flip one that's off.
-- **Floating pill** on the screen edge holds the crew as little creatures that hop while they work. Click it, or press `⌥⇧Space`, to open the chat. Click a creature to talk to that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
+- **Floating pill** on the screen edge holds the crew as little creatures that hop while they work. Click it, or press `⌥⇧Space`, to open the chat (or `⌥⇧D` to open it and start dictating). Click a creature to talk to that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
 - **Dashboard**:
   - **Crew** is a Pokédex-style collection of agent cards, where you create and edit agents.
   - **Grid** and **Focus** show the live terminals. `⌘1` `⌘2` `⌘3` switch between the three.
@@ -55,6 +55,15 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
 
 - **Message one agent.** Click its chip in the composer, or start with `@david …`.
 - **Message several agents.** Use bare `@mentions` anywhere in the message, such as `@david @joseph fix the payload`. Mentions add to the selected composer chip; choose **Auto** to address only the mentioned agents. Each recipient gets one copy, regardless of repeated mentions or capitalization, with the original message and a note naming the other recipients. Emails, package paths, possessives such as `@david's`, and text in backticks do not address agents. An unknown, turned-off, or self recipient rejects the whole send before anything is delivered. With Autopilot off, each teammate hand-off waits for its own approval.
+- **Talk instead of typing.** Click the 🎙 mic next to send and just talk. Your words appear in the message box as you speak, and it fixes them up as it goes. Or press `⌥⇧D` from any app: the chat opens and starts listening.
+  - **Hold the mic** to talk and let go to stop, or click once to start and once to stop.
+  - **Enter** stops and sends once the last words are in. **Esc** stops and leaves the text for you to edit. If it's slow to finish, a second Esc stops waiting and keeps what it has. In the floating chat the next Esc closes the panel.
+  - **While it listens**, the line above the box shows who it's for and which language. Click the language to switch, e.g. English ⇄ Русский; it offers the languages set in System Settings › Language & Region.
+  - **Private:** it's Apple's on-device dictation, so your voice never leaves the Mac, and nothing is sent until you send it.
+  - **First use:** Crew builds a small helper (a few seconds, needs Apple's developer tools: `xcode-select --install`), and macOS asks once for the microphone. A language you haven't used for dictation before downloads first.
+  - **Needs macOS 26.** Older macOS works from Crew.app (`npm start`) through the older recognizer, after it asks for speech-recognition permission, and only offers the languages that recognizer can do on the Mac itself.
+  - **Linked computers:** dictation runs on the computer you're typing on, even when the crew lives on another one.
+  - **Hotkey:** change it with `"voiceHotkey"` in `config.json`, or turn it off with `false`.
 - **Add images** to any message: paste them (⌘V), drop them on the chat, or use the **+** button. They're saved in `~/.crew/attachments` and sent to the agent as file paths. Claude Code and Codex both open them, with no permission prompt. Click a picture in the feed to open it.
 - **Message "Auto".** Without explicit recipients, Crew scores the task against agents' areas, then prefers whoever is free. Coordination wording such as “orchestrate multiple agents”, “organise the crew” and “keep things in working order” also matches an organiser area such as Arie's. This uses a fixed vocabulary of stems and phrases, not unrestricted language understanding; unfamiliar wording can miss, and incidental coordination language can favor the organiser. Use a chip or `@mention` to choose explicitly.
 - **Busy agent?** The message is queued and typed in for you the moment that agent finishes.
@@ -113,6 +122,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 {
   "autopilot": true,
   "hotkey": "Alt+Shift+Space",
+  "voiceHotkey": "Alt+Shift+D",
   "agents": [
     { "name": "gal", "area": "UI/UX design", "provider": "claude", "model": "fable", "effort": "high", "cwd": "~/code/app",
       "avatar": { "body": "heart", "color": "pink", "eyes": "sparkle", "mouth": "cat", "hat": "bow", "cheeks": true } },
@@ -135,6 +145,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 
 - `core/providers.js` defines the brains: built-in providers, your custom ones, and Codex model discovery.
 - `core/adapters.js` turns an agent into a command line for its CLI. That includes model, effort, YOLO, the crew system prompt plus the agent's instructions, and hooks that report status.
+- `core/voice.js` runs voice input. It builds `native/crew-voice.swift` (Apple's on-device `DictationTranscriber`) into `dist/crew-voice` on first use, streams the chat window's microphone audio into it, and returns what it hears as live events.
 - `core/promptgen.js` drafts an agent's instructions headlessly with `claude -p` or `codex exec`, with no tools and nothing saved to your session history.
 - `core/hub.js` is the logic, with no Electron in it:
   - status from hooks (start → free, prompt → working, stop → free plus the reply into the feed, permission → needs you);
@@ -147,6 +158,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 - `core/server.js` is a tiny local HTTP API for the hooks and `bin/crew`. Every request needs a per-launch token.
 - `ui/` is plain HTML, CSS and JS with no build step. The main files:
   - `avatar.js` draws the creatures;
+  - `voice.js` is dictation in the composer: the mic button, hold-to-talk, live text and the language switch (`voice-worklet.js` turns the microphone into 16 kHz audio);
   - `collection.js` is the card collection and editor;
   - `common.js` has shared pieces, including a small DOM patcher that keeps avatars animating smoothly across updates.
 
