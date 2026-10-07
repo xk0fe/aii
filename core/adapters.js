@@ -1,5 +1,8 @@
 // How to launch each agent CLI. An adapter returns { file, args } for the pty, and optionally
-// readyAfter (ms) when the CLI doesn't announce itself at startup. Providers pick an adapter by "cli".
+// readyAfter (ms) when the CLI doesn't announce itself at startup, and env for it. Providers pick an adapter by "cli".
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 // Every hook forwards its JSON payload to the crew hub, which turns it into status + feed entries.
 const HOOK = 'curl -s -m 2 -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/hook/$CREW_AGENT" >/dev/null 2>&1 || true'
@@ -12,6 +15,18 @@ const ASK = (seconds) => `curl -sf -m ${seconds - 10} -X POST -H "X-Crew: $CREW_
 export const ASK_WAIT = { claude: 86400, codex: 1800 }
 const CLAUDE_WAIT = ASK_WAIT.claude
 const CODEX_WAIT = ASK_WAIT.codex
+// Claude Code's status line tells Crew how full the context is (bin/crew-status). Yours keeps showing if you
+// have one: it would otherwise be replaced by the one given on the command line.
+const STATUS_LINE = 'crew-status'
+function userStatusLine() {
+  try {
+    const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+    const line = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8')).statusLine
+    return line?.type === 'command' && typeof line.command === 'string' ? line.command : ''
+  } catch {
+    return ''
+  }
+}
 
 const prompt = (a) => `You are "${a.name}", one of several AI agents working side by side in terminals as a crew, coordinated by the user.
 Your area: ${a.area || 'general'}.
@@ -21,6 +36,7 @@ Crew commands (run them in the shell, they return instantly):
   crew send <name> "<task>" hand a task to a teammate (queued until they are free)
   crew note "<fact>"        share context with everyone: decisions, interfaces, gotchas
   crew board                read the shared notes
+  crew bug                  bugs the user called out: list, show, fix, report (crew bug help)
 Messages starting with "[from @name]" come from a teammate. If they need a result, reply with crew send <name> "<result>" when done.
 Image files listed in a message are attachments (screenshots, mockups, references): open them before you start.${
   a.prompt ? `\n\nYour instructions:\n${a.prompt}` : ''
@@ -43,9 +59,11 @@ export const adapters = {
         Notification: on(),
         Stop: on(),
       },
+      statusLine: { type: 'command', command: STATUS_LINE, padding: 0 },
     }
     return {
       file: 'claude',
+      env: { CREW_STATUS_LINE: userStatusLine() },
       args: [
         '--name', a.name,
         ...(a.model ? ['--model', a.model] : []),

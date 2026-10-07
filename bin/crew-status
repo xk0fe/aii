@@ -1,0 +1,10 @@
+#!/bin/sh
+# The status line of Crew's Claude Code agents: tells Crew how full the conversation is (the context gauge),
+# then shows your own status line if you have one in ~/.claude/settings.json, or Crew's.
+input=$(cat)
+line=$(printf '%s' "$input" | curl -s -m 1 -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/status/$CREW_AGENT" 2>/dev/null)
+if [ -n "$CREW_STATUS_LINE" ]; then
+  printf '%s' "$input" | "${SHELL:-/bin/sh}" -c "$CREW_STATUS_LINE"
+else
+  printf '%s' "$line"
+fi

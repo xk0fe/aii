@@ -1,5 +1,5 @@
 // Full-screen view: the crew collection, every agent's live terminal, and the crew feed.
-/* global themeButton, nameHTML, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
+/* global themeButton, nameHTML, contextRing, mountBugs, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -9,9 +9,10 @@ const THEME = {
 }
 
 const terms = new Map() // name -> { tile, head, term, fit, ready }
-const feed = mountFeed($('.feed'), { onAgent: (name) => select(name) })
+const feed = mountFeed($('.feed'), { onAgent: (name) => select(name), onTicket: (key) => openBug(key) })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat') })
 const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name), onImport: () => importPack() })
+const bugs = mountBugs($('.bugs-view'), { onTerminal: (name) => select(name) })
 let view = store.get('crew.view') || 'crew'
 let selected = null
 let state = { agents: [], providers: {} }
@@ -92,6 +93,8 @@ function tileHead(a) {
     ${a.yolo ? '<span class="tag yolo-tag" title="Skips all permission prompts">YOLO</span>' : ''}
     <span class="activity">${esc(a.activity)}</span>
     ${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}
+    ${contextRing(a)}
+    <button class="icon" data-act="fresh" aria-pressed="${Boolean(a.freshPending)}" title="${a.freshPending ? 'Starts a new conversation when it finishes this task' : 'New conversation: a clean slate for its next task (the old one stays in its history)'}">${ICONS.fresh}</button>
     <button class="icon" data-act="edit" title="Edit agent">${ICONS.edit}</button>
     <button class="icon" data-act="restart" title="Restart (resumes the session)">${ICONS.restart}</button>
     <button class="icon" data-act="off" title="Turn off (stays off after restarts)">${ICONS.power}</button>`
@@ -105,7 +108,8 @@ $('.terms').addEventListener('click', (e) => {
   if (act === 'restart') {
     terms.get(name).term.reset()
     crew.call('restart', name)
-  } else if (act === 'off') crew.call('update', name, { off: true })
+  } else if (act === 'fresh') crew.call('freshStart', name).catch((err) => alert(err.message))
+  else if (act === 'off') crew.call('update', name, { off: true })
   else if (act === 'markIdle') crew.call('markIdle', name)
   else if (act === 'edit') edit(name)
   else if (!act) highlight(name)
@@ -145,8 +149,10 @@ function setView(next) {
   store.set('crew.view', next)
   if (!terms.has(selected)) highlight(terms.keys().next().value)
   const crewView = view === 'crew'
+  const bugsView = view === 'bugs'
   $('.collection').classList.toggle('hidden', !crewView)
-  $('.terms').classList.toggle('hidden', crewView)
+  $('.bugs-view').classList.toggle('hidden', !bugsView)
+  $('.terms').classList.toggle('hidden', crewView || bugsView)
   $('.terms').classList.toggle('focus', view === 'focus')
   drawBlank()
   segmented($('.seg.views'), (b) => b.dataset.view === view)
@@ -155,18 +161,18 @@ function setView(next) {
 
 function drawBlank() {
   const on = state.agents.filter((a) => a.on).length
-  $('.blank').classList.toggle('hidden', view === 'crew' || on > 0)
+  $('.blank').classList.toggle('hidden', view === 'crew' || view === 'bugs' || on > 0)
   $('.blank b').textContent = state.agents.length ? 'All agents are off' : 'No agents yet'
   $('.blank span').textContent = state.agents.length ? 'Flip one on in the sidebar, it picks up its last session.' : 'Make your first one in the Crew view.'
 }
 
 $('.seg.views').addEventListener('click', (e) => e.target.dataset.view && setView(e.target.dataset.view))
 // ⌘1 ⌘2 ⌘3: Crew, Grid, Focus
-const VIEWS = ['crew', 'grid', 'focus']
+const VIEWS = ['crew', 'bugs', 'grid', 'focus']
 document.querySelectorAll('.seg.views button').forEach((b, i) => (b.title += ` (⌘${i + 1})`))
 document.addEventListener('keydown', (e) => {
   const n = Number(e.key)
-  if (!e.metaKey || e.altKey || e.ctrlKey || !(n >= 1 && n <= 3)) return
+  if (!e.metaKey || e.altKey || e.ctrlKey || !(n >= 1 && n <= VIEWS.length)) return
   e.preventDefault()
   setView(VIEWS[n - 1])
 })
@@ -186,7 +192,13 @@ function addAgent() {
 
 function handleFocus(arg) {
   if (arg === ':add') addAgent()
+  else if (arg?.startsWith('bug:')) openBug(arg.slice(4))
   else if (arg) select(arg)
+}
+
+function openBug(key) {
+  setView('bugs')
+  bugs.open(key)
 }
 crew.onFocus(handleFocus)
 
@@ -207,8 +219,11 @@ const ready = live((next) => {
   }
   for (const a of on) {
     const t = terms.get(a.name) ?? createTile(a.name)
-    if (t.away && a.status !== 'away') replay(t)
+    // back from being unreachable, or a new conversation: show the terminal as it is now
+    const convo = a.convo?.since
+    if ((t.away && a.status !== 'away') || (t.convo && convo && convo !== t.convo)) replay(t)
     t.away = a.status === 'away'
+    t.convo = convo
     t.tile.style.setProperty('--c', agentColor(a))
     morph(t.head, tileHead(a))
   }
@@ -222,6 +237,12 @@ const ready = live((next) => {
   feed.render(state)
   composer.render(state)
   collection.render(state)
+  bugs.render(state)
+  const badge = bugs.badge(state)
+  const el = $('.seg-badge')
+  el.textContent = badge.check || badge.open || ''
+  el.classList.toggle('check', badge.check > 0)
+  el.title = badge.check ? `${badge.check} fixed, waiting for you to check` : badge.open ? `${badge.open} open` : ''
   celebrate($('.side .agents'), state.agents) // after the cards, so a visible card gets the confetti
 })
 

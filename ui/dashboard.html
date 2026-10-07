@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
   <link rel="stylesheet" href="common.css">
   <link rel="stylesheet" href="collection.css">
+  <link rel="stylesheet" href="bugs.css">
   <style>
     html, body { height: 100%; background: var(--bg); overflow: hidden; }
     .titlebar { height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 86px; border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
@@ -115,6 +116,14 @@
     .imp .imp-folder { flex: 1; }
     .imp .imp-note { grid-column: 3; color: var(--fg3); font-size: 11.5px; }
 
+    /* the Bugs tab counts what's waiting; its space is always kept, so the tabs never shift */
+    .seg-badge { display: inline-grid; place-items: center; min-width: 17px; height: 16px; margin-left: 5px; padding: 0 4px; border-radius: 999px; font: 700 10px/1 -apple-system, sans-serif; font-style: normal; font-variant-numeric: tabular-nums; vertical-align: 1px; background: var(--btn-hover); color: var(--fg2); transition: opacity .2s, transform .35s var(--spring); }
+    .seg-badge:empty { opacity: 0; transform: scale(.5); }
+    .seg-badge.check { background: var(--waiting); color: #fff; }
+    .tile-head .ctx { --ctx-calm: rgba(255, 255, 255, .5); --track: rgba(255, 255, 255, .14); }
+    .tile-head .ctx.calm b { color: rgba(255, 255, 255, .45); }
+    .tile-head [data-act=fresh][aria-pressed=true] { color: #7aa2ff; background: rgba(122, 162, 255, .16); }
+
     .chat { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: color-mix(in srgb, var(--surface) 35%, var(--bg)); }
     .chat .feed { flex: 1; }
   </style>
@@ -123,7 +132,7 @@
   <header class="titlebar">
     <span class="brand"><span class="logo"></span><b>Crew</b></span><span class="sums"></span><span class="grow"></span>
     <button class="link-chip" data-act="link" title="Computers: link your other computers into one crew"></button>
-    <div class="seg views"><button data-view="crew" title="The crew as cards">Crew</button><button data-view="grid" title="Every terminal side by side">Grid</button><button data-view="focus" title="One terminal, big">Focus</button></div>
+    <div class="seg views"><button data-view="crew" title="The crew as cards">Crew</button><button data-view="bugs" title="Bugs: report, fix one per conversation, check">Bugs<i class="seg-badge"></i></button><button data-view="grid" title="Every terminal side by side">Grid</button><button data-view="focus" title="One terminal, big">Focus</button></div>
     <button class="btn add" data-act="add" title="Add an agent"></button>
     <span class="divider"></span>
     <button class="icon" data-act="theme"></button>
@@ -142,6 +151,7 @@
     <section class="center">
       <div class="terms"></div>
       <div class="collection hidden"></div>
+      <div class="bugs-view hidden"></div>
       <div class="blank hidden"><span class="blank-mark"></span><b>No agents yet</b><span>Give each one a name, an area of work and a model.</span><div><button class="btn primary" data-act="add">Add your first agent</button></div></div>
     </section>
     <aside class="chat">
@@ -169,8 +179,10 @@
   <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="avatar.js"></script>
+  <script src="voice.js"></script>
   <script src="common.js"></script>
   <script src="collection.js"></script>
+  <script src="bugs.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>

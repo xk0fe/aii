@@ -1,6 +1,6 @@
 // The crew as a collection: a Pokédex of agent cards. Click a card to open it and edit everything about
 // the agent (brain, folder, flags, look). "Select" turns on bulk mode to change many agents at once.
-/* global crew, store, esc, nameHTML, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, PARTS, COLORS, ICONS */
+/* global crew, store, esc, nameHTML, contextRing, contextTip, ctxLevel, tokenCount, plural, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, PARTS, COLORS, ICONS */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -61,7 +61,7 @@ function mountCollection(root, { onTerminal, onImport }) {
       <span class="pc-area" title="${esc(a.area)}">${esc(a.area || 'No area yet. Open the card to set one.')}</span>
       ${modes ? `<span class="pc-modes">${modes}</span>` : ''}
       <span class="pc-chips">${chips}</span>
-      <span class="pc-state" title="${esc(statusText(a))}"><span><span class="dot ${a.status}"></span><span>${esc(statusText(a))}</span></span>${doing}</span>
+      <span class="pc-state" title="${esc(statusText(a))}"><span><span class="dot ${a.status}"></span><span>${esc(statusText(a))}</span>${contextRing(a)}</span>${doing}</span>
       <span class="pc-av">${avatarHTML(a, { size: 104 })}</span>
       <span class="pc-check">✓</span>
     </button>`
@@ -72,7 +72,7 @@ function mountCollection(root, { onTerminal, onImport }) {
     root.classList.toggle('stats-mode', mode === 'stats')
     segmented($('[data-mode-switch]'), (b) => b.dataset.mode === mode)
     if (mode === 'stats') drawStatsTable()
-    const next = JSON.stringify([selecting, [...picked], state.agents.map((a) => [a.name, a.status, a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, levelOf(a.stats).lv])])
+    const next = JSON.stringify([selecting, [...picked], state.agents.map((a) => [a.name, a.status, a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, levelOf(a.stats).lv, a.convo?.context?.pct, a.convo?.compactions])])
     if (next === gridKey) return
     gridKey = next
     morph(grid, state.agents.map(cardHTML).join('') + `<button class="pcard add" data-act="new"><b>${ICONS.plus}</b>New agent</button>`)
@@ -353,6 +353,8 @@ function mountCollection(root, { onTerminal, onImport }) {
           <textarea class="pd-area" data-k="area" rows="2" placeholder="What does it own? e.g. 3D character: rig, animations, materials">${esc(d.area)}</textarea>
           <h4>Work experience <span class="h4-note xp-since"></span></h4>
           <div class="experience"></div>
+          <h4>Conversation <span class="h4-note convo-since"></span></h4>
+          <div class="convo"></div>
           <h4>Instructions <button class="btn small" data-act="write">✨ Write it</button><span class="h4-note">its system prompt, on top of the crew basics</span></h4>
           <textarea class="pd-prompt" data-k="prompt" rows="7" placeholder="How this agent works: what it owns, its quality bar, conventions, when to hand off. Leave it empty, or let ✨ write a first draft from the name and area.">${esc(d.prompt)}</textarea>
           <div class="refs"><button type="button" class="btn small" data-ref>+ Reference image</button><span class="h4-note">mockups, brand guides, screenshots… paste or drop them on the instructions too</span></div>
@@ -371,6 +373,7 @@ function mountCollection(root, { onTerminal, onImport }) {
       </div>`
     drawState()
     drawExperience()
+    drawConvo()
     drawBrain()
     drawLook()
     drawAvatar()
@@ -410,6 +413,36 @@ function mountCollection(root, { onTerminal, onImport }) {
         return `<div class="bs-row" title="${esc(m.tip?.(s) ?? '')}"><span class="bs-label">${m.label}</span><b>${has ? m.show(s) : '–'}${mark.best === a.name ? ' 👑' : mark.worst === a.name ? ' 🐢' : ''}</b>${has ? bar(s[m.key], max) : '<i class="mbar"></i>'}</div>`
       }).join('')}</div>
       <div class="bs-row"><span class="bs-label">Last 14 days</span>${sparkline(s.days)}</div>`
+  }
+
+  // How full its current conversation is, and a way to start a new one. Long conversations with many
+  // unrelated tasks are where agents start mixing things up.
+  function drawConvo() {
+    const host = card.querySelector('.convo')
+    if (!host) return
+    const a = agentNamed(editing)
+    const c = a?.convo
+    if (!a || !c) {
+      host.innerHTML = `<p class="xp-empty">${a ? 'No conversation yet. It starts one with its first task.' : 'It starts a conversation with its first task.'}</p>`
+      return
+    }
+    const ctx = c.context
+    const level = ctx ? ctxLevel(ctx.pct) : 'calm'
+    const advice = !a.on ? 'It picks this conversation up when it comes back on.'
+      : c.compactions ? `It ran out of room ${c.compactions === 1 ? 'once' : `${c.compactions} times`} and summarized older details. A new conversation gives it a clean slate.`
+      : level === 'hot' ? 'Nearly full: it will soon summarize older details to make room. Start fresh before its next task.'
+      : level === 'warm' ? 'Getting long. Start fresh before giving it something unrelated.'
+      : 'Plenty of room.'
+    card.querySelector('.convo-since').textContent = c.since ? `since ${new Date(c.since).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''
+    morph(host, `
+      <div class="convo-card ${level}">
+        <div class="convo-gauge">${ctx && a.on ? contextRing(a, { label: false, size: 54 }) : '<span class="ctx calm" style="--s:54px"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.6" class="ctx-track"/></svg></span>'}<b>${ctx ? `${ctx.pct}%` : '–'}</b></div>
+        <div class="convo-info">
+          <div class="convo-nums">${ctx ? `<b>${tokenCount(ctx.used)}</b> of ${tokenCount(ctx.size)} tokens` : 'Not measured yet'} · ${plural(c.tasks, 'task')}${c.compactions ? ` · compacted ${c.compactions}×` : ''}</div>
+          <p>${esc(advice)}</p>
+        </div>
+        <button class="btn convo-fresh" data-act="fresh" ${a.freshPending ? 'disabled' : ''} title="${esc(contextTip(a))}">${ICONS.fresh}${a.freshPending ? 'When it’s free…' : 'New conversation'}</button>
+      </div>`)
   }
 
   function drawState() {
@@ -554,6 +587,14 @@ function mountCollection(root, { onTerminal, onImport }) {
     }
     if (act === 'terminal') onTerminal(editing)
     if (act === 'export') exportAgents([editing])
+    if (act === 'fresh') {
+      try {
+        await crew.call('freshStart', editing)
+        card.querySelector('.pd-msg').textContent = 'New conversation ✓'
+      } catch (err) {
+        card.querySelector('.pd-msg').textContent = err.message
+      }
+    }
     if (act === 'remove' && confirm(`Remove ${editing}? Its session stops (the transcript stays with the CLI).`)) {
       await crew.call('removeAgent', editing)
       editing = null
@@ -643,6 +684,7 @@ function mountCollection(root, { onTerminal, onImport }) {
       } else if (editing) {
         drawState()
         drawExperience()
+        drawConvo()
       }
     },
     open,

@@ -283,3 +283,21 @@
 .btn.danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .btn.small { padding: 3px 10px; font-size: 11.5px; text-transform: none; letter-spacing: 0; white-space: nowrap; flex: none; }
 .btn:disabled { opacity: .4; cursor: default; }
+
+/* ---- the editor's Conversation block: a fuel gauge and a fresh start ---- */
+.convo-card { display: flex; align-items: center; gap: 16px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line); transition: background .3s, border-color .3s; }
+.convo-card.warm { background: color-mix(in srgb, var(--ctx-warm) 7%, transparent); border-color: color-mix(in srgb, var(--ctx-warm) 30%, transparent); }
+.convo-card.hot { background: color-mix(in srgb, var(--ctx-hot) 7%, transparent); border-color: color-mix(in srgb, var(--ctx-hot) 30%, transparent); }
+.convo-gauge { position: relative; width: 54px; height: 54px; flex: none; display: grid; place-items: center; }
+.convo-gauge .ctx { position: absolute; inset: 0; }
+.convo-gauge .ctx circle { stroke-width: 2.2; }
+.convo-gauge > b { position: relative; font: 750 13px/1 var(--rounded); font-variant-numeric: tabular-nums; }
+.convo-info { flex: 1; min-width: 0; }
+.convo-nums { font-size: 13px; color: var(--fg2); }
+.convo-nums b { color: var(--fg); font-weight: 700; }
+.convo-info p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--fg3); }
+.convo-card.warm .convo-info p { color: var(--waiting-ink); }
+.convo-card.hot .convo-info p { color: var(--danger); }
+.convo-fresh { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+.convo-fresh svg { width: 15px; height: 15px; color: var(--accent); }
+.pc-state .ctx { margin-left: 6px; }
