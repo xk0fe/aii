@@ -1,0 +1,201 @@
+// Full-screen view: the crew collection, every agent's live terminal, and the crew feed.
+/* global themeButton, crew, live, store, morph, agentCard, statusText, brainLabel, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
+
+const $ = (s) => document.querySelector(s)
+const THEME = {
+  background: '#0f1012', foreground: '#e4e4e7', cursor: '#e4e4e7', cursorAccent: '#0f1012', selectionBackground: 'rgba(122, 162, 255, 0.3)',
+  black: '#1d1f21', red: '#ff6b6b', green: '#4cd38a', yellow: '#ffd166', blue: '#7aa2ff', magenta: '#c58cff', cyan: '#36cfc9', white: '#d4d4d8',
+  brightBlack: '#5c5f66', brightRed: '#ff8787', brightGreen: '#69db9a', brightYellow: '#ffe08a', brightBlue: '#9bb8ff', brightMagenta: '#d6a8ff', brightCyan: '#5fe0da', brightWhite: '#fafafa',
+}
+
+const terms = new Map() // name -> { tile, head, term, fit, ready }
+const feed = mountFeed($('.feed'), { onAgent: (name) => select(name) })
+const composer = mountComposer($('.compose'), { dropZone: $('.chat') })
+const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name) })
+let view = store.get('crew.view') || 'crew'
+let selected = null
+let state = { agents: [], providers: {} }
+
+$('[data-act=config]').innerHTML = ICONS.braces
+const drawTheme = themeButton($('[data-act=theme]'))
+
+// ---- terminals -------------------------------------------------------------
+
+function createTile(name) {
+  const tile = document.createElement('div')
+  tile.className = 'tile'
+  tile.dataset.name = name
+  tile.innerHTML = '<div class="tile-head"></div><div class="term"></div>'
+  $('.terms').append(tile)
+
+  const term = new Terminal({ theme: THEME, fontFamily: '"SF Mono", Menlo, monospace', fontSize: 12, lineHeight: 1.12, cursorBlink: true, macOptionIsMeta: true, scrollback: 5000 })
+  const fit = new FitAddon.FitAddon()
+  term.loadAddon(fit)
+  term.open(tile.querySelector('.term'))
+  // Shift+Enter = newline in Claude Code, same as /terminal-setup configures.
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type !== 'keydown' || e.key !== 'Enter' || !e.shiftKey) return true
+    crew.input(name, '\x1b\r')
+    return false
+  })
+  term.onData((data) => crew.input(name, data))
+
+  const t = { tile, head: tile.querySelector('.tile-head'), term, fit, ready: false }
+  terms.set(name, t)
+  let timer
+  new ResizeObserver(() => {
+    clearTimeout(timer)
+    timer = setTimeout(() => resize(name), 40)
+  }).observe(tile.querySelector('.term'))
+  // Replay what the agent already printed at the size it was drawn, then fit (the agent redraws on resize).
+  // Live chunks that arrive before this are already in the buffer.
+  crew.call('buffer', name).then(({ data, cols, rows }) => {
+    term.resize(cols, rows)
+    term.write(data, () => {
+      t.ready = true
+      resize(name)
+    })
+  })
+  return t
+}
+
+function resize(name) {
+  const t = terms.get(name)
+  if (!t || !t.tile.offsetWidth) return
+  t.fit.fit()
+  crew.call('resize', name, t.term.cols, t.term.rows)
+}
+
+crew.onPty((name, data) => {
+  const t = terms.get(name)
+  if (t?.ready) t.term.write(data)
+})
+
+function tileHead(a) {
+  const busy = a.status === 'working' || a.status === 'waiting'
+  return `${avatarHTML(a, { size: 26 })}<b>${esc(a.name)}</b><span class="model">${esc(brainLabel(a, state.providers))}</span>
+    <span class="state ${a.status}" ${busy ? 'data-act="markIdle" title="Stuck? Click to mark it free"' : ''}>${esc(statusText(a))}</span>
+    ${a.yolo ? '<span class="tag yolo-tag" title="Skips all permission prompts">YOLO</span>' : ''}
+    <span class="activity">${esc(a.activity)}</span>
+    ${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}
+    <button class="icon" data-act="edit" title="Edit agent">${ICONS.edit}</button>
+    <button class="icon" data-act="restart" title="Restart (resumes the session)">${ICONS.restart}</button>
+    <button class="icon" data-act="off" title="Turn off (stays off after restarts)">${ICONS.power}</button>`
+}
+
+$('.terms').addEventListener('click', (e) => {
+  const tile = e.target.closest('.tile')
+  if (!tile) return
+  const name = tile.dataset.name
+  const act = e.target.closest('[data-act]')?.dataset.act
+  if (act === 'restart') {
+    terms.get(name).term.reset()
+    crew.call('restart', name)
+  } else if (act === 'off') crew.call('update', name, { off: true })
+  else if (act === 'markIdle') crew.call('markIdle', name)
+  else if (act === 'edit') edit(name)
+  else if (!act) highlight(name)
+})
+$('.terms').addEventListener('dblclick', (e) => {
+  const head = e.target.closest('.tile-head')
+  if (head && !e.target.closest('button')) {
+    highlight(head.parentElement.dataset.name)
+    setView(view === 'focus' ? 'grid' : 'focus')
+  }
+})
+
+// ---- selection + views -----------------------------------------------------
+
+function highlight(name) {
+  selected = name
+  for (const [n, t] of terms) t.tile.classList.toggle('on', n === name)
+  for (const el of document.querySelectorAll('.side .agent')) el.classList.toggle('on', el.dataset.agent === name)
+}
+
+// Show an agent's terminal and aim the composer at it. Agents that are off have no terminal: open their card.
+function select(name) {
+  if (!terms.has(name)) return edit(name)
+  highlight(name)
+  composer.setTarget(name)
+  setView('focus')
+  terms.get(name).term.focus()
+}
+
+function edit(name) {
+  setView('crew')
+  collection.open(name)
+}
+
+function setView(next) {
+  view = next
+  store.set('crew.view', next)
+  if (!terms.has(selected)) highlight(terms.keys().next().value)
+  const crewView = view === 'crew'
+  $('.collection').classList.toggle('hidden', !crewView)
+  $('.terms').classList.toggle('hidden', crewView)
+  $('.terms').classList.toggle('focus', view === 'focus')
+  drawBlank()
+  for (const b of document.querySelectorAll('.seg button')) b.classList.toggle('on', b.dataset.view === view)
+  requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
+}
+
+function drawBlank() {
+  const on = state.agents.filter((a) => a.on).length
+  $('.blank').classList.toggle('hidden', view === 'crew' || on > 0)
+  $('.blank b').textContent = state.agents.length ? 'All agents are off' : 'No agents yet'
+  $('.blank span').textContent = state.agents.length ? 'Flip one on in the sidebar, it picks up its last session.' : 'Make your first one in the Crew view.'
+}
+
+document.querySelector('.seg').addEventListener('click', (e) => e.target.dataset.view && setView(e.target.dataset.view))
+$('.side .agents').addEventListener('click', (e) => {
+  if (e.target.closest('.yolo, .switch')) return
+  const card = e.target.closest('.agent')
+  if (card) (view === 'crew' ? edit : select)(card.dataset.agent)
+})
+$('.autopilot .switch').addEventListener('change', (e) => crew.call('autopilot', e.target.checked))
+$('[data-act=config]').addEventListener('click', () => crew.call('config'))
+for (const b of document.querySelectorAll('[data-act=add]')) b.addEventListener('click', addAgent)
+
+function addAgent() {
+  setView('crew')
+  collection.create()
+}
+
+function handleFocus(arg) {
+  if (arg === ':add') addAgent()
+  else if (arg) select(arg)
+}
+crew.onFocus(handleFocus)
+
+// ---- render ----------------------------------------------------------------
+
+const ready = live((next) => {
+  state = next
+  drawTheme(state.theme)
+  // Terminals only for agents that are on; the sidebar lists everyone so off agents are one click from coming back.
+  const on = state.agents.filter((a) => a.on)
+  const names = new Set(on.map((a) => a.name))
+  for (const [name, t] of terms) {
+    if (names.has(name)) continue
+    t.term.dispose()
+    t.tile.remove()
+    terms.delete(name)
+  }
+  for (const a of on) morph((terms.get(a.name) ?? createTile(a.name)).head, tileHead(a))
+
+  morph($('.side .agents'), state.agents.map((a) => agentCard(a, state.providers)).join(''))
+  $('.autopilot .switch').checked = state.autopilot
+  const working = on.filter((a) => a.status === 'working').length
+  const waiting = on.filter((a) => a.status === 'waiting').length
+  $('.sub').textContent = on.length ? `${working} of ${on.length} working${waiting ? ` · ${waiting} need you` : ''}` : ''
+  highlight(terms.has(selected) ? selected : on[0]?.name)
+  drawBlank()
+  feed.render(state)
+  composer.render(state)
+  collection.render(state)
+})
+
+ready.then(() => {
+  setView(state.agents.length ? view : 'crew')
+  handleFocus(new URLSearchParams(location.search).get('focus'))
+})

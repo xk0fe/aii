@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Crew</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    body { background: transparent; padding: 14px 16px 10px; }
+    html::-webkit-scrollbar { display: none; }
+    header { display: flex; align-items: center; margin-bottom: 2px; }
+    header b { font-size: 15px; }
+    .empty { color: var(--fg2); padding: 14px 0 16px; }
+    .agents .agent { cursor: pointer; border-radius: 10px; margin: 0 -8px; padding-left: 8px; padding-right: 8px; }
+    .agents .agent:hover { background: var(--btn); }
+    .agents .agent + .agent { border-top: 0; }
+    hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0 12px; }
+    .autopilot { display: flex; align-items: center; gap: 12px; }
+    .autopilot b { font-size: 14px; }
+    .autopilot p { margin: 2px 0 0; color: var(--fg2); font-size: 12.5px; }
+    footer { display: flex; align-items: center; gap: 2px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <header><b>Crew</b><span class="grow"></span><span class="summary model"></span></header>
+  <div class="agents"></div>
+  <hr>
+  <label class="autopilot">
+    <div class="grow"><b>Autopilot</b><p>Agents hand work to each other without asking you first.</p></div>
+    <input type="checkbox" class="switch">
+  </label>
+  <footer>
+    <button class="link" data-act="add">+ Add agent</button>
+    <span class="grow"></span>
+    <button class="icon" data-act="dashboard" title="Open dashboard"></button>
+    <button class="icon" data-theme></button>
+    <button class="icon" data-act="config" title="Open config.json in your text editor"></button>
+    <button class="icon" data-act="quit" title="Quit Crew"></button>
+  </footer>
+  <script src="avatar.js"></script>
+  <script src="common.js"></script>
+  <script src="tray.js"></script>
+</body>
+</html>

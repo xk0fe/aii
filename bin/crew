@@ -1,0 +1,32 @@
+#!/bin/sh
+# crew: talk to the crew from inside an agent or from any terminal while the app is running.
+DIR=${CREW_HOME:-$HOME/.crew}
+URL=${CREW_URL:-$(cat "$DIR/url" 2>/dev/null)}
+TOKEN=${CREW_TOKEN:-$(cat "$DIR/token" 2>/dev/null)}
+FROM=${CREW_AGENT:-you}
+[ -n "$URL" ] || { echo "crew app is not running" >&2; exit 1; }
+
+call() { curl -sS -m 5 -H "X-Crew: $TOKEN" "$@" || echo "crew app is not running" >&2; }
+
+cmd=$1
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  who) call "$URL/who" ;;
+  board) call "$URL/board" ;;
+  send)
+    to=$1
+    [ $# -gt 0 ] && shift
+    [ -n "$to" ] && [ $# -gt 0 ] || { echo 'usage: crew send <name|any> "task"' >&2; exit 2; }
+    printf '%s' "$*" | call --data-binary @- "$URL/send?from=$FROM&to=$to" ;;
+  note)
+    [ $# -gt 0 ] || { echo 'usage: crew note "text"' >&2; exit 2; }
+    printf '%s' "$*" | call --data-binary @- "$URL/note?from=$FROM" ;;
+  *)
+    cat <<'EOF'
+crew who                    agents, their areas and status
+crew send <name|any> "..."  hand a task to an agent (queued until it is free)
+crew note "..."             share context with the whole crew
+crew board                  read the shared notes
+EOF
+    ;;
+esac

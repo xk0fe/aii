@@ -1,0 +1,25 @@
+{
+  "name": "crew",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Menu bar + floating panel + dashboard for orchestrating named AI agents in terminals",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "node scripts/build-app.mjs --open",
+    "dev": "electron .",
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper bin/crew 2>/dev/null || true",
+    "app": "node scripts/build-app.mjs",
+    "icon": "electron scripts/make-icon.mjs"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^44.5.1"
+  },
+  "productName": "Crew"
+}
