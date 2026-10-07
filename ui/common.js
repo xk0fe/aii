@@ -59,6 +59,8 @@ const ICONS = {
   keyboard: svg('<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h1M10.5 10h1M14.5 10h1M6.5 14h11"/>', 'stroke-width="2.2"'),
   sparkles: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 3.5l1.9 5.4 5.4 1.9-5.4 1.9L10 18.1l-1.9-5.4-5.4-1.9 5.4-1.9z"/><path d="M18.5 13.6l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z"/></svg>',
   folder: svg('<path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2h8A1.5 1.5 0 0 1 20.5 9v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/>'),
+  sidebar: svg('<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M9.5 4.5v15"/>'),
+  chatPanel: svg('<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M14.5 4.5v15"/>'),
   chevron: svg('<path d="M9 6l6 6-6 6"/>', 'stroke-width="2.2"'),
   search: svg('<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>', 'stroke-width="2"'),
   desktop: svg('<rect x="3" y="4" width="18" height="12.5" rx="2"/><path d="M9 20.5h6M12 16.5v4"/>'),
@@ -340,7 +342,7 @@ function crewSummary(state, { unread = false } = {}) {
   const on = state.agents.filter((a) => a.on)
   const working = on.filter((a) => a.status === 'working').length
   const waiting = on.filter((a) => a.status === 'waiting').length
-  const pill = (cls, text, dot = cls) => `<span class="sum ${cls}">${dot ? `<i class="dot ${dot}"></i>` : ''}${text}</span>`
+  const pill = (cls, text, dot = cls) => `<span class="sum ${cls}" data-sum="${cls}">${dot ? `<i class="dot ${dot}"></i>` : ''}${text}</span>`
   if (!state.agents.length) return ''
   if (!on.length) return pill('', 'all off', 'off')
   const fresh = unread ? state.agents.reduce((n, a) => n + (a.unread ?? 0), 0) : 0
@@ -579,7 +581,7 @@ function feedItem(e, prev, ctx) {
   // A reply quotes the message it answers, with a bar in the quoted sender's color; click to jump back to it.
   const orig = e.re && byId[e.re]
   const quoted = orig?.ticket !== undefined ? `#${String(orig.ticket).split('@')[0]} ${orig.title ?? ''}` : snippet(orig?.text)
-  const quote = orig ? `<button class="quote" data-jump="${orig.id}" style="--qc:${tint(orig.from)}" title="Jump to the message this answers"><b>${orig.from === 'you' ? 'You' : label(orig.from)}</b> ${esc(quoted)}</button>` : ''
+  const quote = orig ? `<button class="quote" data-jump="${orig.id}" style="--qc:${tint(orig.from)}" title="Jump to the message this answers">${ICONS.reply}<b>${orig.from === 'you' ? 'You' : label(orig.from)}</b><span>${esc(quoted)}</span></button>` : ''
   // ...and a message you sent links forward to the agents' replies.
   const answers = repliesTo[e.id] ?? []
   const replied = answers.length
@@ -1319,7 +1321,8 @@ function mountComposer(el, { dropZone = el } = {}) {
     const head = reply.from === 'you'
       ? `Continuing ${reply.freshConvo ? 'the new conversation ' : ''}with ${esc(listed(reply.to))}`
       : `Replying to ${esc(short(reply.from))}${others.length ? `<span> · also to ${esc(listed(others))}</span>` : ''}`
-    morph(replyBox, `<span class="rt-bar" style="--qc:${color}"></span><span class="rt-text"><b>${head}</b><span class="rt-quote">${reply.from === 'you' ? 'You: ' : ''}${esc(reply.text)}</span></span><button class="rt-close" data-stop-reply title="Stop replying (Esc)" aria-label="Stop replying">${ICONS.close}</button>`)
+    replyBox.style.setProperty('--qc', color)
+    morph(replyBox, `<span class="rt-icon">${ICONS.reply}</span><span class="rt-text"><b>${head}</b><span class="rt-quote">${reply.from === 'you' ? 'You: ' : ''}${esc(reply.text)}</span></span><button class="rt-close" data-stop-reply title="Stop replying (Esc)" aria-label="Stop replying">${ICONS.close}</button>`)
   }
   replyBox.addEventListener('click', (e) => e.target.closest('[data-stop-reply]') && (stopReply(), ta.focus()))
   const attach = mountAttach({

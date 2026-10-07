@@ -20,13 +20,23 @@
     .titlebar .brand b { font-size: 14.5px; font-weight: 750; letter-spacing: -.01em; }
     .titlebar button, .seg, .sums { -webkit-app-region: no-drag; }
     .titlebar .icon { width: 30px; height: 30px; padding: 0; }
+    .tb-left .sum[data-sum=waiting], .tb-left .sum[data-sum=unread], .tb-left .sum[data-sum=working] { cursor: pointer; transition: filter .15s, transform .25s var(--bounce); }
+    .tb-left .sum[data-sum]:hover { filter: brightness(.96) saturate(1.2); }
+    .tb-left .sum[data-sum]:active { transform: scale(.94); }
     .seg.views button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 4px 16px; }
     .seg.views button svg { width: 15px; height: 15px; flex: none; }
 
     /* One row, exactly the window's height. Left auto, the grid measures each column's natural height on every layout,
        and for the chat that means laying out its whole history again for each keystroke or status tick. */
-    main { display: grid; grid-template-columns: 264px minmax(0, 1fr) 384px; grid-template-rows: minmax(0, 1fr); height: calc(100vh - 46px); }
-    .side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--side); }
+    main { --side-w: 264px; --chat-w: 384px; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--chat-w); grid-template-rows: minmax(0, 1fr); height: calc(100vh - 46px); transition: grid-template-columns .32s var(--sheet); }
+    /* either side can be put away for more room in the middle (the titlebar buttons, ⌘⌥S and ⌘⌥C) */
+    body.no-side main { --side-w: 0px; }
+    body.no-chat main { --chat-w: 0px; }
+    body.no-side .side, body.no-chat .chat { visibility: hidden; overflow: hidden; }
+    .titlebar .divider { width: 1px; height: 18px; margin: 0 4px; background: var(--line-strong); }
+    .titlebar [data-panel][aria-pressed=false] { color: var(--fg3); }
+    .titlebar [data-panel][aria-pressed=true] { color: var(--fg); }
+    .side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--side); }
     .side-top { flex: none; display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px; }
     .find { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 9px; border-radius: var(--r-sm); background: var(--btn); color: var(--fg3); cursor: text; transition: box-shadow .15s, background .15s; }
     .find:focus-within { background: var(--field); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
@@ -223,6 +233,9 @@
     <div class="seg views"><button data-view="crew" title="The crew: cards to open and edit each agent"></button><button data-view="tasks" title="Tasks: to do, in progress, review, done"></button><button data-view="terminals" title="Every agent's terminal"></button></div>
     <div class="tb-right">
       <button class="link-chip" data-act="link" title="Computers: link your other computers into one crew"></button>
+      <span class="divider"></span>
+      <button class="icon" data-panel="side" title="Show or hide the crew (⌘⌥S)" aria-label="Show or hide the crew"></button>
+      <button class="icon" data-panel="chat" title="Show or hide the chat (⌘⌥C)" aria-label="Show or hide the chat"></button>
       <button class="icon" data-act="theme"></button>
       <button class="icon" data-act="config" title="Open config.json in your text editor"></button>
     </div>

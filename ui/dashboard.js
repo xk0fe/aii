@@ -1,5 +1,5 @@
 // Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
-/* global themeButton, orbitHTML, subsChip, nameHTML, contextRing, mountTasks, crew, live, store, morph, rosterHTML, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
+/* global isUnread, themeButton, orbitHTML, subsChip, nameHTML, contextRing, mountTasks, crew, live, store, morph, rosterHTML, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -44,6 +44,18 @@ $('[data-act=config]').innerHTML = ICONS.braces
 $('#link .h-icon').innerHTML = ICONS.computers
 $('#import .h-icon').innerHTML = ICONS.import
 const drawTheme = themeButton($('[data-act=theme]'))
+$('[data-panel=side]').innerHTML = ICONS.sidebar
+$('[data-panel=chat]').innerHTML = ICONS.chatPanel
+
+// The sidebar and the chat can each be put away for more room in the middle; remembered across launches.
+function setPanel(which, on) {
+  document.body.classList.toggle(`no-${which}`, !on)
+  $(`[data-panel=${which}]`).setAttribute('aria-pressed', String(on))
+  store.set(`crew.panel.${which}`, on ? '1' : '0')
+  setTimeout(() => terms.forEach((_, name) => resize(name)), 340)
+}
+for (const which of ['side', 'chat']) setPanel(which, store.get(`crew.panel.${which}`) !== '0')
+document.querySelectorAll('[data-panel]').forEach((b) => b.addEventListener('click', () => setPanel(b.dataset.panel, document.body.classList.contains(`no-${b.dataset.panel}`))))
 
 // ---- terminals -------------------------------------------------------------
 
@@ -270,10 +282,12 @@ $('[data-show]').addEventListener('click', (e) => {
 const KEYS = { 1: 'crew', 2: 'tasks', 3: 'grid', 4: 'focus' }
 document.querySelectorAll('.seg.views button').forEach((b, i) => (b.title += ` (⌘${i + 1})`))
 document.addEventListener('keydown', (e) => {
-  if (!e.metaKey || e.altKey || e.ctrlKey) return
-  if (KEYS[e.key]) return void (e.preventDefault(), setView(KEYS[e.key]))
-  if (e.key === 'f' && !e.shiftKey) return void (e.preventDefault(), $('[data-find]').focus(), $('[data-find]').select())
-  if (e.key === 'n' && !e.shiftKey) return void (e.preventDefault(), addAgent())
+  if (!e.metaKey || e.ctrlKey) return
+  if (KEYS[e.key] && !e.altKey) return void (e.preventDefault(), setView(KEYS[e.key]))
+  if (e.code === 'KeyS' && e.altKey) return void (e.preventDefault(), setPanel('side', document.body.classList.contains('no-side')))
+  if (e.code === 'KeyC' && e.altKey) return void (e.preventDefault(), setPanel('chat', document.body.classList.contains('no-chat')))
+  if (e.key === 'f' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), setPanel('side', true), $('[data-find]').focus(), $('[data-find]').select())
+  if (e.key === 'n' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), addAgent())
 })
 
 // ---- the roster: every agent, by computer ------------------------------------
@@ -402,6 +416,22 @@ const endDrag = () => {
 }
 roster.addEventListener('dragend', endDrag)
 
+// The titlebar's counts are shortcuts: "need you" jumps to the first question waiting in the chat (or that
+// agent's terminal), "new" to the first reply you haven't read.
+$('.tb-left .sums').addEventListener('click', (e) => {
+  const kind = e.target.closest('[data-sum]')?.dataset.sum
+  if (kind === 'waiting') {
+    const ask = state.feed.find((x) => x.kind === 'ask' && !x.answer && state.agents.some((a) => a.name === x.from && a.status === 'waiting'))
+    if (ask) return feed.jump(ask.id)
+    const a = state.agents.find((x) => x.on && x.status === 'waiting')
+    if (a) select(a.name)
+  }
+  if (kind === 'unread') {
+    const first = state.feed.find((x) => isUnread(x, state.reads))
+    if (first) feed.jump(first.id)
+  }
+  if (kind === 'working') setView('terminals'), show !== 'busy' && $('[data-show=busy]').click()
+})
 $('.autopilot .switch').addEventListener('change', (e) => crew.call('autopilot', e.target.checked))
 $('[data-act=config]').addEventListener('click', () => crew.call('config'))
 for (const b of document.querySelectorAll('[data-act=add]')) b.addEventListener('click', addAgent)

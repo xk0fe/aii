@@ -6,16 +6,17 @@ Claude Code and Codex are built in. GLM and local open-weight models work too, a
 
 You get three views:
 
-- **Menu bar** (three little buddies): every agent with its area, status and brain, its on/off switch and YOLO/⚡ Fast chips, and Autopilot. Modes that are on always show; hover a row to flip one that's off.
-- **Floating pill** on the screen edge holds the crew as little creatures that hop while they work. Click it, or press `⌥⇧Space`, to open the chat (or `⌥⇧D` to open it and start dictating). Click a creature to talk to that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
+- **Menu bar** (three little buddies): the crew, grouped by computer, one line per agent: its creature, its name and what it's doing. YOLO and ⚡ Fast show as small marks when they're on; hover a row for the YOLO, Fast and power switches. Agents that are off fold into one line ("3 off"). It scrolls once the crew is taller than the screen allows. Autopilot sits under the crew.
+- **Floating pill** on the screen edge holds the crew as little creatures that hop while they work. A crew too big for the screen edge keeps the ones that need a look (waiting on you, new replies, at work) and folds the rest into **+N**. Click it, or press `⌥⇧Space`, to open the chat (or `⌥⇧D` to open it and start dictating). Click a creature to talk to that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
   - **Drag it anywhere** by its edge or by the chat's header. The chat opens on the side with room: on the left of the screen it opens to the right of the pill, on the right to the left, at the top below, at the bottom above. At the top and bottom the pill lies flat, like the Dock.
   - **It stays put:** dropped near an edge, it tucks in against it, and opening or closing the chat never moves it.
-- **Dashboard**:
-  - **Crew** is a Pokédex-style collection of agent cards, where you create and edit agents.
+- **Dashboard**: the crew on the left, the view in the middle, the chat on the right.
+  - **The sidebar** lists every agent by computer, in your order (a status change never moves a row). Fold a computer with its arrow; its header still counts who's working and who needs you. Off agents fold into one line. **Search** (`⌘F`) finds an agent by name or area, and **+** (`⌘N`) makes one. Click an agent for its terminal (its card in the Crew view), and **right-click** for everything else: message it, open its terminal, edit it, start a new conversation, move it to another computer, turn it off, remove it. **Drag** an agent onto another computer to move it there.
+  - **Crew** is a Pokédex-style collection of agent cards, grouped by computer, where you create and edit agents. Big cards, compact cards (the default once the crew outgrows a screen), or **Stats** to compare them.
   - **Tasks** is a board of work for the crew (bugs, features, chores): each task gets a fresh conversation, and you review what comes back.
-  - **Grid** and **Focus** show the agents' terminals. `⌘1` to `⌘4` switch between the four.
+  - **Terminals** shows the agents' terminals, side by side (**Grid**) or one big (**Focus**). **Busy** narrows the grid to the agents at work or waiting on you. `⌘1` Crew, `⌘2` Tasks, `⌘3` the grid, `⌘4` focus.
   - **The ribbon** under each terminal's header says what you're looking at. These aren't terminal apps: Crew runs each agent's CLI in a pseudo-terminal and draws its output, replaying what it printed before the view opened. **Live** means typing goes straight to the agent; **Mirror** means it runs on a linked computer and streams here; **Replay** means it's still being redrawn; **Offline** (its computer can't be reached) and **Ended** (the CLI exited) are striped and dimmed, because that output is frozen. The ribbon also shows the brain and the terminal's size, and hovering it explains the rest.
-  - The feed sits on the right.
+  - The chat sits on the right. Under the last message, a line per agent at work says what it's doing; with a big crew it shows the ones waiting on you first, up to three, and folds the rest into one line of faces (click it for all).
 
 ```
 npm install
@@ -36,17 +37,15 @@ npm start        # opens Crew.app (builds it the first time)
 
 ## The crew collection
 
-- **Every card shows its area** under the name, so you can see who does what at a glance.
-- **Click a card** to open it and edit everything:
-  - the name and area;
-  - its **instructions**, the system prompt layered on top of the crew basics. Press **✨ Write it** and the agent's own brain (Claude or Codex) drafts one from its name and area, including what to hand off to which teammate. The draft runs in the agent's folder, so it can pick up the project's CLAUDE.md or AGENTS.md;
-  - **reference images** for its instructions, such as mockups, brand guides or screenshots. Use **+ Reference image**, or paste or drop them on the instructions box. The agent opens them when relevant;
-  - the brain: provider, model and effort (the options shown depend on the provider, and Codex lists its live models and each model's effort levels);
-  - the folder, YOLO, on/off and extra CLI flags;
-  - the look: body, color, eyes, mouth, accessories and blush, each shown as a tiny version of the agent. Or roll 🎲 Shuffle.
+- **Every card shows its area** under the name, so you can see who does what at a glance. Compact cards show the creature, the name and what it's doing; hover for the rest.
+- **Click a card** to open its sheet. On the left is who it is: its creature (click it to change its look), name, area, level, a glance at its work and how full its conversation is, with **Terminal** and **More** (export, move, remove). On the right, four tabs that each fit on the screen without scrolling. The tab you used last opens next time. `⌘S` saves, `Esc` closes.
+  - **Setup**: the brain (provider, model and effort; the options shown depend on the provider, and Codex lists its live models and each model's effort levels), YOLO, Fast and power side by side, the computer it runs on (**Move…**), its folder and extra CLI flags, and its context limit;
+  - **Instructions**: the system prompt layered on top of the crew basics. Press **Write it** and the agent's own brain (Claude or Codex) drafts one from its name and area, including what to hand off to which teammate. The draft runs in the agent's folder, so it can pick up the project's CLAUDE.md or AGENTS.md. It takes **reference images** too, such as mockups, brand guides or screenshots: **+ Reference image**, or paste or drop them on the instructions. The agent opens them when relevant;
+  - **Look**: body, color, eyes, mouth, accessories and blush, each shown as a tiny version of the agent, with the big one on the left as the preview. Or **Shuffle**;
+  - **Stats**: its level, how it compares with the rest of the crew, and its last two weeks.
 - **Save** applies the changes. If you changed something the agent launches with (area, instructions, brain, folder, flags, YOLO), the agent restarts and resumes its session. Edited instructions apply to the ongoing conversation too. If it's mid-task, it waits until it's free first.
 - **Select** turns on bulk mode. Pick cards, or press **All**, then set provider, model, effort, YOLO or power for all of them at once, or **Export** them.
-- **+ New agent** opens a blank card with a random creature.
+- **+ New agent** opens a blank sheet with a random creature. Pick the computer it should run on under **Setup**.
 
 ## Sharing agents: export and import
 
@@ -138,9 +137,9 @@ It comes from Claude Code's hooks (the Agent tool's PreToolUse, SubagentStart an
 
 Every agent shows how full its current conversation is: a little ring that fills up and turns amber past half and red past 80%. It's on the agent's card, in its terminal header, and in the sidebar once it's past half. Hover it for the numbers: tokens used of the model's window (or of its context limit), tasks in this conversation, and whether it has compacted. A compacted conversation (the CLI summarized older details to make room) gets a dashed ring.
 
-- **New conversation** gives an agent a clean slate: its instructions, folder and the crew's notes stay, the old conversation stays in the CLI's history. It's the ✦ button in the terminal header and in the agent's card (**Conversation** shows the gauge, the numbers and advice). A busy agent finishes its current task first.
+- **New conversation** gives an agent a clean slate: its instructions, folder and the crew's notes stay, the old conversation stays in the CLI's history. It's the ✦ button in the terminal header and beside the gauge in the agent's sheet. A busy agent finishes its current task first.
 - **Send a task fresh.** The **New conversation** toggle under the message box sends your message into a new conversation instead of adding it to everything the agent did before. It's for that one message: the toggle turns off, and the box stays in the new conversation as a reply ("Continuing the new conversation with marc"), so what you send next goes on in it.
-- **Context limit.** A model with a huge window (say 1M) can run one conversation for a very long time. Under **Conversation** in the agent's card, set its own limit (100k, 250k, or any number) and what happens when a conversation passes it:
+- **Context limit.** A model with a huge window (say 1M) can run one conversation for a very long time. Under **Conversation** in the agent's sheet (**Setup**), set its own limit (100k, 250k, or any number) and what happens when a conversation passes it:
   - **New conversation** (the default): it finishes what it's doing, then starts fresh. Its instructions, folder and the crew's notes stay.
   - **Just tell me**: a notification and an orange line in the chat, and you decide.
 
@@ -231,7 +230,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 - `ui/` is plain HTML, CSS and JS with no build step. The main files:
   - `avatar.js` draws the creatures;
   - `voice.js` is dictation in the composer: the mic button, hold-to-talk, live text and the language switch (`voice-worklet.js` turns the microphone into 16 kHz audio);
-  - `collection.js` is the card collection and editor;
+  - `collection.js` is the card collection and the agent's sheet;
   - `tasks.js` is the Tasks board, list and task panel;
   - `common.js` has shared pieces, including a small DOM patcher that keeps avatars animating smoothly across updates.
 

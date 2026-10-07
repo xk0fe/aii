@@ -708,33 +708,98 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // Sidebar: hovering a row reveals the modes that are off; flip one, then wake a sleeping agent.
+  // Sidebar: hovering a row shows its switches; flip YOLO, open the off line and wake an agent, fold a computer.
   async sidebarGif() {
-    const win = await dashboard('light', 'crew')
-    await sleep(900)
-    const side = await js(win, "const r = document.querySelector('.side').getBoundingClientRect(); return { x: 0, y: Math.round(r.y), width: Math.round(r.width), height: Math.min(720, Math.round(r.height)) }")
+    const win = await dashboard('light', 'grid', { fixture: 'big', reset: ['crew.folds'] })
+    await sleep(1200)
+    const side = await js(win, "const r = document.querySelector('.side').getBoundingClientRect(); return { x: 0, y: Math.round(r.y), width: Math.round(r.width), height: Math.min(760, Math.round(r.height)) }")
     await record(win, 'sidebar', {
-      clip: side, ms: 7000, width: 340,
+      clip: side, ms: 9000, width: 360,
       during: async () => {
         let at = { x: 400, y: 300 }
         await sleep(300)
-        at = await glide(win, at, await center(win, '.agent[data-agent=gal] .area'), 700)
+        at = await glide(win, at, await center(win, '.crow[data-agent=lena] .crow-main'), 700)
         await sleep(500)
-        at = await glide(win, at, await center(win, '.agent[data-agent=gal] .mode.yolo'), 400)
+        at = await glide(win, at, await center(win, '.crow[data-agent=lena] .mode.yolo'), 400)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(800)
+        at = await glide(win, at, await center(win, '[data-fold="off:"]'), 600)
         await sleep(250)
         await tap(win, at)
         await sleep(700)
-        at = await glide(win, at, await center(win, '.agent[data-agent=marc] .mode.fast'), 600)
+        at = await glide(win, at, await center(win, '.crow[data-agent=pia] .crow-main'), 500)
         await sleep(300)
+        at = await glide(win, at, await center(win, '[data-power=pia]'), 400)
+        await sleep(250)
         await tap(win, at)
-        await sleep(600)
-        await tap(win, at)
-        await sleep(600)
-        at = await glide(win, at, await center(win, '[data-power=ye]'), 600)
+        await sleep(1000)
+        at = await glide(win, at, await center(win, '.cgroup-head[data-fold="group:"] b'), 700)
         await sleep(250)
         await tap(win, at)
         await sleep(1200)
+        await tap(win, at)
+        await sleep(900)
         await glide(win, at, { x: 400, y: at.y }, 400)
+      },
+    })
+    win.destroy()
+  },
+  // Moving an agent from any computer: right-click it, Move to Mac mini, check the folder there, Move.
+  async moveGif() {
+    const win = await dashboard('light', 'crew', { reset: ['crew.folds'] })
+    await sleep(1200)
+    await record(win, 'move', {
+      ms: 9800, width: 1000,
+      during: async () => {
+        let at = { x: 700, y: 400 }
+        at = await glide(win, at, await center(win, '.crow[data-agent=arie] .crow-main'), 800)
+        await sleep(400)
+        win.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(at.x), y: Math.round(at.y), button: 'right', clickCount: 1 })
+        win.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(at.x), y: Math.round(at.y), button: 'right', clickCount: 1 })
+        await sleep(900)
+        const item = await js(win, "const b = [...document.querySelectorAll('.menu button')].find((x) => x.textContent.includes('Mac mini')); const r = b.getBoundingClientRect(); return { x: r.x + 60, y: r.y + r.height / 2 }")
+        at = await glide(win, at, item, 600)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1600)
+        at = await glide(win, at, await center(win, '[data-mv-sug="~/builds"]'), 700)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '[data-mv-go]'), 600)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(2000)
+        await glide(win, at, { x: at.x - 300, y: at.y + 60 }, 500)
+      },
+    })
+    win.destroy()
+  },
+  // The agent's sheet: Setup, Instructions, Look (try a hat on), Stats, without ever scrolling.
+  async sheetGif() {
+    const win = await dashboard('light', 'crew')
+    await js(win, click('[data-mode=cards]'))
+    await sleep(1000)
+    await record(win, 'sheet', {
+      ms: 8600, width: 1000,
+      during: async () => {
+        let at = { x: 900, y: 500 }
+        at = await glide(win, at, await center(win, '.pcard[data-name=marc]'), 600)
+        await sleep(200)
+        await tap(win, at)
+        await sleep(1300)
+        for (const tab of ['instructions', 'look']) {
+          at = await glide(win, at, await center(win, `.ed-tabs [data-tab=${tab}]`), 500)
+          await tap(win, at)
+          await sleep(900)
+        }
+        at = await glide(win, at, await center(win, '.opt[data-look=hat][data-v=crown]'), 600)
+        await tap(win, at)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '.ed-tabs [data-tab=stats]'), 600)
+        await tap(win, at)
+        await sleep(1200)
       },
     })
     win.destroy()

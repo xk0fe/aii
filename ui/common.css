@@ -431,9 +431,10 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 
 /* threads: a reply quotes what it answers (a bar in the quoted sender's color), a message links to its replies */
 .quote, .replied { all: unset; box-sizing: border-box; cursor: pointer; max-width: 100%; font-size: 12px; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quote { --qc: var(--fg3); position: relative; display: block; margin: 0 0 4px; padding: 5px 10px 5px 14px; border-radius: 10px; background: color-mix(in srgb, var(--qc) 9%, transparent); transition: background .15s, color .15s; }
-.quote::before { content: ''; position: absolute; left: 5px; top: 5px; bottom: 5px; width: 3px; border-radius: 2px; background: var(--qc); }
-.quote b { font-weight: 650; color: color-mix(in oklab, var(--qc) 62%, var(--fg)); }
+.quote { --qc: var(--fg3); display: flex; align-items: center; gap: 5px; margin: 0 0 4px; padding: 4px 10px 4px 7px; border-radius: 10px; background: color-mix(in srgb, var(--qc) 9%, transparent); transition: background .15s, color .15s; }
+.quote svg { flex: none; width: 13px; height: 13px; color: color-mix(in oklab, var(--qc) 70%, var(--fg)); }
+.quote b { flex: none; font-weight: 650; color: color-mix(in oklab, var(--qc) 62%, var(--fg)); }
+.quote span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .quote:hover { background: color-mix(in srgb, var(--qc) 15%, transparent); color: var(--fg); }
 .replied { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 1px 3px; font-weight: 600; color: var(--fg3); transition: color .15s; }
 .replied svg { width: 13px; height: 13px; flex: none; }
@@ -623,7 +624,8 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .msg-tool:hover { background: var(--btn); color: var(--fg); }
 .msg-tool svg { width: 13px; height: 13px; }
 .reply-to { display: flex; align-items: center; gap: 8px; margin: 6px 6px 0; padding: 6px 4px 6px 0; border-radius: 10px; background: var(--btn); animation: hint-in .25s var(--out); }
-.rt-bar { flex: none; align-self: stretch; width: 3px; margin-left: 7px; border-radius: 2px; background: var(--qc); }
+.rt-icon { flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin-left: 5px; border-radius: 8px; color: color-mix(in oklab, var(--qc) 70%, var(--fg)); background: color-mix(in srgb, var(--qc) 13%, transparent); }
+.rt-icon svg { width: 14px; height: 14px; }
 .rt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: 12px; line-height: 1.35; }
 .rt-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; color: color-mix(in oklab, var(--qc) 62%, var(--fg)); }
 .rt-text b span { font-weight: 500; color: var(--fg3); }

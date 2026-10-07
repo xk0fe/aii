@@ -343,7 +343,7 @@ function mountTasks(root, { onTerminal }) {
       : ''
     const s = t.status === 'fixing' && live(t)
     const doing = s && s.cls === 'working' && s.shimmer ? `<div class="tk-doing"><span class="shimmer">${esc(s.text)}</span></div>` : ''
-    const summary = t.fix && (t.status === 'check' || t.status === 'done') ? `<p class="tk-summary">${esc(snippet(t.fix))}</p>` : ''
+    const summary = t.fix && (t.status === 'check' || t.status === 'done') ? `<p class="tk-summary"><i class="tk-done-mark">${ICONS.check}</i>${esc(snippet(t.fix))}</p>` : ''
     const c = agent(t.fixer ?? t.owner)
     return `<article class="tc st-${t.status} kind-${t.kind} pr-${t.severity}${selected === t.key ? ' sel' : ''}" data-name="${esc(t.key)}" draggable="true" style="--c:${c ? agentColor(c) : 'var(--fg3)'}">
       <div class="tc-top">${KIND_ICON[t.kind]}<span class="tk-id">#${t.id}</span>${pills(t)}<span class="grow"></span><button class="tk-prio" data-menu="priority" title="${PRIORITY_LABEL[t.severity]} priority">${PRIORITY_ICON[t.severity]}</button></div>
