@@ -15,7 +15,7 @@ const electronVersion = JSON.parse(fs.readFileSync(path.join(root, 'node_modules
 
 const app = path.join(root, 'dist', 'Crew.app')
 const stamp = path.join(root, 'dist', '.build.json')
-const wanted = JSON.stringify({ electronVersion, root, icon: fs.statSync(path.join(root, 'assets', 'icon.icns')).mtimeMs })
+const wanted = JSON.stringify({ electronVersion, root, icon: fs.statSync(path.join(root, 'assets', 'icon.icns')).mtimeMs, documents: 1 })
 const open = process.argv.includes('--open')
 const current = fs.existsSync(app) && fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === wanted
 
@@ -35,6 +35,10 @@ const [built] = await packager({
   appBundleId: 'app.crew.desktop',
   appCategoryType: 'public.app-category.developer-tools',
   icon: path.join(root, 'assets', 'icon.icns'),
+  // .crew agent packs open in Crew from Finder or Mail
+  extendInfo: {
+    CFBundleDocumentTypes: [{ CFBundleTypeName: 'Crew agents', CFBundleTypeExtensions: ['crew'], CFBundleTypeRole: 'Viewer', LSHandlerRank: 'Owner' }],
+  },
   electronVersion,
   platform: 'darwin',
   arch: process.arch,

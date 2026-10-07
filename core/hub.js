@@ -386,12 +386,19 @@ export class Hub extends EventEmitter {
   // Who gets a message: the `to` field (a name, several names, or "any") plus every @name in the text.
   // Explicit recipients skip routing. All of them are checked before anything is posted, so one unknown,
   // turned-off or self recipient rejects the whole send rather than reaching half the crew.
-  send({ from = 'you', to, text, images = [] }) {
+  // Names on another computer (gal@mac-mini) go to `relay`, which main.js wires to Crew Link; `mentions: false`
+  // means `to` is final (the message was already addressed on another computer).
+  send({ from = 'you', to, text, images = [], mentions = true }) {
     text = String(text ?? '').trim()
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
     if (!text) throw new Error('nothing to send')
-    const names = addressees(to, text)
+    // a bare name that isn't here but is on exactly one linked computer means that agent
+    const all = addressees(to, mentions ? text : '').map((n) => (n.includes('@') || this.agents.has(n) ? n : (this.elsewhere?.(n) ?? n)))
+    const away = all.filter((n) => n.includes('@'))
+    const names = all.filter((n) => !n.includes('@'))
+    if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and Crew Link isn't on`)
+    if (away.length && !names.length) return this.relay(from, away, text, images)
     const targets = names.length ? this.recipients(names, from) : [this.route(text, from)]
     if (!targets[0]) throw new Error('no agents to send to')
 
@@ -405,7 +412,8 @@ export class Hub extends EventEmitter {
       this.post({ kind: 'msg', from, to: a.name, text, ...group, ...(images.length && { images }), ...(re && { re }), queued: !held, held }),
     )
     if (held) return `waiting for the user to approve this hand-off to ${targets.map((a) => `@${a.name}`).join(' ')}\n`
-    return targets.map((a, i) => this.enqueue(a, msgs[i])).join('')
+    const here = targets.map((a, i) => this.enqueue(a, msgs[i])).join('')
+    return away.length ? this.relay(from, away, text, images).then((there) => here + there) : here
   }
 
   recipients(names, from) {
@@ -447,16 +455,9 @@ export class Hub extends EventEmitter {
   // An area matches on shared words and on shared intents (see INTENTS), so "keep the crew in working order"
   // finds the organiser even though none of its words are in "admin work, assistant, organiser".
   route(text, from) {
-    const words = new Set(tokens(text))
-    const asks = intents(text)
-    const score = (a) => {
-      const own = `${a.name} ${a.area ?? ''}`
-      return [...new Set(tokens(own))].filter((w) => words.has(w)).length + 2 * [...intents(own)].filter((i) => asks.has(i)).length
-    }
-    const free = (a) => Number(a.status === 'idle' && !a.inbox.length)
-    return [...this.agents.values()]
-      .filter((a) => a.name !== from && this.runner.running(a.name))
-      .sort((x, y) => score(y) - score(x) || free(y) - free(x) || x.inbox.length - y.inbox.length)[0]
+    const ready = [...this.agents.values()].filter((a) => a.name !== from && this.runner.running(a.name))
+    const best = bestFor(text, ready.map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.inbox.length })))
+    return best && this.agents.get(best.name)
   }
 
   // Deliver the next queued message once the agent is idle and nothing asked to hold off (e.g. you typing in its terminal).
@@ -520,6 +521,8 @@ export class Hub extends EventEmitter {
       const brain = [this.providerOf(a)?.label, a.model, a.effort].filter(Boolean).join(' ')
       return `${a.name.padEnd(16)} ${(a.status + queue).padEnd(20)} ${brain.padEnd(22)} ${a.area ?? ''}`
     })
+    // teammates on your other computers (Crew Link), addressed as name@computer
+    for (const a of this.directory?.() ?? []) rows.push(`${a.name.padEnd(16)} ${(a.on ? a.status : 'off').padEnd(20)} ${''.padEnd(22)} ${a.area ?? ''}`)
     return rows.join('\n') + '\n'
   }
 
@@ -635,11 +638,25 @@ const intents = (s) => {
 // bare @name in the text, wherever it is. The text itself is left as written. Not addresses: @words glued to
 // something (someone@example.com, @types/node, @david's), code in backticks, and @any/@you/@crew.
 // Names are case-insensitive and come back lowercase, without duplicates, in the order they appear.
+// An agent on another computer is name@computer: "@gal@mac-mini" in text, or "gal@mac-mini" in `to`.
 export function addressees(to, text) {
   const prose = String(text).replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ')
-  const mentions = [...prose.matchAll(/(?<![\w.@/'-])@([\w-]+)(?![\w@/'-]|\.\w)/g)].map((m) => m[1])
+  const mentions = [...prose.matchAll(/(?<![\w.@/'-])@([\w-]+(?:@[\w-]+)?)(?![\w@/'-]|\.\w)/g)].map((m) => m[1])
   const names = [...String(to ?? '').split(/[\s,]+/), ...mentions].map((n) => n.toLowerCase())
   return [...new Set(names)].filter((n) => n && !RESERVED.has(n) && n !== 'auto')
+}
+
+// The best agent for an un-addressed task: area match first, then whoever is free, then the shortest queue.
+// agents: [{ name, area, status, queue }], already narrowed to the ones that can take work.
+export function bestFor(text, agents) {
+  const words = new Set(tokens(text))
+  const asks = intents(text)
+  const score = (a) => {
+    const own = `${a.name.split('@')[0]} ${a.area ?? ''}`
+    return [...new Set(tokens(own))].filter((w) => words.has(w)).length + 2 * [...intents(own)].filter((i) => asks.has(i)).length
+  }
+  const free = (a) => Number(a.status === 'idle' && !a.queue)
+  return [...agents].sort((x, y) => score(y) - score(x) || free(y) - free(x) || x.queue - y.queue)[0]
 }
 
 function describe({ tool_name: tool, tool_input: input = {} }) {

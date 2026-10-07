@@ -41,8 +41,15 @@ npm start        # opens Crew.app (builds it the first time)
   - the folder, YOLO, on/off and extra CLI flags;
   - the look: body, color, eyes, mouth, accessories and blush, each shown as a tiny version of the agent. Or roll 🎲 Shuffle.
 - **Save** applies the changes. If you changed something the agent launches with (area, instructions, brain, folder, flags, YOLO), the agent restarts and resumes its session. Edited instructions apply to the ongoing conversation too. If it's mid-task, it waits until it's free first.
-- **Select** turns on bulk mode. Pick cards, or press **All**, then set provider, model, effort, YOLO or power for all of them at once.
+- **Select** turns on bulk mode. Pick cards, or press **All**, then set provider, model, effort, YOLO or power for all of them at once, or **Export** them.
 - **+ New agent** opens a blank card with a random creature.
+
+## Sharing agents: export and import
+
+An agent pack is a `.crew` file holding one or more agents: name, area, instructions, reference images, brain (provider, model, effort, fast), YOLO, extra flags and look, plus any custom provider they use. Folders, sessions and work experience stay behind.
+
+- **Export:** open an agent and press **Export**, or **Select** several and press **Export** in the bar. The file is saved where you choose and shown in Finder.
+- **Import:** press **Import** on the Crew page, drop a `.crew` file on the window, or double-click one in Finder. For each agent you choose whether to take it, what to call it (names already in use get a free one), which folder it works in and which computer it runs on. Imported agents start switched off, so you can look them over before they run. A pack never overrides providers you already have.
 
 ## How you use it
 
@@ -68,60 +75,25 @@ npm start        # opens Crew.app (builds it the first time)
 - **⚡ Fast** (Codex agents) uses Codex's fast service tier. It's a ⚡ chip on the agent's row and a toggle in the editor; until you set it, it follows `service_tier` in your Codex config.
 - **YOLO** skips every permission prompt. Claude gets `--dangerously-skip-permissions`; Codex gets `--dangerously-bypass-approvals-and-sandbox`.
 
-## Crew Link: one crew, all your computers
+## Computers: one crew across your Macs
 
-Your agents, terminals and history stay on one Mac (the host). Your other computers connect to it and get a live window into the same crew.
+Each agent runs on one computer. Link your computers and each one shows the whole crew: you can chat with any agent, watch and type into its terminal, edit it, and agents hand work to each other across computers. An agent on another computer shows up as **name@computer** (`gal@mac-mini`).
 
-1. **On the Mac that runs your agents:** click **Link** in the dashboard titlebar, turn on **Share this crew**, and **Copy** the pairing code.
-2. **On your other computer:** click **Link**, paste the code, and **Connect**. Crew restarts connected, and the titlebar chip says **on ‹host›**.
+1. **On one computer:** click **Computers** in the dashboard titlebar, turn on **Share this computer**, and **Copy** the pairing code.
+2. **On the other computer:** click **Computers**, paste the code under **Link a computer**, and press **Link**.
+3. **Choose what to use.** The dialog lists the linked computer's agents. **Use** decides which ones show up in this computer's crew; the rest keep running there. **Move here** opens the agent's card set to run on this computer: check its folder and **Save**.
 
-From the other computer you can do everything:
-- chat with agents, with replies threaded to your messages;
-- follow hand-offs and stats;
-- edit agents;
-- watch and type into terminals;
-- attach images.
+The link works both ways, so the first computer sees the second one's agents too. Link more computers the same way. Linked computers reconnect on their own after a restart or a network change.
 
-Theme, notifications and opening files stay per computer.
-
-- **Networks:** the same Wi-Fi, or Tailscale. The code lists every address of the host (LAN IP, Tailscale IP and MagicDNS name), and the client uses whichever one answers. The default port is 7787; to change it, set `"port"` in `~/.crew/link/link.json`.
-- **Security:** the link is TLS with the host's own certificate, pinned by the code. The secret key in the code is only sent after the certificate checks out, so a fake host on the same network can't take it. **New code** revokes the old one, and sharing is off until you turn it on. Anyone with the code can run your agents, so keep it to your own machines.
+- **Where an agent runs:** an agent's card shows **Runs on** once you have more than one computer. Pick another one and **Save** to move it. It keeps its instructions, reference images, look and work experience, but its conversation starts fresh there, because transcripts are files on the computer it left. New agents and imported agents can be put on any linked computer.
+- **Addressing:** `@gal` finds gal wherever it runs; if two computers have a gal, the one on this computer wins, and you can write `@gal@mac-mini` for the other. `crew who` lists teammates on every linked computer, so agents use the same names.
+- **Names:** each computer has a name (click it in the dialog to change it). Others see its agents as name@that-computer.
+- **Networks:** the same Wi-Fi, or Tailscale. The code lists every address of the computer (LAN IP, Tailscale IP and MagicDNS name), and the other computer uses whichever one answers. The default port is 7787; to change it, set `"port"` in `~/.crew/link/link.json`.
+- **Security:** the link is TLS with the sharing computer's own certificate, pinned by the code. The secret key in the code is only sent after the certificate checks out, so a fake computer on the same network can't take it. **New code** revokes the old one, and sharing is off until you turn it on. A link gives both computers full use of each other's agents, terminals included, so only link your own computers and keep the code to yourself. **Forget** unlinks a computer.
 - **Good to know:**
-  - The host has to stay awake. Crew keeps itself running while sharing, but closing the lid still sleeps the Mac.
-  - While connected, the other computer's own agents are paused, and they resume when you **Disconnect**.
-  - Agent folders are paths on the host, so type them; the folder picker can't browse another computer.
-
-## Work experience
-
-Every agent keeps a record of what it actually does, across restarts:
-- tasks, split into from you and from teammates;
-- active time and average turn time;
-- tool calls and hand-offs;
-- "needs you" moments and the time spent waiting on you;
-- queue wait: how long messages sit before the agent is free, which shows who's overloaded;
-- the last 14 days of activity.
-
-Agents level up as they work (10 XP per finished task, plus 1 per active minute). A finished task gets a little hop; a level-up gets confetti.
-
-- **Each card's detail** has a Pokédex-style *Work experience* panel, with bars against the rest of the crew.
-- **The Crew page's Stats tab** compares everyone in a sortable table. 👑 marks the best in each column and 🐢 the slowest, so strong performers and slow agents stand out.
-
-## Providers
-
-| id | runs | notes |
-|---|---|---|
-| `claude` | Claude Code | `fable`, `opus`, `sonnet`, `haiku`; effort `low` to `max` |
-| `codex` | Codex CLI | models and per-model efforts come from `codex debug models` |
-| `glm` | Claude Code against Z.ai's Anthropic-compatible API | needs `ZAI_API_KEY` in your shell |
-| `local` | Codex with `--oss` on Ollama | e.g. `gpt-oss:20b`, `qwen3-coder` |
-
-Add your own in `config.json`. Each provider names a CLI adapter (`claude` or `codex`) plus optional env, args and menus. `${VAR}` values come from your environment, so keys never live in the file:
-
-```json
-"providers": {
-  "gateway": { "label": "My gateway", "cli": "claude", "env": { "ANTHROPIC_BASE_URL": "https://your-anthropic-compatible-endpoint", "ANTHROPIC_AUTH_TOKEN": "${GATEWAY_KEY}" }, "needs": ["GATEWAY_KEY"], "models": ["some-model"] }
-}
-```
+  - A computer has to be awake for its agents to work. Crew keeps itself running while linked, but closing the lid still sleeps the Mac. While a computer is unreachable, its agents show as unreachable.
+  - Folders are paths on the computer an agent runs on, so type them; the folder picker only browses this computer.
+  - Theme, notifications and opening files stay per computer.
 
 A Codex-backed agent runs in Codex's `workspace-write` sandbox with network access on, so `crew` can reach the app over localhost. Its status hooks are passed on the command line with `--dangerously-bypass-hook-trust`, so no hook-trust prompt blocks every launch. That flag also lets hooks defined in the agent's own repo run without review, the same trust model Claude Code uses.
 
@@ -132,7 +104,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `config.json`: your agents, custom providers and theme. The UI writes it, you can edit it by hand (the `{ }` button), and changes apply live.
 - `sessions.json`: which session each agent resumes.
 - `stats.json`: each agent's work experience.
-- `link/`: Crew Link settings, the host certificate and key, and a cache of images from a remote crew.
+- `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, and a cache of images from agents on other computers.
 - `board.md`: shared notes (`crew note`).
 - `feed.jsonl`: the feed history.
 - `attachments/`: images you've attached to messages and instructions.
@@ -156,9 +128,9 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 ## How it works
 
 ```
- UI windows (ui/*.html) ──IPC── main.js ── core/hub.js ── core/runner.js ── pty ── claude / codex (one per agent)
-                                                ▲                                        │
-                                   core/server.js (127.0.0.1, token) ◄── hooks + `crew` CLI ┘
+ UI windows (ui/*.html) ──IPC── main.js ── core/crew.js ── core/hub.js ── core/runner.js ── pty ── claude / codex
+                                              │                 ▲                                     │
+                    other computers ── core/link.js    core/server.js (127.0.0.1, token) ◄── hooks + `crew` CLI
 ```
 
 - `core/providers.js` defines the brains: built-in providers, your custom ones, and Codex model discovery.
@@ -169,7 +141,9 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
   - inboxes, routing, the feed and notes;
   - `update()`, the single edit path behind the editor and bulk edits.
 - `core/runner.js` owns the pseudo-terminals.
-- `core/link.js` is Crew Link: pairing codes, the TLS host, and a client that looks like a local crew to the rest of the app.
+- `core/crew.js` is the crew across your computers: this computer's hub plus every linked computer's agents, merged into one list, with each action sent to the computer the agent runs on.
+- `core/link.js` is the link itself: pairing codes, the TLS server, the client, and one symmetric connection either side can call over.
+- `core/pack.js` reads and writes agent packs (`.crew` files).
 - `core/server.js` is a tiny local HTTP API for the hooks and `bin/crew`. Every request needs a per-launch token.
 - `ui/` is plain HTML, CSS and JS with no build step. The main files:
   - `avatar.js` draws the creatures;

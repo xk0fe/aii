@@ -1,9 +1,9 @@
-// Crew Link: use one computer's crew from another, over your Wi-Fi or Tailscale.
-// The host keeps the agents, terminals and history; other computers get a live window into them.
-// The channel is TLS with a self-signed certificate that the pairing code pins, and the secret key in
-// the code is only sent after the certificate checks out, so it stays private even on shared networks.
+// Crew Link: your computers' crews, as one. Each computer runs its own agents; a link between two computers
+// is one connection over which both share theirs, so every computer sees (and can talk to) the whole crew.
+// The channel is TLS with a self-signed certificate that the pairing code pins, and the secret key in the code
+// is only sent after the certificate checks out, so it stays private even on shared networks.
 import { EventEmitter } from 'node:events'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import https from 'node:https'
@@ -11,8 +11,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
 
-export const PROTOCOL = 1
+export const PROTOCOL = 2
 export const DEFAULT_PORT = 7787
+
+// A computer's short name, as agents on it are addressed from elsewhere: gal@mac-mini.
+export const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'computer'
 
 // ---- identity: a certificate + key per host, made once with openssl --------------------------
 
@@ -32,7 +35,7 @@ export function identity(dir) {
 // ---- pairing codes ----------------------------------------------------------------------------------
 
 // Every address this machine can be reached on: Wi-Fi/Ethernet and Tailscale (100.64.0.0/10).
-export function addresses() {
+export async function addresses() {
   const out = []
   for (const [iface, list] of Object.entries(os.networkInterfaces())) {
     for (const a of list ?? []) {
@@ -42,7 +45,8 @@ export function addresses() {
     }
   }
   try {
-    const self = JSON.parse(execFileSync('tailscale', ['status', '--json'], { timeout: 3000 })).Self ?? {}
+    const status = await new Promise((resolve, reject) => execFile('tailscale', ['status', '--json'], { timeout: 3000 }, (e, out) => (e ? reject(e) : resolve(out))))
+    const self = JSON.parse(status).Self ?? {}
     for (const ip of self.TailscaleIPs ?? []) if (ip.includes('.') && !out.some((o) => o.address === ip)) out.push({ address: ip, via: 'Tailscale' })
     const name = self.DNSName?.replace(/\.$/, '')
     if (name) out.push({ address: name, via: 'Tailscale name' })
@@ -60,31 +64,94 @@ export function readCode(code) {
   return { name: c.n, port: c.p, key: c.k, fingerprint: c.f, hosts: c.h }
 }
 
-// Messages are JSON; bytes (pasted images) travel as { $bytes: base64 }.
+// Messages are JSON; bytes (images) travel as { $bytes: base64 }.
 const pack = (v) => JSON.stringify(v, (_, x) => (x instanceof Uint8Array ? { $bytes: Buffer.from(x).toString('base64') } : x))
 const unpack = (s) => JSON.parse(s, (_, x) => (x && typeof x === 'object' && typeof x.$bytes === 'string' ? new Uint8Array(Buffer.from(x.$bytes, 'base64')) : x))
 
-// ---- host ---------------------------------------------------------------------------------------------
+// ---- a peer: one live connection, the same on both ends --------------------------------------------
 
-// backend: { call(name, args), input(name, data), snapshot(), on('state'|'pty'|'alert') }, allowed: action names
-export class LinkHost extends EventEmitter {
-  clients = new Set()
+// Either side can call() the other (answered by its `handle`), push() its crew's state / terminal output /
+// alerts, and type into the other's terminals with input(). Emits 'state', 'pty', 'alert', 'input', 'close'.
+export class Peer extends EventEmitter {
+  pending = new Map()
+  seq = 0
 
-  constructor({ backend, allowed, key, cert, keyPem, name }) {
+  constructor(ws, name, handle) {
     super()
-    Object.assign(this, { backend, allowed: new Set(allowed), key, cert, keyPem, name })
-    this.forward = {
-      state: (state) => this.broadcast({ t: 'state', state }),
-      pty: (name, data) => this.broadcast({ t: 'pty', name, data }),
-      alert: (name, text) => this.broadcast({ t: 'alert', name, text }),
+    Object.assign(this, { ws, name, handle })
+    ws.on('message', (raw) => this.receive(raw))
+    ws.on('close', () => {
+      for (const p of this.pending.values()) p.reject(new Error(`lost the connection to ${this.name}`))
+      this.pending.clear()
+      this.emit('close')
+    })
+    ws.on('error', () => {})
+  }
+
+  async receive(raw) {
+    let m
+    try {
+      m = unpack(raw.toString())
+    } catch {
+      return
     }
+    if (m.t === 'state') this.emit('state', m.state)
+    else if (m.t === 'pty') this.emit('pty', m.name, m.data)
+    else if (m.t === 'alert') this.emit('alert', m.name, m.text)
+    else if (m.t === 'input') this.emit('input', m.name, m.data)
+    else if (m.t === 'reply') {
+      const p = this.pending.get(m.id)
+      this.pending.delete(m.id)
+      if (p) m.error ? p.reject(new Error(m.error)) : p.resolve(m.ok)
+    } else if (m.t === 'call') {
+      try {
+        this.send({ t: 'reply', id: m.id, ok: await this.handle(m.name, m.args ?? []) })
+      } catch (e) {
+        this.send({ t: 'reply', id: m.id, error: e.message })
+      }
+    }
+  }
+
+  send(msg) {
+    if (this.ws.readyState === WebSocket.OPEN) this.ws.send(pack(msg))
+  }
+
+  call(name, args = []) {
+    if (this.ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error(`not connected to ${this.name}`))
+    const id = ++this.seq
+    this.send({ t: 'call', id, name, args })
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject })
+      setTimeout(() => this.pending.delete(id) && reject(new Error(`${this.name} took too long to answer`)), 200000)
+    })
+  }
+
+  push(t, ...args) {
+    this.send(t === 'state' ? { t, state: args[0] } : t === 'pty' || t === 'input' ? { t, name: args[0], data: args[1] } : { t, name: args[0], text: args[1] })
+  }
+
+  input(name, data) {
+    this.push('input', name, data)
+  }
+
+  close() {
+    this.ws.close()
+  }
+}
+
+// ---- sharing: accept computers that have the pairing code ------------------------------------------
+
+// Emits 'peer' (peer) for every computer that proves it has the key.
+export class LinkHost extends EventEmitter {
+  constructor({ key, cert, keyPem, name, handle }) {
+    super()
+    Object.assign(this, { key, cert, keyPem, name, handle })
   }
 
   start(port) {
     this.server = https.createServer({ cert: this.cert, key: this.keyPem }, (_, res) => res.writeHead(426).end('Crew Link speaks WebSocket\n'))
     this.wss = new WebSocketServer({ server: this.server, maxPayload: 32 * 1024 * 1024 })
-    this.wss.on('connection', (ws, req) => this.welcome(ws, req))
-    for (const [event, fn] of Object.entries(this.forward)) this.backend.on(event, fn)
+    this.wss.on('connection', (ws) => this.welcome(ws))
     return new Promise((resolve, reject) => {
       this.server.once('error', reject)
       this.server.listen(port, '0.0.0.0', () => resolve(this))
@@ -92,86 +159,71 @@ export class LinkHost extends EventEmitter {
   }
 
   stop() {
-    for (const [event, fn] of Object.entries(this.forward)) this.backend.off(event, fn)
-    for (const ws of this.clients) ws.close(1001, 'sharing stopped')
+    for (const ws of this.wss?.clients ?? []) ws.close(1001, 'sharing stopped')
     this.wss?.close()
     this.server?.close()
-    this.clients.clear()
-    this.emit('clients', 0)
   }
 
-  // A client has 5 seconds to prove it has the key, sent only after it verified our certificate.
-  welcome(ws, req) {
-    const who = req.socket.remoteAddress
+  // A computer has 5 seconds to prove it has the key, which it only sends after verifying our certificate.
+  welcome(ws) {
     const timer = setTimeout(() => ws.close(4001, 'no key'), 5000)
-    let authed = false
-    ws.on('message', async (raw) => {
+    ws.once('message', (raw) => {
+      clearTimeout(timer)
       let m
       try {
         m = unpack(raw.toString())
       } catch {
         return ws.close(4002, 'bad message')
       }
-      if (!authed) {
-        const ok = m.t === 'auth' && typeof m.key === 'string' && m.key.length === this.key.length && crypto.timingSafeEqual(Buffer.from(m.key), Buffer.from(this.key))
-        if (!ok) return ws.close(4003, 'wrong key')
-        clearTimeout(timer)
-        authed = true
-        ws.send(pack({ t: 'hello', protocol: PROTOCOL, name: this.name })) // first, before any broadcast reaches it
-        this.clients.add(ws)
-        this.emit('clients', this.clients.size, who)
-        ws.send(pack({ t: 'state', state: this.backend.snapshot() }))
-        return
-      }
-      if (m.t === 'input') return this.backend.input(m.name, m.data)
-      if (m.t !== 'call') return
-      try {
-        if (!this.allowed.has(m.name)) throw new Error(`"${m.name}" isn't available over Crew Link`)
-        ws.send(pack({ t: 'reply', id: m.id, ok: await this.backend.call(m.name, m.args ?? []) }))
-      } catch (e) {
-        ws.send(pack({ t: 'reply', id: m.id, error: e.message }))
-      }
+      const ok = m.t === 'auth' && typeof m.key === 'string' && m.key.length === this.key.length && crypto.timingSafeEqual(Buffer.from(m.key), Buffer.from(this.key))
+      if (!ok) return ws.close(4003, 'wrong key')
+      if (m.protocol !== PROTOCOL) return ws.close(4004, 'different version')
+      ws.send(pack({ t: 'hello', protocol: PROTOCOL, name: this.name })) // first, before anything else reaches it
+      this.emit('peer', new Peer(ws, String(m.name || 'computer'), this.handle))
     })
-    ws.on('close', () => {
-      clearTimeout(timer)
-      if (this.clients.delete(ws)) this.emit('clients', this.clients.size)
-    })
-  }
-
-  broadcast(msg) {
-    if (!this.clients.size) return
-    const data = pack(msg)
-    for (const ws of this.clients) if (ws.readyState === WebSocket.OPEN) ws.send(data)
   }
 }
 
-// ---- client -------------------------------------------------------------------------------------------
+// ---- connecting: a computer we have the code for ----------------------------------------------------
 
-// Emits 'state', 'pty', 'alert' like a local hub, plus 'status' ({ connected, address, error }).
+// Keeps reconnecting until closed. Emits 'peer' (peer) on every successful connection and 'status' changes.
 export class LinkClient extends EventEmitter {
-  pending = new Map()
-  seq = 0
-  ws = null
+  status = { connected: false }
   closed = false
 
-  constructor(code) {
+  constructor(code, { name, handle }) {
     super()
     this.code = readCode(code)
+    Object.assign(this, { myName: name, handle })
   }
 
-  // Try every address in the code at once; the first one that proves it's the right host wins.
+  setStatus(s) {
+    this.status = s
+    this.emit('status', s)
+  }
+
+  // Try every address in the code at once; the first one that proves it's the right computer wins.
   async connect() {
     this.closed = false
     const { hosts, port } = this.code
     this.trying = []
     try {
-      const { ws, address } = await Promise.any(hosts.map((h) => this.attempt(h, port)))
+      const { ws, address, name, early, keep } = await Promise.any(hosts.map((h) => this.attempt(h, port)))
       for (const other of this.trying) if (other !== ws) other.terminate() // slower addresses that also answered
-      this.adopt(ws, address)
+      ws.off('message', keep)
+      const peer = new Peer(ws, name, this.handle)
+      for (const raw of early) peer.receive(raw) // anything the other side sent right after saying hello
+      peer.on('close', () => {
+        if (this.closed) return
+        this.setStatus({ connected: false, error: 'reconnecting…' })
+        this.retry = setTimeout(() => this.connect(), 2000)
+      })
+      this.setStatus({ connected: true, address })
+      this.emit('peer', peer)
     } catch (e) {
       // the most telling reason wins: an impostor, a revoked code, a version mismatch, then plain unreachable
       const why = ['certificate', 'reset', 'version'].map((w) => e.errors?.find((x) => x.message.includes(w))?.message).find(Boolean) ?? "couldn't reach it on any address"
-      this.emit('status', { connected: false, error: why })
+      this.setStatus({ connected: false, error: why })
       if (!this.closed) this.retry = setTimeout(() => this.connect(), 4000)
     }
   }
@@ -188,66 +240,26 @@ export class LinkClient extends EventEmitter {
         }
       })
       ws.on('open', () => {
-        ws.send(pack({ t: 'auth', key: this.code.key }))
-        const hello = (raw) => {
+        ws.send(pack({ t: 'auth', key: this.code.key, protocol: PROTOCOL, name: this.myName }))
+        ws.once('message', (raw) => {
           const m = unpack(raw.toString())
-          if (m.t !== 'hello') return // anything else waits until we're adopted
-          ws.off('message', hello)
-          if (m.protocol !== PROTOCOL) return reject(new Error('the host runs a different Crew version, update both'))
-          this.emit('hello', m)
-          resolve({ ws, address: host })
-        }
-        ws.on('message', hello)
+          if (m.t !== 'hello') return reject(new Error('unexpected reply'))
+          const early = []
+          const keep = (r) => early.push(r)
+          ws.on('message', keep)
+          resolve({ ws, address: host, name: m.name, early, keep })
+        })
       })
-      ws.on('close', (code) => reject(new Error(code === 4003 ? 'the pairing code was reset on the host, get a new one' : `${host}: closed`)))
+      ws.on('close', (code) =>
+        reject(new Error(code === 4003 ? 'the pairing code was reset on the other computer, get a new one' : code === 4004 ? 'the other computer runs a different Crew version, update both' : `${host}: closed`)),
+      )
       ws.on('error', (e) => reject(e))
     })
-  }
-
-  adopt(ws, address) {
-    this.ws = ws
-    this.emit('status', { connected: true, address })
-    ws.on('message', (raw) => {
-      const m = unpack(raw.toString())
-      if (m.t === 'state') this.emit('state', m.state)
-      else if (m.t === 'pty') this.emit('pty', m.name, m.data)
-      else if (m.t === 'alert') this.emit('alert', m.name, m.text)
-      else if (m.t === 'reply') {
-        const p = this.pending.get(m.id)
-        this.pending.delete(m.id)
-        if (p) m.error ? p.reject(new Error(m.error)) : p.resolve(m.ok)
-      }
-    })
-    ws.on('close', (code) => {
-      for (const p of this.pending.values()) p.reject(new Error('lost the connection to the host'))
-      this.pending.clear()
-      this.ws = null
-      if (this.closed) return
-      this.emit('status', { connected: false, error: code === 4003 ? 'the pairing code was reset on the host' : 'reconnecting…' })
-      this.retry = setTimeout(() => this.connect(), 2000)
-    })
-    ws.on('error', () => {})
-    // Ask for the full picture now that we're listening (a push sent before this point may have been missed).
-    this.call('state').then((state) => this.emit('state', state), () => {})
-  }
-
-  call(name, args = []) {
-    if (!this.ws) return Promise.reject(new Error(`not connected to ${this.code.name}`))
-    const id = ++this.seq
-    this.ws.send(pack({ t: 'call', id, name, args }))
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      setTimeout(() => this.pending.delete(id) && reject(new Error('the host took too long to answer')), 200000)
-    })
-  }
-
-  input(name, data) {
-    this.ws?.send(pack({ t: 'input', name, data }))
   }
 
   close() {
     this.closed = true
     clearTimeout(this.retry)
-    this.ws?.close()
+    for (const ws of this.trying ?? []) ws.terminate()
   }
 }

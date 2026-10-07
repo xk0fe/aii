@@ -67,14 +67,19 @@
     .link-chip svg { width: 15px; height: 15px; flex: none; }
     .link-chip.on { color: var(--fg); }
 
-    dialog#link { width: 560px; border: 1px solid var(--line); border-radius: 22px; padding: 22px 24px 18px; background: var(--surface); color: var(--fg); box-shadow: var(--shadow-lg); }
-    dialog#link h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: 18px; font-weight: 750; }
-    dialog#link h3 .h-icon { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; color: #fff; background: linear-gradient(160deg, #5aa9ff, var(--accent)); }
-    dialog#link h3 svg { width: 18px; height: 18px; }
-    dialog#link .lead { margin: 0 0 16px; color: var(--fg2); line-height: 1.45; }
+    dialog.sheet { width: 600px; max-height: calc(100vh - 80px); border: 1px solid var(--line); border-radius: 22px; padding: 22px 24px 18px; background: var(--surface); color: var(--fg); box-shadow: var(--shadow-lg); }
+    dialog.sheet[open] { display: flex; flex-direction: column; }
+    dialog.sheet .sheet-body { overflow-y: auto; min-height: 0; margin: 0 -6px; padding: 0 6px; }
+    dialog.sheet h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: 18px; font-weight: 750; }
+    dialog.sheet h3 .h-icon { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; color: #fff; background: linear-gradient(160deg, #5aa9ff, var(--accent)); }
+    dialog.sheet h3 svg { width: 18px; height: 18px; }
+    dialog.sheet .lead { margin: 0 0 16px; color: var(--fg2); line-height: 1.45; }
+    dialog.sheet .buttons { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
     .ls { border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; }
+    .ls.fresh { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
     .ls p { margin: 4px 0 0; color: var(--fg2); font-size: 12.5px; line-height: 1.45; }
     .ls-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; }
+    .ls-row + .ls-row { margin-top: 12px; }
     .ls-row.small { cursor: default; margin-top: 10px; font-size: 12.5px; color: var(--fg2); }
     .code-box { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
     .code-box code { flex: 1; min-width: 0; font: 11.5px var(--mono); padding: 9px 10px; border-radius: 10px; background: var(--btn); overflow-wrap: anywhere; user-select: all; max-height: 74px; overflow: auto; }
@@ -84,10 +89,31 @@
     .code-in { display: flex; gap: 8px; align-items: stretch; margin-top: 10px; }
     .code-in textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 10px; background: var(--btn); padding: 8px 10px; font: 11.5px var(--mono); outline: 0; user-select: text; }
     .code-in textarea:focus { border-color: var(--accent); }
-    .remote-card { display: flex; gap: 12px; align-items: center; }
-    .remote-card b { font-size: 15px; }
-    .ls .err { color: var(--danger); min-height: 0; }
-    dialog#link .buttons { display: flex; justify-content: flex-end; }
+    .me-name { font: inherit; font-weight: 700; font-size: 15px; border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 2px 6px; margin-left: -7px; width: 230px; outline: 0; }
+    .me-name:hover { background: var(--btn); }
+    .me-name:focus { border-color: var(--accent); background: var(--btn); }
+    .pc-head { display: flex; align-items: center; gap: 11px; }
+    .pc-head b { font-size: 15px; }
+    .pc-agents { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+    .pc-agents li { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 12px; }
+    .pc-agents li:hover { background: var(--btn); }
+    .pc-agents li.unused .av, .pc-agents li.unused .who { opacity: .45; }
+    .pc-agents .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .pc-agents .who small { color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pc-agents .use { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg2); cursor: pointer; }
+    .ls .err, .sheet .err { color: var(--danger); min-height: 0; margin: 4px 0 0; font-size: 12.5px; }
+
+    .imp-list { display: flex; flex-direction: column; gap: 8px; }
+    .imp { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; transition: opacity .2s; }
+    .imp.skip { opacity: .45; }
+    .imp .imp-what { min-width: 0; }
+    .imp .imp-what small { display: block; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .imp .imp-fields { grid-column: 3; display: flex; gap: 8px; }
+    .imp input[type=text], .imp select { font: inherit; font-size: 12.5px; border: 1px solid var(--line); border-radius: 8px; background: var(--btn); padding: 4px 8px; outline: 0; min-width: 0; }
+    .imp input[type=text]:focus { border-color: var(--accent); }
+    .imp .imp-name { font-weight: 700; width: 150px; }
+    .imp .imp-folder { flex: 1; }
+    .imp .imp-note { grid-column: 3; color: var(--fg3); font-size: 11.5px; }
 
     .chat { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: color-mix(in srgb, var(--surface) 35%, var(--bg)); }
     .chat .feed { flex: 1; }
@@ -96,7 +122,7 @@
 <body>
   <header class="titlebar">
     <span class="brand"><span class="logo"></span><b>Crew</b></span><span class="sums"></span><span class="grow"></span>
-    <button class="link-chip" data-act="link" title="Crew Link: use this crew from your other computers"></button>
+    <button class="link-chip" data-act="link" title="Computers: link your other computers into one crew"></button>
     <div class="seg views"><button data-view="crew" title="The crew as cards">Crew</button><button data-view="grid" title="Every terminal side by side">Grid</button><button data-view="focus" title="One terminal, big">Focus</button></div>
     <button class="btn add" data-act="add" title="Add an agent"></button>
     <span class="divider"></span>
@@ -125,11 +151,19 @@
   </main>
 
 
-  <dialog id="link">
-    <h3><span class="h-icon"></span>Crew Link</h3>
-    <p class="lead">One crew, all your computers. The agents, terminals and history stay on one Mac; your other computers connect to it over the same Wi-Fi or Tailscale.</p>
-    <div class="link-body"></div>
-    <div class="buttons"><button class="btn" data-close>Done</button></div>
+  <dialog id="link" class="sheet">
+    <h3><span class="h-icon"></span>Computers</h3>
+    <p class="lead">One crew across your computers. Each agent runs on one of them; linked computers see every agent, talk to them and hand work around, over the same Wi-Fi or Tailscale.</p>
+    <div class="sheet-body link-body"></div>
+    <div class="buttons"><button class="btn" data-close autofocus>Done</button></div>
+  </dialog>
+
+  <dialog id="import" class="sheet">
+    <h3><span class="h-icon"></span>Import agents</h3>
+    <p class="lead"></p>
+    <div class="sheet-body imp-list"></div>
+    <p class="err" data-import-err></p>
+    <div class="buttons"><button class="btn" data-close>Cancel</button><button class="btn primary" data-import-go>Import</button></div>
   </dialog>
 
   <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>

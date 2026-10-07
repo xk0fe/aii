@@ -16,4 +16,5 @@ contextBridge.exposeInMainWorld('crew', {
   onPty: listen('pty'),
   onFocus: listen('focus'),
   onToggle: listen('toggle'),
+  onImport: listen('import'),
 })

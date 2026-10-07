@@ -20,7 +20,7 @@ export function serve(hub) {
     if (req.headers['x-crew'] !== hub.token) return res.writeHead(403).end('bad token, is crew running?\n')
     if (!Object.hasOwn(routes, route)) return res.writeHead(404).end('unknown command, try: crew help\n')
     try {
-      res.end(routes[route](Object.fromEntries(url.searchParams), body, arg) ?? 'ok\n')
+      res.end((await routes[route](Object.fromEntries(url.searchParams), body, arg)) ?? 'ok\n') // a send to another computer resolves later
     } catch (e) {
       res.writeHead(400).end(`${e.message}\n`)
     }

@@ -1,18 +1,21 @@
 // The crew as a collection: a Pokédex of agent cards. Click a card to open it and edit everything about
 // the agent (brain, folder, flags, look). "Select" turns on bulk mode to change many agents at once.
-/* global crew, store, esc, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, PARTS, COLORS, ICONS */
+/* global crew, store, esc, nameHTML, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, PARTS, COLORS, ICONS */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
 const slug = (s) => String(s ?? '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
 const FIELDS = ['name', 'area', 'prompt', 'images', 'provider', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo']
+// An agent's full name as the crew knows it: on another computer it carries that computer's name.
+const qualified = (name, home) => (home ? `${name}@${home}` : name)
 
-function mountCollection(root, { onTerminal }) {
+function mountCollection(root, { onTerminal, onImport }) {
   root.innerHTML = `
     <section class="col-list">
       <header class="col-head">
         <div><h2>Your crew</h2><p class="col-sub"></p></div><span class="grow"></span>
         <div class="seg" data-mode-switch><button data-mode="cards">Cards</button><button data-mode="stats">Stats</button></div>
+        <button class="btn" data-act="import" title="Add agents from a .crew file (or drop one on the window)">${ICONS.import}Import</button>
         <button class="btn" data-act="select">Select</button>
         <button class="btn primary" data-act="new">${ICONS.plus}New agent</button>
       </header>
@@ -54,7 +57,7 @@ function mountCollection(root, { onTerminal }) {
     return `<button class="pcard hop ${LIGHT.has(look.color) ? 'light' : ''} ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}">
       <span class="pc-mark">${ICONS.mark}</span>
       <span class="pc-no"><b title="${levelOf(a.stats).xp} XP">Lv ${levelOf(a.stats).lv}</b><span>#${pad(i + 1)}</span></span>
-      <span class="pc-name">${esc(a.name)}</span>
+      <span class="pc-name">${nameHTML(a)}</span>
       <span class="pc-area" title="${esc(a.area)}">${esc(a.area || 'No area yet. Open the card to set one.')}</span>
       ${modes ? `<span class="pc-modes">${modes}</span>` : ''}
       <span class="pc-chips">${chips}</span>
@@ -111,6 +114,7 @@ function mountCollection(root, { onTerminal }) {
   $('.col-head').addEventListener('click', (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act
     if (act === 'new') open(null)
+    if (act === 'import') onImport()
     if (act === 'select') setSelecting(!selecting)
     const m = e.target.closest('[data-mode]')?.dataset.mode
     if (m) {
@@ -161,7 +165,7 @@ function mountCollection(root, { onTerminal }) {
     // morph, not innerHTML: rows animate in once, and bars glide to new values instead of redrawing
     morph($('.col-stats'), `<table class="stats-table"><thead><tr><th>Agent</th>${METRICS.map((m) => `<th data-sort="${m.key}" class="${m.key === sortBy ? 'on' : ''}" title="${m.better === 'high' ? 'more is better' : 'less is better'}">${m.label}</th>`).join('')}<th>14 days</th></tr></thead><tbody>${
       rows.map((a) => `<tr data-name="${esc(a.name)}" class="${a.on ? '' : 'off'}" style="--c:${colorOf(avatarOf(a))}">
-        <td class="who" title="${esc(a.area)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span><b>${esc(a.name)}</b><small title="last active">Lv ${levelOf(a.stats).lv} · ${!a.stats.last ? 'no work yet' : Date.now() - a.stats.last < 60000 ? 'just now' : `${ago(a.stats.last)} ago`}</small></span></td>
+        <td class="who" title="${esc(a.area)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span><b>${nameHTML(a)}</b><small title="last active">Lv ${levelOf(a.stats).lv} · ${!a.stats.last ? 'no work yet' : Date.now() - a.stats.last < 60000 ? 'just now' : `${ago(a.stats.last)} ago`}</small></span></td>
         ${METRICS.map((m) => {
           const s = a.stats
           const has = (m.has ?? (() => true))(s)
@@ -206,6 +210,7 @@ function mountCollection(root, { onTerminal }) {
       <select data-b="tier" title="Codex agents only"><option value="">Fast</option><option value="fast">Fast on</option><option value="default">Fast off</option></select>
       <select data-b="power"><option value="">Power</option><option value="1">Turn on</option><option value="0">Turn off</option></select>
       <button class="btn" data-act="all">All</button>
+      <button class="btn" data-act="export" title="Save the picked agents as a .crew file to share">${ICONS.export}Export</button>
       <button class="btn primary" data-act="apply"></button>`
     drawBulkCount()
   }
@@ -216,7 +221,7 @@ function mountCollection(root, { onTerminal }) {
     const names = [...picked]
     who.innerHTML = names.slice(0, 6).map((n) => avatarHTML(agentNamed(n) ?? { name: n }, { size: 28, mood: 'still' })).join('') + `<b>${names.length ? `${names.length} selected` : 'Tap cards to pick them'}</b>`
     const apply = bulk.querySelector('[data-act=apply]')
-    apply.disabled = !names.length
+    apply.disabled = bulk.querySelector('[data-act=export]').disabled = !names.length
     apply.textContent = names.length ? `Apply to ${names.length}` : 'Apply'
   }
 
@@ -226,6 +231,10 @@ function mountCollection(root, { onTerminal }) {
       state.agents.forEach((a) => picked.add(a.name))
       gridKey = ''
       drawGrid()
+    }
+    if (act === 'export' && picked.size) {
+      const saved = await exportAgents([...picked])
+      if (saved) setSelecting(false)
     }
     if (act !== 'apply' || !picked.size) return
     const v = Object.fromEntries([...bulk.querySelectorAll('[data-b]')].map((el) => [el.dataset.b, el.value.trim()]))
@@ -243,6 +252,15 @@ function mountCollection(root, { onTerminal }) {
     cheer(names)
   })
 
+  // A .crew file with these agents: their definitions, looks and reference images (not their folders or chats).
+  async function exportAgents(names) {
+    try {
+      return await crew.call('exportAgents', names)
+    } catch (err) {
+      alert(`Couldn't export: ${err.message}`)
+    }
+  }
+
   // Little celebratory hop on cards that just changed.
   function cheer(names) {
     setTimeout(() => {
@@ -252,14 +270,16 @@ function mountCollection(root, { onTerminal }) {
 
   // ---- card (detail + editor) ------------------------------------------------
 
-  function open(name) {
+  // `home` opens it set to run on another computer ('' = this one), which Save turns into a move.
+  function open(name, { home } = {}) {
     const a = name && agentNamed(name)
     original = a
-      ? { name: a.name, area: a.area ?? '', prompt: a.prompt ?? '', images: a.images ?? [], provider: a.provider ?? 'claude', model: a.model ?? '', effort: a.effort ?? '', tier: a.tier ?? '', cwd: a.cwd ?? '', args: a.args ?? '', yolo: a.yolo, on: a.on, avatar: avatarOf(a) }
+      ? { name: a.seed ?? a.name, home: a.home ?? '', area: a.area ?? '', prompt: a.prompt ?? '', images: a.images ?? [], provider: a.provider ?? 'claude', model: a.model ?? '', effort: a.effort ?? '', tier: a.tier ?? '', cwd: a.cwd ?? '', args: a.args ?? '', yolo: a.yolo, on: a.on, avatar: avatarOf(a) }
       : null
     draft = original
       ? structuredClone(original)
-      : { name: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar() }
+      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar() }
+    if (home !== undefined) draft.home = home
     editing = a ? a.name : ':new'
     if (selecting) setSelecting(false)
     morphTo(a?.name, 'open', () => {
@@ -342,7 +362,7 @@ function mountCollection(root, { onTerminal }) {
           <h4>Look <button class="btn small" data-act="shuffle">🎲 Shuffle</button></h4>
           <div class="look"></div>
           <footer class="pd-foot">
-            ${live ? `<button class="btn" data-act="terminal">Open terminal</button><button class="btn danger" data-act="remove">Remove</button>` : ''}
+            ${live ? `<button class="btn" data-act="terminal">Open terminal</button><button class="btn" data-act="export" title="Save it as a .crew file to share">Export</button><button class="btn danger" data-act="remove">Remove</button>` : ''}
             <span class="grow"></span><span class="pd-msg"></span><span class="pd-dirty">Unsaved changes</span>
             <button class="btn" data-act="back">Cancel</button>
             <button class="btn primary" data-act="save">${live ? 'Save' : 'Add to crew'}</button>
@@ -403,6 +423,7 @@ function mountCollection(root, { onTerminal }) {
     const p = providerOf(d.provider)
     const efforts = effortsFor(d)
     card.querySelector('.brain').innerHTML = `
+      ${runsOnHTML(d)}
       <div class="pills" data-pick="provider">${Object.entries(state.providers)
         .map(([id, pr]) => `<button class="pill ${d.provider === id ? 'on' : ''}" data-v="${id}" title="${pr.missing?.length ? `needs ${pr.missing.join(', ')} in your environment` : ''}">${esc(pr.label)}${pr.missing?.length ? ' ⚠︎' : ''}</button>`)
         .join('')}</div>
@@ -420,6 +441,21 @@ function mountCollection(root, { onTerminal }) {
         <label class="stat toggle"><span><i class="glyph">${ICONS.power}</i><span>Power<small>on now and after restarts</small></span></span><input type="checkbox" class="switch" data-k="on" ${d.on ? 'checked' : ''}></label>
         <label class="stat wide"><span>Extra flags</span><input data-k="args" value="${esc(d.args)}" placeholder="passed straight to the CLI" autocomplete="off"></label>
       </div>`
+  }
+
+  // Which computer the agent runs on, once there's more than one. Picking another for an existing agent moves it
+  // there on Save.
+  function runsOnHTML(d) {
+    const c = state.computers ?? { me: {}, links: [] }
+    const places = [{ slug: '', name: c.me.name ?? 'This computer', online: true }, ...c.links]
+    if (places.length < 2 && !d.home) return ''
+    const shown = places.filter((p) => p.online || p.slug === d.home || p.slug === original?.home)
+    const to = places.find((p) => p.slug === d.home)?.name ?? d.home
+    const moving = original && d.home !== original.home
+    return `<div class="runs-on"><span class="label">Runs on</span><div class="pills small" data-pick="home">${shown
+      .map((p) => `<button class="pill ${d.home === p.slug ? 'on' : ''}" data-v="${esc(p.slug)}" ${p.online ? '' : 'disabled title="unreachable right now"'}>${esc(p.name)}${p.slug ? '' : ' (this one)'}</button>`)
+      .join('')}</div>
+      ${moving ? `<p class="move-note">Moves to <b>${esc(to)}</b> when you save. Its instructions, look and work experience go along; its conversation starts fresh there. Check the folder below exists on ${esc(to)}.</p>` : ''}</div>`
   }
 
   // A character creator: every option is shown as a tiny version of this agent wearing it.
@@ -509,14 +545,15 @@ function mountCollection(root, { onTerminal }) {
     }
     if (act === 'pick') {
       try {
-        const dir = await crew.call('pickFolder')
+        const dir = await crew.call('pickFolder', draft.home)
         if (dir) card.querySelector('[data-k=cwd]').value = draft.cwd = dir
         syncSave()
       } catch (err) {
-        card.querySelector('.pd-msg').textContent = err.message // e.g. a remote crew's folders are on its host
+        card.querySelector('.pd-msg').textContent = err.message // an agent on another computer works in that computer's folders
       }
     }
     if (act === 'terminal') onTerminal(editing)
+    if (act === 'export') exportAgents([editing])
     if (act === 'remove' && confirm(`Remove ${editing}? Its session stops (the transcript stays with the CLI).`)) {
       await crew.call('removeAgent', editing)
       editing = null
@@ -541,7 +578,7 @@ function mountCollection(root, { onTerminal }) {
     msg.textContent = ''
     try {
       const { name, area, provider, model, cwd } = draft
-      box.value = draft.prompt = await crew.call('draftPrompt', { name: slug(name), area, provider, model, cwd })
+      box.value = draft.prompt = await crew.call('draftPrompt', { name: slug(name), area, provider, model, cwd, home: draft.home })
       syncSave()
       msg.textContent = 'Drafted ✓ (review it, then Save)'
     } catch (err) {
@@ -560,15 +597,24 @@ function mountCollection(root, { onTerminal }) {
     try {
       if (!original) {
         const { on, ...fields } = draft
-        reopen = await crew.call('addAgent', { ...fields, off: !on })
+        reopen = await crew.call('addAgent', { ...fields, off: !on }) // a name@computer when it runs elsewhere
         store.set('crew.yolo', draft.yolo ? '1' : '0')
       } else {
         const patch = {}
         for (const k of FIELDS) if (JSON.stringify(draft[k]) !== JSON.stringify(original[k])) patch[k] = draft[k]
         if (draft.on !== original.on) patch.off = !draft.on
         if (JSON.stringify(draft.avatar) !== JSON.stringify(original.avatar)) patch.avatar = draft.avatar
-        await crew.call('update', original.name, patch)
-        reopen = 'name' in patch ? slug(draft.name) : original.name
+        let name = editing
+        if (draft.home !== original.home) {
+          // reference images are files on the computer it leaves; the move carries the saved ones
+          if ('images' in patch) throw new Error('Save the reference image changes first, then move it')
+          msg.textContent = 'Moving…'
+          name = await crew.call('moveAgent', editing, draft.home, draft.cwd)
+          delete patch.cwd
+          msg.textContent = ''
+        }
+        if (Object.keys(patch).length) await crew.call('update', name, patch)
+        reopen = 'name' in patch ? qualified(slug(draft.name), draft.home) : name
       }
     } catch (err) {
       msg.textContent = err.message

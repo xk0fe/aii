@@ -39,6 +39,9 @@ const ICONS = {
   copy: svg('<rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/>'),
   check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.4"'),
   plus: svg('<path d="M12 5v14M5 12h14"/>', 'stroke-width="2.2"'),
+  import: svg('<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4.5 15v2.5A2.5 2.5 0 0 0 7 20h10a2.5 2.5 0 0 0 2.5-2.5V15"/>'),
+  export: svg('<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4.5 15v2.5A2.5 2.5 0 0 0 7 20h10a2.5 2.5 0 0 0 2.5-2.5V15"/>'),
+  computers: svg('<rect x="2.5" y="4" width="13" height="9.5" rx="1.8"/><path d="M6 17h6M9 13.5V17"/><rect x="17.5" y="7" width="4.5" height="10" rx="1.2"/>'),
   plane: svg('<path d="M21 3 3 10.4l7.2 2.4L12.6 20 21 3z"/><path d="m10.2 12.8 4.6-4.6"/>'),
   bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.5 4.8 13.2c-.4.5 0 1.2.6 1.2H11l-1.2 7.1c-.1.6.7.9 1 .4l8.8-10.7c.4-.5 0-1.2-.6-1.2H13.4l1.2-7.1c.1-.6-.7-.9-1-.4z"/></svg>',
 }
@@ -112,6 +115,7 @@ function statusText(a) {
     case 'idle': return 'free'
     case 'starting': return Date.now() - a.since > 15000 ? 'starting… check its terminal' : 'starting…'
     case 'off': return 'off'
+    case 'away': return `${a.homeName ?? 'its computer'} is unreachable`
     default: return 'exited'
   }
 }
@@ -143,6 +147,9 @@ function powerSwitch(a) {
 }
 
 // One row per agent: name and status / what it owns / brain and modes, plus what it's doing while it works.
+// An agent's name; one on another computer carries its computer: gal@mac-mini.
+const nameHTML = (a) => (a.home ? `${esc(a.seed)}<span class="at" title="runs on ${esc(a.homeName)}">@${esc(a.home)}</span>` : esc(a.name))
+
 function agentCard(a, providers) {
   const doing = a.on && (a.activity || a.queue)
   const activity = doing || a.pending
@@ -151,7 +158,7 @@ function agentCard(a, providers) {
   return `<div class="agent hop ${a.on ? a.status : 'off'}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}">
     <div class="agent-av">${avatarHTML(a, { size: 38 })}</div>
     <div class="agent-body">
-      <div class="agent-top"><span class="name">${esc(a.name)}</span><span class="state ${a.status}">${esc(statusText(a))}</span><span class="grow"></span>${powerSwitch(a)}</div>
+      <div class="agent-top"><span class="name">${nameHTML(a)}</span><span class="state ${a.status}">${esc(statusText(a))}</span><span class="grow"></span>${powerSwitch(a)}</div>
       <div class="area" title="${esc(a.area)}">${esc(a.area || 'No area yet')}</div>
       <div class="agent-foot"><span class="brain" title="${esc(brainLabel(a, providers))}">${esc(brainShort(a, providers))}</span>${modeChips(a)}</div>
       ${activity}
@@ -165,10 +172,9 @@ function crewSummary(state) {
   const working = on.filter((a) => a.status === 'working').length
   const waiting = on.filter((a) => a.status === 'waiting').length
   const pill = (cls, text, dot = cls) => `<span class="sum ${cls}">${dot ? `<i class="dot ${dot}"></i>` : ''}${text}</span>`
-  const link = state.link?.mode === 'remote' ? pill(state.link.connected ? '' : 'waiting', `on ${esc(state.link.name)}${state.link.connected ? '' : '…'}`, '') : ''
-  if (!state.agents.length) return link
-  if (!on.length) return pill('', 'all off', 'off') + link
-  return (working ? pill('working', `${working} working`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting ? '' : pill('idle', on.length > 1 ? `all ${on.length} free` : 'free')) + link
+  if (!state.agents.length) return ''
+  if (!on.length) return pill('', 'all off', 'off')
+  return (working ? pill('working', `${working} working`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting ? '' : pill('idle', on.length > 1 ? `all ${on.length} free` : 'free'))
 }
 
 // Segmented control: marks the segment that isOn() picks and slides the thumb to it (see .seg in common.css).
@@ -591,7 +597,7 @@ function mountComposer(el, { dropZone = el } = {}) {
     if (target !== 'auto' && agents.length && !agents.some((a) => a.on && a.name === target)) target = 'auto'
     morph(chips,
       `<button class="chip ${target === 'auto' ? 'on' : ''}" data-to="auto" title="Picks by area, prefers whoever is free. @mention names to pick them yourself">✦ Auto</button>` +
-      agents.filter((a) => a.on).map((a) => `<button class="chip ${target === a.name ? 'on' : ''}" data-to="${esc(a.name)}" title="${esc(statusText(a))}">${avatarHTML(a, { size: 20 })}${esc(a.name)}</button>`).join(''))
+      agents.filter((a) => a.on).map((a) => `<button class="chip ${target === a.name ? 'on' : ''}" data-to="${esc(a.name)}" title="${esc(statusText(a))}">${avatarHTML(a, { size: 20 })}${nameHTML(a)}</button>`).join(''))
     ta.placeholder = target === 'auto' ? 'Describe a task, the crew picks who…' : `Message @${target}…`
   }
   const autosize = () => {

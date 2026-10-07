@@ -1,5 +1,5 @@
 // Full-screen view: the crew collection, every agent's live terminal, and the crew feed.
-/* global themeButton, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
+/* global themeButton, nameHTML, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -11,7 +11,7 @@ const THEME = {
 const terms = new Map() // name -> { tile, head, term, fit, ready }
 const feed = mountFeed($('.feed'), { onAgent: (name) => select(name) })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat') })
-const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name) })
+const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name), onImport: () => importPack() })
 let view = store.get('crew.view') || 'crew'
 let selected = null
 let state = { agents: [], providers: {} }
@@ -21,7 +21,8 @@ $('.blank .blank-mark').outerHTML = ICONS.mark
 $('.titlebar [data-act=add]').innerHTML = `${ICONS.plus}Agent`
 $('.side .autopilot .glyph').innerHTML = ICONS.plane
 $('[data-act=config]').innerHTML = ICONS.braces
-$('#link .h-icon').innerHTML = ICONS.link
+$('#link .h-icon').innerHTML = ICONS.computers
+$('#import .h-icon').innerHTML = ICONS.import
 const drawTheme = themeButton($('[data-act=theme]'))
 
 // ---- terminals -------------------------------------------------------------
@@ -52,23 +53,30 @@ function createTile(name) {
     clearTimeout(timer)
     timer = setTimeout(() => resize(name), 40)
   }).observe(tile.querySelector('.term'))
-  // Replay what the agent already printed at the size it was drawn, then fit (the agent redraws on resize).
-  // Live chunks that arrive before this are already in the buffer.
+  replay(t)
+  return t
+}
+
+// Replay what the agent already printed at the size it was drawn, then fit (the agent redraws on resize).
+// Live chunks that arrive before this are already in the buffer. Again after an agent's computer comes back.
+function replay(t) {
+  const name = t.tile.dataset.name
+  t.ready = false
   crew.call('buffer', name).then(({ data, cols, rows }) => {
-    term.resize(cols, rows)
-    term.write(data, () => {
+    t.term.reset()
+    t.term.resize(cols, rows)
+    t.term.write(data, () => {
       t.ready = true
       resize(name)
     })
-  })
-  return t
+  }, () => (t.ready = true))
 }
 
 function resize(name) {
   const t = terms.get(name)
   if (!t || !t.tile.offsetWidth) return
   t.fit.fit()
-  crew.call('resize', name, t.term.cols, t.term.rows)
+  crew.call('resize', name, t.term.cols, t.term.rows).catch(() => {})
 }
 
 crew.onPty((name, data) => {
@@ -78,7 +86,7 @@ crew.onPty((name, data) => {
 
 function tileHead(a) {
   const busy = a.status === 'working' || a.status === 'waiting'
-  return `${avatarHTML(a, { size: 26 })}<b>${esc(a.name)}</b><span class="model" title="${esc(brainLabel(a, state.providers))}">${esc(brainShort(a, state.providers))}</span>
+  return `${avatarHTML(a, { size: 26 })}<b>${nameHTML(a)}</b><span class="model" title="${esc(brainLabel(a, state.providers))}">${esc(brainShort(a, state.providers))}</span>
     <span class="state ${a.status}" ${busy ? 'data-act="markIdle" title="Stuck? Click to mark it free"' : ''}>${esc(statusText(a))}</span>
     ${a.fast ? `<span class="tag fast-tag" title="Fast: Codex's fast service tier">${ICONS.bolt}</span>` : ''}
     ${a.yolo ? '<span class="tag yolo-tag" title="Skips all permission prompts">YOLO</span>' : ''}
@@ -187,7 +195,7 @@ crew.onFocus(handleFocus)
 const ready = live((next) => {
   state = next
   drawTheme(state.theme)
-  drawLink(state)
+  drawComputers(state)
   // Terminals only for agents that are on; the sidebar lists everyone so off agents are one click from coming back.
   const on = state.agents.filter((a) => a.on)
   const names = new Set(on.map((a) => a.name))
@@ -199,6 +207,8 @@ const ready = live((next) => {
   }
   for (const a of on) {
     const t = terms.get(a.name) ?? createTile(a.name)
+    if (t.away && a.status !== 'away') replay(t)
+    t.away = a.status === 'away'
     t.tile.style.setProperty('--c', agentColor(a))
     morph(t.head, tileHead(a))
   }
@@ -215,88 +225,226 @@ const ready = live((next) => {
   celebrate($('.side .agents'), state.agents) // after the cards, so a visible card gets the confetti
 })
 
-// ---- Crew Link -------------------------------------------------------------------
+// ---- Computers (Crew Link) -------------------------------------------------------
 
 const linkDialog = $('#link')
 let linkKey = ''
+let fresh = null // a computer just linked: its agents are shown to pick from
+let linkErr = '' // kept across redraws until the next try
 
-function drawLink(state) {
-  const l = state.link ?? { mode: 'local' }
+function drawComputers(state) {
+  const c = state.computers ?? { me: {}, links: [] }
+  const online = c.links.filter((l) => l.online).length
   const chip = $('.link-chip')
-  chip.classList.toggle('on', l.mode === 'remote' || l.sharing)
-  chip.innerHTML =
-    l.mode === 'remote'
-      ? `<span class="dot ${l.connected ? 'working' : 'waiting'}"></span>${l.connected ? `on ${esc(l.name)}` : `Reconnecting to ${esc(l.name)}…`}`
-      : l.sharing
-        ? `<span class="dot working"></span>Sharing${l.clients ? ` · ${l.clients}` : ''}`
-        : `${ICONS.link}Link`
-  const next = JSON.stringify(l)
+  chip.classList.toggle('on', Boolean(online || c.me.sharing))
+  chip.innerHTML = c.links.length
+    ? `<span class="dot ${online === c.links.length ? 'working' : 'waiting'}"></span>${c.links.length + 1} computers`
+    : c.me.sharing ? '<span class="dot working"></span>Sharing' : `${ICONS.computers}Computers`
+  const next = JSON.stringify([c, fresh, linkErr])
   if (next === linkKey) return
   linkKey = next
-  const typed = linkDialog.querySelector('[data-link-code]')?.value ?? ''
-  linkDialog.querySelector('.link-body').innerHTML = l.mode === 'remote' ? remoteHTML(l) : localHTML(l)
-  const box = linkDialog.querySelector('[data-link-code]')
+  // keep what's being typed across redraws
+  const body = linkDialog.querySelector('.link-body')
+  const typed = body.querySelector('[data-link-code]')?.value ?? ''
+  morph(body, computersHTML(c))
+  const box = body.querySelector('[data-link-code]')
   if (box) box.value = typed
 }
 
-const localHTML = (l) => `
+const computersHTML = ({ me, links }) => `
   <section class="ls">
-    <label class="ls-row"><div><b>Share this crew</b><p>Let your other computers use the agents on this Mac.</p></div><input type="checkbox" class="switch" data-link-share ${l.sharing ? 'checked' : ''}></label>
-    ${l.sharing ? `
-      <div class="code-box"><code>${esc(l.code)}</code><button class="btn" data-link-copy>Copy</button></div>
-      <p>On your other computer: <b>Crew Link → paste → Connect</b>. Anyone with this code can run your agents, so keep it to your own machines.</p>
-      <div class="addr">${l.hosts.map((h) => `<span><b>${esc(h.address)}</b> ${esc(h.via)}</span>`).join('')}</div>
-      <div class="ls-row small"><span>${l.clients ? `${l.clients} computer${l.clients > 1 ? 's' : ''} connected` : 'Nobody connected yet'} · port ${l.port}</span><button class="btn" data-link-reset title="Makes a new code; computers using the old one are disconnected">New code</button></div>`
-    : l.error ? `<p class="err">${esc(l.error)}</p>` : ''}
+    <div class="ls-row small" style="margin:0"><div><input class="me-name" data-me-name value="${esc(me.name)}" spellcheck="false" title="This computer's name; others see its agents as name@${esc(me.slug)}">
+      <p>This computer · ${me.agents} agent${me.agents === 1 ? '' : 's'} run here · others see them as <b>name@${esc(me.slug)}</b></p></div></div>
+    <label class="ls-row"><div><b>Share this computer</b><p>Let your other computers link to it.</p></div><input type="checkbox" class="switch" data-link-share ${me.sharing ? 'checked' : ''}></label>
+    ${me.sharing ? `
+      <div class="code-box"><code>${esc(me.code)}</code><button class="btn" data-link-copy>Copy</button></div>
+      <p>On your other computer: <b>Computers → Link a computer → paste → Link</b>. Anyone with this code can use and drive your agents, so keep it to your own machines.</p>
+      <div class="addr">${me.hosts.map((h) => `<span><b>${esc(h.address)}</b> ${esc(h.via)}</span>`).join('')}</div>
+      <div class="ls-row small"><span>port ${me.port}</span><button class="btn" data-link-reset title="Makes a new code; computers using the old one are disconnected">New code</button></div>`
+    : me.error ? `<p class="err">${esc(me.error)}</p>` : ''}
   </section>
+  ${links.map(linkHTML).join('')}
   <section class="ls">
-    <b>Use a crew from another computer</b>
-    <p>Paste the pairing code from the Mac that runs your agents. This Mac's own agents stop while you're connected, and come back when you disconnect.</p>
-    <div class="code-in"><textarea data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Connect</button></div>
-    <p class="err" data-link-err></p>
+    <b>Link a computer</b>
+    <p>Paste the code from the other computer's <b>Share this computer</b>. Linking works both ways: each computer sees the other's agents.</p>
+    <div class="code-in"><textarea data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Link</button></div>
+    <p class="err" data-link-err>${esc(linkErr)}</p>
   </section>`
 
-const remoteHTML = (l) => `
-  <section class="ls">
-    <div class="remote-card"><span class="dot ${l.connected ? 'working' : 'waiting'}"></span><div><b>${l.connected ? 'Connected to' : 'Reconnecting to'} ${esc(l.name)}</b><p>${l.connected ? `via ${esc(l.address)}` : esc(l.error ?? 'trying…')}</p></div></div>
-    <p>Agents, terminals and history live on ${esc(l.name)}; everything you do here happens there.</p>
-    <div class="ls-row small"><span>Back to this Mac's own crew</span><button class="btn" data-link-disconnect>Disconnect</button></div>
+// A linked computer and its agents: tick the ones to use from here, or bring one over to run here.
+function linkHTML(l) {
+  const used = l.agents.filter((a) => !a.hidden).length
+  const status = l.online ? (l.status?.address ? `linked via ${esc(l.status.address)}` : 'linked to this computer') : esc(l.status?.error ?? 'unreachable, it reconnects on its own')
+  return `<section class="ls ${fresh === l.slug ? 'fresh' : ''}" data-computer="${esc(l.slug)}">
+    <div class="pc-head"><span class="dot ${l.online ? 'working' : 'waiting'}"></span><div class="grow"><b>${esc(l.name)}</b><p>${status}</p></div>
+      ${l.saved ? `<button class="btn small" data-forget="${esc(l.slug)}" title="Unlink it from this computer">Forget</button>` : ''}</div>
+    ${fresh === l.slug ? `<p><b>Pick which of ${esc(l.name)}'s agents to use here.</b> The rest keep running there. Move one here to run it on this computer instead.</p>` : ''}
+    ${l.agents.length ? `<ul class="pc-agents">${l.agents.map((a) => `
+      <li class="${a.hidden ? 'unused' : ''}">${avatarHTML(a, { size: 30, mood: 'still' })}
+        <span class="who"><b>${esc(a.seed)}</b><small>${esc(a.area || 'no area')}</small></span>
+        ${l.online ? `<button class="btn small" data-move="${esc(a.name)}" title="Run it on this computer instead, with its instructions, look and work experience">Move here</button>` : ''}
+        <label class="use"><input type="checkbox" class="switch" data-use="${esc(a.name)}" ${a.hidden ? '' : 'checked'}>Use</label>
+      </li>`).join('')}</ul>
+      ${l.agents.length > 1 ? `<div class="ls-row small"><span>using ${used} of ${l.agents.length}</span><span><button class="btn small" data-use-all="${esc(l.slug)}">All</button> <button class="btn small" data-use-none="${esc(l.slug)}">None</button></span></div>` : ''}`
+    : `<p>${l.online ? 'No agents there yet.' : ''}</p>`}
   </section>`
+}
 
-$('.link-chip').addEventListener('click', () => linkDialog.showModal())
+function openComputers() {
+  fresh = null
+  linkErr = ''
+  linkKey = ''
+  drawComputers(state)
+  linkDialog.showModal()
+}
+
+$('.link-chip').addEventListener('click', openComputers)
 linkDialog.addEventListener('click', async (e) => {
   const t = e.target
   if (t.closest('[data-close]') || t === linkDialog) return linkDialog.close()
-  const err = linkDialog.querySelector('[data-link-err]')
+  const linked = (slug) => state.computers.links.find((l) => l.slug === slug)
+  const fail = (text) => {
+    linkErr = text
+    drawComputers(state)
+  }
   try {
     if (t.closest('[data-link-copy]')) {
       await crew.call('copy', linkDialog.querySelector('.code-box code').textContent)
       t.closest('[data-link-copy]').textContent = 'Copied ✓'
     }
-    if (t.closest('[data-link-reset]') && confirm('Make a new code? Computers using the current one are disconnected.')) await crew.call('link', 'reset')
+    if (t.closest('[data-link-reset]') && confirm('Make a new code? Computers using the current one are disconnected until they link again with the new one.')) await crew.call('link', 'reset')
     if (t.closest('[data-link-connect]')) {
       const code = linkDialog.querySelector('[data-link-code]').value.trim()
-      if (!code) return void (err.textContent = 'Paste the code from the other Mac first')
-      const running = state.agents.filter((a) => a.on).length
-      if (running && !confirm(`Connect? The ${running} agent${running > 1 ? 's' : ''} running on this Mac stop until you disconnect, then pick up where they left off.`)) return
-      await crew.call('link', 'connect', code) // Crew restarts connected
+      if (!code) return fail('Paste the code from the other computer first')
+      const btn = t.closest('[data-link-connect]')
+      btn.disabled = true
+      btn.textContent = 'Linking…'
+      linkErr = ''
+      try {
+        fresh = await crew.call('link', 'connect', code)
+        linkDialog.querySelector('[data-link-code]').value = ''
+        linkKey = ''
+        drawComputers(state)
+        linkDialog.querySelector(`[data-computer="${CSS.escape(fresh)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      } finally {
+        btn.disabled = false
+        btn.textContent = 'Link'
+      }
     }
-    if (t.closest('[data-link-disconnect]') && confirm("Disconnect and go back to this Mac's own crew?")) await crew.call('link', 'disconnect')
+    const forget = t.closest('[data-forget]')?.dataset.forget
+    if (forget && confirm(`Forget ${linked(forget)?.name}? Its agents disappear from here (they keep running there). Link it again with its code any time.`)) await crew.call('link', 'forget', forget)
+    const all = t.closest('[data-use-all]')?.dataset.useAll
+    const none = t.closest('[data-use-none]')?.dataset.useNone
+    if (all || none) await crew.call('link', 'hide', linked(all || none).agents.map((a) => a.name), Boolean(none))
+    const move = t.closest('[data-move]')?.dataset.move
+    if (move) {
+      // the agent's card, set to run here: its folder on this computer can be checked before saving
+      linkDialog.close()
+      setView('crew')
+      collection.open(move, { home: '' })
+    }
   } catch (x) {
-    if (err) err.textContent = x.message
-    else alert(x.message)
+    fail(x.message)
   }
 })
 linkDialog.addEventListener('change', async (e) => {
-  if (!('linkShare' in e.target.dataset)) return
+  const d = e.target.dataset
   try {
-    await crew.call('link', 'share', e.target.checked)
+    if ('linkShare' in d) await crew.call('link', 'share', e.target.checked)
+    if (d.use) await crew.call('link', 'hide', [d.use], !e.target.checked)
+    if ('meName' in d) {
+      const name = e.target.value.trim()
+      if (name && name !== state.computers.me.name && confirm(`Rename this computer to "${name}"? Linked computers reconnect, and see its agents as name@${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.`)) await crew.call('link', 'rename', name)
+      else e.target.value = state.computers.me.name
+    }
   } catch (x) {
-    e.target.checked = false
     linkKey = ''
-    alert(`Couldn't start sharing: ${x.message}`)
+    drawComputers(state)
+    alert(x.message)
   }
 })
+linkDialog.addEventListener('keydown', (e) => e.key === 'Enter' && e.target.matches('[data-me-name]') && e.target.blur())
+
+// ---- import: a .crew file, picked or dropped ------------------------------------------
+
+const importDialog = $('#import')
+let pending = null // { file, pack, agents }
+
+async function importPack(dropped) {
+  try {
+    const opened = await crew.call('openPack', dropped)
+    if (!opened) return
+    pending = opened
+    drawImport()
+    importDialog.showModal()
+  } catch (x) {
+    alert(x.message)
+  }
+}
+
+function drawImport() {
+  const { file, pack, agents } = pending
+  const places = [{ slug: '', name: 'this computer' }, ...(state.computers?.links ?? []).filter((l) => l.online)]
+  const brain = (a) => [state.providers[a.provider]?.label ?? a.provider, a.model, a.effort].filter(Boolean).join(' · ')
+  importDialog.querySelector('.lead').innerHTML = `<b>${esc(file)}</b> · ${agents.length} agent${agents.length === 1 ? '' : 's'}${pack.exported ? `, exported ${new Date(pack.exported).toLocaleDateString()}` : ''}. Imported agents start switched off, so you can look them over first.`
+  importDialog.querySelector('.imp-list').innerHTML = agents.map((a) => `
+    <div class="imp" data-i="${a.index}">
+      <input type="checkbox" class="switch" data-take checked>
+      ${avatarHTML({ name: a.seed, avatar: a.avatar }, { size: 40, mood: 'still' })}
+      <div class="imp-what"><input type="text" class="imp-name" data-name value="${esc(a.name)}" spellcheck="false" title="Its name here"><small title="${esc(a.area)}">${esc(a.area || 'no area')} · ${esc(brain(a))}${a.yolo ? ' · YOLO' : ''}${a.images ? ` · ${a.images} reference image${a.images > 1 ? 's' : ''}` : ''}</small></div>
+      <div class="imp-fields">
+        <input type="text" class="imp-folder" data-folder placeholder="Folder (home if empty)${a.folder ? `, it worked in …/${esc(a.folder)}` : ''}" spellcheck="false">
+        ${places.length > 1 ? `<select data-home title="Which computer it runs on">${places.map((p) => `<option value="${esc(p.slug)}">on ${esc(p.name)}</option>`).join('')}</select>` : ''}
+      </div>
+    </div>`).join('')
+  importDialog.querySelector('[data-import-err]').textContent = ''
+  syncImport()
+}
+
+function syncImport() {
+  const rows = [...importDialog.querySelectorAll('.imp')]
+  for (const r of rows) r.classList.toggle('skip', !r.querySelector('[data-take]').checked)
+  const n = rows.filter((r) => r.querySelector('[data-take]').checked).length
+  const go = importDialog.querySelector('[data-import-go]')
+  go.disabled = !n
+  go.textContent = n ? `Import ${n}` : 'Import'
+}
+
+importDialog.addEventListener('change', async (e) => {
+  syncImport()
+  // a name free on one computer may be taken on another
+  if (e.target.matches('[data-home]')) {
+    const row = e.target.closest('.imp')
+    const box = row.querySelector('[data-name]')
+    box.value = await crew.call('freeName', pending.agents[row.dataset.i].seed, e.target.value).catch(() => box.value)
+  }
+})
+importDialog.addEventListener('click', async (e) => {
+  if (e.target.closest('[data-close]') || e.target === importDialog) return importDialog.close()
+  if (!e.target.closest('[data-import-go]')) return
+  const choices = [...importDialog.querySelectorAll('.imp')]
+    .filter((r) => r.querySelector('[data-take]').checked)
+    .map((r) => ({ index: Number(r.dataset.i), name: r.querySelector('[data-name]').value.trim(), folder: r.querySelector('[data-folder]').value.trim() || undefined, home: r.querySelector('[data-home]')?.value || '' }))
+  try {
+    const added = await crew.call('importAgents', pending.pack, choices)
+    importDialog.close()
+    setView('crew')
+    if (added.length === 1) collection.open(added[0])
+  } catch (x) {
+    importDialog.querySelector('[data-import-err]').textContent = x.message
+  }
+})
+
+crew.onImport(importPack)
+// A .crew file dropped anywhere on the window (image drop zones only take images).
+document.addEventListener('dragover', (e) => [...e.dataTransfer.items].some((i) => i.kind === 'file') && e.preventDefault())
+document.addEventListener('drop', async (e) => {
+  const file = [...e.dataTransfer.files].find((f) => f.name.endsWith('.crew'))
+  if (!file) return
+  e.preventDefault()
+  e.stopPropagation()
+  importPack({ name: file.name, text: await file.text() })
+}, true)
 
 ready.then(() => {
   setView(state.agents.length ? view : 'crew')

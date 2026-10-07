@@ -127,7 +127,8 @@ function seeded(name) {
   }
 }
 
-const avatarOf = (agent) => ({ ...seeded(agent.name), ...agent.avatar })
+// Whatever the look doesn't set comes from a seed: the name it was made with (kept through imports and moves).
+const avatarOf = (agent) => ({ ...seeded(agent.avatar?.seed ?? agent.seed ?? agent.name), ...agent.avatar })
 const agentColor = (agent) => COLORS[avatarOf(agent).color] ?? avatarOf(agent).color ?? '#888'
 
 function randomAvatar() {
