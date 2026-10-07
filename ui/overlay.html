@@ -48,6 +48,11 @@
     [data-side=above] .dots, [data-side=below] .dots { flex-direction: row; }
     .home { width: 40px; height: 36px; border: 0; background: none; color: var(--fg); cursor: pointer; padding: 4px 3px; border-radius: 14px; transition: background .15s, transform .3s var(--bounce); }
     .home:hover { background: var(--btn); }
+    .pill { position: relative; }
+    .home-badge { position: absolute; top: 4px; right: 3px; pointer-events: none; }
+    .home-badge .unread-badge { position: static; }
+    /* in the pill the creatures stack, so a count sits on the left, clear of the "!" of the one below */
+    .dots .unread-badge { right: auto; bottom: auto; left: -5px; top: -3px; }
     .home + .dots:not(:empty) { padding-top: 7px; border-top: 1px solid var(--line); width: 32px; }
     [data-side=above] .home + .dots:not(:empty), [data-side=below] .home + .dots:not(:empty) { padding: 0 0 0 7px; border-top: 0; border-left: 1px solid var(--line); width: auto; height: 32px; }
     .home:active { transform: scale(.9); }
@@ -85,7 +90,7 @@
       <div class="compose"></div>
     </section>
     <aside class="pill sheet">
-      <button class="home" title="Crew"></button>
+      <button class="home" title="Crew"></button><span class="home-badge"></span>
       <div class="dots"></div>
     </aside>
   </div>

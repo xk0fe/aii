@@ -376,6 +376,126 @@ const SHOTS = {
     })
     win.destroy()
   },
+  // Replies you haven't read: a dot and a ring on each, the "New" line above the first, a count on the creatures.
+  async unread(theme) {
+    const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await js(win, "document.querySelector('.new-line').scrollIntoView({ block: 'start' }); document.querySelector('.feed').scrollTop -= 20")
+    await sleep(500)
+    await save(win, `unread-${theme}`)
+    win.destroy()
+  },
+  // Reading: a reply that's been on screen for a moment (with the window focused) is read, and the badges go.
+  async readGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    // an offscreen window never has focus; the chat only counts what you could actually have seen
+    await js(win, "document.hasFocus = () => true; window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await js(win, "document.querySelector('.feed').scrollTop = 0")
+    await sleep(400)
+    await record(win, 'read', {
+      ms: 6500, width: 760,
+      during: async () => {
+        await sleep(900)
+        await js(win, "document.querySelector('#m-f6c').scrollIntoView({ block: 'start', behavior: 'smooth' })")
+        await sleep(2400)
+        await js(win, "document.querySelector('#m-f8').scrollIntoView({ block: 'center', behavior: 'smooth' })")
+        await sleep(2600)
+      },
+    })
+    const left = await js(win, "return JSON.stringify(window.__crewState.reads.agents)")
+    console.log('reads after:', left)
+    win.destroy()
+  },
+  // Reply to a message from its hover toolbar, then the thread follows the answer; Esc leaves it.
+  async replyGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await js(win, "document.querySelector('#m-f8').scrollIntoView({ block: 'center' })")
+    await sleep(400)
+    const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + 48), width: Math.round(r.width), height: Math.round(r.height - 48) }")
+    const typeOut = async (text) => {
+      for (const ch of text) {
+        win.webContents.sendInputEvent({ type: 'char', keyCode: ch })
+        await sleep(40)
+      }
+    }
+    const key = async (keyCode) => {
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode })
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode })
+      await sleep(200)
+    }
+    await record(win, 'reply', {
+      clip: panel, ms: 10500, width: 800,
+      during: async () => {
+        let at = { x: panel.x + 60, y: panel.y + 60 }
+        at = await glide(win, at, await center(win, '#m-f8 .bubble'), 700)
+        await sleep(500)
+        at = await glide(win, at, await center(win, '#m-f8 .msg-tool'), 400)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(700)
+        await typeOut('Ship it, and add a test for hub.reply')
+        await sleep(300)
+        await key('Return')
+        await sleep(1300)
+        await js(win, "const s = window.__crewState; const mine = s.feed.findLast((e) => e.from === 'you'); s.feed.push({ id: 'r-ship', kind: 'reply', from: 'joseph', to: 'you', re: mine.id, text: 'Shipped, and hub.reply has a test now: 43 passing.', ts: Date.now() }); window.__crewEmit('state', s)")
+        await sleep(2200)
+        await key('Escape')
+        await sleep(1200)
+      },
+    })
+    win.destroy()
+  },
+  // New conversation is for one message: after it, the box goes on in that conversation as a reply.
+  async threadGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "localStorage.setItem('crew.fresh', '0'); window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + r.height - 420), width: Math.round(r.width), height: 420 }")
+    const typeOut = async (text) => {
+      for (const ch of text) {
+        win.webContents.sendInputEvent({ type: 'char', keyCode: ch })
+        await sleep(40)
+      }
+    }
+    const enter = async () => {
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
+    }
+    await record(win, 'thread', {
+      clip: panel, ms: 10000, width: 800,
+      during: async () => {
+        let at = { x: panel.x + 200, y: panel.y + 100 }
+        at = await glide(win, at, await center(win, '.chip[data-to=marc]'), 600)
+        await tap(win, at)
+        await sleep(400)
+        at = await glide(win, at, await center(win, '.fresh-toggle'), 500)
+        await tap(win, at)
+        await sleep(600)
+        await js(win, "document.querySelector('.composer textarea').focus()")
+        await typeOut('Draft three onboarding illustrations')
+        await sleep(300)
+        await enter()
+        await sleep(1600)
+        await typeOut('Keep them pastel, like our creatures')
+        await sleep(300)
+        await enter()
+        await sleep(2200)
+      },
+    })
+    win.destroy()
+  },
   // A reply that used sub-agents, its list opened.
   async subsReply(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })

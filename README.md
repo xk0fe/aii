@@ -80,9 +80,11 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
   - `crew task …` to work the Tasks board (see below).
 
   Every hand-off and reply shows up in the feed, with the agent's face beside it.
-- **Threads.** Each reply, and each hand-off an agent makes while working on your request, quotes the message it answers ("↩ you: …"). Click the quote to jump back. Your messages link forward too ("↪ @joseph replied"), so with several messages and several agents in flight you can always tell what answers what. Prompts you type directly into an agent's terminal show up in the feed too, tagged *in terminal*.
+- **Threads.** Each reply, and each hand-off an agent makes while working on your request, quotes the message it answers, with a bar in its sender's color. Click the quote to jump back. Your messages link forward too ("↪ @joseph replied"), so with several messages and several agents in flight you can always tell what answers what. Prompts you type directly into an agent's terminal show up in the feed too, tagged *in terminal*.
 - **Rich text.** Replies render Markdown: bold, italics, `code`, code blocks, lists, quotes, links and pipe tables (links open in your browser). Tables need a header and delimiter row with matching column counts; alignment colons are supported. Escape literal pipes as `\|`, including inside inline code. Wide tables scroll horizontally; multiline cells are not supported. Long replies fold with a fade; click to unfold.
 - **Autopilot off** makes hand-offs between agents wait in the feed until you click **Send it** or **Drop**.
+- **Reply to a message.** Hover it and press **Reply**. The message box shows what you're answering, and your message goes to whoever sent it (to all of them, for one of yours sent to several), linked to it in the feed. If it's an older message, the agent gets a short note saying which one ("replying to your message …"). The box stays in that thread: what you send next answers the newest message in it. **Esc**, **×**, or picking someone on the **To** line leaves it.
+- **Unread replies.** A reply you haven't seen yet has a blue dot, and a **New** line marks where the unread ones begin. Each agent's creature wears a count (in the pill, the **To** line and the sidebar), the pill's mark shows the total, and the dashboard title bar says "2 new". A reply counts as read once it has been on screen for a moment while the window has focus. Clicking a creature in the pill opens the chat at its first unread reply. Crew remembers this in `~/.crew/reads.json`.
 - **Who's on it.** While an agent works, a slim line under the last message in the feed shows what it's doing. Click it to open its terminal; an agent waiting on you gets an **Answer** button that jumps to its question.
 - **Answer from the chat.** When an agent stops to ask you something, the question shows up in the chat as a card, its creature wiggles with a `!`, and you get a notification. The agent waits, and you answer right there:
   - **Permission prompts:** what it wants to run or change, with **Allow** and **Deny**. Claude's "don't ask again" options are there too, such as *Always allow Bash(npm test:\*)*. Type in the note box to say no and tell it what to do instead.
@@ -137,7 +139,7 @@ It comes from Claude Code's hooks (the Agent tool's PreToolUse, SubagentStart an
 Every agent shows how full its current conversation is: a little ring that fills up and turns amber past half and red past 80%. It's on the agent's card, in its terminal header, and in the sidebar once it's past half. Hover it for the numbers: tokens used of the model's window (or of its context limit), tasks in this conversation, and whether it has compacted. A compacted conversation (the CLI summarized older details to make room) gets a dashed ring.
 
 - **New conversation** gives an agent a clean slate: its instructions, folder and the crew's notes stay, the old conversation stays in the CLI's history. It's the ✦ button in the terminal header and in the agent's card (**Conversation** shows the gauge, the numbers and advice). A busy agent finishes its current task first.
-- **Send a task fresh.** The **New conversation** toggle under the message box sends your message into a new conversation instead of adding it to everything the agent did before.
+- **Send a task fresh.** The **New conversation** toggle under the message box sends your message into a new conversation instead of adding it to everything the agent did before. It's for that one message: the toggle turns off, and the box stays in the new conversation as a reply ("Continuing the new conversation with marc"), so what you send next goes on in it.
 - **Context limit.** A model with a huge window (say 1M) can run one conversation for a very long time. Under **Conversation** in the agent's card, set its own limit (100k, 250k, or any number) and what happens when a conversation passes it:
   - **New conversation** (the default): it finishes what it's doing, then starts fresh. Its instructions, folder and the crew's notes stay.
   - **Just tell me**: a notification and an orange line in the chat, and you decide.
@@ -180,6 +182,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `conversations.json`: each agent's current conversation: when it started, tasks in it, compactions and how full it is.
 - `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, and a cache of images from agents on other computers.
 - `board.md`: shared notes (`crew note`).
+- `reads.json`: up to when you've read each agent's replies (the unread badges).
 - `feed.jsonl`: the feed history.
 - `attachments/`: images you've attached to messages and instructions.
 

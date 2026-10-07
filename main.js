@@ -236,6 +236,8 @@ const actions = {
   // Answer an agent's question (a permission prompt, AskUserQuestion, a plan) from the chat; see hub.ask.
   answer: (id, reply) => crew.feedAction(id, 'answer', reply),
   autopilot: (on) => hub.setAutopilot(on),
+  // You've seen agents' replies up to then: { name: ts }. Unread badges count what's newer.
+  read: (seen) => hub.read(seen),
   update: (names, patch) => crew.update(names, patch),
   draftPrompt: (agent) => crew.draftPrompt(agent),
   addAgent: (fields) => crew.addAgent(fields),

@@ -1,5 +1,5 @@
 // Floating pill on the screen edge; click it (or press the hotkey) for the chat panel.
-/* global crew, live, morph, esc, statusText, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS */
+/* global crew, live, morph, esc, isUnread, unreadBadge, statusText, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS */
 
 const $ = (s) => document.querySelector(s)
 $('.home').innerHTML = markSVG('0 6 24 16')
@@ -7,7 +7,7 @@ $('.panel header .logo').outerHTML = markSVG('0 6 24 16')
 $('[data-act=dashboard]').innerHTML = ICONS.expand
 $('[data-act=close]').innerHTML = ICONS.close
 
-const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => crew.call('dashboard', name) })
+const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => crew.call('dashboard', name), onReply: (e) => composer.replyTo(e) })
 const composer = mountComposer($('.compose'), { dropZone: $('.panel') })
 let size = ''
 
@@ -92,25 +92,32 @@ crew.onToggle((opts = {}) => {
   const open = opts.open ?? !document.body.classList.contains('open')
   setOpen(open, opts.focus ?? open)
 })
-// Tap a creature in the pill to talk to that agent.
+// Tap a creature in the pill to talk to that agent; with replies you haven't read, the chat opens on the first.
+let state = null
 $('.dots').addEventListener('click', (e) => {
   const face = e.target.closest('[data-agent]')
   if (!face) return
   composer.setTarget(face.dataset.agent)
   setOpen(true)
+  const first = state?.feed.find((x) => x.from === face.dataset.agent && isUnread(x, state.reads))
+  if (first) requestAnimationFrame(() => feed.jump(first.id))
 })
 
-live((state) => {
+live((next) => {
+  state = next
   const on = state.agents.filter((a) => a.on)
   const working = on.filter((a) => a.status === 'working').length
   document.body.classList.toggle('busy', working > 0)
   document.body.classList.toggle('alert', state.agents.some((a) => a.status === 'waiting'))
   morph($('.dots'), on.map((a) => {
     const subs = runningSubs(a).length
-    return `<span class="face" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}" title="${esc(`${a.name}: ${statusText(a)}${subs ? ` · ${plural(subs, 'sub-agent')} working` : ''}`)}">${avatarHTML(a, { size: 30 })}${orbitHTML(a)}</span>`
+    return `<span class="face" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}" title="${esc(`${a.name}: ${statusText(a)}${subs ? ` · ${plural(subs, 'sub-agent')} working` : ''}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}`)}">${avatarHTML(a, { size: 30 })}${orbitHTML(a)}${unreadBadge(a.unread)}</span>`
   }).join(''))
   celebrate($('.dots'), state.agents)
   morph($('.sums'), crewSummary(state))
+  // the mark in the pill counts every reply you haven't read
+  const fresh = state.agents.reduce((n, a) => n + a.unread, 0)
+  morph($('.home-badge'), fresh ? `<span class="unread-badge">${fresh > 9 ? '9+' : fresh}</span>` : '')
   feed.render(state)
   composer.render(state)
   fit()

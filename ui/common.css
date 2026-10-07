@@ -532,6 +532,40 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .subs-item .sub-meta br { display: none; }
 .subs-item.running .sub-meta { color: var(--working-ink); }
 
+/* ---- replying to a message, and replies you haven't read ----
+   Hover a message for its toolbar (Reply), like Slack: on the right of an agent's line, beside your own bubble.
+   The message box then shows what it answers, with a bar in that sender's color. Unread replies carry a dot and a
+   soft ring until they've been on screen, the "New" line marks where they began, and creatures wear a count. */
+.item { position: relative; }
+.msg-tools { position: absolute; top: -12px; right: 2px; z-index: 3; display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--card); box-shadow: 0 0 0 1px var(--line-strong), 0 6px 16px -8px rgba(0, 0, 0, .3); opacity: 0; translate: 0 3px; pointer-events: none; transition: opacity .15s, translate .2s var(--out); }
+.item:hover > .msg-tools, .msg-tools:focus-within { opacity: 1; translate: 0 0; pointer-events: auto; }
+.item.me > .msg-tools { top: auto; bottom: 2px; right: calc(100% + 8px); }
+.item.me > .msg-tools::after { content: ''; position: absolute; left: 100%; top: 0; bottom: 0; width: 10px; } /* a bridge, so the way over to it keeps the hover */
+.msg-tool { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px 0 7px; border: 0; border-radius: 7px; background: none; color: var(--fg2); font-size: 11.5px; font-weight: 600; cursor: pointer; transition: background .15s, color .15s; }
+.msg-tool:hover { background: var(--btn); color: var(--fg); }
+.msg-tool svg { width: 13px; height: 13px; }
+.reply-to { display: flex; align-items: center; gap: 8px; margin: 6px 6px 0; padding: 6px 4px 6px 0; border-radius: 10px; background: var(--btn); animation: hint-in .25s var(--out); }
+.rt-bar { flex: none; align-self: stretch; width: 3px; margin-left: 7px; border-radius: 2px; background: var(--qc); }
+.rt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: 12px; line-height: 1.35; }
+.rt-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; color: color-mix(in oklab, var(--qc) 62%, var(--fg)); }
+.rt-text b span { font-weight: 500; color: var(--fg3); }
+.rt-quote { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
+.rt-close { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; background: none; color: var(--fg3); cursor: pointer; transition: background .15s, color .15s; }
+.rt-close:hover { background: var(--btn-hover); color: var(--fg); }
+.rt-close svg { width: 13px; height: 13px; stroke-width: 2.2; }
+.unread-badge { position: absolute; right: -3px; bottom: -2px; z-index: 2; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 700 9.5px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; color: #fff; background: var(--accent); box-shadow: 0 0 0 2px var(--orbit-ring, var(--surface)); pointer-events: none; animation: badge-in .4s var(--spring); }
+@keyframes badge-in { from { transform: scale(0); } }
+.chip { position: relative; }
+.chip .unread-badge { right: -2px; bottom: -1px; min-width: 14px; height: 14px; padding: 0 3px; font-size: 9px; --orbit-ring: var(--panel); }
+.item.unread .cap::before { content: ''; flex: none; align-self: center; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: badge-in .4s var(--spring); }
+.item.said .stack > .bubble { transition: box-shadow .8s var(--out); }
+.item.unread .stack > .bubble { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 40%, transparent); }
+.new-line { display: flex; align-items: center; gap: 8px; margin: 0 2px -4px; animation: hint-in .3s var(--out); }
+.new-line::before { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.new-line span { padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #fff; background: var(--accent); }
+.sum.unread { color: color-mix(in oklab, var(--accent) 80%, var(--fg)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.dot.unread { background: var(--accent); }
+
 /* ---- mentions in color, as you type (mountInk in common.js) ----
    The text is drawn by .ink under the textarea, whose own letters are transparent. Nothing here may change the
    width of a letter (no padding, no bold), or the caret would drift from the text it sits in. */

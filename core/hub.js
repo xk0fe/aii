@@ -47,6 +47,8 @@ export class Hub extends EventEmitter {
     this.tickets = new Tickets(at('tickets.json'))
     // Each agent's current conversation: when it started, tasks in it, compactions, and how full it is.
     this.convos = readJSON(at('conversations.json')) ?? {}
+    // Unread replies: up to when you've read each agent's. A first run starts from now, so old history isn't "new".
+    this.reads = readJSON(at('reads.json')) ?? { since: Date.now(), agents: {} }
     this.loadConfig()
     runner.on('exit', (name, code, ms) => this.onExit(name, code, ms))
   }
@@ -191,6 +193,25 @@ export class Hub extends EventEmitter {
 
   providerOf(a) {
     return this.providers[a.provider ?? a.cli ?? 'claude']
+  }
+
+  // You've seen an agent's replies up to `ts` (the chat marks what's been on screen): { name: ts }.
+  // Names can be agents on other computers (gal@mac-mini): what you've read is this computer's to remember.
+  read(seen) {
+    let moved = false
+    for (const [name, ts] of Object.entries(seen ?? {})) {
+      if (!(Number(ts) > (this.reads.agents[name] ?? 0))) continue
+      this.reads.agents[name] = Number(ts)
+      moved = true
+    }
+    if (!moved) return
+    clearTimeout(this.readsTimer)
+    this.readsTimer = setTimeout(() => {
+      try {
+        fs.writeFileSync(at('reads.json'), JSON.stringify(this.reads))
+      } catch {}
+    }, 500)
+    this.changed()
   }
 
   setTheme(theme) {
@@ -698,7 +719,9 @@ export class Hub extends EventEmitter {
   // Names on another computer (gal@mac-mini) go to `relay`, which main.js wires to Crew Link; `mentions: false`
   // means `to` is final (the message was already addressed on another computer).
   // `fresh`: deliver into a new conversation (started when it's this message's turn). `ticket`: the bug it's about.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false }) {
+  // `re`: the message you're replying to (a feed id here); the copy links to it, so the feed threads it. `quote`
+  // ({ from, text }): the same for a message that lives on another computer, which can only be quoted.
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote }) {
     text = String(text ?? '').trim()
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -714,17 +737,32 @@ export class Hub extends EventEmitter {
     if (!targets[0]) throw new Error('no agents to send to')
 
     const held = from !== 'you' && !this.config.autopilot
-    const re = this.agents.get(from)?.current // a hand-off points at the request that led to it
+    const quoted = replyTo ? this.feed.find((e) => e.id === replyTo) : undefined
+    const re = quoted?.id ?? this.agents.get(from)?.current // a hand-off points at the request that led to it
     if (this.agents.has(from)) this.record(from, { handoffs: targets.length })
     // Copies of one send share `cc` and `sendId`, so the feed can show them as one message. Each copy keeps its own
     // id, queue state and approval.
     const group = targets.length > 1 && { cc: targets.map((a) => a.name), sendId: randomUUID().slice(0, 8) }
-    const msgs = targets.map((a) =>
-      this.post({ kind: 'msg', from, to: a.name, text, ...group, ...extra, ...(images.length && { images }), ...(re && { re }), queued: !held, held }),
-    )
+    const said = quoted ? { from: quoted.from, text: quoted.ticket !== undefined ? `#${quoted.ticket} ${quoted.title ?? ''}` : quoted.text } : quote
+    const msgs = targets.map((a) => {
+      const replying = said && this.replyTag(a, said, quoted)
+      return this.post({ kind: 'msg', from, to: a.name, text, ...group, ...extra, ...(images.length && { images }), ...(re && { re }), ...(replying && { replying }), queued: !held, held })
+    })
     if (held) return `waiting for the user to approve this hand-off to ${targets.map((a) => `@${a.name}`).join(' ')}\n`
     const here = targets.map((a, i) => this.enqueue(a, msgs[i])).join('')
     return away.length ? this.relay(from, away, text, images, extra).then((there) => here + there) : here
+  }
+
+  // What the agent is told about the message you're replying to, so it knows which one: "replying to your message
+  // "…"". Nothing when that's simply the last thing it said, or when you're following up on your own message.
+  replyTag(a, said, quoted) {
+    const who = String(said.from ?? '')
+    if (!who || who === 'you') return ''
+    const last = this.feed.findLast((e) => e.kind === 'reply' && e.from === a.name)
+    if (quoted && who === a.name && last?.id === quoted.id) return ''
+    const line = String(said.text ?? '').replace(/```[\s\S]*?```/g, '[code]').replace(/\s+/g, ' ').trim()
+    const snip = line.length > 160 ? `${line.slice(0, 157)}…` : line
+    return `replying to ${who === a.name ? 'your message' : `@${who}'s message`} "${snip}"`
   }
 
   recipients(names, from) {
@@ -789,7 +827,7 @@ export class Hub extends EventEmitter {
     msg.queued = false
     if (msg.ticket !== undefined && !msg.triage) (this.convoOf(a).ticket = msg.ticket), this.saveConvos() // this conversation is about that bug now
     const also = msg.cc?.filter((n) => n !== a.name).map((n) => `@${n}`).join(' ')
-    const tag = [msg.from !== 'you' && `from @${msg.from}`, also && `also sent to ${also}, split the work`].filter(Boolean).join(', ')
+    const tag = [msg.from !== 'you' && `from @${msg.from}`, msg.replying, also && `also sent to ${also}, split the work`].filter(Boolean).join(', ')
     const text = tag ? `[${tag}] ${msg.text}` : msg.text
     this.runner.submit(a.name, withImages(text, msg.images))
     // Matched against the prompt the agent reports, even if it shows up late. Only the words count:
@@ -1097,6 +1135,7 @@ export class Hub extends EventEmitter {
         subs: [...(a.subs?.values() ?? [])].filter((x) => !x.ended || Date.now() - x.ended < SUB_LINGER).map(({ id, type, description, started, ended, tools, activity }) => ({ id, type, description, started, ended, tools, activity })),
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
+      reads: this.reads,
       tasks: {
         tickets: [...this.tickets.open(), ...this.tickets.all.filter((t) => t.status === 'done').sort((x, y) => x.updated - y.updated).slice(-60)],
         triage: this.config.triage ?? null,

@@ -12,7 +12,8 @@ const line = src.match(/const to = (target === 'auto'[^\n]*)/)
 assert.ok(line, 'composer to-expression not found')
 assert.doesNotMatch(line[1], /test\(text\)/, 'leading-mention override still present')
 const composerTo = new Function('target', 'text', `return ${line[1]}`)
-const hint = src.match(/say\(\(await crew\.call\('send', to, text, images(?:, \{ fresh \})?\)\)(.*)\)$/m)[1]
+// the hint's formatting: whatever follows the send call (its options grew: fresh, re)
+const hint = src.match(/say\(\(await crew\.call\('send', .*\)\)(\.trim\(\)[^\n]*)\)$/m)[1]
 const format = new Function('r', `return r${hint}`)
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-composer-'))
