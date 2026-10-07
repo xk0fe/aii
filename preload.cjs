@@ -11,7 +11,12 @@ contextBridge.exposeInMainWorld('crew', {
     return res.ok
   },
   input: (name, data) => ipcRenderer.send('input', name, data),
-  fit: (width, height, focus) => ipcRenderer.send('fit', width, height, focus),
+  // Size the window around the page; the floating pill also says where it sits inside, so it stays put.
+  fit: (width, height, focus, pill) => ipcRenderer.send('fit', width, height, focus, pill),
+  // The floating pill: drag it (start / move / end, pointer in screen coordinates), and hear which side of it
+  // the chat goes on.
+  drag: (phase, x, y) => ipcRenderer.send('drag', phase, x, y),
+  onPlace: listen('place'),
   onState: listen('state'),
   onPty: listen('pty'),
   onFocus: listen('focus'),

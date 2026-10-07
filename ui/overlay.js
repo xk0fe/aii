@@ -10,12 +10,67 @@ const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => crew.call('da
 const composer = mountComposer($('.compose'), { dropZone: $('.panel') })
 let size = ''
 
+// The window wraps what's drawn; main.js places it so the pill stays where it is, so it's told where the pill is.
 function fit(focus = false) {
   const r = $('.wrap').getBoundingClientRect()
-  const next = `${Math.ceil(r.width)}x${Math.ceil(r.height)}`
+  const p = $('.pill').getBoundingClientRect()
+  const pill = { x: Math.round(p.x), y: Math.round(p.y), width: Math.round(p.width), height: Math.round(p.height) }
+  const next = `${Math.ceil(r.width)}x${Math.ceil(r.height)}@${Object.values(pill)}`
   if (next === size && !focus) return
   size = next
-  crew.fit(Math.ceil(r.width), Math.ceil(r.height), focus)
+  crew.fit(Math.ceil(r.width), Math.ceil(r.height), focus, pill)
+}
+
+// Which side of the pill the chat goes on, from main.js (core/pill.js): by the left edge it opens to the right,
+// at the top below, and so on. At the top and bottom the pill lies flat.
+crew.onPlace(({ side, align }) => {
+  const body = document.body
+  const moved = body.dataset.side && body.dataset.side !== side
+  body.dataset.side = side
+  body.dataset.align = align
+  if (moved && body.classList.contains('open')) {
+    body.classList.remove('moved')
+    void body.offsetWidth
+    body.classList.add('moved') // the panel swaps sides with a little settle, once
+  }
+  size = '' // always tell main.js: even when nothing changed size, the pill's place on screen did
+  fit()
+})
+
+$('.panel').addEventListener('animationend', (e) => e.animationName === 'panel-moved' && document.body.classList.remove('moved'))
+
+// Drag the pill (or the chat by its header) anywhere; main.js moves the window with the pointer and, when you
+// let go, picks the chat's side for where you left it. It's a drag once the pointer has moved a few pixels, so
+// a click stays a click. Buttons and creatures stay clickable.
+for (const handle of [$('.pill'), $('.panel header')]) {
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('button, .face, .sums, a, input, textarea')) return
+    e.preventDefault()
+    handle.setPointerCapture(e.pointerId)
+    const [x0, y0] = [e.screenX, e.screenY]
+    let dragging = false
+    const move = (ev) => {
+      if (!dragging && Math.hypot(ev.screenX - x0, ev.screenY - y0) < 3) return
+      if (!dragging) {
+        dragging = true
+        document.body.classList.add('dragging')
+        crew.drag('start', x0, y0)
+      }
+      crew.drag('move', ev.screenX, ev.screenY)
+    }
+    const end = (ev) => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', end)
+      handle.removeEventListener('pointercancel', end)
+      handle.removeEventListener('lostpointercapture', end)
+      document.body.classList.remove('dragging')
+      if (dragging) crew.drag('end', ev.screenX, ev.screenY)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', end)
+    handle.addEventListener('pointercancel', end)
+    handle.addEventListener('lostpointercapture', end) // the window went away mid-drag
+  })
 }
 
 // focus=false opens the chat without pulling you out of the app you're in (e.g. after closing the dashboard).
