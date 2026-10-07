@@ -7,19 +7,36 @@
   <link rel="stylesheet" href="common.css">
   <style>
     html, body { background: transparent; overflow: hidden; }
+    /* The chat opens on the side of the pill away from the screen edge (main.js and core/pill.js decide, this
+       lays it out): data-side is where the chat goes, data-align how it lines up with the pill. */
     .wrap { display: inline-flex; align-items: center; gap: 8px; padding: 12px; }
+    [data-side=right] .wrap { flex-direction: row-reverse; }
+    [data-side=above] .wrap { flex-direction: column; }
+    [data-side=below] .wrap { flex-direction: column-reverse; }
+    [data-align=start] .wrap { align-items: flex-start; }
+    [data-align=end] .wrap { align-items: flex-end; }
     .glass { background: var(--glass); backdrop-filter: blur(24px) saturate(1.6); border: 1px solid var(--line); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, .25); }
 
-    .panel { display: none; width: 390px; height: 580px; border-radius: 24px; flex-direction: column; overflow: hidden; transform-origin: 100% 50%; }
+    /* the panel grows out of the pill: from its right when it opens to the left, and so on */
+    .panel { --from: translate(14px, 0); display: none; width: 390px; height: 580px; border-radius: 24px; flex-direction: column; overflow: hidden; transform-origin: 100% 50%; }
+    [data-side=right] .panel { --from: translate(-14px, 0); transform-origin: 0 50%; }
+    [data-side=above] .panel { --from: translate(0, 14px); transform-origin: 50% 100%; }
+    [data-side=below] .panel { --from: translate(0, -14px); transform-origin: 50% 0; }
     .open .panel { display: flex; animation: panel-in .38s var(--bounce); }
-    @keyframes panel-in { from { opacity: 0; transform: translateX(14px) scale(.94); } }
-    .panel header { display: flex; align-items: center; gap: 8px; padding: 12px 10px 10px 16px; border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
+    .open.moved .panel { animation: panel-moved .38s var(--bounce); } /* it switched sides */
+    @keyframes panel-in { from { opacity: 0; transform: var(--from) scale(.94); } }
+    @keyframes panel-moved { from { opacity: 0; transform: var(--from) scale(.97); } }
+    .panel header { display: flex; align-items: center; gap: 8px; padding: 12px 10px 10px 16px; border-bottom: 1px solid var(--line); cursor: grab; }
     .panel header b { font-size: 14.5px; font-weight: 750; }
-    .panel header button, .panel header .sums { -webkit-app-region: no-drag; }
+
     .panel .feed { flex: 1; }
 
-    .pill { width: 56px; border-radius: 28px; padding: 12px 0 13px; display: flex; flex-direction: column; align-items: center; gap: 10px; -webkit-app-region: drag; transition: box-shadow .3s, border-color .3s; }
-    .home { -webkit-app-region: no-drag; width: 40px; height: 36px; border: 0; background: none; color: var(--fg); cursor: pointer; padding: 4px 3px; border-radius: 14px; transition: background .15s, transform .3s var(--bounce); }
+    .pill { width: 56px; border-radius: 28px; padding: 12px 0 13px; display: flex; flex-direction: column; align-items: center; gap: 10px; cursor: grab; touch-action: none; transition: box-shadow .3s, border-color .3s; }
+    .dragging .pill, .dragging .panel header { cursor: grabbing; }
+    /* at the top or bottom of the screen the pill lies flat, like the Dock */
+    [data-side=above] .pill, [data-side=below] .pill { flex-direction: row; width: auto; height: 56px; padding: 0 13px 0 9px; }
+    [data-side=above] .dots, [data-side=below] .dots { flex-direction: row; }
+    .home { width: 40px; height: 36px; border: 0; background: none; color: var(--fg); cursor: pointer; padding: 4px 3px; border-radius: 14px; transition: background .15s, transform .3s var(--bounce); }
     .home:hover { background: var(--btn); }
     .home:active { transform: scale(.9); }
     .home svg { width: 100%; height: 100%; display: block; overflow: visible; }
@@ -32,8 +49,12 @@
     .alert .pill { border-color: rgba(255, 159, 10, 0.7); animation: pill-alert 1.8s ease-in-out infinite; }
     @keyframes pill-alert { 0%, 100% { box-shadow: 0 0 0 3px rgba(255, 159, 10, 0.12), 0 10px 28px rgba(0, 0, 0, 0.3); } 50% { box-shadow: 0 0 0 6px rgba(255, 159, 10, 0.24), 0 10px 28px rgba(0, 0, 0, 0.3); } }
     /* the crew lives in the pill: one little creature per agent, hopping while it works, magnified like the Dock */
-    .dots { display: flex; flex-direction: column; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
+    .dots { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    /* creatures magnify away from the screen edge */
     .dots .face { cursor: pointer; line-height: 0; transition: transform .3s var(--spring); transform-origin: 70% 50%; }
+    [data-side=right] .dots .face { transform-origin: 30% 50%; }
+    [data-side=below] .dots .face { transform-origin: 50% 25%; }
+    [data-side=above] .dots .face { transform-origin: 50% 75%; }
     .dots .face:hover { transform: scale(1.32); z-index: 1; }
     .dots .face:hover + .face, .dots .face:has(+ .face:hover) { transform: scale(1.12); }
     .dots .face:active { transform: scale(1.05); }

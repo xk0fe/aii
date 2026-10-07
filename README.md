@@ -8,6 +8,8 @@ You get three views:
 
 - **Menu bar** (three little buddies): every agent with its area, status and brain, its on/off switch and YOLO/⚡ Fast chips, and Autopilot. Modes that are on always show; hover a row to flip one that's off.
 - **Floating pill** on the screen edge holds the crew as little creatures that hop while they work. Click it, or press `⌥⇧Space`, to open the chat (or `⌥⇧D` to open it and start dictating). Click a creature to talk to that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
+  - **Drag it anywhere** by its edge or by the chat's header. The chat opens on the side with room: on the left of the screen it opens to the right of the pill, on the right to the left, at the top below, at the bottom above. At the top and bottom the pill lies flat, like the Dock.
+  - **It stays put:** dropped near an edge, it tucks in against it, and opening or closing the chat never moves it.
 - **Dashboard**:
   - **Crew** is a Pokédex-style collection of agent cards, where you create and edit agents.
   - **Tasks** is a board of work for the crew (bugs, features, chores): each task gets a fresh conversation, and you review what comes back.
@@ -192,6 +194,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 
 - `core/providers.js` defines the brains: built-in providers, your custom ones, and Codex model discovery.
 - `core/adapters.js` turns an agent into a command line for its CLI. That includes model, effort, YOLO, the crew system prompt plus the agent's instructions, and hooks that report status.
+- `core/pill.js` places the floating pill's window: which side its chat opens on, keeping the pill where you left it, dragging, and tucking in against an edge.
 - `core/voice.js` runs voice input. It builds `native/crew-voice.swift` (Apple's on-device `DictationTranscriber`) into `dist/crew-voice` on first use, streams the chat window's microphone audio into it, and returns what it hears as live events.
 - `core/promptgen.js` drafts an agent's instructions headlessly with `claude -p` or `codex exec`, with no tools and nothing saved to your session history.
 - `core/hub.js` is the logic, with no Electron in it:
