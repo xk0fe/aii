@@ -306,7 +306,7 @@ test('packs carry how many clones an agent may have', () => {
 
 const ui = (() => {
   const ctx = vm.createContext({ crew: {}, avatarHTML: (a) => `<av ${a.avatar?.seed ?? a.name}>`, agentColor: (a) => `color(${a.avatar?.seed ?? a.name})`, CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
-  vm.runInContext(fs.readFileSync(path.resolve(import.meta.dirname, '../ui/common.js'), 'utf8') + ';globalThis.__x = { feedView, nameHTML, agentCard, typingHTML }', ctx)
+  vm.runInContext(fs.readFileSync(path.resolve(import.meta.dirname, '../ui/common.js'), 'utf8') + ';globalThis.__x = { feedView, nameHTML, rosterHTML, typingHTML }', ctx)
   return ctx.__x
 })()
 
@@ -319,8 +319,8 @@ test('ui: a clone goes by its agent\'s name and face with its number, in the fee
   // the message says who took it; the face is gal's
   const html = ui.feedView(hub.feed, agents, new Set(), 200).html()
   assert.match(html, /to <span class="who" data-agent="gal\.2" style="--c:color\(gal\)">@gal<span class="clone-no"/)
-  // gal's row lists its clone; "who's on it" shows it while it starts
-  assert.match(ui.agentCard(agents[0], {}, [clone]), /data-clone="gal\.2"[\s\S]*<av gal>[\s\S]*starting/)
+  // gal's row lists its clone, right under it; "who's on it" shows it while it starts
+  assert.match(ui.rosterHTML({ agents, computers: { me: { name: 'Mac' }, links: [] } }), /data-agent="gal"[\s\S]*data-clone="gal\.2"[\s\S]*<av gal>[\s\S]*starting/)
   assert.match(ui.typingHTML(agents), /data-agent="gal\.2"[\s\S]*starting up to take it/)
 })
 

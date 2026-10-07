@@ -6,16 +6,17 @@ Claude Code and Codex are built in. GLM and local open-weight models work too, a
 
 You get three views:
 
-- **Menu bar** (three little buddies): every agent with its area, status and brain, its on/off switch and YOLO/⚡ Fast chips, and Autopilot. Modes that are on always show; hover a row to flip one that's off.
-- **Floating pill** on the screen edge holds the crew as little creatures that hop while they work. Click it, or press `⌥⇧Space`, to open the chat (or `⌥⇧D` to open it and start dictating). Click a creature to talk to that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
+- **Menu bar** (three little buddies): the crew, grouped by computer, one line per agent: its creature, its name and what it's doing. YOLO and ⚡ Fast show as small marks when they're on; hover a row for the YOLO, Fast and power switches. Agents that are off fold into one line ("3 off"). It scrolls once the crew is taller than the screen allows. Autopilot sits under the crew.
+- **Floating pill** on the screen edge holds the crew as little creatures that hop while they work. A crew too big for the screen edge keeps the ones that need a look (waiting on you, new replies, at work) and folds the rest into **+N**. Click it, or press `⌥⇧Space`, to open the chat (or `⌥⇧D` to open it and start dictating). Click a creature to talk to that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
   - **Drag it anywhere** by its edge or by the chat's header. The chat opens on the side with room: on the left of the screen it opens to the right of the pill, on the right to the left, at the top below, at the bottom above. At the top and bottom the pill lies flat, like the Dock.
   - **It stays put:** dropped near an edge, it tucks in against it, and opening or closing the chat never moves it.
-- **Dashboard**:
-  - **Crew** is a Pokédex-style collection of agent cards, where you create and edit agents.
+- **Dashboard**: the crew on the left, the view in the middle, the chat on the right.
+  - **The sidebar** lists every agent by computer, in your order (a status change never moves a row). Fold a computer with its arrow; its header still counts who's working and who needs you. Off agents fold into one line. **Search** (`⌘F`) finds an agent by name or area, and **+** (`⌘N`) makes one. Click an agent for its terminal (its card in the Crew view), and **right-click** for everything else: message it, open its terminal, edit it, start a new conversation, move it to another computer, turn it off, remove it. **Drag** an agent onto another computer to move it there.
+  - **Crew** is a Pokédex-style collection of agent cards, grouped by computer, where you create and edit agents. Big cards, compact cards (the default once the crew outgrows a screen), or **Stats** to compare them.
   - **Tasks** is a board of work for the crew (bugs, features, chores): each task gets a fresh conversation, and you review what comes back.
-  - **Grid** and **Focus** show the agents' terminals. `⌘1` to `⌘4` switch between the four.
+  - **Terminals** shows the agents' terminals, side by side (**Grid**) or one big (**Focus**). **Busy** narrows the grid to the agents at work or waiting on you. `⌘1` Crew, `⌘2` Tasks, `⌘3` the grid, `⌘4` focus.
   - **The ribbon** under each terminal's header says what you're looking at. These aren't terminal apps: Crew runs each agent's CLI in a pseudo-terminal and draws its output, replaying what it printed before the view opened. **Live** means typing goes straight to the agent; **Mirror** means it runs on a linked computer and streams here; **Replay** means it's still being redrawn; **Offline** (its computer can't be reached) and **Ended** (the CLI exited) are striped and dimmed, because that output is frozen. The ribbon also shows the brain and the terminal's size, and hovering it explains the rest.
-  - The feed sits on the right.
+  - The chat sits on the right. Under the last message, a line per agent at work says what it's doing; with a big crew it shows the ones waiting on you first, up to three, and folds the rest into one line of faces (click it for all).
 
 ```
 npm install
@@ -36,18 +37,15 @@ npm start        # opens Crew.app (builds it the first time)
 
 ## The crew collection
 
-- **Every card shows its area** under the name, so you can see who does what at a glance.
-- **Click a card** to open it and edit everything:
-  - the name and area;
-  - its **instructions**, the system prompt layered on top of the crew basics. Press **✨ Write it** and the agent's own brain (Claude or Codex) drafts one from its name and area, including what to hand off to which teammate. The draft runs in the agent's folder, so it can pick up the project's CLAUDE.md or AGENTS.md;
-  - **reference images** for its instructions, such as mockups, brand guides or screenshots. Use **+ Reference image**, or paste or drop them on the instructions box. The agent opens them when relevant;
-  - the brain: provider, model and effort (the options shown depend on the provider, and Codex lists its live models and each model's effort levels);
-  - the folder, YOLO, on/off and extra CLI flags;
-  - **clones**: how many clones it may run at once when it's busy (see below);
-  - the look: body, color, eyes, mouth, accessories and blush, each shown as a tiny version of the agent. Or roll 🎲 Shuffle.
+- **Every card shows its area** under the name, so you can see who does what at a glance. Compact cards show the creature, the name and what it's doing; hover for the rest.
+- **Click a card** to open its sheet. On the left is who it is: its creature (click it to change its look), name, area, level, a glance at its work and how full its conversation is, with **Terminal** and **More** (export, move, remove). On the right, four tabs that each fit on the screen without scrolling. The tab you used last opens next time. `⌘S` saves, `Esc` closes.
+  - **Setup**: the brain (provider, model and effort; the options shown depend on the provider, and Codex lists its live models and each model's effort levels), YOLO, Fast and power side by side, the computer it runs on (**Move…**), its folder and extra CLI flags, its context limit, and **Clones**: how many clones it may run at once when it's busy (see below);
+  - **Instructions**: the system prompt layered on top of the crew basics. Press **Write it** and the agent's own brain (Claude or Codex) drafts one from its name and area, including what to hand off to which teammate. The draft runs in the agent's folder, so it can pick up the project's CLAUDE.md or AGENTS.md. It takes **reference images** too, such as mockups, brand guides or screenshots: **+ Reference image**, or paste or drop them on the instructions. The agent opens them when relevant;
+  - **Look**: body, color, eyes, mouth, accessories and blush, each shown as a tiny version of the agent, with the big one on the left as the preview. Or **Shuffle**;
+  - **Stats**: its level, how it compares with the rest of the crew, and its last two weeks.
 - **Save** applies the changes. If you changed something the agent launches with (area, instructions, brain, folder, flags, YOLO), the agent restarts and resumes its session. Edited instructions apply to the ongoing conversation too. If it's mid-task, it waits until it's free first.
 - **Select** turns on bulk mode. Pick cards, or press **All**, then set provider, model, effort, YOLO or power for all of them at once, or **Export** them.
-- **+ New agent** opens a blank card with a random creature.
+- **+ New agent** opens a blank sheet with a random creature. Pick the computer it should run on under **Setup**.
 
 ## Sharing agents: export and import
 
@@ -81,9 +79,11 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
   - `crew task …` to work the Tasks board (see below).
 
   Every hand-off and reply shows up in the feed, with the agent's face beside it.
-- **Threads.** Each reply, and each hand-off an agent makes while working on your request, quotes the message it answers ("↩ you: …"). Click the quote to jump back. Your messages link forward too ("↪ @joseph replied"), so with several messages and several agents in flight you can always tell what answers what. Prompts you type directly into an agent's terminal show up in the feed too, tagged *in terminal*.
+- **Threads.** Each reply, and each hand-off an agent makes while working on your request, quotes the message it answers, with a bar in its sender's color. Click the quote to jump back. Your messages link forward too ("↪ @joseph replied"), so with several messages and several agents in flight you can always tell what answers what. Prompts you type directly into an agent's terminal show up in the feed too, tagged *in terminal*.
 - **Rich text.** Replies render Markdown: bold, italics, `code`, code blocks, lists, quotes, links and pipe tables (links open in your browser). Tables need a header and delimiter row with matching column counts; alignment colons are supported. Escape literal pipes as `\|`, including inside inline code. Wide tables scroll horizontally; multiline cells are not supported. Long replies fold with a fade; click to unfold.
 - **Autopilot off** makes hand-offs between agents wait in the feed until you click **Send it** or **Drop**.
+- **Reply to a message.** Hover it and press **Reply**. The message box shows what you're answering, and your message goes to whoever sent it (to all of them, for one of yours sent to several), linked to it in the feed. If it's an older message, the agent gets a short note saying which one ("replying to your message …"). The box stays in that thread: what you send next answers the newest message in it. **Esc**, **×**, or picking someone on the **To** line leaves it.
+- **Unread replies.** A reply you haven't seen yet has a blue dot, and a **New** line marks where the unread ones begin. Each agent's creature wears a count (in the pill, the **To** line and the sidebar), the pill's mark shows the total, and the dashboard title bar says "2 new". A reply counts as read once it has been on screen for a moment while the window has focus. Clicking a creature in the pill opens the chat at its first unread reply. Crew remembers this in `~/.crew/reads.json`.
 - **Who's on it.** While an agent works, a slim line under the last message in the feed shows what it's doing. Click it to open its terminal; an agent waiting on you gets an **Answer** button that jumps to its question.
 - **Answer from the chat.** When an agent stops to ask you something, the question shows up in the chat as a card, its creature wiggles with a `!`, and you get a notification. The agent waits, and you answer right there:
   - **Permission prompts:** what it wants to run or change, with **Allow** and **Deny**. Claude's "don't ask again" options are there too, such as *Always allow Bash(npm test:\*)*. Type in the note box to say no and tell it what to do instead.
@@ -98,10 +98,10 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
 
 ## Clones: one agent, several tasks at once
 
-Give an agent clones and a second task no longer waits for the first to finish. When it's busy, the next message (or task from the board) goes to a **clone**: the same agent, with its instructions, brain, folder and look, in a terminal and conversation of its own. Turn it on in the agent's card under **Clones**, and pick how many may run at once (1 to 5).
+Give an agent clones and a second task no longer waits for the first to finish. When it's busy, the next message (or task from the board) goes to a **clone**: the same agent, with its instructions, brain, folder and look, in a terminal and conversation of its own. Turn it on in the agent's sheet, under **Setup** → **Clones at once**, and pick how many may run at once (1 to 5).
 
 - **Who takes what:** the agent itself when it's free, then a clone that's free, then a new clone if there's room. With every one of them busy, the message waits in the agent's queue and the first to finish takes it.
-- **How they look:** a clone wears its agent's face with its number, `marc ②`. It pops out next to its agent in the pill, gets a line under the agent's row (click it for its terminal), peeks out from behind the agent's card, and has its own terminal right after the agent's. The feed says which one answered.
+- **How they look:** a clone wears its agent's face with its number, `marc ②`. It pops out next to its agent in the pill, gets a slim line under the agent's row in the sidebar and the menu bar (click it for its terminal, right-click to send it away), peeks out from behind the agent's card, shows on the left of the agent's sheet while it works, and has its own terminal right after the agent's. The feed says which one answered.
 - **Talking to one:** a clone is `marc.2` to the crew. Its hand-offs say `[from @marc.2]`, so teammates answer the clone that asked, and an answer to something a clone asked goes back to it even when it's addressed to `marc`. Click a clone in the pill or the feed to message it directly.
 - **When they go:** a clone with nothing left to do goes away after 5 minutes (not while a teammate is still working on something it asked). The × on its terminal sends it away sooner; anything still queued for it goes back to its agent. Turning the agent off ends its clones, and lowering its number ends the spare ones once they're free.
 - **What carries over:** a clone's work counts toward its agent's experience, a task a clone finishes is the agent's on the board, and **Send back** reaches the clone still in that conversation if it's around. Its conversation isn't kept after it goes.
@@ -150,9 +150,9 @@ It comes from Claude Code's hooks (the Agent tool's PreToolUse, SubagentStart an
 
 Every agent shows how full its current conversation is: a little ring that fills up and turns amber past half and red past 80%. It's on the agent's card, in its terminal header, and in the sidebar once it's past half. Hover it for the numbers: tokens used of the model's window (or of its context limit), tasks in this conversation, and whether it has compacted. A compacted conversation (the CLI summarized older details to make room) gets a dashed ring.
 
-- **New conversation** gives an agent a clean slate: its instructions, folder and the crew's notes stay, the old conversation stays in the CLI's history. It's the ✦ button in the terminal header and in the agent's card (**Conversation** shows the gauge, the numbers and advice). A busy agent finishes its current task first.
-- **Send a task fresh.** The **New conversation** toggle under the message box sends your message into a new conversation instead of adding it to everything the agent did before.
-- **Context limit.** A model with a huge window (say 1M) can run one conversation for a very long time. Under **Conversation** in the agent's card, set its own limit (100k, 250k, or any number) and what happens when a conversation passes it:
+- **New conversation** gives an agent a clean slate: its instructions, folder and the crew's notes stay, the old conversation stays in the CLI's history. It's the ✦ button in the terminal header and beside the gauge in the agent's sheet. A busy agent finishes its current task first.
+- **Send a task fresh.** The **New conversation** toggle under the message box sends your message into a new conversation instead of adding it to everything the agent did before. It's for that one message: the toggle turns off, and the box stays in the new conversation as a reply ("Continuing the new conversation with marc"), so what you send next goes on in it.
+- **Context limit.** A model with a huge window (say 1M) can run one conversation for a very long time. Under **Conversation** in the agent's sheet (**Setup**), set its own limit (100k, 250k, or any number) and what happens when a conversation passes it:
   - **New conversation** (the default): it finishes what it's doing, then starts fresh. Its instructions, folder and the crew's notes stay.
   - **Just tell me**: a notification and an orange line in the chat, and you decide.
 
@@ -167,18 +167,21 @@ Each agent runs on one computer. Link your computers and each one shows the whol
 
 1. **On one computer:** click **Computers** in the dashboard titlebar, turn on **Share this computer**, and **Copy** the pairing code.
 2. **On the other computer:** click **Computers**, paste the code under **Link a computer**, and press **Link**.
-3. **Choose what to use.** The dialog lists the linked computer's agents. **Use** decides which ones show up in this computer's crew; the rest keep running there. **Move here** opens the agent's card set to run on this computer: check its folder and **Save**.
+3. **Choose what to use.** The dialog lists the linked computer's agents. **Use** decides which ones show up in this computer's crew; the rest keep running there. **Move to…** on an agent moves it to another computer, this one included (see below).
 
 The link works both ways, so the first computer sees the second one's agents too. Link more computers the same way. Linked computers reconnect on their own after a restart or a network change.
 
-- **Where an agent runs:** an agent's card shows **Runs on** once you have more than one computer. Pick another one and **Save** to move it. It keeps its instructions, reference images, look and work experience, but its conversation starts fresh there, because transcripts are files on the computer it left. New agents and imported agents can be put on any linked computer.
+- **Where an agent runs:** the sidebar groups the crew by computer. Clones stay with their agent's computer: moving an agent ends the clones it has at work (the move sheet says so). To move an agent, **drag** it onto another computer in the sidebar, **right-click** it and pick **Move to …**, or press **Move…** under **Setup** in its sheet. It works from any computer to any other (this one, a linked one, or between two linked ones, which don't need to be linked to each other), so you never have to walk over to the other Mac. A sheet shows where it's going, asks for its folder there (checked on that computer as you type, with that computer's folders to pick from), and says what comes along and what can't. It takes its instructions, reference images, look and work experience, its queued messages, its lines in the chat and its conversation: Crew stops it, copies its Claude Code transcript (or Codex session log) to the other computer, and it resumes there. New agents and imported agents can be put on any linked computer.
+  - **What it's told:** an agent that was working when it moved gets a message once it's up there, saying where it came from, what it was working on, and that whatever it had running on the old computer (dev servers, simulators, builds, background shells) didn't come along, so it checks where things stand before carrying on. An agent that was free isn't interrupted: the note goes on top of the next message it gets. The chat shows "moved from … to …, with its conversation".
+  - **When the conversation can't come:** it isn't found, it's over 256 MB, or the other computer runs an older Crew. The agent still moves and starts a new conversation there, and Crew says why. Messages sent to an agent while it's moving are turned away with "send it again in a moment"; if the move fails, it carries on where it was.
+  - **Its folder** is a path on the computer it moves to, which may be a different checkout: by default the same path as now, and moving a running agent needs that folder to exist there (the sheet shows a ✓ or a warning before you move). Claude Code keeps conversations per folder, so the transcript goes under the new folder's project. Claude's auto memory for a folder, and anything outside the conversation (files you didn't commit, background processes), stay on the old computer.
 - **Addressing:** `@gal` finds gal wherever it runs; if two computers have a gal, the one on this computer wins, and you can write `@gal@mac-mini` for the other. `crew who` lists teammates on every linked computer, so agents use the same names.
 - **Names:** each computer has a name (click it in the dialog to change it). Others see its agents as name@that-computer.
 - **Networks:** the same Wi-Fi, or Tailscale. The code lists every address of the computer (LAN IP, Tailscale IP and MagicDNS name), and the other computer uses whichever one answers. The default port is 7787; to change it, set `"port"` in `~/.crew/link/link.json`.
 - **Security:** the link is TLS with the sharing computer's own certificate, pinned by the code. The secret key in the code is only sent after the certificate checks out, so a fake computer on the same network can't take it. **New code** revokes the old one, and sharing is off until you turn it on. A link gives both computers full use of each other's agents, terminals included, so only link your own computers and keep the code to yourself. **Forget** unlinks a computer.
 - **Good to know:**
   - A computer has to be awake for its agents to work. Crew keeps itself running while linked, but closing the lid still sleeps the Mac. While a computer is unreachable, its agents show as unreachable.
-  - Folders are paths on the computer an agent runs on, so type them; the folder picker only browses this computer.
+  - Folders are paths on the computer an agent runs on. The folder picker only browses this computer; for another one, type the path or pick one of its folders in the move sheet. Crew checks it's there before it moves a running agent.
   - Theme, notifications and opening files stay per computer.
 
 A Codex-backed agent runs in Codex's `workspace-write` sandbox with network access on, so `crew` can reach the app over localhost. Its status hooks are passed on the command line with `--dangerously-bypass-hook-trust`, so no hook-trust prompt blocks every launch. That flag also lets hooks defined in the agent's own repo run without review, the same trust model Claude Code uses.
@@ -194,6 +197,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `conversations.json`: each agent's current conversation: when it started, tasks in it, compactions and how full it is.
 - `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, and a cache of images from agents on other computers.
 - `board.md`: shared notes (`crew note`).
+- `reads.json`: up to when you've read each agent's replies (the unread badges).
 - `feed.jsonl`: the feed history.
 - `attachments/`: images you've attached to messages and instructions.
 
@@ -243,7 +247,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 - `ui/` is plain HTML, CSS and JS with no build step. The main files:
   - `avatar.js` draws the creatures;
   - `voice.js` is dictation in the composer: the mic button, hold-to-talk, live text and the language switch (`voice-worklet.js` turns the microphone into 16 kHz audio);
-  - `collection.js` is the card collection and editor;
+  - `collection.js` is the card collection and the agent's sheet;
   - `tasks.js` is the Tasks board, list and task panel;
   - `common.js` has shared pieces, including a small DOM patcher that keeps avatars animating smoothly across updates.
 

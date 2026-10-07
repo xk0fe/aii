@@ -1,6 +1,14 @@
 /* The Tasks board (ui/tasks.js): header, add bar, filters, board or list, and a panel for one task. */
 .tasks-view { position: absolute; inset: 0; overflow: hidden; }
-.tasks { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+.tasks { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; container-type: inline-size; }
+/* a narrow middle: the counts and labels step aside, the controls stay */
+@container (max-width: 640px) {
+  .tk-head { padding: 16px 16px 4px; }
+  .tk-sub, .tk-flow span { display: none; }
+  .tk-search { width: 34px; padding: 0 9px; overflow: hidden; }
+  .tk-search:focus-within { width: 160px; }
+  .tk-add, .tk-filters { margin-left: 16px !important; margin-right: 16px !important; }
+}
 
 /* glyphs: status rings, priority bars, kinds */
 .ti { width: 15px; height: 15px; flex: none; display: block; }
@@ -136,7 +144,9 @@
 .tk-shots img { width: 48px; height: 34px; border-radius: 7px; object-fit: cover; background: var(--btn); }
 .tk-shots span { height: 34px; padding: 0 7px; border-radius: 7px; background: var(--btn); color: var(--fg2); font-size: 11px; font-weight: 650; display: grid; place-items: center; }
 .tk-doing { margin-top: 7px; padding: 4px 8px; border-radius: 7px; background: color-mix(in srgb, var(--c) 9%, transparent); font: 11px/1.35 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tk-summary { margin: 7px 0 0; padding-left: 8px; border-left: 2px solid color-mix(in srgb, var(--working) 60%, transparent); color: var(--fg2); font-size: 12px; line-height: 1.38; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tk-done-mark { display: inline-grid; vertical-align: -2px; margin-right: 4px; color: var(--working-ink); font-style: normal; }
+.tk-done-mark svg { width: 12px; height: 12px; stroke-width: 3; }
+.tk-summary { margin: 7px 0 0; color: var(--fg2); font-size: 12px; line-height: 1.38; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tc-foot { display: flex; align-items: center; gap: 6px; margin-top: 9px; min-height: 24px; min-width: 0; }
 .tk-owner { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--fg2); white-space: nowrap; overflow: hidden; }
 .tk-owner-name { overflow: hidden; text-overflow: ellipsis; }
@@ -166,7 +176,7 @@
 .tl-group[data-lane=check] { --k: var(--waiting); }
 .tl-group[data-lane=done] { --k: var(--working); }
 .tl-group + .tl-group { margin-top: 10px; }
-.tl-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 10px; background: color-mix(in srgb, var(--btn) 80%, var(--bg)); backdrop-filter: blur(12px); font-size: 12.5px; }
+.tl-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, var(--bg)); font-size: 12.5px; }
 .tl-head b { font-weight: 720; }
 .tl-none { margin: 6px 12px; color: var(--fg3); font-size: 12px; }
 .tr { display: grid; grid-template-columns: 22px 34px 18px minmax(0, 1fr) 128px 96px 38px; align-items: center; column-gap: 8px; height: 42px; padding: 0 10px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .15s; }
@@ -270,7 +280,7 @@
 .tp-desc a { color: var(--link); }
 .tp-none { margin: 0; color: var(--fg3); font-size: 12.5px; }
 .tp-details { border: 0; outline: 0; resize: none; width: 100%; border-radius: 12px; background: var(--btn); padding: 9px 11px; font-size: 13.5px; line-height: 1.5; min-height: 110px; user-select: text; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 50%, transparent); }
-.tp-orig { margin: 0; padding: 8px 12px; border-left: 3px solid var(--line); border-radius: 4px 12px 12px 4px; background: color-mix(in srgb, var(--btn) 50%, transparent); color: var(--fg2); font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; user-select: text; }
+.tp-orig { margin: 0; padding: 9px 12px; border-radius: 12px; background: var(--btn); color: var(--fg2); font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; user-select: text; }
 .tp-shots { margin: 0; }
 .tp-shots:empty { display: none; }
 /* activity, newest first, on a thread */

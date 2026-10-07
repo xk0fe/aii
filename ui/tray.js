@@ -1,5 +1,5 @@
 // Menu bar popover: who's doing what, autopilot, and the way into everything else.
-/* global themeButton, crew, live, morph, agentCard, clonesOf, crewSummary, celebrate, markSVG, ICONS */
+/* global themeButton, crew, live, morph, rosterHTML, crewSummary, celebrate, markSVG, store, ICONS */
 
 const $ = (s) => document.querySelector(s)
 $('.logo').outerHTML = markSVG('0 6 24 16')
@@ -10,11 +10,26 @@ $('[data-act=config]').innerHTML = ICONS.braces
 const drawTheme = themeButton($('[data-theme]'))
 $('[data-act=quit]').innerHTML = ICONS.power
 
+// folds are shared with nothing else: the popover remembers its own
+const folds = new Set((() => {
+  try {
+    return JSON.parse(store.get('crew.tray.folds') || '[]')
+  } catch {
+    return []
+  }
+})())
+let state = null
 document.addEventListener('click', (e) => {
   if (e.target.closest('.mode, .switch')) return
   const clone = e.target.closest('[data-clone]')
   if (clone) return crew.call('dashboard', clone.dataset.clone) // its terminal
-  const card = e.target.closest('.agent')
+  const fold = e.target.closest('[data-fold]')
+  if (fold) {
+    folds.has(fold.dataset.fold) ? folds.delete(fold.dataset.fold) : folds.add(fold.dataset.fold)
+    store.set('crew.tray.folds', JSON.stringify([...folds]))
+    return draw()
+  }
+  const card = e.target.closest('.crow')
   if (card) return crew.call('dashboard', card.dataset.agent)
   const el = e.target.closest('[data-act]')
   if (!el) return
@@ -33,13 +48,21 @@ const opened = () => {
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && opened())
 opened()
 
-live((state) => {
+// The popover grows with the crew up to most of the screen, then the crew scrolls inside it.
+function draw() {
   drawTheme(state.theme)
-  morph($('.agents'), state.agents.length
-    ? state.agents.filter((a) => !a.cloneOf).map((a) => agentCard(a, state.providers, clonesOf(state.agents, a))).join('')
+  document.documentElement.style.setProperty('--max', `${Math.max(260, Math.min(620, screen.availHeight - 260))}px`)
+  morph($('.roster'), state.agents.length
+    ? rosterHTML(state, { folds })
     : '<div class="empty">No agents yet. Add one per area of work, like onboarding or the 3D character.</div>')
-  celebrate($('.agents'), state.agents)
+  celebrate($('.roster'), state.agents)
   morph($('.sums'), crewSummary(state))
   $('.autopilot .switch').checked = state.autopilot
+  $('.autopilot p').textContent = state.autopilot ? 'Agents hand off work without asking you first' : 'Each hand-off waits for your Send it'
   crew.fit(340, document.body.scrollHeight)
+}
+
+live((next) => {
+  state = next
+  draw()
 })

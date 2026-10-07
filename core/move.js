@@ -1,0 +1,426 @@
+// Moving an agent to another computer with its conversation. The computer it leaves stops it (so its CLI has
+// written everything down) and hands over its definition, its CLI session files (Claude Code's transcript, Codex's
+// session log), its queued messages, its conversation's numbers and its own lines in the chat. The computer it
+// moves to puts the files where its CLI looks for them, resumes the conversation and tells the agent what
+// happened. core/crew.js runs the steps, passing everything through the computer you clicked on (the two needn't
+// be linked to each other), file by file in chunks: a long transcript is bigger than one Crew Link message.
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { HOME, ATTACHMENTS } from './hub.js'
+import { packAgents, unpackAgents } from './pack.js'
+import { expandEnv } from './providers.js'
+import { codexLog } from './context.js'
+
+export const CHUNK = 8 * 1024 * 1024 // bytes per Crew Link message: its limit is 32 MB, and bytes travel as base64
+export const MAX_CONVERSATION = 256 * 1024 * 1024 // a bigger one stays behind, and the agent starts fresh
+const MAX_IMAGES = 64 * 1024 * 1024 // images in the lines and messages that go along
+const STAGING = path.join(HOME, 'moving') // what arrives, until it's put in place
+
+const expand = (dir) => (dir ? String(dir).replace(/^~(?=\/|$)/, os.homedir()) : os.homedir())
+const real = (dir) => {
+  try {
+    return fs.realpathSync(dir)
+  } catch {
+    return dir
+  }
+}
+const sizeOf = (file) => {
+  try {
+    const s = fs.statSync(file)
+    return s.isFile() ? s.size : -1
+  } catch {
+    return -1
+  }
+}
+const mb = (n) => `${Math.round(n / 1024 / 1024)} MB`
+
+// ---- where each CLI keeps a conversation --------------------------------------------------------------
+
+// Claude Code: <config>/projects/<the folder's real path, every character but letters and digits a dash>/<id>.jsonl,
+// plus a <id>/ folder (sub-agents' transcripts, long tool outputs). A path over 200 characters is cut there and
+// gets a hash of the whole, as Claude Code does it.
+export function claudeSlug(dir) {
+  const slug = dir.replace(/[^a-zA-Z0-9]/g, '-')
+  if (slug.length <= 200) return slug
+  let hash = 0
+  for (let i = 0; i < dir.length; i++) hash = ((hash << 5) - hash + dir.charCodeAt(i)) | 0
+  return `${slug.slice(0, 200)}-${Math.abs(hash).toString(36)}`
+}
+
+const claudeHome = (env) => (env.CLAUDE_CONFIG_DIR ? expand(env.CLAUDE_CONFIG_DIR) : path.join(os.homedir(), '.claude'))
+const codexHome = (env) => (env.CODEX_HOME ? expand(env.CODEX_HOME) : path.join(os.homedir(), '.codex'))
+export const claudeProject = (cwd, env = process.env) => path.join(claudeHome(env), 'projects', claudeSlug(real(expand(cwd))))
+
+// Where a conversation's files go for an agent working in `cwd`: they're named relative to this.
+export function sessionRoot(cli, cwd, env = process.env) {
+  if (cli === 'claude') return claudeProject(cwd, env)
+  if (cli === 'codex') return path.join(codexHome(env), 'sessions')
+  throw new Error(`Crew can't carry ${cli} conversations`)
+}
+
+// The files of a conversation: { cli, id, root, files: [{ rel, path }] } (rel: relative to root, the same on the
+// computer it goes to), or { reason } there's nothing to take. `transcript`: the path its hooks reported, which
+// beats working it out.
+export function sessionOf(cli, id, { cwd, env = process.env, transcript } = {}) {
+  if (!id) return { reason: "it hadn't started a conversation yet" }
+  const reported = transcript?.id === id && path.basename(transcript.path).endsWith(`${id}.jsonl`) && sizeOf(transcript.path) >= 0 ? transcript.path : null
+  if (cli === 'claude') {
+    let file = reported ?? path.join(claudeProject(cwd, env), `${id}.jsonl`)
+    if (sizeOf(file) < 0) file = findClaude(id, env)
+    if (!file) return { reason: "its conversation wasn't found" }
+    const root = path.dirname(file)
+    const rels = [path.basename(file), ...walk(path.join(root, id)).map((f) => path.join(id, f))]
+    return { cli, id, root, files: rels.map((rel) => ({ rel, path: path.join(root, rel) })) }
+  }
+  if (cli === 'codex') {
+    const root = path.join(codexHome(env), 'sessions')
+    const file = reported ?? codexLog(id, codexHome(env))
+    if (!file || sizeOf(file) < 0) return { reason: "its conversation wasn't found" }
+    let rel = path.relative(root, file)
+    if (rel.startsWith('..') || path.isAbsolute(rel)) rel = path.join(new Date().toISOString().slice(0, 10).replaceAll('-', '/'), path.basename(file))
+    return { cli, id, root, files: [{ rel, path: file }] }
+  }
+  return { reason: `Crew can't carry ${cli} conversations` }
+}
+
+// A session started in another folder: Claude Code finds it in that folder's project.
+function findClaude(id, env) {
+  const projects = path.join(claudeHome(env), 'projects')
+  let dirs = []
+  try {
+    dirs = fs.readdirSync(projects)
+  } catch {}
+  for (const d of dirs) if (sizeOf(path.join(projects, d, `${id}.jsonl`)) >= 0) return path.join(projects, d, `${id}.jsonl`)
+  return null
+}
+
+function walk(dir, base = '') {
+  let list = []
+  try {
+    list = fs.readdirSync(path.join(dir, base), { withFileTypes: true })
+  } catch {
+    return []
+  }
+  return list.flatMap((d) => (d.isDirectory() ? walk(dir, path.join(base, d.name)) : d.isFile() ? [path.join(base, d.name)] : []))
+}
+
+const safeRel = (rel) => {
+  const r = path.normalize(String(rel))
+  if (!r || path.isAbsolute(r) || r === '..' || r.startsWith(`..${path.sep}`)) throw new Error(`not a conversation file: ${rel}`)
+  return r
+}
+
+function place(from, to) {
+  fs.mkdirSync(path.dirname(to), { recursive: true })
+  try {
+    fs.renameSync(from, to)
+  } catch (e) {
+    if (e.code !== 'EXDEV') throw e
+    fs.copyFileSync(from, to)
+    fs.rmSync(from, { force: true })
+  }
+}
+
+// ---- names, as the other computer writes them ---------------------------------------------------------
+
+// A name from the computer an agent leaves (`from`), as the one it moves to (`to`) writes it: the agent itself by
+// its new name, the others it leaves behind as name@from, and the ones that live on `to` (name@to) bare.
+// The same goes for task numbers (`numbers`: 12 there is 12@from here) and the ids of lines in the chat.
+export const requalify = ({ from, to, old, name, numbers = false }) => (n) => {
+  if (n === undefined || n === null || n === 'you' || n === 'crew') return n
+  const s = String(n)
+  const at = s.lastIndexOf('@')
+  if (at < 0) return old !== undefined && s === old ? name : `${s}@${from}`
+  if (s.slice(at + 1) !== to) return s
+  const bare = s.slice(0, at)
+  return numbers && /^\d+$/.test(bare) ? Number(bare) : bare
+}
+
+// A line of the chat, as the computer it moves to keeps it. A reply that points at a line staying behind points
+// at it there (core/crew.js reads id@computer like name@computer).
+function carried(e, { names, tasks, lines, images, moving }) {
+  const out = { ...e, from: names(e.from) }
+  if (e.to !== undefined) out.to = names(e.to)
+  if (e.cc) out.cc = e.cc.map(names)
+  if (e.ticket !== undefined) out.ticket = tasks(e.ticket)
+  if ((e.act === 'fixing' || e.act === 'triaged') && e.text) out.text = names(e.text)
+  if (e.re && !moving.has(e.re)) out.re = lines(e.re)
+  if (e.images) out.images = e.images.map((p) => images.get(p) ?? p)
+  return out
+}
+
+const gist = (text, max = 160) => {
+  const line = String(text ?? '').replace(/```[\s\S]*?```/g, '[code]').replace(/\s+/g, ' ').trim()
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line
+}
+
+// ---- the computer an agent leaves ----------------------------------------------------------------------
+
+// Stops the agent and says what goes with it. Nothing is removed until moveEnd: if the move fails, it carries on
+// here. While it's moving, messages to it are turned away (they'd have nowhere to go).
+export async function moveOut(hub, name) {
+  const a = hub.agents.get(name)
+  if (!a) throw new Error(`no agent named "${name}"`)
+  if (a.moving) throw new Error(`@${name} is already moving`)
+  const working = a.status === 'working' || a.status === 'waiting'
+  const running = hub.runner.running(name)
+  a.moving = true
+  try {
+    await hub.runner.stop(name) // so its CLI has written all of the conversation down
+    for (const t of [a.ack, a.timer, a.readyTimer]) clearTimeout(t)
+    hub.forgetAsks(name)
+    if (running) hub.setStatus(a, 'stopped')
+    const provider = hub.providerOf(a)
+    const env = { ...process.env, ...expandEnv(provider?.env) }
+    let session = sessionOf(provider?.cli, hub.sessions[name], { cwd: a.cwd, env, transcript: a.transcript })
+    const files = []
+    const paths = []
+    if (session.files) {
+      // the transcript itself, then what fits of the rest (sub-agents' transcripts, long tool outputs)
+      const [main, ...rest] = session.files.map((f) => ({ ...f, size: sizeOf(f.path) }))
+      if (main.size > MAX_CONVERSATION) session = { reason: `its conversation is ${mb(main.size)}, more than a move carries (${mb(MAX_CONVERSATION)})` }
+      else {
+        let room = MAX_CONVERSATION
+        for (const f of [main, ...rest]) {
+          if (f.size < 0 || f.size > room) continue
+          room -= f.size
+          files.push({ rel: f.rel, size: f.size })
+          paths.push(f.path)
+        }
+      }
+    }
+    // A message lives with the agent it's addressed to; everything else with the agent who said it.
+    const feed = hub.feed.filter((e) => (e.kind === 'msg' ? e.to === name : e.from === name))
+    const current = working && a.current ? hub.feed.find((e) => e.id === a.current) : undefined
+    let room = MAX_IMAGES
+    for (const p of new Set([...feed, ...a.inbox].flatMap((e) => e.images ?? []))) {
+      const size = String(p).startsWith(ATTACHMENTS + path.sep) ? sizeOf(p) : -1
+      if (size < 0 || size > room) continue
+      room -= size
+      files.push({ image: p, size })
+      paths.push(p)
+    }
+    const token = randomUUID()
+    ;(hub.moves ??= new Map()).set(token, { name, paths, ids: new Set(feed.map((e) => e.id)), running, working })
+    return {
+      token, name, files, pack: packAgents(hub, [name], { stats: true }),
+      session: session.files ? { cli: session.cli, id: session.id, root: session.root } : null, reason: session.reason,
+      convo: hub.convos[name] ?? null, feed, inbox: a.inbox, cwd: real(expand(a.cwd)),
+      working, current: current && { id: current.id, text: gist(current.ticket !== undefined ? `#${current.ticket} ${current.title ?? ''}` : current.text) },
+    }
+  } catch (e) {
+    a.moving = false
+    if (running) hub.launch(a)
+    throw e
+  }
+}
+
+export function moveRead(hub, token, i, offset) {
+  const file = hub.moves?.get(token)?.paths[i]
+  if (!file) throw new Error('that move is over')
+  const fd = fs.openSync(file, 'r')
+  try {
+    const buf = Buffer.alloc(CHUNK)
+    const n = fs.readSync(fd, buf, 0, CHUNK, Number(offset) || 0)
+    return new Uint8Array(buf.subarray(0, n))
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+// done: { to, name } once it lives there (to: that computer, name: what it's called there). Without it the move
+// didn't happen, and the agent picks up again here.
+export function moveEnd(hub, token, done) {
+  const m = hub.moves?.get(token)
+  if (!m) return
+  hub.moves.delete(token)
+  const a = hub.agents.get(m.name)
+  if (!done) {
+    if (!a) return
+    a.moving = false
+    if (m.working) a.inbox.unshift(crewPrompt(a, `[crew] You were stopped for a move to another computer that didn't go through, so you're still here, in ${real(expand(a.cwd))}. Anything you had running in your terminal was stopped. Check where things stand, then carry on.`))
+    if (m.running) hub.launch(a)
+    return hub.changed()
+  }
+  hub.removeAgent(m.name)
+  delete hub.convos[m.name]
+  hub.saveConvos()
+  hub.feed = hub.feed.filter((e) => !m.ids.has(e.id))
+  for (const e of hub.feed) if (m.ids.has(e.re)) e.re = `${e.re}@${done.to}` // replies to its lines point there
+  hub.renameRefs(m.name, `${done.name}@${done.to}`)
+  hub.rewriteFeed()
+  hub.changed()
+}
+
+// A prompt from Crew itself, queued like a message (it isn't one: it's not in the chat).
+const crewPrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, crew: true, queued: true })
+
+// ---- the computer it moves to ------------------------------------------------------------------------
+
+const staging = (token) => {
+  if (!/^[\w-]{8,64}$/.test(String(token))) throw new Error('not a move')
+  return path.join(STAGING, token)
+}
+
+export function moveWrite(token, i, offset, bytes) {
+  if (!Number.isInteger(i) || i < 0 || i > 100000 || !Number.isInteger(offset) || offset < 0) throw new Error('not a part of a move')
+  if (bytes.length > CHUNK || offset + bytes.length > MAX_CONVERSATION + MAX_IMAGES) throw new Error('more than a move carries')
+  const dir = staging(token)
+  if (!fs.existsSync(dir)) sweep()
+  fs.mkdirSync(dir, { recursive: true })
+  const fd = fs.openSync(path.join(dir, String(i)), offset === 0 ? 'w' : 'r+')
+  try {
+    fs.writeSync(fd, bytes, 0, bytes.length, offset)
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+export function moveDrop(token) {
+  fs.rmSync(staging(token), { recursive: true, force: true })
+}
+
+// What's left of moves that never finished (the computer running one went away midway).
+function sweep() {
+  let list = []
+  try {
+    list = fs.readdirSync(STAGING)
+  } catch {}
+  for (const d of list) {
+    try {
+      if (Date.now() - fs.statSync(path.join(STAGING, d)).mtimeMs > 864e5) fs.rmSync(path.join(STAGING, d), { recursive: true, force: true })
+    } catch {}
+  }
+}
+
+// The agent arrives: added under `name`, working in `folder`, its conversation resumed when its files came whole.
+// from: { slug, name } of the computer it left; here: this computer's name. -> { name, conversation, reason? }
+export function moveIn(hub, token, out, { name, folder, on, from }, here) {
+  const dir = staging(token)
+  const staged = (i) => path.join(dir, String(i))
+  const whole = (i) => sizeOf(staged(i)) === out.files[i].size
+  let added
+  try {
+    ;[added] = unpackAgents(hub, out.pack, [{ index: 0, name, folder, on: false }])
+    const a = hub.agents.get(added)
+    const cwd = real(expand(folder))
+    const names = requalify({ from: from.slug, to: hub.self, old: out.name, name: added })
+    const tasks = requalify({ from: from.slug, to: hub.self, numbers: true })
+    const lines = requalify({ from: from.slug, to: hub.self })
+    let conversation = 'fresh'
+    let reason = out.reason
+    if (out.session) {
+      try {
+        const cli = hub.providerOf(a)?.cli
+        if (cli !== out.session.cli) throw new Error(`it runs ${cli} here`)
+        const parts = out.files.map((f, i) => ({ ...f, i })).filter((f) => f.rel)
+        if (!parts.length || !parts.every((f) => whole(f.i))) throw new Error("it didn't arrive whole")
+        const root = sessionRoot(cli, folder, { ...process.env, ...expandEnv(hub.providerOf(a)?.env) })
+        for (const f of parts) place(staged(f.i), path.join(root, safeRel(f.rel)))
+        // Claude Code points at long tool outputs by path: from the old project folder to this one
+        const [first] = parts
+        const was = path.join(out.session.root, out.session.id) + path.sep
+        if (cli === 'claude' && out.session.root !== root) {
+          const file = path.join(root, safeRel(first.rel))
+          const text = fs.readFileSync(file, 'utf8')
+          if (text.includes(was)) fs.writeFileSync(file, text.replaceAll(was, path.join(root, out.session.id) + path.sep))
+        }
+        hub.saveSession(added, out.session.id)
+        conversation = 'moved'
+        reason = undefined
+      } catch (e) {
+        reason = `its conversation couldn't be set up here (${e.message})`
+      }
+    }
+    // the images in its lines and messages, saved here
+    const images = new Map()
+    out.files.forEach((f, i) => {
+      if (!f.image || !whole(i)) return
+      const ext = /^\.(png|jpe?g|gif|webp)$/i.test(path.extname(f.image)) ? path.extname(f.image) : '.png'
+      const file = path.join(ATTACHMENTS, `${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}${ext}`)
+      place(staged(i), file)
+      images.set(f.image, file)
+    })
+    const how = { names, tasks, lines, images, moving: new Set(out.feed.map((e) => e.id)) }
+    hub.adoptFeed(out.feed.map((e) => carried(e, how)))
+    const byId = new Map(hub.feed.map((e) => [e.id, e]))
+    a.inbox = out.inbox.map((m) => Object.assign(byId.get(m.id) ?? carried(m, how), { queued: true }))
+    const there = from.name
+    const moved = `moved from ${there} to ${here}` // its lines travel with it, so not "here"
+    if (conversation === 'moved') {
+      if (out.convo) hub.convos[added] = { ...out.convo, ...(out.convo.ticket != null && { ticket: tasks(out.convo.ticket) }) }
+      const folderNote = `your folder here is ${cwd}${out.cwd && out.cwd !== cwd ? ` (it was ${out.cwd} on ${there})` : ''}`
+      if (out.working) {
+        const what = out.current?.text ? ` while working on: "${out.current.text}"` : ' while working'
+        a.inbox.unshift(crewPrompt(a, `[crew] You were moved from computer "${there}" to "${here}"${what}. Your conversation came with you, but anything that was running on ${there} (dev servers, simulators, builds, background shells, watchers) did not, and ${folderNote}, which may be a different checkout. Check where things stand, then carry on.`, out.current?.id))
+      } else hub.convoOf(a).note = `[crew] Since your last message you moved from computer "${there}" to "${here}" (${folderNote}); processes you started on ${there} didn't come along.`
+      hub.saveConvos()
+      hub.post({ kind: 'event', from: added, text: `${moved}, with its conversation${out.working ? ', and picks up where it left off' : ''}` })
+    } else {
+      const was = out.working && out.current?.text ? `. It was working on "${gist(out.current.text, 90)}": send that again if it still needs doing` : ''
+      hub.post({ kind: 'event', from: added, text: `${moved}, starting a new conversation${reason ? `: ${reason}` : ''}${was}`, fresh: true })
+    }
+    if (hub.renameRefs(`${out.name}@${from.slug}`, added)) hub.rewriteFeed()
+    if (on) {
+      const c = hub.config.agents.find((x) => x.name === added)
+      delete c.off
+      hub.saveConfig() // starts it, resuming the conversation
+    }
+    return { name: added, conversation, ...(reason && { reason }) }
+  } catch (e) {
+    if (added) {
+      hub.removeAgent(added)
+      hub.feed = hub.feed.filter((x) => !out.feed.some((y) => y.id === x.id))
+      hub.rewriteFeed()
+    }
+    throw e
+  } finally {
+    moveDrop(token)
+  }
+}
+
+// ---- every other computer -----------------------------------------------------------------------------
+
+// An agent moved between two other computers: lines, tasks and read markers here follow it to its new name.
+// move: { from, to, old, name } (computer slugs, its name before and after).
+export function agentMoved(hub, { from, to, old, name }) {
+  const before = hub.self === from ? old : `${old}@${from}`
+  const after = hub.self === to ? name : `${name}@${to}`
+  if (hub.renameRefs(before, after)) hub.rewriteFeed()
+}
+
+// ---- folders, on whichever computer an agent will work -------------------------------------------------
+
+// Is there a folder at `dir` (~ is this computer's home)? -> { exists, path } with the path written out.
+export function folderInfo(dir) {
+  const full = expand(String(dir ?? '').trim())
+  let exists = false
+  try {
+    exists = fs.statSync(full).isDirectory()
+  } catch {}
+  return { exists, path: full }
+}
+
+// Folders worth offering for an agent here: the one at the same path as `like` (where it works now, on another
+// computer), the folders this computer's agents work in, and the home folder. -> [{ path, label }]
+export function folders(hub, like) {
+  const out = new Map()
+  const add = (dir, label) => {
+    const { exists, path: full } = folderInfo(dir)
+    if (!exists) return
+    const known = out.get(full)
+    if (!known) out.set(full, { path: full, label })
+    else if (!known.label.includes(label)) known.label += `, ${label}`
+  }
+  if (like !== undefined && like !== null) add(like, 'same folder as now')
+  const users = new Map()
+  for (const a of hub.agents.values()) {
+    const full = folderInfo(a.cwd).path
+    users.set(full, [...(users.get(full) ?? []), a.name])
+  }
+  for (const [full, list] of users) add(full, list.length > 3 ? `${list.slice(0, 3).join(', ')} +${list.length - 3}` : list.join(', '))
+  add('~', 'home folder')
+  return [...out.values()]
+}
