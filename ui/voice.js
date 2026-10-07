@@ -73,7 +73,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit }) {
     bar.classList.toggle('hidden', !visible)
     composer.classList.toggle('voice-note', visible)
     if (!visible) return
-    bar.style.height = `${Math.max(24, composer.querySelector('.chips').offsetHeight - 8)}px` // centered in the chips' space
+    bar.style.height = `${composer.querySelector('.chips').offsetHeight}px` // exactly over the recipients' line
     bar.classList.remove('error')
     if (state !== 'listening') return void (bar.innerHTML = hint)
     const current = language()

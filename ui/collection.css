@@ -298,6 +298,21 @@
 .convo-info p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--fg3); }
 .convo-card.warm .convo-info p { color: var(--waiting-ink); }
 .convo-card.hot .convo-info p { color: var(--danger); }
+/* its own context limit, and what happens when a conversation passes it */
+.limit { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; padding: 13px 16px; border-radius: 16px; border: 1px solid var(--line); }
+.limit-row { display: flex; align-items: center; gap: 12px; transition: opacity .2s; }
+.limit-row.off { opacity: .4; pointer-events: none; }
+.limit-label { width: 124px; flex: none; font-size: 12.5px; font-weight: 650; color: var(--fg2); }
+.limit .pills { flex: 1; min-width: 0; gap: 5px; }
+.limit-custom { display: inline-flex; align-items: center; gap: 1px; height: 24px; padding: 0 10px 0 6px; border-radius: 999px; background: var(--btn); color: var(--fg3); font-size: 12px; font-weight: 650; cursor: text; transition: box-shadow .2s; }
+.limit-custom input { width: 40px; border: 0; padding: 0; background: none; outline: 0; font: inherit; color: var(--fg); text-align: right; user-select: text; }
+.limit-custom input::placeholder { color: var(--fg3); font-weight: 560; }
+.limit-custom input::-webkit-inner-spin-button { display: none; }
+.limit-custom input:placeholder-shown { width: 52px; text-align: left; }
+.limit-custom input:placeholder-shown + span { display: none; }
+.limit-custom.on, .limit-custom:focus-within { box-shadow: inset 0 0 0 1.5px var(--c); color: var(--fg2); }
+.limit-note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--fg3); }
+.limit-note.past { color: var(--waiting-ink); }
 .convo-fresh { display: inline-flex; align-items: center; gap: 5px; flex: none; }
 .convo-fresh svg { width: 15px; height: 15px; color: var(--accent); }
 .pc-state .ctx { margin-left: 6px; }

@@ -13,7 +13,8 @@ You get three views:
 - **Dashboard**:
   - **Crew** is a Pokédex-style collection of agent cards, where you create and edit agents.
   - **Tasks** is a board of work for the crew (bugs, features, chores): each task gets a fresh conversation, and you review what comes back.
-  - **Grid** and **Focus** show the live terminals. `⌘1` to `⌘4` switch between the four.
+  - **Grid** and **Focus** show the agents' terminals. `⌘1` to `⌘4` switch between the four.
+  - **The ribbon** under each terminal's header says what you're looking at. These aren't terminal apps: Crew runs each agent's CLI in a pseudo-terminal and draws its output, replaying what it printed before the view opened. **Live** means typing goes straight to the agent; **Mirror** means it runs on a linked computer and streams here; **Replay** means it's still being redrawn; **Offline** (its computer can't be reached) and **Ended** (the CLI exited) are striped and dimmed, because that output is frozen. The ribbon also shows the brain and the terminal's size, and hovering it explains the rest.
   - The feed sits on the right.
 
 ```
@@ -56,7 +57,7 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
 
 ## How you use it
 
-- **Message one agent.** Click its chip in the composer, or start with `@david …`.
+- **Message one agent.** Pick it on the **To** line above the message box, or start with `@david …`. With a big crew the line shows just the creatures (hover one for its name and status), and scrolls once even those don't fit.
 - **Message several agents.** Use bare `@mentions` anywhere in the message, such as `@david @joseph fix the payload`. Mentions add to the selected composer chip; choose **Auto** to address only the mentioned agents. Each recipient gets one copy, regardless of repeated mentions or capitalization, with the original message and a note naming the other recipients. Emails, package paths, possessives such as `@david's`, and text in backticks do not address agents. An unknown, turned-off, or self recipient rejects the whole send before anything is delivered. With Autopilot off, each teammate hand-off waits for its own approval.
 - **Talk instead of typing.** Click the 🎙 mic next to send and just talk. Your words appear in the message box as you speak, and it fixes them up as it goes. Or press `⌥⇧D` from any app: the chat opens and starts listening.
   - **Hold the mic** to talk and let go to stop, or click once to start and once to stop.
@@ -82,7 +83,7 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
 - **Threads.** Each reply, and each hand-off an agent makes while working on your request, quotes the message it answers ("↩ you: …"). Click the quote to jump back. Your messages link forward too ("↪ @joseph replied"), so with several messages and several agents in flight you can always tell what answers what. Prompts you type directly into an agent's terminal show up in the feed too, tagged *in terminal*.
 - **Rich text.** Replies render Markdown: bold, italics, `code`, code blocks, lists, quotes, links and pipe tables (links open in your browser). Tables need a header and delimiter row with matching column counts; alignment colons are supported. Escape literal pipes as `\|`, including inside inline code. Wide tables scroll horizontally; multiline cells are not supported. Long replies fold with a fade; click to unfold.
 - **Autopilot off** makes hand-offs between agents wait in the feed until you click **Send it** or **Drop**.
-- **Who's on it.** While an agent works, a typing bubble under the last message in the feed shows what it's doing. Click it to open its terminal.
+- **Who's on it.** While an agent works, a slim line under the last message in the feed shows what it's doing. Click it to open its terminal; an agent waiting on you gets an **Answer** button that jumps to its question.
 - **Answer from the chat.** When an agent stops to ask you something, the question shows up in the chat as a card, its creature wiggles with a `!`, and you get a notification. The agent waits, and you answer right there:
   - **Permission prompts:** what it wants to run or change, with **Allow** and **Deny**. Claude's "don't ask again" options are there too, such as *Always allow Bash(npm test:\*)*. Type in the note box to say no and tell it what to do instead.
   - **Its own questions** (Claude's multiple choice): tap an option, pick several where it says *pick any*, or type *something else*.
@@ -123,13 +124,18 @@ crew task dup <n> <original>      the same as another task
 
 ## Conversations: how full they are, and starting fresh
 
-Every agent shows how full its current conversation is: a little ring that fills up and turns amber past half and red past 80%. It's on the agent's card, in its terminal header, and in the sidebar once it's past half. Hover it for the numbers: tokens used of the model's window, tasks in this conversation, and whether it has compacted. A compacted conversation (the CLI summarized older details to make room) gets a dashed ring.
+Every agent shows how full its current conversation is: a little ring that fills up and turns amber past half and red past 80%. It's on the agent's card, in its terminal header, and in the sidebar once it's past half. Hover it for the numbers: tokens used of the model's window (or of its context limit), tasks in this conversation, and whether it has compacted. A compacted conversation (the CLI summarized older details to make room) gets a dashed ring.
 
 - **New conversation** gives an agent a clean slate: its instructions, folder and the crew's notes stay, the old conversation stays in the CLI's history. It's the ✦ button in the terminal header and in the agent's card (**Conversation** shows the gauge, the numbers and advice). A busy agent finishes its current task first.
-- **Send a task fresh.** The ✦ toggle in the composer sends your message into a new conversation instead of adding it to everything the agent did before.
+- **Send a task fresh.** The **New conversation** toggle under the message box sends your message into a new conversation instead of adding it to everything the agent did before.
+- **Context limit.** A model with a huge window (say 1M) can run one conversation for a very long time. Under **Conversation** in the agent's card, set its own limit (100k, 250k, or any number) and what happens when a conversation passes it:
+  - **New conversation** (the default): it finishes what it's doing, then starts fresh. Its instructions, folder and the crew's notes stay.
+  - **Just tell me**: a notification and an orange line in the chat, and you decide.
+
+  The ring, the numbers and the terminal footer then measure against the limit, so 200k of a 250k limit reads 80%. It fires once per conversation, and again if the conversation shrinks below the limit and grows past it later. In `config.json` it's `"contextLimit": 250000` and `"onContextLimit": "notify"`. Agent packs carry both.
 - The feed draws a line where an agent's new conversation starts, and `/clear` typed in a terminal counts too.
 
-Claude Code reports its context to the status line, which Crew points at itself, so its terminal footer shows `context 34% · 68k of 200k · 5 tasks in this conversation`. Codex agents are read from Codex's session log after each step.
+Claude Code reports its context to the status line, which Crew points at itself, so its terminal footer shows `context 34% · 68k of 200k · 5 tasks in this conversation` (or `of 250k limit`). Codex agents are read from Codex's session log after each step.
 
 ## Computers: one crew across your Macs
 

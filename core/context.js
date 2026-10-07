@@ -80,6 +80,14 @@ export function codexLog(sessionId, home = process.env.CODEX_HOME || path.join(o
   return null
 }
 
+// An agent's own context limit, below its model's window: the numbers measured against that instead, so a 1M
+// model held to 250k reads 80% at 200k. `window` keeps the model's real size.
+export function againstLimit(ctx, limit) {
+  limit = Number(limit)
+  if (!ctx || !(limit > 0) || limit >= ctx.size) return ctx
+  return { ...ctx, size: limit, window: ctx.size, limit, pct: clamp((ctx.used / limit) * 100) }
+}
+
 // 1.2M, 340k, 900
 export const tokens = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 

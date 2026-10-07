@@ -32,7 +32,7 @@ function createTile(name) {
   const tile = document.createElement('div')
   tile.className = 'tile'
   tile.dataset.name = name
-  tile.innerHTML = '<div class="tile-head"></div><div class="term"></div>'
+  tile.innerHTML = '<div class="tile-head"></div><div class="ribbon"></div><div class="term"></div>'
   $('.terms').append(tile)
 
   const term = new Terminal({ theme: THEME, fontFamily: '"SF Mono", Menlo, monospace', fontSize: 12, lineHeight: 1.12, cursorBlink: true, macOptionIsMeta: true, scrollback: 5000 })
@@ -47,7 +47,7 @@ function createTile(name) {
   })
   term.onData((data) => crew.input(name, data))
 
-  const t = { tile, head: tile.querySelector('.tile-head'), term, fit, ready: false }
+  const t = { tile, head: tile.querySelector('.tile-head'), ribbon: tile.querySelector('.ribbon'), term, fit, ready: false, replaying: false }
   terms.set(name, t)
   let timer
   new ResizeObserver(() => {
@@ -62,15 +62,22 @@ function createTile(name) {
 // Live chunks that arrive before this are already in the buffer. Again after an agent's computer comes back.
 function replay(t) {
   const name = t.tile.dataset.name
+  const done = () => {
+    t.ready = true
+    t.replaying = false
+    drawRibbon(t)
+  }
   t.ready = false
+  t.replaying = true
+  drawRibbon(t)
   crew.call('buffer', name).then(({ data, cols, rows }) => {
     t.term.reset()
     t.term.resize(cols, rows)
     t.term.write(data, () => {
-      t.ready = true
+      done()
       resize(name)
     })
-  }, () => (t.ready = true))
+  }, done)
 }
 
 function resize(name) {
@@ -78,6 +85,34 @@ function resize(name) {
   if (!t || !t.tile.offsetWidth) return
   t.fit.fit()
   crew.call('resize', name, t.term.cols, t.term.rows).catch(() => {})
+  drawRibbon(t)
+}
+
+// The ribbon under each terminal's header says what you're looking at. These aren't terminal apps: Crew runs
+// the agent's CLI in a pseudo-terminal and draws its output with xterm.js, replaying what it printed before the
+// view opened. So it says whether that's live (typing goes straight to the agent), streamed from another
+// computer, still being redrawn, or frozen (its computer is unreachable, or the process exited).
+const RIBBON = {
+  live: (a) => ['Live', `Crew's view of ${a.name}'s terminal · earlier output replayed`,
+    `This isn't a terminal app. Crew runs ${a.name}'s CLI in a pseudo-terminal and draws its output here; what you type goes straight to ${a.name}. Output from before this view opened (up to 256 KB) is replayed, so older lines can look off until ${a.name} redraws.`],
+  mirror: (a) => ['Mirror', `Streamed from ${a.homeName} · earlier output replayed`,
+    `${a.name} runs on ${a.homeName}. Its terminal output streams here over Crew Link and what you type goes back to it. Output from before this view opened is replayed, so older lines can look off until it redraws.`],
+  replay: (a) => ['Replay', `Redrawing ${a.name}'s recent output…`, 'Crew is replaying what the agent printed before this view opened. Live output follows.'],
+  offline: (a) => ['Offline', `${a.homeName ?? 'Its computer'} is unreachable · showing the last output`,
+    `Not live: ${a.homeName ?? 'the computer it runs on'} can't be reached, so this is the last output it sent. It reconnects on its own.`],
+  ended: (a) => ['Ended', 'The process exited · showing its last output', `Not live: ${a.name}'s CLI exited. Restart it from the header to pick its session back up.`],
+}
+
+function drawRibbon(t) {
+  const a = t.agent
+  if (!a) return
+  const mode = t.replaying ? 'replay' : a.status === 'away' ? 'offline' : a.status === 'stopped' ? 'ended' : a.home ? 'mirror' : 'live'
+  const [badge, line, tip] = RIBBON[mode](a)
+  const size = t.term.cols && t.ready ? `${t.term.cols}×${t.term.rows}` : ''
+  t.tile.dataset.mode = mode
+  t.ribbon.dataset.mode = mode
+  t.ribbon.title = tip
+  morph(t.ribbon, `<span class="rb-badge">${badge}</span><span class="rb-text">${esc(line)}</span><span class="rb-meta">${esc([brainShort(a, state.providers), size].filter(Boolean).join(' · '))}</span>`)
 }
 
 crew.onPty((name, data) => {
@@ -85,19 +120,23 @@ crew.onPty((name, data) => {
   if (t?.ready) t.term.write(data)
 })
 
+// Who and what they're doing on the left; modes, the context gauge and the actions on the right. The brain and
+// terminal size live in the ribbon below, so this line never crowds.
 function tileHead(a) {
   const busy = a.status === 'working' || a.status === 'waiting'
-  return `${avatarHTML(a, { size: 26 })}<b>${nameHTML(a)}</b><span class="model" title="${esc(brainLabel(a, state.providers))}">${esc(brainShort(a, state.providers))}</span>
+  return `${avatarHTML(a, { size: 24 })}<b>${nameHTML(a)}</b>
     <span class="state ${a.status}" ${busy ? 'data-act="markIdle" title="Stuck? Click to mark it free"' : ''}>${esc(statusText(a))}</span>
-    ${a.fast ? `<span class="tag fast-tag" title="Fast: Codex's fast service tier">${ICONS.bolt}</span>` : ''}
-    ${a.yolo ? '<span class="tag yolo-tag" title="Skips all permission prompts">YOLO</span>' : ''}
     <span class="activity">${esc(a.activity)}</span>
     ${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}
+    ${a.fast ? `<span class="tag fast-tag" title="Fast: Codex's fast service tier">${ICONS.bolt}</span>` : ''}
+    ${a.yolo ? '<span class="tag yolo-tag" title="Skips all permission prompts">YOLO</span>' : ''}
     ${contextRing(a)}
-    <button class="icon" data-act="fresh" aria-pressed="${Boolean(a.freshPending)}" title="${a.freshPending ? 'Starts a new conversation when it finishes this task' : 'New conversation: a clean slate for its next task (the old one stays in its history)'}">${ICONS.fresh}</button>
-    <button class="icon" data-act="edit" title="Edit agent">${ICONS.edit}</button>
-    <button class="icon" data-act="restart" title="Restart (resumes the session)">${ICONS.restart}</button>
-    <button class="icon" data-act="off" title="Turn off (stays off after restarts)">${ICONS.power}</button>`
+    <span class="tile-acts">
+      <button class="icon" data-act="fresh" aria-pressed="${Boolean(a.freshPending)}" title="${a.freshPending ? 'Starts a new conversation when it finishes this task' : 'New conversation: a clean slate for its next task (the old one stays in its history)'}">${ICONS.fresh}</button>
+      <button class="icon" data-act="edit" title="Edit agent">${ICONS.edit}</button>
+      <button class="icon" data-act="restart" title="Restart (resumes the session)">${ICONS.restart}</button>
+      <button class="icon" data-act="off" title="Turn off (stays off after restarts)">${ICONS.power}</button>
+    </span>`
 }
 
 $('.terms').addEventListener('click', (e) => {
@@ -225,7 +264,9 @@ const ready = live((next) => {
     t.away = a.status === 'away'
     t.convo = convo
     t.tile.style.setProperty('--c', agentColor(a))
+    t.agent = a
     morph(t.head, tileHead(a))
+    drawRibbon(t)
   }
 
   morph($('.side .agents'), state.agents.map((a) => agentCard(a, state.providers)).join(''))

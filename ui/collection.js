@@ -5,7 +5,9 @@
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
 const slug = (s) => String(s ?? '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
-const FIELDS = ['name', 'area', 'prompt', 'images', 'provider', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo']
+const FIELDS = ['name', 'area', 'prompt', 'images', 'provider', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'contextLimit', 'onContextLimit']
+// Context limits offered as one tap (only those below the model's window show); any other number can be typed.
+const LIMITS = [100000, 150000, 200000, 250000, 400000, 600000]
 // An agent's full name as the crew knows it: on another computer it carries that computer's name.
 const qualified = (name, home) => (home ? `${name}@${home}` : name)
 
@@ -274,11 +276,11 @@ function mountCollection(root, { onTerminal, onImport }) {
   function open(name, { home } = {}) {
     const a = name && agentNamed(name)
     original = a
-      ? { name: a.seed ?? a.name, home: a.home ?? '', area: a.area ?? '', prompt: a.prompt ?? '', images: a.images ?? [], provider: a.provider ?? 'claude', model: a.model ?? '', effort: a.effort ?? '', tier: a.tier ?? '', cwd: a.cwd ?? '', args: a.args ?? '', yolo: a.yolo, on: a.on, avatar: avatarOf(a) }
+      ? { name: a.seed ?? a.name, home: a.home ?? '', area: a.area ?? '', prompt: a.prompt ?? '', images: a.images ?? [], provider: a.provider ?? 'claude', model: a.model ?? '', effort: a.effort ?? '', tier: a.tier ?? '', cwd: a.cwd ?? '', args: a.args ?? '', yolo: a.yolo, on: a.on, avatar: avatarOf(a), contextLimit: a.contextLimit ?? '', onContextLimit: a.onContextLimit ?? 'fresh' }
       : null
     draft = original
       ? structuredClone(original)
-      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar() }
+      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar(), contextLimit: '', onContextLimit: 'fresh' }
     if (home !== undefined) draft.home = home
     editing = a ? a.name : ':new'
     if (selecting) setSelecting(false)
@@ -355,6 +357,7 @@ function mountCollection(root, { onTerminal, onImport }) {
           <div class="experience"></div>
           <h4>Conversation <span class="h4-note convo-since"></span></h4>
           <div class="convo"></div>
+          <div class="limit"></div>
           <h4>Instructions <button class="btn small" data-act="write">✨ Write it</button><span class="h4-note">its system prompt, on top of the crew basics</span></h4>
           <textarea class="pd-prompt" data-k="prompt" rows="7" placeholder="How this agent works: what it owns, its quality bar, conventions, when to hand off. Leave it empty, or let ✨ write a first draft from the name and area.">${esc(d.prompt)}</textarea>
           <div class="refs"><button type="button" class="btn small" data-ref>+ Reference image</button><span class="h4-note">mockups, brand guides, screenshots… paste or drop them on the instructions too</span></div>
@@ -374,6 +377,7 @@ function mountCollection(root, { onTerminal, onImport }) {
     drawState()
     drawExperience()
     drawConvo()
+    drawLimit()
     drawBrain()
     drawLook()
     drawAvatar()
@@ -429,6 +433,7 @@ function mountCollection(root, { onTerminal, onImport }) {
     const ctx = c.context
     const level = ctx ? ctxLevel(ctx.pct) : 'calm'
     const advice = !a.on ? 'It picks this conversation up when it comes back on.'
+      : ctx?.limit && level !== 'calm' ? (a.onContextLimit === 'notify' ? `Getting close to its ${tokenCount(ctx.limit)} limit. You'll get a heads-up when it passes.` : `It starts a new conversation by itself once it passes ${tokenCount(ctx.limit)}.`)
       : c.compactions ? `It ran out of room ${c.compactions === 1 ? 'once' : `${c.compactions} times`} and summarized older details. A new conversation gives it a clean slate.`
       : level === 'hot' ? 'Nearly full: it will soon summarize older details to make room. Start fresh before its next task.'
       : level === 'warm' ? 'Getting long. Start fresh before giving it something unrelated.'
@@ -438,11 +443,41 @@ function mountCollection(root, { onTerminal, onImport }) {
       <div class="convo-card ${level}">
         <div class="convo-gauge">${ctx && a.on ? contextRing(a, { label: false, size: 54 }) : '<span class="ctx calm" style="--s:54px"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.6" class="ctx-track"/></svg></span>'}<b>${ctx ? `${ctx.pct}%` : '–'}</b></div>
         <div class="convo-info">
-          <div class="convo-nums">${ctx ? `<b>${tokenCount(ctx.used)}</b> of ${tokenCount(ctx.size)} tokens` : 'Not measured yet'} · ${plural(c.tasks, 'task')}${c.compactions ? ` · compacted ${c.compactions}×` : ''}</div>
+          <div class="convo-nums">${ctx ? `<b>${tokenCount(ctx.used)}</b> of ${ctx.limit ? `its ${tokenCount(ctx.limit)} limit (${tokenCount(ctx.window)} window)` : `${tokenCount(ctx.size)} tokens`}` : 'Not measured yet'} · ${plural(c.tasks, 'task')}${c.compactions ? ` · compacted ${c.compactions}×` : ''}</div>
           <p>${esc(advice)}</p>
         </div>
         <button class="btn convo-fresh" data-act="fresh" ${a.freshPending ? 'disabled' : ''} title="${esc(contextTip(a))}">${ICONS.fresh}${a.freshPending ? 'When it’s free…' : 'New conversation'}</button>
       </div>`)
+  }
+
+  // Its own context limit, below the model's window, and what happens when the conversation passes it.
+  function drawLimit() {
+    const host = card.querySelector('.limit')
+    if (!host) return
+    const a = agentNamed(editing)
+    const ctx = a?.convo?.context
+    const win = ctx?.window ?? ctx?.size // the model's real window, once it has reported one
+    const limit = Number(draft.contextLimit) || 0
+    const pill = (k, v, label, on) => `<button class="pill ${on ? 'on' : ''}" data-v="${v}">${label}</button>`
+    const presets = LIMITS.filter((n) => !win || n < win)
+    const custom = limit && !presets.includes(limit)
+    const fresh = draft.onContextLimit !== 'notify'
+    const past = limit && ctx && ctx.used >= limit
+    const note = !limit ? `It can use the model's whole window${win ? ` (${tokenCount(win)})` : ''}. Long conversations full of unrelated tasks are where agents start mixing things up; a limit keeps it sharp.`
+      : past ? (fresh ? `It's already past ${tokenCount(limit)}: once you save, it starts a new conversation as soon as it's free.` : `It's already past ${tokenCount(limit)}: you'll get a heads-up once you save.`)
+      : fresh ? `At ${tokenCount(limit)} it finishes what it's doing and starts a new conversation. Its instructions, folder and the crew's notes stay; the old conversation stays in the CLI's history.`
+      : `At ${tokenCount(limit)} you get a notification and a line in the chat, and decide when to start fresh.`
+    host.innerHTML = `
+      <div class="limit-row">
+        <span class="limit-label">Context limit</span>
+        <div class="pills small" data-pick="contextLimit">${pill('contextLimit', '', win ? `Full ${tokenCount(win)}` : 'Full window', !limit)}${presets.map((n) => pill('contextLimit', n, tokenCount(n), limit === n)).join('')}
+          <label class="limit-custom ${custom ? 'on' : ''}"><input type="number" min="10" step="10" data-limit-k value="${custom ? Math.round(limit / 1000) : ''}" placeholder="Custom" title="Any limit, in thousands of tokens"><span>k</span></label></div>
+      </div>
+      <div class="limit-row ${limit ? '' : 'off'}">
+        <span class="limit-label">When it's reached</span>
+        <div class="pills small" data-pick="onContextLimit">${pill('onContextLimit', 'fresh', 'New conversation', fresh)}${pill('onContextLimit', 'notify', 'Just tell me', !fresh)}</div>
+      </div>
+      <p class="limit-note ${past ? 'past' : ''}">${esc(note)}</p>`
   }
 
   function drawState() {
@@ -522,6 +557,14 @@ function mountCollection(root, { onTerminal, onImport }) {
   }
 
   card.addEventListener('input', (e) => {
+    if ('limitK' in e.target.dataset) {
+      const k = Math.round(Number(e.target.value))
+      draft.contextLimit = k >= 10 ? k * 1000 : ''
+      for (const p of card.querySelectorAll('[data-pick=contextLimit] .pill')) p.classList.toggle('on', Number(p.dataset.v || 0) === (Number(draft.contextLimit) || 0) && !(k >= 10 && !p.dataset.v))
+      e.target.closest('.limit-custom').classList.toggle('on', k >= 10 && !LIMITS.includes(draft.contextLimit))
+      card.querySelector('.limit-row + .limit-row')?.classList.toggle('off', !draft.contextLimit)
+      return syncSave()
+    }
     const k = e.target.dataset.k
     if (!k) return
     draft[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value
@@ -554,6 +597,12 @@ function mountCollection(root, { onTerminal, onImport }) {
 
   card.addEventListener('click', async (e) => {
     const pill = e.target.closest('[data-pick] .pill')
+    if (pill && ['contextLimit', 'onContextLimit'].includes(pill.closest('[data-pick]').dataset.pick)) {
+      const k = pill.closest('[data-pick]').dataset.pick
+      draft[k] = k === 'contextLimit' ? Number(pill.dataset.v) || '' : pill.dataset.v
+      drawLimit()
+      return syncSave()
+    }
     if (pill) {
       const k = pill.closest('[data-pick]').dataset.pick
       if (k === 'provider' && draft.provider !== pill.dataset.v) Object.assign(draft, { model: '', effort: '', tier: '' })
@@ -685,6 +734,7 @@ function mountCollection(root, { onTerminal, onImport }) {
         drawState()
         drawExperience()
         drawConvo()
+        if (!card.querySelector('.limit')?.contains(document.activeElement)) drawLimit()
       }
     },
     open,

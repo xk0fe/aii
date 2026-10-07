@@ -255,6 +255,142 @@ const SHOTS = {
     })
     win.destroy()
   },
+  // A thread in the chat: a long reply folded under "Show more", quoting the hand-off it answers.
+  async chatThread(theme) {
+    const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await js(win, "document.querySelector('#m-f6c').scrollIntoView({ block: 'end' }); document.querySelector('.feed').scrollTop += 16")
+    await sleep(500)
+    await save(win, `chat-thread-${theme}`)
+    win.destroy()
+  },
+  // Every kind of terminal ribbon at once: live, mirrored from another computer, replaying, offline, ended.
+  async ribbons(theme) {
+    const win = await dashboard(theme, 'grid', { width: 1920, height: 1080 })
+    await sleep(1500)
+    await js(win, `
+      const s = window.__crewState
+      const by = (n) => s.agents.find((a) => a.name === n)
+      by('jeff').status = 'stopped'
+      window.__crewBufferDelay = 600000
+      by('arie').convo = { ...by('arie').convo, since: Date.now() }
+      window.__crewEmit('state', s)`)
+    await sleep(900)
+    await js(win, "document.querySelector('.terms').scrollTop = 99999")
+    await sleep(500)
+    await save(win, `ribbons-${theme}`)
+    await js(win, "const s = window.__crewState; s.agents.find((a) => a.name === 'scarlett@mac-mini').status = 'away'; window.__crewEmit('state', s)")
+    await sleep(700)
+    await save(win, `ribbons-offline-${theme}`)
+    win.destroy()
+  },
+  // Opening a terminal replays what the agent printed before: the ribbon says so, then turns live.
+  async ribbonGif() {
+    const win = await dashboard('dark', 'grid', { width: 1920, height: 1080 })
+    await sleep(1500)
+    const tile = await js(win, "const r = document.querySelector('.tile[data-name=arie]').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
+    await record(win, 'ribbon-replay', {
+      clip: tile, ms: 4200, width: 900,
+      during: async () => {
+        await sleep(600)
+        await js(win, "window.__crewBufferDelay = 1800; const s = window.__crewState; const a = s.agents.find((x) => x.name === 'arie'); a.convo = { ...a.convo, since: Date.now() }; window.__crewEmit('state', s)")
+        await sleep(3000)
+      },
+    })
+    win.destroy()
+  },
+  // The recipient line: hover the faces for who's who, pick one, and the message box says who it's for.
+  async railGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await sleep(300)
+    const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + r.height - 300), width: Math.round(r.width), height: 300 }")
+    await record(win, 'rail', {
+      clip: panel, ms: 6200, width: 800,
+      during: async () => {
+        let at = { x: panel.x + 200, y: panel.y + 40 }
+        for (const name of ['joseph', 'david', 'gal', 'marc', 'scarlett@mac-mini']) {
+          at = await glide(win, at, await center(win, `.chip[data-to="${name}"]`), 380)
+          await sleep(320)
+        }
+        at = await glide(win, at, await center(win, '.chip[data-to=marc]'), 400)
+        await sleep(200)
+        await tap(win, at)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '.chip[data-to=auto]'), 500)
+        await sleep(200)
+        await tap(win, at)
+        await sleep(600)
+        await glide(win, at, { x: at.x + 60, y: at.y + 90 }, 400)
+      },
+    })
+    win.destroy()
+  },
+  // The pill at the top of the screen: it lies flat and the chat opens below it.
+  async chatBelow(theme) {
+    const win = await open('overlay.html', { theme, width: 640, height: 760, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('place', { side: 'below', align: 'center' }); window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(800)
+    await fitToContent(win)
+    await save(win, `chat-below-${theme}`)
+    win.destroy()
+  },
+  // An agent's own context limit: joseph's 1M window held to 250k.
+  async limit(theme) {
+    const win = await dashboard(theme, 'crew')
+    await js(win, click('[data-mode=cards]'))
+    await sleep(300)
+    await js(win, click('.pcard[data-name=joseph]'))
+    await sleep(1200)
+    await js(win, "const c = document.querySelector('.col-card'); c.scrollTop = document.querySelector('.convo').offsetTop - 140")
+    await sleep(500)
+    await save(win, `limit-${theme}`)
+    win.destroy()
+  },
+  // Setting one: gal is already past 150k, so the note says what happens on Save; then "Just tell me".
+  async limitGif() {
+    const win = await dashboard('light', 'crew')
+    await js(win, click('[data-mode=cards]'))
+    await sleep(300)
+    await js(win, click('.pcard[data-name=gal]'))
+    await sleep(1200)
+    await js(win, "const c = document.querySelector('.col-card'); c.scrollTop = document.querySelector('.convo').offsetTop - 140")
+    await sleep(500)
+    const box = await js(win, "const r = document.querySelector('.convo').getBoundingClientRect(); const l = document.querySelector('.limit').getBoundingClientRect(); return { x: Math.round(r.x) - 16, y: Math.round(r.y) - 40, width: Math.round(r.width) + 32, height: Math.round(l.bottom - r.y) + 56 }")
+    await record(win, 'context-limit', {
+      clip: box, ms: 6400, width: 900,
+      during: async () => {
+        let at = { x: box.x + box.width - 40, y: box.y + 30 }
+        await sleep(400)
+        at = await glide(win, at, await center(win, '[data-pick=contextLimit] .pill[data-v="150000"]'), 700)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(1300)
+        at = await glide(win, at, await center(win, '[data-pick=onContextLimit] .pill[data-v=notify]'), 600)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(1200)
+        at = await glide(win, at, await center(win, '[data-pick=onContextLimit] .pill[data-v=fresh]'), 500)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(700)
+      },
+    })
+    win.destroy()
+  },
+  async focus(theme) {
+    const win = await dashboard(theme, 'focus')
+    await sleep(1500)
+    await save(win, `focus-${theme}`)
+    win.destroy()
+  },
   async grid(theme) {
     const win = await dashboard(theme, 'grid')
     await sleep(1500)
@@ -363,8 +499,8 @@ const SHOTS = {
   },
 }
 
-async function dashboard(theme, view) {
-  const win = await open('dashboard.html', { theme, width: 1440, height: 880 })
+async function dashboard(theme, view, { width = 1440, height = 880 } = {}) {
+  const win = await open('dashboard.html', { theme, width, height })
   await js(win, `localStorage.setItem('crew.view', '${view}')`)
   win.webContents.reload()
   await new Promise((r) => win.webContents.once('did-finish-load', r))
