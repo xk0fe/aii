@@ -1,5 +1,5 @@
 // Full-screen view: the crew collection, every agent's live terminal, and the crew feed.
-/* global themeButton, orbitHTML, subsChip, nameHTML, contextRing, mountTasks, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
+/* global themeButton, orbitHTML, subsChip, nameHTML, displayName, clonesOf, contextRing, mountTasks, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -28,12 +28,13 @@ const drawTheme = themeButton($('[data-act=theme]'))
 
 // ---- terminals -------------------------------------------------------------
 
-function createTile(name) {
+// `before`: the tile it goes in front of, so a new clone's terminal lands right after its original's.
+function createTile(name, before = null) {
   const tile = document.createElement('div')
   tile.className = 'tile'
   tile.dataset.name = name
   tile.innerHTML = '<div class="tile-head"></div><div class="ribbon"></div><div class="term"></div>'
-  $('.terms').append(tile)
+  $('.terms').insertBefore(tile, before)
 
   const term = new Terminal({ theme: THEME, fontFamily: '"SF Mono", Menlo, monospace', fontSize: 12, lineHeight: 1.12, cursorBlink: true, macOptionIsMeta: true, scrollback: 5000 })
   const fit = new FitAddon.FitAddon()
@@ -93,21 +94,21 @@ function resize(name) {
 // view opened. So it says whether that's live (typing goes straight to the agent), streamed from another
 // computer, still being redrawn, or frozen (its computer is unreachable, or the process exited).
 const RIBBON = {
-  live: (a) => ['Live', `Crew's view of ${a.name}'s terminal · earlier output replayed`,
-    `This isn't a terminal app. Crew runs ${a.name}'s CLI in a pseudo-terminal and draws its output here; what you type goes straight to ${a.name}. Output from before this view opened (up to 256 KB) is replayed, so older lines can look off until ${a.name} redraws.`],
-  mirror: (a) => ['Mirror', `Streamed from ${a.homeName} · earlier output replayed`,
-    `${a.name} runs on ${a.homeName}. Its terminal output streams here over Crew Link and what you type goes back to it. Output from before this view opened is replayed, so older lines can look off until it redraws.`],
-  replay: (a) => ['Replay', `Redrawing ${a.name}'s recent output…`, 'Crew is replaying what the agent printed before this view opened. Live output follows.'],
+  live: (a, n) => ['Live', `Crew's view of ${n}'s terminal · earlier output replayed`,
+    `This isn't a terminal app. Crew runs ${n}'s CLI in a pseudo-terminal and draws its output here; what you type goes straight to ${n}. Output from before this view opened (up to 256 KB) is replayed, so older lines can look off until ${n} redraws.`],
+  mirror: (a, n) => ['Mirror', `Streamed from ${a.homeName} · earlier output replayed`,
+    `${n} runs on ${a.homeName}. Its terminal output streams here over Crew Link and what you type goes back to it. Output from before this view opened is replayed, so older lines can look off until it redraws.`],
+  replay: (a, n) => ['Replay', `Redrawing ${n}'s recent output…`, 'Crew is replaying what the agent printed before this view opened. Live output follows.'],
   offline: (a) => ['Offline', `${a.homeName ?? 'Its computer'} is unreachable · showing the last output`,
     `Not live: ${a.homeName ?? 'the computer it runs on'} can't be reached, so this is the last output it sent. It reconnects on its own.`],
-  ended: (a) => ['Ended', 'The process exited · showing its last output', `Not live: ${a.name}'s CLI exited. Restart it from the header to pick its session back up.`],
+  ended: (a, n) => ['Ended', 'The process exited · showing its last output', `Not live: ${n}'s CLI exited. Restart it from the header to pick its session back up.`],
 }
 
 function drawRibbon(t) {
   const a = t.agent
   if (!a) return
   const mode = t.replaying ? 'replay' : a.status === 'away' ? 'offline' : a.status === 'stopped' ? 'ended' : a.home ? 'mirror' : 'live'
-  const [badge, line, tip] = RIBBON[mode](a)
+  const [badge, line, tip] = RIBBON[mode](a, displayName(a))
   const size = t.term.cols && t.ready ? `${t.term.cols}×${t.term.rows}` : ''
   t.tile.dataset.mode = mode
   t.ribbon.dataset.mode = mode
@@ -133,9 +134,11 @@ function tileHead(a) {
     ${contextRing(a)}
     <span class="tile-acts">
       <button class="icon" data-act="fresh" aria-pressed="${Boolean(a.freshPending)}" title="${a.freshPending ? 'Starts a new conversation when it finishes this task' : 'New conversation: a clean slate for its next task (the old one stays in its history)'}">${ICONS.fresh}</button>
-      <button class="icon" data-act="edit" title="Edit agent">${ICONS.edit}</button>
+      <button class="icon" data-act="edit" title="${a.cloneOf ? `Edit ${esc(a.cloneOf)} (its clones follow)` : 'Edit agent'}">${ICONS.edit}</button>
       <button class="icon" data-act="restart" title="Restart (resumes the session)">${ICONS.restart}</button>
-      <button class="icon" data-act="off" title="Turn off (stays off after restarts)">${ICONS.power}</button>
+      ${a.cloneOf
+        ? `<button class="icon" data-act="dismiss" title="Send this clone away: its terminal closes, and anything queued for it goes back to ${esc(a.cloneOf)}">${ICONS.close}</button>`
+        : '<button class="icon" data-act="off" title="Turn off (stays off after restarts)">' + ICONS.power + '</button>'}
     </span>`
 }
 
@@ -149,6 +152,11 @@ $('.terms').addEventListener('click', (e) => {
     crew.call('restart', name)
   } else if (act === 'fresh') crew.call('freshStart', name).catch((err) => alert(err.message))
   else if (act === 'off') crew.call('update', name, { off: true })
+  else if (act === 'dismiss') {
+    const a = terms.get(name)?.agent
+    if (a && (a.status === 'working' || a.status === 'waiting') && !confirm(`${displayName(a)} is in the middle of something. Send it away anyway?`)) return
+    crew.call('dismiss', name).catch((err) => alert(err.message))
+  }
   else if (act === 'markIdle') crew.call('markIdle', name)
   else if (act === 'edit') edit(name)
   else if (!act) highlight(name)
@@ -165,12 +173,15 @@ $('.terms').addEventListener('dblclick', (e) => {
 
 function highlight(name) {
   selected = name
+  const base = terms.get(name)?.agent?.cloneOf // a clone's terminal: its original's row lights up, and its own line
   for (const [n, t] of terms) t.tile.classList.toggle('on', n === name)
-  for (const el of document.querySelectorAll('.side .agent')) el.classList.toggle('on', el.dataset.agent === name)
+  for (const el of document.querySelectorAll('.side .agent')) el.classList.toggle('on', el.dataset.agent === (base ?? name))
+  for (const el of document.querySelectorAll('.side .clone-line')) el.classList.toggle('on', el.dataset.clone === name)
 }
 
 // Show an agent's terminal and aim the composer at it. Agents that are off have no terminal: open their card.
 function select(name) {
+  if (!terms.has(name) && !state.agents.some((a) => a.name === name)) name = name.replace(/\.\d+(?=@|$)/, '') // a clone that has gone: its original
   if (!terms.has(name)) return edit(name)
   highlight(name)
   composer.setTarget(name)
@@ -180,7 +191,7 @@ function select(name) {
 
 function edit(name) {
   setView('crew')
-  collection.open(name)
+  collection.open(state.agents.find((a) => a.name === name)?.cloneOf ?? name) // a clone is edited through its original
 }
 
 function setView(next) {
@@ -217,6 +228,8 @@ document.addEventListener('keydown', (e) => {
 })
 $('.side .agents').addEventListener('click', (e) => {
   if (e.target.closest('.mode, .switch')) return
+  const clone = e.target.closest('[data-clone]')
+  if (clone) return select(clone.dataset.clone)
   const card = e.target.closest('.agent')
   if (card) (view === 'crew' ? edit : select)(card.dataset.agent)
 })
@@ -256,8 +269,9 @@ const ready = live((next) => {
     t.tile.remove()
     terms.delete(name)
   }
-  for (const a of on) {
-    const t = terms.get(a.name) ?? createTile(a.name)
+  on.forEach((a, i) => {
+    const next = on.slice(i + 1).find((x) => terms.has(x.name))
+    const t = terms.get(a.name) ?? createTile(a.name, next ? terms.get(next.name).tile : null)
     // back from being unreachable, or a new conversation: show the terminal as it is now
     const convo = a.convo?.since
     if ((t.away && a.status !== 'away') || (t.convo && convo && convo !== t.convo)) replay(t)
@@ -267,11 +281,13 @@ const ready = live((next) => {
     t.agent = a
     morph(t.head, tileHead(a))
     drawRibbon(t)
-  }
+  })
 
-  morph($('.side .agents'), state.agents.map((a) => agentCard(a, state.providers)).join(''))
+  // The sidebar lists agents; clones show as lines under theirs.
+  const crewList = state.agents.filter((a) => !a.cloneOf)
+  morph($('.side .agents'), crewList.map((a) => agentCard(a, state.providers, clonesOf(state.agents, a))).join(''))
   $('.autopilot .switch').checked = state.autopilot
-  $('.side-count').textContent = state.agents.length ? `${on.length} of ${state.agents.length} on` : ''
+  $('.side-count').textContent = crewList.length ? `${crewList.filter((a) => a.on).length} of ${crewList.length} on` : ''
   morph($('.titlebar .sums'), crewSummary(state))
   highlight(terms.has(selected) ? selected : on[0]?.name)
   drawBlank()

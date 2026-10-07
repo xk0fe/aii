@@ -18,17 +18,21 @@ const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif
 const at = (file) => path.join(HOME, file)
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
-const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit']
+const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones']
 const RESERVED = new Set(['you', 'any', 'crew'])
 const SUB_TOOLS = new Set(['Agent', 'Task']) // Claude Code's sub-agent tool ("Task" in older versions)
 const SUB_LINGER = 6000 // a finished sub-agent stays in the live view this long
 const FEED_KEEP = 300
+// A clone with nothing to do waits this long before it goes away, in case a teammate's answer is on its way.
+const CLONE_LINGER = 5 * 60000
+export const MAX_CLONES = 5
 const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
 )
 
 export class Hub extends EventEmitter {
-  agents = new Map()
+  agents = new Map() // name -> agent; clones too (gal.2), with cloneOf: 'gal'
+  pinned = new WeakSet() // messages that only one particular clone (or the original) should take
   config = { ...DEFAULTS }
   discovered = {}
   url = null
@@ -79,8 +83,8 @@ export class Hub extends EventEmitter {
     this.config = { ...DEFAULTS, ...raw }
     this.providers = providersFrom(this.config, this.discovered)
     const names = new Set(this.config.agents.map((c) => c.name))
-    for (const name of this.agents.keys()) {
-      if (names.has(name)) continue
+    for (const [name, a] of this.agents) {
+      if (a.cloneOf || names.has(name)) continue // clones follow their original, below
       this.forgetAsks(name)
       this.runner.stop(name)
       this.agents.delete(name)
@@ -95,6 +99,12 @@ export class Hub extends EventEmitter {
         this.runner.stop(a.name)
         this.setStatus(a, 'off')
       } else if (!a.off && a.status === 'off' && this.url) this.launch(a)
+    }
+    // Clones work with their original's settings. One whose original was removed, renamed or turned off goes too.
+    for (const c of this.clones()) {
+      const base = this.agents.get(c.cloneOf)
+      if (!base || base.off) this.dismiss(c.name)
+      else this.dress(c, base)
     }
     this.changed()
   }
@@ -146,8 +156,11 @@ export class Hub extends EventEmitter {
     this.saveConfig()
     for (const n of names) {
       const a = this.agents.get(n)
-      if (a && this.runner.running(n) && this.launchKey(a) !== before.get(n)) this.relaunchWhenFree(a)
-      if (a && ('contextLimit' in fields || 'onContextLimit' in fields)) this.checkLimit(a) // a lower limit may be passed already
+      // its clones too: they pick up the new settings, each resuming its own conversation
+      for (const x of a ? [a, ...this.clonesOf(a)] : []) {
+        if (this.runner.running(x.name) && this.launchKey(x) !== before.get(n)) this.relaunchWhenFree(x)
+        if ('contextLimit' in fields || 'onContextLimit' in fields) this.checkLimit(x) // a lower limit may be passed already
+      }
     }
   }
 
@@ -185,7 +198,7 @@ export class Hub extends EventEmitter {
     const provider = this.providers[agent.provider ?? 'claude']
     if (!provider) throw new Error(`unknown provider "${agent.provider}"`)
     if (provider.missing.length) throw new Error(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
-    const teammates = [...this.agents.values()].filter((a) => a.name !== agent.name).map((a) => `${a.name} (${a.area || 'general'})`).join(', ')
+    const teammates = [...this.agents.values()].filter((a) => a.name !== agent.name && !a.cloneOf).map((a) => `${a.name} (${a.area || 'general'})`).join(', ')
     return generatePrompt(agent, provider, teammates)
   }
 
@@ -243,6 +256,140 @@ export class Hub extends EventEmitter {
     if (a) this.launch(a, fresh)
   }
 
+  // ---- clones: one agent on several tasks at once ---------------------------------------------------
+  // An agent with `clones: n` doesn't make a message wait while it's busy. A clone takes it: the same agent (its
+  // settings, instructions, folder and look) in a terminal and conversation of its own, named gal.2, gal.3… up to
+  // n of them. A clone with nothing left to do goes away after CLONE_LINGER, and its work counts as the agent's.
+
+  clones() {
+    return [...this.agents.values()].filter((a) => a.cloneOf)
+  }
+
+  clonesOf(a) {
+    return this.clones().filter((c) => c.cloneOf === a.name).sort((x, y) => x.clone - y.clone)
+  }
+
+  // Every agent with its clones right after it.
+  ordered() {
+    return [...this.agents.values()].filter((a) => !a.cloneOf).flatMap((a) => [a, ...this.clonesOf(a)])
+  }
+
+  // The agent a name belongs to: a clone's original, or the agent itself. A clone that went away still names its
+  // original (gal.2 -> gal), and so does one on another computer (gal.2@air -> gal@air).
+  baseOf(name) {
+    const a = this.agents.get(name)
+    return a ? (a.cloneOf ?? a.name) : String(name).replace(/\.\d+(?=@|$)/, '')
+  }
+
+  maxClones(a) {
+    return Math.min(Math.max(0, Math.floor(Number(a?.clones) || 0)), MAX_CLONES)
+  }
+
+  // A clone takes its original's settings (and follows them when they change).
+  dress(c, base) {
+    for (const k of AGENT_KEYS) delete c[k]
+    for (const k of AGENT_KEYS) if (base[k] !== undefined) c[k] = structuredClone(base[k])
+  }
+
+  // Which of an agent and its clones takes a message. One meant for a particular one goes to it: a clone addressed
+  // by name, or whichever asked what this answers (its conversation has the context). Otherwise whoever is free,
+  // then a new clone if there's room for one, and failing that the agent's queue, which the first of them to
+  // finish takes from (takeOver).
+  placeFor(a, msg) {
+    if (a.cloneOf || !this.maxClones(a) || !this.runner.running(a.name)) return a
+    const family = [a, ...this.clonesOf(a)]
+    const asked = msg.re && this.feed.find((e) => e.id === msg.re)
+    const asker = asked && family.find((x) => x.name === asked.from)
+    if (asker) {
+      this.pinned.add(msg)
+      return asker
+    }
+    const free = family.find((x) => x.status === 'idle' && !x.inbox.length && this.runner.running(x.name)) ?? family.find((x) => x.status === 'starting' && !x.inbox.length)
+    if (free) return free
+    if (family.length - 1 >= this.maxClones(a)) return a
+    const c = this.spawnClone(a, msg)
+    if (c.status === 'starting') return c
+    this.dismiss(c.name) // it couldn't start (it said why in the feed)
+    return a
+  }
+
+  spawnClone(base, msg) {
+    let n = 2
+    while (this.agents.has(`${base.name}.${n}`)) n++
+    const c = { name: `${base.name}.${n}`, cloneOf: base.name, clone: n, status: 'off', since: Date.now(), activity: '', inbox: [], holdUntil: 0, hookAt: 0 }
+    this.dress(c, base)
+    this.agents.set(c.name, c)
+    if (msg.fresh) c.freshFor = msg.id // it starts in a new conversation anyway
+    this.launch(c, true)
+    return c
+  }
+
+  // A free clone takes the first message waiting for its original that isn't the original's own to answer.
+  takeOver(c) {
+    const base = this.agents.get(c.cloneOf)
+    if (!base || this.surplus(c)) return
+    const i = base.inbox.findIndex((m) => !this.pinned.has(m))
+    if (i < 0) return
+    const [msg] = base.inbox.splice(i, 1)
+    this.amend(msg, { to: c.name })
+    c.inbox.push(msg)
+  }
+
+  // More clones than the agent may have now (its number went down), or its original is gone or off.
+  surplus(c) {
+    const base = this.agents.get(c.cloneOf)
+    return !base || base.off || this.clonesOf(base).indexOf(c) >= this.maxClones(base)
+  }
+
+  // A clone with nothing to do waits a while, in case more work or a teammate's answer comes its way.
+  linger(c) {
+    clearTimeout(c.reapTimer)
+    c.reapTimer = setTimeout(() => this.reap(c), this.surplus(c) ? 0 : CLONE_LINGER)
+  }
+
+  reap(c) {
+    if (this.agents.get(c.name) !== c || c.status !== 'idle' || c.inbox.length || this.asking(c.name)) return // busy again: it lingers once it's done
+    if ([...(c.subs?.values() ?? [])].some((x) => !x.ended)) return this.linger(c) // its sub-agents are still at it
+    if (this.owed(c) && !this.surplus(c)) return this.linger(c)
+    this.dismiss(c.name)
+  }
+
+  // Is a teammate still working on something this clone asked for? Its answer should find the clone still there.
+  owed(c) {
+    const from = (id) => this.feed.find((e) => e.id === id)?.from
+    return this.feed.some((e) => e.held && e.from === c.name) ||
+      [...this.agents.values()].some((x) => x.inbox.some((m) => m.from === c.name) || ((x.status === 'working' || x.status === 'waiting') && from(x.current) === c.name))
+  }
+
+  // A clone goes away: its terminal stops and its conversation ends with it. Anything still queued for it goes
+  // back to its original's queue.
+  dismiss(name) {
+    const c = this.agents.get(name)
+    if (!c?.cloneOf) throw new Error(`@${name} isn't a clone`)
+    for (const t of ['reapTimer', 'timer', 'ack', 'readyTimer']) clearTimeout(c[t])
+    this.forgetAsks(name)
+    this.runner.stop(name)
+    this.setStatus(c, 'off')
+    this.agents.delete(name)
+    delete this.sessions[name]
+    delete this.convos[name]
+    const base = this.agents.get(c.cloneOf)
+    if (base && c.inbox.length) {
+      for (const msg of c.inbox) this.amend(msg, { to: base.name })
+      base.inbox.push(...c.inbox)
+      this.pump(base)
+      for (const x of this.clonesOf(base)) this.pump(x)
+    }
+    this.changed()
+  }
+
+  // How an agent looks to routing: free when it, a clone of it, or a clone it could start can take work now.
+  lineup(a) {
+    const family = [a, ...this.clonesOf(a)]
+    const room = family.some((x) => x.status === 'idle' && !x.inbox.length) || (this.maxClones(a) > family.length - 1 && this.runner.running(a.name))
+    return { name: a.name, area: a.area, status: room ? 'idle' : a.status, queue: room ? 0 : family.reduce((n, x) => n + x.inbox.length, 0) }
+  }
+
   // ---- conversations: starting fresh, and how full the current one is ------------------------------
 
   // A new conversation for an agent, so a new task doesn't share its context with the last ten. Its
@@ -289,7 +436,7 @@ export class Hub extends EventEmitter {
     // only the context gauges' memory: a failed write (the folder gone) must never take anything down
     const write = () => {
       try {
-        fs.writeFileSync(at('conversations.json'), JSON.stringify(this.convos))
+        fs.writeFileSync(at('conversations.json'), JSON.stringify(this.lasting(this.convos)))
       } catch {}
     }
     if (now) write()
@@ -369,12 +516,19 @@ export class Hub extends EventEmitter {
       return this.launch(a, true)
     }
     this.post({ kind: 'event', from: name, text: code ? `exited (code ${code})` : 'exited' })
+    if (a.cloneOf) this.dismiss(name) // a clone isn't restarted: what it had queued goes back to its original
   }
 
   saveSession(name, id) {
     if (id) this.sessions[name] = id
     else delete this.sessions[name]
-    fs.writeFileSync(at('sessions.json'), JSON.stringify(this.sessions, null, 2) + '\n')
+    if (this.agents.get(name)?.cloneOf) return // a clone's conversation goes away with it
+    fs.writeFileSync(at('sessions.json'), JSON.stringify(this.lasting(this.sessions), null, 2) + '\n')
+  }
+
+  // What's worth saving of a per-agent record: clones come and go.
+  lasting(byName) {
+    return Object.fromEntries(Object.entries(byName).filter(([name]) => !this.agents.get(name)?.cloneOf))
   }
 
   // ---- status, from Claude Code hooks ------------------------------------
@@ -617,6 +771,7 @@ export class Hub extends EventEmitter {
   // ---- work experience: what each agent actually did, kept across restarts -----
 
   record(name, counts) {
+    name = this.baseOf(name) // a clone's work is its original's experience
     const s = (this.stats[name] ??= { first: Date.now(), days: {} })
     const day = (s.days[localDay()] ??= {})
     for (const [k, v] of Object.entries(counts)) {
@@ -635,7 +790,7 @@ export class Hub extends EventEmitter {
   }
 
   statsOf(a) {
-    const s = this.stats[a.name] ?? { days: {} }
+    const s = this.stats[a.cloneOf ?? a.name] ?? { days: {} }
     const days = Array.from({ length: 14 }, (_, i) => {
       const d = localDay(Date.now() - (13 - i) * 864e5)
       return { day: d, tasks: s.days[d]?.tasks ?? 0 }
@@ -703,8 +858,10 @@ export class Hub extends EventEmitter {
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
     if (!text) throw new Error('nothing to send')
-    // a bare name that isn't here but is on exactly one linked computer means that agent
-    const all = addressees(to, mentions ? text : '').map((n) => (n.includes('@') || this.agents.has(n) ? n : (this.elsewhere?.(n) ?? n)))
+    // a clone that went away means its original; a bare name that isn't here but is on exactly one linked
+    // computer means that agent
+    const local = (n) => [n, this.baseOf(n)].find((x) => this.agents.has(x))
+    const all = addressees(to, mentions ? text : '').map((n) => (n.includes('@') ? n : (local(n) ?? this.elsewhere?.(n) ?? n)))
     const away = all.filter((n) => n.includes('@'))
     const names = all.filter((n) => !n.includes('@'))
     if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and Crew Link isn't on`)
@@ -732,23 +889,29 @@ export class Hub extends EventEmitter {
     const after = names.length > 1 ? ' (nothing was sent)' : ''
     const unknown = names.filter((n) => !this.agents.has(n))
     if (unknown.length) throw new Error(`no agent named ${unknown.map((n) => `"${n}"`).join(', ')} (try: crew who)${after}`)
-    if (names.includes(from)) throw new Error(`${names.length > 1 ? `@${from} is you, leave yourself off` : "that's you, pick a teammate (crew who)"}${after}`)
+    // an agent and its clones are one agent
+    const me = names.find((n) => this.baseOf(n) === this.baseOf(from))
+    if (me) throw new Error(`${names.length > 1 ? `@${me} is you, leave yourself off` : "that's you, pick a teammate (crew who)"}${me === from ? '' : ` (@${me} and @${from} are the same agent)`}${after}`)
     const off = names.filter((n) => this.agents.get(n).off)
     if (off.length) throw new Error(`${list(off)} ${off.length > 1 ? 'are' : 'is'} turned off, turn ${off.length > 1 ? 'them' : 'it'} on first${after}`)
     return names.map((n) => this.agents.get(n))
   }
 
   enqueue(a, msg) {
-    a.inbox.push(msg)
-    const busy = a.status !== 'idle' || a.inbox.length > 1
-    this.pump(a)
-    return busy ? `queued for @${a.name} (${a.status}, ${a.inbox.length} waiting)\n` : `sent to @${a.name}\n`
+    const to = this.placeFor(a, msg)
+    if (to !== a) this.amend(msg, { to: to.name })
+    to.inbox.push(msg)
+    const busy = to.status !== 'idle' || to.inbox.length > 1
+    const starting = to.status === 'starting'
+    this.pump(to)
+    if (to.cloneOf === a.name && !this.pinned.has(msg)) return `@${a.name} is busy, so ${starting ? `a clone, @${to.name}, is starting up to take this` : `its clone @${to.name} took this`}\n`
+    return busy ? `queued for @${to.name} (${to.status}, ${to.inbox.length} waiting)\n` : `sent to @${to.name}\n`
   }
 
   // Hand-offs between agents wait here for you when autopilot is off.
   approve(id) {
     const msg = this.feed.find((m) => m.id === id && m.held)
-    const a = msg && this.agents.get(msg.to)
+    const a = msg && (this.agents.get(msg.to) ?? this.agents.get(this.baseOf(msg.to))) // for a clone that went away: its original
     if (!a) return
     Object.assign(msg, { held: false, queued: true })
     this.enqueue(a, msg)
@@ -766,15 +929,17 @@ export class Hub extends EventEmitter {
   // An area matches on shared words and on shared intents (see INTENTS), so "keep the crew in working order"
   // finds the organiser even though none of its words are in "admin work, assistant, organiser".
   route(text, from) {
-    const ready = [...this.agents.values()].filter((a) => a.name !== from && this.runner.running(a.name))
-    const best = bestFor(text, ready.map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.inbox.length })))
+    const ready = [...this.agents.values()].filter((a) => !a.cloneOf && a.name !== this.baseOf(from) && this.runner.running(a.name))
+    const best = bestFor(text, ready.map((a) => this.lineup(a)))
     return best && this.agents.get(best.name)
   }
 
   // Deliver the next queued message once the agent is idle and nothing asked to hold off (e.g. you typing in its terminal).
   pump(a) {
     clearTimeout(a.timer)
-    if (a.status !== 'idle' || !a.inbox.length || !this.runner.running(a.name)) return
+    if (a.status !== 'idle' || !this.runner.running(a.name)) return
+    if (a.cloneOf && !a.inbox.length) this.takeOver(a) // a clone with nothing of its own takes what waits for its original
+    if (!a.inbox.length) return a.cloneOf && this.linger(a)
     const wait = a.holdUntil - Date.now()
     if (wait > 0) {
       a.timer = setTimeout(() => this.pump(a), wait)
@@ -848,8 +1013,8 @@ export class Hub extends EventEmitter {
 
   // Everyone who can own a task: agents here that are on, and the ones on linked computers.
   teammates() {
-    const here = [...this.agents.values()].filter((a) => !a.off).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.inbox.length }))
-    return [...here, ...(this.directory?.() ?? []).filter((a) => a.on).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.queue ?? 0 }))]
+    const here = [...this.agents.values()].filter((a) => !a.off && !a.cloneOf).map((a) => this.lineup(a))
+    return [...here, ...(this.directory?.() ?? []).filter((a) => a.on && !a.cloneOf).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.queue ?? 0 }))]
   }
 
   // A task goes to its owner in a fresh conversation with just this task in it. If the owner is still in the
@@ -861,10 +1026,12 @@ export class Hub extends EventEmitter {
     if (!owner) throw new Error(`who should fix #${t.id}? Pick an owner first`)
     const here = this.agents.get(owner)
     // a double click, or Auto-fix and you at once: it's already on its way
-    if (!note && here?.inbox.some((m) => m.ticket === t.id && !m.triage)) return `#${t.id} is already queued for @${owner}\n`
-    const again = t.fixer === owner && this.stillOn(owner, t.id)
+    if (!note && here && [here, ...this.clonesOf(here)].some((x) => x.inbox.some((m) => m.ticket === t.id && !m.triage))) return `#${t.id} is already queued for @${owner}\n`
+    // the owner, or the clone of it, still in the conversation where it worked on this task
+    const on = t.fixer === owner ? this.stillOn(owner, t.id) : null
+    const again = Boolean(on)
     const ref = owner.includes('@') ? `${t.id}@${this.self}` : String(t.id)
-    const out = await this.send({ from: 'you', to: owner, text: fixPrompt(t, ref, note, again), images: again ? [] : t.images, mentions: false, fresh: !again, ticket: t.id, title: t.title, type: t.kind })
+    const out = await this.send({ from: 'you', to: on ?? owner, text: fixPrompt(t, ref, note, again), images: again ? [] : t.images, mentions: false, fresh: !again, ticket: t.id, title: t.title, type: t.kind })
     if (owner !== t.owner) this.tickets.edit(t.id, { owner }, 'you')
     t.fixer = owner
     this.tickets.move(t.id, 'fixing', 'you', again ? `sent it back to @${owner}` : `sent it to @${owner}, in a new conversation`)
@@ -872,12 +1039,13 @@ export class Hub extends EventEmitter {
     return out
   }
 
-  // Is `name`'s current conversation the one about bug `id`, with nothing else lined up to start fresh first?
+  // Which of `name` and its clones is still in the conversation about task `id`, with nothing else lined up to start
+  // fresh first? Its name, or null.
   stillOn(name, id) {
     const a = this.agents.get(name)
-    if (a) return this.convos[name]?.ticket === id && !a.freshPending && !a.inbox.some((m) => m.fresh)
-    const there = (this.directory?.() ?? []).find((x) => x.name === name) // an agent on a linked computer
-    return Boolean(there) && String(there.ticket) === String(id) && !there.freshPending && !there.queue
+    if (a) return [a, ...this.clonesOf(a)].find((x) => this.convos[x.name]?.ticket === id && !x.freshPending && !x.inbox.some((m) => m.fresh))?.name ?? null
+    const there = (this.directory?.() ?? []).filter((x) => x.name === name || x.cloneOf === name) // an agent on a linked computer
+    return there.find((x) => String(x.ticket) === String(id) && !x.freshPending && !x.queue)?.name ?? null
   }
 
   autoDispatch(t) {
@@ -887,7 +1055,7 @@ export class Hub extends EventEmitter {
   // A name for an owner: an agent here, or (bare or name@computer) one on a linked computer.
   agentName(name) {
     if (!name) return null
-    name = String(name).trim().replace(/^@/, '').toLowerCase()
+    name = this.baseOf(String(name).trim().replace(/^@/, '').toLowerCase()) // a task belongs to the agent, not one of its clones
     if (this.agents.has(name)) return name
     const there = (this.directory?.() ?? []).map((a) => a.name)
     if (there.includes(name)) return name
@@ -931,6 +1099,7 @@ export class Hub extends EventEmitter {
       return this.relayTask(host, from, [op, ...there])
     }
     if (original) words[1] = original.id
+    const by = this.baseOf(from) // the board remembers the agent; the feed shows which clone of it did it
     const t = withId ? this.tickets.get(ref) : null
     const text = words.slice(1).join(' ')
     switch (op) {
@@ -942,13 +1111,13 @@ export class Hub extends EventEmitter {
         return ticketText(t)
       case 'add': {
         const owner = flags.owner ? this.agentName(flags.owner) : null
-        const n = this.tickets.add({ title: words[0], body: flags.details ?? words.slice(1).join(' '), by: from, owner, severity: priorityOf(flags.priority), kind: flags.kind ?? 'task' })
+        const n = this.tickets.add({ title: words[0], body: flags.details ?? words.slice(1).join(' '), by, owner, severity: priorityOf(flags.priority), kind: flags.kind ?? 'task' })
         this.postTask(n, from, 'filed')
         return `added #${n.id}\n`
       }
       case 'triage': {
         const owner = flags.owner ? this.agentName(flags.owner) : undefined
-        this.tickets.edit(t.id, { owner, severity: flags.priority, kind: flags.kind, title: flags.title, body: flags.details, triaged: true }, from)
+        this.tickets.edit(t.id, { owner, severity: flags.priority, kind: flags.kind, title: flags.title, body: flags.details, triaged: true }, by)
         this.postTask(t, from, 'triaged', t.owner)
         if (this.config.autofix && t.status === 'new' && t.owner) this.autoDispatch(t)
         return `#${t.id}: ${t.kind}, ${t.owner ? `for @${t.owner}` : 'unassigned'}${this.config.autofix && t.owner ? ', sent to them' : ''}\n`
@@ -957,18 +1126,18 @@ export class Hub extends EventEmitter {
         if (!text) throw new Error(`usage: crew task done ${ref} "what you did, how you checked"`)
         if (t.status === 'done') throw new Error(`#${t.id} is already closed${t.dupOf ? ` (same as #${t.dupOf})` : ''}`)
         const bug = t.kind === 'bug'
-        Object.assign(t, { fix: text, fixer: from })
-        this.tickets.move(t.id, 'check', from, `${bug ? 'fixed' : 'did'} it: ${text}`)
+        Object.assign(t, { fix: text, fixer: by })
+        this.tickets.move(t.id, 'check', by, `${bug ? 'fixed' : 'did'} it: ${text}`)
         this.postTask(t, from, 'fixed', text)
-        this.emit('notice', { title: `@${from} ${bug ? 'fixed' : 'finished'} #${t.id}`, body: `${t.title}. Review it`, focus: `task:${t.id}` })
+        this.emit('notice', { title: `@${by} ${bug ? 'fixed' : 'finished'} #${t.id}`, body: `${t.title}. Review it`, focus: `task:${t.id}` })
         return `#${t.id} is waiting for the user to review it\n`
       }
       case 'note':
-        this.tickets.note(t.id, from, text)
+        this.tickets.note(t.id, by, text)
         this.postTask(t, from, 'note', text)
         return `noted on #${t.id}\n`
       case 'dup': {
-        const original = this.tickets.dup(t.id, words[1], from)
+        const original = this.tickets.dup(t.id, words[1], by)
         this.postTask(t, from, 'dup', `#${original.id}`)
         return `#${t.id} is #${original.id} (seen ${original.seen}x now)\n`
       }
@@ -1040,11 +1209,13 @@ export class Hub extends EventEmitter {
 
   who() {
     if (!this.agents.size) return '(no agents)\n'
-    const rows = [...this.agents.values()].map((a) => {
+    const rows = this.ordered().map((a) => {
       const queue = a.inbox.length ? `, ${a.inbox.length} queued` : ''
       if (a.off) return `${a.name.padEnd(16)} off`
+      if (a.cloneOf) return `${a.name.padEnd(16)} ${(a.status + queue).padEnd(20)} ${''.padEnd(22)} a clone of ${a.cloneOf}, on a task of its own`
       const brain = [this.providerOf(a)?.label, a.model, a.effort].filter(Boolean).join(' ')
-      return `${a.name.padEnd(16)} ${(a.status + queue).padEnd(20)} ${brain.padEnd(22)} ${a.area ?? ''}`
+      const clones = this.maxClones(a) ? ` (clones itself when busy, up to ${this.maxClones(a)})` : ''
+      return `${a.name.padEnd(16)} ${(a.status + queue).padEnd(20)} ${brain.padEnd(22)} ${a.area ?? ''}${clones}`
     })
     // teammates on your other computers (Crew Link), addressed as name@computer
     for (const a of this.directory?.() ?? []) rows.push(`${a.name.padEnd(16)} ${(a.on ? a.status : 'off').padEnd(20)} ${''.padEnd(22)} ${a.area ?? ''}`)
@@ -1084,7 +1255,7 @@ export class Hub extends EventEmitter {
       providers: Object.fromEntries(
         Object.values(this.providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault }]),
       ),
-      agents: [...this.agents.values()].map((a) => ({
+      agents: this.ordered().map((a) => ({
         name: a.name, area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
         tier: a.tier, fast: this.providerOf(a)?.fastByDefault === undefined ? undefined : a.tier ? a.tier === 'fast' : this.providerOf(a).fastByDefault,
         args: (a.args ?? []).join(' '), avatar: a.avatar, status: a.status, since: a.since, activity: a.activity,
@@ -1093,6 +1264,8 @@ export class Hub extends EventEmitter {
         convo: this.convos[a.name] ? { ...this.convos[a.name], context: againstLimit(this.convos[a.name].context, a.contextLimit) } : null,
         contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : null, onContextLimit: a.onContextLimit === 'notify' ? 'notify' : 'fresh',
         freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
+        // a clone: whose, and its number (gal.2 is clone 2); it looks like its original
+        clones: this.maxClones(a), ...(a.cloneOf && { cloneOf: a.cloneOf, clone: a.clone, avatar: { seed: a.avatar?.seed ?? a.cloneOf, ...a.avatar } }),
         // its sub-agents: the running ones, and ones that just finished
         subs: [...(a.subs?.values() ?? [])].filter((x) => !x.ended || Date.now() - x.ended < SUB_LINGER).map(({ id, type, description, started, ended, tools, activity }) => ({ id, type, description, started, ended, tools, activity })),
       })),

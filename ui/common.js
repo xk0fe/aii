@@ -161,8 +161,36 @@ function powerSwitch(a) {
 }
 
 // One row per agent: name and status / what it owns / brain and modes, plus what it's doing while it works.
-// An agent's name; one on another computer carries its computer: gal@mac-mini.
-const nameHTML = (a) => (a.home ? `${esc(a.seed)}<span class="at" title="runs on ${esc(a.homeName)}">@${esc(a.home)}</span>` : esc(a.name))
+// An agent's name; one on another computer carries its computer: gal@mac-mini. A clone is its original's name
+// with its number: gal ②.
+const nameHTML = (a) => `${esc(plainName(a))}${cloneTag(a)}${a.home ? `<span class="at" title="runs on ${esc(a.homeName)}">@${esc(a.home)}</span>` : ''}`
+const plainName = (a) => (a.cloneOf ? a.cloneOf.split('@')[0] : a.home ? a.seed : a.name)
+const cloneTag = (a) => (a.cloneOf ? `<span class="clone-no" title="Clone ${a.clone} of ${esc(a.cloneOf)}: it took a task while ${esc(plainName(a))} was busy">${a.clone}</span>` : '')
+// In plain text (tooltips, the ribbon): "gal 2".
+const displayName = (a) => (a.cloneOf ? `${plainName(a)} ${a.clone}` : a.name)
+
+// ---- clones: an agent busy with one task takes the next on a clone of itself (core/hub.js) -----------
+
+const clonesOf = (agents, a) => agents.filter((x) => x.cloneOf === a.name)
+// A clone that has gone keeps its original's face and name in the feed: gal.2 -> gal, clone 2.
+function cloneGhost(name, byName) {
+  const m = String(name).match(/^(.+)\.(\d+)((?:@[\w-]+)?)$/)
+  const base = m && byName[m[1] + m[3]]
+  if (!base || base.cloneOf) return null
+  const avatar = { seed: base.avatar?.seed ?? base.seed ?? base.name, ...base.avatar } // its look comes from the agent's name, not its own
+  return { ...base, name, avatar, cloneOf: base.name, clone: Number(m[2]), status: 'off', on: false, activity: '' }
+}
+
+// Under an agent's row, one line per clone: its number, how it's doing and what it's on. Click for its terminal.
+function cloneLines(clones) {
+  if (!clones.length) return ''
+  return `<div class="clone-lines">${clones.map((c) => {
+    const what = c.status === 'working' ? c.activity || `working · ${ago(c.since)}` : statusText(c)
+    return `<div class="clone-line ${c.status}" data-clone="${esc(c.name)}" data-agent="${esc(c.name)}" title="${esc(`${displayName(c)}: ${statusText(c)}${c.activity ? ` · ${c.activity}` : ''}. Click for its terminal`)}">
+      <span class="clone-av">${avatarHTML(c, { size: 18 })}</span>${cloneTag(c)}<span class="clone-what ${c.status === 'working' && c.activity ? 'shimmer' : ''}">${esc(what)}</span>${c.queue ? `<span class="queue">${c.queue} queued</span>` : ''}
+    </div>`
+  }).join('')}</div>`
+}
 
 // ---- context: how full an agent's conversation is ----------------------------------------------------
 
@@ -212,7 +240,7 @@ const subsChip = (a) => {
   return subs.length ? `<span class="subs-chip" title="${esc(`${plural(subs.length, 'sub-agent')} working:\n${subsTip(subs)}`)}">${ICONS.subs}${subs.length}</span>` : ''
 }
 
-function agentCard(a, providers) {
+function agentCard(a, providers, clones = []) {
   const doing = a.on && (a.activity || a.queue || runningSubs(a).length)
   const later = a.freshPending ? '<span class="pending" title="It finishes what it is doing first">✦ new conversation when free</span>' : a.pending ? '<span class="pending" title="It restarts with your changes as soon as it is free">↻ restarts when free</span>' : ''
   const activity = doing || later
@@ -225,19 +253,21 @@ function agentCard(a, providers) {
       <div class="area" title="${esc(a.area)}">${esc(a.area || 'No area yet')}</div>
       <div class="agent-foot"><span class="brain" title="${esc(brainLabel(a, providers))}">${esc(brainShort(a, providers))}</span>${a.convo?.context?.pct >= 50 ? contextRing(a, { label: false }) : ''}${modeChips(a)}</div>
       ${activity}
+      ${cloneLines(clones)}
     </div>
   </div>`
 }
 
 // "2 working · 1 needs you" as little pills, for the headers of every view.
 function crewSummary(state) {
-  const on = state.agents.filter((a) => a.on)
+  const on = state.agents.filter((a) => a.on) // clones too: each one working counts
   const working = on.filter((a) => a.status === 'working').length
   const waiting = on.filter((a) => a.status === 'waiting').length
+  const agents = on.filter((a) => !a.cloneOf).length
   const pill = (cls, text, dot = cls) => `<span class="sum ${cls}">${dot ? `<i class="dot ${dot}"></i>` : ''}${text}</span>`
   if (!state.agents.length) return ''
   if (!on.length) return pill('', 'all off', 'off')
-  return (working ? pill('working', `${working} working`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting ? '' : pill('idle', on.length > 1 ? `all ${on.length} free` : 'free'))
+  return (working ? pill('working', `${working} working`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting ? '' : pill('idle', agents > 1 ? `all ${agents} free` : 'free'))
 }
 
 // Segmented control: marks the segment that isOn() picks and slides the thumb to it (see .seg in common.css).
@@ -453,11 +483,13 @@ function taskEvent(e, who) {
 
 function feedItem(e, prev, ctx) {
   const { byName, byId, repliesTo, open } = ctx
-  const agent = (n) => byName[n] ?? { name: n }
+  const agent = (n) => byName[n] ?? cloneGhost(n, byName) ?? { name: n }
   const tint = (n) => (n === 'you' ? 'var(--accent)' : agentColor(agent(n)))
-  const who = (n) => (n === 'you' ? 'you' : `<span class="who" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">@${esc(n)}</span>`)
+  const at = (n) => (agent(n).cloneOf ? `${esc(plainName(agent(n)))}${cloneTag(agent(n))}` : esc(n))
+  const who = (n) => (n === 'you' ? 'you' : `<span class="who" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">@${at(n)}</span>`)
   // In captions an agent goes by its plain name, like a group chat; one on another computer keeps its @computer.
   const label = (n) => {
+    if (agent(n).cloneOf) return nameHTML(agent(n))
     const [base, home] = String(n).split('@')
     return `${esc(base)}${home ? `<span class="at">@${esc(home)}</span>` : ''}`
   }
@@ -474,7 +506,7 @@ function feedItem(e, prev, ctx) {
   // ...and a message you sent links forward to the agents' replies.
   const answers = repliesTo[e.id] ?? []
   const replied = answers.length
-    ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">${ICONS.thread}<span>${[...new Set(answers.map((r) => `@${esc(r.from)}`))].join(', ')} ${answers.some((r) => r.kind === 'reply') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</span></button>`
+    ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">${ICONS.thread}<span>${[...new Set(answers.map((r) => `@${at(r.from)}`))].join(', ')} ${answers.some((r) => r.kind === 'reply') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</span></button>`
     : ''
   // @names in the text take their agent's color; one nobody here has stays a plain word
   const text = md(e.text).replace(/<span class="mention" data-m="([^"]+)">([^<]*)<\/span>/g, (_, n, at) => {
@@ -516,7 +548,7 @@ function feedItem(e, prev, ctx) {
 // draft: what you've picked or typed so far, kept across re-renders.
 function askCard(e, draft = {}) {
   const q = e.ask ?? {}
-  const name = esc(String(e.from).split('@')[0])
+  const name = esc(String(e.from).split('@')[0].replace(/\.(\d+)$/, ' $1')) // a clone, gal.2: "gal 2"
   const icon = ICONS[{ permission: 'shield', question: 'ask', plan: 'plan' }[q.type] ?? 'ask']
   if (e.answer) return `<div class="ask-card done" data-ask="${e.id}">${askSummary(q, e.answer)}</div>`
   const code = q.code ? `<pre class="ask-code"><code>${esc(q.code)}</code></pre>` : ''
@@ -576,12 +608,13 @@ function askSummary(q, a) {
 // card instead of the terminal.
 const typingHTML = (agents, asks = new Map()) =>
   agents
-    .filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || a.subs?.length))
+    .filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || a.subs?.length || (a.cloneOf && a.status === 'starting'))) // a new clone shows up right away
     .map((a) => {
       const card = a.status === 'waiting' && asks.get(a.name)
       const waiting = a.status === 'waiting'
-      const busy = waiting || a.status === 'working'
-      const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : busy ? a.activity || 'working…' : 'free, its sub-agents are still working'
+      const starting = a.cloneOf && a.status === 'starting'
+      const busy = waiting || a.status === 'working' || starting
+      const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : starting ? 'starting up to take it…' : busy ? a.activity || 'working…' : 'free, its sub-agents are still working'
       const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : busy ? '<span class="typing"><i></i><i></i><i></i></span>' : ''
       return `<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
       <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${end}</div>${subTree(a)}`
@@ -944,7 +977,7 @@ function mountMentions(field, { agents, box = field, place = 'above', heading = 
     const was = at?.q
     at = find()
     if (!at) return close()
-    const all = agents()
+    const all = agents().filter((a) => !a.cloneOf) // agents, not their clones: @gal reaches whichever of them is free
     items = all.map((a, i) => [rank(a, at.q), i, a]).filter(([r, , a]) => r >= 0 && a.on).sort((x, y) => x[0] - y[0] || x[1] - y[1]).map(([, , a]) => a)
     const off = all.filter((a) => !a.on && rank(a, at.q) >= 0)
     if (!items.length && !off.length) return close()
@@ -1114,19 +1147,23 @@ function mountComposer(el, { dropZone = el } = {}) {
   const chip = (to, cls, inner, tipText, sub, c) =>
     `<button class="chip ${cls} ${target === to ? 'on' : ''}" data-to="${esc(to)}" aria-pressed="${target === to}" aria-label="${esc(tipText)}" data-tip="${esc(tipText)}" data-sub="${esc(sub)}"${c ? ` style="--c:${c}"` : ''}>${inner}</button>`
   const draw = () => {
-    if (!['auto', 'task'].includes(target) && agents.length && !agents.some((a) => a.on && a.name === target)) target = 'auto'
+    // a clone you were talking to has gone: its original, who it was a copy of
+    const live = (n) => agents.some((a) => a.on && a.name === n)
+    if (!['auto', 'task'].includes(target) && agents.length && !live(target)) target = live(target.replace(/\.\d+(?=@|$)/, '')) ? target.replace(/\.\d+(?=@|$)/, '') : 'auto'
     const task = Boolean(kindIn(ta.value))
+    // agents, plus the clone you picked (in the chat or its terminal) right after its original
+    const shown = agents.filter((a) => a.on && (!a.cloneOf || a.name === target))
     morph(chips,
       '<span class="chips-label">To</span>' +
       chip('auto', '', `${ICONS.sparkles}<span class="label">Auto</span>`, 'Auto', 'picks by area, prefers whoever is free') +
       chip('task', 'task-chip', `${ICONS.task}<span class="label">Task</span>`, 'Task', 'adds it to the Tasks board, @name assigns it') +
       '<span class="chip-sep"></span>' +
-      agents.filter((a) => a.on).map((a) => chip(a.name, 'agent', `${avatarHTML(a, { size: 22 })}<span class="label">${nameHTML(a)}</span>`, a.name, statusText(a), agentColor(a))).join(''))
+      shown.map((a) => chip(a.name, `agent${a.cloneOf ? ' clone' : ''}`, `${avatarHTML(a, { size: 22 })}<span class="label">${nameHTML(a)}</span>`, displayName(a), a.cloneOf ? `a clone of ${plainName(a)} · ${statusText(a)}` : statusText(a), agentColor(a))).join(''))
     fitRail()
     el.classList.toggle('task-mode', task)
     freshBtn.setAttribute('aria-pressed', String(fresh))
     freshBtn.title = fresh ? 'On: the agent starts this task in a new conversation, with a clean slate (click to turn off)' : 'Start this task in a new conversation, with a clean slate instead of everything the agent did before'
-    const who = target.split('@')[0]
+    const who = target.split('@')[0].replace(/\.(\d+)$/, ' $1')
     ta.placeholder = task ? 'Add a task… @name assigns it'
       : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : 'Message the crew, Auto picks who…')
       : fresh ? `New conversation with ${who}…` : `Message ${who}…`
@@ -1172,7 +1209,7 @@ function mountComposer(el, { dropZone = el } = {}) {
     try {
       const kind = kindIn(text)
       if (kind) {
-        const { owner, text: what } = ownerIn(text.replace(TASK_PREFIX, ''), agents)
+        const { owner, text: what } = ownerIn(text.replace(TASK_PREFIX, ''), agents.filter((a) => !a.cloneOf))
         say((await crew.call('task', 'file', null, { text: what, images, kind, ...(owner && { owner }) })).trim())
       }
       else say((await crew.call('send', to, text, images, { fresh })).trim().split('\n').join(' · '))

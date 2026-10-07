@@ -28,7 +28,9 @@ function userStatusLine() {
   }
 }
 
-const prompt = (a) => `You are "${a.name}", one of several AI agents working side by side in terminals as a crew, coordinated by the user.
+const prompt = (a) => `You are "${a.cloneOf ?? a.name}", one of several AI agents working side by side in terminals as a crew, coordinated by the user.${
+  a.cloneOf ? `\nThis copy of ${a.cloneOf} is its clone "${a.name}": ${a.cloneOf} was busy, so Crew started you to take on another task at the same time. Teammates reach you as ${a.name}, and your own work counts as ${a.cloneOf}'s. Other copies of ${a.cloneOf} may be working in the same folder right now: stick to your task, and leave changes you didn't make alone.` : ''
+}
 Your area: ${a.area || 'general'}.
 Stay inside your area. When work belongs to a teammate's area, hand it off instead of doing it yourself.
 Crew commands (run them in the shell, they return instantly):

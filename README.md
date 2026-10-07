@@ -43,6 +43,7 @@ npm start        # opens Crew.app (builds it the first time)
   - **reference images** for its instructions, such as mockups, brand guides or screenshots. Use **+ Reference image**, or paste or drop them on the instructions box. The agent opens them when relevant;
   - the brain: provider, model and effort (the options shown depend on the provider, and Codex lists its live models and each model's effort levels);
   - the folder, YOLO, on/off and extra CLI flags;
+  - **clones**: how many clones it may run at once when it's busy (see below);
   - the look: body, color, eyes, mouth, accessories and blush, each shown as a tiny version of the agent. Or roll 🎲 Shuffle.
 - **Save** applies the changes. If you changed something the agent launches with (area, instructions, brain, folder, flags, YOLO), the agent restarts and resumes its session. Edited instructions apply to the ongoing conversation too. If it's mid-task, it waits until it's free first.
 - **Select** turns on bulk mode. Pick cards, or press **All**, then set provider, model, effort, YOLO or power for all of them at once, or **Export** them.
@@ -70,7 +71,7 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
   - **Hotkey:** change it with `"voiceHotkey"` in `config.json`, or turn it off with `false`.
 - **Add images** to any message: paste them (⌘V), drop them on the chat, or use the **+** button. They're saved in `~/.crew/attachments` and sent to the agent as file paths. Claude Code and Codex both open them, with no permission prompt. Click a picture in the feed to open it.
 - **Message "Auto".** Without explicit recipients, Crew scores the task against agents' areas, then prefers whoever is free. Coordination wording such as “orchestrate multiple agents”, “organise the crew” and “keep things in working order” also matches an organiser area such as Arie's. This uses a fixed vocabulary of stems and phrases, not unrestricted language understanding; unfamiliar wording can miss, and incidental coordination language can favor the organiser. Use a chip or `@mention` to choose explicitly.
-- **Busy agent?** The message is queued and typed in for you the moment that agent finishes.
+- **Busy agent?** The message is queued and typed in for you the moment that agent finishes. An agent with clones doesn't make you wait: a clone of it takes the message (see below).
 - **One request, one bubble.** A new multi-recipient message from you appears once in the feed, addressed to everyone who received it. Replies from each recipient link back to that bubble. Separate sends remain separate, even with identical text. Older history without a send identifier stays unmerged; teammate hand-offs remain separate for approval.
 - **Agents delegate.** Each agent knows its teammates and can run:
   - `crew send <name> "task"` to hand off work, or `crew send david,joseph "task"` for several recipients;
@@ -94,6 +95,19 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
 - **On/off** is saved. An agent you turn off stays off after a restart and resumes its session when you turn it back on.
 - **⚡ Fast** (Codex agents) uses Codex's fast service tier. It's a ⚡ chip on the agent's row and a toggle in the editor; until you set it, it follows `service_tier` in your Codex config.
 - **YOLO** skips every permission prompt. Claude gets `--dangerously-skip-permissions`; Codex gets `--dangerously-bypass-approvals-and-sandbox`.
+
+## Clones: one agent, several tasks at once
+
+Give an agent clones and a second task no longer waits for the first to finish. When it's busy, the next message (or task from the board) goes to a **clone**: the same agent, with its instructions, brain, folder and look, in a terminal and conversation of its own. Turn it on in the agent's card under **Clones**, and pick how many may run at once (1 to 5).
+
+- **Who takes what:** the agent itself when it's free, then a clone that's free, then a new clone if there's room. With every one of them busy, the message waits in the agent's queue and the first to finish takes it.
+- **How they look:** a clone wears its agent's face with its number, `marc ②`. It pops out next to its agent in the pill, gets a line under the agent's row (click it for its terminal), peeks out from behind the agent's card, and has its own terminal right after the agent's. The feed says which one answered.
+- **Talking to one:** a clone is `marc.2` to the crew. Its hand-offs say `[from @marc.2]`, so teammates answer the clone that asked, and an answer to something a clone asked goes back to it even when it's addressed to `marc`. Click a clone in the pill or the feed to message it directly.
+- **When they go:** a clone with nothing left to do goes away after 5 minutes (not while a teammate is still working on something it asked). The × on its terminal sends it away sooner; anything still queued for it goes back to its agent. Turning the agent off ends its clones, and lowering its number ends the spare ones once they're free.
+- **What carries over:** a clone's work counts toward its agent's experience, a task a clone finishes is the agent's on the board, and **Send back** reaches the clone still in that conversation if it's around. Its conversation isn't kept after it goes.
+- **Same folder:** clones work in the agent's folder at the same time, so they suit tasks that don't touch the same files. Each clone is told that other copies may be working beside it.
+
+In `config.json` it's `"clones": 2`. Agent packs carry it. Clones run on the computer their agent runs on.
 
 ## Tasks: one conversation per task
 
@@ -191,12 +205,12 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
   "agents": [
     { "name": "gal", "area": "UI/UX design", "provider": "claude", "model": "fable", "effort": "high", "cwd": "~/code/app",
       "avatar": { "body": "heart", "color": "pink", "eyes": "sparkle", "mouth": "cat", "hat": "bow", "cheeks": true } },
-    { "name": "david", "area": "React Native client", "provider": "codex", "model": "gpt-6-luna", "yolo": true, "cwd": "~/code/app" }
+    { "name": "david", "area": "React Native client", "provider": "codex", "model": "gpt-6-luna", "yolo": true, "clones": 2, "cwd": "~/code/app" }
   ]
 }
 ```
 
-An agent without an `avatar` gets a stable one picked from its name. `off: true` keeps an agent saved but not running. `args` are extra flags passed straight to the CLI.
+An agent without an `avatar` gets a stable one picked from its name. `off: true` keeps an agent saved but not running. `clones` is how many clones it may run at once when it's busy. `args` are extra flags passed straight to the CLI.
 
 To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.local/bin/crew`.
 
@@ -217,6 +231,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
   - status from hooks (start → free, prompt → working, stop → free plus the reply into the feed);
   - questions: an agent's `PermissionRequest` hook (permission prompts, AskUserQuestion, plan approval) waits on the `/ask` route until you answer the card in the chat (`ask`, `answer`), and prints your answer as its decision;
   - inboxes, routing, the feed and notes;
+  - clones: which of an agent and its clones takes a message (`placeFor`), starting and retiring them;
   - `update()`, the single edit path behind the editor and bulk edits.
 - `core/runner.js` owns the pseudo-terminals.
 - `core/crew.js` is the crew across your computers: this computer's hub plus every linked computer's agents, merged into one list, with each action sent to the computer the agent runs on.
@@ -243,6 +258,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 ## Limits worth knowing
 
 - Agents run inside the app, so quitting Crew stops them. They resume their sessions on the next launch, but a turn that was mid-flight is lost.
-- Queued messages live in memory and are dropped on quit.
+- Queued messages live in memory and are dropped on quit. So are clones: they don't come back after a restart.
+- Clones share their agent's folder. Two clones editing the same files at the same time can step on each other.
 - Codex agents are marked ready about 3 seconds after launch, because Codex only announces a session with its first prompt.
 - If an agent looks stuck on "working" (for example after you interrupt it), click its status in the terminal header to mark it free.
