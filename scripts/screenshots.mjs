@@ -404,6 +404,10 @@ const SHOTS = {
     await type('Can you two check the payload? @ar')
     await sleep(400)
     await save(win, `mention-filter-${theme}`)
+    // picked: mentions take their agent's color; one that's off, or that nobody has, is underlined
+    await type('Pair on the payload @david @marc, loop in @ye and @nobody ')
+    await sleep(400)
+    await save(win, `mention-ink-${theme}`)
     win.destroy()
   },
   async mentionGif() {

@@ -2,7 +2,7 @@
 // Add a task in the bar (or from the chat). Starting one hands it to its owner in a fresh conversation, so
 // tasks don't pile into one long context; you review what comes back. Board or list, filtered by kind, owner
 // or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via crew.call('task').
-/* global ownerIn, mountMentions, crew, store, esc, avatarHTML, agentColor, statusText, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented */
+/* global ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, statusText, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented */
 
 const STATUS = [
   { id: 'new', label: 'To do' },
@@ -81,6 +81,7 @@ function mountTasks(root, { onTerminal }) {
   const $ = (s) => root.querySelector(s)
   const tp = $('.tp')
   const add = $('[data-add]')
+  let ink = null // mentions in color (mountInk), set up with the bar's other listeners below
   const addGo = $('.tk-add-go')
   let state = null
   let tickets = []
@@ -213,6 +214,7 @@ function mountTasks(root, { onTerminal }) {
     add.style.height = 'auto'
     if (add.offsetParent && add.value) add.style.height = `${Math.min(add.scrollHeight, 140)}px`
     addGo.disabled = !add.value.trim() && !attach.get().length
+    ink?.paint()
     morph($('[data-kind-pick]'), `${KIND_ICON[addKind]}<span>${KIND_LABEL[addKind]}</span>${CHEVRON}`)
     $('.tk-add').dataset.kind = addKind
     // who it'll go to, as you type @name
@@ -237,6 +239,7 @@ function mountTasks(root, { onTerminal }) {
   }
   add.addEventListener('input', syncAdd)
   mountMentions(add, { agents: () => state?.agents ?? [], box: $('.tk-add'), place: 'below', heading: () => 'Assign to' })
+  ink = mountInk(add, { agents: () => state?.agents ?? [], strict: () => false })
   add.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault()

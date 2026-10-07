@@ -63,3 +63,8 @@ test('HTML in cells is escaped', () => {
 test('a quoted table reads as words, not pipes', () => {
   assert.equal(snippet('| A | B |\n|---|---|\n| 1 | 2 |'), 'A B 1 2')
 })
+
+test('@mentions are marked the way the hub reads them: not emails, packages, possessives or code', () => {
+  assert.match(md('@david fix it, then @gal@mac-mini.'), /<span class="mention" data-m="david">@david<\/span> fix it, then <span class="mention" data-m="gal@mac-mini">@gal@mac-mini<\/span>\./)
+  for (const text of ["@david's branch", 'mail a@b.com', 'bump @types/node', 'run `@nobody`', 'ask @you']) assert.doesNotMatch(md(text), /class="mention"/, text)
+})

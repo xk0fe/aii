@@ -317,6 +317,7 @@ function md(src) {
       .replace(/__(?=\S)(.+?)__/g, '<b>$1</b>')
       .replace(/(^|[\s(])[*_](?=\S)([^*_]+?)[*_](?=[\s).,!?:;]|$)/g, '$1<i>$2</i>')
       .replace(/~~(.+?)~~/g, '<s>$1</s>')
+      .replace(/(?<![\w.@/'-]|&#\d+;)@([\w-]+(?:@[\w-]+)?)(?![\w@/'-]|\.\w|&#39;)/g, (m, n) => (NOT_NAMES.has(n.toLowerCase()) ? m : `<span class="mention" data-m="${n.toLowerCase()}">@${n}</span>`))
       .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>')
       .replace(/(^|[\s(])(https?:\/\/[^\s<)]*[^\s<).,!?:;])/g, '$1<a href="$2">$2</a>')
       .replace(/\u0001(\d+)\u0001/g, (_, i) => `<code>${codes[i]}</code>`)
@@ -475,7 +476,12 @@ function feedItem(e, prev, ctx) {
   const replied = answers.length
     ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">${ICONS.thread}<span>${[...new Set(answers.map((r) => `@${esc(r.from)}`))].join(', ')} ${answers.some((r) => r.kind === 'reply') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</span></button>`
     : ''
-  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}" data-id="${e.id}">${md(e.text)}</div>`
+  // @names in the text take their agent's color; one nobody here has stays a plain word
+  const text = md(e.text).replace(/<span class="mention" data-m="([^"]+)">([^<]*)<\/span>/g, (_, n, at) => {
+    const a = mentioned(n, Object.values(byName))
+    return a ? `<span class="mention" style="--c:${agentColor(a)}">${at}</span>` : at
+  })
+  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}" data-id="${e.id}">${text}</div>`
   const cap = (html) => (cont ? '' : `<div class="cap">${html}${tags}<span class="time">${time}</span></div>`)
   // Agents talk with their little face next to the bubble, like a group chat.
   const said = (cls, capHTML, rest = '', body = bubble) =>
@@ -997,6 +1003,69 @@ function mountMentions(field, { agents, box = field, place = 'above', heading = 
   return { close, open: () => Boolean(at) }
 }
 
+// What counts as an @mention: the hub's rule (addressees in core/hub.js), so the box colors exactly what will be
+// delivered. Not one: @words glued to something (a@b.com, @types/node, @david's), code in backticks, @you/@any/@crew.
+const MENTION = /(?<![\w.@/'-])@([\w-]+(?:@[\w-]+)?)(?![\w@/'-]|\.\w)/g
+const NOT_NAMES = new Set(['you', 'any', 'crew', 'auto'])
+// code spans blanked out, same length, so positions still line up with the text
+const proseOf = (text) => String(text).replace(/```[\s\S]*?```/g, (m) => ' '.repeat(m.length)).replace(/`[^`\n]*`/g, (m) => ' '.repeat(m.length))
+// @gal is the gal here, or the only gal on a linked computer (as the hub resolves it)
+function mentioned(name, agents) {
+  const n = name.toLowerCase()
+  const exact = agents.find((a) => a.name === n)
+  if (exact || n.includes('@')) return exact
+  const there = agents.filter((a) => a.seed === n)
+  return there.length === 1 ? there[0] : undefined
+}
+
+// Mentions in color, right in the message box. A textarea can't color part of its text, so a copy of the text
+// sits under it (same font, padding and wrapping) with each @mention painted in its agent's color, and the
+// textarea's own letters are transparent (the caret and selection stay). A name nobody on the crew has gets a red
+// underline and one that's off an amber one, since the hub would refuse the send; the name still being typed
+// stays plain. strict(): whether unknown names matter here (a task's @owner doesn't refuse anything).
+function mountInk(field, { agents, strict = () => true }) {
+  const ink = document.createElement('div')
+  ink.className = 'ink'
+  ink.setAttribute('aria-hidden', 'true')
+  field.before(ink)
+  field.classList.add('inked')
+  if (getComputedStyle(field.parentElement).position === 'static') field.parentElement.style.position = 'relative'
+  const cs = getComputedStyle(field)
+  for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing', 'textTransform', 'textIndent', 'tabSize', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'boxSizing', 'wordBreak', 'overflowWrap']) ink.style[k] = cs[k]
+  const place = () => {
+    Object.assign(ink.style, { left: `${field.offsetLeft}px`, top: `${field.offsetTop}px`, width: `${field.offsetWidth}px`, height: `${field.offsetHeight}px` })
+    // a scrollbar in the field narrows its text: narrow the copy the same, so lines break in the same places
+    const bar = field.offsetWidth - field.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth)
+    ink.style.paddingRight = `${parseFloat(cs.paddingRight) + Math.max(0, bar)}px`
+    ink.scrollTop = field.scrollTop
+  }
+  const paint = () => {
+    const text = field.value
+    const caret = document.activeElement === field ? field.selectionEnd : -1
+    const crew = agents()
+    let html = ''
+    let last = 0
+    for (const m of proseOf(text).matchAll(MENTION)) {
+      if (NOT_NAMES.has(m[1].toLowerCase())) continue
+      const end = m.index + m[0].length
+      const a = mentioned(m[1], crew)
+      const cls = a ? (a.on ? 'ok' : 'off') : end !== caret && strict() && crew.length ? 'unknown' : ''
+      if (!cls) continue
+      html += `${esc(text.slice(last, m.index))}<span class="mention ${cls}"${a ? ` style="--c:${agentColor(a)}"` : ''}>${esc(text.slice(m.index, end))}</span>`
+      last = end
+    }
+    // a trailing newline only gets its line in the copy if something follows it
+    ink.innerHTML = `${html}${esc(text.slice(last))}​`
+    place()
+  }
+  field.addEventListener('input', paint)
+  field.addEventListener('scroll', () => (ink.scrollTop = field.scrollTop), { passive: true })
+  for (const ev of ['keyup', 'click', 'focus', 'blur']) field.addEventListener(ev, paint)
+  new ResizeObserver(place).observe(field)
+  paint()
+  return { paint }
+}
+
 function mountComposer(el, { dropZone = el } = {}) {
   el.classList.add('composer')
   el.innerHTML = `<div class="chips" role="group" aria-label="Send to"></div>
@@ -1079,6 +1148,7 @@ function mountComposer(el, { dropZone = el } = {}) {
     ta.style.height = `${ta.scrollHeight}px`
     ta.style.overflowY = ta.scrollHeight > 160 ? 'auto' : 'hidden'
     send.disabled = !ta.value.trim() && !attach?.get().length
+    ink?.paint() // dictation and sending change the text without an input event
   }
   const say = (text, error = false) => {
     hint.textContent = text
@@ -1157,6 +1227,8 @@ function mountComposer(el, { dropZone = el } = {}) {
     draw()
     ta.focus()
   })
+  // mentions in their agent's color as you type
+  const ink = mountInk(ta, { agents: () => agents, strict: () => !el.classList.contains('task-mode') })
   // @name opens the crew list; in task mode a mention assigns the task
   const mentions = mountMentions(ta, { agents: () => agents, box: el.querySelector('.input'), heading: () => (el.classList.contains('task-mode') ? 'Assign to' : 'Mention: they get it too') })
   ta.addEventListener('keydown', (e) => {
@@ -1176,6 +1248,7 @@ function mountComposer(el, { dropZone = el } = {}) {
     render(state) {
       agents = state.agents
       draw()
+      ink.paint() // someone switched on, off, or joined
     },
     setTarget,
     focus: () => ta.focus(),
