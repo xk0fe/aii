@@ -17,4 +17,7 @@ contextBridge.exposeInMainWorld('crew', {
   onFocus: listen('focus'),
   onToggle: listen('toggle'),
   onImport: listen('import'),
+  // Dictation: microphone audio out (16 kHz Float32 chunks), what it heard back (see core/voice.js).
+  voiceAudio: (id, samples) => ipcRenderer.send('voice-audio', id, samples),
+  onVoice: listen('voice'),
 })

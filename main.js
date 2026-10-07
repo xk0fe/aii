@@ -1,7 +1,7 @@
 // Electron shell: menu bar popover, floating pill + chat panel, full-screen dashboard.
 // All agent logic lives in core/; this file owns windows, dialogs and notifications and wires them to the crew:
 // this computer's agents plus those of every computer linked over Crew Link (see core/crew.js).
-import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker } from 'electron'
+import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, systemPreferences } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { CONFIG, ATTACHMENTS } from './core/hub.js'
 import { Crew, CACHE } from './core/crew.js'
 import { readPack } from './core/pack.js'
+import { Voice, voiceActions, voiceAudio } from './core/voice.js'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
 const TRAY_WIDTH = 340
@@ -62,6 +63,7 @@ app.whenReady().then(async () => {
   const key = hub.config.hotkey ?? 'Alt+Shift+Space'
   const hotkey = () => (dashOnScreen() ? dash.focus() : overlay.webContents.send('toggle'))
   if (!globalShortcut.register(key, hotkey)) hub.post({ kind: 'event', from: 'crew', text: `hotkey ${key} is taken, set another "hotkey" in config.json` })
+  wireVoice()
 
   // Dev aid: CREW_SHOW=tray,panel,dashboard opens those views on launch.
   const show = (process.env.CREW_SHOW ?? '').split(',')
@@ -331,6 +333,32 @@ function wire() {
     note.on('click', () => openDashboard(name))
     note.show()
   })
+}
+
+// Voice input (core/voice.js): the chat's mic button, plus a hotkey that opens the chat and starts listening.
+// Dictation runs on this computer: it only fills in your message, wherever the agent you send it to lives.
+function wireVoice() {
+  // Older macOS asks for speech-recognition permission, which needs the app's Info.plist to say why (Crew.app does).
+  const plist = path.join(process.resourcesPath, '..', 'Info.plist')
+  const mayAskPermission = fs.existsSync(plist) && fs.readFileSync(plist, 'utf8').includes('NSSpeechRecognitionUsageDescription')
+  const voice = new Voice({ root: dir, mayAskPermission })
+  const send = (event) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('voice', event))
+  Object.assign(actions, voiceActions({ voice, systemPreferences, shell, send }))
+  const audio = voiceAudio(voice)
+  ipcMain.on('voice-audio', (e, id, samples) => audio(e.sender, id, samples))
+  app.on('will-quit', () => voice.cancel())
+
+  const key = hub.config.voiceHotkey ?? 'Alt+Shift+D'
+  const dictate = () => {
+    if (dashOnScreen()) {
+      dash.focus()
+      return dash.webContents.send('voice', { type: 'toggle' })
+    }
+    overlay.showInactive()
+    overlay.webContents.send('toggle', { open: true, focus: true })
+    overlay.webContents.send('voice', { type: 'toggle' })
+  }
+  if (key && !globalShortcut.register(key, dictate)) hub.post({ kind: 'event', from: 'crew', text: `voice hotkey ${key} is taken, set another "voiceHotkey" in config.json` })
 }
 
 function trayTitle(state) {

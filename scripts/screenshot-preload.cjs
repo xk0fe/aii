@@ -61,7 +61,46 @@ const TERM = [
 
 const state = { autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, link: { mode: 'local', sharing: false } }
 
-const listeners = { state: [], focus: [], toggle: [] }
+const listeners = { state: [], focus: [], toggle: [], voice: [] }
+
+// Dictation without a microphone: a wobbling tone stands in for your voice (it only moves the meter), and a
+// scripted transcript arrives word by word. Nothing here ever opens a real microphone.
+const SPOKEN = 'Hey Joseph, can you look at why the build is failing on main? Then hand it to David.'.split(' ')
+let dictation = null
+navigator.mediaDevices.getUserMedia = async () => {
+  const ctx = new AudioContext()
+  const voice = ctx.createOscillator()
+  const wobble = ctx.createOscillator()
+  const depth = ctx.createGain()
+  const gain = ctx.createGain()
+  const out = ctx.createMediaStreamDestination()
+  voice.frequency.value = 180
+  wobble.frequency.value = 2.5
+  depth.gain.value = 0.04
+  gain.gain.value = 0.04
+  wobble.connect(depth).connect(gain.gain)
+  voice.connect(gain).connect(out)
+  voice.start()
+  wobble.start()
+  return out.stream
+}
+function voiceCall(action) {
+  const emit = (e) => listeners.voice.forEach((fn) => fn({ id: 1, ...e }))
+  if (action === 'voiceLocales') return [{ id: 'en_US', label: 'English', installed: true }, { id: 'ru_RU', label: 'Русский', installed: true }]
+  if (action === 'voiceStart') {
+    let n = 0
+    setTimeout(() => emit({ type: 'ready', locale: 'en_US' }), 150)
+    dictation = setInterval(() => {
+      n = Math.min(SPOKEN.length, n + 1)
+      emit({ type: 'text', final: SPOKEN.slice(0, Math.max(0, n - 3)).join(' '), volatile: SPOKEN.slice(Math.max(0, n - 3), n).join(' ') })
+    }, 230)
+    return 1
+  }
+  if (action === 'voiceStop') {
+    clearInterval(dictation)
+    setTimeout(() => emit({ type: 'done', text: SPOKEN.join(' ') }), 250)
+  }
+}
 window.__crewFit = null
 window.__crewEmit = (channel, ...args) => listeners[channel]?.forEach((fn) => fn(...args))
 window.__crewState = state
@@ -69,6 +108,7 @@ window.crew = {
   call: async (action, ...args) => {
     if (action === 'state') return state
     if (action === 'buffer') return { data: TERM, cols: 100, rows: 30 }
+    if (action.startsWith('voice')) return voiceCall(action)
     if (action === 'update') {
       const [names, patch] = args
       for (const a of state.agents.filter((x) => [names].flat().includes(x.name))) {
@@ -86,4 +126,7 @@ window.crew = {
   onPty: () => {},
   onFocus: (fn) => listeners.focus.push(fn),
   onToggle: (fn) => listeners.toggle.push(fn),
+  onImport: () => {},
+  onVoice: (fn) => listeners.voice.push(fn),
+  voiceAudio: () => {},
 }
