@@ -293,7 +293,7 @@ document.addEventListener('keydown', (e) => {
 // ---- the roster: every agent, by computer ------------------------------------
 
 function drawRoster() {
-  morph($('.roster'), rosterHTML(state, { folds, selected, filter: find }))
+  morph($('.roster'), rosterHTML(state, { folds, selected, filter: find, drag: true }))
   $('[data-find]').placeholder = state.agents.length > 1 ? `Search ${state.agents.length} agents` : 'Search'
   if (dragging) document.querySelector(`.roster .crow[data-agent="${CSS.escape(dragging.name)}"]`)?.classList.add('dragging')
   if (cursor) document.querySelector(`.roster .crow[data-agent="${CSS.escape(cursor)}"]`)?.classList.add('cursor')

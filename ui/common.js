@@ -271,11 +271,11 @@ const modeMarks = (a) =>
   (a.yolo ? '<i class="mark-yolo" title="YOLO: skips every permission prompt">YOLO</i>' : '') +
   (a.fast ? `<i class="mark-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</i>` : '')
 
-function crewRow(a, { selected = false } = {}) {
+function crewRow(a, { selected = false, drag = false } = {}) {
   const line = rowLine(a)
   const later = a.freshPending ? 'new conversation when free' : a.pending ? 'restarts when free' : ''
   const tip = [`${a.name}${a.area ? ` · ${a.area}` : ''}`, statusText(a), later, a.queue ? `${a.queue} queued` : ''].filter(Boolean).join('\n')
-  return `<div class="crow ${a.on ? a.status : 'off'} ${selected ? 'on' : ''}" data-agent="${esc(a.name)}" draggable="true" style="--c:${agentColor(a)}" title="${esc(tip)}">
+  return `<div class="crow ${a.on ? a.status : 'off'} ${selected ? 'on' : ''}" data-agent="${esc(a.name)}" ${drag ? 'draggable="true"' : ''} style="--c:${agentColor(a)}" title="${esc(tip)}">
     <span class="crow-av">${avatarHTML(a, { size: 30 })}${orbitHTML(a)}${unreadBadge(a.unread)}</span>
     <span class="crow-main">
       <span class="crow-top"><b>${esc(a.seed ?? a.name)}</b>${modeMarks(a)}</span>
@@ -299,8 +299,9 @@ function groupCounts(agents) {
 }
 
 // folds: 'group:<key>' for computers you folded away, 'off:<key>' for the off agents you unfolded.
-// filter: text to match names and areas (a match shows through any fold).
-function rosterHTML(state, { folds = new Set(), selected, filter = '' } = {}) {
+// filter: text to match names and areas (a match shows through any fold). drag: rows can be dragged to another
+// computer (the dashboard's sidebar).
+function rosterHTML(state, { folds = new Set(), selected, filter = '', drag = false } = {}) {
   const q = filter.trim().toLowerCase()
   const match = (a) => !q || `${a.name} ${a.area ?? ''}`.toLowerCase().includes(q)
   const groups = crewGroups(state)
@@ -320,9 +321,9 @@ function rosterHTML(state, { folds = new Set(), selected, filter = '' } = {}) {
           <span class="grow"></span>${folded ? faceStack(on.length ? on : agents) : ''}${groupCounts(g.agents)}
         </div>`
       : ''
-    const rows = on.map((a) => crewRow(a, { selected: a.name === selected })).join('')
+    const rows = on.map((a) => crewRow(a, { selected: a.name === selected, drag: drag && headed })).join('')
     const offRow = off.length
-      ? `<div class="crow-fold ${offOpen ? 'open' : ''}" data-fold="off:${esc(g.key)}"><span class="chev">${ICONS.chevron}</span>${faceStack(off, 4)}<span>${off.length} off</span></div>${offOpen ? off.map((a) => crewRow(a, { selected: a.name === selected })).join('') : ''}`
+      ? `<div class="crow-fold ${offOpen ? 'open' : ''}" data-fold="off:${esc(g.key)}"><span class="chev">${ICONS.chevron}</span>${faceStack(off, 4)}<span>${off.length} off</span></div>${offOpen ? off.map((a) => crewRow(a, { selected: a.name === selected, drag: drag && headed })).join('') : ''}`
       : ''
     const empty = !agents.length ? `<div class="cgroup-empty">${g.online ? 'No agents here yet' : 'No agents'}</div>` : ''
     return `<section class="cgroup ${folded ? 'folded' : ''} ${g.online ? '' : 'away'}" data-home="${esc(g.key)}">${head}<div class="cgroup-body">${folded ? '' : rows + offRow + empty}</div></section>`
