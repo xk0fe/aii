@@ -10,7 +10,8 @@ You get three views:
 - **Floating pill** on the screen edge holds the crew as little creatures that hop while they work. Click it, or press `⌥⇧Space`, to open the chat. Click a creature to talk to that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
 - **Dashboard**:
   - **Crew** is a Pokédex-style collection of agent cards, where you create and edit agents.
-  - **Grid** and **Focus** show the live terminals. `⌘1` `⌘2` `⌘3` switch between the three.
+  - **Bugs** is a board for play-testing: report what breaks, each fix gets a fresh conversation, you check it.
+  - **Grid** and **Focus** show the live terminals. `⌘1` to `⌘4` switch between the four.
   - The feed sits on the right.
 
 ```
@@ -63,7 +64,8 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
   - `crew send <name> "task"` to hand off work, or `crew send david,joseph "task"` for several recipients;
   - `crew note "fact"` to share context;
   - `crew who` to see the crew;
-  - `crew board` to read shared notes.
+  - `crew board` to read shared notes;
+  - `crew bug …` to work the Bugs board (see below).
 
   Every hand-off and reply shows up in the feed, with the agent's face beside it.
 - **Threads.** Each reply, and each hand-off an agent makes while working on your request, quotes the message it answers ("↩ you: …"). Click the quote to jump back. Your messages link forward too ("↪ @joseph replied"), so with several messages and several agents in flight you can always tell what answers what. Prompts you type directly into an agent's terminal show up in the feed too, tagged *in terminal*.
@@ -74,6 +76,39 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
 - **On/off** is saved. An agent you turn off stays off after a restart and resumes its session when you turn it back on.
 - **⚡ Fast** (Codex agents) uses Codex's fast service tier. It's a ⚡ chip on the agent's row and a toggle in the editor; until you set it, it follows `service_tier` in your Codex config.
 - **YOLO** skips every permission prompt. Claude gets `--dangerously-skip-permissions`; Codex gets `--dangerously-bypass-approvals-and-sandbox`.
+
+## Bugs: play-test, report, fix one per conversation
+
+Calling out bugs while you play is fast, but feeding them all to the agent that's doing most of the work fills its conversation with unrelated fixes, and long mixed-up conversations are where agents start getting things wrong. The Bugs board keeps the three jobs apart: you report, a triage agent sorts, and each fix runs in a **fresh conversation** with just that bug in it.
+
+1. **Report.** Type what went wrong in the bar at the top of **Bugs** and press Enter (paste or drop a screenshot too). Or, without leaving the game: `⌥⇧Space`, pick the **🐞 Bug** chip (or start the message with `bug:`), type, Enter.
+2. **Triage.** Pick a **Triage** agent in the board's header (a cheap model is plenty). It rewrites what you typed into a clear ticket (steps, expected, actual, where to look), sets a severity, gives it to the agent whose area it is, and spots duplicates (`×3` on the card). Your original words stay on the ticket and go to the fixer too, so file paths and repro commands survive the rewrite. Without a triage agent, a bug goes to whoever's area matches.
+3. **Fix.** **Fix** on a card (or drag it to **Fixing**) sends it to its owner: Crew starts that agent a new conversation and gives it the ticket. A busy owner finishes what it's doing first. **Send all** sends every assigned bug at once, each to its own conversation. Turn on **Auto-fix** and bugs go out as soon as they have an owner. The agent reproduces the bug, fixes it, checks the fix and runs `crew bug fixed`; if it can't tell where the bug is, it asks with `crew bug note` instead of guessing.
+4. **Check.** Fixed bugs land in **Check** with what was wrong and how it was checked, and you get a notification. Try it: **Works** closes it, **Broken** sends it back with your note, into the same conversation, so the agent keeps everything it tried.
+
+Open a card to edit the title, details, severity and owner, add screenshots and notes, mark it a duplicate, or follow everything that happened to it. The feed shows each step as one line; click it to open the bug. Blockers sort to the top of **New**. Bugs filed on a linked computer show up too, marked with that computer.
+
+Agents can use the board themselves:
+
+```
+crew bug list                     open bugs
+crew bug show <n>                 one bug in full: details, screenshots, notes
+crew bug fixed <n> "..."          what was wrong, what changed, how it was checked
+crew bug note <n> "..."           a finding (can't reproduce, not my area, a clue)
+crew bug report "title" "..."     a bug the agent found itself
+crew bug triage <n> --owner <name> --severity <blocker|high|normal|low> [--title "..."] [--details "..."]
+crew bug dup <n> <original>       the same bug as another one
+```
+
+## Conversations: how full they are, and starting fresh
+
+Every agent shows how full its current conversation is: a little ring that fills up and turns amber past half and red past 80%. It's on the agent's card, in its terminal header, and in the sidebar once it's past half. Hover it for the numbers: tokens used of the model's window, tasks in this conversation, and whether it has compacted. A compacted conversation (the CLI summarized older details to make room) gets a dashed ring.
+
+- **New conversation** gives an agent a clean slate: its instructions, folder and the crew's notes stay, the old conversation stays in the CLI's history. It's the ✦ button in the terminal header and in the agent's card (**Conversation** shows the gauge, the numbers and advice). A busy agent finishes its current task first.
+- **Send a task fresh.** The ✦ toggle in the composer sends your message into a new conversation instead of adding it to everything the agent did before.
+- The feed draws a line where an agent's new conversation starts, and `/clear` typed in a terminal counts too.
+
+Claude Code reports its context to the status line, which Crew points at itself, so its terminal footer shows `context 34% · 68k of 200k · 5 tasks in this conversation`. Codex agents are read from Codex's session log after each step.
 
 ## Computers: one crew across your Macs
 
@@ -104,6 +139,8 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `config.json`: your agents, custom providers and theme. The UI writes it, you can edit it by hand (the `{ }` button), and changes apply live.
 - `sessions.json`: which session each agent resumes.
 - `stats.json`: each agent's work experience.
+- `tickets.json`: the Bugs board.
+- `conversations.json`: each agent's current conversation: when it started, tasks in it, compactions and how full it is.
 - `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, and a cache of images from agents on other computers.
 - `board.md`: shared notes (`crew note`).
 - `feed.jsonl`: the feed history.
@@ -144,10 +181,13 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 - `core/crew.js` is the crew across your computers: this computer's hub plus every linked computer's agents, merged into one list, with each action sent to the computer the agent runs on.
 - `core/link.js` is the link itself: pairing codes, the TLS server, the client, and one symmetric connection either side can call over.
 - `core/pack.js` reads and writes agent packs (`.crew` files).
+- `core/tickets.js` is the Bugs board: tickets, their history, and the briefs that triage and fixing agents get.
+- `core/context.js` reads how full a conversation is, from Claude Code's status line or Codex's session log.
 - `core/server.js` is a tiny local HTTP API for the hooks and `bin/crew`. Every request needs a per-launch token.
 - `ui/` is plain HTML, CSS and JS with no build step. The main files:
   - `avatar.js` draws the creatures;
   - `collection.js` is the card collection and editor;
+  - `bugs.js` is the Bugs board and the ticket panel;
   - `common.js` has shared pieces, including a small DOM patcher that keeps avatars animating smoothly across updates.
 
 ## Extending it

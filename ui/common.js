@@ -41,6 +41,8 @@ const ICONS = {
   plus: svg('<path d="M12 5v14M5 12h14"/>', 'stroke-width="2.2"'),
   import: svg('<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4.5 15v2.5A2.5 2.5 0 0 0 7 20h10a2.5 2.5 0 0 0 2.5-2.5V15"/>'),
   export: svg('<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4.5 15v2.5A2.5 2.5 0 0 0 7 20h10a2.5 2.5 0 0 0 2.5-2.5V15"/>'),
+  bug: svg('<path d="M8.6 7.6a3.4 3.4 0 0 1 6.8 0"/><rect x="6.6" y="7.6" width="10.8" height="12.4" rx="5.4"/><path d="M12 11v9M3.8 12.6h2.8M17.4 12.6h2.8M4.6 8l2.3 1.6M19.4 8l-2.3 1.6M4.6 18l2.4-1.5M19.4 18 17 16.5"/>'),
+  fresh: svg('<path d="M20.2 12a8.2 8.2 0 0 1-12 7.3L3.8 20.4l1.1-4.2A8.2 8.2 0 1 1 20.2 12z"/><path d="M12 8.4l.9 2.7 2.7.9-2.7.9-.9 2.7-.9-2.7-2.7-.9 2.7-.9z" fill="currentColor" stroke-width="1"/>'),
   computers: svg('<rect x="2.5" y="4" width="13" height="9.5" rx="1.8"/><path d="M6 17h6M9 13.5V17"/><rect x="17.5" y="7" width="4.5" height="10" rx="1.2"/>'),
   plane: svg('<path d="M21 3 3 10.4l7.2 2.4L12.6 20 21 3z"/><path d="m10.2 12.8 4.6-4.6"/>'),
   bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.5 4.8 13.2c-.4.5 0 1.2.6 1.2H11l-1.2 7.1c-.1.6.7.9 1 .4l8.8-10.7c.4-.5 0-1.2-.6-1.2H13.4l1.2-7.1c.1-.6-.7-.9-1-.4z"/></svg>',
@@ -150,17 +152,44 @@ function powerSwitch(a) {
 // An agent's name; one on another computer carries its computer: gal@mac-mini.
 const nameHTML = (a) => (a.home ? `${esc(a.seed)}<span class="at" title="runs on ${esc(a.homeName)}">@${esc(a.home)}</span>` : esc(a.name))
 
+// ---- context: how full an agent's conversation is ----------------------------------------------------
+
+// 1.2M, 340k, 900
+const tokenCount = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n ?? 0))
+// calm: plenty of room. warm: past half, start fresh before unrelated work. hot: compaction is close.
+const ctxLevel = (pct) => (pct >= 80 ? 'hot' : pct >= 50 ? 'warm' : 'calm')
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+function contextTip(a) {
+  const c = a.convo
+  if (!c) return ''
+  const parts = [c.context ? `Context ${c.context.pct}% full: ${tokenCount(c.context.used)} of ${tokenCount(c.context.size)} tokens` : 'Context: not measured yet', `${plural(c.tasks, 'task')} in this conversation`]
+  if (c.compactions) parts.push(`compacted ${c.compactions}× (older details are summaries)`)
+  if (c.context?.pct >= 50 || c.compactions) parts.push('a new conversation gives it a clean slate')
+  return parts.join(' · ')
+}
+
+// A little fuel gauge: the ring fills as the conversation grows and turns amber, then red.
+function contextRing(a, { label = true, size = 15 } = {}) {
+  const ctx = a.convo?.context
+  if (!ctx || !a.on) return ''
+  return `<span class="ctx ${ctxLevel(ctx.pct)}${a.convo.compactions ? ' compacted' : ''}" title="${esc(contextTip(a))}" style="--s:${size}px">` +
+    `<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.6" class="ctx-track"/><circle cx="10" cy="10" r="7.6" class="ctx-fill" pathLength="100" stroke-dasharray="${Math.max(ctx.pct, 3)} 100"/></svg>` +
+    `${label ? `<b>${ctx.pct}%</b>` : ''}</span>`
+}
+
 function agentCard(a, providers) {
   const doing = a.on && (a.activity || a.queue)
-  const activity = doing || a.pending
-    ? `<div class="activity">${a.activity && a.on ? `<span class="${a.status === 'working' ? 'shimmer' : ''}">${esc(a.activity)}</span>` : '<span></span>'}${a.queue && a.on ? `<span class="queue">${a.queue} queued</span>` : ''}${a.pending ? '<span class="pending" title="It restarts with your changes as soon as it is free">↻ restarts when free</span>' : ''}</div>`
+  const later = a.freshPending ? '<span class="pending" title="It finishes what it is doing first">✦ new conversation when free</span>' : a.pending ? '<span class="pending" title="It restarts with your changes as soon as it is free">↻ restarts when free</span>' : ''
+  const activity = doing || later
+    ? `<div class="activity">${a.activity && a.on ? `<span class="${a.status === 'working' ? 'shimmer' : ''}">${esc(a.activity)}</span>` : '<span></span>'}${a.queue && a.on ? `<span class="queue">${a.queue} queued</span>` : ''}${later}</div>`
     : ''
   return `<div class="agent hop ${a.on ? a.status : 'off'}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}">
     <div class="agent-av">${avatarHTML(a, { size: 38 })}</div>
     <div class="agent-body">
       <div class="agent-top"><span class="name">${nameHTML(a)}</span><span class="state ${a.status}">${esc(statusText(a))}</span><span class="grow"></span>${powerSwitch(a)}</div>
       <div class="area" title="${esc(a.area)}">${esc(a.area || 'No area yet')}</div>
-      <div class="agent-foot"><span class="brain" title="${esc(brainLabel(a, providers))}">${esc(brainShort(a, providers))}</span>${modeChips(a)}</div>
+      <div class="agent-foot"><span class="brain" title="${esc(brainLabel(a, providers))}">${esc(brainShort(a, providers))}</span>${a.convo?.context?.pct >= 50 ? contextRing(a, { label: false }) : ''}${modeChips(a)}</div>
       ${activity}
     </div>
   </div>`
@@ -348,6 +377,29 @@ const feedView = (feed, agents, open, limit) => {
   return { items, html: () => items.map((e, i) => feedItem(e, items[i - 1], ctx)).join('') }
 }
 
+// What happened to a bug, as one line in the feed. Click it to open the bug.
+const BUG_ACTS = {
+  filed: (e, who) => (e.from === 'you' ? 'You reported' : `${who(e.from)} reported`),
+  triaged: (e, who) => `${who(e.from)} triaged${e.text ? ` it for ${who(e.text)}` : ''}`,
+  fixing: (e, who) => `went to ${who(e.text)}`,
+  fixed: (e, who) => `${who(e.from)} fixed`,
+  note: (e, who) => `${who(e.from)} noted on`,
+  done: () => 'checked: works ✓',
+  reopened: () => 'reopened',
+  dup: (e) => `is a duplicate of ${esc(e.text)}`,
+}
+
+function bugEvent(e, who) {
+  const key = String(e.ticket)
+  const act = BUG_ACTS[e.act]?.(e, who) ?? esc(e.act)
+  const tail = (e.act === 'fixed' || e.act === 'note') && e.text ? `<span class="bug-ev-text">${esc(snippet(e.text))}</span>` : ''
+  const lead = e.act === 'filed' || e.act === 'triaged' || e.act === 'fixed' || e.act === 'note'
+  return `<div class="bug-ev act-${esc(e.act)}" id="m-${e.id}" data-ticket="${esc(key)}" title="Open bug #${esc(key)}">
+    <span class="bug-ev-icon">${ICONS.bug}</span>
+    <span class="bug-ev-line">${lead ? `${act} <b>#${esc(key.split('@')[0])}</b>` : `<b>#${esc(key.split('@')[0])}</b> ${act}`} <span class="bug-ev-title">${esc(e.title)}</span></span>${tail}
+  </div>`
+}
+
 function feedItem(e, prev, ctx) {
   const { byName, byId, repliesTo, open } = ctx
   const agent = (n) => byName[n] ?? { name: n }
@@ -358,7 +410,8 @@ function feedItem(e, prev, ctx) {
   const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
   // A reply quotes the message it answers; click to jump back to it.
   const orig = e.re && byId[e.re]
-  const quote = orig ? `<button class="quote" data-jump="${orig.id}" title="Jump to the message this answers">↩ ${orig.from === 'you' ? 'you' : `@${esc(orig.from)}`}: ${esc(snippet(orig.text))}</button>` : ''
+  const quoted = orig?.ticket !== undefined ? `bug #${String(orig.ticket).split('@')[0]} ${orig.title ?? ''}` : snippet(orig?.text)
+  const quote = orig ? `<button class="quote" data-jump="${orig.id}" title="Jump to the message this answers">↩ ${orig.from === 'you' ? 'you' : `@${esc(orig.from)}`}: ${esc(quoted)}</button>` : ''
   // ...and a message you sent links forward to the agents' replies.
   const answers = repliesTo[e.id] ?? []
   const replied = answers.length
@@ -370,7 +423,17 @@ function feedItem(e, prev, ctx) {
   const said = (cls, capHTML, rest = '') =>
     `<div class="item said ${cls}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"><span class="face" data-agent="${esc(e.from)}">${repeat ? '' : avatarHTML(agent(e.from), { size: 30, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${bubble}${rest}${replied}</div></div>`
 
+  if (e.kind === 'bug') return bugEvent(e, who)
+  // a new conversation starts: a line across the feed, so what came before is visibly "before"
+  if (e.kind === 'event' && e.fresh) return `<div class="fresh-ev" id="m-${e.id}" title="${time}"><span>${ICONS.fresh}${who(e.from)} ${esc(e.text)}</span></div>`
   if (e.kind === 'event') return `<div class="event ${e.alert ? 'alert' : ''}" id="m-${e.id}" title="${time}">${who(e.from)} ${esc(e.text)}</div>`
+  // a bug sent to an agent (to fix, or to triage): the ticket, not the whole brief
+  if (e.ticket !== undefined && e.from === 'you') {
+    const key = String(e.ticket)
+    const why = e.triage ? '<span class="tag">to triage</span>' : e.fresh ? '<span class="tag fresh">new conversation</span>' : ''
+    return `<div class="item me ticket-msg" id="m-${e.id}" title="${time}"><div class="cap">to ${who(e.to)}${why}${tags}</div>
+      <button class="bubble ticket-bubble" data-ticket="${esc(key)}" data-id="${e.id}"><span class="tb-icon">${ICONS.bug}</span><b>#${esc(key.split('@')[0])}</b> ${esc(e.title ?? '')}</button>${replied}</div>`
+  }
   if (e.kind === 'note') return said('note', `${who(e.from)} shared a note`)
   if (e.kind === 'reply') return said('', who(e.from))
   if (e.from === 'you') return `<div class="item me" id="m-${e.id}" title="${time}">${cap(`to ${(e.cc ?? [e.to]).map(who).join(' ')}`)}${bubble}${replied}</div>`
@@ -391,7 +454,7 @@ const typingHTML = (agents) =>
       }</div></div>`)
     .join('')
 
-function mountFeed(el, { onAgent, limit = 200 } = {}) {
+function mountFeed(el, { onAgent, onTicket = (key) => crew.call('dashboard', `bug:${key}`), limit = 200 } = {}) {
   const open = new Set()
   const seen = new Set()
   let key = ''
@@ -431,6 +494,8 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
     }
     const to = ev.target.closest('[data-jump]')
     if (to) return jump(to.dataset.jump)
+    const bug = ev.target.closest('[data-ticket]')
+    if (bug && !ev.target.closest('.who')) return onTicket?.(bug.dataset.ticket)
     const agent = ev.target.closest('[data-agent]')
     if (agent) return onAgent?.(agent.dataset.agent)
     const act = ev.target.closest('[data-act]')
@@ -576,13 +641,18 @@ function mountComposer(el, { dropZone = el } = {}) {
   el.classList.add('composer')
   el.innerHTML = `<div class="chips"></div>
     <div class="thumbs hidden"></div>
-    <div class="input"><button class="attach" title="Add images (you can also paste or drop them)">${ICONS.plus}</button><textarea rows="1"></textarea><button class="send" disabled title="Send (Enter)">${ICONS.up}</button></div>
+    <div class="input"><button class="attach" title="Add images (you can also paste or drop them)">${ICONS.plus}</button><textarea rows="1"></textarea><button class="fresh-toggle" aria-pressed="false">${ICONS.fresh}</button><button class="send" disabled title="Send (Enter)">${ICONS.up}</button></div>
     <div class="hint"></div>`
   const chips = el.querySelector('.chips')
   const ta = el.querySelector('textarea')
   const send = el.querySelector('.send')
   const hint = el.querySelector('.hint')
+  const freshBtn = el.querySelector('.fresh-toggle')
+  // Bug mode lasts while you're reporting, not across launches: Auto again next time.
   let target = store.get('crew.target') || 'auto'
+  if (target === 'bug') target = 'auto'
+  // New conversation: the task starts with a clean slate instead of joining everything the agent did before.
+  let fresh = store.get('crew.fresh') === '1'
   let agents = []
   const attach = mountAttach({
     zone: dropZone,
@@ -593,12 +663,21 @@ function mountComposer(el, { dropZone = el } = {}) {
     onError: (msg) => say(msg, true),
   })
 
+  // `bug: …` (or /bug) files a bug whatever chip is picked: quickest mid-game.
+  const BUG_PREFIX = /^\s*(?:bug:|\/bug\b)\s*/i
   const draw = () => {
-    if (target !== 'auto' && agents.length && !agents.some((a) => a.on && a.name === target)) target = 'auto'
+    if (!['auto', 'bug'].includes(target) && agents.length && !agents.some((a) => a.on && a.name === target)) target = 'auto'
+    const bug = target === 'bug' || BUG_PREFIX.test(ta.value)
     morph(chips,
       `<button class="chip ${target === 'auto' ? 'on' : ''}" data-to="auto" title="Picks by area, prefers whoever is free. @mention names to pick them yourself">✦ Auto</button>` +
+      `<button class="chip bug-chip ${target === 'bug' ? 'on' : ''}" data-to="bug" title="Report a bug: it becomes a ticket in the Bugs lane (or start a message with bug:)">${ICONS.bug}Bug</button>` +
       agents.filter((a) => a.on).map((a) => `<button class="chip ${target === a.name ? 'on' : ''}" data-to="${esc(a.name)}" title="${esc(statusText(a))}">${avatarHTML(a, { size: 20 })}${nameHTML(a)}</button>`).join(''))
-    ta.placeholder = target === 'auto' ? 'Describe a task, the crew picks who…' : `Message @${target}…`
+    el.classList.toggle('bug-mode', bug)
+    freshBtn.setAttribute('aria-pressed', String(fresh))
+    freshBtn.title = fresh ? 'New conversation: on. The agent starts this task with a clean slate (click to turn off)' : 'New conversation: start this task with a clean slate instead of adding to everything the agent did before'
+    ta.placeholder = bug
+      ? 'What went wrong? Paste a screenshot too…'
+      : `${fresh ? 'New conversation: ' : ''}${target === 'auto' ? (fresh ? 'describe the task…' : 'Describe a task, the crew picks who…') : `${fresh ? 'a task for' : 'Message'} @${target}…`}`
   }
   const autosize = () => {
     ta.style.height = 'auto'
@@ -615,7 +694,7 @@ function mountComposer(el, { dropZone = el } = {}) {
   }
   const setTarget = (name) => {
     target = name
-    store.set('crew.target', name)
+    if (name !== 'bug') store.set('crew.target', name)
     draw()
   }
   const submit = async () => {
@@ -625,7 +704,8 @@ function mountComposer(el, { dropZone = el } = {}) {
     // The chip stays a recipient; the hub adds any @mentions to it.
     const to = target === 'auto' ? undefined : target
     try {
-      say((await crew.call('send', to, text, images)).trim().split('\n').join(' · '))
+      if (target === 'bug' || BUG_PREFIX.test(text)) say((await crew.call('bug', 'file', null, { text: text.replace(BUG_PREFIX, ''), images })).trim())
+      else say((await crew.call('send', to, text, images, { fresh })).trim().split('\n').join(' · '))
       ta.value = ''
       attach.set([])
       autosize()
@@ -643,6 +723,13 @@ function mountComposer(el, { dropZone = el } = {}) {
   ta.addEventListener('input', () => {
     autosize()
     if (hint.classList.contains('error')) say('')
+    if (el.classList.contains('bug-mode') !== (target === 'bug' || BUG_PREFIX.test(ta.value))) draw()
+  })
+  freshBtn.addEventListener('click', () => {
+    fresh = !fresh
+    store.set('crew.fresh', fresh ? '1' : '0')
+    draw()
+    ta.focus()
   })
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {

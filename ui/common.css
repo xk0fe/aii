@@ -29,6 +29,11 @@
   --yolo-ink: #e0244a;
   --fast: #ffb020;
   --fast-ink: #c47a00;
+  --bug: #ff5a4e;
+  --bug-ink: #d8352a;
+  --ctx-calm: color-mix(in srgb, var(--fg) 42%, transparent);
+  --ctx-warm: #ff9f0a;
+  --ctx-hot: #ff453a;
   --ring: color-mix(in srgb, var(--accent) 55%, transparent);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
   --shadow-lg: 0 24px 60px -20px rgba(20, 20, 40, 0.35), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
@@ -63,6 +68,7 @@
     --waiting-ink: #ffb340;
     --yolo-ink: #ff6b81;
     --fast-ink: #ffc24d;
+    --bug-ink: #ff7b70;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
     --shadow-lg: 0 30px 70px -20px rgba(0, 0, 0, 0.7), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
   }
@@ -193,7 +199,9 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .agent-av { padding-top: 1px; line-height: 0; position: relative; }
 .agent-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .agent-top { display: flex; align-items: center; gap: 7px; min-width: 0; height: 20px; }
-.agent .name { font-size: 14.5px; font-weight: 720; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.agent .name { font-size: 14.5px; font-weight: 720; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 0; max-width: 62%; }
+/* a long status gives way before the name does: "working · ju…", never "d…" */
+.agent-top .state { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .agent .area { font-size: 12.5px; line-height: 1.32; color: var(--fg2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .agent-foot { display: flex; align-items: center; gap: 4px; min-width: 0; margin-top: 3px; height: 20px; }
 .agent .brain { font-size: 11px; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; font-weight: 500; }
@@ -225,6 +233,22 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .agent:hover .mode[aria-pressed=false], .agent:focus-within .mode[aria-pressed=false] { opacity: 1; transform: none; pointer-events: auto; max-width: 48px; min-width: 20px; padding: 0 7px; margin-left: 0; }
 .agent:hover .mode.fast[aria-pressed=false], .agent:focus-within .mode.fast[aria-pressed=false] { padding: 0; }
 .agent:hover .mode:active { transform: scale(.82); }
+
+/* ---- context gauge: how full an agent's conversation is ---- */
+.ctx { --s: 15px; --k: var(--ctx-calm); display: inline-flex; align-items: center; gap: 3px; flex: none; color: var(--k); font: 650 10.5px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; cursor: help; }
+.ctx svg { width: var(--s); height: var(--s); transform: rotate(-90deg); overflow: visible; }
+.ctx circle { fill: none; stroke-width: 2.6; }
+.ctx-track { stroke: var(--track); }
+.ctx-fill { stroke: var(--k); stroke-linecap: round; transition: stroke-dasharray .8s var(--out), stroke .4s; }
+.ctx b { font-weight: 650; }
+.ctx.calm b { color: var(--fg3); }
+.ctx.warm { --k: var(--ctx-warm); }
+.ctx.hot { --k: var(--ctx-hot); }
+.ctx.hot svg { animation: ctx-hot 1.8s ease-in-out infinite; }
+/* compacted: a dashed ring, its older memories are summaries now */
+.ctx.compacted .ctx-track { stroke-dasharray: 2.2 2.2; stroke: color-mix(in srgb, var(--k) 45%, transparent); }
+@keyframes ctx-hot { 50% { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--ctx-hot) 60%, transparent)); } }
+.agent-foot .ctx { margin-right: 2px; }
 
 /* a finished task gets a little burst of confetti (cheer() in common.js) */
 .burst { position: fixed; z-index: 1000; width: 0; height: 0; pointer-events: none; }
@@ -309,6 +333,36 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .event.alert { color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 12%, transparent); }
 .event .who { font-weight: 650; cursor: pointer; }
 
+/* a new conversation: a soft rule across the feed */
+.fresh-ev { display: flex; align-items: center; gap: 10px; margin: 6px 4px; color: var(--fg3); font-size: 11.5px; }
+.fresh-ev::before, .fresh-ev::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--line) 30%, var(--line) 70%, transparent); }
+.fresh-ev span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.fresh-ev svg { width: 13px; height: 13px; color: var(--accent); }
+.fresh-ev .who { font-weight: 650; cursor: pointer; }
+
+/* bugs in the feed: one tappable line each */
+.bug-ev { align-self: center; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 7px; align-items: center; max-width: 94%; padding: 5px 12px 5px 7px; border-radius: 14px; background: color-mix(in srgb, var(--bug) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bug) 14%, transparent); cursor: pointer; font-size: 12px; color: var(--fg2); transition: background .15s, transform .3s var(--bounce); }
+.bug-ev:hover { background: color-mix(in srgb, var(--bug) 12%, transparent); }
+.bug-ev:active { transform: scale(.98); }
+.bug-ev-icon { width: 20px; height: 20px; border-radius: 7px; display: grid; place-items: center; color: #fff; background: linear-gradient(160deg, #ff8a7a, var(--bug)); }
+.bug-ev-icon svg { width: 13px; height: 13px; }
+.bug-ev-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bug-ev-line b { color: var(--bug-ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+.bug-ev-title { color: var(--fg); font-weight: 560; }
+.bug-ev-text { grid-column: 2; font-size: 11.5px; color: var(--fg3); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bug-ev .who { font-weight: 650; }
+.bug-ev.act-fixed { background: color-mix(in srgb, var(--working) 9%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--working) 22%, transparent); }
+.bug-ev.act-fixed .bug-ev-icon { background: linear-gradient(160deg, #6fe08a, var(--working)); }
+.bug-ev.act-done { opacity: .75; }
+/* a bug handed to an agent: the ticket, not its whole brief */
+.ticket-bubble { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 8px 13px 8px 9px; border-radius: 18px; border-bottom-right-radius: 6px; background: var(--bubble-me); color: #fff; font-size: 13.5px; transition: filter .15s, transform .3s var(--bounce); }
+.ticket-bubble:hover { filter: brightness(1.08); }
+.ticket-bubble:active { transform: scale(.97); }
+.ticket-bubble .tb-icon { width: 20px; height: 20px; border-radius: 7px; display: grid; place-items: center; background: rgba(255, 255, 255, .22); flex: none; }
+.ticket-bubble svg { width: 13px; height: 13px; }
+.ticket-bubble b { font-variant-numeric: tabular-nums; }
+.item .tag.fresh { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
 /* who's on it right now: a typing bubble per busy agent, under the last message */
 .typing-row { display: flex; align-items: flex-end; gap: 8px; max-width: 92%; cursor: pointer; animation: item-in .45s var(--bounce) both; }
 .typing-row .face { width: 30px; flex: none; line-height: 0; }
@@ -363,6 +417,19 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .send:active:not(:disabled) { transform: scale(.88); }
 .send:disabled { opacity: 1; background: var(--btn-hover); color: var(--fg3); cursor: default; transform: scale(.9); }
 .send svg { width: 15px; height: 15px; }
+/* new conversation toggle: a sparkle bubble that lights up */
+.fresh-toggle { width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; flex: none; display: grid; place-items: center; background: none; color: var(--fg3); cursor: pointer; transition: background .2s, color .2s, transform .35s var(--spring), opacity .2s; }
+.fresh-toggle:hover { background: var(--btn); color: var(--fg2); }
+.fresh-toggle:active { transform: scale(.85); }
+.fresh-toggle svg { width: 17px; height: 17px; }
+.fresh-toggle[aria-pressed=true] { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); animation: mode-on .45s var(--spring); }
+.composer.bug-mode .fresh-toggle { visibility: hidden; }
+/* reporting a bug: the composer takes the bug's color */
+.chip.bug-chip svg { width: 13px; height: 13px; color: var(--bug); transition: color .2s; }
+.chip.bug-chip.on { background: var(--bug); color: #fff; }
+.chip.bug-chip.on svg { color: #fff; }
+.composer.bug-mode .input:focus-within { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--bug) 55%, transparent), 0 0 0 5px color-mix(in srgb, var(--bug) 12%, transparent); }
+.composer.bug-mode .send:not(:disabled) { background: var(--bug); }
 .hint { font-size: 11.5px; color: var(--fg2); margin: 6px 4px 0; min-height: 0; }
 .hint:empty { display: none; }
 .hint.error { color: var(--danger); }
