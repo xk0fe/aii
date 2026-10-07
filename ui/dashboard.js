@@ -296,7 +296,9 @@ function drawRoster() {
   morph($('.roster'), rosterHTML(state, { folds, selected, filter: find }))
   $('[data-find]').placeholder = state.agents.length > 1 ? `Search ${state.agents.length} agents` : 'Search'
   if (dragging) document.querySelector(`.roster .crow[data-agent="${CSS.escape(dragging.name)}"]`)?.classList.add('dragging')
+  if (cursor) document.querySelector(`.roster .crow[data-agent="${CSS.escape(cursor)}"]`)?.classList.add('cursor')
 }
+let cursor = null // the search's marked match, kept across redraws
 
 function toggleFold(key) {
   folds.has(key) ? folds.delete(key) : folds.add(key)
@@ -307,17 +309,33 @@ function toggleFold(key) {
 const findBox = $('[data-find]')
 findBox.addEventListener('input', () => {
   find = findBox.value
+  cursor = null
   drawRoster()
 })
+// ↑↓ move through the matches, Enter opens the one marked (the first, until you move)
+findBox.addEventListener('blur', () => {
+  cursor = null
+  document.querySelector('.roster .crow.cursor')?.classList.remove('cursor')
+})
 findBox.addEventListener('keydown', (e) => {
+  const rows = [...document.querySelectorAll('.roster .crow')]
+  const at = rows.findIndex((r) => r.classList.contains('cursor'))
   if (e.key === 'Escape') {
     findBox.value = find = ''
+    cursor = null
     drawRoster()
     findBox.blur()
   }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    const next = rows[Math.max(0, Math.min(rows.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)))]
+    rows.forEach((r) => r.classList.toggle('cursor', r === next))
+    cursor = next?.dataset.agent ?? null
+    next?.scrollIntoView({ block: 'nearest' })
+  }
   if (e.key === 'Enter') {
-    const first = $('.roster .crow')
-    if (first) (view === 'crew' ? edit : select)(first.dataset.agent)
+    const row = rows[Math.max(0, at)]
+    if (row) (view === 'crew' ? edit : select)(row.dataset.agent)
   }
 })
 
