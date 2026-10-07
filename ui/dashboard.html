@@ -19,7 +19,9 @@
     .titlebar .btn.add svg { width: 14px; height: 14px; }
     .titlebar .divider { width: 1px; height: 18px; background: var(--line); margin: 0 2px; }
 
-    main { display: grid; grid-template-columns: 272px minmax(0, 1fr) 390px; height: calc(100vh - 46px); }
+    /* One row, exactly the window's height. Left auto, the grid measures each column's natural height on every layout,
+       and for the chat that means laying out its whole history again for each keystroke or status tick. */
+    main { display: grid; grid-template-columns: 272px minmax(0, 1fr) 390px; grid-template-rows: minmax(0, 1fr); height: calc(100vh - 46px); }
     .side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
     .side-head { display: flex; align-items: baseline; gap: 6px; padding: 14px 18px 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--fg3); }
     .side-head span { letter-spacing: 0; text-transform: none; font-weight: 550; }
