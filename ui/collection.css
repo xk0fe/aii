@@ -109,6 +109,14 @@
 .pc-state .dot.idle { box-shadow: inset 0 0 0 1.5px currentColor; }
 .pc-doing { font: 500 10.5px var(--mono); opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block !important; }
 .pc-av { position: absolute; right: 4px; bottom: -4px; z-index: 1; }
+/* clones at work peek out from behind the creature, smaller and numbered; the status beside them makes room */
+.pc-clones { position: absolute; right: 84px; bottom: 0; z-index: 1; display: flex; flex-direction: row-reverse; align-items: flex-end; pointer-events: none; }
+.pc-clone { position: relative; line-height: 0; margin-left: -16px; animation: pc-clone-in .65s var(--bounce) backwards; animation-delay: calc(var(--j) * 90ms); }
+.pc-clone:nth-child(n + 4) { display: none; }
+.pc-clone .clone-no { position: absolute; left: 0; top: 2px; margin: 0; height: 16px; min-width: 16px; font-size: 9.5px; color: #141418; background: rgba(255, 255, 255, .86); box-shadow: 0 2px 5px -2px rgba(0, 0, 0, .3); }
+.pcard.has-clones .pc-state { max-width: calc(100% - 136px - min(var(--clones), 3) * 30px); }
+@keyframes pc-clone-in { from { opacity: 0; transform: translateX(42px) scale(.4); } }
+.pc-clone-n { font: 800 10px/14px var(--rounded); font-style: normal; padding: 0 5px; border-radius: 999px; background: rgba(255, 255, 255, .7); color: #141418; }
 .pcard.add { background: transparent; border: 2px dashed var(--line-strong); color: var(--fg2); align-items: center; justify-content: center; font-weight: 650; box-shadow: none; gap: 6px; transition: color .2s, border-color .2s, background .2s, transform .4s var(--bounce); }
 .pcard.add::before, .pcard.add::after { display: none; }
 .pcard.add b { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--btn); transition: transform .5s var(--spring), background .2s; }
@@ -255,6 +263,15 @@
 .ed-level .xpbar b { background: color-mix(in srgb, var(--c) 75%, #000); }
 .ed-level .xp-n { opacity: .6; font-variant-numeric: tabular-nums; }
 .ed-id .convo:empty { display: none; }
+/* its clones at work, under its conversation: click one for its terminal */
+.ed-clones { display: flex; flex-wrap: wrap; gap: 5px; }
+.ed-clones:empty { display: none; }
+.ed-clones-head { flex-basis: 100%; font-size: 11.5px; font-weight: 650; opacity: .7; }
+.clone-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 28px; padding: 0 11px 0 4px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .62); color: #2a2a30; font: 11px var(--mono); cursor: pointer; transition: background .15s, transform .3s var(--spring); animation: clone-in .5s var(--bounce) backwards; }
+.clone-chip:hover { background: rgba(255, 255, 255, .9); transform: translateY(-1px); }
+.clone-chip .clone-no { margin: 0; flex: none; color: #2a2a30; background: rgba(0, 0, 0, .08); box-shadow: none; }
+.clone-chip > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.clone-chip.waiting > span:last-child { color: #b26200; }
 .ed-glance { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: var(--r-md); background: rgba(255, 255, 255, .45); color: #2a2a30; }
 .ed-glance:empty { display: none; }
 .ed-glance dl { margin: 0; display: grid; grid-template-columns: auto auto; gap: 2px 10px; font-size: 11.5px; }
@@ -320,6 +337,7 @@
 .ed-pc { display: inline-flex; align-items: center; gap: 7px; flex: 1; min-width: 0; font-size: 13px; }
 .ed-pc svg { width: 16px; height: 16px; color: var(--fg3); flex: none; }
 .ed-pc small { color: var(--fg3); }
+.ed-row.clones-row { box-shadow: inset 0 1px 0 var(--line); }
 .limit-note { margin: 0; padding: 2px 14px 9px; font-size: 11.5px; line-height: 1.4; color: var(--fg3); }
 .limit-note.past { color: var(--waiting-ink); }
 

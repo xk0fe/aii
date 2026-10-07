@@ -1,5 +1,5 @@
 // Floating pill on the screen edge; click it (or press the hotkey) for the chat panel.
-/* global crew, live, morph, esc, isUnread, unreadBadge, statusText, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS */
+/* global crew, live, morph, esc, isUnread, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS */
 
 const $ = (s) => document.querySelector(s)
 $('.home').innerHTML = markSVG('0 6 24 16')
@@ -121,9 +121,10 @@ live((next) => {
     shown = on.filter((a) => look.has(a.name))
   }
   const hidden = on.length - shown.length
+  // a clone pops out next to its original, a little smaller, with its number
   morph($('.dots'), shown.map((a) => {
     const subs = runningSubs(a).length
-    return `<span class="face" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}" title="${esc(`${a.name}: ${statusText(a)}${subs ? ` · ${plural(subs, 'sub-agent')} working` : ''}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}`)}">${avatarHTML(a, { size: 30 })}${orbitHTML(a)}${unreadBadge(a.unread)}</span>`
+    return `<span class="face${a.cloneOf ? ' clone' : ''}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}" title="${esc(`${displayName(a)}${a.cloneOf ? ` (a clone of ${a.cloneOf})` : ''}: ${statusText(a)}${subs ? ` · ${plural(subs, 'sub-agent')} working` : ''}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}`)}">${avatarHTML(a, { size: a.cloneOf ? 24 : 30 })}${orbitHTML(a)}${cloneTag(a)}${unreadBadge(a.unread)}</span>`
   }).join('') + (hidden ? `<button class="more-faces" data-more-faces title="${esc(`${plural(hidden, 'more agent')}: ${on.filter((a) => !shown.includes(a)).map((a) => a.name).join(', ')}`)}">+${hidden}</button>` : ''))
   celebrate($('.dots'), state.agents)
   morph($('.sums'), crewSummary(state))

@@ -131,7 +131,7 @@ export class Crew extends EventEmitter {
       for (const a of l.state.agents) {
         agents.push({
           ...a, name: q(a.name), seed: a.name, home: l.slug, homeName: l.name, status: l.peer ? a.status : 'away', images: a.images?.map((p) => this.fetchImage(l, p)),
-          ticket: a.ticket == null ? null : q(String(a.ticket)),
+          ticket: a.ticket == null ? null : q(String(a.ticket)), ...(a.cloneOf && { cloneOf: q(a.cloneOf) }),
         })
       }
       for (const e of l.state.feed) {
@@ -154,7 +154,7 @@ export class Crew extends EventEmitter {
     const recent = feed.slice(-200)
     const open = feed.slice(0, -200).filter((e) => e.kind === 'ask' && !e.answer)
     return {
-      ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.name)), feed: [...open, ...recent], computers: this.computers(),
+      ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.cloneOf ?? a.name)), feed: [...open, ...recent], computers: this.computers(),
       tasks: { ...s.tasks, tickets },
     }
   }
@@ -184,6 +184,7 @@ export class Crew extends EventEmitter {
       return l ? name : base
     }
     if (this.hub.agents.has(name)) return name
+    if (this.hub.agents.has(this.hub.baseOf(name))) return this.hub.baseOf(name) // a clone that went away: its original
     const there = agents.filter((a) => a.home && a.seed === name)
     if (there.length === 1) return there[0].name
     if (there.length > 1) throw new Error(`which ${name}? ${there.map((a) => `@${a.name}`).join(' or ')}`)
@@ -236,8 +237,9 @@ export class Crew extends EventEmitter {
     const unq = (slug) => (name) => (slug && String(name).endsWith(`@${slug}`) ? String(name).slice(0, -slug.length - 1) : name)
     let names = addressees(to, text).map((n) => this.resolve(n))
     if (!names.length) {
-      const ready = this.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'away'].includes(a.status))
-      const best = bestFor(text, ready)
+      // agents, not their clones; one here that can clone itself counts as free
+      const ready = this.snapshot().agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status))
+      const best = bestFor(text, ready.map((a) => (a.home ? a : { ...a, ...this.hub.lineup(this.hub.agents.get(a.name)) })))
       if (!best) throw new Error('no agents to send to')
       names = [best.name]
     }
@@ -341,6 +343,7 @@ export class Crew extends EventEmitter {
       removeAgent: (name) => h.removeAgent(name),
       restart: (name) => h.restart(name),
       markIdle: (name) => h.markIdle(name),
+      dismiss: (name) => h.dismiss(name),
       resize: (name, cols, rows) => this.runner.resize(name, cols, rows),
       // Flush first: chunks already batched are in the buffer, so a viewer replaying it won't see them twice.
       buffer: (name) => {
@@ -504,7 +507,7 @@ export class Crew extends EventEmitter {
   computers() {
     const hidden = new Set(this.settings.hidden ?? [])
     const port = this.settings.port ?? DEFAULT_PORT
-    let me = { name: this.me.name, slug: this.me.slug, sharing: Boolean(this.sharing), error: this.linkError, agents: this.hub.agents.size }
+    let me = { name: this.me.name, slug: this.me.slug, sharing: Boolean(this.sharing), error: this.linkError, agents: this.hub.config.agents.length }
     if (this.sharing) {
       if (Date.now() - this.hosts.at > 30000) this.findHosts() // networks come and go (Wi-Fi, Tailscale)
       const hosts = this.hosts.list
@@ -514,7 +517,7 @@ export class Crew extends EventEmitter {
       const q = this.qualifier(l)
       return {
         slug: l.slug, name: l.name, online: Boolean(l.peer), saved: Boolean(l.code), status: l.client?.status,
-        agents: (l.state?.agents ?? []).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)) })),
+        agents: (l.state?.agents ?? []).filter((a) => !a.cloneOf).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)) })),
       }
     })
     return { me, links }

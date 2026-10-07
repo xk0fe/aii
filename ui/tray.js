@@ -21,6 +21,8 @@ const folds = new Set((() => {
 let state = null
 document.addEventListener('click', (e) => {
   if (e.target.closest('.mode, .switch')) return
+  const clone = e.target.closest('[data-clone]')
+  if (clone) return crew.call('dashboard', clone.dataset.clone) // its terminal
   const fold = e.target.closest('[data-fold]')
   if (fold) {
     folds.has(fold.dataset.fold) ? folds.delete(fold.dataset.fold) : folds.add(fold.dataset.fold)

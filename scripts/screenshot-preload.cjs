@@ -18,12 +18,19 @@ const AGENTS = [
   { name: 'david', area: 'Executive SWE (frontend, mobile apps)', provider: 'claude', model: 'opus', effort: 'high', yolo: true, status: 'waiting', since: now - min, stats: stats(39, 22, 377, 402, 811, 9, 5, 64, [1, 3, 2, 4, 0, 3, 5, 2, 3, 4, 2, 6, 3, 1]) },
   { name: 'gal', area: 'Executive UI/UX Designer', provider: 'claude', model: 'fable', effort: 'xhigh', yolo: false, status: 'waiting', since: now - min, activity: 'Bash: npm run build', stats: stats(11, 9, 96, 523, 214, 4, 6, 22, [0, 0, 1, 0, 2, 1, 0, 0, 3, 1, 0, 2, 1, 0]), avatar: { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true } },
   { name: 'ye', area: 'marketing analytical mastermind, using posthog to get analytics', provider: 'claude', model: 'haiku', effort: 'medium', yolo: true, status: 'off', on: false, stats: stats(4, 4, 18, 270, 40, 0, 1, 12, [0, 0, 0, 1, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0]), avatar: { body: 'bean', color: 'purple', eyes: 'sparkle', mouth: 'none', hat: 'glasses', cheeks: true } },
-  { name: 'marc', area: 'artist, makes images', provider: 'codex', model: '', effort: 'high', tier: 'fast', fast: true, yolo: true, status: 'working', since: now - 12 * min, activity: 'image_gen: hero illustration, pastel', queue: 2, stats: stats(17, 12, 141, 488, 160, 2, 0, 140, [0, 1, 2, 0, 1, 3, 0, 2, 1, 2, 0, 1, 3, 1]), avatar: { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false } },
+  { name: 'marc', area: 'artist, makes images', provider: 'codex', model: '', effort: 'high', tier: 'fast', fast: true, yolo: true, clones: 2, status: 'working', since: now - 12 * min, activity: 'image_gen: hero illustration, pastel', queue: 0, stats: stats(17, 12, 141, 488, 160, 2, 0, 140, [0, 1, 2, 0, 1, 3, 0, 2, 1, 2, 0, 1, 3, 1]), avatar: { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false } },
   { name: 'arie', area: 'admin work, assistant, organiser', provider: 'codex', model: '', effort: 'medium', fast: false, yolo: true, status: 'idle', since: now - 30 * min, stats: stats(26, 14, 120, 210, 300, 21, 1, 30, [3, 1, 2, 2, 4, 1, 0, 3, 2, 1, 2, 3, 1, 1]), avatar: { body: 'bunny', color: 'lilac', eyes: 'sparkle', mouth: 'grin', hat: 'crown', cheeks: true } },
   { name: 'jeff', area: 'technical support, professional yapper, good to talk to about anything else', provider: 'codex', model: '', effort: 'medium', fast: true, yolo: false, status: 'starting', since: now - 2000, stats: none, avatar: { body: 'blob', color: 'teal', eyes: 'dot', mouth: 'none', hat: 'headphones', cheeks: false } },
   // runs on a linked computer: its terminal is a mirror streamed over Crew Link
   { name: 'scarlett@mac-mini', seed: 'scarlett', home: 'mac-mini', homeName: 'Mac mini', area: 'QA, play-tests every build', provider: 'claude', model: 'sonnet', effort: 'medium', yolo: false, status: 'working', since: now - 6 * min, activity: 'Bash: npm run e2e', stats: stats(9, 5, 70, 300, 120, 1, 1, 20, [0, 1, 0, 2, 1, 0, 1, 0, 2, 1, 0, 1, 0, 0]), avatar: { body: 'mochi', color: 'yellow', eyes: 'dot', mouth: 'smile', hat: 'sprout', cheeks: true } },
-].map((a) => ({ on: true, queue: 0, activity: '', pending: false, args: '', cwd: '~/code/app', prompt: '', images: [], ...a }))
+].map((a) => ({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: '~/code/app', prompt: '', images: [], ...a }))
+
+// marc can clone itself: the two tasks that would wait in its queue are being drawn by its clones instead
+const cloneOf = (base, n, extra) => ({ ...base, name: `${base.name}.${n}`, cloneOf: base.name, clone: n, clones: 0, avatar: { seed: base.name, ...base.avatar }, queue: 0, ...extra })
+const MARC = AGENTS.find((a) => a.name === 'marc')
+AGENTS.splice(AGENTS.indexOf(MARC) + 1, 0,
+  cloneOf(MARC, 2, { status: 'working', since: now - 4 * min, activity: 'image_gen: empty Tasks board, felt look' }),
+  cloneOf(MARC, 3, { status: 'working', since: now - 1 * min, activity: 'Read assets/brand/palette.md' }))
 
 // How full each conversation is (the context gauges) and which bug each fixer's conversation is about.
 const convo = (tasks, pct, size, extra = {}) => ({ since: now - (40 + tasks * 9) * min, tasks, compactions: 0, context: { pct, size, used: Math.round((pct / 100) * size) }, ...extra })
@@ -34,6 +41,8 @@ const CONVOS = {
   ye: [convo(2, 12, 200000), null],
   marc: [convo(4, 23, 258400), 6],
   arie: [convo(11, 18, 258400), null],
+  'marc.2': [convo(1, 9, 258400), null],
+  'marc.3': [convo(1, 4, 258400), null],
   jeff: [{ since: now - 3000, tasks: 0, compactions: 0 }, 8],
 }
 for (const a of AGENTS) [a.convo, a.ticket] = CONVOS[a.name] ?? [null, null]
@@ -131,6 +140,8 @@ const FEED = [
   { id: 'f6c', kind: 'reply', from: 'arie', to: 'you', re: 'f6b', ts: t(4), text: "**Release blocker closed.** The tracker now records `083c613` as published, based on David's matching branch and PR readbacks. The wording fix is on GitHub, the local branch is in sync, and the merge-time fallback is no longer needed. Jeff has been told.\n\nThe remaining sequence is unchanged:\n\n1. Merge **#4645**, then **#4647**. Both are open and unmerged.\n2. Verify the cleanup in a store build.\n3. Joseph retires flag `928775`.\n4. Gal signs off the onboarding art.\n\nI'll post here when #4645 lands." },
   { id: 'f7', kind: 'ask', from: 'gal', to: 'you', cli: 'claude', re: 'f4', ts: t(1), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'rm -rf dist && npm run build', detail: 'Clean the build folder and rebuild the app', alert: 'wants to run a command',
     always: [{ i: 0, label: 'Always allow Bash(npm run build:*)' }, { i: 1, label: 'Allow all edits this session' }] } },
+  { id: 'c1', kind: 'msg', from: 'you', to: 'marc.2', text: 'An illustration for the empty Tasks board too, same felt look', ts: t(4.2) },
+  { id: 'c2', kind: 'msg', from: 'you', to: 'marc.3', text: 'And a pastel palette sheet for the brand guide', ts: t(1.1) },
   { id: 'f8', kind: 'reply', from: 'joseph', to: 'you', re: 'f1', subs: [{ type: 'Explore', description: 'Find every reply path', tools: 9, ms: 41000, running: false }, { type: 'general-purpose', description: 'Run the test suite', tools: 3, ms: 64000, running: false }], text: 'Server side is threaded too:\n\n| path | status |\n|---|---|\n| hub.send | ✓ sendId |\n| hub.reply | ✓ re |\n\nRan the suite, 42 passing.', ts: t(0.5) },
   { id: 'f9', kind: 'ask', from: 'david', to: 'you', cli: 'claude', re: 'f2', ts: t(0.3), ask: { type: 'question', alert: 'asks: Which navigation pattern?', questions: [
     { question: 'Which navigation pattern should the mobile app use?', header: 'Navigation', multiSelect: false, options: [{ label: 'Tab bar', description: 'Five tabs at the bottom, like iOS apps' }, { label: 'Drawer', description: 'A side menu behind a hamburger' }, { label: 'Both', description: 'Tabs for the main areas, a drawer for settings' }] }] } },
@@ -166,7 +177,7 @@ const linked = (slug, name, online) => ({
   agents: AGENTS.filter((a) => a.home === slug).map((a) => ({ name: a.name, seed: a.seed, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: false })),
 })
 const COMPUTERS = {
-  me: { name: 'Studio Mac', slug: 'studio-mac', sharing: true, agents: AGENTS.filter((a) => !a.home).length, port: 7787, code: 'crew1.eyJuYW1lIjoiU3R1ZGlvIE1hYyJ9.k3y', hosts: [{ address: '192.168.1.20', via: 'Wi-Fi' }, { address: 'studio-mac.tail1234.ts.net', via: 'Tailscale' }] },
+  me: { name: 'Studio Mac', slug: 'studio-mac', sharing: true, agents: AGENTS.filter((a) => !a.home && !a.cloneOf).length, port: 7787, code: 'crew1.eyJuYW1lIjoiU3R1ZGlvIE1hYyJ9.k3y', hosts: [{ address: '192.168.1.20', via: 'Wi-Fi' }, { address: 'studio-mac.tail1234.ts.net', via: 'Tailscale' }] },
   links: [linked('mac-mini', 'Mac mini', true), ...(BIG ? [linked('air', 'MacBook Air', false)] : [])],
 }
 // Folders each computer has, for moving an agent there (folderInfo / folders in main.js).
@@ -219,6 +230,27 @@ function taskAction(op, key, arg) {
   emit()
 }
 
+// Enough of send for the recordings: a message for a busy agent that can clone itself starts a clone (core/hub.js).
+function sendAction(to, text) {
+  const name = to ?? String(text).match(/@([\w-]+)/)?.[1] ?? 'arie'
+  const a = state.agents.find((x) => x.name === name)
+  const family = state.agents.filter((x) => x === a || x.cloneOf === name)
+  const free = family.find((x) => x.status === 'idle')
+  let target = free ?? a
+  let out = `sent to @${target.name}`
+  if (!free && a.clones > family.length - 1) {
+    let n = 2
+    while (state.agents.some((x) => x.name === `${name}.${n}`)) n++
+    target = cloneOf(a, n, { status: 'starting', since: Date.now(), activity: '', convo: { since: Date.now(), tasks: 0, compactions: 0 } })
+    state.agents.splice(state.agents.indexOf(family.at(-1)) + 1, 0, target)
+    out = `@${name} is busy, so a clone, @${target.name}, is starting up to take this`
+    setTimeout(() => (Object.assign(target, { status: 'working', since: Date.now(), activity: 'Read assets/brand/palette.md', convo: { ...target.convo, tasks: 1, context: { pct: 3, size: 258400, used: 8000 } } }), emit()), 1300)
+  }
+  FEED.push({ id: `s${Date.now()}`, kind: 'msg', from: 'you', to: target.name, text, ts: Date.now() })
+  emit()
+  return out
+}
+
 const listeners = { state: [], focus: [], toggle: [], voice: [], place: [] }
 
 // Dictation without a microphone: a wobbling tone stands in for your voice (it only moves the meter), and a
@@ -268,6 +300,8 @@ window.crew = {
     // sending from the chat: your message lands in the feed (Auto goes to joseph), threaded when it's a reply
     if (action === 'send') {
       const [to, text, , opts = {}] = args
+      // a busy agent that can clone itself: a clone takes it (sendAction)
+      if (to && !String(to).includes(',') && !opts.re && state.agents.find((a) => a.name === to)?.clones) return sendAction(to, text)
       const names = String(to || 'joseph').split(',').filter(Boolean)
       const group = names.length > 1 && { cc: names, sendId: `s${Date.now()}` }
       for (const n of names) state.feed.push({ id: `u${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text, ts: Date.now(), ...group, ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }) })
@@ -317,6 +351,10 @@ window.crew = {
       Object.assign(a, { name: home ? `${seed}@${home}` : seed, seed, home: home || null, homeName: link?.name ?? null, cwd: args[2] ?? a.cwd })
       emit()
       return { name: a.name, conversation: 'moved' }
+    }
+    if (action === 'dismiss') {
+      state.agents.splice(state.agents.findIndex((a) => a.name === args[0]), 1)
+      emit()
     }
     if (action === 'freshStart') {
       const a = state.agents.find((x) => x.name === args[0])

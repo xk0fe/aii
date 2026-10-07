@@ -2,12 +2,14 @@
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, level, conversation), everything you can set on the right,
 // in four tabs that each fit without scrolling. "Select" turns on bulk mode to change many agents at once.
-/* global crew, store, esc, nameHTML, contextRing, contextTip, ctxLevel, tokenCount, plural, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS */
+/* global crew, store, esc, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, tokenCount, plural, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
 const slug = (s) => String(s ?? '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
-const FIELDS = ['name', 'area', 'prompt', 'images', 'provider', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'contextLimit', 'onContextLimit']
+const FIELDS = ['name', 'area', 'prompt', 'images', 'provider', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'contextLimit', 'onContextLimit', 'clones']
+// How many clones an agent may run at once (core/hub.js MAX_CLONES).
+const CLONES = [1, 2, 3, 4, 5]
 // Context limits offered as one tap (only those below the model's window, at most four); any other can be typed.
 const LIMITS = [100000, 150000, 200000, 250000, 400000, 600000]
 const limitPresets = (win) => {
@@ -70,6 +72,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
 
   const modeNow = () => mode ?? (state.agents.length > 9 ? 'tiles' : 'cards')
   const agentNamed = (name) => state.agents.find((a) => a.name === name)
+  const roster = () => state.agents.filter((a) => !a.cloneOf) // the crew's cards: agents, not their clones
   const providerOf = (id) => state.providers[id] ?? { label: id, models: [], efforts: [] }
   const effortsFor = (d) => providerOf(d.provider).modelEfforts?.[d.model] ?? providerOf(d.provider).efforts ?? []
 
@@ -80,7 +83,10 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const chips = [providerOf(a.provider).label, [a.model, a.effort].filter(Boolean).join(' · ')].filter(Boolean).map((c) => `<span>${esc(c)}</span>`).join('')
     const modes = (a.fast ? `<span class="pc-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</span>` : '') + (a.yolo ? '<span class="pc-yolo" title="YOLO: skips every permission prompt">YOLO</span>' : '')
     const doing = a.on && a.activity && atWork(a) ? `<span class="pc-doing">${esc(a.activity)}</span>` : ''
-    return `<button class="pcard hop ${LIGHT.has(look.color) ? 'light' : ''} ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}">
+    // its clones at work peek out from behind it, smaller, each with its number
+    const clones = a.on ? clonesOf(state.agents, a) : []
+    const litter = clones.length ? `<span class="pc-clones" style="--n:${clones.length}">${clones.map((c, j) => `<span class="pc-clone" style="--j:${j}" title="${esc(`${displayName(c)}: ${statusText(c)}${c.activity ? ` · ${c.activity}` : ''}`)}">${avatarHTML(c, { size: 50 })}${cloneTag(c)}</span>`).join('')}</span>` : ''
+    return `<button class="pcard hop ${LIGHT.has(look.color) ? 'light' : ''} ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''} ${clones.length ? 'has-clones' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}; --clones:${clones.length}">
       <span class="pc-mark">${ICONS.mark}</span>
       <span class="pc-no"><b title="${levelOf(a.stats).xp} XP">Lv ${levelOf(a.stats).lv}</b><span>#${pad(i + 1)}</span></span>
       <span class="pc-name">${esc(a.seed ?? a.name)}</span>
@@ -88,7 +94,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       ${modes ? `<span class="pc-modes">${modes}</span>` : ''}
       <span class="pc-chips">${chips}</span>
       <span class="pc-state" title="${esc(statusText(a))}"><span><span class="dot ${a.status}"></span><span>${esc(statusText(a))}</span>${contextRing(a)}</span>${doing}</span>
-      <span class="pc-av">${avatarHTML(a, { size: 104 })}</span>
+      ${litter}<span class="pc-av">${avatarHTML(a, { size: 104 })}</span>
       <span class="pc-check">${ICONS.check}</span>
     </button>`
   }
@@ -101,7 +107,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       <span class="pc-mark">${ICONS.mark}</span>
       <span class="pc-name">${esc(a.seed ?? a.name)}</span>
       <span class="pc-line"><span class="dot ${a.on ? a.status : 'off'}"></span><span class="${a.activity && atWork(a) ? 'mono' : ''}">${esc(line)}</span></span>
-      <span class="pc-tags">${a.yolo ? '<i class="mark-yolo">YOLO</i>' : ''}${a.fast ? `<i class="mark-fast">${ICONS.bolt}</i>` : ''}${contextRing(a, { label: false })}</span>
+      <span class="pc-tags">${a.yolo ? '<i class="mark-yolo">YOLO</i>' : ''}${a.fast ? `<i class="mark-fast">${ICONS.bolt}</i>` : ''}${contextRing(a, { label: false })}${a.on && clonesOf(state.agents, a).length ? `<i class="pc-clone-n" title="${plural(clonesOf(state.agents, a).length, 'clone')} at work">+${clonesOf(state.agents, a).length}</i>` : ''}</span>
       <span class="pc-av">${avatarHTML(a, { size: 62 })}</span>
       <span class="pc-check">${ICONS.check}</span>
     </button>`
@@ -114,10 +120,10 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     segmented($('[data-mode-switch]'), (b) => b.dataset.mode === m)
     if (m === 'stats') drawStatsTable()
     const groups = crewGroups(state)
-    const next = JSON.stringify([m, selecting, [...picked], groups.map((g) => [g.key, g.name, g.online]), state.agents.map((a) => [a.name, a.status, a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, levelOf(a.stats).lv, a.convo?.context?.pct, a.convo?.compactions])])
+    const next = JSON.stringify([m, selecting, [...picked], groups.map((g) => [g.key, g.name, g.online]), roster().map((a) => [a.name, a.status, a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, levelOf(a.stats).lv, a.convo?.context?.pct, a.convo?.compactions, clonesOf(state.agents, a).map((c) => [c.name, c.status, c.activity])])])
     if (next === gridKey) return
     gridKey = next
-    const index = new Map(state.agents.map((a, i) => [a.name, i]))
+    const index = new Map(roster().map((a, i) => [a.name, i]))
     const one = (a) => (m === 'tiles' ? tileHTML(a) : cardHTML(a, index.get(a.name)))
     // on agents first in each group, off ones after them; your order otherwise
     const order = (agents) => [...agents.filter((a) => a.on), ...agents.filter((a) => !a.on)]
@@ -126,12 +132,12 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       ? groups.filter((g) => g.agents.length).map((g, i) => `<section class="col-group" data-home="${esc(g.key)}">
           <h3>${g.here ? ICONS.desktop : ICONS.laptop}<b>${esc(g.name)}</b><span>${plural(g.agents.length, 'agent')}${g.here ? ' · this Mac' : g.online ? '' : ' · offline'}</span></h3>
           <div class="col-cards ${m}">${order(g.agents).map(one).join('')}${i === 0 ? add : ''}</div></section>`).join('')
-      : `<div class="col-cards ${m}">${order(state.agents).map(one).join('')}${add}</div>`
+      : `<div class="col-cards ${m}">${order(roster()).map(one).join('')}${add}</div>`
     morph(grid, html)
     celebrate(grid, state.agents)
-    const on = state.agents.filter((a) => a.on).length
+    const on = roster().filter((a) => a.on).length
     const pcs = groups.filter((g) => g.agents.length).length
-    $('.col-sub').textContent = state.agents.length ? `${plural(state.agents.length, 'agent')} · ${on} on${pcs > 1 ? ` · ${pcs} computers` : ''}` : 'Start with one agent per area of work'
+    $('.col-sub').textContent = roster().length ? `${plural(roster().length, 'agent')} · ${on} on${pcs > 1 ? ` · ${pcs} computers` : ''}` : 'Start with one agent per area of work'
     root.classList.toggle('selecting', selecting)
     $('[data-act=select]').textContent = selecting ? 'Done' : 'Select'
     drawBulkCount()
@@ -196,7 +202,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
 
   // best in a column, and slowest (for the "lower is better" timing columns)
   function standouts(metric) {
-    const rows = state.agents.filter((a) => (metric.has ?? ((s) => s[metric.key] > 0))(a.stats))
+    const rows = roster().filter((a) => (metric.has ?? ((s) => s[metric.key] > 0))(a.stats))
     if (!rows.length) return {}
     const sorted = [...rows].sort((x, y) => (x.stats[metric.key] - y.stats[metric.key]) * (metric.better === 'high' ? -1 : 1))
     return { best: sorted[0].name, worst: metric.better === 'low' && metric.key !== 'waits' && sorted.length > 1 ? sorted.at(-1).name : null }
@@ -213,10 +219,10 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   function drawStatsTable() {
     const metric = METRICS.find((m) => m.key === sortBy) ?? METRICS[0]
     const value = (a) => ((metric.has ?? (() => true))(a.stats) ? a.stats[metric.key] : metric.better === 'high' ? -1 : Infinity)
-    const rows = [...state.agents].sort((x, y) => (value(x) - value(y)) * (metric.better === 'high' ? -1 : 1))
+    const rows = roster().sort((x, y) => (value(x) - value(y)) * (metric.better === 'high' ? -1 : 1))
     const marks = Object.fromEntries(METRICS.map((m) => [m.key, standouts(m)]))
-    const maxOf = Object.fromEntries(METRICS.map((m) => [m.key, Math.max(0, ...state.agents.map((a) => a.stats[m.key] || 0))]))
-    const sparkMax = Math.max(1, ...state.agents.flatMap((a) => a.stats.days.map((d) => d.tasks)))
+    const maxOf = Object.fromEntries(METRICS.map((m) => [m.key, Math.max(0, ...roster().map((a) => a.stats[m.key] || 0))]))
+    const sparkMax = Math.max(1, ...roster().flatMap((a) => a.stats.days.map((d) => d.tasks)))
     // morph, not innerHTML: rows animate in once, and bars glide to new values instead of redrawing
     morph($('.col-stats'), `<table class="stats-table"><thead><tr><th>Agent</th>${METRICS.map((m) => `<th data-sort="${m.key}" class="${m.key === sortBy ? 'on' : ''}" title="${m.better === 'high' ? 'more is better' : 'less is better'}">${m.label}</th>`).join('')}<th>14 days</th></tr></thead><tbody>${
       rows.map((a) => `<tr data-name="${esc(a.name)}" class="${a.on ? '' : 'off'}" style="--c:${colorOf(avatarOf(a))}">
@@ -283,7 +289,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   bulk.addEventListener('click', async (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act
     if (act === 'all') {
-      state.agents.forEach((a) => picked.add(a.name))
+      roster().forEach((a) => picked.add(a.name))
       gridKey = ''
       drawGrid()
     }
@@ -326,15 +332,16 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   // ---- the sheet: one agent, everything about it ------------------------------------
 
   // `home` opens a new agent set to run on another computer ('' = this one).
-  function open(name, { home, at } = {}) {
-    if (editing && name !== editing && dirty() && !confirm('Discard your changes?')) return
+  // force: reopening after a save (a new agent or a renamed one), where the draft is what was just saved
+  function open(name, { home, at, force = false } = {}) {
+    if (!force && editing && name !== editing && dirty() && !confirm('Discard your changes?')) return
     const a = name && agentNamed(name)
     original = a
-      ? { name: a.seed ?? a.name, home: a.home ?? '', area: a.area ?? '', prompt: a.prompt ?? '', images: a.images ?? [], provider: a.provider ?? 'claude', model: a.model ?? '', effort: a.effort ?? '', tier: a.tier ?? '', cwd: a.cwd ?? '', args: a.args ?? '', yolo: a.yolo, on: a.on, avatar: avatarOf(a), contextLimit: a.contextLimit ?? '', onContextLimit: a.onContextLimit ?? 'fresh' }
+      ? { name: a.seed ?? a.name, home: a.home ?? '', area: a.area ?? '', prompt: a.prompt ?? '', images: a.images ?? [], provider: a.provider ?? 'claude', model: a.model ?? '', effort: a.effort ?? '', tier: a.tier ?? '', cwd: a.cwd ?? '', args: a.args ?? '', yolo: a.yolo, on: a.on, avatar: avatarOf(a), contextLimit: a.contextLimit ?? '', onContextLimit: a.onContextLimit ?? 'fresh', clones: a.clones || '' }
       : null
     draft = original
       ? structuredClone(original)
-      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar(), contextLimit: '', onContextLimit: 'fresh' }
+      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar(), contextLimit: '', onContextLimit: 'fresh', clones: '' }
     if (home !== undefined && !a) draft.home = home
     editing = a ? a.name : ':new'
     tab = at ?? (a ? store.get('crew.edTab') || 'setup' : 'setup')
@@ -393,7 +400,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   function drawCard() {
     const d = draft
     const live = agentNamed(editing)
-    const i = state.agents.findIndex((x) => x.name === editing)
+    const i = roster().findIndex((x) => x.name === editing)
     card.innerHTML = `
       <aside class="ed-id">
         <div class="ed-top"><span class="pd-state"></span><span class="pd-no">${i >= 0 ? `#${pad(i + 1)}` : 'new'}</span></div>
@@ -404,6 +411,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         <div class="ed-level"></div>
         <div class="ed-glance"></div>
         <div class="convo"></div>
+        <div class="ed-clones"></div>
         <span class="grow"></span>
         ${live ? `<div class="ed-id-acts">
           <button class="btn" data-act="terminal" ${live.on ? '' : 'disabled'} title="Open its terminal">${ICONS.terminal}<span>Terminal</span></button>
@@ -424,7 +432,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
             <div class="ed-modes"></div>
             <h4>Where it works</h4>
             <div class="ed-list where"></div>
-            <h4>Conversation</h4>
+            <h4>Conversations</h4>
             <div class="ed-list limit"></div>
           </section>
           <section class="ed-pane" data-pane="instructions">
@@ -449,6 +457,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     drawLevel()
     drawExperience()
     drawConvo()
+    drawClones()
     drawLimit()
     drawBrain()
     drawLook()
@@ -511,7 +520,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       <div class="xp-big"><span class="lv">Lv ${lv.lv}</span><div class="grow"><i class="xpbar"><b style="width:${Math.round(lv.progress * 100)}%"></b></i><span class="h4-note">${lv.xp} XP · ${lv.toNext} to Lv ${lv.lv + 1}${s.first ? ` · working since ${new Date(s.first).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span></div></div>
       <div class="base-stats">${METRICS.map((m) => {
         const has = (m.has ?? (() => true))(s)
-        const max = Math.max(0, ...state.agents.map((x) => x.stats[m.key] || 0))
+        const max = Math.max(0, ...roster().map((x) => x.stats[m.key] || 0))
         const mark = standouts(m)
         return `<div class="bs-row" title="${esc(m.tip?.(s) ?? '')}"><span class="bs-label">${m.label}</span><b>${has ? m.show(s) : '–'}${mark.best === a.name ? BEST : mark.worst === a.name ? SLOW : ''}</b>${has ? bar(s[m.key], max) : '<i class="mbar"></i>'}</div>`
       }).join('')}</div>
@@ -572,7 +581,28 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       row('Context limit', `<div class="pills small" data-pick="contextLimit">${pill('', win ? `Full ${tokenCount(win)}` : 'Full window', !limit)}${presets.map((n) => pill(n, tokenCount(n), limit === n)).join('')}
         <label class="limit-custom ${custom ? 'on' : ''}"><input type="number" min="10" step="10" data-limit-k value="${custom ? Math.round(limit / 1000) : ''}" placeholder="Custom" title="Any limit, in thousands of tokens"><span>k</span></label></div>`) +
       row('When it’s reached', `<div class="pills small" data-pick="onContextLimit">${pill('fresh', 'New conversation', fresh)}${pill('notify', 'Just tell me', !fresh)}</div>`, { cls: limit ? '' : 'off' }) +
-      `<p class="limit-note ${past ? 'past' : ''}">${esc(note)}</p>`
+      `<p class="limit-note ${past ? 'past' : ''}">${esc(note)}</p>` +
+      clonesRow()
+  }
+
+  // Clones: busy with one task, it takes the next on a clone of itself (its own conversation) instead of making it
+  // wait in its queue. The row says how many at once; the clones at work show on the left, under its conversation.
+  function clonesRow() {
+    const n = Number(draft.clones) || 0
+    const name = draft.name.trim() || 'it'
+    const tip = !n ? `Busy with one task, ${name} makes the next one wait in its queue. With clones, a copy of ${name} takes it right away instead.`
+      : `When ${name} is busy, a clone takes the next task: the same agent in a conversation of its own, up to ${n} at once. A clone with nothing left to do goes away after 5 minutes, and its work counts as ${name}'s. Clones share its folder, so they suit tasks that don't touch the same files.`
+    return `<div class="ed-row clones-row" title="${esc(tip)}"><span class="ed-label">Clones at once<small>when it's busy</small></span><div class="ed-ctl"><div class="pills small" data-pick="clones">${pill('', 'None', !n)}${CLONES.map((v) => pill(v, v, n === v)).join('')}</div></div></div>`
+  }
+
+  function drawClones() {
+    const host = card.querySelector('.ed-clones')
+    const a = agentNamed(editing)
+    if (!host) return
+    const live = a ? clonesOf(state.agents, a) : []
+    morph(host, live.length
+      ? `<span class="ed-clones-head">${plural(live.length, 'clone')} at work</span>${live.map((c) => `<button class="clone-chip ${c.status}" data-clone="${esc(c.name)}" title="Open its terminal">${avatarHTML(c, { size: 22 })}${cloneTag(c)}<span>${esc(c.activity && c.status === 'working' ? c.activity : statusText(c))}</span></button>`).join('')}`
+      : '')
   }
 
   function drawState() {
@@ -689,6 +719,17 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const t = e.target.closest('[data-tab]')
     if (t && !t.disabled) return setTab(t.dataset.tab)
     const p = e.target.closest('[data-pick] .pill')
+    if (p && p.closest('[data-pick]').dataset.pick === 'clones') {
+      draft.clones = Number(p.dataset.v) || ''
+      drawLimit()
+      return syncSave()
+    }
+    const clone = e.target.closest('[data-clone]')
+    if (clone) {
+      const name = clone.dataset.clone
+      if (close()) onTerminal(name)
+      return
+    }
     if (p && ['contextLimit', 'onContextLimit'].includes(p.closest('[data-pick]').dataset.pick)) {
       const k = p.closest('[data-pick]').dataset.pick
       draft[k] = k === 'contextLimit' ? Number(p.dataset.v) || '' : p.dataset.v
@@ -834,7 +875,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       if (reopen && agentNamed(reopen)) {
         const name = reopen
         reopen = null
-        open(name, { at: tab })
+        open(name, { at: tab, force: true })
         drawAvatar(true)
         card.querySelector('.pd-msg').textContent = 'Saved ✓'
       } else if (editing && editing !== ':new' && !agentNamed(editing)) {
@@ -845,6 +886,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         drawLevel()
         drawExperience()
         drawConvo()
+        drawClones()
         if (!card.querySelector('.limit')?.contains(document.activeElement)) drawLimit()
       }
     },
