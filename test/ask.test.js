@@ -275,7 +275,9 @@ test('the hook prints nothing on an HTTP error and always ends before the agent 
   const hook = settings.hooks.PermissionRequest[0].hooks[0]
   assert.match(hook.command, /curl -sf -m 86390 /)
   assert.equal(hook.timeout, ASK_WAIT.claude)
-  assert.equal(settings.hooks.PreToolUse, undefined, 'AskUserQuestion comes through PermissionRequest now')
+  // AskUserQuestion comes through PermissionRequest now; PreToolUse only reports what a sub-agent is for, without waiting
+  assert.deepEqual(settings.hooks.PreToolUse.map((h) => h.matcher), ['Agent|Task'])
+  assert.doesNotMatch(JSON.stringify(settings.hooks.PreToolUse), /\/ask\//)
   const codex = adapters.codex({ name: 'marc' }, {}).args.find((a) => a.startsWith('hooks.PermissionRequest='))
   assert.match(codex, /curl -sf -m 1790 /)
   assert.match(codex, /timeout=1800/)
