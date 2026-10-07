@@ -36,35 +36,38 @@ const CONVOS = {
 }
 for (const a of AGENTS) [a.convo, a.ticket] = CONVOS[a.name] ?? [null, null]
 
-// A made-up game screenshot for the bugs that come with one.
+// A made-up game screenshot for the tasks that come with one.
 const SHOT = require('path').join(require('os').tmpdir(), 'crew-shots-level2.svg')
 require('fs').writeFileSync(SHOT, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8ec5ff"/><stop offset="1" stop-color="#d9f0ff"/></linearGradient></defs><rect width="320" height="200" fill="url(#s)"/><circle cx="262" cy="42" r="20" fill="#ffe27a"/><rect y="150" width="320" height="50" fill="#6fcf6a"/><rect x="40" y="112" width="70" height="12" rx="6" fill="#a86b3c"/><rect x="190" y="96" width="80" height="12" rx="6" fill="#a86b3c"/><circle cx="72" cy="140" r="11" fill="#ff7eb6"/><circle cx="68" cy="137" r="2" fill="#222"/><circle cx="76" cy="137" r="2" fill="#222"/><rect x="110" y="60" width="100" height="44" rx="10" fill="rgba(0,0,0,.55)"/><text x="160" y="88" font-family="Helvetica" font-size="16" fill="#fff" text-anchor="middle">PAUSED</text></svg>`)
 
 const log = (...entries) => entries.map(([m, by, text, kind]) => ({ ts: now - m * min, by, text, ...(kind && { kind }) }))
 const ticket = (id, status, severity, title, owner, extra = {}) => ({
-  id, key: String(id), home: null, status, severity, title, body: '', owner, fixer: null, by: 'you', images: [], seen: 1, triaged: Boolean(owner),
-  created: now - (90 - id * 6) * min, updated: now - (60 - id * 4) * min, log: log([90 - id * 6, 'you', 'reported it']), ...extra,
+  id, key: String(id), home: null, kind: 'task', status, severity, title, body: '', owner, fixer: null, by: 'you', images: [], seen: 1, triaged: Boolean(owner),
+  created: now - (90 - id * 6) * min, updated: now - (60 - id * 4) * min, log: log([90 - id * 6, 'you', 'added it']), ...extra,
 })
 const TICKETS = [
   ticket(12, 'new', 'blocker', 'Jump does nothing after unpausing', 'david', {
+    kind: 'bug',
     body: '1. Start level 2\n2. Pause, then resume\n3. Press jump: nothing happens until you press it twice\n\nExpected: jumps right away. Happens on keyboard and gamepad.',
     images: [SHOT], created: now - 2 * min, updated: now - 1 * min,
     log: log([2, 'you', 'reported it'], [1.5, 'arie', 'gave it to @david, marked it blocker, updated the details'], [1, 'arie', 'Probably the input buffer isn\'t cleared on resume; see PauseMenu.onResume', 'note']),
   }),
-  ticket(11, 'new', 'high', 'Pause menu buttons overlap on small screens', 'gal', { seen: 3 }),
-  ticket(10, 'new', 'normal', "Leaderboard shows yesterday's scores", null, { triaged: false, created: now - 0.4 * min }),
-  ticket(9, 'new', 'low', 'Typo in settings: "Volumn"', 'david'),
-  ticket(7, 'fixing', 'high', 'Coins counter resets after level 2', 'joseph', { fixer: 'joseph' }),
-  ticket(6, 'fixing', 'normal', 'Shop prices are not localized', 'marc', { fixer: 'marc' }),
-  ticket(8, 'fixing', 'normal', 'Avatar picker crashes when offline', 'jeff', { fixer: 'jeff' }),
+  ticket(11, 'new', 'high', 'Pause menu buttons overlap on small screens', 'gal', { kind: 'bug', seen: 3 }),
+  ticket(10, 'new', 'normal', 'Daily challenge with a shared leaderboard', null, { kind: 'feature', triaged: false, created: now - 0.4 * min }),
+  ticket(9, 'new', 'low', 'Rename "Volumn" to "Volume" in settings', 'david'),
+  ticket(13, 'new', 'normal', 'Onboarding hero illustrations, one per crew role', 'marc', { kind: 'feature' }),
+  ticket(7, 'fixing', 'high', 'Coins counter resets after level 2', 'joseph', { kind: 'bug', fixer: 'joseph' }),
+  ticket(6, 'fixing', 'normal', 'Localize shop prices', 'marc', { fixer: 'marc' }),
+  ticket(8, 'fixing', 'normal', 'Offline mode for the avatar picker', 'jeff', { kind: 'feature', fixer: 'jeff' }),
   ticket(5, 'check', 'high', 'Double jump fires twice on gamepad', 'david', {
+    kind: 'bug',
     fixer: 'david', fix: 'Held buttons were read every frame. Debounced the jump input so a press fires once; checked keyboard and a DualSense on levels 1–3.',
     log: log([60, 'you', 'reported it'], [55, 'you', 'sent it to @david, in a new conversation'], [12, 'david', 'fixed it: Debounced the jump input'], [12, 'david', 'Repro was 100% with a DualSense at 120Hz.', 'note']),
   }),
-  ticket(4, 'check', 'normal', 'Music keeps playing on the pause screen', 'marc', { fixer: 'marc', fix: 'Ducked the music bus when the pause menu opens.' }),
-  ticket(3, 'done', 'normal', 'Login spinner never stops', 'joseph', { fixer: 'joseph', fix: 'Missing timeout on the auth call; added one and an error state.' }),
-  ticket(2, 'done', 'low', 'Login spinner keeps spinning', 'joseph', { dupOf: 3 }),
-  ticket(1, 'done', 'normal', 'Tutorial skips step 3', 'david', { fixer: 'david', fix: 'Off-by-one in the step list.' }),
+  ticket(4, 'check', 'normal', 'Fade the music when the game pauses', 'marc', { fixer: 'marc', fix: 'Ducked the music bus when the pause menu opens, back up on resume.' }),
+  ticket(3, 'done', 'normal', 'Login spinner never stops', 'joseph', { kind: 'bug', fixer: 'joseph', fix: 'Missing timeout on the auth call; added one and an error state.' }),
+  ticket(2, 'done', 'low', 'Login spinner keeps spinning', 'joseph', { kind: 'bug', dupOf: 3 }),
+  ticket(1, 'done', 'normal', 'Tutorial: add a skip button', 'david', { kind: 'feature', fixer: 'david', fix: 'Skip in the top corner; remembers that you skipped.' }),
 ]
 
 const t = (m) => now - m * min
@@ -108,28 +111,29 @@ const TERM = [
 ].join('\r\n')
 
 const COMPUTERS = { me: { name: 'Studio Mac', slug: 'studio-mac', sharing: false, agents: AGENTS.length }, links: [] }
-// The bug flow in the chat: reported, triaged, sent off in a new conversation, fixed.
+// The task flow in the chat: added, triaged, started in a new conversation, done.
 FEED.push(
-  { id: 'b1', kind: 'bug', act: 'filed', from: 'you', ticket: 12, title: 'Jump does nothing after unpausing', ts: t(0.45) },
-  { id: 'b2', kind: 'bug', act: 'triaged', from: 'arie', ticket: 12, title: 'Jump does nothing after unpausing', text: 'david', ts: t(0.4) },
-  { id: 'b3', kind: 'event', fresh: true, from: 'joseph', text: 'started a new conversation for bug #7', ts: t(0.35) },
-  { id: 'b4', kind: 'msg', from: 'you', to: 'joseph', ticket: 7, title: 'Coins counter resets after level 2', fresh: true, text: '[bug #7] Coins counter resets after level 2', ts: t(0.3) },
-  { id: 'b5', kind: 'bug', act: 'fixed', from: 'david', ticket: 5, title: 'Double jump fires twice on gamepad', text: 'Held buttons were read every frame. Debounced the jump input so a press fires once.', ts: t(0.2) },
+  { id: 'b1', kind: 'task', type: 'bug', act: 'filed', from: 'you', ticket: 12, title: 'Jump does nothing after unpausing', ts: t(0.45) },
+  { id: 'b2', kind: 'task', type: 'bug', act: 'triaged', from: 'arie', ticket: 12, title: 'Jump does nothing after unpausing', text: 'david', ts: t(0.4) },
+  { id: 'b3', kind: 'event', fresh: true, from: 'joseph', text: 'started a new conversation for #7', ts: t(0.35) },
+  { id: 'b4', kind: 'msg', from: 'you', to: 'joseph', ticket: 7, type: 'bug', title: 'Coins counter resets after level 2', fresh: true, text: '[bug #7] Coins counter resets after level 2', ts: t(0.3) },
+  { id: 'b5', kind: 'task', type: 'bug', act: 'fixed', from: 'david', ticket: 5, title: 'Double jump fires twice on gamepad', text: 'Held buttons were read every frame. Debounced the jump input so a press fires once.', ts: t(0.2) },
 )
 
-const state = { autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, bugs: { tickets: TICKETS, triage: 'arie', autofix: false } }
+const state = { autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, tasks: { tickets: TICKETS, triage: 'arie', autofix: false } }
 const emit = () => setTimeout(() => window.__crewEmit('state', state), 30)
-let nextBug = 13
+let nextTask = 14
 
-// Enough of the bug actions for the recordings: report, send, check.
-function bugAction(op, key, arg) {
+// Enough of the task actions for the recordings: add, start, accept.
+function taskAction(op, key, arg) {
   if (op === 'file') {
     const text = String(arg.text ?? '').trim()
-    const t = { ...TICKETS.find((x) => x.id === 9), id: nextBug, key: String(nextBug), status: 'new', severity: 'normal', title: text, body: '', owner: 'david', triaged: true, seen: 1, images: arg.images ?? [], created: Date.now(), updated: Date.now(), log: [{ ts: Date.now(), by: 'you', text: 'reported it' }] }
+    const owner = arg.owner ?? 'david'
+    const t = { ...TICKETS.find((x) => x.id === 9), id: nextTask, key: String(nextTask), kind: arg.kind ?? 'task', status: 'new', severity: 'normal', title: text, body: '', owner, triaged: true, seen: 1, images: arg.images ?? [], created: Date.now(), updated: Date.now(), log: [{ ts: Date.now(), by: 'you', text: 'added it' }] }
     TICKETS.push(t)
-    FEED.push({ id: `nb${nextBug}`, kind: 'bug', act: 'filed', from: 'you', ticket: nextBug, title: text, ts: Date.now() })
+    FEED.push({ id: `nb${nextTask}`, kind: 'task', type: t.kind, act: 'filed', from: 'you', ticket: nextTask, title: text, ts: Date.now() })
     emit()
-    return `filed #${nextBug++} for @david`
+    return `added #${nextTask++} for @${owner}`
   }
   const t = TICKETS.find((x) => x.key === key)
   if (!t) return
@@ -140,10 +144,10 @@ function bugAction(op, key, arg) {
     if (a) Object.assign(a, { ticket: t.id, status: 'starting', since: Date.now(), convo: { since: Date.now(), tasks: 0, compactions: 0, context: { pct: 2, size: 200000, used: 4000 } } })
     setTimeout(() => a && Object.assign(a, { status: 'working', since: Date.now(), activity: 'Read src/game/PauseMenu.ts' }) && emit(), 1400)
   }
-  if (op === 'works' || (op === 'move' && arg === 'done')) to('done')
+  if (op === 'accept' || (op === 'move' && arg === 'done')) to('done')
   if (op === 'move' && arg === 'check') to('check', { fix: t.fix ?? 'Fixed by hand.' })
   if (op === 'move' && arg === 'new') to('new')
-  if (op === 'broken') to('fixing')
+  if (op === 'sendBack') to('fixing')
   if (op === 'edit') Object.assign(t, arg, { updated: Date.now() })
   emit()
 }
@@ -215,7 +219,7 @@ window.crew = {
       }
       setTimeout(() => window.__crewEmit('state', state), 30)
     }
-    if (action === 'bug') return bugAction(...args)
+    if (action === 'task') return taskAction(...args)
     if (action === 'freshStart') {
       const a = state.agents.find((x) => x.name === args[0])
       // like the hub: a busy agent finishes its task first

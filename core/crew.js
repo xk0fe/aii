@@ -36,7 +36,7 @@ export class Crew extends EventEmitter {
     this.runner = new Runner()
     this.hub = new Hub(this.runner, { bin })
     this.hub.relay = (from, names, text, images, extra) => this.relay(from, names, text, images, extra)
-    this.hub.relayBug = (host, from, args) => this.link(host).peer.call('bug', [`${from}@${this.me.slug}`, args])
+    this.hub.relayTask = (host, from, args) => this.link(host).peer.call('task', [`${from}@${this.me.slug}`, args])
     this.hub.self = this.me.slug
     this.hub.directory = () => this.snapshot().agents.filter((a) => a.home)
     this.hub.elsewhere = (name) => {
@@ -121,7 +121,7 @@ export class Crew extends EventEmitter {
     const s = this.hub.snapshot()
     const agents = s.agents.map((a) => ({ ...a, home: null }))
     const feed = [...s.feed]
-    const tickets = s.bugs.tickets.map((t) => ({ ...t, key: String(t.id), home: null }))
+    const tickets = s.tasks.tickets.map((t) => ({ ...t, key: String(t.id), home: null }))
     const providers = {}
     for (const l of this.links.values()) {
       if (!l.state) continue
@@ -139,8 +139,8 @@ export class Crew extends EventEmitter {
           ...(e.ticket !== undefined && { ticket: q(String(e.ticket)) }), ...((e.act === 'fixing' || e.act === 'triaged') && e.text && { text: q(e.text) }),
         })
       }
-      // Bugs filed there: #12 there is 12@that-computer here.
-      for (const t of l.state.bugs?.tickets ?? []) {
+      // Tasks that live there: #12 there is 12@that-computer here. (`bugs`: a computer on the previous version.)
+      for (const t of (l.state.tasks ?? l.state.bugs)?.tickets ?? []) {
         tickets.push({
           ...t, key: `${t.id}@${l.slug}`, home: l.slug, homeName: l.name, owner: q(t.owner), fixer: q(t.fixer), by: q(t.by),
           images: t.images.map((p) => this.fetchImage(l, p)), log: t.log.map((x) => ({ ...x, by: q(x.by) })),
@@ -154,7 +154,7 @@ export class Crew extends EventEmitter {
     const open = feed.slice(0, -200).filter((e) => e.kind === 'ask' && !e.answer)
     return {
       ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.name)), feed: [...open, ...recent], computers: this.computers(),
-      bugs: { ...s.bugs, tickets },
+      tasks: { ...s.tasks, tickets },
     }
   }
 
@@ -284,9 +284,9 @@ export class Crew extends EventEmitter {
     return `${await l.peer.call('addAgent', [{ ...fields, images: await this.toHome(fields.images, l) }])}@${l.slug}`
   }
 
-  // A Bugs lane action. Bugs live on the computer they were filed on: 12@air is #12 on Air.
+  // A Tasks board action. A task lives on the computer it was added on: 12@air is #12 on Air.
   async ticket(op, key, arg) {
-    if (op === 'file') return this.hub.fileBug(arg)
+    if (op === 'file') return this.hub.fileTask(arg)
     const { l, base } = this.where(String(key))
     if (!l) return this.hub.ticket(op, base, arg)
     if (arg?.owner) arg = { ...arg, owner: this.qualifierFor(l)(arg.owner) }
@@ -342,7 +342,8 @@ export class Crew extends EventEmitter {
       },
       exportAgents: (names, opts) => packAgents(h, names, opts),
       freshStart: (name) => h.freshStart(name),
-      bug: (from, args) => h.bug(from, args),
+      task: (from, args) => h.taskCommand(from, args),
+      bug: (from, args) => h.taskCommand(from, args), // a computer on the previous version
       ticket: (op, id, arg) => h.ticket(op, id, arg),
       importAgents: (pack, choices) => unpackAgents(h, pack, choices),
     }

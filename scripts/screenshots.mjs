@@ -149,20 +149,34 @@ const SHOTS = {
     await save(win, `select-${theme}`)
     win.destroy()
   },
-  async bugs(theme) {
-    const win = await dashboard(theme, 'bugs')
-    await sleep(1000)
-    await save(win, `bugs-${theme}`)
-    await js(win, click('.tk[data-name="12"]'))
+  async tasks(theme) {
+    const win = await dashboard(theme, 'tasks')
+    await js(win, "localStorage.setItem('crew.tasks.view', 'board'); localStorage.setItem('crew.tasks.done', '0')")
+    win.webContents.reload()
+    await new Promise((r) => win.webContents.once('did-finish-load', r))
+    await sleep(1100)
+    await save(win, `tasks-${theme}`)
+    await js(win, click('.tc[data-name="12"]'))
     await sleep(900)
-    await save(win, `bug-panel-${theme}`)
+    await save(win, `task-panel-${theme}`)
     await js(win, click('.tp [data-tp=close]'))
     await sleep(500)
-    await js(win, click('.tk[data-name="5"]'))
-    await sleep(900)
-    await js(win, click('.tp [data-tp=broken]'))
-    await sleep(700)
-    await save(win, `bug-check-${theme}`)
+    await js(win, click('.tc[data-name="5"]'))
+    await sleep(800)
+    await js(win, click('.tp [data-tp=sendback]'))
+    await sleep(600)
+    await save(win, `task-review-${theme}`)
+    await js(win, click('.tp [data-tp=close]'))
+    await sleep(400)
+    await js(win, click('.tk-views [data-mode=list]'))
+    await sleep(800)
+    await save(win, `tasks-list-${theme}`)
+    await js(win, `${click('.tk-views [data-mode=board]')}; ${click('[data-filter="kind:bug"]')}`)
+    await sleep(800)
+    await save(win, `tasks-filtered-${theme}`)
+    await js(win, click('[data-flow]'))
+    await sleep(500)
+    await save(win, `tasks-workflow-${theme}`)
     win.destroy()
   },
   async conversation(theme) {
@@ -176,42 +190,45 @@ const SHOTS = {
     await save(win, `conversation-${theme}`)
     win.destroy()
   },
-  async chatBug(theme) {
+  async chatTask(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
     await sleep(400)
     await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
     await sleep(600)
-    await js(win, `${click('.chip.bug-chip')}; const ta = document.querySelector('.composer textarea'); ta.value = 'Shop button is hidden behind the coins counter on iPhone SE'; ta.dispatchEvent(new Event('input'))`)
+    await js(win, `${click('.chip.task-chip')}; const ta = document.querySelector('.composer textarea'); ta.value = 'Shop button is hidden behind the coins counter on iPhone SE @gal'; ta.dispatchEvent(new Event('input'))`)
     await sleep(500)
     await fitToContent(win)
-    await save(win, `chat-bug-${theme}`)
+    await save(win, `chat-task-${theme}`)
     win.destroy()
   },
-  // Report a bug, send it off in a new conversation, then check a fix: the board's whole loop.
-  async bugsGif() {
-    const win = await dashboard('light', 'bugs')
+  // Add a task, start it in a new conversation, then accept another one: the board's whole loop.
+  async tasksGif() {
+    const win = await dashboard('light', 'tasks')
+    await js(win, "localStorage.setItem('crew.tasks.view', 'board'); localStorage.setItem('crew.tasks.done', '0')")
+    win.webContents.reload()
+    await new Promise((r) => win.webContents.once('did-finish-load', r))
     await sleep(1200)
-    await record(win, 'bugs-loop', {
-      ms: 11000, width: 1000,
+    await record(win, 'tasks-loop', {
+      ms: 11500, width: 1000,
       during: async () => {
         let at = { x: 900, y: 500 }
-        at = await glide(win, at, await center(win, '.capture textarea'), 600)
+        at = await glide(win, at, await center(win, '.tk-add textarea'), 600)
         await tap(win, at)
         await sleep(300)
-        const text = 'Coins vanish when you collect two at once'
+        const text = 'Coins vanish when you collect two at once @david'
         for (let i = 1; i <= text.length; i++) {
-          await js(win, `const ta = document.querySelector('.capture textarea'); ta.value = ${JSON.stringify(text)}.slice(0, ${i}); ta.dispatchEvent(new Event('input'))`)
-          await sleep(28)
+          await js(win, `const ta = document.querySelector('.tk-add textarea'); ta.value = ${JSON.stringify(text)}.slice(0, ${i}); ta.dispatchEvent(new Event('input'))`)
+          await sleep(26)
         }
-        await sleep(350)
+        await sleep(450)
         win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
         win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
         await sleep(1300)
-        at = await glide(win, at, await center(win, '.tk[data-name="13"] [data-tk=dispatch]'), 700)
+        at = await glide(win, at, await center(win, '.tc[data-name="14"] [data-act=start]'), 700)
         await sleep(200)
         await tap(win, at)
-        await sleep(2600)
-        at = await glide(win, at, await center(win, '.tk[data-name="5"] [data-tk=works]'), 900)
+        await sleep(2700)
+        at = await glide(win, at, await center(win, '.tc[data-name="5"] [data-act=accept]'), 900)
         await sleep(250)
         await tap(win, at)
         await sleep(1600)

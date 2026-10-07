@@ -36,7 +36,7 @@ Crew commands (run them in the shell, they return instantly):
   crew send <name> "<task>" hand a task to a teammate (queued until they are free)
   crew note "<fact>"        share context with everyone: decisions, interfaces, gotchas
   crew board                read the shared notes
-  crew bug                  bugs the user called out: list, show, fix, report (crew bug help)
+  crew task                 the Tasks board: list, show, done, note, add (crew task help)
 Messages starting with "[from @name]" come from a teammate. If they need a result, reply with crew send <name> "<result>" when done.
 Image files listed in a message are attachments (screenshots, mockups, references): open them before you start.${
   a.prompt ? `\n\nYour instructions:\n${a.prompt}` : ''

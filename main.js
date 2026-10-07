@@ -214,9 +214,9 @@ const actions = {
   send: (to, text, images, opts) => crew.send(to, text, images, opts),
   // A new conversation for an agent (after its current task, if it's busy).
   freshStart: (name) => crew.at(name, 'freshStart'),
-  // The Bugs lane: bug('file', null, { text, images }), bug('dispatch', '12'), bug('works', '12@air')…
-  bug: (op, key, arg) => crew.ticket(op, key, arg),
-  bugSettings: (patch) => hub.setBugSettings(patch),
+  // The Tasks board: task('file', null, { text, images, kind }), task('dispatch', '12'), task('accept', '12@air')…
+  task: (op, key, arg) => crew.ticket(op, key, arg),
+  taskSettings: (patch) => hub.setTaskSettings(patch),
   saveImage: (name, type, bytes) => hub.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
   approve: (id) => crew.feedAction(id, 'approve'),
   drop: (id) => crew.feedAction(id, 'drop'),

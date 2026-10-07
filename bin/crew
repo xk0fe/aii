@@ -21,16 +21,16 @@ case "$cmd" in
   note)
     [ $# -gt 0 ] || { echo 'usage: crew note "text"' >&2; exit 2; }
     printf '%s' "$*" | call --data-binary @- "$URL/note?from=$FROM" ;;
-  bug)
+  task|bug)
     # each word NUL-terminated, so quotes, newlines and flags arrive as typed
-    printf '%s\0' "$@" | call --data-binary @- "$URL/bug?from=$FROM" ;;
+    printf '%s\0' "$@" | call --data-binary @- "$URL/task?from=$FROM" ;;
   *)
     cat <<'EOF'
 crew who                    agents, their areas and status
 crew send <name|any> "..."  hand a task to an agent (queued until it is free)
 crew note "..."             share context with the whole crew
 crew board                  read the shared notes
-crew bug                    bugs: list, show, fixed, note, report (crew bug help)
+crew task                   the Tasks board: list, show, done, note, add (crew task help)
 EOF
     ;;
 esac

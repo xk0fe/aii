@@ -1,4 +1,4 @@
-// The Bugs lane and fresh conversations, against the real Hub with a fake runner in a throwaway CREW_HOME:
+// The Tasks board and fresh conversations, against the real Hub with a fake runner in a throwaway CREW_HOME:
 // filing, triage, owner by area, fixing in a fresh conversation, "still broken", context. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -57,17 +57,17 @@ test('a report becomes a title and details', () => {
 })
 
 test('without a triage agent, a bug goes to whoever owns that area, and only a real match counts', () => {
-  assert.match(hub.fileBug({ text: 'pause menu buttons overlap on small screens' }), /filed #1 for @david/)
+  assert.match(hub.fileTask({ kind: 'bug', text: 'pause menu buttons overlap on small screens' }), /added #1 for @david/)
   const t = hub.tickets.get(1)
   assert.equal(t.owner, 'david')
   assert.equal(t.status, 'new')
-  assert.equal(hub.feed.at(-1).kind, 'bug')
+  assert.equal(hub.feed.at(-1).kind, 'task')
   assert.equal(ownerFor('the sky colour is weird', [...hub.agents.values()]), null)
 })
 
 test('with a triage agent, it gets the raw report to triage, without becoming "about" that bug', async () => {
   hub.config.triage = 'arie'
-  assert.match(hub.fileBug({ text: 'jump broken after pause' }), /@arie is triaging it/)
+  assert.match(hub.fileTask({ kind: 'bug', text: 'jump broken after pause' }), /@arie is triaging it/)
   const msg = hub.feed.findLast((e) => e.kind === 'msg')
   assert.equal(msg.to, 'arie')
   assert.equal(msg.triage, true)
@@ -79,9 +79,9 @@ test('with a triage agent, it gets the raw report to triage, without becoming "a
 test('triage via `crew bug triage` assigns it; with Auto-fix the owner gets it in a fresh conversation', async () => {
   hub.config.triage = 'arie'
   hub.config.autofix = true
-  hub.fileBug({ text: 'jump broken after pause' })
-  const out = hub.bug('arie', ['triage', '1', '--owner', 'david', '--severity', 'high', '--title', 'Jump dead after unpausing', '--details', '1. pause 2. resume 3. press jump'])
-  assert.match(out, /#1: high, for @david, sent to them/)
+  hub.fileTask({ kind: 'bug', text: 'jump broken after pause' })
+  const out = hub.taskCommand('arie', ['triage', '1', '--owner', 'david', '--severity', 'high', '--title', 'Jump dead after unpausing', '--details', '1. pause 2. resume 3. press jump'])
+  assert.match(out, /#1: bug, for @david, sent to them/)
   await settle()
   const t = hub.tickets.get(1)
   assert.equal(t.title, 'Jump dead after unpausing')
@@ -93,9 +93,9 @@ test('triage via `crew bug triage` assigns it; with Auto-fix the owner gets it i
   assert.ok(hub.feed.some((e) => e.fresh && e.from === 'david'), 'a "new conversation" divider in the feed')
   started('david')
   await new Promise((r) => setTimeout(r, 2100)) // the prompt box gets a moment after SessionStart
-  assert.match(lastTyped('david'), /\[bug #1\] Jump dead after unpausing[\s\S]*crew bug fixed 1 /)
+  assert.match(lastTyped('david'), /\[bug #1\] Jump dead after unpausing[\s\S]*crew task done 1 /)
   // triage rewrote it, and the fixer still gets the report word for word (paths, repro commands)
-  assert.match(lastTyped('david'), /word for word:\njump broken after pause/)
+  assert.match(lastTyped('david'), /as written:\njump broken after pause/)
   assert.match(lastTyped('david'), /don't guess/)
   assert.equal(hub.snapshot().agents.find((a) => a.name === 'david').ticket, 1) // remembered on the conversation
 })
@@ -103,38 +103,38 @@ test('triage via `crew bug triage` assigns it; with Auto-fix the owner gets it i
 test('fixed → check → "still broken" goes back to the same conversation; "works" closes it', async () => {
   const notices = []
   hub.on('notice', (n) => notices.push(n))
-  hub.fileBug({ text: 'pause menu does not close' })
+  hub.fileTask({ kind: 'bug', text: 'pause menu does not close' })
   await hub.ticket('dispatch', 1)
   started('david')
   await new Promise((r) => setTimeout(r, 2100))
   hub.onHook('david', { hook_event_name: 'UserPromptSubmit', prompt: lastTyped('david') })
   hub.onHook('david', { hook_event_name: 'Stop' })
-  assert.match(hub.bug('david', ['fixed', '1', 'the close button lost its handler; re-bound it, checked by hand']), /waiting for the user/)
+  assert.match(hub.taskCommand('david', ['fixed', '1', 'the close button lost its handler; re-bound it, checked by hand']), /waiting for the user to review/)
   assert.equal(hub.tickets.get(1).status, 'check')
-  assert.equal(notices[0].focus, 'bug:1')
+  assert.equal(notices[0].focus, 'task:1')
   // still broken: same agent, same conversation (no fresh start), with your note
   await hub.ticket('broken', 1, 'only with a controller')
   await new Promise((r) => setTimeout(r, 700))
   assert.notEqual(hub.agents.get('david').status, 'starting')
-  assert.match(lastTyped('david'), /Still broken after your fix\. The user says: only with a controller/)
+  assert.match(lastTyped('david'), /Sent back: still broken\. The user says: only with a controller/)
   assert.equal(hub.tickets.get(1).status, 'fixing')
-  hub.bug('david', ['fixed', '1', 'controller path too'])
+  hub.taskCommand('david', ['fixed', '1', 'controller path too'])
   await hub.ticket('works', 1)
   assert.equal(hub.tickets.get(1).status, 'done')
 })
 
 test('duplicates count on the original; agents can list, show, note and report', () => {
-  hub.fileBug({ text: 'pause menu overlaps' })
-  hub.fileBug({ text: 'pause menu overlapping again' })
-  assert.match(hub.bug('arie', ['dup', '2', '1']), /#2 is #1 \(seen 2x now\)/)
+  hub.fileTask({ kind: 'bug', text: 'pause menu overlaps' })
+  hub.fileTask({ kind: 'bug', text: 'pause menu overlapping again' })
+  assert.match(hub.taskCommand('arie', ['dup', '2', '1']), /#2 is #1 \(seen 2x now\)/)
   assert.equal(hub.tickets.get(2).status, 'done')
-  assert.match(hub.bug('joseph', ['list']), /#1 .*seen 2x/)
-  hub.bug('joseph', ['note', '1', 'not the server, client only'])
-  assert.match(hub.bug('david', ['show', '1']), /joseph: not the server/)
-  assert.match(hub.bug('joseph', ['report', 'Leaderboard 500s', '--details', 'GET /scores fails']), /filed #3/)
+  assert.match(hub.taskCommand('joseph', ['list']), /#1 .*seen 2x/)
+  hub.taskCommand('joseph', ['note', '1', 'not the server, client only'])
+  assert.match(hub.taskCommand('david', ['show', '1']), /joseph: not the server/)
+  assert.match(hub.taskCommand('joseph', ['report', 'Leaderboard 500s', '--details', 'GET /scores fails']), /added #3/)
   assert.equal(hub.tickets.get(3).by, 'joseph')
-  assert.throws(() => hub.bug('david', ['show', '99']), /no bug #99/)
-  assert.match(hub.bug('david', ['help']), /crew bug fixed/)
+  assert.throws(() => hub.taskCommand('david', ['show', '99']), /no task #99/)
+  assert.match(hub.taskCommand('david', ['help']), /crew task done/)
 })
 
 test('new conversation: right away when free, after the task when busy', () => {
@@ -186,28 +186,28 @@ test('context from a Codex session log', () => {
 // ---- from review: the edges -------------------------------------------------------------------
 
 test('dispatch survives a null options argument (how Crew Link delivers a missing one)', async () => {
-  hub.fileBug({ text: 'pause menu stuck' })
+  hub.fileTask({ kind: 'bug', text: 'pause menu stuck' })
   await hub.ticket('dispatch', 1, null)
   assert.equal(hub.tickets.get(1).status, 'fixing')
 })
 
 test('"still broken" waits its turn in a fresh conversation when another bug is lined up first', async () => {
-  hub.fileBug({ text: 'pause menu stuck' })
-  hub.fileBug({ text: 'pause menu flickers on input' })
+  hub.fileTask({ kind: 'bug', text: 'pause menu stuck' })
+  hub.fileTask({ kind: 'bug', text: 'pause menu flickers on input' })
   await hub.ticket('dispatch', 1)
   started('david')
   await new Promise((r) => setTimeout(r, 2100))
   const david = hub.agents.get('david')
   assert.equal(hub.snapshot().agents.find((a) => a.name === 'david').ticket, 1)
   david.status = 'working' // still at it when bug 2 and the "still broken" come in
-  hub.bug('david', ['fixed', '1', 'rebound the close button'])
+  hub.taskCommand('david', ['fixed', '1', 'rebound the close button'])
   await hub.ticket('dispatch', 2)
   await hub.ticket('broken', 1, 'still stuck with a controller')
   // bug 2 starts a fresh conversation first, so #1 can't count on "the same conversation" any more
   const last = david.inbox.at(-1)
   assert.equal(last.ticket, 1)
   assert.equal(last.fresh, true)
-  assert.doesNotMatch(last.text, /Still broken after your fix/)
+  assert.doesNotMatch(last.text, /Sent back/)
 })
 
 test('one fresh task, one restart: a pending fresh start serves the task waiting for it', () => {
@@ -223,10 +223,10 @@ test('one fresh task, one restart: a pending fresh start serves the task waiting
 })
 
 test('a late `crew bug fixed` does not reopen a closed bug; a double send is caught', async () => {
-  hub.fileBug({ text: 'pause menu stuck' })
-  hub.fileBug({ text: 'pause menu stuck again' })
-  hub.bug('arie', ['dup', '2', '1'])
-  assert.throws(() => hub.bug('david', ['fixed', '2', 'done']), /already closed \(same as #1\)/)
+  hub.fileTask({ kind: 'bug', text: 'pause menu stuck' })
+  hub.fileTask({ kind: 'bug', text: 'pause menu stuck again' })
+  hub.taskCommand('arie', ['dup', '2', '1'])
+  assert.throws(() => hub.taskCommand('david', ['fixed', '2', 'done']), /already closed \(same as #1\)/)
   hub.agents.get('david').status = 'working'
   await hub.ticket('dispatch', 1)
   assert.match(await hub.ticket('dispatch', 1), /already queued/)
@@ -235,22 +235,22 @@ test('a late `crew bug fixed` does not reopen a closed bug; a double send is cau
 
 test('bug refs naming this computer work here; dup refs must be on one computer', () => {
   hub.self = 'mac'
-  hub.fileBug({ text: 'pause menu stuck' })
-  hub.fileBug({ text: 'pause menu stuck again' })
-  assert.match(hub.bug('joseph', ['note', '1@mac', 'client side']), /noted on #1/)
-  assert.throws(() => hub.bug('arie', ['dup', '2', '1@air']), /same computer/)
-  assert.match(hub.bug('arie', ['dup', '2@mac', '1']), /#2 is #1/)
+  hub.fileTask({ kind: 'bug', text: 'pause menu stuck' })
+  hub.fileTask({ kind: 'bug', text: 'pause menu stuck again' })
+  assert.match(hub.taskCommand('joseph', ['note', '1@mac', 'client side']), /noted on #1/)
+  assert.throws(() => hub.taskCommand('arie', ['dup', '2', '1@air']), /same computer/)
+  assert.match(hub.taskCommand('arie', ['dup', '2@mac', '1']), /#2 is #1/)
 })
 
 test('a just-closed old bug stays on the board', async () => {
   for (let i = 0; i < 62; i++) hub.tickets.add({ text: `bug ${i}` })
   for (const t of hub.tickets.all.slice(1)) Object.assign(t, { status: 'done', updated: 1000 + t.id })
   await hub.ticket('works', 1)
-  assert.ok(hub.snapshot().bugs.tickets.some((t) => t.id === 1))
+  assert.ok(hub.snapshot().tasks.tickets.some((t) => t.id === 1))
 })
 
 test('renaming an agent keeps its conversation numbers and the bugs it owns', () => {
-  hub.fileBug({ text: 'pause menu stuck' })
+  hub.fileTask({ kind: 'bug', text: 'pause menu stuck' })
   hub.onStatusLine('david', { context_window: { context_window_size: 200000, used_percentage: 30, current_usage: { input_tokens: 60000 } } })
   hub.update('david', { name: 'dave' })
   assert.equal(hub.tickets.get(1).owner, 'dave')
@@ -261,4 +261,40 @@ test('context numbers are numbers, whatever the status line sends', () => {
   const c = fromStatusLine({ context_window: { context_window_size: '<b>200000</b>', used_percentage: 'x' } })
   assert.equal(c, null)
   assert.deepEqual(fromStatusLine({ context_window: { context_window_size: 1000, used_percentage: 7, current_usage: { input_tokens: '70' } } }), { used: 70, size: 1000, pct: 7 })
+})
+
+// ---- Tasks: kinds, owners you name, priority words -----------------------------------------------
+
+test('a task is a task unless it says otherwise; kinds and priorities change by name', () => {
+  hub.fileTask({ text: 'Add a settings screen for controls' })
+  const t = hub.tickets.get(1)
+  assert.equal(t.kind, 'task')
+  assert.match(hub.taskCommand('arie', ['triage', '1', '--kind', 'feature', '--priority', 'urgent']), /#1: feature/)
+  assert.equal(t.kind, 'feature')
+  assert.equal(t.severity, 'blocker')
+  assert.throws(() => hub.taskCommand('arie', ['triage', '1', '--priority', 'whenever']), /urgent, high, medium, low/)
+  assert.match(hub.taskCommand('joseph', ['add', 'Cache the leaderboard', '--kind', 'task', '--priority', 'low']), /added #2/)
+  assert.equal(hub.tickets.get(2).severity, 'low')
+  assert.match(hub.taskCommand('joseph', ['list']), /#1 +feature +new +urgent/)
+})
+
+test('naming the owner skips triage; a feature gets a "do it" brief, not a bug hunt', async () => {
+  hub.config.triage = 'arie'
+  assert.match(hub.fileTask({ text: 'Add a pause menu shortcut', kind: 'feature', owner: '@david' }), /added #1 for @david/)
+  assert.equal(hub.tickets.get(1).triaged, true)
+  assert.equal(hub.agents.get('arie').inbox.length + runner.typed.filter((x) => x.n === 'arie').length, 0)
+  await hub.ticket('dispatch', 1)
+  started('david')
+  await new Promise((r) => setTimeout(r, 2100))
+  assert.match(lastTyped('david'), /\[feature #1\] Add a pause menu shortcut[\s\S]*Do it, and keep to what it asks/)
+  assert.doesNotMatch(lastTyped('david'), /Reproduce it/)
+})
+
+test('the old names still work: crew bug fixed / report, works / broken', async () => {
+  hub.fileTask({ text: 'pause menu stuck', kind: 'bug' })
+  await hub.ticket('dispatch', 1)
+  assert.match(hub.taskCommand('david', ['fixed', '1', 'rebound it']), /review/)
+  await hub.ticket('works', 1)
+  assert.equal(hub.tickets.get(1).status, 'done')
+  assert.match(hub.taskCommand('joseph', ['report', 'Scores lag']), /added #2/)
 })

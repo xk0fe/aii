@@ -1,5 +1,5 @@
 // Full-screen view: the crew collection, every agent's live terminal, and the crew feed.
-/* global themeButton, nameHTML, contextRing, mountBugs, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
+/* global themeButton, nameHTML, contextRing, mountTasks, crew, live, store, morph, agentCard, statusText, brainLabel, brainShort, crewSummary, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -9,11 +9,11 @@ const THEME = {
 }
 
 const terms = new Map() // name -> { tile, head, term, fit, ready }
-const feed = mountFeed($('.feed'), { onAgent: (name) => select(name), onTicket: (key) => openBug(key) })
+const feed = mountFeed($('.feed'), { onAgent: (name) => select(name), onTicket: (key) => openTask(key) })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat') })
 const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name), onImport: () => importPack() })
-const bugs = mountBugs($('.bugs-view'), { onTerminal: (name) => select(name) })
-let view = store.get('crew.view') || 'crew'
+const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
+let view = store.get('crew.view') === 'bugs' ? 'tasks' : store.get('crew.view') || 'crew'
 let selected = null
 let state = { agents: [], providers: {} }
 
@@ -149,10 +149,10 @@ function setView(next) {
   store.set('crew.view', next)
   if (!terms.has(selected)) highlight(terms.keys().next().value)
   const crewView = view === 'crew'
-  const bugsView = view === 'bugs'
+  const tasksView = view === 'tasks'
   $('.collection').classList.toggle('hidden', !crewView)
-  $('.bugs-view').classList.toggle('hidden', !bugsView)
-  $('.terms').classList.toggle('hidden', crewView || bugsView)
+  $('.tasks-view').classList.toggle('hidden', !tasksView)
+  $('.terms').classList.toggle('hidden', crewView || tasksView)
   $('.terms').classList.toggle('focus', view === 'focus')
   drawBlank()
   segmented($('.seg.views'), (b) => b.dataset.view === view)
@@ -161,14 +161,14 @@ function setView(next) {
 
 function drawBlank() {
   const on = state.agents.filter((a) => a.on).length
-  $('.blank').classList.toggle('hidden', view === 'crew' || view === 'bugs' || on > 0)
+  $('.blank').classList.toggle('hidden', view === 'crew' || view === 'tasks' || on > 0)
   $('.blank b').textContent = state.agents.length ? 'All agents are off' : 'No agents yet'
   $('.blank span').textContent = state.agents.length ? 'Flip one on in the sidebar, it picks up its last session.' : 'Make your first one in the Crew view.'
 }
 
 $('.seg.views').addEventListener('click', (e) => e.target.dataset.view && setView(e.target.dataset.view))
 // ⌘1 ⌘2 ⌘3: Crew, Grid, Focus
-const VIEWS = ['crew', 'bugs', 'grid', 'focus']
+const VIEWS = ['crew', 'tasks', 'grid', 'focus']
 document.querySelectorAll('.seg.views button').forEach((b, i) => (b.title += ` (⌘${i + 1})`))
 document.addEventListener('keydown', (e) => {
   const n = Number(e.key)
@@ -192,13 +192,13 @@ function addAgent() {
 
 function handleFocus(arg) {
   if (arg === ':add') addAgent()
-  else if (arg?.startsWith('bug:')) openBug(arg.slice(4))
+  else if (arg?.startsWith('task:') || arg?.startsWith('bug:')) openTask(arg.slice(arg.indexOf(':') + 1))
   else if (arg) select(arg)
 }
 
-function openBug(key) {
-  setView('bugs')
-  bugs.open(key)
+function openTask(key) {
+  setView('tasks')
+  tasks.open(key)
 }
 crew.onFocus(handleFocus)
 
@@ -237,12 +237,12 @@ const ready = live((next) => {
   feed.render(state)
   composer.render(state)
   collection.render(state)
-  bugs.render(state)
-  const badge = bugs.badge(state)
+  tasks.render(state)
+  const badge = tasks.badge(state)
   const el = $('.seg-badge')
-  el.textContent = badge.check || badge.open || ''
-  el.classList.toggle('check', badge.check > 0)
-  el.title = badge.check ? `${badge.check} fixed, waiting for you to check` : badge.open ? `${badge.open} open` : ''
+  el.textContent = badge.review || badge.open || ''
+  el.classList.toggle('review', badge.review > 0)
+  el.title = badge.review ? `${badge.review} waiting for your review` : badge.open ? `${badge.open} open` : ''
   celebrate($('.side .agents'), state.agents) // after the cards, so a visible card gets the confetti
 })
 

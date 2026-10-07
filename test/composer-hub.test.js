@@ -26,7 +26,7 @@ beforeEach(() => {
   hub = new Hub(r, { bin: '/nonexistent' })
   for (const a of hub.agents.values()) if (!a.off) (r.on_.add(a.name), (a.status = 'working'))
 })
-afterEach(() => { for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer); clearTimeout(hub.statsTimer) })
+afterEach(() => { for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer); clearTimeout(hub.statsTimer); clearTimeout(hub.convoTimer) })
 after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
 const send = (target, text) => format(hub.send({ to: composerTo(target, text), text }))
 const queued = () => Object.fromEntries([...hub.agents.values()].filter((a) => a.inbox.length).map((a) => [a.name, a.inbox.length]))

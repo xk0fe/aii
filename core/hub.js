@@ -7,7 +7,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
-import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, BUG_HELP } from './tickets.js'
+import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, tokens as tokenCount } from './context.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
@@ -157,7 +157,7 @@ export class Hub extends EventEmitter {
     this.saveSession(from, null) // also writes the moved session
     if (this.stats[from]) [this.stats[to], this.stats[from]] = [this.stats[from], undefined] // experience moves with the name
     this.saveStats()
-    // so do its conversation's numbers and the bugs it owns or is fixing
+    // so do its conversation's numbers and the tasks it owns or is working on
     if (this.convos[from]) [this.convos[to], this.convos[from]] = [this.convos[from], undefined]
     this.saveConvos()
     for (const t of this.tickets.all) for (const k of ['owner', 'fixer']) if (t[k] === from) t[k] = to
@@ -280,7 +280,12 @@ export class Hub extends EventEmitter {
   // Debounced: the status line reports often. `now` on quit, so the last numbers aren't lost.
   saveConvos(now = false) {
     clearTimeout(this.convoTimer)
-    const write = () => fs.writeFileSync(at('conversations.json'), JSON.stringify(this.convos))
+    // only the context gauges' memory: a failed write (the folder gone) must never take anything down
+    const write = () => {
+      try {
+        fs.writeFileSync(at('conversations.json'), JSON.stringify(this.convos))
+      } catch {}
+    }
     if (now) write()
     else this.convoTimer = setTimeout(write, 1000)
   }
@@ -572,7 +577,7 @@ export class Hub extends EventEmitter {
   // Names on another computer (gal@mac-mini) go to `relay`, which main.js wires to Crew Link; `mentions: false`
   // means `to` is final (the message was already addressed on another computer).
   // `fresh`: deliver into a new conversation (started when it's this message's turn). `ticket`: the bug it's about.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, triage = false }) {
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false }) {
     text = String(text ?? '').trim()
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -582,7 +587,7 @@ export class Hub extends EventEmitter {
     const away = all.filter((n) => n.includes('@'))
     const names = all.filter((n) => !n.includes('@'))
     if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and Crew Link isn't on`)
-    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title }), ...(triage && { triage: true }) }
+    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }) }
     if (away.length && !names.length) return this.relay(from, away, text, images, extra)
     const targets = names.length ? this.recipients(names, from) : [this.route(text, from)]
     if (!targets[0]) throw new Error('no agents to send to')
@@ -657,7 +662,7 @@ export class Hub extends EventEmitter {
     // A task meant for a fresh conversation: start one, and deliver once it's up.
     if (a.inbox[0].fresh && a.freshFor !== a.inbox[0].id) {
       a.freshFor = a.inbox[0].id
-      return this.startFresh(a, a.inbox[0].ticket !== undefined ? ` for bug #${a.inbox[0].ticket}` : ' for its next task')
+      return this.startFresh(a, a.inbox[0].ticket !== undefined ? ` for #${a.inbox[0].ticket}` : ' for its next task')
     }
     const msg = a.inbox.shift()
     msg.queued = false
@@ -687,24 +692,31 @@ export class Hub extends EventEmitter {
     }, ms)
   }
 
-  // ---- bugs -------------------------------------------------------------------------------------
+  // ---- tasks ------------------------------------------------------------------------------------
 
-  // You call out a bug (in the chat or the Bugs lane). The triage agent, if you picked one, makes it a proper
-  // ticket and assigns it; otherwise it goes to whoever's area it matches. With Auto-fix on, the owner gets it
-  // right away, in a fresh conversation.
-  fileBug({ text, images = [], by = 'you' }) {
+  // You add a task (a bug, a feature, a chore) in the chat or on the Tasks board. The triage agent, if you
+  // picked one, makes it clear and assigns it; otherwise it goes to whoever's area it matches. With Auto-start
+  // on, the owner gets it right away, in a fresh conversation. `owner` (an @name you typed) skips all that.
+  fileTask({ text, images = [], by = 'you', kind = 'task', owner }) {
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!String(text ?? '').trim() && images.length) text = 'See the screenshot'
-    const t = this.tickets.add({ text, images, by })
+    owner = owner ? this.agentName(owner) : null
+    const t = this.tickets.add({ text, images, by, kind: KINDS.includes(kind) ? kind : 'task', owner })
+    if (owner) {
+      t.triaged = true // you said who: nothing to triage
+      this.postTask(t, by, 'filed')
+      if (this.config.autofix) this.autoDispatch(t)
+      return `added #${t.id} for @${owner}\n`
+    }
     const triage = this.triager()
     if (!triage) {
       const owner = ownerFor(`${t.title} ${t.body}`, this.teammates())
       if (owner) this.tickets.edit(t.id, { owner: owner.name }, 'crew')
     }
-    this.postBug(t, by, 'filed')
-    if (triage) this.send({ from: 'you', to: triage, text: triagePrompt(t, t.id), images: t.images, mentions: false, ticket: t.id, title: t.title, triage: true })
+    this.postTask(t, by, 'filed')
+    if (triage) this.send({ from: 'you', to: triage, text: triagePrompt(t, t.id), images: t.images, mentions: false, ticket: t.id, title: t.title, type: t.kind, triage: true })
     else if (this.config.autofix && t.owner) this.autoDispatch(t)
-    return `filed #${t.id}${triage ? `, @${triage} is triaging it` : t.owner ? ` for @${t.owner}` : ''}\n`
+    return `added #${t.id}${triage ? `, @${triage} is triaging it` : t.owner ? ` for @${t.owner}` : ''}\n`
   }
 
   // The triage agent you picked, if it's around to do it.
@@ -713,14 +725,14 @@ export class Hub extends EventEmitter {
     return a && !a.off ? a.name : null
   }
 
-  // Everyone who can own a bug: agents here that are on, and the ones on linked computers.
+  // Everyone who can own a task: agents here that are on, and the ones on linked computers.
   teammates() {
     const here = [...this.agents.values()].filter((a) => !a.off).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.inbox.length }))
     return [...here, ...(this.directory?.() ?? []).filter((a) => a.on).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.queue ?? 0 }))]
   }
 
-  // A bug goes to its owner in a fresh conversation with just this bug in it. If the owner is still in the
-  // conversation where it fixed this bug, "still broken" goes back there, with everything it already tried.
+  // A task goes to its owner in a fresh conversation with just this task in it. If the owner is still in the
+  // conversation where it worked on this task, "send back" goes there, with everything it already tried.
   async dispatch(id, opts) {
     const { to, note } = opts ?? {} // over Crew Link a missing argument arrives as null
     const t = this.tickets.get(id)
@@ -731,11 +743,11 @@ export class Hub extends EventEmitter {
     if (!note && here?.inbox.some((m) => m.ticket === t.id && !m.triage)) return `#${t.id} is already queued for @${owner}\n`
     const again = t.fixer === owner && this.stillOn(owner, t.id)
     const ref = owner.includes('@') ? `${t.id}@${this.self}` : String(t.id)
-    const out = await this.send({ from: 'you', to: owner, text: fixPrompt(t, ref, note, again), images: again ? [] : t.images, mentions: false, fresh: !again, ticket: t.id, title: t.title })
+    const out = await this.send({ from: 'you', to: owner, text: fixPrompt(t, ref, note, again), images: again ? [] : t.images, mentions: false, fresh: !again, ticket: t.id, title: t.title, type: t.kind })
     if (owner !== t.owner) this.tickets.edit(t.id, { owner }, 'you')
     t.fixer = owner
     this.tickets.move(t.id, 'fixing', 'you', again ? `sent it back to @${owner}` : `sent it to @${owner}, in a new conversation`)
-    this.postBug(t, 'you', 'fixing', owner)
+    this.postTask(t, 'you', 'fixing', owner)
     return out
   }
 
@@ -748,7 +760,7 @@ export class Hub extends EventEmitter {
   }
 
   autoDispatch(t) {
-    this.dispatch(t.id).catch((e) => this.post({ kind: 'event', from: 'crew', text: `couldn't send bug #${t.id} on: ${e.message}` }))
+    this.dispatch(t.id).catch((e) => this.post({ kind: 'event', from: 'crew', text: `couldn't send #${t.id} on: ${e.message}` }))
   }
 
   // A name for an owner: an agent here, or (bare or name@computer) one on a linked computer.
@@ -763,35 +775,39 @@ export class Hub extends EventEmitter {
     throw new Error(`no agent named "${name}" (try: crew who)`)
   }
 
-  postBug(t, from, act, text) {
-    this.post({ kind: 'bug', from, ticket: t.id, title: t.title, act, ...(text && { text }) })
+  // One line in the feed for what happened to a task (`type` is its kind: bug, feature, task).
+  postTask(t, from, act, text) {
+    this.post({ kind: 'task', type: t.kind, from, ticket: t.id, title: t.title, act, ...(text && { text }) })
   }
 
-  // `crew bug ...` from an agent (or your terminal). args are the words after `crew bug`.
-  bug(from, args) {
-    const [op = 'help', ...rest] = args
+  // `crew task ...` (or `crew bug ...`) from an agent or your terminal. args are the words after it.
+  taskCommand(from, args) {
+    let [op = 'help', ...rest] = args
+    op = { fixed: 'done', report: 'add' }[op] ?? op // the names from when it was the Bugs board
     const flags = {}
     const words = []
     for (let i = 0; i < rest.length; i++) {
-      const m = rest[i].match(/^--(owner|severity|title|details)(?:=(.*))?$/)
-      if (m) flags[m[1]] = m[2] ?? rest[++i]
+      const m = rest[i].match(/^--(owner|severity|priority|kind|title|details)(?:=(.*))?$/)
+      if (m) flags[m[1] === 'severity' ? 'priority' : m[1]] = m[2] ?? rest[++i]
       else words.push(rest[i])
     }
-    // 12 is a bug here; 12@air one filed on another computer (12@<this computer> is a bug here too)
+    if (flags.priority !== undefined && !priorityOf(flags.priority)) throw new Error('--priority is one of: urgent, high, medium, low')
+    if (flags.kind !== undefined && !KINDS.includes(flags.kind)) throw new Error(`--kind is one of: ${KINDS.join(', ')}`)
+    // 12 is a task here; 12@air one that lives on another computer (12@<this computer> is here too)
     const split = (r) => {
       const [id, host] = String(r ?? '').replace(/^#/, '').split('@')
       return { id, host: host && host !== this.self ? host : null }
     }
-    const withId = ['show', 'fixed', 'note', 'triage', 'dup'].includes(op)
+    const withId = ['show', 'done', 'note', 'triage', 'dup'].includes(op)
     const { id: ref, host } = withId ? split(words[0]) : { id: '', host: null }
     const original = op === 'dup' ? split(words[1]) : null
-    if (original && !original.id) throw new Error('usage: crew bug dup <n> <original>')
-    if (original && original.host !== host) throw new Error('both bugs must be on the same computer')
+    if (original && !original.id) throw new Error('usage: crew task dup <n> <original>')
+    if (original && original.host !== host) throw new Error('both tasks must be on the same computer')
     if (host) {
-      // the same command on the computer the bug lives on, with the bug numbers as it knows them
-      if (!this.relayBug) throw new Error(`#${words[0]} is on another computer, and Crew Link isn't on`)
+      // the same command on the computer the task lives on, with the numbers as it knows them
+      if (!this.relayTask) throw new Error(`#${words[0]} is on another computer, and Crew Link isn't on`)
       const there = rest.map((w) => (w === words[0] ? ref : original && w === words[1] ? original.id : w))
-      return this.relayBug(host, from, [op, ...there])
+      return this.relayTask(host, from, [op, ...there])
     }
     if (original) words[1] = original.id
     const t = withId ? this.tickets.get(ref) : null
@@ -799,48 +815,52 @@ export class Hub extends EventEmitter {
     switch (op) {
       case 'list': {
         const open = this.tickets.open()
-        return open.length ? open.map(ticketLine).join('\n') + '\n' : '(no open bugs)\n'
+        return open.length ? open.map(ticketLine).join('\n') + '\n' : '(no open tasks)\n'
       }
       case 'show':
         return ticketText(t)
-      case 'report': {
+      case 'add': {
         const owner = flags.owner ? this.agentName(flags.owner) : null
-        const n = this.tickets.add({ title: words[0], body: flags.details ?? words.slice(1).join(' '), by: from, owner, severity: flags.severity })
-        this.postBug(n, from, 'filed')
-        return `filed #${n.id}\n`
+        const n = this.tickets.add({ title: words[0], body: flags.details ?? words.slice(1).join(' '), by: from, owner, severity: priorityOf(flags.priority), kind: flags.kind ?? 'task' })
+        this.postTask(n, from, 'filed')
+        return `added #${n.id}\n`
       }
       case 'triage': {
         const owner = flags.owner ? this.agentName(flags.owner) : undefined
-        this.tickets.edit(t.id, { owner, severity: flags.severity, title: flags.title, body: flags.details, triaged: true }, from)
-        this.postBug(t, from, 'triaged', t.owner)
+        this.tickets.edit(t.id, { owner, severity: flags.priority, kind: flags.kind, title: flags.title, body: flags.details, triaged: true }, from)
+        this.postTask(t, from, 'triaged', t.owner)
         if (this.config.autofix && t.status === 'new' && t.owner) this.autoDispatch(t)
-        return `#${t.id}: ${t.severity}, ${t.owner ? `for @${t.owner}` : 'unassigned'}${this.config.autofix && t.owner ? ', sent to them' : ''}\n`
+        return `#${t.id}: ${t.kind}, ${t.owner ? `for @${t.owner}` : 'unassigned'}${this.config.autofix && t.owner ? ', sent to them' : ''}\n`
       }
-      case 'fixed':
-        if (!text) throw new Error(`usage: crew bug fixed ${ref} "what was wrong, what you changed, how you checked"`)
+      case 'done': {
+        if (!text) throw new Error(`usage: crew task done ${ref} "what you did, how you checked"`)
         if (t.status === 'done') throw new Error(`#${t.id} is already closed${t.dupOf ? ` (same as #${t.dupOf})` : ''}`)
+        const bug = t.kind === 'bug'
         Object.assign(t, { fix: text, fixer: from })
-        this.tickets.move(t.id, 'check', from, `fixed it: ${text}`)
-        this.postBug(t, from, 'fixed', text)
-        this.emit('notice', { title: `@${from} fixed #${t.id}`, body: `${t.title}. Check it`, focus: `bug:${t.id}` })
-        return `#${t.id} is waiting for the user to check it\n`
+        this.tickets.move(t.id, 'check', from, `${bug ? 'fixed' : 'did'} it: ${text}`)
+        this.postTask(t, from, 'fixed', text)
+        this.emit('notice', { title: `@${from} ${bug ? 'fixed' : 'finished'} #${t.id}`, body: `${t.title}. Review it`, focus: `task:${t.id}` })
+        return `#${t.id} is waiting for the user to review it\n`
+      }
       case 'note':
         this.tickets.note(t.id, from, text)
-        this.postBug(t, from, 'note', text)
+        this.postTask(t, from, 'note', text)
         return `noted on #${t.id}\n`
       case 'dup': {
         const original = this.tickets.dup(t.id, words[1], from)
-        this.postBug(t, from, 'dup', `#${original.id}`)
+        this.postTask(t, from, 'dup', `#${original.id}`)
         return `#${t.id} is #${original.id} (seen ${original.seen}x now)\n`
       }
       default:
-        return BUG_HELP
+        return TASK_HELP
     }
   }
 
-  // What the Bugs lane can do. op: file, edit, note, dispatch, works, broken, move, dup, remove.
+  // What the Tasks board can do. op: file, edit, note, dispatch, accept, sendBack, move, dup, remove.
+  // (works / broken are the names from when it was the Bugs board.)
   async ticket(op, id, arg) {
-    if (op === 'file') return this.fileBug(arg)
+    op = { works: 'accept', broken: 'sendBack' }[op] ?? op
+    if (op === 'file') return this.fileTask(arg)
     const t = this.tickets.get(id)
     switch (op) {
       case 'edit':
@@ -849,32 +869,32 @@ export class Hub extends EventEmitter {
         return void this.tickets.edit(t.id, arg, 'you')
       case 'note':
         this.tickets.note(t.id, 'you', arg)
-        return void this.postBug(t, 'you', 'note', arg)
+        return void this.postTask(t, 'you', 'note', arg)
       case 'dispatch':
         return this.dispatch(t.id, arg)
-      case 'works':
-        this.tickets.move(t.id, 'done', 'you', 'checked it: works')
-        return void this.postBug(t, 'you', 'done')
-      case 'broken':
-        if (arg?.trim()) this.tickets.note(t.id, 'you', `still broken: ${arg.trim()}`)
+      case 'accept':
+        this.tickets.move(t.id, 'done', 'you', t.kind === 'bug' ? 'checked it: works' : 'accepted it')
+        return void this.postTask(t, 'you', 'done')
+      case 'sendBack':
+        if (arg?.trim()) this.tickets.note(t.id, 'you', `${t.kind === 'bug' ? 'still broken' : 'sent back'}: ${arg.trim()}`)
         if (t.fixer) return this.dispatch(t.id, { to: t.fixer, note: arg?.trim() })
         this.tickets.move(t.id, 'new', 'you', 'reopened it')
-        return void this.postBug(t, 'you', 'reopened')
+        return void this.postTask(t, 'you', 'reopened')
       case 'move':
         if (arg === t.status) return
         if (arg === 'fixing') return this.dispatch(t.id)
-        if (arg === 'done') return this.ticket('works', id)
-        this.tickets.move(t.id, arg, 'you', arg === 'check' ? 'marked it fixed' : 'moved it back to new')
-        return void this.postBug(t, 'you', arg === 'check' ? 'fixed' : 'reopened')
+        if (arg === 'done') return this.ticket('accept', id)
+        this.tickets.move(t.id, arg, 'you', arg === 'check' ? 'marked it done' : 'moved it back to To do')
+        return void this.postTask(t, 'you', arg === 'check' ? 'fixed' : 'reopened')
       case 'dup':
-        return void this.postBug(t, 'you', 'dup', `#${this.tickets.dup(t.id, arg, 'you').id}`)
+        return void this.postTask(t, 'you', 'dup', `#${this.tickets.dup(t.id, arg, 'you').id}`)
       case 'remove':
         return void this.tickets.remove(t.id)
     }
-    throw new Error(`unknown bug action "${op}"`)
+    throw new Error(`unknown task action "${op}"`)
   }
 
-  setBugSettings({ triage, autofix }) {
+  setTaskSettings({ triage, autofix }) {
     if (triage !== undefined) this.config.triage = triage || undefined
     if (autofix !== undefined) this.config.autofix = Boolean(autofix) || undefined
     this.saveConfig()
@@ -951,7 +971,7 @@ export class Hub extends EventEmitter {
         convo: this.convos[a.name] ?? null, freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
-      bugs: {
+      tasks: {
         tickets: [...this.tickets.open(), ...this.tickets.all.filter((t) => t.status === 'done').sort((x, y) => x.updated - y.updated).slice(-60)],
         triage: this.config.triage ?? null,
         autofix: Boolean(this.config.autofix),

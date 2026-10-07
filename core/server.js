@@ -12,8 +12,9 @@ export function serve(hub) {
     // An agent's PermissionRequest hook, held open until you answer in the chat; the reply is its decision
     // (empty: no decision, the agent asks in its terminal). `closed` fires if the hook gives up first.
     ask: (q, body, name, closed) => hub.ask(name, JSON.parse(body || '{}'), closed),
-    // `crew bug <op> <args...>`: the words arrive NUL-separated, so any text survives intact
-    bug: (q, body) => hub.bug(q.from || 'you', body.split('\0').slice(0, -1)),
+    // `crew task <op> <args...>` (or `crew bug`): the words arrive NUL-separated, so any text survives intact
+    task: (q, body) => hub.taskCommand(q.from || 'you', body.split('\0').slice(0, -1)),
+    bug: (q, body) => hub.taskCommand(q.from || 'you', body.split('\0').slice(0, -1)),
     // Claude Code's status line: how full the context is; the answer is the line it shows
     status: (q, body, name) => hub.onStatusLine(name, JSON.parse(body || '{}')),
   }

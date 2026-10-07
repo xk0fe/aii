@@ -41,6 +41,8 @@ const ICONS = {
   plus: svg('<path d="M12 5v14M5 12h14"/>', 'stroke-width="2.2"'),
   import: svg('<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4.5 15v2.5A2.5 2.5 0 0 0 7 20h10a2.5 2.5 0 0 0 2.5-2.5V15"/>'),
   export: svg('<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4.5 15v2.5A2.5 2.5 0 0 0 7 20h10a2.5 2.5 0 0 0 2.5-2.5V15"/>'),
+  task: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="M8 12.2l2.8 2.8L16.2 9.4"/>', 'stroke-width="2"'),
+  feature: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.6l2.2 6.3 6.3 2.2-6.3 2.2L12 19.6l-2.2-6.3-6.3-2.2 6.3-2.2z"/></svg>',
   bug: svg('<path d="M8.6 7.6a3.4 3.4 0 0 1 6.8 0"/><rect x="6.6" y="7.6" width="10.8" height="12.4" rx="5.4"/><path d="M12 11v9M3.8 12.6h2.8M17.4 12.6h2.8M4.6 8l2.3 1.6M19.4 8l-2.3 1.6M4.6 18l2.4-1.5M19.4 18 17 16.5"/>'),
   fresh: svg('<path d="M20.2 12a8.2 8.2 0 0 1-12 7.3L3.8 20.4l1.1-4.2A8.2 8.2 0 1 1 20.2 12z"/><path d="M12 8.4l.9 2.7 2.7.9-2.7.9-.9 2.7-.9-2.7-2.7-.9 2.7-.9z" fill="currentColor" stroke-width="1"/>'),
   computers: svg('<rect x="2.5" y="4" width="13" height="9.5" rx="1.8"/><path d="M6 17h6M9 13.5V17"/><rect x="17.5" y="7" width="4.5" height="10" rx="1.2"/>'),
@@ -381,26 +383,41 @@ const feedView = (feed, agents, open, limit, drafts = new Map()) => {
   return { items, html: () => items.map((e, i) => feedItem(e, items[i - 1], ctx)).join('') }
 }
 
-// What happened to a bug, as one line in the feed. Click it to open the bug.
-const BUG_ACTS = {
-  filed: (e, who) => (e.from === 'you' ? 'You reported' : `${who(e.from)} reported`),
-  triaged: (e, who) => `${who(e.from)} triaged${e.text ? ` it for ${who(e.text)}` : ''}`,
-  fixing: (e, who) => `went to ${who(e.text)}`,
-  fixed: (e, who) => `${who(e.from)} fixed`,
-  note: (e, who) => `${who(e.from)} noted on`,
-  done: () => 'checked: works ✓',
-  reopened: () => 'reopened',
-  dup: (e) => `is a duplicate of ${esc(e.text)}`,
+// ---- tasks (ui/tasks.js) in the chat -------------------------------------------------------------------
+
+// "Fix the login @david" -> the task and who it's for (an agent's name, typed as @name anywhere).
+function ownerIn(text, agents) {
+  const names = new Set(agents.map((a) => a.name))
+  for (const m of String(text).matchAll(/(^|\s)@([\w-]+(?:@[\w-]+)?)\b/g)) {
+    const name = m[2].toLowerCase()
+    if (names.has(name)) return { owner: name, text: (text.slice(0, m.index) + m[1] + text.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim() }
+  }
+  return { owner: null, text: String(text).trim() }
 }
 
-function bugEvent(e, who) {
+// What happened to a task, as one line in the feed. Click it to open the task. (Entries from when the board
+// was Bugs have kind 'bug' and no type.)
+const typeOf = (e) => e.type ?? 'bug'
+const TASK_ACTS = {
+  filed: (e, who) => `${e.from === 'you' ? 'You' : who(e.from)} ${typeOf(e) === 'bug' ? 'reported' : 'added'}`,
+  triaged: (e, who) => `${who(e.from)} triaged${e.text ? ` it for ${who(e.text)}` : ''}`,
+  fixing: (e, who) => `went to ${who(e.text)}`,
+  fixed: (e, who) => `${who(e.from)} ${typeOf(e) === 'bug' ? 'fixed' : 'finished'}`,
+  note: (e, who) => `${who(e.from)} noted on`,
+  done: (e) => (typeOf(e) === 'bug' ? 'checked: works ✓' : 'accepted ✓'),
+  reopened: () => 'reopened',
+  dup: (e) => `is the same as ${esc(e.text)}`,
+}
+
+function taskEvent(e, who) {
   const key = String(e.ticket)
-  const act = BUG_ACTS[e.act]?.(e, who) ?? esc(e.act)
-  const tail = (e.act === 'fixed' || e.act === 'note') && e.text ? `<span class="bug-ev-text">${esc(snippet(e.text))}</span>` : ''
+  const type = typeOf(e)
+  const act = TASK_ACTS[e.act]?.(e, who) ?? esc(e.act)
+  const tail = (e.act === 'fixed' || e.act === 'note') && e.text ? `<span class="task-ev-text">${esc(snippet(e.text))}</span>` : ''
   const lead = e.act === 'filed' || e.act === 'triaged' || e.act === 'fixed' || e.act === 'note'
-  return `<div class="bug-ev act-${esc(e.act)}" id="m-${e.id}" data-ticket="${esc(key)}" title="Open bug #${esc(key)}">
-    <span class="bug-ev-icon">${ICONS.bug}</span>
-    <span class="bug-ev-line">${lead ? `${act} <b>#${esc(key.split('@')[0])}</b>` : `<b>#${esc(key.split('@')[0])}</b> ${act}`} <span class="bug-ev-title">${esc(e.title)}</span></span>${tail}
+  return `<div class="task-ev type-${esc(type)} act-${esc(e.act)}" id="m-${e.id}" data-ticket="${esc(key)}" title="Open #${esc(key)}">
+    <span class="task-ev-icon">${ICONS[type] ?? ICONS.task}</span>
+    <span class="task-ev-line">${lead ? `${act} <b>#${esc(key.split('@')[0])}</b>` : `<b>#${esc(key.split('@')[0])}</b> ${act}`} <span class="task-ev-title">${esc(e.title)}</span></span>${tail}
   </div>`
 }
 
@@ -427,7 +444,7 @@ function feedItem(e, prev, ctx) {
   const said = (cls, capHTML, rest = '', body = bubble) =>
     `<div class="item said ${cls}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"><span class="face" data-agent="${esc(e.from)}">${repeat ? '' : avatarHTML(agent(e.from), { size: 30, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div></div>`
 
-  if (e.kind === 'bug') return bugEvent(e, who)
+  if (e.kind === 'task' || e.kind === 'bug') return taskEvent(e, who)
   // a new conversation starts: a line across the feed, so what came before is visibly "before"
   if (e.kind === 'event' && e.fresh) return `<div class="fresh-ev" id="m-${e.id}" title="${time}"><span>${ICONS.fresh}${who(e.from)} ${esc(e.text)}</span></div>`
   if (e.kind === 'event') return `<div class="event ${e.alert ? 'alert' : ''}" id="m-${e.id}" title="${time}">${who(e.from)} ${esc(e.text)}</div>`
@@ -436,7 +453,7 @@ function feedItem(e, prev, ctx) {
     const key = String(e.ticket)
     const why = e.triage ? '<span class="tag">to triage</span>' : e.fresh ? '<span class="tag fresh">new conversation</span>' : ''
     return `<div class="item me ticket-msg" id="m-${e.id}" title="${time}"><div class="cap">to ${who(e.to)}${why}${tags}</div>
-      <button class="bubble ticket-bubble" data-ticket="${esc(key)}" data-id="${e.id}"><span class="tb-icon">${ICONS.bug}</span><b>#${esc(key.split('@')[0])}</b> ${esc(e.title ?? '')}</button>${replied}</div>`
+      <button class="bubble ticket-bubble" data-ticket="${esc(key)}" data-id="${e.id}"><span class="tb-icon">${ICONS[e.type ?? 'bug'] ?? ICONS.task}</span><b>#${esc(key.split('@')[0])}</b> ${esc(e.title ?? '')}</button>${replied}</div>`
   }
   if (e.kind === 'note') return said('note', `${who(e.from)} shared a note`)
   if (e.kind === 'reply') return said('', who(e.from))
@@ -525,7 +542,7 @@ const typingHTML = (agents, asks = new Map()) =>
     })
     .join('')
 
-function mountFeed(el, { onAgent, onTicket = (key) => crew.call('dashboard', `bug:${key}`), limit = 200 } = {}) {
+function mountFeed(el, { onAgent, onTicket = (key) => crew.call('dashboard', `task:${key}`), limit = 200 } = {}) {
   const open = new Set()
   const seen = new Set()
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
@@ -808,9 +825,9 @@ function mountComposer(el, { dropZone = el } = {}) {
   const send = el.querySelector('.send')
   const hint = el.querySelector('.hint')
   const freshBtn = el.querySelector('.fresh-toggle')
-  // Bug mode lasts while you're reporting, not across launches: Auto again next time.
+  // Task mode lasts while you're adding tasks, not across launches: Auto again next time.
   let target = store.get('crew.target') || 'auto'
-  if (target === 'bug') target = 'auto'
+  if (target === 'task' || target === 'bug') target = 'auto'
   // New conversation: the task starts with a clean slate instead of joining everything the agent did before.
   let fresh = store.get('crew.fresh') === '1'
   let agents = []
@@ -823,20 +840,24 @@ function mountComposer(el, { dropZone = el } = {}) {
     onError: (msg) => say(msg, true),
   })
 
-  // `bug: …` (or /bug) files a bug whatever chip is picked: quickest mid-game.
-  const BUG_PREFIX = /^\s*(?:bug:|\/bug\b)\s*/i
+  // `task: …`, `bug: …` or `feature: …` (or /task…) adds to the Tasks board whatever chip is picked.
+  const TASK_PREFIX = /^\s*(?:(task|bug|feature):|\/(task|bug|feature)\b)\s*/i
+  const kindIn = (text) => {
+    const m = String(text).match(TASK_PREFIX)
+    return m ? (m[1] ?? m[2]).toLowerCase() : target === 'task' ? 'task' : null
+  }
   const draw = () => {
-    if (!['auto', 'bug'].includes(target) && agents.length && !agents.some((a) => a.on && a.name === target)) target = 'auto'
-    const bug = target === 'bug' || BUG_PREFIX.test(ta.value)
+    if (!['auto', 'task'].includes(target) && agents.length && !agents.some((a) => a.on && a.name === target)) target = 'auto'
+    const task = Boolean(kindIn(ta.value))
     morph(chips,
       `<button class="chip ${target === 'auto' ? 'on' : ''}" data-to="auto" title="Picks by area, prefers whoever is free. @mention names to pick them yourself">✦ Auto</button>` +
-      `<button class="chip bug-chip ${target === 'bug' ? 'on' : ''}" data-to="bug" title="Report a bug: it becomes a ticket in the Bugs lane (or start a message with bug:)">${ICONS.bug}Bug</button>` +
+      `<button class="chip task-chip ${target === 'task' ? 'on' : ''}" data-to="task" title="Add to the Tasks board instead of messaging an agent (or start with task:, bug: or feature:). @name assigns it">${ICONS.task}Task</button>` +
       agents.filter((a) => a.on).map((a) => `<button class="chip ${target === a.name ? 'on' : ''}" data-to="${esc(a.name)}" title="${esc(statusText(a))}">${avatarHTML(a, { size: 20 })}${nameHTML(a)}</button>`).join(''))
-    el.classList.toggle('bug-mode', bug)
+    el.classList.toggle('task-mode', task)
     freshBtn.setAttribute('aria-pressed', String(fresh))
     freshBtn.title = fresh ? 'New conversation: on. The agent starts this task with a clean slate (click to turn off)' : 'New conversation: start this task with a clean slate instead of adding to everything the agent did before'
     // short enough to sit beside the ✦, mic and send buttons on one line
-    ta.placeholder = bug ? 'What went wrong?'
+    ta.placeholder = task ? 'Add a task… @name assigns it'
       : target === 'auto' ? (fresh ? 'Fresh task, the crew picks who…' : 'Any task: the crew picks who…')
       : fresh ? `Fresh task for @${target}…` : `Message @${target}…`
   }
@@ -855,7 +876,7 @@ function mountComposer(el, { dropZone = el } = {}) {
   }
   const setTarget = (name) => {
     target = name
-    if (name !== 'bug') store.set('crew.target', name)
+    if (name !== 'task') store.set('crew.target', name)
     draw()
   }
   const submit = async () => {
@@ -866,7 +887,11 @@ function mountComposer(el, { dropZone = el } = {}) {
     // The chip stays a recipient; the hub adds any @mentions to it.
     const to = target === 'auto' ? undefined : target
     try {
-      if (target === 'bug' || BUG_PREFIX.test(text)) say((await crew.call('bug', 'file', null, { text: text.replace(BUG_PREFIX, ''), images })).trim())
+      const kind = kindIn(text)
+      if (kind) {
+        const { owner, text: what } = ownerIn(text.replace(TASK_PREFIX, ''), agents)
+        say((await crew.call('task', 'file', null, { text: what, images, kind, ...(owner && { owner }) })).trim())
+      }
       else say((await crew.call('send', to, text, images, { fresh })).trim().split('\n').join(' · '))
       ta.value = ''
       attach.set([])
@@ -885,7 +910,7 @@ function mountComposer(el, { dropZone = el } = {}) {
   ta.addEventListener('input', () => {
     autosize()
     if (hint.classList.contains('error')) say('')
-    if (el.classList.contains('bug-mode') !== (target === 'bug' || BUG_PREFIX.test(ta.value))) draw()
+    if (el.classList.contains('task-mode') !== Boolean(kindIn(ta.value))) draw()
   })
   freshBtn.addEventListener('click', () => {
     fresh = !fresh
