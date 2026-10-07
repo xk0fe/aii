@@ -1,6 +1,18 @@
 /* The crew collection: Pokédex-style cards grouped by computer, bulk select, the stats table, and the agent's sheet. */
 .collection { overflow: hidden; }
-.col-list { position: absolute; inset: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.col-list { position: absolute; inset: 0; overflow-y: auto; scrollbar-gutter: stable; container-type: inline-size; }
+/* a narrow middle (small window, both panels out): the header keeps its controls and lets the words go */
+@container (max-width: 640px) {
+  .col-head { padding: 16px 16px 12px; gap: 6px; }
+  .col-head h2 { font-size: 20px; }
+  .col-sub { display: none; }
+  .col-head [data-act=new] { width: 30px; padding: 0; justify-content: center; }
+  .col-head [data-act=new] span { display: none; }
+  .col-grid { padding: 4px 16px 120px; }
+  .col-cards { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+}
+.col-title { overflow: hidden; }
+.col-head h2 { overflow: hidden; text-overflow: ellipsis; }
 
 /* The header sticks on a solid background, and nothing in it moves when you switch views. */
 .col-head { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: 8px; padding: 20px 24px 14px; background: var(--bg); transition: box-shadow .25s; }

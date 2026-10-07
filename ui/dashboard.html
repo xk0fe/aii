@@ -30,6 +30,8 @@
        and for the chat that means laying out its whole history again for each keystroke or status tick. */
     main { --side-w: 264px; --chat-w: 384px; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--chat-w); grid-template-rows: minmax(0, 1fr); height: calc(100vh - 46px); transition: grid-template-columns .32s var(--sheet); }
     /* either side can be put away for more room in the middle (the titlebar buttons, ⌘⌥S and ⌘⌥C) */
+    @media (max-width: 1240px) { main { --side-w: 232px; --chat-w: 336px; } .seg.views button { padding: 4px 11px; } }
+    @media (max-width: 1060px) { .seg.views button span { display: none; } .tb-left .sums .sum:nth-child(n + 3) { display: none; } }
     body.no-side main { --side-w: 0px; }
     body.no-chat main { --chat-w: 0px; }
     body.no-side .side, body.no-chat .chat { visibility: hidden; overflow: hidden; }

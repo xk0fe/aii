@@ -35,7 +35,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         </div>
         <button class="btn" data-act="select" title="Pick several agents to change or export at once">Select</button>
         <button class="btn icon-btn" data-act="import" title="Import agents from a .crew file (or drop one on the window)">${ICONS.import}</button>
-        <button class="btn primary" data-act="new" title="New agent (⌘N)">${ICONS.plus}New agent</button>
+        <button class="btn primary" data-act="new" title="New agent (⌘N)">${ICONS.plus}<span>New agent</span></button>
       </header>
       <div class="col-grid"></div>
       <div class="col-stats"></div>
