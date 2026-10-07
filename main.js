@@ -11,11 +11,13 @@ import { CONFIG, ATTACHMENTS } from './core/hub.js'
 import { Crew, CACHE } from './core/crew.js'
 import { readPack } from './core/pack.js'
 import { Voice, voiceActions, voiceAudio } from './core/voice.js'
+import { pillWindow } from './core/pill.js'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
 const TRAY_WIDTH = 340
 
 let crew, hub, tray, trayWin, overlay, dash
+let pill // the floating pill's window placement (core/pill.js)
 let trayHiddenAt = 0
 let quitting = false
 let awake = null
@@ -155,11 +157,22 @@ function createOverlay() {
   overlay = page('overlay.html', {
     width: 78, height: 140, frame: false, transparent: true, resizable: false, hasShadow: false, skipTaskbar: true,
     fullscreenable: false, minimizable: false, maximizable: false, alwaysOnTop: true,
+    acceptFirstMouse: true, // the first press on the pill drags it (or opens the chat), even from another app
   })
   overlay.setAlwaysOnTop(true, 'floating')
   overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   const wa = screen.getPrimaryDisplay().workArea
   overlay.setPosition(wa.x + wa.width - 78, Math.round(wa.y + wa.height / 2 - 70))
+  // Its chat opens on the side of the pill away from the part of the screen it's in, and it can be dragged
+  // anywhere (core/pill.js).
+  pill = pillWindow(overlay, screen)
+  overlay.webContents.on('did-finish-load', () => {
+    pill.cancelDrag() // a reload mid-drag never says "let go"
+    overlay.webContents.send('place', pill.place)
+  })
+  overlay.on('hide', () => pill.cancelDrag())
+  // a display came or went, or the Dock or menu bar moved: bring the pill back on screen and re-pick the side
+  for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(ev, () => pill.resettle())
   overlay.once('ready-to-show', () => dashOnScreen() || overlay.showInactive())
 }
 
@@ -306,19 +319,18 @@ function wire() {
       return { error: e.message }
     }
   })
+  // Dragging the pill (or the chat by its header): the page reports the pointer, letting go settles it.
+  ipcMain.on('drag', (e, phase, x, y) => BrowserWindow.fromWebContents(e.sender) === overlay && pill.drag(phase, x, y))
   ipcMain.on('input', (_e, name, data) => {
     const { l, base } = crew.where(name)
     l ? l.peer?.input(base, data) : hub.input(base, data)
   })
 
-  // Windows size themselves to their content; the overlay stays anchored to its right edge and vertical center.
-  ipcMain.on('fit', (e, width, height, focus) => {
+  // Windows size themselves to their content; the overlay is placed so its pill stays put (core/pill.js).
+  ipcMain.on('fit', (e, width, height, focus, inside) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     if (win !== overlay) return win?.setContentSize(width, Math.min(height, screen.getDisplayMatching(win.getBounds()).workArea.height - 20))
-    const b = overlay.getBounds()
-    const wa = screen.getDisplayMatching(b).workArea
-    const y = Math.round(b.y + b.height / 2 - height / 2)
-    overlay.setBounds({ x: b.x + b.width - width, y: Math.max(wa.y, Math.min(y, wa.y + wa.height - height)), width, height })
+    pill.fit(width, height, inside)
     if (focus) {
       app.focus({ steal: true })
       overlay.focus()

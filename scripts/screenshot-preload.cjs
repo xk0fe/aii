@@ -159,7 +159,7 @@ function taskAction(op, key, arg) {
   emit()
 }
 
-const listeners = { state: [], focus: [], toggle: [], voice: [] }
+const listeners = { state: [], focus: [], toggle: [], voice: [], place: [] }
 
 // Dictation without a microphone: a wobbling tone stands in for your voice (it only moves the meter), and a
 // scripted transcript arrives word by word. Nothing here ever opens a real microphone.
@@ -238,7 +238,9 @@ window.crew = {
     return undefined
   },
   input: () => {},
-  fit: (width, height) => (window.__crewFit = { width, height }),
+  fit: (width, height, focus, pill) => (window.__crewFit = { width, height, pill }),
+  drag: () => {},
+  onPlace: (fn) => listeners.place.push(fn),
   onState: (fn) => listeners.state.push(fn),
   onPty: () => {},
   onFocus: (fn) => listeners.focus.push(fn),

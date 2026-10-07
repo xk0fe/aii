@@ -7,32 +7,49 @@
   <link rel="stylesheet" href="common.css">
   <style>
     html, body { background: transparent; overflow: hidden; }
-    .wrap { display: inline-flex; align-items: center; gap: 10px; padding: 20px; }
+    /* The chat opens on the side of the pill away from the screen edge (main.js and core/pill.js decide, this
+       lays it out): data-side is where the chat goes, data-align how it lines up with the pill. */
+    .wrap { display: inline-flex; align-items: center; gap: 10px; padding: 18px; }
+    [data-side=right] .wrap { flex-direction: row-reverse; }
+    [data-side=above] .wrap { flex-direction: column; }
+    [data-side=below] .wrap { flex-direction: column-reverse; }
+    [data-align=start] .wrap { align-items: flex-start; }
+    [data-align=end] .wrap { align-items: flex-end; }
     /* Solid sheets, not glass: a transparent window can't blur the desktop behind it, so glass would let whatever
        is underneath (a terminal, a web page) show through the text. */
-    .sheet { background: var(--panel); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .14), 0 12px 32px -14px rgba(0, 0, 0, .38), 0 3px 8px -4px rgba(0, 0, 0, .14); }
+    .sheet { background: var(--panel); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .14), 0 10px 26px -14px rgba(0, 0, 0, .4), 0 3px 8px -4px rgba(0, 0, 0, .14); }
     @media (prefers-color-scheme: dark) {
-      .sheet { box-shadow: 0 0 0 .5px rgba(0, 0, 0, .7), inset 0 0 0 .5px rgba(255, 255, 255, .1), 0 12px 32px -14px rgba(0, 0, 0, .7), 0 3px 8px -4px rgba(0, 0, 0, .4); }
+      .sheet { box-shadow: 0 0 0 .5px rgba(0, 0, 0, .7), inset 0 0 0 .5px rgba(255, 255, 255, .1), 0 10px 26px -14px rgba(0, 0, 0, .7), 0 3px 8px -4px rgba(0, 0, 0, .4); }
     }
 
-    .panel { display: none; width: 400px; height: 600px; border-radius: 20px; flex-direction: column; overflow: hidden; transform-origin: 100% 50%; }
+    /* the panel grows out of the pill: from its right when it opens to the left, and so on */
+    .panel { --from: translate(14px, 0); display: none; width: 400px; height: 600px; border-radius: 20px; flex-direction: column; overflow: hidden; transform-origin: 100% 50%; }
+    [data-side=right] .panel { --from: translate(-14px, 0); transform-origin: 0 50%; }
+    [data-side=above] .panel { --from: translate(0, 14px); transform-origin: 50% 100%; }
+    [data-side=below] .panel { --from: translate(0, -14px); transform-origin: 50% 0; }
     .open .panel { display: flex; animation: panel-in .38s var(--bounce); }
-    @keyframes panel-in { from { opacity: 0; transform: translateX(14px) scale(.94); } }
-    .panel header { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 8px 0 14px; flex: none; -webkit-app-region: drag; }
+    .open.moved .panel { animation: panel-moved .38s var(--bounce); } /* it switched sides */
+    @keyframes panel-in { from { opacity: 0; transform: var(--from) scale(.94); } }
+    @keyframes panel-moved { from { opacity: 0; transform: var(--from) scale(.97); } }
+    .panel header { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 8px 0 14px; flex: none; cursor: grab; }
     .panel header .brand { display: flex; align-items: center; gap: 7px; }
     .panel header .mark { width: 24px; height: 16px; color: var(--fg); }
     .panel header b { font-size: 14px; font-weight: 700; letter-spacing: -.01em; }
     .panel header .sums { margin-left: 4px; }
-    .panel header button, .panel header .sums { -webkit-app-region: no-drag; }
     .panel header .icon { width: 30px; height: 30px; padding: 0; }
     .panel .feed { flex: 1; }
     .panel .compose { flex: none; }
 
     /* The pill: the crew as little creatures on the screen edge. */
-    .pill { width: 52px; border-radius: 26px; padding: 8px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; -webkit-app-region: drag; transition: box-shadow .3s; }
-    .home { -webkit-app-region: no-drag; width: 40px; height: 36px; border: 0; background: none; color: var(--fg); cursor: pointer; padding: 4px 3px; border-radius: 14px; transition: background .15s, transform .3s var(--bounce); }
+    .pill { width: 52px; border-radius: 26px; padding: 8px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: grab; touch-action: none; transition: box-shadow .3s; }
+    .dragging .pill, .dragging .panel header { cursor: grabbing; }
+    /* at the top or bottom of the screen the pill lies flat, like the Dock */
+    [data-side=above] .pill, [data-side=below] .pill { flex-direction: row; width: auto; height: 52px; padding: 0 10px 0 6px; }
+    [data-side=above] .dots, [data-side=below] .dots { flex-direction: row; }
+    .home { width: 40px; height: 36px; border: 0; background: none; color: var(--fg); cursor: pointer; padding: 4px 3px; border-radius: 14px; transition: background .15s, transform .3s var(--bounce); }
     .home:hover { background: var(--btn); }
     .home + .dots:not(:empty) { padding-top: 7px; border-top: 1px solid var(--line); width: 32px; }
+    [data-side=above] .home + .dots:not(:empty), [data-side=below] .home + .dots:not(:empty) { padding: 0 0 0 7px; border-top: 0; border-left: 1px solid var(--line); width: auto; height: 32px; }
     .home:active { transform: scale(.9); }
     .home svg { width: 100%; height: 100%; display: block; overflow: visible; }
     /* while anyone works, the three buddies hop in a little wave */
@@ -45,8 +62,12 @@
     .alert .pill { animation: pill-alert 2s ease-in-out infinite; }
     @keyframes pill-alert { 50% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 75%, transparent), 0 0 0 5px color-mix(in srgb, var(--waiting) 16%, transparent), 0 12px 32px -14px rgba(0, 0, 0, .38); } }
     /* the crew lives in the pill: one little creature per agent, hopping while it works, magnified like the Dock */
-    .dots { display: flex; flex-direction: column; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
+    .dots { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    /* creatures magnify away from the screen edge */
     .dots .face { cursor: pointer; line-height: 0; transition: transform .3s var(--spring); transform-origin: 70% 50%; }
+    [data-side=right] .dots .face { transform-origin: 30% 50%; }
+    [data-side=below] .dots .face { transform-origin: 50% 25%; }
+    [data-side=above] .dots .face { transform-origin: 50% 75%; }
     .dots .face:hover { transform: scale(1.32); z-index: 1; }
     .dots .face:hover + .face, .dots .face:has(+ .face:hover) { transform: scale(1.12); }
     .dots .face:active { transform: scale(1.05); }
