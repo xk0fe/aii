@@ -6,31 +6,42 @@
   <title>Crew</title>
   <link rel="stylesheet" href="common.css">
   <style>
-    body { background: transparent; padding: 14px 16px 10px; }
+    body { background: transparent; padding: 12px 10px 10px; }
     html::-webkit-scrollbar { display: none; }
-    header { display: flex; align-items: center; margin-bottom: 2px; }
-    header b { font-size: 15px; }
-    .empty { color: var(--fg2); padding: 14px 0 16px; }
-    .agents .agent { cursor: pointer; border-radius: 10px; margin: 0 -8px; padding-left: 8px; padding-right: 8px; }
-    .agents .agent:hover { background: var(--btn); }
-    .agents .agent + .agent { border-top: 0; }
-    hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0 12px; }
-    .autopilot { display: flex; align-items: center; gap: 12px; }
-    .autopilot b { font-size: 14px; }
-    .autopilot p { margin: 2px 0 0; color: var(--fg2); font-size: 12.5px; }
-    footer { display: flex; align-items: center; gap: 2px; margin-top: 12px; }
+    header { display: flex; align-items: center; gap: 8px; padding: 2px 6px 8px; }
+    header .mark { width: 27px; height: 18px; color: var(--fg); flex: none; }
+    header b { font-size: 15px; font-weight: 750; letter-spacing: -.01em; }
+    .sums { margin-left: auto; }
+    .empty { color: var(--fg2); padding: 18px 10px 20px; text-align: center; line-height: 1.45; }
+    .agents { display: flex; flex-direction: column; gap: 1px; }
+    /* every time the popover opens, the crew cascades in */
+    .opened .agents .agent { animation: row-in .42s var(--out) backwards; animation-delay: calc(sibling-index() * 28ms); }
+    @keyframes row-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+    hr { border: 0; border-top: 1px solid var(--line); margin: 8px 6px; }
+    .autopilot { display: flex; align-items: center; gap: 11px; padding: 8px 10px; border-radius: 14px; cursor: pointer; transition: background .18s; }
+    .autopilot:hover { background: var(--btn); }
+    .autopilot .glyph { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; flex: none; color: var(--fg3); background: var(--btn); transition: background .3s, color .3s, transform .4s var(--spring); }
+    .autopilot .glyph svg { width: 17px; height: 17px; }
+    .autopilot:has(:checked) .glyph { color: #fff; background: linear-gradient(160deg, #5aa9ff, var(--accent)); transform: rotate(-8deg); }
+    .autopilot b { font-size: 13.5px; font-weight: 650; }
+    .autopilot p { margin: 1px 0 0; color: var(--fg2); font-size: 12px; line-height: 1.3; }
+    footer { display: flex; align-items: center; gap: 2px; margin-top: 8px; padding: 0 4px; }
+    footer .add { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px 5px 8px; border-radius: 999px; background: var(--btn); color: var(--fg2); }
+    footer .add svg { width: 14px; height: 14px; }
+    footer .add:hover { background: var(--btn-hover); color: var(--fg); }
   </style>
 </head>
 <body>
-  <header><b>Crew</b><span class="grow"></span><span class="summary model"></span></header>
+  <header><span class="logo"></span><b>Crew</b><span class="sums"></span></header>
   <div class="agents"></div>
   <hr>
   <label class="autopilot">
-    <div class="grow"><b>Autopilot</b><p>Agents hand work to each other without asking you first.</p></div>
+    <span class="glyph"></span>
+    <div class="grow"><b>Autopilot</b><p>Agents hand off work without asking you first.</p></div>
     <input type="checkbox" class="switch">
   </label>
   <footer>
-    <button class="link" data-act="add">+ Add agent</button>
+    <button class="btn add" data-act="add"></button>
     <span class="grow"></span>
     <button class="icon" data-act="dashboard" title="Open dashboard"></button>
     <button class="icon" data-theme></button>

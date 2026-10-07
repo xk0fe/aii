@@ -6,11 +6,11 @@ Claude Code and Codex are built in. GLM and local open-weight models work too, a
 
 You get three views:
 
-- **Menu bar** (three little buddies): every agent, its brain and status, on/off and YOLO switches, and Autopilot.
+- **Menu bar** (three little buddies): every agent with its area, status and brain, its on/off switch and YOLO/⚡ Fast chips, and Autopilot. Modes that are on always show; hover a row to flip one that's off.
 - **Floating pill** on the screen edge holds the crew as little creatures that hop while they work. Click it, or press `⌥⇧Space`, to open the chat. Click a creature to talk to that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
 - **Dashboard**:
   - **Crew** is a Pokédex-style collection of agent cards, where you create and edit agents.
-  - **Grid** and **Focus** show the live terminals.
+  - **Grid** and **Focus** show the live terminals. `⌘1` `⌘2` `⌘3` switch between the three.
   - The feed sits on the right.
 
 ```
@@ -26,6 +26,7 @@ npm start        # opens Crew.app (builds it the first time)
   - `npm run app` forces a rebuild.
   - `npm run dev` runs the bare Electron runtime for development; macOS calls it "Electron" there.
   - `npm run icon` re-renders the app icon from the same plush creatures the UI uses.
+  - `npm run shots` renders every view, light and dark, with a made-up crew into `dist/shots` (PNGs plus GIFs of the animations). Nothing starts and `~/.crew` is untouched, so it's safe for checking UI changes.
 - **One copy at a time:** opening Crew again brings up the one that's running.
 - **Theme:** the ☀️/🌙 button (dashboard titlebar or the menu bar popover) switches Light, Dark, or Auto (follow macOS). Terminals stay dark either way. The `{ }` button opens `config.json` in your text editor.
 
@@ -61,9 +62,10 @@ npm start        # opens Crew.app (builds it the first time)
 - **Threads.** Each reply, and each hand-off an agent makes while working on your request, quotes the message it answers ("↩ you: …"). Click the quote to jump back. Your messages link forward too ("↪ @joseph replied"), so with several messages and several agents in flight you can always tell what answers what. Prompts you type directly into an agent's terminal show up in the feed too, tagged *in terminal*.
 - **Rich text.** Replies render Markdown: bold, italics, `code`, code blocks, lists, quotes, links and pipe tables (links open in your browser). Tables need a header and delimiter row with matching column counts; alignment colons are supported. Escape literal pipes as `\|`, including inside inline code. Wide tables scroll horizontally; multiline cells are not supported. Long replies fold with a fade; click to unfold.
 - **Autopilot off** makes hand-offs between agents wait in the feed until you click **Send it** or **Drop**.
-- **Needs you.** On a permission prompt or a question, the agent's creature wiggles with a `!` and you get a notification. Answer it in its terminal.
+- **Who's on it.** While an agent works, a typing bubble under the last message in the feed shows what it's doing. Click it to open its terminal.
+- **Needs you.** On a permission prompt or a question, the agent's creature wiggles with a `!`, its feed bubble turns orange and you get a notification. Answer it in its terminal.
 - **On/off** is saved. An agent you turn off stays off after a restart and resumes its session when you turn it back on.
-- **⚡ Fast** (Codex agents) uses Codex's fast service tier. It's a checkmark on the agent card and a toggle in the editor; until you set it, it follows `service_tier` in your Codex config.
+- **⚡ Fast** (Codex agents) uses Codex's fast service tier. It's a ⚡ chip on the agent's row and a toggle in the editor; until you set it, it follows `service_tier` in your Codex config.
 - **YOLO** skips every permission prompt. Claude gets `--dangerously-skip-permissions`; Codex gets `--dangerously-bypass-approvals-and-sandbox`.
 
 ## Crew Link: one crew, all your computers
@@ -99,7 +101,7 @@ Every agent keeps a record of what it actually does, across restarts:
 - queue wait: how long messages sit before the agent is free, which shows who's overloaded;
 - the last 14 days of activity.
 
-Agents level up as they work (10 XP per finished task, plus 1 per active minute).
+Agents level up as they work (10 XP per finished task, plus 1 per active minute). A finished task gets a little hop; a level-up gets confetti.
 
 - **Each card's detail** has a Pokédex-style *Work experience* panel, with bars against the rest of the crew.
 - **The Crew page's Stats tab** compares everyone in a sortable table. 👑 marks the best in each column and 🐢 the slowest, so strong performers and slow agents stand out.
