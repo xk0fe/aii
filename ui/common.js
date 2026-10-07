@@ -35,6 +35,8 @@ const ICONS = {
   up: svg('<path d="M12 19V5M5 12l7-7 7 7"/>', 'stroke-width="2.4"'),
   edit: svg('<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4"/>'),
   back: svg('<path d="M15 5l-7 7 7 7"/>', 'stroke-width="2.4"'),
+  copy: svg('<rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/>'),
+  check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.4"'),
 }
 
 // Update el's children to match html without recreating unchanged nodes. Avatars (data-sig) are left alone
@@ -136,7 +138,7 @@ function agentCard(a, providers) {
 // The text is escaped first, so whatever an agent writes can't inject HTML.
 function md(src) {
   const blocks = []
-  const text = esc(src).replace(/```[\w-]*\n?([\s\S]*?)```/g, (_, code) => `\u0000${blocks.push(`<pre><code>${code.replace(/\n$/, '')}</code></pre>`) - 1}\u0000`)
+  const text = esc(src).replace(/```[\w-]*\n?([\s\S]*?)```/g, (_, code) => `\u0000${blocks.push(`<pre><button class="copy" data-copy title="Copy">${ICONS.copy}</button><code>${code.replace(/\n$/, '')}</code></pre>`) - 1}\u0000`)
   const inline = (line) => {
     const codes = []
     return line
@@ -244,6 +246,16 @@ function mountFeed(el, { onAgent, limit = 200 } = {}) {
     if (act) return crew.call(act.dataset.act, act.dataset.id)
     const pic = ev.target.closest('[data-open]')
     if (pic) return crew.call('openFile', pic.dataset.open)
+    const copy = ev.target.closest('[data-copy]')
+    if (copy) {
+      crew.call('copy', copy.nextElementSibling.textContent)
+      copy.innerHTML = ICONS.check
+      copy.classList.add('done')
+      return setTimeout(() => {
+        copy.innerHTML = ICONS.copy
+        copy.classList.remove('done')
+      }, 1500)
+    }
     const more = ev.target.closest('[data-more]')
     if (more) return toggle(el.querySelector(`.bubble[data-id="${CSS.escape(more.dataset.more)}"]`))
     const bubble = ev.target.closest('.bubble.long')

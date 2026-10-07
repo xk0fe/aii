@@ -1,6 +1,6 @@
 // Electron shell: menu bar popover, floating pill + chat panel, full-screen dashboard.
 // All agent logic lives in core/; this file only owns windows and wires them to the hub.
-import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell } from 'electron'
+import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -177,6 +177,7 @@ const actions = {
   saveImage: (name, type, bytes) => hub.saveImage(name, type, bytes),
   openFile: (file) => String(file).startsWith(ATTACHMENTS + path.sep) && shell.openPath(file),
   openUrl: (url) => /^https?:\/\//.test(url) && shell.openExternal(url),
+  copy: (text) => clipboard.writeText(String(text)),
   approve: (id) => hub.approve(id),
   drop: (id) => hub.drop(id),
   autopilot: (on) => hub.setAutopilot(on),
