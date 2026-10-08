@@ -1,5 +1,5 @@
 // Renders every view with a made-up crew (scripts/screenshot-preload.cjs) and saves PNGs, plus short GIFs of
-// the animations. Nothing starts and ~/.crew is untouched. Run: npm run shots [-- out-dir [shot names...]]
+// the animations. Nothing starts and ~/.crew is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp]
 import { app, BrowserWindow, nativeTheme } from 'electron'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -18,13 +18,13 @@ const BACKDROP = {
   desktop: { light: 'linear-gradient(135deg, #dfe7f5, #f1e4f1)', dark: 'linear-gradient(135deg, #1c2233, #2a1f2e)' },
 }
 
-async function open(file, { theme, width, height, backdrop, fixture }) {
+async function open(file, { theme, width, height, backdrop, fixture, transparent = false }) {
   if (nativeTheme.themeSource !== theme) {
     nativeTheme.themeSource = theme
     await sleep(300)
   }
   const win = new BrowserWindow({
-    width, height, show: false, paintWhenInitiallyHidden: true, useContentSize: true, frame: false,
+    width, height, show: false, paintWhenInitiallyHidden: true, useContentSize: true, frame: false, transparent,
     webPreferences: { preload: path.join(root, 'scripts', 'screenshot-preload.cjs'), contextIsolation: false, sandbox: false, backgroundThrottling: false },
   })
   win.webContents.on('console-message', (e) => e.level === 'error' && console.error(`${file}: ${e.message}`))
@@ -71,6 +71,11 @@ async function record(win, name, { clip, ms, during, width = 760 }) {
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'list.txt'),
     '-vf', `fps=30,scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle`, gif])
   console.log('saved', `${name}.gif`, `(${frames.length} frames)`)
+  // --webp: an animated WebP from the same frames too, full color and a fraction of the GIF's size (the README uses these)
+  if (!process.argv.includes('--webp')) return
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'list.txt'),
+    '-vf', `fps=25,scale=${width}:-1:flags=lanczos`, '-c:v', 'libwebp_anim', '-q:v', '80', '-compression_level', '6', '-loop', '0', path.join(out, `${name}.webp`)])
+  console.log('saved', `${name}.webp`)
 }
 
 const click = (sel) => `document.querySelector(${JSON.stringify(sel)})?.click()`
@@ -93,6 +98,14 @@ async function tap(win, at) {
 }
 
 const SHOTS = {
+  // The README's cover (scripts/cover.html): one picture, with see-through rounded corners.
+  async cover(theme) {
+    if (theme !== 'light') return
+    const win = await open('../scripts/cover.html', { theme, width: 1280, height: 640, transparent: true })
+    await sleep(800)
+    await save(win, 'cover')
+    win.destroy()
+  },
   async tray(theme) {
     const win = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
     await sleep(500)
@@ -253,14 +266,16 @@ const SHOTS = {
     win.webContents.reload()
     await new Promise((r) => win.webContents.once('did-finish-load', r))
     await sleep(1200)
+    // the sidebar and the board, without the chat column, so the cards stay readable
+    const board = await js(win, "return { x: 0, y: 0, width: Math.round(document.querySelector('.chat').getBoundingClientRect().x), height: innerHeight }")
     await record(win, 'tasks-loop', {
-      ms: 11500, width: 1000,
+      clip: board, ms: 11500, width: 1000,
       during: async () => {
         let at = { x: 900, y: 500 }
         at = await glide(win, at, await center(win, '.tk-add textarea'), 600)
         await tap(win, at)
         await sleep(300)
-        const text = 'Coins vanish when you collect two at once @david'
+        const text = 'Coins vanish when you collect two at once @david ' // the space closes the @ picker, so Enter adds the task
         for (let i = 1; i <= text.length; i++) {
           await js(win, `const ta = document.querySelector('.tk-add textarea'); ta.value = ${JSON.stringify(text)}.slice(0, ${i}); ta.dispatchEvent(new Event('input'))`)
           await sleep(26)
@@ -537,6 +552,60 @@ const SHOTS = {
         await sleep(300)
         await enter()
         await sleep(2200)
+      },
+    })
+    win.destroy()
+  },
+  // Scrolled up while replies come in: nothing moves, and a pill at the bottom counts them.
+  async latest(theme) {
+    const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await js(win, "document.querySelector('.feed').scrollTop = 0")
+    await sleep(400)
+    for (let i = 0; i < 3; i++) {
+      await js(win, `const s = window.__crewState; s.feed.push({ id: 'late${i}', kind: 'reply', from: 'joseph', to: 'you', text: 'Reply ${i + 1} while you read', ts: Date.now() }); window.__crewEmit('state', s)`)
+      await sleep(250)
+    }
+    await sleep(600)
+    await save(win, `latest-${theme}`)
+    win.destroy()
+  },
+  // Reading an older message while replies arrive: it holds still, the pill counts up, and a click goes down.
+  // A long history, so the oldest messages drop off the top as new ones come in (the chat keeps the last 80).
+  async latestGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, `const s = window.__crewState; const t0 = Date.now() - 3 * 3600000
+      const said = ['Checked the save file migration.', 'Tests are green on CI.', 'Left a note on the pause menu task.', 'Bumped the coin sound volume a little.']
+      s.feed.unshift(...Array.from({ length: 90 }, (_, i) => ({ id: 'old' + i, kind: 'reply', from: ['joseph', 'david', 'gal', 'marc'][i % 4], to: 'you', text: said[i % 4], ts: t0 + i * 60000 })))
+      window.__crewEmit('state', s); window.__crewEmit('toggle', { open: true, focus: false })`)
+    await sleep(900)
+    await fitToContent(win)
+    await js(win, "document.querySelector('#m-old60').scrollIntoView({ block: 'start' })")
+    await sleep(500)
+    const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
+    const say = (i, from, text) => js(win, `const s = window.__crewState; s.feed.push({ id: 'late${i}', kind: 'reply', from: '${from}', to: 'you', text: ${JSON.stringify(text)}, ts: Date.now() }); window.__crewEmit('state', s)`)
+    await record(win, 'latest', {
+      clip: panel, ms: 8200, width: 760,
+      during: async () => {
+        let at = { x: panel.x + 200, y: panel.y + 220 }
+        await sleep(900)
+        await say(0, 'joseph', 'Pushed the fix for the reply threading.')
+        await sleep(1100)
+        await say(1, 'david', 'Reviewed it, two small notes in the PR.')
+        await sleep(1100)
+        await say(2, 'marc', 'Hero illustration is ready in assets/hero.png')
+        await sleep(1300)
+        // (an older build has no pill: then the recording just ends here)
+        if (await js(win, "return !!document.querySelector('.feed-latest button')")) {
+          at = await glide(win, at, await center(win, '.feed-latest button'), 700)
+          await sleep(300)
+          await tap(win, at)
+        }
+        await sleep(1800)
       },
     })
     win.destroy()

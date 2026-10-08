@@ -672,6 +672,18 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .new-line { display: flex; align-items: center; gap: 8px; margin: 0 2px -4px; animation: hint-in .3s var(--out); }
 .new-line::before { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
 .new-line span { padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #fff; background: var(--accent); }
+/* Scrolled up while messages came in: a pill to jump back down. It sticks to the feed's bottom edge and takes no
+   space (the negative margin cancels the feed's gap), so showing or hiding it moves nothing. */
+.feed-latest { position: sticky; bottom: 0; z-index: 3; align-self: center; height: 0; margin-top: -14px; }
+.feed-latest button {
+  position: absolute; left: 0; bottom: 14px; translate: -50% 0; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 12px 0 9px;
+  border: 0; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 650; white-space: nowrap; cursor: pointer;
+  box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--accent) 70%, transparent), 0 1px 2px rgba(0, 0, 0, .12);
+  opacity: 0; scale: .85; visibility: hidden; transition: opacity .18s, scale .3s var(--spring), visibility 0s .3s;
+}
+.feed-latest.on button { opacity: 1; scale: 1; visibility: visible; transition: opacity .18s, scale .3s var(--spring), visibility 0s; }
+.feed-latest button:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+.feed-latest svg { width: 14px; height: 14px; rotate: 180deg; }
 .sum.unread { color: color-mix(in oklab, var(--accent) 80%, var(--fg)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .dot.unread { background: var(--accent); }
 

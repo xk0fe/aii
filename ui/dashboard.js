@@ -10,7 +10,7 @@ const THEME = {
 
 const terms = new Map() // name -> { tile, head, term, fit, ready }
 const feed = mountFeed($('.feed'), { onAgent: (name) => select(name), onTicket: (key) => openTask(key), onReply: (e) => composer.replyTo(e) })
-const composer = mountComposer($('.compose'), { dropZone: $('.chat') })
+const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest() })
 const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home) })
 const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
 // Views: Crew, Tasks and Terminals, the terminals laid out as a grid or one big one. Older saves said grid,

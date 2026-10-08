@@ -8,7 +8,7 @@ $('[data-act=dashboard]').innerHTML = ICONS.expand
 $('[data-act=close]').innerHTML = ICONS.close
 
 const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => crew.call('dashboard', name), onReply: (e) => composer.replyTo(e) })
-const composer = mountComposer($('.compose'), { dropZone: $('.panel') })
+const composer = mountComposer($('.compose'), { dropZone: $('.panel'), onSend: () => feed.toLatest() })
 let size = ''
 
 // The window wraps what's drawn; main.js places it so the pill stays where it is, so it's told where the pill is.
