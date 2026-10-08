@@ -1129,9 +1129,10 @@ export class Hub extends EventEmitter {
     throw new Error(`no agent named "${name}" (try: crew who)`)
   }
 
-  // One line in the feed for what happened to a task (`type` is its kind: bug, feature, task).
+  // One line in the feed for what happened to a task (`type` is its kind: bug, feature, task). A task filed for
+  // someone says who, so it shows in your conversation with them too.
   postTask(t, from, act, text) {
-    this.post({ kind: 'task', type: t.kind, from, ticket: t.id, title: t.title, act, ...(text && { text }) })
+    this.post({ kind: 'task', type: t.kind, from, ticket: t.id, title: t.title, act, ...(text && { text }), ...(act === 'filed' && t.owner && { owner: t.owner }) })
   }
 
   // `crew task ...` (or `crew bug ...`) from an agent or your terminal. args are the words after it.

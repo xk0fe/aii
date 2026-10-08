@@ -2,6 +2,11 @@
 // rendered and captured without starting any agents or touching ~/.crew.
 const now = Date.now()
 const min = 60000
+// Every window starts on everyone's chat: the composer's target is the conversation it shows, and windows in one
+// run share localStorage, so one shot's conversation would otherwise open in the next.
+try {
+  localStorage.removeItem('crew.target')
+} catch {}
 const day = 24 * 60 * min
 
 const days = (counts) => counts.map((tasks, i) => ({ day: new Date(now - (counts.length - 1 - i) * day).toISOString().slice(0, 10), tasks }))
@@ -209,7 +214,7 @@ function taskAction(op, key, arg) {
     const owner = arg.owner ?? 'david'
     const t = { ...TICKETS.find((x) => x.id === 9), id: nextTask, key: String(nextTask), kind: arg.kind ?? 'task', status: 'new', severity: 'normal', title: text, body: '', owner, triaged: true, seen: 1, images: arg.images ?? [], created: Date.now(), updated: Date.now(), log: [{ ts: Date.now(), by: 'you', text: 'added it' }] }
     TICKETS.push(t)
-    FEED.push({ id: `nb${nextTask}`, kind: 'task', type: t.kind, act: 'filed', from: 'you', ticket: nextTask, title: text, ts: Date.now() })
+    FEED.push({ id: `nb${nextTask}`, kind: 'task', type: t.kind, act: 'filed', from: 'you', ticket: nextTask, title: text, owner, ts: Date.now() })
     emit()
     return `added #${nextTask++} for @${owner}`
   }

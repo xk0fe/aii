@@ -515,7 +515,7 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // New conversation is for one message: after it, the box goes on in that conversation as a reply.
+  // New conversation is for one message, in marc's conversation: what you send next goes on in the new one.
   async threadGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
@@ -684,6 +684,79 @@ const SHOTS = {
         await sleep(300)
         await key('Tab')
         await sleep(1000)
+      },
+    })
+    win.destroy()
+  },
+  // Your conversation with one agent: click its face in the chat, and the chat is the two of you.
+  async convo(theme) {
+    const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await js(win, click('.item.said .face[data-agent=joseph]'))
+    await sleep(900)
+    await save(win, `convo-${theme}`)
+    win.destroy()
+  },
+  // The same in the dashboard's chat column.
+  async convoDash(theme) {
+    const win = await dashboard(theme, 'crew')
+    await sleep(700)
+    await js(win, click('.chat .item.said .face[data-agent=joseph]'))
+    await sleep(900)
+    const box = await js(win, "const r = document.querySelector('.chat').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(r.width), height: Math.round(r.bottom) }")
+    fs.writeFileSync(path.join(out, `convo-dash-${theme}.png`), (await win.webContents.capturePage(box)).toPNG())
+    console.log('saved', `convo-dash-${theme}.png`)
+    win.destroy()
+  },
+  // Into joseph's conversation from his face, a message (with @david brought in), and back to everyone.
+  async convoGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "localStorage.setItem('crew.fresh', '0'); window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await js(win, "document.querySelector('#m-f8').scrollIntoView({ block: 'center' })")
+    await sleep(400)
+    const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
+    const typeOut = async (text) => {
+      for (const ch of text) {
+        win.webContents.sendInputEvent({ type: 'char', keyCode: ch })
+        await sleep(45)
+      }
+    }
+    const key = async (keyCode) => {
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode })
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode })
+      await sleep(260)
+    }
+    await record(win, 'convo', {
+      clip: panel, ms: 12500, width: 800,
+      during: async () => {
+        let at = { x: panel.x + 260, y: panel.y + 300 }
+        await sleep(600)
+        at = await glide(win, at, await center(win, '#m-f8 .face'), 800)
+        await sleep(350)
+        await tap(win, at)
+        await sleep(1400)
+        await js(win, "document.querySelector('.composer textarea').focus()")
+        await typeOut('Run the suite once more and post the numbers for ')
+        await typeOut('@')
+        await sleep(500)
+        await typeOut('da')
+        await sleep(500)
+        await key('Return')
+        await sleep(400)
+        await key('Return')
+        await sleep(1400)
+        await js(win, "const s = window.__crewState; const mine = s.feed.findLast((e) => e.from === 'you'); s.feed.push({ id: 'cv-r', kind: 'reply', from: 'joseph', to: 'you', re: mine.id, text: 'Re-ran it: **43 passing**. Sent @david the numbers.', ts: Date.now() }); window.__crewEmit('state', s)")
+        await sleep(1800)
+        at = await glide(win, at, await center(win, '.ch-back'), 800)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1600)
       },
     })
     win.destroy()

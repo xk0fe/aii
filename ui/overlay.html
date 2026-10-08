@@ -37,6 +37,10 @@
     .panel header b { font-size: 14px; font-weight: 700; letter-spacing: -.01em; }
     .panel header .sums { margin-left: 4px; }
     .panel header .icon { width: 30px; height: 30px; padding: 0; }
+    /* in a conversation with one agent, it takes the header's left side (same height, so nothing moves) */
+    .panel header.in-convo { padding-left: 9px; }
+    .panel header.in-convo .brand, .panel header.in-convo .sums, .panel header.in-convo > .grow { display: none; }
+    .panel header .convo-head { flex: 1; }
     .panel .feed { flex: 1; }
     .panel .compose { flex: none; }
 
@@ -57,12 +61,17 @@
     [data-side=above] .home + .dots:not(:empty), [data-side=below] .home + .dots:not(:empty) { padding: 0 0 0 7px; border-top: 0; border-left: 1px solid var(--line); width: auto; height: 32px; }
     .home:active { transform: scale(.9); }
     .home svg { width: 100%; height: 100%; display: block; overflow: visible; }
+    /* the buddies are stacked <svg>s, one per span (markSVG split), so their hops run on the compositor */
+    .home { container-type: size; }
+    .home .marks { position: relative; display: block; width: 100%; height: 100%; }
+    .home .marks > span { position: absolute; inset: 0; }
     /* while anyone works, the three buddies hop in a little wave */
     .home path { transform-box: fill-box; transform-origin: 50% 100%; }
     .busy .home .m0, .busy .home .m1, .busy .home .m2 { animation: buddy-hop 1.1s cubic-bezier(.3, .6, .4, 1) infinite; }
     .busy .home .m1 { animation-delay: .14s; }
     .busy .home .m2 { animation-delay: .28s; }
-    @keyframes buddy-hop { 0%, 55%, 100% { translate: 0 0; } 25% { translate: 0 -2.4px; } }
+    /* 2.4 units of the mark's viewBox (24 × 16, fitted into the button): the hop it always had, in px */
+    @keyframes buddy-hop { 0%, 55%, 100% { translate: 0 0; } 25% { translate: 0 calc(-2.4 * min(100cqw / 24, 100cqh / 16)); } }
     /* someone needs you: a warm edge that breathes (their creature wiggles with a "!") */
     .alert .pill { animation: pill-alert 2s ease-in-out infinite; }
     @keyframes pill-alert { 50% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 75%, transparent), 0 0 0 5px color-mix(in srgb, var(--waiting) 16%, transparent), 0 12px 32px -14px rgba(0, 0, 0, .38); } }
@@ -91,7 +100,7 @@
   <div class="wrap">
     <section class="panel sheet">
       <header>
-        <span class="brand"><span class="logo"></span><b>Crew</b></span><span class="sums"></span><span class="grow"></span>
+        <div class="convo-head"></div><span class="brand"><span class="logo"></span><b>Crew</b></span><span class="sums"></span><span class="grow"></span>
         <button class="icon" data-act="dashboard" title="Open the dashboard" aria-label="Open the dashboard"></button>
         <button class="icon" data-act="close" title="Close (Esc)" aria-label="Close"></button>
       </header>
