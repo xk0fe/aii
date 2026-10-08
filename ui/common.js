@@ -91,10 +91,37 @@ const ICONS = {
 // still the ones it left) is skipped, except for what morph always puts back, checkboxes' checked state.
 // html can also come in parts (see morphParts), so a long list re-reads only the rows that changed. An element is
 // always morphed one way or the other (parts remember which html each node came from; a whole-html morph doesn't).
-// Returns whether it patched anything.
+// Anything else that changes what a morph drew (a row's class, a button's text, a chip pressed ahead of the state)
+// is put back by the next morph, as it always was: see `outside`. Returns whether it patched anything.
 const morphed = new WeakMap() // el -> { html, first, last, count, boxes }
 function morph(el, html) {
-  if (Array.isArray(html)) return morphParts(el, html)
+  watch(el)
+  forget(outside?.takeRecords() ?? []) // changed since the last morph, by someone else
+  const changed = Array.isArray(html) ? morphParts(el, html) : morphWhole(el, html)
+  outside?.takeRecords() // the morph's own changes
+  return changed
+}
+
+// Changes to a morphed element's insides made outside morph() drop what was cached for everything around them, so the
+// next morph patches those nodes again instead of skipping them.
+const outside = typeof MutationObserver === 'function' ? new MutationObserver((records) => forget(records)) : null
+const watched = new WeakSet()
+function watch(el) {
+  if (!outside || watched.has(el)) return
+  watched.add(el)
+  outside.observe(el, { subtree: true, childList: true, attributes: true, characterData: true })
+}
+function forget(records) {
+  for (const r of records) {
+    if (r.type === 'attributes' && watched.has(r.target)) continue // a morph never touches the element it fills
+    for (let n = r.target; n; n = n.parentNode) {
+      partOf.delete(n)
+      morphed.delete(n)
+    }
+  }
+}
+
+function morphWhole(el, html) {
   const was = morphed.get(el)
   if (was && was.html === html && was.first === el.firstChild && was.last === el.lastChild && was.count === el.childNodes.length) {
     if (was.boxes) for (const box of el.querySelectorAll('input[type=checkbox]')) box.checked = box.hasAttribute('checked')
@@ -110,9 +137,8 @@ function morph(el, html) {
 // The same as morphing to the parts' html joined together, part by part. A part is the html of one node, or
 // { start, end, slot, parts } for a node (start + end) whose element matching `slot` (the node itself or one inside
 // it, written empty) holds parts of its own. A part that's what its node was last patched from isn't parsed
-// again, so a push that changes one row of a long list reads and patches that row alone, unless something changed
-// the row's own class or style since (the search's cursor, a drag): a morph puts those back. joinParts() is the html.
-const partOf = new WeakMap() // node -> { html, cls, style, boxes }: the part it was last patched from
+// again, so a push that changes one row of a long list reads and patches that row alone. joinParts() is the html.
+const partOf = new WeakMap() // node -> { html, boxes }: the part it was last patched from, and its checkboxes
 function morphParts(el, parts) {
   morphed.delete(el)
   let changed = false
@@ -122,7 +148,7 @@ function morphParts(el, parts) {
     if (!html) continue
     let o = el.childNodes[i++]
     const was = o && partOf.get(o)
-    if (was?.html === html && was.cls === o.getAttribute?.('class') && was.style === o.getAttribute?.('style')) {
+    if (was?.html === html) {
       for (const box of was.boxes) box.checked = box.hasAttribute('checked')
     } else {
       const tpl = document.createElement('template')
@@ -131,7 +157,7 @@ function morphParts(el, parts) {
       o = patchNode(el, o, tpl.content.firstChild, part.slot)
       const inner = part.slot && slotOf(o, part.slot)
       const boxes = o.nodeType === Node.ELEMENT_NODE ? [...(o.type === 'checkbox' ? [o] : []), ...o.querySelectorAll('input[type=checkbox]')].filter((b) => !inner?.contains(b)) : []
-      partOf.set(o, { html, cls: o.getAttribute?.('class'), style: o.getAttribute?.('style'), boxes })
+      partOf.set(o, { html, boxes })
       changed = true
     }
     if (part.slot) changed = morphParts(slotOf(o, part.slot), part.parts) || changed
