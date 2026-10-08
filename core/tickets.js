@@ -184,7 +184,8 @@ export function fixPrompt(t, ref, note, again) {
     note && `\nThe user adds: ${note}`,
     `\nThis conversation is just for this ${t.kind}. ${bug ? 'Reproduce it, find the cause, fix it.' : 'Do it, and keep to what it asks.'}`,
     `Stay in your own project. If it isn't clear ${bug ? 'where the bug lives and you can\'t find it there' : 'what is wanted or where it goes'}, don't guess and don't change other code:`,
-    `run crew task note ${ref} "what you looked at, what you need to know" and stop. Same if it isn't in your area${bug ? " or you can't reproduce it" : ''}.`,
+    `run crew task note ${ref} "what you looked at, what you need to know" and stop.${bug ? " Same if you can't reproduce it." : ''}`,
+    `If it isn't yours to do (not your area, or you can't take it), run crew task decline ${ref} "why" and stop: Crew gives it to whoever's area it is.`,
     done,
   ].filter(Boolean).join('\n')
 }
@@ -205,7 +206,8 @@ export const triagePrompt = (t, ref) =>
 export const TASK_HELP = `crew task list                    open tasks
 crew task show <n>                one task in full: details, screenshots, notes
 crew task done <n> "..."          you did it: what you did (or what was wrong), how you checked
-crew task note <n> "..."          add what you found (unclear, not your area, can't reproduce, a clue)
+crew task note <n> "..."          add what you found (unclear, can't reproduce, a clue)
+crew task decline <n> "why"       it isn't yours (not your area, can't take it): Crew gives it to the next owner by area
 crew task add "title" "..."       add a task (--kind bug|feature|task, --priority, --owner)
 crew task triage <n> --owner <name> --priority <urgent|high|medium|low> [--kind] [--title "..."] [--details "..."]
 crew task dup <n> <original>      it's the same as another task

@@ -10,6 +10,9 @@ const HOOK = 'curl -s -m 2 -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$C
 // its decision. No answer (Crew gone, an error, handed to the terminal, time's up) prints nothing, and the agent
 // asks as usual. curl gives up 10 s before the agent would kill the hook, so the hook always ends cleanly.
 const ASK = (seconds) => `curl -sf -m ${seconds - 10} -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/ask/$CREW_AGENT" 2>/dev/null || true`
+// Before a file tool writes: is the file free, or is a teammate editing it? Crew prints a deny decision when it's taken,
+// nothing when it's free (or when Crew isn't there to ask).
+const LEASE = 'curl -sf -m 3 -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/lease/$CREW_AGENT" 2>/dev/null || true'
 // How long each CLI's hook waits, in seconds. Claude shows its own dialog meanwhile (answer in either place), so
 // it can wait a day. Codex shows nothing until the hook is done: after half an hour it asks in its terminal.
 export const ASK_WAIT = { claude: 86400, codex: 1800 }
@@ -33,13 +36,24 @@ const prompt = (a) => `You are "${a.cloneOf ?? a.name}", one of several AI agent
 }
 Your area: ${a.area || 'general'}.
 Stay inside your area. When work belongs to a teammate's area, hand it off instead of doing it yourself.
-Crew commands (run them in the shell, they return instantly):
+Crew commands (run them in the shell):
   crew who                  teammates, their areas and whether they are busy
-  crew send <name> "<task>" hand a task to a teammate (queued until they are free)
+  crew ask <name> "<what>"  when you need something back from a teammate before you go on: an answer, or work done.
+                            It reaches them even mid-task and prints their answer, usually within a minute. If it
+                            isn't in after ~2 minutes it says so: carry on, and the answer comes to you anyway.
+  crew answer "<answer>"    answer a teammate's question right away, even in the middle of something, then carry on
+  crew wait                 keep waiting for the answers to what you asked
+  crew send <name> "<task>" hand work to a teammate for good: it's theirs now, and nothing comes back
   crew note "<fact>"        share context with everyone: decisions, interfaces, gotchas
   crew board                read the shared notes
-  crew task                 the Tasks board: list, show, done, note, add (crew task help)
-Messages starting with "[from @name]" come from a teammate. If they need a result, reply with crew send <name> "<result>" when done.
+  crew task                 the Tasks board: list, show, done, note, add, decline (crew task help)
+Crew keeps the crew from stalling. Its rules:
+- Need it back? crew ask. Never poll, sleep or loop waiting for a teammate, and never ask the same thing twice.
+- "[question from @name]": they're waiting on you. Answer with crew answer as soon as you can (mid-task is fine), then
+  carry on. If you don't, your final message is the answer. Either way it goes back by itself: never crew send it.
+- "[from @name]": a hand-off, yours now. Don't send thanks, acknowledgements or "recorded" messages back.
+- If Crew turns down an ask because that teammate is waiting on you, answer them first with what you know.
+- If Crew says a teammate is editing a file, leave the file to them: do the rest, or crew ask them.
 Image files listed in a message are attachments (screenshots, mockups, references): open them before you start.${
   a.prompt ? `\n\nYour instructions:\n${a.prompt}` : ''
 }${a.images?.length ? `\n\nReference images for your area (open them when relevant):\n${a.images.join('\n')}` : ''}`
@@ -58,8 +72,9 @@ export const adapters = {
         UserPromptSubmit: on(),
         PermissionRequest: [{ hooks: [{ type: 'command', command: ASK(CLAUDE_WAIT), timeout: CLAUDE_WAIT }] }], // AskUserQuestion and ExitPlanMode come here too
         PostToolUse: on('*'),
-        // sub-agents: what each is for, when it starts and stops (its own tool calls come through PostToolUse)
-        PreToolUse: on('Agent|Task'),
+        // sub-agents: what each is for, when it starts and stops (its own tool calls come through PostToolUse); and
+        // the file tools, which check that no teammate is editing the file (one editor per file)
+        PreToolUse: [...on('Agent|Task'), { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: LEASE, timeout: 5 }] }],
         SubagentStart: on(),
         SubagentStop: on(),
         Notification: on(),
@@ -104,6 +119,8 @@ export const adapters = {
         '-c', 'check_for_update_on_startup=false',
         ...events.flatMap((e) => ['-c', `hooks.${e}=[{hooks=[{type="command",command=${toml(HOOK)}}]}]`]),
         '-c', `hooks.PermissionRequest=${ask}`,
+        // one editor per file: apply_patch checks with Crew first (every tool comes through; only patches are looked at)
+        '-c', `hooks.PreToolUse=[{hooks=[{type="command",command=${toml(LEASE)},timeout=5}]}]`,
         // Command-line hooks would otherwise wait on a "trust these hooks" prompt every launch.
         '--dangerously-bypass-hook-trust',
       ],
