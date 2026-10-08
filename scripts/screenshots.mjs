@@ -327,6 +327,53 @@ const SHOTS = {
     await save(win, `chat-thread-${theme}`)
     win.destroy()
   },
+  // Right of way: arie waits on joseph's answer, joseph answers first instead of asking back, and earlier answers,
+  // hand-offs taken together, a file left to its editor and a declined task (?fixture=row).
+  async rightOfWay(theme) {
+    const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop', fixture: 'row' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(900)
+    await fitToContent(win)
+    await save(win, `right-of-way-${theme}`)
+    win.destroy()
+  },
+  // arie asks joseph something while joseph is busy: it waits on joseph, joseph answers mid-task and carries on, and
+  // arie goes on with the answer.
+  async rightOfWayGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop', fixture: 'row' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await sleep(300)
+    const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + 40), width: Math.round(r.width) + 80, height: Math.round(r.height - 200) }")
+    const step = (code) => js(win, `const s = window.__crewState; const a = (n) => s.agents.find((x) => x.name === n); ${code}; window.__crewEmit('state', s)`)
+    await record(win, 'right-of-way', {
+      clip: panel, ms: 9500, width: 760,
+      during: async () => {
+        // before: both at work, nobody waiting
+        await step("s.feed.splice(s.feed.findIndex((e) => e.id === 'q1')); Object.assign(a('arie'), { waitingOn: [], activity: 'Read · RELEASE.md', since: Date.now() - 60000 }); a('joseph').owes = []")
+        await sleep(1200)
+        await step("s.feed.push({ id: 'g1', kind: 'msg', from: 'arie', to: 'joseph', ask: true, text: 'Which port does the staging API listen on?', ts: Date.now() }); a('arie').waitingOn = [{ name: 'joseph', since: Date.now(), id: 'g1', text: 'Which port does the staging API listen on?' }]; a('joseph').owes = [{ name: 'arie', since: Date.now(), id: 'g1', waiting: true }]")
+        await sleep(1400)
+        await step("a('joseph').activity = 'Bash · crew answer'")
+        await sleep(900)
+        await step("const q = s.feed.find((e) => e.id === 'g1'); s.feed.push({ id: 'g2', kind: 'reply', from: 'joseph', re: 'g1', text: '4000. Staging and local use the same port.', ts: Date.now() }); q.answered = { by: 'joseph', at: Date.now(), reply: 'g2' }; a('arie').waitingOn = []; a('arie').activity = 'Edit · deploy/staging.env'; a('joseph').owes = []; a('joseph').activity = 'Edit · core/hub.js'")
+        await sleep(1600)
+        await step("a('arie').activity = 'Bash · curl localhost:4000/health'")
+        await sleep(1800)
+      },
+    })
+    win.destroy()
+  },
+  // The same in the dashboard: the sidebar and the chat both say who's waiting on whom.
+  async rightOfWayDash(theme) {
+    const win = await dashboard(theme, 'crew', { fixture: 'row' })
+    await sleep(900)
+    await save(win, `right-of-way-dash-${theme}`)
+    win.destroy()
+  },
   // Every kind of terminal ribbon at once: live, mirrored from another computer, replaying, offline, ended.
   async ribbons(theme) {
     const win = await dashboard(theme, 'grid', { width: 1920, height: 1080 })

@@ -82,6 +82,7 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
 - **Busy agent?** The message is queued and typed in for you the moment that agent finishes. An agent with clones doesn't make you wait: a clone of it takes the message (see below).
 - **One request, one bubble.** A new multi-recipient message from you appears once in the feed, addressed to everyone who received it. Replies from each recipient link back to that bubble. Separate sends remain separate, even with identical text. Older history without a send identifier stays unmerged; teammate hand-offs remain separate for approval.
 - **Agents delegate.** Each agent knows its teammates and can run:
+  - `crew ask <name> "question"` when it needs something back, and `crew answer "…"` to answer one (see [Right of way](#right-of-way-when-agents-need-each-other));
   - `crew send <name> "task"` to hand off work, or `crew send david,joseph "task"` for several recipients;
   - `crew note "fact"` to share context;
   - `crew who` to see the crew;
@@ -122,6 +123,40 @@ Give an agent clones and a second task no longer waits for the first to finish. 
 
 In `config.json` it's `"clones": 2`. Agent packs carry it. Clones run on the computer their agent runs on.
 
+## Right of way: when agents need each other
+
+Agents that depend on each other can stall a crew. Two of them each wait for the other. An answer never finds its way back. Work goes back and forth between two agents who each think it's the other's. Two agents edit the same file. A task sits with an owner who said no. Crew settles all of these by rule, the moment they come up, instead of leaving the agents to sort it out.
+
+- **Questions come back.** `crew ask joseph "which port does staging use?"` asks a teammate and waits for its answer, right there in the asker's turn. Nobody has to remember to reply, and nobody polls.
+  - **It reaches a busy teammate too.** Crew types the question into the turn it's in, and the teammate's CLI takes it in at its next step (between two tool calls; Claude Code and Codex both do this). It answers with `crew answer "…"` and carries on with what it was doing. So the asker waits about as long as one step takes, usually well under a minute, not until the teammate has finished its task.
+  - **A free teammate** gets the question as its next prompt, and its final message is the answer.
+  - **Questions go first.** One waiting for a teammate that can't take it in right now (a permission prompt is up in its terminal, or you're typing there) is first in line, and goes in as soon as that clears.
+  - **Taking longer?** After about 100 seconds `crew ask` says where things stand and lets the asker carry on. The answer still comes, into the asker's turn or as its next prompt. `crew wait` waits some more.
+  - **It always hears back.** If the teammate is interrupted, exits, is restarted or is turned off before it answers, the asker is told so instead of waiting.
+- **Nobody waits in circles.** Whoever is being waited on never waits on its waiter. If joseph is waiting on arie's answer and arie tries to `crew ask joseph`, Crew turns that down on the spot and tells arie to answer first, with what it knows. The same goes down a line (joseph waits on arie, arie on david: david can't wait on joseph). So two agents can never end up waiting on each other.
+- **No handing back.** An agent can't `crew send` work back to a teammate that's waiting on its answer. It puts what it would have sent in the answer, which goes back by itself. That's one hop, not a round trip.
+- **One file, one editor.** The first agent to edit a file (Claude Code's Edit and Write, Codex's patches) holds it until its turn ends. Anyone else who tries is turned away and told who has it, so an agent and its clones, or two agents in one folder, never write over each other. An agent answering the holder's question may edit its files, since the holder is waiting on it rather than editing.
+- **One owner.** A message sent to several agents names the first one as the lead: it owns the result, and the others each take the part in their own area. A hand-off is the recipient's from then on, with no need to report back. A task's owner who can't take it runs `crew task decline`, and it goes straight to the next agent whose area it is (never back to one that declined it), or back to To do for you, with a notification.
+- **Hand-offs that pile up go in together.** Several teammates' hand-offs waiting for a busy agent go in as one prompt when it's free, so it reads them side by side in one turn, not one turn each. Messages that crossed are read together instead of answered one at a time. Your own messages and tasks still get a turn each.
+
+In the chat:
+
+- An agent waiting on a teammate rests instead of hopping, and says so in calm indigo (not the orange of "needs you"): *waiting on @joseph · 2m* in the sidebar, the menu bar, its card and its terminal header. Under the last message, its line shows who it's waiting on, what it asked and for how long; click it for the question. The teammate's line shows the faces of whoever waits on it. The titlebar counts them: *1 waiting*.
+- A question shows who asked whom, *waiting* while the asker holds on, and then *@joseph answered in 24s*. The answer is threaded to it, marked with who it went back to.
+- When Crew steps in, it's one quiet line with a yield sign, such as *@arie is waiting on @joseph, so @joseph answers first instead of asking back*. Hover it for the rule.
+
+Agents learn all of this from the crew basics in their instructions:
+
+```
+crew ask <name> "..."     ask a teammate and wait for its answer (it reaches them mid-task)
+crew answer [@name] "..." answer a question you were asked, right away, and carry on
+crew wait                 keep waiting for the answers to what you asked
+crew send <name> "..."    hand work to a teammate for good: nothing comes back
+crew task decline <n> "why"   a task that isn't yours goes to the next owner by area
+```
+
+`node scripts/handoffs.mjs` reads your own history (`~/.crew/feed.jsonl` and `stats.json`) and shows what hand-offs between your agents have cost: how long a question took to come back, how much of that was a teammate finishing something else first or an answer waiting for its asker, and the turns spent on acknowledgements and messages that crossed.
+
 ## Tasks: one conversation per task
 
 Handing an agent task after task fills one conversation with unrelated work, and long mixed-up conversations are where agents start getting things wrong. The **Tasks** board (`⌘2`) keeps adding, sorting and doing apart, and runs each task in a **fresh conversation** with just that task in it.
@@ -141,7 +176,8 @@ Agents can use the board themselves:
 crew task list                    open tasks
 crew task show <n>                one task in full: details, screenshots, notes
 crew task done <n> "..."          what was done (or what was wrong), how it was checked
-crew task note <n> "..."          a finding (unclear, not my area, can't reproduce, a clue)
+crew task note <n> "..."          a finding (unclear, can't reproduce, a clue)
+crew task decline <n> "..."       not mine: it goes to the next owner by area, or back to you
 crew task add "title" "..."       a new task (--kind bug|feature|task, --priority, --owner)
 crew task triage <n> --owner <name> --priority <urgent|high|medium|low> [--kind] [--title "..."] [--details "..."]
 crew task dup <n> <original>      the same as another task
@@ -248,6 +284,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
   - status from hooks (start → free, prompt → working, stop → free plus the reply into the feed);
   - questions: an agent's `PermissionRequest` hook (permission prompts, AskUserQuestion, plan approval) waits on the `/ask` route until you answer the card in the chat (`ask`, `answer`), and prints your answer as its decision;
   - inboxes, routing, the feed and notes;
+  - right of way: `crew ask` and its answer coming back (`question`, `respond`), typing questions into a busy agent's turn (`steer`), who may wait on whom (`mayWait`), the order a queue is taken in (`queue`, `nextUp`), one editor per file (`lease`) and declined tasks (`decline`);
   - clones: which of an agent and its clones takes a message (`placeFor`), starting and retiring them;
   - `update()`, the single edit path behind the editor and bulk edits.
 - `core/runner.js` owns the pseudo-terminals.
@@ -256,7 +293,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 - `core/pack.js` reads and writes agent packs (`.crew` files).
 - `core/tickets.js` is the Tasks board: tasks, their history, and the briefs that triage and working agents get.
 - `core/context.js` reads how full a conversation is, from Claude Code's status line or Codex's session log.
-- `core/server.js` is a tiny local HTTP API for the hooks and `bin/crew`. Every request needs a per-launch token. `/ask` holds the request open until you answer, and notices when the hook gives up.
+- `core/server.js` is a tiny local HTTP API for the hooks and `bin/crew`. Every request needs a per-launch token. `/ask` holds the request open until you answer, and notices when the hook gives up; `/question` and `/wait` (`crew ask`, `crew wait`) do the same until a teammate answers. `/lease` is the file tools' check before they write.
 - `ui/` is plain HTML, CSS and JS with no build step. The main files:
   - `avatar.js` draws the creatures;
   - `voice.js` is dictation in the composer: the mic button, hold-to-talk, live text and the language switch (`voice-worklet.js` turns the microphone into 16 kHz audio);
@@ -275,7 +312,10 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 ## Limits worth knowing
 
 - Agents run inside the app, so quitting Crew stops them. They resume their sessions on the next launch, but a turn that was mid-flight is lost.
-- Queued messages live in memory and are dropped on quit. So are clones: they don't come back after a restart.
+- Queued messages live in memory and are dropped on quit. So are clones, and questions still waiting for an answer: they don't come back after a restart.
+- One editor per file covers the file tools (Claude Code's Edit and Write, Codex's patches), not a file an agent rewrites from the shell (`sed -i`, `>`).
+- A question reaches a busy agent at its next step. One that's in a single long command (a ten-minute build) sees it when that ends.
+- Asking an agent on a linked computer needs Crew with right of way on both computers. An older one takes the question as a plain hand-off, and the asker is told the answer won't come back by itself.
 - Clones share their agent's folder. Two clones editing the same files at the same time can step on each other.
 - Codex agents are marked ready about 3 seconds after launch, because Codex only announces a session with its first prompt.
 - If an agent looks stuck on "working" (for example after you interrupt it), click its status in the terminal header to mark it free.
