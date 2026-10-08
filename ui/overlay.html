@@ -37,6 +37,10 @@
     .panel header b { font-size: 14px; font-weight: 700; letter-spacing: -.01em; }
     .panel header .sums { margin-left: 4px; }
     .panel header .icon { width: 30px; height: 30px; padding: 0; }
+    /* in a conversation with one agent, it takes the header's left side (same height, so nothing moves) */
+    .panel header.in-convo { padding-left: 9px; }
+    .panel header.in-convo .brand, .panel header.in-convo .sums, .panel header.in-convo > .grow { display: none; }
+    .panel header .convo-head { flex: 1; }
     .panel .feed { flex: 1; }
     .panel .compose { flex: none; }
 
@@ -96,7 +100,7 @@
   <div class="wrap">
     <section class="panel sheet">
       <header>
-        <span class="brand"><span class="logo"></span><b>Crew</b></span><span class="sums"></span><span class="grow"></span>
+        <div class="convo-head"></div><span class="brand"><span class="logo"></span><b>Crew</b></span><span class="sums"></span><span class="grow"></span>
         <button class="icon" data-act="dashboard" title="Open the dashboard" aria-label="Open the dashboard"></button>
         <button class="icon" data-act="close" title="Close (Esc)" aria-label="Close"></button>
       </header>

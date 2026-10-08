@@ -1,5 +1,5 @@
 // Floating pill on the screen edge; click it (or press the hotkey) for the chat panel.
-/* global crew, live, morph, esc, isUnread, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS */
+/* global crew, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS */
 
 const $ = (s) => document.querySelector(s)
 $('.home').innerHTML = markSVG('0 6 24 16', { split: true }) // its buddies hop while anyone works
@@ -7,8 +7,11 @@ $('.panel header .logo').outerHTML = markSVG('0 6 24 16')
 $('[data-act=dashboard]').innerHTML = ICONS.expand
 $('[data-act=close]').innerHTML = ICONS.close
 
-const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => crew.call('dashboard', name), onReply: (e) => composer.replyTo(e) })
-const composer = mountComposer($('.compose'), { dropZone: $('.panel'), onSend: () => feed.toLatest() })
+// Your conversation with one agent takes the header's left side: back to everyone, and who it's with.
+const everyone = () => (composer.setTarget('auto'), composer.focus())
+const head = mountConvoHead($('.panel header .convo-head'), { onBack: everyone, onTerminal: (name) => crew.call('dashboard', name) })
+const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => crew.call('dashboard', name), onConvo: (name) => (composer.setTarget(name), composer.focus()), onLeave: () => composer.setTarget('auto'), onReply: (e) => composer.replyTo(e) })
+const composer = mountComposer($('.compose'), { dropZone: $('.panel'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to)) })
 let size = ''
 
 // The window wraps what's drawn; main.js places it so the pill stays where it is, so it's told where the pill is.
@@ -92,7 +95,8 @@ crew.onToggle((opts = {}) => {
   const open = opts.open ?? !document.body.classList.contains('open')
   setOpen(open, opts.focus ?? open)
 })
-// Tap a creature in the pill to talk to that agent; with replies you haven't read, the chat opens on the first.
+// Tap a creature in the pill for your conversation with that agent; with replies you haven't read, it opens on
+// the first.
 let state = null
 $('.dots').addEventListener('click', (e) => {
   if (e.target.closest('[data-more-faces]')) return setOpen(true)
@@ -100,8 +104,7 @@ $('.dots').addEventListener('click', (e) => {
   if (!face) return
   composer.setTarget(face.dataset.agent)
   setOpen(true)
-  const first = state?.feed.find((x) => x.from === face.dataset.agent && isUnread(x, state.reads))
-  if (first) requestAnimationFrame(() => feed.jump(first.id))
+  requestAnimationFrame(() => feed.reveal()) // the panel was closed: it couldn't scroll yet
 })
 
 live((next) => {
@@ -131,6 +134,7 @@ live((next) => {
   // the mark in the pill counts every reply you haven't read
   const fresh = state.agents.reduce((n, a) => n + a.unread, 0)
   morph($('.home-badge'), fresh ? `<span class="unread-badge">${fresh > 9 ? '9+' : fresh}</span>` : '')
+  head.render(state)
   feed.render(state)
   composer.render(state)
   fit()

@@ -1,5 +1,5 @@
 // Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
-/* global rosterParts, isUnread, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
+/* global rosterParts, isUnread, mountConvoHead, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -9,8 +9,16 @@ const THEME = {
 }
 
 const terms = new Map() // name -> { tile, head, term, fit, ready }
-const feed = mountFeed($('.feed'), { onAgent: (name) => select(name), onTicket: (key) => openTask(key), onReply: (e) => composer.replyTo(e) })
-const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest() })
+// The chat: everyone's messages, or your conversation with one agent (its header on top, back to everyone).
+const head = mountConvoHead($('.chat .convo-head'), { onBack: () => (composer.setTarget('auto'), composer.focus()), onTerminal: (name) => select(name) })
+const feed = mountFeed($('.feed'), {
+  onAgent: (name) => select(name),
+  onConvo: (name) => (composer.setTarget(name), composer.focus()),
+  onLeave: () => composer.setTarget('auto'),
+  onTicket: (key) => openTask(key),
+  onReply: (e) => composer.replyTo(e),
+})
+const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to)) })
 const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home) })
 const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
 // Views: Crew, Tasks and Terminals, the terminals laid out as a grid or one big one. Older saves said grid,
@@ -239,7 +247,8 @@ function freshen() {
   }
 }
 
-// Show an agent's terminal and aim the composer at it. Agents that are off have no terminal: open their card.
+// Show an agent's terminal, with your conversation with it in the chat. Agents that are off have no terminal:
+// open their card.
 function select(name) {
   if (!terms.has(name) && !state.agents.some((a) => a.name === name)) name = name.replace(/\.\d+(?=@|$)/, '') // a clone that has gone: its original
   if (!terms.has(name)) return edit(name)
@@ -587,6 +596,7 @@ const ready = live((next) => {
   highlight(selected)
   drawShow() // and the terminals now on screen catch up (freshen)
   drawBlank()
+  head.render(state)
   feed.render(state)
   composer.render(state)
   collection.render(state)
