@@ -407,6 +407,34 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .feed .who:hover { text-decoration: underline; text-underline-offset: 2px; }
 .item.said { flex-direction: row; align-items: flex-start; gap: 10px; }
 .item.said .face { width: 28px; flex: none; padding-top: 1px; cursor: pointer; line-height: 0; }
+/* in its own conversation an agent's name and face aren't links: that's where you are */
+.feed .who.here, .item.said .face.here { cursor: default; }
+.feed .who.here:hover { text-decoration: none; }
+
+/* ---- a conversation with one agent: its header ----
+   Back to everyone (a count for replies from the others meanwhile, an orange dot when one of them needs you),
+   the creature and what it's doing, and its terminal. */
+.convo-head { display: flex; align-items: center; gap: 9px; min-width: 0; animation: convo-in .32s var(--out); }
+.convo-head:empty { display: none; }
+@keyframes convo-in { from { opacity: 0; transform: translateX(10px); } }
+.ch-back { position: relative; flex: none; display: inline-flex; align-items: center; gap: 1px; height: 28px; padding: 0 9px 0 4px; border: 0; border-radius: 999px; background: var(--btn); color: var(--fg2); font: 600 12.5px/1 -apple-system, sans-serif; cursor: pointer; transition: background .15s, color .15s, transform .25s var(--spring); }
+.ch-back:hover { background: var(--btn-hover); color: var(--fg); }
+.ch-back:active { transform: scale(.93); }
+.ch-back svg { width: 15px; height: 15px; }
+.ch-count { margin-left: 5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 700 9.5px/1 -apple-system, sans-serif; font-style: normal; font-variant-numeric: tabular-nums; color: #fff; background: var(--accent); animation: badge-in .4s var(--spring); }
+.ch-back.alert::after { content: ''; position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--waiting); box-shadow: 0 0 0 2px var(--panel); animation: badge-in .4s var(--spring); }
+.ch-face { position: relative; flex: none; margin-left: 2px; line-height: 0; --orbit-ring: var(--panel); --dot: 6px; }
+.ch-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ch-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; letter-spacing: -.01em; line-height: 18px; }
+.ch-who b .at { font-weight: 550; color: var(--fg3); }
+.ch-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; line-height: 15px; color: var(--fg3); }
+.ch-line.working { color: var(--fg2); }
+.ch-line.mono { font: 11px/15px var(--mono); }
+.ch-line.waiting { color: var(--waiting-ink); font-weight: 600; }
+.ch-line.starting { color: var(--starting); }
+.ch-line.stopped { color: var(--danger); }
+.ch-term { flex: none; width: 30px; height: 30px; padding: 0; }
+.feed .convo-empty .av { margin-bottom: 8px; }
 .item.said .stack { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
 .bubble {
   background: var(--bubble); border-radius: 16px; padding: 8px 12px; max-width: 100%; min-width: 0;

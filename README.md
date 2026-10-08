@@ -38,6 +38,8 @@ Click a card to open it. This is where you set the agent's job, model and folder
 
 Write a message and Crew gives it to the agent whose job fits and who's free. Or type `@` and pick who it's for. Mention a few agents and each one gets its own copy.
 
+Click an agent's face and the chat turns into your conversation with it. You see just what the two of you said, and everything you send goes to that agent. **All** takes you back to everyone.
+
 If an agent is busy, your message waits and goes in the moment it's done.
 
 When an agent wants permission or has a question, it shows up as a card in the chat. You answer there, no terminal needed.

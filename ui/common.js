@@ -542,14 +542,73 @@ const mergeSends = (feed) => {
   return { shown, as }
 }
 
+// ---- conversations: the chat with one agent --------------------------------------------------------------
+// Pick an agent (its face or name in the feed, its creature on the To line or in the pill) and the chat becomes
+// your conversation with it. Everything you send there goes to it, plus anyone you @mention. The target the
+// composer aims at is the conversation: 'auto' and 'task' are everyone's chat.
+const isConvo = (target) => Boolean(target) && target !== 'auto' && target !== 'task'
+// An agent and its clones are one conversation: a message to marc that a clone took says to: 'marc.2'.
+const familyOf = (name) => String(name ?? '').replace(/\.\d+(?=@|$)/, '')
+// What belongs in its conversation: what you and it said to each other, its questions, the hand-offs it made or
+// got, what happened to its tasks (filed for it, triaged to it, sent to it, done by it), and its own events (a new
+// conversation, a move). name: its family name.
+function inConvo(e, name) {
+  const its = (n) => Boolean(n) && familyOf(n) === name
+  if (e.kind === 'task' || e.kind === 'bug') return its(e.from) || its(e.owner) || ((e.act === 'triaged' || e.act === 'fixing') && its(e.text))
+  return its(e.from) || its(e.to) || (e.cc ?? []).some(its)
+}
+
+// Its header: back to everyone (with what came in from the others meanwhile), who you're talking to and what
+// it's doing, and its terminal.
+function convoHead(a, { elsewhere = 0, alert = false } = {}) {
+  const line = rowLine(a)
+  const back = [elsewhere && plural(elsewhere, 'new reply', 'new replies'), alert && 'someone needs you'].filter(Boolean).join(', ')
+  return `<button class="ch-back${alert ? ' alert' : ''}" data-convo-back title="Everyone's messages${back ? ` (${back})` : ''}" aria-label="Back to everyone's messages">${ICONS.back}<span>All</span>${elsewhere ? `<i class="ch-count">${elsewhere > 9 ? '9+' : elsewhere}</i>` : ''}</button>
+    <span class="ch-face" style="--c:${agentColor(a)}">${avatarHTML(a, { size: 30 })}${orbitHTML(a)}</span>
+    <span class="ch-who" title="${esc([a.area, a.cloneOf && `a clone of ${a.cloneOf}`].filter(Boolean).join(' · '))}"><b>${nameHTML(a)}</b><span class="ch-line ${line.cls}">${esc(line.text)}</span></span>
+    <button class="icon ch-term" data-convo-term title="Open ${esc(displayName(a))}'s terminal" aria-label="Open its terminal">${ICONS.terminal}</button>`
+}
+
+// The header in a view: set() with the composer's target, render() with each state.
+function mountConvoHead(el, { onBack, onTerminal }) {
+  let target = null
+  let state = null
+  const draw = () => {
+    // a clone that has just gone: its agent, until the composer moves the conversation over
+    const a = isConvo(target) && (state?.agents.find((x) => x.name === target) ?? state?.agents.find((x) => x.name === familyOf(target)))
+    el.parentElement.classList.toggle('in-convo', Boolean(a))
+    if (!a) return morph(el, '')
+    const others = state.agents.filter((x) => familyOf(x.name) !== familyOf(target))
+    morph(el, convoHead(a, { elsewhere: others.reduce((n, x) => n + (x.unread ?? 0), 0), alert: others.some((x) => x.on && x.status === 'waiting') }))
+  }
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('[data-convo-back]')) onBack()
+    else if (e.target.closest('[data-convo-term]')) onTerminal(target)
+  })
+  return {
+    set(next) {
+      target = next
+      draw()
+    },
+    render(next) {
+      state = next
+      draw()
+    },
+  }
+}
+
 // What the feed shows: the last `limit` entries after merging, and their HTML. Replies to any copy of a
 // merged send link to the copy that's shown.
 // reads: what you've read (state.reads); divider: the message the "New" line goes above.
-const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider } = {}) => {
-  const { shown, as } = mergeSends(feed)
+// only: which entries to show (an agent's conversation); quotes and "replied" links still reach the rest.
+// here: the agent whose conversation it is, so its own name isn't a link to where you already are.
+const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider, only, here } = {}) => {
+  const merged = mergeSends(feed)
+  const shown = only ? merged.shown.filter(only) : merged.shown
+  const as = merged.as
   // the last `limit` entries, plus questions still waiting for you from before them
   const items = [...shown.slice(0, -limit).filter((e) => e.kind === 'ask' && !e.answer), ...shown.slice(-limit)]
-  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, open, drafts, reads }
+  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, open, drafts, reads, here }
   for (const e of feed) if (e.re) (ctx.repliesTo[as[e.re]?.id ?? e.re] ??= []).push(e)
   const line = '<div class="new-line" aria-label="New replies"><span>New</span></div>'
   return { items, html: () => items.map((e, i) => (e.id === divider ? line : '') + feedItem(e, items[i - 1], ctx)).join('') }
@@ -598,14 +657,16 @@ function feedItem(e, prev, ctx) {
   const agent = (n) => byName[n] ?? cloneGhost(n, byName) ?? { name: n }
   const tint = (n) => (n === 'you' ? 'var(--accent)' : agentColor(agent(n)))
   const at = (n) => (agent(n).cloneOf ? `${esc(plainName(agent(n)))}${cloneTag(agent(n))}` : esc(n))
-  const who = (n) => (n === 'you' ? 'you' : `<span class="who" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">@${at(n)}</span>`)
+  // the agent whose conversation this is: its name is plain text here (a link would lead where you already are)
+  const here = (n) => (n === ctx.here ? ' here' : '')
+  const who = (n) => (n === 'you' ? 'you' : `<span class="who${here(n)}" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">@${at(n)}</span>`)
   // In captions an agent goes by its plain name, like a group chat; one on another computer keeps its @computer.
   const label = (n) => {
     if (agent(n).cloneOf) return nameHTML(agent(n))
     const [base, home] = String(n).split('@')
     return `${esc(base)}${home ? `<span class="at">@${esc(home)}</span>` : ''}`
   }
-  const name = (n) => (n === 'you' ? 'You' : `<span class="who" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">${label(n)}</span>`)
+  const name = (n) => (n === 'you' ? 'You' : `<span class="who${here(n)}" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">${label(n)}</span>`)
   const time = new Date(e.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const repeat = prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && e.ts - prev.ts < 120000 && !e.re
   const tags = (e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
@@ -633,7 +694,7 @@ function feedItem(e, prev, ctx) {
   const seen = e.kind === 'reply' ? ` data-from="${esc(e.from)}" data-ts="${e.ts}"` : ''
   // Agents talk with their little face next to the bubble, like a group chat.
   const said = (cls, capHTML, rest = '', body = bubble, withTools = true) =>
-    `<div class="item said ${cls}${cont}${fresh ? ' unread' : ''}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"${seen}><span class="face" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: 28, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div>${withTools ? tools : ''}</div>`
+    `<div class="item said ${cls}${cont}${fresh ? ' unread' : ''}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"${seen}><span class="face${here(e.from)}" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: 28, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div>${withTools ? tools : ''}</div>`
 
   if (e.kind === 'task' || e.kind === 'bug') return taskEvent(e, who)
   // a new conversation starts: a line across the feed, so what came before is visibly "before"
@@ -777,7 +838,10 @@ function subsUsed(e, open) {
     <div class="subs-list">${e.subs.map((s) => `<div class="subs-item ${s.running ? 'running' : ''}"><span class="sub-kind">${esc(subType(s.type))}</span><span class="sub-job">${esc(s.description || 'sub-agent')}</span><span class="sub-meta">${s.tools ? `${plural(s.tools, 'step')} · ` : ''}${duration(s.ms)}${s.running ? ' · working' : ''}</span></div>`).join('')}</div></details>`
 }
 
-function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), limit = 200 } = {}) {
+// onAgent: an agent's line under the feed (who's at work) was clicked, for its terminal. onConvo: an agent's face
+// or name in a message was, for your conversation with it. onLeave: a jump goes to a message outside the
+// conversation on screen, so the chat goes back to everyone's.
+function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), limit = 200 } = {}) {
   const open = new Set()
   const seen = new Set()
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
@@ -795,6 +859,9 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
   let missed = 0 // messages that came in while you were scrolled up
   let jumpTo = null // the message a quote is gliding to: a re-render aims the glide again rather than holding still
   let jumpTimer = null
+  let talkingTo = null // the agent whose conversation this is (the composer's target), or null for everyone's
+  let convo = null // ...and its family: the agent, for a clone
+  let aim = null // the message to show once a conversation opens (the one you pressed Reply on)
   const atEnd = () => el.scrollHeight - el.scrollTop - el.clientHeight < 60
   const pin = (smooth = false) => {
     const top = el.scrollHeight - el.clientHeight
@@ -864,7 +931,12 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
     return it && list.contains(it) ? it.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop : null
   }
   const jump = (id) => {
-    const target = el.querySelector(`#m-${CSS.escape(id)}`)
+    let target = el.querySelector(`#m-${CSS.escape(id)}`)
+    // a quote, a "replied" link or an Answer pointing outside this conversation: everyone's chat, if it shows it
+    if (!target && convo && onLeave && inEveryones(id)) {
+      onLeave()
+      target = el.querySelector(`#m-${CSS.escape(id)}`)
+    }
     if (!target) return
     jumpTo = target.id
     pinned = false // on the way up: new messages mustn't pull it back down
@@ -892,15 +964,25 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
     const to = ev.target.closest('[data-jump]')
     if (to) return jump(to.dataset.jump)
     const re = ev.target.closest('[data-reply]')
-    if (re) return onReply?.(shown.get(re.dataset.reply))
+    if (re) {
+      // replying to one agent opens its conversation (see the composer's replyTo), with this message in view
+      aim = re.dataset.reply
+      onReply?.(shown.get(re.dataset.reply))
+      aim = null
+      return
+    }
     const pick = ev.target.closest('[data-pick]')
     if (pick) return choose(pick)
     const ans = ev.target.closest('[data-answer]')
     if (ans) return answerFrom(ans.closest('[data-ask]'), ans.dataset.answer, ans.dataset.i)
     const bug = ev.target.closest('[data-ticket]')
     if (bug && !ev.target.closest('.who')) return onTicket?.(bug.dataset.ticket)
+    // an agent at work (its line under the feed) opens its terminal; a face or name in a message, your
+    // conversation with it
     const agent = ev.target.closest('[data-agent]')
-    if (agent) return onAgent?.(agent.dataset.agent)
+    if (agent && agent.closest('.typing-list')) return onAgent?.(agent.dataset.agent)
+    // (the crew itself, in its notices, isn't anyone to talk to)
+    if (agent) return agent.dataset.agent === talkingTo || !last?.agents.some((a) => a.name === familyOf(agent.dataset.agent) || a.name === agent.dataset.agent) || onConvo?.(agent.dataset.agent)
     const act = ev.target.closest('[data-act]')
     if (act) return crew.call(act.dataset.act, act.dataset.id)
     const pic = ev.target.closest('[data-open]')
@@ -1018,6 +1100,10 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
   }
   new ResizeObserver(() => {
     measure()
+    if (revealing && showing()) {
+      if (!revealing.until || Date.now() < revealing.until) return reveal(revealing.id)
+      revealing = null
+    }
     pin()
   }).observe(el)
   // ---- unread: a reply counts as read once it has been on screen for a moment while this window has focus ----
@@ -1047,24 +1133,87 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
   let divider = null
   let dividerTimer = null
 
+  const emptyHTML = (agents) => {
+    const a = convo && (agents.find((x) => x.name === talkingTo) ?? agents.find((x) => x.name === convo))
+    if (!a) return `<div class="empty">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
+    const n = esc(plainName(a))
+    return `<div class="empty convo-empty">${avatarHTML(a, { size: 56 })}<b>You and ${esc(displayName(a))}</b><span>What you send here goes to ${n}${a.on ? '' : ` once it's back on`}. @mention someone to bring them in too.</span></div>`
+  }
+  // Where a conversation opens: at the message you pressed Reply on, else at its first reply you haven't read,
+  // else at the end. A chat that's hidden (the floating panel closed, the dashboard's put away) can't scroll, so it
+  // waits until it shows, and keeps aiming while it grows in (the panel's open animation, the column sliding out).
+  let revealing = null // { id, until }
+  const showing = () => Boolean(el.offsetParent) && el.clientWidth > 120 && getComputedStyle(el).visibility !== 'hidden'
+  const reveal = (id = aim) => {
+    if (!showing()) return void (revealing = { id, until: 0 })
+    if (revealing && !revealing.until) revealing.until = Date.now() + 450
+    const it = (id && list.querySelector(`#m-${CSS.escape(id)}`)) || list.querySelector('.item.unread')
+    if (!it) return void ((pinned = true), pin(), settle())
+    jumpTo = null
+    // measured in layout pixels: the floating panel opens from 94% scale, and its rects are scaled with it
+    const scale = el.getBoundingClientRect().height / el.offsetHeight || 1
+    const top = (it.getBoundingClientRect().top - el.getBoundingClientRect().top) / scale
+    el.scrollTop += top - (id ? Math.max(40, (el.clientHeight - it.offsetHeight) / 2) : 40)
+    settle()
+  }
+  // whether everyone's chat shows this message (it keeps the last `limit`), so a link out of a conversation lands
+  const inEveryones = (id) => {
+    if (!last) return false
+    const { as } = mergeSends(last.feed)
+    const lead = as[id]?.id
+    return Boolean(lead) && feedView(last.feed, last.agents, open, limit).items.some((e) => e.id === lead)
+  }
+  const only = () => convo && ((e) => inConvo(e, convo))
+
   const api = {
     jump,
     toLatest,
+    reveal,
+    // Show the conversation with this agent (null or 'auto': everyone's). The feed slides over, from the right
+    // into a conversation and from the left back out of one, and starts fresh: no "came in below" count, nothing
+    // popping in as new.
+    setConvo(target) {
+      const next = isConvo(target) ? target : null
+      if (next === talkingTo) return
+      const was = convo
+      talkingTo = next
+      convo = next && familyOf(next)
+      key = ''
+      if (convo === was) return void (last && api.render(last)) // marc to its clone marc.2: the same conversation
+      divider = null
+      clearTimeout(dividerTimer)
+      dividerTimer = null
+      pinned = true
+      missed = 0
+      jumpTo = null
+      typingAll = false
+      first = true
+      revealing = null
+      if (!last) return
+      api.render(last)
+      const id = aim
+      reveal(id)
+      if (!showing()) return
+      // once more after this frame's layout: the header and the reply you're writing take some of its height
+      requestAnimationFrame(() => talkingTo === next && !jumpTo && reveal(id))
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) el.animate([{ opacity: 0, transform: `translateX(${convo ? 14 : -14}px)` }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2, .8, .2, 1)' })
+    },
     render({ feed, agents, reads }) {
-      const unread = feed.filter((e) => isUnread(e, reads))
+      const unread = feed.filter((e) => isUnread(e, reads) && (!convo || inConvo(e, convo)))
       if (unread.length) {
         clearTimeout(dividerTimer)
         dividerTimer = null
         if (!divider || !feed.some((e) => e.id === divider)) divider = unread[0].id
       } else if (divider && !dividerTimer) dividerTimer = setTimeout(() => ((divider = null), (key = ''), api.render(last)), 4000)
       last = { feed, agents, reads }
-      const view = feedView(feed, agents, open, limit, drafts, { reads, divider })
+      const view = feedView(feed, agents, open, limit, drafts, { reads, divider, only: only(), here: talkingTo })
       shown = new Map(view.items.map((e) => [e.id, e]))
       let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
-      const busy = typingHTML(agents, asks, { all: typingAll })
+      // in a conversation, only its agent (and its clones) at work
+      const busy = typingHTML(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll })
       let added = false
-      if (!view.items.length) next += busy ? ':busy' : ':empty' // the empty-feed hint shows only when nobody's busy
+      if (!view.items.length) next += busy ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}` // the empty-feed hint shows only when nobody's busy
       if (next !== key) {
         key = next
         // a re-render mustn't take away what you're typing into a question card
@@ -1072,7 +1221,7 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
         const keep = active && { id: active.closest('[data-ask]').dataset.ask, field: 'note' in active.dataset ? '[data-note]' : `[data-other="${active.dataset.other}"]`, from: active.selectionStart, to: active.selectionEnd }
         const reading = pinned || first || jumpTo ? null : readingAt()
         const aimedAt = jumpTo && placeOf(jumpTo)
-        list.innerHTML = view.items.length || busy ? view.html() : `<div class="empty">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
+        list.innerHTML = view.items.length || busy ? view.html() : emptyHTML(agents)
         // New messages pop in; the ones already on screen stay put.
         for (const e of view.items) {
           if (seen.has(e.id)) continue
@@ -1349,7 +1498,8 @@ function mountInk(field, { agents, strict = () => true }) {
   return { paint }
 }
 
-function mountComposer(el, { dropZone = el, onSend } = {}) {
+// onTarget(target): who it's aimed at changed (an agent's name opens your conversation with it; see isConvo).
+function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
   el.classList.add('composer')
   el.innerHTML = `<div class="chips" role="group" aria-label="Send to"></div>
     <div class="input">
@@ -1382,15 +1532,21 @@ function mountComposer(el, { dropZone = el, onSend } = {}) {
   // Replying: to a message in the feed (its Reply button), and then staying in that thread, each message answering
   // the newest one in it. A message sent into a new conversation starts a thread too, so what you send next goes
   // on in that conversation. Esc, ×, or picking someone on the To line leaves it.
+  // In an agent's conversation a reply only quotes: it goes to that agent, and what you send next does anyway.
   let reply = null // { to: [names], id, from, text, ids: thread ids it answers, freshConvo }
   let follow = null // just sent: { at, to } until the next state shows the message, which the thread then answers
   const replyBox = el.querySelector('.reply-to')
   const quoteOf = (e) => (e.ticket !== undefined ? `#${String(e.ticket).split('@')[0]} ${e.title ?? ''}` : snippet(e.text))
   const short = (n) => String(n).split('@')[0]
   const listed = (names) => (names.length > 2 ? `${names.slice(0, -1).map(short).join(', ')} and ${short(names.at(-1))}` : names.map(short).join(' and '))
+  const nameOf = (n) => short(n).replace(/\.(\d+)$/, ' $1') // a clone, marc.2: "marc 2"
   const replyTo = (e) => {
     if (!e || !['reply', 'handoff', 'note', 'msg', 'task'].includes(e.kind) || e.ticket !== undefined && e.from !== 'you') return
-    reply = { to: e.from === 'you' ? [...(e.cc ?? [e.to])] : [e.from], id: e.id, from: e.from, text: quoteOf(e) }
+    const to = e.from === 'you' ? [...(e.cc ?? [e.to])] : [e.from]
+    // One agent's message, or yours to one agent: answer it in your conversation with that agent, so the thread
+    // and everything after it stay with the one you're talking to. One of yours to several stays in everyone's.
+    if (!isConvo(target) && to.length === 1) setTarget(to[0], { carry: true })
+    reply = { to, id: e.id, from: e.from, text: quoteOf(e) }
     follow = null
     draw()
     ta.focus()
@@ -1411,7 +1567,7 @@ function mountComposer(el, { dropZone = el, onSend } = {}) {
         follow = null
       } else if (Date.now() - follow.at > 20000) follow = null
     }
-    if (!reply) return
+    if (!reply || isConvo(target)) return
     const copies = (e) => (e.sendId ? feed.filter((x) => x.sendId === e.sendId).map((x) => x.id) : [e.id])
     for (let ids = copies(reply), next; (next = feed.findLast((e) => ids.includes(e.re) && ['reply', 'handoff', 'msg'].includes(e.kind) && e.id !== reply.id)); ids = copies(next)) {
       reply = { ...reply, id: next.id, from: next.from, text: quoteOf(next) }
@@ -1422,9 +1578,14 @@ function mountComposer(el, { dropZone = el, onSend } = {}) {
     if (!reply) return
     const color = reply.from === 'you' ? 'var(--accent)' : agentColor(agents.find((a) => a.name === reply.from) ?? { name: reply.from })
     const others = reply.to.filter((n) => n !== reply.from)
-    const head = reply.from === 'you'
-      ? `Continuing ${reply.freshConvo ? 'the new conversation ' : ''}with ${esc(listed(reply.to))}`
-      : `Replying to ${esc(short(reply.from))}${others.length ? `<span> · also to ${esc(listed(others))}</span>` : ''}`
+    // in a conversation: what it answers, and (quoting someone else) who it still goes to
+    const head = isConvo(target)
+      ? reply.from === 'you' ? 'Following up on your message'
+        : familyOf(reply.from) === familyOf(target) ? `Replying to ${esc(nameOf(reply.from))}`
+        : `Quoting ${esc(nameOf(reply.from))}<span> · it goes to ${esc(nameOf(target))}</span>`
+      : reply.from === 'you'
+        ? `Continuing ${reply.freshConvo ? 'the new conversation ' : ''}with ${esc(listed(reply.to))}`
+        : `Replying to ${esc(short(reply.from))}${others.length ? `<span> · also to ${esc(listed(others))}</span>` : ''}`
     replyBox.style.setProperty('--qc', color)
     morph(replyBox, `<span class="rt-icon">${ICONS.reply}</span><span class="rt-text"><b>${head}</b><span class="rt-quote">${reply.from === 'you' ? 'You: ' : ''}${esc(reply.text)}</span></span><button class="rt-close" data-stop-reply title="Stop replying (Esc)" aria-label="Stop replying">${ICONS.close}</button>`)
   }
@@ -1448,10 +1609,19 @@ function mountComposer(el, { dropZone = el, onSend } = {}) {
   // crew shows only faces.
   const chip = (to, cls, inner, tipText, sub, c) =>
     `<button class="chip ${cls} ${target === to ? 'on' : ''}" data-to="${esc(to)}" aria-pressed="${target === to}" aria-label="${esc(tipText)}" data-tip="${esc(tipText)}" data-sub="${esc(sub)}"${c ? ` style="--c:${c}"` : ''}>${inner}</button>`
+  let told // the target onTarget last heard about
   const draw = () => {
-    // a clone you were talking to has gone: its original, who it was a copy of
-    const live = (n) => agents.some((a) => a.on && a.name === n)
-    if (!['auto', 'task'].includes(target) && agents.length && !live(target)) target = live(target.replace(/\.\d+(?=@|$)/, '')) ? target.replace(/\.\d+(?=@|$)/, '') : 'auto'
+    // a clone you were talking to has gone: its original, who it was a copy of. One that's off keeps its
+    // conversation, to read; it takes messages again once it's back on.
+    // One that moved to another computer goes by name@computer now: the same conversation, if there's just one.
+    const known = (n) => agents.some((a) => a.name === n)
+    const moved = (n) => {
+      const base = familyOf(n).split('@')[0]
+      const same = agents.filter((a) => !a.cloneOf && a.name.split('@')[0] === base)
+      return same.length === 1 ? same[0].name : null
+    }
+    if (isConvo(target) && agents.length && !known(target)) target = known(familyOf(target)) ? familyOf(target) : (moved(target) ?? 'auto')
+    const off = isConvo(target) && agents.find((a) => a.name === target)?.on === false
     const task = Boolean(kindIn(ta.value))
     // agents, plus the clone you picked (in the chat or its terminal) right after its original
     const shown = agents.filter((a) => a.on && (!a.cloneOf || a.name === target))
@@ -1466,11 +1636,13 @@ function mountComposer(el, { dropZone = el, onSend } = {}) {
     freshBtn.setAttribute('aria-pressed', String(fresh))
     freshBtn.title = fresh ? 'On: the agent starts this task in a new conversation, with a clean slate (click to turn off)' : 'Start this task in a new conversation, with a clean slate instead of everything the agent did before'
     drawReply()
-    const who = target.split('@')[0].replace(/\.(\d+)$/, ' $1')
-    ta.placeholder = task ? 'Add a task… @name assigns it'
-      : reply ? `Reply to ${listed(reply.to)}…`
+    const who = nameOf(target)
+    ta.placeholder = task ? (isConvo(target) ? `Add a task for ${short(familyOf(target))}… @name gives it to someone else` : 'Add a task… @name assigns it')
+      : off ? `${who} is off. Turn it on to message it`
+      : reply ? `Reply to ${isConvo(target) ? who : listed(reply.to)}…`
       : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : 'Message the crew, Auto picks who…')
       : fresh ? `New conversation with ${who}…` : `Message ${who}…`
+    if (target !== told) onTarget?.((told = target))
   }
   // Names while they fit on the line, faces only once they don't (the same for every chip, so picking one never
   // moves the others), then Auto and Task as icons; past that the line scrolls, with a fade where it continues.
@@ -1498,9 +1670,30 @@ function mountComposer(el, { dropZone = el, onSend } = {}) {
     // A rejected send (e.g. an @name that isn't a teammate) stays up until the draft is edited.
     if (!error) say.timer = setTimeout(() => (hint.textContent = ''), 4000)
   }
-  const setTarget = (name) => {
+  // Each conversation keeps its own draft: what you typed, its images, and what you were replying to. Going to
+  // another one puts yours aside and brings back the one you left there. (Auto and Task are both everyone's.)
+  // carry: you pressed Reply on its message, so what you're typing comes along, unless it has a draft of its own.
+  const drafts = new Map() // 'all' or an agent's name -> { text, images, reply, follow }
+  const draftKey = (t) => (isConvo(t) ? t : 'all')
+  const swapDraft = (next, carry) => {
+    if (voice?.busy()) return // dictating: the words keep coming into the box
+    const mine = { text: ta.value, images: attach.get(), reply, follow }
+    const there = drafts.get(draftKey(next))
+    drafts.delete(draftKey(next))
+    if (carry && !there) return void ((reply = null), (follow = null))
+    if (mine.text.trim() || mine.images.length || mine.reply) drafts.set(draftKey(target), mine)
+    ta.value = there?.text ?? ''
+    attach.set(there?.images ?? [])
+    reply = there?.reply ?? null
+    follow = there?.follow ?? null
+    if (hint.classList.contains('error')) say('') // that was about the draft you put aside
+    autosize()
+  }
+  const setTarget = (name, { carry = false } = {}) => {
+    if (draftKey(name) !== draftKey(target)) swapDraft(name, carry)
     target = name
-    if (name !== 'task') store.set('crew.target', name)
+    // Task is a mode of everyone's chat: next time it opens on everyone's
+    store.set('crew.target', name === 'task' ? 'auto' : name)
     draw()
   }
   const submit = async () => {
@@ -1512,19 +1705,27 @@ function mountComposer(el, { dropZone = el, onSend } = {}) {
     // The chip stays a recipient; the hub adds any @mentions to it.
     const to = target === 'auto' ? undefined : target
     const sentAt = Date.now()
+    const sentFrom = draftKey(target) // you may be in another conversation by the time it's sent
     try {
       const kind = kindIn(text)
+      const talking = isConvo(target)
       if (kind) {
+        // in a conversation, a task is for that agent unless it @names someone else
         const { owner, text: what } = ownerIn(text.replace(TASK_PREFIX, ''), agents.filter((a) => !a.cloneOf))
-        say((await crew.call('task', 'file', null, { text: what, images, kind, ...(owner && { owner }) })).trim())
+        const forWhom = owner ?? (talking ? familyOf(target) : null)
+        say((await crew.call('task', 'file', null, { text: what, images, kind, ...(forWhom && { owner: forWhom }) })).trim())
       }
       else {
-        say((await crew.call('send', reply ? reply.to.join(',') : to, text, images, { fresh, ...(reply && { re: reply.id }) })).trim().split('\n').join(' · '))
-        // New conversation is for one message: what you send next goes on in that conversation, as a reply
-        if (fresh || reply) follow = { at: sentAt, to: reply?.to ?? (to ? [to] : null) }
+        say((await crew.call('send', reply && !talking ? reply.to.join(',') : to, text, images, { fresh, ...(reply && { re: reply.id }) })).trim().split('\n').join(' · '))
+        // New conversation is for one message: what you send next goes on in that conversation, as a reply. In an
+        // agent's conversation it does anyway, so the quote just goes.
+        if (draftKey(target) !== sentFrom) drafts.delete(sentFrom)
+        else if (talking) reply = null
+        else if (fresh || reply) follow = { at: sentAt, to: reply?.to ?? (to ? [to] : null) }
         if (fresh) (fresh = false), store.set('crew.fresh', '0')
         draw()
       }
+      if (draftKey(target) !== sentFrom) return void drafts.delete(sentFrom)
       ta.value = ''
       attach.set([])
       autosize()
@@ -1536,7 +1737,8 @@ function mountComposer(el, { dropZone = el, onSend } = {}) {
   chips.addEventListener('click', (e) => {
     const picked = e.target.closest('[data-to]')
     if (!picked) return
-    stopReply() // picking someone else leaves the thread
+    // the one you're in leaves the thread; another conversation keeps it for when you're back
+    if (draftKey(picked.dataset.to) === draftKey(target)) stopReply()
     setTarget(picked.dataset.to)
     tip.classList.remove('on')
     ta.focus()
