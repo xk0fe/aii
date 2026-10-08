@@ -8,7 +8,9 @@ const svg = (paths, attrs = '') =>
 
 // Crew's mark: three little mochis in a huddle. Eyes are evenodd holes, so the same shape works as the
 // menu bar template icon; each buddy is its own path (.m0 .m1 .m2) so CSS can make them hop in turn.
-function markSVG(viewBox = '0 0 24 24') {
+// split: each buddy in an <svg> of its own (in a span), stacked into the same picture, so a hop is a transform on an
+// HTML element, which the compositor can play (the pill's buddies hop for as long as anyone works).
+function markSVG(viewBox = '0 0 24 24', { split = false } = {}) {
   const n = (v) => +v.toFixed(2)
   const hole = (x, y, r) => `M${n(x - r)} ${n(y)}a${r} ${r} 0 1 0 ${n(2 * r)} 0a${r} ${r} 0 1 0 ${n(-2 * r)} 0Z`
   const mochi = (cx, w, h, rc, eye, gap, tilt) => {
@@ -17,9 +19,9 @@ function markSVG(viewBox = '0 0 24 24') {
     return { d: d + hole(cx - gap, ey, eye) + hole(cx + gap, ey, eye), t: tilt ? `rotate(${tilt} ${cx} ${by})` : '' }
   }
   const buddies = [mochi(3.85, 7.3, 6.6, 2.3, 0.72, 1.3, 4), mochi(12, 9.4, 9.4, 2.8, 1, 1.75, 0), mochi(20.15, 7.3, 6.6, 2.3, 0.72, 1.3, -4)]
-  return `<svg viewBox="${viewBox}" fill="currentColor" class="mark">${buddies
-    .map((b, i) => `<path class="m${i}" fill-rule="evenodd"${b.t ? ` transform="${b.t}"` : ''} d="${b.d}"/>`)
-    .join('')}</svg>`
+  const path = (b, cls = '') => `<path${cls} fill-rule="evenodd"${b.t ? ` transform="${b.t}"` : ''} d="${b.d}"/>`
+  if (split) return `<span class="mark marks">${buddies.map((b, i) => `<span class="m${i}"><svg viewBox="${viewBox}" fill="currentColor">${path(b)}</svg></span>`).join('')}</span>`
+  return `<svg viewBox="${viewBox}" fill="currentColor" class="mark">${buddies.map((b, i) => path(b, ` class="m${i}"`)).join('')}</svg>`
 }
 
 const ICONS = {
@@ -85,30 +87,109 @@ const ICONS = {
 
 // Update el's children to match html without recreating unchanged nodes. Avatars (data-sig) are left alone
 // unless their look or mood changed, so their animations don't restart on every status tick.
+// Most state pushes change a line or two: html that's the same as what el was last morphed to (and el's children
+// still the ones it left) is skipped, except for what morph always puts back, checkboxes' checked state.
+// html can also come in parts (see morphParts), so a long list re-reads only the rows that changed. An element is
+// always morphed one way or the other (parts remember which html each node came from; a whole-html morph doesn't).
+// Anything else that changes what a morph drew (a row's class, a button's text, a chip pressed ahead of the state)
+// is put back by the next morph, as it always was: see `outside`. Returns whether it patched anything.
+const morphed = new WeakMap() // el -> { html, first, last, count, boxes }
 function morph(el, html) {
+  watch(el)
+  forget(outside?.takeRecords() ?? []) // changed since the last morph, by someone else
+  const changed = Array.isArray(html) ? morphParts(el, html) : morphWhole(el, html)
+  outside?.takeRecords() // the morph's own changes
+  return changed
+}
+
+// Changes to a morphed element's insides made outside morph() drop what was cached for everything around them, so the
+// next morph patches those nodes again instead of skipping them.
+const outside = typeof MutationObserver === 'function' ? new MutationObserver((records) => forget(records)) : null
+const watched = new WeakSet()
+function watch(el) {
+  if (!outside || watched.has(el)) return
+  watched.add(el)
+  outside.observe(el, { subtree: true, childList: true, attributes: true, characterData: true })
+}
+function forget(records) {
+  for (const r of records) {
+    if (r.type === 'attributes' && watched.has(r.target)) continue // a morph never touches the element it fills
+    for (let n = r.target; n; n = n.parentNode) {
+      partOf.delete(n)
+      morphed.delete(n)
+    }
+  }
+}
+
+function morphWhole(el, html) {
+  const was = morphed.get(el)
+  if (was && was.html === html && was.first === el.firstChild && was.last === el.lastChild && was.count === el.childNodes.length) {
+    if (was.boxes) for (const box of el.querySelectorAll('input[type=checkbox]')) box.checked = box.hasAttribute('checked')
+    return false
+  }
   const tpl = document.createElement('template')
   tpl.innerHTML = html
   patchChildren(el, tpl.content)
+  morphed.set(el, { html, first: el.firstChild, last: el.lastChild, count: el.childNodes.length, boxes: Boolean(el.querySelector('input[type=checkbox]')) })
+  return true
 }
 
-function patchChildren(parent, next) {
+// The same as morphing to the parts' html joined together, part by part. A part is the html of one node, or
+// { start, end, slot, parts } for a node (start + end) whose element matching `slot` (the node itself or one inside
+// it, written empty) holds parts of its own. A part that's what its node was last patched from isn't parsed
+// again, so a push that changes one row of a long list reads and patches that row alone. joinParts() is the html.
+const partOf = new WeakMap() // node -> { html, boxes }: the part it was last patched from, and its checkboxes
+function morphParts(el, parts) {
+  morphed.delete(el)
+  let changed = false
+  let i = 0
+  for (const part of parts) {
+    const html = typeof part === 'string' ? part : part.start + part.end
+    if (!html) continue
+    let o = el.childNodes[i++]
+    const was = o && partOf.get(o)
+    if (was?.html === html) {
+      for (const box of was.boxes) box.checked = box.hasAttribute('checked')
+    } else {
+      const tpl = document.createElement('template')
+      tpl.innerHTML = html
+      if (tpl.content.childNodes.length !== 1) throw new Error(`a morph part is one node: ${html.slice(0, 80)}`)
+      o = patchNode(el, o, tpl.content.firstChild, part.slot)
+      const inner = part.slot && slotOf(o, part.slot)
+      const boxes = o.nodeType === Node.ELEMENT_NODE ? [...(o.type === 'checkbox' ? [o] : []), ...o.querySelectorAll('input[type=checkbox]')].filter((b) => !inner?.contains(b)) : []
+      partOf.set(o, { html, boxes })
+      changed = true
+    }
+    if (part.slot) changed = morphParts(slotOf(o, part.slot), part.parts) || changed
+  }
+  while (el.childNodes.length > i) (el.lastChild.remove(), (changed = true))
+  return changed
+}
+const slotOf = (node, slot) => (node.matches(slot) ? node : node.querySelector(slot))
+const joinParts = (parts) => parts.map((p) => (typeof p === 'string' ? p : p.start + joinParts(p.parts) + p.end)).join('')
+
+// One node of a morph: patched in place when it's the same kind of node (and the same agent or avatar), replaced
+// otherwise. slot: an element (selector) whose children are left as they are, for morphParts to fill.
+function patchNode(parent, o, n, slot) {
+  if (!o) return parent.appendChild(n)
+  const same = o.nodeName === n.nodeName && o.dataset?.sig === n.dataset?.sig && o.dataset?.agent === n.dataset?.agent && o.dataset?.name === n.dataset?.name
+  if (!same) return parent.replaceChild(n, o), n
+  if (o.nodeType === Node.TEXT_NODE) {
+    if (o.nodeValue !== n.nodeValue) o.nodeValue = n.nodeValue
+    return o
+  }
+  if (o.nodeType !== Node.ELEMENT_NODE || o.dataset.sig) return o
+  for (const { name } of [...o.attributes]) if (!n.hasAttribute(name)) o.removeAttribute(name)
+  for (const { name, value } of [...n.attributes]) if (o.getAttribute(name) !== value) o.setAttribute(name, value)
+  if (o.type === 'checkbox') o.checked = n.hasAttribute('checked')
+  if (!slot || !n.matches(slot)) patchChildren(o, n, slot)
+  return o
+}
+
+function patchChildren(parent, next, slot) {
   const olds = [...parent.childNodes]
   const news = [...next.childNodes]
-  news.forEach((n, i) => {
-    const o = olds[i]
-    if (!o) return parent.appendChild(n)
-    const same = o.nodeName === n.nodeName && o.dataset?.sig === n.dataset?.sig && o.dataset?.agent === n.dataset?.agent && o.dataset?.name === n.dataset?.name
-    if (!same) return parent.replaceChild(n, o)
-    if (o.nodeType === Node.TEXT_NODE) {
-      if (o.nodeValue !== n.nodeValue) o.nodeValue = n.nodeValue
-      return
-    }
-    if (o.nodeType !== Node.ELEMENT_NODE || o.dataset.sig) return
-    for (const { name } of [...o.attributes]) if (!n.hasAttribute(name)) o.removeAttribute(name)
-    for (const { name, value } of [...n.attributes]) if (o.getAttribute(name) !== value) o.setAttribute(name, value)
-    if (o.type === 'checkbox') o.checked = n.hasAttribute('checked')
-    patchChildren(o, n)
-  })
+  news.forEach((n, i) => patchNode(parent, olds[i], n, slot))
   for (let i = olds.length - 1; i >= news.length; i--) olds[i].remove()
 }
 
@@ -329,15 +410,20 @@ function groupCounts(agents) {
 // folds: 'group:<key>' for computers you folded away, 'off:<key>' for the off agents you unfolded.
 // filter: text to match names and areas (a match shows through any fold). drag: rows can be dragged to another
 // computer (the dashboard's sidebar).
-function rosterHTML(state, { folds = new Set(), selected, filter = '', drag = false } = {}) {
+function rosterHTML(state, opts) {
+  return joinParts(rosterParts(state, opts))
+}
+
+// The same, in parts for morph(): a section per computer, each row a part of its own.
+function rosterParts(state, { folds = new Set(), selected, filter = '', drag = false } = {}) {
   const q = filter.trim().toLowerCase()
   const match = (a) => !q || `${a.name} ${a.area ?? ''}`.toLowerCase().includes(q)
   const groups = crewGroups(state)
   const headed = grouped(groups)
-  const html = groups.map((g) => {
+  const parts = groups.map((g) => {
     const agents = g.agents.filter(match)
-    if (q && !agents.length) return ''
-    if (!headed && !agents.length) return ''
+    if (q && !agents.length) return null
+    if (!headed && !agents.length) return null
     const folded = headed && !q && folds.has(`group:${g.key}`)
     const on = agents.filter((a) => a.on)
     const off = agents.filter((a) => !a.on)
@@ -349,15 +435,15 @@ function rosterHTML(state, { folds = new Set(), selected, filter = '', drag = fa
           <span class="grow"></span>${folded ? faceStack(on.length ? on : agents) : ''}${groupCounts([...g.agents, ...g.clones])}
         </div>`
       : ''
-    const clones = (a) => g.clones.filter((c) => c.cloneOf === a.name).map((c) => cloneRow(c, { selected: c.name === selected })).join('')
-    const rows = on.map((a) => crewRow(a, { selected: a.name === selected, drag: drag && headed }) + clones(a)).join('')
-    const offRow = off.length
-      ? `<div class="crow-fold ${offOpen ? 'open' : ''}" data-fold="off:${esc(g.key)}"><span class="chev">${ICONS.chevron}</span>${faceStack(off, 4)}<span>${off.length} off</span></div>${offOpen ? off.map((a) => crewRow(a, { selected: a.name === selected, drag: drag && headed })).join('') : ''}`
-      : ''
-    const empty = !agents.length ? `<div class="cgroup-empty">${g.online ? 'No agents here yet' : 'No agents'}</div>` : ''
-    return `<section class="cgroup ${folded ? 'folded' : ''} ${g.online ? '' : 'away'}" data-home="${esc(g.key)}">${head}<div class="cgroup-body">${folded ? '' : rows + offRow + empty}</div></section>`
-  }).join('')
-  return html || `<div class="roster-none">${q ? `No one matches “${esc(filter.trim())}”` : 'No agents yet'}</div>`
+    const clones = (a) => g.clones.filter((c) => c.cloneOf === a.name).map((c) => cloneRow(c, { selected: c.name === selected }))
+    const rows = on.flatMap((a) => [crewRow(a, { selected: a.name === selected, drag: drag && headed }), ...clones(a)])
+    const offRows = off.length
+      ? [`<div class="crow-fold ${offOpen ? 'open' : ''}" data-fold="off:${esc(g.key)}"><span class="chev">${ICONS.chevron}</span>${faceStack(off, 4)}<span>${off.length} off</span></div>`, ...(offOpen ? off.map((a) => crewRow(a, { selected: a.name === selected, drag: drag && headed })) : [])]
+      : []
+    const empty = !agents.length ? [`<div class="cgroup-empty">${g.online ? 'No agents here yet' : 'No agents'}</div>`] : []
+    return { start: `<section class="cgroup ${folded ? 'folded' : ''} ${g.online ? '' : 'away'}" data-home="${esc(g.key)}">${head}<div class="cgroup-body">`, end: '</div></section>', slot: '.cgroup-body', parts: folded ? [] : [...rows, ...offRows, ...empty] }
+  }).filter(Boolean)
+  return parts.length ? parts : [`<div class="roster-none">${q ? `No one matches “${esc(filter.trim())}”` : 'No agents yet'}</div>`]
 }
 
 // ---- unread: agents' replies you haven't seen yet ------------------------------------------------------
@@ -446,7 +532,19 @@ function celebrate(root, agents) {
 
 // Just enough Markdown for agent replies: code, bold/italic/strike, headings, lists, quotes and links.
 // The text is escaped first, so whatever an agent writes can't inject HTML.
+// The feed redraws every message whenever one arrives, so each text is converted once.
+const mdDone = new Map()
 function md(src) {
+  const key = String(src ?? '')
+  let html = mdDone.get(key)
+  if (html === undefined) {
+    if (mdDone.size > 1000) mdDone.clear()
+    mdDone.set(key, (html = renderMarkdown(key)))
+  }
+  return html
+}
+
+function renderMarkdown(src) {
   const blocks = []
   const text = esc(src).replace(/```[\w-]*\n?([\s\S]*?)```/g, (_, code) => `\u0000${blocks.push(`<pre><button class="copy" data-copy title="Copy">${ICONS.copy}</button><code>${code.replace(/\n$/, '')}</code></pre>`) - 1}\u0000`)
   const inline = (line) => {
@@ -786,28 +884,33 @@ function askSummary(q, a) {
 // With a big crew the line would push the chat off screen, so it shows the agents waiting on you first, then
 // who's working, up to three, and folds the rest into one line of faces (click it for all of them).
 const TYPING_ROWS = 3
-function typingHTML(agents, asks = new Map(), { all = false } = {}) {
+function typingHTML(agents, asks, opts) {
+  return joinParts(typingParts(agents, asks, opts))
+}
+
+// The same, in parts for morph(): each row, and each one's sub-agents, a part of its own.
+function typingParts(agents, asks = new Map(), { all = false } = {}) {
   const active = agents.filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || a.subs?.length || (a.cloneOf && a.status === 'starting'))) // a new clone shows up right away
   const ordered = [...active.filter((a) => a.status === 'waiting'), ...active.filter((a) => a.status !== 'waiting')]
   const many = ordered.length > TYPING_ROWS + 1
   const shown = many && !all ? ordered.slice(0, TYPING_ROWS) : ordered
   const rest = many && !all ? ordered.slice(TYPING_ROWS) : []
-  const rows = shown.map((a) => {
+  const rows = shown.flatMap((a) => {
     const card = a.status === 'waiting' && asks.get(a.name)
     const waiting = a.status === 'waiting'
     const starting = a.cloneOf && a.status === 'starting'
     const busy = waiting || a.status === 'working' || starting
     const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : starting ? 'starting up to take it…' : busy ? a.activity || 'working…' : 'free, its sub-agents are still working'
     const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : busy ? '<span class="typing"><i></i><i></i><i></i></span>' : ''
-    return `<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
-    <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${end}</div>${subTree(a, many ? 2 : 4)}`
-  }).join('')
+    return [`<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
+    <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${end}</div>`, subTree(a, many ? 2 : 4)]
+  })
   const waitingLeft = rest.filter((a) => a.status === 'waiting').length
   const what = [waitingLeft && `${waitingLeft} more need${waitingLeft > 1 ? '' : 's'} you`, rest.length - waitingLeft && `${rest.length - waitingLeft} more at work`].filter(Boolean).join(' · ')
   const more = rest.length
     ? `<div class="typing-row typing-more" data-typing="all" title="Show everyone at work">${faceStack(rest, 6)}<span class="tr-what quiet">${what}</span><span class="chev">${ICONS.chevron}</span></div>`
     : many ? `<div class="typing-row typing-more open" data-typing="less"><span class="tr-what quiet">Show fewer</span><span class="chev">${ICONS.chevron}</span></div>` : ''
-  return rows + more
+  return [...rows, more].filter(Boolean)
 }
 
 // Its sub-agents, as branches under its line: each one's kind and job, what it's doing, how many steps and how
@@ -1084,19 +1187,20 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   }
   // Long messages fold with a fade and a "Show more" button. Measured whenever the feed is visible and changes
   // size (a hidden chat panel has no layout, so it's measured again when it opens).
+  // All the measuring first, then all the changes: measuring after each change would lay the feed out again per bubble.
   const measure = () => {
-    for (const b of el.querySelectorAll('.bubble')) {
-      if (!b.offsetParent) continue
-      const long = b.scrollHeight > parseFloat(getComputedStyle(b).fontSize) * 22 + 4
-      b.classList.toggle('long', long)
+    const bubbles = [...el.querySelectorAll('.bubble')].filter((b) => b.offsetParent)
+    const long = bubbles.map((b) => b.scrollHeight > parseFloat(getComputedStyle(b).fontSize) * 22 + 4)
+    bubbles.forEach((b, i) => {
+      b.classList.toggle('long', long[i])
       let more = b.nextElementSibling?.matches('.more') ? b.nextElementSibling : null
-      if (long && !more) {
+      if (long[i] && !more) {
         b.insertAdjacentHTML('afterend', `<button class="more" data-more="${b.dataset.id}"></button>`)
         more = b.nextElementSibling
       }
-      if (!long) more?.remove()
+      if (!long[i]) more?.remove()
       else more.textContent = b.classList.contains('open') ? 'Show less' : 'Show more'
-    }
+    })
   }
   new ResizeObserver(() => {
     measure()
@@ -1211,9 +1315,9 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
-      const busy = typingHTML(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll })
+      const busy = typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll })
       let added = false
-      if (!view.items.length) next += busy ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}` // the empty-feed hint shows only when nobody's busy
+      if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}` // the empty-feed hint shows only when nobody's busy
       if (next !== key) {
         key = next
         // a re-render mustn't take away what you're typing into a question card
@@ -1221,7 +1325,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
         const keep = active && { id: active.closest('[data-ask]').dataset.ask, field: 'note' in active.dataset ? '[data-note]' : `[data-other="${active.dataset.other}"]`, from: active.selectionStart, to: active.selectionEnd }
         const reading = pinned || first || jumpTo ? null : readingAt()
         const aimedAt = jumpTo && placeOf(jumpTo)
-        list.innerHTML = view.items.length || busy ? view.html() : emptyHTML(agents)
+        list.innerHTML = view.items.length || busy.length ? view.html() : emptyHTML(agents)
         // New messages pop in; the ones already on screen stay put.
         for (const e of view.items) {
           if (seen.has(e.id)) continue
@@ -1468,7 +1572,9 @@ function mountInk(field, { agents, strict = () => true }) {
     ink.style.paddingRight = `${parseFloat(cs.paddingRight) + Math.max(0, bar)}px`
     ink.scrollTop = field.scrollTop
   }
-  const paint = () => {
+  let painted = null
+  // quiet: a state push, which only matters when it changes what's painted (the field's size has its own observer)
+  const paint = ({ quiet = false } = {}) => {
     const text = field.value
     const caret = document.activeElement === field ? field.selectionEnd : -1
     const crew = agents()
@@ -1484,12 +1590,15 @@ function mountInk(field, { agents, strict = () => true }) {
       last = end
     }
     // a trailing newline only gets its line in the copy if something follows it
-    ink.innerHTML = `${html}${esc(text.slice(last))}​`
+    const next = `${html}${esc(text.slice(last))}​`
+    if (quiet && next === painted) return
+    painted = next
+    ink.innerHTML = next
     place()
   }
-  field.addEventListener('input', paint)
+  field.addEventListener('input', () => paint())
   field.addEventListener('scroll', () => (ink.scrollTop = field.scrollTop), { passive: true })
-  for (const ev of ['keyup', 'click', 'focus', 'blur']) field.addEventListener(ev, paint)
+  for (const ev of ['keyup', 'click', 'focus', 'blur']) field.addEventListener(ev, () => paint())
   // the field moves when something appears above it in its box (a reply preview, thumbnails)
   const moved = new ResizeObserver(place)
   moved.observe(field)
@@ -1625,13 +1734,14 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
     const task = Boolean(kindIn(ta.value))
     // agents, plus the clone you picked (in the chat or its terminal) right after its original
     const shown = agents.filter((a) => a.on && (!a.cloneOf || a.name === target))
-    morph(chips,
-      '<span class="chips-label">To</span>' +
-      chip('auto', '', `${ICONS.sparkles}<span class="label">Auto</span>`, 'Auto', 'picks by area, prefers whoever is free') +
-      chip('task', 'task-chip', `${ICONS.task}<span class="label">Task</span>`, 'Task', 'adds it to the Tasks board, @name assigns it') +
-      '<span class="chip-sep"></span>' +
-      shown.map((a) => chip(a.name, `agent${a.cloneOf ? ' clone' : ''}`, `${avatarHTML(a, { size: 22 })}<span class="label">${nameHTML(a)}</span>${unreadBadge(a.unread)}`, displayName(a), `${a.cloneOf ? `a clone of ${plainName(a)} · ` : ''}${statusText(a)}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}`, agentColor(a))).join(''))
-    fitRail()
+    const changed = morph(chips, [
+      '<span class="chips-label">To</span>',
+      chip('auto', '', `${ICONS.sparkles}<span class="label">Auto</span>`, 'Auto', 'picks by area, prefers whoever is free'),
+      chip('task', 'task-chip', `${ICONS.task}<span class="label">Task</span>`, 'Task', 'adds it to the Tasks board, @name assigns it'),
+      '<span class="chip-sep"></span>',
+      ...shown.map((a) => chip(a.name, `agent${a.cloneOf ? ' clone' : ''}`, `${avatarHTML(a, { size: 22 })}<span class="label">${nameHTML(a)}</span>${unreadBadge(a.unread)}`, displayName(a), `${a.cloneOf ? `a clone of ${plainName(a)} · ` : ''}${statusText(a)}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}`, agentColor(a))),
+    ])
+    if (changed) fitRail() // the same chips at the same width fit the same way
     el.classList.toggle('task-mode', task)
     freshBtn.setAttribute('aria-pressed', String(fresh))
     freshBtn.title = fresh ? 'On: the agent starts this task in a new conversation, with a clean slate (click to turn off)' : 'Start this task in a new conversation, with a clean slate instead of everything the agent did before'
@@ -1803,7 +1913,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
       feed = state.feed ?? []
       advance()
       draw()
-      ink.paint() // someone switched on, off, or joined
+      ink.paint({ quiet: true }) // someone switched on, off, or joined
     },
     setTarget,
     replyTo,
@@ -1843,8 +1953,11 @@ const THEMES = { system: ['auto', 'Theme: follows macOS'], light: ['sun', 'Theme
 const NEXT_THEME = { system: 'light', light: 'dark', dark: 'system' }
 function themeButton(btn) {
   let theme = 'system'
+  let drawn = false
   btn.addEventListener('click', () => crew.call('theme', NEXT_THEME[theme]))
   return (next) => {
+    if (drawn && (next ?? 'system') === theme) return // every state push asks; redrawn only when it changes
+    drawn = true
     theme = next ?? 'system'
     const [icon, label] = THEMES[theme]
     btn.innerHTML = ICONS[icon]

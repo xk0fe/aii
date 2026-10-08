@@ -1,5 +1,5 @@
 // Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
-/* global isUnread, mountConvoHead, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, mountTasks, crew, live, store, morph, rosterHTML, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
+/* global rosterParts, isUnread, mountConvoHead, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -80,6 +80,7 @@ function createTile(name, before = null) {
   const fit = new FitAddon.FitAddon()
   term.loadAddon(fit)
   term.open(tile.querySelector('.term'))
+  quietSelection(term)
   // Shift+Enter = newline in Claude Code, same as /terminal-setup configures.
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== 'keydown' || e.key !== 'Enter' || !e.shiftKey) return true
@@ -97,6 +98,23 @@ function createTile(name, before = null) {
   }).observe(tile.querySelector('.term'))
   replay(t)
   return t
+}
+
+// xterm redraws a terminal's selection every time its output scrolls a line, and its DOM renderer does that by
+// re-rendering every row, even with nothing selected and even for a terminal that's out of view (which otherwise
+// waits to be shown). With no selection before or after, that redraw changes nothing: skip it. (xterm internals,
+// so only if they're there.)
+function quietSelection(term) {
+  const render = term._core?._renderService
+  if (typeof render?.handleSelectionChanged !== 'function') return
+  const redraw = render.handleSelectionChanged.bind(render)
+  let selected = false
+  render.handleSelectionChanged = (start, end, columnSelectMode) => {
+    const now = Boolean(start && end)
+    if (!now && !selected) return
+    selected = now
+    redraw(start, end, columnSelectMode)
+  }
 }
 
 // Replay what the agent already printed at the size it was drawn, then fit (the agent redraws on resize).
@@ -212,7 +230,21 @@ $('.terms').addEventListener('dblclick', (e) => {
 function highlight(name) {
   selected = name
   for (const [n, t] of terms) t.tile.classList.toggle('on', n === name)
-  for (const el of document.querySelectorAll('.roster .crow, .roster .clone-line')) el.classList.toggle('on', el.dataset.agent === name)
+  for (const el of $('.roster').querySelectorAll('.crow, .clone-line')) el.classList.toggle('on', el.dataset.agent === name)
+  freshen() // in Focus, the one picked is the one on screen
+}
+
+// A terminal's header and ribbon are drawn while it's on screen: in the Terminals view, not filtered out of the grid,
+// and in Focus only the one picked. The rest catch up as they come into view, so a state push doesn't redraw
+// twenty headers nobody can see.
+const tileShown = (t) => view === 'terminals' && !t.tile.classList.contains('filtered') && (layout === 'grid' || t.tile.classList.contains('on'))
+function freshen() {
+  for (const t of terms.values()) {
+    if (!t.stale || !t.agent || !tileShown(t)) continue
+    t.stale = false
+    morph(t.head, tileHead(t.agent))
+    drawRibbon(t)
+  }
 }
 
 // Show an agent's terminal, with your conversation with it in the chat. Agents that are off have no terminal:
@@ -243,6 +275,9 @@ function setView(next) {
   view = next
   store.set('crew.view', next)
   if (!terms.has(selected)) highlight(terms.keys().next().value)
+  // views that are hidden skip their redraws: the one coming into view catches up first, still hidden
+  collection.setVisible(view === 'crew')
+  tasks.setVisible(view === 'tasks')
   $('.collection').classList.toggle('hidden', view !== 'crew')
   $('.tasks-view').classList.toggle('hidden', view !== 'tasks')
   $('.terms-view').classList.toggle('hidden', view !== 'terminals')
@@ -273,6 +308,7 @@ function drawShow() {
     t.tile.classList.toggle('filtered', hide)
     if (!hide) shown++
   }
+  freshen()
   const none = $('.terms .terms-none')
   if (show === 'busy' && !shown && terms.size) {
     if (!none) $('.terms').insertAdjacentHTML('beforeend', '<p class="terms-none">Nobody is busy right now</p>')
@@ -316,7 +352,7 @@ let rosterStale = false
 function drawRoster() {
   if (dragging) return void (rosterStale = true)
   rosterStale = false
-  morph($('.roster'), rosterHTML(state, { folds, selected, filter: find, drag: true }))
+  morph($('.roster'), rosterParts(state, { folds, selected, filter: find, drag: true }))
   const count = state.agents.filter((a) => !a.cloneOf).length
   $('[data-find]').placeholder = count > 1 ? `Search ${count} agents` : 'Search'
   if (dragging) document.querySelector(`.roster .crow[data-agent="${CSS.escape(dragging.name)}"]`)?.classList.add('dragging')
@@ -550,8 +586,7 @@ const ready = live((next) => {
     t.convo = convo
     t.tile.style.setProperty('--c', agentColor(a))
     t.agent = a
-    morph(t.head, tileHead(a))
-    drawRibbon(t)
+    t.stale = true // drawn by freshen() below, if it's on screen
   })
   if (!terms.has(selected)) selected = on[0]?.name
   drawRoster()
@@ -559,7 +594,7 @@ const ready = live((next) => {
   $('.autopilot small').textContent = state.autopilot ? 'Hand-offs go through' : 'Hand-offs wait for you'
   morph($('.tb-left .sums'), crewSummary(state, { unread: true }))
   highlight(selected)
-  drawShow()
+  drawShow() // and the terminals now on screen catch up (freshen)
   drawBlank()
   head.render(state)
   feed.render(state)
@@ -586,9 +621,10 @@ function drawComputers(state) {
   const online = c.links.filter((l) => l.online).length
   const chip = $('.link-chip')
   chip.classList.toggle('on', Boolean(online || c.me.sharing))
-  chip.innerHTML = c.links.length
+  const label = c.links.length
     ? `<span class="dot ${online === c.links.length ? 'working' : 'waiting'}"></span>${c.links.length + 1} computers`
     : c.me.sharing ? '<span class="dot working"></span>Sharing' : `${ICONS.computers}Computers`
+  if (chip.label !== label) chip.innerHTML = chip.label = label // asked on every push, replaced only when it changes
   const next = JSON.stringify([c, fresh, linkErr])
   if (next === linkKey) return
   linkKey = next

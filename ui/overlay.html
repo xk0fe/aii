@@ -61,12 +61,17 @@
     [data-side=above] .home + .dots:not(:empty), [data-side=below] .home + .dots:not(:empty) { padding: 0 0 0 7px; border-top: 0; border-left: 1px solid var(--line); width: auto; height: 32px; }
     .home:active { transform: scale(.9); }
     .home svg { width: 100%; height: 100%; display: block; overflow: visible; }
+    /* the buddies are stacked <svg>s, one per span (markSVG split), so their hops run on the compositor */
+    .home { container-type: size; }
+    .home .marks { position: relative; display: block; width: 100%; height: 100%; }
+    .home .marks > span { position: absolute; inset: 0; }
     /* while anyone works, the three buddies hop in a little wave */
     .home path { transform-box: fill-box; transform-origin: 50% 100%; }
     .busy .home .m0, .busy .home .m1, .busy .home .m2 { animation: buddy-hop 1.1s cubic-bezier(.3, .6, .4, 1) infinite; }
     .busy .home .m1 { animation-delay: .14s; }
     .busy .home .m2 { animation-delay: .28s; }
-    @keyframes buddy-hop { 0%, 55%, 100% { translate: 0 0; } 25% { translate: 0 -2.4px; } }
+    /* 2.4 units of the mark's viewBox (24 × 16, fitted into the button): the hop it always had, in px */
+    @keyframes buddy-hop { 0%, 55%, 100% { translate: 0 0; } 25% { translate: 0 calc(-2.4 * min(100cqw / 24, 100cqh / 16)); } }
     /* someone needs you: a warm edge that breathes (their creature wiggles with a "!") */
     .alert .pill { animation: pill-alert 2s ease-in-out infinite; }
     @keyframes pill-alert { 50% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 75%, transparent), 0 0 0 5px color-mix(in srgb, var(--waiting) 16%, transparent), 0 12px 32px -14px rgba(0, 0, 0, .38); } }

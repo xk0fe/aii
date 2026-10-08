@@ -2,7 +2,7 @@
 /* global crew, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS */
 
 const $ = (s) => document.querySelector(s)
-$('.home').innerHTML = markSVG('0 6 24 16')
+$('.home').innerHTML = markSVG('0 6 24 16', { split: true }) // its buddies hop while anyone works
 $('.panel header .logo').outerHTML = markSVG('0 6 24 16')
 $('[data-act=dashboard]').innerHTML = ICONS.expand
 $('[data-act=close]').innerHTML = ICONS.close
@@ -125,10 +125,10 @@ live((next) => {
   }
   const hidden = on.length - shown.length
   // a clone pops out next to its original, a little smaller, with its number
-  morph($('.dots'), shown.map((a) => {
+  morph($('.dots'), [...shown.map((a) => {
     const subs = runningSubs(a).length
     return `<span class="face${a.cloneOf ? ' clone' : ''}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}" title="${esc(`${displayName(a)}${a.cloneOf ? ` (a clone of ${a.cloneOf})` : ''}: ${statusText(a)}${subs ? ` · ${plural(subs, 'sub-agent')} working` : ''}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}`)}">${avatarHTML(a, { size: a.cloneOf ? 24 : 30 })}${orbitHTML(a)}${cloneTag(a)}${unreadBadge(a.unread)}</span>`
-  }).join('') + (hidden ? `<button class="more-faces" data-more-faces title="${esc(`${plural(hidden, 'more agent')}: ${on.filter((a) => !shown.includes(a)).map((a) => a.name).join(', ')}`)}">+${hidden}</button>` : ''))
+  }), hidden ? `<button class="more-faces" data-more-faces title="${esc(`${plural(hidden, 'more agent')}: ${on.filter((a) => !shown.includes(a)).map((a) => a.name).join(', ')}`)}">+${hidden}</button>` : ''])
   celebrate($('.dots'), state.agents)
   morph($('.sums'), crewSummary(state))
   // the mark in the pill counts every reply you haven't read

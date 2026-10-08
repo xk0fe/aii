@@ -410,7 +410,7 @@ function mountTasks(root, { onTerminal }) {
       if (hidden) list = list.slice(0, DONE_SHOWN)
       lane.querySelector('.lane-count').textContent = by[s.id].length || ''
       morph(lane.querySelector('.lane-act'), laneAct(s.id, by[s.id]))
-      morph(lane.querySelector('.lane-list'), list.map(cardHTML).join('') + (hidden ? `<button class="lane-more" data-act="more">Show ${hidden} more</button>` : ''))
+      morph(lane.querySelector('.lane-list'), [...list.map(cardHTML), hidden ? `<button class="lane-more" data-act="more">Show ${hidden} more</button>` : ''])
     }
   }
 
@@ -802,11 +802,26 @@ function mountTasks(root, { onTerminal }) {
   })
 
   syncAdd()
+  // While another view is up, the board isn't redrawn on every push: it catches up just before it's shown again,
+  // without the slide-ins it would have played out of sight.
+  let shown = true
+  let stale = false
   return {
     render(next) {
       state = next
       tickets = next.tasks?.tickets ?? []
       drawHead()
+      if (shown) {
+        draw()
+        if (selected) drawPanel()
+        syncAdd()
+      } else stale = true
+    },
+    setVisible(on) {
+      shown = on
+      if (!on || !stale || !state) return
+      stale = false
+      first = true
       draw()
       if (selected) drawPanel()
       syncAdd()
