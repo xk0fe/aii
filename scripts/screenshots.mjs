@@ -556,6 +556,60 @@ const SHOTS = {
     })
     win.destroy()
   },
+  // Scrolled up while replies come in: nothing moves, and a pill at the bottom counts them.
+  async latest(theme) {
+    const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await js(win, "document.querySelector('.feed').scrollTop = 0")
+    await sleep(400)
+    for (let i = 0; i < 3; i++) {
+      await js(win, `const s = window.__crewState; s.feed.push({ id: 'late${i}', kind: 'reply', from: 'joseph', to: 'you', text: 'Reply ${i + 1} while you read', ts: Date.now() }); window.__crewEmit('state', s)`)
+      await sleep(250)
+    }
+    await sleep(600)
+    await save(win, `latest-${theme}`)
+    win.destroy()
+  },
+  // Reading an older message while replies arrive: it holds still, the pill counts up, and a click goes down.
+  // A long history, so the oldest messages drop off the top as new ones come in (the chat keeps the last 80).
+  async latestGif() {
+    const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, `const s = window.__crewState; const t0 = Date.now() - 3 * 3600000
+      const said = ['Checked the save file migration.', 'Tests are green on CI.', 'Left a note on the pause menu task.', 'Bumped the coin sound volume a little.']
+      s.feed.unshift(...Array.from({ length: 90 }, (_, i) => ({ id: 'old' + i, kind: 'reply', from: ['joseph', 'david', 'gal', 'marc'][i % 4], to: 'you', text: said[i % 4], ts: t0 + i * 60000 })))
+      window.__crewEmit('state', s); window.__crewEmit('toggle', { open: true, focus: false })`)
+    await sleep(900)
+    await fitToContent(win)
+    await js(win, "document.querySelector('#m-old60').scrollIntoView({ block: 'start' })")
+    await sleep(500)
+    const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
+    const say = (i, from, text) => js(win, `const s = window.__crewState; s.feed.push({ id: 'late${i}', kind: 'reply', from: '${from}', to: 'you', text: ${JSON.stringify(text)}, ts: Date.now() }); window.__crewEmit('state', s)`)
+    await record(win, 'latest', {
+      clip: panel, ms: 8200, width: 760,
+      during: async () => {
+        let at = { x: panel.x + 200, y: panel.y + 220 }
+        await sleep(900)
+        await say(0, 'joseph', 'Pushed the fix for the reply threading.')
+        await sleep(1100)
+        await say(1, 'david', 'Reviewed it, two small notes in the PR.')
+        await sleep(1100)
+        await say(2, 'marc', 'Hero illustration is ready in assets/hero.png')
+        await sleep(1300)
+        // (an older build has no pill: then the recording just ends here)
+        if (await js(win, "return !!document.querySelector('.feed-latest button')")) {
+          at = await glide(win, at, await center(win, '.feed-latest button'), 700)
+          await sleep(300)
+          await tap(win, at)
+        }
+        await sleep(1800)
+      },
+    })
+    win.destroy()
+  },
   // A reply that used sub-agents, its list opened.
   async subsReply(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
