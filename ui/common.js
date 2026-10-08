@@ -788,8 +788,13 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
   let last = null // the state last drawn, to redraw when the "New" line goes
   let first = true
   // Pinned while you're at the bottom: new messages, typing rows and folding long bubbles keep it there.
+  // Scrolled up, nothing moves under you: a re-render puts the message you were reading back where it was, and a
+  // pill counts what came in below.
   let pinned = true
   let gliding = false
+  let missed = 0 // messages that came in while you were scrolled up
+  let jumpTo = null // the message a quote is gliding to: a re-render aims the glide again rather than holding still
+  let jumpTimer = null
   const atEnd = () => el.scrollHeight - el.scrollTop - el.clientHeight < 60
   const pin = (smooth = false) => {
     const top = el.scrollHeight - el.clientHeight
@@ -797,19 +802,73 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
     gliding = smooth
     el.scrollTo({ top, behavior: smooth ? 'smooth' : 'instant' })
   }
+  const settle = () => {
+    pinned = atEnd()
+    if (pinned) missed = 0
+    drawLatest()
+  }
   // A smooth glide fires scroll events on the way down; judge where you are once it (or your own scroll) ends.
-  el.addEventListener('scroll', () => gliding || (pinned = atEnd()), { passive: true })
+  // So does a jump to a quoted message: near the bottom its first steps would otherwise count as "at the end".
+  el.addEventListener('scroll', () => gliding || jumpTo || settle(), { passive: true })
+  // your own scrolling takes over from a jump
+  el.addEventListener('wheel', () => (jumpTo = null), { passive: true })
   el.addEventListener('scrollend', () => {
     gliding = false
-    pinned = atEnd()
+    jumpTo = null
+    settle()
   })
-  el.innerHTML = '<div class="feed-list"></div><div class="feed-list typing-list"></div>'
-  const list = el.firstElementChild
-  const typing = el.lastElementChild
+  el.innerHTML = `<div class="feed-list"></div><div class="feed-list typing-list"></div>
+    <div class="feed-latest"><button type="button" title="Jump to the latest messages">${ICONS.up}<span></span></button></div>`
+  const [list, typing, latest] = el.children
+  const count = latest.querySelector('span')
+  // runs on every scroll event, so it only touches the DOM when something changed
+  const drawLatest = () => {
+    latest.classList.toggle('on', missed > 0 && !pinned)
+    if (missed && count.textContent !== `${missed} new`) count.textContent = `${missed} new`
+  }
+  const toLatest = () => {
+    pinned = true
+    missed = 0
+    drawLatest()
+    pin(true)
+  }
+  latest.querySelector('button').addEventListener('click', toLatest)
+  latest.querySelector('button').addEventListener('mousedown', (ev) => ev.preventDefault()) // keep focus in the message box
+  // The messages at the top of what you're reading, and how far each sits from the feed's top edge. A few, in
+  // case the first one is gone after the re-render (the oldest drop off as new ones come in).
+  const readingAt = () => {
+    const top = el.getBoundingClientRect().top
+    const at = []
+    for (const it of list.children) {
+      if (!it.id) continue
+      const r = it.getBoundingClientRect()
+      if (r.bottom > top) at.push({ id: it.id, y: r.top - top })
+      if (at.length === 4) break
+    }
+    return at
+  }
+  const keepReading = (at) => {
+    const it = at.map((x) => ({ ...x, el: document.getElementById(x.id) })).find((x) => x.el && list.contains(x.el))
+    const by = it ? it.el.getBoundingClientRect().top - el.getBoundingClientRect().top - it.y : 0
+    if (Math.abs(by) >= 0.5) el.scrollTop += by
+  }
+  const glideTo = (target) => {
+    clearTimeout(jumpTimer)
+    // in case it was already in view and nothing scrolled (no scrollend): judge where you are now
+    jumpTimer = setTimeout(() => ((jumpTo = null), settle(), pin(true)), 2000)
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+  // where a message sits in the feed's content, to tell whether a re-render moved it
+  const placeOf = (id) => {
+    const it = document.getElementById(id)
+    return it && list.contains(it) ? it.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop : null
+  }
   const jump = (id) => {
     const target = el.querySelector(`#m-${CSS.escape(id)}`)
     if (!target) return
-    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    jumpTo = target.id
+    pinned = false // on the way up: new messages mustn't pull it back down
+    glideTo(target)
     target.classList.remove('flash')
     void target.offsetWidth // restart the flash animation
     target.classList.add('flash')
@@ -990,6 +1049,7 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
 
   const api = {
     jump,
+    toLatest,
     render({ feed, agents, reads }) {
       const unread = feed.filter((e) => isUnread(e, reads))
       if (unread.length) {
@@ -1010,12 +1070,17 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
         // a re-render mustn't take away what you're typing into a question card
         const active = list.contains(document.activeElement) && document.activeElement.closest('[data-ask]') ? document.activeElement : null
         const keep = active && { id: active.closest('[data-ask]').dataset.ask, field: 'note' in active.dataset ? '[data-note]' : `[data-other="${active.dataset.other}"]`, from: active.selectionStart, to: active.selectionEnd }
+        const reading = pinned || first || jumpTo ? null : readingAt()
+        const aimedAt = jumpTo && placeOf(jumpTo)
         list.innerHTML = view.items.length || busy ? view.html() : `<div class="empty">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
         // New messages pop in; the ones already on screen stay put.
         for (const e of view.items) {
           if (seen.has(e.id)) continue
           seen.add(e.id)
-          if (!first) (list.querySelector(`#m-${CSS.escape(e.id)}`)?.classList.add('enter'), (added = true))
+          if (first) continue
+          list.querySelector(`#m-${CSS.escape(e.id)}`)?.classList.add('enter')
+          added = true
+          if (!pinned && e.from !== 'you' && e.kind !== 'event') missed++
         }
         for (const id of sending) list.querySelector(`[data-ask="${CSS.escape(id)}"]`)?.classList.add('sending')
         watch.disconnect()
@@ -1024,9 +1089,14 @@ function mountFeed(el, { onAgent, onReply, onTicket = (key) => crew.call('dashbo
         const back = keep && list.querySelector(`[data-ask="${CSS.escape(keep.id)}"] ${keep.field}`)
         if (back) (back.focus({ preventScroll: true }), back.setSelectionRange(keep.from, keep.to))
         measure()
+        if (jumpTo) {
+          const now = placeOf(jumpTo)
+          if (now != null && Math.abs(now - aimedAt) >= 1) glideTo(document.getElementById(jumpTo))
+        } else if (reading) keepReading(reading)
       }
       morph(typing, busy)
       pin(added)
+      drawLatest()
       first = false
     },
   }
@@ -1279,7 +1349,7 @@ function mountInk(field, { agents, strict = () => true }) {
   return { paint }
 }
 
-function mountComposer(el, { dropZone = el } = {}) {
+function mountComposer(el, { dropZone = el, onSend } = {}) {
   el.classList.add('composer')
   el.innerHTML = `<div class="chips" role="group" aria-label="Send to"></div>
     <div class="input">
@@ -1438,6 +1508,7 @@ function mountComposer(el, { dropZone = el } = {}) {
     const text = ta.value.trim()
     const images = attach.get()
     if (!text && !images.length) return
+    onSend?.()
     // The chip stays a recipient; the hub adds any @mentions to it.
     const to = target === 'auto' ? undefined : target
     const sentAt = Date.now()

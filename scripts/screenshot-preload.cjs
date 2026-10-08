@@ -129,8 +129,8 @@ const TICKETS = [
 
 const t = (m) => now - m * min
 const FEED = [
-  { id: 'f1', kind: 'task', from: 'you', to: 'joseph', cc: ['joseph', 'david'], sendId: 's1', text: 'The feed merges multi-recipient sends. Can you two make sure replies thread back to the right bubble?', ts: t(26) },
-  { id: 'f2', kind: 'task', from: 'you', to: 'david', cc: ['joseph', 'david'], sendId: 's1', text: 'The feed merges multi-recipient sends. Can you two make sure replies thread back to the right bubble?', ts: t(26) },
+  { id: 'f1', kind: 'msg', from: 'you', to: 'joseph', cc: ['joseph', 'david'], sendId: 's1', text: 'The feed merges multi-recipient sends. Can you two make sure replies thread back to the right bubble?', ts: t(26) },
+  { id: 'f2', kind: 'msg', from: 'you', to: 'david', cc: ['joseph', 'david'], sendId: 's1', text: 'The feed merges multi-recipient sends. Can you two make sure replies thread back to the right bubble?', ts: t(26) },
   { id: 'f3', kind: 'reply', from: 'david', to: 'you', re: 'f2', text: 'Done on the client side. Replies now link to the **first visible copy**, so `mergeSends` stays the single source of truth.', ts: t(19) },
   { id: 'f3b', kind: 'ask', from: 'joseph', to: 'you', cli: 'claude', re: 'f1', ts: t(17), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm test', always: [] }, answer: { by: 'you', allow: true, always: 'Always allow Bash(npm test:*)', at: t(16.5) } },
   { id: 'f4', kind: 'handoff', from: 'joseph', to: 'gal', re: 'f1', text: 'Can you sanity-check the quote styling for threaded replies? It looks cramped on narrow panels.', ts: t(14) },
