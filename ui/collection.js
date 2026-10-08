@@ -95,7 +95,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       <span class="pc-chips">${chips}</span>
       <span class="pc-state" title="${esc(statusText(a))}"><span><span class="dot ${a.status}"></span><span>${esc(statusText(a))}</span>${contextRing(a)}</span>${doing}</span>
       ${litter}<span class="pc-av">${avatarHTML(a, { size: 104 })}</span>
-      <span class="pc-check">${ICONS.check}</span>
+      <span class="pc-check">${ICONS.check}</span><span class="pc-glow"></span>
     </button>`
   }
 
@@ -109,7 +109,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       <span class="pc-line"><span class="dot ${a.on ? a.status : 'off'}"></span><span class="${a.activity && atWork(a) ? 'mono' : ''}">${esc(line)}</span></span>
       <span class="pc-tags">${a.yolo ? '<i class="mark-yolo">YOLO</i>' : ''}${a.fast ? `<i class="mark-fast">${ICONS.bolt}</i>` : ''}${contextRing(a, { label: false })}${a.on && clonesOf(state.agents, a).length ? `<i class="pc-clone-n" title="${plural(clonesOf(state.agents, a).length, 'clone')} at work">+${clonesOf(state.agents, a).length}</i>` : ''}</span>
       <span class="pc-av">${avatarHTML(a, { size: 62 })}</span>
-      <span class="pc-check">${ICONS.check}</span>
+      <span class="pc-check">${ICONS.check}</span><span class="pc-glow"></span>
     </button>`
   }
 
@@ -128,12 +128,16 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     // on agents first in each group, off ones after them; your order otherwise
     const order = (agents) => [...agents.filter((a) => a.on), ...agents.filter((a) => !a.on)]
     const add = `<button class="pcard add ${m === 'tiles' ? 'mini' : ''}" data-act="new"><b>${ICONS.plus}</b>New agent</button>`
-    const html = grouped(groups)
-      ? groups.filter((g) => g.agents.length).map((g, i) => `<section class="col-group" data-home="${esc(g.key)}">
+    // in parts (see morph): a push that changes one agent re-reads its card alone
+    const parts = grouped(groups)
+      ? groups.filter((g) => g.agents.length).map((g, i) => ({
+          start: `<section class="col-group" data-home="${esc(g.key)}">
           <h3>${g.here ? ICONS.desktop : ICONS.laptop}<b>${esc(g.name)}</b><span>${plural(g.agents.length, 'agent')}${g.here ? ' · this Mac' : g.online ? '' : ' · offline'}</span></h3>
-          <div class="col-cards ${m}">${order(g.agents).map(one).join('')}${i === 0 ? add : ''}</div></section>`).join('')
-      : `<div class="col-cards ${m}">${order(roster()).map(one).join('')}${add}</div>`
-    morph(grid, html)
+          <div class="col-cards ${m}">`,
+          end: '</div></section>', slot: '.col-cards', parts: [...order(g.agents).map(one), ...(i === 0 ? [add] : [])],
+        }))
+      : [{ start: `<div class="col-cards ${m}">`, end: '</div>', slot: '.col-cards', parts: [...order(roster()).map(one), add] }]
+    morph(grid, parts)
     celebrate(grid, state.agents)
     const on = roster().filter((a) => a.on).length
     const pcs = groups.filter((g) => g.agents.length).length
@@ -868,10 +872,16 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     if (selecting && root.offsetParent) setSelecting(false)
   })
 
+  // While another view is up, the grid isn't redrawn on every push: it catches up when it's shown again. What it
+  // would have celebrated meanwhile is remembered all the same (and not saved for later), as when it redrew hidden.
+  let shown = true
+  let stale = false
+
   return {
     render(next) {
       state = next
-      drawGrid()
+      if (shown) drawGrid()
+      else (stale = true), celebrate(grid, state.agents)
       if (reopen && agentNamed(reopen)) {
         const name = reopen
         reopen = null
@@ -892,5 +902,9 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     },
     open,
     create: () => open(null),
+    setVisible(on) {
+      shown = on
+      if (on && stale && state) (stale = false), drawGrid()
+    },
   }
 }

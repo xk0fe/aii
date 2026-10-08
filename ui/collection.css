@@ -40,8 +40,8 @@
 
 /* ---- cards ---- */
 .pcard {
-  --c: #888;
-  position: relative; height: 196px; border: 0; border-radius: 26px; padding: 16px 18px; text-align: left; cursor: pointer; overflow: hidden;
+  --c: #888; --card-h: 196px;
+  position: relative; height: var(--card-h); border: 0; border-radius: 26px; padding: 16px 18px; text-align: left; cursor: pointer; overflow: hidden;
   color: color-mix(in srgb, var(--c) 30%, #141418);
   display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
   background:
@@ -70,15 +70,20 @@
 .pcard:hover .av-face { translate: calc((var(--mx, .5) - .5) * 7px) calc((var(--my, .5) - .5) * 5px); }
 @keyframes card-in { from { opacity: 0; transform: translateY(22px) scale(.92); } }
 .pcard.off { filter: saturate(.25); opacity: .78; }
-/* working: a light runs around the card's edge */
-@property --spin { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-.pcard.working::after {
-  content: ''; position: absolute; inset: 0; z-index: 4; border-radius: inherit; padding: 2.5px; pointer-events: none;
-  background: conic-gradient(from var(--spin), transparent 0 55%, color-mix(in srgb, var(--c) 60%, #fff) 72%, #fff 80%, color-mix(in srgb, var(--c) 60%, #fff) 88%, transparent 100%);
+/* working: a light runs around the card's edge. .pc-glow is the edge (a ring mask); the light is a conic gradient
+   on a square, as wide as the card's diagonal, that turns behind it: the same picture as turning the gradient's
+   angle, but a transform, so the compositor plays it instead of a repaint every frame. */
+.pc-glow { display: none; }
+.pcard.working .pc-glow {
+  display: block; position: absolute; inset: 0; z-index: 4; border-radius: inherit; padding: 2.5px; pointer-events: none;
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: spin 2.6s linear infinite;
 }
-@keyframes spin { to { --spin: 360deg; } }
+.pcard.working .pc-glow::before {
+  content: ''; position: absolute; left: 50%; top: 50%; width: hypot(100%, var(--card-h)); aspect-ratio: 1; translate: -50% -50%;
+  background: conic-gradient(transparent 0 55%, color-mix(in srgb, var(--c) 60%, #fff) 72%, #fff 80%, color-mix(in srgb, var(--c) 60%, #fff) 88%, transparent 100%);
+  animation: glow-turn 2.6s linear infinite;
+}
+@keyframes glow-turn { to { rotate: 360deg; } }
 /* needs you: a warm ring that breathes */
 .pcard.waiting { animation: card-in .55s var(--bounce) backwards, needs 1.8s ease-in-out infinite; animation-delay: calc(sibling-index() * 40ms), 0s; }
 @keyframes needs { 0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), 0 0 0 0 color-mix(in srgb, var(--waiting) 0%, transparent), 0 16px 30px -18px color-mix(in srgb, var(--c) 90%, #000); } 50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), 0 0 0 4px color-mix(in srgb, var(--waiting) 55%, transparent), 0 16px 30px -18px color-mix(in srgb, var(--c) 90%, #000); } }
@@ -126,7 +131,7 @@
 
 
 /* ---- compact cards: a big crew on one screen ---- */
-.pcard.mini { height: 118px; padding: 12px 14px; border-radius: 20px; gap: 3px; }
+.pcard.mini { --card-h: 118px; height: var(--card-h); padding: 12px 14px; border-radius: 20px; gap: 3px; }
 .pcard.mini .pc-mark { right: -30px; top: -36px; width: 120px; height: 120px; }
 .pcard.mini .pc-name { font-size: 17px; max-width: calc(100% - 58px); }
 .pc-line { display: flex; align-items: center; gap: 6px; max-width: calc(100% - 62px); font-size: 11.5px; font-weight: 650; min-width: 0; }

@@ -854,7 +854,11 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .av-in { position: absolute; inset: 0; transform-origin: 50% 96%; animation: av-breathe 3.6s ease-in-out infinite var(--delay); will-change: transform; }
 .av-in svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .av-face { transition: translate .25s var(--out); }
-.av-eyes { transform-box: fill-box; transform-origin: center; animation: av-blink 5.5s infinite var(--delay); }
+/* the eyes are their own <svg> in a span (ui/avatar.js), pivoting on their middle (set inline), so the blink runs on the compositor */
+.av-eyes { position: absolute; inset: 0; animation: av-blink 5.5s infinite var(--delay); }
+/* While they blink, the eyes and what's drawn over them get layers of their own, as Chrome gave the blinking SVG group
+   (and the rest of the face after it) when the blink was inside the face's <svg>: the same pixels as before. */
+.av:not(.still) .av-eye, .av:not(.still) .av-eyes + .av-face .av-front { will-change: transform; transform-box: fill-box; transform-origin: center; }
 .av.working .av-in { animation: av-hop .72s cubic-bezier(.3, .6, .4, 1) infinite var(--delay); }
 .av.waiting .av-in { animation: av-wiggle .55s ease-in-out infinite; }
 .av.sleep .av-in { animation-duration: 5.5s; filter: saturate(.3) brightness(.82); }
@@ -892,5 +896,6 @@ dialog::backdrop { background: rgba(12, 12, 22, .32); animation: fade-in .25s ea
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .av-in, .av-eyes, .av-z, .av-bang, .shimmer, .typing i { animation: none !important; }
+  .av-eye, .av-front { will-change: auto !important; }
   .shimmer { color: var(--fg2); background: none; }
 }

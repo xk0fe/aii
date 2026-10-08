@@ -21,9 +21,13 @@ export class Runner extends EventEmitter {
     this.stop(name)
     const fullEnv = cleanEnv({ ...process.env, ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' })
     const p = pty.spawn(which(file, fullEnv.PATH), args, { name: 'xterm-256color', cols: 120, rows: 36, cwd, env: fullEnv })
-    const proc = { p, buf: '', startedAt: Date.now(), cols: 120, rows: 36 }
+    // Scrollback as the chunks that arrived, trimmed to the last SCROLLBACK characters only now and then: slicing a
+    // 256 KB string on every chunk of a chatty agent's output was most of what a spinner cost.
+    const proc = { p, chunks: [], size: 0, startedAt: Date.now(), cols: 120, rows: 36 }
     p.onData((d) => {
-      proc.buf = (proc.buf + d).slice(-SCROLLBACK)
+      proc.chunks.push(d)
+      proc.size += d.length
+      if (proc.size > SCROLLBACK * 1.5) trim(proc)
       this.emit('data', name, d)
     })
     p.onExit(({ exitCode }) => {
@@ -78,8 +82,18 @@ export class Runner extends EventEmitter {
   // Recent output plus the size it was drawn at; TUIs only replay correctly at that size.
   buffer(name) {
     const proc = this.procs.get(name)
-    return proc ? { data: proc.buf, cols: proc.cols, rows: proc.rows } : { data: '', cols: 120, rows: 36 }
+    if (!proc) return { data: '', cols: 120, rows: 36 }
+    trim(proc)
+    return { data: proc.chunks[0] ?? '', cols: proc.cols, rows: proc.rows }
   }
+}
+
+// The last SCROLLBACK characters of a pty's output, as one chunk.
+function trim(proc) {
+  if (proc.chunks.length <= 1 && proc.size <= SCROLLBACK) return
+  const all = proc.chunks.join('').slice(-SCROLLBACK)
+  proc.chunks = [all]
+  proc.size = all.length
 }
 
 function which(cmd, PATH = '') {
