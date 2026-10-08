@@ -55,6 +55,8 @@ const ICONS = {
   reply: svg('<path d="M9.5 14.5 4 9l5.5-5.5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5V20"/>'),
   subs: svg('<circle cx="5.5" cy="5.5" r="2.5"/><circle cx="18.5" cy="11" r="2.5"/><circle cx="18.5" cy="19" r="2.5"/><path d="M5.5 8v7a4 4 0 0 0 4 4H16M5.5 11H16"/>'),
   thread: svg('<path d="M5 4v6.5A3.5 3.5 0 0 0 8.5 14H19M15 10l4 4-4 4"/>'),
+  // right of way: the yield sign, for Crew deciding who goes first
+  yield: svg('<path d="M4.6 5h14.8a1.1 1.1 0 0 1 .95 1.66l-7.4 12.5a1.1 1.1 0 0 1-1.9 0L3.65 6.66A1.1 1.1 0 0 1 4.6 5z"/><path d="M8.6 8.4h6.8L12 14.2z" fill="currentColor" stroke="none" opacity=".35"/>'),
   arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>', 'stroke-width="2.2"'),
   undo: svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', 'stroke-width="2.4"'),
   dash: svg('<path d="M7 12h10"/>', 'stroke-width="2.8"'),
@@ -226,7 +228,14 @@ function ago(ts) {
   return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
 }
 
+// An agent whose `crew ask` is waiting on a teammate's answer (core/hub.js question): it isn't working, it's waiting.
+const blockedOn = (a) => (a.status === 'working' && a.waitingOn?.length ? a.waitingOn : null)
+const waitText = (on) => `waiting on @${on[0].name}${on.length > 1 ? ` +${on.length - 1}` : ''} · ${ago(on[0].since)}`
+// Its status as a class (dots, status words): 'blocked' while it waits on a teammate, else its status.
+const statusClass = (a) => (blockedOn(a) ? 'blocked' : a.status)
+
 function statusText(a) {
+  if (blockedOn(a)) return waitText(a.waitingOn)
   switch (a.status) {
     case 'working': return `working · ${ago(a.since)}`
     case 'waiting': return 'needs you'
@@ -361,6 +370,7 @@ const grouped = (groups) => groups.filter((g) => g.agents.length || !g.here).len
 // What it's doing, in a few words: its current step while it works, otherwise how it is.
 function rowLine(a) {
   if (!a.on) return { text: 'off', cls: 'off' }
+  if (blockedOn(a)) return { text: waitText(a.waitingOn), cls: 'blocked' }
   if (a.status === 'working') return { text: a.activity || statusText(a), cls: a.activity ? 'working mono' : 'working' }
   if (a.status === 'waiting') return { text: a.activity ? `needs you · ${a.activity}` : 'needs you', cls: 'waiting' }
   if (a.status === 'idle' && runningSubs(a).length) return { text: `free · ${plural(runningSubs(a).length, 'sub-agent')} working`, cls: 'idle' }
@@ -457,13 +467,14 @@ const unreadBadge = (n) => (n ? `<span class="unread-badge" title="${plural(n, '
 function crewSummary(state, { unread = false } = {}) {
   const on = state.agents.filter((a) => a.on) // clones too: each one working counts
   const agents = on.filter((a) => !a.cloneOf).length
-  const working = on.filter((a) => a.status === 'working').length
+  const blocked = on.filter((a) => blockedOn(a)).length
+  const working = on.filter((a) => a.status === 'working').length - blocked
   const waiting = on.filter((a) => a.status === 'waiting').length
-  const pill = (cls, text, dot = cls) => `<span class="sum ${cls}" data-sum="${cls}">${dot ? `<i class="dot ${dot}"></i>` : ''}${text}</span>`
+  const pill = (cls, text, dot = cls, tip = '') => `<span class="sum ${cls}" data-sum="${cls}"${tip ? ` title="${tip}"` : ''}>${dot ? `<i class="dot ${dot}"></i>` : ''}${text}</span>`
   if (!state.agents.length) return ''
   if (!on.length) return pill('', 'all off', 'off')
   const fresh = unread ? state.agents.reduce((n, a) => n + (a.unread ?? 0), 0) : 0
-  return (working ? pill('working', `${working} working`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting ? '' : pill('idle', agents > 1 ? `all ${agents} free` : 'free')) + (fresh ? pill('unread', `${fresh} new`) : '')
+  return (working ? pill('working', `${working} working`) : '') + (blocked ? pill('blocked', `${blocked} waiting`, 'blocked', `${plural(blocked, 'agent')} waiting on a teammate's answer`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting || blocked ? '' : pill('idle', agents > 1 ? `all ${agents} free` : 'free')) + (fresh ? pill('unread', `${fresh} new`) : '')
 }
 
 // Segmented control: marks the segment that isOn() picks and slides the thumb to it (see .seg in common.css).
@@ -571,11 +582,12 @@ function renderMarkdown(src) {
     if (list) html += `</${list}>`
     list = null
   }
-  const item = (tag, body) => {
+  // an ordered list starts at its first number, so "4000. That's the port." doesn't read as "1."
+  const item = (tag, body, start = 1) => {
     flush()
     if (list !== tag) {
       close()
-      html += `<${tag}>`
+      html += `<${tag}${start !== 1 ? ` start="${start}"` : ''}>`
       list = tag
     }
     html += `<li>${inline(body)}</li>`
@@ -605,7 +617,7 @@ function renderMarkdown(src) {
     } else if (/^\s*\u0000\d+\u0000\s*$/.test(line)) (flush(), close(), (html += line.trim()))
     else if ((m = line.match(/^(#{1,4})\s+(.*)/))) (flush(), close(), (html += `<h4>${inline(m[2])}</h4>`))
     else if ((m = line.match(/^\s*[-*•]\s+(.*)/))) item('ul', m[1])
-    else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) item('ol', m[1])
+    else if ((m = line.match(/^\s*(\d{1,9})[.)]\s+(.*)/))) item('ol', m[2], Number(m[1]))
     else if ((m = line.match(/^&#62;\s?(.*)/))) (flush(), close(), (html += `<blockquote>${inline(m[1])}</blockquote>`))
     else if (!line.trim()) (flush(), close())
     else (close(), para.push(line))
@@ -700,14 +712,26 @@ function mountConvoHead(el, { onBack, onTerminal }) {
 // reads: what you've read (state.reads); divider: the message the "New" line goes above.
 // only: which entries to show (an agent's conversation); quotes and "replied" links still reach the rest.
 // here: the agent whose conversation it is, so its own name isn't a link to where you already are.
+// An answer that went back to the agent that asked (core/hub.js respond) is the reply already in the feed: it isn't
+// shown twice, the reply says where it went instead (backTo). A reply that answered several hand-offs at once (they
+// came in together) threads to each of them.
 const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider, only, here } = {}) => {
   const merged = mergeSends(feed)
-  const shown = only ? merged.shown.filter(only) : merged.shown
+  const visible = merged.shown.filter((e) => !e.answers)
+  const shown = only ? visible.filter(only) : visible
   const as = merged.as
   // the last `limit` entries, plus questions still waiting for you from before them
   const items = [...shown.slice(0, -limit).filter((e) => e.kind === 'ask' && !e.answer), ...shown.slice(-limit)]
-  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, open, drafts, reads, here }
-  for (const e of feed) if (e.re) (ctx.repliesTo[as[e.re]?.id ?? e.re] ??= []).push(e)
+  const waiting = new Set(agents.flatMap((a) => (a.waitingOn ?? []).map((w) => w.id)).filter(Boolean))
+  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, backTo: {}, waiting, open, drafts, reads, here }
+  for (const e of feed) {
+    if (e.answers) {
+      if (e.reply) ctx.backTo[e.reply] = { to: e.to, queued: e.queued }
+      continue
+    }
+    for (const id of [e.re, ...(e.also ?? [])].filter(Boolean)) (ctx.repliesTo[as[id]?.id ?? id] ??= []).push(e)
+    if (e.ask && e.answered?.reply && !ctx.backTo[e.answered.reply]) ctx.backTo[e.answered.reply] = { to: e.from }
+  }
   const line = '<div class="new-line" aria-label="New replies"><span>New</span></div>'
   return { items, html: () => items.map((e, i) => (e.id === divider ? line : '') + feedItem(e, items[i - 1], ctx)).join('') }
 }
@@ -767,7 +791,7 @@ function feedItem(e, prev, ctx) {
   const name = (n) => (n === 'you' ? 'You' : `<span class="who${here(n)}" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">${label(n)}</span>`)
   const time = new Date(e.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const repeat = prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && e.ts - prev.ts < 120000 && !e.re
-  const tags = (e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
+  const tags = (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
   const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
   // A reply quotes the message it answers, with a bar in the quoted sender's color; click to jump back to it.
@@ -776,7 +800,11 @@ function feedItem(e, prev, ctx) {
   const quote = orig ? `<button class="quote" data-jump="${orig.id}" style="--qc:${tint(orig.from)}" title="Jump to the message this answers">${ICONS.reply}<b>${orig.from === 'you' ? 'You' : label(orig.from)}</b><span>${esc(quoted)}</span></button>` : ''
   // ...and a message you sent links forward to the agents' replies.
   const answers = repliesTo[e.id] ?? []
-  const replied = answers.length
+  // a teammate's question (crew ask) says who answered and how long it took, or why no answer came
+  const done = e.ask && e.answered
+  const replied = done
+    ? `<button class="replied answered${done.why ? ' none' : ''}" ${done.reply ? `data-jump="${done.reply}"` : ''} title="${done.reply ? 'Jump to the answer' : ''}">${done.why ? ICONS.dash : ICONS.check}<span>@${at(done.by)} ${done.why ? esc(done.why) : `answered in ${duration(done.at - e.ts)}`}</span></button>`
+    : answers.length
     ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">${ICONS.thread}<span>${[...new Set(answers.map((r) => (r.from === 'you' ? 'You' : `@${at(r.from)}`)))].join(', ')} ${answers.some((r) => r.kind === 'reply' || r.from === 'you') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</span></button>`
     : ''
   // @names in the text take their agent's color; one nobody here has stays a plain word
@@ -806,7 +834,13 @@ function feedItem(e, prev, ctx) {
       <button class="bubble ticket-bubble" data-ticket="${esc(key)}" data-id="${e.id}"><span class="tb-icon">${ICONS[e.type ?? 'bug'] ?? ICONS.task}</span><b>#${esc(key.split('@')[0])}</b> ${esc(e.title ?? '')}</button>${replied}</div>`
   }
   if (e.kind === 'note') return said('note', `${name(e.from)} <span>shared a note</span>`)
-  if (e.kind === 'reply') return said(e.subs?.length ? 'with-subs' : '', name(e.from), subsUsed(e, open))
+  if (e.kind === 'rule') return ruleLine(e, who, time)
+  if (e.kind === 'reply') {
+    // an answer to a teammate's question: it went back to that teammate by itself
+    const back = ctx.backTo[e.id]
+    const went = back ? `<span class="tag back" style="--c:${tint(back.to)}" title="${esc(`This answer went back to @${back.to}${back.queued ? ', for its next turn' : ', straight into what it was doing'}`)}">${ICONS.reply}@${at(back.to)}</span>` : ''
+    return said(e.subs?.length ? 'with-subs' : '', `${name(e.from)}${went}`, subsUsed(e, open))
+  }
   if (e.kind === 'ask') {
     const verb = { permission: 'needs your OK', question: 'asks', plan: 'has a plan for you' }[e.ask?.type] ?? 'asks'
     return said(`ask ${e.answer ? 'answered' : 'open'}`, `${name(e.from)} <span>${verb}</span>`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`, false)
@@ -815,7 +849,38 @@ function feedItem(e, prev, ctx) {
   const actions = e.held
     ? `<div class="actions"><button class="btn primary" data-act="approve" data-id="${e.id}">Send it</button><button class="btn" data-act="drop" data-id="${e.id}">Drop</button></div>`
     : ''
+  if (e.ask) return said(`handoff question ${e.dropped ? 'dropped' : ''}`, `${name(e.from)} <span class="verb">asks</span> ${name(e.to)}`, actions)
   return said(`handoff ${e.dropped ? 'dropped' : ''}`, `${name(e.from)}<span class="via" title="handed off to">${ICONS.arrow}</span>${name(e.to)}`, actions)
+}
+
+// ---- right of way (core/hub.js question, lease, decline): Crew deciding who goes first ----------------------------
+// One quiet line in the chat each time Crew steps in, saying who was stopped from what and why. Hover it for the rule.
+const RULES = {
+  loop: {
+    text: (e, who) => {
+      const via = (e.line ?? []).slice(1, -1)
+      return `${who(e.to)} is waiting on ${who(e.from)}${via.length ? ` through ${via.map(who).join(', ')}` : ''}, so ${who(e.from)} answers first instead of ${via.length ? `asking ${who(e.to)}` : 'asking back'}`
+    },
+    tip: 'Right of way: whoever is being waited on never waits on its waiter, so two agents can never end up waiting on each other.',
+  },
+  back: {
+    text: (e, who) => `${who(e.to)} is waiting on ${who(e.from)}'s answer, so ${who(e.from)} answers instead of handing it back`,
+    tip: "Right of way: work can't go back to an agent that's waiting on your answer. The answer goes back to it by itself.",
+  },
+  file: {
+    text: (e, who) => `${who(e.from)} left <b class="rule-file">${esc(e.file)}</b> to ${who(e.to)}, who's editing it`,
+    tip: "Right of way: one agent edits a file at a time. It's free again once the agent editing it finishes its turn.",
+  },
+  decline: {
+    text: (e, who) => `<b>#${esc(String(e.ticket).split('@')[0])}</b> ${e.to ? `went to ${who(e.to)}: ${who(e.from)} declined it` : `is back on To do: ${who(e.from)} declined it, and no one else's area fits`}` + (e.text ? `<span class="rule-why">“${esc(snippet(e.text))}”</span>` : ''),
+    tip: "Right of way: a task never sits with an owner that said no. It goes to the next agent whose area it is, or back to you.",
+  },
+}
+function ruleLine(e, who, time) {
+  const r = RULES[e.rule]
+  if (!r) return ''
+  const open = e.ticket !== undefined ? ` data-ticket="${esc(String(e.ticket))}"` : ''
+  return `<div class="rule-ev${open ? ' link' : ''}" id="m-${e.id}"${open} title="${esc(`${r.tip}\n${time}`)}"><span class="rule-icon">${ICONS.yield}</span><span class="rule-text">${r.text(e, who)}</span></div>`
 }
 
 // An agent's question as a card you answer right in the chat (see hub.ask): a permission prompt, its own
@@ -889,13 +954,18 @@ function typingHTML(agents, asks, opts) {
 }
 
 // The same, in parts for morph(): each row, and each one's sub-agents, a part of its own.
-function typingParts(agents, asks = new Map(), { all = false } = {}) {
+// crew: everyone, to draw the teammates a line mentions (the one an agent is waiting on, the ones waiting on it).
+function typingParts(agents, asks = new Map(), { all = false, crew = agents } = {}) {
   const active = agents.filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || a.subs?.length || (a.cloneOf && a.status === 'starting'))) // a new clone shows up right away
-  const ordered = [...active.filter((a) => a.status === 'waiting'), ...active.filter((a) => a.status !== 'waiting')]
+  const ordered = [...active.filter((a) => a.status === 'waiting'), ...active.filter((a) => blockedOn(a)), ...active.filter((a) => a.status !== 'waiting' && !blockedOn(a))]
   const many = ordered.length > TYPING_ROWS + 1
   const shown = many && !all ? ordered.slice(0, TYPING_ROWS) : ordered
   const rest = many && !all ? ordered.slice(TYPING_ROWS) : []
+  const byName = Object.fromEntries(crew.map((x) => [x.name, x]))
+  const someone = (n) => byName[n] ?? cloneGhost(n, byName) ?? { name: n }
   const rows = shown.flatMap((a) => {
+    const on = blockedOn(a)
+    if (on) return [waitRow(a, on, someone), subTree(a, many ? 2 : 4)]
     const card = a.status === 'waiting' && asks.get(a.name)
     const waiting = a.status === 'waiting'
     const starting = a.cloneOf && a.status === 'starting'
@@ -903,7 +973,7 @@ function typingParts(agents, asks = new Map(), { all = false } = {}) {
     const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : starting ? 'starting up to take it…' : busy ? a.activity || 'working…' : 'free, its sub-agents are still working'
     const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : busy ? '<span class="typing"><i></i><i></i><i></i></span>' : ''
     return [`<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
-    <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${end}</div>`, subTree(a, many ? 2 : 4)]
+    <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${owedChip(a, someone)}${end}</div>`, subTree(a, many ? 2 : 4)]
   })
   const waitingLeft = rest.filter((a) => a.status === 'waiting').length
   const what = [waitingLeft && `${waitingLeft} more need${waitingLeft > 1 ? '' : 's'} you`, rest.length - waitingLeft && `${rest.length - waitingLeft} more at work`].filter(Boolean).join(' · ')
@@ -911,6 +981,27 @@ function typingParts(agents, asks = new Map(), { all = false } = {}) {
     ? `<div class="typing-row typing-more" data-typing="all" title="Show everyone at work">${faceStack(rest, 6)}<span class="tr-what quiet">${what}</span><span class="chev">${ICONS.chevron}</span></div>`
     : many ? `<div class="typing-row typing-more open" data-typing="less"><span class="tr-what quiet">Show fewer</span><span class="chev">${ICONS.chevron}</span></div>` : ''
   return [...rows, more].filter(Boolean)
+}
+
+// An agent waiting on a teammate's answer (its `crew ask`): who it's waiting on, what it asked, and for how long. It
+// rests instead of hopping, in the calm color of waiting rather than the orange of "needs you". Click for its question.
+function waitRow(a, on, someone) {
+  const w = on[0]
+  const them = someone(w.name)
+  const more = on.length > 1 ? `<span class="tr-more">+${on.length - 1}</span>` : ''
+  const tip = `${displayName(a)} asked @${w.name}${w.text ? `: “${w.text}”` : ''}\nIt's waiting for the answer, which goes ahead of everything else @${w.name} has queued. Click for the question`
+  return `<div class="typing-row blocked" ${w.id ? `data-jump="${esc(w.id)}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${esc(tip)}">
+    <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span>
+    <span class="tr-what tr-wait"><span>waiting on</span><span class="tr-on" style="--c:${agentColor(them)}">${avatarHTML(them, { size: 16, mood: 'still' })}<b>${nameHTML(them)}</b></span>${more}${w.text ? `<span class="tr-q">${esc(w.text)}</span>` : ''}</span>
+    <span class="tr-time">${duration(Date.now() - w.since)}</span></div>`
+}
+
+// On the line of an agent someone is waiting on: their faces, so you can see whose answer holds up whom.
+function owedChip(a, someone) {
+  const waiting = (a.owes ?? []).filter((o) => o.waiting)
+  if (!waiting.length) return ''
+  const names = waiting.map((o) => `@${o.name}`).join(', ')
+  return `<span class="tr-owed" title="${esc(`${names} ${waiting.length > 1 ? 'are' : 'is'} waiting on ${displayName(a)}'s answer, so ${waiting.length > 1 ? 'their questions go' : 'its question goes'} first`)}">${waiting.slice(0, 3).map((o) => avatarHTML(someone(o.name), { size: 14, mood: 'still' })).join('')}<span>${waiting.length > 1 ? `${waiting.length} wait` : 'waits'}</span></span>`
 }
 
 // Its sub-agents, as branches under its line: each one's kind and job, what it's doing, how many steps and how
@@ -1315,7 +1406,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
-      const busy = typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll })
+      const busy = typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll, crew: agents })
       let added = false
       if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}` // the empty-feed hint shows only when nobody's busy
       if (next !== key) {

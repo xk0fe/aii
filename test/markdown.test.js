@@ -68,3 +68,8 @@ test('@mentions are marked the way the hub reads them: not emails, packages, pos
   assert.match(md('@david fix it, then @gal@mac-mini.'), /<span class="mention" data-m="david">@david<\/span> fix it, then <span class="mention" data-m="gal@mac-mini">@gal@mac-mini<\/span>\./)
   for (const text of ["@david's branch", 'mail a@b.com', 'bump @types/node', 'run `@nobody`', 'ask @you']) assert.doesNotMatch(md(text), /class="mention"/, text)
 })
+
+test('an ordered list starts at its first number, so an answer that starts with one reads as written', () => {
+  assert.equal(md('4000. Staging and local use the same port.'), '<ol start="4000"><li>Staging and local use the same port.</li></ol>')
+  assert.equal(md('1. one\n2. two'), '<ol><li>one</li><li>two</li></ol>')
+})
