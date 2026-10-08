@@ -148,8 +148,8 @@ const air = computer('Air', port + 1, [
 ])
 const mini = computer('Mini', port + 2, [])
 
-// The CLI has started (its SessionStart hook) and is free: messages go in right away.
-const ready = (c, name) => c.run(`((a) => (crew.hub.onHook(${JSON.stringify(name)}, { hook_event_name: 'SessionStart', source: 'startup' }), a.holdUntil = 0, crew.hub.pump(a), a.status))(crew.hub.agents.get(${JSON.stringify(name)}))`)
+// The CLI has started (its SessionStart hook), its terminal has gone quiet and it is free: messages go in right away.
+const ready = (c, name) => c.run(`((a, proc) => (crew.hub.onHook(${JSON.stringify(name)}, { hook_event_name: 'SessionStart', source: 'startup' }), a.holdUntil = 0, proc && (proc.lastOutput = 0), crew.hub.pump(a), a.status))(crew.hub.agents.get(${JSON.stringify(name)}), crew.hub.runner.procs.get(${JSON.stringify(name)}))`)
 const feedOf = (c) => c.run(`crew.hub.feed`)
 
 before(async () => {

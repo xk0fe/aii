@@ -23,8 +23,9 @@ export class Runner extends EventEmitter {
     const p = pty.spawn(which(file, fullEnv.PATH), args, { name: 'xterm-256color', cols: 120, rows: 36, cwd, env: fullEnv })
     // Scrollback as the chunks that arrived, trimmed to the last SCROLLBACK characters only now and then: slicing a
     // 256 KB string on every chunk of a chatty agent's output was most of what a spinner cost.
-    const proc = { p, chunks: [], size: 0, startedAt: Date.now(), cols: 120, rows: 36 }
+    const proc = { p, chunks: [], size: 0, startedAt: Date.now(), lastOutput: Date.now(), cols: 120, rows: 36 }
     p.onData((d) => {
+      proc.lastOutput = Date.now()
       proc.chunks.push(d)
       proc.size += d.length
       if (proc.size > SCROLLBACK * 1.5) trim(proc)
@@ -64,11 +65,18 @@ export class Runner extends EventEmitter {
     this.procs.get(name)?.p.write(data)
   }
 
-  // Type a prompt and press Enter. Multi-line text goes in as a bracketed paste so newlines don't submit early.
+  // How long its terminal has drawn nothing: an idle CLI is silent, a busy or starting one keeps redrawing.
+  quietFor(name) {
+    const proc = this.procs.get(name)
+    return proc ? Date.now() - proc.lastOutput : 0
+  }
+
+  // Type a prompt and press Enter. The text always goes in as a bracketed paste: newlines don't submit early, and
+  // when a stalled CLI reads the text and the Enter together, the Enter still submits instead of joining the text.
   submit(name, text) {
     const proc = this.procs.get(name)
     if (!proc) return
-    proc.p.write(text.includes('\n') ? `\x1b[200~${text}\x1b[201~` : text)
+    proc.p.write(`\x1b[200~${text}\x1b[201~`)
     setTimeout(() => proc.p.write('\r'), 150)
   }
 

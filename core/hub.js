@@ -26,6 +26,12 @@ const FEED_KEEP = 300
 // A clone with nothing to do waits this long before it goes away, in case a teammate's answer is on its way.
 const CLONE_LINGER = 5 * 60000
 export const MAX_CLONES = 5
+// An idle CLI draws nothing; one still starting up or finishing a turn (a hook's spinner) keeps drawing. A message
+// waits for this much quiet before it's typed, but never longer than SETTLE_MAX.
+const SETTLE_QUIET = 700
+const SETTLE_MAX = 20000
+// Enter again until the CLI reports the prompt, then call for help: about three minutes in all.
+const PICKUP_WAITS = [2500, 3000, 5000, 10000, 20000, 30000, 60000, 60000]
 const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
 )
@@ -996,6 +1002,14 @@ export class Hub extends EventEmitter {
       a.freshFor = a.inbox[0].id
       return this.startFresh(a, a.inbox[0].ticket !== undefined ? ` for #${a.inbox[0].ticket}` : ' for its next task')
     }
+    // Still drawing: starting up, or finishing a turn under a hook's spinner. Text typed now can be dropped, or read
+    // together with its Enter, which the CLI then takes as part of the text.
+    if (a.settleFor !== a.inbox[0].id) Object.assign(a, { settleFor: a.inbox[0].id, settleFrom: Date.now() })
+    const drawing = SETTLE_QUIET - (this.runner.quietFor?.(a.name) ?? Infinity)
+    if (drawing > 0 && Date.now() - a.settleFrom < SETTLE_MAX) {
+      a.timer = setTimeout(() => this.pump(a), drawing)
+      return
+    }
     const msg = a.inbox.shift()
     msg.queued = false
     if (msg.ticket !== undefined && !msg.triage) (this.convoOf(a).ticket = msg.ticket), this.saveConvos() // this conversation is about that bug now
@@ -1015,13 +1029,14 @@ export class Hub extends EventEmitter {
     this.setStatus(a, 'working')
   }
 
-  // UserPromptSubmit cancels this. Until then, press Enter again in case the first one was swallowed.
-  // Slow starters (a CLI still loading its MCP servers) get about 20s before we call for help.
-  awaitPickup(a, waits = [2500, 3000, 14000]) {
+  // UserPromptSubmit cancels this. Until then, press Enter again in case the first one was swallowed: a loaded Mac
+  // can stall the CLI long enough that the next Enter is lost too, so keep at it for minutes, not seconds.
+  awaitPickup(a, waits = PICKUP_WAITS) {
     clearTimeout(a.ack)
     const [ms, ...rest] = waits
     a.ack = setTimeout(() => {
       if (a.status !== 'working') return
+      if (a.holdUntil > Date.now()) return this.awaitPickup(a, waits) // you're typing in its terminal: don't send your line
       if (!rest.length) return this.needsYou(a, "didn't pick up the last message, check its terminal")
       this.runner.write(a.name, '\r')
       this.awaitPickup(a, rest)
