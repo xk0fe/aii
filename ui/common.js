@@ -110,8 +110,9 @@ function morph(el, html) {
 // The same as morphing to the parts' html joined together, part by part. A part is the html of one node, or
 // { start, end, slot, parts } for a node (start + end) whose element matching `slot` (the node itself or one inside
 // it, written empty) holds parts of its own. A part that's what its node was last patched from isn't parsed
-// again, so a push that changes one row of a long list reads and patches that row alone. joinParts() is the html.
-const partOf = new WeakMap() // node -> { html, boxes }: the part it was last patched from, and its checkboxes
+// again, so a push that changes one row of a long list reads and patches that row alone, unless something changed
+// the row's own class or style since (the search's cursor, a drag): a morph puts those back. joinParts() is the html.
+const partOf = new WeakMap() // node -> { html, cls, style, boxes }: the part it was last patched from
 function morphParts(el, parts) {
   morphed.delete(el)
   let changed = false
@@ -121,7 +122,7 @@ function morphParts(el, parts) {
     if (!html) continue
     let o = el.childNodes[i++]
     const was = o && partOf.get(o)
-    if (was?.html === html) {
+    if (was?.html === html && was.cls === o.getAttribute?.('class') && was.style === o.getAttribute?.('style')) {
       for (const box of was.boxes) box.checked = box.hasAttribute('checked')
     } else {
       const tpl = document.createElement('template')
@@ -130,7 +131,7 @@ function morphParts(el, parts) {
       o = patchNode(el, o, tpl.content.firstChild, part.slot)
       const inner = part.slot && slotOf(o, part.slot)
       const boxes = o.nodeType === Node.ELEMENT_NODE ? [...(o.type === 'checkbox' ? [o] : []), ...o.querySelectorAll('input[type=checkbox]')].filter((b) => !inner?.contains(b)) : []
-      partOf.set(o, { html, boxes })
+      partOf.set(o, { html, cls: o.getAttribute?.('class'), style: o.getAttribute?.('style'), boxes })
       changed = true
     }
     if (part.slot) changed = morphParts(slotOf(o, part.slot), part.parts) || changed
