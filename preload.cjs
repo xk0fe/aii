@@ -1,5 +1,5 @@
 // The only bridge between the UI pages and the app: pages use window.crew.
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const listen = (channel) => (fn) => ipcRenderer.on(channel, (_e, ...args) => fn(...args))
 
@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('crew', {
     return res.ok
   },
   input: (name, data) => ipcRenderer.send('input', name, data),
+  // Where a file or folder dropped on the page is on disk.
+  pathOf: (file) => webUtils.getPathForFile(file),
   // Size the window around the page; the floating pill also says where it sits inside, so it stays put.
   fit: (width, height, focus, pill) => ipcRenderer.send('fit', width, height, focus, pill),
   // The floating pill: drag it (start / move / end, pointer in screen coordinates), and hear which side of it

@@ -260,6 +260,15 @@ function select(name) {
   terms.get(name).term.focus()
 }
 
+// A click in the sidebar: the agent whose terminal and conversation are already up, clicked again, lets go of it.
+// The chat goes back to everyone's and Focus to the grid. The second click of a double-click doesn't count.
+function pick(name, e) {
+  if (e.detail > 1) return
+  if (view !== 'terminals' || selected !== name || composer.target() !== name) return select(name)
+  composer.setTarget('auto')
+  if (layout === 'focus') setLayout('grid')
+}
+
 function edit(name) {
   if (view !== 'crew') setView('crew')
   collection.open(state.agents.find((a) => a.name === name)?.cloneOf ?? name) // a clone is edited through its original
@@ -406,9 +415,9 @@ $('.roster').addEventListener('click', (e) => {
   const fold = e.target.closest('[data-fold]')
   if (fold) return toggleFold(fold.dataset.fold)
   const clone = e.target.closest('[data-clone]')
-  if (clone) return select(clone.dataset.clone)
+  if (clone) return pick(clone.dataset.clone, e)
   const row = e.target.closest('.crow')
-  if (row) (view === 'crew' ? edit : select)(row.dataset.agent)
+  if (row) view === 'crew' ? edit(row.dataset.agent) : pick(row.dataset.agent, e)
 })
 $('.roster').addEventListener('dblclick', (e) => {
   const row = e.target.closest('.crow')

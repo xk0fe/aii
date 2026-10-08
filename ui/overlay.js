@@ -102,6 +102,8 @@ $('.dots').addEventListener('click', (e) => {
   if (e.target.closest('[data-more-faces]')) return setOpen(true)
   const face = e.target.closest('[data-agent]')
   if (!face) return
+  // the one you're talking to, tapped again with the chat open: back to everyone's
+  if (document.body.classList.contains('open') && composer.target() === face.dataset.agent) return everyone()
   composer.setTarget(face.dataset.agent)
   setOpen(true)
   requestAnimationFrame(() => feed.reveal()) // the panel was closed: it couldn't scroll yet
