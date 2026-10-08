@@ -6,7 +6,7 @@ TOKEN=${CREW_TOKEN:-$(cat "$DIR/token" 2>/dev/null)}
 FROM=${CREW_AGENT:-you}
 [ -n "$URL" ] || { echo "crew app is not running" >&2; exit 1; }
 
-call() { curl -sS -m 5 -H "X-Crew: $TOKEN" "$@" || echo "crew app is not running" >&2; }
+call() { curl -sS -m "${WAIT:-5}" -H "X-Crew: $TOKEN" "$@" || echo "crew app is not running" >&2; }
 
 cmd=$1
 [ $# -gt 0 ] && shift
@@ -18,6 +18,19 @@ case "$cmd" in
     [ $# -gt 0 ] && shift
     [ -n "$to" ] && [ $# -gt 0 ] || { echo 'usage: crew send <name|any> "task"' >&2; exit 2; }
     printf '%s' "$*" | call --data-binary @- "$URL/send?from=$FROM&to=$to" ;;
+  ask)
+    # held open until the answer comes; Crew lets go after 100s with where things stand
+    to=$1
+    [ $# -gt 0 ] && shift
+    [ -n "$to" ] && [ $# -gt 0 ] || { echo 'usage: crew ask <name|any> "question"' >&2; exit 2; }
+    printf '%s' "$*" | WAIT=110 call --data-binary @- "$URL/question?from=$FROM&to=$to" ;;
+  wait) WAIT=110 call -X POST "$URL/wait?from=$FROM" ;;
+  answer)
+    # crew answer "…" answers the question you were asked; crew answer @name "…" picks whose
+    to=
+    case "$1" in @*) to=${1#@}; shift ;; esac
+    [ $# -gt 0 ] || { echo 'usage: crew answer [@name] "your answer"' >&2; exit 2; }
+    printf '%s' "$*" | call --data-binary @- "$URL/answer?from=$FROM&to=$to" ;;
   note)
     [ $# -gt 0 ] || { echo 'usage: crew note "text"' >&2; exit 2; }
     printf '%s' "$*" | call --data-binary @- "$URL/note?from=$FROM" ;;
@@ -27,7 +40,10 @@ case "$cmd" in
   *)
     cat <<'EOF'
 crew who                    agents, their areas and status
-crew send <name|any> "..."  hand a task to an agent (queued until it is free)
+crew ask <name|any> "..."   ask an agent and wait for its answer (its final message)
+crew wait                   keep waiting for the answers to what you asked
+crew answer [@name] "..."   answer a question you were asked, right away, and carry on
+crew send <name|any> "..."  hand a task to an agent for good (queued until it is free)
 crew note "..."             share context with the whole crew
 crew board                  read the shared notes
 crew task                   the Tasks board: list, show, done, note, add (crew task help)

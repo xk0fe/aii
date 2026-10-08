@@ -116,11 +116,19 @@ Export one agent or a few as a `.crew` file and send it to someone. They get the
 Agents pass work around with a small `crew` command:
 
 ```sh
-crew send david "fix the payload"    # hand work to a teammate
-crew note "API runs on port 4000"    # tell the whole crew something
-crew who                             # see who's around
-crew task list                       # pick up work from the Tasks board
+crew ask joseph "which port is staging on?"  # ask a teammate and wait for the answer
+crew answer "4000"                           # answer one, even in the middle of a task
+crew send david "fix the payload"            # hand work to a teammate for good
+crew note "API runs on port 4000"            # tell the whole crew something
+crew who                                     # see who's around
+crew task list                               # pick up work from the Tasks board
 ```
+
+A question reaches a teammate even when it's busy with something else. It shows up at the teammate's next step, the teammate answers and carries on, and the asker has the answer within seconds instead of waiting for the teammate to finish.
+
+Crew also decides who goes first when agents need each other, so they never end up waiting in circles. An agent that's being waited on can't wait on its waiter, work can't be handed back to an agent that's waiting for your answer, and two agents never edit the same file at once. When Crew steps in, the chat says so in one quiet line.
+
+<p align="center"><img src="docs/images/right-of-way.webp" alt="arie asks joseph while joseph is busy: arie waits on it, joseph answers mid-task in two seconds and carries on" width="560"></p>
 
 Hand-offs show up in the chat with the sender's face next to them. Turn Autopilot off if you'd rather approve each one.
 

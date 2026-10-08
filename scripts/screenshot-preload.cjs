@@ -201,6 +201,31 @@ FEED.push(
   { id: 'b5', kind: 'task', type: 'bug', act: 'fixed', from: 'david', ticket: 5, title: 'Double jump fires twice on gamepad', text: 'Held buttons were read every frame. Debounced the jump input so a press fires once.', ts: t(0.2) },
 )
 
+// ?fixture=row: right of way (core/hub.js question). arie asked joseph something and waits on his answer, which goes
+// ahead of his queue; when joseph tried to ask arie back, Crew had him answer first. Earlier: david's question came
+// back answered, three hand-offs for david went in as one turn, a clone left a file to its agent, and a declined task
+// went straight to its next owner.
+if (new URLSearchParams(location.search).get('fixture') === 'row') {
+  const agent = (n) => AGENTS.find((a) => a.name === n)
+  Object.assign(agent('arie'), { status: 'working', since: t(1.4), activity: 'Bash · crew ask joseph', waitingOn: [{ name: 'joseph', since: t(0.8), id: 'q1', text: 'Which port does the staging API listen on?' }] })
+  Object.assign(agent('joseph'), { owes: [{ name: 'arie', since: t(0.8), id: 'q1', waiting: true }] })
+  Object.assign(agent('david'), { status: 'working', since: t(4), activity: 'Edit src/screens/Settings.tsx' })
+  Object.assign(agent('gal'), { status: 'idle', since: t(20), activity: '' })
+  FEED.length = 0
+  FEED.push(
+    { id: 'h1', kind: 'msg', from: 'arie', to: 'david', text: 'Triaged #9 to you: the settings labels sit at the far edge of their rows in Arabic.', ts: t(9) },
+    { id: 'h2', kind: 'msg', from: 'scarlett@mac-mini', to: 'david', text: 'QA on #4715: the hold card sits 79pt too high on the iPhone Air.', ts: t(8.8) },
+    { id: 'h3', kind: 'msg', from: 'arie', to: 'david', text: 'Recorded both blockers on #2.', ts: t(8.6) },
+    { id: 'h4', kind: 'reply', from: 'david', to: 'you', re: 'h1', also: ['h2', 'h3'], text: 'Fixed the hold offset and both **#2** blockers in one pass (PR #4747). Starting on **#9** next.', ts: t(6.5) },
+    { id: 'q0', kind: 'msg', from: 'david', to: 'joseph', ask: true, text: 'Does /v2/swing still return frames as an array?', ts: t(5), answered: { by: 'joseph', at: t(4.2), reply: 'q0r' } },
+    { id: 'q0r', kind: 'reply', from: 'joseph', to: 'you', re: 'q0', text: 'Yes: `frames: Frame[]`, newest last. It pages past 500.', ts: t(4.2) },
+    { id: 'r1', kind: 'rule', rule: 'file', from: 'marc.2', to: 'marc', file: 'palette.md', ts: t(3) },
+    { id: 'r2', kind: 'rule', rule: 'decline', from: 'jeff', to: 'david', ticket: 9, title: 'Rename "Volumn" to "Volume" in settings', text: 'Settings strings are client code, not support', ts: t(2) },
+    { id: 'q1', kind: 'msg', from: 'arie', to: 'joseph', ask: true, queued: true, text: 'Which port does the staging API listen on?', ts: t(0.8) },
+    { id: 'r3', kind: 'rule', rule: 'loop', from: 'joseph', to: 'arie', line: ['arie', 'joseph'], ts: t(0.5) },
+  )
+}
+
 // what you've read: david's replies, but not joseph's or arie's latest
 const READS = { since: 0, agents: { david: now - 18 * min } }
 const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, tasks: { tickets: TICKETS, triage: 'arie', autofix: false } }

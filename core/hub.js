@@ -32,6 +32,12 @@ const SETTLE_QUIET = 700
 const SETTLE_MAX = 20000
 // Enter again until the CLI reports the prompt, then call for help: about three minutes in all.
 const PICKUP_WAITS = [2500, 3000, 5000, 10000, 20000, 30000, 60000, 60000]
+// How long `crew ask` holds on for the answer before the asker carries on (the answer then comes as a message).
+// Under Claude Code's two minutes for a shell command, so the command ends on its own terms.
+export const ASK_HOLD = 100000
+// A file an agent edits is its own until its turn ends. One it hasn't touched for this long is free again, in case
+// a turn's end went unreported.
+const LEASE_STALE = 30 * 60000
 const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
 )
@@ -53,6 +59,10 @@ export class Hub extends EventEmitter {
     this.stats = readJSON(at('stats.json')) ?? {}
     this.feed = loadFeed()
     this.asks = new Map() // feed id of an open question -> { resolve, name, cli, input }
+    // Right of way (see question): what each `crew ask` is still owed, and which agent edits which file.
+    this.calls = new Map() // id (the question's feed id) -> { id, msg, from, to, parent, at, hold, remote }
+    this.leases = new Map() // absolute path -> { name, at }
+    this.turnedAway = new Set() // "who:file" told this turn that a file is taken, so the chat says it once
     this.saving = Promise.resolve() // feed.jsonl appends, one after another (an answer must land after its card)
     this.tickets = new Tickets(at('tickets.json'))
     // Each agent's current conversation: when it started, tasks in it, compactions, and how full it is.
@@ -94,6 +104,7 @@ export class Hub extends EventEmitter {
     for (const [name, a] of this.agents) {
       if (a.cloneOf || names.has(name)) continue // clones follow their original, below
       this.forgetAsks(name)
+      this.forgetCalls(name, 'went away before it answered')
       this.runner.stop(name)
       this.agents.delete(name)
     }
@@ -251,6 +262,8 @@ export class Hub extends EventEmitter {
 
   launch(a, fresh = false) {
     this.forgetAsks(a.name)
+    if (a.serving?.length) this.settleCalls(a, null, 'restarted before it answered')
+    this.release(a.name)
     a.relaunch = false
     a.subs = new Map() // sub-agents don't outlive their process
     a.subPending = []
@@ -327,7 +340,7 @@ export class Hub extends EventEmitter {
   // then a new clone if there's room for one, and failing that the agent's queue, which the first of them to
   // finish takes from (takeOver).
   placeFor(a, msg) {
-    if (a.cloneOf || !this.maxClones(a) || !this.runner.running(a.name)) return a
+    if (a.cloneOf || !this.maxClones(a) || !this.runner.running(a.name) || this.pinned.has(msg)) return a
     const family = [a, ...this.clonesOf(a)]
     const asked = msg.re && this.feed.find((e) => e.id === msg.re)
     const asker = asked && family.find((x) => x.name === asked.from)
@@ -388,7 +401,7 @@ export class Hub extends EventEmitter {
   // Is a teammate still working on something this clone asked for? Its answer should find the clone still there.
   owed(c) {
     const from = (id) => this.feed.find((e) => e.id === id)?.from
-    return this.feed.some((e) => e.held && e.from === c.name) ||
+    return this.feed.some((e) => e.held && e.from === c.name) || [...this.calls.values()].some((call) => call.from === c.name) ||
       [...this.agents.values()].some((x) => x.inbox.some((m) => m.from === c.name) || ((x.status === 'working' || x.status === 'waiting') && from(x.current) === c.name))
   }
 
@@ -397,18 +410,25 @@ export class Hub extends EventEmitter {
   dismiss(name) {
     const c = this.agents.get(name)
     if (!c?.cloneOf) throw new Error(`@${name} isn't a clone`)
-    for (const t of ['reapTimer', 'timer', 'ack', 'readyTimer']) clearTimeout(c[t])
+    for (const t of ['reapTimer', 'timer', 'ack', 'readyTimer', 'steerTimer']) clearTimeout(c[t])
     this.forgetAsks(name)
     this.runner.stop(name)
     this.setStatus(c, 'off')
     this.agents.delete(name)
     delete this.sessions[name]
     delete this.convos[name]
+    // a question it was answering, or had put aside while it asked a teammate, won't get its answer from it
+    for (const call of [...this.calls.values()]) if (this.ownerOf(call) === name && !c.inbox.includes(call.msg)) this.respond(call, { by: name, why: 'went away before it answered' })
     const base = this.agents.get(c.cloneOf)
     if (base && c.inbox.length) {
-      for (const msg of c.inbox) this.amend(msg, { to: base.name })
-      base.inbox.push(...c.inbox)
+      for (const msg of c.inbox) {
+        this.amend(msg, { to: base.name })
+        const call = msg.ask && base.off && this.calls.get(msg.id)
+        if (call) this.respond(call, { by: base.name, why: "was turned off, so it can't answer" })
+        else this.queue(base, msg)
+      }
       this.pump(base)
+      this.steer(base)
       for (const x of this.clonesOf(base)) this.pump(x)
     }
     this.changed()
@@ -591,12 +611,26 @@ export class Hub extends EventEmitter {
       case 'UserPromptSubmit':
         // Remembered only once it has a prompt: Claude Code doesn't save empty sessions, so they can't be resumed.
         if (e.session_id && this.sessions[name] !== e.session_id) this.saveSession(name, e.session_id)
+        // A question or an answer Crew typed into the turn it's in (steer): it's part of this turn now. (A turn that
+        // ended before it got there starts with it instead, as any other turn does.)
+        if (a.steering && samePrompt(e.prompt, a.steering.text)) {
+          const { msgs } = a.steering
+          clearTimeout(a.steerTimer)
+          a.steering = null
+          if (a.status === 'working') {
+            a.serving = [...(a.serving ?? []), ...msgs]
+            this.changed()
+            return this.steer(a)
+          }
+          a.expect = { id: msgs[0].id, text: e.prompt, msgs }
+        }
         clearTimeout(a.ack)
         a.activity = ''
         // Remember what the agent is answering, so its reply (and any hand-off it makes) can point back to it.
         // A prompt typed straight into its terminal joins the feed too, so replies to it have something to point at.
         if (a.expect && samePrompt(e.prompt, a.expect.text)) {
           a.current = a.expect.id
+          a.serving = a.expect.msgs // what this turn answers (several, when hand-offs came in together)
           a.expect = null
         } else if (e.prompt && !e.prompt.startsWith('/')) a.current = this.post({ kind: 'msg', from: 'you', to: name, text: e.prompt.slice(0, 4000), via: 'terminal' }).id
         this.record(name, { tasks: 1 })
@@ -634,7 +668,12 @@ export class Hub extends EventEmitter {
         if (a.turnStart) this.record(name, { turns: 1, turnMs: Date.now() - a.turnStart })
         a.turnStart = null
         const subs = this.subsThisTurn(a, e.background_tasks)
-        if (e.last_assistant_message) this.post({ kind: 'reply', from: name, text: e.last_assistant_message.slice(0, 4000), ...(a.current && { re: a.current }), ...(subs.length && { subs }) })
+        // one turn can answer several messages that came in together: the reply threads to the first, and the rest
+        const also = (a.serving ?? []).slice(1).map((m) => m.id)
+        const reply = e.last_assistant_message
+          ? this.post({ kind: 'reply', from: name, text: e.last_assistant_message.slice(0, 4000), ...(a.current && { re: a.current }), ...(also.length && { also }), ...(subs.length && { subs }) })
+          : null
+        this.settleCalls(a, reply)
         hold(a, 600)
         return this.setStatus(a, 'idle')
       }
@@ -795,10 +834,69 @@ export class Hub extends EventEmitter {
       if (a.status === 'waiting') this.record(a.name, { waitMs: spent })
       Object.assign(a, { status, since: Date.now() })
     }
+    // Its turn is over, whichever way it ended: the files it edited are free again, and whoever asked it something
+    // this turn hears that no answer is coming (a Stop has settled those already). Turned off, it won't get to the
+    // questions in its queue either, so their askers hear that now rather than wait. (A clone's queue goes back to
+    // its original instead, see dismiss.)
+    if (status === 'idle' || status === 'stopped' || status === 'off') {
+      this.release(a.name)
+      if (a.steering && status === 'idle' && !a.freshPending && !a.relaunch) {
+        // what Crew typed mid-turn wasn't taken in yet: give the CLI a moment to start a turn with it (see unsteer)
+        hold(a, 5000)
+        clearTimeout(a.steerTimer)
+        a.steerTimer = setTimeout(() => this.unsteer(a), 5000)
+      } else if (a.steering) this.unsteer(a) // gone: it's back in the queue, for what happens to that below
+      if (a.serving?.length) this.settleCalls(a, null, { idle: 'stopped before it answered', stopped: 'exited before it answered', off: 'was turned off before it answered' }[status])
+      if (status === 'off' && !a.cloneOf) this.forgetCalls(a.name, "was turned off, so it can't answer")
+    }
     if (status === 'idle' && a.freshPending) return this.startFresh(a)
     if (status === 'idle' && a.relaunch) return this.launch(a)
     if (status === 'idle') this.pump(a)
+    if (status === 'working') this.steer(a)
     this.changed()
+  }
+
+  // Questions and answers don't wait for the end of a turn. A busy agent gets them typed into the turn it's in: its
+  // CLI takes them in at its next step (Claude Code and Codex both do, between two tool calls), so a teammate waiting
+  // on its answer waits seconds rather than the rest of a task. It answers with `crew answer` and carries on.
+  // Never while a dialog is up in its terminal (a permission prompt), while you're typing there, or while the last
+  // thing Crew typed hasn't been taken in yet; then as soon as that clears.
+  steer(a) {
+    if (a.status !== 'working' || !this.runner.running(a.name) || a.expect || a.steering || this.asking(a.name)) return
+    const msgs = a.inbox.filter((m) => m.ask || m.answers)
+    if (!msgs.length) return
+    clearTimeout(a.steerTimer)
+    const wait = a.holdUntil - Date.now()
+    if (wait > 0) return void (a.steerTimer = setTimeout(() => this.steer(a), wait))
+    for (const m of msgs) {
+      a.inbox.splice(a.inbox.indexOf(m), 1)
+      m.queued = false
+      this.record(a.name, { fromTeam: 1, delivered: 1, queuedMs: Date.now() - m.ts })
+    }
+    const text = msgs.map((m) => this.framed(a, m, { busy: true })).join('\n\n')
+    this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
+    a.steering = { text, msgs, at: Date.now() }
+    // Enter again in case the first was lost on a stalled CLI (an empty prompt box ignores it)
+    const retry = (waits) => {
+      a.steerTimer = setTimeout(() => {
+        if (!a.steering || a.status !== 'working' || a.typedAt > a.steering.at) return // you've typed there since
+        this.runner.write(a.name, '\r')
+        if (waits.length > 1) retry(waits.slice(1))
+      }, waits[0])
+    }
+    retry([3000, 8000])
+    this.changed()
+  }
+
+  // The turn ended before its CLI took in what Crew typed into it. If the CLI doesn't start a turn with it by itself
+  // in a few seconds, it goes back to the front of the queue and in as the next prompt.
+  unsteer(a) {
+    clearTimeout(a.steerTimer)
+    if (!a.steering) return
+    const { msgs } = a.steering
+    a.steering = null
+    for (const m of [...msgs].sort((x, y) => rank(y) - rank(x))) (a.inbox.unshift(m), (m.queued = true))
+    this.pump(a)
   }
 
   // ---- work experience: what each agent actually did, kept across restarts -----
@@ -858,6 +956,7 @@ export class Hub extends EventEmitter {
     // Codex waits on its hook while a question is in the chat: typing in its terminal hands the question over.
     // Only real keys count, not what the terminal reports by itself (focus in/out, cursor position, mouse).
     if (typed(data)) for (const [id, q] of this.asks) if (q.name === name && q.cli === 'codex') this.answer(id, { terminal: true })
+    if (typed(data)) a.typedAt = Date.now()
     hold(a, 3000)
     this.runner.write(name, data)
     if (a.status === 'waiting' && data === '\r') this.setStatus(a, 'working')
@@ -888,11 +987,18 @@ export class Hub extends EventEmitter {
   // `fresh`: deliver into a new conversation (started when it's this message's turn). `ticket`: the bug it's about.
   // `re`: the message you're replying to (a feed id here); the copy links to it, so the feed threads it. `quote`
   // ({ from, text }): the same for a message that lives on another computer, which can only be quoted.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote }) {
+  // From a linked computer, `ask` is a question asked there (its id there: the answer goes back with it), and
+  // `answers` the answer to one asked here.
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers }) {
     text = String(text ?? '').trim()
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
     if (!text) throw new Error('nothing to send')
+    if (answers) {
+      const call = this.calls.get(answers)
+      if (call) this.respond(call, { by: from, text })
+      return 'answered\n'
+    }
     // a clone that went away means its original; a bare name that isn't here but is on exactly one linked
     // computer means that agent
     const local = (n) => [n, this.baseOf(n)].find((x) => this.agents.has(x))
@@ -904,8 +1010,22 @@ export class Hub extends EventEmitter {
     if (away.length && !names.length) return this.relay(from, away, text, images, extra)
     const targets = names.length ? this.recipients(names, from) : [this.route(text, from)]
     if (!targets[0]) throw new Error('no agents to send to')
+    // Work can't go back to a teammate that's waiting on your answer: your final message goes back to it by itself.
+    for (const t of this.agents.has(from) ? targets : []) {
+      const answering = this.agents.get(from).serving ?? []
+      const call = [...this.calls.values()].find((c) => this.ownerOf(c) === from && (c.from === t.name || this.baseOf(c.from) === t.name) && (c.hold || answering.includes(c.msg)))
+      if (!call) continue
+      this.ruling('back', from, call.from)
+      throw new Error(`@${call.from} is waiting for your answer to "${gist(call.text, 80)}". Don't hand it back: put what you'd send it in your answer. Your final message goes back to @${call.from} by itself.${targets.length > 1 ? ' (nothing was sent)' : ''}`)
+    }
 
     const held = from !== 'you' && !this.config.autopilot
+    if (ask) {
+      const msg = this.post({ kind: 'msg', from, to: targets[0].name, text, ask: true, ...(images.length && { images }), queued: !held, held })
+      this.open({ id: msg.id, msg, from, text, back: ask })
+      if (!held) this.enqueue(targets[0], msg)
+      return `asked @${targets[0].name}\n`
+    }
     const quoted = replyTo ? this.feed.find((e) => e.id === replyTo) : undefined
     const re = quoted?.id ?? this.agents.get(from)?.current // a hand-off points at the request that led to it
     if (this.agents.has(from)) this.record(from, { handoffs: targets.length })
@@ -949,13 +1069,22 @@ export class Hub extends EventEmitter {
     return names.map((n) => this.agents.get(n))
   }
 
+  // An agent's queue, in the order it takes things up: answers to its own questions first (they unblock work it's in
+  // the middle of), then teammates' questions (someone is waiting), then everything else as it came.
+  queue(a, msg) {
+    const i = a.inbox.findIndex((m) => rank(m) > rank(msg))
+    if (i < 0) a.inbox.push(msg)
+    else a.inbox.splice(i, 0, msg)
+  }
+
   enqueue(a, msg) {
     const to = this.placeFor(a, msg)
     if (to !== a) this.amend(msg, { to: to.name })
-    to.inbox.push(msg)
+    this.queue(to, msg)
     const busy = to.status !== 'idle' || to.inbox.length > 1
     const starting = to.status === 'starting'
     this.pump(to)
+    this.steer(to) // a question or an answer for a busy agent goes into the turn it's in
     if (to.cloneOf === a.name && !this.pinned.has(msg)) return `@${a.name} is busy, so ${starting ? `a clone, @${to.name}, is starting up to take this` : `its clone @${to.name} took this`}\n`
     return busy ? `queued for @${to.name} (${to.status}, ${to.inbox.length} waiting)\n` : `sent to @${to.name}\n`
   }
@@ -974,7 +1103,300 @@ export class Hub extends EventEmitter {
     const msg = this.feed.find((m) => m.id === id && m.held)
     if (!msg) return
     Object.assign(msg, { held: false, dropped: true })
+    const call = this.calls.get(id) // a question you dropped: its asker hears so, instead of waiting
+    if (call) this.respond(call, { by: msg.to, why: 'never got it: the user dropped the question' })
     this.changed()
+  }
+
+  // ---- right of way: questions that come back, and who goes first -------------------------------------------
+  // Agents that need each other can stall a crew: two of them each waiting for the other, an answer that never finds
+  // its way back, work handed back and forth, two editors in one file. Crew settles these by rule instead of leaving
+  // the agents to sort it out between them:
+  // - `crew ask` holds the asker's shell until the answer comes. The question reaches the teammate even mid-task (it's
+  //   typed into the turn it's in, see steer), and its `crew answer`, or else its final message, comes straight back
+  //   into the asker's turn (or into the turn it's in by then, if it gave up waiting). Nobody has to remember to
+  //   reply, and nobody polls.
+  // - Whoever is being waited on never waits on its waiter: an ask that would close a loop is refused on the spot.
+  //   And work can't be handed back to an agent that's waiting on your answer: the answer goes back by itself.
+  // - Answers go in first, then questions, then the rest; hand-offs that piled up go in together, in one turn.
+  // - One file, one editor (lease).
+
+  // `crew ask <name> "…"`. Resolves with the answer, or after `hold` ms with where things stand.
+  async question({ from = 'you', to, text, images = [], closed, hold = ASK_HOLD }) {
+    text = String(text ?? '').trim()
+    images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
+    if (!text) throw new Error('usage: crew ask <name> "what you need"')
+    const named = addressees(to, '')
+    if (named.length > 1) throw new Error('ask one teammate at a time: crew ask <name> "…"')
+    const local = (n) => [n, this.baseOf(n)].find((x) => this.agents.has(x))
+    const name = named.length ? (named[0].includes('@') ? named[0] : (local(named[0]) ?? this.elsewhere?.(named[0]) ?? named[0])) : this.route(text, from)?.name
+    if (!name) throw new Error('no agents to ask')
+    const asker = this.agents.get(from)
+    this.mayWait(from, name)
+    if (name.includes('@')) return this.questionElsewhere({ from, name, text, images, closed, hold })
+    const [target] = this.recipients([name], from)
+    // the same question again (a retry after a "hasn't answered yet"): wait on the one already asked
+    const same = [...this.calls.values()].find((c) => c.from === from && this.baseOf(this.ownerOf(c)) === target.name && squash(c.text) === squash(text))
+    if (same) return this.hold([same], hold, closed)
+    const held = from !== 'you' && !this.config.autopilot
+    const msg = this.post({ kind: 'msg', from, to: target.name, text, ask: true, ...(images.length && { images }), ...(asker?.current && { re: asker.current }), queued: !held, held })
+    const call = this.open({ id: msg.id, msg, from, text, parent: this.workingOn(asker) })
+    if (asker) this.record(from, { handoffs: 1 })
+    if (!held) this.enqueue(target, msg)
+    return this.hold([call], hold, closed)
+  }
+
+  // A question for an agent on a linked computer: asked there (where it's queued and answered by the same rules), and
+  // waited on here. Its answer comes back through send({ answers }).
+  async questionElsewhere({ from, name, text, images, closed, hold }) {
+    if (!this.relay) throw new Error(`@${name} is on another computer, and Crew Link isn't on`)
+    // from your own terminal there's no one there to send the answer back to: it shows in the chat
+    if (from === 'you') return `${await this.relay(from, [name], text, images, {})}(its answer will show in the chat)\n`
+    const call = this.open({ id: randomUUID().slice(0, 8), to: name, from, text, parent: this.workingOn(this.agents.get(from)) })
+    let out
+    try {
+      out = await this.relay(from, [name], text, images, { ask: call.id })
+    } catch (e) {
+      this.calls.delete(call.id)
+      throw e
+    }
+    if (!/^asked /.test(out)) {
+      // a computer on an older Crew took it as a hand-off: no answer will come back by itself
+      this.calls.delete(call.id)
+      return `${out}(its computer runs an older Crew, so this went as a hand-off: the answer won't come back by itself)\n`
+    }
+    if (this.agents.has(from)) this.record(from, { handoffs: 1 })
+    return this.hold([call], hold, closed)
+  }
+
+  open(call) {
+    // a question that never got its answer back (its computer went away for good) is forgotten after a day
+    for (const [id, c] of this.calls) if (!c.hold && Date.now() - c.at > 864e5) this.calls.delete(id)
+    this.calls.set(call.id, { at: Date.now(), hold: null, ...call })
+    this.changed()
+    return this.calls.get(call.id)
+  }
+
+  // `name` won't answer any more (turned off, removed, renamed, moved to another computer): whoever is waiting on it
+  // hears so now, whether its question was queued, being answered or put aside while it asked a teammate. What it
+  // asked itself isn't waited on any more either.
+  forgetCalls(name, why) {
+    const a = this.agents.get(name)
+    for (const m of a?.inbox.filter((m) => m.ask) ?? []) a.inbox.splice(a.inbox.indexOf(m), 1)
+    for (const call of [...this.calls.values()]) {
+      if (this.ownerOf(call) === name) this.respond(call, { by: name, why })
+      else if (call.from === name) {
+        this.calls.delete(call.id)
+        call.hold?.resolve('')
+      }
+    }
+  }
+
+  // Who owes a question its answer: whoever took it (a clone, maybe), or the agent on another computer it went to.
+  ownerOf(call) {
+    return call.msg?.to ?? call.to
+  }
+
+  // The question `a` is answering right now, if any: anything it asks in turn is part of answering that one.
+  workingOn(a) {
+    for (const m of a?.serving ?? []) {
+      const id = m.ask ? m.id : m.for
+      if (id && this.calls.has(id)) return id
+    }
+    return undefined
+  }
+
+  // Whoever is being waited on never waits on its waiter. `from` may wait on `to` unless `to` is already waiting on
+  // `from`, directly or down a line of teammates: `from` would then wait forever, so it's told to answer first.
+  mayWait(from, to) {
+    const line = this.waitPath(to, from)
+    if (!line) return
+    this.ruling('loop', from, to, { line })
+    const via = line.slice(1, -1).map((n) => `@${n}`)
+    const why = via.length ? `@${to} is waiting on ${via.join(', which is waiting on ')}, which is waiting for your answer` : `@${to} is waiting for your answer`
+    throw new Error(`${why}, so it can't answer you until you answer. Don't wait on it: finish with what you know, say what you couldn't check, and your answer unblocks it.`)
+  }
+
+  // [start, …, goal] when `start` is stuck waiting on `goal`, through whoever it waits on in turn. null when it isn't.
+  waitPath(start, goal) {
+    const prev = new Map([[start, null]])
+    const todo = [start]
+    while (todo.length) {
+      const n = todo.shift()
+      for (const m of this.blockedOn(n)) {
+        if (prev.has(m)) continue
+        prev.set(m, n)
+        if (m === goal) {
+          const line = [m]
+          for (let x = n; x !== null; x = prev.get(x)) line.unshift(x)
+          return line
+        }
+        todo.push(m)
+      }
+    }
+    return null
+  }
+
+  // The teammates `name` is stuck waiting on right now: whoever owes an answer to a `crew ask` of its that's still
+  // holding on. An agent on a linked computer: as its computer reports it.
+  blockedOn(name) {
+    if (this.agents.has(name)) return [...this.calls.values()].filter((c) => c.from === name && c.hold).map((c) => this.ownerOf(c))
+    return (this.directory?.() ?? []).find((a) => a.name === name)?.waitingOn?.map((w) => w.name) ?? []
+  }
+
+  // The asker waits in its shell for the first of `calls` to be answered, for up to `ms`. Then it's told where
+  // things stand and to carry on, and the answers come to it as messages instead. The shell command ending early
+  // (Esc, a timeout) lets go the same way.
+  hold(calls, ms, closed) {
+    return new Promise((resolve) => {
+      const h = {}
+      const timer = setTimeout(() => h.resolve(this.stillWaiting(calls)), ms)
+      h.resolve = (text) => {
+        clearTimeout(timer)
+        for (const c of calls) if (c.hold === h) c.hold = null
+        this.changed()
+        resolve(text)
+      }
+      h.since = Date.now()
+      for (const c of calls) {
+        c.hold?.resolve(this.stillWaiting([c])) // a second wait on it takes over from the first
+        c.hold = h
+      }
+      closed?.addEventListener('abort', () => h.resolve(''), { once: true })
+      this.changed()
+    })
+  }
+
+  stillWaiting(calls) {
+    const lines = calls.map((c) => {
+      const to = this.ownerOf(c)
+      const b = this.agents.get(to)
+      const at = b ? b.inbox.indexOf(c.msg) : -1
+      const where = !b ? '' : b.serving?.includes(c.msg) ? "it's on it now" : b.steering?.msgs.includes(c.msg) ? 'it gets your question at its next step' : at === 0 ? (b.status === 'idle' ? "it's about to start on it" : 'your question is next, once it finishes what it is doing') : at > 0 ? `${at} message${at > 1 ? 's' : ''} ahead of yours` : ''
+      return `@${to} hasn't answered yet${where ? ` (${where})` : ''}.`
+    })
+    return `${lines.join('\n')}\nDon't ask again. Carry on with other work and the answer comes to you as a message, or wait more with: crew wait\n`
+  }
+
+  // `crew wait`: hold on for the answers to the questions you asked. One that came in while you were busy (queued
+  // for your next turn) is handed over right here instead.
+  wait({ from = 'you', closed, hold = ASK_HOLD } = {}) {
+    const a = this.agents.get(from)
+    const arrived = a ? a.inbox.filter((m) => m.answers) : []
+    if (arrived.length) {
+      for (const m of arrived) {
+        a.inbox.splice(a.inbox.indexOf(m), 1)
+        this.amend(m, { queued: false })
+      }
+      a.serving = [...(a.serving ?? []), ...arrived] // this turn takes them up now
+      return arrived.map((m) => `@${m.from} answered${m.question ? ` "${m.question}"` : ''}:\n\n${m.text}`).join('\n\n') + '\n'
+    }
+    const open = [...this.calls.values()].filter((c) => c.from === from)
+    if (!open.length) return 'Nothing to wait for: every question you asked has been answered.\n'
+    for (const c of open) this.mayWait(from, this.ownerOf(c)) // the same rule as crew ask: never wait on your waiter
+    return this.hold(open, hold, closed)
+  }
+
+  // `crew answer [@name] "…"`: answer a question you were asked, right away, without ending what you're doing (the
+  // oldest still open, or the one from `to`). It shows in the chat as your reply to it, and the asker has it now.
+  answerNow({ from, to, text }) {
+    text = String(text ?? '').trim()
+    if (!text) throw new Error('usage: crew answer "your answer"')
+    const a = this.agents.get(from)
+    const asked = (to ? [to] : []).map((n) => String(n).replace(/^@/, '').toLowerCase())
+    const all = (a?.serving ?? []).filter((m) => m.ask && this.calls.has(m.id))
+    const open = all.filter((m) => !asked.length || asked.includes(m.from) || asked.includes(this.baseOf(m.from)))
+    if (!open.length) throw new Error(asked.length ? `@${asked[0]} hasn't asked you anything that's still open` : 'No question to answer: nobody is waiting on you (or it was answered already).')
+    const m = open[0]
+    const reply = this.post({ kind: 'reply', from, text: text.slice(0, 4000), re: m.id })
+    this.respond(this.calls.get(m.id), { by: from, text, reply })
+    const left = all.length - 1
+    return `@${m.from} has your answer.${left ? ` ${left} more question${left > 1 ? 's' : ''} waiting: crew answer @name "…"` : ''}\n`
+  }
+
+  // An agent's turn is over: the questions it was answering get its final message (or why there isn't one). One it
+  // asked a teammate about in turn, still unanswered, stays open: the turn in which that answer comes in settles it.
+  settleCalls(a, reply, why) {
+    const served = a.serving ?? []
+    a.serving = []
+    for (const id of new Set(served.map((m) => (m.ask ? m.id : m.for)))) {
+      const call = id && this.calls.get(id)
+      if (!call || this.ownerOf(call) !== a.name) continue
+      if (!why && [...this.calls.values()].some((c) => c.from === a.name && c.parent === id)) continue
+      this.respond(call, { by: a.name, text: reply?.text, reply, why: why ?? (reply ? undefined : 'finished without an answer') })
+    }
+  }
+
+  // A question's answer, whichever way it comes: back into the asker's `crew ask` if that's still waiting, else to the
+  // asker as its next message (ahead of anything else in its queue), or back to its computer if it's on another.
+  respond(call, { by, text, reply, why }) {
+    this.calls.delete(call.id)
+    const said = why ? `(@${by} ${why}.)` : String(text ?? '').trim()
+    if (call.msg) this.amend(call.msg, { answered: { by, at: Date.now(), ...(reply && { reply: reply.id }), ...(why && { why }) } })
+    if (call.hold) return call.hold.resolve(`@${by} answered:\n\n${said}\n`)
+    if (call.back) return this.sendBack(by, call, said)
+    const asker = this.agents.get(call.from) ?? this.agents.get(this.baseOf(call.from))
+    if (!asker || asker.off) return this.changed()
+    const msg = this.post({ kind: 'msg', from: by, to: asker.name, text: said, answers: call.id, question: gist(call.text), re: call.msg?.id ?? call.id, ...(reply && { reply: reply.id }), ...(call.parent && { for: call.parent }), queued: true })
+    this.pinned.add(msg) // its asker's, not a clone's that happens to be free
+    this.enqueue(asker, msg)
+  }
+
+  // An answer for a question asked on another computer goes back there. If that computer can't be reached right now,
+  // it tries again for a minute before giving up (the asker there is told where things stand by its own hold).
+  sendBack(by, call, said, tries = 0) {
+    Promise.resolve(this.relay?.(by, [call.from], said, [], { answers: call.back })).catch(() => {
+      if (tries < 5) setTimeout(() => this.sendBack(by, call, said, tries + 1), 12000)
+    })
+  }
+
+  // Crew stepping in, as a line in the chat: who was stopped from what, and why. The same one twice in a row (an
+  // agent trying again) shows once.
+  ruling(rule, from, to, extra = {}) {
+    const last = this.feed.findLast((e) => e.kind === 'rule')
+    if (last && last.rule === rule && last.from === from && last.to === to && last.file === extra.file && last.ticket === extra.ticket && Date.now() - last.ts < 120000) return
+    this.post({ kind: 'rule', rule, from, to, ...extra })
+  }
+
+  // One file, one editor. An agent's file tools check here before they write (Claude Code's Edit, Write, MultiEdit
+  // and NotebookEdit; Codex's apply_patch): the first agent to edit a file holds it until its turn ends, and anyone
+  // else is turned away, told who has it. So an agent and its clones, or two agents in one folder, never write over
+  // each other. An agent answering the holder's question may edit its files: the holder is waiting on it, not
+  // editing. The answer is the PreToolUse hook's output: '' lets the edit through.
+  lease(name, e) {
+    const a = this.agents.get(name)
+    if (!a || !e) return ''
+    const files = editedFiles(e, expand(a.cwd))
+    for (const file of files) {
+      const held = this.leases.get(file)
+      const holder = held && held.name !== name && this.agents.get(held.name)
+      if (!holder || !this.holding(holder, held) || this.waitPath(holder.name, name)) continue
+      const short = path.basename(file)
+      if (!this.turnedAway.has(`${name}:${file}`)) {
+        this.turnedAway.add(`${name}:${file}`)
+        this.ruling('file', name, holder.name, { file: short })
+      }
+      const reason = `${short} is being edited by @${holder.name} right now, and Crew lets one agent edit a file at a time. Leave it to @${holder.name} and do the rest of your work: the file is free again once @${holder.name} finishes its turn. If you need a change in it, crew ask ${holder.name}.`
+      return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } })
+    }
+    for (const file of files) {
+      const held = this.leases.get(file)
+      // free, or its own already: it's this agent's now (one answering the holder edits under the holder's lease)
+      if (!held || held.name === name || !this.holding(this.agents.get(held.name), held)) this.leases.set(file, { name, at: Date.now() })
+    }
+    return ''
+  }
+
+  // Is an agent still holding a file it edited? Only mid-turn, and only for so long without touching it.
+  holding(a, lease) {
+    return Boolean(a) && this.runner.running(a.name) && (a.status === 'working' || a.status === 'waiting') && Date.now() - lease.at < LEASE_STALE
+  }
+
+  release(name) {
+    let freed = false
+    for (const [file, l] of this.leases) if (l.name === name) (this.leases.delete(file), (freed = true))
+    for (const k of this.turnedAway) if (k.startsWith(`${name}:`)) this.turnedAway.delete(k)
+    if (freed) this.changed()
   }
 
   // Best agent for an un-addressed task: area match first, then whoever is free, then the shortest queue.
@@ -1010,23 +1432,51 @@ export class Hub extends EventEmitter {
       a.timer = setTimeout(() => this.pump(a), drawing)
       return
     }
-    const msg = a.inbox.shift()
-    msg.queued = false
+    const msgs = this.nextUp(a)
+    const [msg] = msgs
+    for (const m of msgs) m.queued = false
     if (msg.ticket !== undefined && !msg.triage) (this.convoOf(a).ticket = msg.ticket), this.saveConvos() // this conversation is about that bug now
-    const also = msg.cc?.filter((n) => n !== a.name).map((n) => `@${n}`).join(' ')
-    const tag = [msg.from !== 'you' && `from @${msg.from}`, msg.replying, also && `also sent to ${also}, split the work`].filter(Boolean).join(', ')
     // A line Crew owes the agent (it moved to this computer while free) goes on top of the next message it gets.
     const note = this.convos[a.name]?.note
     if (note) delete this.convos[a.name].note, this.saveConvos()
-    const text = [note, tag ? `[${tag}] ${msg.text}` : msg.text].filter(Boolean).join('\n\n')
-    this.runner.submit(a.name, withImages(text, msg.images))
+    const head = msgs.length < 2 ? '' : msg.answers ? `[${msgs.length} answers to your questions came in]` : `[${msgs.length} hand-offs came in while you were busy, oldest first. Take them together, in this one turn.]`
+    const text = [note, head, ...msgs.map((m) => this.framed(a, m))].filter(Boolean).join('\n\n')
+    this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
     // Matched against the prompt the agent reports, even if it shows up late. Only the words count:
     // Claude Code turns attached image paths into "[Image #1]" and moves them around.
-    a.expect = { id: msg.id, text }
+    a.expect = { id: msg.id, text, msgs }
     // (Crew's own prompts, like "you were moved here", aren't messages anyone sent it)
-    if (!msg.crew) this.record(a.name, { [msg.from === 'you' ? 'fromYou' : 'fromTeam']: 1, delivered: 1, queuedMs: Date.now() - msg.ts })
+    for (const m of msgs) if (!m.crew) this.record(a.name, { [m.from === 'you' ? 'fromYou' : 'fromTeam']: 1, delivered: 1, queuedMs: Date.now() - m.ts })
     this.awaitPickup(a)
     this.setStatus(a, 'working')
+  }
+
+  // What goes in next: the head of the queue, with every other answer when it's an answer, and every other teammate
+  // hand-off when it's one of those. They're read together, in one turn: a pile of hand-offs costs one turn instead
+  // of one each, and two that crossed are read side by side. A question, a message from you and a task each get a
+  // turn of their own.
+  nextUp(a) {
+    const kind = (m) => (m.answers ? 'answer' : !m.ask && !m.fresh && m.ticket === undefined && m.from !== 'you' && !m.crew ? 'handoff' : null)
+    const k = kind(a.inbox[0])
+    const msgs = k ? a.inbox.filter((m) => kind(m) === k) : [a.inbox[0]]
+    for (const m of msgs) a.inbox.splice(a.inbox.indexOf(m), 1)
+    return msgs
+  }
+
+  // A message as the agent reads it: in brackets, what it is and who it's from, so it knows what's expected of it.
+  // Several agents sent the same message: the first named leads and owns the result, the rest each take their part.
+  // busy: typed into the turn it's in (steer), so it answers right away and carries on.
+  framed(a, m, { busy = false } = {}) {
+    if (m.answers) return `[answer from @${m.from} to your question${m.question ? ` "${m.question}"` : ''}] ${m.text}`
+    if (m.ask && busy) return `[question from @${m.from}, who is waiting on your answer. Answer it now with crew answer "…", then carry on with what you were doing] ${m.text}`
+    if (m.ask) return `[question from @${m.from}, who is waiting on your answer: your final message is the answer, and goes back to @${m.from} by itself] ${m.text}`
+    const others = (m.cc ?? []).filter((n) => this.baseOf(n) !== this.baseOf(a.name))
+    const leads = others.length && this.baseOf(m.cc[0]) === this.baseOf(a.name)
+    const split = !others.length ? '' : leads
+      ? `also sent to ${others.map((n) => `@${n}`).join(' ')}: you lead this and own the result, and they each take the part in their own area`
+      : `also sent to ${others.map((n) => `@${n}`).join(' ')}, and @${m.cc[0]} leads it: take only the part in your own area`
+    const tag = [m.from !== 'you' && `from @${m.from}: it's yours now, no need to report back`, m.replying, split].filter(Boolean).join(', ')
+    return tag ? `[${tag}] ${m.text}` : m.text
   }
 
   // UserPromptSubmit cancels this. Until then, press Enter again in case the first one was swallowed: a loaded Mac
@@ -1087,7 +1537,7 @@ export class Hub extends EventEmitter {
   async dispatch(id, opts) {
     const { to, note } = opts ?? {} // over Crew Link a missing argument arrives as null
     const t = this.tickets.get(id)
-    const owner = this.agentName(to || t.owner || ownerFor(`${t.title} ${t.body}`, this.teammates())?.name)
+    const owner = this.agentName(to || t.owner || ownerFor(`${t.title} ${t.body}`, this.teammates().filter((a) => !t.declined?.includes(this.baseOf(a.name))))?.name)
     if (!owner) throw new Error(`who should fix #${t.id}? Pick an owner first`)
     const here = this.agents.get(owner)
     // a double click, or Auto-fix and you at once: it's already on its way
@@ -1153,7 +1603,7 @@ export class Hub extends EventEmitter {
       const [id, host] = String(r ?? '').replace(/^#/, '').split('@')
       return { id, host: host && host !== this.self ? host : null }
     }
-    const withId = ['show', 'done', 'note', 'triage', 'dup'].includes(op)
+    const withId = ['show', 'done', 'note', 'triage', 'dup', 'decline'].includes(op)
     const { id: ref, host } = withId ? split(words[0]) : { id: '', host: null }
     const original = op === 'dup' ? split(words[1]) : null
     if (original && !original.id) throw new Error('usage: crew task dup <n> <original>')
@@ -1202,6 +1652,9 @@ export class Hub extends EventEmitter {
         this.tickets.note(t.id, by, text)
         this.postTask(t, from, 'note', text)
         return `noted on #${t.id}\n`
+      case 'decline':
+        if (!text) throw new Error(`usage: crew task decline ${ref} "why it isn't yours"`)
+        return this.decline(t, by, text)
       case 'dup': {
         const original = this.tickets.dup(t.id, words[1], by)
         this.postTask(t, from, 'dup', `#${original.id}`)
@@ -1210,6 +1663,28 @@ export class Hub extends EventEmitter {
       default:
         return TASK_HELP
     }
+  }
+
+  // `crew task decline <n> "why"`: its owner can't or shouldn't do it. A task never sits with an owner that said no: it
+  // goes straight to the next agent whose area it matches (never back to one that declined it), and on to it in a new
+  // conversation if it was under way or Auto-start is on. With no one left, it goes back to To do, unassigned, and
+  // you hear about it.
+  decline(t, by, why) {
+    if (t.status === 'done' || t.status === 'check') throw new Error(`#${t.id} is ${t.status === 'done' ? 'closed' : 'waiting for review'} already`)
+    if (by !== t.owner && by !== t.fixer) throw new Error(`#${t.id} is ${t.owner ? `@${t.owner}'s` : 'nobody\'s yet'}: only its owner can decline it`)
+    t.declined = [...new Set([...(t.declined ?? []), by])]
+    this.tickets.note(t.id, by, `declined: ${why}`)
+    const next = ownerFor(`${t.title} ${t.body}`, this.teammates().filter((a) => !t.declined.includes(this.baseOf(a.name))))
+    const started = t.status === 'fixing'
+    if (started) this.tickets.move(t.id, 'new', 'crew', `back to To do: @${by} declined it`)
+    this.tickets.edit(t.id, { owner: next?.name ?? '' }, 'crew')
+    this.ruling('decline', by, next?.name ?? null, { ticket: t.id, title: t.title, text: why })
+    if (!next) {
+      this.emit('notice', { title: `#${t.id} needs an owner`, body: `@${by} declined it: ${why}`, focus: `task:${t.id}` })
+      return `#${t.id} is back on To do, for the user to give to someone\n`
+    }
+    if (started || this.config.autofix) this.autoDispatch(t)
+    return `#${t.id} went to @${next.name}${started || this.config.autofix ? ', who starts on it now' : ''}\n`
   }
 
   // What the Tasks board can do. op: file, edit, note, dispatch, accept, sendBack, move, dup, remove.
@@ -1273,15 +1748,27 @@ export class Hub extends EventEmitter {
     }
   }
 
+  // Who `crew ask` of `a`'s is holding on for right now. [{ name, since, id, text }]
+  waitingOn(a) {
+    return [...this.calls.values()].filter((c) => c.from === a.name && c.hold).map((c) => ({ name: this.ownerOf(c), since: c.at, id: c.msg?.id ?? null, text: gist(c.text) }))
+  }
+
+  // Who's owed an answer by `a`, and whether they're waiting on it right now. [{ name, since, id, waiting }]
+  owes(a) {
+    return [...this.calls.values()].filter((c) => this.ownerOf(c) === a.name).map((c) => ({ name: c.from, since: c.at, id: c.msg?.id ?? null, waiting: Boolean(c.hold) }))
+  }
+
   who() {
     if (!this.agents.size) return '(no agents)\n'
     const rows = this.ordered().map((a) => {
       const queue = a.inbox.length ? `, ${a.inbox.length} queued` : ''
+      const waits = this.blockedOn(a.name)
+      const status = (waits.length ? `waiting on ${waits.map((n) => `@${n}`).join(' ')}` : a.status) + queue
       if (a.off) return `${a.name.padEnd(16)} off`
-      if (a.cloneOf) return `${a.name.padEnd(16)} ${(a.status + queue).padEnd(20)} ${''.padEnd(22)} a clone of ${a.cloneOf}, on a task of its own`
+      if (a.cloneOf) return `${a.name.padEnd(16)} ${status.padEnd(20)} ${''.padEnd(22)} a clone of ${a.cloneOf}, on a task of its own`
       const brain = [this.providerOf(a)?.label, a.model, a.effort].filter(Boolean).join(' ')
       const clones = this.maxClones(a) ? ` (clones itself when busy, up to ${this.maxClones(a)})` : ''
-      return `${a.name.padEnd(16)} ${(a.status + queue).padEnd(20)} ${brain.padEnd(22)} ${a.area ?? ''}${clones}`
+      return `${a.name.padEnd(16)} ${status.padEnd(20)} ${brain.padEnd(22)} ${a.area ?? ''}${clones}`
     })
     // teammates on your other computers (Crew Link), addressed as name@computer
     for (const a of this.directory?.() ?? []) rows.push(`${a.name.padEnd(16)} ${(a.on ? a.status : 'off').padEnd(20)} ${''.padEnd(22)} ${a.area ?? ''}`)
@@ -1379,6 +1866,8 @@ export class Hub extends EventEmitter {
         clones: this.maxClones(a), ...(a.cloneOf && { cloneOf: a.cloneOf, clone: a.clone, avatar: { seed: a.avatar?.seed ?? a.cloneOf, ...a.avatar } }),
         // its sub-agents: the running ones, and ones that just finished
         subs: [...(a.subs?.values() ?? [])].filter((x) => !x.ended || Date.now() - x.ended < SUB_LINGER).map(({ id, type, description, started, ended, tools, activity }) => ({ id, type, description, started, ended, tools, activity })),
+        // right of way: the teammates its `crew ask` is waiting on right now, and who's owed an answer by it
+        waitingOn: this.waitingOn(a), owes: this.owes(a),
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
       reads: this.reads,
@@ -1412,6 +1901,29 @@ const withImages = (text, images) =>
 
 const hold = (a, ms) => {
   a.holdUntil = Math.max(a.holdUntil, Date.now() + ms)
+}
+
+// Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.
+const rank = (m) => (m.answers ? 0 : m.ask ? 1 : 2)
+
+// A message in one line, for quoting it back: code blocks folded, cut at `max`.
+const gist = (text, max = 100) => {
+  const line = String(text ?? '').replace(/```[\s\S]*?```/g, '[code]').replace(/\s+/g, ' ').trim()
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line
+}
+
+// The files a tool call is about to write, as absolute paths: Claude Code's file tools name one, and Codex's
+// apply_patch lists them in the patch (in whichever field its input carries it).
+function editedFiles({ tool_name: tool = '', tool_input: input } = {}, cwd) {
+  if (!input || typeof input !== 'object') return []
+  const named = input.file_path ?? input.notebook_path
+  const strings = Object.values(input).flatMap((v) => (typeof v === 'string' ? [v] : Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []))
+  // a patch counts when it's apply_patch's own input, or a shell command that runs apply_patch (not a `crew ask` that
+  // quotes one, say)
+  const patch = tool === 'apply_patch' || strings.some((x) => /(^|[\s;&|(])apply_patch\b/.test(x) && !/^\s*crew\s/.test(x))
+  const patched = (x) => [...x.matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)].map((m) => m[1].trim())
+  const paths = typeof named === 'string' ? [named] : patch ? strings.flatMap(patched) : []
+  return [...new Set(paths.filter(Boolean).map((p) => path.resolve(cwd, p)))]
 }
 
 function readJSON(file) {

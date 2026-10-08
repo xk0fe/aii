@@ -6,6 +6,12 @@ export function serve(hub) {
   const routes = {
     hook: (q, body, name) => hub.onHook(name, JSON.parse(body || '{}')),
     send: (q, body) => hub.send({ from: q.from || 'you', to: q.to, text: body }),
+    // `crew ask` and `crew wait`: held open until the answer comes (or ASK_HOLD), the answer is the reply
+    question: (q, body, name, closed) => hub.question({ from: q.from || 'you', to: q.to, text: body, closed }),
+    wait: (q, body, name, closed) => hub.wait({ from: q.from || 'you', closed }),
+    answer: (q, body) => hub.answerNow({ from: q.from || 'you', to: q.to, text: body }),
+    // An agent's file tools, before they write: one agent edits a file at a time. The reply is the hook's decision.
+    lease: (q, body, name) => hub.lease(name, JSON.parse(body || '{}')),
     note: (q, body) => hub.note(q.from || 'you', body),
     who: () => hub.who(),
     board: () => hub.board(),

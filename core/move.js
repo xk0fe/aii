@@ -207,7 +207,9 @@ export async function moveOut(hub, name) {
     return {
       token, name, files, pack: packAgents(hub, [name], { stats: true }),
       session: session.files ? { cli: session.cli, id: session.id, root: session.root } : null, reason: session.reason,
-      convo: hub.convos[name] ?? null, feed, inbox: a.inbox, cwd: real(expand(a.cwd)),
+      // questions waiting for it stay: their askers here are told it moved (moveEnd), so nobody waits on an answer
+      // that would have nowhere to go
+      convo: hub.convos[name] ?? null, feed, inbox: a.inbox.filter((m) => !m.ask), cwd: real(expand(a.cwd)),
       working, current: current && { id: current.id, text: gist(current.ticket !== undefined ? `#${current.ticket} ${current.title ?? ''}` : current.text) },
     }
   } catch (e) {
@@ -244,6 +246,7 @@ export function moveEnd(hub, token, done) {
     if (m.running) hub.launch(a)
     return hub.changed()
   }
+  hub.forgetCalls(m.name, `moved to another computer before it answered: ask @${done.name}@${done.to} again`)
   hub.removeAgent(m.name)
   delete hub.convos[m.name]
   hub.saveConvos()

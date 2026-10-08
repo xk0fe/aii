@@ -1,5 +1,5 @@
 // Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
-/* global rosterParts, isUnread, mountConvoHead, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
+/* global statusClass, rosterParts, isUnread, mountConvoHead, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -184,7 +184,7 @@ crew.onPty((name, data) => {
 function tileHead(a) {
   const busy = a.status === 'working' || a.status === 'waiting'
   return `<span class="tile-av">${avatarHTML(a, { size: 24 })}${orbitHTML(a)}</span><b>${nameHTML(a)}</b>
-    <span class="state ${a.status}" ${busy ? 'data-act="markIdle" title="Stuck? Click to mark it free"' : ''}>${esc(statusText(a))}</span>
+    <span class="state ${statusClass(a)}" ${busy ? 'data-act="markIdle" title="Stuck? Click to mark it free"' : ''}>${esc(statusText(a))}</span>
     <span class="activity">${esc(a.activity)}</span>
     ${subsChip(a)}${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}${modeMarks(a)}
     ${contextRing(a)}

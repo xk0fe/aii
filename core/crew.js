@@ -129,15 +129,19 @@ export class Crew extends EventEmitter {
       const q = this.qualifier(l)
       Object.assign(providers, l.state.providers)
       for (const a of l.state.agents) {
+        // who it waits on and who waits on it: names and the questions' feed ids, as this computer writes them
+        const waits = (list) => list?.map((w) => ({ ...w, name: q(w.name), id: w.id && q(w.id) }))
         agents.push({
           ...a, name: q(a.name), seed: a.name, home: l.slug, homeName: l.name, status: l.peer ? a.status : 'away', images: a.images?.map((p) => this.fetchImage(l, p)),
-          ticket: a.ticket == null ? null : q(String(a.ticket)), ...(a.cloneOf && { cloneOf: q(a.cloneOf) }),
+          ticket: a.ticket == null ? null : q(String(a.ticket)), ...(a.cloneOf && { cloneOf: q(a.cloneOf) }), waitingOn: waits(a.waitingOn), owes: waits(a.owes),
         })
       }
       for (const e of l.state.feed) {
         feed.push({
           ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && q(e.re), images: e.images?.map((p) => this.fetchImage(l, p)),
           ...(e.ticket !== undefined && { ticket: q(String(e.ticket)) }), ...((e.act === 'fixing' || e.act === 'triaged') && e.text && { text: q(e.text) }),
+          ...(e.also && { also: e.also.map(q) }), ...(e.reply && { reply: q(e.reply) }), ...(e.line && { line: e.line.map(q) }),
+          ...(e.answered && { answered: { ...e.answered, by: q(e.answered.by), ...(e.answered.reply && { reply: q(e.answered.reply) }) } }),
         })
       }
       // Tasks that live there: #12 there is 12@that-computer here. (`bugs`: a computer on the previous version.)

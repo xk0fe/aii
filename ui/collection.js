@@ -2,7 +2,7 @@
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, level, conversation), everything you can set on the right,
 // in four tabs that each fit without scrolling. "Select" turns on bulk mode to change many agents at once.
-/* global crew, store, esc, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, tokenCount, plural, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS */
+/* global crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, tokenCount, plural, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -24,7 +24,8 @@ const TABS = [
   { id: 'look', label: 'Look', icon: ICONS.palette },
   { id: 'stats', label: 'Stats', icon: ICONS.chart },
 ]
-const atWork = (a) => a?.status === 'working' || a?.status === 'waiting'
+// at work: what it's doing says more than its status. Waiting on a teammate, the status says it (who it waits on).
+const atWork = (a) => (a?.status === 'working' && !a.waitingOn?.length) || a?.status === 'waiting'
 
 function mountCollection(root, { onTerminal, onImport, onMove }) {
   root.innerHTML = `
@@ -93,7 +94,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       <span class="pc-area" title="${esc(a.area)}">${esc(a.area || 'No area yet. Open the card to set one.')}</span>
       ${modes ? `<span class="pc-modes">${modes}</span>` : ''}
       <span class="pc-chips">${chips}</span>
-      <span class="pc-state" title="${esc(statusText(a))}"><span><span class="dot ${a.status}"></span><span>${esc(statusText(a))}</span>${contextRing(a)}</span>${doing}</span>
+      <span class="pc-state" title="${esc(statusText(a))}"><span><span class="dot ${statusClass(a)}"></span><span>${esc(statusText(a))}</span>${contextRing(a)}</span>${doing}</span>
       ${litter}<span class="pc-av">${avatarHTML(a, { size: 104 })}</span>
       <span class="pc-check">${ICONS.check}</span><span class="pc-glow"></span>
     </button>`
@@ -106,7 +107,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     return `<button class="pcard mini hop ${LIGHT.has(look.color) ? 'light' : ''} ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, `${providerOf(a.provider).label}${a.model ? ` · ${a.model}` : ''}${a.effort ? ` · ${a.effort}` : ''}`].filter(Boolean).join('\n'))}">
       <span class="pc-mark">${ICONS.mark}</span>
       <span class="pc-name">${esc(a.seed ?? a.name)}</span>
-      <span class="pc-line"><span class="dot ${a.on ? a.status : 'off'}"></span><span class="${a.activity && atWork(a) ? 'mono' : ''}">${esc(line)}</span></span>
+      <span class="pc-line"><span class="dot ${a.on ? statusClass(a) : 'off'}"></span><span class="${a.activity && atWork(a) ? 'mono' : ''}">${esc(line)}</span></span>
       <span class="pc-tags">${a.yolo ? '<i class="mark-yolo">YOLO</i>' : ''}${a.fast ? `<i class="mark-fast">${ICONS.bolt}</i>` : ''}${contextRing(a, { label: false })}${a.on && clonesOf(state.agents, a).length ? `<i class="pc-clone-n" title="${plural(clonesOf(state.agents, a).length, 'clone')} at work">+${clonesOf(state.agents, a).length}</i>` : ''}</span>
       <span class="pc-av">${avatarHTML(a, { size: 62 })}</span>
       <span class="pc-check">${ICONS.check}</span><span class="pc-glow"></span>

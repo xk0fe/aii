@@ -65,11 +65,11 @@ test('`to` picks the agent, as the CLI and composer chip do', () => {
   assert.deepEqual(queued(), { david: 1 })
 })
 
-test('an idle agent gets the message typed in straight away, tagged with the sender', () => {
+test('an idle agent gets the message typed in straight away, tagged with the sender and whose it is now', () => {
   const david = hub.agents.get('david')
   david.status = 'idle'
   assert.equal(hub.send({ from: 'joseph', to: 'david', text: 'ping' }), 'sent to @david\n')
-  assert.deepEqual(runner.submitted, [{ name: 'david', text: '[from @joseph] ping' }])
+  assert.deepEqual(runner.submitted, [{ name: 'david', text: "[from @joseph: it's yours now, no need to report back] ping" }])
 })
 
 test('unknown, off and self recipients are rejected as before', () => {
@@ -163,12 +163,12 @@ test('`to` accepts several names', () => {
   assert.deepEqual(queued(), { david: 1, joseph: 1 })
 })
 
-test('each recipient is told who else has it, so they can split the work', () => {
+test('each recipient is told who else has it and who leads: the first named owns the result, the rest their part', () => {
   for (const a of hub.agents.values()) a.status = 'idle'
   hub.send({ from: 'arie', text: '@david @joseph fix ranked' })
-  assert.deepEqual(runner.submitted.map((s) => s.text).sort(), [
-    '[from @arie, also sent to @david, split the work] @david @joseph fix ranked',
-    '[from @arie, also sent to @joseph, split the work] @david @joseph fix ranked',
+  assert.deepEqual(runner.submitted.map((s) => s.text), [
+    "[from @arie: it's yours now, no need to report back, also sent to @joseph: you lead this and own the result, and they each take the part in their own area] @david @joseph fix ranked",
+    "[from @arie: it's yours now, no need to report back, also sent to @david, and @david leads it: take only the part in your own area] @david @joseph fix ranked",
   ])
 })
 

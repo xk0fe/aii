@@ -170,7 +170,8 @@ const avatarCache = new Map()
 // agent: anything with a name (+ optional avatar/status). Big avatars get the felt filter; tiny ones skip it.
 function avatarHTML(agent, { size = 48, mood } = {}) {
   ensureDefs()
-  mood ??= MOODS[agent.status] ?? 'idle'
+  // waiting on a teammate's answer, it rests instead of hopping: it isn't working, it's waiting (core/hub.js question)
+  mood ??= agent.status === 'working' && agent.waitingOn?.length ? 'idle' : (MOODS[agent.status] ?? 'idle')
   const key = `${agent.name}\u0000${agent.seed ?? ''}\u0000${size}\u0000${mood}\u0000${agent.avatar ? JSON.stringify(agent.avatar) : ''}`
   let html = avatarCache.get(key)
   if (html === undefined) {
