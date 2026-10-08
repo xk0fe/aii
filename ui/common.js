@@ -1034,7 +1034,7 @@ function subsUsed(e, open) {
 
 // onAgent: an agent's line under the feed (who's at work) was clicked, for its terminal. onConvo: an agent's face
 // or name in a message was, for your conversation with it. onLeave: a jump goes to a message outside the
-// conversation on screen, so the chat goes back to everyone's.
+// conversation on screen, or the agent you're talking to was clicked again, so the chat goes back to everyone's.
 function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), limit = 200 } = {}) {
   const open = new Set()
   const seen = new Set()
@@ -1175,8 +1175,10 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     // conversation with it
     const agent = ev.target.closest('[data-agent]')
     if (agent && agent.closest('.typing-list')) return onAgent?.(agent.dataset.agent)
-    // (the crew itself, in its notices, isn't anyone to talk to)
-    if (agent) return agent.dataset.agent === talkingTo || !last?.agents.some((a) => a.name === familyOf(agent.dataset.agent) || a.name === agent.dataset.agent) || onConvo?.(agent.dataset.agent)
+    // (the crew itself, in its notices, isn't anyone to talk to). The one you're talking to, clicked again, lets
+    // go of it: back to everyone's.
+    if (agent && agent.dataset.agent === talkingTo) return onLeave?.()
+    if (agent) return !last?.agents.some((a) => a.name === familyOf(agent.dataset.agent) || a.name === agent.dataset.agent) || onConvo?.(agent.dataset.agent)
     const act = ev.target.closest('[data-act]')
     if (act) return crew.call(act.dataset.act, act.dataset.id)
     const pic = ev.target.closest('[data-open]')
@@ -1448,11 +1450,29 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
 }
 
 const fileURL = (p) => `file://${String(p).split('/').map(encodeURIComponent).join('/')}`
+// Where a dropped file or folder is on disk ('' when it isn't one, or the page has no way to tell).
+const pathOf = (file) => {
+  try {
+    return (file && crew.pathOf?.(file)) || ''
+  } catch {
+    return ''
+  }
+}
+// Paths put in a message, in backticks so a space can't split one and the feed shows them as code.
+const pathRefs = (paths) => paths.map((p) => `\`${p}\``).join(' ')
+// text put in at the cursor (start..end, a selection it replaces), a space either side when it would touch a word
+function insertAt(value, start, end, text) {
+  const before = value.slice(0, start)
+  const after = value.slice(end)
+  const piece = `${before && !/\s$/.test(before) ? ' ' : ''}${text}${/^\s/.test(after) ? '' : ' '}`
+  return { value: before + piece + after, caret: before.length + piece.length }
+}
 const isImage = (f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)
 
 // Images for a prompt: paste them, drop them, or pick them with the button. Each is saved under
-// ~/.crew/attachments and reaches the agent as a file path it can open.
-function mountAttach({ zone, field, tray, button, onChange, onError }) {
+// ~/.crew/attachments and reaches the agent as a file path it can open. A folder dropped in isn't attached:
+// onPaths gets its path, for the message to point at.
+function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) {
   let paths = []
   const picker = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', multiple: true, hidden: true })
   button.after(picker)
@@ -1463,7 +1483,7 @@ function mountAttach({ zone, field, tray, button, onChange, onError }) {
   }
   const add = async (files) => {
     const images = files.filter(isImage)
-    if (files.length && !images.length) return onError?.('Only PNG, JPEG, GIF and WebP images')
+    if (files.length && !images.length) return onError?.(`Only PNG, JPEG, GIF and WebP images${onPaths ? ', or folders' : ''}`)
     for (const f of images) {
       try {
         paths.push(await crew.call('saveImage', f.name, f.type, new Uint8Array(await f.arrayBuffer())))
@@ -1484,7 +1504,16 @@ function mountAttach({ zone, field, tray, button, onChange, onError }) {
     zone.classList.remove('dropping')
     if (!dragging(e)) return
     e.preventDefault()
-    add([...e.dataTransfer.files])
+    // what's a folder can only be read during the drop; where nothing takes paths, a folder is refused like any
+    // file that isn't an image
+    const dropped = [...e.dataTransfer.items].filter((it) => it.kind === 'file').map((it) => {
+      const file = it.getAsFile()
+      return { file, path: onPaths && it.webkitGetAsEntry?.()?.isDirectory ? pathOf(file) : '' }
+    })
+    const folders = dropped.filter((d) => d.path).map((d) => d.path)
+    if (folders.length) onPaths(folders)
+    const files = dropped.filter((d) => !d.path && d.file).map((d) => d.file)
+    if (files.length || !folders.length) add(files)
   })
   field.addEventListener('paste', (e) => {
     const files = [...(e.clipboardData?.files ?? [])].filter(isImage)
@@ -1707,7 +1736,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
       <div class="thumbs hidden"></div>
       <textarea rows="1"></textarea>
       <div class="input-bar">
-        <button class="attach" title="Add images (or paste or drop them)">${ICONS.plus}</button>
+        <button class="attach" title="Add images (or paste or drop them). Drop a folder for its path">${ICONS.plus}</button>
         <button class="fresh-toggle" aria-pressed="false">${ICONS.fresh}<span>New conversation</span></button>
         <span class="grow"></span>
         <button class="mic" aria-label="Dictate"></button>
@@ -1796,6 +1825,13 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
     tray: el.querySelector('.thumbs'),
     button: el.querySelector('.attach'),
     onChange: () => autosize(),
+    onPaths: (paths) => {
+      const put = insertAt(ta.value, ta.selectionStart, ta.selectionEnd, pathRefs(paths))
+      ta.value = put.value
+      ta.focus()
+      ta.setSelectionRange(put.caret, put.caret)
+      ta.dispatchEvent(new Event('input')) // sized, inked and checked for task mode like typing
+    },
     onError: (msg) => say(msg, true),
   })
 
@@ -1938,9 +1974,13 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
   chips.addEventListener('click', (e) => {
     const picked = e.target.closest('[data-to]')
     if (!picked) return
-    // the one you're in leaves the thread; another conversation keeps it for when you're back
-    if (draftKey(picked.dataset.to) === draftKey(target)) stopReply()
-    setTarget(picked.dataset.to)
+    // the agent (or Task) you're on, clicked again, lets go of it: back to Auto, everyone's messages
+    if (picked.dataset.to === target && target !== 'auto') setTarget('auto')
+    else {
+      // the one you're in leaves the thread; another conversation keeps it for when you're back
+      if (draftKey(picked.dataset.to) === draftKey(target)) stopReply()
+      setTarget(picked.dataset.to)
+    }
     tip.classList.remove('on')
     ta.focus()
   })
@@ -2007,6 +2047,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
       ink.paint({ quiet: true }) // someone switched on, off, or joined
     },
     setTarget,
+    target: () => target,
     replyTo,
     focus: () => ta.focus(),
     // true when it stopped a dictation (so Esc can stop that first, and close things on the next press)
