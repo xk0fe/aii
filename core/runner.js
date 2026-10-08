@@ -21,8 +21,9 @@ export class Runner extends EventEmitter {
     this.stop(name)
     const fullEnv = cleanEnv({ ...process.env, ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' })
     const p = pty.spawn(which(file, fullEnv.PATH), args, { name: 'xterm-256color', cols: 120, rows: 36, cwd, env: fullEnv })
-    const proc = { p, buf: '', startedAt: Date.now(), cols: 120, rows: 36 }
+    const proc = { p, buf: '', startedAt: Date.now(), lastOutput: Date.now(), cols: 120, rows: 36 }
     p.onData((d) => {
+      proc.lastOutput = Date.now()
       proc.buf = (proc.buf + d).slice(-SCROLLBACK)
       this.emit('data', name, d)
     })
@@ -60,11 +61,18 @@ export class Runner extends EventEmitter {
     this.procs.get(name)?.p.write(data)
   }
 
-  // Type a prompt and press Enter. Multi-line text goes in as a bracketed paste so newlines don't submit early.
+  // How long its terminal has drawn nothing: an idle CLI is silent, a busy or starting one keeps redrawing.
+  quietFor(name) {
+    const proc = this.procs.get(name)
+    return proc ? Date.now() - proc.lastOutput : 0
+  }
+
+  // Type a prompt and press Enter. The text always goes in as a bracketed paste: newlines don't submit early, and
+  // when a stalled CLI reads the text and the Enter together, the Enter still submits instead of joining the text.
   submit(name, text) {
     const proc = this.procs.get(name)
     if (!proc) return
-    proc.p.write(text.includes('\n') ? `\x1b[200~${text}\x1b[201~` : text)
+    proc.p.write(`\x1b[200~${text}\x1b[201~`)
     setTimeout(() => proc.p.write('\r'), 150)
   }
 
