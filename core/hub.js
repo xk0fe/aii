@@ -38,6 +38,13 @@ export const ASK_HOLD = 100000
 // A file an agent edits is its own until its turn ends. One it hasn't touched for this long is free again, in case
 // a turn's end went unreported.
 const LEASE_STALE = 30 * 60000
+// A turn an API error cut short: the errors that pass, which Crew answers with "continue", and how long it waits
+// before each try. After the last one it calls you.
+const PASSING_ERRORS = new Set(['server_error', 'overloaded', 'unknown', 'max_output_tokens'])
+const API_RETRY = [20000, 60000, 180000]
+const CONTINUE = 'continue'
+// Asked before a new conversation that the context limit starts (see freshWhenDone).
+const WRAP_UP = "[crew] Your conversation passed its context limit, so a new one starts after this reply. If your task isn't finished, write down where it stands for your next conversation: the worktree and branch, what's done, what's left, and anything you had running. Under 80 words. If it's all finished, reply with just: done"
 const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
 )
@@ -265,7 +272,10 @@ export class Hub extends EventEmitter {
     if (a.serving?.length) this.settleCalls(a, null, 'restarted before it answered')
     this.release(a.name)
     a.relaunch = false
+    clearTimeout(a.retryTimer)
+    a.retrying = false
     a.subs = new Map() // sub-agents don't outlive their process
+    a.background = 0 // nor does anything else it ran
     a.subPending = []
     clearTimeout(a.readyTimer)
     if (fresh) this.saveSession(a.name, null)
@@ -463,11 +473,40 @@ export class Hub extends EventEmitter {
   }
 
   startFresh(a, why = a.freshWhy ?? '') {
-    a.freshPending = false
-    a.freshWhy = undefined
+    const note = String(a.wrapNote ?? '').trim()
+    const carry = note && !/^\W*done\W*$/i.test(note) ? { text: note, for: a.wrapFor } : null
+    Object.assign(a, { freshPending: false, freshWhy: undefined, freshLimit: false, wrapUp: false, wrapNote: undefined, wrapFor: undefined, toldBackground: false })
     if (a.inbox[0]?.fresh) a.freshFor = a.inbox[0].id // this new conversation is the one that task waits for
-    this.post({ kind: 'event', from: a.name, text: `started a new conversation${why}`, fresh: true })
+    this.post({ kind: 'event', from: a.name, text: `started a new conversation${why}${carry ? `, and picks up where it left off: ${gist(carry.text, 160)}` : ''}`, fresh: true })
     this.launch(a, true)
+    // where it left off, in its own words: the first thing in the new conversation, threaded to the task it was on
+    if (carry) a.inbox.unshift(crewPrompt(a, `[crew] Your last conversation passed its context limit, so this is a new one. You hadn't finished. Where you left off, in your own words:\n\n${carry.text}\n\nCheck where things stand, then carry on.`, carry.for))
+  }
+
+  // A new conversation once the agent is free. One you asked for starts right away. One for its context limit
+  // can't take the end of a turn on trust: a turn also ends while the agent waits on what it started in the
+  // background (a build, a server, a sub-agent), and a restart then drops the task half-way. So Crew waits for those
+  // (or for its next task), asks the agent where things stand, and the new conversation starts from its answer.
+  freshWhenDone(a) {
+    if (!a.freshLimit || a.wrapNote !== undefined) return this.startFresh(a)
+    if (a.wrapUp && a.inbox.some((m) => m.wrapUp)) return this.pump(a) // asked, not taken up yet: it's next in its queue
+    if (a.wrapUp) return this.startFresh(a) // asked, and its turn ended without an answer (you stopped it)
+    if (a.background && !a.inbox.length) {
+      if (!a.toldBackground) {
+        a.toldBackground = true
+        this.post({ kind: 'event', from: a.name, text: `waits for ${a.background === 1 ? 'the task' : `the ${a.background} tasks`} it left running in the background, then starts a new conversation` })
+      }
+      return this.changed()
+    }
+    this.askWrapUp(a)
+  }
+
+  askWrapUp(a) {
+    a.wrapUp = true
+    a.wrapFor = a.current
+    a.inbox.unshift({ ...crewPrompt(a, WRAP_UP), wrapUp: true })
+    this.pump(a)
+    this.changed()
   }
 
   // Every way a new conversation starts (fresh start, no session to resume, /clear) comes through here,
@@ -524,10 +563,10 @@ export class Hub extends EventEmitter {
       this.emit('notice', { title: `@${a.name} ${passed}`, body: 'Start a new conversation from its terminal or its card when it suits you.', focus: a.name })
       return this.changed()
     }
-    const why = ` (it passed its ${tokenCount(limit)} context limit)`
-    if (a.status === 'idle') return this.startFresh(a, why)
     a.freshPending = true
-    a.freshWhy = why
+    a.freshWhy = ` (it passed its ${tokenCount(limit)} context limit)`
+    a.freshLimit = true
+    if (a.status === 'idle') return this.freshWhenDone(a)
     this.post({ kind: 'event', from: a.name, text: `${passed}, so it starts a new conversation when it finishes this task` })
     this.changed()
   }
@@ -608,7 +647,11 @@ export class Hub extends EventEmitter {
         if (a.status !== 'starting') return
         hold(a, 2000) // the prompt box isn't ready the moment the session starts
         return this.setStatus(a, 'idle')
-      case 'UserPromptSubmit':
+      case 'UserPromptSubmit': {
+        // a "continue" Crew owes it after an API error: this prompt (Crew's, or anything you typed) takes its place
+        clearTimeout(a.retryTimer)
+        a.retrying = false
+        const again = Boolean(a.expect?.again) && samePrompt(e.prompt, a.expect.text)
         // Remembered only once it has a prompt: Claude Code doesn't save empty sessions, so they can't be resumed.
         if (e.session_id && this.sessions[name] !== e.session_id) this.saveSession(name, e.session_id)
         // A question or an answer Crew typed into the turn it's in (steer): it's part of this turn now. (A turn that
@@ -633,11 +676,14 @@ export class Hub extends EventEmitter {
           a.serving = a.expect.msgs // what this turn answers (several, when hand-offs came in together)
           a.expect = null
         } else if (e.prompt && !e.prompt.startsWith('/')) a.current = this.post({ kind: 'msg', from: 'you', to: name, text: e.prompt.slice(0, 4000), via: 'terminal' }).id
-        this.record(name, { tasks: 1 })
-        if (!e.prompt?.startsWith('/')) (this.convoOf(a).tasks += 1), this.saveConvos()
+        if (!again) {
+          this.record(name, { tasks: 1 })
+          if (!e.prompt?.startsWith('/')) (this.convoOf(a).tasks += 1), this.saveConvos()
+        }
         a.turnStart = Date.now()
         this.readCodexContext(a, e)
         return this.setStatus(a, 'working')
+      }
       case 'PreToolUse': // only for the Agent tool (see adapters.js): what the next sub-agent is for
         if (SUB_TOOLS.has(e.tool_name) && !e.agent_id) (a.subPending ??= []).push({ description: String(e.tool_input?.description ?? ''), type: String(e.tool_input?.subagent_type ?? '') })
         return
@@ -655,19 +701,31 @@ export class Hub extends EventEmitter {
       case 'Notification':
         // Permission prompts come with a card in the chat (see ask), which alerts on its own; both hooks fire at
         // the same moment, so this one may even arrive first.
-        if (e.notification_type === 'permission_prompt' || this.asking(name)) return
+        if (e.notification_type === 'permission_prompt' || this.asking(name) || a.retrying) return
         if (a.status === 'working') this.needsYou(a, e.message || 'needs your input')
         return
       case 'Interrupt':
+        clearTimeout(a.retryTimer)
+        a.retrying = false
         a.activity = ''
         a.turnStart = null
         return this.setStatus(a, 'idle')
       case 'Stop': {
         a.activity = ''
+        a.apiRetries = 0
         this.readCodexContext(a, e)
         if (a.turnStart) this.record(name, { turns: 1, turnMs: Date.now() - a.turnStart })
         a.turnStart = null
         const subs = this.subsThisTurn(a, e.background_tasks)
+        // what it left running in the background (a build, a server, a sub-agent): it's called back when they finish
+        a.background = Array.isArray(e.background_tasks) ? e.background_tasks.filter((t) => t?.status === 'running' || t?.status === 'pending').length : 0
+        // its answer to where things stand, before a new conversation (see freshWhenDone): for Crew, not the chat
+        if ((a.serving ?? []).some((m) => m.wrapUp)) {
+          a.wrapNote = String(e.last_assistant_message ?? '')
+          a.serving = []
+          hold(a, 600)
+          return this.setStatus(a, 'idle')
+        }
         // one turn can answer several messages that came in together: the reply threads to the first, and the rest
         const also = (a.serving ?? []).slice(1).map((m) => m.id)
         const reply = e.last_assistant_message
@@ -677,7 +735,43 @@ export class Hub extends EventEmitter {
         hold(a, 600)
         return this.setStatus(a, 'idle')
       }
+      case 'StopFailure':
+        return this.apiError(a, e)
     }
+  }
+
+  // A turn an API error cut short (Claude Code's StopFailure, in place of Stop). A dropped connection or a busy
+  // server passes: Crew types "continue" for it, as you would, waiting longer each time. A usage limit, a login or
+  // a billing problem doesn't, so that one is for you. Its turn isn't over meanwhile: nothing else is typed in.
+  apiError(a, e) {
+    a.activity = ''
+    if (a.turnStart) this.record(a.name, { turns: 1, turnMs: Date.now() - a.turnStart })
+    a.turnStart = null
+    const error = String(e.error || 'unknown')
+    const tries = a.apiRetries ?? 0
+    if (!PASSING_ERRORS.has(error) || tries >= API_RETRY.length) {
+      a.apiRetries = 0
+      const said = gist(e.last_assistant_message, 160).replace(/[.\s]+$/, '')
+      return this.needsYou(a, `stopped on an API error (${error})${said ? `: ${said}` : ''}. Type "continue" in its terminal once that's sorted`)
+    }
+    const ms = API_RETRY[tries]
+    a.apiRetries = tries + 1
+    a.retrying = true
+    clearTimeout(a.retryTimer)
+    a.retryTimer = setTimeout(() => this.resumeTurn(a), ms)
+    this.post({ kind: 'event', from: a.name, text: `lost its turn to an API error (${error}), so Crew types "continue" for it in ${ms < 60000 ? `${ms / 1000}s` : `${ms / 60000} min`}` })
+    this.changed()
+  }
+
+  resumeTurn(a) {
+    if (!a.retrying) return
+    if (!this.runner.running(a.name)) return void (a.retrying = false)
+    const wait = a.holdUntil - Date.now() // you're typing in its terminal
+    if (wait > 0) return void (a.retryTimer = setTimeout(() => this.resumeTurn(a), wait))
+    a.retrying = false
+    this.runner.submit(a.name, CONTINUE)
+    a.expect = { id: a.current, text: CONTINUE, msgs: a.serving ?? [], again: true }
+    this.awaitPickup(a)
   }
 
   // ---- sub-agents: Claude Code's Agent tool ------------------------------------------------------
@@ -849,7 +943,7 @@ export class Hub extends EventEmitter {
       if (a.serving?.length) this.settleCalls(a, null, { idle: 'stopped before it answered', stopped: 'exited before it answered', off: 'was turned off before it answered' }[status])
       if (status === 'off' && !a.cloneOf) this.forgetCalls(a.name, "was turned off, so it can't answer")
     }
-    if (status === 'idle' && a.freshPending) return this.startFresh(a)
+    if (status === 'idle' && a.freshPending) return this.freshWhenDone(a)
     if (status === 'idle' && a.relaunch) return this.launch(a)
     if (status === 'idle') this.pump(a)
     if (status === 'working') this.steer(a)
@@ -862,7 +956,7 @@ export class Hub extends EventEmitter {
   // Never while a dialog is up in its terminal (a permission prompt), while you're typing there, or while the last
   // thing Crew typed hasn't been taken in yet; then as soon as that clears.
   steer(a) {
-    if (a.status !== 'working' || !this.runner.running(a.name) || a.expect || a.steering || this.asking(a.name)) return
+    if (a.status !== 'working' || !this.runner.running(a.name) || a.expect || a.steering || a.retrying || this.asking(a.name)) return
     const msgs = a.inbox.filter((m) => m.ask || m.answers)
     if (!msgs.length) return
     clearTimeout(a.steerTimer)
@@ -1414,6 +1508,9 @@ export class Hub extends EventEmitter {
     if (a.status !== 'idle' || !this.runner.running(a.name)) return
     if (a.cloneOf && !a.inbox.length) this.takeOver(a) // a clone with nothing of its own takes what waits for its original
     if (!a.inbox.length) return a.cloneOf && this.linger(a)
+    // past its context limit, and free while it waited on what it left running: its next task is the moment for
+    // the new conversation, once it has said where things stand
+    if (a.freshPending && a.freshLimit && !a.wrapUp) return this.askWrapUp(a)
     const wait = a.holdUntil - Date.now()
     if (wait > 0) {
       a.timer = setTimeout(() => this.pump(a), wait)
@@ -1902,6 +1999,9 @@ const withImages = (text, images) =>
 const hold = (a, ms) => {
   a.holdUntil = Math.max(a.holdUntil, Date.now() + ms)
 }
+
+// A prompt from Crew itself, queued like a message (it isn't one: it's not in the chat). See move.js.
+const crewPrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, crew: true, queued: true })
 
 // Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.
 const rank = (m) => (m.answers ? 0 : m.ask ? 1 : 2)
