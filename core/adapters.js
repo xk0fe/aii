@@ -54,6 +54,12 @@ Crew keeps the crew from stalling. Its rules:
 - "[from @name]": a hand-off, yours now. Don't send thanks, acknowledgements or "recorded" messages back.
 - If Crew turns down an ask because that teammate is waiting on you, answer them first with what you know.
 - If Crew says a teammate is editing a file, leave the file to them: do the rest, or crew ask them.
+- crew send is for work you hand off. News goes in crew note: a busy teammate starts a clone for anything you send.
+One builder per piece of work:
+- Before you build something, check that nobody is building it already: crew board, open PRs, and branches or
+  worktrees named for it. If someone is (a teammate, a clone, another session), don't start a second build: crew ask
+  them, or ask the user which one goes ahead.
+- Work only in a worktree or branch you made, or one its owner handed you. Never write in someone else's.
 Image files listed in a message are attachments (screenshots, mockups, references): open them before you start.${
   a.prompt ? `\n\nYour instructions:\n${a.prompt}` : ''
 }${a.images?.length ? `\n\nReference images for your area (open them when relevant):\n${a.images.join('\n')}` : ''}`
@@ -79,6 +85,7 @@ export const adapters = {
         SubagentStop: on(),
         Notification: on(),
         Stop: on(),
+        StopFailure: on(), // a turn an API error cut short (a dropped connection, a busy server)
       },
       statusLine: { type: 'command', command: STATUS_LINE, padding: 0 },
     }
