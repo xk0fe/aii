@@ -81,6 +81,7 @@ export class Hub extends EventEmitter {
     this.reads = readJSON(at('reads.json')) ?? { since: Date.now(), agents: {} }
     this.loadConfig()
     runner.on('exit', (name, code, ms) => this.onExit(name, code, ms))
+    runner.on('data', (name, data) => this.onOutput(name, data))
   }
 
   start(url) {
@@ -292,7 +293,8 @@ export class Hub extends EventEmitter {
     if (!adapter) return fail(`unknown provider "${a.provider}", define it under "providers" in config.json`)
     if (provider.missing.length) return fail(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const resume = this.sessions[a.name]
-    const { file, args, readyAfter, env: extraEnv } = adapter(a, { resume, session: randomUUID(), attachments: ATTACHMENTS })
+    const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session: randomUUID(), attachments: ATTACHMENTS })
+    Object.assign(a, { readyAfter, trust, trustAsk: false, boot: '' }) // see onOutput
     a.resumed = Boolean(resume)
     if (!resume) this.newConvo(a)
     try {
@@ -301,11 +303,31 @@ export class Hub extends EventEmitter {
       const env = { ...expandEnv(provider.env), ...extraEnv, PATH: `${this.bin}:${process.env.PATH}`, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME }
       this.runner.start(a.name, { file, args: [...args, ...(provider.args ?? []), ...(a.args ?? [])], cwd, env })
       this.setStatus(a, 'starting')
-      if (readyAfter) a.readyTimer = setTimeout(() => a.status === 'starting' && this.setStatus(a, 'idle'), readyAfter)
+      this.readyIn(a)
     } catch (e) {
       this.setStatus(a, 'stopped')
       this.post({ kind: 'event', from: a.name, text: `failed to start: ${e.message}` })
     }
+  }
+
+  // A CLI that doesn't say when it's up (Codex) counts as ready this long after it starts.
+  readyIn(a) {
+    clearTimeout(a.readyTimer)
+    if (a.readyAfter) a.readyTimer = setTimeout(() => a.status === 'starting' && this.setStatus(a, 'idle'), a.readyAfter)
+  }
+
+  // The first time a CLI runs in a folder it asks whether you trust it, YOLO or not, and nothing typed reaches its
+  // prompt until that's answered: Codex would take the Enter after the first message as "Trust and continue" and lose
+  // the message, and Claude Code doesn't even say it started. So until it's up and has taken its first prompt, Crew
+  // watches its screen for that question and hands it to you. Messages wait in its queue meanwhile.
+  onOutput(name, data) {
+    const a = this.agents.get(name)
+    if (!a?.trust || a.trustAsk) return
+    a.boot = (a.boot + data).slice(-6000)
+    if (!a.trust.test(flat(a.boot))) return
+    clearTimeout(a.readyTimer)
+    Object.assign(a, { trustAsk: true, boot: '' })
+    this.needsYou(a, `asks whether to trust its folder, ${a.cwd}. Answer in its terminal: messages wait until then`)
   }
 
   restart(name, fresh = false) {
@@ -630,6 +652,7 @@ export class Hub extends EventEmitter {
     const a = this.agents.get(name)
     if (!a) return
     a.hookAt = Date.now()
+    if (e.hook_event_name === 'SessionStart' || e.hook_event_name === 'UserPromptSubmit') Object.assign(a, { trust: null, boot: '' }) // past any trust question
     // where its CLI keeps this conversation, so a move to another computer can take it along (core/move.js)
     if (e.transcript_path && e.session_id && !e.agent_id) a.transcript = { id: e.session_id, path: String(e.transcript_path) }
     switch (e.hook_event_name) {
@@ -1100,6 +1123,12 @@ export class Hub extends EventEmitter {
     if (typed(data)) a.typedAt = Date.now()
     hold(a, 3000)
     this.runner.write(name, data)
+    // Enter on its trust question: it's starting up now (or quitting, if that's what you picked)
+    if (a.trustAsk && data.includes('\r')) {
+      a.trustAsk = false
+      this.setStatus(a, 'starting')
+      return this.readyIn(a)
+    }
     if (a.status === 'waiting' && data === '\r') this.setStatus(a, 'working')
     // Esc / Ctrl+C interrupt Claude without a Stop hook, so assume idle unless a hook says otherwise.
     if ((data === '\x1b' || data === '\x03') && (a.status === 'working' || a.status === 'waiting')) {
@@ -2044,6 +2073,9 @@ const isNotice = (prompt) => /^\s*<task-notification>/.test(String(prompt ?? '')
 // Agents get images as file paths (Claude Code and Codex can both open local images).
 const withImages = (text, images) =>
   images?.length ? `${text}\n\nAttached image${images.length > 1 ? 's' : ''} (open to view):\n${images.join('\n')}` : text
+
+// A terminal's text without its escape sequences and spaces: what's on screen, however it was drawn.
+const flat = (s) => s.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-9;?<>=]*[ -\/]*[@-~]/g, '').replace(/\x1b./g, '').replace(/\s+/g, '')
 
 const hold = (a, ms) => {
   a.holdUntil = Math.max(a.holdUntil, Date.now() + ms)
