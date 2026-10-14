@@ -159,6 +159,36 @@ test('a new task while it waits on the background: it says where things stand, a
   assert.equal(runner.submitted.at(-1), 'next: the header')
 })
 
+test("a late status line from the conversation it just replaced doesn't count against the new one", () => {
+  const joseph = hub.agents.get('joseph')
+  const old = (used) => hub.onStatusLine('joseph', { session_id: 'old-session', context_window: { context_window_size: 1000000, used_percentage: used / 10000, current_usage: { input_tokens: used } } })
+  joseph.sessionId = 'old-session'
+  old(260000)
+  assert.ok(asked())
+  answer('joseph', 'done')
+  assert.equal(joseph.status, 'starting')
+  assert.notEqual(joseph.sessionId, 'old-session', 'the new process runs a new conversation')
+  // the old process, on its way out, draws its status line once more
+  assert.equal(old(261000), '')
+  assert.equal(hub.convos.joseph.context, undefined)
+  assert.equal(joseph.freshPending, false)
+  const typed = runner.submitted.length
+  up('joseph')
+  assert.ok(!runner.submitted.slice(typed).some((t) => t.includes('passed its context limit')), 'no second wrap-up for the new conversation')
+  assert.deepEqual(events('joseph').filter((t) => /context limit \(\d+k used\)/.test(t)), [], 'no second limit hit')
+  // the new conversation's own reports count
+  hub.onStatusLine('joseph', { session_id: joseph.sessionId, context_window: { context_window_size: 1000000, used_percentage: 3, current_usage: { input_tokens: 30000 } } })
+  assert.equal(hub.convos.joseph.context.used, 30000)
+})
+
+test('/clear starts another conversation in the same process: its status line counts', () => {
+  const joseph = hub.agents.get('joseph')
+  joseph.sessionId = 'first'
+  hub.onHook('joseph', { hook_event_name: 'SessionStart', source: 'clear', session_id: 'after-clear' })
+  hub.onStatusLine('joseph', { session_id: 'after-clear', context_window: { context_window_size: 1000000, used_percentage: 2, current_usage: { input_tokens: 20000 } } })
+  assert.equal(hub.convos.joseph.context.used, 20000)
+})
+
 test('"notify" only tells you, once per conversation, and re-arms after the conversation shrinks', () => {
   const notices = []
   hub.on('notice', (n) => notices.push(n))
