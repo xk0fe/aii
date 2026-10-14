@@ -60,7 +60,10 @@ One builder per piece of work:
 - Before you build something, check that nobody is building it already: crew board, open PRs, and branches or
   worktrees named for it. If someone is (a teammate, a clone, another session), don't start a second build: crew ask
   them, or ask the user which one goes ahead.
-- Work only in a worktree or branch you made, or one its owner handed you. Never write in someone else's.
+- Work in your folder, on the branch checked out there, unless the user or your task asks for a branch. Never write
+  in a worktree or branch someone else made, unless its owner handed it to you.
+- Teammates and clones may be working in your folder right now: never switch its branch (git switch, git checkout
+  <branch>) or stash their changes. A task that needs a branch of its own gets a worktree for it.
 Image files listed in a message are attachments (screenshots, mockups, references): open them before you start.${
   a.prompt ? `\n\nYour instructions:\n${a.prompt}` : ''
 }${a.images?.length ? `\n\nReference images for your area (open them when relevant):\n${a.images.join('\n')}` : ''}`
