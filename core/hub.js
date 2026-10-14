@@ -654,6 +654,13 @@ export class Hub extends EventEmitter {
         const again = Boolean(a.expect?.again) && samePrompt(e.prompt, a.expect.text)
         // Remembered only once it has a prompt: Claude Code doesn't save empty sessions, so they can't be resumed.
         if (e.session_id && this.sessions[name] !== e.session_id) this.saveSession(name, e.session_id)
+        // Claude Code's own prompt: something the agent left running in the background finished. It's not a message
+        // from you, nor a new task. It comes in mid-turn, or starts a turn of its own once the last one is over; either
+        // way the agent is still on what it was answering, and its reply threads there.
+        if (isNotice(e.prompt)) {
+          if (a.status !== 'working') (a.activity = ''), (a.turnStart = Date.now())
+          return this.setStatus(a, 'working')
+        }
         // A question or an answer Crew typed into the turn it's in (steer): it's part of this turn now. (A turn that
         // ended before it got there starts with it instead, as any other turn does.)
         if (a.steering && samePrompt(e.prompt, a.steering.text)) {
@@ -1991,6 +1998,8 @@ function clean(patch) {
 // Does the prompt an agent reports match what we typed into it? (Whitespace can differ.)
 const squash = (s) => String(s ?? '').replace(/\s+/g, ' ').trim()
 const samePrompt = (reported, sent) => reported === undefined || squash(reported).includes(squash(sent).slice(0, 60))
+// What Claude Code submits by itself when a command or sub-agent the agent ran in the background finishes.
+const isNotice = (prompt) => /^\s*<task-notification>/.test(String(prompt ?? ''))
 
 // Agents get images as file paths (Claude Code and Codex can both open local images).
 const withImages = (text, images) =>
