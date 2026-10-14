@@ -5,6 +5,9 @@ import path from 'node:path'
 import pty from 'node-pty'
 
 const SCROLLBACK = 256 * 1024
+// Output that only sets the window title (OSC 0/1/2), like the spinner Codex keeps in its title for half a minute
+// after it starts: nothing on screen changes, so it doesn't count as drawing (see quietFor).
+const TITLE_ONLY = /^(?:\x1b\][012];[^\x07\x1b]*(?:\x07|\x1b\\))+$/
 // Markers a parent Claude Code session leaves in the environment (e.g. when crew is started from inside one).
 // Inherited, they make the agent think it's a child session and stop saving transcripts, which breaks resume.
 const PARENT_SESSION_VARS = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_CODE_(ENTRYPOINT|EXECPATH|SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|MESSAGING_\w+))$/
@@ -25,7 +28,7 @@ export class Runner extends EventEmitter {
     // 256 KB string on every chunk of a chatty agent's output was most of what a spinner cost.
     const proc = { p, chunks: [], size: 0, startedAt: Date.now(), lastOutput: Date.now(), cols: 120, rows: 36 }
     p.onData((d) => {
-      proc.lastOutput = Date.now()
+      if (!TITLE_ONLY.test(d)) proc.lastOutput = Date.now()
       proc.chunks.push(d)
       proc.size += d.length
       if (proc.size > SCROLLBACK * 1.5) trim(proc)
@@ -65,7 +68,8 @@ export class Runner extends EventEmitter {
     this.procs.get(name)?.p.write(data)
   }
 
-  // How long its terminal has drawn nothing: an idle CLI is silent, a busy or starting one keeps redrawing.
+  // How long its terminal has drawn nothing: an idle CLI is silent, a busy or starting one keeps redrawing. A new
+  // window title isn't drawing.
   quietFor(name) {
     const proc = this.procs.get(name)
     return proc ? Date.now() - proc.lastOutput : 0
