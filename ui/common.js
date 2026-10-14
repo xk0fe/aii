@@ -812,7 +812,7 @@ function feedItem(e, prev, ctx) {
     const a = mentioned(n, Object.values(byName))
     return a ? `<span class="mention" style="--c:${agentColor(a)}">${at}</span>` : at
   })
-  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}" data-id="${e.id}">${text}</div>`
+  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}${e.empty ? ' wordless' : ''}" data-id="${e.id}">${text}</div>`
   const cap = (html) => (cont ? '' : `<div class="cap">${html}${tags}<span class="time">${time}</span></div>`)
   // hover a message for its tools: Reply (the chat's message box then answers it)
   const tools = `<div class="msg-tools"><button class="msg-tool" data-reply="${e.id}" title="Reply to this message">${ICONS.reply}<span>Reply</span></button></div>`

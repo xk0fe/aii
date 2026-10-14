@@ -450,6 +450,8 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
   font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; max-height: 22em; overflow: hidden;
 }
 .item.said .bubble { border-top-left-radius: 6px; }
+/* a turn that ended without a word: Crew's line, not the agent's */
+.bubble.wordless { color: var(--fg2); font-style: italic; }
 /* your messages: a blue bubble, like any chat */
 .me .bubble { background: var(--bubble-me); color: #fff; border-top-right-radius: 6px; }
 .me .bubble a { color: #fff; }

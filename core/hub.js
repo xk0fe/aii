@@ -46,6 +46,8 @@ const API_RETRY = [20000, 60000, 180000]
 // How often an open question looks at its agent's transcript, in case Claude Code settled it by itself (see watchAsk).
 const ASK_CHECK = 5000
 const CONTINUE = 'continue'
+// What the chat shows for a turn that answered a message without a word (see Stop).
+const NO_WORDS = 'Finished without a final message. Its terminal shows what it did.'
 // Asked before a new conversation that the context limit starts (see freshWhenDone).
 const WRAP_UP = "[crew] Your conversation passed its context limit, so a new one starts after this reply. If your task isn't finished, write down where it stands for your next conversation: the worktree and branch, what's done, what's left, and anything you had running. Under 80 words. If it's all finished, reply with just: done"
 const STOP_WORDS = new Set(
@@ -709,6 +711,7 @@ export class Hub extends EventEmitter {
           a.serving = a.expect.msgs // what this turn answers (several, when hand-offs came in together)
           a.expect = null
         } else if (e.prompt && !e.prompt.startsWith('/')) a.current = this.post({ kind: 'msg', from: 'you', to: name, text: e.prompt.slice(0, 4000), via: 'terminal' }).id
+        a.replyDue = Boolean(e.prompt && !e.prompt.startsWith('/')) // a message, not a /command
         if (!again) {
           this.record(name, { tasks: 1 })
           if (!e.prompt?.startsWith('/')) (this.convoOf(a).tasks += 1), this.saveConvos()
@@ -740,6 +743,7 @@ export class Hub extends EventEmitter {
       case 'Interrupt':
         clearTimeout(a.retryTimer)
         a.retrying = false
+        a.replyDue = false
         a.activity = ''
         a.turnStart = null
         return this.setStatus(a, 'idle')
@@ -757,15 +761,20 @@ export class Hub extends EventEmitter {
         if ((a.serving ?? []).some((m) => m.wrapUp)) {
           a.wrapNote = String(e.last_assistant_message ?? '')
           a.serving = []
+          a.replyDue = false
           hold(a, 600)
           return this.setStatus(a, 'idle')
         }
         // one turn can answer several messages that came in together: the reply threads to the first, and the rest
         const also = (a.serving ?? []).slice(1).map((m) => m.id)
-        const reply = e.last_assistant_message
-          ? this.post({ kind: 'reply', from: name, text: e.last_assistant_message.slice(0, 4000), ...(a.current && { re: a.current }), ...(also.length && { also }), ...(subs.length && { subs }) })
+        // A turn can also end without a word (Codex does, after a task that was all tool calls). It was asked
+        // something, so the chat still says it's done instead of leaving your message hanging.
+        const said = String(e.last_assistant_message ?? '')
+        const reply = said || a.replyDue
+          ? this.post({ kind: 'reply', from: name, text: said ? said.slice(0, 4000) : NO_WORDS, ...(!said && { empty: true }), ...(a.current && { re: a.current }), ...(also.length && { also }), ...(subs.length && { subs }) })
           : null
-        this.settleCalls(a, reply)
+        a.replyDue = false
+        this.settleCalls(a, said ? reply : null) // a teammate who asked hears it finished without an answer, as before
         hold(a, 600)
         return this.setStatus(a, 'idle')
       }
