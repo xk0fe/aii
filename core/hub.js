@@ -9,6 +9,7 @@ import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount } from './context.js'
+import { callResult } from './transcript.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
 export const CONFIG = path.join(HOME, 'config.json')
@@ -42,6 +43,8 @@ const LEASE_STALE = 30 * 60000
 // before each try. After the last one it calls you.
 const PASSING_ERRORS = new Set(['server_error', 'overloaded', 'unknown', 'max_output_tokens'])
 const API_RETRY = [20000, 60000, 180000]
+// How often an open question looks at its agent's transcript, in case Claude Code settled it by itself (see watchAsk).
+const ASK_CHECK = 5000
 const CONTINUE = 'continue'
 // Asked before a new conversation that the context limit starts (see freshWhenDone).
 const WRAP_UP = "[crew] Your conversation passed its context limit, so a new one starts after this reply. If your task isn't finished, write down where it stands for your next conversation: the worktree and branch, what's done, what's left, and anything you had running. Under 80 words. If it's all finished, reply with just: done"
@@ -718,6 +721,7 @@ export class Hub extends EventEmitter {
         a.turnStart = null
         return this.setStatus(a, 'idle')
       case 'Stop': {
+        this.closeAsks(a)
         a.activity = ''
         a.apiRetries = 0
         this.readCodexContext(a, e)
@@ -743,6 +747,7 @@ export class Hub extends EventEmitter {
         return this.setStatus(a, 'idle')
       }
       case 'StopFailure':
+        this.closeAsks(a)
         return this.apiError(a, e)
     }
   }
@@ -880,6 +885,7 @@ export class Hub extends EventEmitter {
     const started = Date.now()
     return new Promise((resolve) => {
       this.asks.set(e.id, { resolve, name, cli, input, entry: e })
+      this.watchAsk(e.id, input.transcript_path ?? a.transcript?.path)
       // The hook went away before you answered. Claude: mostly you answered its dialog (it cancels the hook);
       // after a day of waiting, its dialog is simply still up. Codex: its hook ran out, or it was interrupted,
       // and either way it's its terminal's turn now.
@@ -905,6 +911,7 @@ export class Hub extends EventEmitter {
     const q = this.asks.get(id)
     if (!q) return
     this.asks.delete(id)
+    clearInterval(q.timer)
     q.resolve(output)
     this.amend(q.entry, { answer: { ...answer, at: Date.now() } })
     const a = this.agents.get(q.name)
@@ -913,6 +920,39 @@ export class Hub extends EventEmitter {
 
   asking(name) {
     return [...this.asks.values()].some((q) => q.name === name)
+  }
+
+  // Claude Code can settle a question without anyone answering it: its built-in safety check turns a risky command
+  // down after two minutes and the agent carries on, but the hook waiting on the card is never cancelled, and no hook
+  // says so. Its transcript does: the call gets its result. So while one of its own questions is up (a sub-agent's
+  // lives in another file), Crew looks there every few seconds, and the card closes once the call has a result.
+  watchAsk(id, file) {
+    const q = this.asks.get(id)
+    if (q.cli !== 'claude' || q.input.agent_id || !file) return
+    let from = 0
+    try {
+      from = fs.statSync(file).size
+    } catch {}
+    q.watch = { file, from }
+    q.timer = setInterval(() => this.checkAsk(id), ASK_CHECK)
+    q.timer.unref?.()
+  }
+
+  // Has the call behind this question got its result? It ran: you allowed it in its terminal. Turned down, with no
+  // answer from you: Claude Code's own decision.
+  checkAsk(id, stillWaiting = false) {
+    const q = this.asks.get(id)
+    const r = q?.watch && callResult(q.watch, q.input.tool_name, q.input.tool_input)
+    if (!r) return false
+    const denied = r.error && /\b(denied|blocked|rejected)\b/i.test(r.text.slice(0, 400))
+    this.settle(id, '', denied ? { by: 'cli', why: /safety check/i.test(r.text) ? 'its safety check' : '' } : { by: 'terminal' }, stillWaiting)
+    return true
+  }
+
+  // Its turn is over, so nothing it asked in that turn is waiting any more. (A sub-agent's question can outlive the
+  // turn: those stay.)
+  closeAsks(a) {
+    for (const [id, q] of this.asks) if (q.name === a.name && !q.input.agent_id && !this.checkAsk(id, true)) this.settle(id, '', { stale: true }, true)
   }
 
   // An agent that exits, restarts or goes away isn't waiting on its questions any more (even if a hook
