@@ -1,5 +1,6 @@
 // How to launch each agent CLI. An adapter returns { file, args } for the pty, and optionally
 // readyAfter (ms) when the CLI doesn't announce itself at startup, and env for it. Providers pick an adapter by "cli".
+// trust: what its "do you trust this folder?" question looks like on screen, with escapes and spaces taken out.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -91,6 +92,7 @@ export const adapters = {
     }
     return {
       file: 'claude',
+      trust: /Yes,Itrustthisfolder/, // "❯ No, exit  Yes, I trust this folder", and no SessionStart until it's answered
       env: { CREW_STATUS_LINE: userStatusLine() },
       args: [
         '--name', a.name,
@@ -113,6 +115,7 @@ export const adapters = {
     return {
       file: 'codex',
       readyAfter: 3000, // Codex fires SessionStart with the first prompt, not at launch
+      trust: /Trustthisfolder\?.{0,400}1\.Trustandcontinue/, // "Trust this folder? … › 1. Trust and continue  2. Quit", even in YOLO mode
       args: [
         // Resumed in the agent's folder even when the session was started elsewhere (it moved here from another
         // computer): otherwise Codex stops to ask which folder to use.
