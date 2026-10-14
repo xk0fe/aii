@@ -295,7 +295,9 @@ export class Hub extends EventEmitter {
     if (!adapter) return fail(`unknown provider "${a.provider}", define it under "providers" in config.json`)
     if (provider.missing.length) return fail(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const resume = this.sessions[a.name]
-    const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session: randomUUID(), attachments: ATTACHMENTS })
+    const session = randomUUID()
+    const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session, attachments: ATTACHMENTS })
+    a.sessionId = resume ?? session // the conversation this process runs (see onStatusLine)
     Object.assign(a, { readyAfter, trust, trustAsk: false, boot: '' }) // see onOutput
     a.resumed = Boolean(resume)
     if (!resume) this.newConvo(a)
@@ -602,6 +604,9 @@ export class Hub extends EventEmitter {
   onStatusLine(name, s) {
     const a = this.agents.get(name)
     if (!a) return ''
+    // A report from another conversation: the process a new conversation just replaced, still drawing its status line
+    // on its way out. Taken as the new conversation's, it would count the old one's tokens against the new one's limit.
+    if (s?.session_id && a.sessionId && s.session_id !== a.sessionId) return ''
     const context = fromStatusLine(s)
     // Before the first message of a resumed session there's no usage yet: keep what we knew.
     if (context && (s.context_window.current_usage || !this.convoOf(a).context)) this.setContext(a, context)
@@ -657,6 +662,7 @@ export class Hub extends EventEmitter {
     if (e.hook_event_name === 'SessionStart' || e.hook_event_name === 'UserPromptSubmit') Object.assign(a, { trust: null, boot: '' }) // past any trust question
     // where its CLI keeps this conversation, so a move to another computer can take it along (core/move.js)
     if (e.transcript_path && e.session_id && !e.agent_id) a.transcript = { id: e.session_id, path: String(e.transcript_path) }
+    if (e.hook_event_name === 'SessionStart' && e.session_id && !e.agent_id) a.sessionId = e.session_id // /clear starts another
     switch (e.hook_event_name) {
       case 'SessionStart': // Claude: at launch. Codex: with the first prompt, so only "starting" counts.
         if (e.source === 'compact') {
