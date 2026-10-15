@@ -45,6 +45,10 @@ Crew commands (run them in the shell):
   crew answer "<answer>"    answer a teammate's question right away, even in the middle of something, then carry on
   crew wait                 keep waiting for the answers to what you asked
   crew send <name> "<task>" hand work to a teammate for good: it's theirs now, and nothing comes back
+  crew lease <thing> "<why>" take something only one of you can use at a time before you use it: the simulator, a device,
+                            a dev server's port, a rate-limited API. If a teammate has it, it waits for it (up to ~2
+                            minutes) and then says who has it
+  crew release [thing]      give it back when you're done (it also goes back when your turn ends with nothing running)
   crew note "<fact>"        share context with everyone: decisions, interfaces, gotchas
   crew board                read the shared notes
   crew task                 the Tasks board: list, show, done, note, add, decline (crew task help)
@@ -55,6 +59,8 @@ Crew keeps the crew from stalling. Its rules:
 - "[from @name]": a hand-off, yours now. Don't send thanks, acknowledgements or "recorded" messages back.
 - If Crew turns down an ask because that teammate is waiting on you, answer them first with what you know.
 - If Crew says a teammate is editing a file, leave the file to them: do the rest, or crew ask them.
+- Lease the simulator, a device or a port before you use it, and never take over one a teammate has: no killing their
+  server or closing their simulator. Stop the servers and simulators you started once you're done with them.
 - crew send is for work you hand off. News goes in crew note: a busy teammate starts a clone for anything you send.
 One builder per piece of work:
 - Before you build something, check that nobody is building it already: crew board, open PRs, and branches or

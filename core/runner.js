@@ -20,7 +20,8 @@ export function cleanEnv(env) {
 export class Runner extends EventEmitter {
   procs = new Map()
 
-  start(name, { file, args, cwd, env }) {
+  // `tag` comes back with 'ended' once this process is gone, however it went (it exited, or was stopped or replaced).
+  start(name, { file, args, cwd, env, tag }) {
     this.stop(name)
     const fullEnv = cleanEnv({ ...process.env, ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' })
     const p = pty.spawn(which(file, fullEnv.PATH), args, { name: 'xterm-256color', cols: 120, rows: 36, cwd, env: fullEnv })
@@ -35,6 +36,7 @@ export class Runner extends EventEmitter {
       this.emit('data', name, d)
     })
     p.onExit(({ exitCode }) => {
+      this.emit('ended', name, tag)
       if (this.procs.get(name) !== proc) return
       this.procs.delete(name)
       this.emit('exit', name, exitCode, Date.now() - proc.startedAt)
@@ -62,6 +64,10 @@ export class Runner extends EventEmitter {
 
   running(name) {
     return this.procs.has(name)
+  }
+
+  pid(name) {
+    return this.procs.get(name)?.p.pid
   }
 
   write(name, data) {

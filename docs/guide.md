@@ -137,6 +137,8 @@ Agents that depend on each other can stall a crew. Two of them each wait for the
 - **Nobody waits in circles.** Whoever is being waited on never waits on its waiter. If joseph is waiting on arie's answer and arie tries to `crew ask joseph`, Crew turns that down on the spot and tells arie to answer first, with what it knows. The same goes down a line (joseph waits on arie, arie on david: david can't wait on joseph). So two agents can never end up waiting on each other.
 - **No handing back.** An agent can't `crew send` work back to a teammate that's waiting on its answer. It puts what it would have sent in the answer, which goes back by itself. That's one hop, not a round trip.
 - **One file, one editor.** The first agent to edit a file (Claude Code's Edit and Write, Codex's patches) holds it until its turn ends. Anyone else who tries is turned away and told who has it, so an agent and its clones, or two agents in one folder, never write over each other. An agent answering the holder's question may edit its files, since the holder is waiting on it rather than editing.
+- **One user per simulator.** Things that aren't files work the same way: the iOS simulator, a phone, a dev server's port, an API that rate-limits the whole office. `crew lease simulator "QA pass for #12"` takes it before using it. If a teammate has it, `crew lease` waits for it (about two minutes, like `crew ask`), then says who has it and what for, and the agent carries on with other work instead of taking over the teammate's simulator. It's the holder's until `crew release`, until its turn ends with nothing of its left running in the background, or until its CLI stops. `crew leases` lists who has what, the sidebar shows it next to the agent's name, and from your own terminal you can take one too (it stays yours until you release it). Names are case-insensitive, so agents only need to agree on the word.
+- **Nothing left running.** Every command an agent runs leaves its process group behind with Crew (Claude Code runs each one through `bin/crew-sh`; for Codex, Crew looks at the agent's process tree now and then). When the agent's CLI ends (it exits, is turned off, or restarts for a new conversation), whatever is still running in those groups is stopped: the Metro server it started with `&`, the simulator helpers. The chat says what, in one line (*@levi left 3 processes running (node, idb_companion ×2), so Crew stopped them*). Crew itself and what other agents run are never touched, and a process that only reused an old number is left alone. If Crew wasn't running when a CLI ended, it cleans up on its next start.
 - **One owner.** A message sent to several agents names the first one as the lead: it owns the result, and the others each take the part in their own area. A hand-off is the recipient's from then on, with no need to report back. A task's owner who can't take it runs `crew task decline`, and it goes straight to the next agent whose area it is (never back to one that declined it), or back to To do for you, with a notification.
 - **One builder per piece of work.** Before an agent builds something, it checks that nobody else is building it already: the board, open PRs, and branches or worktrees named for it. If someone is (a teammate, a clone, or another Claude session), it asks instead of starting a second build. It works only in a worktree or branch it made, or one its owner handed it. News goes in `crew note`, not `crew send`, because a busy teammate starts a clone for anything sent to it.
 - **A lost connection doesn't stop the work.** When an API error cuts a turn short (a dropped connection, a busy server), Crew types "continue" for the agent after 20 seconds, then 1 and 3 minutes if it happens again. The turn goes on answering the same message. A usage limit, a login or a billing problem, or a fourth failure in a row, calls you instead.
@@ -155,6 +157,8 @@ crew ask <name> "..."     ask a teammate and wait for its answer (it reaches the
 crew answer [@name] "..." answer a question you were asked, right away, and carry on
 crew wait                 keep waiting for the answers to what you asked
 crew send <name> "..."    hand work to a teammate for good: nothing comes back
+crew lease <thing> "..."  take the simulator, a device or a port before using it (waits if a teammate has it)
+crew release [thing]      give it back
 crew task decline <n> "why"   a task that isn't yours goes to the next owner by area
 ```
 
@@ -265,6 +269,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `usage.json`: each provider's usage limits as last reported, and which heads-ups you've had (so the UI isn't blank until the next reply).
 - `feed.jsonl`: the feed history.
 - `attachments/`: images you've attached to messages and instructions.
+- `run/groups/`: the process groups each running agent's commands started, a file per launch, so what they leave running can be stopped when they end.
 
 ```json
 {

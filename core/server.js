@@ -12,6 +12,10 @@ export function serve(hub) {
     answer: (q, body) => hub.answerNow({ from: q.from || 'you', to: q.to, text: body }),
     // An agent's file tools, before they write: one agent edits a file at a time. The reply is the hook's decision.
     lease: (q, body, name) => hub.lease(name, JSON.parse(body || '{}')),
+    // `crew lease <thing> ["why"]`: held open while a teammate has it (up to ASK_HOLD); `crew release [thing]`; `crew leases`
+    claim: (q, body, name, closed) => hub.claim({ from: q.from || 'you', words: body.split('\0').slice(0, -1), closed }),
+    release: (q, body) => hub.give({ from: q.from || 'you', words: body.split('\0').slice(0, -1) }),
+    leases: () => hub.leasesText(),
     note: (q, body) => hub.note(q.from || 'you', body),
     who: () => hub.who(),
     board: () => hub.board(),

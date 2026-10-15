@@ -10,6 +10,7 @@ import { generatePrompt } from './promptgen.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, LIMITS } from './context.js'
 import { callResult } from './transcript.js'
+import { processes, tree, groupsOf, readGroups, leftovers, stop as stopProcesses, summary } from './procs.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
 export const CONFIG = path.join(HOME, 'config.json')
@@ -17,6 +18,10 @@ export const ATTACHMENTS = path.join(HOME, 'attachments')
 const localDay = (t = Date.now()) => new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
 const at = (file) => path.join(HOME, file)
+// Where each agent's CLI writes down the process groups of the commands it runs, a file per launch (core/procs.js).
+const GROUPS = path.join(HOME, 'run', 'groups')
+// How often an agent's process tree is looked at for groups bin/crew-sh doesn't see (Codex, the CLI's own children).
+const TREE_CHECK = 15000
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones']
@@ -73,6 +78,7 @@ export class Hub extends EventEmitter {
   constructor(runner, { bin }) {
     super()
     fs.mkdirSync(ATTACHMENTS, { recursive: true })
+    fs.mkdirSync(GROUPS, { recursive: true })
     this.runner = runner
     this.bin = bin
     this.token = randomBytes(16).toString('hex')
@@ -83,6 +89,9 @@ export class Hub extends EventEmitter {
     // Right of way (see question): what each `crew ask` is still owed, and which agent edits which file.
     this.calls = new Map() // id (the question's feed id) -> { id, msg, from, to, parent, at, hold, remote }
     this.leases = new Map() // absolute path -> { name, at }
+    this.held = new Map() // a thing only one agent can use at a time (crew lease), lowercased -> { thing, name, why, at }
+    this.leaseWaits = [] // `crew lease`s waiting for a thing someone else has: { key, from, thing, why, resolve }
+    this.runs = new Map() // launch id -> { name, file, pid, at }: each CLI process and the file of groups it started
     this.turnedAway = new Set() // "who:file" told this turn that a file is taken, so the chat says it once
     this.saving = Promise.resolve() // feed.jsonl appends, one after another (an answer must land after its card)
     this.tickets = new Tickets(at('tickets.json'))
@@ -96,6 +105,7 @@ export class Hub extends EventEmitter {
     this.loadConfig()
     runner.on('exit', (name, code, ms) => this.onExit(name, code, ms))
     runner.on('data', (name, data) => this.onOutput(name, data))
+    runner.on('ended', (name, run) => this.sweep(run))
   }
 
   start(url) {
@@ -103,6 +113,7 @@ export class Hub extends EventEmitter {
     fs.writeFileSync(at('url'), url)
     fs.writeFileSync(at('token'), this.token)
     fs.chmodSync(at('token'), 0o600)
+    this.sweepStale()
     for (const a of this.agents.values()) if (!a.off) this.launch(a)
     fs.watchFile(CONFIG, { interval: 1000 }, () => this.loadConfig())
     this.stallTimer = setInterval(() => this.checkStalls(), STALL_CHECK)
@@ -294,6 +305,7 @@ export class Hub extends EventEmitter {
     this.forgetAsks(a.name)
     if (a.serving?.length) this.settleCalls(a, null, 'restarted before it answered')
     this.release(a.name)
+    this.letGo(a.name)
     a.relaunch = false
     clearTimeout(a.retryTimer)
     a.retrying = false
@@ -321,8 +333,18 @@ export class Hub extends EventEmitter {
     try {
       const cwd = expand(a.cwd)
       if (!fs.existsSync(cwd)) throw new Error(`folder not found: ${cwd}`)
-      const env = { ...expandEnv(provider.env), ...extraEnv, PATH: `${this.bin}:${process.env.PATH}`, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME }
-      this.runner.start(a.name, { file, args: [...args, ...(provider.args ?? []), ...(a.args ?? [])], cwd, env })
+      const run = randomUUID().slice(0, 8)
+      const groups = path.join(GROUPS, `${a.name}.${run}`)
+      const env = {
+        ...expandEnv(provider.env), ...extraEnv, PATH: `${this.bin}:${process.env.PATH}`, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME,
+        CREW_GROUPS: groups, ...(provider.cli === 'claude' && shellPrefix(this.bin)),
+      }
+      this.runner.start(a.name, { file, args: [...args, ...(provider.args ?? []), ...(a.args ?? [])], cwd, env, tag: run })
+      // its own group first: what the CLI starts without a group of its own lands there
+      const pid = this.runner.pid?.(a.name)
+      if (pid) fs.writeFileSync(groups, `${pid} ${Math.floor(Date.now() / 1000)}\n`)
+      this.runs.set(run, { name: a.name, file: groups, pid, at: 0 })
+      a.run = run
       this.setStatus(a, 'starting')
       this.readyIn(a)
     } catch (e) {
@@ -715,6 +737,57 @@ export class Hub extends EventEmitter {
     if (a.cloneOf) this.dismiss(name) // a clone isn't restarted: what it had queued goes back to its original
   }
 
+  // ---- what an agent leaves running ---------------------------------------------------------------------
+  // Each launch writes down its process groups (core/procs.js): bin/crew-sh adds every command Claude Code runs, and
+  // noteGroups what turns up in the CLI's process tree. When the CLI ends (it exits, is turned off, or restarts for a new
+  // conversation), whatever is still in those groups is stopped: the dev server it started with &, the simulator helpers.
+
+  // Groups bin/crew-sh doesn't see: what the CLI starts itself, and every command of a CLI without a shell prefix (Codex).
+  noteGroups(a) {
+    const run = this.runs.get(a.run)
+    if (!run?.pid || Date.now() - run.at < TREE_CHECK) return
+    run.at = Date.now()
+    processes().then((procs) => {
+      const known = readGroups(run.file)
+      const lines = [...groupsOf(procs, run.pid)].filter(([g]) => !known.has(g)).map(([g, start]) => `${g} ${start}\n`)
+      if (lines.length) fs.appendFile(run.file, lines.join(''), () => {})
+    })
+  }
+
+  // A CLI is gone: what's left in its groups is stopped, with one line in the chat saying what. Crew itself, and what
+  // other agents run, are never touched (Crew started from an agent's terminal sits in one of its groups).
+  async sweep(id) {
+    const run = this.runs.get(id)
+    if (!run) return
+    this.runs.delete(id)
+    const groups = readGroups(run.file)
+    fs.rm(run.file, { force: true }, () => {})
+    if (!groups.size) return
+    const procs = await processes()
+    const keep = new Set(tree(procs, process.pid).map((p) => p.pid))
+    for (const r of this.runs.values()) if (r.pid) for (const p of tree(procs, r.pid)) keep.add(p.pid)
+    groups.delete(procs.find((p) => p.pid === process.pid)?.pgid)
+    const left = leftovers(procs, groups, keep)
+    if (!left.length) return
+    stopProcesses(left)
+    const n = left.length
+    this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(left)}), so Crew stopped ${n === 1 ? 'it' : 'them'}` })
+  }
+
+  // Launches that ended while Crew wasn't there to see it (it quit, or crashed): swept now.
+  sweepStale() {
+    let files = []
+    try {
+      files = fs.readdirSync(GROUPS)
+    } catch {}
+    for (const f of files) {
+      const m = f.match(/^(.+)\.([0-9a-f]{8})$/)
+      if (!m || this.runs.has(m[2])) continue
+      this.runs.set(m[2], { name: m[1], file: path.join(GROUPS, f), at: 0 })
+      this.sweep(m[2])
+    }
+  }
+
   saveSession(name, id) {
     if (id) this.sessions[name] = id
     else delete this.sessions[name]
@@ -733,6 +806,7 @@ export class Hub extends EventEmitter {
     const a = this.agents.get(name)
     if (!a) return
     a.hookAt = Date.now()
+    this.noteGroups(a)
     if (e.hook_event_name === 'SessionStart' || e.hook_event_name === 'UserPromptSubmit') Object.assign(a, { trust: null, boot: '' }) // past any trust question
     // where its CLI keeps this conversation, so a move to another computer can take it along (core/move.js)
     if (e.transcript_path && e.session_id && !e.agent_id) a.transcript = { id: e.session_id, path: String(e.transcript_path) }
@@ -1093,6 +1167,7 @@ export class Hub extends EventEmitter {
     // its original instead, see dismiss.)
     if (status === 'idle' || status === 'stopped' || status === 'off') {
       this.release(a.name)
+      if (status !== 'idle' || !a.background) this.letGo(a.name) // what it left running may still be using a lease
       if (a.steering && status === 'idle' && !a.freshPending && !a.relaunch) {
         // what Crew typed mid-turn wasn't taken in yet: give the CLI a moment to start a turn with it (see unsteer)
         hold(a, 5000)
@@ -1658,6 +1733,93 @@ export class Hub extends EventEmitter {
     if (freed) this.changed()
   }
 
+  // One user at a time, for things that aren't files: a simulator, a device, a dev server's port, an API that rate-limits
+  // the whole office. `crew lease <thing>` takes it before using it; someone else has it, and it waits for it like
+  // `crew ask` waits for an answer, then says who has it. It's the holder's until it gives it back (`crew release`), its
+  // turn ends with nothing of its left running in the background, or its CLI stops. An agent answering the holder's
+  // question may use it: the holder is waiting on it, not using it. From your own terminal it's yours until you release it.
+  async claim({ from = 'you', words = [], closed, hold = ASK_HOLD }) {
+    const [thing = '', ...why] = words.map((w) => String(w).trim())
+    const key = leaseKey(thing)
+    if (!key) throw new Error('usage: crew lease <thing> ["what for"], e.g. crew lease simulator "QA pass for #12"')
+    if (from !== 'you' && !this.agents.has(from)) throw new Error(`no agent named "${from}"`)
+    const held = this.held.get(key)
+    if (!held || held.name === from || !this.stillHolds(held)) return this.grant(key, from, thing, why.join(' '))
+    if (this.waitPath(held.name, from)) return `@${held.name} has ${held.thing}, but it's waiting on you: use it for what @${held.name} asked you.\n`
+    if (!this.turnedAway.has(`${from}:lease:${key}`)) {
+      this.turnedAway.add(`${from}:lease:${key}`)
+      this.ruling('lease', from, held.name, { thing: held.thing })
+    }
+    return new Promise((resolve) => {
+      const w = { key, from, thing, why: why.join(' ') }
+      const timer = setTimeout(() => w.resolve(this.takenText(this.held.get(key) ?? held)), hold)
+      w.resolve = (text) => {
+        clearTimeout(timer)
+        this.leaseWaits = this.leaseWaits.filter((x) => x !== w)
+        resolve(text)
+      }
+      closed?.addEventListener('abort', () => w.resolve(''), { once: true })
+      this.leaseWaits.push(w)
+    })
+  }
+
+  grant(key, name, thing, why) {
+    const was = this.held.get(key)
+    const again = was?.name === name
+    if (again) thing = was.thing // as it was first written
+    this.held.set(key, { thing, name, why: why ? why.slice(0, 200) : (again ? was.why : ''), at: again ? was.at : Date.now() })
+    this.changed()
+    const until = name === 'you' ? 'until you crew release it' : `until your turn ends with nothing left running, or you crew release ${thing}`
+    return `${again ? 'Still yours' : 'Yours now'}: ${thing}, ${until}.\n`
+  }
+
+  // Still the holder's? Yours until you let go; an agent's while it's at work, or something it left running is.
+  stillHolds({ name }) {
+    if (name === 'you') return true
+    const a = this.agents.get(name)
+    return Boolean(a) && this.runner.running(name) && !['off', 'stopped'].includes(a.status) && (a.status !== 'idle' || a.background > 0)
+  }
+
+  takenText(h) {
+    const mins = Math.max(1, Math.round((Date.now() - h.at) / 60000))
+    const who = h.name === 'you' ? 'the user' : `@${h.name}`
+    return `${h.thing} is still ${who}'s (${mins} min${h.why ? `: ${h.why}` : ''}). Don't use it meanwhile: carry on with other work and try again later${h.name === 'you' ? '' : `, or crew ask ${h.name}`}.\n`
+  }
+
+  // `crew release [thing]`: one thing, or everything it holds.
+  give({ from = 'you', words = [] }) {
+    const thing = words.join(' ').trim()
+    const keys = (thing ? [leaseKey(thing)] : [...this.held.keys()]).filter((k) => this.held.get(k)?.name === from)
+    if (!keys.length) return thing ? `${thing} isn't yours\n` : 'You hold nothing\n'
+    const things = keys.map((k) => this.held.get(k).thing)
+    for (const k of keys) this.free(k)
+    return `released ${things.join(', ')}\n`
+  }
+
+  // Everything `name` holds goes back: its turn is over, or its CLI stopped.
+  letGo(name) {
+    for (const [k, h] of [...this.held]) if (h.name === name) this.free(k)
+  }
+
+  // Free again: the first one waiting for it gets it.
+  free(key) {
+    this.held.delete(key)
+    const next = this.leaseWaits.find((w) => w.key === key && (w.from === 'you' || this.runner.running(w.from)))
+    if (next) next.resolve(this.grant(key, next.from, next.thing, next.why))
+    this.changed()
+  }
+
+  holdsOf(name) {
+    return [...this.held.values()].filter((h) => h.name === name && this.stillHolds(h)).map((h) => h.thing)
+  }
+
+  // `crew leases`: who has what.
+  leasesText() {
+    const now = [...this.held.values()].filter((h) => this.stillHolds(h))
+    if (!now.length) return 'Nothing is leased right now.\n'
+    return now.map((h) => `${h.thing.padEnd(22)} ${(h.name === 'you' ? 'the user' : `@${h.name}`).padEnd(16)} ${Math.max(1, Math.round((Date.now() - h.at) / 60000))} min${h.why ? `  ${h.why}` : ''}`).join('\n') + '\n'
+  }
+
   // Best agent for an un-addressed task: area match first, then whoever is free, then the shortest queue.
   // An area matches on shared words and on shared intents (see INTENTS), so "keep the crew in working order"
   // finds the organiser even though none of its words are in "admin work, assistant, organiser".
@@ -2182,7 +2344,8 @@ export class Hub extends EventEmitter {
     const rows = this.ordered().map((a) => {
       const queue = a.inbox.length ? `, ${a.inbox.length} queued` : ''
       const waits = this.blockedOn(a.name)
-      const status = (waits.length ? `waiting on ${waits.map((n) => `@${n}`).join(' ')}` : a.status) + queue
+      const holds = this.holdsOf(a.name)
+      const status = (waits.length ? `waiting on ${waits.map((n) => `@${n}`).join(' ')}` : a.status) + queue + (holds.length ? `, has ${holds.join(', ')}` : '')
       if (a.off) return `${a.name.padEnd(16)} off`
       if (a.cloneOf) return `${a.name.padEnd(16)} ${status.padEnd(20)} ${''.padEnd(22)} a clone of ${a.cloneOf}, on a task of its own`
       const brain = [this.providerOf(a)?.label, a.model, a.effort].filter(Boolean).join(' ')
@@ -2287,6 +2450,8 @@ export class Hub extends EventEmitter {
         subs: [...(a.subs?.values() ?? [])].filter((x) => !x.ended || Date.now() - x.ended < SUB_LINGER).map(({ id, type, description, started, ended, tools, activity }) => ({ id, type, description, started, ended, tools, activity })),
         // right of way: the teammates its `crew ask` is waiting on right now, and who's owed an answer by it
         waitingOn: this.waitingOn(a), owes: this.owes(a),
+        // what it has leased (crew lease): the simulator, a port
+        holds: this.holdsOf(a.name),
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
       reads: this.reads,
@@ -2334,6 +2499,16 @@ const crewPrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: D
 
 // The last time anyone but Crew did something with a task: added it, started it, wrote a note, moved it.
 const lastWord = (t) => t.log.findLast((l) => l.by !== 'crew')?.ts ?? t.created
+
+// What `crew lease` calls a thing, however it's written: "iOS  Simulator" and "ios simulator" are one.
+const leaseKey = (thing) => String(thing ?? '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 60)
+
+// Claude Code runs every command through bin/crew-sh, which writes down its process group (see Hub.sweep). Your own
+// prefix, if you have one, still runs after it.
+const shellPrefix = (bin) => {
+  const yours = process.env.CLAUDE_CODE_SHELL_PREFIX
+  return { CLAUDE_CODE_SHELL_PREFIX: path.join(bin, 'crew-sh'), ...(yours && !yours.endsWith('/crew-sh') && { CREW_SHELL_PREFIX: yours }) }
+}
 
 // Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.
 const rank = (m) => (m.answers ? 0 : m.ask ? 1 : 2)
