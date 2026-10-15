@@ -137,6 +137,7 @@ export class Tickets {
 
   log(t, by, text, kind) {
     t.updated = Date.now()
+    if (by !== 'crew') delete t.stalled // someone's on it again (see Hub.checkStalls)
     t.log.push({ ts: t.updated, by, text, ...(kind && { kind }) })
     if (t.log.length > 60) t.log.splice(1, t.log.length - 60) // keep the first entry (who reported it)
     this.save()

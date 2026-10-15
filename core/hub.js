@@ -50,6 +50,11 @@ const CONTINUE = 'continue'
 const NO_WORDS = 'Finished without a final message. Its terminal shows what it did.'
 // Asked before a new conversation that the context limit starts (see freshWhenDone).
 const WRAP_UP = "[crew] Your conversation passed its context limit, so a new one starts after this reply. If your task isn't finished, write down where it stands for your next conversation: the worktree and branch, what's done, what's left, and anything you had running. Under 80 words. If it's all finished, reply with just: done"
+// A task in progress counts as stalled once the agent on it has been idle this long (stallMinutes in config.json, 0 for
+// never) with no word on the task. Three times as long when it left something running in the background, which calls
+// it back when it's done. Looked at once a minute.
+const STALL_MINUTES = 10
+const STALL_CHECK = 60000
 const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
 )
@@ -77,6 +82,7 @@ export class Hub extends EventEmitter {
     this.turnedAway = new Set() // "who:file" told this turn that a file is taken, so the chat says it once
     this.saving = Promise.resolve() // feed.jsonl appends, one after another (an answer must land after its card)
     this.tickets = new Tickets(at('tickets.json'))
+    this.stalls = new Map() // task id -> { at, told }: Crew reminded its agent at `at`, or (told) called you
     // Each agent's current conversation: when it started, tasks in it, compactions, and how full it is.
     this.convos = readJSON(at('conversations.json')) ?? {}
     // Unread replies: up to when you've read each agent's. A first run starts from now, so old history isn't "new".
@@ -93,6 +99,8 @@ export class Hub extends EventEmitter {
     fs.chmodSync(at('token'), 0o600)
     for (const a of this.agents.values()) if (!a.off) this.launch(a)
     fs.watchFile(CONFIG, { interval: 1000 }, () => this.loadConfig())
+    this.stallTimer = setInterval(() => this.checkStalls(), STALL_CHECK)
+    this.stallTimer.unref?.()
     discoverCodex().then((codex) => {
       if (!codex) return
       this.discovered.codex = codex
@@ -1782,6 +1790,66 @@ export class Hub extends EventEmitter {
     return Boolean((this.directory?.() ?? []).find((x) => x.name === name)?.on)
   }
 
+  // ---- stalled tasks: in progress, and nobody on them --------------------------------------------------
+  // A task can sit In progress while its agent does nothing: its turn ended on "I'll take the screenshots once it
+  // settles", or the conversation moved on, and nothing calls it back. Once the agent on it has been idle a while with
+  // nothing lined up, nothing it's waiting on and no word on the task, Crew reminds it once: carry on, or say what's in
+  // the way. If it stops again without finishing, its last reply asked you something, or no conversation is on the task
+  // any more, it's yours to look at: one line in the chat and a notification.
+
+  checkStalls(now = Date.now()) {
+    const after = Number(this.config.stallMinutes ?? STALL_MINUTES) * 60000
+    if (!(after > 0)) return
+    for (const t of this.tickets.open()) {
+      if (t.status !== 'fixing' || !t.fixer || t.fixer.includes('@')) continue // a task an agent elsewhere works on: its computer can't tell this one
+      const base = this.agents.get(t.fixer)
+      if (!base || base.off || base.moving) continue
+      const family = [base, ...this.clonesOf(base)]
+      if (family.some((x) => x.inbox.some((m) => m.ticket === t.id))) continue // lined up, not started yet
+      const word = lastWord(t)
+      let s = this.stalls.get(t.id) ?? (t.stalled ? { at: t.stalled, told: true } : null) // you were told before a restart
+      if (s && word >= s.at) {
+        // a note, a status change: someone's on it again, so the next stall starts from scratch
+        this.stalls.delete(t.id)
+        delete t.stalled
+        s = null
+      }
+      if (s?.told) continue
+      const w = family.find((x) => this.convos[x.name]?.ticket === t.id)
+      if (!w) {
+        if (family.some((x) => x.status !== 'idle') || now - Math.max(word, base.since) < after) continue
+        this.tellStalled(t, base, `isn't on #${t.id} any more, but it's still in progress. Start it again or move it`)
+        continue
+      }
+      if (w.status !== 'idle' || !this.runner.running(w.name) || w.retrying || w.freshPending || w.relaunch || this.owed(w)) continue
+      const idle = now - Math.max(w.since, word)
+      if (idle < after * (w.background ? 3 : 1)) continue
+      const mins = Math.round(idle / 60000)
+      const last = this.feed.findLast((e) => e.kind === 'reply' && e.from === w.name)
+      if (s) {
+        if (w.since >= s.at) this.tellStalled(t, w, `stopped on #${t.id} again without finishing it. Have a look`)
+      } else if (last && last.ts >= word && /\?\s*$/.test(last.text)) this.tellStalled(t, w, `asked you something about #${t.id} ${mins} min ago and is waiting for your answer`)
+      else this.remind(t, w, mins)
+    }
+  }
+
+  remind(t, w, mins) {
+    this.stalls.set(t.id, { at: Date.now() })
+    this.post({ kind: 'event', from: w.name, text: `stopped on #${t.id} ${mins} min ago without finishing it, so Crew reminded it` })
+    const handed = this.feed.findLast((e) => e.kind === 'msg' && e.ticket === t.id) // its reply threads to the task
+    const text = `[crew] Task #${t.id} "${t.title}" is still in progress, and your turn ended ${mins} min ago without finishing it. If it's done, run: crew task done ${t.id} "what you did, how you checked". If something is in the way (an answer, a decision, access), say what with crew task note ${t.id} "…" and stop. Otherwise carry on with it now.`
+    this.queue(w, crewPrompt(w, text, handed?.id))
+    this.pump(w)
+  }
+
+  tellStalled(t, a, text) {
+    this.stalls.set(t.id, { at: Date.now(), told: true })
+    t.stalled = Date.now()
+    this.tickets.save()
+    this.post({ kind: 'event', from: a.name, text, alert: true })
+    this.emit('notice', { title: `#${t.id} has stalled`, body: `@${a.name} ${text}`, focus: `task:${t.id}` })
+  }
+
   // A name for an owner: an agent here, or (bare or name@computer) one on a linked computer.
   agentName(name) {
     if (!name) return null
@@ -2125,6 +2193,9 @@ const hold = (a, ms) => {
 
 // A prompt from Crew itself, queued like a message (it isn't one: it's not in the chat). See move.js.
 const crewPrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, crew: true, queued: true })
+
+// The last time anyone but Crew did something with a task: added it, started it, wrote a note, moved it.
+const lastWord = (t) => t.log.findLast((l) => l.by !== 'crew')?.ts ?? t.created
 
 // Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.
 const rank = (m) => (m.answers ? 0 : m.ask ? 1 : 2)
