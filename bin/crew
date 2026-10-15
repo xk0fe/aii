@@ -1,8 +1,9 @@
 #!/bin/sh
 # crew: talk to the crew from inside an agent or from any terminal while the app is running.
 DIR=${CREW_HOME:-$HOME/.crew}
-URL=${CREW_URL:-$(cat "$DIR/url" 2>/dev/null)}
-TOKEN=${CREW_TOKEN:-$(cat "$DIR/token" 2>/dev/null)}
+# what Crew wrote when it started comes first: an agent can outlive the Crew that started it (core/ptyhost.js)
+URL=$(cat "$DIR/url" 2>/dev/null); URL=${URL:-$CREW_URL}
+TOKEN=$(cat "$DIR/token" 2>/dev/null); TOKEN=${TOKEN:-$CREW_TOKEN}
 FROM=${CREW_AGENT:-you}
 [ -n "$URL" ] || { echo "crew app is not running" >&2; exit 1; }
 

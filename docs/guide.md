@@ -35,6 +35,7 @@ npm start        # opens Crew.app (builds it the first time)
   - `npm run icon` re-renders the app icon from the same plush creatures the UI uses.
   - `npm run shots` renders every view, light and dark, with a made-up crew into `dist/shots` (PNGs plus GIFs of the animations). Nothing starts and `~/.crew` is untouched, so it's safe for checking UI changes. Add `--webp` for animated WebP copies of the animations (the README uses those), and `npm run shots -- cover` renders just the README's cover (`scripts/cover.html`).
 - **One copy at a time:** opening Crew again brings up the one that's running.
+- **Quitting doesn't stop the agents.** Their terminals live in a small process of their own, the terminal host (`core/ptyhost.js`), so an agent mid-task carries on while Crew is closed, crashes, or relaunches with new code (after you pull or merge a fix, say). Open Crew again and it picks every agent up where it is, with one line in the chat saying so: a reply it finished meanwhile shows up threaded to what it answered, and its queue, its clones and its teammates' questions are still there. While Crew is closed, agents can't reach each other (`crew send` and `crew ask` say Crew isn't running) and a permission prompt waits in the agent's terminal. **Quit** keeps them running; **Stop Agents and Quit** ends them, as quitting used to.
 - **Theme:** the ☀️/🌙 button (dashboard titlebar or the menu bar popover) switches Light, Dark, or Auto (follow macOS). Terminals stay dark either way. The `{ }` button opens `config.json` in your text editor.
 
 ## The crew collection
@@ -270,6 +271,9 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `feed.jsonl`: the feed history.
 - `attachments/`: images you've attached to messages and instructions.
 - `run/groups/`: the process groups each running agent's commands started, a file per launch, so what they leave running can be stopped when they end.
+- `run/pty.sock`, `run/pty.token`, `run/ptyhost.log`: the terminal host's socket (yours only), its key, and its log.
+- `runtime.json`: what Crew knows about each agent at work (what it's answering, its queue, its clones, questions between agents), so it can pick them up after a restart.
+- `spool/`: hook events agents sent while Crew was closed, replayed when it starts.
 
 ```json
 {
@@ -291,9 +295,9 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 ## How it works
 
 ```
- UI windows (ui/*.html) ──IPC── main.js ── core/crew.js ── core/hub.js ── core/runner.js ── pty ── claude / codex
-                                              │                 ▲                                     │
-                    other computers ── core/link.js    core/server.js (127.0.0.1, token) ◄── hooks + `crew` CLI
+ UI windows (ui/*.html) ──IPC── main.js ── core/crew.js ── core/hub.js ── core/ptyclient.js ══ core/ptyhost.js ── pty ── claude / codex
+                                              │                 ▲          (Unix socket)   (outlives Crew)            │
+                    other computers ── core/link.js    core/server.js (127.0.0.1, token) ◄── hooks + `crew` CLI ───────┘
 ```
 
 - `core/providers.js` defines the brains: built-in providers, your custom ones, and Codex model discovery.
@@ -308,7 +312,7 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
   - right of way: `crew ask` and its answer coming back (`question`, `respond`), typing questions into a busy agent's turn (`steer`), who may wait on whom (`mayWait`), the order a queue is taken in (`queue`, `nextUp`), one editor per file (`lease`) and declined tasks (`decline`);
   - clones: which of an agent and its clones takes a message (`placeFor`), starting and retiring them;
   - `update()`, the single edit path behind the editor and bulk edits.
-- `core/runner.js` owns the pseudo-terminals.
+- `core/runner.js` owns the pseudo-terminals in Crew's own process; `core/ptyclient.js` is the same to the hub, with the terminals in the terminal host (`core/ptyhost.js`), a process of its own that outlives Crew. Crew connects to it over a Unix socket, and on start it adopts what's still running (`Hub.adopt`) and replays what the hooks spooled meanwhile (`Hub.replaySpool`).
 - `core/crew.js` is the crew across your computers: this computer's hub plus every linked computer's agents, merged into one list, with each action sent to the computer the agent runs on.
 - `core/link.js` is the link itself: pairing codes, the TLS server, the client, and one symmetric connection either side can call over.
 - `core/pack.js` reads and writes agent packs (`.crew` files).
@@ -332,8 +336,8 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 
 ## Limits worth knowing
 
-- Agents run inside the app, so quitting Crew stops them. They resume their sessions on the next launch, but a turn that was mid-flight is lost.
-- Queued messages live in memory and are dropped on quit. So are clones, and questions still waiting for an answer: they don't come back after a restart.
+- With Crew closed, agents keep working but can't hand work to each other or ask each other anything, and a question card can't reach you: Claude Code asks in its terminal instead. What their hooks report meanwhile is kept and replayed when Crew is back.
+- If the terminal host itself goes (you stop it, or it crashes), the agents' CLIs go with it. They resume their conversations on the next launch, but a turn that was mid-flight is lost.
 - One editor per file covers the file tools (Claude Code's Edit and Write, Codex's patches), not a file an agent rewrites from the shell (`sed -i`, `>`).
 - A question reaches a busy agent at its next step. One that's in a single long command (a ten-minute build) sees it when that ends.
 - Asking an agent on a linked computer needs Crew with right of way on both computers. An older one takes the question as a plain hand-off, and the asker is told the answer won't come back by itself.

@@ -22,6 +22,13 @@ const at = (file) => path.join(HOME, file)
 const GROUPS = path.join(HOME, 'run', 'groups')
 // How often an agent's process tree is looked at for groups bin/crew-sh doesn't see (Codex, the CLI's own children).
 const TREE_CHECK = 15000
+// Hook events an agent's CLI couldn't deliver while Crew was closed (adapters.js), replayed when it's back.
+const SPOOL = path.join(HOME, 'spool')
+// What Crew remembers of each agent at work, so it can pick them up after a restart while their terminals carried on in
+// the terminal host (core/ptyhost.js): saved as things change, read back by adopt().
+const RUNTIME = at('runtime.json')
+const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
+  'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'retrying', 'apiRetries', 'cloneOf', 'clone']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones']
@@ -79,7 +86,6 @@ export class Hub extends EventEmitter {
     super()
     fs.mkdirSync(ATTACHMENTS, { recursive: true })
     fs.mkdirSync(GROUPS, { recursive: true })
-    this.runner = runner
     this.bin = bin
     this.token = randomBytes(16).toString('hex')
     this.sessions = readJSON(at('sessions.json')) ?? {}
@@ -102,19 +108,35 @@ export class Hub extends EventEmitter {
     this.reads = readJSON(at('reads.json')) ?? { since: Date.now(), agents: {} }
     // Each provider's usage limits, as its agents' status lines last reported them (see setUsage).
     this.usage = readJSON(at('usage.json')) ?? {}
+    this.useRunner(runner)
     this.loadConfig()
+  }
+
+  // The terminals: in this process (core/runner.js), or in the terminal host, where they outlive Crew (core/ptyclient.js).
+  useRunner(runner) {
+    this.runner = runner
     runner.on('exit', (name, code, ms) => this.onExit(name, code, ms))
     runner.on('data', (name, data) => this.onOutput(name, data))
     runner.on('ended', (name, run) => this.sweep(run))
   }
 
-  start(url) {
+  // survivors: terminals still running from before Crew restarted ([{ name, tag, pid }], from the terminal host). Their
+  // agents carry on where they are instead of starting again.
+  start(url, { survivors = [] } = {}) {
     this.url = url
     fs.writeFileSync(at('url'), url)
     fs.writeFileSync(at('token'), this.token)
     fs.chmodSync(at('token'), 0o600)
+    this.keepRuntime = Boolean(this.runner.survivors)
+    const adopted = this.adopt(survivors)
+    this.replaySpool()
     this.sweepStale()
-    for (const a of this.agents.values()) if (!a.off) this.launch(a)
+    for (const a of this.agents.values()) if (!a.off && !adopted.has(a.name)) this.launch(a)
+    for (const name of adopted) {
+      const a = this.agents.get(name)
+      if (a?.status === 'idle') this.pump(a)
+      if (a?.status === 'working') this.steer(a)
+    }
     fs.watchFile(CONFIG, { interval: 1000 }, () => this.loadConfig())
     this.stallTimer = setInterval(() => this.checkStalls(), STALL_CHECK)
     this.stallTimer.unref?.()
@@ -745,6 +767,7 @@ export class Hub extends EventEmitter {
   // Groups bin/crew-sh doesn't see: what the CLI starts itself, and every command of a CLI without a shell prefix (Codex).
   noteGroups(a) {
     const run = this.runs.get(a.run)
+    if (run && !run.pid) run.pid = this.runner.pid?.(a.name) // the terminal host says it a moment after the start
     if (!run?.pid || Date.now() - run.at < TREE_CHECK) return
     run.at = Date.now()
     processes().then((procs) => {
@@ -2426,6 +2449,119 @@ export class Hub extends EventEmitter {
 
   changed() {
     this.emit('change')
+    if (this.keepRuntime) this.saveRuntime()
+  }
+
+  // ---- outliving Crew: picking agents up again after a restart ----------------------------------------------
+  // With the terminal host, quitting Crew leaves the agents' CLIs running. What Crew knew about them (what each is
+  // answering, its queue, its clones, questions between them, who holds which file) is saved as it changes, and read
+  // back when Crew starts again and finds their terminals still there. Hook events they sent meanwhile were spooled
+  // (adapters.js) and replay in order, so a reply finished while Crew was closed still lands in the chat, threaded.
+
+  saveRuntime(now = false) {
+    clearTimeout(this.runtimeTimer)
+    const write = () => {
+      const agents = {}
+      for (const a of this.agents.values()) {
+        if (a.status === 'off' && !a.inbox.length) continue
+        const s = {}
+        for (const k of KEEP) if (a[k] !== undefined) s[k] = a[k]
+        agents[a.name] = { ...s, inbox: a.inbox, serving: a.serving ?? [], expect: a.expect ?? null, steering: a.steering ? { text: a.steering.text, msgs: a.steering.msgs, at: a.steering.at } : null }
+      }
+      const calls = [...this.calls.values()].map((c) => ({ ...c, msg: c.msg?.id, to: this.ownerOf(c), hold: null }))
+      try {
+        fs.writeFileSync(RUNTIME, JSON.stringify({ at: Date.now(), agents, calls, leases: [...this.leases], held: [...this.held] }))
+      } catch {}
+    }
+    if (now) return write()
+    this.runtimeTimer = setTimeout(write, 300)
+    this.runtimeTimer.unref?.()
+  }
+
+  // The terminals that survived, matched with what was saved about them. Returns the names picked up. Any other terminal
+  // (its agent was removed or turned off meanwhile, or nothing is known about it) is stopped. Queues of agents whose CLI
+  // ended while Crew was closed still go to them once they start again.
+  adopt(survivors) {
+    const saved = readJSON(RUNTIME) ?? {}
+    // kept up to date only with the terminal host; otherwise it was written on quit, and read once is enough (a crash
+    // later mustn't queue the same messages again)
+    if (!this.keepRuntime) fs.rmSync(RUNTIME, { force: true })
+    const states = saved.agents ?? {}
+    const live = (m) => (m ? (this.feed.find((e) => e.id === m.id) ?? m) : m) // the same message as the one in the chat
+    const alive = new Map(survivors.map((p) => [p.name, p]))
+    // clones still at work come back, wearing their original's settings
+    for (const [name, s] of Object.entries(states)) {
+      const base = s.cloneOf && alive.has(name) && this.agents.get(s.cloneOf)
+      if (!base || base.off || this.agents.has(name)) continue
+      const c = { name, cloneOf: s.cloneOf, clone: s.clone, status: 'off', since: Date.now(), activity: '', inbox: [], holdUntil: 0, hookAt: 0 }
+      this.dress(c, base)
+      this.agents.set(name, c)
+    }
+    const adopted = new Set()
+    for (const [name, p] of alive) {
+      const a = this.agents.get(name)
+      const s = states[name]
+      if (!a || a.off || !s || s.run !== p.tag) {
+        this.runner.stop(name)
+        continue
+      }
+      for (const k of KEEP) if (s[k] !== undefined) a[k] = s[k]
+      a.inbox = (s.inbox ?? []).map(live)
+      a.serving = (s.serving ?? []).map(live)
+      a.expect = s.expect ? { ...s.expect, msgs: s.expect.msgs.map(live) } : null
+      a.steering = s.steering ? { ...s.steering, msgs: s.steering.msgs.map(live) } : null
+      Object.assign(a, { subs: new Map(), subPending: [] })
+      this.runs.set(p.tag, { name, file: path.join(GROUPS, `${name}.${p.tag}`), pid: p.pid, at: 0 })
+      adopted.add(name)
+      if (a.status === 'starting') this.readyIn(a)
+      if (a.status === 'working' && a.expect) this.awaitPickup(a)
+      if (a.retrying) a.retryTimer = setTimeout(() => this.resumeTurn(a), API_RETRY[0])
+    }
+    for (const [name, s] of Object.entries(states)) {
+      if (adopted.has(name) || !s.inbox?.length) continue
+      const a = this.agents.get(name) ?? this.agents.get(s.cloneOf)
+      if (!a || a.off) continue
+      for (const m of s.inbox.map(live)) {
+        if (m.to !== a.name && !m.crew) this.amend(m, { to: a.name }) // a clone's, gone: its original takes it
+        this.queue(a, m)
+      }
+    }
+    for (const c of saved.calls ?? []) this.calls.set(c.id, { ...c, msg: c.msg ? this.feed.find((e) => e.id === c.msg) : undefined, hold: null })
+    for (const [file, l] of saved.leases ?? []) if (adopted.has(l.name)) this.leases.set(file, l)
+    for (const [k, h] of saved.held ?? []) if (h.name === 'you' || adopted.has(h.name)) this.held.set(k, h)
+    if (adopted.size) this.post({ kind: 'event', from: 'crew', text: `picked up ${[...adopted].map((n) => `@${n}`).join(' ')} where ${adopted.size === 1 ? 'it was' : 'they were'}: ${adopted.size === 1 ? 'it' : 'they'} kept working while Crew was closed` })
+    return adopted
+  }
+
+  // What agents' hooks couldn't tell Crew while it was closed, in the order it happened.
+  replaySpool() {
+    let files = []
+    try {
+      files = fs.readdirSync(SPOOL)
+    } catch {}
+    for (const f of files) {
+      const file = path.join(SPOOL, f)
+      let text = ''
+      try {
+        text = fs.readFileSync(file, 'utf8')
+        fs.rmSync(file)
+      } catch {
+        continue
+      }
+      const name = f.replace(/\.jsonl$/, '')
+      if (!this.agents.has(name)) continue
+      for (const line of text.split('\n')) {
+        let e
+        try {
+          e = JSON.parse(line)
+        } catch {
+          continue
+        }
+        try {
+          this.onHook(name, e)
+        } catch {}
+      }
+    }
   }
 
   snapshot() {
