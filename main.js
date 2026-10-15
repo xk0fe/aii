@@ -53,7 +53,9 @@ app.whenReady().then(async () => {
   app.dock?.hide()
   app.setAboutPanelOptions({ applicationName: 'Crew', iconPath: path.join(dir, 'assets', 'icon.png'), credits: 'Your crew of AI agents, side by side.' })
 
-  crew = new Crew({ bin: path.join(dir, 'bin'), computerName: computerName() })
+  // The agents' terminals live in the terminal host (core/ptyhost.js), run by this same binary as Node, so they keep
+  // working while Crew quits or relaunches with new code.
+  crew = new Crew({ bin: path.join(dir, 'bin'), computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
   hub = crew.hub
   await crew.start()
   nativeTheme.themeSource = hub.config.theme // every window + the popover's material
@@ -77,31 +79,43 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {}) // keep living in the menu bar
 
-// Ctrl+C in the terminal that ran `npm start`: quit without the confirmation dialog.
+// Ctrl+C in the terminal that ran `npm start`: quit without the confirmation dialog. The agents keep working.
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     quitting = true
-    crew?.stop()
+    crew?.detach()
     app.exit(0)
   })
 }
 
+// Quitting leaves the agents working in the terminal host, and the next Crew picks them up; "Stop Agents and Quit"
+// ends them too.
 app.on('before-quit', (e) => {
   if (quitting || !crew) return
   const live = hub.snapshot().agents.filter((a) => a.on && a.status !== 'stopped').length
-  const answer = live
-    ? dialog.showMessageBoxSync({
-        type: 'question',
-        message: 'Quit Crew?',
-        detail: `${live} agent session${live > 1 ? 's' : ''} on this computer will stop. They pick up where they left off next time you open Crew.`,
-        buttons: ['Quit', 'Cancel'],
-        defaultId: 0,
-        cancelId: 1,
-      })
-    : 0
-  if (answer === 1) return e.preventDefault()
+  const s = live > 1 ? 's' : ''
+  const answer = !live ? 1
+    : crew.outlives
+      ? dialog.showMessageBoxSync({
+          type: 'question',
+          message: 'Quit Crew?',
+          detail: `${live} agent${s} on this computer keep${live > 1 ? '' : 's'} working, and Crew picks ${live > 1 ? 'them' : 'it'} up where ${live > 1 ? 'they are' : 'it is'} next time you open it. Messages you send wait until then.`,
+          buttons: ['Quit', 'Stop Agents and Quit', 'Cancel'],
+          defaultId: 0,
+          cancelId: 2,
+        })
+      : [1, 2][dialog.showMessageBoxSync({
+          type: 'question',
+          message: 'Quit Crew?',
+          detail: `${live} agent session${s} on this computer will stop. They pick up where they left off next time you open Crew.`,
+          buttons: ['Quit', 'Cancel'],
+          defaultId: 0,
+          cancelId: 1,
+        })]
+  if (answer === 2) return e.preventDefault()
   quitting = true
-  crew.stop()
+  if (answer === 1) crew.stop()
+  else crew.detach()
 })
 
 const computerName = () => {

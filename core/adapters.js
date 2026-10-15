@@ -5,15 +5,21 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-// Every hook forwards its JSON payload to the crew hub, which turns it into status + feed entries.
-const HOOK = 'curl -s -m 2 -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/hook/$CREW_AGENT" >/dev/null 2>&1 || true'
+// Where the hub is, read from CREW_HOME on every call: Crew's address and token change each time it starts, and an agent
+// can outlive a Crew (its CLI keeps running in the terminal host while Crew relaunches), so what it was started with
+// can be out of date.
+const TOKEN = '-H "X-Crew: $(cat "$CREW_HOME/token" 2>/dev/null)"'
+const HUB = (route) => `"$(cat "$CREW_HOME/url" 2>/dev/null)/${route}/$CREW_AGENT"`
+// Every hook forwards its JSON payload to the crew hub, which turns it into status + feed entries. With Crew closed it
+// goes to CREW_HOME/spool, one line each, and Crew replays it when it's back (Hub.replaySpool).
+const HOOK = `p=$(cat); printf '%s' "$p" | curl -sf -m 2 -X POST ${TOKEN} --data-binary @- ${HUB('hook')} >/dev/null 2>&1 || { mkdir -p "$CREW_HOME/spool" && printf '%s\\n' "$(printf '%s' "$p" | tr '\\n' ' ')" >> "$CREW_HOME/spool/$CREW_AGENT.jsonl"; } 2>/dev/null || true`
 // Permission prompts, questions and plan approvals: the hook waits for your answer in the chat and prints it as
 // its decision. No answer (Crew gone, an error, handed to the terminal, time's up) prints nothing, and the agent
 // asks as usual. curl gives up 10 s before the agent would kill the hook, so the hook always ends cleanly.
-const ASK = (seconds) => `curl -sf -m ${seconds - 10} -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/ask/$CREW_AGENT" 2>/dev/null || true`
+const ASK = (seconds) => `curl -sf -m ${seconds - 10} -X POST ${TOKEN} --data-binary @- ${HUB('ask')} 2>/dev/null || true`
 // Before a file tool writes: is the file free, or is a teammate editing it? Crew prints a deny decision when it's taken,
 // nothing when it's free (or when Crew isn't there to ask).
-const LEASE = 'curl -sf -m 3 -X POST -H "X-Crew: $CREW_TOKEN" --data-binary @- "$CREW_URL/lease/$CREW_AGENT" 2>/dev/null || true'
+const LEASE = `curl -sf -m 3 -X POST ${TOKEN} --data-binary @- ${HUB('lease')} 2>/dev/null || true`
 // How long each CLI's hook waits, in seconds. Claude shows its own dialog meanwhile (answer in either place), so
 // it can wait a day. Codex shows nothing until the hook is done: after half an hour it asks in its terminal.
 export const ASK_WAIT = { claude: 86400, codex: 1800 }

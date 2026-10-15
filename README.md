@@ -22,6 +22,8 @@ npm start
 
 The first `npm start` builds `Crew.app` and opens it. After that it opens right away. Drag `dist/Crew.app` to your Dock to keep it handy.
 
+Quitting Crew doesn't stop your agents: they keep working, and the next time you open Crew they're right where they were.
+
 ## Meet your crew
 
 Agents show up as cards. A card shows what the agent does, which model it runs on, what it's busy with and how full its conversation is. Point at a card and it tilts like a holo trading card.

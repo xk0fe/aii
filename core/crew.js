@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, bestFor } from './hub.js'
 import { Runner } from './runner.js'
+import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
 import { LinkHost, LinkClient, identity, addresses, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
 import { packAgents, unpackAgents } from './pack.js'
@@ -27,14 +28,16 @@ const readJSON = (file) => {
 export class Crew extends EventEmitter {
   links = new Map() // computer slug -> { slug, name, peer, client, state, toHost, fetching }
 
-  constructor({ bin, computerName }) {
+  // host: run the agents' terminals in the terminal host, where they outlive Crew ({ file, env }: how to run it as
+  // Node, core/ptyclient.js). Without it they live in this process and stop with it.
+  constructor({ bin, computerName, host }) {
     super()
     // { share, port, key, name, peers: [codes], hidden: [agent names] }
     this.settings = readJSON(SETTINGS) ?? {}
     if (this.settings.remote) this.settings.peers = [this.settings.remote] // from when a link replaced this crew
     delete this.settings.remote
     this.me = { name: this.settings.name || computerName, slug: slug(this.settings.name || computerName) }
-    this.runner = new Runner()
+    this.runner = host ? new HostRunner({ runtime: host }) : new Runner()
     this.hub = new Hub(this.runner, { bin })
     this.hub.relay = (from, names, text, images, extra) => this.relay(from, names, text, images, extra)
     this.hub.relayTask = (host, from, args) => this.link(host).peer.call('task', [`${from}@${this.me.slug}`, args])
@@ -48,7 +51,19 @@ export class Crew extends EventEmitter {
 
   async start() {
     const server = await serve(this.hub)
-    this.hub.start(`http://127.0.0.1:${server.address().port}`)
+    let survivors = []
+    if (this.runner.connect) {
+      try {
+        survivors = await this.runner.connect()
+      } catch (e) {
+        // no terminal host: the agents run in here, as before, and stop when Crew quits
+        this.runner = new Runner()
+        this.hub.useRunner(this.runner)
+        this.hub.post({ kind: 'event', from: 'crew', text: `${e.message}, so agents stop when Crew quits this time` })
+      }
+    }
+    if (this.runner.replaced) this.hub.post({ kind: 'event', from: 'crew', text: 'the terminal host was from another Crew version, so its agents started again, resuming their conversations' })
+    this.hub.start(`http://127.0.0.1:${server.address().port}`, { survivors })
     const pushAll = (...msg) => {
       for (const l of this.links.values()) l.peer?.push(...msg)
     }
@@ -84,7 +99,22 @@ export class Crew extends EventEmitter {
     for (const code of this.settings.peers ?? []) this.connect(code, { save: false }).catch(() => {})
   }
 
+  // Quitting, agents and all ("Stop agents and quit"), or with agents kept running in the terminal host (detach): the
+  // next Crew picks them up.
   stop() {
+    this.close()
+    if (this.runner.quit) this.runner.quit()
+    else this.runner.stopAll()
+  }
+
+  detach() {
+    this.close()
+    this.hub.saveRuntime?.(true)
+    if (this.runner.detach) this.runner.detach()
+    else this.runner.stopAll()
+  }
+
+  close() {
     for (const l of this.links.values()) {
       l.client?.close()
       l.peer?.close()
@@ -93,7 +123,11 @@ export class Crew extends EventEmitter {
     this.hub.saveStats()
     this.hub.saveConvos(true)
     this.hub.saveUsage(true)
-    this.runner.stopAll()
+  }
+
+  // Do the agents keep working once Crew quits?
+  get outlives() {
+    return Boolean(this.runner.detach)
   }
 
   saveSettings() {

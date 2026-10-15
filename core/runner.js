@@ -7,7 +7,7 @@ import pty from 'node-pty'
 const SCROLLBACK = 256 * 1024
 // Output that only sets the window title (OSC 0/1/2), like the spinner Codex keeps in its title for half a minute
 // after it starts: nothing on screen changes, so it doesn't count as drawing (see quietFor).
-const TITLE_ONLY = /^(?:\x1b\][012];[^\x07\x1b]*(?:\x07|\x1b\\))+$/
+export const TITLE_ONLY = /^(?:\x1b\][012];[^\x07\x1b]*(?:\x07|\x1b\\))+$/
 // Markers a parent Claude Code session leaves in the environment (e.g. when crew is started from inside one).
 // Inherited, they make the agent think it's a child session and stop saving transcripts, which breaks resume.
 const PARENT_SESSION_VARS = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_CODE_(ENTRYPOINT|EXECPATH|SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|MESSAGING_\w+))$/
@@ -114,7 +114,7 @@ function trim(proc) {
   proc.size = all.length
 }
 
-function which(cmd, PATH = '') {
+export function which(cmd, PATH = '') {
   if (cmd.includes('/')) return cmd
   for (const dir of PATH.split(':')) {
     const file = path.join(dir, cmd)
