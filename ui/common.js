@@ -798,6 +798,12 @@ const TASK_ACTS = {
 }
 
 function taskEvent(e, who) {
+  // a bulk action on the board: one line for all of them ("You closed 23 tasks"), which opens the board
+  if (e.act === 'bulk') {
+    return `<div class="task-ev type-task act-bulk" id="m-${e.id}" data-ticket="" title="Open Tasks">
+      <span class="task-ev-icon">${ICONS.task}</span><span class="task-ev-line">${e.from === 'you' ? 'You' : who(e.from)} ${esc(e.text)}</span>
+    </div>`
+  }
   const key = String(e.ticket)
   const type = typeOf(e)
   const act = TASK_ACTS[e.act]?.(e, who) ?? esc(e.act)

@@ -247,6 +247,21 @@ function taskAction(op, key, arg) {
     emit()
     return `added #${nextTask++} for @${owner}`
   }
+  // the board's bulk bar: every picked task changes, and the chat gets one line for all of them
+  if (op === 'bulk') {
+    const { op: what, keys = [], arg: value } = arg
+    const list = what === 'clear' ? TICKETS.filter((x) => x.status === 'done') : TICKETS.filter((x) => keys.includes(x.key))
+    const n = list.length
+    const status = what === 'close' ? 'done' : what === 'start' ? 'fixing' : what === 'move' ? value : null
+    if (status) list.forEach((x) => Object.assign(x, { status, updated: Date.now() }, status === 'fixing' && { fixer: x.owner }))
+    if (what === 'owner') list.forEach((x) => (x.owner = value || null))
+    if (what === 'priority') list.forEach((x) => (x.severity = { urgent: 'blocker', medium: 'normal' }[value] ?? value))
+    if (what === 'remove' || what === 'clear') for (const x of list) TICKETS.splice(TICKETS.indexOf(x), 1)
+    const text = `${{ close: 'closed', start: 'started', move: 'moved', owner: 'gave', priority: 'changed', remove: 'deleted', clear: 'cleared' }[what]} ${n} task${n === 1 ? '' : 's'}`
+    FEED.push({ id: `bk${Date.now()}`, kind: 'task', type: 'task', act: 'bulk', from: 'you', text, count: n, ts: Date.now() })
+    emit()
+    return `${text}\n`
+  }
   const t = TICKETS.find((x) => x.key === key)
   if (!t) return
   const to = (status, extra = {}) => Object.assign(t, { status, updated: Date.now(), ...extra })
