@@ -118,6 +118,8 @@ const TICKETS = [
   ticket(10, 'new', 'normal', 'Daily challenge with a shared leaderboard', null, { kind: 'feature', triaged: false, created: now - 0.4 * min }),
   ticket(9, 'new', 'low', 'Rename "Volumn" to "Volume" in settings', 'david'),
   ticket(13, 'new', 'normal', 'Onboarding hero illustrations, one per crew role', 'marc', { kind: 'feature' }),
+  // ye is switched off: its task waits for it (no Start until it's back on)
+  ticket(14, 'new', 'low', 'Weekly retention chart for the launch', 'ye'),
   ticket(7, 'fixing', 'high', 'Coins counter resets after level 2', 'joseph', { kind: 'bug', fixer: 'joseph' }),
   ticket(6, 'fixing', 'normal', 'Localize shop prices', 'marc', { fixer: 'marc' }),
   ticket(8, 'fixing', 'normal', 'Offline mode for the avatar picker', 'jeff', { kind: 'feature', fixer: 'jeff' }),

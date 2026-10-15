@@ -130,7 +130,10 @@ export class Hub extends EventEmitter {
       if (a.off && a.status !== 'off') {
         this.runner.stop(a.name)
         this.setStatus(a, 'off')
-      } else if (!a.off && a.status === 'off' && this.url) this.launch(a)
+      } else if (!a.off && a.status === 'off' && this.url) {
+        this.launch(a)
+        this.startWaiting(a)
+      }
     }
     // Clones work with their original's settings. One whose original was removed, renamed or turned off goes too.
     for (const c of this.clones()) {
@@ -1689,7 +1692,7 @@ export class Hub extends EventEmitter {
   fileTask({ text, images = [], by = 'you', kind = 'task', owner }) {
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!String(text ?? '').trim() && images.length) text = 'See the screenshot'
-    owner = owner ? this.agentName(owner) : null
+    owner = owner ? this.taskOwner(owner, by) : null
     const t = this.tickets.add({ text, images, by, kind: KINDS.includes(kind) ? kind : 'task', owner })
     if (owner) {
       t.triaged = true // you said who: nothing to triage
@@ -1727,6 +1730,7 @@ export class Hub extends EventEmitter {
     const t = this.tickets.get(id)
     const owner = this.agentName(to || t.owner || ownerFor(`${t.title} ${t.body}`, this.teammates().filter((a) => !t.declined?.includes(this.baseOf(a.name))))?.name)
     if (!owner) throw new Error(`who should fix #${t.id}? Pick an owner first`)
+    if (!this.isOn(owner)) throw new Error(`@${owner} is turned off: turn it on to start #${t.id}, or give it to someone else`)
     const here = this.agents.get(owner)
     // a double click, or Auto-fix and you at once: it's already on its way
     if (!note && here && [here, ...this.clonesOf(here)].some((x) => x.inbox.some((m) => m.ticket === t.id && !m.triage))) return `#${t.id} is already queued for @${owner}\n`
@@ -1752,7 +1756,30 @@ export class Hub extends EventEmitter {
   }
 
   autoDispatch(t) {
+    // An owner that's off: the task waits for it, and starts once it's back on (startWaiting).
+    if (t.owner && !this.isOn(t.owner)) return void this.post({ kind: 'event', from: 'crew', text: `#${t.id} waits for @${t.owner}, who is turned off: it starts once @${t.owner} is back on` })
     this.dispatch(t.id).catch((e) => this.post({ kind: 'event', from: 'crew', text: `couldn't send #${t.id} on: ${e.message}` }))
+  }
+
+  // An agent just came back on: with Auto-start, the tasks that waited for it start now, each in a new conversation.
+  startWaiting(a) {
+    if (!this.config.autofix) return
+    for (const t of this.tickets.open()) if (t.status === 'new' && t.owner === a.name) this.autoDispatch(t)
+  }
+
+  // An owner for a task. An agent giving a task away (triage, `crew task add --owner`) can only give it to a teammate
+  // who's on: one that's off never picks it up, and the task just sits there. You can, and the task waits for it.
+  taskOwner(name, by, t) {
+    const owner = this.agentName(name)
+    if (by === 'you' || this.isOn(owner)) return owner
+    throw new Error(`@${owner} is turned off, so it can't take ${t ? `#${t.id}` : 'this task'}. Give it to a teammate who's on (crew who), or leave out --owner for the user to decide`)
+  }
+
+  // Is this agent switched on? One here, or name@computer as its computer reports it.
+  isOn(name) {
+    const a = this.agents.get(name)
+    if (a) return !a.off
+    return Boolean((this.directory?.() ?? []).find((x) => x.name === name)?.on)
   }
 
   // A name for an owner: an agent here, or (bare or name@computer) one on a linked computer.
@@ -1814,13 +1841,13 @@ export class Hub extends EventEmitter {
       case 'show':
         return ticketText(t)
       case 'add': {
-        const owner = flags.owner ? this.agentName(flags.owner) : null
+        const owner = flags.owner ? this.taskOwner(flags.owner, by) : null
         const n = this.tickets.add({ title: words[0], body: flags.details ?? words.slice(1).join(' '), by, owner, severity: priorityOf(flags.priority), kind: flags.kind ?? 'task' })
         this.postTask(n, from, 'filed')
         return `added #${n.id}\n`
       }
       case 'triage': {
-        const owner = flags.owner ? this.agentName(flags.owner) : undefined
+        const owner = flags.owner ? this.taskOwner(flags.owner, by, t) : undefined
         this.tickets.edit(t.id, { owner, severity: flags.priority, kind: flags.kind, title: flags.title, body: flags.details, triaged: true }, by)
         this.postTask(t, from, 'triaged', t.owner)
         if (this.config.autofix && t.status === 'new' && t.owner) this.autoDispatch(t)

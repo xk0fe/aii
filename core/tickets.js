@@ -197,7 +197,7 @@ export const triagePrompt = (t, ref) =>
     '',
     `Triage this ${t.kind === 'bug' ? 'bug report' : 'task'} the user just added. Don't do it yourself.`,
     `1. If it's the same as an open task (crew task list), run: crew task dup ${ref} <that task's number>`,
-    '2. Otherwise make it clear and give it to the agent whose area it is (crew who).',
+    '2. Otherwise make it clear and give it to the agent whose area it is and who is on (crew who).',
     '   Keep every concrete detail from what the user wrote: file paths, commands, steps, numbers, devices.',
     `   crew task triage ${ref} --owner <name> --priority <urgent|high|medium|low> --kind <bug|feature|task> --title "short title" --details "${t.kind === 'bug' ? 'steps to reproduce, expected, actual' : 'what is wanted, how to tell it is done'}, where to look"`,
     'Keep it short. Urgent means it blocks the user right now.',
