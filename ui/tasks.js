@@ -302,6 +302,7 @@ function mountTasks(root, { onTerminal }) {
   function live(t) {
     const a = worker(t)
     if (!a || !a.on) return { cls: 'off', text: a?.status === 'away' ? 'unreachable' : 'off' }
+    if (t.stalled && a.status !== 'working') return { cls: 'waiting', text: 'stalled, have a look' } // Crew called you about it
     if (String(a.ticket) === t.key) {
       if (a.status === 'working') return { cls: 'working', text: a.activity || `on it · ${ago(a.since)}`, since: ago(a.since), shimmer: Boolean(a.activity) }
       if (a.status === 'waiting') return { cls: 'waiting', text: 'needs you' }
