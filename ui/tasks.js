@@ -321,6 +321,9 @@ function mountTasks(root, { onTerminal }) {
     if (!n) return `<button class="tk-assign" data-menu="owner" title="Who does it?"><i class="tk-nobody">?</i><span>Assign</span></button>`
     return `<span class="tk-owner">${face(n, { live: t.status === 'fixing' })}<span class="tk-owner-name">${nameHTML(agent(n))}</span></span>`
   }
+  // A task whose owner is switched off waits for it: no Start until it's back on.
+  const ownerOff = (t) => Boolean(t.owner) && !agent(t.owner).on
+  const offHTML = (t) => `<span class="tk-state" title="@${esc(t.owner)} is turned off: turn it on, or give this task to someone else"><i class="dot off"></i>off</span>`
   const pills = (t) =>
     `${t.seen > 1 ? `<span class="tk-seen" title="Added ${t.seen} times">×${t.seen}</span>` : ''}${t.home ? `<span class="tk-home" title="On ${esc(t.homeName)}">${esc(t.homeName)}</span>` : ''}`
 
@@ -329,7 +332,7 @@ function mountTasks(root, { onTerminal }) {
     if (t.status === 'new') {
       const triage = state.tasks.triage
       if (!t.owner && triage && !t.triaged && t.by === 'you') return `<span class="tk-owner">${face(triage, { live: true })}<span class="shimmer">@${esc(triage)} is triaging…</span></span>`
-      return `${ownerHTML(t)}<span class="grow"></span>${t.owner ? `<button class="tk-btn go" data-act="start" title="Hand it to @${esc(t.owner)} in a new conversation">${ICONS.fresh}Start</button>` : ''}`
+      return `${ownerHTML(t)}<span class="grow"></span>${ownerOff(t) ? offHTML(t) : t.owner ? `<button class="tk-btn go" data-act="start" title="Hand it to @${esc(t.owner)} in a new conversation">${ICONS.fresh}Start</button>` : ''}`
     }
     if (t.status === 'fixing') {
       const s = live(t)
@@ -359,7 +362,8 @@ function mountTasks(root, { onTerminal }) {
   function rowHTML(t) {
     const s = t.status === 'fixing' && live(t)
     const right =
-      t.status === 'new' && t.owner ? `<button class="tk-btn go" data-act="start">${ICONS.fresh}Start</button>`
+      t.status === 'new' && ownerOff(t) ? offHTML(t)
+      : t.status === 'new' && t.owner ? `<button class="tk-btn go" data-act="start">${ICONS.fresh}Start</button>`
       : t.status === 'fixing' ? `${contextRing(worker(t) ?? {}, { label: false })}<span class="tk-state ${s.cls}"><i class="dot ${s.cls === 'queued' ? 'idle' : s.cls}"></i>${esc(s.since ?? s.text)}</span>`
       : t.status === 'check' ? `<button class="tk-btn only" data-act="sendBack" title="Send back">${BACK}</button><button class="tk-btn good" data-act="accept">${ICONS.check}Accept</button>`
       : ''
@@ -385,7 +389,7 @@ function mountTasks(root, { onTerminal }) {
 
   function laneAct(status, list) {
     if (status === 'new') {
-      const ready = list.filter((t) => t.owner)
+      const ready = list.filter((t) => t.owner && !ownerOff(t))
       return ready.length > 1 ? `<button class="tk-btn go" data-act="start-all" title="Start all ${ready.length}, each in a new conversation">${ICONS.fresh}Start ${ready.length}</button>` : ''
     }
     if (status === 'done') return `<button class="icon tk-fold" data-act="fold-done" title="${doneOpen ? 'Fold Done away' : 'Show Done'}">${CHEVRON}</button>`
@@ -513,7 +517,7 @@ function mountTasks(root, { onTerminal }) {
     if (act === 'more') return void ((showAllDone = true), draw())
     if (act === 'fold-done') return void ((doneOpen = !doneOpen), store.set('crew.tasks.done', doneOpen ? '1' : '0'), draw())
     if (act === 'start-all') {
-      const ready = tickets.filter((x) => x.status === 'new' && x.owner && matches(x))
+      const ready = tickets.filter((x) => x.status === 'new' && x.owner && !ownerOff(x) && matches(x))
       for (const x of ready) await call('dispatch', x.key).catch(() => {})
       return toast(`Started ${ready.length}, each in its own conversation`)
     }
@@ -622,7 +626,7 @@ function mountTasks(root, { onTerminal }) {
   function footHTMLPanel(t) {
     const more = `<button class="icon" data-tp="more" title="More">${icon('<circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/>')}</button>`
     const main =
-      t.status === 'new' ? `<button class="btn primary" data-tp="start" ${t.owner ? '' : 'disabled'} title="A new conversation with just this task in it">${ICONS.fresh}${t.owner ? `Start with @${esc(t.owner)}` : 'Pick an owner to start'}</button>`
+      t.status === 'new' ? `<button class="btn primary" data-tp="start" ${t.owner && !ownerOff(t) ? '' : 'disabled'} title="A new conversation with just this task in it">${ICONS.fresh}${ownerOff(t) ? `Turn @${esc(t.owner)} on to start` : t.owner ? `Start with @${esc(t.owner)}` : 'Pick an owner to start'}</button>`
       : t.status === 'fixing' ? `<button class="btn" data-tp="mark-done" title="Move it to Review yourself">Mark done</button>`
       : t.status === 'done' ? '<button class="btn" data-tp="reopen">Reopen</button>'
       : ''
@@ -749,10 +753,7 @@ function mountTasks(root, { onTerminal }) {
       box.value = ''
       return fit(box)
     }
-    if (op === 'start') {
-      await call('dispatch', t.key).catch(() => {})
-      return toast(`#${t.id} went to @${t.owner}, in a new conversation`)
-    }
+    if (op === 'start') return call('dispatch', t.key).then(() => toast(`#${t.id} went to @${t.owner}, in a new conversation`), () => {})
     if (op === 'terminal') return onTerminal(worker(t)?.name ?? t.fixer)
     if (op === 'mark-done') return call('move', t.key, 'check').catch(() => {})
     if (op === 'accept') {

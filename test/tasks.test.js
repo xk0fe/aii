@@ -298,3 +298,40 @@ test('the old names still work: crew bug fixed / report, works / broken', async 
   assert.equal(hub.tickets.get(1).status, 'done')
   assert.match(hub.taskCommand('joseph', ['report', 'Scores lag']), /added #2/)
 })
+
+test('an agent that is off never gets a task from a teammate; one you give it waits and starts when it is back on', async () => {
+  hub.config.triage = 'arie'
+  hub.config.autofix = true
+  hub.update('david', { off: true })
+  hub.fileTask({ kind: 'bug', text: 'pause menu buttons overlap' })
+  // triage can't hand it to david while he's off: it hears why, and the task stays unassigned
+  assert.throws(() => hub.taskCommand('arie', ['triage', '1', '--owner', 'david']), /@david is turned off, so it can't take #1/)
+  assert.equal(hub.tickets.get(1).owner, null)
+  assert.throws(() => hub.taskCommand('joseph', ['add', 'Fix the pause menu', '--owner', 'david']), /@david is turned off/)
+  // from you it's fine: the task waits for david, says so once, and Start says why it can't go yet
+  assert.match(hub.taskCommand('you', ['add', 'Fix the pause menu', '--owner', 'david']), /added #2/)
+  assert.match(hub.fileTask({ text: 'Jump is dead after pause', owner: 'david' }), /added #3 for @david/)
+  await settle()
+  assert.equal(hub.tickets.get(3).status, 'new')
+  assert.ok(hub.feed.some((e) => e.kind === 'event' && /#3 waits for @david, who is turned off/.test(e.text)))
+  assert.ok(!hub.feed.some((e) => /couldn't send #3/.test(e.text ?? '')))
+  await assert.rejects(hub.ticket('dispatch', 3), /@david is turned off: turn it on to start #3/)
+  // back on: with Auto-start, what waited for him starts, each in a new conversation
+  hub.url = 'http://127.0.0.1:1'
+  hub.update('david', { off: undefined })
+  await settle()
+  for (const id of [2, 3]) assert.equal(hub.tickets.get(id).status, 'fixing')
+  const david = hub.agents.get('david')
+  assert.deepEqual(david.inbox.map((m) => m.ticket), [2, 3])
+  assert.ok(david.inbox.every((m) => m.fresh))
+})
+
+test('without Auto-start, an agent coming back on waits for you to start its tasks', async () => {
+  hub.update('david', { off: true })
+  hub.fileTask({ text: 'Jump is dead after pause', owner: 'david' })
+  hub.url = 'http://127.0.0.1:1'
+  hub.update('david', { off: undefined })
+  await settle()
+  assert.equal(hub.tickets.get(1).status, 'new')
+  assert.equal(hub.agents.get('david').inbox.length, 0)
+})
