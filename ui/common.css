@@ -285,6 +285,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .mark-yolo { height: 14px; padding: 0 4px; border-radius: 4px; font: 800 8.5px/1 -apple-system, sans-serif; letter-spacing: .06em; color: var(--yolo-ink); background: color-mix(in srgb, var(--yolo) 13%, transparent); }
 .mark-fast { width: 14px; height: 14px; border-radius: 4px; color: var(--fast-ink); background: color-mix(in srgb, var(--fast) 18%, transparent); }
 .mark-fast svg { width: 9px; height: 9px; }
+.mark-holds { flex: 0 1 auto; min-width: 0; height: 14px; padding: 0 5px; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 650 9.5px/14px var(--mono); font-style: normal; color: var(--fg2); background: var(--btn); }
 .crow-end { display: flex; align-items: center; gap: 6px; }
 .crow-end:empty { display: none; }
 .crow-queue { font: 650 10.5px/16px -apple-system, sans-serif; font-style: normal; min-width: 18px; padding: 0 5px; text-align: center; border-radius: 999px; background: var(--btn); color: var(--fg2); font-variant-numeric: tabular-nums; }

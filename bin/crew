@@ -31,6 +31,12 @@ case "$cmd" in
     case "$1" in @*) to=${1#@}; shift ;; esac
     [ $# -gt 0 ] || { echo 'usage: crew answer [@name] "your answer"' >&2; exit 2; }
     printf '%s' "$*" | call --data-binary @- "$URL/answer?from=$FROM&to=$to" ;;
+  lease)
+    # held open while a teammate has it; Crew lets go after 100s with who has it
+    [ -n "$1" ] || { echo 'usage: crew lease <thing> ["what for"]' >&2; exit 2; }
+    printf '%s\0' "$@" | WAIT=110 call --data-binary @- "$URL/claim?from=$FROM" ;;
+  release) printf '%s\0' "$@" | call --data-binary @- "$URL/release?from=$FROM" ;;
+  leases) call "$URL/leases" ;;
   note)
     [ $# -gt 0 ] || { echo 'usage: crew note "text"' >&2; exit 2; }
     printf '%s' "$*" | call --data-binary @- "$URL/note?from=$FROM" ;;
@@ -44,6 +50,9 @@ crew ask <name|any> "..."   ask an agent and wait for its answer (its final mess
 crew wait                   keep waiting for the answers to what you asked
 crew answer [@name] "..."   answer a question you were asked, right away, and carry on
 crew send <name|any> "..."  hand a task to an agent for good (queued until it is free)
+crew lease <thing> ["..."]  take something only one agent can use at a time (a simulator, a port), waiting if it's taken
+crew release [thing]        give it back (everything you hold, without a name)
+crew leases                 who has what
 crew note "..."             share context with the whole crew
 crew board                  read the shared notes
 crew task                   the Tasks board: list, show, done, note, add (crew task help)

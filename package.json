@@ -9,7 +9,7 @@
     "start": "node scripts/build-app.mjs --open",
     "dev": "electron .",
     "test": "node --test test/*.test.js",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper bin/crew bin/crew-status 2>/dev/null || true",
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper bin/crew bin/crew-status bin/crew-sh 2>/dev/null || true",
     "app": "node scripts/build-app.mjs",
     "icon": "electron scripts/make-icon.mjs",
     "shots": "electron scripts/screenshots.mjs"

@@ -412,10 +412,12 @@ function rowLine(a) {
   return { text: statusText(a), cls: a.status }
 }
 
-// Modes that are on, as marks beside the name: YOLO (red) and Fast (amber).
+// Modes that are on, as marks beside the name: YOLO (red) and Fast (amber). And what it has leased (crew lease), so
+// you can see who's on the simulator.
 const modeMarks = (a) =>
   (a.yolo ? '<i class="mark-yolo" title="YOLO: skips every permission prompt">YOLO</i>' : '') +
-  (a.fast ? `<i class="mark-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</i>` : '')
+  (a.fast ? `<i class="mark-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</i>` : '') +
+  (a.holds?.length ? `<i class="mark-holds" title="${esc(`Has ${a.holds.join(', ')} (crew lease): nobody else uses it until it's done`)}">${esc(a.holds.join(', '))}</i>` : '')
 
 function crewRow(a, { selected = false, drag = false } = {}) {
   const line = rowLine(a)
@@ -911,6 +913,10 @@ const RULES = {
   file: {
     text: (e, who) => `${who(e.from)} left <b class="rule-file">${esc(e.file)}</b> to ${who(e.to)}, who's editing it`,
     tip: "Right of way: one agent edits a file at a time. It's free again once the agent editing it finishes its turn.",
+  },
+  lease: {
+    text: (e, who) => `${who(e.from)} waited for <b class="rule-file">${esc(e.thing)}</b>: ${who(e.to)} is using it`,
+    tip: "Right of way: one agent uses a simulator, a device or a port at a time (crew lease). It's free again once the agent using it gives it back or finishes its turn.",
   },
   decline: {
     text: (e, who) => `<b>#${esc(String(e.ticket).split('@')[0])}</b> ${e.to ? `went to ${who(e.to)}: ${who(e.from)} declined it` : `is back on To do: ${who(e.from)} declined it, and no one else's area fits`}` + (e.text ? `<span class="rule-why">“${esc(snippet(e.text))}”</span>` : ''),
