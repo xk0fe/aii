@@ -296,6 +296,11 @@
 .convo-info p { margin: 1px 0 0; font-size: 11.5px; line-height: 1.35; color: rgba(0, 0, 0, .5); }
 .convo-card.warm .convo-info p { color: #b26200; }
 .convo-card.hot .convo-info p { color: #d0251b; }
+/* narrow: the parts wrap as a whole, so no separator is left hanging at a line's end */
+.convo-card .usage-line { display: flex; flex-wrap: wrap; gap: 0 7px; margin-top: 2px; font-size: 11.5px; color: rgba(0, 0, 0, .5); white-space: nowrap; cursor: help; }
+.convo-card .usage-line i { display: none; }
+.convo-card .usage-line .warm { color: #b26200; }
+.convo-card .usage-line .hot { color: #d0251b; }
 .convo-fresh { flex: none; width: 32px; height: 32px; padding: 0; border-radius: 10px; color: #0a6cdb; }
 .convo-fresh:hover { background: rgba(10, 132, 255, .12); color: #0a6cdb; }
 .convo-fresh svg { width: 17px; height: 17px; }

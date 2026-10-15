@@ -20,6 +20,25 @@ export function fromStatusLine(s) {
 // numbers only: this arrives over the local API
 const num = (v) => (Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : 0)
 
+// The account's usage limits, from the same JSON. Claude Code passes on what each API response says about a
+// subscription's windows (and a gateway's spend limit), each one only until it resets. Not a subscriber, before the
+// first response, or a provider that doesn't report them: null. -> [{ id, pct, resetsAt }], resetsAt in ms.
+export const LIMITS = { five_hour: '5-hour limit', seven_day: 'weekly limit', spend_limit: 'spend limit' }
+export function limitsFrom(s, now = Date.now()) {
+  const r = s?.rate_limits
+  if (!r || typeof r !== 'object') return null
+  const windows = []
+  for (const id of Object.keys(LIMITS)) {
+    const pct = real(r[id]?.used_percentage)
+    const resets = real(r[id]?.resets_at) // Unix seconds
+    if (pct === null || resets === null || resets * 1000 <= now) continue
+    windows.push({ id, pct: clamp(pct), resetsAt: Math.round(resets * 1000) })
+  }
+  return windows.length ? windows : null
+}
+
+const real = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
 // Codex treats this much as always in use (instructions, tools) when it shows "context left"; same math here.
 const CODEX_BASELINE = 12000
 

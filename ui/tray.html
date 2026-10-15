@@ -37,12 +37,19 @@
     footer .add { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px 5px 8px; border-radius: 999px; background: var(--btn); color: var(--fg2); }
     footer .add svg { width: 14px; height: 14px; }
     footer .add:hover { background: var(--btn-hover); color: var(--fg); }
+    /* the account's usage limits, one row per provider that reports them */
+    .usage-row { display: flex; align-items: center; gap: 4px; padding: 2px 10px 8px; color: var(--fg2); font-size: 12.5px; cursor: help; }
+    .usage-row b { font-weight: 650; font-variant-numeric: tabular-nums; }
+    .usage-row b.warm { color: var(--ctx-warm); }
+    .usage-row b.hot { color: var(--ctx-hot); }
+    .usage-row i { font-style: normal; color: var(--fg3); }
   </style>
 </head>
 <body>
   <header><span class="logo"></span><b>Crew</b><span class="sums"></span></header>
   <div class="roster"></div>
   <hr>
+  <div class="usage"></div>
   <label class="autopilot" title="Autopilot on: agents hand work to each other without asking. Off: each hand-off waits in the chat for your Send it.">
     <span class="glyph"></span>
     <div class="grow"><b>Autopilot</b><p></p></div>

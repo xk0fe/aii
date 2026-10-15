@@ -1,5 +1,5 @@
 // Menu bar popover: who's doing what, autopilot, and the way into everything else.
-/* global themeButton, crew, live, morph, rosterParts, crewSummary, celebrate, markSVG, store, ICONS */
+/* global themeButton, crew, live, morph, esc, rosterParts, crewSummary, usageTip, limitNums, celebrate, markSVG, store, ICONS */
 
 const $ = (s) => document.querySelector(s)
 $('.logo').outerHTML = markSVG('0 6 24 16')
@@ -57,6 +57,7 @@ function draw() {
     : ['<div class="empty">No agents yet. Add one per area of work, like onboarding or the 3D character.</div>'])
   celebrate($('.roster'), state.agents)
   morph($('.sums'), crewSummary(state))
+  morph($('.usage'), Object.values(state.usage ?? {}).map((u) => `<div class="usage-row" title="${esc(usageTip(u))}"><span>${esc(u.label)} limits</span><span class="grow"></span>${limitNums(u)}</div>`).join(''))
   $('.autopilot .switch').checked = state.autopilot
   $('.autopilot p').textContent = state.autopilot ? 'Agents hand off work without asking you first' : 'Each hand-off waits for your Send it'
   crew.fit(340, document.body.scrollHeight)
