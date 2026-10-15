@@ -11,27 +11,34 @@ import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KI
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, LIMITS } from './context.js'
 import { callResult } from './transcript.js'
 import { processes, tree, groupsOf, readGroups, leftovers, stop as stopProcesses, summary } from './procs.js'
+import { Config } from './config.js'
+import { DEFAULT, dirOf, space, forget, renameShared, sharedNames } from './workspaces.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
 export const CONFIG = path.join(HOME, 'config.json')
 export const ATTACHMENTS = path.join(HOME, 'attachments')
 const localDay = (t = Date.now()) => new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
+// Files about you or this computer. A workspace's own files are in its folder (Hub.at).
 const at = (file) => path.join(HOME, file)
-// Where each agent's CLI writes down the process groups of the commands it runs, a file per launch (core/procs.js).
-const GROUPS = path.join(HOME, 'run', 'groups')
+// Where each agent's CLI writes down the process groups of the commands it runs, a file per launch (core/procs.js), in
+// its workspace's folder.
+const GROUPS = path.join('run', 'groups')
 // How often an agent's process tree is looked at for groups bin/crew-sh doesn't see (Codex, the CLI's own children).
 const TREE_CHECK = 15000
-// Hook events an agent's CLI couldn't deliver while Crew was closed (adapters.js), replayed when it's back.
-const SPOOL = path.join(HOME, 'spool')
+// Hook events an agent's CLI couldn't deliver while Crew was closed (adapters.js), replayed when it's back. In the
+// agent's workspace's folder.
+const SPOOL = 'spool'
 // What Crew remembers of each agent at work, so it can pick them up after a restart while their terminals carried on in
-// the terminal host (core/ptyhost.js): saved as things change, read back by adopt().
-const RUNTIME = at('runtime.json')
+// the terminal host (core/ptyhost.js): saved as things change, read back by adopt(). In the workspace's folder.
+const RUNTIME = 'runtime.json'
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
   'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'retrying', 'apiRetries', 'cloneOf', 'clone']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
-const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones']
+// config.json, for every workspace's hub to share.
+export const openConfig = () => new Config(CONFIG, DEFAULTS)
+const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared']
 const RESERVED = new Set(['you', 'any', 'crew'])
 const SUB_TOOLS = new Set(['Agent', 'Task']) // Claude Code's sub-agent tool ("Task" in older versions)
 const SUB_LINGER = 6000 // a finished sub-agent stays in the live view this long
@@ -75,22 +82,27 @@ const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
 )
 
+// One workspace's crew (core/workspaces.js): its agents as they work there, its chat, notes and tasks. Crew runs one
+// per workspace, all on the one config.json (config) and local server (token).
 export class Hub extends EventEmitter {
   agents = new Map() // name -> agent; clones too (gal.2), with cloneOf: 'gal'
   pinned = new WeakSet() // messages that only one particular clone (or the original) should take
-  config = { ...DEFAULTS }
-  discovered = {}
   url = null
+  parked = false // started, but its agents only run once it's opened (see start)
+  carryOn = new Set() // renamed while running: starts again under the new name even here parked (see renameAgent)
 
-  constructor(runner, { bin }) {
+  // config, token, usage: what every workspace's hub shares (one of each of its own when it's the only hub).
+  constructor(runner, { bin, workspace = DEFAULT, config, token, usage }) {
     super()
+    this.ws = workspace
+    this.dir = dirOf(HOME, workspace)
     fs.mkdirSync(ATTACHMENTS, { recursive: true })
-    fs.mkdirSync(GROUPS, { recursive: true })
+    fs.mkdirSync(this.at(GROUPS), { recursive: true })
     this.bin = bin
-    this.token = randomBytes(16).toString('hex')
-    this.sessions = readJSON(at('sessions.json')) ?? {}
-    this.stats = readJSON(at('stats.json')) ?? {}
-    this.feed = loadFeed()
+    this.token = token ?? randomBytes(16).toString('hex')
+    this.sessions = readJSON(this.at('sessions.json')) ?? {}
+    this.stats = readJSON(this.at('stats.json')) ?? {}
+    this.feed = loadFeed(this.at('feed.jsonl'))
     this.asks = new Map() // feed id of an open question -> { resolve, name, cli, input }
     // Right of way (see question): what each `crew ask` is still owed, and which agent edits which file.
     this.calls = new Map() // id (the question's feed id) -> { id, msg, from, to, parent, at, hold, remote }
@@ -100,16 +112,46 @@ export class Hub extends EventEmitter {
     this.runs = new Map() // launch id -> { name, file, pid, at }: each CLI process and the file of groups it started
     this.turnedAway = new Set() // "who:file" told this turn that a file is taken, so the chat says it once
     this.saving = Promise.resolve() // feed.jsonl appends, one after another (an answer must land after its card)
-    this.tickets = new Tickets(at('tickets.json'))
+    this.tickets = new Tickets(this.at('tickets.json'))
     this.stalls = new Map() // task id -> { at, told }: Crew reminded its agent at `at`, or (told) called you
     // Each agent's current conversation: when it started, tasks in it, compactions, and how full it is.
-    this.convos = readJSON(at('conversations.json')) ?? {}
+    this.convos = readJSON(this.at('conversations.json')) ?? {}
     // Unread replies: up to when you've read each agent's. A first run starts from now, so old history isn't "new".
-    this.reads = readJSON(at('reads.json')) ?? { since: Date.now(), agents: {} }
-    // Each provider's usage limits, as its agents' status lines last reported them (see setUsage).
-    this.usage = readJSON(at('usage.json')) ?? {}
+    this.reads = readJSON(this.at('reads.json')) ?? { since: Date.now(), agents: {} }
+    // Each provider's usage limits, as its agents' status lines last reported them (see setUsage). Your accounts', so
+    // every workspace's hub shares them.
+    this.usage = usage ?? readJSON(at('usage.json')) ?? {}
     this.useRunner(runner)
-    this.loadConfig()
+    this.cfg = config ?? new Config(CONFIG, DEFAULTS)
+    this.onConfig = () => this.apply()
+    this.onProblem = (text) => this.post({ kind: 'event', from: 'crew', text })
+    this.cfg.on('change', this.onConfig)
+    if (this.ws === DEFAULT) this.cfg.on('problem', this.onProblem) // said once, in the default workspace's chat
+    if (!this.cfg.tried) this.cfg.load()
+    if (!this.space) this.apply() // read before this hub was made, or unreadable: as it is
+  }
+
+  // The workspace is gone from config.json (apply has stopped its agents already): what's pending is saved, and this
+  // hub stops listening.
+  dispose() {
+    this.cfg.off('change', this.onConfig)
+    this.cfg.off('problem', this.onProblem)
+    this.runner.dispose?.()
+    clearInterval(this.stallTimer)
+    if (this.statsTimer) this.saveStats()
+    this.saveConvos(true)
+    for (const t of ['statsTimer', 'readsTimer', 'runtimeTimer', 'usageTimer']) clearTimeout(this[t])
+    for (const a of this.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'steerTimer', 'retryTimer', 'reapTimer']) clearTimeout(a[t])
+  }
+
+  // A file of this workspace's, in its folder.
+  at(...parts) {
+    return path.join(this.dir, ...parts)
+  }
+
+  // config.json as it is (core/config.js). What's this workspace's in it is this.space.
+  get config() {
+    return this.cfg.data
   }
 
   // The terminals: in this process (core/runner.js), or in the terminal host, where they outlive Crew (core/ptyclient.js).
@@ -121,46 +163,50 @@ export class Hub extends EventEmitter {
   }
 
   // survivors: terminals still running from before Crew restarted ([{ name, tag, pid }], from the terminal host). Their
-  // agents carry on where they are instead of starting again.
-  start(url, { survivors = [] } = {}) {
+  // agents carry on where they are instead of starting again. park: the rest don't start until the workspace is opened.
+  start(url, { survivors = [], park = false } = {}) {
     this.url = url
-    fs.writeFileSync(at('url'), url)
-    fs.writeFileSync(at('token'), this.token)
-    fs.chmodSync(at('token'), 0o600)
+    this.parked = park
+    if (this.ws === DEFAULT) {
+      // where agents' hooks and `crew` find Crew: every workspace's, told apart by the X-Crew-Workspace header
+      fs.writeFileSync(at('url'), url)
+      fs.writeFileSync(at('token'), this.token)
+      fs.chmodSync(at('token'), 0o600)
+    }
     this.keepRuntime = Boolean(this.runner.survivors)
     const adopted = this.adopt(survivors)
     this.replaySpool()
     this.sweepStale()
-    for (const a of this.agents.values()) if (!a.off && !adopted.has(a.name)) this.launch(a)
+    if (!park) for (const a of this.agents.values()) if (!a.off && !adopted.has(a.name)) this.launch(a)
     for (const name of adopted) {
       const a = this.agents.get(name)
       if (a?.status === 'idle') this.pump(a)
       if (a?.status === 'working') this.steer(a)
     }
-    fs.watchFile(CONFIG, { interval: 1000 }, () => this.loadConfig())
+    this.cfg.watch()
     this.stallTimer = setInterval(() => this.checkStalls(), STALL_CHECK)
     this.stallTimer.unref?.()
-    discoverCodex().then((codex) => {
+    this.cfg.discovering ??= discoverCodex().then((codex) => {
       if (!codex) return
-      this.discovered.codex = codex
+      this.cfg.discovered.codex = codex
       this.loadConfig()
     })
   }
 
   // ---- config ------------------------------------------------------------
 
+  // config.json read again: every workspace's hub applies it.
   loadConfig() {
-    let raw
-    try {
-      raw = JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
-    } catch (e) {
-      if (e.code !== 'ENOENT') return this.post({ kind: 'event', from: 'crew', text: `config.json: ${e.message}` })
-      raw = {}
-      fs.writeFileSync(CONFIG, JSON.stringify(DEFAULTS, null, 2) + '\n')
-    }
-    this.config = { ...DEFAULTS, ...raw }
-    this.providers = providersFrom(this.config, this.discovered)
-    const names = new Set(this.config.agents.map((c) => c.name))
+    this.cfg.load()
+  }
+
+  // This workspace's part of config.json, put into effect: agents come, go, change, start and stop to match it.
+  apply() {
+    const before = new Map([...this.agents].map(([n, a]) => [n, [this.launchKey(a), a.contextLimit, a.onContextLimit]]))
+    this.providers = providersFrom(this.config, this.cfg.discovered)
+    this.space = space(this.config, this.ws) ?? space({ agents: [] }, DEFAULT) // no agents once it's gone from config.json
+    const list = this.space.agents
+    const names = new Set(list.map((c) => c.name))
     for (const [name, a] of this.agents) {
       if (a.cloneOf || names.has(name)) continue // clones follow their original, below
       this.forgetAsks(name)
@@ -168,16 +214,20 @@ export class Hub extends EventEmitter {
       this.runner.stop(name)
       this.agents.delete(name)
     }
-    for (const c of this.config.agents) {
+    for (const c of list) {
       let a = this.agents.get(c.name)
       if (!a) this.agents.set(c.name, (a = { status: 'off', since: Date.now(), activity: '', inbox: [], holdUntil: 0, hookAt: 0 }))
+      const home = a.name && sessionHome(a)
       for (const k of AGENT_KEYS) delete a[k]
       Object.assign(a, c)
+      // A session belongs to one CLI and one folder: changing either (here, in another workspace it's in, or by hand)
+      // starts a fresh conversation.
+      if (home && home !== sessionHome(a)) this.saveSession(a.name, null)
       // config.json decides on/off, whether it was toggled in the UI or edited by hand.
       if (a.off && a.status !== 'off') {
         this.runner.stop(a.name)
         this.setStatus(a, 'off')
-      } else if (!a.off && a.status === 'off' && this.url) {
+      } else if (!a.off && a.status === 'off' && this.url && (!this.parked || this.carryOn.delete(a.name))) {
         this.launch(a)
         this.startWaiting(a)
       }
@@ -188,81 +238,110 @@ export class Hub extends EventEmitter {
       if (!base || base.off) this.dismiss(c.name)
       else this.dress(c, base)
     }
+    // New launch settings (from the UI, another workspace the agent is in too, or by hand): a running agent and its
+    // clones start again with them, each resuming its conversation, as soon as they're free. And a lower context limit
+    // may be passed already.
+    for (const [n, [key, limit, onLimit]] of before) {
+      const a = this.agents.get(n)
+      if (!a) continue
+      if (this.runner.running(n) && this.launchKey(a) !== key) this.relaunchWhenFree(a)
+      if (a.contextLimit !== limit || a.onContextLimit !== onLimit) this.checkLimit(a)
+    }
     this.changed()
   }
 
   saveConfig() {
-    fs.writeFileSync(CONFIG, JSON.stringify(this.config, null, 2) + '\n')
-    this.loadConfig()
+    this.cfg.save()
   }
 
-  addAgent({ name, ...fields }) {
-    name = this.freeName(name)
-    this.config.agents.push(JSON.parse(JSON.stringify({ name, ...clean(fields) })))
+  // The hubs of the other workspaces, for what's kept about a shared agent in each (Crew sets this).
+  others() {
+    return []
+  }
+
+  // shared: in a workspace other than the default, whether the new agent is one of your shared ones (it's in this
+  // workspace and the default) or this workspace's own. In the default workspace every agent is shared.
+  addAgent({ name, shared, ...fields }) {
+    const own = this.ws !== DEFAULT && !shared
+    name = this.freeName(name, own ? undefined : (n) => this.agents.has(n) || sharedNames(this.config, n).has(n))
+    const def = JSON.parse(JSON.stringify({ name, ...clean(fields) }))
+    if (own || this.ws === DEFAULT) this.space.add(def, { shared: !own })
+    else {
+      // Where it works here, and whether it's on, are this workspace's. In the default workspace it starts off, until
+      // it's turned on there.
+      const { cwd, off, ...who } = def
+      this.space.add({ ...who, off: true }, { shared: true, member: { ...(cwd && { folder: cwd }), ...(off && { off }) } })
+    }
     this.saveConfig()
     return name
   }
 
-  freeName(raw) {
+  freeName(raw, taken = (n) => this.agents.has(n)) {
     const name = String(raw ?? '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
     if (!name || RESERVED.has(name)) throw new Error('pick another name')
-    if (this.agents.has(name)) throw new Error(`"${name}" already exists`)
+    if (taken(name)) throw new Error(`"${name}" already exists`)
     return name
   }
 
+  // An agent out of this workspace. Its own, or a shared one in the default workspace, is gone for good, and so is what
+  // every workspace kept about it. A shared one leaving any other workspace is still yours, and still in the others.
   removeAgent(name) {
-    this.config.agents = this.config.agents.filter((c) => c.name !== name)
+    const everywhere = this.ws === DEFAULT
+    if (everywhere) forget(this.config, name)
+    else this.space.remove(name)
+    for (const h of everywhere ? [this, ...this.others()] : [this]) h.forgetAgent(name)
+    this.saveConfig()
+  }
+
+  // What this workspace kept about an agent that's gone: its conversation and experience here.
+  forgetAgent(name) {
     this.saveSession(name, null)
     delete this.stats[name]
     this.saveStats()
-    this.saveConfig()
   }
 
   // The one edit path: a patch for one agent or many at once (bulk edit in the collection).
   // `off` is saved, so it survives restarts. Launch settings restart a running agent, resuming its
-  // session, as soon as it's free.
+  // session, as soon as it's free (see apply).
   update(names, patch) {
     names = [].concat(names)
     if (names.length === 1 && patch.name !== undefined && patch.name !== names[0]) names = [this.rename(names[0], patch.name)]
     const { name, ...fields } = clean(patch)
-    const before = new Map(names.map((n) => [n, this.launchKey(this.agents.get(n))]))
     for (const n of names) {
-      const c = this.config.agents.find((x) => x.name === n)
-      if (!c) continue
-      const oldHome = [c.provider ?? c.cli ?? 'claude', c.cwd]
-      for (const [k, v] of Object.entries(fields)) v === undefined ? delete c[k] : (c[k] = v)
-      if ('provider' in fields) delete c.cli
-      // A session belongs to one CLI and one folder; switching either starts a fresh conversation.
-      if (oldHome[0] !== (c.provider ?? c.cli ?? 'claude') || oldHome[1] !== c.cwd) this.saveSession(n, null)
+      if (!this.space.has(n)) continue
+      for (const [k, v] of Object.entries(fields)) this.space.set(n, k, v)
+      if ('provider' in fields) this.space.set(n, 'cli', undefined)
     }
     this.saveConfig()
-    for (const n of names) {
-      const a = this.agents.get(n)
-      // its clones too: they pick up the new settings, each resuming its own conversation
-      for (const x of a ? [a, ...this.clonesOf(a)] : []) {
-        if (this.runner.running(x.name) && this.launchKey(x) !== before.get(n)) this.relaunchWhenFree(x)
-        if ('contextLimit' in fields || 'onContextLimit' in fields) this.checkLimit(x) // a lower limit may be passed already
-      }
-    }
   }
 
+  // A shared agent's new name is its name in every workspace; one of a workspace's own is renamed there.
   rename(from, to) {
-    to = this.freeName(to)
-    const c = this.config.agents.find((x) => x.name === from)
-    if (!c) throw new Error(`no agent named "${from}"`)
-    c.name = to
+    if (!this.space.has(from)) throw new Error(`no agent named "${from}"`)
+    const shared = this.space.shared(from)
+    to = this.freeName(to, shared ? (n) => this.agents.has(n) || sharedNames(this.config, from).has(n) : undefined)
+    if (shared) renameShared(this.config, from, to)
+    else {
+      this.space.def(from).name = to
+      if (this.space.triage === from) this.space.triage = to
+    }
+    for (const h of shared ? [this, ...this.others()] : [this]) h.renameAgent(from, to)
+    this.saveConfig() // stops `from`, starts `to` resuming the same conversation
+    return to
+  }
+
+  // What this workspace keeps about an agent, under its new name: its conversation, experience, the conversation's
+  // numbers, and the tasks it owns or is working on.
+  renameAgent(from, to) {
+    if (this.runner.running(from)) this.carryOn.add(to)
     if (this.sessions[from]) this.sessions[to] = this.sessions[from]
     this.saveSession(from, null) // also writes the moved session
-    if (this.stats[from]) [this.stats[to], this.stats[from]] = [this.stats[from], undefined] // experience moves with the name
+    if (this.stats[from]) [this.stats[to], this.stats[from]] = [this.stats[from], undefined]
     this.saveStats()
-    // so do its conversation's numbers and the tasks it owns or is working on
     if (this.convos[from]) [this.convos[to], this.convos[from]] = [this.convos[from], undefined]
     this.saveConvos()
     for (const t of this.tickets.all) for (const k of ['owner', 'fixer']) if (t[k] === from) t[k] = to
     this.tickets.save()
-    if (this.config.triage === from) this.config.triage = to
-    this.saveConfig() // stops `from`, starts `to` resuming the same conversation
-    return to
   }
 
   launchKey(a) {
@@ -306,7 +385,7 @@ export class Hub extends EventEmitter {
     clearTimeout(this.readsTimer)
     this.readsTimer = setTimeout(() => {
       try {
-        fs.writeFileSync(at('reads.json'), JSON.stringify(this.reads))
+        fs.writeFileSync(this.at('reads.json'), JSON.stringify(this.reads))
       } catch {}
     }, 500)
   }
@@ -317,7 +396,7 @@ export class Hub extends EventEmitter {
   }
 
   setAutopilot(on) {
-    this.config.autopilot = Boolean(on)
+    this.space.autopilot = on
     this.saveConfig()
   }
 
@@ -356,10 +435,13 @@ export class Hub extends EventEmitter {
       const cwd = expand(a.cwd)
       if (!fs.existsSync(cwd)) throw new Error(`folder not found: ${cwd}`)
       const run = randomUUID().slice(0, 8)
-      const groups = path.join(GROUPS, `${a.name}.${run}`)
+      const groups = this.at(GROUPS, `${a.name}.${run}`)
       const env = {
         ...expandEnv(provider.env), ...extraEnv, PATH: `${this.bin}:${process.env.PATH}`, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME,
         CREW_GROUPS: groups, ...(provider.cli === 'claude' && shellPrefix(this.bin)),
+        // which workspace its hooks and `crew` talk to: empty for the default (as for agents started before workspaces),
+        // whatever Crew itself was started with
+        CREW_WORKSPACE: this.ws === DEFAULT ? '' : this.ws,
       }
       this.runner.start(a.name, { file, args: [...args, ...(provider.args ?? []), ...(a.args ?? [])], cwd, env, tag: run })
       // its own group first: what the CLI starts without a group of its own lands there
@@ -616,7 +698,7 @@ export class Hub extends EventEmitter {
     // only the context gauges' memory: a failed write (the folder gone) must never take anything down
     const write = () => {
       try {
-        fs.writeFileSync(at('conversations.json'), JSON.stringify(this.lasting(this.convos)))
+        fs.writeFileSync(this.at('conversations.json'), JSON.stringify(this.lasting(this.convos)))
       } catch {}
     }
     if (now) write()
@@ -801,12 +883,12 @@ export class Hub extends EventEmitter {
   sweepStale() {
     let files = []
     try {
-      files = fs.readdirSync(GROUPS)
+      files = fs.readdirSync(this.at(GROUPS))
     } catch {}
     for (const f of files) {
       const m = f.match(/^(.+)\.([0-9a-f]{8})$/)
       if (!m || this.runs.has(m[2])) continue
-      this.runs.set(m[2], { name: m[1], file: path.join(GROUPS, f), at: 0 })
+      this.runs.set(m[2], { name: m[1], file: this.at(GROUPS, f), at: 0 })
       this.sweep(m[2])
     }
   }
@@ -815,7 +897,7 @@ export class Hub extends EventEmitter {
     if (id) this.sessions[name] = id
     else delete this.sessions[name]
     if (this.agents.get(name)?.cloneOf) return // a clone's conversation goes away with it
-    fs.writeFileSync(at('sessions.json'), JSON.stringify(this.lasting(this.sessions), null, 2) + '\n')
+    fs.writeFileSync(this.at('sessions.json'), JSON.stringify(this.lasting(this.sessions), null, 2) + '\n')
   }
 
   // What's worth saving of a per-agent record: clones come and go.
@@ -1268,7 +1350,7 @@ export class Hub extends EventEmitter {
   saveStats() {
     const cutoff = localDay(Date.now() - 60 * 864e5)
     for (const s of Object.values(this.stats)) if (s) for (const d of Object.keys(s.days)) if (d < cutoff) delete s.days[d]
-    fs.writeFileSync(at('stats.json'), JSON.stringify(this.stats))
+    fs.writeFileSync(this.at('stats.json'), JSON.stringify(this.stats))
   }
 
   statsOf(a) {
@@ -1376,7 +1458,7 @@ export class Hub extends EventEmitter {
       throw new Error(`@${call.from} is waiting for your answer to "${gist(call.text, 80)}". Don't hand it back: put what you'd send it in your answer. Your final message goes back to @${call.from} by itself.${targets.length > 1 ? ' (nothing was sent)' : ''}`)
     }
 
-    const held = from !== 'you' && !this.config.autopilot
+    const held = from !== 'you' && !this.space.autopilot
     if (ask) {
       const msg = this.post({ kind: 'msg', from, to: targets[0].name, text, ask: true, ...(images.length && { images }), queued: !held, held })
       this.open({ id: msg.id, msg, from, text, back: ask })
@@ -1495,7 +1577,7 @@ export class Hub extends EventEmitter {
     // the same question again (a retry after a "hasn't answered yet"): wait on the one already asked
     const same = [...this.calls.values()].find((c) => c.from === from && this.baseOf(this.ownerOf(c)) === target.name && squash(c.text) === squash(text))
     if (same) return this.hold([same], hold, closed)
-    const held = from !== 'you' && !this.config.autopilot
+    const held = from !== 'you' && !this.space.autopilot
     const msg = this.post({ kind: 'msg', from, to: target.name, text, ask: true, ...(images.length && { images }), ...(asker?.current && { re: asker.current }), queued: !held, held })
     const call = this.open({ id: msg.id, msg, from, text, parent: this.workingOn(asker) })
     if (asker) this.record(from, { handoffs: 1 })
@@ -1953,7 +2035,7 @@ export class Hub extends EventEmitter {
     if (owner) {
       t.triaged = true // you said who: nothing to triage
       this.postTask(t, by, 'filed')
-      if (this.config.autofix) this.autoDispatch(t)
+      if (this.space.autofix) this.autoDispatch(t)
       return `added #${t.id} for @${owner}\n`
     }
     const triage = this.triager()
@@ -1963,13 +2045,13 @@ export class Hub extends EventEmitter {
     }
     this.postTask(t, by, 'filed')
     if (triage) this.send({ from: 'you', to: triage, text: triagePrompt(t, t.id), images: t.images, mentions: false, ticket: t.id, title: t.title, type: t.kind, triage: true })
-    else if (this.config.autofix && t.owner) this.autoDispatch(t)
+    else if (this.space.autofix && t.owner) this.autoDispatch(t)
     return `added #${t.id}${triage ? `, @${triage} is triaging it` : t.owner ? ` for @${t.owner}` : ''}\n`
   }
 
   // The triage agent you picked, if it's around to do it.
   triager() {
-    const a = this.agents.get(this.config.triage)
+    const a = this.agents.get(this.space.triage)
     return a && !a.off ? a.name : null
   }
 
@@ -2020,7 +2102,7 @@ export class Hub extends EventEmitter {
 
   // An agent just came back on: with Auto-start, the tasks that waited for it start now, each in a new conversation.
   startWaiting(a) {
-    if (!this.config.autofix) return
+    if (!this.space.autofix) return
     for (const t of this.tickets.open()) if (t.status === 'new' && t.owner === a.name) this.autoDispatch(t)
   }
 
@@ -2167,8 +2249,8 @@ export class Hub extends EventEmitter {
         const owner = flags.owner ? this.taskOwner(flags.owner, by, t) : undefined
         this.tickets.edit(t.id, { owner, severity: flags.priority, kind: flags.kind, title: flags.title, body: flags.details, triaged: true }, by)
         this.postTask(t, from, 'triaged', t.owner)
-        if (this.config.autofix && t.status === 'new' && t.owner) this.autoDispatch(t)
-        return `#${t.id}: ${t.kind}, ${t.owner ? `for @${t.owner}` : 'unassigned'}${this.config.autofix && t.owner ? ', sent to them' : ''}\n`
+        if (this.space.autofix && t.status === 'new' && t.owner) this.autoDispatch(t)
+        return `#${t.id}: ${t.kind}, ${t.owner ? `for @${t.owner}` : 'unassigned'}${this.space.autofix && t.owner ? ', sent to them' : ''}\n`
       }
       case 'done': {
         if (!text) throw new Error(`usage: crew task done ${ref} "what you did, how you checked"`)
@@ -2215,8 +2297,8 @@ export class Hub extends EventEmitter {
       this.emit('notice', { title: `#${t.id} needs an owner`, body: `@${by} declined it: ${why}`, focus: `task:${t.id}` })
       return `#${t.id} is back on To do, for the user to give to someone\n`
     }
-    if (started || this.config.autofix) this.autoDispatch(t)
-    return `#${t.id} went to @${next.name}${started || this.config.autofix ? ', who starts on it now' : ''}\n`
+    if (started || this.space.autofix) this.autoDispatch(t)
+    return `#${t.id} went to @${next.name}${started || this.space.autofix ? ', who starts on it now' : ''}\n`
   }
 
   // What the Tasks board can do. op: file, edit, note, dispatch, accept, sendBack, move, dup, remove.
@@ -2330,8 +2412,8 @@ export class Hub extends EventEmitter {
   }
 
   setTaskSettings({ triage, autofix }) {
-    if (triage !== undefined) this.config.triage = triage || undefined
-    if (autofix !== undefined) this.config.autofix = Boolean(autofix) || undefined
+    if (triage !== undefined) this.space.triage = triage || undefined
+    if (autofix !== undefined) this.space.autofix = Boolean(autofix) || undefined
     this.saveConfig()
   }
 
@@ -2339,14 +2421,14 @@ export class Hub extends EventEmitter {
     text = String(text ?? '').trim()
     if (!text) throw new Error('nothing to note')
     const when = new Date().toISOString().slice(0, 16).replace('T', ' ')
-    fs.appendFileSync(at('board.md'), `- **${from}** (${when}): ${text.replace(/\s*\n\s*/g, ' ')}\n`)
+    fs.appendFileSync(this.at('board.md'), `- **${from}** (${when}): ${text.replace(/\s*\n\s*/g, ' ')}\n`)
     this.post({ kind: 'note', from, text })
     return 'shared with the crew\n'
   }
 
   board() {
     try {
-      return fs.readFileSync(at('board.md'), 'utf8').split('\n').slice(-200).join('\n')
+      return fs.readFileSync(this.at('board.md'), 'utf8').split('\n').slice(-200).join('\n')
     } catch {
       return '(no shared notes yet)\n'
     }
@@ -2399,7 +2481,7 @@ export class Hub extends EventEmitter {
   }
 
   save(line) {
-    this.saving = this.saving.then(() => fs.promises.appendFile(at('feed.jsonl'), JSON.stringify(line) + '\n')).catch(() => {})
+    this.saving = this.saving.then(() => fs.promises.appendFile(this.at('feed.jsonl'), JSON.stringify(line) + '\n')).catch(() => {})
   }
 
   // ---- an agent moving between computers (core/move.js) ---------------------------------------------
@@ -2408,7 +2490,7 @@ export class Hub extends EventEmitter {
   // than what's here) with one that moves in. The lines are taken now, so one posted meanwhile lands after them.
   rewriteFeed() {
     const text = this.feed.map((e) => JSON.stringify(e) + '\n').join('')
-    this.saving = this.saving.then(() => fs.promises.writeFile(at('feed.jsonl'), text)).catch(() => {})
+    this.saving = this.saving.then(() => fs.promises.writeFile(this.at('feed.jsonl'), text)).catch(() => {})
   }
 
   // Lines from another computer, for an agent that moved here: merged in by time.
@@ -2470,7 +2552,7 @@ export class Hub extends EventEmitter {
       }
       const calls = [...this.calls.values()].map((c) => ({ ...c, msg: c.msg?.id, to: this.ownerOf(c), hold: null }))
       try {
-        fs.writeFileSync(RUNTIME, JSON.stringify({ at: Date.now(), agents, calls, leases: [...this.leases], held: [...this.held] }))
+        fs.writeFileSync(this.at(RUNTIME), JSON.stringify({ at: Date.now(), agents, calls, leases: [...this.leases], held: [...this.held] }))
       } catch {}
     }
     if (now) return write()
@@ -2482,10 +2564,10 @@ export class Hub extends EventEmitter {
   // (its agent was removed or turned off meanwhile, or nothing is known about it) is stopped. Queues of agents whose CLI
   // ended while Crew was closed still go to them once they start again.
   adopt(survivors) {
-    const saved = readJSON(RUNTIME) ?? {}
+    const saved = readJSON(this.at(RUNTIME)) ?? {}
     // kept up to date only with the terminal host; otherwise it was written on quit, and read once is enough (a crash
     // later mustn't queue the same messages again)
-    if (!this.keepRuntime) fs.rmSync(RUNTIME, { force: true })
+    if (!this.keepRuntime) fs.rmSync(this.at(RUNTIME), { force: true })
     const states = saved.agents ?? {}
     const live = (m) => (m ? (this.feed.find((e) => e.id === m.id) ?? m) : m) // the same message as the one in the chat
     const alive = new Map(survivors.map((p) => [p.name, p]))
@@ -2511,7 +2593,7 @@ export class Hub extends EventEmitter {
       a.expect = s.expect ? { ...s.expect, msgs: s.expect.msgs.map(live) } : null
       a.steering = s.steering ? { ...s.steering, msgs: s.steering.msgs.map(live) } : null
       Object.assign(a, { subs: new Map(), subPending: [] })
-      this.runs.set(p.tag, { name, file: path.join(GROUPS, `${name}.${p.tag}`), pid: p.pid, at: 0 })
+      this.runs.set(p.tag, { name, file: this.at(GROUPS, `${name}.${p.tag}`), pid: p.pid, at: 0 })
       adopted.add(name)
       if (a.status === 'starting') this.readyIn(a)
       if (a.status === 'working' && a.expect) this.awaitPickup(a)
@@ -2537,10 +2619,10 @@ export class Hub extends EventEmitter {
   replaySpool() {
     let files = []
     try {
-      files = fs.readdirSync(SPOOL)
+      files = fs.readdirSync(this.at(SPOOL))
     } catch {}
     for (const f of files) {
-      const file = path.join(SPOOL, f)
+      const file = this.at(SPOOL, f)
       let text = ''
       try {
         text = fs.readFileSync(file, 'utf8')
@@ -2566,7 +2648,7 @@ export class Hub extends EventEmitter {
 
   snapshot() {
     return {
-      autopilot: this.config.autopilot,
+      autopilot: this.space.autopilot,
       theme: this.config.theme,
       providers: Object.fromEntries(
         Object.values(this.providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault }]),
@@ -2595,8 +2677,8 @@ export class Hub extends EventEmitter {
       usage: Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id) }]).filter(([, u]) => u.windows.length)),
       tasks: {
         tickets: [...this.tickets.open(), ...this.tickets.all.filter((t) => t.status === 'done').sort((x, y) => x.updated - y.updated).slice(-60)],
-        triage: this.config.triage ?? null,
-        autofix: Boolean(this.config.autofix),
+        triage: this.space.triage ?? null,
+        autofix: Boolean(this.space.autofix),
       },
     }
   }
@@ -2684,16 +2766,16 @@ function readJSON(file) {
   }
 }
 
-function loadFeed() {
+function loadFeed(file) {
   let lines
   try {
-    lines = fs.readFileSync(at('feed.jsonl'), 'utf8').trim().split('\n')
+    lines = fs.readFileSync(file, 'utf8').trim().split('\n')
   } catch {
     return []
   }
   if (lines.length > FEED_KEEP * 2) {
     lines = lines.slice(-FEED_KEEP)
-    fs.writeFileSync(at('feed.jsonl'), lines.join('\n') + '\n')
+    fs.writeFileSync(file, lines.join('\n') + '\n')
   }
   const feed = []
   const byId = new Map()
@@ -2799,6 +2881,8 @@ function decide(ask, input, cli, reply) {
 }
 
 const expand = (dir) => (dir ? dir.replace(/^~(?=\/|$)/, os.homedir()) : os.homedir())
+// What an agent's conversation is tied to: the CLI that keeps it, and the folder it was started in.
+const sessionHome = (a) => JSON.stringify([a.provider ?? a.cli ?? 'claude', expand(a.cwd)])
 
 const tokens = (s) =>
   (s.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => w.length > 1 && !STOP_WORDS.has(w)).map((w) => w.replace(/(?<=...)s$/, ''))

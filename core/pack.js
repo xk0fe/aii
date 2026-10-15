@@ -6,13 +6,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { BUILT_IN } from './providers.js'
 import { MAX_CLONES } from './hub.js'
+import { DEFAULT, space } from './workspaces.js'
 
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const expand = (dir) => (dir ? dir.replace(/^~(?=\/|$)/, os.homedir()) : os.homedir())
 
 export function packAgents(hub, names, { stats = false } = {}) {
   const agents = names.map((name) => {
-    const c = hub.config.agents.find((a) => a.name === name)
+    const c = space(hub.config, hub.ws ?? DEFAULT)?.agents.find((a) => a.name === name) // as it is in its workspace (its folder there)
     if (!c) throw new Error(`no agent named "${name}"`)
     return {
       name: c.name,

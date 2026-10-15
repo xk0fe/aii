@@ -367,8 +367,7 @@ export function moveIn(hub, token, out, { name, folder, on, from }, here) {
     }
     if (hub.renameRefs(`${out.name}@${from.slug}`, added)) hub.rewriteFeed()
     if (on) {
-      const c = hub.config.agents.find((x) => x.name === added)
-      delete c.off
+      hub.space.set(added, 'off', undefined)
       hub.saveConfig() // starts it, resuming the conversation
     }
     return { name: added, conversation, ...(reason && { reason }) }

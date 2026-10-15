@@ -125,3 +125,78 @@ export function which(cmd, PATH = '') {
   }
   return cmd
 }
+
+// One workspace's terminals, in the runner all workspaces share (core/workspaces.js). The runner knows them by the
+// workspace and the agent's name (golf/joseph); the default workspace's by the agent's name alone, as before there were
+// workspaces, so terminals that outlived an older Crew are still found.
+export class Scoped extends EventEmitter {
+  constructor(runner, workspace, isDefault) {
+    super()
+    this.runner = runner
+    this.prefix = isDefault ? '' : `${workspace}/`
+    runner.setMaxListeners(0) // each workspace listens
+    this.relays = ['data', 'exit', 'ended'].map((event) => {
+      const relay = (name, ...rest) => {
+        const own = this.own(name)
+        if (own) this.emit(event, own, ...rest)
+      }
+      runner.on(event, relay)
+      return [event, relay]
+    })
+  }
+
+  // The workspace is gone: its hub hears no more.
+  dispose() {
+    for (const [event, relay] of this.relays) this.runner.off(event, relay)
+  }
+
+  // the agent's name, for a terminal of this workspace's
+  own(name) {
+    if (!this.prefix) return name.includes('/') ? null : name
+    return name.startsWith(this.prefix) ? name.slice(this.prefix.length) : null
+  }
+
+  full(name) {
+    return this.prefix + name
+  }
+
+  get survivors() {
+    return this.runner.survivors?.filter((s) => this.own(s.name)).map((s) => ({ ...s, name: this.own(s.name) }))
+  }
+
+  start(name, opts) {
+    return this.runner.start(this.full(name), opts)
+  }
+
+  stop(name) {
+    return this.runner.stop(this.full(name))
+  }
+
+  running(name) {
+    return this.runner.running(this.full(name))
+  }
+
+  pid(name) {
+    return this.runner.pid?.(this.full(name))
+  }
+
+  write(name, data) {
+    return this.runner.write(this.full(name), data)
+  }
+
+  quietFor(name) {
+    return this.runner.quietFor?.(this.full(name))
+  }
+
+  submit(name, text) {
+    return this.runner.submit(this.full(name), text)
+  }
+
+  resize(name, cols, rows) {
+    return this.runner.resize(this.full(name), cols, rows)
+  }
+
+  buffer(name) {
+    return this.runner.buffer(this.full(name))
+  }
+}

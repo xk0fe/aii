@@ -7,12 +7,15 @@ import path from 'node:path'
 
 // Where the hub is, read from CREW_HOME on every call: Crew's address and token change each time it starts, and an agent
 // can outlive a Crew (its CLI keeps running in the terminal host while Crew relaunches), so what it was started with
-// can be out of date.
-const TOKEN = '-H "X-Crew: $(cat "$CREW_HOME/token" 2>/dev/null)"'
+// can be out of date. Every workspace's agents talk to the one Crew, saying which workspace they're in (CREW_WORKSPACE,
+// none for the default: core/workspaces.js).
+const TOKEN = '-H "X-Crew: $(cat "$CREW_HOME/token" 2>/dev/null)" -H "X-Crew-Workspace: $CREW_WORKSPACE"'
 const HUB = (route) => `"$(cat "$CREW_HOME/url" 2>/dev/null)/${route}/$CREW_AGENT"`
+// The agent's workspace's folder for hook events Crew wasn't there to take (Hub.at('spool')).
+const SPOOL = '$CREW_HOME${CREW_WORKSPACE:+/workspaces/$CREW_WORKSPACE}/spool'
 // Every hook forwards its JSON payload to the crew hub, which turns it into status + feed entries. With Crew closed it
-// goes to CREW_HOME/spool, one line each, and Crew replays it when it's back (Hub.replaySpool).
-const HOOK = `p=$(cat); printf '%s' "$p" | curl -sf -m 2 -X POST ${TOKEN} --data-binary @- ${HUB('hook')} >/dev/null 2>&1 || { mkdir -p "$CREW_HOME/spool" && printf '%s\\n' "$(printf '%s' "$p" | tr '\\n' ' ')" >> "$CREW_HOME/spool/$CREW_AGENT.jsonl"; } 2>/dev/null || true`
+// goes to the spool, one line each, and Crew replays it when it's back (Hub.replaySpool).
+const HOOK = `p=$(cat); printf '%s' "$p" | curl -sf -m 2 -X POST ${TOKEN} --data-binary @- ${HUB('hook')} >/dev/null 2>&1 || { mkdir -p "${SPOOL}" && printf '%s\\n' "$(printf '%s' "$p" | tr '\\n' ' ')" >> "${SPOOL}/$CREW_AGENT.jsonl"; } 2>/dev/null || true`
 // Permission prompts, questions and plan approvals: the hook waits for your answer in the chat and prints it as
 // its decision. No answer (Crew gone, an error, handed to the terminal, time's up) prints nothing, and the agent
 // asks as usual. curl gives up 10 s before the agent would kill the hook, so the hook always ends cleanly.

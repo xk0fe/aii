@@ -1,9 +1,13 @@
 // Local HTTP API used by Claude Code hooks and the `crew` CLI. Plain-text in, plain-text out.
 // Every request needs the per-launch token, so web pages can't drive your agents.
 import http from 'node:http'
+import { DEFAULT } from './workspaces.js'
 
-export function serve(hub) {
-  const routes = {
+// Every workspace's agents come to the one server, and the X-Crew-Workspace header says which workspace's hub a request
+// is for (none: the default). `to` is a hub (the one there is) or { token, hubFor(workspace) }.
+export function serve(to) {
+  const hubFor = to.hubFor ? (id) => to.hubFor(id) : (id) => (id === DEFAULT ? to : null)
+  const routes = (hub) => ({
     hook: (q, body, name) => hub.onHook(name, JSON.parse(body || '{}')),
     send: (q, body) => hub.send({ from: q.from || 'you', to: q.to, text: body }),
     // `crew ask` and `crew wait`: held open until the answer comes (or ASK_HOLD), the answer is the reply
@@ -27,7 +31,7 @@ export function serve(hub) {
     bug: (q, body) => hub.taskCommand(q.from || 'you', body.split('\0').slice(0, -1)),
     // Claude Code's status line: how full the context is; the answer is the line it shows
     status: (q, body, name) => hub.onStatusLine(name, JSON.parse(body || '{}')),
-  }
+  })
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost')
@@ -35,12 +39,16 @@ export function serve(hub) {
     let body = ''
     for await (const chunk of req) body += chunk
     res.setHeader('content-type', 'text/plain; charset=utf-8')
-    if (req.headers['x-crew'] !== hub.token) return res.writeHead(403).end('bad token, is crew running?\n')
-    if (!Object.hasOwn(routes, route)) return res.writeHead(404).end('unknown command, try: crew help\n')
+    if (req.headers['x-crew'] !== to.token) return res.writeHead(403).end('bad token, is crew running?\n')
+    const ws = req.headers['x-crew-workspace'] || DEFAULT
+    const hub = hubFor(ws)
+    if (!hub) return res.writeHead(404).end(`there's no workspace "${ws}" in Crew any more\n`)
+    const api = routes(hub)
+    if (!Object.hasOwn(api, route)) return res.writeHead(404).end('unknown command, try: crew help\n')
     const closed = new AbortController()
     res.on('close', () => res.writableEnded || closed.abort())
     try {
-      res.end((await routes[route](Object.fromEntries(url.searchParams), body, arg, closed.signal)) ?? 'ok\n') // a send to another computer resolves later
+      res.end((await api[route](Object.fromEntries(url.searchParams), body, arg, closed.signal)) ?? 'ok\n') // a send to another computer resolves later
     } catch (e) {
       res.writeHead(400).end(`${e.message}\n`)
     }

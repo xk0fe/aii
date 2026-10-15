@@ -274,6 +274,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `run/pty.sock`, `run/pty.token`, `run/ptyhost.log`: the terminal host's socket (yours only), its key, and its log.
 - `runtime.json`: what Crew knows about each agent at work (what it's answering, its queue, its clones, questions between agents), so it can pick them up after a restart.
 - `spool/`: hook events agents sent while Crew was closed, replayed when it starts.
+- `workspaces/<id>/`: a workspace's own copies of the files about a project (`feed.jsonl`, `board.md`, `tickets.json`, `sessions.json`, `conversations.json`, `reads.json`, `stats.json`, `runtime.json`, `spool/` and `run/groups/`). The default workspace's are the ones above, in `~/.crew/` itself.
 
 ```json
 {
@@ -305,7 +306,8 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
 - `core/pill.js` places the floating pill's window: which side its chat opens on, keeping the pill where you left it, dragging, and tucking in against an edge.
 - `core/voice.js` runs voice input. It builds `native/crew-voice.swift` (Apple's on-device `DictationTranscriber`) into `dist/crew-voice` on first use, streams the chat window's microphone audio into it, and returns what it hears as live events.
 - `core/promptgen.js` drafts an agent's instructions headlessly with `claude -p` or `codex exec`, with no tools and nothing saved to your session history.
-- `core/hub.js` is the logic, with no Electron in it:
+- `core/workspaces.js` reads what each workspace is made of from `config.json`: its members and its own agents, each agent's folder and on/off there, and its settings. `core/config.js` reads and writes `config.json` for every workspace's hub at once.
+- `core/hub.js` is the logic for one workspace, with no Electron in it:
   - status from hooks (start → free, prompt → working, stop → free plus the reply into the feed);
   - questions: an agent's `PermissionRequest` hook (permission prompts, AskUserQuestion, plan approval) waits on the `/ask` route until you answer the card in the chat (`ask`, `answer`), and prints your answer as its decision;
   - inboxes, routing, the feed and notes;
@@ -313,12 +315,12 @@ To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.loca
   - clones: which of an agent and its clones takes a message (`placeFor`), starting and retiring them;
   - `update()`, the single edit path behind the editor and bulk edits.
 - `core/runner.js` owns the pseudo-terminals in Crew's own process; `core/ptyclient.js` is the same to the hub, with the terminals in the terminal host (`core/ptyhost.js`), a process of its own that outlives Crew. Crew connects to it over a Unix socket, and on start it adopts what's still running (`Hub.adopt`) and replays what the hooks spooled meanwhile (`Hub.replaySpool`).
-- `core/crew.js` is the crew across your computers: this computer's hub plus every linked computer's agents, merged into one list, with each action sent to the computer the agent runs on.
+- `core/crew.js` is the crew across your computers: a hub per workspace on this computer (all on one terminal runner, where `runner.js`'s `Scoped` names a workspace's terminals `workspace/agent`), plus every linked computer's agents, merged into one list, with each action sent to the computer the agent runs on.
 - `core/link.js` is the link itself: pairing codes, the TLS server, the client, and one symmetric connection either side can call over.
 - `core/pack.js` reads and writes agent packs (`.crew` files).
 - `core/tickets.js` is the Tasks board: tasks, their history, and the briefs that triage and working agents get.
 - `core/context.js` reads how full a conversation is, from Claude Code's status line or Codex's session log.
-- `core/server.js` is a tiny local HTTP API for the hooks and `bin/crew`. Every request needs a per-launch token. `/ask` holds the request open until you answer, and notices when the hook gives up; `/question` and `/wait` (`crew ask`, `crew wait`) do the same until a teammate answers. `/lease` is the file tools' check before they write.
+- `core/server.js` is a tiny local HTTP API for the hooks and `bin/crew`. Every request needs a per-launch token, and goes to the hub of the workspace its `X-Crew-Workspace` header names (an agent's `CREW_WORKSPACE`; none is the default). `/ask` holds the request open until you answer, and notices when the hook gives up; `/question` and `/wait` (`crew ask`, `crew wait`) do the same until a teammate answers. `/lease` is the file tools' check before they write.
 - `ui/` is plain HTML, CSS and JS with no build step. The main files:
   - `avatar.js` draws the creatures;
   - `voice.js` is dictation in the composer: the mic button, hold-to-talk, live text and the language switch (`voice-worklet.js` turns the microphone into 16 kHz audio);
