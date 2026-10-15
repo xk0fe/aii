@@ -46,6 +46,7 @@
 .tk-flow .ti { width: 15px; height: 15px; }
 .tk-flow-on { position: absolute; top: 6px; left: 20px; width: 6px; height: 6px; border-radius: 50%; background: var(--working); box-shadow: 0 0 0 2px var(--bg); opacity: 0; transform: scale(.4); transition: opacity .2s, transform .3s var(--spring); }
 .tk-flow.on .tk-flow-on { opacity: 1; transform: none; }
+.tk-more { padding: 0 8px; }
 
 /* ---- adding a task ---- */
 .tk-add { --k: var(--task); display: flex; align-items: flex-end; gap: 6px; margin: 12px 24px 0; padding: 6px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-sm); flex: none; transition: box-shadow .2s; }
@@ -196,6 +197,48 @@
 .tr .tk-owner { max-width: 96px; }
 .tr .tk-owner, .tr .tk-assign { justify-self: start; max-width: 120px; }
 .tr .tk-age { text-align: right; }
+
+/* ---- picking several (⌘-click, Shift-click, a lane's select-all) and the bar that acts on them all ---- */
+.tc-check, .tr-check { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-style: normal; color: transparent; background: var(--surface); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg3) 80%, transparent); cursor: pointer; transition: transform .3s cubic-bezier(.3, 1.7, .5, 1), background .15s, box-shadow .15s, color .15s; }
+.tc-check svg, .tr-check svg { width: 11px; height: 11px; stroke-width: 3.2; }
+/* on a card it takes the kind's place, top left, while some are picked */
+.tc-check { position: absolute; left: 11px; top: 10px; z-index: 1; transform: scale(0); }
+.picking .tc-check { transform: none; }
+.picking .tc-top > .ki { visibility: hidden; }
+.tc.picked.picked { box-shadow: 0 0 0 2px var(--accent), 0 8px 22px -14px color-mix(in srgb, var(--accent) 70%, #000); }
+.tc-check:hover, .tr-check:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.tc.picked .tc-check, .tr.picked .tr-check { background: var(--accent); box-shadow: none; color: #fff; }
+.tr-check { justify-self: center; }
+.tr.picked { background: color-mix(in srgb, var(--accent) 11%, transparent); }
+.tr.picked:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+/* a lane's select-all: there when you point at the lane, or once something is picked */
+.lane-pick { padding: 4px; color: var(--fg3); opacity: 0; transition: opacity .15s, color .15s; }
+.lane-pick .ti { width: 14px; height: 14px; }
+.lane:hover .lane-pick, .tl-group:hover .lane-pick, .picking .lane-pick, .lane-pick:focus-visible { opacity: 1; }
+.lane-pick.on { color: var(--accent); }
+.lane-act { align-items: center; gap: 2px; }
+/* a narrow lane (Done open, a small window) keeps Start's icon and count, so the header never runs into the next lane */
+.lane { container-type: inline-size; }
+@container (max-width: 250px) { .lane-word { display: none; } }
+.tk-bulk {
+  position: absolute; left: 50%; bottom: 20px; z-index: 7; display: none; align-items: center; gap: 5px; max-width: calc(100% - 48px);
+  padding: 6px 6px 6px 16px; border-radius: 999px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-lg); transform: translateX(-50%); white-space: nowrap;
+}
+.picking .tk-bulk { display: flex; animation: tk-bulk-in .45s var(--bounce); }
+@keyframes tk-bulk-in { from { opacity: 0; transform: translate(-50%, 26px) scale(.96); } }
+.panel-open .tk-bulk { left: calc(50% - 235px); }
+.tk-bulk-count { margin-right: 8px; font-size: 12.5px; font-weight: 600; color: var(--fg2); }
+.tk-bulk-count b { color: var(--fg); font-weight: 750; font-variant-numeric: tabular-nums; }
+.tk-bulk .tk-btn { height: 28px; padding: 0 11px; font-size: 12px; }
+.tk-bulk .tk-btn > .ti:last-child { width: 12px; height: 12px; margin-right: -3px; color: var(--fg3); }
+.tk-btn.danger { color: var(--danger); }
+.tk-btn.danger:hover { background: color-mix(in srgb, var(--danger) 13%, transparent); color: var(--danger); }
+.tk-bulk-x { padding: 6px; margin-left: 2px; color: var(--fg3); }
+.tk-bulk-x svg { width: 13px; height: 13px; }
+/* the toast steps up above the bar, and the lanes and list scroll clear of it */
+.picking .tk-toast { bottom: 76px; }
+.picking .lane-list { padding-bottom: 66px; }
+.picking .tk-list { padding-bottom: 76px; }
 
 /* ---- pop-up menus ---- */
 .tk-pop { position: fixed; z-index: 50; min-width: 190px; max-width: 340px; padding: 5px; border-radius: 13px; background: var(--surface); box-shadow: var(--shadow-lg); animation: pop-in .22s var(--out); }

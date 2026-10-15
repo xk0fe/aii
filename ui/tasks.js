@@ -50,6 +50,8 @@ const LIST = icon('<rect x="2" y="3" width="12" height="2.2" rx="1.1" fill="curr
 const PICTURE = icon('<rect x="2" y="3" width="12" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6.7" r="1.2" fill="currentColor"/><path d="M3 12l3.4-3.2 2.4 2 2.2-1.9L14 11.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>')
 const BACK = icon('<path d="M6.2 4.2 2.8 7.4l3.4 3.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.2 7.4h6.3a3.6 3.6 0 0 1 0 7.2H8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>')
 const CHEVRON = icon('<path d="M5.5 6.5L8 9l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>')
+const DOTS = icon('<circle cx="3.5" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="12.5" cy="8" r="1.4" fill="currentColor"/>')
+const PICK_ALL = icon('<rect x="2.2" y="2.2" width="11.6" height="11.6" rx="3.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.2 8.1l2 2 3.8-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>')
 
 function mountTasks(root, { onTerminal }) {
   root.innerHTML = `
@@ -60,6 +62,7 @@ function mountTasks(root, { onTerminal }) {
         <label class="tk-search">${SEARCH}<input type="search" placeholder="Search" spellcheck="false" data-search></label>
         <div class="seg tk-views"><button data-mode="board" title="Board">${BOARD}</button><button data-mode="list" title="List">${LIST}</button></div>
         <button class="tk-flow" data-flow title="Triage and Auto-start">${GEAR}<span>Workflow</span><i class="tk-flow-on"></i></button>
+        <button class="tk-flow tk-more" data-board-menu title="Select, close or clear many at once">${DOTS}</button>
       </header>
       <div class="tk-add">
         <button class="tk-kind" data-kind-pick title="Kind (click to change)"></button>
@@ -75,6 +78,7 @@ function mountTasks(root, { onTerminal }) {
         <div class="tk-list"></div>
         <div class="tk-empty"></div>
       </div>
+      <div class="tk-bulk"></div>
       <div class="tk-toast"></div>
     </section>
     <aside class="tp"></aside>`
@@ -90,6 +94,8 @@ function mountTasks(root, { onTerminal }) {
   let addKind = 'task'
   const filter = { q: '', kind: '', owner: '' }
   let selected = null // the open task's key
+  const picked = new Set() // tasks picked to act on all at once (⌘-click, Shift-click, a lane's select-all)
+  let anchor = null // the last one picked or let go: Shift-click picks from there
   let panelFor = null // the task the panel was built for
   let shots = null
   let sendingBack = false
@@ -127,7 +133,7 @@ function mountTasks(root, { onTerminal }) {
     pop = null
     document.removeEventListener('pointerdown', outside, true)
   }
-  const outside = (e) => pop && !pop.contains(e.target) && !e.target.closest('[data-flow], [data-menu], [data-kind-pick]') && closePop()
+  const outside = (e) => pop && !pop.contains(e.target) && !e.target.closest('[data-flow], [data-board-menu], [data-menu], [data-kind-pick]') && closePop()
   function openPop(anchor, html, { width } = {}) {
     closePop()
     pop = document.createElement('div')
@@ -266,6 +272,7 @@ function mountTasks(root, { onTerminal }) {
     draw()
   })
   $('[data-flow]').addEventListener('click', (e) => (pop ? closePop() : workflow(e.currentTarget)))
+  $('[data-board-menu]').addEventListener('click', (e) => (pop ? closePop() : boardMenu(e.currentTarget)))
   $('.tk-filters').addEventListener('click', (e) => {
     const f = e.target.closest('[data-filter]')
     if (!f) return
@@ -351,7 +358,8 @@ function mountTasks(root, { onTerminal }) {
     const doing = s && s.cls === 'working' && s.shimmer ? `<div class="tk-doing"><span class="shimmer">${esc(s.text)}</span></div>` : ''
     const summary = t.fix && (t.status === 'check' || t.status === 'done') ? `<p class="tk-summary"><i class="tk-done-mark">${ICONS.check}</i>${esc(snippet(t.fix))}</p>` : ''
     const c = agent(t.fixer ?? t.owner)
-    return `<article class="tc st-${t.status} kind-${t.kind} pr-${t.severity}${selected === t.key ? ' sel' : ''}" data-name="${esc(t.key)}" draggable="true" style="--c:${c ? agentColor(c) : 'var(--fg3)'}">
+    return `<article class="tc st-${t.status} kind-${t.kind} pr-${t.severity}${selected === t.key ? ' sel' : ''}${picked.has(t.key) ? ' picked' : ''}" data-name="${esc(t.key)}" draggable="true" style="--c:${c ? agentColor(c) : 'var(--fg3)'}">
+      <i class="tc-check" data-pick title="${picked.has(t.key) ? 'Let go' : 'Pick'} (⌘-click)">${ICONS.check}</i>
       <div class="tc-top">${KIND_ICON[t.kind]}<span class="tk-id">#${t.id}</span>${pills(t)}<span class="grow"></span><button class="tk-prio" data-menu="priority" title="${PRIORITY_LABEL[t.severity]} priority">${PRIORITY_ICON[t.severity]}</button></div>
       <div class="tc-title">${esc(t.title)}</div>
       ${pics}${doing}${summary}
@@ -368,8 +376,10 @@ function mountTasks(root, { onTerminal }) {
       : t.status === 'fixing' ? `${contextRing(worker(t) ?? {}, { label: false })}<span class="tk-state ${s.cls}"><i class="dot ${s.cls === 'queued' ? 'idle' : s.cls}"></i>${esc(s.since ?? s.text)}</span>`
       : t.status === 'check' ? `<button class="tk-btn only" data-act="sendBack" title="Send back">${BACK}</button><button class="tk-btn good" data-act="accept">${ICONS.check}Accept</button>`
       : ''
-    return `<div class="tr st-${t.status}${selected === t.key ? ' sel' : ''}" data-name="${esc(t.key)}" draggable="true">
-      <button class="tk-prio" data-menu="priority" title="${PRIORITY_LABEL[t.severity]} priority">${PRIORITY_ICON[t.severity]}</button>
+    // while some are picked, each row leads with its check instead of its priority
+    const lead = picked.size ? `<i class="tr-check" data-pick title="${picked.has(t.key) ? 'Let go' : 'Pick'}">${ICONS.check}</i>` : `<button class="tk-prio" data-menu="priority" title="${PRIORITY_LABEL[t.severity]} priority">${PRIORITY_ICON[t.severity]}</button>`
+    return `<div class="tr st-${t.status}${selected === t.key ? ' sel' : ''}${picked.has(t.key) ? ' picked' : ''}" data-name="${esc(t.key)}" draggable="true">
+      ${lead}
       <span class="tk-id">#${t.id}</span>${KIND_ICON[t.kind]}
       <span class="tr-title"><span class="tr-name">${esc(t.title)}</span>${pills(t)}${t.images.length ? `<span class="tr-pics" title="${t.images.length} screenshot${t.images.length > 1 ? 's' : ''}">${PICTURE}${t.images.length}</span>` : ''}${t.status === 'fixing' && s.shimmer ? `<small class="shimmer">${esc(s.text)}</small>` : t.fix && t.status !== 'new' ? `<small>${esc(snippet(t.fix))}</small>` : ''}</span>
       <span class="tr-right">${right}</span>
@@ -388,13 +398,20 @@ function mountTasks(root, { onTerminal }) {
   }
   const grouped = () => Object.fromEntries(STATUS.map((s) => [s.id, tickets.filter((t) => t.status === s.id && matches(t)).sort(order[s.id])]))
 
+  // The tasks a lane shows (Done stops at DONE_SHOWN until you ask for more).
+  const shownIn = (status, list) => (status === 'done' && !showAllDone ? list.slice(0, DONE_SHOWN) : list)
+
   function laneAct(status, list) {
+    // select all it shows, or let them all go again (a folded Done lane is just its title)
+    const shown = shownIn(status, list)
+    const all = shown.length && shown.every((t) => picked.has(t.key))
+    const pickAll = shown.length && (status !== 'done' || doneOpen) ? `<button class="icon lane-pick ${all ? 'on' : ''}" data-act="pick-lane" title="${all ? 'Let these go' : `Select all ${shown.length}`}">${PICK_ALL}</button>` : ''
     if (status === 'new') {
       const ready = list.filter((t) => t.owner && !ownerOff(t))
-      return ready.length > 1 ? `<button class="tk-btn go" data-act="start-all" title="Start all ${ready.length}, each in a new conversation">${ICONS.fresh}Start ${ready.length}</button>` : ''
+      return pickAll + (ready.length > 1 ? `<button class="tk-btn go" data-act="start-all" title="Start all ${ready.length}, each in a new conversation">${ICONS.fresh}<span class="lane-word">Start </span>${ready.length}</button>` : '')
     }
-    if (status === 'done') return `<button class="icon tk-fold" data-act="fold-done" title="${doneOpen ? 'Fold Done away' : 'Show Done'}">${CHEVRON}</button>`
-    return ''
+    if (status === 'done') return `${pickAll}<button class="icon tk-fold" data-act="fold-done" title="${doneOpen ? 'Fold Done away' : 'Show Done'}">${CHEVRON}</button>`
+    return pickAll
   }
 
   function drawBoard(by) {
@@ -437,7 +454,10 @@ function mountTasks(root, { onTerminal }) {
     const before = new Map([...root.querySelectorAll('.tc, .tr')].map((el) => [el.dataset.name, el.getBoundingClientRect()]))
     root.classList.toggle('mode-list', mode === 'list')
     segmented($('.tk-views'), (b) => b.dataset.mode === mode)
+    for (const key of picked) if (!ticket(key)) picked.delete(key) // deleted, or gone from the board
+    root.classList.toggle('picking', picked.size > 0)
     drawFilters()
+    drawBulk()
     const shown = Object.values(by).flat().length
     const none = !tickets.length
     morph($('.tk-empty'), none ? `<div class="tk-hello">${ICONS.mark}<b>No tasks yet</b><span>Add one above, or from the chat with the Task chip.</span></div>`
@@ -473,6 +493,95 @@ function mountTasks(root, { onTerminal }) {
     $('[data-flow]').title = `Triage: ${state.tasks.triage ? `@${state.tasks.triage}` : 'nobody'} · Auto-start: ${state.tasks.autofix ? 'on' : 'off'}`
   }
 
+  // ---- picking several tasks, and the bar that acts on all of them at once ----------------------------
+
+  // The tasks on screen right now, in the order they're shown (lane by lane on the board).
+  const onScreen = () => [...root.querySelectorAll(mode === 'board' ? '.tk-board .tc' : '.tk-list .tr')].map((el) => el.dataset.name)
+
+  // ⌘-click picks a task or lets it go; Shift-click picks every task from the last one picked to this one.
+  function pickTask(key, range = false) {
+    const keys = onScreen()
+    const [i, j] = [keys.indexOf(anchor), keys.indexOf(key)]
+    if (range && i >= 0 && j >= 0) for (const k of keys.slice(Math.min(i, j), Math.max(i, j) + 1)) picked.add(k)
+    else picked.has(key) ? picked.delete(key) : picked.add(key)
+    anchor = key
+    draw()
+  }
+  // A lane's select-all: picks what it shows, or lets them all go if they're all picked already.
+  function pickAll(keys, toggle = true) {
+    const all = toggle && keys.length && keys.every((k) => picked.has(k))
+    for (const k of keys) all ? picked.delete(k) : picked.add(k)
+    draw()
+  }
+  function unpick() {
+    picked.clear()
+    anchor = null
+    closePop()
+    draw()
+  }
+
+  // One call for all of them (see Hub.bulk), and one line in the chat. What's left picked after it: the ones you
+  // may want to change some more (a new owner, a priority); the rest have moved on.
+  async function bulk(op, keys, arg, { keep = false } = {}) {
+    const out = (await call('bulk', null, { op, keys, arg }).catch(() => null))?.trim()
+    if (out) toast(out.charAt(0).toUpperCase() + out.slice(1).replace(/\n/g, ' · '))
+    if (!keep) unpick()
+  }
+
+  function drawBulk() {
+    const list = [...picked].map(ticket).filter(Boolean)
+    if (!list.length) return morph($('.tk-bulk'), '')
+    const open = list.filter((t) => t.status !== 'done')
+    const ready = list.filter((t) => t.status === 'new' && t.owner && !ownerOff(t))
+    const moves = STATUS.filter((s) => s.id !== 'fixing' && list.some((t) => t.status !== s.id && (s.id !== 'check' || t.status !== 'done')))
+    morph($('.tk-bulk'), `<span class="tk-bulk-count"><b>${list.length}</b> selected</span>` +
+      (ready.length ? `<button class="tk-btn go" data-bulk="start" title="Hand each to its owner, in a new conversation">${ICONS.fresh}Start ${ready.length}</button>` : '') +
+      (open.length ? `<button class="tk-btn" data-bulk="owner">Assign${CHEVRON}</button><button class="tk-btn" data-bulk="priority">Priority${CHEVRON}</button>` : '') +
+      (moves.length ? `<button class="tk-btn" data-bulk="move">Move to${CHEVRON}</button>` : '') +
+      (open.length ? `<button class="tk-btn" data-bulk="close" title="Move ${open.length > 1 ? 'them' : 'it'} to Done">${ICONS.check}Close ${open.length}</button>` : '') +
+      `<button class="tk-btn danger" data-bulk="remove">Delete</button>` +
+      `<button class="icon tk-bulk-x" data-bulk="unpick" title="Let them go (Esc)">${ICONS.close}</button>`)
+  }
+
+  $('.tk-bulk').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-bulk]')
+    if (!b) return
+    const list = [...picked].map(ticket).filter(Boolean)
+    const open = list.filter((t) => t.status !== 'done')
+    const keys = (ts) => ts.map((t) => t.key)
+    // what they all share, if they do (a menu marks it); undefined when they differ
+    const same = (f) => (new Set(open.map(f)).size === 1 ? f(open[0]) : undefined)
+    const op = b.dataset.bulk
+    if (op === 'unpick') return unpick()
+    if (op === 'start') return bulk('start', keys(list.filter((t) => t.status === 'new' && t.owner && !ownerOff(t))))
+    if (op === 'close') return bulk('close', keys(open))
+    if (op === 'remove') return confirm(`Delete ${list.length > 1 ? `these ${list.length} tasks` : `#${list[0].id}`}? ${list.length > 1 ? "They're" : "It's"} gone for good.`) && bulk('remove', keys(list))
+    if (op === 'owner') return menu(b, ownerItems(same((t) => t.owner ?? '') ?? ':mixed'), (v) => bulk('owner', keys(open), v, { keep: true }))
+    if (op === 'priority') return menu(b, priorityItems({ severity: same((t) => t.severity) }), (v) => bulk('priority', keys(open), v, { keep: true }))
+    if (op === 'move') {
+      const items = STATUS.filter((s) => s.id !== 'fixing' && list.some((t) => t.status !== s.id && (s.id !== 'check' || t.status !== 'done')))
+      return menu(b, items.map((s) => ({ value: s.id, label: s.label, icon: STATUS_ICON[s.id] })), (v) => bulk('move', keys(list), v))
+    }
+  })
+
+  // The header's ⋯: pick everything shown, or clear the board in one go (work you finished somewhere else).
+  function boardMenu(anchor) {
+    const filtered = Boolean(filter.kind || filter.owner || filter.q)
+    const open = tickets.filter((t) => t.status !== 'done' && (!filtered || matches(t)))
+    const done = tickets.filter((t) => t.status === 'done')
+    const shown = onScreen()
+    menu(anchor, [
+      ...(shown.length ? [{ value: 'pick', label: 'Select all shown', hint: '⌘A', icon: PICK_ALL }] : []),
+      ...(open.length ? [{ value: 'close', label: filtered ? `Close the ${open.length} open shown` : `Close all ${open.length} open`, hint: 'to Done', icon: STATUS_ICON.done }] : []),
+      ...(done.length ? [{ value: 'clear', label: 'Clear Done', hint: 'deletes them', icon: `<span class="danger-ico">${ICONS.close}</span>` }] : []),
+    ], (v) => {
+      if (v === 'pick') pickAll(shown, false)
+      if (v === 'close' && confirm(`Close ${open.length > 1 ? `all ${open.length} open tasks${filtered ? ' shown' : ''}` : `#${open[0].id}`}? ${open.length > 1 ? 'They move' : 'It moves'} to Done.`)) bulk('close', open.map((t) => t.key))
+      // every task in Done goes, on every computer with some there (older ones beyond what the board shows too)
+      if (v === 'clear' && confirm("Delete every task in Done? They're gone for good.")) bulk('clear', done.map((t) => t.key))
+    })
+  }
+
   // ---- dragging between lanes (or list groups) -----------------------------------------------------
 
   root.addEventListener('dragstart', (e) => {
@@ -500,6 +609,8 @@ function mountTasks(root, { onTerminal }) {
       el.classList.remove('over')
       if (!key) return
       e.preventDefault()
+      // one of several picked: they all go (to In progress, the ones that can start)
+      if (picked.has(key) && picked.size > 1) return void bulk(status === 'fixing' ? 'start' : 'move', [...picked], status)
       const t = ticket(key)
       if (t) move(t, status)
     })
@@ -512,16 +623,18 @@ function mountTasks(root, { onTerminal }) {
     if (f) return void (Object.assign(filter, { kind: '', owner: '', q: '' }), ($('[data-search]').value = ''), draw())
     const item = e.target.closest('.tc, .tr')
     const t = item && ticket(item.dataset.name)
+    // ⌘/Ctrl-click or Shift-click picks it (its check does too, while some are picked); a plain click opens it
+    if (t && (e.metaKey || e.ctrlKey || e.shiftKey || e.target.closest('[data-pick]'))) return pickTask(t.key, e.shiftKey)
     const m = e.target.closest('[data-menu]')
     if (m && t) return pick(t, m.dataset.menu, m)
     const act = e.target.closest('[data-act]')?.dataset.act
     if (act === 'more') return void ((showAllDone = true), draw())
     if (act === 'fold-done') return void ((doneOpen = !doneOpen), store.set('crew.tasks.done', doneOpen ? '1' : '0'), draw())
-    if (act === 'start-all') {
-      const ready = tickets.filter((x) => x.status === 'new' && x.owner && !ownerOff(x) && matches(x))
-      for (const x of ready) await call('dispatch', x.key).catch(() => {})
-      return toast(`Started ${ready.length}, each in its own conversation`)
+    if (act === 'pick-lane') {
+      const lane = e.target.closest('[data-lane]').dataset.lane
+      return pickAll(shownIn(lane, grouped()[lane]).map((x) => x.key))
     }
+    if (act === 'start-all') return bulk('start', tickets.filter((x) => x.status === 'new' && x.owner && !ownerOff(x) && matches(x)).map((x) => x.key), null, { keep: true })
     if (act && t) {
       if (act === 'start') {
         bounce(item.querySelector('.av'), 'pop')
@@ -796,6 +909,12 @@ function mountTasks(root, { onTerminal }) {
     if (!root.offsetParent) return
     if (e.key === 'Escape' && pop) return closePop()
     if (e.key === 'Escape' && selected && !e.target.matches?.('.tp-details')) return close()
+    if (e.key === 'Escape' && picked.size) return unpick()
+    // ⌘A outside a text field: pick every task shown
+    if (e.key === 'a' && (e.metaKey || e.ctrlKey) && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) {
+      e.preventDefault()
+      return pickAll(onScreen(), false)
+    }
     // "/" or "n": add a task, like a search box
     if ((e.key === '/' || e.key === 'n') && !e.metaKey && !e.ctrlKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) {
       e.preventDefault()

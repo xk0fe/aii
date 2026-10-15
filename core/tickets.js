@@ -10,7 +10,7 @@ export const KINDS = ['task', 'bug', 'feature']
 export const SEVERITIES = ['blocker', 'high', 'normal', 'low']
 const PRIORITY = { urgent: 'blocker', blocker: 'blocker', high: 'high', medium: 'normal', normal: 'normal', low: 'low' }
 export const priorityOf = (word) => PRIORITY[String(word ?? '').toLowerCase()]
-const PRIORITY_NAME = { blocker: 'urgent', high: 'high', normal: 'medium', low: 'low' }
+export const PRIORITY_NAME = { blocker: 'urgent', high: 'high', normal: 'medium', low: 'low' }
 const KEEP_DONE = 200 // older done tickets are dropped
 
 // "Jump does nothing after pause. Happens every time on level 2" -> a title and the rest as the body.
@@ -38,7 +38,19 @@ export class Tickets {
     for (const t of this.all) t.kind ??= 'bug' // the board started out as Bugs
   }
 
+  // Many changes, one write: a bulk action on the board. fn may be async (starting tasks sends them on).
+  async batch(fn) {
+    this.holding = (this.holding ?? 0) + 1
+    try {
+      return await fn()
+    } finally {
+      if (!--this.holding && this.dirty) this.save()
+    }
+  }
+
   save() {
+    if (this.holding) return void (this.dirty = true)
+    this.dirty = false
     const done = this.all.filter((t) => t.status === 'done')
     if (done.length > KEEP_DONE) {
       const drop = new Set(done.sort((x, y) => x.updated - y.updated).slice(0, done.length - KEEP_DONE))

@@ -176,6 +176,8 @@ Handing an agent task after task fills one conversation with unrelated work, and
 
 **Board or list**, filtered by kind, by owner (their creatures above the board) or by search. **Done** folds into a slim column; click it to open. Open a task to change its status, priority, kind or owner from their menus, edit the title and description (Markdown), add attachments and notes, mark it the same as another task, and follow everything that happened to it. The feed shows each step as one line; click it to open the task. Tasks added on a linked computer show up too, marked with that computer.
 
+**Many at once.** `⌘`-click tasks to pick them, `Shift`-click to pick a run of them, or use the select-all at the top of a column (`⌘A` picks everything shown). A bar at the bottom acts on all of them: **Start** (each owned one in its own new conversation), **Assign**, **Priority**, **Move to**, **Close** and **Delete**. Dragging one of them drags them all. `Esc` lets them go. For work you finished somewhere else, the **⋯** at the top closes every open task in one go, and **Clear Done** deletes everything in Done. Either way the chat gets one line ("You closed 23 tasks"), not one per task, and tasks on a linked computer are changed there.
+
 Agents can use the board themselves:
 
 ```

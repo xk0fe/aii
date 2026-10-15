@@ -1,0 +1,175 @@
+// Bulk actions on the Tasks board, against the real Hub with a fake runner in a throwaway CREW_HOME: many tasks
+// changed in one write with one line in the chat, Start handing each to its owner in a new conversation, Clear Done,
+// and a bulk action split by the computer each task lives on (an older Crew gets them one at a time). Run with
+// `npm test`.
+import { test, beforeEach, afterEach, after } from 'node:test'
+import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-bulk-'))
+const { Hub, CONFIG } = await import('../core/hub.js')
+const { Crew } = await import('../core/crew.js')
+
+const CREW = [
+  { name: 'david', area: 'game client: controls, input, pause menu, UI screens' },
+  { name: 'joseph', area: 'backend api, servers, leaderboards' },
+]
+
+class FakeRunner extends EventEmitter {
+  live = new Set()
+  typed = []
+  starts = []
+  running = (n) => this.live.has(n)
+  start = (n) => (this.starts.push(n), this.live.add(n))
+  stop = (n) => this.live.delete(n)
+  submit = (n, text) => this.typed.push({ n, text })
+  write() {}
+}
+
+let hub, runner
+beforeEach(() => {
+  for (const f of ['tickets.json', 'conversations.json', 'sessions.json', 'feed.jsonl']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW }))
+  runner = new FakeRunner()
+  hub = new Hub(runner, { bin: '/nonexistent' })
+  for (const a of hub.agents.values()) (runner.live.add(a.name), (a.status = 'idle'))
+})
+afterEach(() => {
+  for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer), clearTimeout(a.readyTimer)
+  clearTimeout(hub.statsTimer)
+  clearTimeout(hub.convoTimer)
+})
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+
+// A task on the board, with its owner and where it stands: its number.
+const add = (text, { owner, status = 'new', kind = 'task', on = hub } = {}) => {
+  on.fileTask({ text, kind, owner })
+  const t = on.tickets.all.at(-1)
+  if (status !== 'new') on.tickets.move(t.id, status, 'you')
+  return t.id
+}
+const task = (id) => hub.tickets.all.find((t) => t.id === id)
+const bulkLines = () => hub.feed.filter((e) => e.kind === 'task' && e.act === 'bulk')
+const linesAfter = (n) => hub.feed.slice(n).filter((e) => e.kind === 'task')
+
+// How many times tickets.json is written while fn runs.
+async function writesDuring(fn) {
+  const file = path.join(process.env.CREW_HOME, 'tickets.json')
+  const real = fs.writeFileSync
+  let n = 0
+  fs.writeFileSync = (f, ...rest) => ((f === file && n++), real.call(fs, f, ...rest))
+  try {
+    await fn()
+  } finally {
+    fs.writeFileSync = real
+  }
+  return n
+}
+
+test('closing many tasks is one write and one line in the chat; one already closed is left alone', async () => {
+  const ids = [add('Pause menu overlaps', { owner: 'david' }), add('Leaderboard is slow', { owner: 'joseph', status: 'fixing' }), add('Rename Volumn', { status: 'check' }), add('Old one', { status: 'done' })]
+  const before = hub.feed.length
+  let out
+  assert.equal(await writesDuring(async () => (out = await hub.bulk('close', ids.map(String)))), 1)
+  assert.equal(out, 'closed 3 tasks\n')
+  assert.deepEqual(ids.map((id) => task(id).status), ['done', 'done', 'done', 'done'])
+  assert.equal(task(ids[0]).log.at(-1).text, 'closed it')
+  assert.equal(task(ids[2]).log.at(-1).text, 'accepted it', 'one waiting for review is accepted')
+  const lines = linesAfter(before)
+  assert.equal(lines.length, 1, 'not one line per task')
+  assert.deepEqual([lines[0].act, lines[0].from, lines[0].text, lines[0].count], ['bulk', 'you', 'closed 3 tasks', 3])
+})
+
+test('bulk Start hands each owned task to its owner in a new conversation, with one line for all of them', async () => {
+  const mine = add('Pause menu overlaps', { owner: 'david' })
+  const theirs = add('Leaderboard is slow', { owner: 'joseph' })
+  const nobody = add('Daily challenge')
+  const review = add('Rename Volumn', { owner: 'david', status: 'check' })
+  const before = hub.feed.length
+  let out
+  const writes = await writesDuring(async () => (out = await hub.bulk('start', [mine, theirs, nobody, review].map(String))))
+  assert.equal(writes, 1)
+  assert.match(out, /^started 2 tasks, each in a new conversation\n$/)
+  assert.deepEqual([task(mine).status, task(theirs).status, task(nobody).status, task(review).status], ['fixing', 'fixing', 'new', 'check'])
+  assert.deepEqual([task(mine).fixer, task(theirs).fixer], ['david', 'joseph'])
+  // each went as a message of its own, for a new conversation, and each agent started one
+  const sent = hub.feed.slice(before).filter((e) => e.kind === 'msg' && e.ticket !== undefined)
+  assert.deepEqual(sent.map((e) => [e.to, e.ticket, Boolean(e.fresh)]), [['david', mine, true], ['joseph', theirs, true]])
+  assert.deepEqual(runner.starts.sort(), ['david', 'joseph'])
+  // the chat: one line for the lot, none of the single "went to @david" ones
+  const lines = linesAfter(before)
+  assert.deepEqual(lines.map((e) => e.act), ['bulk'])
+  assert.equal(lines[0].text, 'started 2 tasks, each in a new conversation')
+})
+
+test('a task Start can not hand on is left in To do, and the answer says why', async () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [CREW[0], { ...CREW[1], off: true }] }))
+  hub.loadConfig()
+  const ok = add('Pause menu overlaps', { owner: 'david' })
+  const off = add('Leaderboard is slow', { owner: 'joseph' })
+  const out = await hub.bulk('start', [ok, off])
+  assert.match(out, /^started 1 task, each in a new conversation\n/)
+  assert.match(out, new RegExp(`#${off}: .*turned off`))
+  assert.deepEqual([task(ok).status, task(off).status], ['fixing', 'new'])
+})
+
+test('owner, priority and moves change only the tasks they apply to; nothing to change says so', async () => {
+  const a = add('Pause menu overlaps', { owner: 'david' })
+  const b = add('Daily challenge')
+  const c = add('Old one', { owner: 'david', status: 'done' })
+  assert.equal(await hub.bulk('owner', [a, b, c], 'joseph'), 'gave 2 tasks to @joseph\n', 'a closed task keeps its owner')
+  assert.deepEqual([task(a).owner, task(b).owner, task(c).owner], ['joseph', 'joseph', 'david'])
+  assert.equal(await hub.bulk('owner', [a, b], 'joseph'), 'nothing to change\n')
+  assert.equal(await hub.bulk('owner', [a], ''), 'unassigned 1 task\n')
+  assert.equal(task(a).owner, null)
+  assert.equal(await hub.bulk('priority', [a, b, c], 'urgent'), 'made 2 tasks urgent priority\n')
+  assert.deepEqual([task(a).severity, task(b).severity, task(c).severity], ['blocker', 'blocker', 'normal'])
+  await assert.rejects(hub.bulk('priority', [a], 'whenever'), /priority is one of/)
+  assert.equal(await hub.bulk('move', [a, b, c], 'check'), 'moved 2 tasks to Review\n', 'a closed one stays closed')
+  assert.equal(await hub.bulk('move', [a, b, c], 'new'), 'moved 3 tasks to To do\n')
+  assert.equal(await hub.bulk('move', [a], 'done'), 'closed 1 task\n')
+  assert.equal(bulkLines().length, 6, 'one line for each bulk action that changed something')
+})
+
+test('delete takes the picked tasks; Clear Done takes every done task, picked or not', async () => {
+  const open = add('Pause menu overlaps', { owner: 'david' })
+  const gone = add('Daily challenge')
+  const done = [add('One', { status: 'done' }), add('Two', { status: 'done' }), add('Three', { status: 'done' })]
+  assert.equal(await hub.bulk('remove', [gone, 999]), 'deleted 1 task\n', 'a task already gone is skipped')
+  assert.equal(task(gone), undefined)
+  assert.equal(await hub.bulk('clear', [done[0]]), 'cleared 3 done tasks\n')
+  assert.deepEqual(hub.tickets.all.map((t) => t.id), [open])
+  assert.equal(await hub.bulk('clear', []), 'nothing to change\n')
+})
+
+test('a bulk action goes to each computer with its own tasks; an older Crew gets them one at a time', async () => {
+  const crew = new Crew({ bin: '/nonexistent', computerName: 'Studio' })
+  const here = add('Pause menu overlaps', { owner: 'david', on: crew.hub })
+  const calls = []
+  crew.links.set('air', { slug: 'air', name: 'Air', peer: { call: async (fn, args) => (calls.push([fn, args]), fn === 'bulk' ? `closed ${args[1].length} tasks\n` : undefined) } })
+  crew.links.set('old', {
+    slug: 'old', name: 'Old Mac',
+    peer: { call: async (fn, args) => {
+      calls.push([fn, args])
+      if (fn === 'bulk') throw new Error('"bulk" isn\'t available over Crew Link')
+    } },
+  })
+  crew.links.set('gone', { slug: 'gone', name: 'Gone', peer: null })
+  const out = await crew.ticket('bulk', null, { op: 'close', keys: [`${here}@studio`, '7@air', '8@air', '3@old', '4@old', '5@gone'] })
+  assert.equal(out, "closed 1 task\non Air: closed 2 tasks\non Old Mac: 2 of 2 done one at a time (it runs an older Crew)\n1 on Gone left as they were: it's unreachable right now\n")
+  assert.equal(crew.hub.tickets.all.find((t) => t.id === here).status, 'done')
+  assert.deepEqual(calls, [
+    ['bulk', ['close', ['7', '8'], undefined]],
+    ['bulk', ['close', ['3', '4'], undefined]],
+    ['ticket', ['accept', '3', undefined]],
+    ['ticket', ['accept', '4', undefined]],
+  ])
+  // an owner, as the other computer names it: ours with @this-computer, its own bare
+  calls.length = 0
+  await crew.ticket('bulk', null, { op: 'owner', keys: ['7@air'], arg: 'david' })
+  await crew.ticket('bulk', null, { op: 'owner', keys: ['7@air'], arg: 'ann@air' })
+  assert.deepEqual(calls.map(([, args]) => args[2]), ['david@studio', 'ann'])
+})

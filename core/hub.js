@@ -7,7 +7,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
-import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf } from './tickets.js'
+import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, LIMITS } from './context.js'
 import { callResult } from './transcript.js'
 
@@ -1796,8 +1796,9 @@ export class Hub extends EventEmitter {
 
   // A task goes to its owner in a fresh conversation with just this task in it. If the owner is still in the
   // conversation where it worked on this task, "send back" goes there, with everything it already tried.
+  // quiet: no line in the chat for it (a bulk Start posts one for all of them).
   async dispatch(id, opts) {
-    const { to, note } = opts ?? {} // over Crew Link a missing argument arrives as null
+    const { to, note, quiet } = opts ?? {} // over Crew Link a missing argument arrives as null
     const t = this.tickets.get(id)
     const owner = this.agentName(to || t.owner || ownerFor(`${t.title} ${t.body}`, this.teammates().filter((a) => !t.declined?.includes(this.baseOf(a.name))))?.name)
     if (!owner) throw new Error(`who should fix #${t.id}? Pick an owner first`)
@@ -1813,7 +1814,7 @@ export class Hub extends EventEmitter {
     if (owner !== t.owner) this.tickets.edit(t.id, { owner }, 'you')
     t.fixer = owner
     this.tickets.move(t.id, 'fixing', 'you', again ? `sent it back to @${owner}` : `sent it to @${owner}, in a new conversation`)
-    this.postTask(t, 'you', 'fixing', owner)
+    if (!quiet) this.postTask(t, 'you', 'fixing', owner)
     return out
   }
 
@@ -2069,6 +2070,78 @@ export class Hub extends EventEmitter {
         return void this.tickets.remove(t.id)
     }
     throw new Error(`unknown task action "${op}"`)
+  }
+
+  // A bulk action from the board, on many tasks at once (`ids` as this computer numbers them): one write to the board
+  // and one line in the chat for all of them ("closed 23 tasks"), not one each. A task it doesn't apply to (closing one
+  // that's closed already) is left as it is. op: start, close, move (arg: new, check or done), owner (arg: a name, ''
+  // for nobody), priority (arg: urgent, high, medium, low), remove, and clear: every task in Done goes, picked or not.
+  async bulk(op, ids, arg) {
+    if (op === 'move' && arg === 'done') op = 'close'
+    if (op === 'move' && arg === 'fixing') op = 'start'
+    if (op === 'move' && arg !== 'new' && arg !== 'check') throw new Error('move them to new, check or done')
+    const picked = [].concat(ids ?? []).map((id) => this.tickets.all.find((t) => t.id === Number(String(id).replace(/^#/, '')))).filter(Boolean)
+    const open = picked.filter((t) => t.status !== 'done')
+    const plural = (n, what = 'task') => `${n} ${what}${n === 1 ? '' : 's'}`
+    const changed = []
+    let said = ''
+    let out = ''
+    await this.tickets.batch(async () => {
+      switch (op) {
+        case 'start':
+          // each in a new conversation of its own, as Start does it: only the line in the chat is shared
+          for (const t of picked.filter((x) => x.status === 'new' && x.owner)) {
+            try {
+              await this.dispatch(t.id, { quiet: true })
+              changed.push(t)
+            } catch (e) {
+              out += `#${t.id}: ${e.message}\n`
+            }
+          }
+          said = `started ${plural(changed.length)}, each in a new conversation`
+          break
+        case 'close':
+          changed.push(...open)
+          for (const t of open) this.tickets.move(t.id, 'done', 'you', t.status !== 'check' ? 'closed it' : t.kind === 'bug' ? 'checked it: works' : 'accepted it')
+          said = `closed ${plural(changed.length)}`
+          break
+        case 'move':
+          changed.push(...(arg === 'new' ? picked.filter((t) => t.status !== 'new') : open.filter((t) => t.status !== 'check')))
+          for (const t of changed) this.tickets.move(t.id, arg, 'you', arg === 'check' ? 'marked it done' : 'moved it back to To do')
+          said = `moved ${plural(changed.length)} to ${arg === 'check' ? 'Review' : 'To do'}`
+          break
+        case 'owner': {
+          const owner = arg ? this.agentName(arg) : ''
+          changed.push(...open.filter((t) => (t.owner ?? '') !== owner))
+          for (const t of changed) this.tickets.edit(t.id, { owner }, 'you')
+          said = owner ? `gave ${plural(changed.length)} to @${owner}` : `unassigned ${plural(changed.length)}`
+          break
+        }
+        case 'priority': {
+          const severity = priorityOf(arg)
+          if (!severity) throw new Error('priority is one of: urgent, high, medium, low')
+          changed.push(...open.filter((t) => t.severity !== severity))
+          for (const t of changed) this.tickets.edit(t.id, { severity }, 'you')
+          said = `made ${plural(changed.length)} ${PRIORITY_NAME[severity]} priority`
+          break
+        }
+        case 'remove':
+          changed.push(...picked)
+          for (const t of picked) this.tickets.remove(t.id)
+          said = `deleted ${plural(changed.length)}`
+          break
+        case 'clear':
+          changed.push(...this.tickets.all.filter((t) => t.status === 'done'))
+          for (const t of changed) this.tickets.remove(t.id)
+          said = `cleared ${plural(changed.length, 'done task')}`
+          break
+        default:
+          throw new Error(`unknown bulk action "${op}"`)
+      }
+    })
+    if (!changed.length) return out || 'nothing to change\n'
+    this.post({ kind: 'task', type: 'task', act: 'bulk', from: 'you', text: said, count: changed.length })
+    return `${said}\n${out}`
   }
 
   setTaskSettings({ triage, autofix }) {

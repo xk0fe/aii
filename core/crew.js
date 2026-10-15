@@ -301,11 +301,58 @@ export class Crew extends EventEmitter {
   // A Tasks board action. A task lives on the computer it was added on: 12@air is #12 on Air.
   async ticket(op, key, arg) {
     if (op === 'file') return this.hub.fileTask(arg)
+    if (op === 'bulk') return this.bulkTickets(arg)
     const { l, base } = this.where(String(key))
     if (!l) return this.hub.ticket(op, base, arg)
     if (arg?.owner) arg = { ...arg, owner: this.qualifierFor(l)(arg.owner) }
     if (arg?.images) arg = { ...arg, images: await this.toHome(arg.images, l) } // screenshots live with the bug
     return l.peer.call('ticket', [op, base, op === 'dispatch' && arg?.to ? { ...arg, to: this.qualifierFor(l)(arg.to) } : arg])
+  }
+
+  // A bulk action on the Tasks board ({ op, keys, arg }, see Hub.bulk): each computer gets its own tasks in one call.
+  // One on an older Crew, without bulk actions, gets them one at a time; one that can't be reached is left out.
+  async bulkTickets({ op, keys = [], arg } = {}) {
+    const groups = new Map() // computer ('' for this one) -> its task numbers
+    for (const key of keys.map(String)) {
+      const at = key.lastIndexOf('@')
+      const home = at < 0 || key.slice(at + 1) === this.me.slug ? '' : key.slice(at + 1)
+      groups.set(home, [...(groups.get(home) ?? []), at < 0 ? key : key.slice(0, at)])
+    }
+    if (op === 'clear' && !groups.size) groups.set('', [])
+    const out = []
+    for (const [home, ids] of groups) {
+      if (!home) {
+        out.push(await this.hub.bulk(op, ids, arg))
+        continue
+      }
+      const l = this.links.get(home)
+      if (!l?.peer) {
+        out.push(`${ids.length} on ${l?.name ?? home} left as they were: it's unreachable right now\n`)
+        continue
+      }
+      const there = op === 'owner' && arg ? this.qualifierFor(l)(arg) : arg
+      try {
+        out.push(`on ${l.name}: ${await l.peer.call('bulk', [op, ids, there])}`)
+      } catch (e) {
+        if (!/isn't available over Crew Link/.test(e.message)) throw e
+        out.push(await this.oneByOne(l, op, ids, there))
+      }
+    }
+    return out.join('')
+  }
+
+  // A bulk action as single-task calls, for a computer on an older Crew.
+  async oneByOne(l, op, ids, arg) {
+    const [fn, value] = { start: ['dispatch'], close: ['accept'], move: arg === 'done' ? ['accept'] : ['move', arg], owner: ['edit', { owner: arg }], priority: ['edit', { severity: arg }], remove: ['remove'], clear: ['remove'] }[op] ?? []
+    if (!fn) throw new Error(`unknown bulk action "${op}"`)
+    let n = 0
+    for (const id of ids) {
+      try {
+        await l.peer.call('ticket', [fn, id, value])
+        n++
+      } catch {}
+    }
+    return `on ${l.name}: ${n} of ${ids.length} done one at a time (it runs an older Crew)\n`
   }
 
   // Names as another computer sees them: its agents bare, ours as name@this-computer.
@@ -360,6 +407,7 @@ export class Crew extends EventEmitter {
       task: (from, args) => h.taskCommand(from, args),
       bug: (from, args) => h.taskCommand(from, args), // a computer on the previous version
       ticket: (op, id, arg) => h.ticket(op, id, arg),
+      bulk: (op, ids, arg) => h.bulk(op, ids, arg),
       importAgents: (pack, choices) => unpackAgents(h, pack, choices),
       // moving an agent with its conversation (see moveAgent): the computer it leaves, the one it goes to, the rest
       moveOut: (name) => moveOut(h, name),

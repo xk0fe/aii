@@ -236,6 +236,33 @@ const SHOTS = {
     await save(win, `tasks-workflow-${theme}`)
     win.destroy()
   },
+  // Several tasks picked (⌘-click, then Shift-click for a run of them) and the bar that acts on them all, on the
+  // board and in the list; then the header's ⋯ for clearing the board, with the chat's one line for a bulk action.
+  async tasksBulk(theme) {
+    const win = await dashboard(theme, 'tasks')
+    await js(win, "localStorage.setItem('crew.tasks.view', 'board'); localStorage.setItem('crew.tasks.done', '1')")
+    win.webContents.reload()
+    await new Promise((r) => win.webContents.once('did-finish-load', r))
+    await sleep(1100)
+    const pick = (key, mods) => `document.querySelector('.tc[data-name="${key}"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, ${mods} }))`
+    await js(win, `${pick(11, 'metaKey: true')}; ${pick(13, 'shiftKey: true')}; ${pick(7, 'metaKey: true')}`)
+    await sleep(800)
+    await save(win, `tasks-bulk-${theme}`)
+    await js(win, click('.tk-bulk [data-bulk=owner]'))
+    await sleep(500)
+    await save(win, `tasks-bulk-assign-${theme}`)
+    await js(win, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); " + click('.tk-views [data-mode=list]'))
+    await sleep(800)
+    await save(win, `tasks-bulk-list-${theme}`)
+    await js(win, `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); ${click('.tk-views [data-mode=board]')}
+      window.__crewState.feed.push({ id: 'bk1', kind: 'task', type: 'task', act: 'bulk', from: 'you', text: 'closed 23 tasks', count: 23, ts: Date.now() })
+      window.__crewEmit('state', window.__crewState)`)
+    await sleep(700)
+    await js(win, click('[data-board-menu]'))
+    await sleep(500)
+    await save(win, `tasks-board-menu-${theme}`)
+    win.destroy()
+  },
   async conversation(theme) {
     const win = await dashboard(theme, 'crew')
     await js(win, click('[data-mode=cards]'))
