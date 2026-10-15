@@ -381,6 +381,14 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .ctx.compacted .ctx-track { stroke-dasharray: 2.2 2.2; stroke: color-mix(in srgb, var(--k) 45%, transparent); }
 @keyframes ctx-hot { 50% { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--ctx-hot) 60%, transparent)); } }
 
+/* ---- usage limits: the account's 5-hour and weekly windows (common.js usageChip, limitMark) ---- */
+.sum.usage { gap: 4px; cursor: help; }
+.sum.usage b, .usage-line b { font-weight: 650; font-variant-numeric: tabular-nums; }
+.sum.usage i, .usage-line i { font-style: normal; color: var(--fg3); }
+.sum.usage .warm, .lim.warm { color: var(--ctx-warm); }
+.sum.usage .hot, .lim.hot { color: var(--ctx-hot); }
+.lim { flex: none; color: var(--fg3); font: 650 10.5px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: help; }
+
 /* a finished task gets a little burst of confetti (cheer() in common.js) */
 .burst { position: fixed; z-index: 1000; width: 0; height: 0; pointer-events: none; }
 .burst i { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 2px; background: var(--b); animation: burst .8s var(--out) forwards; }

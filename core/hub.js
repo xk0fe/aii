@@ -8,7 +8,7 @@ import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf } from './tickets.js'
-import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount } from './context.js'
+import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, LIMITS } from './context.js'
 import { callResult } from './transcript.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
@@ -46,6 +46,10 @@ const API_RETRY = [20000, 60000, 180000]
 // How often an open question looks at its agent's transcript, in case Claude Code settled it by itself (see watchAsk).
 const ASK_CHECK = 5000
 const CONTINUE = 'continue'
+// An account's usage limits: crossing these (percent of a window) is said once each, in the chat and as a notification.
+// At NEAR_LIMIT of its 5-hour or weekly window, routing prefers agents on other providers among equal area matches.
+const LIMIT_WARN = [80, 95]
+const NEAR_LIMIT = 90
 // What the chat shows for a turn that answered a message without a word (see Stop).
 const NO_WORDS = 'Finished without a final message. Its terminal shows what it did.'
 // Asked before a new conversation that the context limit starts (see freshWhenDone).
@@ -87,6 +91,8 @@ export class Hub extends EventEmitter {
     this.convos = readJSON(at('conversations.json')) ?? {}
     // Unread replies: up to when you've read each agent's. A first run starts from now, so old history isn't "new".
     this.reads = readJSON(at('reads.json')) ?? { since: Date.now(), agents: {} }
+    // Each provider's usage limits, as its agents' status lines last reported them (see setUsage).
+    this.usage = readJSON(at('usage.json')) ?? {}
     this.loadConfig()
     runner.on('exit', (name, code, ms) => this.onExit(name, code, ms))
     runner.on('data', (name, data) => this.onOutput(name, data))
@@ -488,7 +494,7 @@ export class Hub extends EventEmitter {
   lineup(a) {
     const family = [a, ...this.clonesOf(a)]
     const room = family.some((x) => x.status === 'idle' && !x.inbox.length) || (this.maxClones(a) > family.length - 1 && this.runner.running(a.name))
-    return { name: a.name, area: a.area, status: room ? 'idle' : a.status, queue: room ? 0 : family.reduce((n, x) => n + x.inbox.length, 0) }
+    return { name: a.name, area: a.area, status: room ? 'idle' : a.status, queue: room ? 0 : family.reduce((n, x) => n + x.inbox.length, 0), nearLimit: this.nearLimit(this.providerOf(a)?.id) }
   }
 
   // ---- conversations: starting fresh, and how full the current one is ------------------------------
@@ -621,11 +627,68 @@ export class Hub extends EventEmitter {
     const context = fromStatusLine(s)
     // Before the first message of a resumed session there's no usage yet: keep what we knew.
     if (context && (s.context_window.current_usage || !this.convoOf(a).context)) this.setContext(a, context)
+    const id = this.providerOf(a)?.id ?? 'claude'
+    const limits = limitsFrom(s)
+    if (limits) this.setUsage(id, limits)
     const c = this.convoOf(a)
     if (!c.context) return ''
     const { pct, used, size, limit } = againstLimit(c.context, a.contextLimit)
-    const color = pct >= 85 ? '31' : pct >= 60 ? '33' : '2'
-    return `\x1b[${color}mcontext ${pct}% · ${tokenCount(used)} of ${tokenCount(size)}${limit ? ' limit' : ''}\x1b[0m\x1b[2m · ${c.tasks} task${c.tasks === 1 ? '' : 's'} in this conversation\x1b[0m`
+    const color = (p) => (p >= 85 ? '31' : p >= 60 ? '33' : '2')
+    const five = this.liveUsage(id).find((w) => w.id === 'five_hour')
+    return `\x1b[${color(pct)}mcontext ${pct}% · ${tokenCount(used)} of ${tokenCount(size)}${limit ? ' limit' : ''}\x1b[0m\x1b[2m · ${c.tasks} task${c.tasks === 1 ? '' : 's'} in this conversation\x1b[0m${
+      five ? `\x1b[2m · \x1b[0m\x1b[${color(five.pct)}m5h limit ${five.pct}%\x1b[0m` : ''}`
+  }
+
+  // ---- usage limits: how much of its account's 5-hour and weekly windows a provider has used ---------------
+  // Agents on one provider share its account, so the newest reading from any of them is the account's. A window that
+  // has reset is gone until a status line reports the new one.
+
+  setUsage(id, windows) {
+    const before = JSON.stringify(this.liveUsage(id))
+    const u = (this.usage[id] ??= { told: {} })
+    Object.assign(u, { at: Date.now(), windows })
+    for (const w of windows) this.warnUsage(id, u, w)
+    this.saveUsage()
+    if (JSON.stringify(this.liveUsage(id)) !== before) this.changed()
+  }
+
+  liveUsage(id) {
+    const now = Date.now()
+    return (this.usage[id]?.windows ?? []).filter((w) => w.resetsAt > now)
+  }
+
+  // Close to running out: new work goes to agents elsewhere when they're as good a match (see bestFor).
+  nearLimit(id) {
+    return this.liveUsage(id).some((w) => (w.id === 'five_hour' || w.id === 'seven_day') && w.pct >= NEAR_LIMIT)
+  }
+
+  // Crossing 80%, then 95%, of a window: one line in the chat and a notification each, once per window. Said once
+  // already survives a restart (usage.json); a new window (another reset time) starts over.
+  warnUsage(id, u, w) {
+    u.told ??= {}
+    if (u.told[w.id] && Math.abs(u.told[w.id].resetsAt - w.resetsAt) > 60000) delete u.told[w.id]
+    const level = LIMIT_WARN.findLast((l) => w.pct >= l)
+    if (!level || (u.told[w.id]?.level ?? 0) >= level) return
+    u.told[w.id] = { level, resetsAt: w.resetsAt }
+    const what = `${this.providers[id]?.label ?? id} is at ${w.pct}% of its ${LIMITS[w.id]}`
+    const when = resetsWhen(w.resetsAt)
+    this.post({ kind: 'event', from: 'crew', text: `${what}, resets ${when}`, ...(level >= 95 && { alert: true }) })
+    this.emit('notice', { title: what, body: `It resets ${when}.${level >= NEAR_LIMIT ? ' Until then, new work goes to agents on other providers when they cover the same area.' : ''}`, focus: '' })
+  }
+
+  // Debounced like the context gauges; `now` on quit.
+  saveUsage(now = false) {
+    clearTimeout(this.usageTimer)
+    const write = () => {
+      const t = Date.now()
+      for (const u of Object.values(this.usage)) for (const [k, told] of Object.entries(u.told ?? {})) if (told.resetsAt <= t) delete u.told[k]
+      try {
+        fs.writeFileSync(at('usage.json'), JSON.stringify(this.usage))
+      } catch {}
+    }
+    if (now) return write()
+    this.usageTimer = setTimeout(write, 1000)
+    this.usageTimer.unref?.()
   }
 
   // Codex writes its token counts to its session log; read the newest after each step.
@@ -1728,7 +1791,7 @@ export class Hub extends EventEmitter {
   // Everyone who can own a task: agents here that are on, and the ones on linked computers.
   teammates() {
     const here = [...this.agents.values()].filter((a) => !a.off && !a.cloneOf).map((a) => this.lineup(a))
-    return [...here, ...(this.directory?.() ?? []).filter((a) => a.on && !a.cloneOf).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.queue ?? 0 }))]
+    return [...here, ...(this.directory?.() ?? []).filter((a) => a.on && !a.cloneOf).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.queue ?? 0, nearLimit: Boolean(a.nearLimit) }))]
   }
 
   // A task goes to its owner in a fresh conversation with just this task in it. If the owner is still in the
@@ -2140,7 +2203,7 @@ export class Hub extends EventEmitter {
         name: a.name, area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
         tier: a.tier, fast: this.providerOf(a)?.fastByDefault === undefined ? undefined : a.tier ? a.tier === 'fast' : this.providerOf(a).fastByDefault,
         args: (a.args ?? []).join(' '), avatar: a.avatar, status: a.status, since: a.since, activity: a.activity,
-        queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a),
+        queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a), nearLimit: this.nearLimit(this.providerOf(a)?.id),
         // how full, measured against its own context limit when it has one
         convo: this.convos[a.name] ? { ...this.convos[a.name], context: againstLimit(this.convos[a.name].context, a.contextLimit) } : null,
         contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : null, onContextLimit: a.onContextLimit === 'notify' ? 'notify' : 'fresh',
@@ -2154,6 +2217,8 @@ export class Hub extends EventEmitter {
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
       reads: this.reads,
+      // each provider's usage limits that haven't reset yet: { claude: { label, at, windows: [{ id, pct, resetsAt }] } }
+      usage: Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id) }]).filter(([, u]) => u.windows.length)),
       tasks: {
         tickets: [...this.tickets.open(), ...this.tickets.all.filter((t) => t.status === 'done').sort((x, y) => x.updated - y.updated).slice(-60)],
         triage: this.config.triage ?? null,
@@ -2199,6 +2264,13 @@ const lastWord = (t) => t.log.findLast((l) => l.by !== 'crew')?.ts ?? t.created
 
 // Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.
 const rank = (m) => (m.answers ? 0 : m.ask ? 1 : 2)
+
+// When a usage window resets, as the chat says it: "at 15:00" today, "Thu at 09:00" later in the week.
+const resetsWhen = (ms) => {
+  const d = new Date(ms)
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return d.toDateString() === new Date().toDateString() ? `at ${time}` : `${d.toLocaleDateString('en-US', { weekday: 'short' })} at ${time}`
+}
 
 // A message in one line, for quoting it back: code blocks folded, cut at `max`.
 const gist = (text, max = 100) => {
@@ -2378,12 +2450,15 @@ export function addressees(to, text) {
   return [...new Set(names)].filter((n) => n && !RESERVED.has(n) && n !== 'auto')
 }
 
-// The best agent for an un-addressed task: area match first, then whoever is free, then the shortest queue.
-// agents: [{ name, area, status, queue }], already narrowed to the ones that can take work.
+// The best agent for an un-addressed task: area match first, then one whose provider isn't close to its usage limit,
+// then whoever is free, then the shortest queue. A limit never sends work outside an agent's area: it only decides
+// between equally good matches.
+// agents: [{ name, area, status, queue, nearLimit }], already narrowed to the ones that can take work.
 export function bestFor(text, agents) {
   const score = areaScore(text)
   const free = (a) => Number(a.status === 'idle' && !a.queue)
-  return [...agents].sort((x, y) => score(y) - score(x) || free(y) - free(x) || x.queue - y.queue)[0]
+  const near = (a) => Number(Boolean(a.nearLimit))
+  return [...agents].sort((x, y) => score(y) - score(x) || near(x) - near(y) || free(y) - free(x) || x.queue - y.queue)[0]
 }
 
 // How well each agent's name and area match a piece of text: shared words, plus shared intents counted double.

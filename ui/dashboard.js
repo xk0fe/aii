@@ -1,5 +1,5 @@
 // Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
-/* global statusClass, rosterParts, isUnread, mountConvoHead, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
+/* global statusClass, rosterParts, isUnread, mountConvoHead, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, limitMark, usageChip, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -187,7 +187,7 @@ function tileHead(a) {
     <span class="state ${statusClass(a)}" ${busy ? 'data-act="markIdle" title="Stuck? Click to mark it free"' : ''}>${esc(statusText(a))}</span>
     <span class="activity">${esc(a.activity)}</span>
     ${subsChip(a)}${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}${modeMarks(a)}
-    ${contextRing(a)}
+    ${contextRing(a)}${limitMark(a, state)}
     <span class="tile-acts">
       <button class="icon" data-act="fresh" aria-pressed="${Boolean(a.freshPending)}" title="${a.freshPending ? 'Starts a new conversation when it finishes this task' : 'New conversation: a clean slate for its next task (the old one stays in its history)'}">${ICONS.fresh}</button>
       <button class="icon" data-act="edit" title="${a.cloneOf ? `Edit ${esc(a.cloneOf)} (its clones follow)` : 'Edit agent'}">${ICONS.edit}</button>
@@ -602,6 +602,7 @@ const ready = live((next) => {
   $('.autopilot .switch').checked = state.autopilot
   $('.autopilot small').textContent = state.autopilot ? 'Hand-offs go through' : 'Hand-offs wait for you'
   morph($('.tb-left .sums'), crewSummary(state, { unread: true }))
+  morph($('.tb-right .usage-slot'), usageChip(state))
   highlight(selected)
   drawShow() // and the terminals now on screen catch up (freshen)
   drawBlank()

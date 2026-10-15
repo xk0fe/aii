@@ -327,6 +327,41 @@ function contextRing(a, { label = true, size = 15 } = {}) {
     `${label ? `<b>${ctx.pct}%</b>` : ''}</span>`
 }
 
+// ---- usage limits: how much of its account's 5-hour and weekly windows a provider has used (core/hub.js) ----------
+
+const LIMIT_SHORT = { five_hour: '5h', seven_day: 'week', spend_limit: 'spend' }
+const LIMIT_LONG = { five_hour: '5-hour limit', seven_day: 'Weekly limit', spend_limit: 'Spend limit' }
+// "resets 15:00" today, "resets Thu 09:00" later in the week
+function resetsText(ms) {
+  const d = new Date(ms)
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  return d.toDateString() === new Date().toDateString() ? `resets ${time}` : `resets ${d.toLocaleDateString([], { weekday: 'short' })} ${time}`
+}
+const usageTip = (u) => `${u.label} account\n${u.windows.map((w) => `${LIMIT_LONG[w.id]}: ${w.pct}% used, ${resetsText(w.resetsAt)}`).join('\n')}`
+// each number turns amber, then red, like the context ring
+const limitNums = (u) => u.windows.map((w) => `<b class="${ctxLevel(w.pct)}">${LIMIT_SHORT[w.id]} ${w.pct}%</b>`).join('<i>·</i>')
+
+// The account's limits in one pill, for the titlebar and the menu bar: "5h 42% · week 61%". A provider's name leads
+// only when more than one reports limits.
+function usageChip(state) {
+  const all = Object.values(state.usage ?? {}).filter((u) => u.windows?.length)
+  return all.map((u) => `<span class="sum usage" title="${esc(usageTip(u))}">${all.length > 1 ? `<span>${esc(u.label)}</span>` : ''}${limitNums(u)}</span>`).join('')
+}
+
+// Next to an agent's context ring: its account's fullest window ("5h 42%"), all of them on hover. An agent on
+// another computer runs on that computer's account, which this one doesn't see.
+function limitMark(a, state) {
+  const u = !a.home && a.on && state.usage?.[a.provider]
+  const w = u && [...u.windows].sort((x, y) => y.pct - x.pct)[0]
+  return w ? `<span class="lim ${ctxLevel(w.pct)}" title="${esc(usageTip(u))}">${LIMIT_SHORT[w.id]} ${w.pct}%</span>` : ''
+}
+
+// The same as a line, for an agent's sheet: "Claude · 5h 42% · week 61%".
+function usageLine(a, state) {
+  const u = !a.home && state.usage?.[a.provider]
+  return u ? `<span class="usage-line" title="${esc(usageTip(u))}">${esc(u.label)}<i>·</i>${limitNums(u)}</span>` : ''
+}
+
 // ---- sub-agents: the helpers an agent hands parts of its work to (Claude Code's Agent tool) -----------
 
 const runningSubs = (a) => (a.on ? (a.subs ?? []).filter((s) => !s.ended) : [])

@@ -216,6 +216,13 @@ Every agent shows how full its current conversation is: a little ring that fills
 
 Claude Code reports its context to the status line, which Crew points at itself, so its terminal footer shows `context 34% · 68k of 200k · 5 tasks in this conversation` (or `of 250k limit`). Codex agents are read from Codex's session log after each step.
 
+### Usage limits
+
+On a Claude subscription, the same status line says how much of the account's 5-hour and weekly limits is used, so Crew shows that too: `5h 64% · week 38%` in the dashboard's title bar and the menu bar, next to the ring in each Claude agent's terminal header and sheet, and at the end of its terminal footer (`· 5h limit 64%`). The numbers turn amber and red like the ring, and hovering them says when each limit resets. Agents on one provider share its account, so the newest reading from any of them counts; a limit drops off once it resets, until the next reply reports the new one. Codex, GLM and local models don't report limits this way, so their agents show none.
+
+- **Heads-ups.** When a limit passes 80%, and again at 95%, the chat gets one line and you get a notification ("Claude is at 95% of its 5-hour limit, resets at 15:00"). Once per limit until it resets.
+- **Routing.** While a provider is at 90% or more of its 5-hour or weekly limit, a message or task Crew routes for you goes to an agent on another provider when one covers the area just as well. It never sends work outside an agent's area because of a limit, and messages you address to an agent always go to it.
+
 ## Computers: one crew across your Macs
 
 Each agent runs on one computer. Link your computers and each one shows the whole crew: you can chat with any agent, watch and type into its terminal, edit it, and agents hand work to each other across computers. An agent on another computer shows up as **name@computer** (`gal@mac-mini`).
@@ -253,6 +260,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, and a cache of images from agents on other computers.
 - `board.md`: shared notes (`crew note`).
 - `reads.json`: up to when you've read each agent's replies (the unread badges).
+- `usage.json`: each provider's usage limits as last reported, and which heads-ups you've had (so the UI isn't blank until the next reply).
 - `feed.jsonl`: the feed history.
 - `attachments/`: images you've attached to messages and instructions.
 

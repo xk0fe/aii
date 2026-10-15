@@ -92,6 +92,7 @@ export class Crew extends EventEmitter {
     this.sharing?.stop()
     this.hub.saveStats()
     this.hub.saveConvos(true)
+    this.hub.saveUsage(true)
     this.runner.stopAll()
   }
 

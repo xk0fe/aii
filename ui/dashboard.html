@@ -18,7 +18,8 @@
     .titlebar .brand { display: flex; align-items: center; gap: 8px; flex: none; }
     .titlebar .brand .mark { width: 27px; height: 18px; color: var(--fg); }
     .titlebar .brand b { font-size: 14.5px; font-weight: 750; letter-spacing: -.01em; }
-    .titlebar button, .seg, .sums { -webkit-app-region: no-drag; }
+    .titlebar button, .seg, .sums, .usage-slot { -webkit-app-region: no-drag; }
+    .usage-slot { display: inline-flex; margin-right: 4px; }
     .titlebar .icon { width: 30px; height: 30px; padding: 0; }
     .tb-left .sum[data-sum=waiting], .tb-left .sum[data-sum=unread], .tb-left .sum[data-sum=working] { cursor: pointer; transition: filter .15s, transform .25s var(--bounce); }
     .tb-left .sum[data-sum]:hover { filter: brightness(.96) saturate(1.2); }
@@ -237,6 +238,7 @@
     <div class="tb-left"><span class="brand"><span class="logo"></span><b>Crew</b></span><span class="sums"></span></div>
     <div class="seg views"><button data-view="crew" title="The crew: cards to open and edit each agent"></button><button data-view="tasks" title="Tasks: to do, in progress, review, done"></button><button data-view="terminals" title="Every agent's terminal"></button></div>
     <div class="tb-right">
+      <span class="usage-slot"></span>
       <button class="link-chip" data-act="link" title="Computers: link your other computers into one crew"></button>
       <span class="divider"></span>
       <button class="icon" data-panel="side" title="Show or hide the crew (⌘⌥S)" aria-label="Show or hide the crew"></button>

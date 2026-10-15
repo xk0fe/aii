@@ -2,7 +2,7 @@
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, level, conversation), everything you can set on the right,
 // in four tabs that each fit without scrolling. "Select" turns on bulk mode to change many agents at once.
-/* global crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, tokenCount, plural, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS */
+/* global crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -557,6 +557,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         <div class="convo-info">
           <div class="convo-nums">${ctx ? `<b>${tokenCount(ctx.used)}</b> of ${tokenCount(ctx.limit ?? ctx.size)}` : 'Not measured yet'} · ${plural(c.tasks, 'task')}</div>
           <p>${esc(advice)}</p>
+          ${usageLine(a, state)}
         </div>
         <button class="icon convo-fresh" data-act="fresh" ${a.freshPending || !a.on ? 'disabled' : ''} title="${a.freshPending ? 'Starts a new conversation when it’s free' : 'New conversation: a clean slate (the old one stays in its history)'}">${ICONS.fresh}</button>
       </div>`)
