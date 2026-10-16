@@ -230,6 +230,16 @@ On a Claude subscription, the same status line says how much of the account's 5-
 - **Heads-ups.** When a limit passes 80%, and again at 95%, the chat gets one line and you get a notification ("Claude is at 95% of its 5-hour limit, resets at 15:00"). Once per limit until it resets.
 - **Routing.** While a provider is at 90% or more of its 5-hour or weekly limit, a message or task Crew routes for you goes to an agent on another provider when one covers the area just as well. It never sends work outside an agent's area because of a limit, and messages you address to an agent always go to it.
 
+### What the work costs
+
+Claude Code also tells its status line what its session has cost so far (the figure `/cost` shows, at API prices or your organization's rates), the lines it changed and its time on the API. Crew adds up what grows between reports, per agent and per task:
+
+- **Agents.** **Spent** in the **Stats** view and on an agent's **Stats** tab, with what a task costs it on average; a clone's work counts as its original's. Codex reports tokens rather than money, so its agents show tokens (`3.4M tok`).
+- **Tasks.** Each card shows what working on it has cost so far (`$1.31`), counted while the conversation it runs in is on it; the task's panel adds the lines changed.
+- **The crew.** The top of the **Stats** view and the menu bar: today's spend against what's usual by this time of day (on the days the crew worked, over the last four weeks), and the last 7 and 30 days.
+
+On a subscription none of this is billed: it's a measure of how much each agent and task uses, priced the way Claude Code prices it. Nothing is counted twice: totals are kept per CLI process, a CLI that starts counting over from zero is noticed, and a resumed conversation picks up from where its total last was.
+
 ## Computers: one crew across your Macs
 
 Each agent runs on one computer. Link your computers and each one shows the whole crew: you can chat with any agent, watch and type into its terminal, edit it, and agents hand work to each other across computers. An agent on another computer shows up as **name@computer** (`gal@mac-mini`).
@@ -268,6 +278,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `board.md`: shared notes (`crew note`).
 - `reads.json`: up to when you've read each agent's replies (the unread badges).
 - `usage.json`: each provider's usage limits as last reported, and which heads-ups you've had (so the UI isn't blank until the next reply).
+- `spend.json`: the last running totals each agent's CLI reported (so nothing is counted twice) and the crew's spend per hour of each day. What each agent spent lives in `stats.json`, and each task's on the task.
 - `feed.jsonl`: the feed history.
 - `attachments/`: images you've attached to messages and instructions.
 - `run/groups/`: the process groups each running agent's commands started, a file per launch, so what they leave running can be stopped when they end.

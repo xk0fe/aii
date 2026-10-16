@@ -2,7 +2,7 @@
 // Add a task in the bar (or from the chat). Starting one hands it to its owner in a fresh conversation, so
 // tasks don't pile into one long context; you review what comes back. Board or list, filtered by kind, owner
 // or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via crew.call('task').
-/* global ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, statusText, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented */
+/* global ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, statusText, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE */
 
 const STATUS = [
   { id: 'new', label: 'To do' },
@@ -332,8 +332,14 @@ function mountTasks(root, { onTerminal }) {
   // A task whose owner is switched off waits for it: no Start until it's back on.
   const ownerOff = (t) => Boolean(t.owner) && !agent(t.owner).on
   const offHTML = (t) => `<span class="tk-state" title="@${esc(t.owner)} is turned off: turn it on, or give this task to someone else"><i class="dot off"></i>off</span>`
+  // What working on it has cost so far (or, for Codex, the tokens it used)
+  const spentPill = (t) => {
+    const s = t.spent
+    const text = s?.cost >= 0.005 ? money(s.cost) : s?.tokens ? `${tokenCount(s.tokens)} tok` : ''
+    return text ? `<span class="tk-cost" title="${esc(`What working on #${t.id} has cost so far${s.added || s.removed ? ` · +${s.added} −${s.removed} lines` : ''}. ${SPEND_NOTE}`)}">${text}</span>` : ''
+  }
   const pills = (t) =>
-    `${t.seen > 1 ? `<span class="tk-seen" title="Added ${t.seen} times">×${t.seen}</span>` : ''}${t.home ? `<span class="tk-home" title="On ${esc(t.homeName)}">${esc(t.homeName)}</span>` : ''}`
+    spentPill(t) + `${t.seen > 1 ? `<span class="tk-seen" title="Added ${t.seen} times">×${t.seen}</span>` : ''}${t.home ? `<span class="tk-home" title="On ${esc(t.homeName)}">${esc(t.homeName)}</span>` : ''}`
 
   // The bottom of a card: who, and what you can do with it now.
   function footHTML(t) {
@@ -699,7 +705,8 @@ function mountTasks(root, { onTerminal }) {
       prop('Priority', `${PRIORITY_ICON[t.severity]}<span>${PRIORITY_LABEL[t.severity]}</span>`, 'priority') +
       prop('Kind', `${KIND_ICON[t.kind]}<span>${KIND_LABEL[t.kind]}</span>`, 'kind') +
       prop('Owner', owner ? `${avatarHTML(owner, { size: 20, mood: 'still' })}<span>${nameHTML(owner)}</span>` : '<i class="tk-nobody">?</i><span class="muted">Nobody</span>', 'owner') +
-      prop('Added', `${who(t.by)} · ${esc(ago(t.created))}${ago(t.created) === 'just now' ? '' : ' ago'}${t.seen > 1 ? ` · <b>×${t.seen}</b>` : ''}${t.home ? ` · on ${esc(t.homeName)}` : ''}`)
+      prop('Added', `${who(t.by)} · ${esc(ago(t.created))}${ago(t.created) === 'just now' ? '' : ' ago'}${t.seen > 1 ? ` · <b>×${t.seen}</b>` : ''}${t.home ? ` · on ${esc(t.homeName)}` : ''}`) +
+      (t.spent?.cost >= 0.005 || t.spent?.tokens ? prop('Spent', `<span title="${esc(SPEND_NOTE)}">${t.spent.cost >= 0.005 ? money(t.spent.cost) : `${tokenCount(t.spent.tokens)} tokens`}${t.spent.added || t.spent.removed ? ` · +${t.spent.added} −${t.spent.removed} lines` : ''}</span>`) : '')
   }
 
   // While it's being worked on: who, what they're doing right now, how full their conversation is.
