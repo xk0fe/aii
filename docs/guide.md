@@ -240,6 +240,8 @@ Claude Code also tells its status line what its session has cost so far (the fig
 
 On a subscription none of this is billed: it's a measure of how much each agent and task uses, priced the way Claude Code prices it. Nothing is counted twice: totals are kept per CLI process, a CLI that starts counting over from zero is noticed, and a resumed conversation picks up from where its total last was.
 
+- **The month before.** The first time Crew counts, it looks back through the agents' own logs for the last 30 days, so the numbers don't start at zero: Claude Code's transcripts (each one names the agent that wrote it) priced at list prices, since `/cost`'s own figure isn't kept, and Codex's session logs for tokens. A conversation that opened with a task's brief counts toward that task. It reads only the crew's sessions, in the background, and says what it found in one line in the chat. Sessions it counted carry on from there in the live count.
+
 ## Computers: one crew across your Macs
 
 Each agent runs on one computer. Link your computers and each one shows the whole crew: you can chat with any agent, watch and type into its terminal, edit it, and agents hand work to each other across computers. An agent on another computer shows up as **name@computer** (`gal@mac-mini`).
@@ -278,7 +280,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `board.md`: shared notes (`crew note`).
 - `reads.json`: up to when you've read each agent's replies (the unread badges).
 - `usage.json`: each provider's usage limits as last reported, and which heads-ups you've had (so the UI isn't blank until the next reply).
-- `spend.json`: the last running totals each agent's CLI reported (so nothing is counted twice) and the crew's spend per hour of each day. What each agent spent lives in `stats.json`, and each task's on the task.
+- `spend.json`: the last running totals each agent's CLI reported (so nothing is counted twice), the crew's spend per hour of each day, and when Crew looked back through the agents' logs. What each agent spent lives in `stats.json`, and each task's on the task.
 - `feed.jsonl`: the feed history.
 - `attachments/`: images you've attached to messages and instructions.
 - `run/groups/`: the process groups each running agent's commands started, a file per launch, so what they leave running can be stopped when they end.

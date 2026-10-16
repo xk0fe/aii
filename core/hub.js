@@ -1,5 +1,6 @@
 // The brain: agents, their status, inboxes, the shared feed and routing. No Electron in here.
 import { EventEmitter } from 'node:events'
+import { Worker } from 'node:worker_threads'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -27,6 +28,8 @@ const SPOOL = path.join(HOME, 'spool')
 // What Crew remembers of each agent at work, so it can pick them up after a restart while their terminals carried on in
 // the terminal host (core/ptyhost.js): saved as things change, read back by adopt().
 const RUNTIME = at('runtime.json')
+// How far back the first look through the agents' logs goes for what their work cost (Hub.lookBack, core/backfill.js).
+const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
   'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'retrying', 'apiRetries', 'cloneOf', 'clone']
 
@@ -127,6 +130,7 @@ export class Hub extends EventEmitter {
   // agents carry on where they are instead of starting again.
   start(url, { survivors = [] } = {}) {
     this.url = url
+    this.startedAt = Date.now()
     fs.writeFileSync(at('url'), url)
     fs.writeFileSync(at('token'), this.token)
     fs.chmodSync(at('token'), 0o600)
@@ -143,6 +147,10 @@ export class Hub extends EventEmitter {
     fs.watchFile(CONFIG, { interval: 1000 }, () => this.loadConfig())
     this.stallTimer = setInterval(() => this.checkStalls(), STALL_CHECK)
     this.stallTimer.unref?.()
+    if (!this.spend.lookedBack) {
+      this.lookingBack = true
+      setTimeout(() => this.lookBack(), 5000).unref?.()
+    }
     discoverCodex().then((codex) => {
       if (!codex) return
       this.discovered.codex = codex
@@ -370,6 +378,7 @@ export class Hub extends EventEmitter {
       if (pid) fs.writeFileSync(groups, `${pid} ${Math.floor(Date.now() / 1000)}\n`)
       this.runs.set(run, { name: a.name, file: groups, pid, at: 0 })
       a.run = run
+      a.launchedAt = Date.now()
       this.setStatus(a, 'starting')
       this.readyIn(a)
     } catch (e) {
@@ -755,9 +764,11 @@ export class Hub extends EventEmitter {
     const minus = (x, y) => Object.fromEntries(Object.keys(x).map((k) => [k, x[k] - (y[k] ?? 0)]))
     const seen = this.spend.runs[run]
     const before = !seen && session ? this.spend.sessions[session] : null
-    const grew = seen ? (less(now, seen) ? now : minus(now, seen))
-      : before ? (less(now, before) ? now : minus(now, before))
-      : a.resumed ? null : now
+    // a session already under way when Crew started counts from here on while the look back covers what came before
+    const unseen = a.resumed || (this.lookingBack && !(a.launchedAt >= this.startedAt)) ? null : now
+    // a session the look back counted (baseline) counts from its next report on
+    const sinceBefore = before && (before.baseline ? null : less(now, before) ? now : minus(now, before))
+    const grew = seen ? (less(now, seen) ? now : minus(now, seen)) : before ? sinceBefore : unseen
     const stamp = { ...now, at: Date.now() }
     this.spend.runs[run] = stamp
     if (session) this.spend.sessions[session] = stamp
@@ -795,6 +806,60 @@ export class Hub extends EventEmitter {
     if (now) return write()
     this.spendTimer = setTimeout(write, 2000)
     this.spendTimer.unref?.()
+  }
+
+  // The first time Crew counts spend, it looks back through the agents' logs for the last LOOK_BACK_DAYS (core/backfill.js,
+  // in a worker thread), up to when it started counting: when this Crew started, or the first hour live counting ever
+  // saw. Sessions it counted are a baseline from then on, so the live count only adds what comes after.
+  lookBack() {
+    const counted = Object.entries(this.spend.hours).filter(([, h]) => h.some((v) => v > 0)).map(([d, h]) => new Date(`${d}T${String(h.findIndex((v) => v > 0)).padStart(2, '0')}:00`).getTime())
+    const until = Math.min(this.startedAt ?? Date.now(), ...counted)
+    const claude = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects')
+    const codex = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions')
+    const names = this.config.agents.map((c) => c.name)
+    const worker = new Worker(new URL('./backfill.js', import.meta.url), { workerData: { lookBack: { claude: [claude], codex, names, since: until - LOOK_BACK_DAYS * 864e5, until } } })
+    worker.unref()
+    worker.once('message', (r) => {
+      worker.terminate()
+      if (r.error) return void (this.lookingBack = false)
+      this.mergeLookBack(r, until)
+    })
+    worker.once('error', () => (this.lookingBack = false))
+  }
+
+  // What the look back found, added to each agent's days, the crew's hours and the tasks. -> { cost, tokens }
+  mergeLookBack({ agents, hours, tickets, sessions }, until) {
+    let cost = 0
+    let tokens = 0
+    for (const [name, days] of Object.entries(agents)) {
+      if (!this.agents.has(name)) continue
+      const s = (this.stats[name] ??= { first: Date.now(), days: {} })
+      for (const [d, v] of Object.entries(days)) {
+        const day = (s.days[d] ??= {})
+        if (v.cost) (day.cost = (day.cost ?? 0) + v.cost), (s.cost = (s.cost ?? 0) + v.cost), (cost += v.cost)
+        if (v.tokens) (day.tokens = (day.tokens ?? 0) + v.tokens), (s.tokens = (s.tokens ?? 0) + v.tokens), (tokens += v.tokens)
+      }
+    }
+    for (const [d, h] of Object.entries(hours)) {
+      const mine = (this.spend.hours[d] ??= Array(24).fill(0))
+      h.forEach((v, i) => (mine[i] += v))
+    }
+    for (const [id, v] of Object.entries(tickets)) {
+      const t = this.tickets.all.find((x) => x.id === Number(id))
+      if (t) t.spent = { cost: (t.spent?.cost ?? 0) + v.cost, tokens: (t.spent?.tokens ?? 0) + v.tokens, added: t.spent?.added ?? 0, removed: t.spent?.removed ?? 0 }
+    }
+    for (const id of sessions) this.spend.sessions[id] ??= { baseline: true, at: Date.now() }
+    this.spend.lookedBack = { at: Date.now(), until, cost, tokens }
+    this.lookingBack = false
+    this.saveStats()
+    this.saveSpend(true)
+    this.tickets.save()
+    if (cost >= 0.005 || tokens) {
+      const what = [cost >= 0.005 && `$${cost < 10 ? cost.toFixed(2) : Math.round(cost).toLocaleString('en-US')} at API prices`, tokens && `${tokenCount(tokens)} Codex tokens`].filter(Boolean).join(' and ')
+      this.post({ kind: 'event', from: 'crew', text: `added up what the crew's work cost before Crew counted it: ${what} over the last ${LOOK_BACK_DAYS} days` })
+    }
+    this.changed()
+    return { cost, tokens }
   }
 
   // The crew's spend for the dashboard: today, and what it usually is by this time of day (on the days the crew spent
