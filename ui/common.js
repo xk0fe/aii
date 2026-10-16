@@ -357,7 +357,14 @@ function resetsText(ms) {
 }
 // Codex also says what's left of the account's credits
 const creditsText = (c) => (!c ? '' : c.unlimited ? '\nUnlimited credits' : c.balance !== undefined ? `\nCredits left: ${Math.round(c.balance).toLocaleString()}` : '')
-const usageTip = (u) => `${u.label} account\n${u.windows.map((w) => `${limitLong(w)}: ${w.pct}% used, ${resetsText(w.resetsAt)}`).join('\n')}${creditsText(u.credits)}`
+// Where a window is heading at this pace (core/hub.js paceOf): "runs out Wed 21:00", or "on pace for 82% by then".
+const paceText = (w) => (!w.pace ? '' : w.pace.runsOut ? `, runs out ${resetsText(w.pace.runsOut).replace(/^resets /, '')} at this pace` : `, on pace for ${Math.min(w.pace.projected, 100)}% by then`)
+const usageTip = (u) => `${u.label} account\n${u.windows.map((w) => `${limitLong(w)}: ${w.pct}% used, ${resetsText(w.resetsAt)}${paceText(w)}`).join('\n')}${creditsText(u.credits)}${u.windows.some((w) => w.pace) ? '\n(At the pace since each limit began; the 5-hour one at its pace over the last few minutes.)' : ''}`
+// The first window that runs out before it resets, in words for the menu bar: "Week runs out Wed 21:00 at this pace".
+function paceWarning(u) {
+  const w = u.windows.filter((x) => x.pace?.runsOut).sort((x, y) => x.pace.runsOut - y.pace.runsOut)[0]
+  return w ? `${limitLong(w).replace(/ limit$/, '').replace(/^Weekly$/, 'Week')} runs out ${resetsText(w.pace.runsOut).replace(/^resets /, '')} at this pace` : ''
+}
 // each number turns amber, then red, like the context ring
 const limitNums = (u) => u.windows.map((w) => `<b class="${ctxLevel(w.pct)}">${limitShort(w)} ${w.pct}%</b>`).join('<i>·</i>')
 

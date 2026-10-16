@@ -65,6 +65,10 @@ const CONTINUE = 'continue'
 // At NEAR_LIMIT of its 5-hour or weekly window, routing prefers agents on other providers among equal area matches.
 const LIMIT_WARN = [80, 95]
 const NEAR_LIMIT = 90
+// The pace forecast (paceOf): readings this recent give the 5-hour window's pace right now; the heads-up that a window
+// runs out before it resets comes once it's less than a quarter of the window away (weekly: under 42 hours).
+const RECENT = 20 * 60000
+const PACE_WARN = 0.25
 // What the chat shows for a turn that answered a message without a word (see Stop).
 const NO_WORDS = 'Finished without a final message. Its terminal shows what it did.'
 // Asked before a new conversation that the context limit starts (see freshWhenDone).
@@ -705,7 +709,11 @@ export class Hub extends EventEmitter {
     const before = JSON.stringify([this.liveUsage(id), this.usage[id]?.credits])
     const u = (this.usage[id] ??= { told: {} })
     Object.assign(u, { at: Date.now(), windows, credits: credits ?? undefined })
-    for (const w of windows) this.warnUsage(id, u, w)
+    for (const w of windows) {
+      this.sample(id, w)
+      this.warnUsage(id, u, w)
+      this.warnPace(id, u, w)
+    }
     this.saveUsage()
     if (JSON.stringify([this.liveUsage(id), u.credits]) !== before) this.changed()
   }
@@ -732,6 +740,32 @@ export class Hub extends EventEmitter {
     const when = resetsWhen(w.resetsAt)
     this.post({ kind: 'event', from: 'crew', text: `${what}, resets ${when}`, ...(level >= 95 && { alert: true }) })
     this.emit('notice', { title: what, body: `It resets ${when}.${level >= NEAR_LIMIT ? ' Until then, new work goes to agents on other providers when they cover the same area.' : ''}`, focus: '' })
+  }
+
+  // Readings of a window over the last RECENT minutes, for its pace right now. A drop or a new reset time is a new window.
+  sample(id, w) {
+    const list = ((this.samples ??= {})[id] ??= {})[w.id] ?? []
+    const last = list.at(-1)
+    const now = Date.now()
+    const keep = last && last[1] <= w.pct && last[2] === w.resetsAt ? list.filter(([t]) => now - t <= RECENT) : []
+    this.samples[id][w.id] = [...keep, [now, w.pct, w.resetsAt]]
+  }
+
+  pace(id, w) {
+    return paceOf(w, this.samples?.[id]?.[w.id])
+  }
+
+  // At this pace a window runs out before it resets: one line in the chat and a notification, once per window, when it's
+  // close enough to plan around (PACE_WARN of the window away).
+  warnPace(id, u, w) {
+    const p = this.pace(id, w)
+    const key = `pace:${w.id}`
+    const length = windowMs(w)
+    if (!p?.runsOut || u.told[key]?.resetsAt === w.resetsAt || p.runsOut - Date.now() > length * PACE_WARN) return
+    u.told[key] = { resetsAt: w.resetsAt }
+    const what = `At this pace, ${this.providers[id]?.label ?? id}'s ${limitName(w)} runs out ${resetsWhen(p.runsOut)}`
+    this.post({ kind: 'event', from: 'crew', text: `${what}, before it resets ${resetsWhen(w.resetsAt)}`, alert: true })
+    this.emit('notice', { title: what, body: `It resets ${resetsWhen(w.resetsAt)}.`, focus: '' })
   }
 
   // Debounced like the context gauges; `now` on quit.
@@ -2744,7 +2778,8 @@ export class Hub extends EventEmitter {
       reads: this.reads,
       spend: this.spendNow(),
       // each provider's usage limits that haven't reset yet: { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
-      usage: Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id), ...(this.usage[id].credits && { credits: this.usage[id].credits }) }]).filter(([, u]) => u.windows.length)),
+      // each window with where it's heading at this pace: { projected (percent at its reset), runsOut (ms) }
+      usage: Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id).map((w) => ({ ...w, pace: this.pace(id, w) ?? undefined })), ...(this.usage[id].credits && { credits: this.usage[id].credits }) }]).filter(([, u]) => u.windows.length)),
       tasks: {
         tickets: [...this.tickets.open(), ...this.tickets.all.filter((t) => t.status === 'done').sort((x, y) => x.updated - y.updated).slice(-60)],
         triage: this.config.triage ?? null,
@@ -2800,6 +2835,26 @@ const shellPrefix = (bin) => {
 
 // Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.
 const rank = (m) => (m.answers ? 0 : m.ask ? 1 : 2)
+
+// How long a window is (Codex names its own by length: window_120 is two hours); null when unknown, as a spend limit's is.
+const windowMs = (w) => ({ five_hour: 5 * 3600000, seven_day: 7 * 864e5 })[w.id] ?? (Number(String(w.id).match(/^window_(\d+)$/)?.[1]) * 60000 || null)
+
+// Where a window is heading, as Side A forecasts it without a weekly rhythm: the share used so far at the pace it has
+// gone since the window began, carried on to its reset. The 5-hour window, with readings at least five minutes apart in
+// the last RECENT minutes, goes at the pace of those instead: what it's burning right now. -> { projected (percent at the
+// reset), runsOut (ms, when it reaches 100% before the reset, else null) }, or null when it's too early to say.
+export function paceOf(w, samples = [], now = Date.now()) {
+  const length = windowMs(w)
+  if (!length || !(w.resetsAt > now) || !(w.pct > 0)) return null
+  const recent = w.id === 'five_hour' ? samples.filter(([t]) => now - t <= RECENT) : []
+  const span = recent.length >= 2 ? recent.at(-1)[0] - recent[0][0] : 0
+  const elapsed = now - (w.resetsAt - length)
+  if (span < 5 * 60000 && elapsed < length * 0.05) return null
+  const rate = span >= 5 * 60000 ? (recent.at(-1)[1] - recent[0][1]) / span : w.pct / elapsed // percent a millisecond
+  if (!(rate > 0)) return { projected: w.pct, runsOut: null }
+  const runsOut = now + Math.max(0, (100 - w.pct) / rate)
+  return { projected: Math.round(w.pct + rate * (w.resetsAt - now)), runsOut: runsOut < w.resetsAt ? Math.round(runsOut) : null }
+}
 
 // When a usage window resets, as the chat says it: "at 15:00" today, "Thu at 09:00" later in the week.
 const resetsWhen = (ms) => {

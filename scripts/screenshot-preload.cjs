@@ -240,8 +240,9 @@ const READS = { since: 0, agents: { david: now - 18 * min } }
 // The accounts' usage limits: Claude's as the agents' status lines report them (the 5-hour window getting full), and
 // Codex's from its session log, with the credits left on it.
 const USAGE = {
-  claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 64, resetsAt: now + 140 * min }, { id: 'seven_day', pct: 38, resetsAt: now + 3.2 * day }] },
-  codex: { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 5, resetsAt: now + 5.5 * day }], credits: { unlimited: false, balance: 62500 } },
+  // where each is heading at this pace: the 5-hour window runs out before it resets
+  claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 64, resetsAt: now + 140 * min, pace: { projected: 128, runsOut: now + 66 * min } }, { id: 'seven_day', pct: 38, resetsAt: now + 3.2 * day, pace: { projected: 71, runsOut: null } }] },
+  codex: { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 5, resetsAt: now + 5.5 * day, pace: { projected: 23, runsOut: null } }], credits: { unlimited: false, balance: 62500 } },
 }
 // what the work on a task cost so far
 for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [5, { cost: 1.31, tokens: 0, added: 42, removed: 18 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }], [3, { cost: 0.86, tokens: 0, added: 21, removed: 4 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })
