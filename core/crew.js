@@ -123,6 +123,7 @@ export class Crew extends EventEmitter {
     this.hub.saveStats()
     this.hub.saveConvos(true)
     this.hub.saveUsage(true)
+    this.hub.saveSpend(true)
   }
 
   // Do the agents keep working once Crew quits?

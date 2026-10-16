@@ -136,6 +136,8 @@
 .tc.st-done .tc-title { color: var(--fg2); }
 .tc-top { display: flex; align-items: center; gap: 5px; height: 20px; }
 .tk-id { font: 650 11px var(--mono); color: var(--fg3); white-space: nowrap; }
+.tk-cost { padding: 0 5px; border-radius: 5px; background: var(--btn); color: var(--fg2); font: 650 10.5px/16px var(--mono); white-space: nowrap; }
+.tr-title .tk-cost { flex: none; }
 .tk-seen { padding: 0 5px; border-radius: 5px; background: var(--btn); color: var(--fg2); font-weight: 700; font-size: 10.5px; line-height: 16px; }
 .tk-home { padding: 0 6px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); font-size: 10.5px; font-weight: 600; line-height: 16px; white-space: nowrap; }
 .tk-prio { all: unset; display: grid; place-items: center; width: 22px; height: 20px; border-radius: 6px; cursor: pointer; flex: none; transition: background .15s; }

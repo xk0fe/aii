@@ -302,6 +302,21 @@ const tokenCount = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1000 ? 
 // calm: plenty of room. warm: past half, start fresh before unrelated work. hot: compaction is close.
 const ctxLevel = (pct) => (pct >= 80 ? 'hot' : pct >= 50 ? 'warm' : 'calm')
 const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`
+// $0.42, $3.10, $87, $1,204
+const money = (v) => `$${v < 10 ? v.toFixed(2) : Math.round(v).toLocaleString('en-US')}`
+// What spend means, wherever it shows: Claude Code's own estimate at API prices, not what a subscription bills.
+const SPEND_NOTE = 'Priced as Claude Code prices it in /cost (API rates). On a subscription this measures use, not a bill.'
+// What an agent's work has cost: "$87" for Claude, "3.4M tokens" for Codex (which reports tokens, not money).
+const spentText = (s, { short = false } = {}) => (s.cost >= 0.005 ? money(s.cost) : s.tokens ? `${tokenCount(s.tokens)} ${short ? 'tok' : 'tokens'}` : '')
+const linesText = (s) => (s.linesAdded || s.linesRemoved ? `+${s.linesAdded.toLocaleString('en-US')} −${s.linesRemoved.toLocaleString('en-US')} lines` : '')
+// The crew's spend today against what it usually is by this time of day: "$42 today · 18% over usual by now".
+function spendLine(sp) {
+  if (!sp || !(sp.today >= 0.005 || sp.week >= 0.005)) return ''
+  const usual = sp.usual >= 0.005 ? Math.round(((sp.today - sp.usual) / sp.usual) * 100) : null
+  const vs = usual === null ? '' : Math.abs(usual) < 5 ? ' · about usual by now' : ` · ${Math.abs(usual)}% ${usual > 0 ? 'over' : 'under'} usual by now`
+  return `${money(sp.today)} today${vs}`
+}
+const spendTip = (sp) => `Today ${money(sp.today)}${sp.usual >= 0.005 ? ` (usually ${money(sp.usual)} by now)` : ''}\nLast 7 days ${money(sp.week)}${sp.weekBefore >= 0.005 ? ` (the 7 before: ${money(sp.weekBefore)})` : ''}\nLast 30 days ${money(sp.month)}\n${SPEND_NOTE}`
 
 function contextTip(a) {
   const c = a.convo

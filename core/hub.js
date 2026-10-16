@@ -8,7 +8,7 @@ import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
-import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName } from './context.js'
+import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
 import { processes, tree, groupsOf, readGroups, leftovers, stop as stopProcesses, summary } from './procs.js'
 
@@ -108,6 +108,9 @@ export class Hub extends EventEmitter {
     this.reads = readJSON(at('reads.json')) ?? { since: Date.now(), agents: {} }
     // Each provider's usage limits, as its agents' status lines last reported them (see setUsage).
     this.usage = readJSON(at('usage.json')) ?? {}
+    // What the crew's work has cost: the last running totals of each CLI process and of each session (so nothing is
+    // counted twice), and the crew's spend per hour of each day (for "usual by now"). See countSpend.
+    this.spend = { runs: {}, sessions: {}, hours: {}, ...readJSON(at('spend.json')) }
     this.useRunner(runner)
     this.loadConfig()
   }
@@ -674,6 +677,7 @@ export class Hub extends EventEmitter {
     const id = this.providerOf(a)?.id ?? 'claude'
     const limits = limitsFrom(s)
     if (limits) this.setUsage(id, limits)
+    this.countSpend(a, s?.session_id, spentFrom(s))
     const c = this.convoOf(a)
     if (!c.context) return ''
     const { pct, used, size, limit } = againstLimit(c.context, a.contextLimit)
@@ -736,6 +740,75 @@ export class Hub extends EventEmitter {
     this.usageTimer.unref?.()
   }
 
+  // ---- spend: what each agent's work costs ------------------------------------------------------------------
+  // Claude Code tells its status line what it has cost so far (priced as /cost prices it), the lines it changed and its
+  // time on the API; Codex's log has the tokens it has used. Those are running totals: what grew since the last report
+  // goes to the agent (a clone's to its original), the task its conversation is on, and the hour. Totals are kept per
+  // CLI process (its launch), where they only grow or start over from zero. A process's first report is measured against
+  // what its session last said (a resumed session can pick its total up again), and a resumed session Crew has never
+  // seen only counts from here on. So nothing is counted twice.
+
+  countSpend(a, session, now) {
+    if (!now || !(a.run || session)) return
+    const run = a.run ?? session
+    const less = (x, y) => Object.keys(x).some((k) => x[k] < (y[k] ?? 0))
+    const minus = (x, y) => Object.fromEntries(Object.keys(x).map((k) => [k, x[k] - (y[k] ?? 0)]))
+    const seen = this.spend.runs[run]
+    const before = !seen && session ? this.spend.sessions[session] : null
+    const grew = seen ? (less(now, seen) ? now : minus(now, seen))
+      : before ? (less(now, before) ? now : minus(now, before))
+      : a.resumed ? null : now
+    const stamp = { ...now, at: Date.now() }
+    this.spend.runs[run] = stamp
+    if (session) this.spend.sessions[session] = stamp
+    this.saveSpend()
+    if (grew && Object.values(grew).some((v) => v > 0)) this.addSpend(a, grew)
+  }
+
+  addSpend(a, { cost = 0, added = 0, removed = 0, apiMs = 0, tokens = 0 }) {
+    const counts = Object.fromEntries(Object.entries({ cost, linesAdded: added, linesRemoved: removed, apiMs, tokens }).filter(([, v]) => v > 0))
+    this.record(a.name, counts)
+    if (cost) (this.spend.hours[localDay()] ??= Array(24).fill(0))[new Date().getHours()] += cost
+    // the task its conversation is about (one that lives on this computer)
+    const id = this.convos[a.name]?.ticket
+    const t = typeof id === 'number' && this.tickets.all.find((x) => x.id === id)
+    if (t) {
+      t.spent = { cost: (t.spent?.cost ?? 0) + cost, tokens: (t.spent?.tokens ?? 0) + tokens, added: (t.spent?.added ?? 0) + added, removed: (t.spent?.removed ?? 0) + removed }
+      clearTimeout(this.ticketsTimer)
+      this.ticketsTimer = setTimeout(() => this.tickets.save(), 5000)
+      this.ticketsTimer.unref?.()
+    }
+    this.changed()
+  }
+
+  // Debounced like the context gauges; `now` on quit. Sessions not heard from in 60 days and days older than that go.
+  saveSpend(now = false) {
+    clearTimeout(this.spendTimer)
+    const write = () => {
+      const cutoff = Date.now() - 60 * 864e5
+      for (const k of ['runs', 'sessions']) for (const [id, s] of Object.entries(this.spend[k])) if (!(s.at > cutoff)) delete this.spend[k][id]
+      for (const d of Object.keys(this.spend.hours)) if (d < localDay(cutoff)) delete this.spend.hours[d]
+      try {
+        fs.writeFileSync(at('spend.json'), JSON.stringify(this.spend))
+      } catch {}
+    }
+    if (now) return write()
+    this.spendTimer = setTimeout(write, 2000)
+    this.spendTimer.unref?.()
+  }
+
+  // The crew's spend for the dashboard: today, and what it usually is by this time of day (on the days the crew spent
+  // anything, over the last four weeks); the last 7 and 30 days, and the 7 before.
+  spendNow() {
+    const day = (n) => localDay(Date.now() - n * 864e5)
+    const on = (d) => Object.values(this.stats).reduce((sum, s) => sum + (s?.days?.[d]?.cost ?? 0), 0)
+    const days = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => on(day(from + i))).reduce((x, y) => x + y, 0)
+    const now = new Date()
+    const byNow = (h) => h.slice(0, now.getHours()).reduce((x, y) => x + y, 0) + h[now.getHours()] * (now.getMinutes() / 60)
+    const past = Object.entries(this.spend.hours).filter(([d, h]) => d < day(0) && d >= day(28) && h.some((v) => v > 0)).map(([, h]) => byNow(h))
+    return { today: on(day(0)), usual: past.length >= 3 ? past.reduce((x, y) => x + y, 0) / past.length : null, week: days(0, 6), weekBefore: days(7, 13), month: days(0, 29) }
+  }
+
   // Codex writes its token counts to its session log, and its account's usage limits with them; read the newest after
   // each step.
   readCodexContext(a, e) {
@@ -748,6 +821,7 @@ export class Hub extends EventEmitter {
     if (context) this.setContext(a, context)
     const limits = file && codexLimitsFrom(file)
     if (limits) this.setUsage(this.providerOf(a).id, limits.windows, limits.credits)
+    if (file) this.countSpend(a, e.session_id ?? this.sessions[a.name], codexSpent(file))
   }
 
   onExit(name, code, ms) {
@@ -1262,7 +1336,7 @@ export class Hub extends EventEmitter {
     const day = (s.days[localDay()] ??= {})
     for (const [k, v] of Object.entries(counts)) {
       s[k] = (s[k] ?? 0) + v
-      if (k === 'tasks' || k === 'activeMs') day[k] = (day[k] ?? 0) + v
+      if (['tasks', 'activeMs', 'cost', 'tokens'].includes(k)) day[k] = (day[k] ?? 0) + v
     }
     s.last = Date.now()
     clearTimeout(this.statsTimer)
@@ -1279,7 +1353,7 @@ export class Hub extends EventEmitter {
     const s = this.stats[a.cloneOf ?? a.name] ?? { days: {} }
     const days = Array.from({ length: 14 }, (_, i) => {
       const d = localDay(Date.now() - (13 - i) * 864e5)
-      return { day: d, tasks: s.days[d]?.tasks ?? 0 }
+      return { day: d, tasks: s.days[d]?.tasks ?? 0, cost: s.days[d]?.cost ?? 0 }
     })
     return {
       tasks: s.tasks ?? 0,
@@ -1293,6 +1367,14 @@ export class Hub extends EventEmitter {
       fromYou: s.fromYou ?? 0,
       fromTeam: s.fromTeam ?? 0,
       handoffs: s.handoffs ?? 0,
+      // what its work cost (Claude, priced as Claude Code prices it) or used (Codex reports tokens), and the lines it changed
+      cost: s.cost ?? 0,
+      costToday: s.days[localDay()]?.cost ?? 0,
+      costPerTask: s.cost && s.tasks ? s.cost / s.tasks : 0,
+      tokens: s.tokens ?? 0,
+      linesAdded: s.linesAdded ?? 0,
+      linesRemoved: s.linesRemoved ?? 0,
+      apiMs: s.apiMs ?? 0,
       first: s.first,
       last: s.last,
       days,
@@ -2595,6 +2677,7 @@ export class Hub extends EventEmitter {
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
       reads: this.reads,
+      spend: this.spendNow(),
       // each provider's usage limits that haven't reset yet: { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
       usage: Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id), ...(this.usage[id].credits && { credits: this.usage[id].credits }) }]).filter(([, u]) => u.windows.length)),
       tasks: {

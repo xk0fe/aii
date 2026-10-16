@@ -156,3 +156,30 @@ export function againstLimit(ctx, limit) {
 export const tokens = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 
 const clamp = (pct) => Math.max(0, Math.min(100, Math.round(pct)))
+
+// ---- spend: what a session has used so far, as its CLI counts it ------------------------------------------------
+
+// Claude Code's own running total for the session, from the status line JSON: what it cost (as /cost prices it, at
+// list price or your organization's rates), the lines it changed and the time spent waiting on the API. Each number is
+// the session's total so far. Numbers only: this arrives over the local API. -> { cost, added, removed, apiMs } or null
+export function spentFrom(s) {
+  const c = s?.cost
+  if (!c || typeof c !== 'object' || real(c.total_cost_usd) === null) return null
+  return { cost: Math.max(0, c.total_cost_usd), added: whole(c.total_lines_added), removed: whole(c.total_lines_removed), apiMs: whole(c.total_api_duration_ms) }
+}
+
+const whole = (v) => (real(v) === null ? 0 : Math.max(0, Math.round(v)))
+
+// Codex reports tokens, not money: the newest running total in its session log. -> { tokens } or null
+export function codexSpent(file) {
+  const text = tail(file)
+  const lines = text?.split('\n') ?? []
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes('"total_token_usage"')) continue
+    try {
+      const total = JSON.parse(lines[i]).payload?.info?.total_token_usage
+      if (total && typeof total === 'object') return { tokens: whole(real(total.total_tokens) ?? (real(total.input_tokens) ?? 0) + (real(total.output_tokens) ?? 0)) }
+    } catch {}
+  }
+  return null
+}
