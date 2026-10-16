@@ -89,7 +89,7 @@ test("a Codex agent's step brings its account's limits in, kept per provider nex
   step('david')
   hub.onStatusLine('joseph', { context_window: { context_window_size: 200000, used_percentage: 10 }, rate_limits: { five_hour: { used_percentage: 40, resets_at: (now + 2 * HOUR) / 1000 } } })
   const usage = hub.snapshot().usage
-  assert.deepEqual(usage.codex, { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 92, resetsAt: now + 100 * HOUR }], credits: { unlimited: false, balance: 62500 } })
+  assert.deepEqual({ ...usage.codex, windows: usage.codex.windows.map(({ pace, ...w }) => w) }, { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 92, resetsAt: now + 100 * HOUR }], credits: { unlimited: false, balance: 62500 } })
   assert.deepEqual(usage.claude.windows.map((w) => [w.id, w.pct]), [['five_hour', 40]])
   // Codex is the one near its limit: its agents lose ties, Claude's don't
   const agents = hub.snapshot().agents
@@ -103,14 +103,15 @@ test("a Codex agent's step brings its account's limits in, kept per provider nex
 test("heads-ups say it's Codex, and name a window Codex measures in hours", () => {
   log(count({ primary: [96, 10080, 100], secondary: [81, 120, 1] }))
   step('david')
-  const said = hub.feed.filter((e) => e.kind === 'event').map((e) => e.text)
+  const limits = () => hub.feed.filter((e) => e.kind === 'event' && !/^At this pace/.test(e.text))
+  const said = limits().map((e) => e.text)
   assert.equal(said.length, 2)
   assert.match(said[0], /^Codex is at 96% of its weekly limit, resets /)
   assert.match(said[1], /^Codex is at 81% of its 2-hour limit, resets at /)
   // the next step, same windows: nothing again
   mock.timers.tick(6000)
   step('david')
-  assert.equal(hub.feed.filter((e) => e.kind === 'event').length, 2)
+  assert.equal(limits().length, 2)
 })
 
 test('a Codex-run provider without limits in its log (Ollama) has none', () => {
