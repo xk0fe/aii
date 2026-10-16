@@ -331,21 +331,28 @@ function contextRing(a, { label = true, size = 15 } = {}) {
 
 const LIMIT_SHORT = { five_hour: '5h', seven_day: 'week', spend_limit: 'spend' }
 const LIMIT_LONG = { five_hour: '5-hour limit', seven_day: 'Weekly limit', spend_limit: 'Spend limit' }
+// a window Codex names by its length ("2-hour limit"): "2-hour", and "2-hour limit" on hover
+const limitShort = (w) => LIMIT_SHORT[w.id] ?? String(w.label ?? 'limit').replace(/ limit$/, '')
+const limitLong = (w) => LIMIT_LONG[w.id] ?? String(w.label ?? 'Limit').replace(/^./, (c) => c.toUpperCase())
 // "resets 15:00" today, "resets Thu 09:00" later in the week
 function resetsText(ms) {
   const d = new Date(ms)
   const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
   return d.toDateString() === new Date().toDateString() ? `resets ${time}` : `resets ${d.toLocaleDateString([], { weekday: 'short' })} ${time}`
 }
-const usageTip = (u) => `${u.label} account\n${u.windows.map((w) => `${LIMIT_LONG[w.id]}: ${w.pct}% used, ${resetsText(w.resetsAt)}`).join('\n')}`
+// Codex also says what's left of the account's credits
+const creditsText = (c) => (!c ? '' : c.unlimited ? '\nUnlimited credits' : c.balance !== undefined ? `\nCredits left: ${Math.round(c.balance).toLocaleString()}` : '')
+const usageTip = (u) => `${u.label} account\n${u.windows.map((w) => `${limitLong(w)}: ${w.pct}% used, ${resetsText(w.resetsAt)}`).join('\n')}${creditsText(u.credits)}`
 // each number turns amber, then red, like the context ring
-const limitNums = (u) => u.windows.map((w) => `<b class="${ctxLevel(w.pct)}">${LIMIT_SHORT[w.id]} ${w.pct}%</b>`).join('<i>·</i>')
+const limitNums = (u) => u.windows.map((w) => `<b class="${ctxLevel(w.pct)}">${limitShort(w)} ${w.pct}%</b>`).join('<i>·</i>')
 
-// The account's limits in one pill, for the titlebar and the menu bar: "5h 42% · week 61%". A provider's name leads
-// only when more than one reports limits.
+// The account's limits in one pill, for the titlebar: "5h 42% · week 61%". With more than one account reporting, each
+// shows its fullest window after its name, "Claude 5h 64% · Codex week 5%", and every window is in the tooltip.
 function usageChip(state) {
   const all = Object.values(state.usage ?? {}).filter((u) => u.windows?.length)
-  return all.map((u) => `<span class="sum usage" title="${esc(usageTip(u))}">${all.length > 1 ? `<span>${esc(u.label)}</span>` : ''}${limitNums(u)}</span>`).join('')
+  if (all.length < 2) return all.map((u) => `<span class="sum usage" title="${esc(usageTip(u))}">${limitNums(u)}</span>`).join('')
+  const fullest = (u) => ({ ...u, windows: [[...u.windows].sort((x, y) => y.pct - x.pct)[0]] })
+  return `<span class="sum usage" title="${esc(all.map(usageTip).join('\n\n'))}">${all.map((u) => `<span>${esc(u.label)}</span>${limitNums(fullest(u))}`).join('<i>·</i>')}</span>`
 }
 
 // Next to an agent's context ring: its account's fullest window ("5h 42%"), all of them on hover. An agent on
@@ -353,7 +360,7 @@ function usageChip(state) {
 function limitMark(a, state) {
   const u = !a.home && a.on && state.usage?.[a.provider]
   const w = u && [...u.windows].sort((x, y) => y.pct - x.pct)[0]
-  return w ? `<span class="lim ${ctxLevel(w.pct)}" title="${esc(usageTip(u))}">${LIMIT_SHORT[w.id]} ${w.pct}%</span>` : ''
+  return w ? `<span class="lim ${ctxLevel(w.pct)}" title="${esc(usageTip(u))}">${limitShort(w)} ${w.pct}%</span>` : ''
 }
 
 // The same as a line, for an agent's sheet: "Claude · 5h 42% · week 61%".

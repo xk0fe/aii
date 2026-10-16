@@ -8,7 +8,7 @@ import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
-import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, LIMITS } from './context.js'
+import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName } from './context.js'
 import { callResult } from './transcript.js'
 import { processes, tree, groupsOf, readGroups, leftovers, stop as stopProcesses, summary } from './procs.js'
 
@@ -684,16 +684,17 @@ export class Hub extends EventEmitter {
   }
 
   // ---- usage limits: how much of its account's 5-hour and weekly windows a provider has used ---------------
-  // Agents on one provider share its account, so the newest reading from any of them is the account's. A window that
-  // has reset is gone until a status line reports the new one.
+  // Agents on one provider share its account, so the newest reading from any of them is the account's: Claude Code's
+  // status line, or Codex's session log (readCodexContext). A window that has reset is gone until the next reading.
+  // credits: what Codex says is left on the account ({ balance, unlimited }), shown with its windows.
 
-  setUsage(id, windows) {
-    const before = JSON.stringify(this.liveUsage(id))
+  setUsage(id, windows, credits) {
+    const before = JSON.stringify([this.liveUsage(id), this.usage[id]?.credits])
     const u = (this.usage[id] ??= { told: {} })
-    Object.assign(u, { at: Date.now(), windows })
+    Object.assign(u, { at: Date.now(), windows, credits: credits ?? undefined })
     for (const w of windows) this.warnUsage(id, u, w)
     this.saveUsage()
-    if (JSON.stringify(this.liveUsage(id)) !== before) this.changed()
+    if (JSON.stringify([this.liveUsage(id), u.credits]) !== before) this.changed()
   }
 
   liveUsage(id) {
@@ -714,7 +715,7 @@ export class Hub extends EventEmitter {
     const level = LIMIT_WARN.findLast((l) => w.pct >= l)
     if (!level || (u.told[w.id]?.level ?? 0) >= level) return
     u.told[w.id] = { level, resetsAt: w.resetsAt }
-    const what = `${this.providers[id]?.label ?? id} is at ${w.pct}% of its ${LIMITS[w.id]}`
+    const what = `${this.providers[id]?.label ?? id} is at ${w.pct}% of its ${limitName(w)}`
     const when = resetsWhen(w.resetsAt)
     this.post({ kind: 'event', from: 'crew', text: `${what}, resets ${when}`, ...(level >= 95 && { alert: true }) })
     this.emit('notice', { title: what, body: `It resets ${when}.${level >= NEAR_LIMIT ? ' Until then, new work goes to agents on other providers when they cover the same area.' : ''}`, focus: '' })
@@ -735,7 +736,8 @@ export class Hub extends EventEmitter {
     this.usageTimer.unref?.()
   }
 
-  // Codex writes its token counts to its session log; read the newest after each step.
+  // Codex writes its token counts to its session log, and its account's usage limits with them; read the newest after
+  // each step.
   readCodexContext(a, e) {
     if (this.providerOf(a)?.cli !== 'codex') return
     const now = Date.now()
@@ -744,6 +746,8 @@ export class Hub extends EventEmitter {
     const file = e.transcript_path || codexLog(e.session_id ?? this.sessions[a.name])
     const context = file && fromCodexLog(file)
     if (context) this.setContext(a, context)
+    const limits = file && codexLimitsFrom(file)
+    if (limits) this.setUsage(this.providerOf(a).id, limits.windows, limits.credits)
   }
 
   onExit(name, code, ms) {
@@ -2591,8 +2595,8 @@ export class Hub extends EventEmitter {
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
       reads: this.reads,
-      // each provider's usage limits that haven't reset yet: { claude: { label, at, windows: [{ id, pct, resetsAt }] } }
-      usage: Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id) }]).filter(([, u]) => u.windows.length)),
+      // each provider's usage limits that haven't reset yet: { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
+      usage: Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id), ...(this.usage[id].credits && { credits: this.usage[id].credits }) }]).filter(([, u]) => u.windows.length)),
       tasks: {
         tickets: [...this.tickets.open(), ...this.tickets.all.filter((t) => t.status === 'done').sort((x, y) => x.updated - y.updated).slice(-60)],
         triage: this.config.triage ?? null,

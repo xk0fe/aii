@@ -42,19 +42,24 @@ const real = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 // Codex treats this much as always in use (instructions, tools) when it shows "context left"; same math here.
 const CODEX_BASELINE = 12000
 
-export function fromCodexLog(file) {
-  let text
+// The end of a Codex session log, where the newest token count is. null if it can't be read.
+function tail(file) {
   try {
     const fd = fs.openSync(file, 'r')
     const { size } = fs.fstatSync(fd)
-    const len = Math.min(size, 512 * 1024) // the newest count is near the end
+    const len = Math.min(size, 512 * 1024)
     const buf = Buffer.alloc(len)
     fs.readSync(fd, buf, 0, len, size - len)
     fs.closeSync(fd)
-    text = buf.toString('utf8')
+    return buf.toString('utf8')
   } catch {
     return null
   }
+}
+
+export function fromCodexLog(file) {
+  const text = tail(file)
+  if (text === null) return null
   const lines = text.split('\n')
   for (let i = lines.length - 1; i >= 0; i--) {
     if (!lines[i].includes('"token_count"')) continue
@@ -71,6 +76,46 @@ export function fromCodexLog(file) {
   }
   return null
 }
+
+// Codex's usage limits, from the same log: each token count also carries its account's rate limits, a primary and a
+// secondary window, each as a share of a window so many minutes long (Codex's weekly limit is 10080). The newest
+// reading wins. -> { windows: [{ id, pct, resetsAt, label? }], credits?: { balance, unlimited } }, or null.
+export function codexLimitsFrom(file, now = Date.now()) {
+  const text = tail(file)
+  if (text === null) return null
+  const lines = text.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes('"rate_limits"')) continue
+    let r
+    try {
+      r = JSON.parse(lines[i]).payload?.rate_limits
+    } catch {
+      continue
+    }
+    // another meter than the account's own (Codex names it "codex"): not the account's limits
+    if (!r || typeof r !== 'object' || (r.limit_id != null && r.limit_id !== 'codex')) continue
+    const windows = [r.primary, r.secondary].map((w) => codexWindow(w, now)).filter(Boolean)
+    const c = r.credits
+    const balance = Number(c?.balance)
+    const credits = c && typeof c === 'object' && c.has_credits ? { unlimited: c.unlimited === true, ...(Number.isFinite(balance) && { balance }) } : null
+    if (!windows.length && !credits) continue
+    return { windows, ...(credits && { credits }) }
+  }
+  return null
+}
+
+function codexWindow(w, now) {
+  const pct = real(w?.used_percent)
+  const minutes = real(w?.window_minutes)
+  const resets = real(w?.resets_at) // Unix seconds
+  if (pct === null || !(minutes > 0) || resets === null || resets * 1000 <= now) return null
+  const id = minutes === 300 ? 'five_hour' : minutes === 10080 ? 'seven_day' : `window_${minutes}`
+  const label = LIMITS[id] ? undefined : `${minutes % 1440 === 0 ? `${minutes / 1440}-day` : minutes % 60 === 0 ? `${minutes / 60}-hour` : `${minutes}-minute`} limit`
+  return { id, pct: clamp(pct), resetsAt: Math.round(resets * 1000), ...(label && { label }) }
+}
+
+// What a window is called: "weekly limit", or what Codex's own windows say they are.
+export const limitName = (w) => LIMITS[w.id] ?? w.label ?? 'limit'
 
 // Codex names its session logs rollout-<time>-<session id>.jsonl, in sessions/YYYY/MM/DD. Newest days first.
 const found = new Map()

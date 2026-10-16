@@ -230,8 +230,12 @@ if (new URLSearchParams(location.search).get('fixture') === 'row') {
 
 // what you've read: david's replies, but not joseph's or arie's latest
 const READS = { since: 0, agents: { david: now - 18 * min } }
-// The Claude account's usage limits, as the agents' status lines report them: the 5-hour window getting full.
-const USAGE = { claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 64, resetsAt: now + 140 * min }, { id: 'seven_day', pct: 38, resetsAt: now + 3.2 * day }] } }
+// The accounts' usage limits: Claude's as the agents' status lines report them (the 5-hour window getting full), and
+// Codex's from its session log, with the credits left on it.
+const USAGE = {
+  claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 64, resetsAt: now + 140 * min }, { id: 'seven_day', pct: 38, resetsAt: now + 3.2 * day }] },
+  codex: { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 5, resetsAt: now + 5.5 * day }], credits: { unlimited: false, balance: 62500 } },
+}
 const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, usage: USAGE, tasks: { tickets: TICKETS, triage: 'arie', autofix: false } }
 const emit = () => setTimeout(() => window.__crewEmit('state', state), 30)
 let nextTask = 14
