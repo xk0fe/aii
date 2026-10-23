@@ -490,6 +490,10 @@ test("who works in a workspace: shared agents join and leave from the app, each 
     assert.deepEqual(w.members, [{ name: 'joseph', folder: '' }, { name: 'gal', folder: APP }])
     assert.deepEqual(c.hubs.get('golf').space.agents.map((a) => [a.name, a.cwd]), [['joseph', API], ['gal', APP], ['kim', API]])
     assert.throws(() => c.workspaceAction('members', DEFAULT, { add: ['gal'] }), /every shared agent/)
+    // in Home, each agent's own folder: where it works there
+    c.workspaceAction('members', DEFAULT, { folders: { gal: APP, joseph: '' } })
+    assert.deepEqual(saved().agents.map((a) => [a.name, a.cwd]), [['joseph', undefined], ['david', undefined], ['gal', APP]])
+    assert.equal(c.snapshot().roster.find((a) => a.name === 'gal').cwd, APP, 'the sheet shows it')
   } finally {
     quit(c)
   }

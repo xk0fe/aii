@@ -246,7 +246,7 @@ On a subscription none of this is billed: it's a measure of how much each agent 
 
 ## Workspaces: a crew per project
 
-A workspace is a project: a folder, the agents who work on it, and its own chat, notes, tasks and conversations. Without any, Crew is one workspace, **Home**, where every agent works in its own folder, as it always was.
+A workspace is a project: a folder, the agents who work on it, and its own chat, notes, tasks and conversations. Without any, Crew is one workspace, **Home**, where every agent works in its own folder, as it always was. Home has no folder of its own: its settings list every agent with its folder, to change any of them there (or in the agent's sheet).
 
 - **The switcher** is the titlebar's top left: the workspace you're in, with its tile (an icon or its initial, on its color). Click it for every workspace: who's working there and who needs you, a few of its agents' faces, and `⌃1`–`⌃9` to jump straight to one (`⌃Tab` and `⌃⇧Tab` go to the next and previous). Once you have two, they also sit in a row at the foot of the sidebar, each with its own count, one click away; right-click one to park, open or change it. Its color tints the sidebar, so you know where you are at a glance. When an agent in another workspace needs you, the switcher's tile gets an orange count (a blue dot for new replies), the floating pill lights up, the menu bar lists it at the top, and the notification says which workspace it's from; clicking either takes you there.
 - **New workspace…** (in the switcher) asks for a name, a look, a folder, and which of your agents work there. Crew opens it and puts it on screen, and its agents start in its folder, each in a fresh conversation of its own.

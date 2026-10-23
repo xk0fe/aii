@@ -223,7 +223,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
         <p class="ws-note">Where its agents work, unless one has a folder of its own here.</p>
       </section>
       <section class="ws-sec" data-sec="crew">
-        <h4>Who works here <small class="ws-count"></small></h4>
+        <h4><span data-crew-title>Who works here</span> <small class="ws-count"></small></h4>
         <ul class="ws-crew"></ul>
         <p class="ws-note" data-crew-note></p>
       </section>
@@ -244,9 +244,14 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     const w = id ? state.workspaces.find((x) => x.id === id) : null
     const named = !w || w.id !== 'default'
     before = w
+    // Home has every agent, each in the folder of its own; any other workspace, its members and their folders there
+    const home = w?.id === 'default'
+    const roster = state.roster ?? []
     draft = {
       id: w?.id ?? null, name: w?.name ?? '', color: w?.color ?? (w ? '' : freshColor()), icon: w?.icon ?? '', folder: w?.folder ?? '',
-      members: new Set(w?.members?.map((m) => m.name) ?? []), folders: Object.fromEntries((w?.members ?? []).filter((m) => m.folder).map((m) => [m.name, m.folder])), running: w ? !w.parked : true,
+      members: new Set(home ? roster.map((a) => a.name) : w?.members?.map((m) => m.name) ?? []),
+      folders: Object.fromEntries(home ? roster.filter((a) => a.cwd).map((a) => [a.name, a.cwd]) : (w?.members ?? []).filter((m) => m.folder).map((m) => [m.name, m.folder])),
+      running: w ? !w.parked : true,
     }
     $d('[data-ws-name]').value = draft.name
     $d('[data-ws-folder]').value = tilde(draft.folder)
@@ -282,8 +287,9 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
       WS_COLORS.map((c) => `<button type="button" class="ws-sw ${draft.color === c ? 'on' : ''}" data-ws-color="${c}" style="--w:${COLORS[c]}" title="${c}" role="radio" aria-checked="${draft.color === c}"></button>`).join('')
     $d('.ws-icons').innerHTML = `<button type="button" class="ws-ic letter ${draft.icon ? '' : 'on'}" data-ws-icon="" title="Its initial" role="radio" aria-checked="${!draft.icon}">${esc((draft.name.trim()[0] ?? 'A').toUpperCase())}</button>` +
       WS_ICONS.map((i) => `<button type="button" class="ws-ic ${draft.icon === i ? 'on' : ''}" data-ws-icon="${i}" role="radio" aria-checked="${draft.icon === i}">${i}</button>`).join('')
-    $d('[data-sec=crew]').classList.toggle('hidden', !named || !roster.length)
-    $d('.ws-count').textContent = roster.length ? `${draft.members.size} of ${roster.length}` : ''
+    $d('[data-sec=crew]').classList.toggle('hidden', !roster.length)
+    $d('[data-crew-title]').textContent = named ? 'Who works here' : 'Where they work'
+    $d('.ws-count').textContent = !roster.length ? '' : named ? `${draft.members.size} of ${roster.length}` : plural(roster.length, 'agent')
     if (list) drawCrew(roster)
     const run = $d('.ws-run')
     run.querySelector('b').textContent = draft.running ? 'Running' : 'Parked'
@@ -293,20 +299,26 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     run.classList.toggle('on', draft.running)
   }
 
+  // Home: every agent, each with the folder of its own to change. Any other workspace: who's in it (the switches), and a
+  // folder of its own there for any of them.
   function drawCrew(roster) {
+    const home = draft.id === 'default'
     $d('.ws-crew').innerHTML = roster.map((a) => {
       const on = draft.members.has(a.name)
       const own = draft.folders[a.name]
+      const tip = home ? `Works in ${own ? esc(own) : 'your home folder'}. Click to change` : own ? `Works in ${esc(own)} here. Click to change` : "Give it a folder of its own here, instead of the workspace's"
       return `<li class="ws-agent ${on ? 'in' : ''}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}">
         <span class="ws-av">${avatarHTML(a, { size: 30, mood: on ? undefined : 'still' })}</span>
         <span class="who"><b>${esc(a.name)}</b><small>${esc(a.area || 'no area')}</small></span>
-        ${on ? `<button type="button" class="ws-own ${own ? 'set' : ''}" data-ws-own="${esc(a.name)}" title="${own ? `Works in ${esc(own)} here. Click to change` : "Give it a folder of its own here, instead of the workspace's"}">${ICONS.folder}<span>${own ? esc(tilde(own)) : 'Own folder'}</span></button>` : ''}
-        <input type="checkbox" class="switch sm" data-ws-member="${esc(a.name)}" ${on ? 'checked' : ''} aria-label="${esc(a.name)} works here">
+        ${on ? `<button type="button" class="ws-own ${own || home ? 'set' : ''}" data-ws-own="${esc(a.name)}" title="${tip}">${ICONS.folder}<span>${own ? esc(tilde(own)) : home ? '~' : 'Own folder'}</span></button>` : ''}
+        ${home ? '' : `<input type="checkbox" class="switch sm" data-ws-member="${esc(a.name)}" ${on ? 'checked' : ''} aria-label="${esc(a.name)} works here">`}
       </li>`
     }).join('')
-    $d('[data-crew-note]').textContent = draft.id
-      ? 'Who an agent is (its job, brain and look) is the same in every workspace; where it works and whether it’s on is each workspace’s. Agents only this workspace needs: make them with New agent while you’re in it.'
-      : 'Your agents bring who they are (job, brain, look) and start fresh conversations here. Agents only this workspace needs: make them with New agent once you’re in it.'
+    $d('[data-crew-note]').textContent = home
+      ? 'Home has no folder of its own: each agent works in its own, as you set it here or in its sheet. For a project the whole crew works on in one folder, make a workspace for it.'
+      : draft.id
+        ? 'Who an agent is (its job, brain and look) is the same in every workspace; where it works and whether it’s on is each workspace’s. Agents only this workspace needs: make them with New agent while you’re in it.'
+        : 'Your agents bring who they are (job, brain, look) and start fresh conversations here. Agents only this workspace needs: make them with New agent once you’re in it.'
   }
 
   dialog.addEventListener('input', (e) => {
@@ -357,7 +369,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     if (own) {
       // in place: a field for its folder here, empty for the workspace's
       const name = own.dataset.wsOwn
-      own.outerHTML = `<input class="ws-own-input mono" data-ws-own-input="${esc(name)}" value="${esc(tilde(draft.folders[name] ?? ''))}" placeholder="${esc(tilde(draft.folder) || '~/code/…')}" spellcheck="false">`
+      own.outerHTML = `<input class="ws-own-input mono" data-ws-own-input="${esc(name)}" value="${esc(tilde(draft.folders[name] ?? ''))}" placeholder="${esc(draft.id === 'default' ? '~ (your home folder)' : tilde(draft.folder) || '~/code/…')}" spellcheck="false">`
       const input = dialog.querySelector(`[data-ws-own-input="${CSS.escape(name)}"]`)
       input.focus()
       input.addEventListener('keydown', (k) => k.key === 'Enter' && (k.preventDefault(), setOwn(input)))
@@ -402,7 +414,15 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
         onSwitched(next)
       } else {
         const id = draft.id
+        // folders that changed, checked first: an agent can't start in one that isn't there
+        const folderWas = (n) => (id === 'default' ? (state.roster ?? []).find((a) => a.name === n)?.cwd : before.members.find((m) => m.name === n)?.folder) ?? ''
+        const moved = Object.fromEntries([...draft.members].map((n) => [n, draft.folders[n] ?? '']).filter(([n, f]) => f !== folderWas(n)))
+        for (const f of Object.values(moved).filter(Boolean)) {
+          const there = await crew.call('folderInfo', '', f)
+          if (!there.exists) throw new Error(`There's no folder ${tilde(there.path)}`)
+        }
         await crew.call('workspace', 'edit', id, look)
+        if (id === 'default' && Object.keys(moved).length) await crew.call('workspace', 'members', id, { folders: moved })
         if (id !== 'default') {
           const was = new Set(before.members.map((m) => m.name))
           const folders = Object.fromEntries([...draft.members].map((n) => [n, draft.folders[n] ?? '']).filter(([n, f]) => f !== (before.members.find((m) => m.name === n)?.folder ?? '')))

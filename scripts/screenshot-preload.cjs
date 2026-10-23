@@ -273,7 +273,7 @@ if (new URLSearchParams(location.search).get('fixture') === 'workspaces') {
         : every.filter((a) => w.members?.some((m) => m.name === a.name)).map((a) => ({ ...a, shared: true, ...(w.parked && { status: 'parked' }) }))
   }
   state.workspaces = WORKSPACES
-  state.roster = LOCAL.map((a) => ({ name: a.name, area: a.area, avatar: a.avatar }))
+  state.roster = LOCAL.map((a) => ({ name: a.name, area: a.area, avatar: a.avatar, cwd: `/Users/you/code/${a.name === 'ye' ? 'analytics' : a.name === 'marc' ? 'art' : 'app'}` }))
   show('golf')
   window.__crewShow = show
 }
