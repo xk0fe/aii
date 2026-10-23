@@ -152,6 +152,10 @@ export class Hub extends EventEmitter {
     if (this.ticketsTimer) this.tickets.save()
     this.saveConvos(true)
     this.saveSpend(true)
+    // its agents were just stopped (apply), but their CLIs end after this hub stops listening: what they left running
+    // is swept once they've had a moment to go
+    const runs = [...this.runs.keys()]
+    if (runs.length) setTimeout(() => runs.forEach((id) => this.sweep(id)), 4000).unref?.()
     for (const t of ['statsTimer', 'readsTimer', 'runtimeTimer', 'usageTimer', 'ticketsTimer', 'lookTimer']) clearTimeout(this[t])
     for (const a of this.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'steerTimer', 'retryTimer', 'reapTimer']) clearTimeout(a[t])
   }
@@ -175,10 +179,11 @@ export class Hub extends EventEmitter {
   }
 
   // survivors: terminals still running from before Crew restarted ([{ name, tag, pid }], from the terminal host). Their
-  // agents carry on where they are instead of starting again. park: the rest don't start until the workspace is opened.
-  start(url, { survivors = [], park = false } = {}) {
+  // agents carry on where they are instead of starting again. The rest start, unless config.json says the workspace is
+  // parked: then they wait until it's opened.
+  start(url, { survivors = [] } = {}) {
     this.url = url
-    this.parked = park
+    const park = (this.parked = this.space.parked)
     this.startedAt = Date.now()
     if (this.ws === DEFAULT) {
       // where agents' hooks and `crew` find Crew: every workspace's, told apart by the X-Crew-Workspace header
@@ -266,7 +271,68 @@ export class Hub extends EventEmitter {
       if (this.runner.running(n) && this.launchKey(a) !== key) this.relaunchWhenFree(a)
       if (a.contextLimit !== limit || a.onContextLimit !== onLimit) this.checkLimit(a)
     }
+    // parked or opened in config.json, from the app or by hand
+    if (this.url && this.space.parked !== this.parked) this.space.parked ? this.park() : this.unpark()
     this.changed()
+  }
+
+  // Opened: its agents that are on start, each picking up its conversation.
+  unpark() {
+    if (!this.parked) return
+    this.parked = false
+    const starting = [...this.agents.values()].filter((a) => !a.off && !a.cloneOf && !this.runner.running(a.name))
+    for (const a of starting) {
+      this.launch(a)
+      this.startWaiting(a)
+    }
+    if (starting.length) this.post({ kind: 'event', from: 'crew', text: `opened: ${starting.map((a) => `@${a.name}`).join(', ')} pick${starting.length === 1 ? 's' : ''} up where ${starting.length === 1 ? 'it' : 'they'} left off` })
+    this.changed()
+  }
+
+  // Parked: its agents stop, and their conversations wait for it to open again. Clones go home first, so what they had
+  // queued waits with their original.
+  park() {
+    const running = [...this.agents.values()].filter((a) => !a.cloneOf && (a.status !== 'off' || this.runner.running(a.name)))
+    if (this.parked && !running.some((a) => this.runner.running(a.name))) return
+    this.parked = true
+    // the agents first, so what their clones had queued waits with them instead of being typed into a terminal that's
+    // about to stop
+    const stopping = running
+    for (const a of stopping) {
+      this.forgetAsks(a.name)
+      this.forgetCalls(a.name, 'its workspace was parked before it answered')
+      // what it leaves running is stopped as always, without a line each: parking stops everything on purpose
+      const run = this.runs.get(a.run)
+      if (run) run.quiet = true
+      this.runner.stop(a.name)
+      this.setStatus(a, 'off')
+    }
+    for (const c of this.clones()) {
+      const run = this.runs.get(c.run)
+      if (run) run.quiet = true
+      this.dismiss(c.name)
+    }
+    if (stopping.length) this.post({ kind: 'event', from: 'crew', text: `parked: ${stopping.map((a) => `@${a.name}`).join(', ')} stopped, and their conversations wait for the workspace to open again` })
+    this.changed()
+  }
+
+  // How this workspace is doing, for the switcher: its agents, who's at work or waiting on you, the replies you haven't
+  // read (as its chat counts them), and a few faces.
+  // An agent counts as working while it or any of its clones does; each one waiting on you counts.
+  summary() {
+    const agents = this.ordered().filter((a) => !a.cloneOf)
+    const live = agents.filter((a) => !a.off && (!this.parked || this.runner.running(a.name)))
+    const read = (from) => Math.max(this.reads.since ?? 0, this.reads.agents?.[from] ?? 0)
+    return {
+      agents: agents.length,
+      on: agents.filter((a) => !a.off).length,
+      working: live.filter((a) => [a, ...this.clonesOf(a)].some((x) => x.status === 'working')).length,
+      waiting: live.flatMap((a) => [a, ...this.clonesOf(a)]).filter((x) => x.status === 'waiting').length,
+      unread: this.feed.slice(-200).filter((e) => e.kind === 'reply' && e.from !== 'you' && e.ts > read(e.from)).length,
+      faces: agents.filter((a) => !a.off).slice(0, 4).map((a) => ({ name: a.name, avatar: a.avatar, status: this.parked ? 'parked' : a.status })),
+      // who's waiting on you there, so another workspace can say so
+      needs: live.flatMap((a) => [a, ...this.clonesOf(a)]).filter((x) => x.status === 'waiting').slice(0, 4).map((x) => ({ name: x.name, avatar: x.avatar ?? (x.cloneOf && this.agents.get(x.cloneOf)?.avatar), activity: x.activity })),
+    }
   }
 
   saveConfig() {
@@ -499,6 +565,7 @@ export class Hub extends EventEmitter {
 
   restart(name, fresh = false) {
     const a = this.agents.get(name)
+    if (a && this.parked && !this.runner.running(name)) throw new Error(`${this.space.name} is parked: open it to start its agents`)
     if (a) this.launch(a, fresh)
   }
 
@@ -659,6 +726,12 @@ export class Hub extends EventEmitter {
     }
     if (a.status === 'working' || a.status === 'waiting') {
       a.freshPending = true
+      return this.changed()
+    }
+    // parked: the next time it starts, it starts fresh
+    if (this.parked && !this.runner.running(name)) {
+      this.saveSession(name, null)
+      this.newConvo(a)
       return this.changed()
     }
     this.startFresh(a)
@@ -1057,7 +1130,7 @@ export class Hub extends EventEmitter {
     if (!left.length) return
     stopProcesses(left)
     const n = left.length
-    this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(left)}), so Crew stopped ${n === 1 ? 'it' : 'them'}` })
+    if (!run.quiet) this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(left)}), so Crew stopped ${n === 1 ? 'it' : 'them'}` })
   }
 
   // Launches that ended while Crew wasn't there to see it (it quit, or crashed): swept now.
@@ -2837,6 +2910,7 @@ export class Hub extends EventEmitter {
 
   snapshot() {
     return {
+      parked: this.parked,
       autopilot: this.space.autopilot,
       theme: this.config.theme,
       providers: Object.fromEntries(
@@ -2845,12 +2919,14 @@ export class Hub extends EventEmitter {
       agents: this.ordered().map((a) => ({
         name: a.name, area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
         tier: a.tier, fast: this.providerOf(a)?.fastByDefault === undefined ? undefined : a.tier ? a.tier === 'fast' : this.providerOf(a).fastByDefault,
-        args: (a.args ?? []).join(' '), avatar: a.avatar, status: a.status, since: a.since, activity: a.activity,
+        args: (a.args ?? []).join(' '), avatar: a.avatar, status: this.parked && !a.off && a.status === 'off' ? 'parked' : a.status, since: a.since, activity: a.activity,
         queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a), nearLimit: this.nearLimit(this.providerOf(a)?.id),
         // how full, measured against its own context limit when it has one
         convo: this.convos[a.name] ? { ...this.convos[a.name], context: againstLimit(this.convos[a.name].context, a.contextLimit) } : null,
         contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : null, onContextLimit: a.onContextLimit === 'notify' ? 'notify' : 'fresh',
         freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
+        // in a workspace other than the default: one of your shared agents (in other workspaces too), or only this one's
+        ...(this.ws !== DEFAULT && !a.cloneOf && { shared: Boolean(a.shared) }),
         // a clone: whose, and its number (gal.2 is clone 2); it looks like its original
         clones: this.maxClones(a), ...(a.cloneOf && { cloneOf: a.cloneOf, clone: a.clone, avatar: { seed: a.avatar?.seed ?? a.cloneOf, ...a.avatar } }),
         // its sub-agents: the running ones, and ones that just finished

@@ -2,7 +2,7 @@
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, level, conversation), everything you can set on the right,
 // in four tabs that each fit without scrolling. "Select" turns on bulk mode to change many agents at once.
-/* global crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS */
+/* global crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -142,7 +142,11 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     celebrate(grid, state.agents)
     const on = roster().filter((a) => a.on).length
     const pcs = groups.filter((g) => g.agents.length).length
-    $('.col-sub').textContent = roster().length ? `${plural(roster().length, 'agent')} · ${on} on${pcs > 1 ? ` · ${pcs} computers` : ''}` : 'Start with one agent per area of work'
+    // in a workspace: its name, and where its agents work
+    const ws = hasWorkspaces(state) ? state.workspace : null
+    $('.col-title h2').textContent = ws ? ws.name : 'Your crew'
+    const where = ws?.folder ? ` · ${shortPath(ws.folder)}` : ''
+    $('.col-sub').textContent = roster().length ? `${plural(roster().length, 'agent')} · ${on} on${pcs > 1 ? ` · ${pcs} computers` : ''}${where}` : ws && ws.id !== 'default' ? 'Add your agents in its settings, or make one only it needs' : 'Start with one agent per area of work'
     root.classList.toggle('selecting', selecting)
     $('[data-act=select]').textContent = selecting ? 'Done' : 'Select'
     drawBulkCount()
@@ -355,7 +359,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       : null
     draft = original
       ? structuredClone(original)
-      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar(), contextLimit: '', onContextLimit: 'fresh', clones: '' }
+      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar(), contextLimit: '', onContextLimit: 'fresh', clones: '', shared: '' }
     if (home !== undefined && !a) draft.home = home
     editing = a ? a.name : ':new'
     tab = at ?? (a ? store.get('crew.edTab') || 'setup' : 'setup')
@@ -657,8 +661,16 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       : live
         ? row('Computer', `<span class="ed-pc">${at.here ? ICONS.desktop : ICONS.laptop}<b>${esc(at.name)}</b>${at.here ? '<small>this Mac</small>' : ''}</span><button class="btn small" data-act="move-to" ${places.some((p) => p.slug !== (d.home ?? '') && p.online) ? '' : 'disabled'}>${ICONS.move}<span>Move…</span></button>`, { note: 'its chat comes along' })
         : row('Computer', `<div class="pills small" data-pick="home">${places.filter((p) => p.online || p.slug === d.home).map((p) => pill(p.slug, esc(p.name), d.home === p.slug)).join('')}</div>`)
-    card.querySelector('.where').innerHTML = computer +
-      row('Folder', `<input class="ed-input mono" data-k="cwd" value="${esc(d.cwd)}" placeholder="~/code/my-app" autocomplete="off">${d.home ? '' : '<button type="button" class="btn small" data-act="pick">Choose…</button>'}`, { note: d.home ? `a path on ${esc(at.name)}` : '' }) +
+    // in a workspace other than the default: whether it's one of your shared agents or only this workspace's, and its
+    // folder is the workspace's unless it has one of its own
+    const ws = state.workspace && state.workspace.id !== 'default' ? state.workspace : null
+    const lives = !ws ? ''
+      : live
+        ? row('Lives in', `<span class="ed-pc">${wsTile(ws, { size: 18 })}<b>${live.shared ? 'Your crew' : `${esc(ws.name)} only`}</b></span>`, { note: live.shared ? 'the same agent in every workspace it works in' : `only ${esc(ws.name)} has it` })
+        : row('Lives in', `<div class="pills small" data-pick="shared">${pill('', `${esc(ws.name)} only`, !d.shared)}${pill('1', 'Your whole crew', Boolean(d.shared))}</div>`, { note: d.shared ? `joins your crew, and works here in ${esc(ws.name)}` : `only ${esc(ws.name)} has it` })
+    const folder = ws?.folder ? ws.folder.replace(/^\/Users\/[^/]+/, '~') : ''
+    card.querySelector('.where').innerHTML = lives + computer +
+      row('Folder', `<input class="ed-input mono" data-k="cwd" value="${esc(d.cwd)}" placeholder="${esc(folder || '~/code/my-app')}" autocomplete="off">${d.home ? '' : '<button type="button" class="btn small" data-act="pick">Choose…</button>'}`, { note: d.home ? `a path on ${esc(at.name)}` : folder && !d.cwd ? `${esc(ws.name)}'s folder` : '' }) +
       row('Extra flags', `<input class="ed-input mono" data-k="args" value="${esc(d.args)}" placeholder="passed straight to the CLI" autocomplete="off">`)
   }
 
@@ -913,6 +925,9 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     },
     open,
     create: () => open(null),
+    close: () => editing && close(true),
+    // the agent whose sheet has changes not saved yet, if any
+    unsaved: () => (editing && dirty() ? (editing === ':new' ? 'the new agent' : editing) : null),
     setVisible(on) {
       shown = on
       if (on && stale && state) (stale = false), drawGrid()

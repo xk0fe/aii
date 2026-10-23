@@ -12,7 +12,10 @@
 //     "members": { "joseph": {}, "david": { "folder": "~/code/app" } }, shared agents in it, one with a folder of its own
 //     "agents": [{ "name": "kim", "area": "docs" }],                    its own agents, set up like shared ones
 //     "autopilot": false, "triage": "joseph", "autofix": true          as the top-level ones, which are the default's
+//     "color": "teal", "icon": "⛳", "parked": true                      its look, and whether its agents are stopped
 //   }]
+// The default one's look and switch are top-level too ("name", "color", "icon", "parked"), and "current" is the
+// workspace on screen.
 // Where an agent works in a workspace: its own folder there (a member's "folder", an own agent's "cwd"), else the
 // workspace's, else (a shared agent) the folder it has of its own, else home. Whether it's on ("off") is per workspace
 // too. Who it is (its job, instructions, model, look) is the same wherever it works.
@@ -21,6 +24,11 @@ import path from 'node:path'
 
 export const DEFAULT = 'default'
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/
+// a color by name (one of the creatures', ui/avatar.js) or as #hex: nothing that could break out of a style
+const COLOR = /^(?:[a-z]{2,20}|#[0-9a-f]{3,8})$/i
+
+// What a workspace is called when config.json doesn't say: the default one is your home.
+export const HOME_NAME = 'Home'
 
 // Where a workspace keeps its files.
 export const dirOf = (home, id) => (id === DEFAULT ? home : path.join(home, 'workspaces', id))
@@ -62,8 +70,10 @@ export function space(config, id) {
   const def = (name) => [...joined, ...owned].find((a) => a.name === name)
   return {
     id,
-    name: members ? own.name || own.id : null,
+    name: members ? own.name || own.id : config.name || HOME_NAME,
     folder: members ? own.folder || null : null,
+    color: typeof own.color === 'string' && COLOR.test(own.color) ? own.color : null,
+    icon: typeof own.icon === 'string' ? own.icon : null,
     agents,
     has: (name) => taken.has(name),
     // the agent's definition in config.json, wherever it's kept (shared, or this workspace's own)
@@ -88,11 +98,12 @@ export function space(config, id) {
         if (members) own.members = { ...members, [fields.name]: member }
       } else own.agents = [...(Array.isArray(own.agents) ? own.agents : []), fields]
     },
+    // (as the file is now: several in a row each see the last)
     join(name, fields = {}) {
-      own.members = { ...members, [name]: fields }
+      own.members = { ...memberMap(own), [name]: fields }
     },
     leave(name) {
-      if (members) delete members[name]
+      if (members) delete memberMap(own)[name]
     },
     // one of its own agents goes; a shared one only leaves (see forget for taking it off the roster)
     remove(name) {
@@ -118,7 +129,59 @@ export function space(config, id) {
     set autofix(on) {
       own.autofix = Boolean(on) || undefined
     },
+    // parked: its agents don't run (their conversations wait for it to open again)
+    get parked() {
+      return Boolean(own.parked)
+    },
+    set parked(on) {
+      own.parked = Boolean(on) || undefined
+    },
   }
+}
+
+// A free id for a new workspace, from its name: "Golf app" -> golf-app, golf-app-2.
+export function newId(config, name) {
+  const base = String(name ?? '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'workspace'
+  const taken = new Set([DEFAULT, ...workspacesIn(config).map((w) => w.id)])
+  let id = base
+  for (let i = 2; taken.has(id); i++) id = `${base}-${i}`
+  return id
+}
+
+// A workspace's name, look and folder, as the app sets them (the default's are top-level). Empty values go.
+const LOOK = ['name', 'color', 'icon', 'folder']
+export function setLook(config, id, patch) {
+  const own = id === DEFAULT ? config : workspacesIn(config).find((w) => w.id === id)
+  if (!own) throw new Error('no such workspace')
+  for (const k of LOOK) {
+    if (!(k in patch) || (k === 'folder' && id === DEFAULT)) continue
+    const v = typeof patch[k] === 'string' ? patch[k].trim() : ''
+    if (k === 'color' && v && !COLOR.test(v)) throw new Error(`"${v}" isn't a color`)
+    if (v) own[k] = v
+    else delete own[k]
+  }
+}
+
+// A new workspace: its look, its folder, and which of your shared agents work in it. -> its id
+// folders: { name: folder } for members with a folder of their own there.
+export function addWorkspace(config, { name, members = [], folders = {}, ...look }) {
+  name = String(name ?? '').trim()
+  if (!name) throw new Error('give the workspace a name')
+  const id = newId(config, name)
+  const shared = new Set(named(config.agents).map((a) => a.name))
+  const entry = (n) => (String(folders[n] ?? '').trim() ? { folder: String(folders[n]).trim() } : {})
+  const w = { id, name, members: Object.fromEntries(members.filter((n) => shared.has(n)).map((n) => [n, entry(n)])) }
+  config.workspaces = [...(Array.isArray(config.workspaces) ? config.workspaces : []), w]
+  setLook(config, id, look)
+  return id
+}
+
+// A workspace out of config.json (never the default). Its files stay in its folder, so one made again with the same
+// id picks its chat, notes and tasks back up.
+export function dropWorkspace(config, id) {
+  if (id === DEFAULT) throw new Error("the default workspace can't be removed")
+  config.workspaces = (Array.isArray(config.workspaces) ? config.workspaces : []).filter((w) => w?.id !== id)
+  if (config.current === id) delete config.current
 }
 
 // A shared agent off the roster: out of every workspace too.

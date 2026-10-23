@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
   <title>Crew</title>
   <link rel="stylesheet" href="common.css">
+  <link rel="stylesheet" href="workspaces.css">
   <style>
     :root { --tray-hover: #dedee3; }
     @media (prefers-color-scheme: dark) { :root { --tray-hover: #3b3b40; } }
@@ -13,6 +14,9 @@
     header { display: flex; align-items: center; gap: 8px; padding: 2px 6px 8px; }
     header .mark { width: 27px; height: 18px; color: var(--fg); flex: none; }
     header b { font-size: 15px; font-weight: 750; letter-spacing: -.01em; }
+    header .brand { display: flex; align-items: center; gap: 8px; flex: none; }
+    header .ws-switch { margin: -4px 0 -4px -4px; max-width: 170px; }
+    header .ws-switch b { font-size: 15px; }
     .sums { margin-left: auto; }
     .empty { color: var(--fg2); padding: 18px 10px 20px; text-align: center; line-height: 1.45; }
     /* the crew, by computer: scrolls inside the popover once it's taller than the screen allows */
@@ -45,10 +49,20 @@
     .usage-row i { font-style: normal; color: var(--fg3); }
     /* a limit that runs out before it resets, at this pace */
     .usage-pace { margin: -6px 10px 8px; color: var(--ctx-hot); font-size: 11.5px; font-weight: 600; text-align: right; }
+    /* agents waiting on you in other workspaces, first: a click goes there */
+    .away { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px; }
+    .away:empty { display: none; }
+    .away-row { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px; border-radius: 12px; cursor: default; background: color-mix(in srgb, var(--waiting) 12%, transparent); animation: sum-in .4s var(--spring); }
+    .away-row:hover { background: color-mix(in srgb, var(--waiting) 20%, transparent); }
+    .away-row .who { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; white-space: nowrap; overflow: hidden; }
+    .away-row .who b { font-size: 13px; }
+    .away-row .who span { color: var(--waiting-ink); font-size: 12px; font-weight: 600; }
+    .away-row small { display: flex; align-items: center; gap: 5px; flex: none; color: var(--fg2); font-size: 11.5px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
   </style>
 </head>
 <body>
-  <header><span class="logo"></span><b>Crew</b><span class="sums"></span></header>
+  <header><span class="brand"><span class="logo"></span><b>Crew</b></span><button class="ws-switch hidden" aria-haspopup="menu"></button><span class="sums"></span></header>
+  <div class="away"></div>
   <div class="roster"></div>
   <hr>
   <div class="usage"></div>

@@ -331,3 +331,14 @@ test('ui: a clone that has gone keeps its agent\'s face and name in the feed', (
   assert.match(html, /<av gal>/)
   assert.match(html, />gal<span class="clone-no"[^>]*>3<\/span>/)
 })
+
+test("parking its workspace: what a clone had queued waits with its agent, typed into nobody's terminal", () => {
+  busy('gal')
+  hub.send({ to: 'gal', text: 'make the empty state' })
+  assert.ok(names().includes('gal.2'), 'a clone took it')
+  hub.park()
+  assert.ok(!names().includes('gal.2'), 'the clone goes home')
+  assert.equal(agent('gal').status, 'off')
+  assert.deepEqual(agent('gal').inbox.map((m) => m.text), ['make the empty state'], 'waiting for the workspace to open')
+  assert.deepEqual([...typedInto('gal'), ...typedInto('gal.2')], [])
+})

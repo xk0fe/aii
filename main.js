@@ -92,7 +92,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 // ends them too.
 app.on('before-quit', (e) => {
   if (quitting || !crew) return
-  const live = hub.snapshot().agents.filter((a) => a.on && a.status !== 'stopped').length
+  const live = [...crew.hubs.values()].reduce((n, h) => n + h.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'parked'].includes(a.status)).length, 0)
   const s = live > 1 ? 's' : ''
   const answer = !live ? 1
     : crew.outlives
@@ -235,23 +235,26 @@ function showDock() {
 // ---- wiring ------------------------------------------------------------------
 
 // Every action the UI can take: crew.call('<name>', ...args). Agents are addressed by the name the UI shows,
-// so an agent on another computer (gal@mac-mini) is handled there.
+// so an agent on another computer (gal@mac-mini) is handled there. What the UI does lands in the workspace on screen.
 const actions = {
   state: () => crew.snapshot(),
+  // The switcher and the workspace sheet: workspace('switch', 'golf'), workspace('create', null, { name, … }), and
+  // edit, open, park, remove, members (see Crew.workspaceAction). -> { id, state }
+  workspace: (op, id, arg) => crew.workspaceAction(op, id, arg),
   send: (to, text, images, opts) => crew.send(to, text, images, opts),
   // A new conversation for an agent (after its current task, if it's busy).
   freshStart: (name) => crew.at(name, 'freshStart'),
   // The Tasks board: task('file', null, { text, images, kind }), task('dispatch', '12'), task('accept', '12@air')…
   task: (op, key, arg) => crew.ticket(op, key, arg),
-  taskSettings: (patch) => hub.setTaskSettings(patch),
-  saveImage: (name, type, bytes) => hub.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
+  taskSettings: (patch) => crew.here.setTaskSettings(patch),
+  saveImage: (name, type, bytes) => crew.here.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
   approve: (id) => crew.feedAction(id, 'approve'),
   drop: (id) => crew.feedAction(id, 'drop'),
   // Answer an agent's question (a permission prompt, AskUserQuestion, a plan) from the chat; see hub.ask.
   answer: (id, reply) => crew.feedAction(id, 'answer', reply),
-  autopilot: (on) => hub.setAutopilot(on),
+  autopilot: (on) => crew.here.setAutopilot(on),
   // You've seen agents' replies up to then: { name: ts }. Unread badges count what's newer.
-  read: (seen) => hub.read(seen),
+  read: (seen, ws) => (crew.hubs.get(ws) ?? crew.here).read(seen),
   update: (names, patch) => crew.update(names, patch),
   draftPrompt: (agent) => crew.draftPrompt(agent),
   addAgent: (fields) => crew.addAgent(fields),
@@ -347,7 +350,7 @@ function wire() {
   ipcMain.on('drag', (e, phase, x, y) => BrowserWindow.fromWebContents(e.sender) === overlay && pill.drag(phase, x, y))
   ipcMain.on('input', (_e, name, data) => {
     const { l, base } = crew.where(name)
-    l ? l.peer?.input(base, data) : hub.input(base, data)
+    l ? l.peer?.input(base, data) : crew.here.input(base, data)
   })
 
   // Windows size themselves to their content; the overlay is placed so its pill stays put (core/pill.js).
@@ -380,16 +383,22 @@ function wire() {
   })
   crew.changed()
 
-  crew.on('alert', (name, text) => {
-    const note = new Notification({ title: `${name.replace(/\.(\d+)(?=@|$)/, ' (clone $1)')} needs you`, body: text })
-    note.on('click', () => openDashboard(name))
+  // From any workspace: with workspaces, the title says which, and a click puts that one on screen first.
+  const from = (ws) => (crew.hubs.size > 1 ? `${crew.hubs.get(ws)?.space.name ?? ws} · ` : '')
+  const goTo = (ws, focus) => {
+    if (ws && ws !== crew.current && crew.hubs.has(ws)) crew.workspaceAction('switch', ws)
+    openDashboard(focus)
+  }
+  crew.on('alert', (name, text, ws) => {
+    const note = new Notification({ title: `${from(ws)}${name.replace(/\.(\d+)(?=@|$)/, ' (clone $1)')} needs you`, body: text })
+    note.on('click', () => goTo(ws, name))
     note.show()
   })
 
   // e.g. "@david fixed #12": click to check it in the Bugs lane
-  crew.on('notice', ({ title, body, focus }) => {
-    const note = new Notification({ title, body })
-    note.on('click', () => openDashboard(focus))
+  crew.on('notice', ({ title, body, focus, workspace }) => {
+    const note = new Notification({ title: `${from(workspace)}${title}`, body })
+    note.on('click', () => goTo(workspace, focus))
     note.show()
   })
 }
@@ -420,8 +429,14 @@ function wireVoice() {
   if (key && !globalShortcut.register(key, dictate)) hub.post({ kind: 'event', from: 'crew', text: `voice hotkey ${key} is taken, set another "voiceHotkey" in config.json` })
 }
 
-// "2/5": agents at work out of those on; one counts as working while it or any of its clones is.
+// "2/5": agents at work out of those on; one counts as working while it or any of its clones is. With workspaces, every
+// open one counts.
 function trayTitle(state) {
+  if (state.workspaces?.length > 1) {
+    const sum = (k) => state.workspaces.reduce((n, w) => n + (w.parked ? 0 : w[k]), 0)
+    const [waiting, working, on] = [sum('waiting'), sum('working'), sum('on')]
+    return waiting ? ` ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? ` ${working}/${on}` : ''
+  }
   const on = state.agents.filter((a) => a.on)
   const agents = on.filter((a) => !a.cloneOf)
   const waiting = on.filter((a) => a.status === 'waiting').length

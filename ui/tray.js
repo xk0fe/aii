@@ -1,5 +1,5 @@
 // Menu bar popover: who's doing what, autopilot, and the way into everything else.
-/* global themeButton, crew, live, morph, esc, rosterParts, crewSummary, usageTip, limitNums, paceWarning, spendLine, spendTip, celebrate, markSVG, store, ICONS */
+/* global avatarHTML, popMenu, wsTile, wsStatus, elsewhere, hasWorkspaces, themeButton, crew, live, morph, esc, rosterParts, crewSummary, usageTip, limitNums, paceWarning, spendLine, spendTip, celebrate, markSVG, store, ICONS */
 
 const $ = (s) => document.querySelector(s)
 $('.logo').outerHTML = markSVG('0 6 24 16')
@@ -29,6 +29,8 @@ document.addEventListener('click', (e) => {
     store.set('crew.tray.folds', JSON.stringify([...folds]))
     return draw()
   }
+  const away = e.target.closest('[data-away-ws]')
+  if (away) return crew.call('workspace', 'switch', away.dataset.awayWs).then(() => crew.call('dashboard', away.dataset.awayAgent))
   const card = e.target.closest('.crow')
   if (card) return crew.call('dashboard', card.dataset.agent)
   const el = e.target.closest('[data-act]')
@@ -38,6 +40,23 @@ document.addEventListener('click', (e) => {
   else crew.call(act)
 })
 $('.autopilot .switch').addEventListener('change', (e) => crew.call('autopilot', e.target.checked))
+
+// With workspaces, the header says which one you're looking at, and switches (a parked one opens).
+$('.ws-switch').addEventListener('click', (e) => {
+  e.stopPropagation()
+  const list = state.workspaces ?? []
+  popMenu($('.ws-switch'), [
+    { head: 'Workspaces' },
+    ...list.map((w) => ({ label: w.name, icon: wsTile(w, { size: 18 }), act: w.id, hint: w.current ? 'on screen' : wsStatus(w) })),
+    '-',
+    { label: 'New workspace…', icon: ICONS.plus, act: ':new' },
+  ], async (id) => {
+    if (id === ':new') return crew.call('dashboard', ':workspace')
+    const w = list.find((x) => x.id === id)
+    if (w.parked) await crew.call('workspace', 'open', id)
+    await crew.call('workspace', 'switch', id)
+  })
+})
 
 // The window is hidden, not closed, between clicks on the menu bar icon: replay the entrance on each open.
 const opened = () => {
@@ -51,7 +70,18 @@ opened()
 // The popover grows with the crew up to most of the screen, then the crew scrolls inside it.
 function draw() {
   drawTheme(state.theme)
+  const ws = hasWorkspaces(state)
+  $('header .brand').classList.toggle('hidden', ws)
+  $('.ws-switch').classList.toggle('hidden', !ws)
+  if (ws) {
+    const away = elsewhere(state)
+    morph($('.ws-switch'), `${wsTile(state.workspace, { size: 22 })}<b>${esc(state.workspace.name)}</b><span class="ws-chev">${ICONS.updown}</span>${away.waiting ? `<i class="ws-alert waiting">${away.waiting}</i>` : away.unread ? '<i class="ws-alert unread"></i>' : ''}`)
+    $('.ws-switch').title = ['Switch workspaces', ...away.who.map((w) => `${w.name}: ${wsStatus(w)}`)].join('\n')
+  }
   document.documentElement.style.setProperty('--max', `${Math.max(260, Math.min(620, screen.availHeight - 260))}px`)
+  // who's waiting on you in another open workspace, before this one's crew
+  morph($('.away'), elsewhere(state).who.flatMap((w) => (w.needs ?? []).map((a) => `<button class="away-row" data-away-ws="${esc(w.id)}" data-away-agent="${esc(a.name)}" title="${esc(`${a.name} needs you in ${w.name}${a.activity ? `: ${a.activity}` : ''}`)}">
+    ${avatarHTML(a, { size: 26 })}<span class="who"><b>${esc(a.name)}</b><span>needs you</span></span><small>${wsTile(w, { size: 16 })}${esc(w.name)}</small></button>`)).join(''))
   morph($('.roster'), state.agents.length
     ? rosterParts(state, { folds })
     : ['<div class="empty">No agents yet. Add one per area of work, like onboarding or the 3D character.</div>'])

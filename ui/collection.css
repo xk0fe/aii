@@ -70,6 +70,7 @@
 .pcard:hover .av-face { translate: calc((var(--mx, .5) - .5) * 7px) calc((var(--my, .5) - .5) * 5px); }
 @keyframes card-in { from { opacity: 0; transform: translateY(22px) scale(.92); } }
 .pcard.off { filter: saturate(.25); opacity: .78; }
+.pcard.parked { filter: saturate(.45); opacity: .86; }
 /* working: a light runs around the card's edge. .pc-glow is the edge (a ring mask); the light is a conic gradient
    on a square, as wide as the card's diagonal, that turns behind it: the same picture as turning the gradient's
    angle, but a transform, so the compositor plays it instead of a repaint every frame. */

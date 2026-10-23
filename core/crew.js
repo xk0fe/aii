@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, bestFor, openConfig } from './hub.js'
 import { Runner, Scoped } from './runner.js'
-import { DEFAULT, workspacesIn } from './workspaces.js'
+import { DEFAULT, workspacesIn, space, addWorkspace, setLook, dropWorkspace } from './workspaces.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
 import { LinkHost, LinkClient, identity, addresses, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
@@ -45,20 +45,21 @@ export class Crew extends EventEmitter {
     this.config = openConfig() // read by the first hub, so a broken one is said in its chat
     this.usage = readJSON(path.join(HOME, 'usage.json')) ?? {} // your accounts' limits, the same in every workspace
     this.hubs = new Map()
-    this.hub = this.workspace(DEFAULT) // the default workspace's: the only one shown, and linked, for now
+    this.hub = this.workspace(DEFAULT) // the default workspace's: the one linked computers see
     this.syncWorkspaces()
     this.config.on('change', () => this.syncWorkspaces())
     this.hub.relay = (from, names, text, images, extra) => this.relay(from, names, text, images, extra)
     this.hub.relayTask = (host, from, args) => this.link(host).peer.call('task', [`${from}@${this.me.slug}`, args])
     this.hub.self = this.me.slug
-    this.hub.directory = () => this.snapshot().agents.filter((a) => a.home)
+    this.hub.directory = () => this.snapshot(this.hub).agents.filter((a) => a.home)
     this.hub.elsewhere = (name) => {
       const there = this.hub.directory().filter((a) => a.seed === name)
       return there.length === 1 ? there[0].name : undefined
     }
   }
 
-  // A workspace's hub, made when it's first needed.
+  // A workspace's hub, made when it's first needed. What it says to you (alerts, notices) says which workspace it's from,
+  // and anything that changes there redraws the app (the switcher counts every workspace).
   workspace(id) {
     let hub = this.hubs.get(id)
     if (hub) return hub
@@ -66,15 +67,17 @@ export class Crew extends EventEmitter {
     hub.others = () => [...this.hubs.values()].filter((h) => h !== hub)
     if (id !== DEFAULT) {
       // the default's go further, to linked computers too: see start
-      hub.on('notice', (n) => this.emit('notice', n))
+      hub.on('notice', (n) => this.emit('notice', { ...n, workspace: id }))
       hub.on('alert', (a, text) => this.emit('alert', a.name, text, id))
+      hub.on('change', () => this.changed())
     }
     this.hubs.set(id, hub)
     if (this.url) this.startWorkspace(hub)
     return hub
   }
 
-  // A hub for each workspace in config.json; one that's gone stops (its hub has stopped its agents already).
+  // A hub for each workspace in config.json; one that's gone stops (its hub has stopped its agents already). The one on
+  // screen is the one config.json says ("current"), or the default.
   syncWorkspaces() {
     const ids = new Set([DEFAULT, ...workspacesIn(this.config.data).map((w) => w.id)])
     for (const id of ids) this.workspace(id)
@@ -83,13 +86,89 @@ export class Crew extends EventEmitter {
       hub.dispose()
       this.hubs.delete(id)
     }
+    const current = ids.has(this.config.data.current) ? this.config.data.current : DEFAULT
+    if (current !== this.current) {
+      this.current = current
+      this.changed()
+    }
   }
 
-  // The default workspace's agents start; any other workspace's stay parked, but those still at work from before Crew
-  // restarted carry on (still running: a workspace taken out of config.json and put back has had its stopped).
+  // The workspace on screen: what the app shows, and where what you do in it goes.
+  get here() {
+    return this.hubs.get(this.current) ?? this.hub
+  }
+
+  // Each workspace's agents start unless it's parked; those still at work from before Crew restarted carry on either way
+  // (still running: a workspace taken out of config.json and put back has had its stopped).
   startWorkspace(hub, survivors = this.runner.survivors ?? []) {
     const own = survivors.filter((s) => hub.runner.own(s.name) && this.runner.running(s.name)).map((s) => ({ ...s, name: hub.runner.own(s.name) }))
-    hub.start(this.url, { survivors: own, park: hub.ws !== DEFAULT })
+    hub.start(this.url, { survivors: own })
+  }
+
+  // ---- workspaces: the switcher, and making, changing, opening and parking them ---------------------------------
+
+  // Every workspace, for the switcher: its look and folder, whether it's on screen or parked, and how it's doing.
+  workspaces() {
+    return [...this.hubs.values()].map((h) => ({
+      id: h.ws, name: h.space.name, color: h.space.color, icon: h.space.icon, folder: h.space.folder, parked: h.parked, current: h === this.here,
+      members: h.ws === DEFAULT ? null : h.space.agents.filter((a) => a.shared).map((a) => ({ name: a.name, folder: this.memberFolder(h.ws, a.name) })),
+      ...h.summary(),
+    }))
+  }
+
+  // A shared agent's own folder in a workspace (empty: it works in the workspace's).
+  memberFolder(id, name) {
+    const m = workspacesIn(this.config.data).find((w) => w.id === id)?.members?.[name]
+    return (m && typeof m === 'object' && m.folder) || ''
+  }
+
+  // switch(id): put it on screen. create({ name, color, icon, folder, members }): a new workspace, opened and on screen.
+  // edit(id, { name, color, icon, folder }), open(id), park(id), remove(id). members(id, { add, remove, folders }): which
+  // shared agents work there, and the folder each has of its own there ('' for the workspace's).
+  workspaceAction(op, id, arg) {
+    const data = this.config.data
+    const has = (x) => x === DEFAULT || workspacesIn(data).some((w) => w.id === x)
+    if (op !== 'create' && !has(id)) throw new Error('no such workspace')
+    const where = () => space(data, id)
+    const ops = {
+      switch: () => {
+        if (id === DEFAULT) delete data.current
+        else data.current = id
+      },
+      create: () => {
+        id = addWorkspace(data, arg ?? {}) // members with folders of their own start there, the first time
+        data.current = id
+      },
+      edit: () => setLook(data, id, arg ?? {}),
+      open: () => (where().parked = false),
+      park: () => (where().parked = true),
+      remove: () => dropWorkspace(data, id),
+      members: () => {
+        if (id === DEFAULT) throw new Error('every shared agent is in the default workspace')
+        const { add = [], remove = [], folders = {} } = arg ?? {}
+        const w = where()
+        const shared = new Set((data.agents ?? []).map((a) => a?.name))
+        for (const name of add) {
+          if (!shared.has(name) || w.shared(name)) continue
+          if (w.has(name)) throw new Error(`${w.name} has an agent of its own called ${name}`)
+          w.join(name, {})
+        }
+        for (const name of remove) if (w.shared(name)) w.leave(name)
+        const now = where() // as it is after joining
+        for (const [name, folder] of Object.entries(folders)) if (now.shared(name)) now.set(name, 'cwd', String(folder ?? '').trim() || undefined)
+      },
+    }
+    if (!Object.hasOwn(ops, op)) throw new Error(`unknown workspace action "${op}"`)
+    ops[op]()
+    this.config.save()
+    // parked by hand while Crew was closed, and still running what carried on: park stops those too
+    if (op === 'park') this.hubs.get(id)?.park()
+    // out right away rather than after the usual pause, so what follows it (a notification's click focusing an agent
+    // there) lands in the workspace now on screen
+    const state = this.snapshot()
+    clearTimeout(this.changeTimer)
+    this.emit('state', state)
+    return { id, state }
   }
 
   async start() {
@@ -115,14 +194,17 @@ export class Crew extends EventEmitter {
     const pushAll = (...msg) => {
       for (const l of this.links.values()) l.peer?.push(...msg)
     }
-    // Terminal output is batched per frame so a chatty agent doesn't flood IPC or the network.
+    // Terminal output is batched per frame so a chatty agent doesn't flood IPC or the network. The app gets the
+    // terminals of the workspace on screen, linked computers the default's, each by its agent's name.
     const out = new Map()
     this.flushPty = () => {
       clearTimeout(this.ptyTimer)
       this.ptyTimer = null
       for (const [name, data] of out) {
-        this.emit('pty', name, data)
-        pushAll('pty', name, data)
+        const shown = this.here.runner.own(name)
+        if (shown) this.emit('pty', shown, data)
+        const linked = this.hub.runner.own(name)
+        if (linked) pushAll('pty', linked, data)
       }
       out.clear()
     }
@@ -138,9 +220,9 @@ export class Crew extends EventEmitter {
         this.changed()
       }, 50)
     })
-    this.hub.on('notice', (n) => this.emit('notice', n))
+    this.hub.on('notice', (n) => this.emit('notice', { ...n, workspace: DEFAULT }))
     this.hub.on('alert', (a, text) => {
-      this.emit('alert', a.name, text)
+      this.emit('alert', a.name, text, DEFAULT)
       pushAll('alert', a.name, text)
     })
     if (this.settings.share) await this.share(true).catch(() => {})
@@ -204,14 +286,16 @@ export class Crew extends EventEmitter {
     }
   }
 
-  snapshot() {
-    const s = this.hub.snapshot()
+  // The workspace on screen (or `here`), with the linked computers' agents when that's the default (theirs are in their
+  // own defaults), and every workspace for the switcher.
+  snapshot(here = this.here) {
+    const s = here.snapshot()
     const agents = s.agents.map((a) => ({ ...a, home: null }))
     const feed = [...s.feed]
     const tickets = s.tasks.tickets.map((t) => ({ ...t, key: String(t.id), home: null }))
     const providers = {}
     for (const l of this.links.values()) {
-      if (!l.state) continue
+      if (!l.state || here !== this.hub) continue
       const q = this.qualifier(l)
       Object.assign(providers, l.state.providers)
       for (const a of l.state.agents) {
@@ -243,9 +327,12 @@ export class Crew extends EventEmitter {
     // the last 200 entries, plus any question still waiting for an answer from before them
     const recent = feed.slice(-200)
     const open = feed.slice(0, -200).filter((e) => e.kind === 'ask' && !e.answer)
+    const workspaces = this.workspaces()
     return {
       ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.cloneOf ?? a.name)), feed: [...open, ...recent], computers: this.computers(),
-      tasks: { ...s.tasks, tickets },
+      tasks: { ...s.tasks, tickets }, workspace: workspaces.find((w) => w.id === here.ws), workspaces,
+      // your shared agents, to pick who works in a workspace
+      roster: (this.config.data.agents ?? []).filter((a) => a?.name).map((a) => ({ name: a.name, area: a.area, avatar: a.avatar })),
     }
   }
 
@@ -273,8 +360,8 @@ export class Crew extends EventEmitter {
       if (l && !l.state?.agents.some((a) => a.name === base)) throw new Error(`no agent named "${name}" (try: crew who)`)
       return l ? name : base
     }
-    if (this.hub.agents.has(name)) return name
-    if (this.hub.agents.has(this.hub.baseOf(name))) return this.hub.baseOf(name) // a clone that went away: its original
+    if (this.here.agents.has(name)) return name
+    if (this.here.agents.has(this.here.baseOf(name))) return this.here.baseOf(name) // a clone that went away: its original
     const there = agents.filter((a) => a.home && a.seed === name)
     if (there.length === 1) return there[0].name
     if (there.length > 1) throw new Error(`which ${name}? ${there.map((a) => `@${a.name}`).join(' or ')}`)
@@ -329,14 +416,14 @@ export class Crew extends EventEmitter {
     if (!names.length) {
       // agents, not their clones; one here that can clone itself counts as free
       const ready = this.snapshot().agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status))
-      const best = bestFor(text, ready.map((a) => (a.home ? a : { ...a, ...this.hub.lineup(this.hub.agents.get(a.name)) })))
+      const best = bestFor(text, ready.map((a) => (a.home ? a : { ...a, ...this.here.lineup(this.here.agents.get(a.name)) })))
       if (!best) throw new Error('no agents to send to')
       names = [best.name]
     }
     const out = []
     for (const [home, bases] of this.group(names)) {
       const reply = quoted ? { re: here(home)(re), quote: { ...quote, from: unq(home)(quote.from) } } : {}
-      if (!home) out.push(await this.hub.send({ to: bases.join(','), text, images, mentions: false, fresh, ...reply }))
+      if (!home) out.push(await this.here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...reply }))
       else {
         const l = this.link(home)
         out.push(await l.peer.call('deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...reply }]))
@@ -364,12 +451,12 @@ export class Crew extends EventEmitter {
   async at(name, fn, ...args) {
     const { l, base } = this.where(name)
     if (l) return l.peer.call(fn, [base, ...args])
-    return this.serve(fn, [base, ...args])
+    return this.serve(fn, [base, ...args], this.here)
   }
 
   async update(names, patch) {
     for (const [home, bases] of this.group([].concat(names))) {
-      if (!home) this.hub.update(bases, patch)
+      if (!home) this.here.update(bases, patch)
       else {
         const l = this.link(home)
         await l.peer.call('update', [bases, patch.images ? { ...patch, images: await this.toHome(patch.images, l) } : patch])
@@ -378,17 +465,17 @@ export class Crew extends EventEmitter {
   }
 
   async addAgent({ home, ...fields }) {
-    if (!home) return this.hub.addAgent(fields)
+    if (!home) return this.here.addAgent(fields)
     const l = this.link(home)
     return `${await l.peer.call('addAgent', [{ ...fields, images: await this.toHome(fields.images, l) }])}@${l.slug}`
   }
 
   // A Tasks board action. A task lives on the computer it was added on: 12@air is #12 on Air.
   async ticket(op, key, arg) {
-    if (op === 'file') return this.hub.fileTask(arg)
+    if (op === 'file') return this.here.fileTask(arg)
     if (op === 'bulk') return this.bulkTickets(arg)
     const { l, base } = this.where(String(key))
-    if (!l) return this.hub.ticket(op, base, arg)
+    if (!l) return this.here.ticket(op, base, arg)
     if (arg?.owner) arg = { ...arg, owner: this.qualifierFor(l)(arg.owner) }
     if (arg?.images) arg = { ...arg, images: await this.toHome(arg.images, l) } // screenshots live with the bug
     return l.peer.call('ticket', [op, base, op === 'dispatch' && arg?.to ? { ...arg, to: this.qualifierFor(l)(arg.to) } : arg])
@@ -407,7 +494,7 @@ export class Crew extends EventEmitter {
     const out = []
     for (const [home, ids] of groups) {
       if (!home) {
-        out.push(await this.hub.bulk(op, ids, arg))
+        out.push(await this.here.bulk(op, ids, arg))
         continue
       }
       const l = this.links.get(home)
@@ -452,17 +539,17 @@ export class Crew extends EventEmitter {
 
   feedAction(id, fn, ...args) {
     const { l, base } = this.where(id)
-    return l ? l.peer.call(fn, [base, ...args]) : this.hub[fn](base, ...args)
+    return l ? l.peer.call(fn, [base, ...args]) : this.here[fn](base, ...args)
   }
 
   draftPrompt({ home, ...agent }) {
-    return home ? this.link(home).peer.call('draftPrompt', [agent]) : this.hub.draftPrompt(agent)
+    return home ? this.link(home).peer.call('draftPrompt', [agent]) : this.here.draftPrompt(agent)
   }
 
   // ---- what linked computers may ask of this one -----------------------------------------------
 
-  serve(fn, args) {
-    const h = this.hub
+  // h: the hub it's for (linked computers only ever reach the default's; this computer's app, the one on screen).
+  serve(fn, args, h = this.hub) {
     const allowed = {
       state: () => h.snapshot(),
       deliver: (opts) => h.send({ ...opts, mentions: false }),
@@ -481,11 +568,11 @@ export class Crew extends EventEmitter {
       restart: (name) => h.restart(name),
       markIdle: (name) => h.markIdle(name),
       dismiss: (name) => h.dismiss(name),
-      resize: (name, cols, rows) => this.runner.resize(name, cols, rows),
+      resize: (name, cols, rows) => h.runner.resize(name, cols, rows),
       // Flush first: chunks already batched are in the buffer, so a viewer replaying it won't see them twice.
       buffer: (name) => {
         this.flushPty()
-        return this.runner.buffer(name)
+        return h.runner.buffer(name)
       },
       exportAgents: (names, opts) => packAgents(h, names, opts),
       freshStart: (name) => h.freshStart(name),
@@ -514,13 +601,13 @@ export class Crew extends EventEmitter {
 
   async exportAgents(names, opts = {}) {
     const packs = []
-    for (const [home, bases] of this.group(names)) packs.push(home ? await this.link(home).peer.call('exportAgents', [bases, opts]) : packAgents(this.hub, bases, opts))
+    for (const [home, bases] of this.group(names)) packs.push(home ? await this.link(home).peer.call('exportAgents', [bases, opts]) : packAgents(this.here, bases, opts))
     return { crew: 1, exported: new Date().toISOString(), agents: packs.flatMap((p) => p.agents), providers: Object.assign({}, ...packs.map((p) => p.providers)) }
   }
 
   // Every name in use on a computer (home '' = this one), to suggest free ones.
   namesOn(home) {
-    return new Set(home ? (this.links.get(home)?.state?.agents ?? []).map((a) => a.name) : this.hub.agents.keys())
+    return new Set(home ? (this.links.get(home)?.state?.agents ?? []).map((a) => a.name) : this.here.agents.keys())
   }
 
   freeName(name, home) {
@@ -545,7 +632,7 @@ export class Crew extends EventEmitter {
     for (const [home, list] of byHome) {
       const sub = { ...pack, agents: list.map((c) => pack.agents[c.index]) }
       const picks = list.map((c, i) => ({ index: i, name: c.name, folder: c.folder, on: false }))
-      const names = home ? (await this.link(home).peer.call('importAgents', [sub, picks])).map((n) => `${n}@${home}`) : unpackAgents(this.hub, sub, picks)
+      const names = home ? (await this.link(home).peer.call('importAgents', [sub, picks])).map((n) => `${n}@${home}`) : unpackAgents(this.here, sub, picks)
       list.forEach((c, i) => added.set(c, names[i]))
     }
     return choices.map((c) => added.get(c))
@@ -557,6 +644,7 @@ export class Crew extends EventEmitter {
   // the two needn't be linked to each other. A computer on an older Crew can only take the agent, not its
   // conversation (`older`). -> { name, conversation: 'moved' | 'fresh', reason?, older? }
   async moveAgent(name, home, folder) {
+    if (this.here !== this.hub) throw new Error('agents move between computers from the default workspace')
     home ??= ''
     const src = this.where(name)
     const from = src.l?.slug ?? ''
@@ -637,7 +725,7 @@ export class Crew extends EventEmitter {
 
   folders(home, name) {
     const like = name ? (this.snapshot().agents.find((a) => a.name === name)?.cwd ?? null) : null
-    return home ? this.link(home).peer.call('folders', [like]) : folders(this.hub, like)
+    return home ? this.link(home).peer.call('folders', [like]) : folders(this.here, like)
   }
 
   // ---- computers: sharing this one, linking others, choosing which agents to use -------------
@@ -765,7 +853,7 @@ export class Crew extends EventEmitter {
       this.changed()
     })
     peer.on('pty', (n, d) => this.emit('pty', q(n), d))
-    peer.on('alert', (n, t) => this.emit('alert', q(n), t))
+    peer.on('alert', (n, t) => this.emit('alert', q(n), t, DEFAULT)) // theirs show in the default workspace
     peer.on('input', (n, d) => this.hub.input(n, d))
     peer.on('close', () => {
       if (l.peer !== peer) return

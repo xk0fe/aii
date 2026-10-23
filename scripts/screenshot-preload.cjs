@@ -249,6 +249,48 @@ for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }
 // the crew's spend: today against what's usual by now, and the last week and month
 const SPEND = { today: 42.1, usual: 35.6, week: 310, weekBefore: 271, month: 1020 }
 const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'arie', autofix: false } }
+
+// ?fixture=workspaces: three projects besides the default. Golf app is on screen with four of the crew, Website runs
+// in the background with a reply you haven't read, Research is parked. As Crew.workspaces() reports them.
+const LOCAL = AGENTS.filter((a) => !a.home && !a.cloneOf)
+const faces = (names) => names.map((n) => AGENTS.find((a) => a.name === n)).map((a) => ({ name: a.name, avatar: a.avatar, status: a.status }))
+const WORKSPACES = [
+  { id: 'default', name: 'Home', color: null, icon: null, folder: null, parked: false, members: null, agents: 7, on: 6, working: 1, waiting: 1, unread: 0, faces: faces(['arie', 'jeff', 'ye', 'marc']), needs: faces(['ye']).map((f) => ({ ...f, activity: 'Bash: npx posthog query' })) },
+  { id: 'golf', name: 'Golf app', color: 'teal', icon: '⛳', folder: '/Users/you/code/golf', parked: false, members: [{ name: 'joseph', folder: '' }, { name: 'david', folder: '/Users/you/code/golf-ios' }, { name: 'gal', folder: '' }, { name: 'marc', folder: '' }], agents: 4, on: 4, working: 2, waiting: 2, unread: 0, faces: faces(['joseph', 'david', 'gal', 'marc']), needs: faces(['david', 'gal']) },
+  { id: 'site', name: 'Website', color: 'pink', icon: '🎨', folder: '/Users/you/code/site', parked: false, members: [{ name: 'gal', folder: '' }, { name: 'ye', folder: '' }], agents: 2, on: 2, working: 1, waiting: 0, unread: 1, faces: faces(['gal', 'ye']), needs: [] },
+  { id: 'research', name: 'Research', color: 'purple', icon: null, folder: '/Users/you/notes', parked: true, members: [{ name: 'arie', folder: '' }, { name: 'jeff', folder: '' }], agents: 2, on: 2, working: 0, waiting: 0, unread: 0, faces: faces(['arie', 'jeff']), needs: [] },
+]
+if (new URLSearchParams(location.search).get('fixture') === 'workspaces') {
+  const every = AGENTS
+  const golf = new Set(['joseph', 'david', 'gal', 'marc', 'marc.2', 'marc.3'])
+  const show = (id) => {
+    for (const w of WORKSPACES) w.current = w.id === id
+    state.workspace = WORKSPACES.find((w) => w.current)
+    const w = state.workspace
+    state.parked = w.parked
+    state.agents = id === 'golf' ? every.filter((a) => golf.has(a.name)).map((a) => ({ ...a, cwd: a.name === 'david' ? '~/code/golf-ios' : '~/code/golf', shared: true }))
+      : id === 'default' ? every
+        : every.filter((a) => w.members?.some((m) => m.name === a.name)).map((a) => ({ ...a, shared: true, ...(w.parked && { status: 'parked' }) }))
+  }
+  state.workspaces = WORKSPACES
+  state.roster = LOCAL.map((a) => ({ name: a.name, area: a.area, avatar: a.avatar }))
+  show('golf')
+  window.__crewShow = show
+}
+// The workspace actions, enough for the shots: switch, open, park, make one.
+function workspaceAction(op, id, arg) {
+  const w = WORKSPACES.find((x) => x.id === id)
+  if (op === 'switch') window.__crewShow(id)
+  if (op === 'open') (w.parked = false), window.__crewShow(state.workspace.id)
+  if (op === 'park') (w.parked = true), window.__crewShow(state.workspace.id)
+  if (op === 'create') {
+    id = String(arg.name).toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    WORKSPACES.push({ id, name: arg.name, color: arg.color || null, icon: arg.icon || null, folder: arg.folder || null, parked: false, members: (arg.members ?? []).map((name) => ({ name, folder: '' })), agents: arg.members?.length ?? 0, on: arg.members?.length ?? 0, working: 0, waiting: 0, unread: 0, faces: faces(arg.members ?? []) })
+    window.__crewShow(id)
+  }
+  emit()
+  return { id, state }
+}
 const emit = () => setTimeout(() => window.__crewEmit('state', state), 30)
 let nextTask = 14
 
@@ -401,6 +443,7 @@ window.crew = {
       setTimeout(() => window.__crewEmit('state', state), 30)
     }
     if (action === 'task') return taskAction(...args)
+    if (action === 'workspace') return workspaceAction(...args)
     // moving an agent to another computer: its folders there, then the move itself
     if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? []).map(([path, label]) => ({ path, label }))
     if (action === 'folderInfo') {

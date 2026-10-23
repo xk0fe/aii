@@ -8,16 +8,14 @@
   <link rel="stylesheet" href="common.css">
   <link rel="stylesheet" href="collection.css">
   <link rel="stylesheet" href="tasks.css">
+  <link rel="stylesheet" href="workspaces.css">
   <style>
     html, body { height: 100%; background: var(--bg); overflow: hidden; }
-    /* Three columns in the titlebar: who's busy on the left, the views centered, the computer and app on the right.
+    /* Three columns in the titlebar: the workspace and who's busy on the left, the views centered, the computer and app on the right.
        Grid columns (not flex), so a long summary can never push the views off center. */
     .titlebar { height: 46px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 0 10px 0 86px; border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
     .tb-left, .tb-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .tb-right { justify-content: flex-end; gap: 4px; }
-    .titlebar .brand { display: flex; align-items: center; gap: 8px; flex: none; }
-    .titlebar .brand .mark { width: 27px; height: 18px; color: var(--fg); }
-    .titlebar .brand b { font-size: 14.5px; font-weight: 750; letter-spacing: -.01em; }
     .titlebar button, .seg, .sums, .usage-slot { -webkit-app-region: no-drag; }
     .usage-slot { display: inline-flex; margin-right: 4px; }
     .titlebar .icon { width: 30px; height: 30px; padding: 0; }
@@ -235,7 +233,7 @@
 </head>
 <body>
   <header class="titlebar">
-    <div class="tb-left"><span class="brand"><span class="logo"></span><b>Crew</b></span><span class="sums"></span></div>
+    <div class="tb-left"><button class="ws-switch" aria-haspopup="menu" aria-expanded="false"></button><span class="sums"></span></div>
     <div class="seg views"><button data-view="crew" title="The crew: cards to open and edit each agent"></button><button data-view="tasks" title="Tasks: to do, in progress, review, done"></button><button data-view="terminals" title="Every agent's terminal"></button></div>
     <div class="tb-right">
       <span class="usage-slot"></span>
@@ -254,6 +252,7 @@
         <button class="icon" data-act="add" title="New agent (⌘N)" aria-label="New agent"></button>
       </div>
       <div class="roster"></div>
+      <div class="ws-dock hidden" role="tablist" aria-label="Workspaces"></div>
       <label class="autopilot" title="Autopilot on: agents hand work to each other without asking. Off: each hand-off waits in the chat for your Send it.">
         <span class="glyph"></span>
         <div class="grow"><b>Autopilot</b><small></small></div>
@@ -261,6 +260,7 @@
       </label>
     </nav>
     <section class="center">
+      <div class="ws-banner hidden"></div>
       <div class="terms-view hidden">
         <header class="tv-head">
           <div class="seg" data-layout><button data-layout="grid" title="Every terminal side by side (⌘3)"></button><button data-layout="focus" title="One terminal, big (⌘4)"></button></div>
@@ -294,6 +294,8 @@
   </dialog>
   <div class="toast" role="status" aria-live="polite"></div>
 
+  <dialog id="ws" class="sheet ws-sheet"></dialog>
+
   <dialog id="import" class="sheet">
     <h3><span class="h-icon"></span>Import agents</h3>
     <p class="lead"></p>
@@ -309,6 +311,7 @@
   <script src="common.js"></script>
   <script src="collection.js"></script>
   <script src="tasks.js"></script>
+  <script src="workspaces.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>

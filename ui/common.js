@@ -84,6 +84,10 @@ const ICONS = {
   trash: svg('<path d="M4.5 7h15M10 11v6M14 11v6M6.5 7l.8 11.2A2 2 0 0 0 9.3 20h5.4a2 2 0 0 0 2-1.8L17.5 7M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/>'),
   crown: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 8.2 8 12l4-6.5 4 6.5 4.5-3.8-1.6 10.3H5.1z"/></svg>',
   snail: svg('<path d="M3 18.5h14.5a3.5 3.5 0 0 0 3.5-3.5V11"/><circle cx="11" cy="12.5" r="5"/><path d="M11 12.5a1.8 1.8 0 1 1 1.8-1.8"/><path d="M19.5 11 18.5 7.5M21.5 11l1-3.5"/>'),
+  pause: svg('<rect x="6.5" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.9" y="5" width="3.6" height="14" rx="1.2"/>'),
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.3v13.4a1 1 0 0 0 1.5.86l10.6-6.7a1 1 0 0 0 0-1.72L9.5 4.44A1 1 0 0 0 8 5.3z"/></svg>',
+  gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4.9a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.4A7.6 7.6 0 0 0 7 6.4l-2.4-.9-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-.9a7.6 7.6 0 0 0 2.6 1.5l.4 2.4h4l.4-2.4a7.6 7.6 0 0 0 2.6-1.5l2.4.9 2-3.4z"/>'),
+  updown: svg('<path d="M8 9.5 12 5.5l4 4M8 14.5l4 4 4-4"/>', 'stroke-width="2.2"'),
   bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.5 4.8 13.2c-.4.5 0 1.2.6 1.2H11l-1.2 7.1c-.1.6.7.9 1 .4l8.8-10.7c.4-.5 0-1.2-.6-1.2H13.4l1.2-7.1c.1-.6-.7-.9-1-.4z"/></svg>',
 }
 
@@ -242,6 +246,7 @@ function statusText(a) {
     case 'idle': return 'free'
     case 'starting': return Date.now() - a.since > 15000 ? 'starting… check its terminal' : 'starting…'
     case 'off': return 'off'
+    case 'parked': return 'parked'
     case 'away': return 'unreachable'
     default: return 'exited'
   }
@@ -420,7 +425,9 @@ function crewGroups(state) {
   const c = state.computers ?? { me: {}, links: [] }
   const group = (key, name, online, here = false) => ({ key, name, here, online, agents: [], clones: [] })
   const groups = new Map([['', group('', c.me?.name || 'This computer', true, true)]])
-  for (const l of c.links ?? []) groups.set(l.slug, group(l.slug, l.name, Boolean(l.online)))
+  // linked computers' agents are in their default workspaces, so only the default shows their computers
+  const linked = !state.workspace || state.workspace.id === 'default'
+  for (const l of linked ? c.links ?? [] : []) groups.set(l.slug, group(l.slug, l.name, Boolean(l.online)))
   for (const a of state.agents) {
     const k = a.home ?? ''
     if (!groups.has(k)) groups.set(k, group(k, a.homeName ?? k, a.status !== 'away'))
@@ -538,9 +545,43 @@ function crewSummary(state, { unread = false } = {}) {
   const waiting = on.filter((a) => a.status === 'waiting').length
   const pill = (cls, text, dot = cls, tip = '') => `<span class="sum ${cls}" data-sum="${cls}"${tip ? ` title="${tip}"` : ''}>${dot ? `<i class="dot ${dot}"></i>` : ''}${text}</span>`
   if (!state.agents.length) return ''
+  if (state.parked) return pill('', 'parked', 'parked', 'Its agents are stopped until you open this workspace')
   if (!on.length) return pill('', 'all off', 'off')
   const fresh = unread ? state.agents.reduce((n, a) => n + (a.unread ?? 0), 0) : 0
   return (working ? pill('working', `${working} working`) : '') + (blocked ? pill('blocked', `${blocked} waiting`, 'blocked', `${plural(blocked, 'agent')} waiting on a teammate's answer`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting || blocked ? '' : pill('idle', agents > 1 ? `all ${agents} free` : 'free')) + (fresh ? pill('unread', `${fresh} new`) : '')
+}
+
+// ---- workspaces: each project the crew works on, with its own chat, tasks and agents (core/workspaces.js) ----------
+
+// A workspace's color: one of the creatures' (avatar.js), or any CSS color. The default one has none unless you give it
+// one.
+const wsColor = (w) => (w?.color ? COLORS[w.color] ?? w.color : null)
+const wsInitial = (name) => ([...String(name ?? '').trim()][0] ?? '?').toUpperCase()
+// Its tile: its icon (an emoji) or its initial, on its color. The default one without a look wears the crew's mark.
+function wsTile(w, { size = 22, cls = '' } = {}) {
+  const color = wsColor(w)
+  const plain = !color && !w?.icon && w?.id === 'default'
+  const face = plain ? markSVG('0 4 24 18') : w?.icon ? `<span class="ws-emoji">${esc(w.icon)}</span>` : esc(wsInitial(w?.name))
+  return `<span class="ws-tile ${plain ? 'plain' : ''} ${w?.parked ? 'parked' : ''} ${cls}" style="--s:${size}px${color ? `;--w:${esc(color)}` : ''}" aria-hidden="true">${face}</span>`
+}
+// A folder in a few characters: ~ for your home, and only its last two folders when it's long.
+function shortPath(p) {
+  const t = String(p ?? '').replace(/^\/Users\/[^/]+/, '~')
+  const parts = t.split('/').filter(Boolean)
+  return t.length > 30 && parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : t
+}
+// Workspaces worth a switcher: more than the default, or a default you've given a look.
+const hasWorkspaces = (state) => (state.workspaces?.length ?? 0) > 1 || Boolean(state.workspace?.color || state.workspace?.icon || (state.workspace && state.workspace.name !== 'Home'))
+// Other open workspaces that want you: agents waiting on you, and replies you haven't read.
+function elsewhere(state) {
+  const others = (state.workspaces ?? []).filter((w) => !w.current && !w.parked)
+  return { waiting: others.reduce((n, w) => n + w.waiting, 0), unread: others.reduce((n, w) => n + w.unread, 0), who: others.filter((w) => w.waiting || w.unread) }
+}
+// "2 need you · 1 working", or "Parked", for a workspace's line in the switcher.
+function wsStatus(w) {
+  if (w.parked) return 'Parked'
+  const bits = [w.waiting && `${w.waiting} need${w.waiting > 1 ? '' : 's'} you`, w.working && `${w.working} working`, w.unread && plural(w.unread, 'new reply', 'new replies')].filter(Boolean)
+  return bits.length ? bits.join(' · ') : !w.agents ? 'No agents yet' : w.on ? `${w.on > 1 ? `all ${w.on}` : w.on} free` : 'All off'
 }
 
 // Segmented control: marks the segment that isOn() picks and slides the thumb to it (see .seg in common.css).
@@ -1387,7 +1428,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     if (!onScreen.size || !document.hasFocus() || document.hidden || !el.offsetParent) return
     const seenUpTo = {}
     for (const v of onScreen.values()) seenUpTo[v.from] = Math.max(seenUpTo[v.from] ?? 0, v.ts)
-    crew.call('read', seenUpTo).catch(() => {})
+    crew.call('read', seenUpTo, last?.workspace).catch(() => {})
   }
   const soon = () => {
     clearTimeout(readTimer)
@@ -1472,14 +1513,17 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       requestAnimationFrame(() => talkingTo === next && !jumpTo && reveal(id))
       if (!matchMedia('(prefers-reduced-motion: reduce)').matches) el.animate([{ opacity: 0, transform: `translateX(${convo ? 14 : -14}px)` }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2, .8, .2, 1)' })
     },
-    render({ feed, agents, reads }) {
+    render({ feed, agents, reads, workspace: w }) {
+      const workspace = w?.id
+      // another workspace's chat: what was on screen of the last one was read there, or not at all
+      if (last && last.workspace !== workspace) (onScreen.clear(), clearTimeout(readTimer))
       const unread = feed.filter((e) => isUnread(e, reads) && (!convo || inConvo(e, convo)))
       if (unread.length) {
         clearTimeout(dividerTimer)
         dividerTimer = null
         if (!divider || !feed.some((e) => e.id === divider)) divider = unread[0].id
       } else if (divider && !dividerTimer) dividerTimer = setTimeout(() => ((divider = null), (key = ''), api.render(last)), 4000)
-      last = { feed, agents, reads }
+      last = { feed, agents, reads, workspace }
       const view = feedView(feed, agents, open, limit, drafts, { reads, divider, only: only(), here: talkingTo })
       shown = new Map(view.items.map((e) => [e.id, e]))
       let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider
@@ -2126,6 +2170,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
     setTarget,
     target: () => target,
     replyTo,
+    stopReply,
     focus: () => ta.focus(),
     // true when it stopped a dictation (so Esc can stop that first, and close things on the next press)
     stopVoice: () => Boolean(voice?.busy() && (voice.stop(), true)),
@@ -2240,4 +2285,5 @@ async function live(render) {
   render(state)
   crew.onState((next) => render((state = counted(next))))
   setInterval(() => render(state), 15000)
+  return (next) => render((state = counted(next)))
 }

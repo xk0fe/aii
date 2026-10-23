@@ -100,6 +100,17 @@ A little pill sits on the edge of your screen with the crew inside. They hop whi
 
 The menu bar has the crew too. Hover an agent to switch it on or off, or to let it skip permission prompts (YOLO).
 
+## A crew per project
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/workspaces-dark.webp">
+  <img src="docs/images/workspaces-light.webp" alt="The workspace switcher: each project with who's working and who needs you">
+</picture>
+
+Give each project a workspace: a folder, the agents who work on it, and its own chat, notes and tasks. Your agents are the same everywhere, so pick who works where and they start in that project's folder. Every workspace runs at once; switch with the switcher, the dock at the foot of the sidebar or `⌃1`–`⌃9`, and an orange count says when another one needs you. Park a project you're not on: its agents stop, and pick up where they left off when you open it again.
+
+<p align="center"><img src="docs/images/workspaces-switch.webp" alt="Switching from Golf app to Home and back: the crew slides over" width="1000"></p>
+
 ## All your Macs, one crew
 
 <picture>

@@ -956,6 +956,7 @@ function mountTasks(root, { onTerminal }) {
     },
     open: (key) => (state ? open(String(key)) : setTimeout(() => open(String(key)), 300)),
     focus: () => add.focus(),
+    close: () => selected && close(),
     // the titlebar tab's count: tasks waiting on your review first
     badge: (next) => {
       const list = next.tasks?.tickets ?? []
