@@ -376,8 +376,8 @@ export class Hub extends EventEmitter {
 
   // An agent out of this workspace. Its own, or a shared one in the default workspace, is gone for good, and so is what
   // every workspace kept about it. A shared one leaving any other workspace is still yours, and still in the others.
-  removeAgent(name) {
-    const everywhere = this.ws === DEFAULT
+  // everywhere: a shared agent off the roster even from another workspace (a move that didn't go through, core/move.js).
+  removeAgent(name, { everywhere = this.ws === DEFAULT } = {}) {
     if (everywhere) forget(this.config, name)
     else this.space.remove(name)
     for (const h of everywhere ? [this, ...this.others()] : [this]) h.forgetAgent(name)

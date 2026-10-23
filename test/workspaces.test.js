@@ -495,7 +495,7 @@ test("who works in a workspace: shared agents join and leave from the app, each 
   }
 })
 
-test("what the app does lands in the workspace on screen: its agents, edits, new agents and tasks; linked computers' agents only show in the default", async () => {
+test("what the app does lands in the workspace on screen: its agents, edits, new agents and tasks; a linked computer's agents show in the workspace it has too", async () => {
   const c = await crewApp({ agents: roster(), workspaces: [golf()], current: 'golf' })
   try {
     assert.equal(c.here, c.hubs.get('golf'))
@@ -508,12 +508,12 @@ test("what the app does lands in the workspace on screen: its agents, edits, new
     await c.ticket('file', null, { text: 'rate limits are off by one', kind: 'bug' })
     assert.equal(c.hubs.get('golf').tickets.all.length, 1)
     assert.equal(c.hub.tickets.all.length, 0)
-    // a linked computer's agents are in its own default workspace
+    // a linked computer's default agents are in the default here; it has no golf, so none of its agents are in golf
     c.links.set('air', { slug: 'air', name: 'Air', peer: {}, toHost: new Map(), fetching: new Set(), state: { agents: [{ name: 'bo', status: 'idle' }], feed: [], tasks: { tickets: [] }, providers: {} } })
     assert.equal(c.snapshot().agents.some((a) => a.home), false)
+    await assert.rejects(() => c.moveAgent('kim', 'air'), /Air has no Golf workspace/)
     c.workspaceAction('switch', DEFAULT)
     assert.deepEqual(c.snapshot().agents.filter((a) => a.home).map((a) => a.name), ['bo@air'])
-    await assert.rejects(() => (c.workspaceAction('switch', 'golf'), c.moveAgent('kim', 'air')), /default workspace/)
   } finally {
     quit(c)
   }
@@ -648,4 +648,58 @@ test('crew lease: one simulator for every workspace; it goes to whoever waits fo
   assert.deepEqual(ws.holdsOf('kim'), ['Simulator'])
   assert.match(home.leasesText(), /kim \(Golf\)/)
   assert.match(home.give({ from: 'kim' }), /isn't yours|hold nothing/, "Home's agents can't give back Golf's")
+})
+
+test('a linked computer: its terminals show in their own workspace, typing reaches the right one, and an older Crew is told to update', async () => {
+  const c = await crewApp({ agents: roster(), workspaces: [golf()], current: 'golf' })
+  try {
+    const { EventEmitter: Emitter } = await import('node:events')
+    const peer = Object.assign(new Emitter(), { name: 'Air', push() {}, input() {}, close() {} })
+    peer.call = async (fn) => {
+      if (fn === 'state') return { agents: [], feed: [], tasks: { tickets: [] }, providers: {} }
+      throw new Error(`"${fn}" isn't available over Crew Link`) // an older Crew: no workspaces
+    }
+    const l = c.attach(peer)
+    await new Promise((r) => setTimeout(r, 10))
+    assert.equal(l.aware, false, "it didn't answer 'spaces'")
+    const pty = []
+    c.on('pty', (n, d) => pty.push([n, d]))
+    peer.emit('pty', 'golf/kim', 'golf output')
+    peer.emit('pty', 'ann', 'default output') // the default's, while golf is on screen
+    assert.deepEqual(pty, [['kim@air', 'golf output']])
+    const typed = []
+    for (const [id, h] of c.hubs) h.input = (n, d) => typed.push([id, n, d])
+    peer.emit('input', 'golf/joseph', 'y')
+    peer.emit('input', 'joseph', 'n')
+    assert.deepEqual(typed, [['golf', 'joseph', 'y'], ['default', 'joseph', 'n']])
+    await assert.rejects(c.linkCall(l, 'update', [['kim'], {}]), /Air runs an older Crew, without workspaces: update it/)
+  } finally {
+    quit(c)
+  }
+})
+
+test("a connection that loses to another doesn't take the winner's workspaces with it", async () => {
+  const c = await crewApp({ agents: roster(), workspaces: [golf()] })
+  try {
+    const { EventEmitter: Emitter } = await import('node:events')
+    const answers = []
+    const peer = () => {
+      const p = Object.assign(new Emitter(), { name: 'Air', push() {}, input() {}, close() {} })
+      p.call = (fn) => (fn === 'state' ? Promise.resolve({ agents: [], feed: [], tasks: { tickets: [] }, providers: {} }) : new Promise((resolve, reject) => answers.push({ resolve, reject })))
+      return p
+    }
+    const slow = peer()
+    const l = c.attach(slow) // the slower of two sockets dialed at once
+    const fast = peer()
+    c.attach(fast) // ...and the one that wins
+    answers[1].resolve(['golf']) // the winner knows workspaces
+    await new Promise((r) => setTimeout(r, 10))
+    assert.equal(l.aware, true)
+    answers[0].reject(new Error('lost the connection to Air')) // the loser is closed afterwards
+    await new Promise((r) => setTimeout(r, 10))
+    assert.equal(l.aware, true, 'still aware')
+    assert.deepEqual([...l.theirs], ['golf'])
+  } finally {
+    quit(c)
+  }
 })

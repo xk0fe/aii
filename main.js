@@ -348,10 +348,7 @@ function wire() {
   })
   // Dragging the pill (or the chat by its header): the page reports the pointer, letting go settles it.
   ipcMain.on('drag', (e, phase, x, y) => BrowserWindow.fromWebContents(e.sender) === overlay && pill.drag(phase, x, y))
-  ipcMain.on('input', (_e, name, data) => {
-    const { l, base } = crew.where(name)
-    l ? l.peer?.input(base, data) : crew.here.input(base, data)
-  })
+  ipcMain.on('input', (_e, name, data) => crew.input(name, data))
 
   // Windows size themselves to their content; the overlay is placed so its pill stays put (core/pill.js).
   // (The menu bar popover asks on every state push; it's resized only when that changes its size.)

@@ -1016,7 +1016,9 @@ async function importPack(dropped) {
 
 function drawImport() {
   const { file, pack, agents } = pending
-  const places = [{ slug: '', name: 'this computer' }, ...(state.computers?.links ?? []).filter((l) => l.online)]
+  // in a workspace other than the default, the linked computers that have it too
+  const ws = state.workspace?.id ?? 'default'
+  const places = [{ slug: '', name: 'this computer' }, ...(state.computers?.links ?? []).filter((l) => l.online && (ws === 'default' || l.spaces?.includes(ws)))]
   const brain = (a) => [state.providers[a.provider]?.label ?? a.provider, a.model, a.effort].filter(Boolean).join(' · ')
   importDialog.querySelector('.lead').innerHTML = `<b>${esc(file)}</b> · ${agents.length} agent${agents.length === 1 ? '' : 's'}${pack.exported ? `, exported ${new Date(pack.exported).toLocaleDateString()}` : ''}. Imported agents start switched off, so you can look them over first.`
   importDialog.querySelector('.imp-list').innerHTML = agents.map((a) => `

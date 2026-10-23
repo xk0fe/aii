@@ -425,9 +425,9 @@ function crewGroups(state) {
   const c = state.computers ?? { me: {}, links: [] }
   const group = (key, name, online, here = false) => ({ key, name, here, online, agents: [], clones: [] })
   const groups = new Map([['', group('', c.me?.name || 'This computer', true, true)]])
-  // linked computers' agents are in their default workspaces, so only the default shows their computers
-  const linked = !state.workspace || state.workspace.id === 'default'
-  for (const l of linked ? c.links ?? [] : []) groups.set(l.slug, group(l.slug, l.name, Boolean(l.online)))
+  // in a workspace other than the default, the linked computers that have one like it (the same id)
+  const ws = state.workspace?.id ?? 'default'
+  for (const l of c.links ?? []) if (ws === 'default' || l.spaces?.includes(ws)) groups.set(l.slug, group(l.slug, l.name, Boolean(l.online)))
   for (const a of state.agents) {
     const k = a.home ?? ''
     if (!groups.has(k)) groups.set(k, group(k, a.homeName ?? k, a.status !== 'away'))

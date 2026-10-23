@@ -300,13 +300,21 @@ function sweep() {
 
 // The agent arrives: added under `name`, working in `folder`, its conversation resumed when its files came whole.
 // from: { slug, name } of the computer it left; here: this computer's name. -> { name, conversation, reason? }
-export function moveIn(hub, token, out, { name, folder, on, from }, here) {
+// shared: one of your shared agents, moving in a workspace other than the default: it joins this computer's crew too,
+// or (join) this computer's crew has it already and it rejoins this workspace.
+export function moveIn(hub, token, out, { name, folder, on, from, shared, join }, here) {
   const dir = staging(token)
   const staged = (i) => path.join(dir, String(i))
   const whole = (i) => sizeOf(staged(i)) === out.files[i].size
   let added
   try {
-    ;[added] = unpackAgents(hub, out.pack, [{ index: 0, name, folder, on: false }])
+    if (join) {
+      hub.space.join(name, { ...(folder && { folder }), off: true })
+      hub.saveConfig()
+      added = name
+      const stats = out.pack.agents[0]?.stats
+      if (stats && !hub.stats[name]) (hub.stats[name] = { ...stats, days: { ...stats.days } }), hub.saveStats()
+    } else [added] = unpackAgents(hub, out.pack, [{ index: 0, name, folder, on: false, shared: Boolean(shared) }])
     const a = hub.agents.get(added)
     const cwd = real(expand(folder))
     const names = requalify({ from: from.slug, to: hub.self, old: out.name, name: added })
@@ -373,7 +381,8 @@ export function moveIn(hub, token, out, { name, folder, on, from }, here) {
     return { name: added, conversation, ...(reason && { reason }) }
   } catch (e) {
     if (added) {
-      hub.removeAgent(added)
+      // one that joined leaves this workspace again; one made here goes, from the crew too if it joined that
+      hub.removeAgent(added, { everywhere: Boolean(shared) && !join })
       hub.feed = hub.feed.filter((x) => !out.feed.some((y) => y.id === x.id))
       hub.rewriteFeed()
     }
