@@ -71,7 +71,8 @@ const unpack = (s) => JSON.parse(s, (_, x) => (x && typeof x === 'object' && typ
 // ---- a peer: one live connection, the same on both ends --------------------------------------------
 
 // Either side can call() the other (answered by its `handle`), push() its crew's state / terminal output /
-// alerts, and type into the other's terminals with input(). Emits 'state', 'pty', 'alert', 'input', 'close'.
+// alerts, and type into the other's terminals with input(). Emits 'state', 'space', 'spaces', 'pty', 'alert', 'input',
+// 'close'.
 export class Peer extends EventEmitter {
   pending = new Map()
   seq = 0
@@ -96,6 +97,8 @@ export class Peer extends EventEmitter {
       return
     }
     if (m.t === 'state') this.emit('state', m.state)
+    else if (m.t === 'space') this.emit('space', m.id, m.state) // one of its other workspaces (an older Crew never sends it)
+    else if (m.t === 'spaces') this.emit('spaces', m.ids) // which workspaces it has now
     else if (m.t === 'pty') this.emit('pty', m.name, m.data)
     else if (m.t === 'alert') this.emit('alert', m.name, m.text)
     else if (m.t === 'input') this.emit('input', m.name, m.data)
@@ -127,7 +130,7 @@ export class Peer extends EventEmitter {
   }
 
   push(t, ...args) {
-    this.send(t === 'state' ? { t, state: args[0] } : t === 'pty' || t === 'input' ? { t, name: args[0], data: args[1] } : { t, name: args[0], text: args[1] })
+    this.send(t === 'state' ? { t, state: args[0] } : t === 'space' ? { t, id: args[0], state: args[1] } : t === 'spaces' ? { t, ids: args[0] } : t === 'pty' || t === 'input' ? { t, name: args[0], data: args[1] } : { t, name: args[0], text: args[1] })
   }
 
   input(name, data) {

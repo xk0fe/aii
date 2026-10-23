@@ -118,7 +118,7 @@ Give each project a workspace: a folder, the agents who work on it, and its own 
   <img src="docs/images/computers-light.webp" alt="Linking computers with a pairing code">
 </picture>
 
-Link your Macs with a pairing code and each one sees the whole crew. Chat with any agent and watch its terminal from either side. You can move an agent to another Mac, and its conversation goes with it.
+Link your Macs with a pairing code and each one sees the whole crew. Chat with any agent and watch its terminal from either side. You can move an agent to another Mac, and its conversation goes with it. Workspaces work across Macs too: give a project's workspace the same name on each one, and it's one crew.
 
 ## Share agents
 

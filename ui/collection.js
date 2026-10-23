@@ -649,12 +649,15 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     drawWhere()
   }
 
+  // Linked computers an agent can run on from here: in a workspace other than the default, the ones that have it too.
+  const linkedHere = (c) => (c.links ?? []).filter((l) => !state.workspace || state.workspace.id === 'default' || l.spaces?.includes(state.workspace.id))
+
   // Which computer it runs on and its folder there, plus extra CLI flags. An agent that exists moves with the
   // move sheet (its conversation goes along); a new one is simply made there.
   function drawWhere() {
     const d = draft
     const c = state.computers ?? { me: {}, links: [] }
-    const places = [{ slug: '', name: c.me?.name || 'This computer', online: true, here: true }, ...(c.links ?? [])]
+    const places = [{ slug: '', name: c.me?.name || 'This computer', online: true, here: true }, ...linkedHere(c)]
     const live = agentNamed(editing)
     const at = places.find((p) => p.slug === (d.home ?? '')) ?? { name: d.home, online: false }
     const computer = places.length < 2 && !d.home ? ''
@@ -815,7 +818,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   // Move…: the computers it could go to. The move sheet takes it from there (folder, what comes along).
   function moveMenu(anchor) {
     const c = state.computers ?? { me: {}, links: [] }
-    const places = [{ slug: '', name: c.me?.name || 'This computer', online: true, here: true }, ...(c.links ?? [])].filter((p) => p.slug !== (draft.home ?? ''))
+    const places = [{ slug: '', name: c.me?.name || 'This computer', online: true, here: true }, ...linkedHere(c)].filter((p) => p.slug !== (draft.home ?? ''))
     popMenu(anchor, [{ head: 'Move to' }, ...places.map((p) => ({ label: p.name, icon: p.here ? ICONS.desktop : ICONS.laptop, act: p.slug, disabled: !p.online, hint: p.online ? (p.here ? 'this Mac' : '') : 'offline' }))], (home) => {
       const name = editing
       if (close()) onMove?.(name, home)
@@ -825,7 +828,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   function moreMenu(anchor) {
     popMenu(anchor, [
       { label: 'Export…', icon: ICONS.export, act: 'export', hint: '.crew file' },
-      { label: 'Move to another computer…', icon: ICONS.move, act: 'move', disabled: !(state.computers?.links ?? []).some((l) => l.online) && !draft.home },
+      { label: 'Move to another computer…', icon: ICONS.move, act: 'move', disabled: !linkedHere(state.computers ?? {}).some((l) => l.online) && !draft.home },
       '-',
       { label: 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
     ], async (act) => {

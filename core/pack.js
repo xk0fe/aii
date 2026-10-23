@@ -57,7 +57,8 @@ export function readPack(text) {
   return pack
 }
 
-// choices: [{ index, name, folder, on }] — which agents to take, what to call them here, where they work.
+// choices: [{ index, name, folder, on, shared }] — which agents to take, what to call them here, where they work, and
+// (in a workspace other than the default) whether it's one of your shared agents or only that workspace's.
 export function unpackAgents(hub, pack, choices) {
   if (pack.providers) hub.config.providers = { ...pack.providers, ...hub.config.providers } // never replaces yours
   return choices.map((choice) => {
@@ -81,6 +82,7 @@ export function unpackAgents(hub, pack, choices) {
       avatar: a.avatar,
       cwd: choice.folder,
       off: !choice.on,
+      ...(choice.shared && { shared: true }),
     })
     if (a.stats && typeof a.stats === 'object') {
       hub.stats[name] = { ...a.stats, days: { ...a.stats.days } }
