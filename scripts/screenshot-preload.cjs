@@ -30,6 +30,13 @@ const AGENTS = [
   { name: 'scarlett@mac-mini', seed: 'scarlett', home: 'mac-mini', homeName: 'Mac mini', area: 'QA, play-tests every build', provider: 'claude', model: 'sonnet', effort: 'medium', yolo: false, status: 'working', since: now - 6 * min, activity: 'Bash: npm run e2e', holds: ['simulator'], stats: stats(9, 5, 70, 300, 120, 1, 1, 20, [0, 1, 0, 2, 1, 0, 1, 0, 2, 1, 0, 1, 0, 0]), avatar: { body: 'mochi', color: 'yellow', eyes: 'dot', mouth: 'smile', hat: 'sprout', cheeks: true } },
 ].map((a) => ({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: '~/code/app', prompt: '', images: [], ...a }))
 
+// What each one's work has cost: Claude agents in dollars (from Claude Code's status line), Codex agents in tokens.
+const SPENT = { joseph: [61.4, 0, 3120, 940], david: [48.2, 0, 2210, 610], gal: [43.0, 0, 1460, 220], ye: [2.1, 0, 40, 12], marc: [0, 3.4e6, 1880, 300], arie: [0, 1.2e6, 310, 95], 'scarlett@mac-mini': [9.6, 0, 520, 140] }
+for (const a of AGENTS) {
+  const [cost, tokens, added, removed] = SPENT[a.name] ?? [0, 0, 0, 0]
+  Object.assign(a.stats, { cost, tokens, costToday: cost * 0.18, costPerTask: a.stats.tasks && cost ? cost / a.stats.tasks : 0, linesAdded: added, linesRemoved: removed, apiMs: cost * 52000 })
+}
+
 // marc can clone itself: the two tasks that would wait in its queue are being drawn by its clones instead
 const cloneOf = (base, n, extra) => ({ ...base, name: `${base.name}.${n}`, cloneOf: base.name, clone: n, clones: 0, avatar: { seed: base.name, ...base.avatar }, queue: 0, ...extra })
 const MARC = AGENTS.find((a) => a.name === 'marc')
@@ -230,9 +237,18 @@ if (new URLSearchParams(location.search).get('fixture') === 'row') {
 
 // what you've read: david's replies, but not joseph's or arie's latest
 const READS = { since: 0, agents: { david: now - 18 * min } }
-// The Claude account's usage limits, as the agents' status lines report them: the 5-hour window getting full.
-const USAGE = { claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 64, resetsAt: now + 140 * min }, { id: 'seven_day', pct: 38, resetsAt: now + 3.2 * day }] } }
-const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, usage: USAGE, tasks: { tickets: TICKETS, triage: 'arie', autofix: false } }
+// The accounts' usage limits: Claude's as the agents' status lines report them (the 5-hour window getting full), and
+// Codex's from its session log, with the credits left on it.
+const USAGE = {
+  // where each is heading at this pace: the 5-hour window runs out before it resets
+  claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 64, resetsAt: now + 140 * min, pace: { projected: 128, runsOut: now + 66 * min } }, { id: 'seven_day', pct: 38, resetsAt: now + 3.2 * day, pace: { projected: 71, runsOut: null } }] },
+  codex: { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 5, resetsAt: now + 5.5 * day, pace: { projected: 23, runsOut: null } }], credits: { unlimited: false, balance: 62500 } },
+}
+// what the work on a task cost so far
+for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [5, { cost: 1.31, tokens: 0, added: 42, removed: 18 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }], [3, { cost: 0.86, tokens: 0, added: 21, removed: 4 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })
+// the crew's spend: today against what's usual by now, and the last week and month
+const SPEND = { today: 42.1, usual: 35.6, week: 310, weekBefore: 271, month: 1020 }
+const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'arie', autofix: false } }
 const emit = () => setTimeout(() => window.__crewEmit('state', state), 30)
 let nextTask = 14
 

@@ -1,5 +1,6 @@
 // The brain: agents, their status, inboxes, the shared feed and routing. No Electron in here.
 import { EventEmitter } from 'node:events'
+import { Worker } from 'node:worker_threads'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -8,7 +9,7 @@ import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
-import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, LIMITS } from './context.js'
+import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
 import { processes, tree, groupsOf, readGroups, leftovers, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
@@ -32,6 +33,8 @@ const SPOOL = 'spool'
 // What Crew remembers of each agent at work, so it can pick them up after a restart while their terminals carried on in
 // the terminal host (core/ptyhost.js): saved as things change, read back by adopt(). In the workspace's folder.
 const RUNTIME = 'runtime.json'
+// How far back the first look through the agents' logs goes for what their work cost (Hub.lookBack, core/backfill.js).
+const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
   'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'retrying', 'apiRetries', 'cloneOf', 'clone']
 
@@ -69,6 +72,10 @@ const CONTINUE = 'continue'
 // At NEAR_LIMIT of its 5-hour or weekly window, routing prefers agents on other providers among equal area matches.
 const LIMIT_WARN = [80, 95]
 const NEAR_LIMIT = 90
+// The pace forecast (paceOf): readings this recent give the 5-hour window's pace right now; the heads-up that a window
+// runs out before it resets comes once it's less than a quarter of the window away (weekly: under 42 hours).
+const RECENT = 20 * 60000
+const PACE_WARN = 0.25
 // What the chat shows for a turn that answered a message without a word (see Stop).
 const NO_WORDS = 'Finished without a final message. Its terminal shows what it did.'
 // Asked before a new conversation that the context limit starts (see freshWhenDone).
@@ -121,6 +128,9 @@ export class Hub extends EventEmitter {
     // Each provider's usage limits, as its agents' status lines last reported them (see setUsage). Your accounts', so
     // every workspace's hub shares them.
     this.usage = usage ?? readJSON(at('usage.json')) ?? {}
+    // What this workspace's work has cost: the last running totals of each CLI process and of each session (so nothing
+    // is counted twice), and its spend per hour of each day (for "usual by now"). See countSpend.
+    this.spend = { runs: {}, sessions: {}, hours: {}, ...readJSON(this.at('spend.json')) }
     this.useRunner(runner)
     this.cfg = config ?? new Config(CONFIG, DEFAULTS)
     this.onConfig = () => this.apply()
@@ -139,8 +149,10 @@ export class Hub extends EventEmitter {
     this.runner.dispose?.()
     clearInterval(this.stallTimer)
     if (this.statsTimer) this.saveStats()
+    if (this.ticketsTimer) this.tickets.save()
     this.saveConvos(true)
-    for (const t of ['statsTimer', 'readsTimer', 'runtimeTimer', 'usageTimer']) clearTimeout(this[t])
+    this.saveSpend(true)
+    for (const t of ['statsTimer', 'readsTimer', 'runtimeTimer', 'usageTimer', 'ticketsTimer', 'lookTimer']) clearTimeout(this[t])
     for (const a of this.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'steerTimer', 'retryTimer', 'reapTimer']) clearTimeout(a[t])
   }
 
@@ -167,6 +179,7 @@ export class Hub extends EventEmitter {
   start(url, { survivors = [], park = false } = {}) {
     this.url = url
     this.parked = park
+    this.startedAt = Date.now()
     if (this.ws === DEFAULT) {
       // where agents' hooks and `crew` find Crew: every workspace's, told apart by the X-Crew-Workspace header
       fs.writeFileSync(at('url'), url)
@@ -186,6 +199,12 @@ export class Hub extends EventEmitter {
     this.cfg.watch()
     this.stallTimer = setInterval(() => this.checkStalls(), STALL_CHECK)
     this.stallTimer.unref?.()
+    // the agents' logs don't say which workspace they worked in, and what came before workspaces is the default's
+    if (this.ws === DEFAULT && !this.spend.lookedBack) {
+      this.lookingBack = true
+      this.lookTimer = setTimeout(() => this.lookBack(), 5000)
+      this.lookTimer.unref?.()
+    }
     this.cfg.discovering ??= discoverCodex().then((codex) => {
       if (!codex) return
       this.cfg.discovered.codex = codex
@@ -449,6 +468,7 @@ export class Hub extends EventEmitter {
       if (pid) fs.writeFileSync(groups, `${pid} ${Math.floor(Date.now() / 1000)}\n`)
       this.runs.set(run, { name: a.name, file: groups, pid, at: 0 })
       a.run = run
+      a.launchedAt = Date.now()
       this.setStatus(a, 'starting')
       this.readyIn(a)
     } catch (e) {
@@ -756,6 +776,7 @@ export class Hub extends EventEmitter {
     const id = this.providerOf(a)?.id ?? 'claude'
     const limits = limitsFrom(s)
     if (limits) this.setUsage(id, limits)
+    this.countSpend(a, s?.session_id, spentFrom(s))
     const c = this.convoOf(a)
     if (!c.context) return ''
     const { pct, used, size, limit } = againstLimit(c.context, a.contextLimit)
@@ -766,16 +787,21 @@ export class Hub extends EventEmitter {
   }
 
   // ---- usage limits: how much of its account's 5-hour and weekly windows a provider has used ---------------
-  // Agents on one provider share its account, so the newest reading from any of them is the account's. A window that
-  // has reset is gone until a status line reports the new one.
+  // Agents on one provider share its account, so the newest reading from any of them is the account's: Claude Code's
+  // status line, or Codex's session log (readCodexContext). A window that has reset is gone until the next reading.
+  // credits: what Codex says is left on the account ({ balance, unlimited }), shown with its windows.
 
-  setUsage(id, windows) {
-    const before = JSON.stringify(this.liveUsage(id))
+  setUsage(id, windows, credits) {
+    const before = JSON.stringify([this.liveUsage(id), this.usage[id]?.credits])
     const u = (this.usage[id] ??= { told: {} })
-    Object.assign(u, { at: Date.now(), windows })
-    for (const w of windows) this.warnUsage(id, u, w)
+    Object.assign(u, { at: Date.now(), windows, credits: credits ?? undefined })
+    for (const w of windows) {
+      this.sample(id, w)
+      this.warnUsage(id, u, w)
+      this.warnPace(id, u, w)
+    }
     this.saveUsage()
-    if (JSON.stringify(this.liveUsage(id)) !== before) this.changed()
+    if (JSON.stringify([this.liveUsage(id), u.credits]) !== before) this.changed()
   }
 
   liveUsage(id) {
@@ -796,10 +822,36 @@ export class Hub extends EventEmitter {
     const level = LIMIT_WARN.findLast((l) => w.pct >= l)
     if (!level || (u.told[w.id]?.level ?? 0) >= level) return
     u.told[w.id] = { level, resetsAt: w.resetsAt }
-    const what = `${this.providers[id]?.label ?? id} is at ${w.pct}% of its ${LIMITS[w.id]}`
+    const what = `${this.providers[id]?.label ?? id} is at ${w.pct}% of its ${limitName(w)}`
     const when = resetsWhen(w.resetsAt)
     this.post({ kind: 'event', from: 'crew', text: `${what}, resets ${when}`, ...(level >= 95 && { alert: true }) })
     this.emit('notice', { title: what, body: `It resets ${when}.${level >= NEAR_LIMIT ? ' Until then, new work goes to agents on other providers when they cover the same area.' : ''}`, focus: '' })
+  }
+
+  // Readings of a window over the last RECENT minutes, for its pace right now. A drop or a new reset time is a new window.
+  sample(id, w) {
+    const list = ((this.samples ??= {})[id] ??= {})[w.id] ?? []
+    const last = list.at(-1)
+    const now = Date.now()
+    const keep = last && last[1] <= w.pct && last[2] === w.resetsAt ? list.filter(([t]) => now - t <= RECENT) : []
+    this.samples[id][w.id] = [...keep, [now, w.pct, w.resetsAt]]
+  }
+
+  pace(id, w) {
+    return paceOf(w, this.samples?.[id]?.[w.id])
+  }
+
+  // At this pace a window runs out before it resets: one line in the chat and a notification, once per window, when it's
+  // close enough to plan around (PACE_WARN of the window away).
+  warnPace(id, u, w) {
+    const p = this.pace(id, w)
+    const key = `pace:${w.id}`
+    const length = windowMs(w)
+    if (!p?.runsOut || u.told[key]?.resetsAt === w.resetsAt || p.runsOut - Date.now() > length * PACE_WARN) return
+    u.told[key] = { resetsAt: w.resetsAt }
+    const what = `At this pace, ${this.providers[id]?.label ?? id}'s ${limitName(w)} runs out ${resetsWhen(p.runsOut)}`
+    this.post({ kind: 'event', from: 'crew', text: `${what}, before it resets ${resetsWhen(w.resetsAt)}`, alert: true })
+    this.emit('notice', { title: what, body: `It resets ${resetsWhen(w.resetsAt)}.`, focus: '' })
   }
 
   // Debounced like the context gauges; `now` on quit.
@@ -817,7 +869,133 @@ export class Hub extends EventEmitter {
     this.usageTimer.unref?.()
   }
 
-  // Codex writes its token counts to its session log; read the newest after each step.
+  // ---- spend: what each agent's work costs ------------------------------------------------------------------
+  // Claude Code tells its status line what it has cost so far (priced as /cost prices it), the lines it changed and its
+  // time on the API; Codex's log has the tokens it has used. Those are running totals: what grew since the last report
+  // goes to the agent (a clone's to its original), the task its conversation is on, and the hour. Totals are kept per
+  // CLI process (its launch), where they only grow or start over from zero. A process's first report is measured against
+  // what its session last said (a resumed session can pick its total up again), and a resumed session Crew has never
+  // seen only counts from here on. So nothing is counted twice.
+
+  countSpend(a, session, now) {
+    if (!now || !(a.run || session)) return
+    const run = a.run ?? session
+    const less = (x, y) => Object.keys(x).some((k) => x[k] < (y[k] ?? 0))
+    const minus = (x, y) => Object.fromEntries(Object.keys(x).map((k) => [k, x[k] - (y[k] ?? 0)]))
+    const seen = this.spend.runs[run]
+    const before = !seen && session ? this.spend.sessions[session] : null
+    // a session already under way when Crew started counts from here on while the look back covers what came before
+    const unseen = a.resumed || (this.lookingBack && !(a.launchedAt >= this.startedAt)) ? null : now
+    // a session the look back counted (baseline) counts from its next report on
+    const sinceBefore = before && (before.baseline ? null : less(now, before) ? now : minus(now, before))
+    const grew = seen ? (less(now, seen) ? now : minus(now, seen)) : before ? sinceBefore : unseen
+    const stamp = { ...now, at: Date.now() }
+    this.spend.runs[run] = stamp
+    if (session) this.spend.sessions[session] = stamp
+    this.saveSpend()
+    if (grew && Object.values(grew).some((v) => v > 0)) this.addSpend(a, grew)
+  }
+
+  addSpend(a, { cost = 0, added = 0, removed = 0, apiMs = 0, tokens = 0 }) {
+    const counts = Object.fromEntries(Object.entries({ cost, linesAdded: added, linesRemoved: removed, apiMs, tokens }).filter(([, v]) => v > 0))
+    this.record(a.name, counts)
+    if (cost) (this.spend.hours[localDay()] ??= Array(24).fill(0))[new Date().getHours()] += cost
+    // the task its conversation is about (one that lives on this computer)
+    const id = this.convos[a.name]?.ticket
+    const t = typeof id === 'number' && this.tickets.all.find((x) => x.id === id)
+    if (t) {
+      t.spent = { cost: (t.spent?.cost ?? 0) + cost, tokens: (t.spent?.tokens ?? 0) + tokens, added: (t.spent?.added ?? 0) + added, removed: (t.spent?.removed ?? 0) + removed }
+      clearTimeout(this.ticketsTimer)
+      this.ticketsTimer = setTimeout(() => this.tickets.save(), 5000)
+      this.ticketsTimer.unref?.()
+    }
+    this.changed()
+  }
+
+  // Debounced like the context gauges; `now` on quit. Sessions not heard from in 60 days and days older than that go.
+  saveSpend(now = false) {
+    clearTimeout(this.spendTimer)
+    const write = () => {
+      const cutoff = Date.now() - 60 * 864e5
+      for (const k of ['runs', 'sessions']) for (const [id, s] of Object.entries(this.spend[k])) if (!(s.at > cutoff)) delete this.spend[k][id]
+      for (const d of Object.keys(this.spend.hours)) if (d < localDay(cutoff)) delete this.spend.hours[d]
+      try {
+        fs.writeFileSync(this.at('spend.json'), JSON.stringify(this.spend))
+      } catch {}
+    }
+    if (now) return write()
+    this.spendTimer = setTimeout(write, 2000)
+    this.spendTimer.unref?.()
+  }
+
+  // The first time Crew counts spend, it looks back through the agents' logs for the last LOOK_BACK_DAYS (core/backfill.js,
+  // in a worker thread), up to when it started counting: when this Crew started, or the first hour live counting ever
+  // saw. Sessions it counted are a baseline from then on, so the live count only adds what comes after.
+  lookBack() {
+    const counted = Object.entries(this.spend.hours).filter(([, h]) => h.some((v) => v > 0)).map(([d, h]) => new Date(`${d}T${String(h.findIndex((v) => v > 0)).padStart(2, '0')}:00`).getTime())
+    const until = Math.min(this.startedAt ?? Date.now(), ...counted)
+    const claude = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects')
+    const codex = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions')
+    const names = this.space.agents.map((c) => c.name)
+    const worker = new Worker(new URL('./backfill.js', import.meta.url), { workerData: { lookBack: { claude: [claude], codex, names, since: until - LOOK_BACK_DAYS * 864e5, until } } })
+    worker.unref()
+    worker.once('message', (r) => {
+      worker.terminate()
+      if (r.error) return void (this.lookingBack = false)
+      this.mergeLookBack(r, until)
+    })
+    worker.once('error', () => (this.lookingBack = false))
+  }
+
+  // What the look back found, added to each agent's days, the crew's hours and the tasks. -> { cost, tokens }
+  mergeLookBack({ agents, hours, tickets, sessions }, until) {
+    let cost = 0
+    let tokens = 0
+    for (const [name, days] of Object.entries(agents)) {
+      if (!this.agents.has(name)) continue
+      const s = (this.stats[name] ??= { first: Date.now(), days: {} })
+      for (const [d, v] of Object.entries(days)) {
+        const day = (s.days[d] ??= {})
+        if (v.cost) (day.cost = (day.cost ?? 0) + v.cost), (s.cost = (s.cost ?? 0) + v.cost), (cost += v.cost)
+        if (v.tokens) (day.tokens = (day.tokens ?? 0) + v.tokens), (s.tokens = (s.tokens ?? 0) + v.tokens), (tokens += v.tokens)
+      }
+    }
+    for (const [d, h] of Object.entries(hours)) {
+      const mine = (this.spend.hours[d] ??= Array(24).fill(0))
+      h.forEach((v, i) => (mine[i] += v))
+    }
+    for (const [id, v] of Object.entries(tickets)) {
+      const t = this.tickets.all.find((x) => x.id === Number(id))
+      if (t) t.spent = { cost: (t.spent?.cost ?? 0) + v.cost, tokens: (t.spent?.tokens ?? 0) + v.tokens, added: t.spent?.added ?? 0, removed: t.spent?.removed ?? 0 }
+    }
+    for (const id of sessions) this.spend.sessions[id] ??= { baseline: true, at: Date.now() }
+    this.spend.lookedBack = { at: Date.now(), until, cost, tokens }
+    this.lookingBack = false
+    this.saveStats()
+    this.saveSpend(true)
+    this.tickets.save()
+    if (cost >= 0.005 || tokens) {
+      const what = [cost >= 0.005 && `$${cost < 10 ? cost.toFixed(2) : Math.round(cost).toLocaleString('en-US')} at API prices`, tokens && `${tokenCount(tokens)} Codex tokens`].filter(Boolean).join(' and ')
+      this.post({ kind: 'event', from: 'crew', text: `added up what the crew's work cost before Crew counted it: ${what} over the last ${LOOK_BACK_DAYS} days` })
+    }
+    this.changed()
+    return { cost, tokens }
+  }
+
+  // The crew's spend for the dashboard: today, and what it usually is by this time of day (on the days the crew spent
+  // anything, over the last four weeks); the last 7 and 30 days, and the 7 before.
+  spendNow() {
+    const day = (n) => localDay(Date.now() - n * 864e5)
+    const on = (d) => Object.values(this.stats).reduce((sum, s) => sum + (s?.days?.[d]?.cost ?? 0), 0)
+    const days = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => on(day(from + i))).reduce((x, y) => x + y, 0)
+    const now = new Date()
+    const byNow = (h) => h.slice(0, now.getHours()).reduce((x, y) => x + y, 0) + h[now.getHours()] * (now.getMinutes() / 60)
+    const past = Object.entries(this.spend.hours).filter(([d, h]) => d < day(0) && d >= day(28) && h.some((v) => v > 0)).map(([, h]) => byNow(h))
+    return { today: on(day(0)), usual: past.length >= 3 ? past.reduce((x, y) => x + y, 0) / past.length : null, week: days(0, 6), weekBefore: days(7, 13), month: days(0, 29) }
+  }
+
+  // Codex writes its token counts to its session log, and its account's usage limits with them; read the newest after
+  // each step.
   readCodexContext(a, e) {
     if (this.providerOf(a)?.cli !== 'codex') return
     const now = Date.now()
@@ -826,6 +1004,9 @@ export class Hub extends EventEmitter {
     const file = e.transcript_path || codexLog(e.session_id ?? this.sessions[a.name])
     const context = file && fromCodexLog(file)
     if (context) this.setContext(a, context)
+    const limits = file && codexLimitsFrom(file)
+    if (limits) this.setUsage(this.providerOf(a).id, limits.windows, limits.credits)
+    if (file) this.countSpend(a, e.session_id ?? this.sessions[a.name], codexSpent(file))
   }
 
   onExit(name, code, ms) {
@@ -1340,7 +1521,7 @@ export class Hub extends EventEmitter {
     const day = (s.days[localDay()] ??= {})
     for (const [k, v] of Object.entries(counts)) {
       s[k] = (s[k] ?? 0) + v
-      if (k === 'tasks' || k === 'activeMs') day[k] = (day[k] ?? 0) + v
+      if (['tasks', 'activeMs', 'cost', 'tokens'].includes(k)) day[k] = (day[k] ?? 0) + v
     }
     s.last = Date.now()
     clearTimeout(this.statsTimer)
@@ -1357,7 +1538,7 @@ export class Hub extends EventEmitter {
     const s = this.stats[a.cloneOf ?? a.name] ?? { days: {} }
     const days = Array.from({ length: 14 }, (_, i) => {
       const d = localDay(Date.now() - (13 - i) * 864e5)
-      return { day: d, tasks: s.days[d]?.tasks ?? 0 }
+      return { day: d, tasks: s.days[d]?.tasks ?? 0, cost: s.days[d]?.cost ?? 0 }
     })
     return {
       tasks: s.tasks ?? 0,
@@ -1371,6 +1552,14 @@ export class Hub extends EventEmitter {
       fromYou: s.fromYou ?? 0,
       fromTeam: s.fromTeam ?? 0,
       handoffs: s.handoffs ?? 0,
+      // what its work cost (Claude, priced as Claude Code prices it) or used (Codex reports tokens), and the lines it changed
+      cost: s.cost ?? 0,
+      costToday: s.days[localDay()]?.cost ?? 0,
+      costPerTask: s.cost && s.tasks ? s.cost / s.tasks : 0,
+      tokens: s.tokens ?? 0,
+      linesAdded: s.linesAdded ?? 0,
+      linesRemoved: s.linesRemoved ?? 0,
+      apiMs: s.apiMs ?? 0,
       first: s.first,
       last: s.last,
       days,
@@ -2673,8 +2862,10 @@ export class Hub extends EventEmitter {
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
       reads: this.reads,
-      // each provider's usage limits that haven't reset yet: { claude: { label, at, windows: [{ id, pct, resetsAt }] } }
-      usage: Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id) }]).filter(([, u]) => u.windows.length)),
+      spend: this.spendNow(),
+      // each provider's usage limits that haven't reset yet: { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
+      // each window with where it's heading at this pace: { projected (percent at its reset), runsOut (ms) }
+      usage: Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id).map((w) => ({ ...w, pace: this.pace(id, w) ?? undefined })), ...(this.usage[id].credits && { credits: this.usage[id].credits }) }]).filter(([, u]) => u.windows.length)),
       tasks: {
         tickets: [...this.tickets.open(), ...this.tickets.all.filter((t) => t.status === 'done').sort((x, y) => x.updated - y.updated).slice(-60)],
         triage: this.space.triage ?? null,
@@ -2730,6 +2921,26 @@ const shellPrefix = (bin) => {
 
 // Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.
 const rank = (m) => (m.answers ? 0 : m.ask ? 1 : 2)
+
+// How long a window is (Codex names its own by length: window_120 is two hours); null when unknown, as a spend limit's is.
+const windowMs = (w) => ({ five_hour: 5 * 3600000, seven_day: 7 * 864e5 })[w.id] ?? (Number(String(w.id).match(/^window_(\d+)$/)?.[1]) * 60000 || null)
+
+// Where a window is heading, as Side A forecasts it without a weekly rhythm: the share used so far at the pace it has
+// gone since the window began, carried on to its reset. The 5-hour window, with readings at least five minutes apart in
+// the last RECENT minutes, goes at the pace of those instead: what it's burning right now. -> { projected (percent at the
+// reset), runsOut (ms, when it reaches 100% before the reset, else null) }, or null when it's too early to say.
+export function paceOf(w, samples = [], now = Date.now()) {
+  const length = windowMs(w)
+  if (!length || !(w.resetsAt > now) || !(w.pct > 0)) return null
+  const recent = w.id === 'five_hour' ? samples.filter(([t]) => now - t <= RECENT) : []
+  const span = recent.length >= 2 ? recent.at(-1)[0] - recent[0][0] : 0
+  const elapsed = now - (w.resetsAt - length)
+  if (span < 5 * 60000 && elapsed < length * 0.05) return null
+  const rate = span >= 5 * 60000 ? (recent.at(-1)[1] - recent[0][1]) / span : w.pct / elapsed // percent a millisecond
+  if (!(rate > 0)) return { projected: w.pct, runsOut: null }
+  const runsOut = now + Math.max(0, (100 - w.pct) / rate)
+  return { projected: Math.round(w.pct + rate * (w.resetsAt - now)), runsOut: runsOut < w.resetsAt ? Math.round(runsOut) : null }
+}
 
 // When a usage window resets, as the chat says it: "at 15:00" today, "Thu at 09:00" later in the week.
 const resetsWhen = (ms) => {

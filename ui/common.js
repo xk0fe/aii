@@ -302,6 +302,21 @@ const tokenCount = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1000 ? 
 // calm: plenty of room. warm: past half, start fresh before unrelated work. hot: compaction is close.
 const ctxLevel = (pct) => (pct >= 80 ? 'hot' : pct >= 50 ? 'warm' : 'calm')
 const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`
+// $0.42, $3.10, $87, $1,204
+const money = (v) => `$${v < 10 ? v.toFixed(2) : Math.round(v).toLocaleString('en-US')}`
+// What spend means, wherever it shows: Claude Code's own estimate at API prices, not what a subscription bills.
+const SPEND_NOTE = 'Priced as Claude Code prices it in /cost (API rates). On a subscription this measures use, not a bill.'
+// What an agent's work has cost: "$87" for Claude, "3.4M tokens" for Codex (which reports tokens, not money).
+const spentText = (s, { short = false } = {}) => (s.cost >= 0.005 ? money(s.cost) : s.tokens ? `${tokenCount(s.tokens)} ${short ? 'tok' : 'tokens'}` : '')
+const linesText = (s) => (s.linesAdded || s.linesRemoved ? `+${s.linesAdded.toLocaleString('en-US')} −${s.linesRemoved.toLocaleString('en-US')} lines` : '')
+// The crew's spend today against what it usually is by this time of day: "$42 today · 18% over usual by now".
+function spendLine(sp) {
+  if (!sp || !(sp.today >= 0.005 || sp.week >= 0.005)) return ''
+  const usual = sp.usual >= 0.005 ? Math.round(((sp.today - sp.usual) / sp.usual) * 100) : null
+  const vs = usual === null ? '' : Math.abs(usual) < 5 ? ' · about usual by now' : ` · ${Math.abs(usual)}% ${usual > 0 ? 'over' : 'under'} usual by now`
+  return `${money(sp.today)} today${vs}`
+}
+const spendTip = (sp) => `Today ${money(sp.today)}${sp.usual >= 0.005 ? ` (usually ${money(sp.usual)} by now)` : ''}\nLast 7 days ${money(sp.week)}${sp.weekBefore >= 0.005 ? ` (the 7 before: ${money(sp.weekBefore)})` : ''}\nLast 30 days ${money(sp.month)}\n${SPEND_NOTE}`
 
 function contextTip(a) {
   const c = a.convo
@@ -331,21 +346,35 @@ function contextRing(a, { label = true, size = 15 } = {}) {
 
 const LIMIT_SHORT = { five_hour: '5h', seven_day: 'week', spend_limit: 'spend' }
 const LIMIT_LONG = { five_hour: '5-hour limit', seven_day: 'Weekly limit', spend_limit: 'Spend limit' }
+// a window Codex names by its length ("2-hour limit"): "2-hour", and "2-hour limit" on hover
+const limitShort = (w) => LIMIT_SHORT[w.id] ?? String(w.label ?? 'limit').replace(/ limit$/, '')
+const limitLong = (w) => LIMIT_LONG[w.id] ?? String(w.label ?? 'Limit').replace(/^./, (c) => c.toUpperCase())
 // "resets 15:00" today, "resets Thu 09:00" later in the week
 function resetsText(ms) {
   const d = new Date(ms)
   const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
   return d.toDateString() === new Date().toDateString() ? `resets ${time}` : `resets ${d.toLocaleDateString([], { weekday: 'short' })} ${time}`
 }
-const usageTip = (u) => `${u.label} account\n${u.windows.map((w) => `${LIMIT_LONG[w.id]}: ${w.pct}% used, ${resetsText(w.resetsAt)}`).join('\n')}`
+// Codex also says what's left of the account's credits
+const creditsText = (c) => (!c ? '' : c.unlimited ? '\nUnlimited credits' : c.balance !== undefined ? `\nCredits left: ${Math.round(c.balance).toLocaleString()}` : '')
+// Where a window is heading at this pace (core/hub.js paceOf): "runs out Wed 21:00", or "on pace for 82% by then".
+const paceText = (w) => (!w.pace ? '' : w.pace.runsOut ? `, runs out ${resetsText(w.pace.runsOut).replace(/^resets /, '')} at this pace` : `, on pace for ${Math.min(w.pace.projected, 100)}% by then`)
+const usageTip = (u) => `${u.label} account\n${u.windows.map((w) => `${limitLong(w)}: ${w.pct}% used, ${resetsText(w.resetsAt)}${paceText(w)}`).join('\n')}${creditsText(u.credits)}${u.windows.some((w) => w.pace) ? '\n(At the pace since each limit began; the 5-hour one at its pace over the last few minutes.)' : ''}`
+// The first window that runs out before it resets, in words for the menu bar: "Week runs out Wed 21:00 at this pace".
+function paceWarning(u) {
+  const w = u.windows.filter((x) => x.pace?.runsOut).sort((x, y) => x.pace.runsOut - y.pace.runsOut)[0]
+  return w ? `${limitLong(w).replace(/ limit$/, '').replace(/^Weekly$/, 'Week')} runs out ${resetsText(w.pace.runsOut).replace(/^resets /, '')} at this pace` : ''
+}
 // each number turns amber, then red, like the context ring
-const limitNums = (u) => u.windows.map((w) => `<b class="${ctxLevel(w.pct)}">${LIMIT_SHORT[w.id]} ${w.pct}%</b>`).join('<i>·</i>')
+const limitNums = (u) => u.windows.map((w) => `<b class="${ctxLevel(w.pct)}">${limitShort(w)} ${w.pct}%</b>`).join('<i>·</i>')
 
-// The account's limits in one pill, for the titlebar and the menu bar: "5h 42% · week 61%". A provider's name leads
-// only when more than one reports limits.
+// The account's limits in one pill, for the titlebar: "5h 42% · week 61%". With more than one account reporting, each
+// shows its fullest window after its name, "Claude 5h 64% · Codex week 5%", and every window is in the tooltip.
 function usageChip(state) {
   const all = Object.values(state.usage ?? {}).filter((u) => u.windows?.length)
-  return all.map((u) => `<span class="sum usage" title="${esc(usageTip(u))}">${all.length > 1 ? `<span>${esc(u.label)}</span>` : ''}${limitNums(u)}</span>`).join('')
+  if (all.length < 2) return all.map((u) => `<span class="sum usage" title="${esc(usageTip(u))}">${limitNums(u)}</span>`).join('')
+  const fullest = (u) => ({ ...u, windows: [[...u.windows].sort((x, y) => y.pct - x.pct)[0]] })
+  return `<span class="sum usage" title="${esc(all.map(usageTip).join('\n\n'))}">${all.map((u) => `<span>${esc(u.label)}</span>${limitNums(fullest(u))}`).join('<i>·</i>')}</span>`
 }
 
 // Next to an agent's context ring: its account's fullest window ("5h 42%"), all of them on hover. An agent on
@@ -353,7 +382,7 @@ function usageChip(state) {
 function limitMark(a, state) {
   const u = !a.home && a.on && state.usage?.[a.provider]
   const w = u && [...u.windows].sort((x, y) => y.pct - x.pct)[0]
-  return w ? `<span class="lim ${ctxLevel(w.pct)}" title="${esc(usageTip(u))}">${LIMIT_SHORT[w.id]} ${w.pct}%</span>` : ''
+  return w ? `<span class="lim ${ctxLevel(w.pct)}" title="${esc(usageTip(u))}">${limitShort(w)} ${w.pct}%</span>` : ''
 }
 
 // The same as a line, for an agent's sheet: "Claude · 5h 42% · week 61%".

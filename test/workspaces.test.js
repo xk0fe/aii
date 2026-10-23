@@ -59,7 +59,7 @@ function crew(raw = { autopilot: true, agents: roster(), workspaces: [golf()] })
 }
 const saved = () => JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
 beforeEach(() => {
-  for (const dir of [HOME, dirOf(HOME, 'golf')]) for (const f of ['feed.jsonl', 'board.md', 'tickets.json', 'sessions.json', 'conversations.json', 'stats.json']) fs.rmSync(path.join(dir, f), { force: true })
+  for (const dir of [HOME, dirOf(HOME, 'golf')]) for (const f of ['feed.jsonl', 'board.md', 'tickets.json', 'sessions.json', 'conversations.json', 'stats.json', 'spend.json']) fs.rmSync(path.join(dir, f), { force: true })
   crew()
 })
 afterEach(() => {
@@ -168,6 +168,18 @@ test("each workspace's chat, notes, tasks and conversations are its own, in its 
   assert.equal(home.sessions.joseph, 'sess-default')
   assert.equal(ws.sessions.joseph, 'sess-golf')
   assert.deepEqual(ws.tickets.all.map((t) => t.title), ['rate limits'])
+})
+
+test('each workspace counts what its work cost, in its own folder', () => {
+  ws.onStatusLine('joseph', { session_id: 'sess-golf', cost: { total_cost_usd: 2, total_lines_added: 0, total_lines_removed: 0, total_api_duration_ms: 0 } })
+  home.onStatusLine('joseph', { session_id: 'sess-default', cost: { total_cost_usd: 0.5, total_lines_added: 0, total_lines_removed: 0, total_api_duration_ms: 0 } })
+  assert.equal(ws.spendNow().today, 2)
+  assert.equal(home.spendNow().today, 0.5)
+  ws.saveSpend(true)
+  home.saveSpend(true)
+  const sessions = (dir) => Object.keys(JSON.parse(fs.readFileSync(path.join(dir, 'spend.json'), 'utf8')).sessions)
+  assert.deepEqual(sessions(dirOf(HOME, 'golf')), ['sess-golf'])
+  assert.deepEqual(sessions(HOME), ['sess-default'])
 })
 
 test("agents start where they work in their workspace, and say which workspace they're in", (t) => {
@@ -355,6 +367,9 @@ test('Crew keeps a hub for each workspace in config.json: the default one runs, 
     assert.equal(c.hubs.get('golf').parked, true)
     assert.ok(c.hubs.get('golf').agents.has('joseph'))
     assert.ok(!c.runner.running('golf/joseph'), 'on there, but not started until golf is opened')
+    // the agents' logs don't say which workspace they worked in: only the default looks back through them for spend
+    assert.equal(c.hub.lookingBack, true)
+    assert.ok(!c.hubs.get('golf').lookingBack)
     // a workspace added by hand gets its hub; one taken out loses it
     fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'joseph', area: 'backend', off: true }], workspaces: [{ id: 'side', members: { joseph: {} } }] }))
     c.config.load()

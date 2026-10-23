@@ -225,10 +225,23 @@ Claude Code reports its context to the status line, which Crew points at itself,
 
 ### Usage limits
 
-On a Claude subscription, the same status line says how much of the account's 5-hour and weekly limits is used, so Crew shows that too: `5h 64% · week 38%` in the dashboard's title bar and the menu bar, next to the ring in each Claude agent's terminal header and sheet, and at the end of its terminal footer (`· 5h limit 64%`). The numbers turn amber and red like the ring, and hovering them says when each limit resets. Agents on one provider share its account, so the newest reading from any of them counts; a limit drops off once it resets, until the next reply reports the new one. Codex, GLM and local models don't report limits this way, so their agents show none.
+On a Claude subscription, the same status line says how much of the account's 5-hour and weekly limits is used, so Crew shows that too: `5h 64% · week 38%` in the dashboard's title bar and the menu bar, next to the ring in each Claude agent's terminal header and sheet, and at the end of its terminal footer (`· 5h limit 64%`). The numbers turn amber and red like the ring, and hovering them says when each limit resets. Codex writes its account's limits into its session log with every token count, so Crew reads them there after each step: `week 5%` shows the same way for Codex agents, and with both reporting, each pill and menu bar row says which account it is. Hovering a Codex number also says how many credits are left. Agents on one provider share its account, so the newest reading from any of them counts; a limit drops off once it resets, until the next reply reports the new one. GLM and local models don't report limits, so their agents show none.
 
 - **Heads-ups.** When a limit passes 80%, and again at 95%, the chat gets one line and you get a notification ("Claude is at 95% of its 5-hour limit, resets at 15:00"). Once per limit until it resets.
+- **Pace.** Hovering a limit also says where it's heading: "on pace for 71% by then", or "runs out Wed 21:00 at this pace". The weekly limit goes at the pace it has gone since it began (spread evenly over the week); the 5-hour one, at its pace over the last few minutes of readings, so a burst shows right away. When a limit will run out before it resets, the menu bar says so under its numbers, and once running out is less than a quarter of the window away (42 hours for the week, 75 minutes for the 5-hour window) the chat and a notification say so too, once per window.
 - **Routing.** While a provider is at 90% or more of its 5-hour or weekly limit, a message or task Crew routes for you goes to an agent on another provider when one covers the area just as well. It never sends work outside an agent's area because of a limit, and messages you address to an agent always go to it.
+
+### What the work costs
+
+Claude Code also tells its status line what its session has cost so far (the figure `/cost` shows, at API prices or your organization's rates), the lines it changed and its time on the API. Crew adds up what grows between reports, per agent and per task:
+
+- **Agents.** **Spent** in the **Stats** view and on an agent's **Stats** tab, with what a task costs it on average; a clone's work counts as its original's. Codex reports tokens rather than money, so its agents show tokens (`3.4M tok`).
+- **Tasks.** Each card shows what working on it has cost so far (`$1.31`), counted while the conversation it runs in is on it; the task's panel adds the lines changed.
+- **The crew.** The top of the **Stats** view and the menu bar: today's spend against what's usual by this time of day (on the days the crew worked, over the last four weeks), and the last 7 and 30 days.
+
+On a subscription none of this is billed: it's a measure of how much each agent and task uses, priced the way Claude Code prices it. Nothing is counted twice: totals are kept per CLI process, a CLI that starts counting over from zero is noticed, and a resumed conversation picks up from where its total last was.
+
+- **The month before.** The first time Crew counts, it looks back through the agents' own logs for the last 30 days, so the numbers don't start at zero: Claude Code's transcripts (each one names the agent that wrote it) priced at list prices, since `/cost`'s own figure isn't kept, and Codex's session logs for tokens. A conversation that opened with a task's brief counts toward that task. It reads only the crew's sessions, in the background, and says what it found in one line in the chat. Sessions it counted carry on from there in the live count.
 
 ## Computers: one crew across your Macs
 
@@ -268,13 +281,14 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `board.md`: shared notes (`crew note`).
 - `reads.json`: up to when you've read each agent's replies (the unread badges).
 - `usage.json`: each provider's usage limits as last reported, and which heads-ups you've had (so the UI isn't blank until the next reply).
+- `spend.json`: the last running totals each agent's CLI reported (so nothing is counted twice), the crew's spend per hour of each day, and when Crew looked back through the agents' logs. What each agent spent lives in `stats.json`, and each task's on the task.
 - `feed.jsonl`: the feed history.
 - `attachments/`: images you've attached to messages and instructions.
 - `run/groups/`: the process groups each running agent's commands started, a file per launch, so what they leave running can be stopped when they end.
 - `run/pty.sock`, `run/pty.token`, `run/ptyhost.log`: the terminal host's socket (yours only), its key, and its log.
 - `runtime.json`: what Crew knows about each agent at work (what it's answering, its queue, its clones, questions between agents), so it can pick them up after a restart.
 - `spool/`: hook events agents sent while Crew was closed, replayed when it starts.
-- `workspaces/<id>/`: a workspace's own copies of the files about a project (`feed.jsonl`, `board.md`, `tickets.json`, `sessions.json`, `conversations.json`, `reads.json`, `stats.json`, `runtime.json`, `spool/` and `run/groups/`). The default workspace's are the ones above, in `~/.crew/` itself.
+- `workspaces/<id>/`: a workspace's own copies of the files about a project (`feed.jsonl`, `board.md`, `tickets.json`, `sessions.json`, `conversations.json`, `reads.json`, `stats.json`, `spend.json`, `runtime.json`, `spool/` and `run/groups/`). The default workspace's are the ones above, in `~/.crew/` itself. Only the default one looks back through the agents' logs for spend, since they don't say which workspace an agent worked in.
 
 ```json
 {

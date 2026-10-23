@@ -2,7 +2,7 @@
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, level, conversation), everything you can set on the right,
 // in four tabs that each fit without scrolling. "Select" turns on bulk mode to change many agents at once.
-/* global crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS */
+/* global crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -192,9 +192,15 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
 
   // ---- stats: compare the crew side by side ----------------------------------------
 
-  // better: which direction wins. has: whether an agent has data for it (no turns yet means no average).
+  // better: which direction wins ('none': no winner, just more first). has: whether an agent has data for it (no turns
+  // yet means no average). table: false keeps it to the agent's own Stats tab (the table is wide enough as it is).
   const METRICS = [
     { key: 'tasks', label: 'Tasks', better: 'high', show: (s) => s.tasks, tip: (s) => `${s.fromYou} from you · ${s.fromTeam} from teammates` },
+    {
+      key: 'cost', label: 'Spent', better: 'none', show: (s) => spentText(s, { short: true }), has: (s) => s.cost >= 0.005 || s.tokens > 0,
+      tip: (s) => [s.cost >= 0.005 && `${money(s.costToday)} today`, s.costPerTask >= 0.005 && `${money(s.costPerTask)} a task`, linesText(s), s.cost >= 0.005 ? SPEND_NOTE : 'Codex reports tokens, not money'].filter(Boolean).join(' · '),
+    },
+    { key: 'costPerTask', label: 'Per task', better: 'low', table: false, show: (s) => money(s.costPerTask), has: (s) => s.costPerTask >= 0.005, tip: () => `what a task costs it on average. ${SPEND_NOTE}` },
     { key: 'activeMs', label: 'Active', better: 'high', show: (s) => duration(s.activeMs) },
     { key: 'avgTurnMs', label: 'Avg turn', better: 'low', show: (s) => duration(s.avgTurnMs), has: (s) => s.turns > 0 },
     { key: 'tools', label: 'Tool calls', better: 'high', show: (s) => s.tools },
@@ -207,10 +213,11 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
 
   // best in a column, and slowest (for the "lower is better" timing columns)
   function standouts(metric) {
+    if (metric.better === 'none') return {}
     const rows = roster().filter((a) => (metric.has ?? ((s) => s[metric.key] > 0))(a.stats))
     if (!rows.length) return {}
     const sorted = [...rows].sort((x, y) => (x.stats[metric.key] - y.stats[metric.key]) * (metric.better === 'high' ? -1 : 1))
-    return { best: sorted[0].name, worst: metric.better === 'low' && metric.key !== 'waits' && sorted.length > 1 ? sorted.at(-1).name : null }
+    return { best: sorted[0].name, worst: metric.better === 'low' && metric.key.endsWith('Ms') && sorted.length > 1 ? sorted.at(-1).name : null }
   }
 
   function bar(value, max) {
@@ -222,17 +229,19 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   }
 
   function drawStatsTable() {
-    const metric = METRICS.find((m) => m.key === sortBy) ?? METRICS[0]
-    const value = (a) => ((metric.has ?? (() => true))(a.stats) ? a.stats[metric.key] : metric.better === 'high' ? -1 : Infinity)
-    const rows = roster().sort((x, y) => (value(x) - value(y)) * (metric.better === 'high' ? -1 : 1))
-    const marks = Object.fromEntries(METRICS.map((m) => [m.key, standouts(m)]))
-    const maxOf = Object.fromEntries(METRICS.map((m) => [m.key, Math.max(0, ...roster().map((a) => a.stats[m.key] || 0))]))
+    const COLUMNS = METRICS.filter((m) => m.table !== false)
+    const metric = COLUMNS.find((m) => m.key === sortBy) ?? COLUMNS[0]
+    const value = (a) => ((metric.has ?? (() => true))(a.stats) ? a.stats[metric.key] : metric.better === 'low' ? Infinity : -1)
+    const rows = roster().sort((x, y) => (value(x) - value(y)) * (metric.better === 'low' ? 1 : -1))
+    const marks = Object.fromEntries(COLUMNS.map((m) => [m.key, standouts(m)]))
+    const maxOf = Object.fromEntries(COLUMNS.map((m) => [m.key, Math.max(0, ...roster().map((a) => a.stats[m.key] || 0))]))
     const sparkMax = Math.max(1, ...roster().flatMap((a) => a.stats.days.map((d) => d.tasks)))
     // morph, not innerHTML: rows animate in once, and bars glide to new values instead of redrawing
-    morph($('.col-stats'), `<table class="stats-table"><thead><tr><th>Agent</th>${METRICS.map((m) => `<th data-sort="${m.key}" class="${m.key === sortBy ? 'on' : ''}" title="${m.better === 'high' ? 'more is better' : 'less is better'}">${m.label}</th>`).join('')}<th>14 days</th></tr></thead><tbody>${
+    const sp = spendLine(state.spend)
+    morph($('.col-stats'), `${sp ? `<p class="stats-spend" title="${esc(spendTip(state.spend))}">The crew: <b>${sp}</b> · last 7 days ${money(state.spend.week)} · 30 days ${money(state.spend.month)}</p>` : ''}<table class="stats-table"><thead><tr><th>Agent</th>${COLUMNS.map((m) => `<th data-sort="${m.key}" class="${m.key === sortBy ? 'on' : ''}" title="${{ high: 'more is better', low: 'less is better' }[m.better] ?? ''}">${m.label}</th>`).join('')}<th>14 days</th></tr></thead><tbody>${
       rows.map((a) => `<tr data-name="${esc(a.name)}" class="${a.on ? '' : 'off'}" style="--c:${colorOf(avatarOf(a))}">
         <td class="who" title="${esc(a.area)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span><b>${nameHTML(a)}</b><small title="last active">Lv ${levelOf(a.stats).lv} · ${!a.stats.last ? 'no work yet' : Date.now() - a.stats.last < 60000 ? 'just now' : `${ago(a.stats.last)} ago`}</small></span></td>
-        ${METRICS.map((m) => {
+        ${COLUMNS.map((m) => {
           const s = a.stats
           const has = (m.has ?? (() => true))(s)
           const mark = marks[m.key].best === a.name ? BEST : marks[m.key].worst === a.name ? SLOW : ''
@@ -506,7 +515,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     // a glance at its work: what it's done and its last two weeks (the Stats tab has the rest)
     const s = a.stats
     morph(card.querySelector('.ed-glance'), s.tasks
-      ? `<dl><dt>Tasks</dt><dd>${s.tasks}</dd><dt>Active</dt><dd>${duration(s.activeMs)}</dd><dt>Avg turn</dt><dd>${s.turns ? duration(s.avgTurnMs) : '–'}</dd></dl>${sparkline(s.days)}`
+      ? `<dl><dt>Tasks</dt><dd>${s.tasks}</dd><dt>Active</dt><dd>${duration(s.activeMs)}</dd><dt>Avg turn</dt><dd>${s.turns ? duration(s.avgTurnMs) : '–'}</dd>${spentText(s) ? `<dt>Spent</dt><dd title="${esc(SPEND_NOTE)}">${spentText(s)}</dd>` : ''}</dl>${sparkline(s.days)}`
       : '')
   }
 

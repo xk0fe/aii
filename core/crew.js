@@ -172,6 +172,7 @@ export class Crew extends EventEmitter {
       hub.saveStats()
       hub.saveConvos(true)
       hub.saveUsage(true)
+      hub.saveSpend(true)
     }
   }
 

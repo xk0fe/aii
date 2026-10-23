@@ -60,8 +60,13 @@ const line = (windows) => ({
   rate_limits: Object.fromEntries(Object.entries(windows).map(([id, [pct, hours]]) => [id, { used_percentage: pct, resets_at: (now + hours * HOUR) / 1000 }])),
 })
 const report = (name, windows) => hub.onStatusLine(name, line(windows))
-const usage = (id = 'claude') => hub.snapshot().usage[id]
-const said = () => hub.feed.filter((e) => e.kind === 'event' && e.from === 'crew').map((e) => e.text)
+// the readings as the UI gets them, without where they're heading (test/pace.test.js covers that)
+const usage = (id = 'claude') => {
+  const u = hub.snapshot().usage[id]
+  return u && { ...u, windows: u.windows.map(({ pace, ...w }) => w) }
+}
+// the 80% and 95% heads-ups (the pace heads-up has its own tests)
+const said = () => hub.feed.filter((e) => e.kind === 'event' && e.from === 'crew' && !/^At this pace/.test(e.text)).map((e) => e.text)
 
 test('limits come out of the status line as numbers, each with when it resets', () => {
   const resets = (now + 2 * HOUR) / 1000
@@ -124,9 +129,10 @@ test('passing 80% and 95% is said once each per window, and a new window starts 
   report('joseph', { five_hour: [99, 3] })
   assert.equal(said().length, 2)
   assert.match(said()[1], /Claude is at 96% of its 5-hour limit/)
-  assert.equal(hub.feed.filter((e) => e.from === 'crew').at(-1).alert, true, '95% stands out in the chat')
-  assert.equal(notices.length, 2)
-  assert.match(notices[1].body, /other providers/)
+  assert.equal(hub.feed.filter((e) => e.from === 'crew' && e.text === said()[1]).at(-1).alert, true, '95% stands out in the chat')
+  const limits = notices.filter((n) => !/^At this pace/.test(n.title))
+  assert.equal(limits.length, 2)
+  assert.match(limits[1].body, /other providers/)
   // the window resets: the next one is watched afresh
   mock.timers.tick(3 * HOUR + 1000)
   report('joseph', { five_hour: [81, 5] })
