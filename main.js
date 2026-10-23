@@ -384,7 +384,8 @@ function wire() {
   crew.changed()
 
   // From any workspace: with workspaces, the title says which, and a click puts that one on screen first.
-  const from = (ws) => (crew.hubs.size > 1 ? `${crew.hubs.get(ws)?.space.name ?? ws} · ` : '')
+  // (your accounts' limits are no workspace's)
+  const from = (ws) => (ws && crew.hubs.size > 1 ? `${crew.hubs.get(ws)?.space.name ?? ws} · ` : '')
   const goTo = (ws, focus) => {
     if (ws && ws !== crew.current && crew.hubs.has(ws)) crew.workspaceAction('switch', ws)
     openDashboard(focus)
