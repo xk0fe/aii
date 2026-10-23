@@ -12,7 +12,7 @@ You get three views:
 - **Floating pill** on the screen edge holds the crew as little creatures that hop while they work. A crew too big for the screen edge keeps the ones that need a look (waiting on you, new replies, at work) and folds the rest into **+N**. Click it, or press `⌥⇧Space`, to open the chat (or `⌥⇧D` to open it and start dictating). Click a creature for your conversation with that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
   - **Drag it anywhere** by its edge or by the chat's header. The chat opens on the side with room: on the left of the screen it opens to the right of the pill, on the right to the left, at the top below, at the bottom above. At the top and bottom the pill lies flat, like the Dock.
   - **It stays put:** dropped near an edge, it tucks in against it, and opening or closing the chat never moves it.
-- **Dashboard**: the crew on the left, the view in the middle, the chat on the right.
+- **Dashboard**: the crew on the left, the view in the middle, the chat on the right, and the workspace you're in at the top left (see [Workspaces](#workspaces-a-crew-per-project)).
   - **The sidebar** lists every agent by computer, in your order (a status change never moves a row). Fold a computer with its arrow; its header still counts who's working and who needs you. Off agents fold into one line. **Search** (`⌘F`) finds an agent by name or area, and **+** (`⌘N`) makes one. Click an agent for its terminal and your conversation with it in the chat (its card in the Crew view); click it again to go back to every terminal and everyone's messages. **Right-click** for everything else: message it, open its terminal, edit it, start a new conversation, move it to another computer, turn it off, remove it. **Drag** an agent onto another computer to move it there.
   - **Crew** is a Pokédex-style collection of agent cards, grouped by computer, where you create and edit agents. Big cards, compact cards (the default once the crew outgrows a screen), or **Stats** to compare them.
   - **Tasks** is a board of work for the crew (bugs, features, chores): each task gets a fresh conversation, and you review what comes back.
@@ -243,6 +243,18 @@ On a subscription none of this is billed: it's a measure of how much each agent 
 
 - **The month before.** The first time Crew counts, it looks back through the agents' own logs for the last 30 days, so the numbers don't start at zero: Claude Code's transcripts (each one names the agent that wrote it) priced at list prices, since `/cost`'s own figure isn't kept, and Codex's session logs for tokens. A conversation that opened with a task's brief counts toward that task. It reads only the crew's sessions, in the background, and says what it found in one line in the chat. Sessions it counted carry on from there in the live count.
 
+## Workspaces: a crew per project
+
+A workspace is a project: a folder, the agents who work on it, and its own chat, notes, tasks and conversations. Without any, Crew is one workspace, **Home**, where every agent works in its own folder, as it always was.
+
+- **The switcher** is the titlebar's top left: the workspace you're in, with its tile (an icon or its initial, on its color). Click it for every workspace: who's working there and who needs you, a few of its agents' faces, and `⌃1`–`⌃9` to jump straight to one (`⌃Tab` and `⌃⇧Tab` go to the next and previous). Once you have two, they also sit in a row at the foot of the sidebar, each with its own count, one click away; right-click one to park, open or change it. Its color tints the sidebar, so you know where you are at a glance. When an agent in another workspace needs you, the switcher's tile gets an orange count (a blue dot for new replies), the floating pill lights up, the menu bar lists it at the top, and the notification says which workspace it's from; clicking either takes you there.
+- **New workspace…** (in the switcher) asks for a name, a look, a folder, and which of your agents work there. Crew opens it and puts it on screen, and its agents start in its folder, each in a fresh conversation of its own.
+- **Your agents are the same everywhere.** Who an agent is (its job, instructions, brain, look) is one definition you edit from any workspace. Where it works and whether it's on belong to each workspace: in its settings, give an agent a folder of its own there, or turn it off there only. An agent you make with **New agent** inside a workspace is that workspace's own, unless you pick **Your whole crew** in its sheet. Right-click an agent in Home to **Add to** a workspace; in a workspace, right-click to **Take it out** (it stays in your crew).
+- **Several at once.** Every workspace runs side by side, and switching only changes what's on screen. **Park** one (the pause button in the switcher, or its settings) to stop its agents without losing anything: their chat, tasks and conversations wait, and **Open** starts them again, each picking up its conversation. A parked workspace on screen says so above the crew. A workspace you remove leaves the switcher and stops its agents; its files stay on disk, so making one with the same name brings them back.
+- **What stays in Home for now:** linked computers' agents ([Computers](#computers-one-crew-across-your-macs)), moving agents between computers, and looking back through old logs for spend.
+
+In `config.json`, `workspaces` lists them next to your shared `agents`: each with an `id`, `name`, `folder`, `color`, `icon`, `members` (your agents who work there, each optionally with a `folder` or `off` of its own), its own `agents`, its `autopilot`, `triage` and `autofix`, and `parked`. The top-level `name`, `color`, `icon` and `parked` are Home's, and `current` is the workspace on screen.
+
 ## Computers: one crew across your Macs
 
 Each agent runs on one computer. Link your computers and each one shows the whole crew: you can chat with any agent, watch and type into its terminal, edit it, and agents hand work to each other across computers. An agent on another computer shows up as **name@computer** (`gal@mac-mini`).
@@ -272,7 +284,7 @@ A Codex-backed agent runs in Codex's `workspace-write` sandbox with network acce
 
 Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 
-- `config.json`: your agents, custom providers and theme. The UI writes it, you can edit it by hand (the `{ }` button), and changes apply live.
+- `config.json`: your agents, custom providers, theme and workspaces. The UI writes it, you can edit it by hand (the `{ }` button), and changes apply live.
 - `sessions.json`: which session each agent resumes.
 - `stats.json`: each agent's work experience.
 - `tickets.json`: the Tasks board.

@@ -287,6 +287,30 @@ const SHOTS = {
     win.destroy()
   },
   // Add a task, start it in a new conversation, then accept another one: the board's whole loop.
+  // Switching workspaces: the switcher, Home, then back to Golf app from the sidebar's dock. The crew slides over.
+  async workspacesGif() {
+    const win = await dashboard('light', 'crew', { fixture: 'workspaces', width: 1280, height: 800 })
+    await sleep(1200)
+    await record(win, 'workspaces', {
+      ms: 7600, width: 1000,
+      during: async () => {
+        let at = { x: 640, y: 420 }
+        at = await glide(win, at, await center(win, '.ws-switch'), 650)
+        await tap(win, at)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '.ws-row[data-ws=default]'), 600)
+        await sleep(350)
+        await tap(win, at)
+        await sleep(1500)
+        at = await glide(win, at, await center(win, '.ws-dock [data-ws=golf]'), 800)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1400)
+        await glide(win, at, { x: at.x + 260, y: at.y - 240 }, 500)
+      },
+    })
+    win.destroy()
+  },
   async tasksGif() {
     const win = await dashboard('light', 'tasks')
     await js(win, "localStorage.setItem('crew.tasks.view', 'board'); localStorage.setItem('crew.tasks.done', '0')")
@@ -1140,6 +1164,50 @@ const SHOTS = {
       },
     })
     win.destroy()
+  },
+  // Workspaces: the switcher open over Golf app, the sheet that makes one, one's settings, and a parked one.
+  async workspaces(theme) {
+    const win = await dashboard(theme, 'crew', { fixture: 'workspaces' })
+    await sleep(900)
+    await save(win, `ws-crew-${theme}`)
+    await js(win, click('.ws-switch'))
+    await sleep(700)
+    await save(win, `ws-switcher-${theme}`)
+    await js(win, click('[data-ws-cmd=new]'))
+    await sleep(600)
+    await js(win, `const i = document.querySelector('[data-ws-name]'); i.value = 'Checkout'; i.dispatchEvent(new Event('input', { bubbles: true }))`)
+    await js(win, click('[data-ws-icon="🛒"]'))
+    for (const n of ['joseph', 'gal']) await js(win, `document.querySelector('[data-ws-member="${n}"]').click()`)
+    await sleep(700)
+    await save(win, `ws-new-${theme}`)
+    await js(win, "document.querySelector('#ws').close()")
+    await sleep(300)
+    await js(win, "document.querySelector('.ws-switch').click()")
+    await sleep(500)
+    await js(win, click('.ws-row.current [data-ws-act=settings]'))
+    await sleep(700)
+    await save(win, `ws-settings-${theme}`)
+    await js(win, "document.querySelector('#ws').close()")
+    await js(win, "window.__crewEmit('state', (window.__crewShow('research'), window.__crewState))")
+    await sleep(900)
+    await save(win, `ws-parked-${theme}`)
+    win.destroy()
+    // the menu bar's popover and the floating chat say which workspace they show
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover', fixture: 'workspaces' })
+    await sleep(500)
+    await fitToContent(tray)
+    await save(tray, `ws-tray-away-${theme}`)
+    await js(tray, click('.ws-switch'))
+    await sleep(400)
+    await save(tray, `ws-tray-${theme}`)
+    tray.destroy()
+    const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop', fixture: 'workspaces' })
+    await sleep(400)
+    await js(chat, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(chat)
+    await save(chat, `ws-chat-${theme}`)
+    chat.destroy()
   },
 }
 

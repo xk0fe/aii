@@ -1,5 +1,5 @@
 // Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
-/* global statusClass, rosterParts, isUnread, mountConvoHead, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, limitMark, usageChip, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
+/* global mountWorkspaces, shortPath, burst, wsColor, wsTile, statusClass, rosterParts, isUnread, mountConvoHead, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, limitMark, usageChip, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -21,6 +21,7 @@ const feed = mountFeed($('.feed'), {
 const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to)) })
 const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home) })
 const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
+const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next) })
 // Views: Crew, Tasks and Terminals, the terminals laid out as a grid or one big one. Older saves said grid,
 // focus or bugs.
 const saved = store.get('crew.view')
@@ -39,7 +40,6 @@ const folds = new Set((() => {
 })())
 let find = ''
 
-$('.titlebar .logo').outerHTML = markSVG('0 6 24 16')
 $('.blank .blank-mark').outerHTML = ICONS.mark
 const VIEW_LABEL = { crew: [markSVG('0 4 24 18'), 'Crew'], tasks: [ICONS.task, 'Tasks'], terminals: [ICONS.terminal, 'Terminals'] }
 for (const b of document.querySelectorAll('.seg.views button')) b.innerHTML = `${VIEW_LABEL[b.dataset.view][0]}<span>${VIEW_LABEL[b.dataset.view][1]}</span>${b.dataset.view === 'tasks' ? '<i class="seg-badge"></i>' : ''}`
@@ -301,10 +301,11 @@ function setView(next) {
 const setLayout = (next) => setView(next)
 
 function drawBlank() {
-  const on = state.agents.filter((a) => a.on).length
+  const on = state.agents.filter((a) => a.on && a.status !== 'parked').length
   $('.blank').classList.toggle('hidden', view !== 'terminals' || on > 0)
-  $('.blank b').textContent = state.agents.length ? 'All agents are off' : 'No agents yet'
-  $('.blank span').textContent = state.agents.length ? 'Turn one on in the sidebar: it picks up its last session.' : 'Make your first one in the Crew view.'
+  const parked = state.parked && state.agents.some((a) => a.on)
+  $('.blank b').textContent = parked ? `${state.workspace.name} is parked` : state.agents.length ? 'All agents are off' : 'No agents yet'
+  $('.blank span').textContent = parked ? 'Open it to start its agents: each picks up its conversation.' : state.agents.length ? 'Turn one on in the sidebar: it picks up its last session.' : 'Make your first one in the Crew view.'
 }
 
 // The grid shows every terminal, or just the busy ones (working, or waiting on you).
@@ -353,6 +354,89 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'f' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), setPanel('side', true), $('[data-find]').focus(), $('[data-find]').select())
   if (e.key === 'n' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), addAgent())
 })
+
+// ⌃1–9: the workspaces, in the switcher's order (a parked one opens). ⌃Tab and ⌃⇧Tab: the next and previous open one.
+// Ahead of the terminals (capture), which would take ⌃1 as a key of their own.
+document.addEventListener('keydown', (e) => {
+  if (!e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.ed-layer.open, dialog[open]')) return
+  const list = state.workspaces ?? []
+  if (list.length < 2) return // nothing to switch to: ⌃1 stays the terminal's
+  if (e.key === 'Tab') {
+    const open = list.filter((w) => !w.parked || w.current)
+    const at = open.findIndex((w) => w.current)
+    const next = open[(at + (e.shiftKey ? -1 : 1) + open.length) % open.length]
+    if (!next || next.current) return
+    e.preventDefault()
+    e.stopPropagation()
+    return switchTo(next.id)
+  }
+  const w = /^[1-9]$/.test(e.key) && list[Number(e.key) - 1]
+  if (!w) return
+  e.preventDefault()
+  e.stopPropagation()
+  switchTo(w.id, { open: w.parked })
+}, true)
+
+// ---- workspaces: switching, with the crew sliding over to the next one ----------------------------
+
+// The new workspace renders inside a view transition, from the state the switch answers with; the side it slides in
+// from is where it sits in the switcher. A parked one is opened first when asked.
+let push = null
+async function switchTo(id, { open = false } = {}) {
+  const list = state.workspaces ?? []
+  const from = list.findIndex((w) => w.current)
+  const to = list.findIndex((w) => w.id === id)
+  if (to < 0 || (to === from && !open)) return
+  const unsaved = collection.unsaved()
+  if (unsaved && !confirm(`Discard your changes to ${unsaved}?`)) return
+  const go = async () => {
+    try {
+      if (open) await crew.call('workspace', 'open', id)
+      const { state: next } = await crew.call('workspace', 'switch', id)
+      ;(push ??= await ready)(next)
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+  slide(to < from ? -1 : 1, go)
+}
+// A workspace the sheet just made: already on screen in Crew, now here too.
+function switched(next) {
+  slide(1, async () => (push ??= await ready)(next))
+  setTimeout(() => burst($('.ws-switch .ws-tile'), { count: 9, color: wsColor(next.workspace) ?? undefined }), 520)
+}
+let sliding = 0 // transitions under way: a second switch mid-slide mustn't drop the first one's class from under it
+function slide(dir, update) {
+  const html = document.documentElement
+  if (!document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) return update()
+  html.style.setProperty('--ws-dir', dir)
+  html.classList.add('ws-switching')
+  sliding++
+  document.startViewTransition(update).finished.finally(() => --sliding || html.classList.remove('ws-switching'))
+}
+
+// What's on screen belongs to one workspace: switching closes what was open in the last one, and its terminals go
+// (a shared agent has a terminal in each workspace it's in, under the same name).
+let shownWorkspace = null
+function workspaceChanged(next) {
+  const id = next.workspace?.id ?? 'default'
+  if (shownWorkspace === id) return
+  const first = shownWorkspace === null
+  shownWorkspace = id
+  if (first) return
+  for (const t of terms.values()) {
+    t.term.dispose()
+    t.tile.remove()
+  }
+  terms.clear()
+  selected = null
+  composer.stopReply() // the message it answered is in the other workspace's chat
+  composer.setTarget('auto')
+  const unsaved = collection.unsaved() // switched from the menu bar or a notification, with an agent's sheet open
+  collection.close()
+  if (unsaved) toast(`Closed ${unsaved} without saving: you switched to ${next.workspace.name}`, true)
+  tasks.close()
+}
 
 // ---- the roster: every agent, by computer ------------------------------------
 
@@ -447,6 +531,11 @@ function agentMenu(name, at) {
   }
   const here = a.home ?? ''
   const places = crewGroups(state).filter((g) => g.key !== here)
+  // in the default workspace, a shared agent can join the others; in another one, a shared agent only leaves it
+  const ws = state.workspace
+  const named = ws && ws.id !== 'default'
+  const joins = !named && !a.home ? (state.workspaces ?? []).filter((w) => w.id !== 'default' && !w.members?.some((m) => m.name === name)) : []
+  const leave = named && a.shared
   popMenu(at, [
     { head: a.seed ?? a.name },
     { label: 'Message', icon: ICONS.reply, act: 'message', disabled: !a.on },
@@ -454,9 +543,10 @@ function agentMenu(name, at) {
     { label: 'Edit…', icon: ICONS.edit, act: 'edit' },
     { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a.on || a.freshPending },
     ...(places.length ? ['-', ...places.map((g) => ({ label: `Move to ${g.name}`, icon: g.here ? ICONS.desktop : ICONS.laptop, act: `move:${g.key}`, disabled: !g.online, hint: g.online ? '' : 'offline' }))] : []),
+    ...(joins.length ? ['-', ...joins.map((w) => ({ label: `Add to ${w.name}`, icon: wsTile(w, { size: 16 }), act: `join:${w.id}`, hint: w.parked ? 'parked' : '' }))] : []),
     '-',
     { label: a.on ? 'Turn off' : 'Turn on', icon: ICONS.power, act: 'power' },
-    { label: 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
+    { label: leave ? `Take out of ${ws.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
   ], async (act) => {
     try {
       if (act === 'message') {
@@ -472,7 +562,15 @@ function agentMenu(name, at) {
         if (a.on && busy(a) && !confirm(`${a.seed ?? a.name} is in the middle of something. Turn it off anyway?`)) return
         await crew.call('update', name, { off: a.on })
       }
-      if (act === 'remove' && confirm(`Remove ${a.seed ?? a.name}? Its session stops (the transcript stays with the CLI).`)) await crew.call('removeAgent', name)
+      if (act.startsWith('join:')) {
+        const w = state.workspaces.find((x) => x.id === act.slice(5))
+        await crew.call('workspace', 'members', w.id, { add: [name] })
+        toast(`${name} joins ${w.name}${w.folder ? `, working in ${shortPath(w.folder)}` : ''}`)
+      }
+      const sure = act === 'remove' && confirm(leave
+        ? `Take ${name} out of ${ws.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your crew and your other workspaces.`
+        : named ? `Remove ${name}? It's only in ${ws.name}, so it's gone for good. Its session stops (the transcript stays with the CLI).` : `Remove ${a.seed ?? a.name}? Its session stops (the transcript stays with the CLI).${(state.workspaces ?? []).length > 1 ? ' It leaves every workspace it\'s in.' : ''}`)
+      if (sure) await crew.call('removeAgent', name)
     } catch (err) {
       alert(err.message)
     }
@@ -560,6 +658,8 @@ function addAgent() {
 
 function handleFocus(arg) {
   if (arg === ':add') addAgent()
+  else if (arg === ':workspace') workspaces.create()
+  else if (arg === ':workspace-settings') workspaces.settings()
   else if (arg?.startsWith('task:') || arg?.startsWith('bug:')) openTask(arg.slice(arg.indexOf(':') + 1))
   else if (arg) select(arg)
 }
@@ -573,11 +673,14 @@ crew.onFocus(handleFocus)
 // ---- render ----------------------------------------------------------------
 
 const ready = live((next) => {
+  workspaceChanged(next)
   state = next
+  workspaces.render(state)
   drawTheme(state.theme)
   drawComputers(state)
-  // Terminals only for agents that are on; the sidebar lists everyone so off agents are one click from coming back.
-  const on = state.agents.filter((a) => a.on)
+  // Terminals only for agents that are on (and not parked); the sidebar lists everyone so off agents are one click from
+  // coming back.
+  const on = state.agents.filter((a) => a.on && a.status !== 'parked')
   const names = new Set(on.map((a) => a.name))
   for (const [name, t] of terms) {
     if (names.has(name)) continue
