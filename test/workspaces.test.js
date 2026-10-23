@@ -49,9 +49,11 @@ function crew(raw = { autopilot: true, agents: roster(), workspaces: [golf()] })
   config = openConfig()
   config.load()
   hubs = new Map()
+  const locks = { files: new Map(), held: new Map(), waits: [] } // as Crew shares them
   for (const id of [DEFAULT, ...workspacesIn(config.data).map((w) => w.id)]) {
-    const hub = new Hub(new Scoped(runner, id, id === DEFAULT), { bin: BIN, workspace: id, config, token: 'tok' })
+    const hub = new Hub(new Scoped(runner, id, id === DEFAULT), { bin: BIN, workspace: id, config, token: 'tok', locks })
     hub.others = () => [...hubs.values()].filter((h) => h !== hub)
+    hub.hubOf = (ws) => hubs.get(ws)
     hubs.set(id, hub)
   }
   home = hubs.get(DEFAULT)
@@ -604,4 +606,46 @@ test("your accounts' limits: said once, where you are, whichever workspace's age
   } finally {
     quit(c)
   }
+})
+
+// ---- one file, one editor; one simulator, one user: whichever workspace ----------------------------------
+
+const edit = (file) => ({ hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { file_path: file } })
+const atWork = (hub, name) => {
+  runner.live.set(hub.runner.full(name), {})
+  hub.agents.get(name).status = 'working'
+}
+
+test('a file is edited by one agent at a time, whichever workspace it works in; the one turned away hears where', () => {
+  const file = path.join(API, 'rates.js')
+  atWork(home, 'joseph')
+  atWork(ws, 'kim')
+  atWork(ws, 'joseph')
+  assert.equal(home.lease('joseph', edit(file)), '', "Home's joseph takes it")
+  const no = JSON.parse(ws.lease('kim', edit(file))).hookSpecificOutput
+  assert.equal(no.permissionDecision, 'deny')
+  assert.match(no.permissionDecisionReason, /edited by joseph in your Home workspace/)
+  assert.doesNotMatch(no.permissionDecisionReason, /crew ask/, "it can't ask an agent in another workspace")
+  assert.match(ws.feed.at(-1).file, /rates\.js/)
+  assert.equal(ws.feed.at(-1).in, 'Home')
+  assert.ok(ws.lease('joseph', edit(file)), "Golf's joseph is another agent: turned away too")
+  home.release('joseph') // its turn ends
+  assert.equal(ws.lease('kim', edit(file)), '')
+  assert.equal(home.leases.get(file).ws, 'golf', 'one record: Home sees Golf has it')
+})
+
+test('crew lease: one simulator for every workspace; it goes to whoever waits for it, in any of them', async () => {
+  atWork(home, 'gal')
+  atWork(ws, 'kim')
+  assert.match(await home.claim({ from: 'gal', words: ['simulator', 'QA pass'] }), /Yours now: simulator/)
+  const waiting = ws.claim({ from: 'kim', words: ['Simulator'], hold: 5000 })
+  assert.equal(ws.feed.at(-1).rule, 'lease')
+  assert.equal(ws.feed.at(-1).in, 'Home')
+  assert.match(ws.leasesText(), /simulator\s+gal \(Home\)/)
+  assert.deepEqual(ws.holdsOf('gal'), [], "Golf's gal, if it had one, holds nothing")
+  assert.match(home.give({ from: 'gal' }), /released simulator/)
+  assert.match(await waiting, /Yours now: Simulator/, 'as kim wrote it')
+  assert.deepEqual(ws.holdsOf('kim'), ['Simulator'])
+  assert.match(home.leasesText(), /kim \(Golf\)/)
+  assert.match(home.give({ from: 'kim' }), /isn't yours|hold nothing/, "Home's agents can't give back Golf's")
 })
