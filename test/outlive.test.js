@@ -149,7 +149,7 @@ test("an agent whose CLI ended while Crew was closed still gets what was queued 
 test('the hook spools what it sends while Crew is closed, one line per event, and still sends it when Crew is there', async () => {
   const settings = JSON.parse(adapters.claude({ name: 'david' }, { session: 's', attachments: '/tmp' }).args.find((x) => x.startsWith('{"permissions"')))
   const hook = settings.hooks.Stop[0].hooks[0].command
-  const env = { ...process.env, CREW_HOME: process.env.CREW_HOME, CREW_AGENT: 'david' }
+  const env = { ...process.env, CREW_HOME: process.env.CREW_HOME, CREW_AGENT: 'david', CREW_WORKSPACE: '' }
   const payload = JSON.stringify({ hook_event_name: 'Stop', last_assistant_message: 'line one\nline two' }, null, 2) // even spread over lines
   // Crew closed: its last address answers nothing
   fs.writeFileSync(at('url'), 'http://127.0.0.1:9')

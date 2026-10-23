@@ -24,6 +24,8 @@ const until = async (fn) => {
   for (let i = 0; i < 100 && !(await fn()); i++) await sleep(50)
   return fn()
 }
+// What a stand-in CLI wrote down about how it was started, once the line is whole (a long one is written in pieces).
+const launched = (c, name) => until(() => (c.read(`cli-${name}.log`).endsWith('\n') ? c.read(`cli-${name}.log`) : ''))
 const write = (file, text) => (fs.mkdirSync(path.dirname(file), { recursive: true }), fs.writeFileSync(file, text))
 
 // ---- where a conversation lives ------------------------------------------------------------------------
@@ -149,7 +151,7 @@ const air = computer('Air', port + 1, [
 const mini = computer('Mini', port + 2, [])
 
 // The CLI has started (its SessionStart hook), its terminal has gone quiet and it is free: messages go in right away.
-const ready = (c, name) => c.run(`((a, proc) => (crew.hub.onHook(${JSON.stringify(name)}, { hook_event_name: 'SessionStart', source: 'startup' }), a.holdUntil = 0, proc && (proc.lastOutput = 0), crew.hub.pump(a), a.status))(crew.hub.agents.get(${JSON.stringify(name)}), crew.hub.runner.procs.get(${JSON.stringify(name)}))`)
+const ready = (c, name) => c.run(`((a, proc) => (crew.hub.onHook(${JSON.stringify(name)}, { hook_event_name: 'SessionStart', source: 'startup' }), a.holdUntil = 0, proc && (proc.lastOutput = 0), crew.hub.pump(a), a.status))(crew.hub.agents.get(${JSON.stringify(name)}), crew.runner.procs.get(${JSON.stringify(name)}))`)
 const feedOf = (c) => c.run(`crew.hub.feed`)
 
 before(async () => {
@@ -194,7 +196,7 @@ test('a working agent moves here from a linked computer: its conversation, queue
   assert.equal(fs.readFileSync(path.join(to, id, 'tool-results', 'out.txt'), 'utf8').length, big.length)
   assert.equal(JSON.parse(fs.readFileSync(path.join(to, `${id}.jsonl`), 'utf8')).saved, path.join(to, id, 'tool-results', 'out.txt'))
   assert.equal(await air.run(`crew.hub.sessions.gal`), id)
-  assert.match(await until(() => air.read('cli-gal.log')), new RegExp(`--resume ${id}`), 'it resumes that conversation')
+  assert.match(await launched(air, 'gal'), new RegExp(`--resume ${id}`), 'it resumes that conversation')
   assert.equal(await air.run(`crew.hub.convos.gal.compactions`), 2)
 
   // its lines in the chat moved, with their ids, and read right here
@@ -247,7 +249,7 @@ test('a free Codex agent moves from here to a linked computer: its next message 
   await ready(air, 'dev')
   assert.deepEqual(await air.run(`crew.moveAgent('dev', 'studio-mac', ${JSON.stringify(work.studio)})`), { name: 'dev@studio-mac', conversation: 'moved' })
   assert.equal(fs.readFileSync(path.join(studio.codex, 'sessions', rel), 'utf8'), '{"type":"session_meta"}\n')
-  assert.match(await until(() => studio.read('cli-dev.log')), new RegExp(`launch resume ${id} -c tui.resume_cwd="current"`))
+  assert.match(await launched(studio, 'dev'), new RegExp(`launch resume ${id} -c tui.resume_cwd="current"`))
   assert.match(await studio.run(`crew.hub.convos.dev.note`), /^\[crew\] Since your last message you moved from computer "Air" to "Studio Mac" \(your folder here is .*\); processes you started on Air didn't come along\.$/)
   assert.equal(await studio.run(`crew.hub.agents.get('dev').inbox.length`), 0, 'no turn spent on telling it')
   await studio.run(`crew.hub.send({ to: 'dev', text: 'hello there' })`)

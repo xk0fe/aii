@@ -5,8 +5,9 @@ import { EventEmitter } from 'node:events'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { Hub, HOME, ATTACHMENTS, addressees, bestFor } from './hub.js'
-import { Runner } from './runner.js'
+import { Hub, HOME, ATTACHMENTS, addressees, bestFor, openConfig } from './hub.js'
+import { Runner, Scoped } from './runner.js'
+import { DEFAULT, workspacesIn } from './workspaces.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
 import { LinkHost, LinkClient, identity, addresses, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
@@ -37,8 +38,16 @@ export class Crew extends EventEmitter {
     if (this.settings.remote) this.settings.peers = [this.settings.remote] // from when a link replaced this crew
     delete this.settings.remote
     this.me = { name: this.settings.name || computerName, slug: slug(this.settings.name || computerName) }
+    this.bin = bin
     this.runner = host ? new HostRunner({ runtime: host }) : new Runner()
-    this.hub = new Hub(this.runner, { bin })
+    // A hub per workspace (core/workspaces.js), all on one config.json, one terminal runner and one local server.
+    this.token = crypto.randomBytes(16).toString('hex')
+    this.config = openConfig() // read by the first hub, so a broken one is said in its chat
+    this.usage = readJSON(path.join(HOME, 'usage.json')) ?? {} // your accounts' limits, the same in every workspace
+    this.hubs = new Map()
+    this.hub = this.workspace(DEFAULT) // the default workspace's: the only one shown, and linked, for now
+    this.syncWorkspaces()
+    this.config.on('change', () => this.syncWorkspaces())
     this.hub.relay = (from, names, text, images, extra) => this.relay(from, names, text, images, extra)
     this.hub.relayTask = (host, from, args) => this.link(host).peer.call('task', [`${from}@${this.me.slug}`, args])
     this.hub.self = this.me.slug
@@ -49,8 +58,42 @@ export class Crew extends EventEmitter {
     }
   }
 
+  // A workspace's hub, made when it's first needed.
+  workspace(id) {
+    let hub = this.hubs.get(id)
+    if (hub) return hub
+    hub = new Hub(new Scoped(this.runner, id, id === DEFAULT), { bin: this.bin, workspace: id, config: this.config, token: this.token, usage: this.usage })
+    hub.others = () => [...this.hubs.values()].filter((h) => h !== hub)
+    if (id !== DEFAULT) {
+      // the default's go further, to linked computers too: see start
+      hub.on('notice', (n) => this.emit('notice', n))
+      hub.on('alert', (a, text) => this.emit('alert', a.name, text, id))
+    }
+    this.hubs.set(id, hub)
+    if (this.url) this.startWorkspace(hub)
+    return hub
+  }
+
+  // A hub for each workspace in config.json; one that's gone stops (its hub has stopped its agents already).
+  syncWorkspaces() {
+    const ids = new Set([DEFAULT, ...workspacesIn(this.config.data).map((w) => w.id)])
+    for (const id of ids) this.workspace(id)
+    for (const [id, hub] of this.hubs) {
+      if (ids.has(id)) continue
+      hub.dispose()
+      this.hubs.delete(id)
+    }
+  }
+
+  // The default workspace's agents start; any other workspace's stay parked, but those still at work from before Crew
+  // restarted carry on (still running: a workspace taken out of config.json and put back has had its stopped).
+  startWorkspace(hub, survivors = this.runner.survivors ?? []) {
+    const own = survivors.filter((s) => hub.runner.own(s.name) && this.runner.running(s.name)).map((s) => ({ ...s, name: hub.runner.own(s.name) }))
+    hub.start(this.url, { survivors: own, park: hub.ws !== DEFAULT })
+  }
+
   async start() {
-    const server = await serve(this.hub)
+    const server = (this.server = await serve({ token: this.token, hubFor: (id) => this.hubs.get(id) }))
     let survivors = []
     if (this.runner.connect) {
       try {
@@ -58,12 +101,17 @@ export class Crew extends EventEmitter {
       } catch (e) {
         // no terminal host: the agents run in here, as before, and stop when Crew quits
         this.runner = new Runner()
-        this.hub.useRunner(this.runner)
+        for (const hub of this.hubs.values()) hub.useRunner(new Scoped(this.runner, hub.ws, hub.ws === DEFAULT))
         this.hub.post({ kind: 'event', from: 'crew', text: `${e.message}, so agents stop when Crew quits this time` })
       }
     }
     if (this.runner.replaced) this.hub.post({ kind: 'event', from: 'crew', text: 'the terminal host was from another Crew version, so its agents started again, resuming their conversations' })
-    this.hub.start(`http://127.0.0.1:${server.address().port}`, { survivors })
+    this.url = `http://127.0.0.1:${server.address().port}`
+    for (const hub of this.hubs.values()) this.startWorkspace(hub, survivors)
+    // terminals still running for a workspace that's gone from config.json: nothing would ever hear from them again
+    const stray = survivors.filter((s) => ![...this.hubs.values()].some((hub) => hub.runner.own(s.name)))
+    for (const s of stray) this.runner.stop(s.name)
+    if (stray.length) this.hub.post({ kind: 'event', from: 'crew', text: `stopped ${stray.map((s) => s.name).join(', ')}: ${stray.length === 1 ? 'it was' : 'they were'} still running for a workspace that's no longer in config.json` })
     const pushAll = (...msg) => {
       for (const l of this.links.values()) l.peer?.push(...msg)
     }
@@ -109,7 +157,7 @@ export class Crew extends EventEmitter {
 
   detach() {
     this.close()
-    this.hub.saveRuntime?.(true)
+    for (const hub of this.hubs.values()) hub.saveRuntime(true)
     if (this.runner.detach) this.runner.detach()
     else this.runner.stopAll()
   }
@@ -120,10 +168,12 @@ export class Crew extends EventEmitter {
       l.peer?.close()
     }
     this.sharing?.stop()
-    this.hub.saveStats()
-    this.hub.saveConvos(true)
-    this.hub.saveUsage(true)
-    this.hub.saveSpend(true)
+    for (const hub of this.hubs.values()) {
+      hub.saveStats()
+      hub.saveConvos(true)
+      hub.saveUsage(true)
+      hub.saveSpend(true)
+    }
   }
 
   // Do the agents keep working once Crew quits?
