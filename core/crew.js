@@ -143,7 +143,8 @@ export class Crew extends EventEmitter {
 
   // switch(id): put it on screen. create({ name, color, icon, folder, members }): a new workspace, opened and on screen.
   // edit(id, { name, color, icon, folder }), open(id), park(id), remove(id). members(id, { add, remove, folders }): which
-  // shared agents work there, and the folder each has of its own there ('' for the workspace's).
+  // shared agents work there, and the folder each has of its own there ('' for the workspace's). In the default
+  // workspace, where every shared agent is, only folders: each agent's own ('' for the home folder).
   workspaceAction(op, id, arg) {
     const data = this.config.data
     const has = (x) => x === DEFAULT || workspacesIn(data).some((w) => w.id === x)
@@ -163,8 +164,8 @@ export class Crew extends EventEmitter {
       park: () => (where().parked = true),
       remove: () => dropWorkspace(data, id),
       members: () => {
-        if (id === DEFAULT) throw new Error('every shared agent is in the default workspace')
         const { add = [], remove = [], folders = {} } = arg ?? {}
+        if (id === DEFAULT && (add.length || remove.length)) throw new Error('every shared agent is in the default workspace')
         const w = where()
         const shared = new Set((data.agents ?? []).map((a) => a?.name))
         for (const name of add) {
@@ -403,8 +404,9 @@ export class Crew extends EventEmitter {
     return {
       ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.cloneOf ?? a.name)), feed: [...open, ...recent], computers: this.computers(),
       tasks: { ...s.tasks, tickets }, workspace: workspaces.find((w) => w.id === here.ws), workspaces,
-      // your shared agents, to pick who works in a workspace
-      roster: (this.config.data.agents ?? []).filter((a) => a?.name).map((a) => ({ name: a.name, area: a.area, avatar: a.avatar })),
+      // your shared agents, to pick who works in a workspace, each with the folder of its own (where it works in the
+      // default workspace)
+      roster: (this.config.data.agents ?? []).filter((a) => a?.name).map((a) => ({ name: a.name, area: a.area, avatar: a.avatar, cwd: a.cwd })),
     }
   }
 
