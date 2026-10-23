@@ -98,8 +98,9 @@ export class Hub extends EventEmitter {
   parked = false // started, but its agents only run once it's opened (see start)
   carryOn = new Set() // renamed while running: starts again under the new name even here parked (see renameAgent)
 
-  // config, token, usage, samples: what every workspace's hub shares (one of each of its own when it's the only hub).
-  constructor(runner, { bin, workspace = DEFAULT, config, token, usage, samples }) {
+  // config, token, usage, samples, locks: what every workspace's hub shares (one of each of its own when it's the only
+  // hub).
+  constructor(runner, { bin, workspace = DEFAULT, config, token, usage, samples, locks }) {
     super()
     this.ws = workspace
     this.dir = dirOf(HOME, workspace)
@@ -113,9 +114,12 @@ export class Hub extends EventEmitter {
     this.asks = new Map() // feed id of an open question -> { resolve, name, cli, input }
     // Right of way (see question): what each `crew ask` is still owed, and which agent edits which file.
     this.calls = new Map() // id (the question's feed id) -> { id, msg, from, to, parent, at, hold, remote }
-    this.leases = new Map() // absolute path -> { name, at }
-    this.held = new Map() // a thing only one agent can use at a time (crew lease), lowercased -> { thing, name, why, at }
-    this.leaseWaits = [] // `crew lease`s waiting for a thing someone else has: { key, from, thing, why, resolve }
+    // A file, or a simulator, is one thing whichever workspace's agent uses it: every workspace's hub shares these, and
+    // each entry says whose workspace (ws) its holder works in (see hubOf).
+    this.locks = locks ?? { files: new Map(), held: new Map(), waits: [] }
+    this.leases = this.locks.files // absolute path -> { name, ws, at }
+    this.held = this.locks.held // a thing only one agent can use at a time (crew lease), lowercased -> { thing, name, ws, why, at }
+    this.leaseWaits = this.locks.waits // `crew lease`s waiting for a thing someone else has: { key, from, ws, thing, why, resolve }
     this.runs = new Map() // launch id -> { name, file, pid, at }: each CLI process and the file of groups it started
     this.turnedAway = new Set() // "who:file" told this turn that a file is taken, so the chat says it once
     this.saving = Promise.resolve() // feed.jsonl appends, one after another (an answer must land after its card)
@@ -2073,28 +2077,49 @@ export class Hub extends EventEmitter {
   // else is turned away, told who has it. So an agent and its clones, or two agents in one folder, never write over
   // each other. An agent answering the holder's question may edit its files: the holder is waiting on it, not
   // editing. The answer is the PreToolUse hook's output: '' lets the edit through.
+  // An agent in another workspace holds files and things too: two workspaces in one folder, or a shared agent at work in
+  // both, still edit a file one at a time. It can't be asked (crew ask stays in a workspace), so it's named with its
+  // workspace.
   lease(name, e) {
     const a = this.agents.get(name)
     if (!a || !e) return ''
     const files = editedFiles(e, expand(a.cwd))
     for (const file of files) {
       const held = this.leases.get(file)
-      const holder = held && held.name !== name && this.agents.get(held.name)
-      if (!holder || !this.holding(holder, held) || this.waitPath(holder.name, name)) continue
+      if (!held || this.mine(held, name)) continue
+      const there = this.hubOf(held.ws ?? this.ws)
+      const holder = there?.agents.get(held.name)
+      if (!holder || !there.holding(holder, held) || (there === this && this.waitPath(holder.name, name))) continue
       const short = path.basename(file)
+      const away = there !== this && there.space.name
       if (!this.turnedAway.has(`${name}:${file}`)) {
         this.turnedAway.add(`${name}:${file}`)
-        this.ruling('file', name, holder.name, { file: short })
+        this.ruling('file', name, holder.name, { file: short, ...(away && { in: away }) })
       }
-      const reason = `${short} is being edited by @${holder.name} right now, and Crew lets one agent edit a file at a time. Leave it to @${holder.name} and do the rest of your work: the file is free again once @${holder.name} finishes its turn. If you need a change in it, crew ask ${holder.name}.`
+      const reason = away
+        ? `${short} is being edited by ${holder.name} in your ${away} workspace right now, and Crew lets one agent edit a file at a time, whichever workspace it works in. Leave it be and do the rest of your work: the file is free again once ${holder.name} there finishes its turn.`
+        : `${short} is being edited by @${holder.name} right now, and Crew lets one agent edit a file at a time. Leave it to @${holder.name} and do the rest of your work: the file is free again once @${holder.name} finishes its turn. If you need a change in it, crew ask ${holder.name}.`
       return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } })
     }
     for (const file of files) {
       const held = this.leases.get(file)
+      const there = held && this.hubOf(held.ws ?? this.ws)
       // free, or its own already: it's this agent's now (one answering the holder edits under the holder's lease)
-      if (!held || held.name === name || !this.holding(this.agents.get(held.name), held)) this.leases.set(file, { name, at: Date.now() })
+      if (!held || this.mine(held, name) || !there?.holding(there.agents.get(held.name), held)) this.leases.set(file, { name, ws: this.ws, at: Date.now() })
     }
     return ''
+  }
+
+  // The hub of the workspace a lease's holder works in. Crew sets this, to find any workspace's; on its own, a hub knows
+  // only itself.
+  hubOf(ws) {
+    return ws === this.ws ? this : null
+  }
+
+  // A lease of this agent's: one of this workspace's (the same name in another workspace is another agent), or yours
+  // from any of them.
+  mine(entry, name) {
+    return entry.name === name && (name === 'you' || (entry.ws ?? this.ws) === this.ws)
   }
 
   // Is an agent still holding a file it edited? Only mid-turn, and only for so long without touching it.
@@ -2104,7 +2129,7 @@ export class Hub extends EventEmitter {
 
   release(name) {
     let freed = false
-    for (const [file, l] of this.leases) if (l.name === name) (this.leases.delete(file), (freed = true))
+    for (const [file, l] of this.leases) if (this.mine(l, name)) (this.leases.delete(file), (freed = true))
     for (const k of this.turnedAway) if (k.startsWith(`${name}:`)) this.turnedAway.delete(k)
     if (freed) this.changed()
   }
@@ -2120,18 +2145,20 @@ export class Hub extends EventEmitter {
     if (!key) throw new Error('usage: crew lease <thing> ["what for"], e.g. crew lease simulator "QA pass for #12"')
     if (from !== 'you' && !this.agents.has(from)) throw new Error(`no agent named "${from}"`)
     const held = this.held.get(key)
-    if (!held || held.name === from || !this.stillHolds(held)) return this.grant(key, from, thing, why.join(' '))
-    if (this.waitPath(held.name, from)) return `@${held.name} has ${held.thing}, but it's waiting on you: use it for what @${held.name} asked you.\n`
+    const there = held && (held.name === 'you' ? this : this.hubOf(held.ws ?? this.ws))
+    if (!held || this.mine(held, from) || !there?.stillHolds(held)) return this.grant(key, from, thing, why.join(' '))
+    if (there === this && this.waitPath(held.name, from)) return `@${held.name} has ${held.thing}, but it's waiting on you: use it for what @${held.name} asked you.\n`
     if (!this.turnedAway.has(`${from}:lease:${key}`)) {
       this.turnedAway.add(`${from}:lease:${key}`)
-      this.ruling('lease', from, held.name, { thing: held.thing })
+      this.ruling('lease', from, held.name, { thing: held.thing, ...(there !== this && { in: there.space.name }) })
     }
     return new Promise((resolve) => {
-      const w = { key, from, thing, why: why.join(' ') }
+      const w = { key, from, ws: this.ws, thing, why: why.join(' ') }
       const timer = setTimeout(() => w.resolve(this.takenText(this.held.get(key) ?? held)), hold)
       w.resolve = (text) => {
         clearTimeout(timer)
-        this.leaseWaits = this.leaseWaits.filter((x) => x !== w)
+        const at = this.leaseWaits.indexOf(w)
+        if (at >= 0) this.leaseWaits.splice(at, 1) // in place: every workspace's hub has this list
         resolve(text)
       }
       closed?.addEventListener('abort', () => w.resolve(''), { once: true })
@@ -2143,7 +2170,7 @@ export class Hub extends EventEmitter {
     const was = this.held.get(key)
     const again = was?.name === name
     if (again) thing = was.thing // as it was first written
-    this.held.set(key, { thing, name, why: why ? why.slice(0, 200) : (again ? was.why : ''), at: again ? was.at : Date.now() })
+    this.held.set(key, { thing, name, ws: this.ws, why: why ? why.slice(0, 200) : (again ? was.why : ''), at: again ? was.at : Date.now() })
     this.changed()
     const until = name === 'you' ? 'until you crew release it' : `until your turn ends with nothing left running, or you crew release ${thing}`
     return `${again ? 'Still yours' : 'Yours now'}: ${thing}, ${until}.\n`
@@ -2158,14 +2185,15 @@ export class Hub extends EventEmitter {
 
   takenText(h) {
     const mins = Math.max(1, Math.round((Date.now() - h.at) / 60000))
-    const who = h.name === 'you' ? 'the user' : `@${h.name}`
-    return `${h.thing} is still ${who}'s (${mins} min${h.why ? `: ${h.why}` : ''}). Don't use it meanwhile: carry on with other work and try again later${h.name === 'you' ? '' : `, or crew ask ${h.name}`}.\n`
+    const away = h.name !== 'you' && (h.ws ?? this.ws) !== this.ws && (this.hubOf(h.ws)?.space.name ?? h.ws)
+    const who = h.name === 'you' ? 'the user' : away ? `${h.name} (in your ${away} workspace)` : `@${h.name}`
+    return `${h.thing} is still ${who}'s (${mins} min${h.why ? `: ${h.why}` : ''}). Don't use it meanwhile: carry on with other work and try again later${h.name === 'you' || away ? '' : `, or crew ask ${h.name}`}.\n`
   }
 
   // `crew release [thing]`: one thing, or everything it holds.
   give({ from = 'you', words = [] }) {
     const thing = words.join(' ').trim()
-    const keys = (thing ? [leaseKey(thing)] : [...this.held.keys()]).filter((k) => this.held.get(k)?.name === from)
+    const keys = (thing ? [leaseKey(thing)] : [...this.held.keys()]).filter((k) => this.held.get(k) && this.mine(this.held.get(k), from))
     if (!keys.length) return thing ? `${thing} isn't yours\n` : 'You hold nothing\n'
     const things = keys.map((k) => this.held.get(k).thing)
     for (const k of keys) this.free(k)
@@ -2174,26 +2202,28 @@ export class Hub extends EventEmitter {
 
   // Everything `name` holds goes back: its turn is over, or its CLI stopped.
   letGo(name) {
-    for (const [k, h] of [...this.held]) if (h.name === name) this.free(k)
+    for (const [k, h] of [...this.held]) if (this.mine(h, name)) this.free(k)
   }
 
-  // Free again: the first one waiting for it gets it.
+  // Free again: the first one waiting for it gets it, in whichever workspace it waits.
   free(key) {
     this.held.delete(key)
-    const next = this.leaseWaits.find((w) => w.key === key && (w.from === 'you' || this.runner.running(w.from)))
-    if (next) next.resolve(this.grant(key, next.from, next.thing, next.why))
+    const next = this.leaseWaits.find((w) => w.key === key && (w.from === 'you' || this.hubOf(w.ws ?? this.ws)?.runner.running(w.from)))
+    const there = next && (this.hubOf(next.ws ?? this.ws) ?? this) // yours, from a workspace since removed: here
+    if (next) next.resolve(there.grant(key, next.from, next.thing, next.why))
     this.changed()
   }
 
   holdsOf(name) {
-    return [...this.held.values()].filter((h) => h.name === name && this.stillHolds(h)).map((h) => h.thing)
+    return [...this.held.values()].filter((h) => this.mine(h, name) && this.stillHolds(h)).map((h) => h.thing)
   }
 
-  // `crew leases`: who has what.
+  // `crew leases`: who has what, in every workspace.
   leasesText() {
-    const now = [...this.held.values()].filter((h) => this.stillHolds(h))
+    const now = [...this.held.values()].filter((h) => (h.name === 'you' ? this : this.hubOf(h.ws ?? this.ws))?.stillHolds(h))
     if (!now.length) return 'Nothing is leased right now.\n'
-    return now.map((h) => `${h.thing.padEnd(22)} ${(h.name === 'you' ? 'the user' : `@${h.name}`).padEnd(16)} ${Math.max(1, Math.round((Date.now() - h.at) / 60000))} min${h.why ? `  ${h.why}` : ''}`).join('\n') + '\n'
+    const who = (h) => (h.name === 'you' ? 'the user' : (h.ws ?? this.ws) === this.ws ? `@${h.name}` : `${h.name} (${this.hubOf(h.ws)?.space.name ?? h.ws})`)
+    return now.map((h) => `${h.thing.padEnd(22)} ${who(h).padEnd(16)} ${Math.max(1, Math.round((Date.now() - h.at) / 60000))} min${h.why ? `  ${h.why}` : ''}`).join('\n') + '\n'
   }
 
   // Best agent for an un-addressed task: area match first, then whoever is free, then the shortest queue.
@@ -2823,7 +2853,7 @@ export class Hub extends EventEmitter {
       }
       const calls = [...this.calls.values()].map((c) => ({ ...c, msg: c.msg?.id, to: this.ownerOf(c), hold: null }))
       try {
-        fs.writeFileSync(this.at(RUNTIME), JSON.stringify({ at: Date.now(), agents, calls, leases: [...this.leases], held: [...this.held] }))
+        fs.writeFileSync(this.at(RUNTIME), JSON.stringify({ at: Date.now(), agents, calls, leases: [...this.leases].filter(([, l]) => this.mine(l, l.name)), held: [...this.held].filter(([, h]) => (h.name === 'you' ? this.ws === DEFAULT : this.mine(h, h.name))) }))
       } catch {}
     }
     if (now) return write()
@@ -2880,8 +2910,8 @@ export class Hub extends EventEmitter {
       }
     }
     for (const c of saved.calls ?? []) this.calls.set(c.id, { ...c, msg: c.msg ? this.feed.find((e) => e.id === c.msg) : undefined, hold: null })
-    for (const [file, l] of saved.leases ?? []) if (adopted.has(l.name)) this.leases.set(file, l)
-    for (const [k, h] of saved.held ?? []) if (h.name === 'you' || adopted.has(h.name)) this.held.set(k, h)
+    for (const [file, l] of saved.leases ?? []) if (adopted.has(l.name)) this.leases.set(file, { ...l, ws: this.ws })
+    for (const [k, h] of saved.held ?? []) if (h.name === 'you' || adopted.has(h.name)) this.held.set(k, { ...h, ws: this.ws })
     if (adopted.size) this.post({ kind: 'event', from: 'crew', text: `picked up ${[...adopted].map((n) => `@${n}`).join(' ')} where ${adopted.size === 1 ? 'it was' : 'they were'}: ${adopted.size === 1 ? 'it' : 'they'} kept working while Crew was closed` })
     return adopted
   }

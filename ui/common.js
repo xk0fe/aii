@@ -981,11 +981,11 @@ const RULES = {
     tip: "Right of way: work can't go back to an agent that's waiting on your answer. The answer goes back to it by itself.",
   },
   file: {
-    text: (e, who) => `${who(e.from)} left <b class="rule-file">${esc(e.file)}</b> to ${who(e.to)}, who's editing it`,
+    text: (e, who) => `${who(e.from)} left <b class="rule-file">${esc(e.file)}</b> to ${who(e.to)}${e.in ? ` in ${esc(e.in)}` : ''}, who's editing it`,
     tip: "Right of way: one agent edits a file at a time. It's free again once the agent editing it finishes its turn.",
   },
   lease: {
-    text: (e, who) => `${who(e.from)} waited for <b class="rule-file">${esc(e.thing)}</b>: ${who(e.to)} is using it`,
+    text: (e, who) => `${who(e.from)} waited for <b class="rule-file">${esc(e.thing)}</b>: ${who(e.to)}${e.in ? ` in ${esc(e.in)}` : ''} is using it`,
     tip: "Right of way: one agent uses a simulator, a device or a port at a time (crew lease). It's free again once the agent using it gives it back or finishes its turn.",
   },
   decline: {

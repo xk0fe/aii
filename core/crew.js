@@ -45,6 +45,7 @@ export class Crew extends EventEmitter {
     this.config = openConfig() // read by the first hub, so a broken one is said in its chat
     this.usage = readJSON(path.join(HOME, 'usage.json')) ?? {} // your accounts' limits, the same in every workspace
     this.samples = {} // and their recent readings, for the pace
+    this.locks = { files: new Map(), held: new Map(), waits: [] } // files being edited and things leased, in any workspace
     this.hubs = new Map()
     this.hub = this.workspace(DEFAULT) // the default workspace's: the one linked computers see
     this.syncWorkspaces()
@@ -64,8 +65,9 @@ export class Crew extends EventEmitter {
   workspace(id) {
     let hub = this.hubs.get(id)
     if (hub) return hub
-    hub = new Hub(new Scoped(this.runner, id, id === DEFAULT), { bin: this.bin, workspace: id, config: this.config, token: this.token, usage: this.usage, samples: this.samples })
+    hub = new Hub(new Scoped(this.runner, id, id === DEFAULT), { bin: this.bin, workspace: id, config: this.config, token: this.token, usage: this.usage, samples: this.samples, locks: this.locks })
     hub.others = () => [...this.hubs.values()].filter((h) => h !== hub)
+    hub.hubOf = (ws) => this.hubs.get(ws) // whose a lease is
     hub.aboutAccount = (entry) => this.here.post(entry) // your accounts' limits: said where you are
     if (id !== DEFAULT) {
       // the default's go further, to linked computers too: see start
