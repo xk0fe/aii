@@ -98,8 +98,8 @@ export class Hub extends EventEmitter {
   parked = false // started, but its agents only run once it's opened (see start)
   carryOn = new Set() // renamed while running: starts again under the new name even here parked (see renameAgent)
 
-  // config, token, usage: what every workspace's hub shares (one of each of its own when it's the only hub).
-  constructor(runner, { bin, workspace = DEFAULT, config, token, usage }) {
+  // config, token, usage, samples: what every workspace's hub shares (one of each of its own when it's the only hub).
+  constructor(runner, { bin, workspace = DEFAULT, config, token, usage, samples }) {
     super()
     this.ws = workspace
     this.dir = dirOf(HOME, workspace)
@@ -128,6 +128,8 @@ export class Hub extends EventEmitter {
     // Each provider's usage limits, as its agents' status lines last reported them (see setUsage). Your accounts', so
     // every workspace's hub shares them.
     this.usage = usage ?? readJSON(at('usage.json')) ?? {}
+    // ...and the recent readings of each window, for its pace (see sample): every workspace's agents add to the one record
+    this.samples = samples ?? {}
     // What this workspace's work has cost: the last running totals of each CLI process and of each session (so nothing
     // is counted twice), and its spend per hour of each day (for "usual by now"). See countSpend.
     this.spend = { runs: {}, sessions: {}, hours: {}, ...readJSON(this.at('spend.json')) }
@@ -863,6 +865,13 @@ export class Hub extends EventEmitter {
   // Agents on one provider share its account, so the newest reading from any of them is the account's: Claude Code's
   // status line, or Codex's session log (readCodexContext). A window that has reset is gone until the next reading.
   // credits: what Codex says is left on the account ({ balance, unlimited }), shown with its windows.
+  // The account is yours, not a workspace's: whichever workspace's agent reports it, it's said once, where you are
+  // (aboutAccount), and its notification belongs to no workspace.
+
+  // A line in the chat about your accounts. Crew puts it in the workspace on screen; on its own, a hub keeps it.
+  aboutAccount(entry) {
+    this.post(entry)
+  }
 
   setUsage(id, windows, credits) {
     const before = JSON.stringify([this.liveUsage(id), this.usage[id]?.credits])
@@ -897,13 +906,13 @@ export class Hub extends EventEmitter {
     u.told[w.id] = { level, resetsAt: w.resetsAt }
     const what = `${this.providers[id]?.label ?? id} is at ${w.pct}% of its ${limitName(w)}`
     const when = resetsWhen(w.resetsAt)
-    this.post({ kind: 'event', from: 'crew', text: `${what}, resets ${when}`, ...(level >= 95 && { alert: true }) })
-    this.emit('notice', { title: what, body: `It resets ${when}.${level >= NEAR_LIMIT ? ' Until then, new work goes to agents on other providers when they cover the same area.' : ''}`, focus: '' })
+    this.aboutAccount({ kind: 'event', from: 'crew', text: `${what}, resets ${when}`, ...(level >= 95 && { alert: true }) })
+    this.emit('notice', { title: what, body: `It resets ${when}.${level >= NEAR_LIMIT ? ' Until then, new work goes to agents on other providers when they cover the same area.' : ''}`, focus: '', account: true })
   }
 
   // Readings of a window over the last RECENT minutes, for its pace right now. A drop or a new reset time is a new window.
   sample(id, w) {
-    const list = ((this.samples ??= {})[id] ??= {})[w.id] ?? []
+    const list = (this.samples[id] ??= {})[w.id] ?? []
     const last = list.at(-1)
     const now = Date.now()
     const keep = last && last[1] <= w.pct && last[2] === w.resetsAt ? list.filter(([t]) => now - t <= RECENT) : []
@@ -911,7 +920,7 @@ export class Hub extends EventEmitter {
   }
 
   pace(id, w) {
-    return paceOf(w, this.samples?.[id]?.[w.id])
+    return paceOf(w, this.samples[id]?.[w.id])
   }
 
   // At this pace a window runs out before it resets: one line in the chat and a notification, once per window, when it's
@@ -923,8 +932,8 @@ export class Hub extends EventEmitter {
     if (!p?.runsOut || u.told[key]?.resetsAt === w.resetsAt || p.runsOut - Date.now() > length * PACE_WARN) return
     u.told[key] = { resetsAt: w.resetsAt }
     const what = `At this pace, ${this.providers[id]?.label ?? id}'s ${limitName(w)} runs out ${resetsWhen(p.runsOut)}`
-    this.post({ kind: 'event', from: 'crew', text: `${what}, before it resets ${resetsWhen(w.resetsAt)}`, alert: true })
-    this.emit('notice', { title: what, body: `It resets ${resetsWhen(w.resetsAt)}.`, focus: '' })
+    this.aboutAccount({ kind: 'event', from: 'crew', text: `${what}, before it resets ${resetsWhen(w.resetsAt)}`, alert: true })
+    this.emit('notice', { title: what, body: `It resets ${resetsWhen(w.resetsAt)}.`, focus: '', account: true })
   }
 
   // Debounced like the context gauges; `now` on quit.

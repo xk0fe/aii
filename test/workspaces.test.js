@@ -585,3 +585,23 @@ test("made with members' own folders, they start there the first time; a shared 
     quit(c)
   }
 })
+
+test("your accounts' limits: said once, where you are, whichever workspace's agent reports them; the pace counts every workspace's readings", async () => {
+  const c = await crewApp({ agents: roster(), workspaces: [golf()] })
+  try {
+    const notices = []
+    c.on('notice', (n) => notices.push(n))
+    const home = c.hub
+    const g = c.hubs.get('golf')
+    const at = Date.now() + 3600e3
+    g.setUsage('claude', [{ id: 'five_hour', pct: 81, resetsAt: at }]) // a Golf agent's status line, Home on screen
+    home.setUsage('claude', [{ id: 'five_hour', pct: 82, resetsAt: at }])
+    const said = (h) => h.feed.filter((e) => /5-hour limit, resets/.test(e.text ?? '')).length
+    assert.deepEqual([said(home), said(g)], [1, 0], 'once, in the workspace on screen')
+    assert.ok(notices.length >= 1 && notices.every((n) => n.account && !('workspace' in n)), "its notification is no workspace's")
+    assert.equal(g.samples, home.samples, 'one record of readings')
+    assert.equal(g.samples.claude.five_hour.length, 2)
+  } finally {
+    quit(c)
+  }
+})
