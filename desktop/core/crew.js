@@ -334,11 +334,11 @@ export class Crew extends EventEmitter {
     }
   }
 
-  // Typing into an agent's terminal, here or on its computer (in the workspace on screen).
-  input(name, data) {
+  // Typing into an agent's terminal, here or on its computer (in the workspace on screen, or `here`).
+  input(name, data, here = this.here) {
     const { l, base } = this.where(name)
-    if (!l) return this.here.input(base, data)
-    l.peer?.input(this.here === this.hub ? base : `${this.here.ws}/${base}`, data)
+    if (!l) return here.input(base, data)
+    l.peer?.input(here === this.hub ? base : `${here.ws}/${base}`, data)
   }
 
   // workspace/name (a terminal or an alert from a linked computer) -> [workspace, name]; a bare name is the default's.
@@ -451,16 +451,17 @@ export class Crew extends EventEmitter {
     return l
   }
 
-  // Bare names resolve to this computer first, then to the one linked computer with an agent by that name.
-  resolve(name) {
-    const agents = this.snapshot().agents
+  // Bare names resolve to this computer first, then to the one linked computer with an agent by that name (in the
+  // workspace on screen, or `here`).
+  resolve(name, here = this.here) {
+    const agents = this.snapshot(here).agents
     if (name.includes('@')) {
       const { l, base } = this.where(name)
-      if (l && !this.linkedState(l, this.here.ws)?.agents.some((a) => a.name === base)) throw new Error(`no agent named "${name}" (try: crew who)`)
+      if (l && !this.linkedState(l, here.ws)?.agents.some((a) => a.name === base)) throw new Error(`no agent named "${name}" (try: crew who)`)
       return l ? name : base
     }
-    if (this.here.agents.has(name)) return name
-    if (this.here.agents.has(this.here.baseOf(name))) return this.here.baseOf(name) // a clone that went away: its original
+    if (here.agents.has(name)) return name
+    if (here.agents.has(here.baseOf(name))) return here.baseOf(name) // a clone that went away: its original
     const there = agents.filter((a) => a.home && a.seed === name)
     if (there.length === 1) return there[0].name
     if (there.length > 1) throw new Error(`which ${name}? ${there.map((a) => `@${a.name}`).join(' or ')}`)
@@ -502,31 +503,33 @@ export class Crew extends EventEmitter {
     return groups
   }
 
-  // ---- actions from this computer's UI -----------------------------------------------------------
+  // ---- actions from this computer's UI, and from phones -------------------------------------------
+  // Each acts in the workspace on screen unless it's given another one's hub (`here`): what a phone does lands in the
+  // workspace it watches, whatever this computer shows.
 
   // opts.fresh: deliver into a new conversation. opts.re: the message you're replying to (an id from the feed
   // shown here: on this computer, or id@computer). Each computer links what it has and quotes the rest.
-  async send(to, text, images = [], { fresh = false, re } = {}) {
-    const onScreen = this.here // the workspace it was sent in, whatever's on screen by the time it goes
-    const quoted = re ? this.snapshot().feed.find((e) => e.id === re) : undefined
+  // here: the workspace it was sent in, whatever's on screen by the time it goes.
+  async send(to, text, images = [], { fresh = false, re } = {}, here = this.here) {
+    const quoted = re ? this.snapshot(here).feed.find((e) => e.id === re) : undefined
     const quote = quoted && { from: quoted.from, text: quoted.ticket !== undefined ? `#${String(quoted.ticket).split('@')[0]} ${quoted.title ?? ''}` : quoted.text }
-    const here = (slug) => (id) => (slug ? (id?.endsWith(`@${slug}`) ? id.slice(0, -slug.length - 1) : undefined) : id && !id.includes('@') ? id : undefined)
+    const idThere = (slug) => (id) => (slug ? (id?.endsWith(`@${slug}`) ? id.slice(0, -slug.length - 1) : undefined) : id && !id.includes('@') ? id : undefined)
     const unq = (slug) => (name) => (slug && String(name).endsWith(`@${slug}`) ? String(name).slice(0, -slug.length - 1) : name)
-    let names = addressees(to, text).map((n) => this.resolve(n))
+    let names = addressees(to, text).map((n) => this.resolve(n, here))
     if (!names.length) {
       // agents, not their clones; one here that can clone itself counts as free
-      const ready = this.snapshot().agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status))
-      const best = bestFor(text, ready.map((a) => (a.home ? a : { ...a, ...onScreen.lineup(onScreen.agents.get(a.name)) })))
+      const ready = this.snapshot(here).agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status))
+      const best = bestFor(text, ready.map((a) => (a.home ? a : { ...a, ...here.lineup(here.agents.get(a.name)) })))
       if (!best) throw new Error('no agents to send to')
       names = [best.name]
     }
     const out = []
     for (const [home, bases] of this.group(names)) {
-      const reply = quoted ? { re: here(home)(re), quote: { ...quote, from: unq(home)(quote.from) } } : {}
-      if (!home) out.push(await onScreen.send({ to: bases.join(','), text, images, mentions: false, fresh, ...reply }))
+      const reply = quoted ? { re: idThere(home)(re), quote: { ...quote, from: unq(home)(quote.from) } } : {}
+      if (!home) out.push(await here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...reply }))
       else {
         const l = this.link(home)
-        out.push(await this.linkCall(l, 'deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...reply }], onScreen.ws))
+        out.push(await this.linkCall(l, 'deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...reply }], here.ws))
       }
     }
     return out.join('')
@@ -547,15 +550,13 @@ export class Crew extends EventEmitter {
   }
 
   // Run fn on whichever computer `name` lives on.
-  async at(name, fn, ...args) {
+  async at(name, fn, args = [], here = this.here) {
     const { l, base } = this.where(name)
-    const here = this.here
     if (l) return this.linkCall(l, fn, [base, ...args], here.ws)
     return this.serve(fn, [base, ...args], here)
   }
 
-  async update(names, patch) {
-    const here = this.here
+  async update(names, patch, here = this.here) {
     for (const [home, bases] of this.group([].concat(names))) {
       if (!home) here.update(bases, patch)
       else {
@@ -573,10 +574,9 @@ export class Crew extends EventEmitter {
   }
 
   // A Tasks board action. A task lives on the computer it was added on: 12@air is #12 on Air.
-  async ticket(op, key, arg) {
-    const here = this.here
+  async ticket(op, key, arg, here = this.here) {
     if (op === 'file') return here.fileTask(arg)
-    if (op === 'bulk') return this.bulkTickets(arg)
+    if (op === 'bulk') return this.bulkTickets(arg, here)
     const { l, base } = this.where(String(key))
     if (!l) return here.ticket(op, base, arg)
     if (arg?.owner) arg = { ...arg, owner: this.qualifierFor(l)(arg.owner) }
@@ -586,8 +586,7 @@ export class Crew extends EventEmitter {
 
   // A bulk action on the Tasks board ({ op, keys, arg }, see Hub.bulk): each computer gets its own tasks in one call.
   // One on an older Crew, without bulk actions, gets them one at a time; one that can't be reached is left out.
-  async bulkTickets({ op, keys = [], arg } = {}) {
-    const here = this.here
+  async bulkTickets({ op, keys = [], arg } = {}, here = this.here) {
     const groups = new Map() // computer ('' for this one) -> its task numbers
     for (const key of keys.map(String)) {
       const at = key.lastIndexOf('@')
@@ -641,9 +640,8 @@ export class Crew extends EventEmitter {
     }
   }
 
-  feedAction(id, fn, ...args) {
+  feedAction(id, fn, args = [], here = this.here) {
     const { l, base } = this.where(id)
-    const here = this.here
     return l ? this.linkCall(l, fn, [base, ...args], here.ws) : here[fn](base, ...args)
   }
 

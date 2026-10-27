@@ -251,7 +251,7 @@ const actions = {
   approve: (id) => crew.feedAction(id, 'approve'),
   drop: (id) => crew.feedAction(id, 'drop'),
   // Answer an agent's question (a permission prompt, AskUserQuestion, a plan) from the chat; see hub.ask.
-  answer: (id, reply) => crew.feedAction(id, 'answer', reply),
+  answer: (id, reply) => crew.feedAction(id, 'answer', [reply]),
   autopilot: (on) => crew.here.setAutopilot(on),
   // You've seen agents' replies up to then: { name: ts }. Unread badges count what's newer.
   read: (seen, ws) => (crew.hubs.get(ws) ?? crew.here).read(seen),
@@ -262,7 +262,7 @@ const actions = {
   restart: (name) => crew.at(name, 'restart'),
   markIdle: (name) => crew.at(name, 'markIdle'),
   dismiss: (name) => crew.at(name, 'dismiss'), // send a clone away
-  resize: (name, cols, rows) => crew.at(name, 'resize', cols, rows),
+  resize: (name, cols, rows) => crew.at(name, 'resize', [cols, rows]),
   buffer: (name) => crew.at(name, 'buffer'),
 
   // Agent packs: a .crew file with the agents' definitions, looks and reference images.
