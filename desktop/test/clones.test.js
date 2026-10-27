@@ -319,8 +319,13 @@ test('ui: a clone goes by its agent\'s name and face with its number, in the fee
   // the message says who took it; the face is gal's
   const html = ui.feedView(hub.feed, agents, new Set(), 200).html()
   assert.match(html, /to <span class="who" data-agent="gal\.2" style="--c:color\(gal\)">@gal<span class="clone-no"/)
-  // gal's row lists its clone, right under it; "who's on it" shows it while it starts
-  assert.match(ui.rosterHTML({ agents, computers: { me: { name: 'Mac' }, links: [] } }), /data-agent="gal"[\s\S]*data-clone="gal\.2"[\s\S]*<av gal>[\s\S]*starting/)
+  // gal's row counts its clone (its face and how many); unfolded, the clone's row is right under it. "Who's on it"
+  // shows it while it starts.
+  const crew = { agents, computers: { me: { name: 'Mac' }, links: [] } }
+  assert.match(ui.rosterHTML(crew), /data-agent="gal"[\s\S]*data-fold="clones:gal"[\s\S]*<av gal><b>1<\/b>/)
+  assert.doesNotMatch(ui.rosterHTML(crew), /data-clone="gal\.2"/)
+  assert.match(ui.rosterHTML(crew, { folds: new Set(['clones:gal']) }), /data-agent="gal"[\s\S]*data-clone="gal\.2"[\s\S]*<av gal>[\s\S]*starting/)
+  assert.match(ui.rosterHTML(crew, { selected: 'gal.2' }), /data-clone="gal\.2"/)
   assert.match(ui.typingHTML(agents), /data-agent="gal\.2"[\s\S]*starting up to take it/)
 })
 

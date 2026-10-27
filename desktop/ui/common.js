@@ -443,10 +443,53 @@ const grouped = (groups) => groups.filter((g) => g.agents.length || !g.here).len
 function rowLine(a) {
   if (!a.on) return { text: 'off', cls: 'off' }
   if (blockedOn(a)) return { text: waitText(a.waitingOn), cls: 'blocked' }
-  if (a.status === 'working') return { text: a.activity || statusText(a), cls: a.activity ? 'working mono' : 'working' }
-  if (a.status === 'waiting') return { text: a.activity ? `needs you · ${a.activity}` : 'needs you', cls: 'waiting' }
+  if (a.status === 'working') return { text: a.activity ? activityWords(a.activity) : statusText(a), cls: 'working' }
+  if (a.status === 'waiting') return { text: a.activity ? `needs you · ${activityWords(a.activity)}` : 'needs you', cls: 'waiting' }
   if (a.status === 'idle' && runningSubs(a).length) return { text: `free · ${plural(runningSubs(a).length, 'sub-agent')} working`, cls: 'idle' }
   return { text: statusText(a), cls: a.status }
+}
+
+// What an agent is doing, in plain words. core/hub.js describes a tool call as "Edit · hub.js" or "Bash · npm run e2e";
+// this says "Editing hub.js", "Running e2e". For the roster, the menu bar and Needs you.
+const urlHost = (url) => {
+  try {
+    return new URL(url).host.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+// crew's own commands (core/adapters.js), then package scripts by their name, then the command itself
+function commandWords(cmd) {
+  const c = String(cmd).replace(/^(?:cd\s+\S+\s*&&\s*)+/, '').trim()
+  const own = c.match(/^crew\s+(ask|send|lease|note|board)\b\s*([\w@.-]*)/)
+  if (own) {
+    const [, verb, what] = own
+    const who = what.split('@')[0] || 'a teammate'
+    return { ask: `Asking ${who}`, send: `Handing work to ${who}`, lease: `Booking the ${what || 'shared thing'}`, note: 'Leaving a note for the crew', board: "Reading the crew's notes" }[verb]
+  }
+  if (/^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b/.test(c)) return 'Running the tests'
+  const script = c.match(/^(?:(?:npm|pnpm|yarn|bun)\s+run|npx|pnpx|bunx)\s+(.+)/)
+  return `Running ${script ? script[1] : c}`
+}
+const TOOL_WORDS = [
+  [/^(edit|multiedit|notebookedit|apply_patch)$/i, (x) => (x ? `Editing ${x}` : 'Editing files')],
+  [/^write$/i, (x) => (x ? `Writing ${x}` : 'Writing a file')],
+  [/^(read|notebookread|view_image)$/i, (x) => (x ? `Reading ${x}` : 'Reading files')],
+  [/^(bash|shell|exec_command|local_shell|unified_exec)$/i, (x) => (x ? commandWords(x) : 'Running a command')],
+  [/^(grep|glob)$/i, (x) => (x ? `Searching for ${x}` : 'Searching the code')],
+  [/^webfetch$/i, (x) => `Reading ${urlHost(x) || 'a web page'}`],
+  [/^(websearch|web_search)$/i, (x) => (x ? `Searching the web for ${x}` : 'Searching the web')],
+  [/^image_gen$/i, (x) => (x ? `Drawing ${x}` : 'Drawing')],
+  [/^(agent|task)$/i, (x) => (x ? `Starting a sub-agent: ${x}` : 'Starting a sub-agent')],
+  [/^(todowrite|update_plan)$/i, () => 'Planning its next steps'],
+  [/^exitplanmode$/i, () => 'Writing up a plan'],
+]
+function activityWords(text) {
+  const m = String(text).match(/^([A-Za-z_][\w-]*)(?:\s*[·:]\s*|\s+|$)([\s\S]*)$/)
+  const tool = m && TOOL_WORDS.find(([re]) => re.test(m[1]))
+  if (tool) return tool[1](m[2].split('\n')[0].trim())
+  const mcp = String(text).match(/^mcp__(.+?)__/)
+  return mcp ? `Using ${mcp[1].replace(/_/g, ' ')}` : String(text).replace(/^./, (c) => c.toUpperCase())
 }
 
 // Modes that are on, as marks beside the name: YOLO (red) and Fast (amber). And what it has leased (crew lease), so
@@ -456,17 +499,24 @@ const modeMarks = (a) =>
   (a.fast ? `<i class="mark-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</i>` : '') +
   (a.holds?.length ? `<i class="mark-holds" title="${esc(`Has ${a.holds.join(', ')} (crew lease): nobody else uses it until it's done`)}">${esc(a.holds.join(', '))}</i>` : '')
 
-function crewRow(a, { selected = false, drag = false } = {}) {
+// Its clones at work, as their little faces and how many: click to show or fold their rows under it.
+function cloneCount(a, clones, open) {
+  if (!clones.length) return ''
+  const tip = `${plural(clones.length, 'clone')} of ${displayName(a)} at work. Click to ${open ? 'fold them away' : 'see what each is on'}`
+  return `<button class="crow-clones ${open ? 'open' : ''}" data-fold="clones:${esc(a.name)}" title="${esc(tip)}" aria-expanded="${open}">${clones.slice(0, 3).map((c) => avatarHTML(c, { size: 16, mood: 'still' })).join('')}<b>${clones.length}</b></button>`
+}
+
+function crewRow(a, { selected = false, drag = false, clones = [], clonesOpen = false } = {}) {
   const line = rowLine(a)
   const later = a.freshPending ? 'new conversation when free' : a.pending ? 'restarts when free' : ''
   const tip = [`${a.name}${a.area ? ` · ${a.area}` : ''}`, statusText(a), later, a.queue ? `${a.queue} queued` : ''].filter(Boolean).join('\n')
   return `<div class="crow ${a.on ? a.status : 'off'} ${selected ? 'on' : ''}" data-agent="${esc(a.name)}" ${drag ? 'draggable="true"' : ''} style="--c:${agentColor(a)}" title="${esc(tip)}">
     <span class="crow-av">${avatarHTML(a, { size: 30 })}${orbitHTML(a)}${unreadBadge(a.unread)}</span>
     <span class="crow-main">
-      <span class="crow-top"><b>${esc(a.seed ?? a.name)}</b>${modeMarks(a)}</span>
-      <span class="crow-line ${line.cls}">${esc(line.text)}</span>
+      <span class="crow-top"><b>${esc(a.seed ?? a.name)}</b>${modeMarks(a)}${subsChip(a)}</span>
+      <span class="crow-line ${line.cls}">${cloneCount(a, clones, clonesOpen)}${esc(line.text)}</span>
     </span>
-    <span class="crow-end">${a.queue && a.on ? `<i class="crow-queue" title="${plural(a.queue, 'message')} queued">${a.queue}</i>` : ''}${later ? `<i class="crow-later" title="${esc(later)}">${a.freshPending ? ICONS.fresh : ICONS.restart}</i>` : ''}${a.convo?.context?.pct >= 50 ? contextRing(a, { label: false }) : ''}</span>
+    <span class="crow-end">${a.queue && a.on ? `<i class="crow-queue" title="${plural(a.queue, 'message')} queued">${a.queue}</i>` : ''}${later ? `<i class="crow-later" title="${esc(later)}">${a.freshPending ? ICONS.fresh : ICONS.restart}</i>` : ''}${a.convo?.context?.pct >= 80 ? contextRing(a, { label: false }) : ''}</span>
     <span class="crow-acts">${modeChips(a)}${powerSwitch(a)}</span>
   </div>`
 }
@@ -482,14 +532,6 @@ function cloneRow(c, { selected = false } = {}) {
 // A few creatures overlapping, for folded groups: who's in there at a glance.
 const faceStack = (agents, n = 5) =>
   `<span class="faces">${agents.slice(0, n).map((a) => avatarHTML(a, { size: 20, mood: 'still' })).join('')}${agents.length > n ? `<i>+${agents.length - n}</i>` : ''}</span>`
-
-// Little counts for a group's header: who works, who needs you. Empty when everyone's free.
-function groupCounts(agents) {
-  const on = agents.filter((a) => a.on)
-  const working = on.filter((a) => a.status === 'working').length
-  const waiting = on.filter((a) => a.status === 'waiting').length
-  return (working ? `<i class="gc working" title="${working} working">${working}</i>` : '') + (waiting ? `<i class="gc waiting" title="${waiting} need${waiting > 1 ? '' : 's'} you">${waiting}</i>` : '')
-}
 
 // folds: 'group:<key>' for computers you folded away, 'off:<key>' for the off agents you unfolded.
 // filter: text to match names and areas (a match shows through any fold). drag: rows can be dragged to another
@@ -516,11 +558,16 @@ function rosterParts(state, { folds = new Set(), selected, filter = '', drag = f
       ? `<div class="cgroup-head" data-fold="group:${esc(g.key)}" title="${esc(g.here ? `${g.name}: this computer` : `${g.name}: ${g.online ? 'linked' : 'unreachable, it reconnects on its own'}`)}">
           <span class="chev">${ICONS.chevron}</span><span class="cg-icon ${g.online ? '' : 'away'}">${g.here ? ICONS.desktop : ICONS.laptop}</span>
           <b>${esc(g.name)}</b>${g.online ? '' : '<span class="cg-tag away">offline</span>'}
-          <span class="grow"></span>${folded ? faceStack(on.length ? on : agents) : ''}${groupCounts([...g.agents, ...g.clones])}
+          <span class="grow"></span>${folded ? faceStack(on.length ? on : agents) : ''}
         </div>`
       : ''
-    const clones = (a) => g.clones.filter((c) => c.cloneOf === a.name).map((c) => cloneRow(c, { selected: c.name === selected }))
-    const rows = on.flatMap((a) => [crewRow(a, { selected: a.name === selected, drag: drag && headed }), ...clones(a)])
+    // its clones fold into a count on its row (and unfold on a click, or when one of them is the one you picked)
+    const brood = (a) => g.clones.filter((c) => c.cloneOf === a.name)
+    const clonesOpen = (a) => Boolean(q) || folds.has(`clones:${a.name}`) || brood(a).some((c) => c.name === selected)
+    const rows = on.flatMap((a) => [
+      crewRow(a, { selected: a.name === selected, drag: drag && headed, clones: brood(a), clonesOpen: clonesOpen(a) }),
+      ...(clonesOpen(a) ? brood(a).map((c) => cloneRow(c, { selected: c.name === selected })) : []),
+    ])
     const offRows = off.length
       ? [`<div class="crow-fold ${offOpen ? 'open' : ''}" data-fold="off:${esc(g.key)}"><span class="chev">${ICONS.chevron}</span>${faceStack(off, 4)}<span>${off.length} off</span></div>`, ...(offOpen ? off.map((a) => crewRow(a, { selected: a.name === selected, drag: drag && headed })) : [])]
       : []
@@ -550,6 +597,28 @@ function crewSummary(state, { unread = false } = {}) {
   if (!on.length) return pill('', 'all off', 'off')
   const fresh = unread ? state.agents.reduce((n, a) => n + (a.unread ?? 0), 0) : 0
   return (working ? pill('working', `${working} working`) : '') + (blocked ? pill('blocked', `${blocked} waiting`, 'blocked', `${plural(blocked, 'agent')} waiting on a teammate's answer`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting || blocked ? '' : pill('idle', agents > 1 ? `all ${agents} free` : 'free')) + (fresh ? pill('unread', `${fresh} new`) : '')
+}
+
+// What's waiting on you, oldest first: every open question in the chat, whatever its agent is doing now (a sub-agent's
+// can outlive its turn), and every agent that needs you without one (it's asking in its terminal). One list for the
+// chat's queue, the title bar and the menu bar.
+function needsYou(state) {
+  const byName = new Map(state.agents.map((a) => [a.name, a]))
+  const asks = (state.feed ?? []).filter((e) => e.kind === 'ask' && !e.answer)
+  const asking = new Set(asks.map((e) => e.from))
+  return [
+    ...asks.map((e) => ({ agent: byName.get(e.from) ?? cloneGhost(e.from, Object.fromEntries(byName)) ?? { name: e.from }, ask: e, since: e.ts ?? 0 })),
+    ...state.agents.filter((a) => a.on && a.status === 'waiting' && !asking.has(a.name)).map((a) => ({ agent: a, ask: null, since: a.since ?? 0 })),
+  ].sort((x, y) => x.since - y.since)
+}
+
+// What it's asking, in one line: the question, the command it wants to run, the plan, or that its terminal is waiting.
+function needText({ agent, ask }) {
+  const q = ask?.ask
+  if (!q) return agent.activity ? `Waiting in its terminal · ${activityWords(agent.activity)}` : 'Waiting in its terminal'
+  if (q.type === 'question') return q.questions?.[0]?.question ?? 'Has a question'
+  if (q.type === 'plan') return 'Wants you to approve a plan'
+  return q.code ? `Wants to run ${q.code.split('\n')[0]}` : `Wants to use ${q.title ?? 'a tool'}`
 }
 
 // ---- workspaces: each project the crew works on, with its own chat, tasks and agents (core/workspaces.js) ----------
@@ -823,7 +892,8 @@ function mountConvoHead(el, { onBack, onTerminal }) {
 // An answer that went back to the agent that asked (core/hub.js respond) is the reply already in the feed: it isn't
 // shown twice, the reply says where it went instead (backTo). A reply that answered several hand-offs at once (they
 // came in together) threads to each of them.
-const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider, only, here } = {}) => {
+// queued: open questions live in the chat's Needs you queue (mountFeed), so the feed only points at them.
+const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider, only, here, queued = false } = {}) => {
   const merged = mergeSends(feed)
   const visible = merged.shown.filter((e) => !e.answers)
   const shown = only ? visible.filter(only) : visible
@@ -831,7 +901,7 @@ const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divide
   // the last `limit` entries, plus questions still waiting for you from before them
   const items = [...shown.slice(0, -limit).filter((e) => e.kind === 'ask' && !e.answer), ...shown.slice(-limit)]
   const waiting = new Set(agents.flatMap((a) => (a.waitingOn ?? []).map((w) => w.id)).filter(Boolean))
-  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, backTo: {}, waiting, open, drafts, reads, here }
+  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, backTo: {}, waiting, open, drafts, reads, here, queued }
   for (const e of feed) {
     if (e.answers) {
       if (e.reply) ctx.backTo[e.reply] = { to: e.to, queued: e.queued }
@@ -957,6 +1027,7 @@ function feedItem(e, prev, ctx) {
   }
   if (e.kind === 'ask') {
     const verb = { permission: 'needs your OK', question: 'asks', plan: 'has a plan for you' }[e.ask?.type] ?? 'asks'
+    if (!e.answer && ctx.queued) return said('ask open pointer', `${name(e.from)} <span>${verb}</span>`, '', `${quote}<button class="ask-pointer" data-needs="${esc(e.id)}" title="Answer it in Needs you, at the top of the chat"><span>${esc(needText({ agent: agent(e.from), ask: e }))}</span><b>${ICONS.up}Answer</b></button>`, false)
     return said(`ask ${e.answer ? 'answered' : 'open'}`, `${name(e.from)} <span>${verb}</span>`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`, false)
   }
   if (e.from === 'you') return `<div class="item me${cont}" id="m-${e.id}" title="${time}">${cap(`to ${(e.cc ?? [e.to]).map(who).join(' ')}`)}${bubble}${replied}${tools}</div>`
@@ -1049,6 +1120,25 @@ function askCard(e, draft = {}) {
   </div>`
 }
 
+// The chat's Needs you queue (see mountFeed): who's waiting on you, oldest first. The open one shows its question card,
+// answered right there; the others are a line each until you open them. One asking in its terminal opens that.
+const NEED_VERBS = { permission: 'needs your OK', question: 'asks', plan: 'has a plan for you' }
+function needsHTML(needs, expanded, drafts = new Map()) {
+  const item = ({ agent: a, ask }) => {
+    const verb = ask ? NEED_VERBS[ask.ask?.type] ?? 'asks' : 'is waiting in its terminal'
+    const face = `<span class="nq-face">${avatarHTML(a, { size: 28 })}</span>`
+    const who = `<div class="nq-who"><b>${nameHTML(a)}</b> ${verb}</div>`
+    if (ask && ask.id === expanded) return `<article class="nq-item open" data-need="${esc(ask.id)}">${face}<div class="nq-main">${who}${askCard(ask, drafts.get(ask.id))}</div></article>`
+    const go = ask
+      ? `<button class="btn nq-go amber" data-needs-open="${esc(ask.id)}">Answer</button>`
+      : `<button class="btn nq-go" data-needs-term="${esc(a.name)}" title="Answer it in its terminal">Open</button>`
+    // asking in its terminal: the line says what it was doing, since "waiting in its terminal" is already said
+    const text = ask ? needText({ agent: a, ask }) : a.activity ? activityWords(a.activity) : 'Answer it there'
+    return `<article class="nq-item" ${ask ? `data-need="${esc(ask.id)}"` : ''}>${face}<div class="nq-main">${who}<p class="nq-text">${esc(text)}</p></div>${go}</article>`
+  }
+  return `<header class="nq-head"><span>Needs you</span><b>${needs.length}</b>${needs.length > 1 ? '<span class="nq-order">oldest first</span>' : ''}</header>${needs.map(item).join('')}`
+}
+
 // An answered card, in one line or two.
 function askSummary(q, a) {
   const what = q.type === 'question' ? '' : `<span class="ask-what">${esc(q.type === 'plan' ? 'the plan' : q.title ?? '')}</span>`
@@ -1074,8 +1164,11 @@ function typingHTML(agents, asks, opts) {
 
 // The same, in parts for morph(): each row, and each one's sub-agents, a part of its own.
 // crew: everyone, to draw the teammates a line mentions (the one an agent is waiting on, the ones waiting on it).
-function typingParts(agents, asks = new Map(), { all = false, crew = agents } = {}) {
+// queue: the chat has a Needs you queue, so agents waiting on you are there instead, and with a busy crew only the
+// first few at work show (the roster has everyone).
+function typingParts(agents, asks = new Map(), { all = false, crew = agents, queue = false } = {}) {
   const active = agents.filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || a.subs?.length || (a.cloneOf && a.status === 'starting'))) // a new clone shows up right away
+    .filter((a) => !queue || a.status !== 'waiting')
   const ordered = [...active.filter((a) => a.status === 'waiting'), ...active.filter((a) => blockedOn(a)), ...active.filter((a) => a.status !== 'waiting' && !blockedOn(a))]
   const many = ordered.length > TYPING_ROWS + 1
   const shown = many && !all ? ordered.slice(0, TYPING_ROWS) : ordered
@@ -1089,14 +1182,14 @@ function typingParts(agents, asks = new Map(), { all = false, crew = agents } = 
     const waiting = a.status === 'waiting'
     const starting = a.cloneOf && a.status === 'starting'
     const busy = waiting || a.status === 'working' || starting
-    const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : starting ? 'starting up to take it…' : busy ? a.activity || 'working…' : 'free, its sub-agents are still working'
+    const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : starting ? 'starting up to take it…' : busy ? (a.activity ? activityWords(a.activity) : 'working…') : 'free, its sub-agents are still working'
     const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : busy ? '<span class="typing"><i></i><i></i><i></i></span>' : ''
     return [`<div class="typing-row ${a.status}" ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
     <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${owedChip(a, someone)}${end}</div>`, subTree(a, many ? 2 : 4)]
   })
   const waitingLeft = rest.filter((a) => a.status === 'waiting').length
   const what = [waitingLeft && `${waitingLeft} more need${waitingLeft > 1 ? '' : 's'} you`, rest.length - waitingLeft && `${rest.length - waitingLeft} more at work`].filter(Boolean).join(' · ')
-  const more = rest.length
+  const more = queue ? '' : rest.length
     ? `<div class="typing-row typing-more" data-typing="all" title="Show everyone at work">${faceStack(rest, 6)}<span class="tr-what quiet">${what}</span><span class="chev">${ICONS.chevron}</span></div>`
     : many ? `<div class="typing-row typing-more open" data-typing="less"><span class="tr-what quiet">Show fewer</span><span class="chev">${ICONS.chevron}</span></div>` : ''
   return [...rows, more].filter(Boolean)
@@ -1197,9 +1290,28 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     jumpTo = null
     settle()
   })
-  el.innerHTML = `<div class="feed-list"></div><div class="feed-list typing-list"></div>
+  // Needs you sits first and sticks to the top while the messages scroll under it, so its question cards answer
+  // through the same handlers as the feed's.
+  el.innerHTML = `<section class="needs-queue hidden" aria-label="Needs you"></section><div class="feed-list"></div><div class="feed-list typing-list"></div>
     <div class="feed-latest"><button type="button" title="Jump to the latest messages">${ICONS.up}<span></span></button></div>`
-  const [list, typing, latest] = el.children
+  const [queue, list, typing, latest] = el.children
+  let queued = new Map() // id -> an open question in the queue (it may be outside what the feed shows)
+  let expanded = null // the queued question that's open: the oldest, until you open another
+  let queueKey = ''
+  const entry = (id) => shown.get(id) ?? queued.get(id)
+  // the title bar's "need you", a terminal's Answer, or a question's line in the feed: open it in the queue
+  const showNeeds = (id) => {
+    if (id && queued.has(id)) expanded = id
+    if (last) api.render(last)
+    if (queue.classList.contains('hidden')) return
+    queue.querySelector('.nq-item.open button, .nq-item.open input, .nq-go')?.focus({ preventScroll: true })
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) queue.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.02)' }, { transform: 'scale(1)' }], { duration: 420, easing: 'cubic-bezier(.3, 1.5, .5, 1)' })
+  }
+  document.addEventListener('crew:needs', (ev) => {
+    if (!el.isConnected) return
+    const name = ev.detail?.name
+    showNeeds(name ? [...queued.values()].find((e) => e.from === name)?.id : null)
+  })
   const count = latest.querySelector('span')
   // runs on every scroll event, so it only touches the DOM when something changed
   const drawLatest = () => {
@@ -1238,6 +1350,9 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     jumpTimer = setTimeout(() => ((jumpTo = null), settle(), pin(true)), 2000)
     target.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }
+  // the queue covers the top of the feed while it's up: scrolling to a message keeps clear of it (scroll-padding)
+  const over = () => (queue.classList.contains('hidden') ? 0 : queue.offsetHeight)
+  new ResizeObserver(() => el.style.setProperty('--needs-h', `${over()}px`)).observe(queue)
   // where a message sits in the feed's content, to tell whether a re-render moved it
   const placeOf = (id) => {
     const it = document.getElementById(id)
@@ -1269,6 +1384,12 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       ev.preventDefault()
       return crew.call('openUrl', link.href)
     }
+    const opener = ev.target.closest('[data-needs-open]')
+    if (opener) return showNeeds(opener.dataset.needsOpen)
+    const term = ev.target.closest('[data-needs-term]')
+    if (term) return onAgent?.(term.dataset.needsTerm)
+    const pointer = ev.target.closest('[data-needs]')
+    if (pointer) return showNeeds(pointer.dataset.needs)
     const fold = ev.target.closest('[data-typing]')
     if (fold) {
       typingAll = fold.dataset.typing === 'all'
@@ -1322,7 +1443,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   const answersOf = (e, d) =>
     Object.fromEntries(e.ask.questions.map((x, qi) => [x.question, d.other?.[qi]?.trim() || (x.multiSelect ? (d.picks?.[qi] ?? []) : d.picks?.[qi]?.[0])]).filter(([, v]) => v?.length))
   const syncSend = (card) => {
-    const e = shown.get(card.dataset.ask)
+    const e = entry(card.dataset.ask)
     const send = card.querySelector('[data-answer="send"]')
     if (send) send.disabled = Object.keys(answersOf(e, draftOf(e.id))).length < e.ask.questions.length
   }
@@ -1336,7 +1457,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       await crew.call('answer', id, reply)
       drafts.delete(id)
     } catch (err) {
-      const now = list.querySelector(`[data-ask="${CSS.escape(id)}"]`) ?? card // it may have been re-rendered meanwhile
+      const now = el.querySelector(`[data-ask="${CSS.escape(id)}"]`) ?? card // it may have been re-rendered meanwhile
       now.classList.remove('sending')
       const box = now.querySelector('.ask-error')
       if (box) box.textContent = err.message
@@ -1345,7 +1466,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     }
   }
   const answerFrom = (card, how, i) => {
-    const e = card && shown.get(card.dataset.ask)
+    const e = card && entry(card.dataset.ask)
     if (!e || e.answer) return
     const d = draftOf(e.id)
     if (how === 'allow') return answer(card, { allow: true })
@@ -1357,7 +1478,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   // One question with one answer: a tap sends it. Otherwise taps pick (several, for "pick any") until Send.
   const choose = (button) => {
     const card = button.closest('[data-ask]')
-    const e = shown.get(card.dataset.ask)
+    const e = entry(card.dataset.ask)
     const qi = Number(button.dataset.pick)
     const x = e.ask.questions[qi]
     const label = button.dataset.label
@@ -1382,7 +1503,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   el.addEventListener('keydown', (ev) => {
     const card = ev.target.closest('[data-ask]')
     if (!card || ev.key !== 'Enter' || ev.isComposing) return
-    const e = shown.get(card.dataset.ask)
+    const e = entry(card.dataset.ask)
     if ('note' in ev.target.dataset && ev.target.value.trim()) answerFrom(card, 'deny') // "no, and here's what to do instead"
     else if ('other' in ev.target.dataset && ev.target.value.trim()) {
       if (e.ask.questions.length === 1) answer(card, { answers: { [e.ask.questions[0].question]: ev.target.value.trim() } })
@@ -1469,7 +1590,8 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     // measured in layout pixels: the floating panel opens from 94% scale, and its rects are scaled with it
     const scale = el.getBoundingClientRect().height / el.offsetHeight || 1
     const top = (it.getBoundingClientRect().top - el.getBoundingClientRect().top) / scale
-    el.scrollTop += top - (id ? Math.max(40, (el.clientHeight - it.offsetHeight) / 2) : 40)
+    const room = el.clientHeight - over()
+    el.scrollTop += top - over() - (id ? Math.max(40, (room - it.offsetHeight) / 2) : 40)
     settle()
   }
   // whether everyone's chat shows this message (it keeps the last `limit`), so a link out of a conversation lands
@@ -1481,6 +1603,23 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   }
   const only = () => convo && ((e) => inConvo(e, convo))
 
+  // Needs you, redrawn only when who's waiting (or which question is open) changes, keeping what you're typing
+  // into its card.
+  const drawQueue = (feed, agents) => {
+    const needs = needsYou({ feed, agents })
+    queued = new Map(needs.filter((n) => n.ask).map((n) => [n.ask.id, n.ask]))
+    if (!queued.has(expanded)) expanded = needs.find((n) => n.ask)?.ask.id ?? null
+    const next = JSON.stringify([expanded, needs.map((n) => [n.agent.name, n.agent.activity, n.agent.avatar, n.ask?.id])])
+    if (next === queueKey) return
+    queueKey = next
+    const active = queue.contains(document.activeElement) && document.activeElement.closest('[data-ask]') ? document.activeElement : null
+    const keep = active && { id: active.closest('[data-ask]').dataset.ask, field: 'note' in active.dataset ? '[data-note]' : `[data-other="${active.dataset.other}"]`, from: active.selectionStart, to: active.selectionEnd }
+    queue.classList.toggle('hidden', !needs.length)
+    queue.innerHTML = needs.length ? needsHTML(needs, expanded, drafts) : ''
+    for (const id of sending) queue.querySelector(`[data-ask="${CSS.escape(id)}"]`)?.classList.add('sending')
+    const back = keep && queue.querySelector(`[data-ask="${CSS.escape(keep.id)}"] ${keep.field}`)
+    if (back) (back.focus({ preventScroll: true }), back.setSelectionRange(keep.from, keep.to))
+  }
   const api = {
     jump,
     toLatest,
@@ -1525,12 +1664,12 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
         if (!divider || !feed.some((e) => e.id === divider)) divider = unread[0].id
       } else if (divider && !dividerTimer) dividerTimer = setTimeout(() => ((divider = null), (key = ''), api.render(last)), 4000)
       last = { feed, agents, reads, workspace }
-      const view = feedView(feed, agents, open, limit, drafts, { reads, divider, only: only(), here: talkingTo })
+      const view = feedView(feed, agents, open, limit, drafts, { reads, divider, only: only(), here: talkingTo, queued: true })
       shown = new Map(view.items.map((e) => [e.id, e]))
       let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
-      const busy = typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll, crew: agents })
+      const busy = typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll, crew: agents, queue: true })
       let added = false
       if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}` // the empty-feed hint shows only when nobody's busy
       if (next !== key) {
@@ -1563,6 +1702,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
         } else if (reading) keepReading(reading)
       }
       morph(typing, busy)
+      drawQueue(feed, agents)
       pin(added)
       drawLatest()
       first = false
@@ -1852,14 +1992,15 @@ function mountInk(field, { agents, strict = () => true }) {
 // onTarget(target): who it's aimed at changed (an agent's name opens your conversation with it; see isConvo).
 function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
   el.classList.add('composer')
-  el.innerHTML = `<div class="chips" role="group" aria-label="Send to"></div>
-    <div class="input">
+  // Who it goes to is one picker in the box's bar (To: Auto, Task, or an agent), beside the Task switch.
+  el.innerHTML = `<div class="input">
       <div class="reply-to hidden"></div>
       <div class="thumbs hidden"></div>
       <textarea rows="1"></textarea>
       <div class="input-bar">
         <button class="attach" title="Add images (or paste or drop them). Drop a folder for its path">${ICONS.plus}</button>
-        <button class="fresh-toggle" aria-pressed="false">${ICONS.fresh}<span>New conversation</span></button>
+        <span class="chips to-line" role="group" aria-label="Send to"></span>
+        <button class="fresh-toggle" aria-pressed="false" aria-label="New conversation">${ICONS.fresh}</button>
         <span class="grow"></span>
         <button class="mic" aria-label="Dictate"></button>
         <button class="send" disabled title="Send (Enter)" aria-label="Send">${ICONS.up}</button>
@@ -1963,10 +2104,30 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
     const m = String(text).match(TASK_PREFIX)
     return m ? (m[1] ?? m[2]).toLowerCase() : target === 'task' ? 'task' : null
   }
-  // Who it's for, on one line: Auto, Task, then the crew. Each chip carries a tooltip (data-tip), since a big
-  // crew shows only faces.
+  // The Task switch carries a tooltip (data-tip), like the picker beside it.
   const chip = (to, cls, inner, tipText, sub, c) =>
     `<button class="chip ${cls} ${target === to ? 'on' : ''}" data-to="${esc(to)}" aria-pressed="${target === to}" aria-label="${esc(tipText)}" data-tip="${esc(tipText)}" data-sub="${esc(sub)}"${c ? ` style="--c:${c}"` : ''}>${inner}</button>`
+  // To: whoever it's aimed at now; a click lists Auto, Task and everyone who's on
+  const picker = () => {
+    const a = isConvo(target) && agents.find((x) => x.name === target)
+    const face = a ? avatarHTML(a, { size: 18, mood: 'still' }) : `<span class="to-icon">${ICONS[target === 'task' ? 'task' : 'sparkles']}</span>`
+    const label = a ? nameHTML(a) : target === 'task' ? 'Tasks' : isConvo(target) ? esc(nameOf(target)) : 'Auto'
+    const sub = a ? statusText(a) : target === 'task' ? 'adds it to the Tasks board, @name assigns it' : 'picks by area, prefers whoever is free'
+    return `<button class="to-pick ${target === 'task' ? 'task' : ''}" data-pick-to aria-haspopup="menu" data-tip="${esc(a ? displayName(a) : target === 'task' ? 'Task' : 'Auto')}" data-sub="${esc(sub)}"${a ? ` style="--c:${agentColor(a)}"` : ''}><span class="to-label">To</span>${face}<b>${label}</b>${ICONS.chevron}</button>`
+  }
+  const pickTo = (at) => {
+    const on = agents.filter((a) => a.on && (!a.cloneOf || a.name === target))
+    popMenu(at, [
+      { label: 'Auto', icon: ICONS.sparkles, act: 'auto', hint: 'picks by area' },
+      { label: 'Task', icon: ICONS.task, act: 'task', hint: 'adds to the board' },
+      ...(on.length ? ['-', { head: 'Send to' }] : []),
+      ...on.map((a) => ({ label: displayName(a), icon: avatarHTML(a, { size: 18, mood: 'still' }), act: a.name, hint: `${statusText(a)}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}` })),
+    ], (to) => {
+      if (draftKey(to) === draftKey(target)) stopReply()
+      setTarget(to)
+      ta.focus()
+    })
+  }
   let told // the target onTarget last heard about
   const draw = () => {
     // a clone you were talking to has gone: its original, who it was a copy of. One that's off keeps its
@@ -1981,14 +2142,9 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
     if (isConvo(target) && agents.length && !known(target)) target = known(familyOf(target)) ? familyOf(target) : (moved(target) ?? 'auto')
     const off = isConvo(target) && agents.find((a) => a.name === target)?.on === false
     const task = Boolean(kindIn(ta.value))
-    // agents, plus the clone you picked (in the chat or its terminal) right after its original
-    const shown = agents.filter((a) => a.on && (!a.cloneOf || a.name === target))
     const changed = morph(chips, [
-      '<span class="chips-label">To</span>',
-      chip('auto', '', `${ICONS.sparkles}<span class="label">Auto</span>`, 'Auto', 'picks by area, prefers whoever is free'),
-      chip('task', 'task-chip', `${ICONS.task}<span class="label">Task</span>`, 'Task', 'adds it to the Tasks board, @name assigns it'),
-      '<span class="chip-sep"></span>',
-      ...shown.map((a) => chip(a.name, `agent${a.cloneOf ? ' clone' : ''}`, `${avatarHTML(a, { size: 22 })}<span class="label">${nameHTML(a)}</span>${unreadBadge(a.unread)}`, displayName(a), `${a.cloneOf ? `a clone of ${plainName(a)} · ` : ''}${statusText(a)}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}`, agentColor(a))),
+      picker(),
+      chip('task', 'task-chip', ICONS.task, 'Task', 'adds it to the Tasks board, @name assigns it'),
     ])
     if (changed) fitRail() // the same chips at the same width fit the same way
     el.classList.toggle('task-mode', task)
@@ -2094,6 +2250,8 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
   }
 
   chips.addEventListener('click', (e) => {
+    const menu = e.target.closest('[data-pick-to]')
+    if (menu) return (tip.classList.remove('on'), pickTo(menu))
     const picked = e.target.closest('[data-to]')
     if (!picked) return
     // the agent (or Task) you're on, clicked again, lets go of it: back to Auto, everyone's messages

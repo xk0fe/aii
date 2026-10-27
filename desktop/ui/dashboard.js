@@ -1,5 +1,5 @@
 // Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
-/* global mountWorkspaces, shortPath, burst, wsColor, wsTile, statusClass, rosterParts, isUnread, mountConvoHead, themeButton, orbitHTML, subsChip, nameHTML, displayName, contextRing, limitMark, usageChip, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, crewSummary, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon */
+/* global isUnread, mountWorkspaces, shortPath, burst, wsColor, wsTile, statusClass, rosterParts, mountConvoHead, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, brainLabel, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, paceWarning, usageTip, usageLine, resetsText */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -27,7 +27,7 @@ const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-ban
 const saved = store.get('crew.view')
 let view = saved === 'bugs' ? 'tasks' : saved === 'grid' || saved === 'focus' ? 'terminals' : ['crew', 'tasks', 'terminals'].includes(saved) ? saved : 'crew'
 let layout = saved === 'focus' || (saved !== 'grid' && store.get('crew.layout') === 'focus') ? 'focus' : 'grid'
-let show = store.get('crew.show') === 'busy' ? 'busy' : 'all' // the grid: every terminal, or the busy ones
+let show = ['busy', 'needs'].includes(store.get('crew.show')) ? store.get('crew.show') : 'all' // the grid: every terminal, the busy ones, or the ones waiting on you
 let selected = null
 let state = { agents: [], providers: {} }
 // the roster's folds: computers you folded away, and the "off" lines you opened
@@ -43,27 +43,74 @@ let find = ''
 $('.blank .blank-mark').outerHTML = ICONS.mark
 const VIEW_LABEL = { crew: [markSVG('0 4 24 18'), 'Crew'], tasks: [ICONS.task, 'Tasks'], terminals: [ICONS.terminal, 'Terminals'] }
 for (const b of document.querySelectorAll('.seg.views button')) b.innerHTML = `${VIEW_LABEL[b.dataset.view][0]}<span>${VIEW_LABEL[b.dataset.view][1]}</span>${b.dataset.view === 'tasks' ? '<i class="seg-badge"></i>' : ''}`
-$('[data-layout=grid]').innerHTML = `${ICONS.grid}Grid`
-$('[data-layout=focus]').innerHTML = `${ICONS.focus}Focus`
+$('[data-layout=grid]').innerHTML = ICONS.grid
+$('[data-layout=focus]').innerHTML = ICONS.focus
 $('.find-icon').outerHTML = ICONS.search
 $('.side-top [data-act=add]').innerHTML = ICONS.plus
 $('.side .autopilot .glyph').innerHTML = ICONS.plane
-$('[data-act=config]').innerHTML = ICONS.braces
+$('.tb-more').innerHTML = ICONS.more
 $('#link .h-icon').innerHTML = ICONS.computers
+$('#link [data-link-add]').innerHTML = `${ICONS.link}Link a computer…`
 $('#import .h-icon').innerHTML = ICONS.import
-const drawTheme = themeButton($('[data-act=theme]'))
-$('[data-panel=side]').innerHTML = ICONS.sidebar
-$('[data-panel=chat]').innerHTML = ICONS.chatPanel
 
-// The sidebar and the chat can each be put away for more room in the middle; remembered across launches.
+// The sidebar and the chat can each be put away for more room in the middle (the ⋯ menu, ⌘⌥S, ⌘⌥C); remembered
+// across launches.
 function setPanel(which, on) {
   document.body.classList.toggle(`no-${which}`, !on)
-  $(`[data-panel=${which}]`).setAttribute('aria-pressed', String(on))
   store.set(`crew.panel.${which}`, on ? '1' : '0')
   setTimeout(() => terms.forEach((_, name) => resize(name)), 340)
 }
+const panelShown = (which) => !document.body.classList.contains(`no-${which}`)
 for (const which of ['side', 'chat']) setPanel(which, store.get(`crew.panel.${which}`) !== '0')
-document.querySelectorAll('[data-panel]').forEach((b) => b.addEventListener('click', () => setPanel(b.dataset.panel, document.body.classList.contains(`no-${b.dataset.panel}`))))
+
+// ---- the titlebar's right end: who needs you, and ⋯ for the rest ------------------------------------------
+
+// Their faces and how many. A click brings the chat's queue into view (the chat listens for crew:needs).
+function drawNeedsButton() {
+  const list = needsYou(state)
+  const btn = $('.tb-needs')
+  // replies you haven't read: a dot on ⋯, whose menu jumps to the first one
+  $('.tb-more').classList.toggle('has-new', state.feed.some((x) => isUnread(x, state.reads)))
+  btn.classList.toggle('hidden', !list.length)
+  if (!list.length) return
+  const n = list.length
+  const faces = [...new Map(list.map((x) => [x.agent.name, x.agent])).values()] // an agent with two questions is one face
+  btn.title = `${list.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick to answer, oldest first`
+  morph(btn, `<span class="tb-faces">${faces.slice(0, 3).map((a) => avatarHTML(a, { size: 20 })).join('')}</span>${n} need${n === 1 ? 's' : ''} you`)
+}
+function showNeeds(name) {
+  if (!panelShown('chat')) setPanel('chat', true)
+  document.dispatchEvent(new CustomEvent('crew:needs', name ? { detail: { name } } : undefined))
+}
+$('.tb-needs').addEventListener('click', () => showNeeds())
+
+// Everything the titlebar used to carry: the panels, Computers, the theme and config.json.
+const THEME_CHOICES = [['system', 'Auto', 'auto', 'follows macOS'], ['light', 'Light', 'sun', ''], ['dark', 'Dark', 'moon', '']]
+$('.tb-more').addEventListener('click', (e) => {
+  const theme = state.theme ?? 'system'
+  const unread = state.feed.filter((x) => isUnread(x, state.reads))
+  popMenu(e.currentTarget, [
+    ...(unread.length ? [{ label: `Jump to ${unread.length} new ${unread.length === 1 ? 'reply' : 'replies'}`, icon: ICONS.reply, act: 'unread' }, '-'] : []),
+    { label: panelShown('side') ? 'Hide the crew' : 'Show the crew', icon: ICONS.sidebar, act: 'side', hint: '⌥⌘S' },
+    { label: panelShown('chat') ? 'Hide the chat' : 'Show the chat', icon: ICONS.chatPanel, act: 'chat', hint: '⌥⌘C' },
+    '-',
+    { label: 'Computers…', icon: ICONS.computers, act: 'computers' },
+    '-',
+    { head: 'Theme' },
+    ...THEME_CHOICES.map(([id, label, icon, note]) => ({ label, icon: ICONS[icon], act: `theme:${id}`, hint: theme === id ? '✓' : note })),
+    '-',
+    { label: 'Open config.json', icon: ICONS.braces, act: 'config' },
+  ], (act) => {
+    if (act === 'unread') {
+      setPanel('chat', true)
+      if (unread[0]) feed.jump(unread[0].id)
+    }
+    if (act === 'side' || act === 'chat') setPanel(act, !panelShown(act))
+    if (act === 'computers') openComputers()
+    if (act.startsWith('theme:')) crew.call('theme', act.slice(6))
+    if (act === 'config') crew.call('config')
+  })
+})
 
 // ---- terminals -------------------------------------------------------------
 
@@ -72,7 +119,7 @@ function createTile(name, before = null) {
   const tile = document.createElement('div')
   tile.className = 'tile'
   tile.dataset.name = name
-  tile.innerHTML = '<div class="tile-head"></div><div class="ribbon"></div><div class="term"></div>'
+  tile.innerHTML = '<div class="tile-head"></div><div class="tile-acts"></div><div class="term"></div>'
   $('.terms').insertBefore(tile, before)
   drawShow()
 
@@ -89,7 +136,7 @@ function createTile(name, before = null) {
   })
   term.onData((data) => crew.input(name, data))
 
-  const t = { tile, head: tile.querySelector('.tile-head'), ribbon: tile.querySelector('.ribbon'), term, fit, ready: false, replaying: false }
+  const t = { tile, head: tile.querySelector('.tile-head'), acts: tile.querySelector('.tile-acts'), term, fit, ready: false, replaying: false }
   terms.set(name, t)
   let timer
   new ResizeObserver(() => {
@@ -124,11 +171,11 @@ function replay(t) {
   const done = () => {
     t.ready = true
     t.replaying = false
-    drawRibbon(t)
+    drawTile(t)
   }
   t.ready = false
   t.replaying = true
-  drawRibbon(t)
+  drawTile(t)
   crew.call('buffer', name).then(({ data, cols, rows }) => {
     t.term.reset()
     t.term.resize(cols, rows)
@@ -144,13 +191,14 @@ function resize(name) {
   if (!t || !t.tile.offsetWidth) return
   t.fit.fit()
   crew.call('resize', name, t.term.cols, t.term.rows).catch(() => {})
-  drawRibbon(t)
+  drawTile(t)
 }
 
-// The ribbon under each terminal's header says what you're looking at. These aren't terminal apps: Crew runs
-// the agent's CLI in a pseudo-terminal and draws its output with xterm.js, replaying what it printed before the
-// view opened. So it says whether that's live (typing goes straight to the agent), streamed from another
-// computer, still being redrawn, or frozen (its computer is unreachable, or the process exited).
+// The badge in each terminal's header says what you're looking at. These aren't terminal apps: Crew runs the
+// agent's CLI in a pseudo-terminal and draws its output with xterm.js, replaying what it printed before the view
+// opened. So it says whether that's live (typing goes straight to the agent), streamed from another computer, still
+// being redrawn, or frozen (its computer is unreachable, or the process exited); its tooltip says it in full.
+// [badge, line, explanation] for each.
 const RIBBON = {
   live: (a, n) => ['Live', `Crew's view of ${n}'s terminal · earlier output replayed`,
     `This isn't a terminal app. Crew runs ${n}'s CLI in a pseudo-terminal and draws its output here; what you type goes straight to ${n}. Output from before this view opened (up to 256 KB) is replayed, so older lines can look off until ${n} redraws.`],
@@ -162,16 +210,19 @@ const RIBBON = {
   ended: (a, n) => ['Ended', 'The process exited · showing its last output', `Not live: ${n}'s CLI exited. Restart it from the header to pick its session back up.`],
 }
 
-function drawRibbon(t) {
+const tileMode = (t) => (t.replaying ? 'replay' : t.agent.status === 'away' ? 'offline' : t.agent.status === 'stopped' ? 'ended' : t.agent.home ? 'mirror' : 'live')
+
+// The tile's mode (frozen ones look frozen), whether it waits on you, its header and its actions. One that's off
+// screen is left stale, and freshen() draws it when it comes into view.
+function drawTile(t) {
   const a = t.agent
   if (!a) return
-  const mode = t.replaying ? 'replay' : a.status === 'away' ? 'offline' : a.status === 'stopped' ? 'ended' : a.home ? 'mirror' : 'live'
-  const [badge, line, tip] = RIBBON[mode](a, displayName(a))
-  const size = t.term.cols && t.ready ? `${t.term.cols}×${t.term.rows}` : ''
-  t.tile.dataset.mode = mode
-  t.ribbon.dataset.mode = mode
-  t.ribbon.title = tip
-  morph(t.ribbon, `<span class="rb-badge">${badge}</span><span class="rb-text">${esc(line)}</span><span class="rb-meta">${esc([brainShort(a, state.providers), size].filter(Boolean).join(' · '))}</span>`)
+  t.tile.dataset.mode = tileMode(t)
+  t.tile.classList.toggle('needs', a.status === 'waiting')
+  if (!tileShown(t)) return void (t.stale = true)
+  t.stale = false
+  morph(t.head, tileHead(t))
+  morph(t.acts, tileActs(a))
 }
 
 crew.onPty((name, data) => {
@@ -179,23 +230,51 @@ crew.onPty((name, data) => {
   if (t?.ready) t.term.write(data)
 })
 
-// Who and what they're doing on the left; modes, the context gauge and the actions on the right. The brain and
-// terminal size live in the ribbon below, so this line never crowds.
-function tileHead(a) {
-  const busy = a.status === 'working' || a.status === 'waiting'
-  return `<span class="tile-av">${avatarHTML(a, { size: 24 })}${orbitHTML(a)}</span><b>${nameHTML(a)}</b>
-    <span class="state ${statusClass(a)}" ${busy ? 'data-act="markIdle" title="Stuck? Click to mark it free"' : ''}>${esc(statusText(a))}</span>
-    <span class="activity">${esc(a.activity)}</span>
-    ${subsChip(a)}${a.queue ? `<span class="tag">${a.queue} queued</span>` : ''}${modeMarks(a)}
-    ${contextRing(a)}${limitMark(a, state)}
-    <span class="tile-acts">
-      <button class="icon" data-act="fresh" aria-pressed="${Boolean(a.freshPending)}" title="${a.freshPending ? 'Starts a new conversation when it finishes this task' : 'New conversation: a clean slate for its next task (the old one stays in its history)'}">${ICONS.fresh}</button>
-      <button class="icon" data-act="edit" title="${a.cloneOf ? `Edit ${esc(a.cloneOf)} (its clones follow)` : 'Edit agent'}">${ICONS.edit}</button>
-      <button class="icon" data-act="restart" title="Restart (resumes the session)">${ICONS.restart}</button>
-      ${a.cloneOf
-        ? `<button class="icon" data-act="dismiss" title="Send this clone away: its terminal closes, and anything queued for it goes back to ${esc(a.cloneOf)}">${ICONS.close}</button>`
-        : `<button class="icon" data-act="off" title="Turn off (stays off after restarts)">${ICONS.power}</button>`}
-    </span>`
+// The brain in one word: its model when it has one (opus, sonnet), its provider otherwise (Codex).
+const modelWord = (a) => a.model || (state.providers?.[a.provider]?.label ?? a.provider ?? '')
+// Its name, a clone with its number, and an agent on another computer with that computer: "scarlett · Mac mini".
+const tileName = (a) => `${esc(a.cloneOf ? a.cloneOf.split('@')[0] : a.home ? a.seed ?? a.name : a.name)}${cloneTag(a)}${a.home ? `<span class="t-home"> · ${esc(a.homeName ?? a.home)}</span>` : ''}`
+
+// Who helps it right now: its clones at work (their faces), or else its sub-agents. A clone's own tile has no clones.
+function tileHelpers(a) {
+  const clones = clonesOf(state.agents, a).filter((c) => c.on)
+  if (clones.length) return `<span class="t-chip clones" title="${esc(`${plural(clones.length, 'clone')} at work: ${clones.map(displayName).join(', ')}`)}">${clones.slice(0, 3).map((c) => avatarHTML(c, { size: 16, mood: 'still' })).join('')}${clones.length}</span>`
+  const subs = runningSubs(a)
+  return subs.length ? `<span class="t-chip" title="${esc(`${plural(subs.length, 'sub-agent')} working:\n${subs.map((s) => `${s.type === 'general-purpose' ? 'general' : s.type || 'agent'}${s.description ? `: ${s.description}` : ''}`).join('\n')}`)}">${ICONS.subs}${subs.length}</span>` : ''
+}
+
+// One row: who (and its YOLO and ⚡ marks), how it is in words, its model; then the context ring once it runs hot, its
+// helpers and the badge, which carries what the ribbon used to say. Waiting on you, an Answer button. The model word
+// sits in a one-line wrapping box: without room it wraps out of sight whole (the badge's tooltip has it too).
+function tileHead(t) {
+  const a = t.agent
+  const mode = tileMode(t)
+  const [badge, line, tip] = RIBBON[mode](a, displayName(a))
+  const size = t.term.cols && t.ready ? `${t.term.cols}×${t.term.rows}` : ''
+  const busyNow = a.status === 'working' || a.status === 'waiting'
+  const stateTip = [a.activity, a.queue ? `${a.queue} queued` : '', a.freshPending ? 'New conversation when it finishes this task' : '', busyNow ? 'Stuck? Click to mark it free' : ''].filter(Boolean).join('\n')
+  const badgeTip = [line, tip, [brainShort(a, state.providers), size].filter(Boolean).join(' · ')].filter(Boolean).join('\n\n')
+  return `<span class="tile-av">${avatarHTML(a, { size: 24 })}</span><b class="t-name">${tileName(a)}</b>${modeMarks(a)}
+    <span class="t-mid"><span class="t-state ${statusClass(a)}" ${busyNow ? 'data-act="markIdle"' : ''} title="${esc(stateTip)}">${esc(statusText(a))}</span><span class="t-model" title="${esc(brainLabel(a, state.providers))}">${esc(modelWord(a))}</span></span>
+    ${ctxLevel(a.convo?.context?.pct ?? 0) === 'hot' ? contextRing(a) : ''}${tileHelpers(a)}
+    <span class="t-badge" data-mode="${mode}" title="${esc(badgeTip)}">${badge}</span>
+    ${a.status === 'waiting' ? `<button class="t-answer" data-act="answer" title="${esc(needsYou(state).find((x) => x.agent.name === a.name)?.ask ? 'Answer it in the chat' : 'It asks in its terminal: answer there')}">Answer</button>` : ''}`
+}
+
+// The four actions, floating over the terminal's corner.
+const tileActs = (a) => `
+  <button class="icon" data-act="fresh" aria-pressed="${Boolean(a.freshPending)}" title="${a.freshPending ? 'Starts a new conversation when it finishes this task' : 'New conversation: a clean slate for its next task (the old one stays in its history)'}">${ICONS.fresh}</button>
+  <button class="icon" data-act="edit" title="${a.cloneOf ? `Edit ${esc(a.cloneOf)} (its clones follow)` : 'Edit agent'}">${ICONS.edit}</button>
+  <button class="icon" data-act="restart" title="Restart (resumes the session)">${ICONS.restart}</button>
+  ${a.cloneOf
+    ? `<button class="icon" data-act="dismiss" title="Send this clone away: its terminal closes, and anything queued for it goes back to ${esc(a.cloneOf)}">${ICONS.close}</button>`
+    : `<button class="icon" data-act="off" title="Turn off (stays off after restarts)">${ICONS.power}</button>`}`
+
+// Answer: its question in the chat's queue when it asked there, otherwise its terminal, where it's asking.
+function answerTile(name) {
+  if (needsYou(state).find((x) => x.agent.name === name)?.ask) return showNeeds(name)
+  highlight(name)
+  terms.get(name)?.term.focus()
 }
 
 $('.terms').addEventListener('click', (e) => {
@@ -203,7 +282,8 @@ $('.terms').addEventListener('click', (e) => {
   if (!tile) return
   const name = tile.dataset.name
   const act = e.target.closest('[data-act]')?.dataset.act
-  if (act === 'restart') {
+  if (act === 'answer') answerTile(name)
+  else if (act === 'restart') {
     terms.get(name).term.reset()
     crew.call('restart', name)
   } else if (act === 'fresh') crew.call('freshStart', name).catch((err) => alert(err.message))
@@ -234,17 +314,12 @@ function highlight(name) {
   freshen() // in Focus, the one picked is the one on screen
 }
 
-// A terminal's header and ribbon are drawn while it's on screen: in the Terminals view, not filtered out of the grid,
+// A terminal's header and actions are drawn while it's on screen: in the Terminals view, not filtered out of the grid,
 // and in Focus only the one picked. The rest catch up as they come into view, so a state push doesn't redraw
 // twenty headers nobody can see.
 const tileShown = (t) => view === 'terminals' && !t.tile.classList.contains('filtered') && (layout === 'grid' || t.tile.classList.contains('on'))
 function freshen() {
-  for (const t of terms.values()) {
-    if (!t.stale || !t.agent || !tileShown(t)) continue
-    t.stale = false
-    morph(t.head, tileHead(t.agent))
-    drawRibbon(t)
-  }
+  for (const t of terms.values()) if (t.stale && t.agent && tileShown(t)) drawTile(t)
 }
 
 // Show an agent's terminal, with your conversation with it in the chat. Agents that are off have no terminal:
@@ -293,7 +368,7 @@ function setView(next) {
   $('.terms').classList.toggle('focus', layout === 'focus')
   segmented($('.seg.views'), (b) => b.dataset.view === view)
   segmented($('[data-layout]'), (b) => b.dataset.layout === layout)
-  $('[data-show]').classList.toggle('hidden', layout === 'focus')
+  $('[data-show]').classList.toggle('idle', layout === 'focus') // stays in place, so nothing moves
   drawShow()
   drawBlank()
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
@@ -308,22 +383,35 @@ function drawBlank() {
   $('.blank span').textContent = parked ? 'Open it to start its agents: each picks up its conversation.' : state.agents.length ? 'Turn one on in the sidebar: it picks up its last session.' : 'Make your first one in the Crew view.'
 }
 
-// The grid shows every terminal, or just the busy ones (working, or waiting on you).
+// The grid shows every terminal, the busy ones (working, starting or waiting on you), or the ones waiting on you; each
+// with how many there are.
 const busy = (a) => a && (a.status === 'working' || a.status === 'waiting' || a.status === 'starting')
+const SHOW_NONE = { busy: 'Nobody is busy right now', needs: 'Nobody needs you right now' }
 function drawShow() {
   segmented($('[data-show]'), (b) => b.dataset.show === show)
+  const waiting = new Set(needsYou(state).map((x) => x.agent.name))
+  const count = { all: terms.size, busy: 0, needs: 0 }
   let shown = 0
-  for (const t of terms.values()) {
-    const hide = layout === 'grid' && show === 'busy' && !busy(t.agent) // focus shows the one you picked, busy or not
+  for (const [name, t] of terms) {
+    const isBusy = busy(t.agent)
+    const needs = waiting.has(name)
+    count.busy += isBusy ? 1 : 0
+    count.needs += needs ? 1 : 0
+    const hide = layout === 'grid' && (show === 'busy' ? !isBusy : show === 'needs' ? !needs : false) // focus shows the one you picked
     t.tile.classList.toggle('filtered', hide)
     if (!hide) shown++
   }
+  for (const b of $('[data-show]').children) {
+    const i = b.querySelector('i')
+    if (i.textContent !== String(count[b.dataset.show])) i.textContent = count[b.dataset.show]
+    i.classList.toggle('some', count[b.dataset.show] > 0)
+  }
   freshen()
   const none = $('.terms .terms-none')
-  if (show === 'busy' && !shown && terms.size) {
-    if (!none) $('.terms').insertAdjacentHTML('beforeend', '<p class="terms-none">Nobody is busy right now</p>')
+  if (SHOW_NONE[show] && !shown && terms.size) {
+    if (!none) $('.terms').insertAdjacentHTML('beforeend', `<p class="terms-none">${SHOW_NONE[show]}</p>`)
+    else if (none.textContent !== SHOW_NONE[show]) none.textContent = SHOW_NONE[show]
   } else none?.remove()
-  $('.tv-count').textContent = layout === 'focus' ? '' : show === 'busy' ? `${shown} of ${plural(terms.size, 'terminal')}` : plural(terms.size, 'terminal')
 }
 
 $('.seg.views').addEventListener('click', (e) => {
@@ -334,11 +422,13 @@ $('[data-layout]').addEventListener('click', (e) => {
   const b = e.target.closest('[data-layout]')
   if (b?.dataset.layout) setLayout(b.dataset.layout)
 })
+// In Focus, picking a filter goes back to the grid with it.
 $('[data-show]').addEventListener('click', (e) => {
   const b = e.target.closest('[data-show]')
   if (!b?.dataset.show) return
   show = b.dataset.show
   store.set('crew.show', show)
+  if (layout === 'focus') return setLayout('grid')
   drawShow()
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 })
@@ -626,30 +716,56 @@ const endDrag = () => {
 document.addEventListener('dragend', endDrag)
 document.addEventListener('drop', endDrag)
 
-// The titlebar's counts are shortcuts: "need you" jumps to the first question waiting in the chat (or that
-// agent's terminal), "new" to the first reply you haven't read.
-$('.tb-left .sums').addEventListener('click', (e) => {
-  const kind = e.target.closest('[data-sum]')?.dataset.sum
-  if (kind === 'waiting' || kind === 'unread') setPanel('chat', true) // what it jumps to is in the chat
-  if (kind === 'waiting') {
-    const ask = state.feed.find((x) => x.kind === 'ask' && !x.answer && state.agents.some((a) => a.name === x.from && a.status === 'waiting'))
-    if (ask) return feed.jump(ask.id)
-    const a = state.agents.find((x) => x.on && x.status === 'waiting')
-    if (a) select(a.name)
-  }
-  if (kind === 'unread') {
-    const first = state.feed.find((x) => isUnread(x, state.reads))
-    if (first) feed.jump(first.id)
-  }
-  if (kind === 'working') {
-    show = 'busy'
-    store.set('crew.show', show)
-    setView('grid')
-  }
-})
 $('.autopilot .switch').addEventListener('change', (e) => crew.call('autopilot', e.target.checked))
-$('[data-act=config]').addEventListener('click', () => crew.call('config'))
 for (const b of document.querySelectorAll('[data-act=add]')) b.addEventListener('click', addAgent)
+
+// ---- the sidebar's footer: Autopilot, then the computers and the account's usage as two quiet chips --------------
+
+function drawFoot(state) {
+  const pilot = $('.side .autopilot')
+  pilot.querySelector('.switch').checked = state.autopilot
+  pilot.title = `${state.autopilot ? 'Hand-offs go through' : 'Hand-offs wait for you'}\nOn: agents hand work to each other without asking. Off: each hand-off waits in the chat for your Send it.`
+  // Computers: how many, or This Mac; a hollow dot when a linked one can't be reached
+  const c = state.computers ?? { me: {}, links: [] }
+  const away = c.links.filter((l) => !l.online)
+  const chip = $('.link-chip')
+  const label = `${ICONS.computers}<span>${c.links.length ? `${c.links.length + 1} computers` : 'This Mac'}</span>${away.length ? '<i class="pc-off"></i>' : ''}`
+  if (chip.label !== label) chip.innerHTML = chip.label = label // asked on every push, replaced only when it changes
+  chip.title = c.links.length
+    ? `Computers: this Mac and ${c.links.map((l) => `${l.name} (${l.online ? 'online' : 'offline'})`).join(', ')}`
+    : `Computers: link your other Macs into one crew${c.me.sharing ? '. This Mac lets others link to it' : ''}`
+  // Usage: the account closest to its limit, its fullest window as a little gauge. Amber only when it will run out
+  // before it resets, at this pace.
+  const accounts = Object.values(state.usage ?? {}).filter((u) => u.windows?.length)
+  const use = $('.use-chip')
+  use.classList.toggle('hidden', !accounts.length)
+  if (!accounts.length) return
+  const fullest = (u) => Math.max(...u.windows.map((w) => w.pct))
+  const top = accounts.find((u) => paceWarning(u)) ?? [...accounts].sort((x, y) => fullest(y) - fullest(x))[0]
+  const pct = fullest(top)
+  const warn = paceWarning(top)
+  use.classList.toggle('warm', Boolean(warn))
+  use.title = `${accounts.map(usageTip).join('\n\n')}${warn ? `\n\n${top.label}: ${warn}` : ''}`
+  morph(use, `<i class="use-gauge"><i style="width:${Math.min(100, Math.max(pct, 3))}%"></i></i><span>${esc(top.label)} ${pct}%</span>`)
+  if (usePop.matches(':popover-open')) drawUsePop()
+}
+
+// A click on the usage chip: every account's limits, one line each, and when one runs out at this pace.
+const usePop = $('.use-pop')
+function drawUsePop() {
+  morph(usePop, Object.entries(state.usage ?? {}).filter(([, u]) => u.windows?.length).map(([provider, u]) => {
+    const warn = paceWarning(u)
+    return `<div class="up-row">${usageLine({ provider }, state)}<small class="${warn ? 'warn' : ''}">${esc(warn || u.windows.map((w) => `${w.pct}% ${resetsText(w.resetsAt)}`).join(' · '))}</small></div>`
+  }).join(''))
+}
+// The chip is its invoker (popovertarget), so a second click closes it and a click anywhere else does too.
+usePop.addEventListener('beforetoggle', (e) => {
+  if (e.newState !== 'open') return
+  drawUsePop()
+  const r = $('.use-chip').getBoundingClientRect()
+  usePop.style.left = `${Math.round(r.left)}px`
+  usePop.style.bottom = `${Math.round(innerHeight - r.top + 6)}px`
+})
 
 function addAgent() {
   if (view !== 'crew') setView('crew')
@@ -676,8 +792,8 @@ const ready = live((next) => {
   workspaceChanged(next)
   state = next
   workspaces.render(state)
-  drawTheme(state.theme)
   drawComputers(state)
+  drawFoot(state)
   // Terminals only for agents that are on (and not parked); the sidebar lists everyone so off agents are one click from
   // coming back.
   const on = state.agents.filter((a) => a.on && a.status !== 'parked')
@@ -702,10 +818,7 @@ const ready = live((next) => {
   })
   if (!terms.has(selected)) selected = on[0]?.name
   drawRoster()
-  $('.autopilot .switch').checked = state.autopilot
-  $('.autopilot small').textContent = state.autopilot ? 'Hand-offs go through' : 'Hand-offs wait for you'
-  morph($('.tb-left .sums'), crewSummary(state, { unread: true }))
-  morph($('.tb-right .usage-slot'), usageChip(state))
+  drawNeedsButton()
   highlight(selected)
   drawShow() // and the terminals now on screen catch up (freshen)
   drawBlank()
@@ -728,19 +841,15 @@ const linkDialog = $('#link')
 let linkKey = ''
 let fresh = null // a computer just linked: its agents are shown to pick from
 let linkErr = '' // kept across redraws until the next try
+// what's unfolded: this Mac's addresses, each linked computer's agents, the paste-a-code form; and "Copied" for a moment
+const linkOpen = { details: false, computers: new Set(), form: false, copied: false }
+let copiedTimer = null
 
 function drawComputers(state) {
   const c = state.computers ?? { me: {}, links: [] }
-  const online = c.links.filter((l) => l.online).length
-  const chip = $('.link-chip')
-  chip.classList.toggle('on', Boolean(online || c.me.sharing))
-  const label = c.links.length
-    ? `<span class="dot ${online === c.links.length ? 'working' : 'waiting'}"></span>${c.links.length + 1} computers`
-    : c.me.sharing ? '<span class="dot working"></span>Sharing' : `${ICONS.computers}Computers`
-  if (chip.label !== label) chip.innerHTML = chip.label = label // asked on every push, replaced only when it changes
   const paired = phonePair && c.phones?.devices.find((d) => d.paired >= phonePair.made)
   if (paired) (phoneFresh = paired.id), (phonePair = null) // the code on screen did its job: the new phone is highlighted
-  const next = JSON.stringify([c, fresh, linkErr, phonePair?.expires, phonePair && Date.now() >= phonePair.expires, phoneFresh, phoneErr, phoneBusy])
+  const next = JSON.stringify([c, fresh, linkErr, phonePair?.expires, phonePair && Date.now() >= phonePair.expires, phoneFresh, phoneErr, phoneBusy, linkOpen, [...linkOpen.computers]])
   if (next === linkKey) return
   linkKey = next
   // keep what's being typed across redraws
@@ -749,45 +858,83 @@ function drawComputers(state) {
   morph(body, computersHTML(c))
   const box = body.querySelector('[data-link-code]')
   if (box) box.value = typed
+  linkDialog.querySelector('[data-link-add]').setAttribute('aria-pressed', String(linkOpen.form))
 }
 
-const computersHTML = ({ me, links, phones }) => `
-  <section class="ls">
-    <div class="ls-row small" style="margin:0"><div><input class="me-name" data-me-name value="${esc(me.name)}" spellcheck="false" title="This computer's name; others see its agents as name@${esc(me.slug)}">
-      <p>This computer · ${me.agents} agent${me.agents === 1 ? '' : 's'} run here · others see them as <b>name@${esc(me.slug)}</b></p></div></div>
-    <label class="ls-row"><div><b>Share this computer</b><p>Let your other computers link to it.</p></div><input type="checkbox" class="switch" data-link-share ${me.sharing ? 'checked' : ''}></label>
-    ${me.sharing ? `
-      <div class="code-box"><code>${esc(me.code)}</code><button class="btn" data-link-copy>Copy</button></div>
-      <p>On your other computer: <b>Computers → Link a computer → paste → Link</b>. Anyone with this code can use and drive your agents, so keep it to your own machines.</p>
-      <div class="addr">${me.hosts.map((h) => `<span><b>${esc(h.address)}</b> ${esc(h.via)}</span>`).join('')}</div>
-      <div class="ls-row small"><span>port ${me.port}</span><button class="btn" data-link-reset title="Makes a new code; computers using the old one are disconnected">New code</button></div>`
-    : me.error ? `<p class="err">${esc(me.error)}</p>` : ''}
-  </section>
-  ${links.map(linkHTML).join('')}
-  <section class="ls">
-    <b>Link a computer</b>
-    <p>Paste the code from the other computer's <b>Share this computer</b>. Linking works both ways: each computer sees the other's agents.</p>
-    <div class="code-in"><textarea data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Link</button></div>
-    <p class="err" data-link-err>${esc(linkErr)}</p>
-  </section>
-  ${phonesHTML(phones ?? { devices: [] })}`
+const LINK_CHEV = `<span class="lk-chev">${ICONS.chevron}</span>`
+// A computer's icon by its name: a MacBook is a laptop, anything else a desktop.
+const machineIcon = (name) => (/book|laptop/i.test(name ?? '') ? ICONS.laptop : ICONS.desktop)
 
-// A linked computer and its agents: tick the ones to use from here, or bring one over to run here.
-function linkHTML(l) {
+// This Mac (its name, sharing, the code and the details behind it), the linked computers, the paste-a-code form
+// when it's asked for, and phones.
+function computersHTML({ me, links, phones }) {
+  const mine = `
+    <div class="lk-li"><span class="lk-ic">${machineIcon(me.name)}</span><div class="lk-k">
+      <input class="me-name" data-me-name value="${esc(me.name)}" spellcheck="false" title="This Mac's name: click to rename it. Linked computers see its agents as name@${esc(me.slug)}">
+      <small>${plural(me.agents ?? 0, 'agent')} run here</small></div></div>
+    <label class="lk-li lk-sw"><div class="lk-k">Let your other Macs link to this one</div><input type="checkbox" class="switch" data-link-share ${me.sharing ? 'checked' : ''}></label>
+    ${me.sharing ? `
+      <div class="lk-li"><button class="btn primary lk-copy" data-link-copy title="Anyone with this code can use and drive your agents, so keep it to your own Macs">${linkOpen.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy link code`}</button>
+        <span class="lk-note">Paste it on the other Mac, under Link a computer.</span></div>
+      <button class="lk-li lk-more" data-lk-details aria-expanded="${linkOpen.details}"><span>Addresses, port and a new code</span>${LINK_CHEV}</button>
+      ${linkOpen.details ? `<div class="lk-details">
+        <p>Anyone with the link code can use and drive your agents, so keep it to your own Macs. Linked computers see these agents as <b>name@${esc(me.slug)}</b>.</p>
+        <code>${esc(me.code)}</code>
+        <div class="addr">${(me.hosts ?? []).map((h) => `<span><b>${esc(h.address)}</b> ${esc(h.via)}</span>`).join('')}</div>
+        <div class="lk-row"><span>Port ${me.port}</span><button class="btn small" data-link-reset title="Makes a new code; computers using the old one are disconnected">New code</button></div>
+      </div>` : ''}`
+    : me.error ? `<div class="lk-li"><p class="err">${esc(me.error)}</p></div>` : ''}`
+  const form = linkOpen.form || linkErr ? `
+    <div class="lk-label">Link a computer</div>
+    <div class="lk-list"><div class="lk-form">
+      <p>Paste the code from the other Mac's <b>Copy link code</b>. Linking works both ways: each Mac sees the other's agents.</p>
+      <div class="code-in"><textarea data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Link</button></div>
+      <p class="err" data-link-err>${esc(linkErr)}</p>
+    </div></div>` : ''
+  return `<div class="lk-label">This Mac</div><div class="lk-list">${mine}</div>
+    <div class="lk-label">Linked</div>
+    <div class="lk-list">${links.length ? links.map(linkHTML).join('') : '<div class="lk-li lk-empty">No other Macs yet. Copy the link code on one, then Link a computer… here.</div>'}</div>
+    ${form}
+    <div class="lk-label">Phones</div>
+    ${phonesHTML(phones ?? { devices: [] })}`
+}
+
+// How a linked computer is: "Online · local network · 7 agents", or "Offline · 3 agents" (why, on hover).
+function linkStatus(l) {
   const used = l.agents.filter((a) => !a.hidden).length
-  const status = l.online ? (l.status?.address ? `linked via ${esc(l.status.address)}` : 'linked to this computer') : esc(l.status?.error ?? 'unreachable, it reconnects on its own')
-  return `<section class="ls ${fresh === l.slug ? 'fresh' : ''}" data-computer="${esc(l.slug)}">
-    <div class="pc-head"><span class="dot ${l.online ? 'working' : 'waiting'}"></span><div class="grow"><b>${esc(l.name)}</b><p>${status}</p></div>
-      ${l.saved ? `<button class="btn small" data-forget="${esc(l.slug)}" title="Unlink it from this computer">Forget</button>` : ''}</div>
-    ${fresh === l.slug ? `<p><b>Pick which of ${esc(l.name)}'s agents to use here.</b> The rest keep running there. Move one here to run it on this computer instead.</p>` : ''}
-    ${l.agents.length ? `<ul class="pc-agents">${l.agents.map((a) => `
-      <li class="${a.hidden ? 'unused' : ''}">${avatarHTML(a, { size: 30, mood: 'still' })}
-        <span class="who"><b>${esc(a.seed)}</b><small>${esc(a.area || 'no area')}</small></span>
-        ${l.online ? `<button class="btn small pc-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
-        <label class="use"><input type="checkbox" class="switch" data-use="${esc(a.name)}" ${a.hidden ? '' : 'checked'}>Use</label>
-      </li>`).join('')}</ul>
-      ${l.agents.length > 1 ? `<div class="ls-row small"><span>using ${used} of ${l.agents.length} · drag one onto a computer in the sidebar to move it</span><span><button class="btn small" data-use-all="${esc(l.slug)}">All</button> <button class="btn small" data-use-none="${esc(l.slug)}">None</button></span></div>` : ''}`
-    : `<p>${l.online ? 'No agents there yet.' : ''}</p>`}
+  const count = used < l.agents.length ? `${used} of ${plural(l.agents.length, 'agent')}` : plural(l.agents.length, 'agent')
+  if (!l.online) return { text: `Offline · ${count}`, tip: `${l.status?.error ?? 'Unreachable'}: it reconnects on its own` }
+  const addr = l.status?.address
+  const via = !addr ? 'linked to this Mac' : /\.ts\.net$/.test(addr) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(addr) ? 'Tailscale' : 'local network'
+  return { text: `Online · ${via} · ${count}`, tip: addr ? `Linked via ${addr}` : 'It linked to this Mac' }
+}
+
+// A linked computer: one row (its faces, how it is); its chevron unfolds its agents, to tick the ones to use from here
+// or bring one over to run here, and Forget.
+function linkHTML(l) {
+  const open = linkOpen.computers.has(l.slug)
+  const status = linkStatus(l)
+  const shown = l.agents.filter((a) => !a.hidden)
+  const faces = (shown.length ? shown : l.agents).slice(0, 4)
+  const used = shown.length
+  return `<section class="lk-pc ${fresh === l.slug ? 'fresh' : ''}" data-computer="${esc(l.slug)}">
+    <button class="lk-li" data-lk-open="${esc(l.slug)}" aria-expanded="${open}">
+      <span class="lk-ic">${machineIcon(l.name)}</span>
+      <span class="lk-k">${esc(l.name)}<small title="${esc(status.tip)}"><span class="lk-dot ${l.online ? '' : 'off'}"></span>${esc(status.text)}</small></span>
+      ${faces.length ? `<span class="lk-faces">${faces.map((a) => avatarHTML(a, { size: 24, mood: 'still' })).join('')}${l.agents.length > faces.length ? `<i>+${l.agents.length - faces.length}</i>` : ''}</span>` : ''}
+      ${LINK_CHEV}
+    </button>
+    ${open ? `<div class="lk-body">
+      ${fresh === l.slug ? `<p><b>Pick which of ${esc(l.name)}'s agents to use here.</b> The rest keep running there. Move one here to run it on this Mac instead.</p>` : ''}
+      ${l.agents.length ? `<ul class="lk-agents">${l.agents.map((a) => `
+        <li class="${a.hidden ? 'unused' : ''}">${avatarHTML(a, { size: 30, mood: 'still' })}
+          <span class="who"><b>${esc(a.seed)}</b><small>${esc(a.area || 'no area')}</small></span>
+          ${l.online ? `<button class="btn small lk-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
+          <label class="use"><input type="checkbox" class="switch" data-use="${esc(a.name)}" ${a.hidden ? '' : 'checked'}>Use</label>
+        </li>`).join('')}</ul>` : `<p>${l.online ? 'No agents there yet.' : 'Its agents show here once it\'s back.'}</p>`}
+      <div class="lk-row"><span title="Move one with its Move to…, or drag it onto a computer in the sidebar">${l.agents.length > 1 ? `Using ${used} of ${l.agents.length}` : ''}</span>
+        <span class="lk-btns">${l.agents.length > 1 ? `<button class="btn small" data-use-all="${esc(l.slug)}">All</button><button class="btn small" data-use-none="${esc(l.slug)}">None</button>` : ''}${l.saved ? `<button class="btn small" data-forget="${esc(l.slug)}" title="Unlink it from this Mac">Forget</button>` : ''}</span></div>
+    </div>` : ''}
   </section>`
 }
 
@@ -802,8 +949,8 @@ function phonesHTML(p) {
   const code = phonePair
   const expired = code && Date.now() >= code.expires
   const until = code && new Date(code.expires).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  return `<section class="ls phones">
-    <div class="ph-head"><div class="grow"><b>Phones</b><p>The chat and the questions agents wait on you for, in the Crew app on your phone, over the same Wi-Fi or Tailscale.</p></div>
+  return `<section class="lk-list phones">
+    <div class="ph-head"><div class="grow"><p style="margin:0">The chat and the questions agents wait on you for, in the Crew app on your phone, over the same Wi-Fi or Tailscale.</p></div>
       <button class="btn" data-phone-add ${phoneBusy ? 'disabled' : ''}>${phoneBusy ? 'Making a code…' : code ? 'New code' : 'Add a phone'}</button></div>
     ${code ? `<div class="ph-pair ${expired ? 'expired' : ''}">
       <div class="ph-qr">${code.qr}${expired ? '<span>Expired</span>' : ''}</div>
@@ -872,6 +1019,8 @@ async function phoneAction(t) {
 async function openComputers() {
   fresh = null
   linkErr = ''
+  Object.assign(linkOpen, { details: false, form: false, copied: false })
+  linkOpen.computers.clear()
   phoneFresh = null
   phoneErr = ''
   if (phonePair && Date.now() >= phonePair.expires) phonePair = null // long gone: no need to say so
@@ -895,10 +1044,25 @@ linkDialog.addEventListener('click', async (e) => {
     drawComputers(state)
   }
   if (t.closest('.phones')) return phoneAction(t).catch((x) => ((phoneErr = x.message), drawComputers(state)))
+  // what folds: the details, a linked computer's agents, the paste-a-code form
+  if (t.closest('[data-lk-details]')) return void ((linkOpen.details = !linkOpen.details), drawComputers(state))
+  const pc = t.closest('[data-lk-open]')?.dataset.lkOpen
+  if (pc) return void (linkOpen.computers.has(pc) ? linkOpen.computers.delete(pc) : linkOpen.computers.add(pc), drawComputers(state))
+  if (t.closest('[data-link-add]')) {
+    linkOpen.form = !linkOpen.form
+    if (!linkOpen.form) linkErr = ''
+    drawComputers(state)
+    const box = linkDialog.querySelector('[data-link-code]')
+    box?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    return box?.focus({ preventScroll: true })
+  }
   try {
     if (t.closest('[data-link-copy]')) {
-      await crew.call('copy', linkDialog.querySelector('.code-box code').textContent)
-      t.closest('[data-link-copy]').textContent = 'Copied ✓'
+      await crew.call('copy', state.computers.me.code)
+      linkOpen.copied = true
+      drawComputers(state)
+      clearTimeout(copiedTimer)
+      copiedTimer = setTimeout(() => ((linkOpen.copied = false), drawComputers(state)), 1800)
     }
     if (t.closest('[data-link-reset]') && confirm('Make a new code? Computers using the current one are disconnected until they link again with the new one.')) await crew.call('link', 'reset')
     if (t.closest('[data-link-connect]')) {
@@ -911,6 +1075,8 @@ linkDialog.addEventListener('click', async (e) => {
       try {
         fresh = await crew.call('link', 'connect', code)
         linkDialog.querySelector('[data-link-code]').value = ''
+        linkOpen.computers.add(fresh) // its agents unfolded, to pick from
+        linkOpen.form = false
         linkKey = ''
         drawComputers(state)
         linkDialog.querySelector(`[data-computer="${CSS.escape(fresh)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })

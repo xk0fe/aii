@@ -1,14 +1,6 @@
-/* The Tasks board (ui/tasks.js): header, add bar, filters, board or list, and a panel for one task. */
+/* The Tasks board (ui/tasks.js): header, board or list, the composer and the filter popover, and a panel for one task. */
 .tasks-view { position: absolute; inset: 0; overflow: hidden; }
 .tasks { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; container-type: inline-size; }
-/* a narrow middle: the counts and labels step aside, the controls stay */
-@container (max-width: 640px) {
-  .tk-head { padding: 16px 16px 4px; }
-  .tk-sub, .tk-flow span { display: none; }
-  .tk-search { width: 34px; padding: 0 9px; overflow: hidden; }
-  .tk-search:focus-within { width: 160px; }
-  .tk-add, .tk-filters { margin-left: 16px !important; margin-right: 16px !important; }
-}
 
 /* glyphs: status rings, priority bars, kinds */
 .ti { width: 15px; height: 15px; flex: none; display: block; }
@@ -23,67 +15,95 @@
 .ki-bug { color: var(--bug-ink); background: color-mix(in srgb, var(--bug) 14%, transparent); }
 .ki-feature { color: var(--feature); background: color-mix(in srgb, var(--feature) 14%, transparent); }
 .ki-task { color: var(--task); background: color-mix(in srgb, var(--task) 14%, transparent); }
-.tk-nobody { width: 20px; height: 20px; border-radius: 50%; border: 1.5px dashed var(--fg3); display: inline-grid; place-items: center; font-style: normal; font-size: 10.5px; font-weight: 700; color: var(--fg3); flex: none; }
+/* on cards, rows, the composer and the filter: just the glyph, no tile behind it */
+.tc-top .ki, .tr > .ki, .tk-kind .ki, .tk-fpop .ki { width: 16px; height: 16px; background: none; }
+.tc-top .ki svg, .tr > .ki svg, .tk-fpop .ki svg { width: 14px; height: 14px; }
+.tk-nobody { width: 20px; height: 20px; border-radius: 50%; border: 1.5px dashed var(--fg3); display: inline-grid; place-items: center; font-style: normal; font-size: 10.5px; font-weight: 700; color: var(--fg3); flex: none; box-sizing: border-box; }
 .tk-nobody.sm { width: 18px; height: 18px; font-size: 10px; }
 
-/* ---- header ---- */
-.tk-head { display: flex; align-items: center; gap: 8px; padding: 20px 24px 4px; flex: none; }
-.tk-headline { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
-.tk-headline h2 { margin: 0; font-size: 26px; font-weight: 820; letter-spacing: -.025em; }
-.tk-sub { color: var(--fg2); font-size: 13px; white-space: nowrap; }
-.sub-urgent { color: var(--danger); font-weight: 650; }
-.sub-review { color: var(--waiting-ink); font-weight: 650; }
-.tk-search { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 9px; background: var(--btn); color: var(--fg3); cursor: text; transition: background .15s, box-shadow .15s; }
-.tk-search:focus-within { background: var(--surface); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 50%, transparent); color: var(--fg2); }
-.tk-search input { border: 0; outline: 0; background: none; width: 104px; font-size: 12.5px; transition: width .3s var(--out); user-select: text; }
-.tk-search input:focus, .tk-search input:not(:placeholder-shown) { width: 170px; }
-.tk-search input::-webkit-search-cancel-button { display: none; }
+/* ---- header: title and what's open on the left; search, Filter, board/list, New task and ⋯ on the right ---- */
+.tk-head { display: flex; align-items: center; gap: 8px; padding: 20px 24px 14px; flex: none; }
+/* the headline gives way only once the search is at its narrowest (a narrow window, with a search and a filter on) */
+.tk-headline { display: flex; flex-direction: column; gap: 2px; min-width: 72px; flex: 0 1 auto; } /* "Tasks" itself never gives way */
+.tk-headline h2 { white-space: nowrap; }
+.tk-headline h2 { margin: 0; font-size: 24px; line-height: 1.15; font-weight: 800; letter-spacing: -.025em; }
+.tk-sub { color: var(--fg2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sub-urgent { color: var(--fg); font-weight: 600; }
+.sub-review { color: var(--waiting-ink); font-weight: 600; }
+.tk-hbtn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 10px; flex: none; font-weight: 600; }
+.tk-hbtn > .ti, .tk-hbtn > svg { width: 15px; height: 15px; flex: none; }
+.tk-hbtn.on { background: var(--btn-hover); color: var(--fg); }
+.tk-more { width: 30px; height: 30px; flex: none; }
 .tk-views { height: 30px; }
-.tk-views button { padding: 0 10px; display: grid; place-items: center; }
+.tk-views button { padding: 0 11px; display: grid; place-items: center; }
 .tk-views .ti { width: 14px; height: 14px; }
-.tk-flow { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 0; border-radius: 9px; background: var(--btn); color: var(--fg2); font-weight: 600; font-size: 12.5px; cursor: pointer; transition: background .15s, color .15s; }
-.tk-flow:hover { background: var(--btn-hover); color: var(--fg); }
-.tk-flow .ti { width: 15px; height: 15px; }
-.tk-flow-on { position: absolute; top: 6px; left: 20px; width: 6px; height: 6px; border-radius: 50%; background: var(--working); box-shadow: 0 0 0 2px var(--bg); opacity: 0; transform: scale(.4); transition: opacity .2s, transform .3s var(--spring); }
-.tk-flow.on .tk-flow-on { opacity: 1; transform: none; }
-.tk-more { padding: 0 8px; }
+/* search: the magnifier stays where it is; the field opens to its left, into the header's free space */
+.tk-search { display: flex; align-items: center; flex: 0 0 30px; height: 30px; min-width: 30px; border-radius: 9px; }
+.tk-search.open { flex: 1000 0 96px; max-width: 220px; background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.tk-search.open:focus-within { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
+.tk-search input { display: none; flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; padding: 0 0 0 11px; font-size: 13px; user-select: text; }
+.tk-search.open input { display: block; animation: fade-in .18s var(--out); }
+.tk-search input::-webkit-search-cancel-button { display: none; }
+.tk-search-btn { flex: none; width: 30px; height: 30px; margin-left: auto; }
+.tk-search-btn svg { width: 15px; height: 15px; }
+.tk-search.open .tk-search-btn:hover { background: none; }
+/* the filters that are on, as one chip beside Filter: what they are, and × to clear them */
+.tk-active { display: contents; }
+.tk-on-chip { display: inline-flex; align-items: center; height: 28px; flex: none; border-radius: 999px; background: var(--btn); color: var(--fg); font-size: 12.5px; font-weight: 600; white-space: nowrap; animation: fade-in .18s var(--out); }
+.tk-on-chip button { all: unset; cursor: pointer; }
+.tk-on-chip .tk-on-what { display: block; max-width: 180px; padding: 0 3px 0 12px; line-height: 28px; overflow: hidden; text-overflow: ellipsis; }
+.tk-on-chip .tk-on-x { display: grid; place-items: center; width: 22px; height: 22px; margin-right: 3px; border-radius: 50%; color: var(--fg2); transition: background .15s, color .15s; }
+.tk-on-chip .tk-on-x:hover { background: var(--btn-hover); color: var(--fg); }
+.tk-on-x svg { width: 12px; height: 12px; }
+.tk-on-chip button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: 999px; }
 
-/* ---- adding a task ---- */
-.tk-add { --k: var(--task); display: flex; align-items: flex-end; gap: 6px; margin: 12px 24px 0; padding: 6px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-sm); flex: none; transition: box-shadow .2s; }
+/* ---- the filter popover: kind and owner, one pick each ---- */
+.tk-fpop { position: absolute; z-index: 9; width: 250px; max-height: calc(100% - 110px); overflow-y: auto; padding: 6px; border-radius: 14px; background: var(--card); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-lg); animation: pop-in .18s var(--out); }
+.tk-fp-sec + .tk-fp-sec { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+.tk-fp-sec h6 { margin: 6px 8px 4px; font-size: 11.5px; font-weight: 600; color: var(--fg3); }
+.tk-fp-item { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 8px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.tk-fp-item:hover, .tk-fp-item:focus-visible { background: var(--btn); }
+.tk-fp-item .av { flex: none; }
+.tk-fp-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 560; }
+.tk-fp-n { font-style: normal; font-size: 12px; color: var(--fg3); font-variant-numeric: tabular-nums; }
+.tk-fp-check { display: grid; width: 14px; color: var(--accent); opacity: 0; }
+.tk-fp-check svg { width: 14px; height: 14px; }
+.tk-fp-item.on .tk-fp-check { opacity: 1; }
+.tk-fp-item.on .tk-fp-label { font-weight: 650; }
+.tk-fp-foot { margin-top: 4px; padding: 4px 2px 0; border-top: 1px solid var(--line); }
+.tk-fp-clear { all: unset; box-sizing: border-box; width: 100%; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--link); cursor: pointer; }
+.tk-fp-clear:hover { background: var(--btn); }
+.tk-fp-clear:disabled { color: var(--fg3); cursor: default; background: none; }
+
+/* ---- adding a task: one composer, at the top of a column (or in a popover over the list) ---- */
+.tk-add {
+  --k: var(--task); position: relative; display: flex; flex-direction: column; gap: 8px; padding: 11px 10px 8px 13px; border-radius: 14px;
+  background: var(--card); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent), var(--shadow-sm); container-type: inline-size;
+}
 .tk-add[data-kind=bug] { --k: var(--bug); }
 .tk-add[data-kind=feature] { --k: var(--feature); }
-.tk-add:focus-within { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--k) 55%, transparent), 0 0 0 5px color-mix(in srgb, var(--k) 12%, transparent); }
-.tk-kind { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px 0 6px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--k) 10%, transparent); color: var(--fg); font-weight: 650; font-size: 12.5px; cursor: pointer; flex: none; transition: background .2s, transform .25s var(--bounce); }
+.tk-add.dropping { box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm); }
+.tk-add textarea { display: block; width: 100%; border: 0; outline: 0; background: none; resize: none; padding: 0; font-size: 14px; font-weight: 600; line-height: 1.32; min-height: 18px; max-height: 140px; overflow-y: hidden; user-select: text; }
+.tk-add textarea::placeholder { color: var(--fg3); font-weight: 500; }
+.tk-add-shots { margin: 0; }
+.tk-add-shots .thumb { width: 48px; height: 48px; }
+.tk-add-foot { display: flex; align-items: center; gap: 4px; height: 28px; margin-left: -4px; }
+.tk-kind { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px 0 5px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--k) 10%, transparent); color: var(--fg); font-weight: 600; font-size: 12px; cursor: pointer; flex: none; transition: background .15s, transform .25s var(--bounce); }
 .tk-kind:hover { background: color-mix(in srgb, var(--k) 18%, transparent); }
 .tk-kind:active { transform: scale(.94); }
-.tk-kind .ki { background: none; width: 16px; }
 .tk-kind > .ti { width: 12px; height: 12px; color: var(--fg3); }
-.tk-add textarea { flex: 1; border: 0; outline: 0; background: none; resize: none; padding: 6px 4px; font-size: 14px; line-height: 1.35; min-width: 0; user-select: text; max-height: 140px; }
-.tk-add textarea::placeholder { color: var(--fg3); white-space: nowrap; }
-.tk-to { flex: none; align-self: center; }
-.tk-to-chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 4px; border-radius: 999px; background: var(--btn); color: var(--fg2); font-size: 12px; font-weight: 600; animation: chip-on .35s var(--spring); }
-.tk-add .attach { margin-bottom: 1px; }
-.tk-add-go { height: 30px; border-radius: 10px; background: linear-gradient(180deg, color-mix(in srgb, var(--k) 85%, #fff), var(--k)) !important; box-shadow: 0 1px 0 rgba(255, 255, 255, .25) inset, 0 4px 12px -4px color-mix(in srgb, var(--k) 70%, transparent) !important; }
-.tk-add-go:disabled { opacity: .4; cursor: default; }
-.tk-add-shots { margin: 8px 24px 0 34px; flex: none; }
-
-/* ---- filters ---- */
-.tk-filters { display: flex; align-items: center; gap: 5px; padding: 10px 24px 2px; flex: none; min-height: 36px; overflow-x: auto; scrollbar-width: none; }
-.tk-filters::-webkit-scrollbar { display: none; }
-.tk-chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px 0 5px; border: 0; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--fg2); font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; flex: none; transition: background .15s, color .15s, box-shadow .15s, transform .25s var(--bounce); }
-.tk-chip:hover { background: var(--btn); color: var(--fg); }
-.tk-chip:active { transform: scale(.94); }
-.tk-chip i { font-style: normal; font-weight: 700; font-size: 11px; color: var(--fg3); font-variant-numeric: tabular-nums; }
-.tk-chip.on { background: var(--fg); color: var(--surface); box-shadow: none; }
-.tk-chip.on i { color: color-mix(in srgb, var(--surface) 70%, transparent); }
-.tk-chip .av { margin: -2px 0; }
-/* owners: just their creature and a count (names on hover), so the row fits */
-.tk-chip.who { padding: 0 7px 0 3px; gap: 3px; }
-.tk-chip.who.on { background: color-mix(in srgb, var(--c) 18%, var(--surface)); color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--c); }
-.tk-chip.who.on i { color: var(--fg2); }
-.tk-filters { mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
-.tk-sep { width: 1px; height: 16px; background: var(--line); margin: 0 4px; flex: none; }
-.tk-clear { all: unset; cursor: pointer; padding: 0 6px; font-size: 12px; font-weight: 650; color: var(--link); flex: none; }
+.tk-to { display: flex; min-width: 0; }
+.tk-to-chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 4px; border-radius: 999px; background: var(--btn); color: var(--fg2); font-size: 12px; font-weight: 600; white-space: nowrap; animation: chip-on .35s var(--spring); }
+/* a slim column has room for the face, not the name (the @name is in the title, in its colour) */
+@container (max-width: 300px) { .tk-to-name { display: none; } .tk-to-chip { padding-right: 4px; } }
+.tk-add .attach { width: 26px; height: 26px; padding: 0; flex: none; }
+.tk-add .attach .ti { width: 15px; height: 15px; }
+.tk-add-go { height: 26px; padding: 0 11px; border-radius: 8px; font-size: 12px; }
+.tk-add-go:disabled { opacity: .45; cursor: default; }
+.lane-compose { flex: none; padding: 2px 10px 8px 9px; }
+.lane-compose:empty { display: none; }
+.tk-add-pop { position: absolute; z-index: 9; width: 420px; max-width: calc(100% - 32px); }
+.tk-add-pop .tk-add { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent), var(--shadow-lg); }
 
 /* ---- the body: board, list, or a friendly empty state ---- */
 .tk-body { position: relative; flex: 1; min-height: 0; }
@@ -92,76 +112,68 @@
 .tk-empty { display: none; }
 .tk-body.empty .tk-empty { display: grid; position: absolute; inset: 0; place-items: center; pointer-events: none; z-index: 1; }
 .tk-body.empty .tk-board .lane-list, .tk-body.empty .tk-list { opacity: .0; }
-.tk-hello { display: grid; justify-items: center; gap: 8px; text-align: center; color: var(--fg2); pointer-events: auto; padding: 30px; border-radius: 22px; background: color-mix(in srgb, var(--bg) 80%, transparent); }
-.tk-hello .mark { width: 76px; height: 50px; color: var(--fg3); opacity: .5; animation: float 4s ease-in-out infinite; }
+.tk-hello { display: grid; justify-items: center; gap: 8px; text-align: center; color: var(--fg2); pointer-events: auto; padding: 30px; border-radius: 22px; background: var(--bg); }
+.tk-hello .mark { width: 76px; height: 50px; color: var(--fg3); opacity: .5; }
 .tk-hello b { font-size: 17px; color: var(--fg); font-weight: 750; }
 .tk-hello.small b { font-size: 14px; }
 
 /* board */
-.tk-board { display: grid; grid-template-columns: repeat(4, minmax(186px, 1fr)); gap: 10px; padding: 10px 24px 20px; overflow-x: auto; transition: grid-template-columns .4s var(--sheet); }
+.tk-board { display: grid; grid-template-columns: repeat(4, minmax(186px, 1fr)); gap: 12px; padding: 0 24px 20px; overflow-x: auto; transition: grid-template-columns .4s var(--sheet); }
 .tk-board.done-folded { grid-template-columns: repeat(3, minmax(196px, 1fr)) 46px; }
-.lane { --k: var(--fg3); display: flex; flex-direction: column; min-height: 0; border-radius: 16px; background: color-mix(in srgb, var(--btn) 62%, transparent); transition: background .2s, box-shadow .2s; }
+.lane { --k: var(--fg3); display: flex; flex-direction: column; min-height: 0; border-radius: 16px; background: color-mix(in srgb, var(--fg) 3.5%, var(--bg)); transition: background .2s, box-shadow .2s; }
 .lane[data-lane=fixing] { --k: var(--starting); }
 .lane[data-lane=check] { --k: var(--waiting); }
 .lane[data-lane=done] { --k: var(--working); }
-.lane-head { display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 8px 0 12px; flex: none; font-size: 12.5px; }
-.lane-head b { font-weight: 720; white-space: nowrap; }
-.lane-count { min-width: 18px; padding: 0 5px; color: var(--fg3); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.lane-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 14px; flex: none; font-size: 13px; }
+.lane-head b { font-weight: 700; white-space: nowrap; }
+.lane-count { color: var(--fg3); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .lane-act { display: flex; }
-.lane-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 6px 10px; display: flex; flex-direction: column; gap: 7px; scrollbar-gutter: stable; }
+.lane-add { width: 26px; height: 26px; padding: 0; flex: none; color: var(--fg3); }
+.lane-add svg { width: 15px; height: 15px; }
+.lane-list { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 0 10px 9px; display: flex; flex-direction: column; gap: 8px; scrollbar-gutter: stable; }
 .lane-more { all: unset; cursor: pointer; text-align: center; padding: 6px; font-size: 12px; font-weight: 650; color: var(--link); }
 .tk-fold .ti { transition: transform .35s var(--spring); }
 .tk-fold { padding: 3px; }
 .done-folded [data-lane=done] { cursor: pointer; }
-.done-folded [data-lane=done] .lane-head { flex-direction: column; height: auto; padding: 12px 0; gap: 9px; }
+.done-folded [data-lane=done] .lane-head { flex-direction: column; height: auto; padding: 14px 0; gap: 10px; }
 .done-folded [data-lane=done] .lane-head b { writing-mode: vertical-rl; }
 .done-folded [data-lane=done] .lane-head .grow { display: none; }
 .done-folded [data-lane=done] .tk-fold .ti { transform: rotate(-90deg); }
 .tk-board:not(.done-folded) [data-lane=done] .tk-fold .ti { transform: rotate(90deg); }
 .done-folded [data-lane=done] .lane-list { display: none; }
-.done-folded [data-lane=done]:hover { background: color-mix(in srgb, var(--btn-hover) 70%, transparent); }
+.done-folded [data-lane=done]:hover { background: color-mix(in srgb, var(--fg) 6%, var(--bg)); }
 .dragging-task .lane { box-shadow: inset 0 0 0 1.5px var(--line); }
-.lane.over, .tl-group.over { background: color-mix(in srgb, var(--k) 11%, transparent); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--k) 55%, transparent); }
+.lane.over, .tl-group.over { background: color-mix(in srgb, var(--k) 11%, var(--bg)); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--k) 55%, transparent); }
 
-/* a card */
-.tc { position: relative; flex: none; padding: 9px 10px 9px 11px; border-radius: 13px; background: var(--surface); box-shadow: var(--shadow-sm); cursor: grab; transition: box-shadow .2s, transform .3s var(--bounce), opacity .2s; }
-.tc:hover { transform: translateY(-1px); box-shadow: 0 8px 22px -12px rgba(0, 0, 0, .3), var(--shadow-sm); }
+/* a card: kind and number, Urgent when it is, the title, the owner; nothing moves when you point at it */
+.tc { position: relative; flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 10px 14px; border-radius: 14px; background: var(--card); box-shadow: var(--shadow-sm); cursor: grab; transition: opacity .2s; }
+.tc:hover { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 40%, transparent), var(--shadow-sm); }
 .tc:active { cursor: grabbing; }
-.tc.sel { box-shadow: 0 0 0 2px var(--accent), 0 8px 22px -12px rgba(0, 0, 0, .3); }
+.tc.sel, .tc.sel:hover { box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm); }
 .tc.dragging, .tr.dragging { opacity: .35; }
-.tc.pr-blocker:not(.st-done) { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--danger) 35%, transparent), var(--shadow-sm); }
-.tc.st-check { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--waiting) 50%, transparent), var(--shadow-sm); }
-.tc.sel.sel { box-shadow: 0 0 0 2px var(--accent); }
-.tc.st-done { background: color-mix(in srgb, var(--surface) 50%, transparent); box-shadow: none; }
+.tc.st-done { background: color-mix(in srgb, var(--card) 55%, var(--bg)); box-shadow: none; }
 .tc.st-done .tc-title { color: var(--fg2); }
-.tc-top { display: flex; align-items: center; gap: 5px; height: 20px; }
-.tk-id { font: 650 11px var(--mono); color: var(--fg3); white-space: nowrap; }
-.tk-cost { padding: 0 5px; border-radius: 5px; background: var(--btn); color: var(--fg2); font: 650 10.5px/16px var(--mono); white-space: nowrap; }
-.tr-title .tk-cost { flex: none; }
-.tk-seen { padding: 0 5px; border-radius: 5px; background: var(--btn); color: var(--fg2); font-weight: 700; font-size: 10.5px; line-height: 16px; }
-.tk-home { padding: 0 6px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); font-size: 10.5px; font-weight: 600; line-height: 16px; white-space: nowrap; }
-.tk-prio { all: unset; display: grid; place-items: center; width: 22px; height: 20px; border-radius: 6px; cursor: pointer; flex: none; transition: background .15s; }
-.tk-prio:hover { background: var(--btn); }
-.tc-title { margin-top: 5px; font-size: 13.5px; line-height: 1.34; font-weight: 600; letter-spacing: -.005em; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.tk-shots { display: flex; gap: 5px; margin-top: 8px; }
+.tc-top { display: flex; align-items: center; gap: 6px; height: 18px; min-width: 0; }
+.tk-id { font: 600 11.5px var(--mono); color: var(--fg3); white-space: nowrap; }
+.tk-home { font-size: 11.5px; font-weight: 550; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tk-urgent { margin-left: auto; flex: none; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--bug) 13%, transparent); color: var(--bug-ink); font-size: 10.5px; font-weight: 700; letter-spacing: .02em; line-height: 14px; white-space: nowrap; }
+.tc-title { font-size: 14px; line-height: 1.32; font-weight: 650; letter-spacing: -.005em; overflow-wrap: anywhere; }
+.tk-shots { display: flex; gap: 5px; }
 .tk-shots img { width: 48px; height: 34px; border-radius: 7px; object-fit: cover; background: var(--btn); }
 .tk-shots span { height: 34px; padding: 0 7px; border-radius: 7px; background: var(--btn); color: var(--fg2); font-size: 11px; font-weight: 650; display: grid; place-items: center; }
-.tk-doing { margin-top: 7px; padding: 4px 8px; border-radius: 7px; background: color-mix(in srgb, var(--c) 9%, transparent); font: 11px/1.35 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tk-done-mark { display: inline-grid; vertical-align: -2px; margin-right: 4px; color: var(--working-ink); font-style: normal; }
-.tk-done-mark svg { width: 12px; height: 12px; stroke-width: 3; }
-.tk-summary { margin: 7px 0 0; color: var(--fg2); font-size: 12px; line-height: 1.38; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tc-foot { display: flex; align-items: center; gap: 6px; margin-top: 9px; min-height: 24px; min-width: 0; }
-.tk-owner { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--fg2); white-space: nowrap; overflow: hidden; }
+.tk-summary { margin: -2px 0 0; color: var(--fg2); font-size: 12px; line-height: 1.38; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tc-foot { display: flex; align-items: center; gap: 7px; height: 26px; min-width: 0; }
+.tk-owner { display: inline-flex; align-items: center; gap: 7px; min-width: 0; font-size: 12.5px; font-weight: 550; color: var(--fg2); white-space: nowrap; overflow: hidden; }
 .tk-owner-name { overflow: hidden; text-overflow: ellipsis; }
+.tk-note { color: var(--fg3); overflow: hidden; text-overflow: ellipsis; }
 .tk-face { line-height: 0; cursor: pointer; flex: none; }
-.tk-assign { all: unset; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 2px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--fg3); cursor: pointer; transition: background .15s, color .15s; }
+.tk-assign { all: unset; display: inline-flex; align-items: center; gap: 7px; padding: 2px 8px 2px 1px; border-radius: 999px; font-size: 12.5px; font-weight: 550; color: var(--fg3); cursor: pointer; transition: background .15s, color .15s; }
 .tk-assign:hover { background: var(--btn); color: var(--fg); }
-.tk-state { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 620; color: var(--fg2); white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.tk-state .dot { width: 7px; height: 7px; }
-.tk-state.working { color: var(--working-ink); }
-.tk-state.waiting { color: var(--waiting-ink); }
-.tk-state.starting { color: var(--starting); }
-.tk-age { font-size: 11px; color: var(--fg3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tk-state { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 12px; font-weight: 500; color: var(--fg3); white-space: nowrap; }
+.tk-state .dot { width: 7px; height: 7px; animation: none; }
+.tk-state.working { color: var(--working-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tk-state.waiting { color: var(--waiting-ink); font-weight: 600; }
+.tk-age { font-size: 11.5px; color: var(--fg3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tk-btn { all: unset; box-sizing: border-box; flex: none; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 24px; padding: 0 9px; border-radius: 999px; background: var(--btn); color: var(--fg2); font-size: 11.5px; font-weight: 650; cursor: pointer; transition: background .15s, color .15s, transform .3s var(--bounce); }
 .tk-btn:hover { background: var(--btn-hover); color: var(--fg); }
 .tk-btn:active { transform: scale(.9); }
@@ -170,44 +182,64 @@
 .tk-btn.go:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .tk-btn.good { color: #fff; background: var(--working); }
 .tk-btn.good:hover { background: color-mix(in srgb, var(--working) 85%, #000); color: #fff; }
-.tk-verdict { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+/* Start: on the card you point at or have open, in room that's always kept for it */
+.tk-start { height: 26px; padding: 0 11px; border-radius: 8px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .15s, background .15s, transform .3s var(--bounce); }
+.tc:hover .tk-start, .tc.sel .tk-start, .tc:focus-within .tk-start, .tr:hover .tk-start, .tr.sel .tk-start, .tr:focus-within .tk-start { opacity: 1; pointer-events: auto; }
+/* review: the board's only coloured buttons */
+.tk-verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tk-verdict .tk-btn { height: 30px; border-radius: 9px; font-size: 12.5px; }
+.tk-verdict .tk-btn:not(.good) { color: var(--fg); }
 
 /* list */
-.tk-list { overflow-y: auto; padding: 6px 24px 24px; scrollbar-gutter: stable; }
+.tk-list { overflow-y: auto; padding: 0 24px 24px; scrollbar-gutter: stable; }
 .tl-group { --k: var(--fg3); border-radius: 12px; transition: background .2s, box-shadow .2s; }
 .tl-group[data-lane=fixing] { --k: var(--starting); }
 .tl-group[data-lane=check] { --k: var(--waiting); }
 .tl-group[data-lane=done] { --k: var(--working); }
 .tl-group + .tl-group { margin-top: 10px; }
-.tl-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, var(--bg)); font-size: 12.5px; }
-.tl-head b { font-weight: 720; }
+.tl-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 6px 0 12px; border-radius: 10px; background: color-mix(in srgb, var(--fg) 4%, var(--bg)); font-size: 13px; }
+.tl-head b { font-weight: 700; }
 .tl-none { margin: 6px 12px; color: var(--fg3); font-size: 12px; }
-.tr { display: grid; grid-template-columns: 22px 34px 18px minmax(0, 1fr) 128px 96px 38px; align-items: center; column-gap: 8px; height: 42px; padding: 0 10px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .15s; }
+.tr { display: grid; grid-template-columns: 22px 34px minmax(0, 1fr) 104px 104px 40px; align-items: center; column-gap: 8px; height: 42px; padding: 0 10px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .15s; }
+.tr > .ki { justify-self: center; }
 .tr:hover { background: var(--btn); }
 .tr.sel { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .tr.st-done .tr-title { color: var(--fg2); }
-.tr-title { min-width: 0; display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; }
+.tr-title { min-width: 0; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; }
 .tr-name { flex: 0 1 auto; min-width: 40px; overflow: hidden; text-overflow: ellipsis; font-size: 13.5px; font-weight: 580; }
-.tr-title small { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; font-weight: 450; color: var(--fg3); }
-.tr-title .tk-seen, .tr-title .tk-home, .tr-title .tr-pics { flex: none; }
+.tr-title .tk-urgent { margin-left: 0; }
+.tr-title .tk-home, .tr-title .tr-pics { flex: none; }
 .tr-pics { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--fg3); }
 .tr-pics .ti { width: 13px; height: 13px; }
 .tr-right { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
-.tr-right .tk-state { max-width: 100px; }
 .tk-btn.only { width: 24px; padding: 0; }
 .tk-btn.only .ti { width: 14px; height: 14px; }
-.tr .tk-owner { max-width: 96px; }
-.tr .tk-owner, .tr .tk-assign { justify-self: start; max-width: 120px; }
+.tr .tk-start { height: 24px; padding: 0 10px; }
+.tr .tk-owner, .tr .tk-assign { justify-self: start; max-width: 104px; }
 .tr .tk-age { text-align: right; }
+
+/* a narrow middle: the buttons keep their icons, the words step aside */
+@container (max-width: 780px) {
+  .tk-head { padding: 16px 16px 12px; }
+  .tk-hbtn > span { display: none; }
+  .tk-hbtn { padding: 0 8px; }
+  .tk-board, .tk-list { padding-left: 16px; padding-right: 16px; }
+}
+/* the narrowest board (the window at its minimum, both panels open): the filters say so on the Filter button itself
+   (it's lit, and its popover clears them), and an open search takes less room */
+@container (max-width: 520px) {
+  .tk-on-chip { display: none; }
+  .tk-search.open { flex-basis: 64px; }
+}
 
 /* ---- picking several (⌘-click, Shift-click, a lane's select-all) and the bar that acts on them all ---- */
 .tc-check, .tr-check { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-style: normal; color: transparent; background: var(--surface); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg3) 80%, transparent); cursor: pointer; transition: transform .3s cubic-bezier(.3, 1.7, .5, 1), background .15s, box-shadow .15s, color .15s; }
 .tc-check svg, .tr-check svg { width: 11px; height: 11px; stroke-width: 3.2; }
 /* on a card it takes the kind's place, top left, while some are picked */
-.tc-check { position: absolute; left: 11px; top: 10px; z-index: 1; transform: scale(0); }
+.tc-check { position: absolute; left: 13px; top: 12px; z-index: 1; transform: scale(0); }
 .picking .tc-check { transform: none; }
 .picking .tc-top > .ki { visibility: hidden; }
-.tc.picked.picked { box-shadow: 0 0 0 2px var(--accent), 0 8px 22px -14px color-mix(in srgb, var(--accent) 70%, #000); }
+.tc.picked.picked { box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm); }
 .tc-check:hover, .tr-check:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .tc.picked .tc-check, .tr.picked .tr-check { background: var(--accent); box-shadow: none; color: #fff; }
 .tr-check { justify-self: center; }
@@ -219,9 +251,6 @@
 .lane:hover .lane-pick, .tl-group:hover .lane-pick, .picking .lane-pick, .lane-pick:focus-visible { opacity: 1; }
 .lane-pick.on { color: var(--accent); }
 .lane-act { align-items: center; gap: 2px; }
-/* a narrow lane (Done open, a small window) keeps Start's icon and count, so the header never runs into the next lane */
-.lane { container-type: inline-size; }
-@container (max-width: 250px) { .lane-word { display: none; } }
 .tk-bulk {
   position: absolute; left: 50%; bottom: 20px; z-index: 7; display: none; align-items: center; gap: 5px; max-width: calc(100% - 48px);
   padding: 6px 6px 6px 16px; border-radius: 999px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-lg); transform: translateX(-50%); white-space: nowrap;
@@ -251,6 +280,8 @@
 .tk-pop-item small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg3); font-size: 11.5px; }
 .tk-pop-check { margin-left: auto; color: var(--accent); line-height: 0; }
 .tk-pop-check svg { width: 14px; height: 14px; }
+.tk-pop-ico { display: grid; color: var(--fg2); line-height: 0; }
+.tk-pop-ico svg { width: 15px; height: 15px; }
 .danger-ico { color: var(--danger); line-height: 0; }
 .danger-ico svg { width: 15px; height: 15px; }
 .tk-flow-pop { display: flex; flex-direction: column; gap: 4px; padding: 4px; }

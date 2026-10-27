@@ -52,13 +52,12 @@ test('off agents fold into one line per group until it is opened', () => {
   assert.deepEqual(rows(rosterHTML(s, { folds: new Set(['off:']) })), ['joseph', 'ye', 'pia'])
 })
 
-test('a folded computer keeps its header and counts, and hides its rows', () => {
+test('a folded computer keeps its header and its faces, and hides its rows', () => {
   const s = state([agent('joseph'), remote('bo', 'mac-mini', 'Mac mini', { status: 'working' }), remote('ivy', 'mac-mini', 'Mac mini', { status: 'waiting' })], [{ slug: 'mac-mini', name: 'Mac mini', online: true }])
   const html = rosterHTML(s, { folds: new Set(['group:mac-mini']) })
   assert.deepEqual(rows(html), ['joseph'])
   assert.match(html, /class="cgroup folded[^"]*" data-home="mac-mini"/)
-  assert.match(html, /gc working[^>]*>1</)
-  assert.match(html, /gc waiting[^>]*>1</)
+  assert.match(html, /data-home="mac-mini"[\s\S]*class="faces"><av:bo@mac-mini><av:ivy@mac-mini>/)
 })
 
 test('search matches names and areas, and shows through folds', () => {
