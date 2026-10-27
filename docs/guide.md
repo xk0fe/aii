@@ -284,7 +284,7 @@ A Codex-backed agent runs in Codex's `workspace-write` sandbox with network acce
 
 ## Your phone
 
-The Crew app on your phone keeps you with your crew when you're away from your desk: the chat, the questions agents wait on you for, the Tasks board and the terminals. A phone isn't a computer. It runs no agents and never shows up under Computers. It's you: what you send from it shows up in the chat as yours.
+The Crew app on your phone keeps you with your crew when you're away from your desk: the chat, and the questions agents wait on you for. A phone isn't a computer. It runs no agents and never shows up under Computers. It's you: what you send from it shows up in the chat as yours.
 
 1. **On the Mac:** click **Computers** in the dashboard titlebar, then **Add a phone** under **Phones**. Crew shows a QR code, and the same code as text to copy.
 2. **On the phone:** open Crew and scan the code, or paste it. The phone shows up under **Phones**, and from then on it connects by itself.
@@ -294,6 +294,7 @@ The Crew app on your phone keeps you with your crew when you're away from your d
 - **Networks:** the same Wi-Fi, or Tailscale, as for linked computers. The code lists every address the Mac has. Crew listens for phones on port 7788, and only while a phone is paired or a code is open. To change the port, set `"phonePort"` in `~/.crew/link/link.json`.
 - **Security:** everything between the phone and the Mac is encrypted end to end, with keys only the two of them hold. A code pairs one phone within ten minutes, and a new code ends the old one. A phone never gets Crew Link's code or the agents' instructions. **Remove** unpairs a phone and ends its connection.
 - **Not there yet:**
+  - The Tasks board and the terminals. Crew on the Mac already answers a phone's calls for them (the list above); the app doesn't show them yet.
   - Notifications. Until push lands, the phone hears that an agent needs you only while the app is open.
   - A relay. The phone talks to the Mac directly, so away from your Wi-Fi it needs Tailscale, and the Mac has to be awake with Crew running.
 

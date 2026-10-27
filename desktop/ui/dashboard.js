@@ -803,7 +803,7 @@ function phonesHTML(p) {
   const expired = code && Date.now() >= code.expires
   const until = code && new Date(code.expires).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   return `<section class="ls phones">
-    <div class="ph-head"><div class="grow"><b>Phones</b><p>The chat, questions for you, tasks and terminals, in the Crew app on your phone, over the same Wi-Fi or Tailscale.</p></div>
+    <div class="ph-head"><div class="grow"><b>Phones</b><p>The chat and the questions agents wait on you for, in the Crew app on your phone, over the same Wi-Fi or Tailscale.</p></div>
       <button class="btn" data-phone-add ${phoneBusy ? 'disabled' : ''}>${phoneBusy ? 'Making a code…' : code ? 'New code' : 'Add a phone'}</button></div>
     ${code ? `<div class="ph-pair ${expired ? 'expired' : ''}">
       <div class="ph-qr">${code.qr}${expired ? '<span>Expired</span>' : ''}</div>
