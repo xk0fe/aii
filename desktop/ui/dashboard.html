@@ -164,6 +164,30 @@
     .pc-agents li:hover .pc-move, .pc-move:focus-visible { opacity: 1; }
     .pc-agents .use { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg2); cursor: pointer; }
     .ls .err, .sheet .err { color: var(--danger); min-height: 0; margin: 4px 0 0; font-size: 12.5px; }
+    /* phones: a code to scan beside the same code as text, then each paired phone */
+    .ph-head { display: flex; align-items: flex-start; gap: 16px; }
+    .ph-head .btn { min-width: 132px; } /* Add a phone, New code and Making a code… all fit, so the text beside it never reflows */
+    .ph-pair { display: flex; gap: 18px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .ph-qr { position: relative; flex: none; width: 188px; height: 188px; padding: 4px; border-radius: 14px; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+    .ph-qr svg { display: block; width: 100%; height: 100%; transition: opacity .25s; }
+    .ph-qr span { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 700; color: #1d1d1f; }
+    .ph-side { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .ph-side code { display: block; margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: var(--btn); font: 10.5px/1.5 var(--mono); overflow-wrap: anywhere; user-select: all; transition: opacity .25s; }
+    .ph-side .ls-row.small { margin-top: auto; padding-top: 10px; }
+    .ph-btns { display: flex; gap: 6px; }
+    .ph-btns [data-phone-copy] { min-width: 86px; justify-content: center; } /* Copied ✓ in place of Copy code, without a nudge */
+    .ph-pair.expired svg, .ph-pair.expired code { opacity: .12; }
+    .ph-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+    .ph-list li { display: flex; align-items: center; gap: 12px; padding: 7px 8px; border-radius: 12px; transition: background .3s; }
+    .ph-list li:hover { background: var(--btn); }
+    .ph-list li.fresh { background: color-mix(in srgb, var(--accent) 11%, transparent); }
+    .ph-icon { flex: none; width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+    .ph-icon svg { width: 18px; height: 18px; }
+    .ph-list .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .ph-list .who b { overflow-wrap: anywhere; }
+    .ph-list .who small { color: var(--fg3); }
+    .ph-seen { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg2); white-space: nowrap; }
+    .dot.live { background: var(--working); }
 
     .imp-list { display: flex; flex-direction: column; gap: 8px; }
     .imp { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; transition: opacity .2s; }

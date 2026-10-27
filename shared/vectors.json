@@ -1,0 +1,87 @@
+{
+  "about": "PROTOCOL.md test vectors: X25519, HKDF-SHA256, ChaCha20-Poly1305; all bytes in hex",
+  "vectors": [
+    {
+      "name": "reconnect",
+      "private": {
+        "e": "0101010101010101010101010101010101010101010101010101010101010101",
+        "d": "0202020202020202020202020202020202020202020202020202020202020202",
+        "m": "0303030303030303030303030303030303030303030303030303030303030303",
+        "f": "0404040404040404040404040404040404040404040404040404040404040404"
+      },
+      "public": {
+        "e": "a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209",
+        "d": "ce8d3ad1ccb633ec7b70c17814a5c76ecd029685050d344745ba05870e587d59",
+        "m": "5dfedd3b6bd47f6fa28ee15d969d5bb0ea53774d488bdaf9df1c6e0124b3ef22",
+        "f": "ac01b2209e86354fb853237b5de0f4fab13c7fcbf433a61c019369617fecf10b"
+      },
+      "secret": null,
+      "kPhone": "0699e10dbe0f6ef8abf6592fcd2c41714c4ed1ff1fa10adcde792898b40ec814",
+      "kMac": "8e4fe50a4f96f5f58b977b89d82e55eac464805f1c9aeae9d5be1d7d5c4929df",
+      "frames": [
+        {
+          "from": "phone",
+          "counter": 0,
+          "plaintext": "{\"t\":\"hi\",\"name\":\"Pixel 9\",\"platform\":\"android\",\"app\":\"0.1.0\"}",
+          "sealed": "e0934191c9854d95e6daee9160ce1e7226339a38c723959af04bb9adb30bfbc54f80e6043e558dc09cceb2656c2c5caa9d4a23d375419e15ebd4b16df34dbbb6c99fb2854b9bb8ed6e53763f2e89"
+        },
+        {
+          "from": "mac",
+          "counter": 0,
+          "plaintext": "{\"t\":\"ready\",\"mac\":{\"id\":\"mac-id\",\"name\":\"Mac mini\"},\"device\":{\"id\":\"device-id\"}}",
+          "sealed": "b12643f99cd7dce78f5525a0a3ecd4330ab2353eba2eff85e1c6447065cfaa2b7a221713b48e6fc31ddc6de7bc193c33bcef776e382419f6f683acbabd8a875300d0551acad34a3f7e32b09e2126e854c174033f84d480553912208996beab6fef"
+        },
+        {
+          "from": "phone",
+          "counter": 1,
+          "plaintext": "{\"t\":\"call\",\"id\":1,\"name\":\"watch\",\"args\":[\"default\"]}",
+          "sealed": "aa041a01ef3f8dcbe2f10e73f4c8d020e0e00f6421595ed150a9c3838840cec539a0f07847395652a574c53f82ee69f3dd96c865e8844930a71a3ca26b50c5a86da4c501e3"
+        }
+      ],
+      "b64": {
+        "m": "Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI"
+      }
+    },
+    {
+      "name": "pairing",
+      "private": {
+        "e": "0101010101010101010101010101010101010101010101010101010101010101",
+        "d": "0202020202020202020202020202020202020202020202020202020202020202",
+        "m": "0303030303030303030303030303030303030303030303030303030303030303",
+        "f": "0404040404040404040404040404040404040404040404040404040404040404"
+      },
+      "public": {
+        "e": "a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209",
+        "d": "ce8d3ad1ccb633ec7b70c17814a5c76ecd029685050d344745ba05870e587d59",
+        "m": "5dfedd3b6bd47f6fa28ee15d969d5bb0ea53774d488bdaf9df1c6e0124b3ef22",
+        "f": "ac01b2209e86354fb853237b5de0f4fab13c7fcbf433a61c019369617fecf10b"
+      },
+      "secret": "0505050505050505050505050505050505050505050505050505050505050505",
+      "kPhone": "d716f0ae500fc6e4f63bfe3a210c0a360889e9b7473e85c30800df41b9fdd54b",
+      "kMac": "b5f8e53344ebc633840a450ef9f185a4afdae0994370c0586d898d7515b800a8",
+      "frames": [
+        {
+          "from": "phone",
+          "counter": 0,
+          "plaintext": "{\"t\":\"hi\",\"name\":\"Pixel 9\",\"platform\":\"android\",\"app\":\"0.1.0\"}",
+          "sealed": "cfe93dc77eb5ef25346ca8587ea597451d70fbce78158f08f40b7ffe46f9be81b5eb82c49450fe8ce39111618a32c8f9d620520da917aa2610f077bf2e4e705da3043fbfe2028cd3dfb3c459f45d"
+        },
+        {
+          "from": "mac",
+          "counter": 0,
+          "plaintext": "{\"t\":\"ready\",\"mac\":{\"id\":\"mac-id\",\"name\":\"Mac mini\"},\"device\":{\"id\":\"device-id\"}}",
+          "sealed": "c11ee0e4c105ea06f4d69eec49e67754a4ebe1d9e8c1a47f9b6b16dabe742f74a3d0cf65df56727b7739b70ef7262702af0f75f7ab54e6f43a25e552ccc8f6b22ab77862f2ba0ddb71a347061008da2754116087aab9b0cc87b716445a87313b51"
+        },
+        {
+          "from": "phone",
+          "counter": 1,
+          "plaintext": "{\"t\":\"call\",\"id\":1,\"name\":\"watch\",\"args\":[\"default\"]}",
+          "sealed": "6d612836b87e55bab54470a538e6885febdf93e5d2b4e3379f2d328ee61e21babb044385dbb07c14584268b8f4116659a480a48c893419f6221bf942dfa4faf40815f21536"
+        }
+      ],
+      "b64": {
+        "m": "Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI"
+      }
+    }
+  ]
+}
