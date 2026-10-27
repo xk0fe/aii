@@ -1685,7 +1685,7 @@ export class Hub extends EventEmitter {
 
   // Images pasted, dropped or picked in the UI become files that agents open by path.
   saveImage(name, type, bytes) {
-    const ext = IMAGE_TYPES[type]
+    const ext = Object.hasOwn(IMAGE_TYPES, type) && IMAGE_TYPES[type]
     if (!ext) throw new Error('only PNG, JPEG, GIF and WebP images')
     if (bytes.length > 20 * 1024 * 1024) throw new Error(`${name || 'image'} is over 20 MB`)
     const file = path.join(ATTACHMENTS, `${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}.${ext}`)
