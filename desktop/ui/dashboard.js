@@ -738,7 +738,9 @@ function drawComputers(state) {
     ? `<span class="dot ${online === c.links.length ? 'working' : 'waiting'}"></span>${c.links.length + 1} computers`
     : c.me.sharing ? '<span class="dot working"></span>Sharing' : `${ICONS.computers}Computers`
   if (chip.label !== label) chip.innerHTML = chip.label = label // asked on every push, replaced only when it changes
-  const next = JSON.stringify([c, fresh, linkErr])
+  const paired = phonePair && c.phones?.devices.find((d) => d.paired >= phonePair.made)
+  if (paired) (phoneFresh = paired.id), (phonePair = null) // the code on screen did its job: the new phone is highlighted
+  const next = JSON.stringify([c, fresh, linkErr, phonePair?.expires, phonePair && Date.now() >= phonePair.expires, phoneFresh, phoneErr, phoneBusy])
   if (next === linkKey) return
   linkKey = next
   // keep what's being typed across redraws
@@ -749,7 +751,7 @@ function drawComputers(state) {
   if (box) box.value = typed
 }
 
-const computersHTML = ({ me, links }) => `
+const computersHTML = ({ me, links, phones }) => `
   <section class="ls">
     <div class="ls-row small" style="margin:0"><div><input class="me-name" data-me-name value="${esc(me.name)}" spellcheck="false" title="This computer's name; others see its agents as name@${esc(me.slug)}">
       <p>This computer · ${me.agents} agent${me.agents === 1 ? '' : 's'} run here · others see them as <b>name@${esc(me.slug)}</b></p></div></div>
@@ -767,7 +769,8 @@ const computersHTML = ({ me, links }) => `
     <p>Paste the code from the other computer's <b>Share this computer</b>. Linking works both ways: each computer sees the other's agents.</p>
     <div class="code-in"><textarea data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Link</button></div>
     <p class="err" data-link-err>${esc(linkErr)}</p>
-  </section>`
+  </section>
+  ${phonesHTML(phones ?? { devices: [] })}`
 
 // A linked computer and its agents: tick the ones to use from here, or bring one over to run here.
 function linkHTML(l) {
@@ -788,9 +791,95 @@ function linkHTML(l) {
   </section>`
 }
 
-function openComputers() {
+// ---- Phones (core/phones.js): the Crew app on your phone, paired with a code it scans ----------------------------
+
+let phonePair = null // the code this window shows: { code, qr (SVG), expires, made }
+let phoneFresh = null // the phone that just paired with it
+let phoneErr = ''
+let phoneBusy = false // making a code
+
+function phonesHTML(p) {
+  const code = phonePair
+  const expired = code && Date.now() >= code.expires
+  const until = code && new Date(code.expires).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return `<section class="ls phones">
+    <div class="ph-head"><div class="grow"><b>Phones</b><p>The chat, questions for you, tasks and terminals, in the Crew app on your phone, over the same Wi-Fi or Tailscale.</p></div>
+      <button class="btn" data-phone-add ${phoneBusy ? 'disabled' : ''}>${phoneBusy ? 'Making a code…' : code ? 'New code' : 'Add a phone'}</button></div>
+    ${code ? `<div class="ph-pair ${expired ? 'expired' : ''}">
+      <div class="ph-qr">${code.qr}${expired ? '<span>Expired</span>' : ''}</div>
+      <div class="ph-side">
+        <b>${expired ? 'This code has expired' : 'Scan it with the Crew app'}</b>
+        <p>${expired ? 'A code works for ten minutes and pairs one phone. Make a new one to add a phone.' : 'Open Crew on your phone and scan this code, or copy it and paste it there. It pairs one phone.'}</p>
+        <code>${esc(code.code)}</code>
+        <div class="ls-row small"><span>${expired ? `Ended at ${until}` : `Works until ${until}`}</span><span class="ph-btns">${expired ? '' : '<button class="btn small" data-phone-copy>Copy code</button>'}<button class="btn small" data-phone-cancel>${expired ? 'Done' : 'Cancel'}</button></span></div>
+      </div>
+    </div>` : ''}
+    ${p.devices.length ? `<ul class="ph-list">${p.devices.map(phoneHTML).join('')}</ul>` : ''}
+    <p class="err">${esc(phoneErr || p.error || '')}</p>
+  </section>`
+}
+
+function phoneHTML(d) {
+  const kind = { ios: 'iPhone', android: 'Android' }[d.platform] ?? 'Phone'
+  const seen = d.online ? 'Connected' : phoneDay(d.seen) === 'today' ? `Seen at ${new Date(d.seen).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : `Seen ${phoneDay(d.seen)}`
+  return `<li class="${d.id === phoneFresh ? 'fresh' : ''}" data-phone="${esc(d.id)}">
+    <span class="ph-icon">${ICONS.phone}</span>
+    <span class="who"><b>${esc(d.name)}</b><small>${kind}${d.app ? ` · Crew ${esc(d.app)}` : ''} · paired ${phoneDay(d.paired)}</small></span>
+    <span class="ph-seen"><span class="dot ${d.online ? 'live' : 'off'}"></span>${seen}</span>
+    <button class="btn small" data-phone-remove="${esc(d.id)}">Remove</button>
+  </li>`
+}
+
+// 'today', 'yesterday' or '12 Oct'
+function phoneDay(ts) {
+  const day = (t) => new Date(t).toDateString()
+  if (day(ts) === day(Date.now())) return 'today'
+  if (day(ts) === day(Date.now() - 864e5)) return 'yesterday'
+  return new Date(ts).toLocaleDateString([], { day: 'numeric', month: 'short' })
+}
+
+async function phoneAction(t) {
+  if (t.closest('[data-phone-add]')) {
+    const made = Date.now()
+    phoneBusy = true
+    phoneErr = ''
+    drawComputers(state)
+    try {
+      phonePair = { ...(await crew.call('phones', 'code')), made }
+      phoneFresh = null
+    } catch (x) {
+      phoneErr = x.message
+    } finally {
+      phoneBusy = false
+      drawComputers(state)
+    }
+  }
+  if (t.closest('[data-phone-copy]')) {
+    await crew.call('copy', phonePair.code)
+    t.closest('[data-phone-copy]').textContent = 'Copied ✓'
+  }
+  if (t.closest('[data-phone-cancel]')) {
+    const open = Date.now() < phonePair.expires
+    phonePair = null
+    drawComputers(state)
+    if (open) await crew.call('phones', 'cancel')
+  }
+  const remove = t.closest('[data-phone-remove]')?.dataset.phoneRemove
+  const phone = remove && state.computers.phones.devices.find((d) => d.id === remove)
+  if (phone && confirm(`Remove ${phone.name}? It can't reach this Mac any more, until you pair it again.`)) await crew.call('phones', 'revoke', remove)
+}
+
+async function openComputers() {
   fresh = null
   linkErr = ''
+  phoneFresh = null
+  phoneErr = ''
+  if (phonePair && Date.now() >= phonePair.expires) phonePair = null // long gone: no need to say so
+  // one made before this window opened, and still open: shown again, to scan or to cancel (codes last ten minutes)
+  if (!phonePair && state.computers?.phones?.pairing) {
+    const open = await crew.call('phones', 'open').catch(() => null)
+    if (open) phonePair = { ...open, made: open.expires - 10 * 60000 }
+  }
   linkKey = ''
   drawComputers(state)
   linkDialog.showModal()
@@ -805,6 +894,7 @@ linkDialog.addEventListener('click', async (e) => {
     linkErr = text
     drawComputers(state)
   }
+  if (t.closest('.phones')) return phoneAction(t).catch((x) => ((phoneErr = x.message), drawComputers(state)))
   try {
     if (t.closest('[data-link-copy]')) {
       await crew.call('copy', linkDialog.querySelector('.code-box code').textContent)

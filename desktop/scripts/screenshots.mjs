@@ -184,6 +184,19 @@ const SHOTS = {
     await save(win, `computers-${theme}`)
     win.destroy()
   },
+  // Phones: a code open to pair one, and two paired phones (one connected), under the computers.
+  async phones(theme) {
+    const win = await dashboard(theme, 'crew')
+    await sleep(900)
+    await js(win, click('.link-chip'))
+    await sleep(500)
+    await js(win, click('[data-phone-add]'))
+    await sleep(700)
+    await js(win, "document.querySelector('#link .phones').scrollIntoView({ block: 'end' })")
+    await sleep(400)
+    await save(win, `phones-${theme}`)
+    win.destroy()
+  },
   // Right-click an agent: everything you can do with it, Move to… included.
   async menu(theme) {
     const win = await dashboard(theme, 'grid', { fixture: 'big' })
