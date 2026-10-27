@@ -7,76 +7,136 @@
   <link rel="stylesheet" href="common.css">
   <link rel="stylesheet" href="workspaces.css">
   <style>
+    /* The popover is the system's material, so rows are clear until hovered; a hovered row is solid, so the switches
+       that appear over it cover what's under them. */
     :root { --tray-hover: #dedee3; }
     @media (prefers-color-scheme: dark) { :root { --tray-hover: #3b3b40; } }
     body { background: transparent; padding: 12px 10px 10px; }
     html::-webkit-scrollbar { display: none; }
-    header { display: flex; align-items: center; gap: 8px; padding: 2px 6px 8px; }
+
+    header { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 0 0 6px; margin-bottom: 2px; }
     header .mark { width: 27px; height: 18px; color: var(--fg); flex: none; }
-    header b { font-size: 15px; font-weight: 750; letter-spacing: -.01em; }
     header .brand { display: flex; align-items: center; gap: 8px; flex: none; }
-    header .ws-switch { margin: -4px 0 -4px -4px; max-width: 170px; }
+    header .brand b { font-size: 15px; font-weight: 750; letter-spacing: -.01em; }
+    header .ws-switch { margin: 0 0 0 -4px; max-width: 250px; }
     header .ws-switch b { font-size: 15px; }
-    .sums { margin-left: auto; }
+    header [data-act=dashboard] { margin-left: auto; }
+
+    /* what needs you, who's at work and everyone else: scrolls inside the popover once it's taller than the screen allows */
+    .lists { max-height: var(--max, 520px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+    .lists::-webkit-scrollbar { width: 6px; }
+    .lists::-webkit-scrollbar-thumb { border-width: 1px; }
+    .needs:empty, .work:empty, .rest:empty { display: none; }
+    .needs + .work:not(:empty), .needs + .work + .rest:not(:empty) { margin-top: 2px; }
     .empty { color: var(--fg2); padding: 18px 10px 20px; text-align: center; line-height: 1.45; }
-    /* the crew, by computer: scrolls inside the popover once it's taller than the screen allows */
-    /* The popover is the system's material, so rows are clear until hovered; a hovered row is solid, so its
-       switches cover what's under them. */
-    .roster { --side: transparent; --row-hover: var(--tray-hover); --row-on: var(--tray-hover); max-height: var(--max, 520px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
-    .roster .cgroup-head { position: static; }
-    .roster .crow-fold:hover { background: var(--tray-hover); }
-    .roster .crow.waiting:hover { --bgc: color-mix(in srgb, var(--waiting) 15%, var(--tray-hover)); }
-    /* every time the popover opens, the crew cascades in */
-    .opened .roster .crow { animation: row-in .42s var(--out) backwards; animation-delay: calc(sibling-index() * 22ms); }
-    @keyframes row-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
-    hr { border: 0; border-top: 1px solid var(--line); margin: 8px 6px; }
-    .autopilot { display: flex; align-items: center; gap: 11px; padding: 6px 10px; border-radius: 12px; cursor: pointer; transition: background .18s; }
-    .autopilot:hover { background: var(--btn); }
-    .autopilot .glyph { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; flex: none; color: var(--fg3); background: var(--btn); transition: background .3s, color .3s, transform .4s var(--spring); }
-    .autopilot .glyph svg { width: 17px; height: 17px; }
+    .t-label { display: flex; align-items: center; height: 26px; padding: 6px 6px 2px; font-size: 11.5px; font-weight: 700; color: var(--fg3); }
+    .t-label.amber { color: var(--waiting-ink); }
+
+    /* one row per agent: the creature, its name with its YOLO and ⚡ tags, and one line of plain words */
+    .t-row { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 44px; --pad: 5px; padding: var(--pad) 6px; border-radius: 12px; --bgc: transparent; background: var(--bgc); cursor: default; }
+    .t-row:hover { --bgc: var(--tray-hover); }
+    .t-row > .av, .t-row > .t-face { justify-self: center; }
+    .t-who { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .t-top { display: flex; align-items: center; gap: 5px; min-width: 0; white-space: nowrap; }
+    .t-top b { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 650; }
+    .t-top small { flex: none; color: var(--fg3); font-size: 11.5px; }
+    .t-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg2); }
+    .t-yolo { flex: none; display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: 4px; font: 800 9px/1 -apple-system, sans-serif; letter-spacing: .05em; font-style: normal; color: var(--yolo-ink); background: color-mix(in srgb, var(--yolo) 13%, transparent); }
+    .t-fast { flex: none; display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 4px; font-style: normal; color: var(--fast-ink); background: color-mix(in srgb, var(--fast) 16%, transparent); }
+    .t-fast svg { width: 10px; height: 10px; }
+    /* its sub-agents or clones at work, as a count; the clones' one opens a menu of them */
+    .t-end { position: relative; align-self: stretch; display: flex; align-items: center; gap: 4px; }
+    .t-count { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 7px 0 5px; border: 0; border-radius: 999px; background: var(--btn); font: 700 11px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; color: var(--fg2); cursor: help; }
+    .t-count svg { width: 12px; height: 12px; }
+    .t-count.clones { padding-left: 3px; cursor: pointer; transition: background .15s, transform .25s var(--bounce); }
+    .t-count.clones:hover { background: var(--btn-hover); color: var(--fg); }
+    .t-count.clones:active { transform: scale(.94); }
+    .t-count .av + .av { margin-left: -7px; }
+    .t-top .t-count { height: 16px; padding: 0 5px 0 4px; font-size: 10px; }
+    .t-top .t-count svg { width: 10px; height: 10px; }
+    /* YOLO, Fast and power, over the end of the line on hover (common.js handles them) */
+    .t-acts { position: absolute; right: calc(100% + 2px); top: calc(-1 * var(--pad)); bottom: calc(-1 * var(--pad)); display: flex; align-items: center; gap: 4px; padding-left: 18px; background: linear-gradient(90deg, transparent, var(--bgc) 16px); opacity: 0; pointer-events: none; translate: 4px 0; transition: opacity .15s, translate .2s var(--out); }
+    .t-row:hover .t-acts, .t-row:has(:focus-visible) .t-acts { opacity: 1; pointer-events: auto; translate: 0 0; }
+    .t-row:has(:focus-visible) { --bgc: var(--tray-hover); }
+
+    /* needs you: tinted, with its one action; the question gets two lines before it's cut */
+    .t-need { --bgc: color-mix(in srgb, var(--waiting) 11%, transparent); min-height: 46px; }
+    .t-need:hover { --bgc: color-mix(in srgb, var(--waiting) 17%, transparent); }
+    .t-need + .t-need { margin-top: 4px; }
+    .t-need .t-line { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; }
+    .t-need .t-line .ws-tile { display: inline-grid; vertical-align: -3px; margin-right: 4px; }
+    .t-go { flex: none; min-width: 66px; height: 26px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--waiting); color: #241500; font-size: 12px; font-weight: 650; cursor: pointer; transition: background .15s, transform .25s var(--bounce); }
+    .t-go:hover { background: color-mix(in srgb, var(--waiting) 86%, #fff); }
+    .t-go:active { transform: scale(.94); }
+
+    /* the free, off and unreachable ones: one quiet line, and their rows when you open it */
+    .t-slim { min-height: 34px; --pad: 2px; }
+    .t-slim .t-who { flex-direction: row; align-items: center; gap: 8px; }
+    .t-slim .t-top { flex: none; max-width: 60%; }
+    .t-slim .t-line { flex: 1; min-width: 0; color: var(--fg3); }
+    .t-slim.off > .t-face, .t-slim.away > .t-face, .t-slim.parked > .t-face { opacity: .6; }
+    .t-fold { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 30px; padding: 5px 6px; border-radius: 10px; font-size: 12px; line-height: 1.35; color: var(--fg3); cursor: pointer; transition: background .15s, color .15s; }
+    .t-fold:hover { background: var(--tray-hover); color: var(--fg2); }
+    .t-fold:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+    .t-fold .faces { flex: none; display: inline-flex; width: 30px; justify-content: center; }
+    .t-fold .faces .av + .av { margin-left: -8px; }
+    .t-fold .gap { flex: none; width: 30px; }
+    .t-fold .chev { flex: none; display: grid; margin-left: auto; color: var(--fg3); transition: transform .3s var(--spring); }
+    .t-fold .chev svg { width: 12px; height: 12px; }
+    .t-fold[aria-expanded=true] .chev { transform: rotate(90deg); }
+    .t-fold.t-more { font-weight: 600; color: var(--fg2); }
+
+    /* every time the popover opens, the rows cascade in */
+    .opened .t-in { animation: tray-row-in .42s var(--out) backwards; animation-delay: calc(sibling-index() * 22ms); }
+    @keyframes tray-row-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+
+    /* a clone's creature as a menu icon (popMenu's labels are spans that grow; the creature's spans mustn't) */
+    .menu button > .av, .menu button > .av span { flex: none; overflow: visible; }
+    .t-hr { height: 1px; margin: 6px 6px; background: var(--line); }
+    .t-hr.first { margin-top: 8px; }
+    /* the accounts' limits: a bar each and the one thing that matters about it */
+    .t-use { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; gap: 10px; height: 30px; padding: 0 6px; font-size: 12.5px; cursor: help; }
+    .t-use b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .t-use .bar { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+    .t-use .bar i { display: block; height: 100%; border-radius: 3px; background: var(--fg3); }
+    .t-use .bar.warm i { background: var(--waiting); }
+    .t-use .say { white-space: nowrap; color: var(--fg2); font-variant-numeric: tabular-nums; }
+    .t-use .say.warm { color: var(--waiting-ink); font-weight: 600; }
+
+    .autopilot { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 6px; border-radius: 12px; cursor: pointer; transition: background .18s; }
+    .autopilot:hover { background: var(--tray-hover); }
+    .autopilot .glyph { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none; color: var(--fg3); background: var(--btn); transition: background .3s, color .3s, transform .4s var(--spring); }
+    .autopilot .glyph svg { width: 15px; height: 15px; }
     .autopilot:has(:checked) .glyph { color: #fff; background: var(--accent); transform: rotate(-8deg); }
-    .autopilot b { font-size: 13.5px; font-weight: 650; }
-    .autopilot p { margin: 1px 0 0; color: var(--fg2); font-size: 12px; line-height: 1.3; }
-    footer { display: flex; align-items: center; gap: 2px; margin-top: 8px; padding: 0 4px; }
-    footer .add { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px 5px 8px; border-radius: 999px; background: var(--btn); color: var(--fg2); }
+    .autopilot b { flex: 1; font-size: 13px; font-weight: 600; }
+    footer { display: flex; align-items: center; gap: 2px; margin-top: 6px; padding: 0 2px; }
+    footer .add { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 9px; font-weight: 600; }
     footer .add svg { width: 14px; height: 14px; }
-    footer .add:hover { background: var(--btn-hover); color: var(--fg); }
-    /* the account's usage limits, one row per provider that reports them */
-    .usage-row { display: flex; align-items: center; gap: 4px; padding: 2px 10px 8px; color: var(--fg2); font-size: 12.5px; cursor: help; }
-    .usage-row b { font-weight: 650; font-variant-numeric: tabular-nums; }
-    .usage-row b.warm { color: var(--ctx-warm); }
-    .usage-row b.hot { color: var(--ctx-hot); }
-    .usage-row i { font-style: normal; color: var(--fg3); }
-    /* a limit that runs out before it resets, at this pace */
-    .usage-pace { margin: -6px 10px 8px; color: var(--ctx-hot); font-size: 11.5px; font-weight: 600; text-align: right; }
-    /* agents waiting on you in other workspaces, first: a click goes there */
-    .away { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px; }
-    .away:empty { display: none; }
-    .away-row { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px; border-radius: 12px; cursor: default; background: color-mix(in srgb, var(--waiting) 12%, transparent); animation: sum-in .4s var(--spring); }
-    .away-row:hover { background: color-mix(in srgb, var(--waiting) 20%, transparent); }
-    .away-row .who { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; white-space: nowrap; overflow: hidden; }
-    .away-row .who b { font-size: 13px; }
-    .away-row .who span { color: var(--waiting-ink); font-size: 12px; font-weight: 600; }
-    .away-row small { display: flex; align-items: center; gap: 5px; flex: none; color: var(--fg2); font-size: 11.5px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+    footer .icon { width: 30px; height: 30px; }
+    footer .icon[aria-expanded=true] { background: var(--btn); color: var(--fg); }
+      /* a creature with its unread replies in the corner */
+    .t-face { position: relative; flex: none; line-height: 0; }
+    .t-face .unread-badge { right: -4px; bottom: -2px; --orbit-ring: var(--bg, #ececef); }
   </style>
 </head>
 <body>
-  <header><span class="brand"><span class="logo"></span><b>Crew</b></span><button class="ws-switch hidden" aria-haspopup="menu"></button><span class="sums"></span></header>
-  <div class="away"></div>
-  <div class="roster"></div>
-  <hr>
+  <header><span class="brand"><span class="logo"></span><b>Crew</b></span><button class="ws-switch hidden" aria-haspopup="menu"></button><button class="icon" data-act="dashboard" title="Open the dashboard"></button></header>
+  <div class="lists">
+    <div class="needs"></div>
+    <div class="work"></div>
+    <div class="rest"></div>
+  </div>
   <div class="usage"></div>
-  <label class="autopilot" title="Autopilot on: agents hand work to each other without asking. Off: each hand-off waits in the chat for your Send it.">
+  <div class="t-hr"></div>
+  <label class="autopilot">
     <span class="glyph"></span>
-    <div class="grow"><b>Autopilot</b><p></p></div>
+    <b>Autopilot</b>
     <input type="checkbox" class="switch sm">
   </label>
   <footer>
     <button class="btn add" data-act="add"></button>
     <span class="grow"></span>
-    <button class="icon" data-act="dashboard" title="Open dashboard"></button>
-    <button class="icon" data-theme></button>
-    <button class="icon" data-act="config" title="Open config.json in your text editor"></button>
+    <button class="icon" data-act="settings" title="Settings" aria-haspopup="menu"></button>
     <button class="icon" data-act="quit" title="Quit Crew"></button>
   </footer>
   <script src="avatar.js"></script>

@@ -1,8 +1,8 @@
 // The crew as a collection: a Pokédex of agent cards, grouped by the computer each one runs on. Cards come big
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
-// sheet: who it is on the left (creature, name, area, level, conversation), everything you can set on the right,
-// in four tabs that each fit without scrolling. "Select" turns on bulk mode to change many agents at once.
-/* global crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath */
+// sheet: who it is on the left (creature, name, area, level, a few facts), everything you can set on the right,
+// in four tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
+/* global activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -34,11 +34,9 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         <div class="col-title"><h2>Your crew</h2><p class="col-sub"></p></div>
         <span class="grow"></span>
         <div class="seg icons" data-mode-switch>
-          <button data-mode="cards" title="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the crew">${ICONS.chart}</button>
+          <button data-mode="cards" title="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the crew">${ICONS.table}</button>
         </div>
-        <button class="btn" data-act="select" title="Pick several agents to change or export at once">Select</button>
-        <button class="btn icon-btn" data-act="import" title="Import agents from a .crew file (or drop one on the window)">${ICONS.import}</button>
-        <button class="btn primary" data-act="new" title="New agent (⌘N)">${ICONS.plus}<span>New agent</span></button>
+        <button class="icon col-more" data-act="more" title="Select, export, import" aria-haspopup="menu">${ICONS.more}</button>
       </header>
       <div class="col-grid"></div>
       <div class="col-stats"></div>
@@ -68,6 +66,8 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   let original = null
   let draft = null
   let tab = 'setup'
+  let advOpen = false // the Setup tab's Advanced fold
+  let modelTyping = false // the Model row is a text field (a model the menu doesn't list)
   let reopen = null // name to open once it shows up in state (after add/rename)
   let transitioning = false
 
@@ -79,11 +79,33 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
 
   // ---- grid ------------------------------------------------------------------
 
+  // What it's waiting on you for, by agent (needsYou: its open question or prompt). Refreshed with each grid draw.
+  let needsByName = new Map()
+
+  // What it's doing, in plain words, under its status: its step and its sub-agents while it works, what it wants
+  // while it needs you, a sub-agent still at work while it's free. { text, tip } or null.
+  function doingOf(a) {
+    if (!a.on) return null
+    const subs = runningSubs(a)
+    const subsTip = subs.map((s) => s.description || s.type || 'sub-agent').join('\n')
+    if (a.status === 'waiting') {
+      const need = needsByName.get(a.name) ?? { agent: a, ask: null }
+      const text = need.ask?.ask?.type === 'question' ? 'Asked you a question' : needText(need)
+      return { text, tip: need.ask?.ask?.type === 'question' ? needText(need) : text }
+    }
+    if (atWork(a) && a.activity) return { text: subs.length ? `${activityWords(a.activity)} · ${plural(subs.length, 'sub-agent')}` : activityWords(a.activity), tip: [a.activity, subsTip].filter(Boolean).join('\n') }
+    if (!subs.length) return null
+    if (subs.length === 1 && subs[0].description) return { text: `1 sub-agent: ${subs[0].description}`, tip: subsTip }
+    return { text: `${plural(subs.length, 'sub-agent')} at work`, tip: subsTip }
+  }
+  // The context ring only once the conversation is nearly full; calm, it's a number in the sheet.
+  const hotRing = (a, opts) => (ctxLevel(a.convo?.context?.pct ?? 0) === 'hot' ? contextRing(a, opts) : '')
+
   function cardHTML(a, i) {
     const look = avatarOf(a)
-    const chips = [providerOf(a.provider).label, [a.model, a.effort].filter(Boolean).join(' · ')].filter(Boolean).map((c) => `<span>${esc(c)}</span>`).join('')
     const modes = (a.fast ? `<span class="pc-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</span>` : '') + (a.yolo ? '<span class="pc-yolo" title="YOLO: skips every permission prompt">YOLO</span>' : '')
-    const doing = a.on && a.activity && atWork(a) ? `<span class="pc-doing">${esc(a.activity)}</span>` : ''
+    const what = doingOf(a)
+    const doing = what ? `<span class="pc-doing" title="${esc(what.tip)}">${esc(what.text)}</span>` : ''
     // its clones at work peek out from behind it, smaller, each with its number
     const clones = a.on ? clonesOf(state.agents, a) : []
     const litter = clones.length ? `<span class="pc-clones" style="--n:${clones.length}">${clones.map((c, j) => `<span class="pc-clone" style="--j:${j}" title="${esc(`${displayName(c)}: ${statusText(c)}${c.activity ? ` · ${c.activity}` : ''}`)}">${avatarHTML(c, { size: 50 })}${cloneTag(c)}</span>`).join('')}</span>` : ''
@@ -93,22 +115,27 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       <span class="pc-name">${esc(a.seed ?? a.name)}</span>
       <span class="pc-area" title="${esc(a.area)}">${esc(a.area || 'No area yet. Open the card to set one.')}</span>
       ${modes ? `<span class="pc-modes">${modes}</span>` : ''}
-      <span class="pc-chips">${chips}</span>
-      <span class="pc-state" title="${esc(statusText(a))}"><span><span class="dot ${statusClass(a)}"></span><span>${esc(statusText(a))}</span>${contextRing(a)}</span>${doing}</span>
+      <span class="pc-chips"><span title="${esc(brainLabel(a, state.providers))}">${esc(brainShort(a, state.providers))}</span></span>
+      <span class="pc-state" title="${esc(statusText(a))}"><span><span class="dot ${statusClass(a)}"></span><span>${esc(statusText(a))}</span>${hotRing(a)}</span>${doing}</span>
       ${litter}<span class="pc-av">${avatarHTML(a, { size: 104 })}</span>
       <span class="pc-check">${ICONS.check}</span><span class="pc-glow"></span>
     </button>`
   }
 
-  // Compact: the creature, the name and how it is. Area and brain are a hover away (and in its sheet).
+  // Compact: the creature, the name and how it is, in one line: its step while it works, otherwise its status (what
+  // it wants from you is on hover). Its sub-agents and clones are counts beside its marks. Area and brain are a hover
+  // away (and in its sheet).
   function tileHTML(a) {
     const look = avatarOf(a)
-    const line = a.on && a.activity && atWork(a) ? a.activity : statusText(a)
-    return `<button class="pcard mini hop ${LIGHT.has(look.color) ? 'light' : ''} ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, `${providerOf(a.provider).label}${a.model ? ` · ${a.model}` : ''}${a.effort ? ` · ${a.effort}` : ''}`].filter(Boolean).join('\n'))}">
+    const what = doingOf(a)
+    const clones = a.on ? clonesOf(state.agents, a).length : 0
+    const subs = runningSubs(a)
+    const line = atWork(a) && a.status !== 'waiting' && a.activity ? activityWords(a.activity) : statusText(a)
+    return `<button class="pcard mini hop ${LIGHT.has(look.color) ? 'light' : ''} ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, brainShort(a, state.providers), what?.tip].filter(Boolean).join('\n'))}">
       <span class="pc-mark">${ICONS.mark}</span>
       <span class="pc-name">${esc(a.seed ?? a.name)}</span>
-      <span class="pc-line"><span class="dot ${a.on ? statusClass(a) : 'off'}"></span><span class="${a.activity && atWork(a) ? 'mono' : ''}">${esc(line)}</span></span>
-      <span class="pc-tags">${a.yolo ? '<i class="mark-yolo">YOLO</i>' : ''}${a.fast ? `<i class="mark-fast">${ICONS.bolt}</i>` : ''}${contextRing(a, { label: false })}${a.on && clonesOf(state.agents, a).length ? `<i class="pc-clone-n" title="${plural(clonesOf(state.agents, a).length, 'clone')} at work">+${clonesOf(state.agents, a).length}</i>` : ''}</span>
+      <span class="pc-line"><span class="dot ${a.on ? statusClass(a) : 'off'}"></span><span>${esc(line)}</span></span>
+      <span class="pc-tags">${a.yolo ? '<i class="mark-yolo">YOLO</i>' : ''}${a.fast ? `<i class="mark-fast">${ICONS.bolt}</i>` : ''}${hotRing(a, { label: false })}${subs.length ? `<i class="pc-subs-n" title="${esc(`${plural(subs.length, 'sub-agent')} at work:\n${subs.map((s) => s.description || s.type).join('\n')}`)}">${ICONS.subs}${subs.length}</i>` : ''}${clones ? `<i class="pc-clone-n" title="${plural(clones, 'clone')} at work">+${clones}</i>` : ''}</span>
       <span class="pc-av">${avatarHTML(a, { size: 62 })}</span>
       <span class="pc-check">${ICONS.check}</span><span class="pc-glow"></span>
     </button>`
@@ -121,7 +148,8 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     segmented($('[data-mode-switch]'), (b) => b.dataset.mode === m)
     if (m === 'stats') drawStatsTable()
     const groups = crewGroups(state)
-    const next = JSON.stringify([m, selecting, [...picked], groups.map((g) => [g.key, g.name, g.online]), roster().map((a) => [a.name, a.status, a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, levelOf(a.stats).lv, a.convo?.context?.pct, a.convo?.compactions, clonesOf(state.agents, a).map((c) => [c.name, c.status, c.activity])])])
+    needsByName = new Map(needsYou(state).map((n) => [n.agent.name, n]))
+    const next = JSON.stringify([m, selecting, [...picked], groups.map((g) => [g.key, g.name, g.online]), roster().map((a) => [a.name, a.status, a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, levelOf(a.stats).lv, a.convo?.context?.pct, a.convo?.compactions, doingOf(a), runningSubs(a).length, clonesOf(state.agents, a).map((c) => [c.name, c.status, c.activity])])])
     if (next === gridKey) return
     gridKey = next
     const index = new Map(roster().map((a, i) => [a.name, i]))
@@ -130,8 +158,9 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const order = (agents) => [...agents.filter((a) => a.on), ...agents.filter((a) => !a.on)]
     const add = `<button class="pcard add ${m === 'tiles' ? 'mini' : ''}" data-act="new"><b>${ICONS.plus}</b>New agent</button>`
     // in parts (see morph): a push that changes one agent re-reads its card alone
-    const parts = grouped(groups)
-      ? groups.filter((g) => g.agents.length).map((g, i) => ({
+    const filled = groups.filter((g) => g.agents.length)
+    const parts = grouped(groups) && filled.length
+      ? filled.map((g, i) => ({
           start: `<section class="col-group" data-home="${esc(g.key)}">
           <h3>${g.here ? ICONS.desktop : ICONS.laptop}<b>${esc(g.name)}</b><span>${plural(g.agents.length, 'agent')}${g.here ? ' · this Mac' : g.online ? '' : ' · offline'}</span></h3>
           <div class="col-cards ${m}">`,
@@ -148,7 +177,6 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const where = ws?.folder ? ` · ${shortPath(ws.folder)}` : ''
     $('.col-sub').textContent = roster().length ? `${plural(roster().length, 'agent')} · ${on} on${pcs > 1 ? ` · ${pcs} computers` : ''}${where}` : ws && ws.id !== 'default' ? 'Add your agents in its settings, or make one only it needs' : 'Start with one agent per area of work'
     root.classList.toggle('selecting', selecting)
-    $('[data-act=select]').textContent = selecting ? 'Done' : 'Select'
     drawBulkCount()
   }
 
@@ -179,11 +207,28 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     picked[picked.has(c.dataset.name) ? 'delete' : 'add'](c.dataset.name)
     drawGrid()
   })
+  // ⋯ in the header: a new agent (also the dashed card, the sidebar's + and ⌘N), picking several agents, the whole crew
+  // as a .crew file, and bringing agents in from one.
+  function headMenu(anchor) {
+    const out = roster().filter((a) => a.status !== 'away') // an asleep computer can't pack its agents
+    popMenu(anchor, [
+      { label: 'New agent…', icon: ICONS.plus, act: 'new', hint: '⌘N' },
+      '-',
+      { label: selecting ? 'Done selecting' : 'Select…', icon: ICONS.task, act: 'select', disabled: !selecting && modeNow() === 'stats', hint: !selecting && modeNow() === 'stats' ? 'in the card views' : 'change several at once' },
+      '-',
+      { label: 'Export the crew…', icon: ICONS.export, act: 'export', disabled: !out.length, hint: out.length ? `${plural(out.length, 'agent')} · .crew` : '' },
+      { label: 'Import…', icon: ICONS.import, act: 'import', hint: 'or drop a .crew file' },
+    ], (act) => {
+      if (act === 'new') open(null)
+      if (act === 'select') setSelecting(!selecting)
+      if (act === 'export') exportAgents(out.map((a) => a.name))
+      if (act === 'import') onImport()
+    })
+  }
+
   $('.col-head').addEventListener('click', (e) => {
-    const act = e.target.closest('[data-act]')?.dataset.act
-    if (act === 'new') open(null)
-    if (act === 'import') onImport()
-    if (act === 'select') setSelecting(!selecting)
+    const btn = e.target.closest('[data-act]')
+    if (btn?.dataset.act === 'more') headMenu(btn)
     const m = e.target.closest('[data-mode]')?.dataset.mode
     if (m) {
       mode = m
@@ -290,6 +335,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       <select data-b="power"><option value="">Power</option><option value="1">Turn on</option><option value="0">Turn off</option></select>
       <button class="btn" data-act="all">All</button>
       <button class="btn" data-act="export" title="Save the picked agents as a .crew file to share">${ICONS.export}Export</button>
+      <button class="btn" data-act="done" title="Stop selecting (Esc)">Done</button>
       <button class="btn primary" data-act="apply"></button>`
     drawBulkCount()
   }
@@ -306,6 +352,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
 
   bulk.addEventListener('click', async (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act
+    if (act === 'done') return setSelecting(false)
     if (act === 'all') {
       roster().forEach((a) => picked.add(a.name))
       gridKey = ''
@@ -365,8 +412,13 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     tab = at ?? (a ? store.get('crew.edTab') || 'setup' : 'setup')
     if (!a && tab === 'stats') tab = 'setup'
     if (selecting) setSelecting(false)
+    // reopening after a save keeps the sheet as you left it: Advanced unfolded, scrolled where it was
+    if (!force) advOpen = false
+    modelTyping = false
+    const scrolled = force && sheet.classList.contains('open') ? card.querySelector('.ed-pane.on')?.scrollTop ?? 0 : 0
     morphTo(a?.name, 'open', () => {
       drawCard()
+      if (scrolled) card.querySelector('.ed-pane.on').scrollTop = scrolled
       sheet.classList.add('open')
     })
     if (!a) setTimeout(() => card.querySelector('.pd-name')?.focus(), 250)
@@ -404,6 +456,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       from = parts(dir !== 'open')
       tag(from, true)
     })
+    t.ready.catch(() => {}) // skipped (another opened right after it): the update still ran, nothing to report
     t.finished.finally(() => {
       tag(from, false)
       sheet.classList.remove('vt')
@@ -427,9 +480,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         <input class="pd-name" data-k="name" value="${esc(d.name)}" placeholder="Name" spellcheck="false" autocomplete="off" aria-label="Name">
         <textarea class="pd-area" data-k="area" rows="2" placeholder="What does it own? e.g. 3D character: rig, animations, materials" aria-label="Area of work">${esc(d.area)}</textarea>
         <div class="ed-level"></div>
-        <div class="ed-glance"></div>
-        <div class="convo"></div>
-        <div class="ed-clones"></div>
+        <div class="ed-facts"></div>
         <span class="grow"></span>
         ${live ? `<div class="ed-id-acts">
           <button class="btn" data-act="terminal" ${live.on ? '' : 'disabled'} title="Open its terminal">${ICONS.terminal}<span>Terminal</span></button>
@@ -446,12 +497,14 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
           <section class="ed-pane" data-pane="setup">
             <h4>Brain</h4>
             <div class="ed-list brain"></div>
-            <h4>Modes</h4>
-            <div class="ed-modes"></div>
             <h4>Where it works</h4>
             <div class="ed-list where"></div>
-            <h4>Conversations</h4>
-            <div class="ed-list limit"></div>
+            <h4>Behaviour</h4>
+            <div class="ed-list behave"></div>
+            <div class="ed-adv ${advOpen ? 'open' : ''}">
+              <button class="ed-adv-head" data-act="advanced" aria-expanded="${advOpen}"><i class="ed-adv-chev">${ICONS.chevron}</i><b>Advanced</b><span class="ed-adv-sum"></span></button>
+              <div class="ed-adv-body"><div class="limit"></div><div class="flags"></div></div>
+            </div>
           </section>
           <section class="ed-pane" data-pane="instructions">
             <div class="ed-pane-head"><p>Its system prompt, on top of the crew basics: what it owns, its bar, when to hand off.</p><button class="btn small" data-act="write" title="Its own brain drafts them from its name and area">${ICONS.sparkles}<span>Write it</span></button></div>
@@ -473,11 +526,12 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     drawTab()
     drawState()
     drawLevel()
+    drawFacts()
     drawExperience()
-    drawConvo()
-    drawClones()
     drawLimit()
     drawBrain()
+    drawWhere()
+    drawFlags()
     drawLook()
     drawAvatar()
     const prompt = card.querySelector('.pd-prompt')
@@ -516,11 +570,26 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     if (!a) return void (host.innerHTML = '')
     const lv = levelOf(a.stats)
     morph(host, `<span class="lv">Lv ${lv.lv}</span><i class="xpbar"><b style="width:${Math.round(lv.progress * 100)}%"></b></i><span class="xp-n" title="${lv.toNext} XP to Lv ${lv.lv + 1}">${lv.xp} XP</span>`)
-    // a glance at its work: what it's done and its last two weeks (the Stats tab has the rest)
+  }
+
+  // Under the level, a few plain facts: how full its conversation is (red only when nearly full), what it has cost,
+  // and its helpers while they work (a clone opens its terminal). Numbers and charts live on the Stats tab.
+  function drawFacts() {
+    const host = card.querySelector('.ed-facts')
+    const a = agentNamed(editing)
+    if (!host) return
+    if (!a) return void morph(host, '')
+    const ctx = a.convo?.context
     const s = a.stats
-    morph(card.querySelector('.ed-glance'), s.tasks
-      ? `<dl><dt>Tasks</dt><dd>${s.tasks}</dd><dt>Active</dt><dd>${duration(s.activeMs)}</dd><dt>Avg turn</dt><dd>${s.turns ? duration(s.avgTurnMs) : '–'}</dd>${spentText(s) ? `<dt>Spent</dt><dd title="${esc(SPEND_NOTE)}">${spentText(s)}</dd>` : ''}</dl>${sparkline(s.days)}`
-      : '')
+    const fact = (label, value, { tip = '', cls = '' } = {}) => `<div class="ed-fact" title="${esc(tip)}"><span>${label}</span><b class="${cls}">${value}</b></div>`
+    const subs = runningSubs(a)
+    const clones = a.on ? clonesOf(state.agents, a) : []
+    const spent = [spentText(s), s.tasks ? plural(s.tasks, 'task') : ''].filter(Boolean).join(' · ')
+    morph(host,
+      fact('Context', ctx ? `${ctx.pct}% full` : 'not measured yet', { tip: contextTip(a), cls: ctx ? (ctxLevel(ctx.pct) === 'hot' ? 'hot' : '') : 'quiet' }) +
+      fact('Spent', spent || 'nothing yet', { tip: s.cost >= 0.005 ? SPEND_NOTE : '', cls: spent ? '' : 'quiet' }) +
+      (subs.length ? fact('Sub-agents', `${subs.length} at work`, { tip: subs.map((x) => x.description || x.type).join('\n') }) : '') +
+      (clones.length ? `<div class="ed-fact"><span>Clones</span><span class="ed-clone-faces">${clones.map((c) => `<button class="ed-clone ${c.status}" data-clone="${esc(c.name)}" title="${esc(`${displayName(c)}: ${c.activity && c.status === 'working' ? c.activity : statusText(c)}\nClick for its terminal`)}">${avatarHTML(c, { size: 24 })}${cloneTag(c)}</button>`).join('')}</span></div>` : ''))
   }
 
   // Pokédex-style base stats: this agent against the busiest one in the crew.
@@ -529,12 +598,12 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const a = agentNamed(editing)
     if (!host) return
     if (!a || !a.stats.tasks) {
-      host.innerHTML = `<div class="xp-empty">${ICONS.chart}<b>No work yet</b><span>Send it a task and its stats start counting.</span></div>`
+      morph(host, `<div class="xp-empty">${ICONS.chart}<b>No work yet</b><span>Send it a task and its stats start counting.</span></div>${a ? convoHTML(a) : ''}`)
       return
     }
     const s = a.stats
     const lv = levelOf(s)
-    host.innerHTML = `
+    morph(host, `
       <div class="xp-big"><span class="lv">Lv ${lv.lv}</span><div class="grow"><i class="xpbar"><b style="width:${Math.round(lv.progress * 100)}%"></b></i><span class="h4-note">${lv.xp} XP · ${lv.toNext} to Lv ${lv.lv + 1}${s.first ? ` · working since ${new Date(s.first).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span></div></div>
       <div class="base-stats">${METRICS.map((m) => {
         const has = (m.has ?? (() => true))(s)
@@ -542,20 +611,15 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         const mark = standouts(m)
         return `<div class="bs-row" title="${esc(m.tip?.(s) ?? '')}"><span class="bs-label">${m.label}</span><b>${has ? m.show(s) : '–'}${mark.best === a.name ? BEST : mark.worst === a.name ? SLOW : ''}</b>${has ? bar(s[m.key], max) : '<i class="mbar"></i>'}</div>`
       }).join('')}</div>
-      <div class="days"><span class="bs-label">Tasks a day, last 14 days</span>${sparkline(s.days)}</div>`
+      <div class="days"><span class="bs-label">Tasks a day, last 14 days</span>${sparkline(s.days)}</div>
+      ${convoHTML(a)}`)
   }
 
-  // How full its current conversation is, and a way to start a new one. Long conversations with many
-  // unrelated tasks are where agents start mixing things up.
-  function drawConvo() {
-    const host = card.querySelector('.convo')
-    if (!host) return
-    const a = agentNamed(editing)
-    const c = a?.convo
-    if (!a || !c) {
-      host.innerHTML = ''
-      return
-    }
+  // How full its current conversation is, its account's limits, and a way to start a new one. Long conversations
+  // with many unrelated tasks are where agents start mixing things up.
+  function convoHTML(a) {
+    const c = a.convo
+    if (!c) return ''
     const ctx = c.context
     const level = ctx ? ctxLevel(ctx.pct) : 'calm'
     const advice = !a.on ? 'It picks this conversation up when it comes back on.'
@@ -564,21 +628,24 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       : level === 'hot' ? 'Nearly full: start fresh before its next task.'
       : level === 'warm' ? 'Getting long. Start fresh before something unrelated.'
       : 'Plenty of room.'
-    morph(host, `
-      <div class="convo-card ${level}" title="${esc(contextTip(a))}">
+    return `<div class="convo-stat ${level}" title="${esc(contextTip(a))}">
         <div class="convo-gauge">${ctx && a.on ? contextRing(a, { label: false, size: 40 }) : '<span class="ctx calm" style="--s:40px"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.6" class="ctx-track"/></svg></span>'}<b>${ctx ? `${ctx.pct}%` : '–'}</b></div>
         <div class="convo-info">
+          <span class="bs-label">This conversation</span>
           <div class="convo-nums">${ctx ? `<b>${tokenCount(ctx.used)}</b> of ${tokenCount(ctx.limit ?? ctx.size)}` : 'Not measured yet'} · ${plural(c.tasks, 'task')}</div>
           <p>${esc(advice)}</p>
           ${usageLine(a, state)}
         </div>
-        <button class="icon convo-fresh" data-act="fresh" ${a.freshPending || !a.on ? 'disabled' : ''} title="${a.freshPending ? 'Starts a new conversation when it’s free' : 'New conversation: a clean slate (the old one stays in its history)'}">${ICONS.fresh}</button>
-      </div>`)
+        <button class="btn small convo-fresh" data-act="fresh" ${a.freshPending || !a.on ? 'disabled' : ''} title="${a.freshPending ? 'Starts a new conversation when it’s free' : 'A clean slate (the old one stays in its history)'}">${ICONS.fresh}<span>${a.freshPending ? 'When it’s free' : 'New conversation'}</span></button>
+      </div>`
   }
 
   // A row of the grouped list: what it is on the left, the control on the right.
   const row = (label, control, { note = '', cls = '' } = {}) => `<div class="ed-row ${cls}"><span class="ed-label">${label}${note ? `<small>${note}</small>` : ''}</span><div class="ed-ctl">${control}</div></div>`
-  const pill = (v, label, on, attrs = '') => `<button class="pill ${on ? 'on' : ''}" data-v="${esc(v)}" ${attrs}>${label}</button>`
+  // One choice of a few, as a segmented control in the app's neutral style (the creature's color stays on its side).
+  const pill = (v, label, on, attrs = '') => `<button class="pill ${on ? 'on' : ''}" data-v="${esc(v)}" aria-pressed="${on}" ${attrs}>${label}</button>`
+  // A switch row: the setting and a one-line hint on the left, the switch on the right. Clicking the row flips it.
+  const switchRow = (label, hint, input, cls = '', tip = '') => `<label class="ed-row sw ${cls}" ${tip ? `title="${esc(tip)}"` : ''}><span class="ed-label">${label}<small>${hint}</small></span>${input}</label>`
 
   // Its own context limit, below the model's window, and what happens when the conversation passes it.
   function drawLimit() {
@@ -597,31 +664,52 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       : fresh ? `At ${tokenCount(limit)} it finishes what it's doing and starts a new conversation.`
       : `At ${tokenCount(limit)} you get a notification and decide when to start fresh.`
     host.innerHTML =
-      row('Context limit', `<div class="pills small" data-pick="contextLimit">${pill('', win ? `Full ${tokenCount(win)}` : 'Full window', !limit)}${presets.map((n) => pill(n, tokenCount(n), limit === n)).join('')}
+      row('Context limit', `<div class="pills fill" data-pick="contextLimit">${pill('', win ? `Full ${tokenCount(win)}` : 'Full', !limit)}${presets.map((n) => pill(n, tokenCount(n), limit === n)).join('')}
         <label class="limit-custom ${custom ? 'on' : ''}"><input type="number" min="10" step="10" data-limit-k value="${custom ? Math.round(limit / 1000) : ''}" placeholder="Custom" title="Any limit, in thousands of tokens"><span>k</span></label></div>`) +
-      row('When it’s reached', `<div class="pills small" data-pick="onContextLimit">${pill('fresh', 'New conversation', fresh)}${pill('notify', 'Just tell me', !fresh)}</div>`, { cls: limit ? '' : 'off' }) +
+      row('When it’s reached', `<div class="pills fill" data-pick="onContextLimit">${pill('fresh', 'New conversation', fresh)}${pill('notify', 'Just tell me', !fresh)}</div>`, { cls: limit ? '' : 'off' }) +
       `<p class="limit-note ${past ? 'past' : ''}">${esc(note)}</p>` +
       clonesRow()
   }
 
   // Clones: busy with one task, it takes the next on a clone of itself (its own conversation) instead of making it
-  // wait in its queue. The row says how many at once; the clones at work show on the left, under its conversation.
+  // wait in its queue. The row says how many at once; the clones at work show on the left, under its level.
   function clonesRow() {
     const n = Number(draft.clones) || 0
     const name = draft.name.trim() || 'it'
     const tip = !n ? `Busy with one task, ${name} makes the next one wait in its queue. With clones, a copy of ${name} takes it right away instead.`
       : `When ${name} is busy, a clone takes the next task: the same agent in a conversation of its own, up to ${n} at once. A clone with nothing left to do goes away after 5 minutes, and its work counts as ${name}'s. Clones share its folder, so they suit tasks that don't touch the same files.`
-    return `<div class="ed-row clones-row" title="${esc(tip)}"><span class="ed-label">Clones at once<small>when it's busy</small></span><div class="ed-ctl"><div class="pills small" data-pick="clones">${pill('', 'None', !n)}${CLONES.map((v) => pill(v, v, n === v)).join('')}</div></div></div>`
+    return `<div class="ed-row clones-row" title="${esc(tip)}"><span class="ed-label">Clones at once<small>when it's busy</small></span><div class="ed-ctl"><div class="pills fill" data-pick="clones">${pill('', 'None', !n)}${CLONES.map((v) => pill(v, v, n === v)).join('')}</div></div></div>`
   }
 
-  function drawClones() {
-    const host = card.querySelector('.ed-clones')
-    const a = agentNamed(editing)
+  // Extra CLI flags, in Advanced with the rest of what you rarely touch.
+  function drawFlags() {
+    const host = card.querySelector('.flags')
+    if (host) host.innerHTML = row('Extra flags', `<input class="ed-input mono" data-k="args" value="${esc(draft.args)}" placeholder="passed straight to the CLI" autocomplete="off" spellcheck="false">`)
+  }
+
+  // Advanced, folded: the four settings in a few words, so you know what's in there without opening it.
+  function drawAdvSummary() {
+    const host = card.querySelector('.ed-adv-sum')
     if (!host) return
-    const live = a ? clonesOf(state.agents, a) : []
-    morph(host, live.length
-      ? `<span class="ed-clones-head">${plural(live.length, 'clone')} at work</span>${live.map((c) => `<button class="clone-chip ${c.status}" data-clone="${esc(c.name)}" title="Open its terminal">${avatarHTML(c, { size: 22 })}${cloneTag(c)}<span>${esc(c.activity && c.status === 'working' ? c.activity : statusText(c))}</span></button>`).join('')}`
-      : '')
+    const ctx = agentNamed(editing)?.convo?.context
+    const win = ctx?.window ?? ctx?.size
+    const limit = Number(draft.contextLimit) || 0
+    const n = Number(draft.clones) || 0
+    const flags = String(draft.args ?? '').split(/\s+/).filter((t) => t.startsWith('-')).length || (String(draft.args ?? '').trim() ? 1 : 0)
+    host.textContent = [
+      limit ? `${tokenCount(limit)} context, then ${draft.onContextLimit === 'notify' ? 'a heads-up' : 'a new conversation'}` : `Full ${win ? `${tokenCount(win)} ` : ''}context`,
+      n ? `up to ${plural(n, 'clone')}` : 'no clones',
+      flags ? plural(flags, 'extra flag') : 'no extra flags',
+    ].join(' · ')
+  }
+
+  function setAdvanced(on) {
+    advOpen = on
+    const fold = card.querySelector('.ed-adv')
+    fold.classList.toggle('open', on)
+    fold.querySelector('.ed-adv-head').setAttribute('aria-expanded', String(on))
+    // unfolded, it's below the fold of a short pane: bring it into view, leaving what's above where it was
+    if (on) requestAnimationFrame(() => fold.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }))
   }
 
   function drawState() {
@@ -630,30 +718,98 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     if (el) el.innerHTML = live ? `<span class="dot ${live.on ? live.status : 'off'}"></span>${esc(statusText(live))}${live.pending ? ' · restarts when free' : ''}` : `${ICONS.sparkles}New agent`
   }
 
+  // The brain: one Model control (provider and model together, picked from a menu) and its efforts.
   function drawBrain() {
+    const efforts = effortsFor(draft)
+    card.querySelector('.brain').innerHTML =
+      row('Model', modelControl(), { cls: 'model-row' }) +
+      row('Effort', efforts.length ? effortPills(efforts) : '<em>set by the model</em>', { cls: 'effort-row' })
+    drawBehaviour()
+  }
+
+  function modelControl() {
+    const p = providerOf(draft.provider)
+    const warn = p.missing?.length ? `<small class="ed-model-warn" title="${esc(`${p.label} needs ${p.missing.join(', ')} in your shell environment`)}">⚠︎ needs ${esc(p.missing.join(', '))}</small>` : ''
+    if (modelTyping) {
+      return `<label class="ed-model typing"><span class="prov">${esc(p.label)} ·</span><input data-k="model" list="pd-models" value="${esc(draft.model)}" placeholder="a model name" autocomplete="off" spellcheck="false" aria-label="Model"><datalist id="pd-models">${p.models.map((m) => `<option value="${esc(m)}">`).join('')}</datalist>${warn}</label>`
+    }
+    return `<button class="ed-model" data-act="model" aria-haspopup="menu" title="Pick the brain: a provider and its model"><span class="prov">${esc(p.label)} ·</span>${draft.model ? `<b>${esc(draft.model)}</b>` : '<span class="def">default model</span>'}${warn}<i class="ed-model-chev">${ICONS.updown}</i></button>`
+  }
+
+  // Effort: the model's own levels, none picked meaning its default. Picking the picked one again clears it.
+  const effortPills = (efforts) => `<div class="pills fill" data-pick="effort" title="Pick the selected one again for the model's default">${efforts.map((v) => pill(v, v, draft.effort === v)).join('')}</div>`
+
+  // The menu behind Model: every provider's known models, grouped, and a way to type one it doesn't list.
+  function modelMenu(anchor) {
+    const choices = []
+    const items = []
+    for (const [id, p] of Object.entries(state.providers)) {
+      if (items.length) items.push('-')
+      items.push({ head: p.missing?.length ? `${p.label} ⚠︎ needs ${p.missing.join(', ')}` : p.label })
+      const models = draft.provider === id && draft.model && !p.models.includes(draft.model) ? [...p.models, draft.model] : p.models
+      for (const m of ['', ...models]) {
+        const on = draft.provider === id && draft.model === m
+        items.push({ label: m || 'Default model', icon: on ? ICONS.check : undefined, act: String(choices.length), hint: !m ? 'its CLI picks' : p.models.includes(m) ? '' : 'typed' })
+        choices.push({ provider: id, model: m })
+      }
+    }
+    items.push('-', { label: 'Type a model…', icon: ICONS.edit, act: 'type', hint: `for ${providerOf(draft.provider).label}` })
+    const menu = popMenu(anchor, items, (act) => {
+      if (act === 'type') return typeModel()
+      const pick = choices[Number(act)]
+      if (!pick) return
+      if (pick.provider !== draft.provider) Object.assign(draft, { provider: pick.provider, effort: '', tier: '' })
+      draft.model = pick.model
+      if (!effortsFor(draft).includes(draft.effort)) draft.effort = ''
+      drawBrain()
+      syncSave()
+      card.querySelector('[data-act=model]')?.focus({ preventScroll: true })
+    })
+    menu.el.classList.add('ed-model-menu')
+    // a long list stays on screen and scrolls rather than running off it
+    const r = menu.el.getBoundingClientRect()
+    if (r.bottom > innerHeight - 8) menu.el.style.maxHeight = `${Math.max(160, innerHeight - 8 - r.top)}px`
+  }
+
+  // A model the menu doesn't list: the Model row turns into a field until you're done typing.
+  let typedFrom = ''
+  function typeModel() {
+    typedFrom = draft.model
+    modelTyping = true
+    card.querySelector('.model-row .ed-ctl').innerHTML = modelControl()
+    const input = card.querySelector('.model-row input')
+    input.focus()
+    input.select()
+  }
+  function doneTyping() {
+    if (!modelTyping) return
+    modelTyping = false
+    draft.model = draft.model.trim()
+    const ctl = card.querySelector('.model-row .ed-ctl')
+    if (ctl) ctl.innerHTML = modelControl()
+    drawEffortOnly()
+    syncSave()
+  }
+
+  // On, YOLO and Fast as plain switch rows. Fast stays in its place for brains other than Codex, just unavailable,
+  // so nothing moves when you change the provider.
+  function drawBehaviour() {
     const d = draft
     const p = providerOf(d.provider)
-    const efforts = effortsFor(d)
     const fastKnown = p.fastByDefault !== undefined
-    card.querySelector('.brain').innerHTML =
-      row('Provider', `<div class="pills" data-pick="provider">${Object.entries(state.providers)
-        .map(([id, pr]) => pill(id, `${esc(pr.label)}${pr.missing?.length ? ' ⚠︎' : ''}`, d.provider === id, pr.missing?.length ? `title="needs ${esc(pr.missing.join(', '))} in your environment"` : ''))
-        .join('')}</div>`) +
-      row('Model', `<input class="ed-input" data-k="model" list="pd-models" value="${esc(d.model)}" placeholder="default" autocomplete="off"><datalist id="pd-models">${p.models.map((m) => `<option value="${esc(m)}">`).join('')}</datalist>`) +
-      row('Effort', efforts.length ? `<div class="pills small" data-pick="effort">${['', ...efforts].map((v) => pill(v, v || 'default', d.effort === v)).join('')}</div>` : '<em>set by the model</em>', { cls: 'effort-row' })
-    // three switches side by side; Fast stays in its place for non-Codex brains, just unavailable
-    card.querySelector('.ed-modes').innerHTML = `
-      <label class="mtile yolo"><i class="glyph">!</i><span><b>YOLO</b><small>No permission prompts</small></span><input type="checkbox" class="switch" data-k="yolo" ${d.yolo ? 'checked' : ''}></label>
-      <label class="mtile fast ${fastKnown ? '' : 'na'}" title="${fastKnown ? '' : 'Only Codex has a fast service tier'}"><i class="glyph">${ICONS.bolt}</i><span><b>Fast</b><small>${fastKnown ? `Codex's fast tier${d.tier ? '' : ', as in your config'}` : 'Codex only'}</small></span><input type="checkbox" class="switch" data-fast-tier ${fastKnown && (d.tier ? d.tier === 'fast' : p.fastByDefault) ? 'checked' : ''} ${fastKnown ? '' : 'disabled'}></label>
-      <label class="mtile power"><i class="glyph">${ICONS.power}</i><span><b>${d.on ? 'On' : 'Off'}</b><small>Stays ${d.on ? 'on' : 'off'} after restarts</small></span><input type="checkbox" class="switch" data-k="on" ${d.on ? 'checked' : ''}></label>`
-    drawWhere()
+    const fastOn = fastKnown && (d.tier ? d.tier === 'fast' : p.fastByDefault)
+    card.querySelector('.behave').innerHTML =
+      switchRow('On', onHint(), `<input type="checkbox" class="switch" data-k="on" ${d.on ? 'checked' : ''}>`) +
+      switchRow('YOLO', 'Skips every permission prompt', `<input type="checkbox" class="switch" data-k="yolo" ${d.yolo ? 'checked' : ''}>`, 'yolo') +
+      switchRow('Fast', fastKnown ? `Codex's fast service tier${d.tier ? '' : ', as in your config'}` : 'Codex only', `<input type="checkbox" class="switch" data-fast-tier ${fastOn ? 'checked' : ''} ${fastKnown ? '' : 'disabled'}>`, `fast ${fastKnown ? '' : 'dim'}`, fastKnown ? '' : 'Only Codex has a fast service tier')
   }
+  const onHint = () => `Stays ${draft.on ? 'on' : 'off'} after restarts`
 
   // Linked computers an agent can run on from here: in a workspace other than the default, the ones that have it too.
   const linkedHere = (c) => (c.links ?? []).filter((l) => !state.workspace || state.workspace.id === 'default' || l.spaces?.includes(state.workspace.id))
 
-  // Which computer it runs on and its folder there, plus extra CLI flags. An agent that exists moves with the
-  // move sheet (its conversation goes along); a new one is simply made there.
+  // Its folder and which computer it runs on. An agent that exists moves with the move sheet (its conversation goes
+  // along); a new one is simply made there.
   function drawWhere() {
     const d = draft
     const c = state.computers ?? { me: {}, links: [] }
@@ -662,19 +818,19 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const at = places.find((p) => p.slug === (d.home ?? '')) ?? { name: d.home, online: false }
     const computer = places.length < 2 && !d.home ? ''
       : live
-        ? row('Computer', `<span class="ed-pc">${at.here ? ICONS.desktop : ICONS.laptop}<b>${esc(at.name)}</b>${at.here ? '<small>this Mac</small>' : ''}</span><button class="btn small" data-act="move-to" ${places.some((p) => p.slug !== (d.home ?? '') && p.online) ? '' : 'disabled'}>${ICONS.move}<span>Move…</span></button>`, { note: 'its chat comes along' })
-        : row('Computer', `<div class="pills small" data-pick="home">${places.filter((p) => p.online || p.slug === d.home).map((p) => pill(p.slug, esc(p.name), d.home === p.slug)).join('')}</div>`)
+        ? row('Computer', `<span class="ed-pc">${at.here ? ICONS.desktop : ICONS.laptop}<b>${esc(at.name)}</b>${at.here ? '<small>this Mac</small>' : ''}</span><button class="btn small" data-act="move-to" title="Its chat comes along" ${places.some((p) => p.slug !== (d.home ?? '') && p.online) ? '' : 'disabled'}>${ICONS.move}<span>Move…</span></button>`)
+        : row('Computer', `<div class="pills" data-pick="home">${places.filter((p) => p.online || p.slug === d.home).map((p) => pill(p.slug, esc(p.name), d.home === p.slug)).join('')}</div>`)
     // in a workspace other than the default: whether it's one of your shared agents or only this workspace's, and its
     // folder is the workspace's unless it has one of its own
     const ws = state.workspace && state.workspace.id !== 'default' ? state.workspace : null
     const lives = !ws ? ''
       : live
         ? row('Lives in', `<span class="ed-pc">${wsTile(ws, { size: 18 })}<b>${live.shared ? 'Your crew' : `${esc(ws.name)} only`}</b></span>`, { note: live.shared ? 'the same agent in every workspace it works in' : `only ${esc(ws.name)} has it` })
-        : row('Lives in', `<div class="pills small" data-pick="shared">${pill('', `${esc(ws.name)} only`, !d.shared)}${pill('1', 'Your whole crew', Boolean(d.shared))}</div>`, { note: d.shared ? `joins your crew, and works here in ${esc(ws.name)}` : `only ${esc(ws.name)} has it` })
+        : row('Lives in', `<div class="pills" data-pick="shared">${pill('', `${esc(ws.name)} only`, !d.shared)}${pill('1', 'Your whole crew', Boolean(d.shared))}</div>`, { note: d.shared ? `joins your crew, and works here in ${esc(ws.name)}` : `only ${esc(ws.name)} has it` })
     const folder = ws?.folder ? ws.folder.replace(/^\/Users\/[^/]+/, '~') : ''
-    card.querySelector('.where').innerHTML = lives + computer +
-      row('Folder', `<input class="ed-input mono" data-k="cwd" value="${esc(d.cwd)}" placeholder="${esc(folder || '~/code/my-app')}" autocomplete="off">${d.home ? '' : '<button type="button" class="btn small" data-act="pick">Choose…</button>'}`, { note: d.home ? `a path on ${esc(at.name)}` : folder && !d.cwd ? `${esc(ws.name)}'s folder` : '' }) +
-      row('Extra flags', `<input class="ed-input mono" data-k="args" value="${esc(d.args)}" placeholder="passed straight to the CLI" autocomplete="off">`)
+    card.querySelector('.where').innerHTML = lives +
+      row('Folder', `<input class="ed-input mono" data-k="cwd" value="${esc(d.cwd)}" placeholder="${esc(folder || '~/code/my-app')}" autocomplete="off" spellcheck="false">${d.home ? '' : '<button type="button" class="btn small" data-act="pick">Choose…</button>'}`, { note: d.home ? `a path on ${esc(at.name)}` : folder && !d.cwd ? `${esc(ws.name)}'s folder` : '' }) +
+      computer
   }
 
   // A character creator: every option is shown as a tiny version of this agent wearing it.
@@ -697,7 +853,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const live = agentNamed(editing)
     const host = card.querySelector('.pd-av')
     const mood = live?.status === 'working' || live?.status === 'waiting' ? undefined : live && !live.on ? 'sleep' : 'idle'
-    host.innerHTML = avatarHTML({ name: draft.name || 'new', avatar: draft.avatar, status: live?.status }, { size: 150, mood })
+    host.innerHTML = avatarHTML({ name: draft.name || 'new', avatar: draft.avatar, status: live?.status }, { size: 170, mood })
     if (hop) bounce(host.querySelector('.av'), 'pop')
   }
 
@@ -705,6 +861,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const btn = card.querySelector('[data-act=save]')
     if (btn) btn.disabled = !dirty()
     card.querySelector('.pd-foot')?.classList.toggle('dirty', Boolean(original) && dirty())
+    drawAdvSummary()
   }
 
   card.addEventListener('input', (e) => {
@@ -721,7 +878,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     draft[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value
     if (k === 'model') drawEffortOnly()
     if (k === 'name') card.querySelector('.ed-pane[data-pane=look] .ed-pane-head p').textContent = `Every option shows ${draft.name || 'it'} wearing it.`
-    if (k === 'on') drawBrain()
+    if (k === 'on') card.querySelector('[data-k=on]').closest('.ed-row').querySelector('small').textContent = onHint()
     syncSave()
   })
 
@@ -730,8 +887,21 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const efforts = effortsFor(draft)
     if (!efforts.includes(draft.effort)) draft.effort = ''
     const ctl = card.querySelector('.effort-row .ed-ctl')
-    if (ctl) ctl.innerHTML = efforts.length ? `<div class="pills small" data-pick="effort">${['', ...efforts].map((v) => pill(v, v || 'default', draft.effort === v)).join('')}</div>` : '<em>set by the model</em>'
+    if (ctl) ctl.innerHTML = efforts.length ? effortPills(efforts) : '<em>set by the model</em>'
   }
+
+  // Typing a model: Enter or leaving the field is done, Esc puts back the one it had.
+  card.addEventListener('focusout', (e) => {
+    if (modelTyping && e.target.dataset.k === 'model') doneTyping()
+  })
+  card.addEventListener('keydown', (e) => {
+    if (!modelTyping || e.target.dataset.k !== 'model') return
+    if (e.key === 'Enter') e.preventDefault()
+    else if (e.key === 'Escape') (e.preventDefault(), (draft.model = typedFrom))
+    else return
+    doneTyping()
+    card.querySelector('[data-act=model]')?.focus({ preventScroll: true })
+  })
 
   card.addEventListener('change', (e) => {
     if ('fastTier' in e.target.dataset) {
@@ -766,11 +936,16 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       drawLimit()
       return syncSave()
     }
+    if (p && p.closest('[data-pick]').dataset.pick === 'effort') {
+      // picking the picked one again goes back to the model's default
+      draft.effort = draft.effort === p.dataset.v ? '' : p.dataset.v
+      drawEffortOnly()
+      return syncSave()
+    }
     if (p) {
       const k = p.closest('[data-pick]').dataset.pick
-      if (k === 'provider' && draft.provider !== p.dataset.v) Object.assign(draft, { model: '', effort: '', tier: '' })
       draft[k] = p.dataset.v
-      drawBrain()
+      drawWhere()
       return syncSave()
     }
     const look = e.target.closest('[data-look]')
@@ -782,6 +957,8 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     }
     const act = e.target.closest('[data-act]')?.dataset.act
     if (act === 'back') close()
+    if (act === 'advanced') setAdvanced(!advOpen)
+    if (act === 'model') modelMenu(e.target.closest('[data-act]'))
     if (act === 'shuffle') {
       draft.avatar = randomAvatar()
       drawLook()
@@ -803,17 +980,20 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     }
     if (act === 'move-to') moveMenu(e.target.closest('[data-act]'))
     if (act === 'more') moreMenu(e.target.closest('[data-act]'))
-    if (act === 'fresh') {
-      try {
-        await crew.call('freshStart', editing)
-        card.querySelector('.pd-msg').textContent = 'New conversation ✓'
-      } catch (err) {
-        card.querySelector('.pd-msg').textContent = err.message
-      }
-    }
+    if (act === 'fresh') freshStart()
     if (act === 'save') save()
     if (act === 'write') write()
   })
+
+  // A clean slate: the old conversation stays in its history. A busy agent finishes its task first.
+  async function freshStart() {
+    try {
+      await crew.call('freshStart', editing)
+      card.querySelector('.pd-msg').textContent = 'New conversation ✓'
+    } catch (err) {
+      card.querySelector('.pd-msg').textContent = err.message
+    }
+  }
 
   // Move…: the computers it could go to. The move sheet takes it from there (folder, what comes along).
   function moveMenu(anchor) {
@@ -826,12 +1006,15 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   }
 
   function moreMenu(anchor) {
+    const a = agentNamed(editing)
     popMenu(anchor, [
+      { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a?.on || a.freshPending, hint: a?.freshPending ? 'when it’s free' : a?.convo?.context ? `${a.convo.context.pct}% full` : '' },
       { label: 'Export…', icon: ICONS.export, act: 'export', hint: '.crew file' },
       { label: 'Move to another computer…', icon: ICONS.move, act: 'move', disabled: !linkedHere(state.computers ?? {}).some((l) => l.online) && !draft.home },
       '-',
       { label: 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
     ], async (act) => {
+      if (act === 'fresh') freshStart()
       if (act === 'export') exportAgents([editing])
       if (act === 'move') moveMenu(anchor)
       if (act === 'remove' && confirm(`Remove ${draft.name || editing}? Its session stops (the transcript stays with the CLI).`)) {
@@ -870,6 +1053,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   }
 
   async function save() {
+    doneTyping() // a model being typed counts as typed
     if (!dirty()) return
     const msg = card.querySelector('.pd-msg')
     msg.textContent = ''
@@ -920,10 +1104,10 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       } else if (editing) {
         drawState()
         drawLevel()
+        drawFacts()
         drawExperience()
-        drawConvo()
-        drawClones()
         if (!card.querySelector('.limit')?.contains(document.activeElement)) drawLimit()
+        drawAdvSummary()
       }
     },
     open,

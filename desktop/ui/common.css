@@ -244,10 +244,6 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .cg-icon svg { width: 15px; height: 15px; }
 .cg-tag { flex: none; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; background: var(--btn); color: var(--fg3); }
 .cg-tag.away { color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 14%, transparent); }
-.gc { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 17px; padding: 0 6px 0 5px; border-radius: 999px; font: 700 10.5px/1 -apple-system, sans-serif; font-style: normal; font-variant-numeric: tabular-nums; }
-.gc::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.gc.working { color: var(--working-ink); background: color-mix(in srgb, var(--working) 13%, transparent); }
-.gc.waiting { color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 16%, transparent); }
 .cgroup.away .crow { opacity: .55; }
 .cgroup-empty { padding: 6px 12px 8px 34px; font-size: 12px; color: var(--fg3); }
 /* dragging an agent: the computers it could move to light up */
@@ -264,8 +260,6 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .crow:hover { --bgc: var(--row-hover); }
 .crow.on { --bgc: var(--row-on); }
 .crow.cursor { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
-.crow.waiting { --bgc: color-mix(in srgb, var(--waiting) 9%, var(--side)); }
-.crow.waiting:hover, .crow.waiting.on { --bgc: color-mix(in srgb, var(--waiting) 15%, var(--side)); }
 .crow:active { transform: scale(.985); }
 .crow-av { position: relative; line-height: 0; --orbit-ring: var(--bgc); }
 .crow-av .orbit { inset: -4px; --dot: 5.5px; }
@@ -285,6 +279,11 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .mark-yolo { height: 14px; padding: 0 4px; border-radius: 4px; font: 800 8.5px/1 -apple-system, sans-serif; letter-spacing: .06em; color: var(--yolo-ink); background: color-mix(in srgb, var(--yolo) 13%, transparent); }
 .mark-fast { width: 14px; height: 14px; border-radius: 4px; color: var(--fast-ink); background: color-mix(in srgb, var(--fast) 18%, transparent); }
 .mark-fast svg { width: 9px; height: 9px; }
+/* its clones at work, folded into their faces and a count; a click shows their rows */
+.crow-clones { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 17px; padding: 0 6px 0 2px; border: 0; border-radius: 999px; background: var(--btn); color: var(--fg2); font: 700 10.5px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer; transition: background .15s; }
+.crow-clones:hover, .crow-clones.open { background: var(--btn-hover); color: var(--fg); }
+.crow-clones .av + .av { margin-left: -7px; }
+.crow-top .subs-chip { flex: none; }
 .mark-holds { flex: 0 1 auto; min-width: 0; height: 14px; padding: 0 5px; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 650 9.5px/14px var(--mono); font-style: normal; color: var(--fg2); background: var(--btn); }
 .crow-end { display: flex; align-items: center; gap: 6px; }
 .crow-end:empty { display: none; }
@@ -544,6 +543,38 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .item.ask.open .ask-card { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 60%, transparent), 0 6px 18px -8px color-mix(in srgb, var(--waiting) 50%, transparent); animation: ask-ring 2.4s ease-in-out infinite; }
 @keyframes ask-ring { 50% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 80%, transparent), 0 0 0 5px color-mix(in srgb, var(--waiting) 12%, transparent), 0 6px 18px -8px color-mix(in srgb, var(--waiting) 50%, transparent); } }
 .ask-card.sending { opacity: .55; pointer-events: none; transition: opacity .2s; }
+
+/* Needs you: who's waiting on you, pinned above the messages while they scroll under it (see needsHTML). The one
+   loud thing in the chat: an amber edge, amber Answer buttons. */
+.needs-queue { position: sticky; top: -12px; z-index: 4; flex: none; display: flex; flex-direction: column; max-height: 58%; overflow-y: auto; margin: -8px -4px 0; padding: 4px; border-radius: 16px; background: var(--card); box-shadow: 0 0 0 1px color-mix(in srgb, var(--waiting) 40%, transparent), 0 8px 22px -14px rgba(0, 0, 0, .35), 0 16px 10px -6px var(--panel); user-select: none; overscroll-behavior: contain; } /* the last shadow: messages fade out under its bottom edge instead of being cut */
+.nq-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px 4px; font-size: 12px; font-weight: 700; color: var(--waiting-ink); }
+.nq-head b { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: grid; place-items: center; font-size: 11px; color: #fff; background: var(--waiting); font-variant-numeric: tabular-nums; }
+.nq-order { margin-left: auto; font-weight: 550; color: var(--fg3); }
+.nq-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px; }
+.nq-item + .nq-item { border-top: 1px solid var(--line); }
+.nq-item.open { grid-template-columns: 28px minmax(0, 1fr); align-items: start; }
+.nq-face { line-height: 0; }
+.nq-main { min-width: 0; }
+.nq-who { font-size: 12.5px; color: var(--fg2); }
+.nq-who b { color: var(--fg); font-weight: 650; }
+.nq-text { margin: 1px 0 0; font-size: 12.5px; font-weight: 560; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nq-go { height: 28px; flex: none; }
+.btn.amber { background: var(--waiting); color: #241500; font-weight: 650; }
+.btn.amber:hover { background: color-mix(in srgb, var(--waiting) 88%, #000); }
+.nq-item .ask-card { min-width: 0; margin-top: 6px; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+/* in the queue the question is the card's whole point: its options sit tighter, each on one line */
+.nq-item .ask-head { display: none; }
+.nq-item .ask-question { margin: 2px 0 8px; font-size: 13px; }
+.nq-item .ask-options { gap: 4px; }
+.nq-item .ask-option { flex-direction: row; align-items: baseline; gap: 8px; padding: 7px 34px 7px 10px; }
+.nq-item .ask-option b { flex: none; }
+.nq-item .ask-option span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* in the feed, a question still open points up at the queue instead of being a second card */
+.ask-pointer { display: flex; align-items: center; gap: 10px; max-width: 100%; padding: 8px 8px 8px 12px; border: 0; border-radius: 14px; border-top-left-radius: 6px; background: var(--btn); color: var(--fg2); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; transition: background .15s; }
+.ask-pointer:hover { background: var(--btn-hover); color: var(--fg); }
+.ask-pointer span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-pointer b { flex: none; display: inline-flex; align-items: center; gap: 3px; color: var(--waiting-ink); font-weight: 650; }
+.ask-pointer b svg { width: 12px; height: 12px; }
 .ask-title { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; }
 .ask-title svg { flex: none; width: 24px; height: 24px; padding: 4px; border-radius: 7px; color: var(--waiting-ink); background: color-mix(in srgb, var(--waiting) 16%, transparent); }
 .ask-code { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--code-bg); font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 11em; overflow: auto; }
@@ -620,18 +651,19 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .fresh-ev svg { width: 13px; height: 13px; color: var(--accent); }
 
 /* tasks in the feed: one tappable line each, the kind in its icon's color */
-.task-ev { --k: var(--task); align-self: center; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: center; max-width: 100%; padding: 5px 12px 5px 5px; border-radius: 12px; background: var(--btn); cursor: pointer; font-size: 12px; color: var(--fg2); transition: background .15s, transform .3s var(--bounce); }
+/* a task changing hands: one quiet line, the colour only on its icon */
+.task-ev { --k: var(--task); align-self: stretch; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: center; max-width: 100%; padding: 3px 8px 3px 4px; margin: -6px 0; border-radius: 10px; cursor: pointer; font-size: 12.5px; color: var(--fg2); transition: background .15s, transform .3s var(--bounce); }
 .task-ev.type-bug { --k: var(--bug); }
 .task-ev.type-feature { --k: var(--feature); }
-.task-ev:hover { background: var(--btn-hover); }
+.task-ev:hover { background: var(--btn); }
 .task-ev:active { transform: scale(.98); }
-.task-ev-icon { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; color: #fff; background: var(--k); }
-.task-ev-icon svg { width: 13px; height: 13px; }
+.task-ev-icon { width: 18px; height: 18px; display: grid; place-items: center; color: var(--k); }
+.task-ev-icon svg { width: 15px; height: 15px; }
 .task-ev-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-ev-line b { color: color-mix(in oklab, var(--k) 75%, var(--fg)); font-weight: 650; font-variant-numeric: tabular-nums; }
+.task-ev-line b { color: var(--fg); font-weight: 650; font-variant-numeric: tabular-nums; }
 .task-ev-title { color: var(--fg); font-weight: 560; }
 .task-ev-text { grid-column: 2; font-size: 11.5px; color: var(--fg3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-ev.act-fixed .task-ev-icon, .task-ev.act-done .task-ev-icon { background: var(--working); }
+.task-ev.act-fixed .task-ev-icon, .task-ev.act-done .task-ev-icon { color: var(--working-ink); }
 .task-ev.act-done { color: var(--fg3); }
 /* a task handed to an agent: the ticket, not its whole brief */
 .ticket-bubble { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 7px 12px 7px 8px; border-radius: 16px; border-top-right-radius: 6px; background: var(--bubble-me); color: #fff; font-size: 13.5px; transition: filter .15s, transform .3s var(--bounce); }
@@ -649,7 +681,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .typing-row:hover { background: var(--btn); }
 .typing-row .face { width: 22px; flex: none; line-height: 0; }
 .typing-row .tr-name { flex: none; font-weight: 650; color: color-mix(in oklab, var(--c) 62%, var(--fg)); }
-.typing-row .tr-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px var(--mono); color: var(--fg3); }
+.typing-row .tr-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg3); }
 .typing { flex: none; display: inline-flex; gap: 3px; align-items: center; padding: 0 2px; }
 .typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--c); animation: typing 1.2s ease-in-out infinite; }
 .typing i:nth-child(2) { animation-delay: .15s; }
@@ -847,7 +879,7 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .attach:hover { background: var(--btn); color: var(--fg); transform: rotate(90deg); }
 .attach svg { width: 16px; height: 16px; }
 /* new conversation: a labeled toggle, so what it does is never a guess */
-.fresh-toggle { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px 0 7px; border: 0; border-radius: 999px; flex: none; background: none; color: var(--fg2); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .2s, color .2s, box-shadow .2s, transform .35s var(--spring); }
+.fresh-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; flex: none; background: none; color: var(--fg2); font-size: 12px; font-weight: 600; cursor: pointer; transition: background .2s, color .2s, box-shadow .2s, transform .35s var(--spring); }
 .fresh-toggle:hover { background: var(--btn); color: var(--fg); }
 .fresh-toggle:active { transform: scale(.94); }
 .fresh-toggle svg { width: 15px; height: 15px; flex: none; }
@@ -997,3 +1029,25 @@ dialog::backdrop { background: rgba(12, 12, 22, .32); animation: fade-in .25s ea
 .crow.parked .crow-av { opacity: .55; filter: saturate(.3); }
 .crow-line.parked { color: var(--fg3); }
 .dot.parked { background: transparent; box-shadow: inset 2.5px 0 0 0 var(--fg3), inset -2.5px 0 0 0 var(--fg3); border-radius: 2px; opacity: .6; }
+
+/* ---- the message box's To line: one picker and the Task switch, inside the box's bar ---- */
+.chips.to-line { flex: none; height: auto; margin: 0; padding: 0; gap: 2px; overflow: visible; -webkit-mask-image: none; }
+.to-pick { display: inline-flex; align-items: center; gap: 6px; height: 28px; max-width: 200px; padding: 0 8px 0 7px; border: 0; border-radius: 999px; background: var(--btn); color: var(--fg2); font-size: 12.5px; cursor: pointer; transition: background .15s, color .15s, transform .25s var(--bounce); }
+.to-pick:hover { background: var(--btn-hover); color: var(--fg); }
+.to-pick:active { transform: scale(.95); }
+.to-pick b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-weight: 650; }
+.to-pick .to-label { color: var(--fg3); }
+.to-pick .to-icon { display: grid; color: var(--accent); }
+.to-pick.task .to-icon { color: var(--task); }
+.to-pick .to-icon svg { width: 14px; height: 14px; }
+.to-pick .av { margin: -2px 0; }
+.to-pick > svg { flex: none; width: 11px; height: 11px; color: var(--fg3); transform: rotate(90deg); }
+.chips.to-line .chip.task-chip { width: 28px; height: 28px; padding: 0; justify-content: center; }
+.chips.to-line .chip.task-chip:not(.on) { box-shadow: none; }
+.chips.to-line .chip.task-chip > svg { margin: 0; }
+
+/* a long menu (the To picker with a big crew) scrolls instead of running off the window */
+.menu { max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; }
+/* the feed scrolls a message into view below the Needs you queue, never under it */
+.feed { scroll-padding-top: calc(var(--needs-h, 0px) + 12px); }
+.crow-line .crow-clones { margin-right: 6px; vertical-align: -3px; }

@@ -161,7 +161,7 @@ const SHOTS = {
   async create(theme) {
     const win = await dashboard(theme, 'crew')
     await sleep(300)
-    await js(win, click('.col-head [data-act=new]'))
+    await js(win, click('.pcard.add'))
     await sleep(1000)
     await save(win, `create-${theme}`)
     win.destroy()
@@ -214,7 +214,7 @@ const SHOTS = {
     const win = await dashboard(theme, 'crew')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
-    await js(win, `${click('[data-act=select]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.pcard[data-name=joseph]')}; ${click('.pcard[data-name=marc]')}`)
+    await js(win, `${click('.col-head [data-act=more]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.menu [data-menu-act=select]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.pcard[data-name=joseph]')}; ${click('.pcard[data-name=marc]')}`)
     await sleep(900)
     await save(win, `select-${theme}`)
     win.destroy()
@@ -244,7 +244,9 @@ const SHOTS = {
     await js(win, `${click('.tk-views [data-mode=board]')}; ${click('[data-filter="kind:bug"]')}`)
     await sleep(800)
     await save(win, `tasks-filtered-${theme}`)
-    await js(win, click('[data-flow]'))
+    await js(win, click('[data-board-menu]'))
+    await sleep(300)
+    await js(win, click('.tk-pop [data-flow]'))
     await sleep(500)
     await save(win, `tasks-workflow-${theme}`)
     win.destroy()
@@ -282,6 +284,8 @@ const SHOTS = {
     await sleep(300)
     await js(win, click('.pcard[data-name=gal]'))
     await sleep(1200)
+    await js(win, click('.ed-tabs [data-tab=stats]'))
+    await sleep(600)
     const box = await js(win, "const r = document.querySelector('.ed').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
     const img = await win.webContents.capturePage(box)
     fs.writeFileSync(path.join(out, `conversation-${theme}.png`), img.toPNG())
@@ -336,7 +340,10 @@ const SHOTS = {
       clip: board, ms: 11500, width: 1000,
       during: async () => {
         let at = { x: 900, y: 500 }
-        at = await glide(win, at, await center(win, '.tk-add textarea'), 600)
+        at = await glide(win, at, await center(win, '[data-new-task]'), 600)
+        await tap(win, at)
+        await sleep(500)
+        at = await glide(win, at, await center(win, '.tk-add textarea'), 400)
         await tap(win, at)
         await sleep(300)
         const text = 'Coins vanish when you collect two at once @david ' // the space closes the @ picker, so Enter adds the task
@@ -486,15 +493,17 @@ const SHOTS = {
       clip: panel, ms: 6200, width: 800,
       during: async () => {
         let at = { x: panel.x + 200, y: panel.y + 40 }
-        for (const name of ['joseph', 'david', 'gal', 'marc', 'scarlett@mac-mini']) {
-          at = await glide(win, at, await center(win, `.chip[data-to="${name}"]`), 380)
-          await sleep(320)
-        }
-        at = await glide(win, at, await center(win, '.chip[data-to=marc]'), 400)
+        at = await glide(win, at, await center(win, '[data-pick-to]'), 500)
+        await tap(win, at)
+        await sleep(500)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=marc]'), 500)
         await sleep(200)
         await tap(win, at)
         await sleep(900)
-        at = await glide(win, at, await center(win, '.chip[data-to=auto]'), 500)
+        at = await glide(win, at, await center(win, '[data-pick-to]'), 500)
+        await tap(win, at)
+        await sleep(500)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=auto]'), 500)
         await sleep(200)
         await tap(win, at)
         await sleep(600)
@@ -648,7 +657,10 @@ const SHOTS = {
       clip: panel, ms: 10000, width: 800,
       during: async () => {
         let at = { x: panel.x + 200, y: panel.y + 100 }
-        at = await glide(win, at, await center(win, '.chip[data-to=marc]'), 600)
+        at = await glide(win, at, await center(win, '[data-pick-to]'), 600)
+        await tap(win, at)
+        await sleep(400)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=marc]'), 400)
         await tap(win, at)
         await sleep(400)
         at = await glide(win, at, await center(win, '.fresh-toggle'), 500)
@@ -876,6 +888,8 @@ const SHOTS = {
   async taskMention(theme) {
     const win = await dashboard(theme, 'tasks')
     await sleep(1000)
+    await js(win, click('[data-new-task]'))
+    await sleep(400)
     await js(win, "const ta = document.querySelector('[data-add]'); ta.focus(); ta.value = 'Pause menu flickers on resume @g'; ta.setSelectionRange(ta.value.length, ta.value.length); ta.dispatchEvent(new Event('input', { bubbles: true }))")
     await sleep(500)
     await save(win, `task-mention-${theme}`)
@@ -888,6 +902,8 @@ const SHOTS = {
     await sleep(300)
     await js(win, click('.pcard[data-name=joseph]'))
     await sleep(1200)
+    await js(win, click('.ed [data-act=advanced]'))
+    await sleep(700)
     const box = await js(win, "const r = document.querySelector('.ed').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
     const img = await win.webContents.capturePage(box)
     fs.writeFileSync(path.join(out, `limit-${theme}.png`), img.toPNG())
@@ -901,6 +917,8 @@ const SHOTS = {
     await sleep(300)
     await js(win, click('.pcard[data-name=gal]'))
     await sleep(1200)
+    await js(win, click('.ed [data-act=advanced]'))
+    await sleep(700)
     const box = await js(win, "const r = document.querySelector('.limit').getBoundingClientRect(); return { x: Math.round(r.x) - 16, y: Math.round(r.y) - 40, width: Math.round(r.width) + 32, height: Math.round(r.height) + 56 }")
     await record(win, 'context-limit', {
       clip: box, ms: 6400, width: 900,
@@ -928,7 +946,7 @@ const SHOTS = {
   async clones(theme) {
     const win = await dashboard(theme, 'grid')
     await sleep(1500)
-    await js(win, "document.querySelector('.tile[data-name=marc]').scrollIntoView({ block: 'start' }); document.querySelector('.side .agents').parentElement.scrollTop = document.querySelector('.agent[data-agent=marc]').offsetTop - 120")
+    await js(win, "document.querySelector('.tile[data-name=marc]').scrollIntoView({ block: 'start' }); document.querySelector('.roster .crow[data-agent=marc] .crow-clones')?.click()")
     await sleep(600)
     await save(win, `clones-${theme}`)
     win.destroy()
@@ -940,7 +958,9 @@ const SHOTS = {
     await sleep(300)
     await js(win, click('.pcard[data-name=marc]'))
     await sleep(1200)
-    await js(win, "const c = document.querySelector('.col-card'); c.scrollTop = document.querySelector('.clones-set').offsetTop - 260")
+    await js(win, click('.ed [data-act=advanced]'))
+    await sleep(700)
+    await js(win, "document.querySelector('.ed [data-pick=clones]')?.scrollIntoView({ block: 'center' })")
     await sleep(500)
     await save(win, `clones-editor-${theme}`)
     win.destroy()
