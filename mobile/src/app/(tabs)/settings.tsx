@@ -31,7 +31,7 @@ function MacCard({ t, mac, active }: { t: Theme; mac: MacRecord; active: boolean
   const status = !active ? 'Not in use' : link.status === 'online' ? `Online via ${link.host}` : link.status === 'offline' ? offlineText(link, mac.name).replace(`${mac.name} unreachable`, 'Unreachable') : 'Connecting…'
   const tone = !active ? t.fg3 : link.status === 'online' ? t.workingInk : link.status === 'offline' ? t.waitingInk : t.fg2
   const remove = () =>
-    Alert.alert(`Remove ${mac.name}?`, 'This phone forgets the Mac and its key. To use it again, pair with a new code. (On the Mac, remove this phone from its list too.)', [
+    Alert.alert(`Remove ${mac.name}?`, 'This phone forgets the Mac and its key. To use it again, pair with a new code. On the Mac, remove this phone under Computers › Phones too.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => void session.remove(mac.id) },
     ])
@@ -56,7 +56,9 @@ function MacCard({ t, mac, active }: { t: Theme; mac: MacRecord; active: boolean
         <Row t={t} label="Paired" value={when(mac.pairedAt)} last />
       </View>
       {active && link.status === 'offline' && !link.fatal ? (
-        <Text style={[styles.hint, { color: t.fg2 }]}>It reconnects by itself once the phone can reach it. If you removed this phone in Crew on the Mac, remove it here too and pair again.</Text>
+        <Text style={[styles.hint, { color: t.fg2 }]}>
+          It reconnects by itself once the phone can reach it. If you removed this phone under <Text style={{ fontWeight: '600' }}>Computers › Phones</Text> on the Mac, remove it here too and pair again.
+        </Text>
       ) : null}
       <View style={styles.actions}>
         {active ? (

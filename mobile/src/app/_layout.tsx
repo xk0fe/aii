@@ -27,7 +27,7 @@ export default function Root() {
             <Stack.Screen name="pair" options={{ gestureEnabled: true }} />
             <Stack.Screen name="demo" />
             <Stack.Screen name="agent/[name]" options={{ ...sheet, sheetAllowedDetents: [0.78, 1] }} />
-            <Stack.Screen name="ask/[id]" options={{ ...sheet, sheetAllowedDetents: [0.7, 1] }} />
+            <Stack.Screen name="ask/[id]" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />
             <Stack.Screen name="workspaces" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />
           </Stack>
         </ThemeProvider>

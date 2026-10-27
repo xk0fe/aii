@@ -3,7 +3,7 @@
 // Answered, a card folds into a line saying what happened.
 import * as Haptics from 'expo-haptics'
 import { useState } from 'react'
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 
 import type { Answer, FeedEntry, PermissionAsk, PlanAsk, QuestionAsk, Reply } from '@/net/types'
 
@@ -152,9 +152,12 @@ function PermissionCard(props: AskProps & { ask: PermissionAsk }) {
           {always.length ? (
             <View style={styles.always}>
               {always.map((s) => (
+                // an action, like Allow and Deny: the label alone on a secondary button (a check here read as already ticked)
                 <Press key={s.i} disabled={off} onPress={() => send(`always${s.i}`, { allow: true, always: s.i })} style={[styles.alwaysRow, { backgroundColor: t.btn }]} accessibilityRole="button" accessibilityLabel={s.label}>
-                  <Icon name="check" size={13} color={t.workingInk} />
-                  <Text style={[styles.alwaysText, { color: t.fg }]}>{s.label}</Text>
+                  <Text style={[styles.alwaysText, { color: t.fg, opacity: busy === `always${s.i}` ? 0 : 1 }]} numberOfLines={2}>
+                    {s.label}
+                  </Text>
+                  {busy === `always${s.i}` ? <ActivityIndicator style={StyleSheet.absoluteFill} color={t.fg} size="small" /> : null}
                 </Press>
               ))}
             </View>
@@ -343,8 +346,8 @@ const styles = StyleSheet.create({
   detail: { fontSize: 14, lineHeight: 19, marginTop: -4 },
   row: { flexDirection: 'row', gap: 10 },
   always: { gap: 8 },
-  alwaysRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40, paddingHorizontal: 12, borderRadius: 10 },
-  alwaysText: { flex: 1, fontSize: 14, fontWeight: '500' },
+  alwaysRow: { minHeight: 44, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  alwaysText: { fontSize: 15, lineHeight: 20, fontWeight: '600', letterSpacing: -0.2, textAlign: 'center' },
   more: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 2 },
   moreText: { fontSize: 14, fontWeight: '500' },
   note: { minHeight: 42, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth * 2, paddingHorizontal: 12, fontSize: 15 },

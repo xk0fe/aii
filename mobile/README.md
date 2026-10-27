@@ -6,7 +6,7 @@ It talks to Crew on your Mac directly, over your network or Tailscale, end to en
 
 ## What's in it
 
-- **Pair:** scan the QR code Crew on the Mac shows, or paste the code. Or look around the demo crew.
+- **Pair:** on the Mac, open **Computers** in Crew and choose **Add a phone**; scan the QR code it shows, or paste the code. Or look around the demo crew.
 - **Chat:** everyone's messages, or your conversation with one agent (tap its face). Replies render light Markdown. Type `@` to bring someone in. Replies you've seen are marked read on the Mac too.
 - **Needs you:** permission prompts, an agent's own questions and plans, as cards. They stack at the top of the chat and fill the Needs you tab (with a badge); the answer goes back as `answer(ws, id, reply)`, exactly what `Hub.answer` takes.
 - **Crew:** the agents as creature cards. Tap one for on/off, YOLO, Fast, New conversation, Restart and Mark free.
@@ -62,7 +62,7 @@ npx tsc --noEmit    # types
 npx jest            # shared/vectors.json reproduced, a whole session against a fake Mac, pairing-code errors
 ```
 
-And against a real Mac running Crew with phone pairing open:
+And against a real Mac running Crew, with a code from **Computers › Phones › Add a phone**:
 
 ```sh
 npx tsx scripts/smoke.ts crewphone1.…            # pair, print the state, send a hello, print the patches that follow

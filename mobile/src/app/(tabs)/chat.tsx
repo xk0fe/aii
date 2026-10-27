@@ -228,26 +228,35 @@ export default function ChatScreen() {
       <TopBar t={t} background={t.panel} below={<Line t={t} d={d} here={here} onAll={() => openConvo(null)} offline={offline} parked={Boolean(state?.parked)} />} />
       <View style={[styles.hair, { backgroundColor: t.line }]} />
       <Deck t={t} open={open} byName={d.byName} onAnswer={answer} disabled={offline ? `Answering waits until ${client.macName} is back` : null} />
-      <FlatList
-        style={styles.list}
-        data={state ? items : []}
-        inverted
-        keyExtractor={(e) => e.id}
-        renderItem={({ item, index }) => <FeedItem e={item} prev={items[index + 1]} c={ctx} />}
-        renderScrollComponent={(props) => <KeyboardChatScrollView {...props} inverted offset={tabH} />}
-        ListHeaderComponent={<Working t={t} d={d} here={here?.name ?? null} now={now} />}
-        ListEmptyComponent={
-          <View style={styles.listEmpty}>
-            {here && state ? <Creature agent={here} size={64} /> : null}
-            <Text style={[styles.emptyText, { color: t.fg3 }]}>{!state ? (offline ? offline : `Connecting to ${client.macName}…`) : here ? `Nothing with ${displayName(here.name).base} yet. Say hi.` : 'Nothing here yet. Say hi to your crew.'}</Text>
-          </View>
-        }
-        onViewableItemsChanged={onViewable}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 30, minimumViewTime: 600 }}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.listInner}
-      />
+      <View style={styles.list}>
+        <FlatList
+          style={styles.list}
+          data={state ? items : []}
+          inverted
+          keyExtractor={(e) => e.id}
+          renderItem={({ item, index }) => <FeedItem e={item} prev={items[index + 1]} c={ctx} />}
+          renderScrollComponent={(props) => <KeyboardChatScrollView {...props} inverted offset={tabH} />}
+          ListHeaderComponent={<Working t={t} d={d} here={here?.name ?? null} now={now} />}
+          ListEmptyComponent={
+            <View style={styles.listEmpty}>
+              {here && state ? <Creature agent={here} size={64} /> : null}
+              <Text style={[styles.emptyText, { color: t.fg3 }]}>{!state ? (offline ? offline : `Connecting to ${client.macName}…`) : here ? `Nothing with ${displayName(here.name).base} yet. Say hi.` : 'Nothing here yet. Say hi to your crew.'}</Text>
+            </View>
+          }
+          onViewableItemsChanged={onViewable}
+          viewabilityConfig={{ itemVisiblePercentThreshold: 30, minimumViewTime: 600 }}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.listInner}
+        />
+        {/* What scrolls up under the questions (or the header) fades out instead of being cut mid-line, so it never
+            reads as the cards stacked behind the top one. */}
+        <View pointerEvents="none" style={styles.edge}>
+          {Array.from({ length: 14 }, (_, i) => (
+            <View key={i} style={{ flex: 1, backgroundColor: t.panel, opacity: i < 6 ? 1 : (1 - (i - 6) / 8) ** 1.3 }} />
+          ))}
+        </View>
+      </View>
       <KeyboardStickyView offset={{ closed: 0, opened: tabH }}>
         <Composer t={t} agents={d.agents} convo={here?.name ?? null} unread={d.unread} disabled={disabled} onFace={(n) => openConvo(n)} onSend={(text) => client.send(here?.name ?? '', text)} />
       </KeyboardStickyView>
@@ -260,6 +269,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   hair: { height: StyleSheet.hairlineWidth },
   list: { flex: 1 },
+  edge: { position: 'absolute', left: 0, right: 0, top: 0, height: 46 },
   listInner: { paddingBottom: 8 },
   listEmpty: { paddingVertical: 40, paddingHorizontal: 32, alignItems: 'center', gap: 12, transform: [{ scaleY: -1 }] },
   line: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 40 },

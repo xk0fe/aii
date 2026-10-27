@@ -1,5 +1,5 @@
-// Pairing: scan the code Crew on the Mac shows (or paste it), and the phone and the Mac swap keys. Or look around the
-// demo crew first.
+// Pairing: scan the code Crew on the Mac shows (Computers › Phones › Add a phone), or paste it, and the phone and
+// the Mac swap keys. Or look around the demo crew first.
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import * as Clipboard from 'expo-clipboard'
 import { router } from 'expo-router'
@@ -127,7 +127,7 @@ export default function Pair() {
 
       <View style={styles.steps}>
         <Text style={[styles.step, { color: t.fg }]}>
-          <Text style={[styles.num, { color: t.accent }]}>1 </Text>On your Mac, open Crew and choose <Text style={{ fontWeight: '700' }}>Pair a phone</Text>.
+          <Text style={[styles.num, { color: t.accent }]}>1 </Text>On your Mac, open <Text style={{ fontWeight: '700' }}>Computers</Text> in Crew and choose <Text style={{ fontWeight: '700' }}>Add a phone</Text>.
         </Text>
         <Text style={[styles.step, { color: t.fg }]}>
           <Text style={[styles.num, { color: t.accent }]}>2 </Text>Scan the code it shows. The phone needs to reach the Mac: the same Wi-Fi, or Tailscale.
