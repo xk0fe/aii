@@ -25,17 +25,17 @@ npm install
 npm start        # opens Crew.app (builds it the first time)
 ```
 
-`npm start` opens `dist/Crew.app`, which has Crew's own name and icon everywhere: menu bar, Dock, ⌘Tab and notifications.
+`npm start` opens `desktop/dist/Crew.app`, which has Crew's own name and icon everywhere: menu bar, Dock, ⌘Tab and notifications.
 - **When it builds:** only the first time, after an Electron upgrade, or if you move this folder.
 - **Your edits:** the app is a thin launcher for this folder, so edits apply on the next launch.
-- **Keep it handy:** drag `dist/Crew.app` into Applications or the Dock.
+- **Keep it handy:** drag `desktop/dist/Crew.app` into Applications or the Dock.
 - **Other scripts:**
   - `npm run app` forces a rebuild.
   - `npm run dev` runs the bare Electron runtime for development; macOS calls it "Electron" there.
   - `npm run icon` re-renders the app icon from the same plush creatures the UI uses.
-  - `npm run shots` renders every view, light and dark, with a made-up crew into `dist/shots` (PNGs plus GIFs of the animations). Nothing starts and `~/.crew` is untouched, so it's safe for checking UI changes. Add `--webp` for animated WebP copies of the animations (the README uses those), and `npm run shots -- cover` renders just the README's cover (`scripts/cover.html`).
+  - `npm run shots` renders every view, light and dark, with a made-up crew into `desktop/dist/shots` (PNGs plus GIFs of the animations). Nothing starts and `~/.crew` is untouched, so it's safe for checking UI changes. Add `--webp` for animated WebP copies of the animations (the README uses those), and `npm run shots -- cover` renders just the README's cover (`desktop/scripts/cover.html`).
 - **One copy at a time:** opening Crew again brings up the one that's running.
-- **Quitting doesn't stop the agents.** Their terminals live in a small process of their own, the terminal host (`core/ptyhost.js`), so an agent mid-task carries on while Crew is closed, crashes, or relaunches with new code (after you pull or merge a fix, say). Open Crew again and it picks every agent up where it is, with one line in the chat saying so: a reply it finished meanwhile shows up threaded to what it answered, and its queue, its clones and its teammates' questions are still there. While Crew is closed, agents can't reach each other (`crew send` and `crew ask` say Crew isn't running) and a permission prompt waits in the agent's terminal. **Quit** keeps them running; **Stop Agents and Quit** ends them, as quitting used to.
+- **Quitting doesn't stop the agents.** Their terminals live in a small process of their own, the terminal host (`desktop/core/ptyhost.js`), so an agent mid-task carries on while Crew is closed, crashes, or relaunches with new code (after you pull or merge a fix, say). Open Crew again and it picks every agent up where it is, with one line in the chat saying so: a reply it finished meanwhile shows up threaded to what it answered, and its queue, its clones and its teammates' questions are still there. While Crew is closed, agents can't reach each other (`crew send` and `crew ask` say Crew isn't running) and a permission prompt waits in the agent's terminal. **Quit** keeps them running; **Stop Agents and Quit** ends them, as quitting used to.
 - **Theme:** the ☀️/🌙 button (dashboard titlebar or the menu bar popover) switches Light, Dark, or Auto (follow macOS). Terminals stay dark either way. The `{ }` button opens `config.json` in your text editor.
 
 ## The crew collection
@@ -140,7 +140,7 @@ Agents that depend on each other can stall a crew. Two of them each wait for the
 - **One file, one editor.** The first agent to edit a file (Claude Code's Edit and Write, Codex's patches) holds it until its turn ends. Anyone else who tries is turned away and told who has it, so an agent and its clones, or two agents in one folder, never write over each other. An agent answering the holder's question may edit its files, since the holder is waiting on it rather than editing.
 - **One user per simulator.** Things that aren't files work the same way: the iOS simulator, a phone, a dev server's port, an API that rate-limits the whole office. `crew lease simulator "QA pass for #12"` takes it before using it. If a teammate has it, `crew lease` waits for it (about two minutes, like `crew ask`), then says who has it and what for, and the agent carries on with other work instead of taking over the teammate's simulator. It's the holder's until `crew release`, until its turn ends with nothing of its left running in the background, or until its CLI stops. `crew leases` lists who has what, the sidebar shows it next to the agent's name, and from your own terminal you can take one too (it stays yours until you release it). Names are case-insensitive, so agents only need to agree on the word.
 - **Across workspaces too.** A file and a simulator are one thing whichever workspace's agent uses them: two workspaces in one folder, or one of your agents at work in both, still edit a file one at a time, and there's one simulator for all of them. An agent turned away by one in another workspace is told which workspace (it can't `crew ask` across workspaces, so it's left to finish), and `crew leases` lists every workspace's, with the workspace beside the name.
-- **Nothing left running.** Every command an agent runs leaves its process group behind with Crew (Claude Code runs each one through `bin/crew-sh`; for Codex, Crew looks at the agent's process tree now and then). When the agent's CLI ends (it exits, is turned off, or restarts for a new conversation), whatever is still running in those groups is stopped: the Metro server it started with `&`, the simulator helpers. The chat says what, in one line (*@levi left 3 processes running (node, idb_companion ×2), so Crew stopped them*). Crew itself and what other agents run are never touched, and a process that only reused an old number is left alone. If Crew wasn't running when a CLI ended, it cleans up on its next start.
+- **Nothing left running.** Every command an agent runs leaves its process group behind with Crew (Claude Code runs each one through `desktop/bin/crew-sh`; for Codex, Crew looks at the agent's process tree now and then). When the agent's CLI ends (it exits, is turned off, or restarts for a new conversation), whatever is still running in those groups is stopped: the Metro server it started with `&`, the simulator helpers. The chat says what, in one line (*@levi left 3 processes running (node, idb_companion ×2), so Crew stopped them*). Crew itself and what other agents run are never touched, and a process that only reused an old number is left alone. If Crew wasn't running when a CLI ended, it cleans up on its next start.
 - **One owner.** A message sent to several agents names the first one as the lead: it owns the result, and the others each take the part in their own area. A hand-off is the recipient's from then on, with no need to report back. A task's owner who can't take it runs `crew task decline`, and it goes straight to the next agent whose area it is (never back to one that declined it), or back to To do for you, with a notification.
 - **One builder per piece of work.** Before an agent builds something, it checks that nobody else is building it already: the board, open PRs, and branches or worktrees named for it. If someone is (a teammate, a clone, or another Claude session), it asks instead of starting a second build. It works only in a worktree or branch it made, or one its owner handed it. News goes in `crew note`, not `crew send`, because a busy teammate starts a clone for anything sent to it.
 - **A lost connection doesn't stop the work.** When an API error cuts a turn short (a dropped connection, a busy server), Crew types "continue" for the agent after 20 seconds, then 1 and 3 minutes if it happens again. The turn goes on answering the same message. A usage limit, a login or a billing problem, or a fourth failure in a row, calls you instead.
@@ -164,7 +164,7 @@ crew release [thing]      give it back
 crew task decline <n> "why"   a task that isn't yours goes to the next owner by area
 ```
 
-`node scripts/handoffs.mjs` reads your own history (`~/.crew/feed.jsonl` and `stats.json`) and shows what hand-offs between your agents have cost: how long a question took to come back, how much of that was a teammate finishing something else first or an answer waiting for its asker, and the turns spent on acknowledgements and messages that crossed.
+`node desktop/scripts/handoffs.mjs` reads your own history (`~/.crew/feed.jsonl` and `stats.json`) and shows what hand-offs between your agents have cost: how long a question took to come back, how much of that was a teammate finishing something else first or an answer waiting for its asker, and the turns spent on acknowledgements and messages that crossed.
 
 ## Tasks: one conversation per task
 
@@ -322,6 +322,8 @@ An agent without an `avatar` gets a stable one picked from its name. `off: true`
 To use `crew` from your own terminal as well, run `ln -s "$PWD/bin/crew" ~/.local/bin/crew`.
 
 ## How it works
+
+The repository holds three things: the Mac app in `desktop/`, the phone app in `mobile/`, and what both speak in `shared/` (the protocol between them, with no dependencies). Paths below are relative to `desktop/`.
 
 ```
  UI windows (ui/*.html) ──IPC── main.js ── core/crew.js ── core/hub.js ── core/ptyclient.js ══ core/ptyhost.js ── pty ── claude / codex

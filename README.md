@@ -20,7 +20,7 @@ npm install
 npm start
 ```
 
-The first `npm start` builds `Crew.app` and opens it. After that it opens right away. Drag `dist/Crew.app` to your Dock to keep it handy.
+The first `npm start` builds `Crew.app` and opens it. After that it opens right away. Drag `desktop/dist/Crew.app` to your Dock to keep it handy.
 
 Quitting Crew doesn't stop your agents: they keep working, and the next time you open Crew they're right where they were.
 
@@ -149,3 +149,4 @@ Hand-offs show up in the chat with the sender's face next to them. Turn Autopilo
 
 - [The full guide](docs/guide.md) covers every setting, the files Crew keeps in `~/.crew`, and how it works inside.
 - `npm run shots` renders every screen with a made-up crew. That's where these pictures come from.
+- The Mac app's code is in `desktop/`, the phone app's in `mobile/`, and the protocol they share in `shared/`. Run everything from the top folder: `npm start`, `npm test` and `npm run shots` reach into `desktop/`.
