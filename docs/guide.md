@@ -282,6 +282,22 @@ The link works both ways, so the first computer sees the second one's agents too
 
 A Codex-backed agent runs in Codex's `workspace-write` sandbox with network access on, so `crew` can reach the app over localhost. Its status hooks are passed on the command line with `--dangerously-bypass-hook-trust`, so no hook-trust prompt blocks every launch. That flag also lets hooks defined in the agent's own repo run without review, the same trust model Claude Code uses.
 
+## Your phone
+
+The Crew app on your phone keeps you with your crew when you're away from your desk: the chat, and the questions agents wait on you for. A phone isn't a computer. It runs no agents and never shows up under Computers. It's you: what you send from it shows up in the chat as yours.
+
+1. **On the Mac:** click **Computers** in the dashboard titlebar, then **Add a phone** under **Phones**. Crew shows a QR code, and the same code as text to copy.
+2. **On the phone:** open Crew and scan the code, or paste it. The phone shows up under **Phones**, and from then on it connects by itself.
+
+- **One workspace at a time, its own.** The phone picks which workspace it watches, whatever the Mac shows. What you do there lands in that workspace, and the Mac stays where it was.
+- **What it can do:** send messages and photos, answer question cards, approve or drop hand-offs, add, start, accept, send back and move tasks, turn agents on or off, switch YOLO and Fast, start a new conversation, restart an agent, and watch and type into its terminal. Making and editing agents, workspaces and computers stays on the Mac.
+- **Networks:** the same Wi-Fi, or Tailscale, as for linked computers. The code lists every address the Mac has. Crew listens for phones on port 7788, and only while a phone is paired or a code is open. To change the port, set `"phonePort"` in `~/.crew/link/link.json`.
+- **Security:** everything between the phone and the Mac is encrypted end to end, with keys only the two of them hold. A code pairs one phone within ten minutes, and a new code ends the old one. A phone never gets Crew Link's code or the agents' instructions. **Remove** unpairs a phone and ends its connection.
+- **Not there yet:**
+  - The Tasks board and the terminals. Crew on the Mac already answers a phone's calls for them (the list above); the app doesn't show them yet.
+  - Notifications. Until push lands, the phone hears that an agent needs you only while the app is open.
+  - A relay. The phone talks to the Mac directly, so away from your Wi-Fi it needs Tailscale, and the Mac has to be awake with Crew running.
+
 ## Files
 
 Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
@@ -291,7 +307,7 @@ Everything lives in `~/.crew/` (set `CREW_HOME` to move it):
 - `stats.json`: each agent's work experience.
 - `tickets.json`: the Tasks board.
 - `conversations.json`: each agent's current conversation: when it started, tasks in it, compactions and how full it is.
-- `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, and a cache of images from agents on other computers.
+- `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, a cache of images from agents on other computers, and `phones.json`: this Mac's key for phones and the phones paired with it.
 - `board.md`: shared notes (`crew note`).
 - `reads.json`: up to when you've read each agent's replies (the unread badges).
 - `usage.json`: each provider's usage limits as last reported, and which heads-ups you've had (so the UI isn't blank until the next reply).
@@ -347,6 +363,8 @@ The repository holds three things: the Mac app in `desktop/`, the phone app in `
 - `core/runner.js` owns the pseudo-terminals in Crew's own process; `core/ptyclient.js` is the same to the hub, with the terminals in the terminal host (`core/ptyhost.js`), a process of its own that outlives Crew. Crew connects to it over a Unix socket, and on start it adopts what's still running (`Hub.adopt`) and replays what the hooks spooled meanwhile (`Hub.replaySpool`).
 - `core/crew.js` is the crew across your computers: a hub per workspace on this computer (all on one terminal runner, where `runner.js`'s `Scoped` names a workspace's terminals `workspace/agent`), plus every linked computer's agents, merged into one list, with each action sent to the computer the agent runs on.
 - `core/link.js` is the link itself: pairing codes, the TLS server, the client, and one symmetric connection either side can call over.
+- `core/phones.js` keeps the phones paired with this Mac (`link/phones.json`): this Mac's key for them, each phone's key, the pairing code that's open, and which phones are connected.
+- `core/remote.js` is where phones connect: a WebSocket that listens only while a phone is paired or a code is open, the handshake and encrypted frames of `shared/PROTOCOL.md`, and each phone's calls, its workspace's state as patches, the terminals it follows, and alerts and notices.
 - `core/pack.js` reads and writes agent packs (`.crew` files).
 - `core/tickets.js` is the Tasks board: tasks, their history, and the briefs that triage and working agents get.
 - `core/context.js` reads how full a conversation is, from Claude Code's status line or Codex's session log.

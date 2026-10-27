@@ -68,6 +68,9 @@ export function readCode(code) {
 const pack = (v) => JSON.stringify(v, (_, x) => (x instanceof Uint8Array ? { $bytes: Buffer.from(x).toString('base64') } : x))
 const unpack = (s) => JSON.parse(s, (_, x) => (x && typeof x === 'object' && typeof x.$bytes === 'string' ? new Uint8Array(Buffer.from(x.$bytes, 'base64')) : x))
 
+const closedWhy = (code, host) =>
+  new Error(code === 4003 ? 'the pairing code was reset on the other computer, get a new one' : code === 4004 ? 'the other computer runs a different Crew version, update both' : `${host}: closed`)
+
 // ---- a peer: one live connection, the same on both ends --------------------------------------------
 
 // Either side can call() the other (answered by its `handle`), push() its crew's state / terminal output /
@@ -205,14 +208,17 @@ export class LinkClient extends EventEmitter {
     this.emit('status', s)
   }
 
-  // Try every address in the code at once; the first one that proves it's the right computer wins.
+  // Try every address in the code at once; the first one with the certificate the code pinned wins, and only that one
+  // is sent the key. (Sending it on every address that answered left the other computer with a connection per address,
+  // and when the slower ones were dropped here, it dropped this computer along with them.)
   async connect() {
     this.closed = false
     const { hosts, port } = this.code
     this.trying = []
     try {
-      const { ws, address, name, early, keep } = await Promise.any(hosts.map((h) => this.attempt(h, port)))
+      const { ws, address } = await Promise.any(hosts.map((h) => this.attempt(h, port)))
       for (const other of this.trying) if (other !== ws) other.terminate() // slower addresses that also answered
+      const { name, early, keep } = await this.greet(ws, address)
       ws.off('message', keep)
       const peer = new Peer(ws, name, this.handle)
       for (const raw of early) peer.receive(raw) // anything the other side sent right after saying hello
@@ -225,12 +231,13 @@ export class LinkClient extends EventEmitter {
       this.emit('peer', peer)
     } catch (e) {
       // the most telling reason wins: an impostor, a revoked code, a version mismatch, then plain unreachable
-      const why = ['certificate', 'reset', 'version'].map((w) => e.errors?.find((x) => x.message.includes(w))?.message).find(Boolean) ?? "couldn't reach it on any address"
+      const why = ['certificate', 'reset', 'version'].map((w) => (e.errors ?? [e]).find((x) => x.message.includes(w))?.message).find(Boolean) ?? "couldn't reach it on any address"
       this.setStatus({ connected: false, error: why })
       if (!this.closed) this.retry = setTimeout(() => this.connect(), 4000)
     }
   }
 
+  // A connection to one address, once its certificate checks out (nothing secret has been sent yet).
   attempt(host, port) {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(`wss://${host}:${port}`, { rejectUnauthorized: false, handshakeTimeout: 4000, maxPayload: 32 * 1024 * 1024 })
@@ -242,21 +249,25 @@ export class LinkClient extends EventEmitter {
           reject(new Error(`${host} answered with a different certificate, not connecting`))
         }
       })
-      ws.on('open', () => {
-        ws.send(pack({ t: 'auth', key: this.code.key, protocol: PROTOCOL, name: this.myName }))
-        ws.once('message', (raw) => {
-          const m = unpack(raw.toString())
-          if (m.t !== 'hello') return reject(new Error('unexpected reply'))
-          const early = []
-          const keep = (r) => early.push(r)
-          ws.on('message', keep)
-          resolve({ ws, address: host, name: m.name, early, keep })
-        })
-      })
-      ws.on('close', (code) =>
-        reject(new Error(code === 4003 ? 'the pairing code was reset on the other computer, get a new one' : code === 4004 ? 'the other computer runs a different Crew version, update both' : `${host}: closed`)),
-      )
+      ws.on('open', () => resolve({ ws, address: host }))
+      ws.on('close', (code) => reject(closedWhy(code, host)))
       ws.on('error', (e) => reject(e))
+    })
+  }
+
+  // The key, on the connection that won: the other computer says hello, or closes saying why not.
+  greet(ws, host) {
+    return new Promise((resolve, reject) => {
+      ws.send(pack({ t: 'auth', key: this.code.key, protocol: PROTOCOL, name: this.myName }))
+      ws.once('message', (raw) => {
+        const m = unpack(raw.toString())
+        if (m.t !== 'hello') return reject(new Error('unexpected reply'))
+        const early = []
+        const keep = (r) => early.push(r)
+        ws.on('message', keep)
+        resolve({ name: m.name, early, keep })
+      })
+      ws.on('close', (code) => reject(closedWhy(code, host)))
     })
   }
 

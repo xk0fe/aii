@@ -34,7 +34,7 @@ crewphone1.<b64(UTF-8 JSON)>
 
 1. **phone → Mac** (text): `{ "t": "hello", "v": 1, "e": b64(E.pub), "d": b64(D.pub), "pair": true? }`. E is a fresh ephemeral key pair. `pair` is only there when pairing with a code.
    - An unknown `d` without `pair` closes with **4003** (not paired, or unpaired since).
-   - `pair` with no open code closes with **4005**.
+   - `pair` with no open code closes with **4005**: the code was used, ran out, or was cancelled. A code that a newer one ended looks like a wrong code instead: the Mac only knows the open one, so the phone's `hi` doesn't open (**4006**).
 2. **Mac → phone** (text): `{ "t": "welcome", "v": 1, "f": b64(F.pub) }`. F is the Mac's ephemeral key pair for this connection.
 3. **Both sides derive the keys:**
    ```
@@ -57,8 +57,11 @@ What each key buys:
 - **The secret `s`:** keeps phones without the code out.
 
 **Other close codes:**
+- **4003** also ends a live connection the moment you remove the phone on the Mac.
 - **4004:** a different protocol version.
-- **4008:** too many failed attempts from this address. The Mac waits a minute before it listens to that address again.
+- **4008:** too many failed attempts from this address (five within a minute). The Mac waits a minute before it listens to that address again.
+- The handshake has 10 seconds; a connection still in it after that is dropped. Until it's through, a message over 16 KB closes the connection (1009), and one address can have four connections in the handshake at once (a fifth gets 4008).
+- The Mac only listens while a phone is paired or a code is open. Once the last phone is removed, a phone that wasn't connected at the time finds nothing there (connection refused), not 4003.
 
 **Test vectors:** `vectors.json` holds keys, the derived keys and the first frame each way, for a reconnect and for a pairing. Both implementations must reproduce them: `desktop/` with `node:crypto`, and `mobile/` with `@noble/curves`, `@noble/hashes` and `@noble/ciphers`. `make-vectors.mjs` is the reference implementation that wrote them.
 
@@ -66,13 +69,13 @@ What each key buys:
 
 These are the same shapes as Crew Link's (`desktop/core/link.js`).
 
-- **A call and its reply:** `{ "t": "call", "id": 7, "name": "send", "args": [...] }` gets `{ "t": "reply", "id": 7, "ok": value }` or `{ "t": "reply", "id": 7, "error": "text to show" }`.
+- **A call and its reply:** `{ "t": "call", "id": 7, "name": "send", "args": [...] }` gets `{ "t": "reply", "id": 7, "ok": value }` or `{ "t": "reply", "id": 7, "error": "text to show" }`. `ok` is `null` for a call with nothing to say.
 - **What the Mac pushes:**
-  - `{ "t": "state", "ws": id, "v": 1, "state": {...} }`: the whole state of the workspace the phone watches.
-  - `{ "t": "patch", "ws": id, "v": 2, "patch": {...} }`: what changed since `v - 1` (see Sync). A phone that misses one calls `watch` again.
+  - `{ "t": "state", "ws": id, "v": 1, "state": {...} }`: the whole state of the workspace the phone watches. The Mac pushes one when the workspace the phone watched is removed: it watches Home (`"default"`) from then on.
+  - `{ "t": "patch", "ws": id, "v": 2, "patch": {...} }`: what changed since `v - 1` (see Sync). A phone that misses one calls `watch` again. `v` counts up for as long as the connection lasts, across `watch` calls: a `watch` reply carries the next one.
   - `{ "t": "pty", "ws": id, "name": "gal", "data": "..." }`: terminal output, only for a terminal the phone asked for.
   - `{ "t": "alert", "ws": id, "name": "gal", "text": "wants to run a command: npm test" }`: an agent needs you.
-  - `{ "t": "notice", "ws": id, "title": "...", "body": "...", "focus": "..." }`: something worth a line (a task in Review, a limit).
+  - `{ "t": "notice", "ws": id, "title": "...", "body": "...", "focus": "..." }`: something worth a line (a task in Review, a limit). One about your accounts' limits has no `ws`: they're no workspace's.
 - **Bytes:** byte values (images) travel as `{ "$bytes": "<base64>" }`, as on Crew Link.
 
 A phone watches **one workspace at a time, its own choice**: never the one on the Mac's screen. Every state carries the list of all workspaces with their counts, for the phone's switcher.
@@ -82,7 +85,7 @@ A phone watches **one workspace at a time, its own choice**: never the one on th
 | Call | Arguments | What it does |
 |---|---|---|
 | `watch` | `ws` | Stream workspace `ws`. Replies `{ v, state }` and patches follow. |
-| `send` | `ws, to, text, images?, opts?` | A message, as from the Mac's chat. `to` is `''` (Crew picks), a name, or names with commas. `opts`: `{ fresh?, re? }`. |
+| `send` | `ws, to, text, images?, opts?` | A message, as from the Mac's chat. `to` is `''` (Crew picks), a name, or names with commas. `opts`: `{ fresh?, re? }`. Replies with what Crew says, like `"sent to @kim\n"`. |
 | `answer` | `ws, id, reply` | Answer a question card. `reply` is what `Hub.answer` takes: `{ allow, always?, note? }`, `{ answers }` or `{ terminal: true }`. |
 | `approve`, `drop` | `ws, id` | A hand-off waiting for your approval (Autopilot off). |
 | `read` | `ws, seen` | `{ name: ts }`: replies seen up to then, so unread counts agree with the Mac. |
@@ -92,7 +95,7 @@ A phone watches **one workspace at a time, its own choice**: never the one on th
 | `freshStart`, `restart`, `markIdle` | `ws, name` | As in the agent's menu on the Mac. |
 | `image` | `path` | An image from the chat or a task, as bytes. Only files in Crew's attachments, or in its cache of linked computers' images. |
 | `saveImage` | `name, type, bytes` | Store a photo the phone attaches; replies with its path on the Mac, for `send` or `task`. |
-| `terminal` | `ws, name, on` | Start (`true`, replies with what it printed so far) or stop streaming a terminal. |
+| `terminal` | `ws, name, on` | Start (`true`) or stop streaming a terminal. Starting replies `{ data, cols, rows }`: what it printed so far, and the size it was drawn at (a full-screen CLI only replays right at that size). `pty` messages follow. |
 | `input` | `ws, name, data` | Type into a terminal. |
 
 Anything else is refused with `"<name>" isn't available on a phone`.
@@ -101,7 +104,7 @@ Anything else is refused with `"<name>" isn't available on a phone`.
 
 It's `Crew.snapshot(hub)` for the watched workspace, minus what a phone mustn't have or doesn't need:
 
-- **`computers`:** just `[{ slug, name, online }]`. A snapshot's `computers.me.code` is the Crew Link pairing code, with its secret key, and must never reach a phone.
+- **`computers`:** just `[{ slug, name, online }]`, this Mac first (agents with no `home` are its), then its linked computers. A snapshot's `computers.me.code` is the Crew Link pairing code, with its secret key, and must never reach a phone.
 - **`agents`:** without `prompt`, `args`, `images` or `cwd`.
 - **`providers`:** `{ id: { label } }`.
 - **`roster` and `theme`:** dropped.
