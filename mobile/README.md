@@ -37,7 +37,7 @@ npx expo run:android      # same for Android
 
 Then pick **Try the demo crew**, or open `crew://demo` (`xcrun simctl openurl booted crew://demo`).
 
-On an iPhone: `npx expo run:ios --device`, with your phone plugged in and a development team set in Xcode. The phone has to reach the Mac on port 7788 (the same Wi-Fi, or Tailscale on both); iOS asks once for local network access.
+On an iPhone: `npx expo run:ios --device` with your phone plugged in. A bundle id belongs to one Apple team, so signing with your own team (a free Personal Team works) needs an id of your own: `CREW_BUNDLE_ID=com.you.crew CREW_APPLE_TEAM=<your team id> npx expo run:ios --device --configuration Release` (Release carries its JavaScript, so it runs without the dev server; a free team's build stops opening after 7 days, until you build it again). The phone has to reach the Mac on port 7788 (the same Wi-Fi, or Tailscale on both); iOS asks once for local network access.
 
 `ios/` and `android/` are generated from `app.json` by `npx expo prebuild` (Continuous Native Generation) and are gitignored: change native settings in `app.json`, never in those folders.
 
