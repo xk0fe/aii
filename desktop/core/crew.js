@@ -13,6 +13,7 @@ import { serve } from './server.js'
 import { LinkHost, LinkClient, identity, addresses, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
 import { packAgents, unpackAgents } from './pack.js'
 import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, folderInfo, folders } from './move.js'
+import { Phones } from './phones.js'
 
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
@@ -38,6 +39,9 @@ export class Crew extends EventEmitter {
     if (this.settings.remote) this.settings.peers = [this.settings.remote] // from when a link replaced this crew
     delete this.settings.remote
     this.me = { name: this.settings.name || computerName, slug: slug(this.settings.name || computerName) }
+    // the phones paired with this computer; main.js serves them (core/remote.js)
+    this.phones = new Phones(LINK_DIR)
+    this.phones.on('change', () => this.changed())
     this.bin = bin
     this.runner = host ? new HostRunner({ runtime: host }) : new Runner()
     // A hub per workspace (core/workspaces.js), all on one config.json, one terminal runner and one local server.
@@ -214,7 +218,8 @@ export class Crew extends EventEmitter {
     const pushAll = (...msg) => this.pushAll(...msg)
     // Terminal output is batched per frame so a chatty agent doesn't flood IPC or the network. The app gets the
     // terminals of the workspace on screen by its agents' names. Linked computers get the default's by name, and any
-    // other workspace's as workspace/name, if they know about workspaces.
+    // other workspace's as workspace/name, if they know about workspaces. Phones get any workspace's they asked for
+    // ('terminal': workspace, name, data).
     const out = new Map()
     this.flushPty = () => {
       clearTimeout(this.ptyTimer)
@@ -225,6 +230,7 @@ export class Crew extends EventEmitter {
         const linked = this.hub.runner.own(name)
         if (linked) pushAll('pty', linked, data)
         else this.pushSpace(Crew.split(name)[0], 'pty', name, data)
+        this.emit('terminal', ...Crew.split(name), data)
       }
       out.clear()
     }
@@ -875,7 +881,7 @@ export class Crew extends EventEmitter {
         agents: (l.state?.agents ?? []).filter((a) => !a.cloneOf).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)) })),
       }
     })
-    return { me, links }
+    return { me, links, phones: this.phones.view() }
   }
 
   hosts = { at: 0, list: [] }
@@ -995,6 +1001,7 @@ export class Crew extends EventEmitter {
     peer.on('pty', (n, d) => {
       const [ws, base] = Crew.split(n)
       if (ws === this.current) this.emit('pty', q(base), d)
+      this.emit('terminal', ws, q(base), d)
     })
     peer.on('alert', (n, t) => {
       const [ws, base] = Crew.split(n)

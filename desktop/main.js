@@ -1,14 +1,18 @@
 // Electron shell: menu bar popover, floating pill + chat panel, full-screen dashboard.
 // All agent logic lives in core/; this file owns windows, dialogs and notifications and wires them to the crew:
-// this computer's agents plus those of every computer linked over Crew Link (see core/crew.js).
+// this computer's agents plus those of every computer linked over Crew Link (see core/crew.js), and your phones
+// (core/remote.js).
 import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, systemPreferences } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import qrcode from 'qrcode-generator'
 import { CONFIG, ATTACHMENTS } from './core/hub.js'
 import { Crew, CACHE } from './core/crew.js'
+import { addresses } from './core/link.js'
+import { Remote } from './core/remote.js'
 import { readPack } from './core/pack.js'
 import { Voice, voiceActions, voiceAudio } from './core/voice.js'
 import { pillWindow } from './core/pill.js'
@@ -16,7 +20,8 @@ import { pillWindow } from './core/pill.js'
 const dir = path.dirname(fileURLToPath(import.meta.url))
 const TRAY_WIDTH = 340
 
-let crew, hub, tray, trayWin, overlay, dash
+let crew, hub, remote, tray, trayWin, overlay, dash
+let phoneCode = null // the last code phones('code') made, to show again while it's open
 let pill // the floating pill's window placement (core/pill.js)
 let trayHiddenAt = 0
 let quitting = false
@@ -58,6 +63,8 @@ app.whenReady().then(async () => {
   crew = new Crew({ bin: path.join(dir, 'bin'), computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
   hub = crew.hub
   await crew.start()
+  remote = new Remote(crew)
+  await remote.start()
   nativeTheme.themeSource = hub.config.theme // every window + the popover's material
 
   Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]))
@@ -78,6 +85,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {}) // keep living in the menu bar
+app.on('will-quit', () => remote?.stop()) // phones hear Crew went away, rather than lose it
 
 // Ctrl+C in the terminal that ran `npm start`: quit without the confirmation dialog. The agents keep working.
 for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -126,9 +134,9 @@ const computerName = () => {
   }
 }
 
-// A computer that shares its agents shouldn't doze off while others use them.
+// A computer that shares its agents shouldn't doze off while others (or your phone) use them.
 function keepAwake() {
-  const on = Boolean(crew.sharing) || [...crew.links.values()].some((l) => l.peer)
+  const on = Boolean(crew.sharing) || [...crew.links.values()].some((l) => l.peer) || crew.phones.live.size > 0
   if (on && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension')
   if (!on && awake !== null) powerSaveBlocker.stop(awake), (awake = null)
 }
@@ -316,6 +324,28 @@ const actions = {
     keepAwake()
     return out
   },
+  // Your phones (core/phones.js, core/remote.js): phones('code') -> { code, qr (an SVG), expires }, a code that pairs one
+  // phone within ten minutes (a new one ends it, as does phones('cancel')), and phones('open') is that code again while
+  // it's open; phones('revoke', id) unpairs one.
+  phones: async (op, id) => {
+    const ops = {
+      code: async () => {
+        const made = crew.phones.code({ name: crew.me.name, hosts: (await addresses()).map((h) => h.address), port: remote.port })
+        await remote.sync() // listening before the phone tries
+        if (crew.phones.error) {
+          crew.phones.endCode()
+          throw new Error(crew.phones.error)
+        }
+        return (phoneCode = { ...made, qr: qrSvg(made.code) })
+      },
+      // the code that's still open, as phones('code') gave it, for a dashboard opened since
+      open: () => (phoneCode && crew.phones.open()?.expires === phoneCode.expires ? phoneCode : null),
+      cancel: () => crew.phones.endCode(),
+      revoke: () => crew.phones.revoke(id),
+    }
+    if (!Object.hasOwn(ops, op)) throw new Error(`unknown phones action "${op}"`)
+    return ops[op]()
+  },
 
   openFile: (file) => [ATTACHMENTS, CACHE].some((d) => String(file).startsWith(d + path.sep)) && shell.openPath(file),
   openUrl: (url) => /^https?:\/\//.test(url) && shell.openExternal(url),
@@ -335,6 +365,17 @@ const actions = {
     return (await dialog.showOpenDialog(dash, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0]
   },
   quit: () => app.quit(),
+}
+
+// A pairing code as a QR code: black on white, with the quiet zone around it that cameras need, whatever the theme.
+function qrSvg(text) {
+  const qr = qrcode(0, 'M')
+  qr.addData(text)
+  qr.make()
+  const n = qr.getModuleCount()
+  let d = ''
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.isDark(y, x)) d += `M${x + 4} ${y + 4}h1v1h-1z`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n + 8} ${n + 8}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`
 }
 
 function wire() {
