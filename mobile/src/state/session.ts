@@ -82,7 +82,7 @@ export class Session {
       // the store couldn't be read at launch (before the first unlock, say): try again now
       if (!this.readable) void this.load()
       // back in the foreground: prove the connection, or reconnect right away. A pairing tries again too: iOS's Local
-      // Network alert sends the app to the background and back, and the round it interrupted failed.
+      // Network alert makes the app inactive until it's answered, and the round it interrupted failed.
       this.client?.wake()
       this.pairing?.wake()
     })
