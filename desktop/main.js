@@ -21,7 +21,8 @@ const dir = path.dirname(fileURLToPath(import.meta.url))
 const TRAY_WIDTH = 340
 
 let crew, hub, remote, tray, trayWin, overlay, dash
-let phoneCode = null // the last code phones('code') made, to show again while it's open
+let phoneCodes = Promise.resolve() // phones('code') one at a time: the code made last is the one asked for last
+let dashPage = 0 // the dashboard's page: a new one on each load, and when it closes
 let pill // the floating pill's window placement (core/pill.js)
 let trayHiddenAt = 0
 let quitting = false
@@ -228,8 +229,18 @@ function openDashboard(focus = '') {
   dash.on('restore', () => overlay.hide())
   dash.on('minimize', showChat)
   dash.on('hide', showChat)
+  // A pairing code lives only while the dashboard's pairing view shows it: closing, reloading or losing the page ends
+  // it, and one that page asked for isn't made. (did-navigate, not did-start-navigation: that one also fires for a
+  // navigation will-navigate then stops.)
+  const endPairing = () => {
+    dashPage++
+    crew.phones.endCode()
+  }
+  dash.webContents.on('did-navigate', endPairing)
+  dash.webContents.on('render-process-gone', endPairing)
   dash.on('closed', () => {
     dash = null
+    endPairing()
     app.dock?.hide()
     showChat()
   })
@@ -325,21 +336,14 @@ const actions = {
     return out
   },
   // Your phones (core/phones.js, core/remote.js): phones('code') -> { code, qr (an SVG), expires }, a code that pairs one
-  // phone within ten minutes (a new one ends it, as does phones('cancel')), and phones('open') is that code again while
-  // it's open; phones('revoke', id) unpairs one.
+  // phone within ten minutes (a new one ends it, as does phones('cancel')). The dashboard's pairing view asks for a new
+  // one before each runs out, for as long as it's open. phones('revoke', id) unpairs one.
   phones: async (op, id) => {
     const ops = {
-      code: async () => {
-        const made = crew.phones.code({ name: crew.me.name, hosts: (await addresses()).map((h) => h.address), port: remote.port })
-        await remote.sync() // listening before the phone tries
-        if (crew.phones.error) {
-          crew.phones.endCode()
-          throw new Error(crew.phones.error)
-        }
-        return (phoneCode = { ...made, qr: qrSvg(made.code) })
+      code: () => {
+        const page = dashPage
+        return (phoneCodes = phoneCodes.catch(() => {}).then(() => phoneCode(page)))
       },
-      // the code that's still open, as phones('code') gave it, for a dashboard opened since
-      open: () => (phoneCode && crew.phones.open()?.expires === phoneCode.expires ? phoneCode : null),
       cancel: () => crew.phones.endCode(),
       revoke: () => crew.phones.revoke(id),
     }
@@ -367,15 +371,39 @@ const actions = {
   quit: () => app.quit(),
 }
 
-// A pairing code as a QR code: black on white, with the quiet zone around it that cameras need, whatever the theme.
+// A new pairing code for the dashboard's page that asked -> { code, qr, expires }, made once this Mac's addresses are
+// known (which can take a moment: Tailscale is asked), unless that page has closed or reloaded since.
+async function phoneCode(page) {
+  const hosts = (await addresses()).map((h) => h.address)
+  if (page !== dashPage) throw new Error('the dashboard closed')
+  const made = crew.phones.code({ name: crew.me.name, hosts, port: remote.port })
+  await remote.sync() // listening before the phone tries
+  if (crew.phones.error) {
+    crew.phones.endCode()
+    throw new Error(crew.phones.error)
+  }
+  return { ...made, qr: qrSvg(made.code) }
+}
+
+// A pairing code as a QR code: black on white, one unit a module, each row's runs of dark modules one rectangle (no
+// seams between neighbours). The quiet zone cameras need is the white card the pairing view puts it on, which also sizes
+// it to whole screen pixels.
 function qrSvg(text) {
   const qr = qrcode(0, 'M')
   qr.addData(text)
   qr.make()
   const n = qr.getModuleCount()
   let d = ''
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.isDark(y, x)) d += `M${x + 4} ${y + 4}h1v1h-1z`
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n + 8} ${n + 8}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      if (!qr.isDark(y, x)) continue
+      let run = 1
+      while (x + run < n && qr.isDark(y, x + run)) run++
+      d += `M${x} ${y}h${run}v1h-${run}z`
+      x += run
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`
 }
 
 function wire() {

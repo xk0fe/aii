@@ -204,20 +204,29 @@ const COMPUTERS = {
   links: [linked('mac-mini', 'Mac mini', true), ...(BIG ? [linked('air', 'MacBook Air', false)] : [])],
   phones: PHONES,
 }
-// A pairing code for a phone, with made-up keys, as a QR code the way main.js draws it (qrSvg).
-let LAST_CODE = null
+// A pairing code for a phone, with made-up keys (a new secret each time), as a QR code the way main.js draws it (qrSvg).
+// window.__crewPhoneTTL makes codes end sooner than ten minutes, to watch the pairing view renew them.
+let codes = 0
 function phoneCode() {
   const bytes = (n, seed) => Buffer.from(Array.from({ length: n }, (_, i) => (i * 53 + seed) & 255)).toString('base64url')
-  const code = 'crewphone1.' + Buffer.from(JSON.stringify({ v: 1, id: bytes(16, 1), n: 'Studio Mac', k: bytes(32, 2), s: bytes(32, 3), h: ['192.168.1.20', '100.101.102.103', 'studio-mac.tail1234.ts.net'], p: 7788 })).toString('base64url')
+  const code = 'crewphone1.' + Buffer.from(JSON.stringify({ v: 1, id: bytes(16, 1), n: 'Studio Mac', k: bytes(32, 2), s: bytes(32, 3 + codes++), h: ['192.168.1.20', '100.101.102.103', 'studio-mac.tail1234.ts.net'], p: 7788 })).toString('base64url')
   const qr = require('qrcode-generator')(0, 'M')
   qr.addData(code)
   qr.make()
   const n = qr.getModuleCount()
   let d = ''
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.isDark(y, x)) d += `M${x + 4} ${y + 4}h1v1h-1z`
-  const expires = Math.ceil((Date.now() + 10 * min) / min) * min
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      if (!qr.isDark(y, x)) continue
+      let run = 1
+      while (x + run < n && qr.isDark(y, x + run)) run++
+      d += `M${x} ${y}h${run}v1h-${run}z`
+      x += run
+    }
+  }
+  const expires = Date.now() + (window.__crewPhoneTTL ?? 10 * min)
   PHONES.pairing = { expires }
-  return { code, expires, qr: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n + 8} ${n + 8}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>` }
+  return { code, expires, qr: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>` }
 }
 // Folders each computer has, for moving an agent there (folderInfo / folders in main.js).
 // [path, label] as folders() in core/move.js labels them: the agent's own path there, who works where, home.
@@ -471,8 +480,11 @@ window.crew = {
     // phones: a code to pair one, and unpairing one
     if (action === 'phones') {
       const [op, id] = args
-      if (op === 'code') return new Promise((r) => setTimeout(() => r((LAST_CODE = phoneCode())), window.__crewPhoneDelay ?? 0))
-      if (op === 'open') return PHONES.pairing ? LAST_CODE : null
+      if (op === 'code') {
+        // window.__crewPhoneError: the Mac can't listen for phones (a port that's taken)
+        const fail = window.__crewPhoneError
+        return new Promise((resolve, reject) => setTimeout(() => (fail ? reject(new Error(fail)) : resolve(phoneCode())), window.__crewPhoneDelay ?? 0))
+      }
       if (op === 'cancel') PHONES.pairing = null
       if (op === 'revoke') PHONES.devices = PHONES.devices.filter((d) => d.id !== id)
       emit()

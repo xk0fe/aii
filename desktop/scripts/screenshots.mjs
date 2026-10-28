@@ -184,17 +184,43 @@ const SHOTS = {
     await save(win, `computers-${theme}`)
     win.destroy()
   },
-  // Phones: a code open to pair one, and two paired phones (one connected), under the computers.
+  // Add a phone: the pairing view with its code to scan, the phone that paired with it, then the list with that phone
+  // highlighted (two paired before it, one connected).
   async phones(theme) {
     const win = await dashboard(theme, 'crew')
     await sleep(900)
     await js(win, click('.link-chip'))
     await sleep(500)
     await js(win, click('[data-phone-add]'))
-    await sleep(700)
-    await js(win, "document.querySelector('#link .phones').scrollIntoView({ block: 'end' })")
-    await sleep(400)
+    await sleep(900)
     await save(win, `phones-${theme}`)
+    await js(win, "const s = window.__crewState; s.computers.phones.devices.push({ id: 'p3', name: 'iPad mini', platform: 'ios', app: '0.1.0', paired: Date.now(), seen: Date.now(), online: true }); window.__crewEmit('state', s)")
+    await sleep(900)
+    await save(win, `phones-paired-${theme}`)
+    await sleep(1700)
+    await save(win, `phones-list-${theme}`)
+    win.destroy()
+  },
+  // Add a phone: the code to scan, a new one before it runs out (codes last four seconds here, so the QR just changes),
+  // then a phone pairs and the list shows it highlighted.
+  async pairGif() {
+    const win = await dashboard('light', 'crew')
+    await js(win, click('.link-chip'))
+    await sleep(900)
+    await js(win, 'window.__crewPhoneTTL = 4000')
+    await record(win, 'pair', {
+      clip: { x: 396, y: 16, width: 648, height: 768 }, ms: 9800, width: 648,
+      during: async () => {
+        let at = { x: 700, y: 600 }
+        at = await glide(win, at, await center(win, '[data-phone-add]'), 700)
+        await sleep(250)
+        await tap(win, at)
+        await glide(win, at, { x: at.x + 60, y: at.y + 120 }, 600)
+        await sleep(4300)
+        await js(win, "const s = window.__crewState; s.computers.phones.devices.push({ id: 'p3', name: \"Sasha's iPad\", platform: 'ios', app: '0.1.0', paired: Date.now(), seen: Date.now(), online: true }); s.computers.phones.pairing = null; window.__crewEmit('state', s)")
+        await sleep(3000)
+      },
+    })
     win.destroy()
   },
   // Right-click an agent: everything you can do with it, Move to… included.
