@@ -48,12 +48,16 @@ export type Target =
   | { kind: 'mac'; mac: MacRecord; secret: Bytes }
   | { kind: 'pair'; code: PairCode; secret: Bytes }
 
+// What happened at one address in the last round: `no answer`, `unreachable`, `closed 4008`…
+export type Try = { host: string; why: string; code?: number }
+
 // How the connection is doing, for the UI: connecting the first time, online through one address, or offline since a
-// moment (still trying again unless `fatal`).
+// moment (still trying again unless `fatal`). Offline also says which close code decided it, and, after a round where
+// every address failed, what each one did.
 export type Link =
   | { status: 'connecting'; since: number }
   | { status: 'online'; host: string; since: number }
-  | { status: 'offline'; since: number; reason: string; fatal?: boolean; retryAt?: number }
+  | { status: 'offline'; since: number; reason: string; fatal?: boolean; retryAt?: number; code?: number; tries?: Try[] }
 
 export type Paired = { mac: MacRecord }
 
@@ -368,6 +372,7 @@ export class CrewClient {
     this.attempts = tries
     let left = tries.length
     const errors: HandshakeError[] = []
+    const tried: Try[] = [] // by address, in the code's order
     if (!left) return this.lost(new HandshakeError('no address to try'), [])
     tries.forEach((attempt, i) =>
       attempt.done.then(
@@ -379,17 +384,18 @@ export class CrewClient {
         },
         (err: HandshakeError) => {
           errors.push(err)
+          tried[i] = { host: hosts[i], why: err.message, ...(err.code !== undefined && { code: err.code }) }
           this.log('handshake', hosts[i], err.message, err.code ?? '')
           if (--left || this.attempts !== tries) return
           this.attempts = []
-          this.lost(null, errors)
+          this.lost(null, errors, tried)
         },
       ),
     )
   }
 
-  // Every address failed (errors), or the connection we had closed (closed, with its code).
-  private lost(closed: HandshakeError | null, errors: HandshakeError[]) {
+  // Every address failed (errors, and per address `tries`), or the connection we had closed (closed, with its code).
+  private lost(closed: HandshakeError | null, errors: HandshakeError[], tries?: Try[]) {
     const pairing = this.target.kind === 'pair'
     let code: number | undefined
     let fatal = false
@@ -411,8 +417,9 @@ export class CrewClient {
     // "unreachable since 14:02": the time it went away, not the time of the last try
     const since = was.status === 'offline' ? was.since : this.now()
     this.clearRetry()
+    const why = { ...(code !== undefined && { code }), ...(tries && { tries }) }
     if (fatal || this.stopped) {
-      this.set({ link: { status: 'offline', since, reason, fatal } })
+      this.set({ link: { status: 'offline', since, reason, fatal, ...why } })
       return
     }
     const wait = code === CLOSE.tooMany ? this.t.tooMany : this.t.backoff[Math.min(this.tries, this.t.backoff.length - 1)] * (0.8 + Math.random() * 0.4)
@@ -422,7 +429,7 @@ export class CrewClient {
       this.retryTimer = null
       this.connect()
     }, wait)
-    this.set({ link: { status: 'offline', since, reason, retryAt: this.now() + wait } })
+    this.set({ link: { status: 'offline', since, reason, retryAt: this.now() + wait, ...why } })
   }
 
   private online(conn: Conn) {

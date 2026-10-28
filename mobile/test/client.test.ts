@@ -190,6 +190,26 @@ test('a used-up code is refused with a reason', async () => {
   client.stop()
 })
 
+test('offline says what each address did, in the code\'s order, and which close code decided it', async () => {
+  const { net, mac, deps } = setup()
+  net.listen('ws://192.168.1.20:7788', (socket) => socket.close(4008))
+  net.listen('ws://mac-mini.tail1234.ts.net:7788', () => {}) // takes the connection, never answers
+  const code = parsePairCode(mac.code(['100.101.102.103', '192.168.1.20', 'mac-mini.tail1234.ts.net'], 7788))
+  const client = new CrewClient({ kind: 'pair', code, secret: random(32) }, { ...deps, timing: { ...FAST, handshake: 100 } }, device)
+  client.start()
+  const s = await until(client, (x) => x.link.status === 'offline')
+  expect(s.link).toMatchObject({
+    code: 4008,
+    reason: 'Too many tries from this network. The Mac listens again in a minute.',
+    tries: [
+      { host: '100.101.102.103', why: 'unreachable', code: 1006 },
+      { host: '192.168.1.20', why: 'closed 4008', code: 4008 },
+      { host: 'mac-mini.tail1234.ts.net', why: 'no answer' },
+    ],
+  })
+  client.stop()
+})
+
 test('a Mac with a different key never gets past the first frame', async () => {
   const { mac, deps } = setup()
   const real = parsePairCode(mac.code(['192.168.1.20'], 7788))
