@@ -4,6 +4,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { toolsDir } from './launch.js'
 
 // Where the hub is, read from CREW_HOME on every call: Crew's address and token change each time it starts, and an agent
 // can outlive a Crew (its CLI keeps running in the terminal host while Crew relaunches), so what it was started with
@@ -23,13 +24,24 @@ const ASK = (seconds) => `curl -sf -m ${seconds - 10} -X POST ${TOKEN} --data-bi
 // Before a file tool writes: is the file free, or is a teammate editing it? Crew prints a deny decision when it's taken,
 // nothing when it's free (or when Crew isn't there to ask).
 const LEASE = `curl -sf -m 3 -X POST ${TOKEN} --data-binary @- ${HUB('lease')} 2>/dev/null || true`
+// On Windows the hooks are bin/win32-<arch>/crew-hook.exe (bin/crew.mjs) instead, which does what these do. Claude Code
+// runs a hook through Git Bash when it's installed and PowerShell when it isn't, so its hooks name the program and its
+// arguments, which Claude Code starts with no shell at all (a hook with args, Claude Code 2.1.139 or later). Codex runs a
+// hook through PowerShell (or cmd), and both find crew-hook on the agent's PATH (core/launch.js withTools).
+const POSIX = { hook: () => HOOK, ask: ASK, lease: () => LEASE }
+const claudeHook = (kind, seconds, { platform, bin }) =>
+  platform === 'win32'
+    ? { type: 'command', command: path.win32.join(toolsDir(bin, { platform }), 'crew-hook.exe'), args: [kind, ...(seconds ? [String(seconds - 10)] : [])] }
+    : { type: 'command', command: POSIX[kind](seconds) }
+const codexHook = (kind, seconds, { platform }) => (platform === 'win32' ? `crew-hook ${kind}${seconds ? ` ${seconds - 10}` : ''}` : POSIX[kind](seconds))
 // How long each CLI's hook waits, in seconds. Claude shows its own dialog meanwhile (answer in either place), so
 // it can wait a day. Codex shows nothing until the hook is done: after half an hour it asks in its terminal.
 export const ASK_WAIT = { claude: 86400, codex: 1800 }
 const CLAUDE_WAIT = ASK_WAIT.claude
 const CODEX_WAIT = ASK_WAIT.codex
 // Claude Code's status line tells Crew how full the context is (bin/crew-status). Yours keeps showing if you
-// have one: it would otherwise be replaced by the one given on the command line.
+// have one: it would otherwise be replaced by the one given on the command line. A status line always goes through a
+// shell, so on Windows it's the name alone, which Git Bash and PowerShell both find on PATH: crew-status.exe.
 const STATUS_LINE = 'crew-status'
 function userStatusLine() {
   try {
@@ -86,20 +98,23 @@ Image files listed in a message are attachments (screenshots, mockups, reference
 // TOML basic strings accept JSON string escaping.
 const toml = (s) => JSON.stringify(s)
 
+// platform and bin (where Crew's bin/ is) say how the hooks reach Crew: see claudeHook.
 export const adapters = {
-  claude(a, { resume, session, attachments }) {
-    const on = (matcher) => [{ ...(matcher && { matcher }), hooks: [{ type: 'command', command: HOOK }] }]
+  claude(a, { resume, session, attachments, platform = process.platform, bin }) {
+    const where = { platform, bin }
+    const on = (matcher) => [{ ...(matcher && { matcher }), hooks: [claudeHook('hook', 0, where)] }]
     const settings = {
       // Hand-offs go through `crew send` (queued, visible, approvable), so Claude's built-in peer messaging is off.
-      permissions: { allow: ['Bash(crew *)'], deny: ['SendMessage'] },
+      // On Windows the agent may run crew from PowerShell instead (Claude Code's PowerShell tool).
+      permissions: { allow: ['Bash(crew *)', ...(platform === 'win32' ? ['PowerShell(crew *)'] : [])], deny: ['SendMessage'] },
       hooks: {
         SessionStart: on(),
         UserPromptSubmit: on(),
-        PermissionRequest: [{ hooks: [{ type: 'command', command: ASK(CLAUDE_WAIT), timeout: CLAUDE_WAIT }] }], // AskUserQuestion and ExitPlanMode come here too
+        PermissionRequest: [{ hooks: [{ ...claudeHook('ask', CLAUDE_WAIT, where), timeout: CLAUDE_WAIT }] }], // AskUserQuestion and ExitPlanMode come here too
         PostToolUse: on('*'),
         // sub-agents: what each is for, when it starts and stops (its own tool calls come through PostToolUse); and
         // the file tools, which check that no teammate is editing the file (one editor per file)
-        PreToolUse: [...on('Agent|Task'), { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: LEASE, timeout: 5 }] }],
+        PreToolUse: [...on('Agent|Task'), { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ ...claudeHook('lease', 0, where), timeout: 5 }] }],
         SubagentStart: on(),
         SubagentStop: on(),
         Notification: on(),
@@ -127,9 +142,10 @@ export const adapters = {
     }
   },
 
-  codex(a, { resume }) {
+  codex(a, { resume, platform = process.platform }) {
+    const where = { platform }
     const events = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'Interrupt']
-    const ask = `[{hooks=[{type="command",command=${toml(ASK(CODEX_WAIT))},timeout=${CODEX_WAIT},statusMessage="Waiting for your answer in Crew's chat"}]}]`
+    const ask = `[{hooks=[{type="command",command=${toml(codexHook('ask', CODEX_WAIT, where))},timeout=${CODEX_WAIT},statusMessage="Waiting for your answer in Crew's chat"}]}]`
     return {
       file: 'codex',
       readyAfter: 3000, // Codex fires SessionStart with the first prompt, not at launch
@@ -145,10 +161,10 @@ export const adapters = {
         ...(a.yolo ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true']),
         '-c', `developer_instructions=${toml(prompt(a))}`,
         '-c', 'check_for_update_on_startup=false',
-        ...events.flatMap((e) => ['-c', `hooks.${e}=[{hooks=[{type="command",command=${toml(HOOK)}}]}]`]),
+        ...events.flatMap((e) => ['-c', `hooks.${e}=[{hooks=[{type="command",command=${toml(codexHook('hook', 0, where))}}]}]`]),
         '-c', `hooks.PermissionRequest=${ask}`,
         // one editor per file: apply_patch checks with Crew first (every tool comes through; only patches are looked at)
-        '-c', `hooks.PreToolUse=[{hooks=[{type="command",command=${toml(LEASE)},timeout=5}]}]`,
+        '-c', `hooks.PreToolUse=[{hooks=[{type="command",command=${toml(codexHook('lease', 0, where))},timeout=5}]}]`,
         // Command-line hooks would otherwise wait on a "trust these hooks" prompt every launch.
         '--dangerously-bypass-hook-trust',
       ],
