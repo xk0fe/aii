@@ -54,7 +54,7 @@ jobs:
       - name: desktop
         working-directory: desktop
         timeout-minutes: 30
-        run: node --test --test-timeout=180000 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.xml test/*.test.js
+        run: node --test --import ./test/helpers/clis.mjs --test-timeout=180000 --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.xml test/*.test.js
       - name: what failed
         if: always()
         working-directory: desktop
