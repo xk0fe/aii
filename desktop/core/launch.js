@@ -142,17 +142,17 @@ export function resolveCommand(cmd, args = [], env = process.env, { platform = p
   return { file, args }
 }
 
-// Where agents find `crew`, and the status line and hooks their CLIs run: bin/ (sh scripts) on macOS and Linux, and on
-// Windows also bin/win32-<arch> (crew.exe, crew-status.exe, crew-hook.exe: native/crew-shim.c, which run bin/crew.mjs).
+// Where agents find `crew`, and the status line and hooks their CLIs run: bin/ (sh scripts) on macOS and Linux, and
+// bin/win32-<arch> on Windows (crew.exe, crew-status.exe, crew-hook.exe: native/crew-shim.c, which run bin/crew.mjs;
+// and the sh scripts again, for Git Bash: scripts/build-shims.mjs).
 export const toolsDir = (bin, { platform = process.platform, arch = process.arch } = {}) =>
   platform === WIN ? path.win32.join(bin, `win32-${arch === 'arm64' ? 'arm64' : 'x64'}`) : bin
 
-// The PATH an agent gets: Crew's tools first, then yours. On Windows bin/ comes first too, so Git Bash (Claude Code's
-// Bash tool) finds the sh scripts there, as on macOS, before the .exe files: handing `crew note "/api is v2"` to a
-// Windows program, Git Bash would rewrite /api as a path into its own folder. PowerShell and cmd don't run a file
-// without an extension, so they find the .exe files.
+// The PATH an agent gets: Crew's tools first, then yours. On Windows that folder holds bin/crew and bin/crew-status
+// too (copies), for Git Bash (Claude Code's Bash tool), which takes the name as it is before trying .exe: handing
+// `crew note "/api is v2"` to a Windows program, Git Bash would rewrite /api as a path into its own folder. PowerShell
+// takes a name with a PATHEXT extension before the bare one in a folder, and cmd only those, so they get the .exe files.
 export function withTools(env, bin, { platform = process.platform, arch = process.arch } = {}) {
   const key = pathKey(env, platform)
-  if (platform !== WIN) return { [key]: `${bin}:${env[key] ?? ''}` }
-  return { [key]: `${bin};${toolsDir(bin, { platform, arch })};${env[key] ?? ''}` }
+  return { [key]: `${toolsDir(bin, { platform, arch })}${platform === WIN ? ';' : ':'}${env[key] ?? ''}` }
 }

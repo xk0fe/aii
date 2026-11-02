@@ -107,9 +107,8 @@ test("Windows: PATH is the environment's own key, so an agent's environment neve
   assert.equal(pathKey({}, 'win32'), 'Path')
   assert.equal(pathKey({ Path: 'x' }, 'darwin'), 'PATH')
   const bin = 'C:\\Program Files\\Crew\\resources\\app.asar.unpacked\\desktop\\bin'
-  // bin first, for Git Bash's sake (the sh scripts); PowerShell and cmd skip those and find the .exe files after
-  assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'x64' }), { Path: `${bin};${bin}\\win32-x64;C:\\Windows` })
-  assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'arm64' }), { Path: `${bin};${bin}\\win32-arm64;C:\\Windows` })
+  assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'x64' }), { Path: `${bin}\\win32-x64;C:\\Windows` })
+  assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'arm64' }), { Path: `${bin}\\win32-arm64;C:\\Windows` })
   assert.deepEqual(withTools({ PATH: '/usr/bin:/bin' }, '/Applications/Crew.app/bin', { platform: 'darwin' }), { PATH: '/Applications/Crew.app/bin:/usr/bin:/bin' }, 'macOS: as before')
   assert.equal(toolsDir('/b', { platform: 'darwin' }), '/b')
 })
