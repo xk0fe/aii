@@ -3,12 +3,13 @@
 // The channel is TLS with a self-signed certificate that the pairing code pins, and the secret key in the code
 // is only sent after the certificate checks out, so it stays private even on shared networks.
 import { EventEmitter } from 'node:events'
-import { execFile, execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import https from 'node:https'
 import os from 'node:os'
 import path from 'node:path'
+import tls from 'node:tls'
 import { WebSocketServer, WebSocket } from 'ws'
 
 export const PROTOCOL = 2
@@ -17,41 +18,223 @@ export const DEFAULT_PORT = 7787
 // A computer's short name, as agents on it are addressed from elsewhere: gal@mac-mini.
 export const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'computer'
 
-// ---- identity: a certificate + key per host, made once with openssl --------------------------
+// ---- identity: a certificate + key per host, made once ----------------------------------------------
 
+// Made here, not by openssl, which Windows doesn't have. One an older Crew made with openssl is kept, so the computers
+// linked to this one keep their code, as long as TLS here can use it: macOS's own openssl (LibreSSL) wrote the curve
+// out in full, which Electron's BoringSSL can't read, so sharing never started with one of those and nothing can have
+// linked to it. That one is replaced.
 export function identity(dir) {
   fs.mkdirSync(dir, { recursive: true })
   const certFile = path.join(dir, 'cert.pem')
   const keyFile = path.join(dir, 'key.pem')
-  if (!fs.existsSync(certFile) || !fs.existsSync(keyFile)) {
-    execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
-      '-keyout', keyFile, '-out', certFile, '-days', '3650', '-subj', '/CN=crew-link'], { stdio: 'ignore' })
-    fs.chmodSync(keyFile, 0o600)
+  const saved = usable(certFile, keyFile)
+  if (saved) return saved
+  const made = selfSigned('crew-link')
+  fs.writeFileSync(keyFile, made.key, { mode: 0o600 })
+  fs.writeFileSync(certFile, made.cert)
+  return usable(certFile, keyFile)
+}
+
+// The saved certificate and key, if there are both and this runtime's TLS takes them; null if not.
+function usable(certFile, keyFile) {
+  let cert, key
+  try {
+    cert = fs.readFileSync(certFile, 'utf8')
+    key = fs.readFileSync(keyFile, 'utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') return null
+    throw e // there but unreadable: not a reason to make a new one, which would need a new code
   }
-  const cert = fs.readFileSync(certFile, 'utf8')
-  return { cert, key: fs.readFileSync(keyFile, 'utf8'), fingerprint: new crypto.X509Certificate(cert).fingerprint256 }
+  try {
+    tls.createSecureContext({ cert, key })
+    return { cert, key, fingerprint: new crypto.X509Certificate(cert).fingerprint256 }
+  } catch {
+    return null
+  }
+}
+
+// A self-signed X.509 certificate for a new P-256 key, valid for ten years: what `openssl req -x509 -newkey ec` made.
+// The pairing code pins its fingerprint, so nothing checks more of it than that it's well formed. -> { cert, key } (PEM)
+export function selfSigned(name, { days = 3650, now = new Date() } = {}) {
+  const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+  const serial = crypto.randomBytes(16)
+  serial[0] = serial[0] & 0x7f || 1 // positive, and no leading zero byte
+  const ecdsaWithSha256 = seq(oid('1.2.840.10045.4.3.2'))
+  const who = seq(set(seq(oid('2.5.4.3'), der(0x0c, Buffer.from(name))))) // CN=name
+  const tbs = seq(
+    der(0xa0, der(0x02, Buffer.from([2]))), // v3
+    der(0x02, serial),
+    ecdsaWithSha256,
+    who,
+    seq(time(now), time(new Date(now.getTime() + days * 864e5))),
+    who,
+    publicKey.export({ type: 'spki', format: 'der' }),
+  )
+  const signature = crypto.sign('sha256', tbs, privateKey) // DER, as X.509 has it
+  const body = seq(tbs, ecdsaWithSha256, der(0x03, Buffer.concat([Buffer.from([0]), signature])))
+  const pem = `-----BEGIN CERTIFICATE-----\n${body.toString('base64').match(/.{1,64}/g).join('\n')}\n-----END CERTIFICATE-----\n`
+  return { cert: pem, key: privateKey.export({ type: 'pkcs8', format: 'pem' }) }
+}
+
+// Just enough DER for that certificate.
+function der(tag, ...parts) {
+  const body = Buffer.concat(parts)
+  const n = body.length
+  const len = n < 0x80 ? [n] : n < 0x100 ? [0x81, n] : [0x82, n >> 8, n & 0xff]
+  return Buffer.concat([Buffer.from([tag, ...len]), body])
+}
+const seq = (...parts) => der(0x30, ...parts)
+const set = (...parts) => der(0x31, ...parts)
+function oid(dotted) {
+  const [a, b, ...rest] = dotted.split('.').map(Number)
+  const out = [40 * a + b]
+  for (let n of rest) {
+    const bytes = [n & 0x7f]
+    while ((n >>= 7)) bytes.unshift(0x80 | (n & 0x7f))
+    out.push(...bytes)
+  }
+  return der(0x06, Buffer.from(out))
+}
+// UTCTime up to 2049, GeneralizedTime after, as X.509 wants it
+function time(d) {
+  const s = d.toISOString().replace(/[-:T]/g, '').slice(0, 14) + 'Z'
+  return d.getUTCFullYear() < 2050 ? der(0x17, Buffer.from(s.slice(2))) : der(0x18, Buffer.from(s))
 }
 
 // ---- pairing codes ----------------------------------------------------------------------------------
 
-// Every address this machine can be reached on: Wi-Fi/Ethernet and Tailscale (100.64.0.0/10).
-export async function addresses() {
+// Every address this machine can be reached on: Wi-Fi/Ethernet and Tailscale (100.64.0.0/10). -> [{ address, via,
+// iface? }] (iface: the network interface's own name, for firewallWarning)
+export async function addresses({ interfaces = os.networkInterfaces(), platform = process.platform, tailscale = tailscaleSelf } = {}) {
   const out = []
-  for (const [iface, list] of Object.entries(os.networkInterfaces())) {
+  for (const [iface, list] of Object.entries(interfaces)) {
     for (const a of list ?? []) {
-      if (a.family !== 'IPv4' || a.internal) continue
-      const [x, y] = a.address.split('.').map(Number)
-      out.push({ address: a.address, via: x === 100 && y >= 64 && y < 128 ? 'Tailscale' : iface.startsWith('en') ? 'Wi-Fi / Ethernet' : iface })
+      if ((a.family !== 'IPv4' && a.family !== 4) || a.internal) continue
+      const via = interfaceLabel(iface, a.address, platform)
+      if (via) out.push({ address: a.address, via, iface })
     }
   }
-  try {
-    const status = await new Promise((resolve, reject) => execFile('tailscale', ['status', '--json'], { timeout: 3000 }, (e, out) => (e ? reject(e) : resolve(out))))
-    const self = JSON.parse(status).Self ?? {}
+  const self = await tailscale(platform).catch(() => null)
+  if (self) {
     for (const ip of self.TailscaleIPs ?? []) if (ip.includes('.') && !out.some((o) => o.address === ip)) out.push({ address: ip, via: 'Tailscale' })
     const name = self.DNSName?.replace(/\.$/, '')
     if (name) out.push({ address: name, via: 'Tailscale name' })
-  } catch {}
+  }
   return out
+}
+
+const TAILSCALE = /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./ // 100.64.0.0/10, the addresses Tailscale gives out
+// Windows' networks it makes up itself: a virtual machine's, WSL's or Docker's (vEthernet, VirtualBox, VMware), a Wi-Fi
+// hotspot or Wi-Fi Direct (Local Area Connection*), Bluetooth, loopback adapters (VPNs and packet capture install them)
+const VIRTUAL = /vEthernet|Hyper-V|\bWSL\b|VirtualBox|VMware|VMnet|Docker|Loopback|Npcap|Bluetooth|Local Area Connection\*/i
+
+// What a network interface is called in the app (Wi-Fi, Ethernet, Tailscale), or null when it's one no other
+// computer reaches this one on. macOS names its interfaces en0, en1 (Wi-Fi or Ethernet); Windows gives them names
+// people chose or recognise ("Wi-Fi", "Ethernet 2", "WLAN" in German).
+export function interfaceLabel(iface, address, platform = process.platform) {
+  if (TAILSCALE.test(address)) return 'Tailscale'
+  if (platform !== 'win32') return iface.startsWith('en') ? 'Wi-Fi / Ethernet' : iface
+  if (VIRTUAL.test(iface) || address.startsWith('169.254.')) return null // 169.254: no network gave it an address
+  if (/^(Wi-?Fi|WLAN|Wireless)/i.test(iface)) return 'Wi-Fi'
+  if (/^Ethernet/i.test(iface)) return 'Ethernet'
+  return iface
+}
+
+// This computer as Tailscale sees it (its status's Self), or null without Tailscale or while it's off. Its CLI is on
+// PATH on Windows and with Homebrew's; the Mac app has it inside, and Windows' installer puts it in Program Files
+// (which a Crew started before Tailscale was installed doesn't have on its PATH).
+export async function tailscaleSelf(platform = process.platform) {
+  const tries = ['tailscale', ...(platform === 'darwin' ? ['/Applications/Tailscale.app/Contents/MacOS/Tailscale'] : []),
+    ...(platform === 'win32' ? [path.win32.join(process.env.ProgramFiles || 'C:\\Program Files', 'Tailscale', 'tailscale.exe')] : [])]
+  for (const cli of tries) {
+    let out
+    try {
+      // windowsHide: a console window would flash up every time otherwise
+      out = await new Promise((resolve, reject) => execFile(cli, ['status', '--json'], { timeout: 3000, windowsHide: true }, (e, o) => (e ? reject(e) : resolve(o))))
+    } catch (e) {
+      if (e.code === 'ENOENT' || e.code === 'EACCES') continue // not this one
+      return null // there, but it isn't running (or isn't logged in)
+    }
+    const status = JSON.parse(out)
+    return status.BackendState && status.BackendState !== 'Running' ? null : (status.Self ?? null)
+  }
+  return null
+}
+
+// ---- Windows Firewall: can other computers get in? -------------------------------------------------------
+
+// Crew listens on every network while it shares this computer (or a phone is paired), and Windows Firewall lets
+// connections in only where a rule says so. The installer adds one for Private and Domain networks; without one,
+// Windows asks the first time Crew listens. Neither covers Public networks, which is what Windows makes a network
+// unless you've said it's yours. -> a sentence saying what to do, or null when nothing says the way in is shut
+// (anything it can't tell counts as open: if Windows hasn't decided, it asks).
+export async function firewallWarning(hosts, { platform = process.platform, program = process.execPath, query = firewallState } = {}) {
+  if (platform !== 'win32') return null
+  const state = await query(program).catch(() => null)
+  try {
+    return state ? reachWarning(hosts, state) : null
+  } catch {
+    return null // PowerShell said something else than expected
+  }
+}
+
+// The same, from what Windows says about it: nets [{ alias, category }] (its networks, by interface name, and
+// Public, Private or DomainAuthenticated), walls [{ name, on }] (the firewall for each kind of network: True, False
+// or NotConfigured) and rules [{ action, profile }] (the inbound rules for this program that are on: Allow or Block,
+// for "Any" or a list like "Domain, Private").
+export function reachWarning(hosts, { nets = [], walls = [], rules = [] } = {}) {
+  const list = (x) => [].concat(x ?? []).filter(Boolean)
+  const kind = new Map(list(nets).map((n) => [String(n.alias), { DomainAuthenticated: 'Domain', Private: 'Private', Public: 'Public' }[n.category]]))
+  const covers = (r, profile) => /\bany\b/i.test(r.profile) || String(r.profile).split(/,\s*/).includes(profile)
+  const allowed = (profile) => !list(rules).some((r) => r.action === 'Block' && covers(r, profile)) && list(rules).some((r) => r.action === 'Allow' && covers(r, profile))
+  const blocked = new Map() // what it's called -> the kind of network
+  const exposed = new Set()
+  for (const h of hosts) {
+    const profile = h.iface && kind.get(h.iface)
+    if (!profile || list(walls).find((w) => w.name === profile)?.on === 'False') continue // its firewall is off
+    // a rule that says no (someone said no when Windows asked, or left Public unticked); or a Public network no rule
+    // lets it in on, when Crew has rules (so they'd have been found), as with the installer's
+    const mine = list(rules).filter((r) => covers(r, profile))
+    if (!mine.some((r) => r.action === 'Block') && !(profile === 'Public' && list(rules).length && !mine.some((r) => r.action === 'Allow'))) continue
+    // a public network where a private one would do is better made private than opened up
+    if (profile === 'Public' && allowed('Private')) exposed.add(h.via)
+    else blocked.set(h.via, profile)
+  }
+  const and = (names) => [...new Set(names)].join(' and ')
+  if (blocked.size) return `Windows Firewall blocks Crew on ${and(blocked.keys())}, so your other computers and phones can't reach this one there. To let them in, open Windows Security > Firewall & network protection > Allow an app through firewall > Change settings, and tick ${and(blocked.values())} next to Crew.`
+  if (exposed.size) {
+    const where = [...exposed].map((v) => (v === 'Wi-Fi' ? 'Wi-Fi > your network' : v)).join(' or ')
+    return `Windows treats ${and(exposed)} as a public network, where its firewall keeps your other computers and phones out. If it's your own network, make it private: Settings > Network & internet > ${where} > Network profile type > Private network.`
+  }
+  return null
+}
+
+// What Windows says (see reachWarning), from PowerShell, which every Windows since 8 has; looked up at most every two
+// minutes, as Get-NetFirewallApplicationFilter can take a few seconds. One line, no double quotes, so it goes as
+// itself to -Command (not -EncodedCommand, which virus scanners look at twice); Crew's exe comes in CREW_PROGRAM.
+const FIREWALL = [
+  "$ErrorActionPreference = 'SilentlyContinue'",
+  "$ProgressPreference = 'SilentlyContinue'",
+  '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false',
+  '$nets = @(Get-NetConnectionProfile | ForEach-Object { @{ alias = [string]$_.InterfaceAlias; category = [string]$_.NetworkCategory } })',
+  '$walls = @(Get-NetFirewallProfile | ForEach-Object { @{ name = [string]$_.Name; on = [string]$_.Enabled } })',
+  "$rules = @(Get-NetFirewallApplicationFilter -Program $env:CREW_PROGRAM | Get-NetFirewallRule | Where-Object { [string]$_.Enabled -eq 'True' -and [string]$_.Direction -eq 'Inbound' } | ForEach-Object { @{ action = [string]$_.Action; profile = [string]$_.Profile } })",
+  'ConvertTo-Json -Compress -Depth 3 -InputObject @{ nets = $nets; walls = $walls; rules = $rules }',
+].join('; ')
+let firewallSeen = { at: 0, program: null, state: null }
+
+export async function firewallState(program) {
+  if (firewallSeen.program === program && Date.now() - firewallSeen.at < 120000) return firewallSeen.state
+  const args = ['-NoProfile', '-NonInteractive', '-Command', FIREWALL]
+  let state = null // and not asked again for a while either, when PowerShell can't say
+  try {
+    const out = await new Promise((resolve, reject) =>
+      execFile('powershell.exe', args, { timeout: 20000, windowsHide: true, env: { ...process.env, CREW_PROGRAM: program } }, (e, o) => (e ? reject(e) : resolve(o))))
+    state = JSON.parse(out.replace(/^\uFEFF/, '').trim())
+  } catch {}
+  firewallSeen = { at: Date.now(), program, state }
+  return state
 }
 
 export const makeCode = ({ name, port, key, fingerprint, hosts }) =>

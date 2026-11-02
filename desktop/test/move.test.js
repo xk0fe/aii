@@ -9,15 +9,16 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
+import { fileURLToPath } from 'node:url'
 
 const made = [] // every folder this makes, removed at the end
 const tmp = (name) => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `crew-move-${name}-`)))
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), `crew-move-${name}-`)))
   made.push(dir)
   return dir
 }
 process.env.CREW_HOME = tmp('unit')
-const { claudeSlug, claudeProject, sessionOf, requalify } = await import('../core/move.js')
+const { claudeSlug, claudeProject, sessionOf, requalify, safeRel, repoint, homeTwin } = await import('../core/move.js')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // Waits (up to 5 s) for what a stand-in CLI writes down, or for a computer to catch up.
 const until = async (fn) => {
@@ -84,27 +85,87 @@ test('names and task numbers, as the computer an agent moves to writes them', ()
   assert.deepEqual(['a1b2c3d4', '12345678@air'].map(lines), ['a1b2c3d4@studio', '12345678'], 'ids stay strings')
 })
 
+// ---- between a Mac and Windows -----------------------------------------------------------------------------
+
+test("a conversation's files, sent from a Mac or Windows, land inside its folder on either", () => {
+  const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+  for (const rel of [`${id}/tool-results/out.txt`, `${id}\\tool-results\\out.txt`, `./${id}//tool-results/out.txt`]) {
+    assert.equal(safeRel(rel, path.posix.join), `${id}/tool-results/out.txt`, rel)
+    assert.equal(safeRel(rel, path.win32.join), `${id}\\tool-results\\out.txt`, rel)
+  }
+  assert.equal(safeRel('2026/10/07/rollout-2026-10-07T17-52-23-x.jsonl', path.win32.join), '2026\\10\\07\\rollout-2026-10-07T17-52-23-x.jsonl')
+  for (const bad of ['../x', '..\\x', 'a/../../x', 'a\\..\\..\\x', '/etc/passwd', '\\Windows\\x', 'C:\\x', 'C:x', '\\\\nas\\share\\x', 'a/b:stream', '', '.', 'a\0b']) {
+    assert.throws(() => safeRel(bad, path.posix.join), /not a conversation file/, JSON.stringify(bad))
+    assert.throws(() => safeRel(bad, path.win32.join), /not a conversation file/, JSON.stringify(bad))
+  }
+})
+
+test("Claude Code's long tool outputs point at the new project folder, with that computer's separators", () => {
+  const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+  const mac = { root: '/Users/me/.claude/projects/-Users-me-code-app', id, sep: '/' }
+  const win = { root: 'C:\\Users\\me\\.claude\\projects\\C--Users-me-code-app', id, sep: '\\' }
+  const line = (saved, more = '') => JSON.stringify({ type: 'user', text: `saved to ${saved}${more}`, saved }) + '\n'
+  const at = (w, ...rest) => [w.root, id, ...rest].join(w.sep)
+  // Mac to Windows
+  const there = repoint(line(at(mac, 'tool-results', 'toolu_01.txt'), '\nand more') + line(at(mac, 'subagents', 'agent-a1b2.jsonl')), mac, win.root, '\\')
+  assert.deepEqual(there.trim().split('\n').map((l) => JSON.parse(l).saved), [at(win, 'tool-results', 'toolu_01.txt'), at(win, 'subagents', 'agent-a1b2.jsonl')])
+  assert.equal(JSON.parse(there.split('\n')[0]).text, `saved to ${at(win, 'tool-results', 'toolu_01.txt')}\nand more`, 'what follows a path stays')
+  // Windows to a Mac, with \r\n line endings, which stay
+  const back = repoint(line(at(win, 'tool-results', 'toolu_02.txt')).replace('\n', '\r\n'), win, mac.root, '/')
+  assert.equal(JSON.parse(back).saved, at(mac, 'tool-results', 'toolu_02.txt'))
+  assert.ok(back.endsWith('\r\n'))
+  // between two Macs, as before; and nothing to change, nothing changed
+  assert.equal(JSON.parse(repoint(line(at(mac, 'tool-results', 'x.txt')), mac, '/Users/you/.claude/projects/-Users-you-app', '/')).saved, `/Users/you/.claude/projects/-Users-you-app/${id}/tool-results/x.txt`)
+  assert.equal(repoint('{"a":1}\n', win, mac.root, '/'), '{"a":1}\n')
+})
+
+test("a folder in the other computer's home is the same place in this one's", () => {
+  const mac = (dir) => homeTwin(dir, '/Users/me', path.posix.join)
+  const win = (dir) => homeTwin(dir, 'C:\\Users\\Me', path.win32.join)
+  for (const dir of ['C:\\Users\\ann\\code\\app', 'c:/users/ann/code/app', '/Users/ann/code/app', '/home/ann/code/app', '~/code/app', '~\\code\\app', '/Users/ann//code/app/']) {
+    assert.equal(mac(dir), '/Users/me/code/app', dir)
+    assert.equal(win(dir), 'C:\\Users\\Me\\code\\app', dir)
+  }
+  assert.equal(mac('C:\\Users\\ann'), '/Users/me')
+  assert.equal(win('~'), 'C:\\Users\\Me')
+  for (const dir of ['/opt/app', 'D:\\work\\app', '/Users/Shared/app', 'C:\\Users\\Public\\app', 'code/app', '', '\\\\nas\\ann\\app']) assert.equal(mac(dir), null, dir)
+})
+
 // ---- three computers ------------------------------------------------------------------------------------
 
-// The stand-in CLI: writes down its arguments and everything typed into it.
+// The stand-in CLI: writes down its arguments and everything typed into it. A shell script, and on Windows, which
+// has no sh, the same in Node behind a .cmd.
 const bin = tmp('bin')
 const fake = `#!/bin/sh
 printf 'launch %s\\n' "$*" >> "$CREW_HOME/cli-$CREW_AGENT.log"
 stty raw -echo 2>/dev/null
 exec cat >> "$CREW_HOME/typed-$CREW_AGENT.log"
 `
-for (const cli of ['claude', 'codex']) fs.writeFileSync(path.join(bin, cli), fake, { mode: 0o755 })
+const fakeJs = path.join(bin, 'cli.mjs')
+fs.writeFileSync(fakeJs, `import fs from 'node:fs'
+import path from 'node:path'
+const log = (what) => path.join(process.env.CREW_HOME, what + '-' + process.env.CREW_AGENT + '.log')
+process.stdin.setRawMode?.(true) // as typed, and not echoed
+fs.appendFileSync(log('cli'), 'launch ' + process.argv.slice(2).join(' ') + '\\n')
+process.stdin.on('data', (d) => fs.appendFileSync(log('typed'), d))
+`)
+for (const cli of ['claude', 'codex']) {
+  fs.writeFileSync(path.join(bin, cli), fake, { mode: 0o755 })
+  fs.writeFileSync(path.join(bin, `${cli}.cmd`), `@"${process.execPath}" "${fakeJs}" %*\r\n`)
+}
+const COMPUTER = fileURLToPath(new URL('./helpers/computer.mjs', import.meta.url))
 
 const port = 20000 + Math.floor(Math.random() * 20000)
-function computer(name, linkPort, agents) {
+// you: the home folder of whoever uses it, when it isn't this one's
+function computer(name, linkPort, agents, { you } = {}) {
   const home = tmp('home')
   const claude = tmp('claude')
   const codex = tmp('codex')
   fs.mkdirSync(path.join(home, 'link'))
   fs.writeFileSync(path.join(home, 'link', 'link.json'), JSON.stringify({ name, port: linkPort }))
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ agents: agents.map((a) => ({ off: true, ...a })) }))
-  const env = { ...process.env, CREW_HOME: home, NAME: name, CLAUDE_CONFIG_DIR: claude, CODEX_HOME: codex, PATH: `${bin}:${process.env.PATH}` }
-  const p = spawn(process.execPath, [new URL('./helpers/computer.mjs', import.meta.url).pathname], { env, stdio: ['pipe', 'pipe', 'inherit'] })
+  const env = { ...process.env, CREW_HOME: home, NAME: name, CLAUDE_CONFIG_DIR: claude, CODEX_HOME: codex, PATH: `${bin}${path.delimiter}${process.env.PATH}`, ...(you && { HOME: you, USERPROFILE: you }) }
+  const p = spawn(process.execPath, [COMPUTER], { env, stdio: ['pipe', 'pipe', 'inherit'] })
   const waiting = new Map()
   let seq = 0
   let ready
@@ -148,7 +209,9 @@ const air = computer('Air', port + 1, [
   { name: 'dev', area: 'mobile', provider: 'codex', cwd: work.air, off: false },
   { name: 'ann', area: 'docs writing' },
 ])
-const mini = computer('Mini', port + 2, [])
+const miniHome = tmp('you') // Mini's user, ann, has her own home folder, with code/app in it
+fs.mkdirSync(path.join(miniHome, 'code', 'app'), { recursive: true })
+const mini = computer('Mini', port + 2, [], { you: miniHome })
 
 // The CLI has started (its SessionStart hook), its terminal has gone quiet and it is free: messages go in right away.
 const ready = (c, name) => c.run(`((a, proc) => (crew.hub.onHook(${JSON.stringify(name)}, { hook_event_name: 'SessionStart', source: 'startup' }), a.holdUntil = 0, proc && (proc.lastOutput = 0), crew.hub.pump(a), a.status))(crew.hub.agents.get(${JSON.stringify(name)}), crew.runner.procs.get(${JSON.stringify(name)}))`)
@@ -280,8 +343,9 @@ test('between two linked computers that are not linked to each other, everything
   assert.equal((await feedOf(mini)).find((e) => e.text === 'zed was here').from, 'zed')
   assert.equal(await studio.run(`crew.hub.agents.has('zed')`), false)
   assert.equal(await air.run(`crew.hub.reads.agents['zed@mini']`), 3000, 'this computer follows it too')
-  const seen = await until(async () => (await air.run(`crew.snapshot().feed`)).find((e) => e.text === 'zed was here'))
-  assert.equal(seen.from, 'zed@mini')
+  // once Studio Mac's state has caught up here, one copy, Mini's
+  const copies = async () => (await air.run(`crew.snapshot().feed`)).filter((e) => e.text === 'zed was here').map((e) => e.from)
+  assert.deepEqual(await until(async () => String(await copies()) === 'zed@mini' && copies()), ['zed@mini'])
 })
 
 test('a computer on an older Crew: the agent moves without its conversation, and the result says why', async () => {
@@ -299,17 +363,57 @@ test('a computer on an older Crew: the agent moves without its conversation, and
   }
 })
 
+const nowhere = path.join(work.air, 'no', 'such', 'folder')
+
 test('a running agent needs its folder on the other computer; nothing stops until that checks out', async () => {
-  await assert.rejects(air.run(`crew.moveAgent('bob@studio-mac', '', '/no/such/folder')`), /there's no folder \/no\/such\/folder on Air/)
+  await assert.rejects(air.run(`crew.moveAgent('bob@studio-mac', '', ${JSON.stringify(nowhere)})`), (e) => e.message === `there's no folder ${nowhere} on Air`)
   assert.equal(await studio.run(`crew.hub.runner.running('bob')`), true)
 })
 
 test('folders on another computer: does one exist, and which ones to offer', async () => {
   assert.deepEqual(await air.run(`crew.folderInfo('studio-mac', ${JSON.stringify(work.studio)})`), { exists: true, path: work.studio })
-  assert.deepEqual(await air.run(`crew.folderInfo('studio-mac', '/no/such/folder')`), { exists: false, path: '/no/such/folder' })
+  assert.deepEqual(await air.run(`crew.folderInfo('studio-mac', ${JSON.stringify(nowhere)})`), { exists: false, path: nowhere })
   assert.equal((await air.run(`crew.folderInfo('', '~')`)).path, os.homedir())
   const offered = await air.run(`crew.folders('mini', 'bob@studio-mac')`)
   assert.deepEqual(offered.find((f) => f.path === work.studio), { path: work.studio, label: 'same folder as now' })
   assert.deepEqual(offered.find((f) => f.path === work.mini), { path: work.mini, label: 'zed' })
-  assert.deepEqual(offered.at(-1), { path: os.homedir(), label: 'home folder' })
+  assert.deepEqual(offered.at(-1), { path: miniHome, label: 'home folder' })
+})
+
+test("a folder in another computer's home is found in the same place in this one's: a Mac's path on Windows, and back", async () => {
+  const app = path.join(miniHome, 'code', 'app')
+  for (const dir of ['C:\\Users\\sam\\code\\app', '/Users/sam/code/app', '~\\code\\app', '~/code/app']) {
+    assert.deepEqual(await air.run(`crew.folderInfo('mini', ${JSON.stringify(dir)})`), { exists: true, path: app }, dir)
+  }
+  assert.deepEqual(await air.run(`crew.folderInfo('mini', 'C:\\\\Users\\\\sam\\\\code\\\\nope')`), { exists: false, path: 'C:\\Users\\sam\\code\\nope' })
+  // and offered as where it works now
+  await air.run(`crew.hub.addAgent({ name: 'pcdev', area: 'windows', cwd: 'C:\\\\Users\\\\sam\\\\code\\\\app', off: true })`)
+  const offered = await air.run(`crew.folders('mini', 'pcdev')`)
+  assert.deepEqual(offered.find((f) => f.path === app), { path: app, label: 'same folder as now' })
+  await air.run(`(crew.hub.removeAgent('pcdev'), 1)`)
+})
+
+// What a Windows PC sends when one of its agents moves (see moveOut), arriving here: on Mini, where the folder it worked
+// in, C:\Users\sam\code\app, is ~/code/app.
+test('an agent from Windows arrives on a Mac: its folder, its files and the paths in its transcript as this computer has them', async () => {
+  const id = 'ffffffff-0000-0000-0000-000000000000'
+  const root = 'C:\\Users\\sam\\.claude\\projects\\C--Users-sam-code-app'
+  const transcript = JSON.stringify({ type: 'user', cwd: 'C:\\Users\\sam\\code\\app', saved: `${root}\\${id}\\tool-results\\toolu_01.txt` }) + '\r\n'
+  const files = [[`${id}.jsonl`, transcript], [`${id}/tool-results/toolu_01.txt`, 'output'], [`${id}\\subagents\\agent-1.jsonl`, '{}\r\n']] // the last as an older Windows Crew might have sent it
+  const pack = { crew: 1, agents: [{ name: 'win', area: 'windows builds', provider: 'claude', avatar: { seed: 'win' } }] }
+  const out = { token: 'w1', name: 'win', files: files.map(([rel, text]) => ({ rel, size: Buffer.byteLength(text) })), pack, session: { cli: 'claude', id, root, sep: '\\' }, convo: null, feed: [], inbox: [], cwd: 'C:\\Users\\sam\\code\\app', working: false }
+  const token = 'aaaaaaaa-1111-2222-3333-444444444444'
+  for (const [i, [, text]] of files.entries()) await mini.run(`crew.serve('moveWrite', [${JSON.stringify(token)}, ${i}, 0, new Uint8Array(Buffer.from(${JSON.stringify(text)}))])`)
+  const res = await mini.run(`crew.serve('moveIn', [${JSON.stringify(token)}, ${JSON.stringify(out)}, { name: 'win', folder: 'C:\\\\Users\\\\sam\\\\code\\\\app', on: false, from: { slug: 'pc', name: 'PC' } }])`)
+  assert.deepEqual(res, { name: 'win', conversation: 'moved' })
+  const app = path.join(miniHome, 'code', 'app')
+  assert.equal(await mini.run(`crew.hub.agents.get('win').cwd`), app, 'it works in the same place here')
+  const project = path.join(mini.claude, 'projects', claudeSlug(app))
+  assert.equal(fs.readFileSync(path.join(project, id, 'tool-results', 'toolu_01.txt'), 'utf8'), 'output')
+  assert.equal(fs.readFileSync(path.join(project, id, 'subagents', 'agent-1.jsonl'), 'utf8'), '{}\r\n')
+  const moved = fs.readFileSync(path.join(project, `${id}.jsonl`), 'utf8')
+  assert.equal(JSON.parse(moved).saved, path.join(project, id, 'tool-results', 'toolu_01.txt'))
+  assert.ok(moved.endsWith('\r\n'), 'its line endings as they were')
+  assert.equal(await mini.run(`crew.hub.sessions.win`), id)
+  assert.match(await mini.run(`crew.hub.convos.win.note`), /your folder here is .*app \(it was C:\\Users\\sam\\code\\app on PC\)/)
 })

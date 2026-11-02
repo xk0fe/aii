@@ -904,6 +904,7 @@ function computersHTML({ me, links, phones }) {
     ${me.sharing ? `
       <div class="lk-li"><button class="btn primary lk-copy" data-link-copy title="Anyone with this code can use and drive your agents, so keep it to your own computers">${linkOpen.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy link code`}</button>
         <span class="lk-note"><b>Ready to link.</b> Paste the code on your other computer, under Link a computer.</span></div>
+      ${me.warning ? `<div class="lk-li"><p class="err">${esc(me.warning)}</p></div>` : ''}
       <button class="lk-li lk-more" data-lk-details aria-expanded="${linkOpen.details}"><span>Security and a new code</span>${LINK_CHEV}</button>
       ${linkOpen.details ? `<div class="lk-details">
         <p>Anyone with the link code can use and drive your agents, so keep it to your own computers. Linked computers see these agents as <b>name@${esc(me.slug)}</b>.</p>
@@ -993,7 +994,7 @@ function phonesHTML(p) {
     <div class="ph-head"><div class="grow"><p style="margin:0">The chat and the questions agents wait on you for, in the Crew app on your phone, over the same Wi-Fi or Tailscale.</p></div>
       <button class="btn" data-phone-add>Add a phone</button></div>
     ${p.devices.length ? `<ul class="ph-list">${p.devices.map(phoneHTML).join('')}</ul>` : ''}
-    <p class="err">${esc(phoneErr || p.error || '')}</p>
+    <p class="err">${esc(phoneErr || p.error || p.warning || '')}</p>
   </section>`
 }
 
