@@ -61,7 +61,9 @@ app.whenReady().then(async () => {
 
   // The agents' terminals live in the terminal host (core/ptyhost.js), run by this same binary as Node, so they keep
   // working while Crew quits or relaunches with new code.
-  crew = new Crew({ bin: path.join(dir, 'bin'), computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
+  // bin/ goes on the agents' PATH, so it has to be a real folder: in an installed Crew, the one next to app.asar.
+  const bin = path.join(dir, 'bin').replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
+  crew = new Crew({ bin, computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
   hub = crew.hub
   await crew.start()
   remote = new Remote(crew)
