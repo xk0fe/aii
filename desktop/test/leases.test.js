@@ -7,12 +7,13 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-leases-'))
-const { Hub, CONFIG } = await import('../core/hub.js')
+const { Hub, CONFIG, filePath, fileKey } = await import('../core/hub.js')
 const { Runner } = await import('../core/runner.js')
 const { seconds, leftovers, readGroups } = await import('../core/procs.js')
-const BIN = new URL('../bin', import.meta.url).pathname
+const BIN = fileURLToPath(new URL('../bin', import.meta.url))
 
 class FakeRunner extends EventEmitter {
   live = new Set()
@@ -90,6 +91,39 @@ test('yours from your terminal until you let go; an agent that stops lets go of 
   assert.deepEqual(hub.holdsOf('levi'), [])
   assert.match(hub.give({ from: 'you', words: ['Android  device'] }), /released android device/)
   await assert.rejects(hub.claim({ from: 'levi', words: [] }), /usage: crew lease/)
+})
+
+// ---- one file, however it's written ----------------------------------------------------------------------
+
+const edit = (name, file_path) => hub.lease(name, { hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { file_path, old_string: 'a', new_string: 'b' } })
+
+test('a file an agent names another way is still the one leased', () => {
+  const dir = path.join(os.tmpdir(), 'crew-leases-app')
+  assert.equal(edit('scarlett', path.join(dir, 'src', 'Board.tsx')), '')
+  const other = path.join(dir, 'src', '..', 'src', '.', 'Board.tsx')
+  assert.match(JSON.parse(edit('levi', other)).hookSpecificOutput.permissionDecisionReason, /^Board\.tsx is being edited by @scarlett/)
+  if (process.platform === 'win32') assert.ok(edit('levi', path.join(dir, 'SRC', 'board.TSX')), 'on Windows, in any case')
+})
+
+test('on Windows: C:\\, C:/ and Git Bash\'s /c/ are one drive, and the case of a name is no other file', () => {
+  const win = (file, cwd = 'C:\\Users\\me\\app') => fileKey(filePath(file, cwd, 'win32'), 'win32')
+  const key = 'c:\\users\\me\\app\\src\\board.tsx'
+  for (const spelling of ['C:\\Users\\me\\app\\src\\Board.tsx', 'C:/Users/me/app/src/Board.tsx', '/c/Users/me/app/src/Board.tsx', '/cygdrive/c/Users/me/app/src/Board.tsx',
+    'c:\\users\\ME\\App\\SRC\\board.tsx', 'src\\Board.tsx', 'src/Board.tsx', './src/../src/Board.tsx', '\\\\?\\C:\\Users\\me\\app\\src\\Board.tsx']) assert.equal(win(spelling), key, spelling)
+  assert.equal(win('src/Board.tsx', '/c/Users/me/app'), key, 'a folder in Git Bash spelling too')
+  assert.equal(win('src/Board.tsx', 'c:/users/me/app/'), key)
+  assert.equal(filePath('/c/Users/me/app/src/Board.tsx', 'C:\\x', 'win32'), 'C:\\Users\\me\\app\\src\\Board.tsx', 'as it reads: a drive, \\ between folders, the case kept')
+  assert.equal(filePath('d:/work/x.js', 'C:\\x', 'win32'), 'D:\\work\\x.js')
+  assert.notEqual(win('D:\\Users\\me\\app\\src\\Board.tsx'), key, 'another drive is another file')
+  assert.equal(win('\\\\nas\\share\\Board.tsx'), '\\\\nas\\share\\board.tsx', 'a network share stays one')
+})
+
+test('on a Mac, two names that differ in case are two files (a volume can be case-sensitive)', () => {
+  const mac = (file, cwd = '/Users/me/app') => fileKey(filePath(file, cwd, 'darwin'), 'darwin')
+  assert.equal(mac('src/Board.tsx'), '/Users/me/app/src/Board.tsx')
+  assert.equal(mac('/Users/me/app/./src/../src/Board.tsx'), '/Users/me/app/src/Board.tsx')
+  assert.notEqual(mac('src/board.tsx'), mac('src/Board.tsx'))
+  assert.equal(mac('/c/Users/me/x.js'), '/c/Users/me/x.js', 'no drives on a Mac')
 })
 
 // ---- what an agent leaves running ----------------------------------------------------------------------

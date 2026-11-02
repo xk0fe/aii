@@ -9,7 +9,7 @@ import { MAX_CLONES } from './hub.js'
 import { DEFAULT, space } from './workspaces.js'
 
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
-const expand = (dir) => (dir ? dir.replace(/^~(?=\/|$)/, os.homedir()) : os.homedir())
+const expand = (dir) => (dir ? dir.replace(/^~(?=[\\/]|$)/, os.homedir()) : os.homedir()) // ~/code, or ~\code on Windows
 
 export function packAgents(hub, names, { stats = false } = {}) {
   const agents = names.map((name) => {

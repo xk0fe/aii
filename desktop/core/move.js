@@ -18,10 +18,13 @@ export const MAX_CONVERSATION = 256 * 1024 * 1024 // a bigger one stays behind, 
 const MAX_IMAGES = 64 * 1024 * 1024 // images in the lines and messages that go along
 const STAGING = path.join(HOME, 'moving') // what arrives, until it's put in place
 
-const expand = (dir) => (dir ? String(dir).replace(/^~(?=\/|$)/, os.homedir()) : os.homedir())
+const WINDOWS = process.platform === 'win32'
+const expand = (dir) => (dir ? String(dir).replace(/^~(?=[\\/]|$)/, os.homedir()) : os.homedir()) // ~/code, or ~\code on Windows
+// The folder as its CLI will see it. On Windows, with the case it has on disk (c:\users\me is C:\Users\me there):
+// Claude Code names its project folder after that.
 const real = (dir) => {
   try {
-    return fs.realpathSync(dir)
+    return WINDOWS ? fs.realpathSync.native(dir) : fs.realpathSync(dir)
   } catch {
     return dir
   }
@@ -61,8 +64,8 @@ export function sessionRoot(cli, cwd, env = process.env) {
 }
 
 // The files of a conversation: { cli, id, root, files: [{ rel, path }] } (rel: relative to root, the same on the
-// computer it goes to), or { reason } there's nothing to take. `transcript`: the path its hooks reported, which
-// beats working it out.
+// computer it goes to, with / between folders on Windows too), or { reason } there's nothing to take. `transcript`:
+// the path its hooks reported, which beats working it out.
 export function sessionOf(cli, id, { cwd, env = process.env, transcript } = {}) {
   if (!id) return { reason: "it hadn't started a conversation yet" }
   const reported = transcript?.id === id && path.basename(transcript.path).endsWith(`${id}.jsonl`) && sizeOf(transcript.path) >= 0 ? transcript.path : null
@@ -72,7 +75,7 @@ export function sessionOf(cli, id, { cwd, env = process.env, transcript } = {}) 
     if (!file) return { reason: "its conversation wasn't found" }
     const root = path.dirname(file)
     const rels = [path.basename(file), ...walk(path.join(root, id)).map((f) => path.join(id, f))]
-    return { cli, id, root, files: rels.map((rel) => ({ rel, path: path.join(root, rel) })) }
+    return { cli, id, root, files: rels.map((rel) => ({ rel: portable(rel), path: path.join(root, rel) })) }
   }
   if (cli === 'codex') {
     const root = path.join(codexHome(env), 'sessions')
@@ -80,7 +83,7 @@ export function sessionOf(cli, id, { cwd, env = process.env, transcript } = {}) 
     if (!file || sizeOf(file) < 0) return { reason: "its conversation wasn't found" }
     let rel = path.relative(root, file)
     if (rel.startsWith('..') || path.isAbsolute(rel)) rel = path.join(new Date().toISOString().slice(0, 10).replaceAll('-', '/'), path.basename(file))
-    return { cli, id, root, files: [{ rel, path: file }] }
+    return { cli, id, root, files: [{ rel: portable(rel), path: file }] }
   }
   return { reason: `Crew can't carry ${cli} conversations` }
 }
@@ -106,10 +109,17 @@ function walk(dir, base = '') {
   return list.flatMap((d) => (d.isDirectory() ? walk(dir, path.join(base, d.name)) : d.isFile() ? [path.join(base, d.name)] : []))
 }
 
-const safeRel = (rel) => {
-  const r = path.normalize(String(rel))
-  if (!r || path.isAbsolute(r) || r === '..' || r.startsWith(`..${path.sep}`)) throw new Error(`not a conversation file: ${rel}`)
-  return r
+// A relative path as it travels: / between folders, from Windows too.
+const portable = (rel) => rel.split(path.sep).join('/')
+
+// A relative path that came with a move, as this computer writes it (`join`), whether a Mac or Windows sent it: either
+// separator, and nothing that lands outside the folder it's for (no .., no root, drive or share, no : for a Windows
+// alternate stream).
+export function safeRel(rel, join = path.join) {
+  const s = String(rel ?? '')
+  const parts = s.split(/[\\/]+/).filter((p) => p && p !== '.')
+  if (!parts.length || /^[\\/]/.test(s) || parts.some((p) => p === '..' || p.includes(':') || p.includes('\0'))) throw new Error(`not a conversation file: ${rel}`)
+  return join(...parts)
 }
 
 function place(from, to) {
@@ -117,11 +127,30 @@ function place(from, to) {
   try {
     fs.renameSync(from, to)
   } catch (e) {
-    if (e.code !== 'EXDEV') throw e
+    // another disk; or on Windows, something (a virus scanner, say) has the file open just then
+    if (e.code !== 'EXDEV' && !(WINDOWS && (e.code === 'EPERM' || e.code === 'EBUSY'))) throw e
     fs.copyFileSync(from, to)
     fs.rmSync(from, { force: true })
   }
 }
+
+// Claude Code names long tool outputs and sub-agents' transcripts by their full path, under <its project folder>/<id>/,
+// so a transcript that moved points at the project folder it left (was: { root, id, sep }, as that computer wrote
+// them) and should point at `root`, the one here. It's JSON lines, so a Windows path's \ is written \\ in it; and
+// between a Mac and Windows the rest of each of those paths changes separators too. (Line endings don't matter: a line
+// that ends in \r\n reads the same.)
+export function repoint(text, was, root, sep = path.sep) {
+  const json = (s) => JSON.stringify(s).slice(1, -1)
+  const from = json(was.root + was.sep + was.id + was.sep)
+  if (!text.includes(from)) return text
+  const [a, b] = [json(was.sep), json(sep)]
+  const tail = new RegExp(`${quote(from)}((?:[\\w.-]|${quote(a)})*)`, 'g') // the files there: tool-results/toolu_….txt
+  return text.replace(tail, (_, rest) => json(root + sep + was.id + sep) + rest.split(a).join(b))
+}
+const quote = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// The separator in a folder from a computer that didn't say (an older Crew, so a Mac's).
+const sepOf = (dir) => (/^[a-zA-Z]:\\|^\\\\/.test(String(dir)) ? '\\' : '/')
 
 // ---- names, as the other computer writes them ---------------------------------------------------------
 
@@ -206,7 +235,7 @@ export async function moveOut(hub, name) {
     ;(hub.moves ??= new Map()).set(token, { name, paths, ids: new Set(feed.map((e) => e.id)), running, working })
     return {
       token, name, files, pack: packAgents(hub, [name], { stats: true }),
-      session: session.files ? { cli: session.cli, id: session.id, root: session.root } : null, reason: session.reason,
+      session: session.files ? { cli: session.cli, id: session.id, root: session.root, sep: path.sep } : null, reason: session.reason,
       // questions waiting for it stay: their askers here are told it moved (moveEnd), so nobody waits on an answer
       // that would have nowhere to go
       convo: hub.convos[name] ?? null, feed, inbox: a.inbox.filter((m) => !m.ask), cwd: real(expand(a.cwd)),
@@ -306,6 +335,8 @@ export function moveIn(hub, token, out, { name, folder, on, from, shared, join }
   const dir = staging(token)
   const staged = (i) => path.join(dir, String(i))
   const whole = (i) => sizeOf(staged(i)) === out.files[i].size
+  const there = folderInfo(folder)
+  if (there.exists && there.path !== expand(folder)) folder = there.path // as this computer writes it (a Mac's path on Windows)
   let added
   try {
     if (join) {
@@ -332,11 +363,11 @@ export function moveIn(hub, token, out, { name, folder, on, from, shared, join }
         for (const f of parts) place(staged(f.i), path.join(root, safeRel(f.rel)))
         // Claude Code points at long tool outputs by path: from the old project folder to this one
         const [first] = parts
-        const was = path.join(out.session.root, out.session.id) + path.sep
         if (cli === 'claude' && out.session.root !== root) {
           const file = path.join(root, safeRel(first.rel))
           const text = fs.readFileSync(file, 'utf8')
-          if (text.includes(was)) fs.writeFileSync(file, text.replaceAll(was, path.join(root, out.session.id) + path.sep))
+          const now = repoint(text, { ...out.session, sep: out.session.sep ?? sepOf(out.session.root) }, root)
+          if (now !== text) fs.writeFileSync(file, now)
         }
         hub.saveSession(added, out.session.id)
         conversation = 'moved'
@@ -404,14 +435,35 @@ export function agentMoved(hub, { from, to, old, name }) {
 
 // ---- folders, on whichever computer an agent will work -------------------------------------------------
 
-// Is there a folder at `dir` (~ is this computer's home)? -> { exists, path } with the path written out.
+// Is there a folder at `dir` (~ is this computer's home)? -> { exists, path } with the path written out. A folder
+// in another computer's home (where the agent works now: /Users/ann/code/app on a Mac, C:\Users\ann\code\app on
+// Windows) that isn't here is the same place in this computer's home, if that's there. On Windows, the path is
+// whole (a drive, \ between folders) and has the case it has on disk, as the agent's CLI will see it.
 export function folderInfo(dir) {
-  const full = expand(String(dir ?? '').trim())
-  let exists = false
+  const given = String(dir ?? '').trim()
+  const full = WINDOWS ? path.resolve(expand(given)) : expand(given)
+  if (isDir(full)) return { exists: true, path: WINDOWS ? real(full) : full }
+  const twin = homeTwin(given)
+  if (twin && twin !== full && isDir(twin)) return { exists: true, path: WINDOWS ? real(twin) : twin }
+  return { exists: false, path: full }
+}
+
+const isDir = (dir) => {
   try {
-    exists = fs.statSync(full).isDirectory()
-  } catch {}
-  return { exists, path: full }
+    return fs.statSync(dir).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+// The folder in this computer's home (`home`, its paths joined by `join`) where `dir` is in its own computer's: the
+// rest of the path after /Users/<you> (macOS), /home/<you> (Linux), C:\Users\<you> (Windows) or ~, with either
+// separator. -> the path, or null when `dir` isn't in a home folder.
+export function homeTwin(dir, home = os.homedir(), join = path.join) {
+  const s = String(dir ?? '').trim()
+  const m = s.match(/^~(?:[\\/]+(.*))?$/) ?? s.match(/^\/(?:Users|home)\/(?!Shared(?:\/|$))[^/]+(?:\/+(.*))?$/) ?? s.match(/^[a-zA-Z]:[\\/]+Users[\\/]+(?!Public(?:[\\/]|$))[^\\/]+(?:[\\/]+(.*))?$/i)
+  if (!m) return null
+  return join(home, ...(m[1] ?? '').split(/[\\/]+/).filter(Boolean))
 }
 
 // Folders worth offering for an agent here: the one at the same path as `like` (where it works now, on another
