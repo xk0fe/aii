@@ -16,7 +16,13 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+  # by hand: gh workflow run ci.yml --ref <branch> [-f tests="test/a.test.js test/b.test.js"]
   workflow_dispatch:
+    inputs:
+      tests:
+        description: Only these desktop test files, on both platforms, and no builds (empty for everything)
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -54,7 +60,7 @@ jobs:
       - name: desktop
         working-directory: desktop
         timeout-minutes: 30
-        run: node --test --import ./test/helpers/clis.mjs --test-timeout=180000 --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.xml test/*.test.js
+        run: node --test --import ./test/helpers/clis.mjs --test-timeout=180000 --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.xml ${{ inputs.tests || 'test/*.test.js' }}
       - name: what failed
         if: always()
         working-directory: desktop
@@ -68,6 +74,7 @@ jobs:
           if-no-files-found: ignore
 
   build-mac:
+    if: ${{ !inputs.tests }}
     runs-on: macos-latest
     env:
       HAS_NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' }}
@@ -127,6 +134,7 @@ jobs:
           if-no-files-found: error
 
   build-win:
+    if: ${{ !inputs.tests }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
