@@ -79,7 +79,9 @@ function main() {
     process.exit(1)
   })
   here = WIN ? pipeName() : SOCKET
-  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => quit())
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => quit(signal))
+  // why it went, in its log: nothing there after "listening" means it crashed outside JavaScript
+  process.on('exit', (code) => log(`terminal host ${process.pid} exits (${code})`))
   const listen = () => {
     // macOS: the token before the socket, so a Crew that finds the socket reads this host's token with it, not the last
     // host's (it was turned away, and ran its agents without a host, when it came in between)
@@ -170,7 +172,7 @@ function handle(m) {
       }
       return
     case 'quit':
-      return quit()
+      return quit('Crew asked it to')
   }
 }
 
@@ -232,10 +234,11 @@ function send(m) {
 function idle() {
   clearTimeout(idleTimer)
   if (procs.size || client) return
-  idleTimer = setTimeout(() => quit(), IDLE)
+  idleTimer = setTimeout(() => quit('nothing to keep'), IDLE)
 }
 
-function quit() {
+function quit(why) {
+  log(`terminal host ${process.pid} quits: ${why}`)
   for (const x of procs.values()) kill(x)
   if (!WIN) fs.rmSync(SOCKET, { force: true })
   else if (address()?.path === here) fs.rmSync(PIPE, { force: true }) // unless a newer host has said where it is
