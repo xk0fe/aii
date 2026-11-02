@@ -5,15 +5,20 @@
 // answer straight away, as the hub expects.
 import { EventEmitter } from 'node:events'
 import { spawn } from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { which, cleanEnv, TITLE_ONLY } from './runner.js'
-import { PROTOCOL, RUN, SOCKET, TOKEN } from './ptyhost.js'
+import { PROTOCOL, RUN, LOG, address } from './ptyhost.js'
 
 const SCROLLBACK = 256 * 1024
 const HOST = fileURLToPath(new URL('./ptyhost.js', import.meta.url))
+const LOG_KEEP = 1024 * 1024 // past this the log starts afresh, and the one before is kept as ptyhost.log.1
+// Where the host runs from on Windows: a copy per version (stage).
+export const RUNTIMES = path.join(RUN, 'runtime')
 
 export class HostRunner extends EventEmitter {
   procs = new Map() // name -> { pid, tag, chunks, size, startedAt, lastOutput, cols, rows }
@@ -22,7 +27,8 @@ export class HostRunner extends EventEmitter {
   outbox = [] // what to send once connected
   stopping = new Map() // name -> resolve, for stop()'s promise
 
-  // runtime: how to run the host as Node ({ file, env }); Crew passes its own Electron binary in Node mode.
+  // runtime: how to run the host as Node ({ file, env }); Crew passes its own Electron binary in Node mode. stage:
+  // whether it runs from a copy (see stage(); into: where), by default when that binary is a packaged Crew on Windows.
   constructor({ runtime } = {}) {
     super()
     this.runtime = runtime ?? { file: process.execPath, env: {} }
@@ -30,25 +36,39 @@ export class HostRunner extends EventEmitter {
 
   // Connects, starting the host if there's none, and resolves once it's said what's running.
   async connect() {
-    let sock = await dial().catch(() => null)
-    if (!sock) {
-      this.spawnHost()
-      for (let i = 0; i < 50 && !sock; i++) {
-        await new Promise((r) => setTimeout(r, 100))
-        sock = await dial().catch(() => null)
+    let line = await dial().catch(() => null)
+    if (!line) {
+      // from the copy if there is one, and from where Crew is if the copy won't start (a policy that keeps programs
+      // out of your own folders, say)
+      for (const runtime of await this.runtimes()) {
+        this.spawnHost(runtime)
+        // a program copied anew gets a look from antivirus before it first runs, which can take a while
+        for (let i = 0; i < (runtime.staged ? 200 : 50) && !line; i++) {
+          await new Promise((r) => setTimeout(r, 100))
+          line = await dial().catch(() => null)
+        }
+        if (line) {
+          this.started = runtime // what the host Crew started runs from
+          break
+        }
+        // next time straight to where Crew is, without the wait
+        if (runtime.staged) {
+          note(`terminal host: the copy in ${path.dirname(runtime.file)} didn't start, so it runs from Crew's folder`)
+          fs.writeFileSync(path.join(path.dirname(runtime.file), '.broken'), '')
+        }
       }
-      if (!sock) throw new Error("couldn't start the terminal host (see ~/.crew/run/ptyhost.log)")
+      if (!line) throw new Error(`couldn't start the terminal host (see ${LOG})`)
     }
-    const hello = await this.greet(sock)
+    const hello = await this.greet(line.sock, line.token)
     if (hello.protocol !== PROTOCOL) {
       // a host from another Crew version: its terminals go (the agents resume their conversations), and a new one starts
-      sock.write(JSON.stringify({ t: 'quit' }) + '\n')
-      sock.destroy()
+      line.sock.write(JSON.stringify({ t: 'quit' }) + '\n')
+      line.sock.destroy()
       await new Promise((r) => setTimeout(r, 800))
       this.replaced = hello.procs.length
       return this.connect()
     }
-    this.attach(sock)
+    this.attach(line.sock)
     for (const x of hello.procs) {
       this.procs.set(x.name, { pid: x.pid, tag: x.tag, chunks: x.data ? [x.data] : [], size: x.data?.length ?? 0, startedAt: x.startedAt, lastOutput: x.lastOutput, cols: x.cols, rows: x.rows })
     }
@@ -57,23 +77,38 @@ export class HostRunner extends EventEmitter {
     return this.survivors
   }
 
-  spawnHost() {
+  // How to run the host, in the order to try: [{ file, env, script, staged }].
+  async runtimes() {
+    const direct = { file: this.runtime.file, env: this.runtime.env ?? {}, script: HOST }
+    const packaged = process.platform === 'win32' && Boolean(process.versions.electron) && !process.defaultApp
+    if (!(this.runtime.stage ?? packaged)) return [direct]
+    try {
+      const pty = path.dirname(createRequire(import.meta.url).resolve('node-pty/package.json'))
+      const copy = await stage({ exe: direct.file, script: HOST, pty, into: this.runtime.into ?? RUNTIMES })
+      return [{ ...direct, ...copy, staged: true }, direct]
+    } catch (e) {
+      note(`terminal host: couldn't copy it out of Crew's folder (${e.message}), so it runs from there`)
+      return [direct]
+    }
+  }
+
+  spawnHost({ file, env, script }) {
     fs.mkdirSync(RUN, { recursive: true, mode: 0o700 })
-    const log = fs.openSync(path.join(RUN, 'ptyhost.log'), 'a')
-    const p = spawn(this.runtime.file, [HOST], {
-      detached: true, stdio: ['ignore', log, log], cwd: RUN,
-      env: { ...process.env, ...this.runtime.env },
+    rotate(LOG)
+    const log = fs.openSync(LOG, 'a')
+    // detached: on Windows that also keeps it out of the job that ends what Crew started once Crew goes.
+    // windowsHide: a console program (Node, in the tests) would get a console window of its own otherwise.
+    const p = spawn(file, [script], {
+      detached: true, windowsHide: true, stdio: ['ignore', log, log], cwd: RUN,
+      env: { ...process.env, ...env },
     })
+    p.on('error', (e) => note(`terminal host: ${e.message}`))
     p.unref()
     fs.closeSync(log)
   }
 
-  greet(sock) {
+  greet(sock, token) {
     return new Promise((resolve, reject) => {
-      let token = ''
-      try {
-        token = fs.readFileSync(TOKEN, 'utf8').trim()
-      } catch {}
       let buf = ''
       const onData = (chunk) => {
         buf += chunk
@@ -235,12 +270,111 @@ export class HostRunner extends EventEmitter {
   }
 }
 
+// A line to the host, and the token it wants: { sock, token }.
 function dial() {
   return new Promise((resolve, reject) => {
-    const sock = net.connect(SOCKET)
-    sock.once('connect', () => resolve(sock))
+    const where = address()
+    if (!where) return reject(new Error('no terminal host has said where it is'))
+    const sock = net.connect(where.path)
+    sock.once('connect', () => resolve({ sock, token: where.token }))
     sock.once('error', reject)
   })
+}
+
+// A line in the host's log, from this side of it.
+function note(line) {
+  try {
+    fs.appendFileSync(LOG, `${new Date().toISOString()} ${line}\n`)
+  } catch {}
+}
+
+// The log, kept small: past `keep` bytes it becomes .1 (instead of the one before) and a new one starts.
+export function rotate(file, keep = LOG_KEEP) {
+  try {
+    if (fs.statSync(file).size > keep) fs.renameSync(file, `${file}.1`)
+  } catch {}
+}
+
+// Windows won't replace a program's files while it runs, and an update replaces Crew's. A host running from Crew's
+// folder would have to stop for an update, every agent with it (the installer stops whatever runs as Crew.exe there
+// anyway). So on Windows it runs from a copy of what it needs, made once per version, in `into` (RUNTIMES):
+//   <version>/crew-host.exe      Crew's own binary (Electron, run as Node), with the DLLs and data files beside it
+//   <version>/app/ptyhost.js     this host, with node-pty in app/node_modules
+// Copies no host runs from any more are removed. Windows won't remove a running program's file, which is how `busy`
+// tells by default. Files inside Crew's app.asar are read the way Electron reads them. A copy that didn't start once
+// (connect marks it .broken) isn't tried again. -> { file, script }
+export async function stage({ exe, script, pty, into, busy = running }) {
+  const fsp = fs.promises
+  // what Electron loads beside its program; not locales/ and resources/, which only windows need
+  const beside = (await fsp.readdir(path.dirname(exe))).filter((f) => /\.(dll|dat|bin|pak|json)$/i.test(f)).sort()
+  const { size, mtimeMs } = await fsp.stat(exe)
+  const version = crypto.createHash('sha256')
+    .update(JSON.stringify([size, mtimeMs, beside, process.arch]))
+    .update(await fsp.readFile(path.join(pty, 'package.json')))
+    .update(await fsp.readFile(script))
+    .digest('hex').slice(0, 16)
+  const home = path.join(into, version)
+  const out = { file: path.join(home, 'crew-host.exe'), script: path.join(home, 'app', 'ptyhost.js') }
+  if (fs.existsSync(path.join(home, '.broken'))) throw new Error("the copy didn't start before")
+  await fsp.mkdir(into, { recursive: true })
+  if (!fs.existsSync(path.join(home, '.complete'))) {
+    // copied aside first and moved into place whole, so a copy cut short is never run
+    const tmp = path.join(into, `.${version}-${process.pid}-${Date.now()}`)
+    await fsp.mkdir(path.join(tmp, 'app'), { recursive: true })
+    await fsp.copyFile(exe, path.join(tmp, 'crew-host.exe'))
+    for (const f of beside) await fsp.copyFile(path.join(path.dirname(exe), f), path.join(tmp, f))
+    await fsp.writeFile(path.join(tmp, 'app', 'ptyhost.js'), await fsp.readFile(script))
+    await fsp.writeFile(path.join(tmp, 'app', 'package.json'), '{ "type": "module" }\n')
+    // node-pty: its code, and the native part for this computer, built or prebuilt
+    const parts = ['lib', 'build/Release', `prebuilds/${process.platform}-${process.arch}`]
+    const wanted = (rel, dir) => dir
+      ? parts.some((p) => rel === p || rel.startsWith(`${p}/`) || p.startsWith(`${rel}/`))
+      : rel === 'package.json' || (parts.some((p) => rel.startsWith(`${p}/`)) && !/(\.map|\.pdb|\.test\.js)$/.test(rel))
+    await copyTree(pty, path.join(tmp, 'app', 'node_modules', 'node-pty'), wanted)
+    await fsp.writeFile(path.join(tmp, '.complete'), '')
+    await fsp.rm(home, { recursive: true, force: true }).catch(() => {})
+    await fsp.rename(tmp, home).catch(async (e) => {
+      await fsp.rm(tmp, { recursive: true, force: true }).catch(() => {})
+      if (!fs.existsSync(path.join(home, '.complete'))) throw e // made meanwhile by another Crew is just as good
+    })
+  }
+  for (const name of await fsp.readdir(into)) {
+    const dir = path.join(into, name)
+    if (name === version) continue
+    if (name.startsWith('.')) {
+      // a copy cut short, unless it's another Crew's still under way
+      if (Date.now() - (await fsp.stat(dir)).mtimeMs > 3600e3) await fsp.rm(dir, { recursive: true, force: true }).catch(() => {})
+    } else if (!(await busy(dir))) {
+      await fsp.rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  }
+  return out
+}
+
+// Does a host run from this copy? On Windows its program can't be removed while it runs.
+async function running(dir) {
+  try {
+    await fs.promises.unlink(path.join(dir, 'crew-host.exe'))
+    return false
+  } catch (e) {
+    return e.code !== 'ENOENT'
+  }
+}
+
+// Copies what `wanted(relativePath, isDirectory)` says of src into dst, through readFile and writeFile, which Electron
+// serves from inside app.asar too, keeping what's a program a program.
+async function copyTree(src, dst, wanted, rel = '') {
+  const fsp = fs.promises
+  for (const name of await fsp.readdir(path.join(src, rel))) {
+    const r = rel ? `${rel}/${name}` : name
+    const stat = await fsp.stat(path.join(src, r))
+    if (!wanted(r, stat.isDirectory())) continue
+    if (stat.isDirectory()) await copyTree(src, dst, wanted, r)
+    else {
+      await fsp.mkdir(path.join(dst, rel), { recursive: true })
+      await fsp.writeFile(path.join(dst, r), await fsp.readFile(path.join(src, r)), { mode: stat.mode & 0o777 })
+    }
+  }
 }
 
 function trim(x) {

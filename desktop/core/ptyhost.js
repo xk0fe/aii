@@ -1,8 +1,9 @@
 // The terminal host: a small process of its own that owns the agents' pseudo-terminals, so they keep working while
 // Crew quits, crashes or relaunches with new code. Crew connects over a Unix socket in CREW_HOME/run (core/ptyclient.js),
-// starts and stops terminals, types into them and gets their output; while nobody is connected the terminals carry on and
-// their output is kept, so whoever connects next can redraw them. It knows nothing about agents, and changes rarely:
-// once it's running, newer Crews keep using it. It quits once it has no terminals and nobody has connected for a minute.
+// or a named pipe on Windows, starts and stops terminals, types into them and gets their output; while nobody is
+// connected the terminals carry on and their output is kept, so whoever connects next can redraw them. It knows nothing
+// about agents, and changes rarely: once it's running, newer Crews keep using it. It quits once it has no terminals and
+// nobody has connected for a minute.
 //
 //   node core/ptyhost.js            (Crew runs it with its own Electron binary, as Node: ELECTRON_RUN_AS_NODE=1)
 //
@@ -14,20 +15,59 @@ import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import pty from 'node-pty'
 
 export const PROTOCOL = 1
+const WIN = process.platform === 'win32'
 const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
 export const RUN = path.join(HOME, 'run')
 export const SOCKET = path.join(RUN, 'pty.sock')
 export const TOKEN = path.join(RUN, 'pty.token')
+// Windows has no Unix sockets here: the host listens on a named pipe, and says which in this file, with its token.
+// The pipe is named afresh each time a host starts, so nobody else on the computer can take the name first and be
+// the one Crew tells everything to; the file is in your own folder, where only you can write.
+export const PIPE = path.join(RUN, 'pty.pipe')
+// There while a host is listening.
+export const ADDRESS = WIN ? PIPE : SOCKET
+export const LOG = path.join(RUN, 'ptyhost.log')
+const LOG_CAP = 1024 * 1024 // the host's own lines stop there; Crew starts the log afresh before it starts a host
 const SCROLLBACK = 256 * 1024 // as much as core/runner.js keeps
 const IDLE = 60000
+
+// Where the host is and what it wants to hear: { path, token }, or null when no host has said.
+export function address() {
+  if (!WIN) {
+    let token = ''
+    try {
+      token = fs.readFileSync(TOKEN, 'utf8').trim()
+    } catch {}
+    return { path: SOCKET, token }
+  }
+  try {
+    const { pipe, token } = JSON.parse(fs.readFileSync(PIPE, 'utf8'))
+    return typeof pipe === 'string' && pipe.startsWith('\\\\.\\pipe\\') ? { path: pipe, token: String(token ?? '') } : null
+  } catch {
+    return null
+  }
+}
+
+// A named pipe nobody can guess: \\.\pipe\crew-pty-<32 hex digits>.
+export const pipeName = (bytes = crypto.randomBytes(16)) => `\\\\.\\pipe\\crew-pty-${bytes.toString('hex')}`
 
 const procs = new Map() // name -> { p, tag, chunks, size, startedAt, lastOutput, cols, rows }
 const gone = [] // terminals that ended while nobody was connected: { name, tag, code, ms }
 let client = null
 let idleTimer = null
+let here = null // where this host listens
+let logged = 0
+
+function log(line, error) {
+  if (logged > LOG_CAP) return
+  const text = `${new Date().toISOString()} ${line}\n`
+  logged += text.length
+  ;(error ? process.stderr : process.stdout).write(logged > LOG_CAP ? `${text}(the log is full, the rest isn't kept)\n` : text)
+}
 
 function main() {
   fs.mkdirSync(RUN, { recursive: true, mode: 0o700 })
@@ -35,27 +75,37 @@ function main() {
   const token = crypto.randomBytes(24).toString('hex')
   const server = net.createServer((sock) => welcome(sock, token))
   server.on('error', (e) => {
-    console.error(`terminal host: ${e.message}`)
+    log(`terminal host: ${e.message}`, true)
     process.exit(1)
   })
-  // A socket file left by a host that died is in the way; one that answers belongs to a host that's alive.
-  const listen = () => server.listen(SOCKET, () => {
-    fs.chmodSync(SOCKET, 0o600)
-    fs.writeFileSync(TOKEN, token, { mode: 0o600 })
-    console.log(`terminal host ${process.pid} listening`)
+  here = WIN ? pipeName() : SOCKET
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => quit())
+  const listen = () => server.listen(here, () => {
+    if (WIN) {
+      // the pipe and its token at once, so Crew never reads one host's pipe with another's token
+      const tmp = `${PIPE}.${process.pid}`
+      fs.writeFileSync(tmp, JSON.stringify({ pipe: here, token, pid: process.pid }) + '\n', { mode: 0o600 })
+      fs.renameSync(tmp, PIPE)
+    } else {
+      fs.chmodSync(SOCKET, 0o600)
+      fs.writeFileSync(TOKEN, token, { mode: 0o600 })
+    }
+    log(`terminal host ${process.pid} listening`)
     idle()
   })
-  const probe = net.connect(SOCKET)
+  // A socket file left by a host that died is in the way; one that answers belongs to a host that's alive.
+  const was = address()
+  if (!was) return listen()
+  const probe = net.connect(was.path)
   probe.on('connect', () => {
     probe.destroy()
-    console.error('terminal host: another one is running')
+    log('terminal host: another one is running', true)
     process.exit(0)
   })
   probe.on('error', () => {
-    fs.rmSync(SOCKET, { force: true })
+    if (!WIN) fs.rmSync(SOCKET, { force: true })
     listen()
   })
-  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => quit())
 }
 
 function welcome(sock, token) {
@@ -166,9 +216,25 @@ function idle() {
 
 function quit() {
   for (const x of procs.values()) x.p.kill()
-  fs.rmSync(SOCKET, { force: true })
+  if (!WIN) fs.rmSync(SOCKET, { force: true })
+  else if (address()?.path === here) fs.rmSync(PIPE, { force: true }) // unless a newer host has said where it is
   // a moment for the terminals' processes to take the hint
   setTimeout(() => process.exit(0), procs.size ? 500 : 0)
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url).pathname) main()
+// Run as a program (not imported for the names above). Compared as the system compares paths: on Windows without
+// regard to case, and wherever the file is linked from.
+export const isMain = (argv1, self, win = WIN) => {
+  if (!argv1) return false
+  const real = (f) => {
+    try {
+      return fs.realpathSync(f)
+    } catch {
+      return path.resolve(f)
+    }
+  }
+  const [a, b] = [real(argv1), real(self)]
+  return win ? a.toLowerCase() === b.toLowerCase() : a === b
+}
+
+if (isMain(process.argv[1], fileURLToPath(import.meta.url))) main()

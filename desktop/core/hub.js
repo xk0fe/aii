@@ -11,7 +11,7 @@ import { generatePrompt } from './promptgen.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
-import { processes, tree, groupsOf, readGroups, leftovers, stop as stopProcesses, summary } from './procs.js'
+import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
 import { DEFAULT, dirOf, space, forget, renameShared, sharedNames } from './workspaces.js'
 
@@ -1119,10 +1119,10 @@ export class Hub extends EventEmitter {
     if (run && !run.pid) run.pid = this.runner.pid?.(a.name) // the terminal host says it a moment after the start
     if (!run?.pid || Date.now() - run.at < TREE_CHECK) return
     run.at = Date.now()
-    processes().then((procs) => {
-      const known = readGroups(run.file)
-      const lines = [...groupsOf(procs, run.pid)].filter(([g]) => !known.has(g)).map(([g, start]) => `${g} ${start}\n`)
-      if (lines.length) fs.appendFile(run.file, lines.join(''), () => {})
+    // listing them is slow on Windows: every agent's look shares one list for a while
+    processes({ maxAge: TREE_CHECK / 2 }).then((procs) => {
+      const lines = noteworthy(procs, run.pid, readGroups(run.file))
+      if (lines) fs.appendFile(run.file, lines, () => {})
     })
   }
 
@@ -1133,13 +1133,16 @@ export class Hub extends EventEmitter {
     if (!run) return
     this.runs.delete(id)
     const groups = readGroups(run.file)
+    const spans = readSpans(run.file)
     fs.rm(run.file, { force: true }, () => {})
     if (!groups.size) return
+    // the CLI was there until a moment ago (Windows: what it started meanwhile is still its own)
+    if (run.pid) for (const span of spans.get(run.pid) ?? []) span[1] = Math.max(span[1], Date.now() / 1000)
     const procs = await processes()
     const keep = new Set(tree(procs, process.pid).map((p) => p.pid))
     for (const r of this.runs.values()) if (r.pid) for (const p of tree(procs, r.pid)) keep.add(p.pid)
-    groups.delete(procs.find((p) => p.pid === process.pid)?.pgid)
-    const left = leftovers(procs, groups, keep)
+    for (const g of exempt(procs, process.pid)) groups.delete(g), spans.delete(g)
+    const left = leftovers(procs, groups, keep, spans)
     if (!left.length) return
     stopProcesses(left)
     const n = left.length
@@ -3028,10 +3031,20 @@ const lastWord = (t) => t.log.findLast((l) => l.by !== 'crew')?.ts ?? t.created
 const leaseKey = (thing) => String(thing ?? '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 60)
 
 // Claude Code runs every command through bin/crew-sh, which writes down its process group (see Hub.sweep). Your own
-// prefix, if you have one, still runs after it.
-const shellPrefix = (bin) => {
-  const yours = process.env.CLAUDE_CODE_SHELL_PREFIX
-  return { CLAUDE_CODE_SHELL_PREFIX: path.join(bin, 'crew-sh'), ...(yours && !yours.endsWith('/crew-sh') && { CREW_SHELL_PREFIX: yours }) }
+// prefix, if you have one, still runs after it (unless it's crew-sh itself: Crew started from an agent's terminal).
+// Claude Code quotes the prefix, spaces and all, but takes whatever follows its last " -" as options for it, so in a
+// folder with " -" in its name there's none, and the agent's process tree alone says what it leaves running. On
+// Windows Git Bash runs the commands, and reads C:/ paths best; CREW_BASH is that Git Bash, for bin/crew-sh.cmd. There
+// crew-sh is tried once first (prefixWorks): if Git Bash won't run it right, commands run without it instead of failing.
+export const shellPrefix = (bin, env = process.env, platform = process.platform, works = prefixWorks) => {
+  const win = platform === 'win32'
+  const sh = win ? path.win32.join(bin, 'crew-sh').replaceAll('\\', '/') : path.posix.join(bin, 'crew-sh')
+  if (sh.includes(' -')) return {}
+  const bash = win ? gitBash(env) : null
+  if (win && !works(sh, bash)) return {}
+  const yours = env.CLAUDE_CODE_SHELL_PREFIX
+  const again = yours && /^crew-sh(\.cmd)?$/i.test(path.posix.basename(yours.replaceAll('\\', '/')))
+  return { CLAUDE_CODE_SHELL_PREFIX: sh, ...(yours && !again && { CREW_SHELL_PREFIX: yours }), ...(win && { CREW_BASH: bash }) }
 }
 
 // Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.

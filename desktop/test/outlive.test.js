@@ -9,9 +9,11 @@ import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
+import { WIN, BIN, SH } from './helpers/platform.mjs'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-outlive-'))
-process.env.PATH = '/usr/bin:/bin' // no codex to discover: Hub.start would look its models up after the test is over
+// no codex to discover: Hub.start would look its models up after the test is over (a Windows runner has none)
+if (!WIN) process.env.PATH = '/usr/bin:/bin'
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { adapters } = await import('../core/adapters.js')
 const at = (f) => path.join(process.env.CREW_HOME, f)
@@ -37,7 +39,7 @@ class FakeRunner extends EventEmitter {
 const hubs = []
 function crew(survivors) {
   const runner = new FakeRunner(survivors)
-  const hub = new Hub(runner, { bin: new URL('../bin', import.meta.url).pathname })
+  const hub = new Hub(runner, { bin: BIN })
   hub.start('http://127.0.0.1:1', { survivors })
   hubs.push(hub)
   return { hub, runner }
@@ -146,7 +148,7 @@ test("an agent whose CLI ended while Crew was closed still gets what was queued 
   assert.ok(!hub.agents.has('david.3'))
 })
 
-test('the hook spools what it sends while Crew is closed, one line per event, and still sends it when Crew is there', async () => {
+test('the hook spools what it sends while Crew is closed, one line per event, and still sends it when Crew is there', { skip: !SH && 'no Git Bash here' }, async () => {
   const settings = JSON.parse(adapters.claude({ name: 'david' }, { session: 's', attachments: '/tmp' }).args.find((x) => x.startsWith('{"permissions"')))
   const hook = settings.hooks.Stop[0].hooks[0].command
   const env = { ...process.env, CREW_HOME: process.env.CREW_HOME, CREW_AGENT: 'david', CREW_WORKSPACE: '' }
@@ -154,7 +156,7 @@ test('the hook spools what it sends while Crew is closed, one line per event, an
   // Crew closed: its last address answers nothing
   fs.writeFileSync(at('url'), 'http://127.0.0.1:9')
   fs.writeFileSync(at('token'), 'old')
-  execFileSync('/bin/sh', ['-c', hook], { input: payload, env })
+  execFileSync(SH, ['-c', hook], { input: payload, env })
   const lines = fs.readFileSync(at('spool/david.jsonl'), 'utf8').split('\n').filter(Boolean)
   assert.equal(lines.length, 1)
   assert.equal(JSON.parse(lines[0]).last_assistant_message, 'line one\nline two')
@@ -170,7 +172,7 @@ test('the hook spools what it sends while Crew is closed, one line per event, an
   fs.writeFileSync(at('token'), 'new')
   await new Promise((resolve, reject) => {
     import('node:child_process').then(({ execFile }) => {
-      const p = execFile('/bin/sh', ['-c', hook], { env }, (e) => (e ? reject(e) : resolve()))
+      const p = execFile(SH, ['-c', hook], { env }, (e) => (e ? reject(e) : resolve()))
       p.stdin.end(payload)
     })
   })
