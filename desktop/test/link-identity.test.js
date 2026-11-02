@@ -71,7 +71,7 @@ const tmp = () => {
   return dir
 }
 const saved = (dir, { cert, key }) => (fs.writeFileSync(path.join(dir, 'cert.pem'), cert), fs.writeFileSync(path.join(dir, 'key.pem'), key), dir)
-test.after(() => made.forEach((d) => fs.rmSync(d, { recursive: true, force: true })))
+test.after(() => made.forEach((d) => fs.rmSync(d, { recursive: true, force: true, maxRetries: 10 })))
 
 test('a computer gets its certificate without openssl, or any other program', () => {
   const dir = tmp()
@@ -151,7 +151,7 @@ const LINKS = `
     } catch (e) {
       out[name] = { error: e.message }
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 })
     }
   }
   console.log(JSON.stringify(out))

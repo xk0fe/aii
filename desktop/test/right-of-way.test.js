@@ -52,8 +52,8 @@ afterEach(async () => {
   await hub.saving
 })
 after(() => {
-  fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true })
-  fs.rmSync(DIR, { recursive: true, force: true })
+  fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 })
+  fs.rmSync(DIR, { recursive: true, force: true, maxRetries: 10 })
 })
 
 const agent = (n) => hub.agents.get(n)

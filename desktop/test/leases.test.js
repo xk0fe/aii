@@ -40,7 +40,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const claim = (from, words, hold = 100000) => hub.claim({ from, words, hold })
 const stop = (name, extra = {}) => hub.onHook(name, { hook_event_name: 'Stop', last_assistant_message: 'done', ...extra })

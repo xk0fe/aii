@@ -166,7 +166,7 @@ test('macOS: a command is still the first runnable file on PATH, and one that is
   assert.deepEqual(resolveCommand('claude', ['-x'], { PATH }, { platform: 'darwin' }), { file: path.join(tmp, 'claude'), args: ['-x'] })
   assert.deepEqual(resolveCommand('codex', [], { PATH }, { platform: 'darwin' }), { file: 'codex', args: [] }, "not executable: as before, pty.spawn says so")
   assert.equal(which('/bin/sh', PATH), '/bin/sh')
-  fs.rmSync(tmp, { recursive: true, force: true })
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10 })
 })
 
 // ---- what the CLIs are given --------------------------------------------------------------------------------

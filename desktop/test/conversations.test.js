@@ -25,7 +25,7 @@ beforeEach(() => {
   hub.feed.length = 0
 })
 afterEach(() => { for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer), clearTimeout(a.linger); clearTimeout(hub.statsTimer); clearTimeout(hub.convoTimer) })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const agents = () => [...hub.agents.values()].map((a) => ({ name: a.name, cloneOf: a.cloneOf, clone: a.clone }))
 // (the vm's arrays come from another realm, so copy them into this one for deepEqual)

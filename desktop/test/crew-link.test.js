@@ -41,7 +41,7 @@ function computer(name, linkPort, agents) {
       waiting.set(id, { resolve, reject })
       p.stdin.write(JSON.stringify({ id, code }) + '\n')
     })
-  return { up, run, home, stop: () => (p.kill(), fs.rmSync(home, { recursive: true, force: true })) }
+  return { up, run, home, stop: () => (p.kill(), fs.rmSync(home, { recursive: true, force: true, maxRetries: 10 })) }
 }
 
 const studio = computer('Studio Mac', port, [

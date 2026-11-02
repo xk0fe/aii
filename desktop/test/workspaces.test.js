@@ -73,8 +73,8 @@ afterEach(() => {
   fs.unwatchFile(CONFIG)
 })
 after(() => {
-  fs.rmSync(HOME, { recursive: true, force: true })
-  fs.rmSync(ROOT, { recursive: true, force: true })
+  fs.rmSync(HOME, { recursive: true, force: true, maxRetries: 10 })
+  fs.rmSync(ROOT, { recursive: true, force: true, maxRetries: 10 })
 })
 
 // ---- what config.json says ------------------------------------------------------------------------------
@@ -222,7 +222,7 @@ test('a parked workspace starts nothing, and its terminals are its own', () => {
   runner.survivors = [{ name: 'golf/joseph', tag: 't1', pid: 1 }, { name: 'joseph', tag: 't2', pid: 2 }]
   assert.deepEqual(ws.runner.survivors, [{ name: 'joseph', tag: 't1', pid: 1 }])
   assert.deepEqual(home.runner.survivors, [{ name: 'joseph', tag: 't2', pid: 2 }])
-  fs.rmSync(tmp, { recursive: true, force: true })
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10 })
 })
 
 test('a shared agent edited in one workspace is that agent in all of them; where it works changes only there', () => {
@@ -326,7 +326,7 @@ test("a workspace gone from config.json stops its agents; a hub's settings are i
   config.load()
   assert.ok(!runner.running('golf/joseph'))
   assert.equal(ws.agents.size, 0)
-  fs.rmSync(tmp, { recursive: true, force: true })
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10 })
 })
 
 // ---- agents' requests reach their own workspace -----------------------------------------------------------

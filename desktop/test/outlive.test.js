@@ -60,14 +60,14 @@ const typedTo = (runner, name) => runner.typed.filter((t) => t.n === name).map((
 
 beforeEach(() => {
   for (const f of ['feed.jsonl', 'sessions.json', 'conversations.json', 'runtime.json', 'tickets.json']) fs.rmSync(at(f), { force: true })
-  fs.rmSync(at('spool'), { recursive: true, force: true })
+  fs.rmSync(at('spool'), { recursive: true, force: true, maxRetries: 10 })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'david', area: 'mobile app' }, { name: 'joseph', area: 'backend api' }] }))
 })
 afterEach(() => {
   for (const h of hubs.splice(0)) quit(h)
   fs.unwatchFile(CONFIG)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 5 }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const ready = (hub, name) => {
   const a = hub.agents.get(name)

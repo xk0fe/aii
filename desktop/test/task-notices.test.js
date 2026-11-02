@@ -35,7 +35,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const hook = (e) => hub.onHook('dev', e)
 const notice = (id = 'b86mb6m67') =>

@@ -225,7 +225,7 @@ before(async () => {
 })
 after(() => {
   for (const c of [studio, air, mini]) c.stop()
-  for (const d of made) fs.rmSync(d, { recursive: true, force: true })
+  for (const d of made) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10 })
 })
 
 test('a working agent moves here from a linked computer: its conversation, queue, chat and tasks come along, and it is told', async () => {

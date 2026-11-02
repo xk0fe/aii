@@ -25,7 +25,7 @@ beforeEach(() => {
   hub.feed.length = 0
 })
 afterEach(() => { for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer); clearTimeout(hub.statsTimer) })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const msgs = () => hub.feed.filter((m) => m.kind === 'msg')
 const render = (feed, { open = new Set(), limit = 200 } = {}) => {

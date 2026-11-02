@@ -10,7 +10,7 @@ import path from 'node:path'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-trust-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 class FakeRunner extends EventEmitter {
   live = new Set()

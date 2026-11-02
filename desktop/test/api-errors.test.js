@@ -43,7 +43,7 @@ afterEach(async () => {
   clearTimeout(hub.convoTimer)
   await hub.saving
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const hook = (e) => hub.onHook('levi', e)
 const fail = (error, text = 'API Error: Connection lost mid-response.') => hook({ hook_event_name: 'StopFailure', error, last_assistant_message: text })

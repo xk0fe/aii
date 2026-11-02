@@ -45,7 +45,7 @@ const restart = () => {
   quiet()
   return newHub()
 }
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 5 }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const line = (name, session, cost, added = 0, removed = 0) =>
   hub.onStatusLine(name, { session_id: session, cost: { total_cost_usd: cost, total_lines_added: added, total_lines_removed: removed, total_api_duration_ms: cost * 1000 } })

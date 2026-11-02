@@ -16,7 +16,7 @@ const node = { file: process.execPath, env: {} }
 let last
 after(() => {
   last?.quit()
-  setTimeout(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 5 }), 800)
+  setTimeout(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }), 800)
 })
 
 const until = async (f, ms = 8000) => {
@@ -147,7 +147,7 @@ test('the host knows it was run, from a folder with spaces in its name, or a Win
   assert.ok(isMain('C:\\Program Files\\Crew\\Core\\PtyHost.js', 'c:\\program files\\crew\\core\\ptyhost.js', true))
   assert.ok(!isMain('C:\\Program Files\\Crew\\Core\\PtyHost.js', 'c:\\program files\\crew\\core\\ptyhost.js', false))
   assert.ok(!isMain(undefined, file))
-  fs.rmSync(dir, { recursive: true, force: true })
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 })
 })
 
 test("the host's log starts afresh once it's big, keeping the one before", () => {
@@ -209,5 +209,5 @@ test("the copy has the runtime's program, DLLs and data, and only this computer'
   // a copy that didn't start (connect marks it) isn't tried again: the host runs from where Crew is
   fs.writeFileSync(path.join(path.dirname(second.file), '.broken'), '')
   await assert.rejects(stage(args), /didn't start before/)
-  fs.rmSync(root, { recursive: true, force: true })
+  fs.rmSync(root, { recursive: true, force: true, maxRetries: 10 })
 })

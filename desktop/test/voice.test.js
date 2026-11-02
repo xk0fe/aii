@@ -24,7 +24,7 @@ const can = (() => {
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-voice-'))
 fs.mkdirSync(path.join(root, 'native'))
 fs.copyFileSync(path.join(A, 'native', 'crew-voice.swift'), path.join(root, 'native', 'crew-voice.swift'))
-after(() => fs.rmSync(root, { recursive: true, force: true }))
+after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10 }))
 
 // 16 kHz mono Float32 samples of `text` spoken by macOS.
 function speak(dir, text) {
@@ -94,7 +94,7 @@ function fakeHelper(script) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-voice-fake-'))
   const file = path.join(dir, 'helper.mjs')
   fs.writeFileSync(file, `import fs from 'node:fs'\nconst say = (s) => fs.writeSync(1, s)\n${script}\n`)
-  after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 }))
   return new Voice({ root: dir, binary: process.execPath, args: [file] })
 }
 

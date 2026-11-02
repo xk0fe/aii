@@ -159,8 +159,8 @@ after(() => {
   for (const h of crew.hubs.values()) h.dispose()
   clearTimeout(crew.changeTimer)
   fs.unwatchFile(CONFIG)
-  fs.rmSync(HOME, { recursive: true, force: true })
-  fs.rmSync(ROOT, { recursive: true, force: true })
+  fs.rmSync(HOME, { recursive: true, force: true, maxRetries: 10 })
+  fs.rmSync(ROOT, { recursive: true, force: true, maxRetries: 10 })
 })
 
 beforeEach(async () => {
