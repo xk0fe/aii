@@ -167,22 +167,51 @@ jobs:
           $setup = Get-ChildItem release/Crew-Setup-*-x64.exe | Select-Object -First 1
           Start-Process $setup.FullName -ArgumentList '/S' -Wait
           $dir = "$env:LOCALAPPDATA\Programs\Crew"
-          foreach ($f in 'Crew.exe', 'resources\app.asar', 'resources\app.asar.unpacked\bin\crew',
+          foreach ($f in 'Crew.exe', 'resources\app.asar', 'resources\app.asar.unpacked\bin\crew.mjs',
+                         'resources\app.asar.unpacked\bin\win32-x64\crew.exe', 'resources\app.asar.unpacked\bin\win32-x64\crew-sh',
+                         'resources\app.asar.unpacked\core\ptyhost.js',
                          'resources\app.asar.unpacked\node_modules\node-pty\prebuilds\win32-x64\conpty\OpenConsole.exe',
                          'resources\voice\crew-voice.exe', 'resources\voice\models\ggml-base-q5_1.bin') {
             if (-not (Test-Path "$dir\$f")) { throw "the installed Crew has no $f" }
           }
+          if (Test-Path "$dir\resources\app.asar.unpacked\bin\win32-arm64") { throw 'the x64 Crew carries the arm64 tools too' }
           if (-not (Test-Path 'HKCU:\Software\Classes\.crew')) { Write-Output '::warning::.crew files are not associated with Crew' }
           "CREW_INSTALLED=$dir" >> $env:GITHUB_ENV
       - name: the installed dictation helper hears speech
         working-directory: desktop
         run: node native/windows/smoke.mjs "${{ env.CREW_INSTALLED }}\resources\voice\crew-voice.exe"
+      # what opening it does: Crew starts its terminal host from a copy of its runtime in ~\.crew\run\runtime (so an
+      # update can replace Crew's files while agents keep running), and a terminal runs there. A fresh runner's
+      # ~\.crew is a scratch one.
+      - name: the installed Crew's terminal host runs from its copy and runs a terminal
+        shell: pwsh
+        working-directory: desktop
+        run: |
+          $crewHome = "$env:USERPROFILE\.crew"
+          Start-Process "$env:CREW_INSTALLED\Crew.exe"
+          $pipe = "$crewHome\run\pty.pipe"
+          for ($i = 0; $i -lt 180 -and -not (Test-Path $pipe); $i++) { Start-Sleep -Seconds 1 }
+          if (-not (Test-Path $pipe)) {
+            Get-Content "$crewHome\run\ptyhost.log", "$crewHome\logs\crew.log" -ErrorAction SilentlyContinue
+            throw 'the installed Crew started no terminal host'
+          }
+          $hostPid = (Get-Content $pipe | ConvertFrom-Json).pid
+          $exe = (Get-Process -Id $hostPid).Path
+          Write-Output "terminal host $hostPid runs $exe"
+          if ($exe -notlike "$crewHome\run\runtime\*\crew-host.exe") { throw "the terminal host runs from $exe, not from its copy" }
+          node scripts/check-host.mjs $crewHome
+          if ($LASTEXITCODE) { Get-Content "$crewHome\run\ptyhost.log" -ErrorAction SilentlyContinue; exit 1 }
+      # uninstalling stops Crew and its terminal host and takes the runtime copies, and leaves the crew itself
       - name: uninstall
         shell: pwsh
         run: |
           Start-Process "$env:CREW_INSTALLED\Uninstall Crew.exe" -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 60 -and (Test-Path "$env:CREW_INSTALLED\Crew.exe"); $i++) { Start-Sleep -Seconds 1 }
           Start-Sleep -Seconds 5
           if (Test-Path "$env:CREW_INSTALLED\Crew.exe") { throw 'uninstalling left Crew.exe behind' }
+          if (Get-Process -Name crew-host -ErrorAction SilentlyContinue) { throw 'uninstalling left the terminal host running' }
+          if (Test-Path "$env:USERPROFILE\.crew\run\runtime") { throw 'uninstalling left the runtime copies behind' }
+          if (-not (Test-Path "$env:USERPROFILE\.crew\config.json")) { throw "uninstalling took the crew's settings with it" }
       - uses: actions/upload-artifact@v4
         with:
           name: crew-windows
