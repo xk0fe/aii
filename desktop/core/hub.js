@@ -3038,16 +3038,20 @@ const leaseKey = (thing) => String(thing ?? '').trim().toLowerCase().replace(/\s
 
 // Claude Code runs every command through bin/crew-sh, which writes down its process group (see Hub.sweep). Your own
 // prefix, if you have one, still runs after it (unless it's crew-sh itself: Crew started from an agent's terminal).
-// Claude Code quotes the prefix, spaces and all, but takes whatever follows its last " -" as options for it, so in a
-// folder with " -" in its name there's none, and the agent's process tree alone says what it leaves running. On
-// Windows Git Bash runs the commands, and reads C:/ paths best; CREW_BASH is that Git Bash, for bin/crew-sh.cmd. There
-// crew-sh is tried once first (prefixWorks): if Git Bash won't run it right, commands run without it instead of failing.
+// Claude Code (2.1.316) shell-quotes the prefix, spaces and all, but takes whatever follows its last " -" as options for
+// it, so in a folder with " -" in its name there's none, and the agent's process tree alone says what it leaves running.
+// Its docs promise only "<prefix> '<command>'" (env-vars: CLAUDE_CODE_SHELL_PREFIX), so on Windows, where Crew's
+// folder is under C:\Users\<you> and often has spaces, the prefix is the bare name crew-sh: Git Bash finds it on the
+// agent's PATH, in bin\win32-<arch> (core/launch.js withTools), where copies of crew-sh and crew-sh.cmd sit, and an
+// MCP server's start finds crew-sh.cmd there. CREW_BASH is the Git Bash Claude Code runs commands with, for
+// crew-sh.cmd. There crew-sh is tried once first (prefixWorks), with the agent's PATH: if Git Bash won't find it or run
+// it right, commands run without it instead of failing.
 export const shellPrefix = (bin, env = process.env, platform = process.platform, works = prefixWorks) => {
   const win = platform === 'win32'
-  const sh = win ? path.win32.join(bin, 'crew-sh').replaceAll('\\', '/') : path.posix.join(bin, 'crew-sh')
+  const sh = win ? 'crew-sh' : path.posix.join(bin, 'crew-sh')
   if (sh.includes(' -')) return {}
   const bash = win ? gitBash(env) : null
-  if (win && !works(sh, bash)) return {}
+  if (win && !works(sh, bash, withTools(env, bin, { platform }))) return {}
   const yours = env.CLAUDE_CODE_SHELL_PREFIX
   const again = yours && /^crew-sh(\.cmd)?$/i.test(path.posix.basename(yours.replaceAll('\\', '/')))
   return { CLAUDE_CODE_SHELL_PREFIX: sh, ...(yours && !again && { CREW_SHELL_PREFIX: yours }), ...(win && { CREW_BASH: bash }) }

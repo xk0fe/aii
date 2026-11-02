@@ -255,23 +255,24 @@ export function gitBash(env = process.env, exists = fs.existsSync) {
   return found.find((f) => exists(f)) ?? null
 }
 
-// Windows: does Git Bash run bin/crew-sh the way Claude Code will (bash -c "'…/crew-sh' 'command'"), passing on the
-// command's exit code and writing down its Windows id? Asked once per Crew (it holds Crew up for as long as Git Bash
-// takes to start). If not, agents' commands run without crew-sh, rather than every one of them failing, and their
-// process trees alone say what they leave running.
+// Windows: does Git Bash run crew-sh the way Claude Code will (bash -c "'crew-sh' 'command'", with `extra` in its
+// environment: the agent's PATH, { Path }, where it finds crew-sh by name), passing on the command's exit code and
+// writing down its Windows id? Asked once per Crew (it holds Crew up for as long as Git Bash takes to start). If not,
+// agents' commands run without crew-sh, rather than every one of them failing, and their process trees alone say what
+// they leave running.
 const tried = new Map()
-export function prefixWorks(sh, bash) {
-  const key = `${sh}\n${bash}`
-  if (!tried.has(key)) tried.set(key, tryPrefix(sh, bash))
+export function prefixWorks(sh, bash, extra = {}) {
+  const key = JSON.stringify([sh, bash, extra])
+  if (!tried.has(key)) tried.set(key, tryPrefix(sh, bash, extra))
   return tried.get(key)
 }
 
-function tryPrefix(sh, bash) {
+function tryPrefix(sh, bash, extra) {
   if (!bash) return false
   const file = path.join(os.tmpdir(), `crew-sh-${process.pid}-${Date.now()}`)
   const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`
   try {
-    execFileSync(bash, ['-c', `${quote(sh)} ${quote('exit 7')}`], { env: { ...process.env, CREW_GROUPS: file }, stdio: 'ignore', windowsHide: true, timeout: 20000 })
+    execFileSync(bash, ['-c', `${quote(sh)} ${quote('exit 7')}`], { env: { ...process.env, ...extra, CREW_GROUPS: file }, stdio: 'ignore', windowsHide: true, timeout: 20000 })
     return false
   } catch (e) {
     let text = ''

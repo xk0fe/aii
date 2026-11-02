@@ -152,6 +152,7 @@ export const toolsDir = (bin, { platform = process.platform, arch = process.arch
 // too (copies), for Git Bash (Claude Code's Bash tool), which takes the name as it is before trying .exe: handing
 // `crew note "/api is v2"` to a Windows program, Git Bash would rewrite /api as a path into its own folder. PowerShell
 // takes a name with a PATHEXT extension before the bare one in a folder, and cmd only those, so they get the .exe files.
+// Claude Code's shell prefix is found there by name too: crew-sh, and crew-sh.cmd for MCP servers (core/hub.js).
 export function withTools(env, bin, { platform = process.platform, arch = process.arch } = {}) {
   const key = pathKey(env, platform)
   return { [key]: `${toolsDir(bin, { platform, arch })}${platform === WIN ? ';' : ':'}${env[key] ?? ''}` }

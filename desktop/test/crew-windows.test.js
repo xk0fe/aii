@@ -215,7 +215,7 @@ const zig = (() => {
   }
 })()
 
-test('bin/win32-x64 and bin/win32-arm64 hold bin/crew and bin/crew-status as they are, for Git Bash', async () => {
+test('bin/win32-x64 and bin/win32-arm64 hold bin/crew, bin/crew-status and bin/crew-sh(.cmd) as they are, for Git Bash', async () => {
   const { TARGETS, SCRIPTS } = await import('../scripts/build-shims.mjs')
   for (const arch of Object.keys(TARGETS)) {
     for (const name of SCRIPTS) assert.ok(fs.readFileSync(path.join(BIN, `win32-${arch}`, name)).equals(fs.readFileSync(path.join(BIN, name))), `bin/win32-${arch}/${name}: run node scripts/build-shims.mjs`)
