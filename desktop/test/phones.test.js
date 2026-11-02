@@ -10,7 +10,9 @@ import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'
+import { ELECTRON } from './helpers/platform.mjs'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-phones-'))
 process.env.PATH = '/usr/bin:/bin' // no codex to discover once a hub starts
@@ -223,12 +225,11 @@ test("this Mac's crypto reproduces shared/vectors.json", () => {
 
 // Crew runs in Electron, whose BoringSSL lacks some of what Node's OpenSSL has (ChaCha20-Poly1305, for one, which once
 // turned every phone away while these tests passed): the vectors once more, there.
-const ELECTRON = new URL('../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron', import.meta.url).pathname
 test('…and does so in Electron, where Crew runs', { skip: !fs.existsSync(ELECTRON) && 'no Electron to run' }, () => {
   const script = `
     import fs from 'node:fs'
     const { macKeys, seal, open } = await import(${JSON.stringify(new URL('../core/remote.js', import.meta.url).href)})
-    const { vectors } = JSON.parse(fs.readFileSync(${JSON.stringify(new URL('../../shared/vectors.json', import.meta.url).pathname)}, 'utf8'))
+    const { vectors } = JSON.parse(fs.readFileSync(${JSON.stringify(fileURLToPath(new URL('../../shared/vectors.json', import.meta.url)))}, 'utf8'))
     const bytes = (h) => Buffer.from(h, 'hex')
     const out = vectors.map((v) => {
       const k = macKeys({ m: { pub: bytes(v.public.m), priv: bytes(v.private.m) }, f: { pub: bytes(v.public.f), priv: bytes(v.private.f) }, e: bytes(v.public.e), d: bytes(v.public.d), secret: v.secret && bytes(v.secret) })
