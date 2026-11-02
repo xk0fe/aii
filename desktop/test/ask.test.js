@@ -80,6 +80,15 @@ test('a permission prompt becomes a card, an alert and "needs you"; Allow sends 
   assert.equal(hub.agents.get('joseph').status, 'working')
 })
 
+test("Claude Code's PowerShell tool on Windows asks in the same plain words as Bash", async () => {
+  const waiting = hub.ask('joseph', { ...BASH, tool_name: 'PowerShell', tool_input: { command: 'Remove-Item dist -Recurse; npm run build', description: 'Clean and rebuild' }, permission_suggestions: [] })
+  const e = card()
+  assert.deepEqual({ title: e.ask.title, code: e.ask.code, detail: e.ask.detail }, { title: 'Run a command', code: 'Remove-Item dist -Recurse; npm run build', detail: 'Clean and rebuild' })
+  assert.deepEqual(alerts, ['joseph: wants to run a command: Remove-Item dist -Recurse; npm run build'])
+  hub.answer(e.id, { allow: true })
+  assert.equal(decision(await waiting).behavior, 'allow')
+})
+
 test('"always allow" passes Claude\'s own suggestion back as the permission update', async () => {
   const waiting = hub.ask('joseph', BASH)
   hub.answer(card().id, { allow: true, always: 1 })

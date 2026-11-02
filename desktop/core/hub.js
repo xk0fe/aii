@@ -3193,6 +3193,8 @@ function askOf({ tool_name: tool = '', tool_input: input = {}, permission_sugges
   const name = file ? path.basename(file) : ''
   const shown = {
     Bash: { title: 'Run a command', code: clip(input.command), detail: input.description },
+    // Claude Code's PowerShell tool, on Windows: a command like any other to whoever answers
+    PowerShell: { title: 'Run a command', code: clip(input.command), detail: input.description },
     Edit: { title: `Edit ${name}`, code: firstLines(`- ${String(input.old_string ?? '').split('\n').join('\n- ')}\n+ ${String(input.new_string ?? '').split('\n').join('\n+ ')}`, 40), detail: file },
     MultiEdit: { title: `Edit ${name}`, code: firstLines((input.edits ?? []).map((x) => `- ${x.old_string}\n+ ${x.new_string}`).join('\n'), 40), detail: file },
     Write: { title: `Write ${name}`, code: firstLines(input.content, 30), detail: file },
