@@ -135,10 +135,16 @@ function welcome(sock, token) {
         continue
       }
       if (!ok) {
-        if (m.t !== 'hello' || m.token !== token) return sock.destroy()
+        if (m.t !== 'hello' || m.token !== token) {
+          log('terminal host: turned away a connection without its token')
+          return sock.destroy()
+        }
         ok = true
         // one Crew at a time: a newer one takes over
-        if (client && client !== sock) client.destroy()
+        if (client && client !== sock) {
+          log('terminal host: a newer Crew connected, so the one before is let go')
+          client.destroy()
+        }
         client = sock
         clearTimeout(idleTimer)
         const list = [...procs].map(([name, x]) => ({ name, tag: x.tag, pid: x.p.pid, cols: x.cols, rows: x.rows, startedAt: x.startedAt, lastOutput: x.lastOutput, data: scrollback(x) }))

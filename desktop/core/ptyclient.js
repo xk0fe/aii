@@ -151,11 +151,13 @@ export class HostRunner extends EventEmitter {
         } catch {}
       }
     })
+    sock.on('error', (e) => note(`terminal host: the connection to it failed (${e.message})`))
     sock.on('close', () => {
       if (this.sock !== sock) return
       this.sock = null
       if (this.detached) return
       // the host is gone, and its terminals with it
+      note('terminal host: the connection to it closed, so its terminals count as gone')
       for (const [name, x] of [...this.procs]) {
         this.procs.delete(name)
         this.emit('ended', name, x.tag)
