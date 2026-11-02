@@ -1,4 +1,4 @@
-/* Shared look for all views. Light by default, dark when macOS is dark or Crew's theme says so
+/* Shared look for all views. Light by default, dark when the system is dark or Crew's theme says so
    (main.js sets nativeTheme.themeSource, which drives prefers-color-scheme in every window). */
 :root {
   color-scheme: light dark;
@@ -59,8 +59,11 @@
   --r-xl: 24px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
   --shadow-lg: 0 24px 60px -20px rgba(20, 20, 40, 0.35), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
-  --mono: 'SF Mono', ui-monospace, Menlo, monospace;
-  --rounded: ui-rounded, 'SF Pro Rounded', -apple-system, sans-serif;
+  /* the system's own faces: San Francisco on a Mac, Segoe UI Variable and Cascadia Mono on Windows 11 (Segoe UI and
+     Consolas before it) */
+  --ui: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+  --mono: 'SF Mono', ui-monospace, Menlo, 'Cascadia Mono', Consolas, monospace;
+  --rounded: ui-rounded, 'SF Pro Rounded', -apple-system, 'Segoe UI Variable Display', 'Segoe UI', sans-serif;
   /* motion: springs overshoot a little, outs settle softly */
   --spring: cubic-bezier(.34, 1.56, .64, 1);
   --bounce: cubic-bezier(.3, 1.5, .5, 1);
@@ -113,7 +116,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  font: 13px/1.35 -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  font: 13px/1.35 var(--ui);
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
   user-select: none;
@@ -276,18 +279,18 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .crow-line.stopped { color: var(--danger); }
 .crow.off .crow-av, .crow.off .crow-top b { opacity: .5; }
 .mark-yolo, .mark-fast { flex: none; display: inline-grid; place-items: center; font-style: normal; }
-.mark-yolo { height: 14px; padding: 0 4px; border-radius: 4px; font: 800 8.5px/1 -apple-system, sans-serif; letter-spacing: .06em; color: var(--yolo-ink); background: color-mix(in srgb, var(--yolo) 13%, transparent); }
+.mark-yolo { height: 14px; padding: 0 4px; border-radius: 4px; font: 800 8.5px/1 var(--ui); letter-spacing: .06em; color: var(--yolo-ink); background: color-mix(in srgb, var(--yolo) 13%, transparent); }
 .mark-fast { width: 14px; height: 14px; border-radius: 4px; color: var(--fast-ink); background: color-mix(in srgb, var(--fast) 18%, transparent); }
 .mark-fast svg { width: 9px; height: 9px; }
 /* its clones at work, folded into their faces and a count; a click shows their rows */
-.crow-clones { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 17px; padding: 0 6px 0 2px; border: 0; border-radius: 999px; background: var(--btn); color: var(--fg2); font: 700 10.5px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer; transition: background .15s; }
+.crow-clones { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 17px; padding: 0 6px 0 2px; border: 0; border-radius: 999px; background: var(--btn); color: var(--fg2); font: 700 10.5px/1 var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; transition: background .15s; }
 .crow-clones:hover, .crow-clones.open { background: var(--btn-hover); color: var(--fg); }
 .crow-clones .av + .av { margin-left: -7px; }
 .crow-top .subs-chip { flex: none; }
 .mark-holds { flex: 0 1 auto; min-width: 0; height: 14px; padding: 0 5px; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 650 9.5px/14px var(--mono); font-style: normal; color: var(--fg2); background: var(--btn); }
 .crow-end { display: flex; align-items: center; gap: 6px; }
 .crow-end:empty { display: none; }
-.crow-queue { font: 650 10.5px/16px -apple-system, sans-serif; font-style: normal; min-width: 18px; padding: 0 5px; text-align: center; border-radius: 999px; background: var(--btn); color: var(--fg2); font-variant-numeric: tabular-nums; }
+.crow-queue { font: 650 10.5px/16px var(--ui); font-style: normal; min-width: 18px; padding: 0 5px; text-align: center; border-radius: 999px; background: var(--btn); color: var(--fg2); font-variant-numeric: tabular-nums; }
 .crow-later { display: grid; color: var(--accent); }
 .crow-later svg { width: 14px; height: 14px; }
 /* the switches, over the row's end: YOLO, Fast and power, one click away */
@@ -304,7 +307,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .roster-none { padding: 18px 12px; font-size: 12.5px; color: var(--fg3); text-align: center; }
 .faces { display: inline-flex; align-items: center; flex: none; }
 .faces .av + .av { margin-left: -6px; }
-.faces i { margin-left: 3px; font: 650 10.5px -apple-system, sans-serif; font-style: normal; color: var(--fg3); }
+.faces i { margin-left: 3px; font: 650 10.5px var(--ui); font-style: normal; color: var(--fg3); }
 
 /* ---- clones: an agent busy with one task takes the next on a clone of itself ----
    A clone looks like its original and goes by its name plus a number (gal ②). Under the agent's row, one
@@ -337,7 +340,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 /* mode chips: YOLO and Fast, toggled in place (on rows' hover, and wherever an agent's modes are switched) */
 .mode {
   all: unset; box-sizing: border-box; flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 2px;
-  height: 22px; min-width: 22px; padding: 0 7px; border-radius: 999px; font: 750 9.5px/1 -apple-system, sans-serif; letter-spacing: .06em;
+  height: 22px; min-width: 22px; padding: 0 7px; border-radius: 999px; font: 750 9.5px/1 var(--ui); letter-spacing: .06em;
   color: var(--fg3); box-shadow: inset 0 0 0 1px var(--line-strong); background: var(--bgc, transparent); cursor: pointer;
   transition: background .2s, color .2s, box-shadow .2s, transform .3s var(--spring);
 }
@@ -352,6 +355,14 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 @keyframes mode-on { 40% { transform: scale(1.18); } }
 
 /* ---- menus (popMenu in common.js): right-click an agent, or a More button ---- */
+/* a note at the bottom of the window (notify() in common.js); one about an error has Copy details */
+.toast { position: fixed; left: 50%; bottom: 22px; z-index: 300; display: flex; align-items: center; gap: 12px; width: max-content; max-width: min(560px, calc(100vw - 24px)); padding: 10px 16px; border-radius: 12px; background: var(--tip); color: var(--tip-fg); font-size: 13px; font-weight: 560; line-height: 1.4; box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity .2s, transform .35s var(--spring); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.show.has-detail button { pointer-events: auto; } /* only Copy details takes clicks: the note never covers what's under it */
+.toast.warn { background: var(--waiting); color: #241500; }
+.toast button { all: unset; flex: none; padding: 3px 9px; border-radius: 7px; font-size: 12px; font-weight: 650; white-space: nowrap; background: color-mix(in srgb, currentColor 14%, transparent); cursor: pointer; }
+.toast button:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
+.toast button:focus-visible { outline: 2px solid currentColor; }
 .menu { position: fixed; z-index: 200; min-width: 210px; max-width: 300px; padding: 5px; border-radius: var(--r-md); background: var(--card); color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong), 0 16px 40px -12px rgba(0, 0, 0, .35), 0 4px 10px -6px rgba(0, 0, 0, .15); animation: mn-in .14s var(--out); }
 .menu button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 9px; width: 100%; height: 30px; padding: 0 10px 0 8px; border-radius: 7px; font-size: 13px; cursor: default; white-space: nowrap; }
 .menu button svg, .menu button > i { width: 16px; height: 16px; flex: none; color: var(--fg2); }
@@ -367,7 +378,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .menu-head { padding: 6px 8px 3px; font-size: 11px; font-weight: 600; color: var(--fg3); }
 
 /* ---- context gauge: how full an agent's conversation is ---- */
-.ctx { --s: 15px; --k: var(--ctx-calm); display: inline-flex; align-items: center; gap: 3px; flex: none; color: var(--k); font: 650 10.5px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; cursor: help; }
+.ctx { --s: 15px; --k: var(--ctx-calm); display: inline-flex; align-items: center; gap: 3px; flex: none; color: var(--k); font: 650 10.5px/1 var(--ui); font-variant-numeric: tabular-nums; cursor: help; }
 .ctx svg { width: var(--s); height: var(--s); transform: rotate(-90deg); overflow: visible; }
 .ctx circle { fill: none; stroke-width: 2.6; }
 .ctx-track { stroke: var(--track); }
@@ -387,7 +398,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .sum.usage i, .usage-line i { font-style: normal; color: var(--fg3); }
 .sum.usage .warm, .lim.warm { color: var(--ctx-warm); }
 .sum.usage .hot, .lim.hot { color: var(--ctx-hot); }
-.lim { flex: none; color: var(--fg3); font: 650 10.5px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: help; }
+.lim { flex: none; color: var(--fg3); font: 650 10.5px/1 var(--ui); font-variant-numeric: tabular-nums; white-space: nowrap; cursor: help; }
 
 /* a finished task gets a little burst of confetti (cheer() in common.js) */
 .burst { position: fixed; z-index: 1000; width: 0; height: 0; pointer-events: none; }
@@ -434,11 +445,11 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .convo-head { display: flex; align-items: center; gap: 9px; min-width: 0; animation: convo-in .32s var(--out); }
 .convo-head:empty { display: none; }
 @keyframes convo-in { from { opacity: 0; transform: translateX(10px); } }
-.ch-back { position: relative; flex: none; display: inline-flex; align-items: center; gap: 1px; height: 28px; padding: 0 9px 0 4px; border: 0; border-radius: 999px; background: var(--btn); color: var(--fg2); font: 600 12.5px/1 -apple-system, sans-serif; cursor: pointer; transition: background .15s, color .15s, transform .25s var(--spring); }
+.ch-back { position: relative; flex: none; display: inline-flex; align-items: center; gap: 1px; height: 28px; padding: 0 9px 0 4px; border: 0; border-radius: 999px; background: var(--btn); color: var(--fg2); font: 600 12.5px/1 var(--ui); cursor: pointer; transition: background .15s, color .15s, transform .25s var(--spring); }
 .ch-back:hover { background: var(--btn-hover); color: var(--fg); }
 .ch-back:active { transform: scale(.93); }
 .ch-back svg { width: 15px; height: 15px; }
-.ch-count { margin-left: 5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 700 9.5px/1 -apple-system, sans-serif; font-style: normal; font-variant-numeric: tabular-nums; color: #fff; background: var(--accent); animation: badge-in .4s var(--spring); }
+.ch-count { margin-left: 5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 700 9.5px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: #fff; background: var(--accent); animation: badge-in .4s var(--spring); }
 .ch-back.alert::after { content: ''; position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--waiting); box-shadow: 0 0 0 2px var(--panel); animation: badge-in .4s var(--spring); }
 .ch-face { position: relative; flex: none; margin-left: 2px; line-height: 0; --orbit-ring: var(--panel); --dot: 6px; }
 .ch-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -696,7 +707,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .tr-go { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 650; color: #fff; background: var(--waiting); }
 .tr-go svg { width: 11px; height: 11px; }
 /* waiting on a teammate's answer (crew ask): who, what it asked, how long. Calm indigo, not "needs you" orange */
-.typing-row.blocked .tr-wait { display: flex; align-items: center; gap: 6px; font: 12px -apple-system, sans-serif; color: var(--blocked-ink); }
+.typing-row.blocked .tr-wait { display: flex; align-items: center; gap: 6px; font: 12px var(--ui); color: var(--blocked-ink); }
 .tr-wait > span:first-child { flex: none; }
 .tr-on { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px 0 2px; border-radius: 999px; line-height: 0; background: color-mix(in srgb, var(--c) 13%, transparent); }
 .tr-on b { font-size: 12px; line-height: 1; font-weight: 650; color: color-mix(in oklab, var(--c) 66%, var(--fg)); }
@@ -717,7 +728,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .orbit i { position: absolute; inset: 0; transform: rotate(calc(var(--k) * 360deg / var(--n))); }
 .orbit i::before { content: ''; position: absolute; left: 50%; top: 0; width: var(--dot, 5px); height: var(--dot, 5px); margin-left: calc(var(--dot, 5px) / -2); border-radius: 50%; background: var(--c, var(--accent)); box-shadow: 0 0 0 1.5px var(--orbit-ring, var(--surface)); }
 @keyframes orbit { to { transform: rotate(360deg); } }
-.subs-chip { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 17px; padding: 0 6px 0 5px; border-radius: 999px; font: 650 10px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--c, var(--accent)) 70%, var(--fg)); background: color-mix(in srgb, var(--c, var(--accent)) 14%, transparent); cursor: help; }
+.subs-chip { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 17px; padding: 0 6px 0 5px; border-radius: 999px; font: 650 10px/1 var(--ui); font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--c, var(--accent)) 70%, var(--fg)); background: color-mix(in srgb, var(--c, var(--accent)) 14%, transparent); cursor: help; }
 .subs-chip svg { width: 11px; height: 11px; }
 .typing-row .face { position: relative; }
 .typing-row .tr-what.quiet { font-family: inherit; font-size: 12px; }
@@ -774,7 +785,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .rt-close { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; background: none; color: var(--fg3); cursor: pointer; transition: background .15s, color .15s; }
 .rt-close:hover { background: var(--btn-hover); color: var(--fg); }
 .rt-close svg { width: 13px; height: 13px; stroke-width: 2.2; }
-.unread-badge { position: absolute; right: -3px; bottom: -2px; z-index: 2; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 700 9.5px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; color: #fff; background: var(--accent); box-shadow: 0 0 0 2px var(--orbit-ring, var(--surface)); pointer-events: none; animation: badge-in .4s var(--spring); }
+.unread-badge { position: absolute; right: -3px; bottom: -2px; z-index: 2; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 700 9.5px/1 var(--ui); font-variant-numeric: tabular-nums; color: #fff; background: var(--accent); box-shadow: 0 0 0 2px var(--orbit-ring, var(--surface)); pointer-events: none; animation: badge-in .4s var(--spring); }
 @keyframes badge-in { from { transform: scale(0); } }
 .chip { position: relative; }
 .chip .unread-badge { right: -2px; bottom: -1px; min-width: 14px; height: 14px; padding: 0 3px; font-size: 9px; --orbit-ring: var(--panel); }

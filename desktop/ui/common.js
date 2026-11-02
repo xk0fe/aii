@@ -3,6 +3,46 @@
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
+// ---- this computer: a Mac or a Windows PC (preload.cjs says which) ---------------------------------------------------
+// Its keys (⌘ or Ctrl), its words (this Mac, this PC) and how its paths are written. The page's <html> says it too
+// (data-os="mac" or "win"), for the CSS: the fonts, and room for Windows' window buttons in the dashboard's titlebar.
+const ON_WINDOWS = window.crew?.platform === 'win32'
+document.documentElement.dataset.os = ON_WINDOWS ? 'win' : 'mac'
+const THIS_COMPUTER = ON_WINDOWS ? 'this PC' : 'this Mac'
+const upFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+
+// A shortcut as this computer writes it: ⌥⌘S on a Mac is Ctrl+Alt+S on Windows, ⌘-click is Ctrl+click. The workspaces'
+// ⌃1–9 is Alt+1–9 there, since Ctrl+1–4 are the views (⌘1–4 on a Mac).
+function keys(mac) {
+  if (!ON_WINDOWS) return mac
+  const names = { '⌃': 'Alt', '⌘': 'Ctrl', '⌥': 'Alt', '⇧': 'Shift' }
+  const held = new Set([...mac].filter((c) => names[c]).map((c) => names[c]))
+  const rest = [...mac].filter((c) => !names[c]).join('').replace(/^-/, '')
+  return [...['Ctrl', 'Alt', 'Shift'].filter((m) => held.has(m)), rest].join('+')
+}
+// Every shortcut in a hint, as this computer writes them: "Find an agent (⌘F)" is "Find an agent (Ctrl+F)" on Windows.
+const keysIn = (text) => (ON_WINDOWS ? String(text).replace(/[⌃⌥⇧⌘]+[^\s),]+/g, keys) : String(text))
+// The key Crew's shortcuts go with: ⌘ on a Mac, Ctrl on Windows (not AltGr, which is Ctrl+Alt there and types letters).
+const commandKey = (e) => (ON_WINDOWS ? e.ctrlKey && !e.metaKey && !e.getModifierState?.('AltGraph') : e.metaKey && !e.ctrlKey)
+// The workspaces' key: ⌃ on a Mac, Alt on Windows.
+const workspaceKey = (e) => (ON_WINDOWS ? e.altKey && !e.ctrlKey && !e.metaKey && !e.getModifierState?.('AltGraph') : e.ctrlKey && !e.metaKey && !e.altKey)
+
+// A path with your home folder as ~, in the separators it was written with: /Users/you/code/app is ~/code/app, and
+// C:\Users\you\code\app is ~\code\app. A linked computer's paths shorten the same way, with its own home.
+// (Not the folders every account shares: /Users/Shared, C:\Users\Public.)
+const HOME_DIR = /^(?:\/Users\/(?!Shared(?:\/|$))[^/]+|\/home\/[^/]+|[A-Za-z]:[\\/]Users[\\/](?!(?:Public|Default|All Users)(?:[\\/]|$))[^\\/]+)(?=[\\/]|$)/i
+function tildePath(p) {
+  const s = String(p ?? '')
+  const home = window.crew?.home || null
+  const inHome = home && (ON_WINDOWS ? s.toLowerCase().startsWith(home.toLowerCase()) : s.startsWith(home)) && (s.length === home.length || /[\\/]/.test(s[home.length]))
+  return inHome ? `~${s.slice(home.length)}` : s.replace(HOME_DIR, '~')
+}
+// The same in a field you type in. On Windows it stays written out: Crew reads ~ only as ~/ (~/code/app), and
+// C:\Users\you\code\app is what Windows writes.
+const pathField = (p) => (ON_WINDOWS ? String(p ?? '') : tildePath(p))
+// A path's folders, split on either separator when it's written the Windows way.
+const pathParts = (p) => String(p ?? '').split(/^[A-Za-z]:|\\/.test(String(p ?? '')) ? /[\\/]/ : '/').filter(Boolean)
+
 const svg = (paths, attrs = '') =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${attrs}>${paths}</svg>`
 
@@ -634,11 +674,12 @@ function wsTile(w, { size = 22, cls = '' } = {}) {
   const face = plain ? markSVG('0 4 24 18') : w?.icon ? `<span class="ws-emoji">${esc(w.icon)}</span>` : esc(wsInitial(w?.name))
   return `<span class="ws-tile ${plain ? 'plain' : ''} ${w?.parked ? 'parked' : ''} ${cls}" style="--s:${size}px${color ? `;--w:${esc(color)}` : ''}" aria-hidden="true">${face}</span>`
 }
-// A folder in a few characters: ~ for your home, and only its last two folders when it's long.
+// A folder in a few characters: ~ for your home, and only its last two folders when it's long (in its own separators).
 function shortPath(p) {
-  const t = String(p ?? '').replace(/^\/Users\/[^/]+/, '~')
-  const parts = t.split('/').filter(Boolean)
-  return t.length > 30 && parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : t
+  const t = tildePath(p)
+  const parts = pathParts(t)
+  const sep = /^[A-Za-z]:|\\/.test(t) ? '\\' : '/'
+  return t.length > 30 && parts.length > 2 ? `…${sep}${parts.slice(-2).join(sep)}` : t
 }
 // Workspaces worth a switcher: more than the default, or a default you've given a look.
 const hasWorkspaces = (state) => (state.workspaces?.length ?? 0) > 1 || Boolean(state.workspace?.color || state.workspace?.icon || (state.workspace && state.workspace.name !== 'Home'))
@@ -1460,7 +1501,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       const now = el.querySelector(`[data-ask="${CSS.escape(id)}"]`) ?? card // it may have been re-rendered meanwhile
       now.classList.remove('sending')
       const box = now.querySelector('.ask-error')
-      if (box) box.textContent = err.message
+      if (box) box.textContent = errorLine(err)
     } finally {
       sending.delete(id)
     }
@@ -1711,7 +1752,17 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   return api
 }
 
-const fileURL = (p) => `file://${String(p).split('/').map(encodeURIComponent).join('/')}`
+// A file on disk as a URL an <img> can load: /Users/you/a b.png, C:\Users\you\a.png (drive letter kept, backslashes as
+// slashes) and \\server\share\a.png (the server as the URL's host). Every folder's name is escaped (spaces, #, %).
+function fileURL(p) {
+  const s = String(p ?? '').replace(/^\\\\[?.]\\UNC\\/i, '\\\\').replace(/^\\\\[?.]\\(?=[A-Za-z]:)/, '') // \\?\C:\… is C:\…, \\?\UNC\… is \\…
+  const enc = (parts) => parts.map(encodeURIComponent).join('/')
+  const unc = /^[\\/]{2}([^\\/]+)[\\/](.*)$/.exec(s)
+  if (unc) return `file://${unc[1]}/${enc(unc[2].split(/[\\/]/))}`
+  const drive = /^([A-Za-z]):[\\/]?(.*)$/.exec(s)
+  if (drive) return `file:///${drive[1].toUpperCase()}:/${enc(drive[2].split(/[\\/]/))}`
+  return `file://${enc(s.split('/'))}`
+}
 // Where a dropped file or folder is on disk ('' when it isn't one, or the page has no way to tell).
 const pathOf = (file) => {
   try {
@@ -1750,7 +1801,7 @@ function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) 
       try {
         paths.push(await crew.call('saveImage', f.name, f.type, new Uint8Array(await f.arrayBuffer())))
       } catch (e) {
-        onError?.(e.message)
+        onError?.(errorLine(e))
       }
     }
     draw()
@@ -2245,7 +2296,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
       attach.set([])
       autosize()
     } catch (e) {
-      say(e.message, true)
+      say(errorLine(e), true)
     }
   }
 
@@ -2336,6 +2387,68 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
   }
 }
 
+// ---- notes at the bottom of the window, and what went wrong --------------------------------------------------------
+
+// A note for something that happened out of view, or didn't work: it fades after a few seconds (later while the pointer
+// is on it). detail: the technical text behind it, for its Copy details button.
+function notify(text, { warn = false, detail = '' } = {}) {
+  let el = document.querySelector('.toast')
+  if (!el) {
+    el = Object.assign(document.createElement('div'), { className: 'toast' })
+    el.setAttribute('role', 'status')
+    el.setAttribute('aria-live', 'polite')
+    document.body.append(el)
+  }
+  const fade = (ms) => {
+    clearTimeout(el.timer)
+    el.timer = setTimeout(() => el.classList.remove('show'), ms)
+  }
+  if (!el.wired) {
+    el.wired = true
+    // the pointer on Copy details holds the note (only the button takes the pointer)
+    el.addEventListener('pointerover', (e) => e.target.closest('[data-toast-copy]') && clearTimeout(el.timer))
+    el.addEventListener('pointerout', (e) => e.target.closest('[data-toast-copy]') && el.classList.contains('show') && fade(2500))
+    el.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-toast-copy]')
+      if (!btn) return
+      await crew.call('copy', el.detail).catch(() => {})
+      btn.textContent = 'Copied'
+    })
+  }
+  el.detail = detail
+  el.innerHTML = `<span>${esc(text)}</span>${detail ? '<button type="button" data-toast-copy>Copy details</button>' : ''}`
+  el.className = `toast show ${warn ? 'warn' : ''} ${detail ? 'has-detail' : ''}`
+  fade(detail ? 9000 : warn ? 7000 : 4200)
+}
+
+// What an error from main.js says, as a sentence for the screen, or '' when it's for a bug report. The ones Crew throws
+// on purpose say why ("Mac mini is unreachable right now", "\"gal\" already exists"); a crash or a file system error
+// (ENOENT, "Cannot read properties of undefined", an unknown action) doesn't mean anything to you. Node's error codes
+// are named one by one: a computer called EMILY-PC is unreachable for a reason you can read. So are the network's own
+// words ("fetch failed", "socket hang up") and bare addresses, which say nothing you can act on.
+const ERROR_CODES = 'ENOENT|EACCES|EPERM|EEXIST|EISDIR|ENOTDIR|ENOTEMPTY|EBUSY|EMFILE|ENFILE|ENOSPC|EROFS|EINVAL|EAGAIN|EPIPE|EPROTO|EADDRINUSE|EADDRNOTAVAIL|ECONNREFUSED|ECONNRESET|ECONNABORTED|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ERR_[A-Z_]+'
+const TECHNICAL = new RegExp(String.raw`\b(?:${ERROR_CODES}|[A-Z][a-zA-Z]*Error|errno|syscall)\b|Cannot (?:read|set) propert|is not (?:a function|defined|iterable)|Unexpected (?:token|end)|unknown \w* ?action|\bundefined\b|\bnull\b|^\s*at \S|fetch failed|socket hang up|\b\d{1,3}(?:\.\d{1,3}){3}\b`)
+function errorReason(err) {
+  const text = String(err?.message ?? err ?? '').replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '').trim()
+  if (!text || TECHNICAL.test(text)) return ''
+  const plain = text.replace(/\s*\((?:try: )?crew \w[^)]*\)/g, '') // the CLI's hints, for agents
+  return `${plain.charAt(0).toUpperCase()}${plain.slice(1)}${/[.!?]$/.test(plain) ? '' : '.'}`
+}
+// Something you asked for didn't work: what (e.g. "Couldn't park Website"), then why, or what to do when the reason is a
+// technical one. The error itself is behind Copy details, and in Crew's log (main.js) when it's technical.
+function oops(what, err, todo = 'Try again in a moment.') {
+  const raw = String(err?.message ?? err ?? '')
+  const why = errorReason(err)
+  if (!why && raw) crew.call('log', `${what}: ${raw}`).catch(() => {})
+  notify(`${what}. ${why || todo}`, { warn: true, detail: raw })
+}
+// The same for a line shown in place, under what didn't work (a sheet's error line): the reason, or else what to do.
+function errorLine(err, todo = 'Something went wrong. Try again in a moment.') {
+  const why = errorReason(err)
+  if (!why) crew.call('log', String(err?.message ?? err ?? '')).catch(() => {})
+  return why || todo
+}
+
 // Agent rows appear on several views; these listeners handle their mode chips and on/off switch.
 // A chip flips right away and the next state push confirms it.
 document.addEventListener('click', (e) => {
@@ -2348,7 +2461,7 @@ document.addEventListener('click', (e) => {
   crew.call('update', name, mode === 'yolo' ? { yolo: on } : { tier: on ? 'fast' : 'default' }).catch((err) => {
     flips.delete(`${name}:${mode}`)
     chip.setAttribute('aria-pressed', String(!on))
-    alert(`Couldn't change ${name}: ${err.message}`)
+    oops(`Couldn't change ${name.split('@')[0]}`, err)
   })
 })
 document.addEventListener('change', (e) => {
@@ -2361,8 +2474,8 @@ document.addEventListener('change', (e) => {
   crew.call('update', power, { off: !e.target.checked })
 })
 
-// Theme button: Auto (follow macOS) → Light → Dark. Saved in config.json, applied to every window.
-const THEMES = { system: ['auto', 'Theme: follows macOS'], light: ['sun', 'Theme: light'], dark: ['moon', 'Theme: dark'] }
+// Theme button: Auto (follow the system's) → Light → Dark. Saved in config.json, applied to every window.
+const THEMES = { system: ['auto', `Theme: follows ${ON_WINDOWS ? 'Windows' : 'macOS'}`], light: ['sun', 'Theme: light'], dark: ['moon', 'Theme: dark'] }
 const NEXT_THEME = { system: 'light', light: 'dark', dark: 'system' }
 function themeButton(btn) {
   let theme = 'system'

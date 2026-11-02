@@ -72,6 +72,6 @@ test('emails, package names, possessives and code never address anyone', () => {
 test('a rejected send keeps the draft and leaves the error up until the draft is edited', () => {
   const submit = src.slice(src.indexOf('const submit = async'), src.indexOf('chips.addEventListener'))
   assert.ok(submit.indexOf("ta.value = ''") > submit.indexOf("await crew.call('send'"), 'draft cleared only after a successful send')
-  assert.match(submit, /catch \(e\) \{\s*say\(e\.message, true\)/)
+  assert.match(submit, /catch \(e\) \{\s*say\(errorLine\(e\), true\)/) // the reason, in words (common.js errorLine)
   assert.match(src, /if \(!error\) say\.timer = setTimeout/)
 })

@@ -1,5 +1,5 @@
 // Renders every view with a made-up crew (scripts/screenshot-preload.cjs) and saves PNGs, plus short GIFs of
-// the animations. Nothing starts and ~/.crew is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp]
+// the animations. Nothing starts and ~/.crew is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp] [--win]
 import { app, BrowserWindow, nativeTheme } from 'electron'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -12,6 +12,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-shots-'))
 app.setPath('userData', path.join(tmp, 'userdata'))
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// --win: every view as Windows shows it (screenshot-preload.cjs ?platform=win32)
+const WIN = process.argv.includes('--win')
 // What's behind the transparent windows: the popover's material, or a soft desktop for the floating pill.
 const BACKDROP = {
   popover: { light: '#ececef', dark: '#2b2b2f' },
@@ -28,8 +30,15 @@ async function open(file, { theme, width, height, backdrop, fixture, transparent
     webPreferences: { preload: path.join(root, 'scripts', 'screenshot-preload.cjs'), contextIsolation: false, sandbox: false, backgroundThrottling: false },
   })
   win.webContents.on('console-message', (e) => e.level === 'error' && console.error(`${file}: ${e.message}`))
-  await win.loadFile(path.join(root, 'ui', file), fixture ? { query: { fixture } } : {})
-  if (backdrop) await win.webContents.insertCSS(`html { background: ${BACKDROP[backdrop][theme]} !important; }`)
+  const query = { ...(fixture && { fixture }), ...(WIN && { platform: 'win32' }) }
+  // --win: Windows draws its window buttons over the dashboard's titlebar (main.js titleBarOverlay); stand-ins show
+  // where, on every load (shots reload the page)
+  if (WIN && file === 'dashboard.html') {
+    win.webContents.on('did-finish-load', () => win.webContents.insertCSS(`html::after { content: '\\2014\\00a0\\00a0\\00a0\\00a0\\00a0\\25A2\\00a0\\00a0\\00a0\\00a0\\00a0\\2715'; position: fixed; top: 0; right: 0; z-index: 9999;
+      width: 138px; height: 45px; display: grid; place-items: center; font: 14px 'Segoe UI', sans-serif; color: var(--fg); background: var(--bg); pointer-events: none; }`))
+  }
+  await win.loadFile(path.join(root, 'ui', file), Object.keys(query).length ? { query } : {})
+  if (backdrop && !(WIN && backdrop === 'popover')) await win.webContents.insertCSS(`html { background: ${BACKDROP[backdrop][theme]} !important; }`)
   return win
 }
 

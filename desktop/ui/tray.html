@@ -12,6 +12,9 @@
     :root { --tray-hover: #dedee3; }
     @media (prefers-color-scheme: dark) { :root { --tray-hover: #3b3b40; } }
     body { background: transparent; padding: 12px 10px 10px; }
+    /* Windows has no popover material behind the page: a solid sheet with an edge */
+    html[data-os=win] body { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line-strong); }
+    html[data-os=win] .t-face .unread-badge { --orbit-ring: var(--panel); }
     html::-webkit-scrollbar { display: none; }
 
     header { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 0 0 6px; margin-bottom: 2px; }
@@ -41,12 +44,12 @@
     .t-top b { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 650; }
     .t-top small { flex: none; color: var(--fg3); font-size: 11.5px; }
     .t-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg2); }
-    .t-yolo { flex: none; display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: 4px; font: 800 9px/1 -apple-system, sans-serif; letter-spacing: .05em; font-style: normal; color: var(--yolo-ink); background: color-mix(in srgb, var(--yolo) 13%, transparent); }
+    .t-yolo { flex: none; display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: 4px; font: 800 9px/1 var(--ui); letter-spacing: .05em; font-style: normal; color: var(--yolo-ink); background: color-mix(in srgb, var(--yolo) 13%, transparent); }
     .t-fast { flex: none; display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 4px; font-style: normal; color: var(--fast-ink); background: color-mix(in srgb, var(--fast) 16%, transparent); }
     .t-fast svg { width: 10px; height: 10px; }
     /* its sub-agents or clones at work, as a count; the clones' one opens a menu of them */
     .t-end { position: relative; align-self: stretch; display: flex; align-items: center; gap: 4px; }
-    .t-count { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 7px 0 5px; border: 0; border-radius: 999px; background: var(--btn); font: 700 11px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; color: var(--fg2); cursor: help; }
+    .t-count { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 7px 0 5px; border: 0; border-radius: 999px; background: var(--btn); font: 700 11px/1 var(--ui); font-variant-numeric: tabular-nums; color: var(--fg2); cursor: help; }
     .t-count svg { width: 12px; height: 12px; }
     .t-count.clones { padding-left: 3px; cursor: pointer; transition: background .15s, transform .25s var(--bounce); }
     .t-count.clones:hover { background: var(--btn-hover); color: var(--fg); }

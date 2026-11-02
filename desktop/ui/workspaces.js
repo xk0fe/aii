@@ -1,11 +1,12 @@
 // Workspaces in the dashboard (core/workspaces.js): the switcher in the titlebar, which also says when another
 // workspace needs you; its popover, to switch, open and park; the sheet that makes a workspace or changes one; and the
 // banner over a parked one. The dashboard does the switching itself (onSwitch), so it can animate it.
-/* global crew, esc, plural, morph, markSVG, popMenu, shortPath, ICONS, COLORS, wsTile, wsColor, wsStatus, elsewhere, hasWorkspaces, faceStack, avatarHTML, agentColor, bounce */
+/* global crew, esc, plural, morph, markSVG, popMenu, shortPath, tildePath, pathField, pathParts, keys, oops, errorLine, ICONS, COLORS, wsTile, wsColor, wsStatus, elsewhere, hasWorkspaces, faceStack, avatarHTML, agentColor, bounce */
 
 const WS_COLORS = ['blue', 'sky', 'teal', 'mint', 'lime', 'yellow', 'orange', 'peach', 'red', 'pink', 'lilac', 'purple']
 const WS_ICONS = ['⛳', '🚀', '🎮', '📱', '🛒', '🎨', '🧪', '📚', '🏡', '💼', '🌱', '⚡', '🔧', '🌍']
-const tilde = (p) => String(p ?? '').replace(/^\/Users\/[^/]+/, '~')
+// a folder in a field (pathField: ~/code/app on a Mac, written out on Windows), and in words (tildePath)
+const tilde = (p) => pathField(p)
 
 // onSwitch(id, { open }): put a workspace on screen (opening it first if it's parked). onSwitched(state): a workspace
 // the sheet just made is on screen. dock: the row of workspaces along the sidebar's foot.
@@ -24,7 +25,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     morph(button, on
       ? `${wsTile(w, { size: 22 })}<b>${esc(w.name)}</b><span class="ws-chev">${ICONS.updown}</span>${alert}`
       : `<span class="ws-mark">${markSVG('0 6 24 16')}</span><b>Crew</b><span class="ws-chev">${ICONS.updown}</span>${alert}`)
-    button.title = `${on ? `${w.name}: switch workspaces` : 'Workspaces: a crew, chat and tasks per project'} (⌃1–9)${tip ? `\n\n${tip}` : ''}`
+    button.title = `${on ? `${w.name}: switch workspaces` : 'Workspaces: a crew, chat and tasks per project'} (${keys('⌃1–9')})${tip ? `\n\n${tip}` : ''}`
     // the workspace's color tints the sidebar, so you always know where you are
     const color = on ? wsColor(w) : null
     document.body.classList.toggle('ws-tint', Boolean(color))
@@ -36,7 +37,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
   // ---- its popover -----------------------------------------------------------------------------------------
 
   const rowHTML = (w, i) => `
-    <div class="ws-row ${w.current ? 'current' : ''} ${w.parked ? 'parked' : ''}" data-ws="${esc(w.id)}" role="menuitemradio" aria-checked="${w.current}" tabindex="-1" style="--w:${esc(wsColor(w) ?? 'var(--fg3)')}" title="${esc(w.folder ? tilde(w.folder) : w.id === 'default' ? 'Each agent works in its own folder' : '')}">
+    <div class="ws-row ${w.current ? 'current' : ''} ${w.parked ? 'parked' : ''}" data-ws="${esc(w.id)}" role="menuitemradio" aria-checked="${w.current}" tabindex="-1" style="--w:${esc(wsColor(w) ?? 'var(--fg3)')}" title="${esc(w.folder ? tildePath(w.folder) : w.id === 'default' ? 'Each agent works in its own folder' : '')}">
       ${wsTile(w, { size: 34 })}
       <span class="ws-main">
         <span class="ws-name"><b>${esc(w.name)}</b>${w.current ? `<i class="ws-here" title="On screen">${ICONS.check}</i>` : ''}</span>
@@ -50,7 +51,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
           ${w.parked || state.workspaces.length < 2 ? '' : `<button class="icon ws-act" data-ws-act="park" title="Park ${esc(w.name)}: its agents stop, and pick up where they were when you open it">${ICONS.pause}</button>`}
           <button class="icon ws-act" data-ws-act="settings" title="${esc(w.name)}: settings">${ICONS.gear}</button>
         </span>
-        ${i < 9 ? `<kbd>⌃${i + 1}</kbd>` : ''}
+        ${i < 9 ? `<kbd>${keys(`⌃${i + 1}`)}</kbd>` : ''}
       </span>
     </div>`
 
@@ -138,7 +139,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     try {
       await crew.call('workspace', 'park', w.id)
     } catch (err) {
-      alert(err.message)
+      oops(`Couldn't park ${w.name}`, err)
     }
   }
 
@@ -151,7 +152,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     dock.classList.toggle('hidden', !on)
     if (!on) return
     const badge = (w) => (w.current || w.parked ? '' : w.waiting ? `<i class="ws-alert waiting">${w.waiting > 9 ? '9+' : w.waiting}</i>` : w.unread ? '<i class="ws-alert unread"></i>' : '')
-    morph(dock, list.map((w, i) => `<button class="ws-dock-item ${w.current ? 'current' : ''} ${w.parked ? 'parked' : ''}" data-ws="${esc(w.id)}" role="tab" aria-selected="${w.current}" style="--w:${esc(wsColor(w) ?? 'var(--fg3)')}" title="${esc(`${w.name}: ${wsStatus(w)}${i < 9 ? ` (⌃${i + 1})` : ''}`)}">${wsTile(w, { size: 24 })}${badge(w)}</button>`).join('') +
+    morph(dock, list.map((w, i) => `<button class="ws-dock-item ${w.current ? 'current' : ''} ${w.parked ? 'parked' : ''}" data-ws="${esc(w.id)}" role="tab" aria-selected="${w.current}" style="--w:${esc(wsColor(w) ?? 'var(--fg3)')}" title="${esc(`${w.name}: ${wsStatus(w)}${i < 9 ? ` (${keys(`⌃${i + 1}`)})` : ''}`)}">${wsTile(w, { size: 24 })}${badge(w)}</button>`).join('') +
       `<button class="ws-dock-add" data-ws-new title="New workspace">${ICONS.plus}</button>`)
   }
 
@@ -173,7 +174,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
       { label: 'Settings…', icon: ICONS.gear, act: 'settings' },
     ], (act) => {
       if (act === 'switch') onSwitch(w.id, { open: w.parked })
-      if (act === 'open') crew.call('workspace', 'open', w.id).catch((err) => alert(err.message))
+      if (act === 'open') crew.call('workspace', 'open', w.id).catch((err) => oops(`Couldn't open ${w.name}`, err))
       if (act === 'park') park(w)
       if (act === 'settings') openSheet(w.id)
     })
@@ -194,7 +195,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
   }
 
   banner.addEventListener('click', (e) => {
-    if (e.target.closest('[data-ws-open]')) crew.call('workspace', 'open', state.workspace.id).catch((err) => alert(err.message))
+    if (e.target.closest('[data-ws-open]')) crew.call('workspace', 'open', state.workspace.id).catch((err) => oops(`Couldn't open ${state.workspace.name}`, err))
   })
 
   // ---- the sheet: a new workspace, or one's settings -------------------------------------------------------
@@ -381,7 +382,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
       if (dir) {
         $d('[data-ws-folder]').value = tilde(dir)
         draft.folder = dir
-        if (!draft.name.trim()) $d('[data-ws-name]').value = draft.name = dir.split('/').filter(Boolean).pop().replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase())
+        if (!draft.name.trim()) $d('[data-ws-name]').value = draft.name = (pathParts(dir).pop() ?? '').replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase())
         drawSheet()
       }
       return
@@ -407,7 +408,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     try {
       // its agents start there: a folder that isn't there would only stop them
       const where = draft.folder.trim() && draft.id !== 'default' ? await crew.call('folderInfo', '', draft.folder.trim()) : null
-      if (where && !where.exists) throw new Error(`There's no folder ${tilde(where.path)}`)
+      if (where && !where.exists) throw new Error(`There's no folder ${tildePath(where.path)}`)
       if (!draft.id) {
         const { state: next } = await crew.call('workspace', 'create', null, { ...look, members: [...draft.members], folders: draft.folders })
         dialog.close()
@@ -432,7 +433,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
         dialog.close()
       }
     } catch (x) {
-      err.textContent = x.message
+      err.textContent = errorLine(x)
     } finally {
       btn.disabled = false
     }
@@ -446,7 +447,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
       await crew.call('workspace', 'remove', w.id)
       dialog.close()
     } catch (x) {
-      $d('[data-ws-err]').textContent = x.message
+      $d('[data-ws-err]').textContent = errorLine(x)
     }
   }
 
