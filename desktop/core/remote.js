@@ -14,8 +14,8 @@ import { ATTACHMENTS } from './hub.js'
 import { CACHE, LINK_DIR } from './crew.js'
 import { DEFAULT } from './workspaces.js'
 import { keyPair, privateKey, publicKey } from './phones.js'
-import { VERSION, PORT, SALT, CLOSE, CALLS, TASK_OPS, b64, unb64, utf8, concat, keyInfo, nonce } from '../../shared/protocol.js'
-import { diff } from '../../shared/sync.js'
+import { VERSION, PORT, SALT, CLOSE, CALLS, TASK_OPS, b64, unb64, utf8, concat, keyInfo, nonce } from 'crew-shared/protocol.js'
+import { diff } from 'crew-shared/sync.js'
 
 const TRIES = 5 // failed handshakes from one address within a minute, before it waits a minute (CLOSE.tooMany)
 const WAIT = 60000

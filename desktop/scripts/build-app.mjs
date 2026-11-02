@@ -1,22 +1,26 @@
-// Builds dist/Crew.app: the Electron runtime with Crew's own name, icon and bundle id.
+// Builds dist/Crew.app: the Electron runtime with Crew's own name, icon and bundle id, for working on Crew.
 // The bundle is only a launcher; it runs the code in this folder, so your edits apply on the next launch.
+// (The Crew people install comes from npm run dist: scripts/dist.mjs.)
 //   npm start      opens Crew.app, building it first if it's missing or out of date
 //   npm run app    rebuilds it
+// On Windows there's no launcher to build: npm start runs Crew from this folder, as npm run dev does.
 import { packager } from '@electron/packager'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { APP_ID } from '../core/appid.js'
 import { Voice } from '../core/voice.js'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
+if (process.platform !== 'darwin') process.exit(spawnSync(process.execPath, [path.join(root, 'node_modules', 'electron', 'cli.js'), root], { stdio: 'inherit' }).status ?? 1)
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const electronVersion = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', 'electron', 'package.json'), 'utf8')).version
 
 const app = path.join(root, 'dist', 'Crew.app')
 const stamp = path.join(root, 'dist', '.build.json')
-const wanted = JSON.stringify({ electronVersion, root, icon: fs.statSync(path.join(root, 'assets', 'icon.icns')).mtimeMs, documents: 1, voice: 1 })
+const wanted = JSON.stringify({ electronVersion, root, icon: fs.statSync(path.join(root, 'assets', 'icon.icns')).mtimeMs, documents: 1, voice: 1, id: APP_ID })
 const open = process.argv.includes('--open')
 const current = fs.existsSync(app) && fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === wanted
 
@@ -33,7 +37,8 @@ const [built] = await packager({
   out: path.join(root, 'dist'),
   name: 'Crew',
   executableName: 'Crew',
-  appBundleId: 'app.crew.desktop',
+  // the installed Crew's id plus .dev, so macOS keeps the two apart when both are on this Mac
+  appBundleId: `${APP_ID}.dev`,
   appCategoryType: 'public.app-category.developer-tools',
   icon: path.join(root, 'assets', 'icon.icns'),
   // .crew agent packs open in Crew from Finder or Mail; the two descriptions are what macOS shows when Crew

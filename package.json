@@ -1,12 +1,15 @@
 {
   "name": "crew-monorepo",
   "private": true,
-  "description": "Crew: the Mac app (desktop/), the phone app (mobile/) and what they share (shared/)",
+  "description": "Crew: the desktop app for macOS and Windows (desktop/), the phone app (mobile/) and what they share (shared/)",
   "scripts": {
     "postinstall": "npm --prefix desktop install",
     "start": "npm --prefix desktop start",
     "dev": "npm --prefix desktop run dev",
     "app": "npm --prefix desktop run app",
+    "dist": "npm --prefix desktop run dist --",
+    "dist:mac": "npm --prefix desktop run dist:mac",
+    "dist:win": "npm --prefix desktop run dist:win",
     "icon": "npm --prefix desktop run icon",
     "shots": "npm --prefix desktop run shots --",
     "test": "npm --prefix shared test && npm --prefix desktop test",

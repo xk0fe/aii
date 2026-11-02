@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { PAIR_TTL, b64, makePairCode, unb64 } from '../../shared/protocol.js'
+import { PAIR_TTL, b64, makePairCode, unb64 } from 'crew-shared/protocol.js'
 
 // X25519 keys as their raw 32 bytes, which node:crypto takes wrapped in DER (as shared/make-vectors.mjs does).
 const PKCS8 = Buffer.from('302e020100300506032b656e04220420', 'hex')

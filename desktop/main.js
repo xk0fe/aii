@@ -61,7 +61,9 @@ app.whenReady().then(async () => {
 
   // The agents' terminals live in the terminal host (core/ptyhost.js), run by this same binary as Node, so they keep
   // working while Crew quits or relaunches with new code.
-  crew = new Crew({ bin: path.join(dir, 'bin'), computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
+  // bin/ goes on the agents' PATH, so it has to be a real folder: in an installed Crew, the one next to app.asar.
+  const bin = path.join(dir, 'bin').replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
+  crew = new Crew({ bin, computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
   hub = crew.hub
   await crew.start()
   remote = new Remote(crew)
@@ -475,8 +477,10 @@ function wire() {
 function wireVoice() {
   // Older macOS asks for speech-recognition permission, which needs the app's Info.plist to say why (Crew.app does).
   const plist = path.join(process.resourcesPath, '..', 'Info.plist')
-  const mayAskPermission = fs.existsSync(plist) && fs.readFileSync(plist, 'utf8').includes('NSSpeechRecognitionUsageDescription')
-  const voice = new Voice({ root: dir, mayAskPermission })
+  const mayAskPermission = process.platform === 'darwin' && fs.existsSync(plist) && fs.readFileSync(plist, 'utf8').includes('NSSpeechRecognitionUsageDescription')
+  // An installed Crew carries the helper in Resources/voice; from source (npm start, npm run dev) it's built here.
+  const shipped = path.join(process.resourcesPath, 'voice', process.platform === 'win32' ? 'crew-voice.exe' : 'crew-voice')
+  const voice = new Voice({ root: dir, binary: fs.existsSync(shipped) ? shipped : undefined, mayAskPermission })
   const send = (event) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('voice', event))
   Object.assign(actions, voiceActions({ voice, systemPreferences, shell, send }))
   const audio = voiceAudio(voice)

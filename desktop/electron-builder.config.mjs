@@ -1,0 +1,116 @@
+// How Crew is packaged for people to install (electron-builder): Crew.app as a DMG and a zip for Apple Silicon and
+// Intel, and a per-user Windows installer for x64 and arm64. scripts/dist.mjs runs it (npm run dist).
+//
+// Signing switches on from the environment alone; nothing in here changes for it:
+//   macOS    CSC_LINK + CSC_KEY_PASSWORD: the Developer ID Application certificate (.p12, as a path or base64), or
+//            CSC_NAME: one already in the keychain. Notarization: APPLE_API_KEY (path to the .p8) + APPLE_API_KEY_ID +
+//            APPLE_API_ISSUER, or APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID.
+//            Without a certificate Crew.app is signed ad hoc: it runs, but Gatekeeper warns on other Macs.
+//   Windows  WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD: an Authenticode .pfx, or Azure Trusted Signing with
+//            AZURE_SIGN_ENDPOINT + AZURE_SIGN_ACCOUNT + AZURE_SIGN_PROFILE (and AZURE_TENANT_ID, AZURE_CLIENT_ID,
+//            AZURE_CLIENT_SECRET for the account). Without either the installer is unsigned and SmartScreen warns.
+//   RELEASE_REPO=owner/name: the public GitHub repo releases go to, written into the update metadata.
+import { APP_ID } from './core/appid.js'
+import { afterPack } from './scripts/after-pack.mjs'
+
+const env = process.env
+const macCertificate = Boolean(env.CSC_LINK || env.CSC_NAME)
+const notarize = macCertificate && Boolean((env.APPLE_API_KEY && env.APPLE_API_KEY_ID && env.APPLE_API_ISSUER) || (env.APPLE_ID && env.APPLE_APP_SPECIFIC_PASSWORD && env.APPLE_TEAM_ID))
+const azure = env.AZURE_SIGN_ENDPOINT && env.AZURE_SIGN_ACCOUNT && env.AZURE_SIGN_PROFILE
+const [owner, repo] = (env.RELEASE_REPO ?? '').split('/')
+
+// What goes into the app: the code and its dependencies, not the tests, scripts or sources of native parts, and of
+// node-pty's prebuilt binaries only the one for the platform (darwin, win32) and arch being built. Given whole to each
+// platform: electron-builder lets a platform's list replace the top-level one rather than add to it.
+const files = (platform) => [
+  'package.json',
+  'main.js',
+  'preload.cjs',
+  'core/**',
+  'ui/**',
+  'bin/**',
+  'assets/*.png',
+  `!node_modules/node-pty/prebuilds/!(${platform}-\${arch})/**`,
+  '!node_modules/node-pty/{src,deps,third_party,scripts,typings}/**',
+  '!node_modules/node-pty/binding.gyp',
+  '!node_modules/node-pty/lib/**/*.test.js',
+  '!node_modules/node-addon-api/**',
+  '!**/*.{pdb,map}',
+]
+
+export default {
+  appId: APP_ID,
+  productName: 'Crew',
+  copyright: `© ${new Date().getFullYear()} Greengrass`,
+  directories: { output: 'release', buildResources: 'build' },
+  artifactName: 'Crew-${version}-${os}-${arch}.${ext}',
+
+  asar: true,
+  // Files something outside Crew's own JavaScript runs: node-pty's helpers (spawn-helper on macOS; conpty.dll,
+  // OpenConsole.exe and winpty-agent.exe on Windows), and bin/, which agents get on their PATH.
+  asarUnpack: ['node_modules/node-pty/**', 'bin/**'],
+  // node-pty ships N-API prebuilds for every platform Crew does: nothing to compile.
+  npmRebuild: false,
+  nodeGypRebuild: false,
+  // Dictation's helper, built beforehand by scripts/build-voice.mjs: Resources/voice/crew-voice(.exe)
+  extraResources: [{ from: 'dist/voice/${os}-${arch}', to: 'voice' }],
+  afterPack,
+
+  // .crew agent packs open in Crew (Finder and Mail on macOS, Explorer on Windows)
+  fileAssociations: [{ ext: 'crew', name: 'Crew agents', description: 'Crew agents', role: 'Viewer', rank: 'Owner' }],
+
+  electronFuses: {
+    // The terminal host is Crew's own binary run as Node (core/ptyclient.js): this one has to stay on.
+    runAsNode: true,
+    // Crew itself takes no Node options or debugger flags from outside, and only runs the code in app.asar.
+    enableNodeOptionsEnvironmentVariable: false,
+    enableNodeCliInspectArguments: false,
+    onlyLoadAppFromAsar: true,
+  },
+
+  mac: {
+    category: 'public.app-category.developer-tools',
+    icon: 'assets/icon.icns',
+    files: files('darwin'),
+    target: ['dmg', 'zip'],
+    hardenedRuntime: true,
+    identity: macCertificate ? undefined : '-',
+    entitlements: macCertificate ? 'build/entitlements.mac.plist' : 'build/entitlements.adhoc.plist',
+    entitlementsInherit: macCertificate ? 'build/entitlements.mac.plist' : 'build/entitlements.adhoc.plist',
+    notarize,
+    // What macOS shows when Crew first asks for the microphone, speech recognition (dictation, before macOS 26) and
+    // the local network (Crew Link, phones)
+    extendInfo: {
+      NSMicrophoneUsageDescription: 'Crew listens while you dictate a message to your agents.',
+      NSSpeechRecognitionUsageDescription: 'Crew turns what you say into text, on this Mac.',
+      NSLocalNetworkUsageDescription: 'Crew connects to your other computers and your phone on this network.',
+    },
+  },
+  win: {
+    icon: 'assets/icon.ico',
+    files: files('win32'),
+    target: ['nsis'],
+    executableName: 'Crew',
+    ...(azure && {
+      azureSignOptions: {
+        endpoint: env.AZURE_SIGN_ENDPOINT,
+        codeSigningAccountName: env.AZURE_SIGN_ACCOUNT,
+        certificateProfileName: env.AZURE_SIGN_PROFILE,
+        publisherName: env.AZURE_SIGN_PUBLISHER || 'Greengrass',
+      },
+    }),
+  },
+  nsis: {
+    oneClick: true,
+    perMachine: false,
+    shortcutName: 'Crew',
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
+    runAfterFinish: true,
+    deleteAppDataOnUninstall: false,
+    include: 'build/installer.nsh',
+    artifactName: 'Crew-Setup-${version}-${arch}.${ext}',
+  },
+
+  publish: owner && repo ? [{ provider: 'github', owner, repo, releaseType: 'draft' }] : null,
+}

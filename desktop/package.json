@@ -1,30 +1,41 @@
 {
   "name": "crew",
-  "version": "0.1.0",
+  "productName": "Crew",
+  "version": "1.0.0",
   "private": true,
-  "description": "Menu bar + floating panel + dashboard for orchestrating named AI agents in terminals",
+  "description": "Crew: a team of AI coding agents (Claude Code, Codex) with names, jobs and one chat for all of them",
+  "author": {
+    "name": "Greengrass"
+  },
+  "license": "UNLICENSED",
   "type": "module",
   "main": "main.js",
   "scripts": {
     "start": "node scripts/build-app.mjs --open",
     "dev": "electron .",
     "test": "node --test test/*.test.js",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper bin/crew bin/crew-status bin/crew-sh 2>/dev/null || true",
+    "postinstall": "node scripts/postinstall.mjs",
     "app": "node scripts/build-app.mjs",
-    "icon": "electron scripts/make-icon.mjs",
+    "dist": "node scripts/dist.mjs",
+    "dist:mac": "node scripts/dist.mjs --mac",
+    "dist:win": "node scripts/dist.mjs --win",
+    "voice": "node scripts/build-voice.mjs",
+    "icon": "electron scripts/make-icon.mjs && electron scripts/make-ico.mjs",
     "shots": "electron scripts/screenshots.mjs"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "crew-shared": "file:../shared",
     "node-pty": "^1.1.0",
     "qrcode-generator": "^2.0.4",
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@electron/asar": "^4.3.1",
     "@electron/packager": "^20.3.0",
-    "electron": "^44.5.1"
-  },
-  "productName": "Crew"
+    "electron": "^44.5.1",
+    "electron-builder": "^26.18.0"
+  }
 }

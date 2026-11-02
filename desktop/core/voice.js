@@ -1,34 +1,48 @@
-// Voice input for the chat: Apple's on-device dictation through a small Swift helper (native/crew-voice.swift),
-// built on first use. The chat window streams 16 kHz microphone audio in; what the helper hears comes back as
-// events for that window. Speech never leaves the Mac, and it works the same on a computer linked to another
-// one's crew, since dictation only fills in your message.
+// Voice input for the chat, through a small helper that turns speech into text on this computer: on macOS Apple's
+// on-device dictation (native/crew-voice.swift), on Windows whisper.cpp with a speech model that ships with Crew
+// (native/windows/CrewVoice). Both speak the same protocol (top of crew-voice.swift). The chat window streams
+// 16 kHz microphone audio in; what the helper hears comes back as events for that window. Speech never leaves the
+// computer, and it works the same on a computer linked to another one's crew, since dictation only fills in your
+// message. An installed Crew carries the helper ready-built (scripts/build-voice.mjs); a source checkout on a Mac
+// builds it on first use.
 // No Electron in here: main.js hands over the few Electron pieces it needs (see voiceActions).
 import { execFile, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const SETTINGS = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
+// where you let Crew use the microphone
+const SETTINGS = {
+  darwin: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+  win32: 'ms-settings:privacy-microphone',
+}
 
 export class Voice extends EventEmitter {
   session = null // { id, proc }
   building = null
   seq = 0
 
-  // root: Crew's folder. mayAskPermission: running from an app bundle that explains speech recognition in its
-  // Info.plist (Crew.app); only macOS before 26 asks for that.
-  constructor({ root, mayAskPermission = false }) {
+  // root: Crew's folder. binary: the helper that came with Crew, when it did (args: what goes before the locale,
+  // for a helper that's a script). mayAskPermission: running from an app bundle that explains speech recognition in
+  // its Info.plist (Crew.app); only macOS before 26 asks for that.
+  constructor({ root, binary, args = [], mayAskPermission = false }) {
     super()
     this.source = path.join(root, 'native', 'crew-voice.swift')
-    this.binary = path.join(root, 'dist', 'crew-voice')
+    this.shipped = Boolean(binary)
+    this.compiles = !binary && process.platform === 'darwin' // builds its own helper from the Swift source
+    this.binary = binary ?? path.join(root, 'dist', ...(process.platform === 'win32' ? ['voice', `win-${process.arch}`, 'crew-voice.exe'] : ['crew-voice']))
+    this.args = args
     this.mayAskPermission = mayAskPermission
   }
 
-  built = () => fs.existsSync(this.binary) && fs.statSync(this.binary).mtimeMs >= fs.statSync(this.source).mtimeMs
+  built = () => fs.existsSync(this.binary) && (!this.compiles || fs.statSync(this.binary).mtimeMs >= fs.statSync(this.source).mtimeMs)
 
-  // Compiles the helper when it's missing or older than its source (a few seconds, once).
+  // Compiles the helper when it's missing or older than its source (a few seconds, once). Only a source checkout
+  // on a Mac does: an installed Crew has it, and on Windows scripts/build-voice.mjs makes it.
   ensureBinary() {
     if (this.built()) return Promise.resolve(this.binary)
+    if (this.shipped) return Promise.reject(new Error('Voice input is missing from this copy of Crew. Installing Crew again brings it back.'))
+    if (!this.compiles) return Promise.reject(new Error('Voice input needs its helper here: run npm run voice -- win in desktop/ (with the .NET 8 SDK), then try again.'))
     this.building ??= new Promise((resolve, reject) => {
       fs.mkdirSync(path.dirname(this.binary), { recursive: true })
       const target = `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.0`
@@ -51,7 +65,7 @@ export class Voice extends EventEmitter {
   async locales() {
     const bin = await this.ensureBinary()
     return new Promise((resolve, reject) => {
-      execFile(bin, ['--locales'], { timeout: 15000 }, (err, out) => {
+      execFile(bin, [...this.args, '--locales'], { timeout: 15000, windowsHide: true }, (err, out) => {
         if (err) return reject(err)
         resolve(JSON.parse(String(out).trim().split('\n').pop()).options)
       })
@@ -74,7 +88,7 @@ export class Voice extends EventEmitter {
     if (!live()) return
     let bin
     try {
-      if (!this.built()) this.emit('event', { id, type: 'building' })
+      if (this.compiles && !this.built()) this.emit('event', { id, type: 'building' })
       bin = await this.ensureBinary()
     } catch (err) {
       if (!live()) return
@@ -83,9 +97,9 @@ export class Voice extends EventEmitter {
     }
     if (!live()) return // cancelled while building
     // one argument, and only a locale-shaped one: nothing a caller passes can turn into another flag
-    const args = [`--locale=${/^[A-Za-z]{2,3}([_-][A-Za-z0-9]{2,8})*$/.test(locale ?? '') ? locale : ''}`]
+    const args = [...this.args, `--locale=${/^[A-Za-z]{2,3}([_-][A-Za-z0-9]{2,8})*$/.test(locale ?? '') ? locale : ''}`]
     if (this.mayAskPermission) args.push('--may-ask-permission')
-    const proc = spawn(bin, args, { stdio: ['pipe', 'pipe', 'ignore'] })
+    const proc = spawn(bin, args, { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true })
     this.session.proc = proc
     proc.stdin.on('error', () => {}) // the helper may exit before we stop writing
     proc.stdout.setEncoding('utf8') // a character split across two reads stays one character
@@ -148,20 +162,23 @@ export class Voice extends EventEmitter {
 
 // The crew.call() actions behind the chat's mic button. main.js passes Electron's systemPreferences and shell,
 // and a send(event) that reaches every window (each composer only listens to the session it started).
-export function voiceActions({ voice, systemPreferences, shell, send }) {
+export function voiceActions({ voice, systemPreferences, shell, send, platform = process.platform }) {
   voice.on('event', send)
   return {
-    // The microphone first: macOS asks once, and remembers a "no" until you change it in System Settings.
+    // The microphone first. macOS asks once, and remembers a "no" until you change it in System Settings. Windows
+    // never asks a desktop app: Settings › Privacy & security › Microphone has the switches, so only one that's off
+    // stops dictation here (and the composer's getUserMedia() finds the rest).
     voiceStart: async (locale) => {
       const status = systemPreferences.getMediaAccessStatus('microphone')
-      const allowed = status === 'granted' || (status === 'not-determined' && (await systemPreferences.askForMediaAccess('microphone')))
+      const allowed =
+        platform === 'darwin' ? status === 'granted' || (status === 'not-determined' && (await systemPreferences.askForMediaAccess('microphone'))) : status !== 'denied'
       if (!allowed) throw new Error('mic-denied')
       return voice.start(locale)
     },
     voiceStop: (id) => voice.stop(id),
     voiceCancel: (id) => voice.cancel(id),
     voiceLocales: () => voice.locales(),
-    voiceSettings: () => shell.openExternal(SETTINGS),
+    voiceSettings: () => shell.openExternal(SETTINGS[platform] ?? SETTINGS.darwin),
   }
 }
 
