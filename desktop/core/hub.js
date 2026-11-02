@@ -1151,8 +1151,11 @@ export class Hub extends EventEmitter {
     const left = leftovers(procs, groups, keep, spans)
     if (!left.length) return
     stopProcesses(left)
-    const n = left.length
-    if (!run.quiet) this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(left)}), so Crew stopped ${n === 1 ? 'it' : 'them'}` })
+    // Windows starts a console host for a console program that has no console: that program's window, not something
+    // the agent left, so it goes without a word
+    const said = left.filter((p) => !/^(conhost|OpenConsole)$/i.test(p.name))
+    const n = said.length
+    if (!run.quiet && n) this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(said)}), so Crew stopped ${n === 1 ? 'it' : 'them'}` })
   }
 
   // Launches that ended while Crew wasn't there to see it (it quit, or crashed): swept now.
