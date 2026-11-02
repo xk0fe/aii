@@ -3219,7 +3219,7 @@ function decide(ask, input, cli, reply) {
   return { output: out({ behavior: 'deny', message }), answer: { allow: false, ...(note && { note }) } }
 }
 
-const expand = (dir) => (dir ? dir.replace(/^~(?=\/|$)/, os.homedir()) : os.homedir())
+const expand = (dir) => (dir ? dir.replace(/^~(?=[\\/]|$)/, os.homedir()) : os.homedir()) // ~/code or, on Windows, ~\code
 // What an agent's conversation is tied to: the CLI that keeps it, and the folder it was started in.
 const sessionHome = (a) => JSON.stringify([a.provider ?? a.cli ?? 'claude', expand(a.cwd)])
 

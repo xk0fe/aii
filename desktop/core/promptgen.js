@@ -28,7 +28,7 @@ const run = (file, args, opts) =>
 const tidy = (text) => text.trim().replace(/^```\w*\n?|\n?```$/g, '').replace(/^"([\s\S]*)"$/, '$1').trim()
 
 export async function generatePrompt(agent, provider, teammates) {
-  const dir = agent.cwd?.replace(/^~(?=\/|$)/, os.homedir())
+  const dir = agent.cwd?.replace(/^~(?=[\\/]|$)/, os.homedir()) // ~/code, or ~\code on Windows
   const cwd = dir && fs.existsSync(dir) ? dir : os.homedir() // run in the project so its CLAUDE.md / AGENTS.md can inform the draft
   const env = cleanEnv({ ...process.env, ...expandEnv(provider.env) })
   const prompt = ask(agent, teammates)
