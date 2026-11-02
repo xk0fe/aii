@@ -14,7 +14,7 @@ import { WIN, BIN, SH, program, alive, gone } from './helpers/platform.mjs'
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-leases-'))
 const { Hub, CONFIG, shellPrefix } = await import('../core/hub.js')
 const { Runner } = await import('../core/runner.js')
-const { seconds, leftovers, readGroups, readSpans, parseWindows, tree, groupsOf, noteworthy, exempt, gitBash } = await import('../core/procs.js')
+const { seconds, leftovers, readGroups, readSpans, parseWindows, tree, groupsOf, noteworthy, exempt, gitBash, prefixWorks } = await import('../core/procs.js')
 
 class FakeRunner extends EventEmitter {
   live = new Set()
@@ -265,12 +265,24 @@ test("the shell prefix: quoted by Claude Code itself, Git Bash's paths on Window
   assert.deepEqual(shellPrefix('/Users/jean -luc/crew/bin', {}, 'darwin'), {}, 'Claude Code would take "-luc/crew/bin/crew-sh" for options')
   assert.deepEqual(shellPrefix('/crew/bin', { CLAUDE_CODE_SHELL_PREFIX: '/usr/local/bin/audit' }, 'darwin'), { CLAUDE_CODE_SHELL_PREFIX: '/crew/bin/crew-sh', CREW_SHELL_PREFIX: '/usr/local/bin/audit' })
   assert.deepEqual(shellPrefix('/crew/bin', { CLAUDE_CODE_SHELL_PREFIX: '/old/crew/bin/crew-sh' }, 'darwin'), { CLAUDE_CODE_SHELL_PREFIX: '/crew/bin/crew-sh' })
-  const win = shellPrefix('C:\\Program Files\\Crew\\resources\\app.asar.unpacked\\bin', { CLAUDE_CODE_SHELL_PREFIX: 'C:\\Users\\me\\.crew\\bin\\crew-sh.cmd' }, 'win32')
+  const tried = []
+  const works = (sh, bash) => (tried.push([sh, bash]), true)
+  const env = { CLAUDE_CODE_SHELL_PREFIX: 'C:\\Users\\me\\.crew\\bin\\crew-sh.cmd', CLAUDE_CODE_GIT_BASH_PATH: '/bin/sh' }
+  const win = shellPrefix('C:\\Program Files\\Crew\\resources\\app.asar.unpacked\\bin', env, 'win32', works)
   assert.equal(win.CLAUDE_CODE_SHELL_PREFIX, 'C:/Program Files/Crew/resources/app.asar.unpacked/bin/crew-sh')
   assert.ok(!('CREW_SHELL_PREFIX' in win), "Crew started from an agent's terminal: crew-sh doesn't run itself")
-  assert.equal(typeof win.CREW_BASH, 'string')
+  assert.equal(win.CREW_BASH, '/bin/sh')
+  assert.deepEqual(tried, [['C:/Program Files/Crew/resources/app.asar.unpacked/bin/crew-sh', '/bin/sh']], 'tried in Git Bash first')
+  assert.deepEqual(shellPrefix('C:\\Crew\\bin', env, 'win32', () => false), {}, "if Git Bash won't run it, commands run without it")
   assert.ok(fs.existsSync(path.join(BIN, 'crew-sh.cmd')), 'what Claude Code finds for an MCP server on Windows, beside crew-sh')
   assert.match(fs.readFileSync(path.join(BIN, 'crew-sh.cmd'), 'utf8'), /\r\n"%bash%" "%~dp0crew-sh" %\*\r\n/)
+})
+
+test('crew-sh is tried in the shell that will run it, as Claude Code runs it, before agents get it', { skip: !SH && 'no Git Bash here' }, () => {
+  const sh = WIN ? path.join(BIN, 'crew-sh').replaceAll('\\', '/') : path.join(BIN, 'crew-sh')
+  assert.equal(prefixWorks(sh, SH), true)
+  assert.equal(prefixWorks(path.join(BIN, 'no-such-crew-sh'), SH), false)
+  assert.equal(prefixWorks(sh, null), false, 'no Git Bash, no prefix')
 })
 
 test('bin/crew-sh on Windows still runs the command, with its exit code, when it can\'t say what it was', { skip: WIN }, async () => {

@@ -11,7 +11,7 @@ import { generatePrompt } from './promptgen.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
-import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, stop as stopProcesses, summary } from './procs.js'
+import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
 import { DEFAULT, dirOf, space, forget, renameShared, sharedNames } from './workspaces.js'
 
@@ -3034,14 +3034,17 @@ const leaseKey = (thing) => String(thing ?? '').trim().toLowerCase().replace(/\s
 // prefix, if you have one, still runs after it (unless it's crew-sh itself: Crew started from an agent's terminal).
 // Claude Code quotes the prefix, spaces and all, but takes whatever follows its last " -" as options for it, so in a
 // folder with " -" in its name there's none, and the agent's process tree alone says what it leaves running. On
-// Windows Git Bash runs the commands, and reads C:/ paths best; CREW_BASH is that Git Bash, for bin/crew-sh.cmd.
-export const shellPrefix = (bin, env = process.env, platform = process.platform) => {
+// Windows Git Bash runs the commands, and reads C:/ paths best; CREW_BASH is that Git Bash, for bin/crew-sh.cmd. There
+// crew-sh is tried once first (prefixWorks): if Git Bash won't run it right, commands run without it instead of failing.
+export const shellPrefix = (bin, env = process.env, platform = process.platform, works = prefixWorks) => {
   const win = platform === 'win32'
   const sh = win ? path.win32.join(bin, 'crew-sh').replaceAll('\\', '/') : path.posix.join(bin, 'crew-sh')
   if (sh.includes(' -')) return {}
+  const bash = win ? gitBash(env) : null
+  if (win && !works(sh, bash)) return {}
   const yours = env.CLAUDE_CODE_SHELL_PREFIX
   const again = yours && /^crew-sh(\.cmd)?$/i.test(path.posix.basename(yours.replaceAll('\\', '/')))
-  return { CLAUDE_CODE_SHELL_PREFIX: sh, ...(yours && !again && { CREW_SHELL_PREFIX: yours }), ...(win && { CREW_BASH: gitBash(env) ?? '' }) }
+  return { CLAUDE_CODE_SHELL_PREFIX: sh, ...(yours && !again && { CREW_SHELL_PREFIX: yours }), ...(win && { CREW_BASH: bash }) }
 }
 
 // Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.

@@ -11,8 +11,9 @@
 // was one of the agent's at the time (between its start and when it was last seen). bin/crew-sh, run by Git Bash there,
 // also writes down what a command left in its group once the command is done, so a dev server started with & is found
 // even after the shells between it and the command are gone.
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 const WIN = process.platform === 'win32'
@@ -251,6 +252,37 @@ export function gitBash(env = process.env, exists = fs.existsSync) {
     if (root) found.push(win.join(root, 'Git', 'bin', 'bash.exe'))
   }
   return found.find((f) => exists(f)) ?? null
+}
+
+// Windows: does Git Bash run bin/crew-sh the way Claude Code will (bash -c "'…/crew-sh' 'command'"), passing on the
+// command's exit code and writing down its Windows id? Asked once per Crew (it holds Crew up for as long as Git Bash
+// takes to start). If not, agents' commands run without crew-sh, rather than every one of them failing, and their
+// process trees alone say what they leave running.
+const tried = new Map()
+export function prefixWorks(sh, bash) {
+  const key = `${sh}\n${bash}`
+  if (!tried.has(key)) tried.set(key, tryPrefix(sh, bash))
+  return tried.get(key)
+}
+
+function tryPrefix(sh, bash) {
+  if (!bash) return false
+  const file = path.join(os.tmpdir(), `crew-sh-${process.pid}-${Date.now()}`)
+  const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`
+  try {
+    execFileSync(bash, ['-c', `${quote(sh)} ${quote('exit 7')}`], { env: { ...process.env, CREW_GROUPS: file }, stdio: 'ignore', windowsHide: true, timeout: 20000 })
+    return false
+  } catch (e) {
+    let text = ''
+    try {
+      text = fs.readFileSync(file, 'utf8')
+    } catch {}
+    const ok = e.status === 7 && /^\d+ \d+\s*$/m.test(text)
+    if (!ok) console.warn(`crew-sh doesn't run in ${bash} (exit ${e.status ?? e.code}), so agents' commands run without it`)
+    return ok
+  } finally {
+    fs.rmSync(file, { force: true })
+  }
 }
 
 // "node ×2, idb_companion"
