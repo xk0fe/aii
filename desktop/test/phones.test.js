@@ -3,6 +3,7 @@
 // unpaired, against a real Crew with a fake runner in a throwaway CREW_HOME. Run with `npm test`.
 import { test, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -218,6 +219,28 @@ test("this Mac's crypto reproduces shared/vectors.json", () => {
     assert.throws(() => open(k.kMac, 0, bytes(v.frames[0].sealed)), 'nor one sealed with the other direction')
     assert.equal(b64(m.pub), v.b64.m)
   }
+})
+
+// Crew runs in Electron, whose BoringSSL lacks some of what Node's OpenSSL has (ChaCha20-Poly1305, for one, which once
+// turned every phone away while these tests passed): the vectors once more, there.
+const ELECTRON = new URL('../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron', import.meta.url).pathname
+test('…and does so in Electron, where Crew runs', { skip: !fs.existsSync(ELECTRON) && 'no Electron to run' }, () => {
+  const script = `
+    import fs from 'node:fs'
+    const { macKeys, seal, open } = await import(${JSON.stringify(new URL('../core/remote.js', import.meta.url).href)})
+    const { vectors } = JSON.parse(fs.readFileSync(${JSON.stringify(new URL('../../shared/vectors.json', import.meta.url).pathname)}, 'utf8'))
+    const bytes = (h) => Buffer.from(h, 'hex')
+    const out = vectors.map((v) => {
+      const k = macKeys({ m: { pub: bytes(v.public.m), priv: bytes(v.private.m) }, f: { pub: bytes(v.public.f), priv: bytes(v.private.f) }, e: bytes(v.public.e), d: bytes(v.public.d), secret: v.secret && bytes(v.secret) })
+      return v.frames.map((frame) => {
+        const key = frame.from === 'phone' ? k.kPhone : k.kMac
+        return [seal(key, frame.counter, frame.plaintext).toString('hex'), open(key, frame.counter, bytes(frame.sealed))]
+      })
+    })
+    console.log(JSON.stringify(out))`
+  const got = JSON.parse(execFileSync(ELECTRON, ['--input-type=module', '-e', script], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8' }))
+  const { vectors } = JSON.parse(fs.readFileSync(new URL('../../shared/vectors.json', import.meta.url), 'utf8'))
+  assert.deepEqual(got, vectors.map((v) => v.frames.map((f) => [f.sealed, f.plaintext])))
 })
 
 test('a pairing code pairs one phone, once, within ten minutes; a new code ends the one before', async () => {

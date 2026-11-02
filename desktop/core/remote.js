@@ -8,6 +8,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
+import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { WebSocketServer, WebSocket } from 'ws'
 import { ATTACHMENTS } from './hub.js'
 import { CACHE, LINK_DIR } from './crew.js'
@@ -25,7 +26,7 @@ const MAX = 32 * 1024 * 1024 // and after it: a photo is megabytes
 const PACE = 200 // a phone gets at most one patch this often
 const BATCH = 50 // and terminal output in batches this long
 
-// ---- the crypto (PROTOCOL.md, Handshake), with node:crypto ------------------------------------------------
+// ---- the crypto (PROTOCOL.md, Handshake): node:crypto for the keys, @noble/ciphers for the frames ------------------
 
 const dh = (priv, pub) => crypto.diffieHellman({ privateKey: privateKey(priv), publicKey: publicKey(pub) })
 
@@ -37,18 +38,16 @@ export function macKeys({ m, f, e, d, secret }) {
   return { kPhone: okm.subarray(0, 32), kMac: okm.subarray(32) }
 }
 
-// A frame: ChaCha20-Poly1305 with its direction's key and counter, the tag after the ciphertext.
+// A frame: ChaCha20-Poly1305 with its direction's key and counter, the tag after the ciphertext. Not node:crypto's:
+// Electron's BoringSSL has no ChaCha20-Poly1305 ("Unknown cipher" in Crew, though not under plain Node or in the tests).
 export function seal(key, counter, text) {
-  const c = crypto.createCipheriv('chacha20-poly1305', key, nonce(counter), { authTagLength: 16 })
-  return Buffer.concat([c.update(text, 'utf8'), c.final(), c.getAuthTag()])
+  return Buffer.from(chacha20poly1305(key, nonce(counter)).encrypt(utf8(text)))
 }
 
 // -> its text; throws for a frame that doesn't open (tampered with, another key, or out of order)
 export function open(key, counter, frame) {
   if (frame.length < 16) throw new Error('too short')
-  const d = crypto.createDecipheriv('chacha20-poly1305', key, nonce(counter), { authTagLength: 16 })
-  d.setAuthTag(frame.subarray(-16))
-  return Buffer.concat([d.update(frame.subarray(0, -16)), d.final()]).toString('utf8')
+  return Buffer.from(chacha20poly1305(key, nonce(counter)).decrypt(frame)).toString('utf8')
 }
 
 // Messages as shared/protocol.js packs them (bytes as { $bytes: base64url }), with Node's own base64: a photo is
