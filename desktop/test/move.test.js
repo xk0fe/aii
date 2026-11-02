@@ -164,7 +164,9 @@ function computer(name, linkPort, agents, { you } = {}) {
   fs.mkdirSync(path.join(home, 'link'))
   fs.writeFileSync(path.join(home, 'link', 'link.json'), JSON.stringify({ name, port: linkPort }))
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ agents: agents.map((a) => ({ off: true, ...a })) }))
-  const env = { ...process.env, CREW_HOME: home, NAME: name, CLAUDE_CONFIG_DIR: claude, CODEX_HOME: codex, PATH: `${bin}${path.delimiter}${process.env.PATH}`, ...(you && { HOME: you, USERPROFILE: you }) }
+  // the stand-in CLIs first on PATH, under the name the environment gives it (Windows: Path), or it would hold both
+  const key = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH'
+  const env = { ...process.env, CREW_HOME: home, NAME: name, CLAUDE_CONFIG_DIR: claude, CODEX_HOME: codex, [key]: `${bin}${path.delimiter}${process.env[key]}`, ...(you && { HOME: you, USERPROFILE: you }) }
   const p = spawn(process.execPath, [COMPUTER], { env, stdio: ['pipe', 'pipe', 'inherit'] })
   const waiting = new Map()
   let seq = 0

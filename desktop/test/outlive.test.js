@@ -148,15 +148,17 @@ test("an agent whose CLI ended while Crew was closed still gets what was queued 
   assert.ok(!hub.agents.has('david.3'))
 })
 
-test('the hook spools what it sends while Crew is closed, one line per event, and still sends it when Crew is there', { skip: !SH && 'no Git Bash here' }, async () => {
-  const settings = JSON.parse(adapters.claude({ name: 'david' }, { session: 's', attachments: '/tmp' }).args.find((x) => x.startsWith('{"permissions"')))
-  const hook = settings.hooks.Stop[0].hooks[0].command
-  const env = { ...process.env, CREW_HOME: process.env.CREW_HOME, CREW_AGENT: 'david', CREW_WORKSPACE: '' }
+test('the hook spools what it sends while Crew is closed, one line per event, and still sends it when Crew is there', async () => {
+  const settings = JSON.parse(adapters.claude({ name: 'david' }, { session: 's', attachments: os.tmpdir(), bin: BIN }).args.find((x) => x.startsWith('{"permissions"')))
+  // as Claude Code runs it: a command line for sh on macOS; crew-hook.exe and its arguments, with no shell, on Windows
+  const { command, args } = settings.hooks.Stop[0].hooks[0]
+  const [file, argv] = WIN ? [command, args] : ['/bin/sh', ['-c', command]]
+  const env = { ...process.env, CREW_HOME: process.env.CREW_HOME, CREW_NODE: process.execPath, CREW_AGENT: 'david', CREW_WORKSPACE: '' }
   const payload = JSON.stringify({ hook_event_name: 'Stop', last_assistant_message: 'line one\nline two' }, null, 2) // even spread over lines
   // Crew closed: its last address answers nothing
   fs.writeFileSync(at('url'), 'http://127.0.0.1:9')
   fs.writeFileSync(at('token'), 'old')
-  execFileSync(SH, ['-c', hook], { input: payload, env })
+  execFileSync(file, argv, { input: payload, env })
   const lines = fs.readFileSync(at('spool/david.jsonl'), 'utf8').split('\n').filter(Boolean)
   assert.equal(lines.length, 1)
   assert.equal(JSON.parse(lines[0]).last_assistant_message, 'line one\nline two')
@@ -172,7 +174,7 @@ test('the hook spools what it sends while Crew is closed, one line per event, an
   fs.writeFileSync(at('token'), 'new')
   await new Promise((resolve, reject) => {
     import('node:child_process').then(({ execFile }) => {
-      const p = execFile(SH, ['-c', hook], { env }, (e) => (e ? reject(e) : resolve()))
+      const p = execFile(file, argv, { env }, (e) => (e ? reject(e) : resolve()))
       p.stdin.end(payload)
     })
   })
