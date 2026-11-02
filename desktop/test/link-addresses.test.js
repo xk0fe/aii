@@ -1,13 +1,13 @@
 // A pairing code lists every address of the sharing computer (Wi-Fi, Tailscale IP, Tailscale name). The linking
 // computer tries them all at once; only the first to answer may be sent the key, or the sharing computer gets a
-// connection per address and loses the link when the slower ones are dropped. Which addresses those are, on a Mac and
-// on Windows.
+// connection per address and loses the link when the slower ones are dropped. Which addresses those are (on a Mac and
+// on Windows), and what Windows Firewall has to say about connections getting in.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { LinkHost, LinkClient, identity, makeCode, addresses, interfaceLabel, tailscaleSelf } from '../core/link.js'
+import { LinkHost, LinkClient, identity, makeCode, addresses, interfaceLabel, tailscaleSelf, reachWarning, firewallWarning } from '../core/link.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -94,3 +94,45 @@ test('Tailscale is asked through its CLI, or the one inside the app; off or miss
   assert.deepEqual(await addresses({ interfaces, platform: 'darwin', tailscale: broken }), [{ address: '192.168.1.20', via: 'Wi-Fi / Ethernet', iface: 'en0' }])
 })
 
+// ---- Windows Firewall -------------------------------------------------------------------------------------
+
+const WIFI = { address: '192.168.1.31', via: 'Wi-Fi', iface: 'Wi-Fi' }
+const TS = { address: '100.90.1.2', via: 'Tailscale', iface: 'Tailscale' }
+const walls = [{ name: 'Domain', on: 'True' }, { name: 'Private', on: 'True' }, { name: 'Public', on: 'NotConfigured' }]
+const installer = { action: 'Allow', profile: 'Domain, Private' } // the rule Crew's installer adds
+
+test('Windows Firewall: nothing to say on a private network, or with nothing known about Crew there', () => {
+  assert.equal(reachWarning([WIFI, TS], { nets: [{ alias: 'Wi-Fi', category: 'Private' }, { alias: 'Tailscale', category: 'DomainAuthenticated' }], walls, rules: [installer] }), null)
+  assert.equal(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Public' }], walls, rules: [] }), null, 'no rules found: Windows will ask')
+  assert.equal(reachWarning([WIFI], { nets: { alias: 'Wi-Fi', category: 'Public' }, walls, rules: [installer, { action: 'Allow', profile: 'Public' }] }), null, 'you let it in on public networks too (and one network comes as an object, not a list)')
+  assert.equal(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Public' }], walls: [{ name: 'Public', on: 'False' }], rules: [installer] }), null, 'the firewall is off there')
+  assert.equal(reachWarning([WIFI], {}), null)
+  assert.equal(reachWarning([{ address: 'pc.tail1.ts.net', via: 'Tailscale name' }], { nets: [], walls, rules: [{ action: 'Block', profile: 'Any' }] }), null, 'a name is no network')
+})
+
+test('Windows Firewall: a public network says how to make it private, a blocked app how to let it in', () => {
+  const nets = [{ alias: 'Wi-Fi', category: 'Public' }, { alias: 'Tailscale', category: 'Private' }]
+  assert.equal(reachWarning([WIFI, TS], { nets, walls, rules: [installer] }),
+    "Windows treats Wi-Fi as a public network, where its firewall keeps your other computers and phones out. If it's your own network, make it private: Settings > Network & internet > Wi-Fi > your network > Network profile type > Private network.")
+  assert.equal(reachWarning([TS], { nets, walls, rules: [installer, { action: 'Block', profile: 'Private' }] }),
+    "Windows Firewall blocks Crew on Tailscale, so your other computers and phones can't reach this one there. To let them in, open Windows Security > Firewall & network protection > Allow an app through firewall > Change settings, and tick Private next to Crew.")
+  assert.match(reachWarning([WIFI, TS], { nets, walls, rules: [installer, { action: 'Block', profile: 'Private' }] }), /blocks Crew on Wi-Fi and Tailscale.*tick Public and Private next to Crew/, 'making Wi-Fi private would not do')
+  assert.match(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Private' }], walls, rules: [{ action: 'Block', profile: 'Any' }] }), /^Windows Firewall blocks Crew on Wi-Fi/)
+  // what Windows' own prompt leaves when only Private was ticked: on a public network, making it private is enough
+  const prompted = [{ action: 'Allow', profile: 'Private' }, { action: 'Block', profile: 'Public' }]
+  assert.match(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Public' }], walls, rules: prompted }), /^Windows treats Wi-Fi as a public network/)
+  assert.match(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Public' }], walls, rules: [{ action: 'Block', profile: 'Any' }] }), /^Windows Firewall blocks Crew on Wi-Fi.*tick Public next to Crew\.$/, 'a private one would be blocked too')
+  assert.equal(reachWarning([WIFI], { nets: [null, { alias: 'Wi-Fi', category: 'Private' }], walls: null, rules: [installer] }), null, 'odd answers are no answer')
+})
+
+test("Windows Firewall is only asked on Windows, and what it can't tell says nothing", async () => {
+  let asked = 0
+  const query = async () => (asked++, { nets: [{ alias: 'Wi-Fi', category: 'Public' }], walls, rules: [installer] })
+  assert.equal(await firewallWarning([WIFI], { platform: 'darwin', query }), null)
+  assert.equal(asked, 0)
+  assert.match(await firewallWarning([WIFI], { platform: 'win32', query }), /public network/)
+  const none = async () => {
+    throw new Error('no PowerShell')
+  }
+  assert.equal(await firewallWarning([WIFI], { platform: 'win32', query: none }), null)
+})

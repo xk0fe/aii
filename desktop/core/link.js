@@ -105,7 +105,7 @@ function time(d) {
 // ---- pairing codes ----------------------------------------------------------------------------------
 
 // Every address this machine can be reached on: Wi-Fi/Ethernet and Tailscale (100.64.0.0/10). -> [{ address, via,
-// iface? }] (iface: the network interface's own name)
+// iface? }] (iface: the network interface's own name, for firewallWarning)
 export async function addresses({ interfaces = os.networkInterfaces(), platform = process.platform, tailscale = tailscaleSelf } = {}) {
   const out = []
   for (const [iface, list] of Object.entries(interfaces)) {
@@ -160,6 +160,78 @@ export async function tailscaleSelf(platform = process.platform) {
     return status.BackendState && status.BackendState !== 'Running' ? null : (status.Self ?? null)
   }
   return null
+}
+
+// ---- Windows Firewall: can other computers get in? -------------------------------------------------------
+
+// Crew listens on every network while it shares this computer (or a phone is paired), and Windows Firewall lets
+// connections in only where a rule says so. The installer adds one for Private and Domain networks; without one,
+// Windows asks the first time Crew listens. Neither covers Public networks, which is what Windows makes a network
+// unless you've said it's yours. -> a sentence saying what to do, or null when nothing says the way in is shut
+// (anything it can't tell counts as open: if Windows hasn't decided, it asks).
+export async function firewallWarning(hosts, { platform = process.platform, program = process.execPath, query = firewallState } = {}) {
+  if (platform !== 'win32') return null
+  const state = await query(program).catch(() => null)
+  try {
+    return state ? reachWarning(hosts, state) : null
+  } catch {
+    return null // PowerShell said something else than expected
+  }
+}
+
+// The same, from what Windows says about it: nets [{ alias, category }] (its networks, by interface name, and
+// Public, Private or DomainAuthenticated), walls [{ name, on }] (the firewall for each kind of network: True, False
+// or NotConfigured) and rules [{ action, profile }] (the inbound rules for this program that are on: Allow or Block,
+// for "Any" or a list like "Domain, Private").
+export function reachWarning(hosts, { nets = [], walls = [], rules = [] } = {}) {
+  const list = (x) => [].concat(x ?? []).filter(Boolean)
+  const kind = new Map(list(nets).map((n) => [String(n.alias), { DomainAuthenticated: 'Domain', Private: 'Private', Public: 'Public' }[n.category]]))
+  const covers = (r, profile) => /\bany\b/i.test(r.profile) || String(r.profile).split(/,\s*/).includes(profile)
+  const allowed = (profile) => !list(rules).some((r) => r.action === 'Block' && covers(r, profile)) && list(rules).some((r) => r.action === 'Allow' && covers(r, profile))
+  const blocked = new Map() // what it's called -> the kind of network
+  const exposed = new Set()
+  for (const h of hosts) {
+    const profile = h.iface && kind.get(h.iface)
+    if (!profile || list(walls).find((w) => w.name === profile)?.on === 'False') continue // its firewall is off
+    // a rule that says no (someone said no when Windows asked, or left Public unticked); or a Public network no rule
+    // lets it in on, when Crew has rules (so they'd have been found), as with the installer's
+    const mine = list(rules).filter((r) => covers(r, profile))
+    if (!mine.some((r) => r.action === 'Block') && !(profile === 'Public' && list(rules).length && !mine.some((r) => r.action === 'Allow'))) continue
+    // a public network where a private one would do is better made private than opened up
+    if (profile === 'Public' && allowed('Private')) exposed.add(h.via)
+    else blocked.set(h.via, profile)
+  }
+  const and = (names) => [...new Set(names)].join(' and ')
+  if (blocked.size) return `Windows Firewall blocks Crew on ${and(blocked.keys())}, so your other computers and phones can't reach this one there. To let them in, open Windows Security > Firewall & network protection > Allow an app through firewall > Change settings, and tick ${and(blocked.values())} next to Crew.`
+  if (exposed.size) {
+    const where = [...exposed].map((v) => (v === 'Wi-Fi' ? 'Wi-Fi > your network' : v)).join(' or ')
+    return `Windows treats ${and(exposed)} as a public network, where its firewall keeps your other computers and phones out. If it's your own network, make it private: Settings > Network & internet > ${where} > Network profile type > Private network.`
+  }
+  return null
+}
+
+// What Windows says (see reachWarning), from PowerShell, which every Windows since 8 has; looked up at most every two
+// minutes, as Get-NetFirewallApplicationFilter can take a few seconds.
+const FIREWALL = `$ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+$nets = @(Get-NetConnectionProfile | ForEach-Object { @{ alias = [string]$_.InterfaceAlias; category = [string]$_.NetworkCategory } })
+$walls = @(Get-NetFirewallProfile | ForEach-Object { @{ name = [string]$_.Name; on = [string]$_.Enabled } })
+$rules = @(Get-NetFirewallApplicationFilter -Program $env:CREW_PROGRAM | Get-NetFirewallRule | Where-Object { [string]$_.Enabled -eq 'True' -and [string]$_.Direction -eq 'Inbound' } | ForEach-Object { @{ action = [string]$_.Action; profile = [string]$_.Profile } })
+ConvertTo-Json -Compress -Depth 3 -InputObject @{ nets = $nets; walls = $walls; rules = $rules }`
+let firewallSeen = { at: 0, program: null, state: null }
+
+export async function firewallState(program) {
+  if (firewallSeen.program === program && Date.now() - firewallSeen.at < 120000) return firewallSeen.state
+  const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(FIREWALL, 'utf16le').toString('base64')]
+  let state = null // and not asked again for a while either, when PowerShell can't say
+  try {
+    const out = await new Promise((resolve, reject) =>
+      execFile('powershell.exe', args, { timeout: 20000, windowsHide: true, env: { ...process.env, CREW_PROGRAM: program } }, (e, o) => (e ? reject(e) : resolve(o))))
+    state = JSON.parse(out.replace(/^﻿/, '').trim())
+  } catch {}
+  firewallSeen = { at: Date.now(), program, state }
+  return state
 }
 
 export const makeCode = ({ name, port, key, fingerprint, hosts }) =>
