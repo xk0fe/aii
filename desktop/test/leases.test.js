@@ -15,7 +15,7 @@ process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-leases-'))
 const { Hub, CONFIG, shellPrefix, filePath, fileKey } = await import('../core/hub.js')
 const { Runner } = await import('../core/runner.js')
 const { withTools, pathKey } = await import('../core/launch.js')
-const { seconds, leftovers, readGroups, readSpans, parseWindows, tree, groupsOf, noteworthy, exempt, gitBash, prefixWorks } = await import('../core/procs.js')
+const { seconds, leftovers, readGroups, readSpans, parseWindows, tree, groupsOf, noteworthy, exempt, gitBash, prefixWorks, processes } = await import('../core/procs.js')
 
 class FakeRunner extends EventEmitter {
   live = new Set()
@@ -176,19 +176,25 @@ test('a CLI that ends: what its commands left in their groups is stopped, with o
   assert.ok(!fs.existsSync(groupsFile('levi.0000beef')))
 })
 
-test('bin/crew-sh writes down each command\'s group and runs it as the shell would; Crew sweeps it later', { skip: !SH && 'no Git Bash here' }, async () => {
+test('bin/crew-sh writes down each command\'s group and runs it as the shell would; Crew sweeps it later', { skip: !SH && 'no Git Bash here' }, async (t) => {
   const file = groupsFile('scarlett.0000cafe')
   // Git Bash numbers its processes its own way: the sleep's Windows id is what Crew can stop
   const pid = WIN ? 'read -r w < /proc/$!/winpid; echo $w' : 'echo $!'
   const { leader, out } = await detached([SH, path.join(BIN, 'crew-sh'), `echo "$((40 + 2))"; sleep 300 >/dev/null 2>&1 & ${pid}`], { CREW_GROUPS: file, SHELL: '/bin/sh' })
   const [answer, sleep] = out.split('\n')
   assert.equal(answer, '42', 'the command ran, in a shell')
-  if (WIN) assert.ok(readSpans(file).has(Number(sleep)), 'on Windows also what it left in its group, by its Windows id')
+  // what there was to go on, for when it isn't swept
+  const written = fs.readFileSync(file, 'utf8')
+  const before = WIN ? (await processes()).filter((p) => /bash|sleep|node/i.test(p.name)) : []
+  const seen = () => JSON.stringify({ leader, me: process.pid, sleep, written, alive: alive(Number(sleep)), before })
+  if (WIN) assert.ok(readSpans(file).has(Number(sleep)), `on Windows also what it left in its group, by its Windows id: ${seen()}`)
   else assert.deepEqual([...readGroups(file).keys()], [leader])
   // Crew wasn't running when the CLI ended: the next start sweeps it
   hub.sweepStale()
-  assert.ok(await gone(Number(sleep), 8000))
-  assert.match(hub.feed.findLast((e) => e.kind === 'event').text, /left a process running \(sleep\)/)
+  const stopped = await gone(Number(sleep), 8000)
+  if (WIN) t.diagnostic(seen())
+  assert.ok(stopped, seen())
+  assert.match(hub.feed.findLast((e) => e.kind === 'event')?.text ?? '', /left a process running \(sleep\)/, seen())
 })
 
 test('a group number the system handed out again is left alone', async () => {
