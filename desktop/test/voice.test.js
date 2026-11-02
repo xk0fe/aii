@@ -89,21 +89,17 @@ test('dictation: the languages offered are ones dictation supports, installed fi
   if (firstMissing >= 0) assert.ok(options.slice(firstMissing).every((o) => !o.installed))
 })
 
-// The rest runs anywhere: a shell script stands in for the helper, so these check core/voice.js itself.
+// The rest runs anywhere, Windows included: a Node script stands in for the helper, so these check core/voice.js itself.
 function fakeHelper(script) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-voice-fake-'))
-  fs.mkdirSync(path.join(dir, 'native'))
-  fs.mkdirSync(path.join(dir, 'dist'))
-  fs.writeFileSync(path.join(dir, 'native', 'crew-voice.swift'), '// stand-in')
-  const bin = path.join(dir, 'dist', 'crew-voice')
-  fs.writeFileSync(bin, `#!/bin/sh\n${script}\n`, { mode: 0o755 })
-  fs.utimesSync(bin, new Date(Date.now() + 60000), new Date(Date.now() + 60000)) // newer than its "source": no build
+  const file = path.join(dir, 'helper.mjs')
+  fs.writeFileSync(file, `import fs from 'node:fs'\nconst say = (s) => fs.writeSync(1, s)\n${script}\n`)
   after(() => fs.rmSync(dir, { recursive: true, force: true }))
-  return new Voice({ root: dir })
+  return new Voice({ root: dir, binary: process.execPath, args: [file] })
 }
 
 test('dictation: a helper that dies by a signal still ends the session with an error', { timeout: 10000 }, async () => {
-  const voice = fakeHelper(`printf '{"type":"ready","locale":"en_US"}\\n'; kill -ABRT $$`)
+  const voice = fakeHelper(`say('{"type":"ready","locale":"en_US"}\\n'); process.kill(process.pid, 'SIGKILL')`)
   const id = voice.start('en_US')
   const seen = await until(voice, id, 'error')
   assert.equal(seen.at(-1).type, 'error', 'otherwise the window waits for "done" forever')
@@ -113,14 +109,14 @@ test('dictation: a helper that dies by a signal still ends the session with an e
 
 test('dictation: text split mid-character across reads arrives intact', { timeout: 10000 }, async () => {
   // "Привет" with its first letter's two UTF-8 bytes in separate writes
-  const voice = fakeHelper(`printf '{"type":"done","text":"\\320'; sleep 0.2; printf '\\237ривет"}\\n'`)
+  const voice = fakeHelper(`say(Buffer.from([...Buffer.from('{"type":"done","text":"'), 0xd0])); setTimeout(() => say(Buffer.concat([Buffer.from([0x9f]), Buffer.from('ривет"}\\n')])), 200)`)
   const id = voice.start('ru_RU')
   const seen = await until(voice, id, 'done')
   assert.equal(seen.at(-1).text, 'Привет')
 })
 
 test('dictation: a locale can only ever be a locale, never another flag', { timeout: 10000 }, async () => {
-  const voice = fakeHelper(`printf '{"type":"done","text":"%s"}\\n' "$*"`)
+  const voice = fakeHelper(`say(JSON.stringify({ type: 'done', text: process.argv.slice(2).join(' ') }) + '\\n')`)
   let id = voice.start('--may-ask-permission')
   assert.equal((await until(voice, id, 'done')).at(-1).text, '--locale=')
   id = voice.start('pt_BR')
@@ -130,7 +126,7 @@ test('dictation: a locale can only ever be a locale, never another flag', { time
 test('dictation: closing or reloading the window that owns a session ends it', { timeout: 10000 }, async () => {
   const { voiceAudio } = await import('../core/voice.js')
   const { EventEmitter } = await import('node:events')
-  const voice = fakeHelper('cat > /dev/null; printf \'{"type":"done","text":""}\\n\'')
+  const voice = fakeHelper(`process.stdin.resume(); process.stdin.on('end', () => say('{"type":"done","text":""}\\n'))`)
   const audio = voiceAudio(voice)
   const win = new EventEmitter()
   const id = voice.start('en_US')
@@ -141,3 +137,39 @@ test('dictation: closing or reloading the window that owns a session ends it', {
   assert.equal((await ended).at(-1).type, 'cancelled')
   assert.equal(win.listenerCount('destroyed') + win.listenerCount('did-start-loading'), 0, 'listeners are let go with the session')
 })
+
+test('dictation: an installed Crew whose helper is gone says so, and never tries to build one', { timeout: 10000 }, async () => {
+  const voice = new Voice({ root: os.tmpdir(), binary: path.join(os.tmpdir(), 'no-such-crew-voice') })
+  const id = voice.start('en_US')
+  const seen = await until(voice, id, 'error')
+  assert.deepEqual(seen.map((e) => e.type), ['error'], 'no "building" first')
+  assert.match(seen[0].message, /missing from this copy of Crew/)
+})
+
+// The microphone permission, per platform, with Electron's systemPreferences and shell faked.
+async function permission(platform, status) {
+  const { voiceActions } = await import('../core/voice.js')
+  const asked = []
+  const opened = []
+  const voice = { on() {}, start: (locale) => `session:${locale}` }
+  const systemPreferences = { getMediaAccessStatus: () => status, askForMediaAccess: async () => (asked.push('microphone'), false) }
+  const actions = voiceActions({ voice, systemPreferences, shell: { openExternal: (url) => opened.push(url) }, send() {}, platform })
+  const started = await actions.voiceStart('en_US').catch((e) => e.message)
+  actions.voiceSettings()
+  return { started, asked, opened }
+}
+
+test('dictation on macOS: Crew asks for the microphone once, and a "no" sends you to System Settings', async () => {
+  assert.deepEqual(await permission('darwin', 'granted'), { started: 'session:en_US', asked: [], opened: [SETTINGS_MAC] })
+  assert.deepEqual(await permission('darwin', 'not-determined'), { started: 'mic-denied', asked: ['microphone'], opened: [SETTINGS_MAC] })
+  assert.equal((await permission('darwin', 'denied')).started, 'mic-denied')
+})
+
+test("dictation on Windows: nothing to ask, an off switch stops it, Settings opens Windows' microphone page", async () => {
+  for (const status of ['granted', 'not-determined']) {
+    assert.deepEqual(await permission('win32', status), { started: 'session:en_US', asked: [], opened: ['ms-settings:privacy-microphone'] })
+  }
+  assert.deepEqual(await permission('win32', 'denied'), { started: 'mic-denied', asked: [], opened: ['ms-settings:privacy-microphone'] })
+})
+
+const SETTINGS_MAC = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'

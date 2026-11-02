@@ -475,8 +475,10 @@ function wire() {
 function wireVoice() {
   // Older macOS asks for speech-recognition permission, which needs the app's Info.plist to say why (Crew.app does).
   const plist = path.join(process.resourcesPath, '..', 'Info.plist')
-  const mayAskPermission = fs.existsSync(plist) && fs.readFileSync(plist, 'utf8').includes('NSSpeechRecognitionUsageDescription')
-  const voice = new Voice({ root: dir, mayAskPermission })
+  const mayAskPermission = process.platform === 'darwin' && fs.existsSync(plist) && fs.readFileSync(plist, 'utf8').includes('NSSpeechRecognitionUsageDescription')
+  // An installed Crew carries the helper in Resources/voice; from source (npm start, npm run dev) it's built here.
+  const shipped = path.join(process.resourcesPath, 'voice', process.platform === 'win32' ? 'crew-voice.exe' : 'crew-voice')
+  const voice = new Voice({ root: dir, binary: fs.existsSync(shipped) ? shipped : undefined, mayAskPermission })
   const send = (event) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('voice', event))
   Object.assign(actions, voiceActions({ voice, systemPreferences, shell, send }))
   const audio = voiceAudio(voice)
