@@ -155,7 +155,7 @@ function onPath(name) {
 const HELP = `crew who                    agents, their areas and status
 crew ask <name|any> "..."   ask an agent and wait for its answer (its final message)
 crew wait                   keep waiting for the answers to what you asked
-crew answer [@name] "..."   answer a question you were asked, right away, and carry on
+crew answer ["@name"] "..." answer a question you were asked, right away, and carry on
 crew send <name|any> "..."  hand a task to an agent for good (queued until it is free)
 crew lease <thing> ["..."]  take something only one agent can use at a time (a simulator, a port), waiting if it's taken
 crew release [thing]        give it back (everything you hold, without a name)
@@ -203,9 +203,9 @@ async function cli([cmd, ...args]) {
     case 'wait':
       return send(`/wait?from=${from}`, { method: 'POST', seconds: 110 })
     case 'answer': {
-      // crew answer "…" answers the question you were asked; crew answer @name "…" picks whose
+      // crew answer "…" answers the question you were asked; crew answer "@name" "…" picks whose (quoted: PowerShell reads a bare @name as splatting)
       const to = args[0]?.startsWith('@') ? args.shift().slice(1) : ''
-      if (!args.length) return stop('usage: crew answer [@name] "your answer"', 2)
+      if (!args.length) return stop('usage: crew answer ["@name"] "your answer"', 2)
       return send(`/answer?from=${from}&to=${q(to)}`, { body: args.join(' ') })
     }
     case 'lease':

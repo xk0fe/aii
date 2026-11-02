@@ -2034,7 +2034,7 @@ export class Hub extends EventEmitter {
     const reply = this.post({ kind: 'reply', from, text: text.slice(0, 4000), re: m.id })
     this.respond(this.calls.get(m.id), { by: from, text, reply })
     const left = all.length - 1
-    return `@${m.from} has your answer.${left ? ` ${left} more question${left > 1 ? 's' : ''} waiting: crew answer @name "…"` : ''}\n`
+    return `@${m.from} has your answer.${left ? ` ${left} more question${left > 1 ? 's' : ''} waiting: crew answer "@name" "…"` : ''}\n`
   }
 
   // An agent's turn is over: the questions it was answering get its final message (or why there isn't one). One it

@@ -144,7 +144,7 @@ test('crew answer @name picks which question, when several are waiting', async (
   pickUp('scarlett')
   const fromEstee = hub.question({ from: 'estee', to: 'scarlett', text: 'is #5 verified?' })
   pickUp('scarlett')
-  assert.equal(hub.answerNow({ from: 'scarlett', to: '@estee', text: 'Yes, on 402 and 420pt.' }), '@estee has your answer. 1 more question waiting: crew answer @name "…"\n')
+  assert.equal(hub.answerNow({ from: 'scarlett', to: '@estee', text: 'Yes, on 402 and 420pt.' }), '@estee has your answer. 1 more question waiting: crew answer "@name" "…"\n', 'quoted, for PowerShell')
   assert.match(await fromEstee, /Yes, on 402/)
   assert.equal(await peek(fromLevi), 'pending')
   assert.throws(() => hub.answerNow({ from: 'scarlett', to: 'gal', text: 'hi' }), /@gal hasn't asked you anything that's still open/)
