@@ -344,9 +344,6 @@
     .mv-carry .yes svg { color: var(--working-ink); }
     .mv-carry .no svg { color: var(--fg3); }
     .mv-busy { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--r-sm); font-size: 12.5px; line-height: 1.45; color: var(--fg); background: color-mix(in srgb, var(--waiting) 12%, transparent); }
-    .toast { position: fixed; left: 50%; bottom: 22px; z-index: 300; max-width: min(560px, calc(100vw - 40px)); padding: 10px 16px; border-radius: 12px; background: var(--tip); color: var(--tip-fg); font-size: 13px; font-weight: 560; line-height: 1.4; box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity .2s, transform .35s var(--spring); }
-    .toast.show { opacity: 1; transform: translate(-50%, 0); }
-    .toast.warn { background: var(--waiting); color: #241500; }
 
     .chat { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
     .chat .feed { flex: 1; }

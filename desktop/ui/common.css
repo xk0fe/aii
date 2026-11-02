@@ -355,6 +355,14 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 @keyframes mode-on { 40% { transform: scale(1.18); } }
 
 /* ---- menus (popMenu in common.js): right-click an agent, or a More button ---- */
+/* a note at the bottom of the window (notify() in common.js); one about an error has Copy details */
+.toast { position: fixed; left: 50%; bottom: 22px; z-index: 300; display: flex; align-items: center; gap: 12px; width: max-content; max-width: min(560px, calc(100vw - 24px)); padding: 10px 16px; border-radius: 12px; background: var(--tip); color: var(--tip-fg); font-size: 13px; font-weight: 560; line-height: 1.4; box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity .2s, transform .35s var(--spring); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.show.has-detail { pointer-events: auto; }
+.toast.warn { background: var(--waiting); color: #241500; }
+.toast button { all: unset; flex: none; padding: 3px 9px; border-radius: 7px; font-size: 12px; font-weight: 650; white-space: nowrap; background: color-mix(in srgb, currentColor 14%, transparent); cursor: pointer; }
+.toast button:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
+.toast button:focus-visible { outline: 2px solid currentColor; }
 .menu { position: fixed; z-index: 200; min-width: 210px; max-width: 300px; padding: 5px; border-radius: var(--r-md); background: var(--card); color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong), 0 16px 40px -12px rgba(0, 0, 0, .35), 0 4px 10px -6px rgba(0, 0, 0, .15); animation: mn-in .14s var(--out); }
 .menu button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 9px; width: 100%; height: 30px; padding: 0 10px 0 8px; border-radius: 7px; font-size: 13px; cursor: default; white-space: nowrap; }
 .menu button svg, .menu button > i { width: 16px; height: 16px; flex: none; color: var(--fg2); }

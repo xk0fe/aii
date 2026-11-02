@@ -309,12 +309,12 @@ $('.terms').addEventListener('click', (e) => {
   else if (act === 'restart') {
     terms.get(name).term.reset()
     crew.call('restart', name)
-  } else if (act === 'fresh') crew.call('freshStart', name).catch((err) => alert(err.message))
+  } else if (act === 'fresh') crew.call('freshStart', name).catch((err) => oops(`Couldn't start a new conversation for ${displayName(terms.get(name)?.agent ?? { name })}`, err))
   else if (act === 'off') crew.call('update', name, { off: true })
   else if (act === 'dismiss') {
     const a = terms.get(name)?.agent
     if (a && (a.status === 'working' || a.status === 'waiting') && !confirm(`${displayName(a)} is in the middle of something. Send it away anyway?`)) return
-    crew.call('dismiss', name).catch((err) => alert(err.message))
+    crew.call('dismiss', name).catch((err) => oops(`Couldn't send ${a ? displayName(a) : name} away`, err))
   }
   else if (act === 'markIdle') crew.call('markIdle', name)
   else if (act === 'edit') edit(name)
@@ -511,7 +511,7 @@ async function switchTo(id, { open = false } = {}) {
       const { state: next } = await crew.call('workspace', 'switch', id)
       ;(push ??= await ready)(next)
     } catch (err) {
-      alert(err.message)
+      oops(`Couldn't switch to ${list[to]?.name ?? 'that workspace'}`, err)
     }
   }
   slide(to < from ? -1 : 1, go)
@@ -642,7 +642,7 @@ function agentMenu(name, at) {
       if (act === 'message') (setPanel('chat', true), composer.setTarget(name), composer.focus())
       if (act === 'terminal') select(name)
       if (act === 'edit') edit(name)
-      if (act === 'dismiss' && (!busy(a) || confirm(`${displayName(a)} is in the middle of something. Send it away anyway?`))) crew.call('dismiss', name).catch((err) => alert(err.message))
+      if (act === 'dismiss' && (!busy(a) || confirm(`${displayName(a)} is in the middle of something. Send it away anyway?`))) crew.call('dismiss', name).catch((err) => oops(`Couldn't send ${displayName(a)} away`, err))
     })
   }
   const here = a.home ?? ''
@@ -664,6 +664,8 @@ function agentMenu(name, at) {
     { label: a.on ? 'Turn off' : 'Turn on', icon: ICONS.power, act: 'power' },
     { label: leave ? `Take out of ${ws.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
   ], async (act) => {
+    const who = a.seed ?? a.name
+    const doing = { fresh: `Couldn't start a new conversation for ${who}`, power: `Couldn't turn ${who} ${a.on ? 'off' : 'on'}`, remove: `Couldn't remove ${who}` }[act] ?? (act.startsWith('join:') ? `Couldn't add ${who} to that workspace` : `Couldn't do that for ${who}`)
     try {
       if (act === 'message') {
         setPanel('chat', true)
@@ -688,7 +690,7 @@ function agentMenu(name, at) {
         : named ? `Remove ${name}? It's only in ${ws.name}, so it's gone for good. Its session stops (the transcript stays with the CLI).` : `Remove ${a.seed ?? a.name}? Its session stops (the transcript stays with the CLI).${(state.workspaces ?? []).length > 1 ? ' It leaves every workspace it\'s in.' : ''}`)
       if (sure) await crew.call('removeAgent', name)
     } catch (err) {
-      alert(err.message)
+      oops(doing, err)
     }
   })
 }
@@ -908,7 +910,7 @@ function computersHTML({ me, links, phones }) {
         <div class="addr">${(me.hosts ?? []).map((h) => `<span><b>${esc(h.address)}</b> ${esc(h.via)}</span>`).join('')}</div>
         <div class="lk-row"><span>Port ${me.port}</span><button class="btn small" data-link-reset title="Makes a new code; computers using the old one are disconnected">New code</button></div>
       </div>` : ''}`
-    : me.error ? `<div class="lk-li"><p class="err">${esc(me.error)}</p></div>` : ''}`
+    : me.error ? `<div class="lk-li"><p class="err">${esc(errorReason(me.error) || "Crew couldn't start sharing this computer. Turn it off and on again.")}</p></div>` : ''}`
   const form = linkOpen.form || linkErr ? `
     <div class="lk-label">Link a computer</div>
     <div class="lk-list"><div class="lk-form">
@@ -1083,7 +1085,7 @@ async function makeCode(view) {
       crew.call('phones', 'cancel').catch(() => {}) // the view closed, or a phone paired, while this one was being made
     }
   } catch (x) {
-    if (phonePair === view) Object.assign(view, { code: null, qr: null, err: x.message, renewAt: Infinity })
+    if (phonePair === view) Object.assign(view, { code: null, qr: null, err: errorLine(x, "Crew couldn't make a code for your phone. Try again."), renewAt: Infinity })
   } finally {
     view.making = null
     drawComputers(state)
@@ -1152,7 +1154,7 @@ linkDialog.addEventListener('click', async (e) => {
     linkErr = text
     drawComputers(state)
   }
-  if (t.closest('.phones')) return phoneAction(t).catch((x) => ((phoneErr = x.message), drawComputers(state)))
+  if (t.closest('.phones')) return phoneAction(t).catch((x) => ((phoneErr = errorLine(x)), drawComputers(state)))
   if (t.closest('.pair-view')) return pairAction(t)
   // what folds: the details, a linked computer's agents, the paste-a-code form
   if (t.closest('[data-lk-details]')) return void ((linkOpen.details = !linkOpen.details), drawComputers(state))
@@ -1211,11 +1213,13 @@ linkDialog.addEventListener('click', async (e) => {
       })
     }
   } catch (x) {
-    fail(x.message)
+    fail(errorLine(x))
   }
 })
 linkDialog.addEventListener('change', async (e) => {
   const d = e.target.dataset
+  // said before the redraw below puts the switch back the way it was
+  const what = 'linkShare' in d ? `Couldn't ${e.target.checked ? 'start' : 'stop'} sharing ${THIS_COMPUTER}` : 'meName' in d ? `Couldn't rename ${THIS_COMPUTER}` : "Couldn't change which agents you use"
   try {
     if ('linkShare' in d) await crew.call('link', 'share', e.target.checked)
     if (d.use) await crew.call('link', 'hide', [d.use], !e.target.checked)
@@ -1227,7 +1231,7 @@ linkDialog.addEventListener('change', async (e) => {
   } catch (x) {
     linkKey = ''
     drawComputers(state)
-    alert(x.message)
+    oops(what, x)
   }
 })
 linkDialog.addEventListener('keydown', (e) => e.key === 'Enter' && e.target.matches('[data-me-name]') && e.target.blur())
@@ -1351,22 +1355,16 @@ moveDialog.addEventListener('click', async (e) => {
       ? `${who} moved to ${to}. Its conversation couldn't come along (${res.older ? `${to} runs an older Crew` : res.reason ?? 'not found'}), so it starts a new one there.`
       : `${who} moved to ${to}, conversation and all.`, res?.conversation === 'fresh')
   } catch (x) {
-    if (moving !== m) return toast(`Couldn't move ${m.name.split('@')[0]}: ${x.message}`, true)
-    err.textContent = x.message
+    if (moving !== m) return oops(`Couldn't move ${m.name.split('@')[0]}`, x)
+    err.textContent = errorLine(x)
     go.disabled = false
     go.textContent = 'Try again'
   }
 })
 moveDialog.addEventListener('close', () => (moving = null))
 
-// A note at the bottom of the window for things that happened out of view.
-function toast(text, warn = false) {
-  const el = $('.toast')
-  el.textContent = text
-  el.className = `toast show ${warn ? 'warn' : ''}`
-  clearTimeout(toast.timer)
-  toast.timer = setTimeout(() => el.classList.remove('show'), warn ? 7000 : 4200)
-}
+// A note at the bottom of the window for things that happened out of view (notify, in common.js).
+const toast = (text, warn = false) => notify(text, { warn })
 
 // ---- import: a .crew file, picked or dropped ------------------------------------------
 
@@ -1381,7 +1379,7 @@ async function importPack(dropped) {
     drawImport()
     importDialog.showModal()
   } catch (x) {
-    alert(x.message)
+    oops(`Couldn't open ${dropped?.name ?? 'that file'}`, x, 'Pick a .crew file someone exported from Crew.')
   }
 }
 
@@ -1436,7 +1434,7 @@ importDialog.addEventListener('click', async (e) => {
     setView('crew')
     if (added.length === 1) collection.open(added[0])
   } catch (x) {
-    importDialog.querySelector('[data-import-err]').textContent = x.message
+    importDialog.querySelector('[data-import-err]').textContent = errorLine(x)
   }
 })
 

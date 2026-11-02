@@ -139,7 +139,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     try {
       await crew.call('workspace', 'park', w.id)
     } catch (err) {
-      alert(err.message)
+      oops(`Couldn't park ${w.name}`, err)
     }
   }
 
@@ -174,7 +174,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
       { label: 'Settings…', icon: ICONS.gear, act: 'settings' },
     ], (act) => {
       if (act === 'switch') onSwitch(w.id, { open: w.parked })
-      if (act === 'open') crew.call('workspace', 'open', w.id).catch((err) => alert(err.message))
+      if (act === 'open') crew.call('workspace', 'open', w.id).catch((err) => oops(`Couldn't open ${w.name}`, err))
       if (act === 'park') park(w)
       if (act === 'settings') openSheet(w.id)
     })
@@ -195,7 +195,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
   }
 
   banner.addEventListener('click', (e) => {
-    if (e.target.closest('[data-ws-open]')) crew.call('workspace', 'open', state.workspace.id).catch((err) => alert(err.message))
+    if (e.target.closest('[data-ws-open]')) crew.call('workspace', 'open', state.workspace.id).catch((err) => oops(`Couldn't open ${state.workspace.name}`, err))
   })
 
   // ---- the sheet: a new workspace, or one's settings -------------------------------------------------------
@@ -433,7 +433,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
         dialog.close()
       }
     } catch (x) {
-      err.textContent = x.message
+      err.textContent = errorLine(x)
     } finally {
       btn.disabled = false
     }
@@ -447,7 +447,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
       await crew.call('workspace', 'remove', w.id)
       dialog.close()
     } catch (x) {
-      $d('[data-ws-err]').textContent = x.message
+      $d('[data-ws-err]').textContent = errorLine(x)
     }
   }
 

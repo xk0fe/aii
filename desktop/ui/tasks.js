@@ -124,7 +124,7 @@ function mountTasks(root, { onTerminal }) {
     try {
       return await crew.call('task', ...args)
     } catch (e) {
-      toast(e.message, true)
+      toast(errorLine(e), true)
       throw e
     }
   }
@@ -324,11 +324,11 @@ function mountTasks(root, { onTerminal }) {
       if (start && id && /is triaging it/.test(out)) toast(`${out.charAt(0).toUpperCase() + out.slice(1)}. It starts once it has an owner`)
       else if (start && id) {
         // In progress's +: it goes to its owner (the @name, or whoever's area it is) now, in a new conversation
-        const went = await crew.call('task', 'dispatch', id).then(() => true, (e) => (toast(e.message, true), false))
+        const went = await crew.call('task', 'dispatch', id).then(() => true, (e) => (toast(errorLine(e), true), false))
         if (went) toast(`#${id} went to ${owner ? `@${owner}` : 'its owner'}, in a new conversation`)
       } else toast(out.charAt(0).toUpperCase() + out.slice(1))
     } catch (e) {
-      toast(e.message, true)
+      toast(errorLine(e), true)
     }
     syncAdd()
   }

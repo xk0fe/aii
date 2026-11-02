@@ -1500,7 +1500,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       const now = el.querySelector(`[data-ask="${CSS.escape(id)}"]`) ?? card // it may have been re-rendered meanwhile
       now.classList.remove('sending')
       const box = now.querySelector('.ask-error')
-      if (box) box.textContent = err.message
+      if (box) box.textContent = errorLine(err)
     } finally {
       sending.delete(id)
     }
@@ -1800,7 +1800,7 @@ function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) 
       try {
         paths.push(await crew.call('saveImage', f.name, f.type, new Uint8Array(await f.arrayBuffer())))
       } catch (e) {
-        onError?.(e.message)
+        onError?.(errorLine(e))
       }
     }
     draw()
@@ -2295,7 +2295,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
       attach.set([])
       autosize()
     } catch (e) {
-      say(e.message, true)
+      say(errorLine(e), true)
     }
   }
 
@@ -2386,6 +2386,64 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
   }
 }
 
+// ---- notes at the bottom of the window, and what went wrong --------------------------------------------------------
+
+// A note for something that happened out of view, or didn't work: it fades after a few seconds (later while the pointer
+// is on it). detail: the technical text behind it, for its Copy details button.
+function notify(text, { warn = false, detail = '' } = {}) {
+  let el = document.querySelector('.toast')
+  if (!el) {
+    el = Object.assign(document.createElement('div'), { className: 'toast' })
+    el.setAttribute('role', 'status')
+    el.setAttribute('aria-live', 'polite')
+    document.body.append(el)
+  }
+  const fade = (ms) => {
+    clearTimeout(el.timer)
+    el.timer = setTimeout(() => el.classList.remove('show'), ms)
+  }
+  if (!el.wired) {
+    el.wired = true
+    el.addEventListener('pointerenter', () => clearTimeout(el.timer))
+    el.addEventListener('pointerleave', () => el.classList.contains('show') && fade(2500))
+    el.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-toast-copy]')
+      if (!btn) return
+      await crew.call('copy', el.detail).catch(() => {})
+      btn.textContent = 'Copied'
+    })
+  }
+  el.detail = detail
+  el.innerHTML = `<span>${esc(text)}</span>${detail ? '<button type="button" data-toast-copy>Copy details</button>' : ''}`
+  el.className = `toast show ${warn ? 'warn' : ''} ${detail ? 'has-detail' : ''}`
+  fade(detail ? 9000 : warn ? 7000 : 4200)
+}
+
+// What an error from main.js says, as a sentence for the screen, or '' when it's for a bug report. The ones Crew throws
+// on purpose say why ("Mac mini is unreachable right now", "\"gal\" already exists"); a crash or a file system error
+// (ENOENT, "Cannot read properties of undefined", an unknown action) doesn't mean anything to you.
+const TECHNICAL = /\b(?:E[A-Z]{3,}|[A-Z][a-zA-Z]*Error|errno|syscall)\b|Cannot (?:read|set) propert|is not (?:a function|defined|iterable)|Unexpected (?:token|end)|unknown \w* ?action|\bundefined\b|\bnull\b|^\s*at \S/
+function errorReason(err) {
+  const text = String(err?.message ?? err ?? '').replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '').trim()
+  if (!text || TECHNICAL.test(text)) return ''
+  const plain = text.replace(/\s*\((?:try: )?crew \w[^)]*\)/g, '') // the CLI's hints, for agents
+  return `${plain.charAt(0).toUpperCase()}${plain.slice(1)}${/[.!?]$/.test(plain) ? '' : '.'}`
+}
+// Something you asked for didn't work: what (e.g. "Couldn't park Website"), then why, or what to do when the reason is a
+// technical one. The error itself is behind Copy details, and in Crew's log (main.js) when it's technical.
+function oops(what, err, todo = 'Try again in a moment.') {
+  const raw = String(err?.message ?? err ?? '')
+  const why = errorReason(err)
+  if (!why && raw) crew.call('log', `${what}: ${raw}`).catch(() => {})
+  notify(`${what}. ${why || todo}`, { warn: true, detail: raw })
+}
+// The same for a line shown in place, under what didn't work (a sheet's error line): the reason, or else what to do.
+function errorLine(err, todo = 'Something went wrong. Try again in a moment.') {
+  const why = errorReason(err)
+  if (!why) crew.call('log', String(err?.message ?? err ?? '')).catch(() => {})
+  return why || todo
+}
+
 // Agent rows appear on several views; these listeners handle their mode chips and on/off switch.
 // A chip flips right away and the next state push confirms it.
 document.addEventListener('click', (e) => {
@@ -2398,7 +2456,7 @@ document.addEventListener('click', (e) => {
   crew.call('update', name, mode === 'yolo' ? { yolo: on } : { tier: on ? 'fast' : 'default' }).catch((err) => {
     flips.delete(`${name}:${mode}`)
     chip.setAttribute('aria-pressed', String(!on))
-    alert(`Couldn't change ${name}: ${err.message}`)
+    oops(`Couldn't change ${name.split('@')[0]}`, err)
   })
 })
 document.addEventListener('change', (e) => {

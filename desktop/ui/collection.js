@@ -383,7 +383,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     try {
       return await crew.call('exportAgents', names)
     } catch (err) {
-      alert(`Couldn't export: ${err.message}`)
+      oops(`Couldn't export ${names.length === 1 ? names[0].split('@')[0] : 'the crew'}`, err)
     }
   }
 
@@ -971,7 +971,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         if (dir) card.querySelector('[data-k=cwd]').value = draft.cwd = dir
         syncSave()
       } catch (err) {
-        card.querySelector('.pd-msg').textContent = err.message // an agent on another computer works in that computer's folders
+        card.querySelector('.pd-msg').textContent = errorLine(err) // an agent on another computer works in that computer's folders
       }
     }
     if (act === 'terminal') {
@@ -991,7 +991,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       await crew.call('freshStart', editing)
       card.querySelector('.pd-msg').textContent = 'New conversation ✓'
     } catch (err) {
-      card.querySelector('.pd-msg').textContent = err.message
+      card.querySelector('.pd-msg').textContent = errorLine(err)
     }
   }
 
@@ -1043,7 +1043,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       syncSave()
       msg.textContent = 'Drafted ✓ (review it, then Save)'
     } catch (err) {
-      msg.textContent = `Couldn't write it: ${err.message}`
+      msg.textContent = `Couldn't write it. ${errorLine(err, 'Try again in a moment.')}`
     } finally {
       btn.disabled = false
       btn.querySelector('span').textContent = 'Write it'
@@ -1071,7 +1071,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         reopen = 'name' in patch ? qualified(slug(draft.name), draft.home) : editing
       }
     } catch (err) {
-      msg.textContent = err.message
+      msg.textContent = errorLine(err)
     }
   }
 
