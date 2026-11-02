@@ -29,7 +29,8 @@ const workspaceKey = (e) => (ON_WINDOWS ? e.altKey && !e.ctrlKey && !e.metaKey &
 
 // A path with your home folder as ~, in the separators it was written with: /Users/you/code/app is ~/code/app, and
 // C:\Users\you\code\app is ~\code\app. A linked computer's paths shorten the same way, with its own home.
-const HOME_DIR = /^(?:\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:[\\/]Users[\\/][^\\/]+)(?=[\\/]|$)/i
+// (Not the folders every account shares: /Users/Shared, C:\Users\Public.)
+const HOME_DIR = /^(?:\/Users\/(?!Shared(?:\/|$))[^/]+|\/home\/[^/]+|[A-Za-z]:[\\/]Users[\\/](?!(?:Public|Default|All Users)(?:[\\/]|$))[^\\/]+)(?=[\\/]|$)/i
 function tildePath(p) {
   const s = String(p ?? '')
   const home = window.crew?.home || null
@@ -1754,7 +1755,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
 // A file on disk as a URL an <img> can load: /Users/you/a b.png, C:\Users\you\a.png (drive letter kept, backslashes as
 // slashes) and \\server\share\a.png (the server as the URL's host). Every folder's name is escaped (spaces, #, %).
 function fileURL(p) {
-  const s = String(p ?? '').replace(/^\\\\[?.]\\(?=[A-Za-z]:)/, '') // \\?\C:\… is C:\…
+  const s = String(p ?? '').replace(/^\\\\[?.]\\UNC\\/i, '\\\\').replace(/^\\\\[?.]\\(?=[A-Za-z]:)/, '') // \\?\C:\… is C:\…, \\?\UNC\… is \\…
   const enc = (parts) => parts.map(encodeURIComponent).join('/')
   const unc = /^[\\/]{2}([^\\/]+)[\\/](.*)$/.exec(s)
   if (unc) return `file://${unc[1]}/${enc(unc[2].split(/[\\/]/))}`
@@ -2404,8 +2405,9 @@ function notify(text, { warn = false, detail = '' } = {}) {
   }
   if (!el.wired) {
     el.wired = true
-    el.addEventListener('pointerenter', () => clearTimeout(el.timer))
-    el.addEventListener('pointerleave', () => el.classList.contains('show') && fade(2500))
+    // the pointer on Copy details holds the note (only the button takes the pointer)
+    el.addEventListener('pointerover', (e) => e.target.closest('[data-toast-copy]') && clearTimeout(el.timer))
+    el.addEventListener('pointerout', (e) => e.target.closest('[data-toast-copy]') && el.classList.contains('show') && fade(2500))
     el.addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-toast-copy]')
       if (!btn) return
@@ -2421,8 +2423,11 @@ function notify(text, { warn = false, detail = '' } = {}) {
 
 // What an error from main.js says, as a sentence for the screen, or '' when it's for a bug report. The ones Crew throws
 // on purpose say why ("Mac mini is unreachable right now", "\"gal\" already exists"); a crash or a file system error
-// (ENOENT, "Cannot read properties of undefined", an unknown action) doesn't mean anything to you.
-const TECHNICAL = /\b(?:E[A-Z]{3,}|[A-Z][a-zA-Z]*Error|errno|syscall)\b|Cannot (?:read|set) propert|is not (?:a function|defined|iterable)|Unexpected (?:token|end)|unknown \w* ?action|\bundefined\b|\bnull\b|^\s*at \S/
+// (ENOENT, "Cannot read properties of undefined", an unknown action) doesn't mean anything to you. Node's error codes
+// are named one by one: a computer called EMILY-PC is unreachable for a reason you can read. So are the network's own
+// words ("fetch failed", "socket hang up") and bare addresses, which say nothing you can act on.
+const ERROR_CODES = 'ENOENT|EACCES|EPERM|EEXIST|EISDIR|ENOTDIR|ENOTEMPTY|EBUSY|EMFILE|ENFILE|ENOSPC|EROFS|EINVAL|EAGAIN|EPIPE|EPROTO|EADDRINUSE|EADDRNOTAVAIL|ECONNREFUSED|ECONNRESET|ECONNABORTED|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ERR_[A-Z_]+'
+const TECHNICAL = new RegExp(String.raw`\b(?:${ERROR_CODES}|[A-Z][a-zA-Z]*Error|errno|syscall)\b|Cannot (?:read|set) propert|is not (?:a function|defined|iterable)|Unexpected (?:token|end)|unknown \w* ?action|\bundefined\b|\bnull\b|^\s*at \S|fetch failed|socket hang up|\b\d{1,3}(?:\.\d{1,3}){3}\b`)
 function errorReason(err) {
   const text = String(err?.message ?? err ?? '').replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '').trim()
   if (!text || TECHNICAL.test(text)) return ''

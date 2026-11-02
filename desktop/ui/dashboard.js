@@ -485,7 +485,8 @@ document.addEventListener('keydown', (e) => {
     e.stopPropagation()
     return switchTo(next.id)
   }
-  const w = /^[1-9]$/.test(e.key) && list[Number(e.key) - 1]
+  // the digit keys only: on Windows, Alt and the number pad type a character (Alt+0151 is —)
+  const w = /^[1-9]$/.test(e.key) && (!ON_WINDOWS || e.code.startsWith('Digit')) && list[Number(e.key) - 1]
   if (!w) return
   e.preventDefault()
   e.stopPropagation()
@@ -909,7 +910,7 @@ function computersHTML({ me, links, phones }) {
         <p>${esc(reachText(me.hosts))}</p>
         <div class="lk-row"><span>A new code disconnects the computers using this one, until they link again.</span><span class="lk-btns"><button class="btn small" data-link-details-copy title="This computer's addresses and port, for when a computer can't connect">${linkOpen.detailsCopied ? 'Copied' : 'Copy connection details'}</button><button class="btn small" data-link-reset>New code</button></span></div>
       </div>` : ''}`
-    : me.error ? `<div class="lk-li"><p class="err">${esc(errorReason(me.error) || "Crew couldn't start sharing this computer. Turn it off and on again.")}</p></div>` : ''}`
+    : me.error ? `<div class="lk-li"><p class="err">${esc(sharingError(me.error))}</p></div>` : ''}`
   const form = linkOpen.form || linkErr ? `
     <div class="lk-label">Link a computer</div>
     <div class="lk-list"><div class="lk-form">
@@ -925,6 +926,11 @@ function computersHTML({ me, links, phones }) {
     ${phonesHTML(phones ?? { devices: [] })}`
 }
 
+// Why this computer can't share, in words. A port another app has is the usual one, and there's no setting for the port
+// on screen (it's in Crew's settings file), so it says what you can do instead.
+const sharingError = (error) => (/port \d+ is in use/.test(error)
+  ? "Another app is using the port Crew Link listens on, so this computer can't share right now. Quit that app and turn sharing off and on again."
+  : errorReason(error) || "Crew couldn't start sharing this computer. Turn it off and on again.")
 // How others reach this computer, in words: "Reachable over your local network and Tailscale."
 function reachText(hosts = []) {
   const ways = [...new Set(hosts.map((h) => (/tailscale/i.test(h.via) ? 'Tailscale' : 'your local network')))]

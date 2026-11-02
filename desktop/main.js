@@ -33,6 +33,7 @@ let dashPage = 0 // the dashboard's page: a new one on each load, and when it cl
 let pill // the floating pill's window placement (core/pill.js)
 let trayHiddenAt = 0
 let quitting = false
+let started = false // Crew is up: its windows exist, so a second launch or a .crew file can show them
 let awake = null
 
 // Something that went wrong in here and nothing caught: written to Crew's log, and Crew carries on. Without this
@@ -59,7 +60,7 @@ let opened = null
 const packIn = (argv) => argv.slice(1).find((a) => /\.crew$/i.test(a) && fs.existsSync(a)) ?? null
 function openPack(file) {
   opened = file
-  if (app.isReady() && crew) openPackFile()
+  if (started) openPackFile()
 }
 app.on('open-file', (e, file) => {
   e.preventDefault()
@@ -68,7 +69,7 @@ app.on('open-file', (e, file) => {
 app.on('second-instance', (_e, argv) => {
   const file = packIn(argv)
   if (file) return openPack(file)
-  if (app.isReady() && crew) openDashboard()
+  if (started) openDashboard()
 })
 opened = packIn(process.argv)
 
@@ -87,8 +88,9 @@ function openPackFile() {
   dash.webContents.isLoading() ? dash.webContents.once('did-finish-load', send) : send()
 }
 
-app.whenReady().then(async () => {
-  if (!primary) return
+app.whenReady().then(() => primary && start().catch(failedToStart))
+
+async function start() {
   app.dock?.hide()
   app.setAboutPanelOptions?.({ applicationName: 'Crew', iconPath: path.join(dir, 'assets', 'icon.png'), credits: 'Your crew of AI agents, side by side.' })
 
@@ -117,8 +119,26 @@ app.whenReady().then(async () => {
     if (show.includes('panel')) overlay.webContents.once('did-finish-load', () => overlay.webContents.send('toggle'))
     if (show.includes('tray')) setTimeout(toggleTray, 800)
   }
+  started = true
   openPackFile() // Crew was opened by double-clicking a .crew file
-})
+}
+
+// Crew couldn't start (its terminal host, say): say so and quit, rather than run on with no icon and no window, holding
+// the one-Crew-at-a-time lock so opening it again does nothing. Agents it had picked up keep running in the host.
+function failedToStart(e) {
+  logLine('start', e?.stack ?? String(e))
+  dialog.showMessageBoxSync({
+    type: 'error',
+    message: "Crew couldn't start",
+    detail: `Open Crew again to try once more. If this keeps happening, send Crew's log to support: ${LOG}\n\n${e?.message ?? e}`,
+    buttons: ['Quit'],
+  })
+  quitting = true
+  try {
+    crew?.detach()
+  } catch {}
+  app.exit(1)
+}
 
 // A global shortcut another app already has: what it was for, and what to do instead, for the chat. (There's no setting
 // for the shortcuts in Crew yet.)
