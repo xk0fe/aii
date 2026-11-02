@@ -4,6 +4,7 @@ import type { ColorValue } from 'react-native'
 
 const ICONS = {
   down: ['chevron.down', 'expand_more'],
+  up: ['chevron.up', 'expand_less'],
   right: ['chevron.right', 'chevron_right'],
   back: ['chevron.left', 'chevron_left'],
   send: ['arrow.up', 'arrow_upward'],

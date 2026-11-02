@@ -6,8 +6,9 @@ import * as Device from 'expo-device'
 import { AppState, Platform } from 'react-native'
 
 import { DemoClient } from '@/demo/client'
-import { CrewClient, type Deps, type Snapshot } from '@/net/client'
+import { CrewClient, type Deps, type Link, type Snapshot, type Try } from '@/net/client'
 import { parsePairCode } from '@/net/pairing'
+import { CLOSE } from '@/net/shared'
 import type { MacRecord } from '@/net/types'
 
 import { forgetSecret, loadSaved, loadSecret, save, saveSecret } from './storage'
@@ -21,7 +22,7 @@ export type SessionState = {
   active: string | null // a Mac's id, DEMO, or nobody yet
 }
 
-const deps: Deps = {
+const DEPS: Deps = {
   WebSocket: (globalThis as unknown as { WebSocket: Deps['WebSocket'] }).WebSocket,
   random: (n) => getRandomBytes(n),
   log: __DEV__ ? (...a) => console.log('[crew]', ...a) : undefined,
@@ -33,22 +34,57 @@ const device = () => ({
   app: Constants.expoConfig?.version ?? '0.1.0',
 })
 
-class Session {
+type Offline = Extract<Link, { status: 'offline' }>
+
+// Why pairing didn't work, in few words: a short title, a quieter hint, and for Details what each address did. `fatal`:
+// this code won't work however often it's tried; `retryAt`: the Mac won't listen before then (after too many tries).
+export class PairError extends Error {
+  constructor(
+    public title: string,
+    public hint = '',
+    public more: { fatal?: boolean; tries?: Try[]; retryAt?: number } = {},
+  ) {
+    super(hint ? `${title}. ${hint}` : title)
+  }
+}
+
+const REACH = 'Same Wi-Fi or Tailscale on both?'
+
+// A round that didn't get through, in words. What the Mac said (a close code) beats "can't reach".
+function trouble(name: string, link: Offline) {
+  const more = { fatal: link.fatal, tries: link.tries, retryAt: link.code === CLOSE.tooMany ? link.retryAt : undefined }
+  switch (link.code) {
+    case CLOSE.tooMany:
+      return new PairError('Too many tries', `${name} listens again in a minute.`, more)
+    case CLOSE.noCode:
+    case CLOSE.badFrame:
+      return new PairError('That code is no longer valid', 'Make a new one on the Mac.', { ...more, fatal: true })
+    case CLOSE.version:
+      return new PairError(`${name} runs another version of Crew`, 'Update both.', more)
+    default:
+      return link.fatal ? new PairError(link.reason, '', more) : new PairError(`Can't reach ${name}`, REACH, more)
+  }
+}
+
+export class Session {
   private s: SessionState = { loaded: false, macs: [], active: null }
   private listeners = new Set<() => void>()
   client: CrewLink | null = null
+  private pairing: CrewClient | null = null
   private unwatch: (() => void) | null = null
   private ready: Promise<void>
   private readable = false // what's saved was read; until then nothing is saved over it
 
-  constructor() {
+  constructor(private deps: Deps = DEPS) {
     this.ready = this.load()
     AppState.addEventListener('change', (st) => {
       if (st !== 'active') return
       // the store couldn't be read at launch (before the first unlock, say): try again now
       if (!this.readable) void this.load()
-      // back in the foreground: prove the connection, or reconnect right away
+      // back in the foreground: prove the connection, or reconnect right away. A pairing tries again too: iOS's Local
+      // Network alert makes the app inactive until it's answered, and the round it interrupted failed.
       this.client?.wake()
+      this.pairing?.wake()
     })
   }
 
@@ -115,7 +151,7 @@ class Session {
     this.setClient(null)
     if (!mac || !secret) return false
     try {
-      const client = new CrewClient({ kind: 'mac', mac, secret }, deps, device())
+      const client = new CrewClient({ kind: 'mac', mac, secret }, this.deps, device())
       client.start()
       this.setClient(client)
       return true
@@ -124,21 +160,30 @@ class Session {
     }
   }
 
-  // Pairs with a code: resolves once the Mac has said `ready`, sent the state, and the pairing is saved; rejects with
-  // words to show.
-  pair(text: string): { done: Promise<void>; cancel: () => void } {
+  // Pairs with a code: resolves once the Mac has said `ready`, sent the state, and the pairing is saved; rejects with a
+  // PairError. A round where no address got through doesn't end it: the client tries again with backoff (the first
+  // round often fails while iOS asks about the local network), until `timeout` or an answer that won't change (a used
+  // code, another version, a minute's wait after too many tries). A round still under way at `timeout` may finish: cut
+  // between the Mac's `ready` and the state, it would leave the code used up and the Mac listing a phone that isn't
+  // there. `onRetry`: the first round failed, still trying.
+  pair(text: string, { timeout = 25000, onRetry }: { timeout?: number; onRetry?: () => void } = {}): { done: Promise<void>; cancel: () => void } {
     let cancel = () => {}
     const done = new Promise<void>((resolve, reject) => {
       let code
       try {
         code = parsePairCode(text)
       } catch (e) {
-        return reject(e)
+        const msg = String((e as Error)?.message ?? e)
+        return reject(new PairError(msg.charAt(0).toUpperCase() + msg.slice(1), '', { fatal: true }))
       }
+      const name = code.name
       const secret = getRandomBytes(32)
+      const deadline = (this.deps.now?.() ?? Date.now()) + timeout
       let paired: MacRecord | null = null
+      let failed: Offline | null = null // the last round that didn't get through
+      let late = false // past `timeout`, letting the round under way finish
       let over = false
-      const client = new CrewClient({ kind: 'pair', code, secret }, deps, device(), {
+      const client = new CrewClient({ kind: 'pair', code, secret }, this.deps, device(), {
         onPaired: ({ mac }) => {
           paired = mac
         },
@@ -148,25 +193,42 @@ class Session {
         over = true
         stop()
         clearTimeout(timer)
+        if (this.pairing === client) this.pairing = null
         if (err) {
           client.stop()
           return reject(err)
         }
         this.adopt(paired!, secret, client).then(resolve, (e) => {
           client.stop()
-          reject(new Error(`Paired, but this phone couldn't save it (${String((e as Error)?.message ?? e)}). Try again with a new code.`))
+          this.deps.log?.('saving the pairing failed', e)
+          reject(new PairError("Paired, but this phone couldn't save it", 'Try again with a new code.', { fatal: true }))
         })
       }
-      const timer = setTimeout(() => finish(new Error(`${code.name} didn't answer. Is this phone on the same network as the Mac, or on its Tailscale?`)), 25000)
+      const giveUp = () => {
+        // paired, but the crew never came: the code is used up, so it takes a new one
+        if (paired) return finish(new PairError(`${name} stopped answering`, 'Try again with a new code.', { fatal: true }))
+        finish(failed ? trouble(name, failed) : new PairError(`Can't reach ${name}`, REACH))
+      }
+      let timer = setTimeout(() => {
+        const link = client.getSnapshot().link
+        if (!paired && link.status === 'offline' && link.retryAt !== undefined) return giveUp() // between rounds
+        late = true
+        timer = setTimeout(giveUp, (this.deps.timing?.handshake ?? 10_000) + 2000)
+      }, timeout)
       cancel = () => finish(new Error('cancelled'))
       const stop = client.subscribe(() => {
         const snap = client.getSnapshot()
-        if (snap.link.status === 'offline' && !paired) {
-          const reach = snap.link.fatal ? snap.link.reason : `Couldn't reach ${code.name} at ${code.hosts.join(', ')}. Is this phone on the same network as the Mac, or on its Tailscale?`
-          return finish(new Error(reach))
+        if (paired) {
+          if (snap.state) finish()
+          return
         }
-        if (paired && snap.state) finish()
+        const link = snap.link
+        if (link.status !== 'offline') return
+        if (link.fatal || late || (link.retryAt ?? 0) > deadline) return finish(trouble(name, link))
+        if (!failed) onRetry?.()
+        failed = link
       })
+      this.pairing = client
       client.start()
     })
     return { done, cancel: () => cancel() }

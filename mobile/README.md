@@ -6,7 +6,7 @@ It talks to Crew on your Mac directly, over your network or Tailscale, end to en
 
 ## What's in it
 
-- **Pair:** on the Mac, open **Computers** in Crew and choose **Add a phone**; scan the QR code it shows, or paste the code. Or look around the demo crew.
+- **Pair:** on the Mac, open **Computers** in Crew and choose **Add a phone**, then point the phone at the QR code it shows (or paste the code). The camera keeps looking by itself: a code that didn't get through is tried again after a few seconds, one the Mac turned away isn't. Or look around the demo crew.
 - **Chat:** everyone's messages, or your conversation with one agent (tap its face). Replies render light Markdown. Type `@` to bring someone in. Replies you've seen are marked read on the Mac too.
 - **Needs you:** permission prompts, an agent's own questions and plans, as cards. They stack at the top of the chat and fill the Needs you tab (with a badge); the answer goes back as `answer(ws, id, reply)`, exactly what `Hub.answer` takes.
 - **Crew:** the agents as creature cards. Tap one for on/off, YOLO, Fast, New conversation, Restart and Mark free.
@@ -22,6 +22,7 @@ Version 1 has no Tasks board, no terminals and no push notifications.
 - **Staying current:** `watch` returns the whole state and a version; patches follow, applied with `shared/sync.js`. A patch that doesn't follow the last one makes the phone watch again. `v` counts up for the whole connection.
 - **Workspaces:** the phone's own choice, remembered per Mac. If the Mac removes the one it watches, the Mac pushes Home's state and the phone stays on Home.
 - **Going away and back:** when the Mac can't be reached, the last state stays on screen and the phone retries with backoff (1 s up to 30 s, a minute after "too many tries"). Back in the foreground it proves the connection with a quick `watch` and reconnects if that goes unanswered; a call the Mac never answers does the same.
+- **Pairing:** a round where no address gets through doesn't end it (the first one often fails while iOS asks about the local network): the phone keeps trying for 25 s, unless the Mac's answer won't change or it asked for a minute's wait. What went wrong is one line; Details lists what each address did (`no answer`, `closed 4008`…).
 - **Turned away:** "pair it again" when every address says this phone isn't paired (one address alone could be another Crew Mac on another network), and "that code is no longer valid" when a pairing code was used, ran out, or a newer one replaced it.
 
 ## Run it
@@ -52,14 +53,14 @@ src/
   ui/       the creatures (creature.tsx, ported from desktop/ui/avatar.js), cards, feed, composer, theme tokens
   app/      the screens (expo-router)
 scripts/smoke.ts   the network layer against a real Mac, from a terminal
-test/              Jest: the test vectors, the client against a fake Mac, pairing codes
+test/              Jest: the test vectors, the client against a fake Mac, pairing through the session, pairing codes
 ```
 
 ## Check it
 
 ```sh
 npx tsc --noEmit    # types
-npx jest            # shared/vectors.json reproduced, a whole session against a fake Mac, pairing-code errors
+npx jest            # shared/vectors.json reproduced, a whole session against a fake Mac, pairing, pairing-code errors
 ```
 
 And against a real Mac running Crew, with a code from **Computers › Phones › Add a phone**:
