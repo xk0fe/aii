@@ -300,14 +300,16 @@ test("the shell prefix: quoted by Claude Code itself, by name from the agent's P
   assert.deepEqual(shellPrefix('/crew/bin', { CLAUDE_CODE_SHELL_PREFIX: '/old/crew/bin/crew-sh' }, 'darwin'), { CLAUDE_CODE_SHELL_PREFIX: '/crew/bin/crew-sh' })
   const tried = []
   const works = (sh, bash, extra) => (tried.push([sh, bash, extra]), true)
-  const env = { CLAUDE_CODE_SHELL_PREFIX: 'C:\\Users\\me\\.crew\\bin\\crew-sh.cmd', CLAUDE_CODE_GIT_BASH_PATH: '/bin/sh' }
+  // a Git Bash that's there on any computer (this Node, standing in for it)
+  const bash = process.execPath
+  const env = { CLAUDE_CODE_SHELL_PREFIX: 'C:\\Users\\me\\.crew\\bin\\crew-sh.cmd', CLAUDE_CODE_GIT_BASH_PATH: bash }
   const bin = 'C:\\Users\\Jean -Luc\\AppData\\Local\\Programs\\Crew\\resources\\app.asar.unpacked\\bin'
   const win = shellPrefix(bin, { ...env, Path: 'C:\\Windows' }, 'win32', works)
   assert.equal(win.CLAUDE_CODE_SHELL_PREFIX, 'crew-sh', 'no path to quote, spaces and " -" and all: Git Bash finds it on PATH')
   assert.ok(!('CREW_SHELL_PREFIX' in win), "Crew started from an agent's terminal: crew-sh doesn't run itself")
-  assert.equal(win.CREW_BASH, '/bin/sh')
+  assert.equal(win.CREW_BASH, bash)
   const tools = `${bin}\\win32-${process.arch === 'arm64' ? 'arm64' : 'x64'}`
-  assert.deepEqual(tried, [['crew-sh', '/bin/sh', { Path: `${tools};C:\\Windows` }]], "tried in Git Bash first, with the agent's PATH")
+  assert.deepEqual(tried, [['crew-sh', bash, { Path: `${tools};C:\\Windows` }]], "tried in Git Bash first, with the agent's PATH")
   assert.deepEqual(shellPrefix('C:\\Crew\\bin', env, 'win32', () => false), {}, "if Git Bash won't run it, commands run without it")
   for (const arch of ['x64', 'arm64']) {
     const dir = path.join(BIN, `win32-${arch}`)
