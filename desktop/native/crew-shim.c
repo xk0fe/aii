@@ -1,9 +1,10 @@
 // `crew`, `crew-status` and `crew-hook` on Windows (bin/win32-<arch>/*.exe): this one program under three names. It
 // runs bin/crew.mjs, one folder up from it, with Crew's own runtime, as `crew.mjs <its name> <its arguments>`, passing
-// the arguments exactly as it got them. A program, because PowerShell, cmd and Git Bash all find and start one the
-// same way, with every argument intact: cmd.exe would cut a .cmd's argument at its first newline and read & | % "
-// in it its own way, and PowerShell runs a .ps1 before anything else of the name, or refuses to under the default
-// execution policy.
+// the arguments exactly as it got them. A program, because anything can start one with every argument intact (Claude
+// Code's hooks start crew-hook.exe with no shell at all; Codex's go through PowerShell or cmd), where cmd.exe would
+// cut a .cmd's argument at its first newline and read & | % " in it its own way, and PowerShell runs a .ps1 before
+// anything else of the name, or refuses to under the default execution policy. (Git Bash finds bin/crew and
+// bin/crew-status, the sh scripts, first: core/launch.js withTools.)
 //
 // Crew's runtime is its own Electron binary run as Node: CREW_NODE says where it is (core/hub.js sets it for every
 // agent), or else node.exe on PATH. ELECTRON_RUN_AS_NODE=1 is set here, for that one process: in the agent's own

@@ -139,14 +139,17 @@ export function resolveCommand(cmd, args = [], env = process.env, { platform = p
   return { file, args }
 }
 
-// Where agents find `crew`, and the status line and hooks their CLIs run: bin/ (sh scripts) on macOS and Linux, and
-// bin/win32-<arch> on Windows (crew.exe, crew-status.exe, crew-hook.exe: native/crew-shim.c), which run bin/crew.mjs.
+// Where agents find `crew`, and the status line and hooks their CLIs run: bin/ (sh scripts) on macOS and Linux, and on
+// Windows also bin/win32-<arch> (crew.exe, crew-status.exe, crew-hook.exe: native/crew-shim.c, which run bin/crew.mjs).
 export const toolsDir = (bin, { platform = process.platform, arch = process.arch } = {}) =>
   platform === WIN ? path.win32.join(bin, `win32-${arch === 'arm64' ? 'arm64' : 'x64'}`) : bin
 
-// The PATH an agent gets: Crew's tools first, then yours.
+// The PATH an agent gets: Crew's tools first, then yours. On Windows bin/ comes first too, so Git Bash (Claude Code's
+// Bash tool) finds the sh scripts there, as on macOS, before the .exe files: handing `crew note "/api is v2"` to a
+// Windows program, Git Bash would rewrite /api as a path into its own folder. PowerShell and cmd don't run a file
+// without an extension, so they find the .exe files.
 export function withTools(env, bin, { platform = process.platform, arch = process.arch } = {}) {
   const key = pathKey(env, platform)
-  const sep = platform === WIN ? ';' : ':'
-  return { [key]: `${toolsDir(bin, { platform, arch })}${sep}${env[key] ?? ''}` }
+  if (platform !== WIN) return { [key]: `${bin}:${env[key] ?? ''}` }
+  return { [key]: `${bin};${toolsDir(bin, { platform, arch })};${env[key] ?? ''}` }
 }

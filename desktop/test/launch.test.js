@@ -105,8 +105,9 @@ test("Windows: PATH is the environment's own key, so an agent's environment neve
   assert.equal(pathKey({}, 'win32'), 'Path')
   assert.equal(pathKey({ Path: 'x' }, 'darwin'), 'PATH')
   const bin = 'C:\\Program Files\\Crew\\resources\\app.asar.unpacked\\desktop\\bin'
-  assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'x64' }), { Path: `${bin}\\win32-x64;C:\\Windows` })
-  assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'arm64' }), { Path: `${bin}\\win32-arm64;C:\\Windows` })
+  // bin first, for Git Bash's sake (the sh scripts); PowerShell and cmd skip those and find the .exe files after
+  assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'x64' }), { Path: `${bin};${bin}\\win32-x64;C:\\Windows` })
+  assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'arm64' }), { Path: `${bin};${bin}\\win32-arm64;C:\\Windows` })
   assert.deepEqual(withTools({ PATH: '/usr/bin:/bin' }, '/Applications/Crew.app/bin', { platform: 'darwin' }), { PATH: '/Applications/Crew.app/bin:/usr/bin:/bin' }, 'macOS: as before')
   assert.equal(toolsDir('/b', { platform: 'darwin' }), '/b')
 })
@@ -156,7 +157,7 @@ test("Windows: a batch file Crew can't see through, or no program at all, fails 
   assert.equal(shimTarget(SHIM.npmCodex, `${NPM}\\codex.cmd`, { env: env(), files: disk({}) }), null, "a shim whose program isn't there")
 })
 
-test('macOS: a command is still the first runnable file on PATH, and one that is nowhere stays its name', () => {
+test('macOS: a command is still the first runnable file on PATH, and one that is nowhere stays its name', { skip: process.platform === 'win32' && 'POSIX paths' }, () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-launch-'))
   fs.writeFileSync(path.join(tmp, 'claude'), '#!/bin/sh\n', { mode: 0o755 })
   fs.writeFileSync(path.join(tmp, 'codex'), '', { mode: 0o644 })

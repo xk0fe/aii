@@ -2,7 +2,7 @@
 // curl) do on macOS and Linux, in Node, which Crew always has with it. bin/win32-<arch>/crew.exe, crew-status.exe and
 // crew-hook.exe (native/crew-shim.c) each run this as `crew.mjs <its name> <its arguments>`:
 //
-//   crew <command> ...      the crew CLI an agent uses (crew help), from PowerShell, cmd or Git Bash
+//   crew <command> ...      the crew CLI an agent uses (crew help), from PowerShell or cmd
 //   crew-status             Claude Code's status line (its JSON on stdin)
 //   crew-hook hook          a hook event (stdin) for Crew, or for the spool while Crew is closed
 //   crew-hook ask <s>       a permission request, question or plan: waits up to <s> seconds for your answer in Crew
@@ -11,7 +11,8 @@
 // The contract with Crew (core/hub.js sets these for every agent; packaging keeps bin/ outside the asar):
 //   CREW_NODE       Crew's own runtime: its Electron binary (process.execPath), which crew.exe runs with
 //                   ELECTRON_RUN_AS_NODE=1 for this one process. Without it, node.exe on PATH.
-//   PATH            bin/win32-<arch> first, so every shell finds crew, crew-status and crew-hook.
+//   PATH            bin, then bin/win32-<arch>: Git Bash finds the sh scripts in bin (as macOS does), PowerShell and
+//                   cmd, which don't run a file without an extension, the .exe files (core/launch.js withTools).
 //   CREW_HOME       where Crew writes its address (url) and token each time it starts; read on every call, since an
 //                   agent can outlive the Crew that started it. CREW_URL and CREW_TOKEN when those files aren't there.
 //   CREW_AGENT, CREW_WORKSPACE   who is asking, and in which workspace (none: the default).

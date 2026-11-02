@@ -16,7 +16,7 @@ const DESKTOP = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const BIN = path.join(DESKTOP, 'bin')
 const CREW_MJS = path.join(BIN, 'crew.mjs')
 const { adapters } = await import('../core/adapters.js')
-const { toolsDir } = await import('../core/launch.js')
+const { toolsDir, withTools } = await import('../core/launch.js')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-windows-'))
 const servers = new Set()
 after(() => {
@@ -79,9 +79,12 @@ const both = {
 
 // ---- the same as on macOS, side by side ---------------------------------------------------------------------
 
+// sh and curl, as on macOS (and Git Bash: the Windows run of these is the tests further down)
+const SIDE_BY_SIDE = { skip: process.platform === 'win32' && 'runs the sh scripts beside it' }
+
 const TRICKY = 'fix the build\nthen ship it & tell me | 100% "done" > é ✓ $HOME `x`'
 
-test('crew: every command asks Crew the same thing as bin/crew and prints the same, usage errors and help too', async () => {
+test('crew: every command asks Crew the same thing as bin/crew and prints the same, usage errors and help too', SIDE_BY_SIDE, async () => {
   const crew = await crewServer((r) => (r.route === 'answer' ? { status: 400, body: 'nobody asked you anything\n' } : { body: `${r.route}: ${r.body.replaceAll('\0', '|')}\n` }))
   const env = posixEnv(home('cli', { url: crew.url }), { CREW_WORKSPACE: 'golf' })
   const cases = [
@@ -101,7 +104,7 @@ test('crew: every command asks Crew the same thing as bin/crew and prints the sa
   await crew.close()
 })
 
-test("crew: Crew not running says so, and the address and token come from the environment when Crew's files aren't there", async () => {
+test("crew: Crew not running says so, and the address and token come from the environment when Crew's files aren't there", SIDE_BY_SIDE, async () => {
   const none = posixEnv(home('none'))
   const [sh, node] = await both.crew(['who'], { env: none })
   assert.deepEqual(node, sh)
@@ -119,7 +122,7 @@ test("crew: Crew not running says so, and the address and token come from the en
   assert.ok(sh3.stderr.endsWith('crew app is not running\n') && node3.stderr === 'crew app is not running\n')
 })
 
-test('crew-hook hook: the same event reaches Crew, and the same line lands in the spool while Crew is closed', async () => {
+test('crew-hook hook: the same event reaches Crew, and the same line lands in the spool while Crew is closed', SIDE_BY_SIDE, async () => {
   const crew = await crewServer()
   const event = `${JSON.stringify({ hook_event_name: 'Stop', last_assistant_message: TRICKY }, null, 2)}\n`
   for (const ws of ['', 'golf']) {
@@ -149,7 +152,7 @@ test('crew-hook hook: the same event reaches Crew, and the same line lands in th
   await gone.close()
 })
 
-test("crew-hook ask and lease: Crew's decision is printed, as ASCII that no shell can re-encode; nothing on an error or when time's up", async () => {
+test("crew-hook ask and lease: Crew's decision is printed, as ASCII that no shell can re-encode; nothing on an error or when time's up", SIDE_BY_SIDE, async () => {
   const decision = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow', updatedInput: { answers: { 'Which colour?': 'Grün ✓' } } } } }
   const crew = await crewServer((r) => (r.body.includes('slow') ? { delay: 3000 } : r.body.includes('broken') ? { status: 500, body: 'oops' } : { body: `${JSON.stringify(decision)}\n` }))
   const env = posixEnv(home('ask', { url: crew.url }))
@@ -168,7 +171,7 @@ test("crew-hook ask and lease: Crew's decision is printed, as ASCII that no shel
   await crew.close()
 })
 
-test("crew-status: tells Crew the context, then prints Crew's line, or yours (with the same JSON) when you have one", async () => {
+test("crew-status: tells Crew the context, then prints Crew's line, or yours (with the same JSON) when you have one", SIDE_BY_SIDE, async () => {
   const crew = await crewServer(() => ({ body: '\x1b[32mcontext 12% · 24k of 200k\x1b[0m' }))
   const env = posixEnv(home('status', { url: crew.url }), { CREW_WORKSPACE: 'golf', COLUMNS: '80' })
   const input = JSON.stringify({ session_id: 's', context_window: { used_percentage: 12 } })
@@ -186,7 +189,7 @@ test("crew-status: tells Crew the context, then prints Crew's line, or yours (wi
   assert.deepEqual([node3.stdout, sh3.stdout], ['', ''], 'Crew closed: an empty line')
 })
 
-test("crew.mjs is started only as crew, crew-status or crew-hook, and never passes ELECTRON_RUN_AS_NODE on", async () => {
+test("crew.mjs is started only as crew, crew-status or crew-hook, and never passes ELECTRON_RUN_AS_NODE on", SIDE_BY_SIDE, async () => {
   const bad = await run(process.execPath, [CREW_MJS, 'crew-other'], { env: posixEnv(tmp) })
   assert.equal(bad.code, 2)
   const crew = await crewServer()
@@ -288,8 +291,7 @@ test('Windows: through PowerShell, cmd and Git Bash, the hooks, the status line 
   const { pwsh, bash } = shells()
   const crew = await crewServer((r) => ({ body: r.route === 'ask' ? '{"decision":{"behavior":"allow"}}' : r.route === 'status' ? 'context 12%' : `${r.route} ok\n` }))
   const dir = home('win-shells', { url: crew.url })
-  const env = { ...process.env, ...winEnv(dir), CREW_NODE: process.execPath, Path: `${TOOLS};${process.env.Path ?? process.env.PATH}` }
-  delete env.PATH
+  const env = { ...process.env, ...winEnv(dir), CREW_NODE: process.execPath, ...withTools(process.env, BIN) }
   const viaShell = (file, args, input = '', windowsVerbatimArguments = false) =>
     new Promise((resolve) => {
       const p = spawn(file, args, { env, windowsVerbatimArguments })
@@ -314,8 +316,11 @@ test('Windows: through PowerShell, cmd and Git Bash, the hooks, the status line 
   await viaShell(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', '"crew note "50% & done | ok""'], '', true)
   assert.equal(crew.got.at(-1).body, '50% & done | ok', 'cmd')
   if (bash) {
+    // bin/crew itself (sh + curl), found before crew.exe: a Windows program would get /api rewritten into Git's folder
     await viaShell(bash, ['-c', `crew send bob $'line one\\nline "two" & | > 100% é'`])
     assert.equal(crew.got.at(-1).body, 'line one\nline "two" & | > 100% é', 'Git Bash')
+    await viaShell(bash, ['-c', 'crew note "/api/v2 is the base path"'])
+    assert.equal(crew.got.at(-1).body, '/api/v2 is the base path', 'Git Bash, a /path')
   }
   await crew.close()
 })
