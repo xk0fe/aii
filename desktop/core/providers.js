@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { resolveCommand } from './launch.js'
 
 export const BUILT_IN = {
   claude: {
@@ -54,7 +55,13 @@ export const expandEnv = (env = {}) =>
 // Codex knows its own model catalog, including which reasoning efforts each model supports.
 export function discoverCodex() {
   return new Promise((resolve) => {
-    execFile('codex', ['debug', 'models'], { timeout: 15000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+    let codex
+    try {
+      codex = resolveCommand('codex', ['debug', 'models']) // on Windows the program behind npm's codex.cmd
+    } catch {
+      return resolve(null)
+    }
+    execFile(codex.file, codex.args, { timeout: 15000, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
       if (err) return resolve(null)
       try {
         const list = JSON.parse(stdout).models ?? []

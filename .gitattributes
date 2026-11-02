@@ -1,0 +1,8 @@
+# Scripts sh runs, on Windows too (Git Bash): a checkout with CRLF line ends would break them ("/bin/sh^M").
+desktop/bin/crew text eol=lf
+desktop/bin/crew-status text eol=lf
+desktop/bin/crew-sh text eol=lf
+desktop/bin/win32-*/crew text eol=lf
+desktop/bin/win32-*/crew-status text eol=lf
+# Windows' crew.exe and co. (desktop/native/crew-shim.c), committed as built
+*.exe binary

@@ -8,6 +8,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
+import { resolveCommand, withTools } from './launch.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
@@ -517,7 +518,7 @@ export class Hub extends EventEmitter {
     if (provider.missing.length) return fail(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const resume = this.sessions[a.name]
     const session = randomUUID()
-    const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session, attachments: ATTACHMENTS })
+    const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session, attachments: ATTACHMENTS, bin: this.bin })
     a.sessionId = resume ?? session // the conversation this process runs (see onStatusLine)
     Object.assign(a, { readyAfter, trust, trustAsk: false, boot: '' }) // see onOutput
     a.resumed = Boolean(resume)
@@ -527,14 +528,19 @@ export class Hub extends EventEmitter {
       if (!fs.existsSync(cwd)) throw new Error(`folder not found: ${cwd}`)
       const run = randomUUID().slice(0, 8)
       const groups = this.at(GROUPS, `${a.name}.${run}`)
+      // Crew's tools first on PATH (on Windows under the name Windows gave PATH, so there's one), and Crew's own runtime
+      // for them (bin/crew.mjs): never ELECTRON_RUN_AS_NODE itself, which would make every Electron app the agent starts
+      // run as Node.
       const env = {
-        ...expandEnv(provider.env), ...extraEnv, PATH: `${this.bin}:${process.env.PATH}`, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME,
+        ...expandEnv(provider.env), ...extraEnv, ...withTools(process.env, this.bin), CREW_NODE: process.execPath, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME,
         CREW_GROUPS: groups, ...(provider.cli === 'claude' && shellPrefix(this.bin)),
         // which workspace its hooks and `crew` talk to: empty for the default (as for agents started before workspaces),
         // whatever Crew itself was started with
         CREW_WORKSPACE: this.ws === DEFAULT ? '' : this.ws,
       }
-      this.runner.start(a.name, { file, args: [...args, ...(provider.args ?? []), ...(a.args ?? [])], cwd, env, tag: run })
+      // the program itself on Windows, through the .cmd npm installs it as (core/launch.js)
+      const command = resolveCommand(file, [...args, ...(provider.args ?? []), ...(a.args ?? [])], { ...process.env, ...env })
+      this.runner.start(a.name, { file: command.file, args: command.args, cwd, env, tag: run })
       // its own group first: what the CLI starts without a group of its own lands there
       const pid = this.runner.pid?.(a.name)
       if (pid) fs.writeFileSync(groups, `${pid} ${Math.floor(Date.now() / 1000)}\n`)
