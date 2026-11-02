@@ -12,6 +12,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { which, cleanEnv, TITLE_ONLY } from './runner.js'
+import { pathKey } from './launch.js'
 import { PROTOCOL, RUN, LOG, address } from './ptyhost.js'
 
 const SCROLLBACK = 256 * 1024
@@ -195,7 +196,8 @@ export class HostRunner extends EventEmitter {
     this.stop(name)
     const fullEnv = cleanEnv({ ...process.env, ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' })
     this.procs.set(name, { pid: undefined, tag, chunks: [], size: 0, startedAt: Date.now(), lastOutput: Date.now(), cols: 120, rows: 36 })
-    this.send({ t: 'start', name, file: which(file, fullEnv.PATH), args, cwd, env: fullEnv, cols: 120, rows: 36, tag })
+    // looked up as core/runner.js does: under whatever name the environment gives PATH (Windows': Path)
+    this.send({ t: 'start', name, file: which(file, fullEnv[pathKey(fullEnv)]), args, cwd, env: fullEnv, cols: 120, rows: 36, tag })
   }
 
   // Letting go of it first means a deliberate stop never emits 'exit' (as in core/runner.js). Resolves once it's gone,

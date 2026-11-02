@@ -118,6 +118,15 @@ test('the host runs from a copy of what it needs', async () => {
   last = null
 })
 
+test("a program named without its folder is found on the agent's PATH, whatever its environment calls it (Windows: Path)", () => {
+  const r = new HostRunner({ runtime: node })
+  const sent = []
+  r.sock = { write: (line) => sent.push(JSON.parse(line)) }
+  r.start('ada', { file: 'node', args: [], cwd: tmp, env: { [process.platform === 'win32' ? 'Path' : 'PATH']: path.dirname(process.execPath) }, tag: 'run5' })
+  assert.equal(sent[0].t, 'start')
+  assert.equal(sent[0].file.toLowerCase(), process.execPath.toLowerCase())
+})
+
 // ---- the parts that differ on Windows, checked on any computer ----------------------------------------------
 
 test('on Windows the host listens on a pipe nobody can guess, a new one each time', () => {

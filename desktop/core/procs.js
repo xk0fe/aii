@@ -15,6 +15,7 @@ import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { pathKey } from './launch.js'
 
 const WIN = process.platform === 'win32'
 
@@ -244,7 +245,7 @@ export function gitBash(env = process.env, exists = fs.existsSync) {
   const win = path.win32
   const found = []
   if (env.CLAUDE_CODE_GIT_BASH_PATH) found.push(env.CLAUDE_CODE_GIT_BASH_PATH)
-  for (const dir of String(env.PATH ?? env.Path ?? '').split(';').filter(Boolean)) {
+  for (const dir of String(env[pathKey(env, 'win32')] ?? '').split(';').filter(Boolean)) {
     // Git\cmd\git.exe, Git\bin\git.exe or Git\mingw64\bin\git.exe
     if (exists(win.join(dir, 'git.exe'))) found.push(win.join(dir, '..', 'bin', 'bash.exe'), win.join(dir, '..', '..', 'bin', 'bash.exe'))
   }
