@@ -104,24 +104,62 @@ function time(d) {
 
 // ---- pairing codes ----------------------------------------------------------------------------------
 
-// Every address this machine can be reached on: Wi-Fi/Ethernet and Tailscale (100.64.0.0/10).
-export async function addresses() {
+// Every address this machine can be reached on: Wi-Fi/Ethernet and Tailscale (100.64.0.0/10). -> [{ address, via,
+// iface? }] (iface: the network interface's own name)
+export async function addresses({ interfaces = os.networkInterfaces(), platform = process.platform, tailscale = tailscaleSelf } = {}) {
   const out = []
-  for (const [iface, list] of Object.entries(os.networkInterfaces())) {
+  for (const [iface, list] of Object.entries(interfaces)) {
     for (const a of list ?? []) {
-      if (a.family !== 'IPv4' || a.internal) continue
-      const [x, y] = a.address.split('.').map(Number)
-      out.push({ address: a.address, via: x === 100 && y >= 64 && y < 128 ? 'Tailscale' : iface.startsWith('en') ? 'Wi-Fi / Ethernet' : iface })
+      if ((a.family !== 'IPv4' && a.family !== 4) || a.internal) continue
+      const via = interfaceLabel(iface, a.address, platform)
+      if (via) out.push({ address: a.address, via, iface })
     }
   }
-  try {
-    const status = await new Promise((resolve, reject) => execFile('tailscale', ['status', '--json'], { timeout: 3000 }, (e, out) => (e ? reject(e) : resolve(out))))
-    const self = JSON.parse(status).Self ?? {}
+  const self = await tailscale(platform).catch(() => null)
+  if (self) {
     for (const ip of self.TailscaleIPs ?? []) if (ip.includes('.') && !out.some((o) => o.address === ip)) out.push({ address: ip, via: 'Tailscale' })
     const name = self.DNSName?.replace(/\.$/, '')
     if (name) out.push({ address: name, via: 'Tailscale name' })
-  } catch {}
+  }
   return out
+}
+
+const TAILSCALE = /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./ // 100.64.0.0/10, the addresses Tailscale gives out
+// Windows' networks it makes up itself: a virtual machine's, WSL's or Docker's (vEthernet, VirtualBox, VMware), a Wi-Fi
+// hotspot or Wi-Fi Direct (Local Area Connection*), Bluetooth, loopback adapters (VPNs and packet capture install them)
+const VIRTUAL = /vEthernet|Hyper-V|\bWSL\b|VirtualBox|VMware|VMnet|Docker|Loopback|Npcap|Bluetooth|Local Area Connection\*/i
+
+// What a network interface is called in the app (Wi-Fi, Ethernet, Tailscale), or null when it's one no other
+// computer reaches this one on. macOS names its interfaces en0, en1 (Wi-Fi or Ethernet); Windows gives them names
+// people chose or recognise ("Wi-Fi", "Ethernet 2", "WLAN" in German).
+export function interfaceLabel(iface, address, platform = process.platform) {
+  if (TAILSCALE.test(address)) return 'Tailscale'
+  if (platform !== 'win32') return iface.startsWith('en') ? 'Wi-Fi / Ethernet' : iface
+  if (VIRTUAL.test(iface) || address.startsWith('169.254.')) return null // 169.254: no network gave it an address
+  if (/^(Wi-?Fi|WLAN|Wireless)/i.test(iface)) return 'Wi-Fi'
+  if (/^Ethernet/i.test(iface)) return 'Ethernet'
+  return iface
+}
+
+// This computer as Tailscale sees it (its status's Self), or null without Tailscale or while it's off. Its CLI is on
+// PATH on Windows and with Homebrew's; the Mac app has it inside, and Windows' installer puts it in Program Files
+// (which a Crew started before Tailscale was installed doesn't have on its PATH).
+export async function tailscaleSelf(platform = process.platform) {
+  const tries = ['tailscale', ...(platform === 'darwin' ? ['/Applications/Tailscale.app/Contents/MacOS/Tailscale'] : []),
+    ...(platform === 'win32' ? [path.win32.join(process.env.ProgramFiles || 'C:\\Program Files', 'Tailscale', 'tailscale.exe')] : [])]
+  for (const cli of tries) {
+    let out
+    try {
+      // windowsHide: a console window would flash up every time otherwise
+      out = await new Promise((resolve, reject) => execFile(cli, ['status', '--json'], { timeout: 3000, windowsHide: true }, (e, o) => (e ? reject(e) : resolve(o))))
+    } catch (e) {
+      if (e.code === 'ENOENT' || e.code === 'EACCES') continue // not this one
+      return null // there, but it isn't running (or isn't logged in)
+    }
+    const status = JSON.parse(out)
+    return status.BackendState && status.BackendState !== 'Running' ? null : (status.Self ?? null)
+  }
+  return null
 }
 
 export const makeCode = ({ name, port, key, fingerprint, hosts }) =>
