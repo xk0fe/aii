@@ -8,6 +8,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
+import { resolveCommand } from './launch.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
@@ -534,7 +535,9 @@ export class Hub extends EventEmitter {
         // whatever Crew itself was started with
         CREW_WORKSPACE: this.ws === DEFAULT ? '' : this.ws,
       }
-      this.runner.start(a.name, { file, args: [...args, ...(provider.args ?? []), ...(a.args ?? [])], cwd, env, tag: run })
+      // the program itself on Windows, through the .cmd npm installs it as (core/launch.js)
+      const command = resolveCommand(file, [...args, ...(provider.args ?? []), ...(a.args ?? [])], { ...process.env, ...env })
+      this.runner.start(a.name, { file: command.file, args: command.args, cwd, env, tag: run })
       // its own group first: what the CLI starts without a group of its own lands there
       const pid = this.runner.pid?.(a.name)
       if (pid) fs.writeFileSync(groups, `${pid} ${Math.floor(Date.now() / 1000)}\n`)

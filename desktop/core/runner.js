@@ -1,8 +1,9 @@
 // Owns the pseudo-terminals. Knows nothing about agents beyond a name.
 import { EventEmitter } from 'node:events'
-import fs from 'node:fs'
-import path from 'node:path'
 import pty from 'node-pty'
+import { which, pathKey } from './launch.js'
+
+export { which } // where it always was, for core/ptyclient.js
 
 const SCROLLBACK = 256 * 1024
 // Output that only sets the window title (OSC 0/1/2), like the spinner Codex keeps in its title for half a minute
@@ -24,7 +25,7 @@ export class Runner extends EventEmitter {
   start(name, { file, args, cwd, env, tag }) {
     this.stop(name)
     const fullEnv = cleanEnv({ ...process.env, ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' })
-    const p = pty.spawn(which(file, fullEnv.PATH), args, { name: 'xterm-256color', cols: 120, rows: 36, cwd, env: fullEnv })
+    const p = pty.spawn(which(file, fullEnv[pathKey(fullEnv)]), args, { name: 'xterm-256color', cols: 120, rows: 36, cwd, env: fullEnv })
     // Scrollback as the chunks that arrived, trimmed to the last SCROLLBACK characters only now and then: slicing a
     // 256 KB string on every chunk of a chatty agent's output was most of what a spinner cost.
     const proc = { p, chunks: [], size: 0, startedAt: Date.now(), lastOutput: Date.now(), cols: 120, rows: 36 }
@@ -112,18 +113,6 @@ function trim(proc) {
   const all = proc.chunks.join('').slice(-SCROLLBACK)
   proc.chunks = [all]
   proc.size = all.length
-}
-
-export function which(cmd, PATH = '') {
-  if (cmd.includes('/')) return cmd
-  for (const dir of PATH.split(':')) {
-    const file = path.join(dir, cmd)
-    try {
-      fs.accessSync(file, fs.constants.X_OK)
-      return file
-    } catch {}
-  }
-  return cmd
 }
 
 // One workspace's terminals, in the runner all workspaces share (core/workspaces.js). The runner knows them by the

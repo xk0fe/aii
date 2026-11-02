@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { expandEnv } from './providers.js'
 import { cleanEnv } from './runner.js'
+import { resolveCommand } from './launch.js'
 
 const ask = ({ name, area }, teammates) => `Write the system prompt for an AI coding agent called "${name}".
 Its area of work: ${area || 'general software work'}.
@@ -17,9 +18,11 @@ Write it in second person ("You are..."). Cover:
 
 Under 200 words, concrete and specific to this area. No headings, no preamble, no quotes. Output only the prompt.`
 
-const run = (file, args, opts) =>
+// On Windows: the program behind npm's .cmd, which execFile couldn't start (core/launch.js), and no console window.
+const run = (name, argv, opts) =>
   new Promise((resolve, reject) => {
-    const child = execFile(file, args, { timeout: 180000, maxBuffer: 4 * 1024 * 1024, ...opts }, (err, stdout, stderr) =>
+    const { file, args } = resolveCommand(name, argv, opts.env)
+    const child = execFile(file, args, { timeout: 180000, maxBuffer: 4 * 1024 * 1024, windowsHide: true, ...opts }, (err, stdout, stderr) =>
       err ? reject(new Error((stderr || err.message).trim().split('\n').slice(-3).join(' '))) : resolve(stdout),
     )
     child.stdin?.end() // `codex exec` otherwise waits for more prompt on stdin
@@ -28,7 +31,7 @@ const run = (file, args, opts) =>
 const tidy = (text) => text.trim().replace(/^```\w*\n?|\n?```$/g, '').replace(/^"([\s\S]*)"$/, '$1').trim()
 
 export async function generatePrompt(agent, provider, teammates) {
-  const dir = agent.cwd?.replace(/^~(?=\/|$)/, os.homedir())
+  const dir = agent.cwd?.replace(/^~(?=[\\/]|$)/, os.homedir())
   const cwd = dir && fs.existsSync(dir) ? dir : os.homedir() // run in the project so its CLAUDE.md / AGENTS.md can inform the draft
   const env = cleanEnv({ ...process.env, ...expandEnv(provider.env) })
   const prompt = ask(agent, teammates)
