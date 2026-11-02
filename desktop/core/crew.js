@@ -10,7 +10,7 @@ import { Runner, Scoped } from './runner.js'
 import { DEFAULT, workspacesIn, space, addWorkspace, setLook, dropWorkspace } from './workspaces.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
-import { LinkHost, LinkClient, identity, addresses, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
+import { LinkHost, LinkClient, identity, addresses, firewallWarning, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
 import { packAgents, unpackAgents } from './pack.js'
 import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, folderInfo, folders } from './move.js'
 import { Phones } from './phones.js'
@@ -869,10 +869,13 @@ export class Crew extends EventEmitter {
     const hidden = new Set(this.settings.hidden ?? [])
     const port = this.settings.port ?? DEFAULT_PORT
     let me = { name: this.me.name, slug: this.me.slug, sharing: Boolean(this.sharing), error: this.linkError, agents: this.hub.config.agents.length }
+    // while other computers or phones may connect: networks come and go (Wi-Fi, Tailscale), and so does a firewall's say
+    const phones = this.phones.devices.length > 0 || Boolean(this.phones.open())
+    if ((this.sharing || phones) && Date.now() - this.hosts.at > 30000) this.findHosts()
     if (this.sharing) {
-      if (Date.now() - this.hosts.at > 30000) this.findHosts() // networks come and go (Wi-Fi, Tailscale)
       const hosts = this.hosts.list
       me = { ...me, port, hosts, code: makeCode({ name: this.me.name, port, key: this.settings.key, fingerprint: this.sharing.fingerprint, hosts: hosts.map((h) => h.address) }) }
+      if (this.hosts.warning) me.warning = this.hosts.warning
     }
     const links = [...this.links.values()].map((l) => {
       const q = this.qualifier(l)
@@ -881,16 +884,24 @@ export class Crew extends EventEmitter {
         agents: (l.state?.agents ?? []).filter((a) => !a.cloneOf).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)) })),
       }
     })
-    return { me, links, phones: this.phones.view() }
+    return { me, links, phones: { ...this.phones.view(), ...(phones && this.hosts.warning && { warning: this.hosts.warning }) } }
   }
 
-  hosts = { at: 0, list: [] }
+  hosts = { at: 0, list: [], warning: null } // warning: why connections can't get in (Windows Firewall), if they can't
 
   async findHosts() {
     this.hosts.at = Date.now()
     const list = await addresses()
+    this.findFirewall(list).catch(() => {}) // on Windows PowerShell is asked, which can take seconds: not waited for
     if (JSON.stringify(list) === JSON.stringify(this.hosts.list)) return
     this.hosts.list = list
+    this.changed()
+  }
+
+  async findFirewall(list) {
+    const warning = await firewallWarning(list)
+    if (warning === this.hosts.warning) return
+    this.hosts.warning = warning
     this.changed()
   }
 
