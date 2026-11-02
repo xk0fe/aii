@@ -211,24 +211,27 @@ export function reachWarning(hosts, { nets = [], walls = [], rules = [] } = {}) 
 }
 
 // What Windows says (see reachWarning), from PowerShell, which every Windows since 8 has; looked up at most every two
-// minutes, as Get-NetFirewallApplicationFilter can take a few seconds.
-const FIREWALL = `$ErrorActionPreference = 'SilentlyContinue'
-$ProgressPreference = 'SilentlyContinue'
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-$nets = @(Get-NetConnectionProfile | ForEach-Object { @{ alias = [string]$_.InterfaceAlias; category = [string]$_.NetworkCategory } })
-$walls = @(Get-NetFirewallProfile | ForEach-Object { @{ name = [string]$_.Name; on = [string]$_.Enabled } })
-$rules = @(Get-NetFirewallApplicationFilter -Program $env:CREW_PROGRAM | Get-NetFirewallRule | Where-Object { [string]$_.Enabled -eq 'True' -and [string]$_.Direction -eq 'Inbound' } | ForEach-Object { @{ action = [string]$_.Action; profile = [string]$_.Profile } })
-ConvertTo-Json -Compress -Depth 3 -InputObject @{ nets = $nets; walls = $walls; rules = $rules }`
+// minutes, as Get-NetFirewallApplicationFilter can take a few seconds. One line, no double quotes, so it goes as
+// itself to -Command (not -EncodedCommand, which virus scanners look at twice); Crew's exe comes in CREW_PROGRAM.
+const FIREWALL = [
+  "$ErrorActionPreference = 'SilentlyContinue'",
+  "$ProgressPreference = 'SilentlyContinue'",
+  '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false',
+  '$nets = @(Get-NetConnectionProfile | ForEach-Object { @{ alias = [string]$_.InterfaceAlias; category = [string]$_.NetworkCategory } })',
+  '$walls = @(Get-NetFirewallProfile | ForEach-Object { @{ name = [string]$_.Name; on = [string]$_.Enabled } })',
+  "$rules = @(Get-NetFirewallApplicationFilter -Program $env:CREW_PROGRAM | Get-NetFirewallRule | Where-Object { [string]$_.Enabled -eq 'True' -and [string]$_.Direction -eq 'Inbound' } | ForEach-Object { @{ action = [string]$_.Action; profile = [string]$_.Profile } })",
+  'ConvertTo-Json -Compress -Depth 3 -InputObject @{ nets = $nets; walls = $walls; rules = $rules }',
+].join('; ')
 let firewallSeen = { at: 0, program: null, state: null }
 
 export async function firewallState(program) {
   if (firewallSeen.program === program && Date.now() - firewallSeen.at < 120000) return firewallSeen.state
-  const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(FIREWALL, 'utf16le').toString('base64')]
+  const args = ['-NoProfile', '-NonInteractive', '-Command', FIREWALL]
   let state = null // and not asked again for a while either, when PowerShell can't say
   try {
     const out = await new Promise((resolve, reject) =>
       execFile('powershell.exe', args, { timeout: 20000, windowsHide: true, env: { ...process.env, CREW_PROGRAM: program } }, (e, o) => (e ? reject(e) : resolve(o))))
-    state = JSON.parse(out.replace(/^﻿/, '').trim())
+    state = JSON.parse(out.replace(/^\uFEFF/, '').trim())
   } catch {}
   firewallSeen = { at: Date.now(), program, state }
   return state
