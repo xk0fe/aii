@@ -1,4 +1,4 @@
-// How an agent's CLI is found and started on each platform.
+// How an agent's CLI is found and started on each platform, and where agents find `crew`.
 //
 // macOS and Linux: the first file of that name on PATH that can run. Windows: the first program of that name on PATH,
 // tried with each PATHEXT extension the way cmd.exe tries them, where a .cmd is seen through to what it runs. npm, pnpm
@@ -137,4 +137,16 @@ export function resolveCommand(cmd, args = [], env = process.env, { platform = p
   const length = [file, ...args].reduce((n, arg) => n + arg.length + 3 + (arg.match(/["\\]/g)?.length ?? 0), 0)
   if (length > 32767) throw new Error(`its command line would be ${length} characters, and Windows takes 32767: shorten this agent's instructions`)
   return { file, args }
+}
+
+// Where agents find `crew`, and the status line and hooks their CLIs run: bin/ (sh scripts) on macOS and Linux, and
+// bin/win32-<arch> on Windows (crew.exe, crew-status.exe, crew-hook.exe: native/crew-shim.c), which run bin/crew.mjs.
+export const toolsDir = (bin, { platform = process.platform, arch = process.arch } = {}) =>
+  platform === WIN ? path.win32.join(bin, `win32-${arch === 'arm64' ? 'arm64' : 'x64'}`) : bin
+
+// The PATH an agent gets: Crew's tools first, then yours.
+export function withTools(env, bin, { platform = process.platform, arch = process.arch } = {}) {
+  const key = pathKey(env, platform)
+  const sep = platform === WIN ? ';' : ':'
+  return { [key]: `${toolsDir(bin, { platform, arch })}${sep}${env[key] ?? ''}` }
 }

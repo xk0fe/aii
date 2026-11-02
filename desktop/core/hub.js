@@ -8,7 +8,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt } from './promptgen.js'
-import { resolveCommand } from './launch.js'
+import { resolveCommand, withTools } from './launch.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
@@ -528,8 +528,11 @@ export class Hub extends EventEmitter {
       if (!fs.existsSync(cwd)) throw new Error(`folder not found: ${cwd}`)
       const run = randomUUID().slice(0, 8)
       const groups = this.at(GROUPS, `${a.name}.${run}`)
+      // Crew's tools first on PATH (on Windows under the name Windows gave PATH, so there's one), and Crew's own runtime
+      // for them (bin/crew.mjs): never ELECTRON_RUN_AS_NODE itself, which would make every Electron app the agent starts
+      // run as Node.
       const env = {
-        ...expandEnv(provider.env), ...extraEnv, PATH: `${this.bin}:${process.env.PATH}`, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME,
+        ...expandEnv(provider.env), ...extraEnv, ...withTools(process.env, this.bin), CREW_NODE: process.execPath, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME,
         CREW_GROUPS: groups, ...(provider.cli === 'claude' && shellPrefix(this.bin)),
         // which workspace its hooks and `crew` talk to: empty for the default (as for agents started before workspaces),
         // whatever Crew itself was started with

@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-const { which, pathKey, resolveCommand, shimTarget } = await import('../core/launch.js')
+const { which, pathKey, resolveCommand, shimTarget, toolsDir, withTools } = await import('../core/launch.js')
 
 // ---- a Windows computer, on paper ---------------------------------------------------------------------------
 
@@ -63,11 +63,16 @@ test('Windows: a command is found the way cmd.exe finds it, by PATHEXT, in PATH 
   assert.equal(which('claude', first.env.Path, first), 'C:\\Windows\\system32\\claude.cmd', 'an earlier folder wins')
 })
 
-test("Windows: PATH is the environment's own key", () => {
+test("Windows: PATH is the environment's own key, so an agent's environment never holds Path and PATH both", () => {
   assert.equal(pathKey({ Path: 'x', TEMP: 'y' }, 'win32'), 'Path')
   assert.equal(pathKey({ PATH: 'x' }, 'win32'), 'PATH', 'as Git Bash passes it on')
   assert.equal(pathKey({}, 'win32'), 'Path')
   assert.equal(pathKey({ Path: 'x' }, 'darwin'), 'PATH')
+  const bin = 'C:\\Program Files\\Crew\\resources\\app.asar.unpacked\\desktop\\bin'
+  assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'x64' }), { Path: `${bin}\\win32-x64;C:\\Windows` })
+  assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'arm64' }), { Path: `${bin}\\win32-arm64;C:\\Windows` })
+  assert.deepEqual(withTools({ PATH: '/usr/bin:/bin' }, '/Applications/Crew.app/bin', { platform: 'darwin' }), { PATH: '/Applications/Crew.app/bin:/usr/bin:/bin' }, 'macOS: as before')
+  assert.equal(toolsDir('/b', { platform: 'darwin' }), '/b')
 })
 
 test("Windows: Claude Code's native installer, WinGet and npm and pnpm installs all start as the program itself", () => {
