@@ -206,6 +206,7 @@ function start({ name, file, args = [], cwd, env = {}, cols = 120, rows = 36, ta
     // Windows: one that ended by itself still holds its pseudoconsole, and node-pty (1.1) the thread that reads it,
     // until it's killed, which a host that runs for days can't leave to its exit (core/runner.js release)
     if (WIN && !x.killed) {
+      x.killed = true
       try {
         p.kill()
       } catch {}
@@ -218,8 +219,10 @@ function start({ name, file, args = [], cwd, env = {}, cols = 120, rows = 36, ta
   send({ t: 'started', name, tag, pid: p.pid })
 }
 
+// Once per terminal: on Windows a second kill closes its pseudoconsole a second time, which takes the whole host
+// down, every agent's terminal with it (Crew's "stop, then start again" did it to every restart).
 function kill(x) {
-  if (!x) return
+  if (!x || x.killed) return
   x.killed = true
   x.p.kill()
 }
