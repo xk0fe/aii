@@ -4,11 +4,14 @@
 // pnpm really write. Run with `npm test`.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { createRequire } from 'node:module'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
 const { which, pathKey, resolveCommand, shimTarget, toolsDir, withTools } = await import('../core/launch.js')
+const { adapters, ASK_WAIT } = await import('../core/adapters.js')
+const { argsToCommandLine } = createRequire(import.meta.url)('node-pty/lib/windowsPtyAgent.js')
 
 // ---- a Windows computer, on paper ---------------------------------------------------------------------------
 
@@ -49,6 +52,39 @@ const SHIM = {
 const NODE = 'C:\\Program Files\\nodejs\\node.exe'
 const CLAUDE_EXE = `${NPM}\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe`
 const CODEX_JS = `${NPM}\\node_modules\\@openai\\codex\\bin\\codex.js`
+
+// CommandLineToArgvW's (and the C runtime's, Rust's, Node's) reading of a Windows command line.
+function argv(line) {
+  const out = []
+  let i = 0
+  let program = ''
+  if (line[0] === '"') {
+    for (i = 1; i < line.length && line[i] !== '"'; i++) program += line[i]
+    i++
+  } else for (; i < line.length && line[i] !== ' ' && line[i] !== '\t'; i++) program += line[i]
+  out.push(program)
+  for (;;) {
+    while (line[i] === ' ' || line[i] === '\t') i++
+    if (i >= line.length) return out
+    let arg = ''
+    let quoted = false
+    while (i < line.length && (quoted || (line[i] !== ' ' && line[i] !== '\t'))) {
+      if (line[i] === '\\') {
+        let n = 0
+        while (line[i] === '\\') n++, i++
+        if (line[i] !== '"') arg += '\\'.repeat(n)
+        else {
+          arg += '\\'.repeat(n >> 1)
+          if (n % 2) arg += '"', i++
+        }
+      } else if (line[i] === '"') {
+        if (quoted && line[i + 1] === '"') arg += '"', (i += 2)
+        else (quoted = !quoted), i++
+      } else arg += line[i++]
+    }
+    out.push(arg)
+  }
+}
 
 // ---- finding the program ---------------------------------------------------------------------------------
 
@@ -129,4 +165,60 @@ test('macOS: a command is still the first runnable file on PATH, and one that is
   assert.deepEqual(resolveCommand('codex', [], { PATH }, { platform: 'darwin' }), { file: 'codex', args: [] }, "not executable: as before, pty.spawn says so")
   assert.equal(which('/bin/sh', PATH), '/bin/sh')
   fs.rmSync(tmp, { recursive: true, force: true })
+})
+
+// ---- what the CLIs are given --------------------------------------------------------------------------------
+
+const BIN = 'C:\\Program Files\\Crew\\resources\\app.asar.unpacked\\desktop\\bin'
+const HOOK_EXE = `${BIN}\\win32-${process.arch === 'arm64' ? 'arm64' : 'x64'}\\crew-hook.exe`
+const agent = {
+  name: 'gal.2', cloneOf: 'gal', area: 'the API: routes, "auth" & rate limits | 100% covered', model: 'opus', effort: 'high',
+  prompt: `Keep PRs small.\nRun "npm test" before you push & never force-push.\n${'Write tests first; keep the API stable. '.repeat(40)}`,
+  images: ['C:\\Users\\Ann Lee\\Pictures\\api flow.png'],
+}
+
+test('Windows: Claude Code starts every hook as crew-hook.exe with its arguments and no shell, whatever shell Windows has', () => {
+  const claude = adapters.claude(agent, { session: 's', attachments: `${ANN}\\.crew\\attachments`, platform: 'win32', bin: BIN })
+  const settings = JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
+  const hooks = Object.values(settings.hooks).flat().flatMap((h) => h.hooks)
+  assert.ok(hooks.every((h) => h.type === 'command' && h.command === HOOK_EXE && Array.isArray(h.args)), 'exec form: no Git Bash or PowerShell in between')
+  assert.deepEqual(settings.hooks.Stop[0].hooks[0].args, ['hook'])
+  assert.deepEqual(settings.hooks.PermissionRequest[0].hooks[0], { type: 'command', command: HOOK_EXE, args: ['ask', String(ASK_WAIT.claude - 10)], timeout: ASK_WAIT.claude })
+  assert.deepEqual(settings.hooks.PreToolUse[1], { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: HOOK_EXE, args: ['lease'], timeout: 5 }] })
+  assert.deepEqual(settings.hooks.PreToolUse.map((h) => h.matcher), ['Agent|Task', 'Edit|Write|MultiEdit|NotebookEdit'])
+  // the status line always goes through a shell: a bare name means the same in Git Bash and PowerShell
+  assert.deepEqual(settings.statusLine, { type: 'command', command: 'crew-status', padding: 0 })
+  assert.deepEqual(settings.permissions, { allow: ['Bash(crew *)', 'PowerShell(crew *)'], deny: ['SendMessage'] }, 'crew runs from the PowerShell tool unasked too')
+})
+
+test('Windows: Codex runs its hooks through PowerShell or cmd, so each is a bare crew-hook command that reads the same in both', () => {
+  const codex = adapters.codex(agent, { resume: 'r', platform: 'win32' })
+  const hooks = codex.args.filter((x) => x.startsWith('hooks.')).map((x) => [x.slice(6, x.indexOf('=')), [...x.matchAll(/command="([^"]*)"/g)].map((m) => m[1])])
+  assert.deepEqual(Object.fromEntries(hooks), {
+    SessionStart: ['crew-hook hook'], UserPromptSubmit: ['crew-hook hook'], PostToolUse: ['crew-hook hook'], Stop: ['crew-hook hook'], Interrupt: ['crew-hook hook'],
+    PermissionRequest: [`crew-hook ask ${ASK_WAIT.codex - 10}`], PreToolUse: ['crew-hook lease'],
+  })
+  assert.match(codex.args.find((x) => x.startsWith('hooks.PermissionRequest=')), new RegExp(`timeout=${ASK_WAIT.codex},statusMessage=`))
+})
+
+test("Windows: the arguments survive CreateProcess, as node-pty's ConPTY hands them over, and fit Windows' 32767 characters", () => {
+  for (const [cli, opts] of [['claude', { session: 's', attachments: `${ANN}\\.crew\\attachments` }], ['codex', { resume: 'r' }]]) {
+    const { file, args } = adapters[cli](agent, { ...opts, platform: 'win32', bin: BIN })
+    const launched = resolve(file, args, win({ [`${ANN}\\.local\\bin\\claude.exe`]: '', [`${ANN}\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe`]: '' }))
+    const line = argsToCommandLine(launched.file, launched.args)
+    assert.deepEqual(argv(line), [launched.file, ...args], `${cli}: every argument comes back as it went in`)
+    assert.ok(line.length < 32767, `${cli}: ${line.length} characters`)
+  }
+  // instructions too long for Windows' limit (macOS takes a megabyte): a reason, not CreateProcess failing
+  const long = adapters.claude({ ...agent, prompt: 'x'.repeat(30000) }, { session: 's', attachments: 'C:\\a', platform: 'win32', bin: BIN })
+  assert.throws(() => resolve(long.file, long.args, win({ [`${ANN}\\.local\\bin\\claude.exe`]: '' })), /Windows takes 32767: shorten this agent's instructions/)
+})
+
+test('macOS: the hooks and status line are what they always were', () => {
+  const claude = adapters.claude({ name: 'j' }, { session: 's', attachments: '/tmp', platform: 'darwin', bin: '/b' })
+  const settings = JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
+  assert.match(settings.hooks.Stop[0].hooks[0].command, /^p=\$\(cat\); printf '%s' "\$p" \| curl -sf -m 2 /)
+  assert.equal(settings.hooks.Stop[0].hooks[0].args, undefined)
+  assert.deepEqual(settings.permissions.allow, ['Bash(crew *)'])
+  assert.match(adapters.codex({ name: 'm' }, { platform: 'darwin' }).args.find((x) => x.startsWith('hooks.Stop=')), /curl -sf -m 2 /)
 })
