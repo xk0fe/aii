@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import qrcode from 'qrcode-generator'
-import { CONFIG, ATTACHMENTS } from './core/hub.js'
+import { CONFIG, ATTACHMENTS, HOME } from './core/hub.js'
 import { Crew, CACHE } from './core/crew.js'
 import { addresses } from './core/link.js'
 import { Remote } from './core/remote.js'
@@ -19,6 +19,13 @@ import { pillWindow } from './core/pill.js'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
 const TRAY_WIDTH = 340
+const MAC = process.platform === 'darwin'
+const WINDOWS = process.platform === 'win32'
+// Crew's app id on Windows: notifications carry it, and the installer's Start menu shortcut must have the same one
+// (packaging's appId). A placeholder until the name is settled.
+const APP_ID = 'com.greengrass.crew'
+const LOG = path.join(HOME, 'logs', 'crew.log') // ~/.crew/logs/crew.log (logLine)
+const LOG_MAX = 1024 * 1024
 
 let crew, hub, remote, tray, trayWin, overlay, dash
 let phoneCodes = Promise.resolve() // phones('code') one at a time: the code made last is the one asked for last
@@ -26,38 +33,66 @@ let dashPage = 0 // the dashboard's page: a new one on each load, and when it cl
 let pill // the floating pill's window placement (core/pill.js)
 let trayHiddenAt = 0
 let quitting = false
+let started = false // Crew is up: its windows exist, so a second launch or a .crew file can show them
 let awake = null
 
+// Something that went wrong in here and nothing caught: written to Crew's log, and Crew carries on. Without this
+// Electron shows a dialog with the stack; the agents run in the terminal host either way, so they never stop for it.
+process.on('uncaughtException', (e) => logLine('crash', e?.stack ?? String(e)))
+process.on('unhandledRejection', (e) => logLine('unhandled', e?.stack ?? String(e)))
+process.stderr.on('error', () => {}) // a closed terminal (npm run dev) mustn't make each log line another crash
+
 app.setName('Crew')
+// Windows shows a notification only for an app id it knows: the installer's (packaged), or this Electron's own when
+// running from source.
+if (WINDOWS) app.setAppUserModelId(app.isPackaged ? APP_ID : process.execPath)
 loadShellEnv()
 
-// One Crew at a time: opening it again (Dock, Finder or npm start) brings up the one that's running,
+// One Crew at a time: opening it again (Dock, Finder, the Start menu or npm start) brings up the one that's running,
 // instead of a second copy launching the same agents.
 const primary = app.requestSingleInstanceLock()
 if (!primary) app.exit(0)
-app.on('second-instance', () => openDashboard())
 
-// A .crew file opened from Finder or Mail: the dashboard shows what's in it, to pick what to import.
+// A .crew file opened from Finder, Explorer or Mail: the dashboard shows what's in it, to pick what to import. A Mac
+// hands it over as open-file; Windows starts Crew with it as an argument, or, with Crew running already, hands that
+// one the arguments (second-instance).
 let opened = null
+const packIn = (argv) => argv.slice(1).find((a) => /\.crew$/i.test(a) && fs.existsSync(a)) ?? null
+function openPack(file) {
+  opened = file
+  if (started) openPackFile()
+}
 app.on('open-file', (e, file) => {
   e.preventDefault()
-  opened = file
-  if (app.isReady() && crew) openPackFile()
+  openPack(file)
 })
+app.on('second-instance', (_e, argv) => {
+  const file = packIn(argv)
+  if (file) return openPack(file)
+  if (started) openDashboard()
+})
+opened = packIn(process.argv)
 
 function openPackFile() {
   if (!opened) return
   const file = opened
   opened = null
+  let text
+  try {
+    text = fs.readFileSync(file, 'utf8')
+  } catch (e) {
+    return logLine('open', `${file}: ${e.message}`)
+  }
   openDashboard()
-  const send = () => dash.webContents.send('import', { name: path.basename(file), text: fs.readFileSync(file, 'utf8') })
+  const send = () => dash.webContents.send('import', { name: path.basename(file), text })
   dash.webContents.isLoading() ? dash.webContents.once('did-finish-load', send) : send()
 }
 
-app.whenReady().then(async () => {
-  if (!primary) return
+app.whenReady().then(() => primary && start().catch(failedToStart))
+
+async function start() {
   app.dock?.hide()
-  app.setAboutPanelOptions({ applicationName: 'Crew', iconPath: path.join(dir, 'assets', 'icon.png'), credits: 'Your crew of AI agents, side by side.' })
+  app.setAboutPanelOptions?.({ applicationName: 'Crew', iconPath: path.join(dir, 'assets', 'icon.png'), credits: 'Your crew of AI agents, side by side.' })
 
   // The agents' terminals live in the terminal host (core/ptyhost.js), run by this same binary as Node, so they keep
   // working while Crew quits or relaunches with new code.
@@ -70,22 +105,85 @@ app.whenReady().then(async () => {
   await remote.start()
   nativeTheme.themeSource = hub.config.theme // every window + the popover's material
 
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]))
+  setMenu()
   createTray()
   createOverlay()
   wire()
   const key = hub.config.hotkey ?? 'Alt+Shift+Space'
   const hotkey = () => (dashOnScreen() ? dash.focus() : overlay.webContents.send('toggle'))
-  if (!globalShortcut.register(key, hotkey)) hub.post({ kind: 'event', from: 'crew', text: `hotkey ${key} is taken, set another "hotkey" in config.json` })
+  if (!globalShortcut.register(key, hotkey)) hub.post({ kind: 'event', from: 'crew', text: shortcutTaken(key, 'opens the floating chat', `open the chat from Crew's icon in the ${MAC ? 'menu bar' : 'taskbar'}`) })
   wireVoice()
 
-  // Dev aid: CREW_SHOW=tray,panel,dashboard opens those views on launch.
-  const show = (process.env.CREW_SHOW ?? '').split(',')
-  if (show.includes('dashboard')) openDashboard()
-  if (show.includes('panel')) overlay.webContents.once('did-finish-load', () => overlay.webContents.send('toggle'))
-  if (show.includes('tray')) setTimeout(toggleTray, 800)
+  // Running from source: CREW_SHOW=tray,panel,dashboard opens those views on launch.
+  if (!app.isPackaged) {
+    const show = (process.env.CREW_SHOW ?? '').split(',')
+    if (show.includes('dashboard')) openDashboard()
+    if (show.includes('panel')) overlay.webContents.once('did-finish-load', () => overlay.webContents.send('toggle'))
+    if (show.includes('tray')) setTimeout(toggleTray, 800)
+  }
+  started = true
   openPackFile() // Crew was opened by double-clicking a .crew file
-})
+}
+
+// Crew couldn't start (its terminal host, say): say so and quit, rather than run on with no icon and no window, holding
+// the one-Crew-at-a-time lock so opening it again does nothing. Agents it had picked up keep running in the host.
+function failedToStart(e) {
+  logLine('start', e?.stack ?? String(e))
+  dialog.showMessageBoxSync({
+    type: 'error',
+    message: "Crew couldn't start",
+    detail: `Open Crew again to try once more. If this keeps happening, send Crew's log to support: ${LOG}\n\n${e?.message ?? e}`,
+    buttons: ['Quit'],
+  })
+  quitting = true
+  try {
+    crew?.detach()
+  } catch {}
+  app.exit(1)
+}
+
+// A global shortcut another app already has: what it was for, and what to do instead, for the chat. (There's no setting
+// for the shortcuts in Crew yet.)
+const shortcutTaken = (key, does, instead) => `${shortcutText(key)} ${does}, but another app already uses it, so it's off for now. ${instead.charAt(0).toUpperCase()}${instead.slice(1)} instead.`
+// A shortcut as you'd read it: Alt+Shift+Space is ⌥⇧Space on a Mac.
+function shortcutText(accelerator) {
+  if (!MAC) return accelerator.replace(/CommandOrControl|CmdOrCtrl|Command|Cmd/g, 'Ctrl')
+  const glyphs = { Alt: '⌥', Option: '⌥', Shift: '⇧', Control: '⌃', Ctrl: '⌃', Command: '⌘', Cmd: '⌘', CommandOrControl: '⌘', CmdOrCtrl: '⌘', Super: '⌘' }
+  const parts = accelerator.split('+')
+  return parts.slice(0, -1).map((m) => glyphs[m] ?? `${m}+`).join('') + parts.at(-1)
+}
+
+// The menus. A Mac's menu bar: Crew, Edit (copy and paste need it), View for zoom and full screen, Window. Windows shows
+// no menu bar (windowKeys has its zoom and full-screen keys). Reload and the developer tools only when running from
+// source (npm run dev).
+function setMenu() {
+  if (!MAC) return Menu.setApplicationMenu(null)
+  const dev = app.isPackaged ? [] : [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }]
+  const view = { label: 'View', submenu: [...dev, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] }
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, view, { role: 'windowMenu' }]))
+}
+
+// Windows' keys for what a Mac's View menu does: Ctrl+= / Ctrl+- / Ctrl+0 zoom and F11 full screen (the dashboard); and,
+// running from source, Ctrl+R reloads and Ctrl+Shift+I opens the developer tools (every window).
+function windowKeys(win, { zoom = false } = {}) {
+  if (MAC) return
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown') return
+    const wc = win.webContents
+    const ctrl = input.control && !input.alt && !input.meta
+    const key = input.key.toLowerCase()
+    const act = zoom && ctrl && (key === '=' || key === '+') ? () => wc.setZoomLevel(Math.min(wc.getZoomLevel() + 0.5, 4))
+      : zoom && ctrl && key === '-' ? () => wc.setZoomLevel(Math.max(wc.getZoomLevel() - 0.5, -3))
+        : zoom && ctrl && key === '0' ? () => wc.setZoomLevel(0)
+          : zoom && key === 'f11' && !input.control && !input.alt ? () => win.setFullScreen(!win.isFullScreen())
+            : !app.isPackaged && ctrl && !input.shift && key === 'r' ? () => wc.reload()
+              : !app.isPackaged && ctrl && input.shift && key === 'i' ? () => wc.toggleDevTools()
+                : null
+    if (!act) return
+    e.preventDefault()
+    act()
+  })
+}
 
 app.on('window-all-closed', () => {}) // keep living in the menu bar
 app.on('will-quit', () => remote?.stop()) // phones hear Crew went away, rather than lose it
@@ -129,7 +227,9 @@ app.on('before-quit', (e) => {
   else crew.detach()
 })
 
+// A Mac's friendly name ("Sasha's MacBook Air"); a PC's is its device name (Settings > System > About).
 const computerName = () => {
+  if (!MAC) return os.hostname()
   try {
     return execFileSync('scutil', ['--get', 'ComputerName'], { encoding: 'utf8' }).trim()
   } catch {
@@ -146,20 +246,41 @@ function keepAwake() {
 
 // ---- windows ---------------------------------------------------------------
 
+// A window for one of the pages in ui/. The page hears which computer this is from preload.cjs, and your home folder and
+// whether Crew runs from source from here. One whose page crashed loads it again.
 function page(file, options, query) {
-  const win = new BrowserWindow({ show: false, ...options, webPreferences: { preload: path.join(dir, 'preload.cjs') } })
+  const args = [`--crew-home=${os.homedir()}`, ...(app.isPackaged ? [] : ['--crew-dev'])]
+  const win = new BrowserWindow({ show: false, ...options, webPreferences: { preload: path.join(dir, 'preload.cjs'), additionalArguments: args } })
   win.loadFile(path.join(dir, 'ui', file), { query })
   win.webContents.on('will-navigate', (e) => e.preventDefault()) // a file dropped outside a drop zone must not replace the page
+  win.webContents.on('render-process-gone', (_e, { reason }) => {
+    if (reason === 'clean-exit' || quitting) return
+    logLine('page', `${file} ${reason}`)
+    setTimeout(() => win.isDestroyed() || win.webContents.reload(), 500)
+  })
+  windowKeys(win, { zoom: file === 'dashboard.html' })
   return win
 }
 
+// The popover and the floating chat are hidden, never closed (⌘W, Alt+F4), until Crew quits, or Windows shuts down
+// or signs you out (no before-quit then).
+function keepOpen(win) {
+  win.on('close', (e) => quitting || (e.preventDefault(), win.hide()))
+  win.on('session-end', () => (quitting = true))
+}
+
+// The menu bar icon (a Mac) or the notification area's (Windows). On a Mac it's a template image the menu bar tints, with
+// "2/5" beside it as its title. Windows has no title there: the icon is drawn by the popover's page with the count on it
+// (drawTrayIcon), so it starts as the app icon until that page has loaded.
 function createTray() {
-  tray = new Tray(nativeImage.createFromPath(path.join(dir, 'assets', 'trayTemplate.png')))
+  tray = new Tray(MAC ? nativeImage.createFromPath(path.join(dir, 'assets', 'trayTemplate.png')) : nativeImage.createFromPath(path.join(dir, 'assets', 'icon.png')).resize({ width: 32, height: 32 }))
   tray.setToolTip('Crew')
   trayWin = page('tray.html', {
     width: TRAY_WIDTH, height: 320, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false,
-    fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, vibrancy: 'popover', visualEffectState: 'active', backgroundColor: '#00000000',
+    fullscreenable: false, skipTaskbar: true, alwaysOnTop: true,
+    ...(MAC ? { vibrancy: 'popover', visualEffectState: 'active', backgroundColor: '#00000000' } : { backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1c1f' : '#f9f9fb' }),
   })
+  keepOpen(trayWin)
   trayWin.on('blur', () => {
     trayWin.hide()
     trayHiddenAt = Date.now()
@@ -171,12 +292,59 @@ function createTray() {
 function toggleTray() {
   // Clicking the icon while open blurs (hides) first; don't reopen on that same click.
   if (trayWin.isVisible() || Date.now() - trayHiddenAt < 250) return trayWin.hide()
-  const b = tray.getBounds()
-  const wa = screen.getDisplayNearestPoint({ x: b.x, y: b.y }).workArea
-  const x = Math.min(Math.max(Math.round(b.x + b.width / 2 - TRAY_WIDTH / 2), wa.x + 8), wa.x + wa.width - TRAY_WIDTH - 8)
-  trayWin.setPosition(x, wa.y + 6)
+  placeTray()
   trayWin.show()
+  trayWin.focus() // Windows: without focus it never blurs, so a click elsewhere wouldn't close it
 }
+
+// The popover opens at the icon, inside the screen's work area: under the menu bar on a Mac, and on Windows out of the
+// taskbar, whichever edge it's on (an icon in the overflow flyout or on a taskbar that hides itself sits inside the work
+// area: the popover goes above or below it). Again after it changes size, so one out of a bottom taskbar keeps its
+// bottom edge.
+function placeTray() {
+  const b = tray.getBounds()
+  const [cx, cy] = [b.x + b.width / 2, b.y + b.height / 2]
+  const wa = screen.getDisplayNearestPoint({ x: Math.round(cx), y: Math.round(cy) }).workArea
+  const [w, h] = trayWin.getSize()
+  const within = (v, size, lo, length) => Math.round(Math.min(Math.max(v, lo + 8), Math.max(lo + 8, lo + length - size - 8)))
+  const x = cx < wa.x ? wa.x + 8 : cx >= wa.x + wa.width ? wa.x + wa.width - w - 8 : within(cx - w / 2, w, wa.x, wa.width)
+  const y = cy < wa.y ? wa.y + 6
+    : cy >= wa.y + wa.height ? wa.y + wa.height - h - 8
+      : cx < wa.x || cx >= wa.x + wa.width ? within(cy - h / 2, h, wa.y, wa.height)
+        : cy > wa.y + wa.height / 2 ? within(b.y - h - 8, h, wa.y, wa.height) : within(b.y + b.height + 8, h, wa.y, wa.height)
+  trayWin.setPosition(x, y)
+}
+
+// Windows: the notification area's icon with how many need you (amber) or work (green), and the dashboard's taskbar button
+// with an amber badge while anyone needs you. Drawn by the popover's page (ui/tray.js), a change at a time.
+const TRAY_SIZES = [16, 20, 24, 32]
+let trayDrawn = ''
+let trayTip = ''
+let trayDraws = 0
+let needsBadge = null // [image, words] for the taskbar button, or null
+async function drawTrayIcon(counts) {
+  const { waiting, working, on } = counts
+  const tone = waiting ? 'need' : working ? 'work' : ''
+  const next = `${tone}:${waiting || working}`
+  const tip = waiting ? `Crew · ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? `Crew · ${working} of ${on} at work` : 'Crew'
+  if (tip !== trayTip) tray.setToolTip((trayTip = tip))
+  if (next === trayDrawn) return
+  trayDrawn = next
+  const draw = ++trayDraws
+  const wc = trayWin.webContents
+  if (wc.isLoading()) await new Promise((r) => wc.once('did-finish-load', r))
+  const [urls, badge] = await Promise.all([
+    wc.executeJavaScript(`window.crewTrayIcon(${JSON.stringify({ count: waiting || working, tone })}, ${JSON.stringify(TRAY_SIZES)})`),
+    waiting ? wc.executeJavaScript(`window.crewBadge(${waiting})`) : null,
+  ])
+  if (draw !== trayDraws || tray.isDestroyed()) return
+  const image = nativeImage.createEmpty()
+  TRAY_SIZES.forEach((px, i) => image.addRepresentation({ scaleFactor: px / 16, dataURL: urls[i] }))
+  tray.setImage(image)
+  needsBadge = badge ? [nativeImage.createFromDataURL(badge).resize({ width: 16, height: 16 }), `${waiting} need${waiting > 1 ? '' : 's'} you`] : null
+  showNeedsBadge()
+}
+const showNeedsBadge = () => WINDOWS && dash && !dash.isDestroyed() && dash.setOverlayIcon(needsBadge?.[0] ?? null, needsBadge?.[1] ?? '')
 
 function createOverlay() {
   overlay = page('overlay.html', {
@@ -184,8 +352,9 @@ function createOverlay() {
     fullscreenable: false, minimizable: false, maximizable: false, alwaysOnTop: true,
     acceptFirstMouse: true, // the first press on the pill drags it (or opens the chat), even from another app
   })
+  keepOpen(overlay)
   overlay.setAlwaysOnTop(true, 'floating')
-  overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  if (MAC) overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }) // on every Space, and over full-screen apps
   const wa = screen.getPrimaryDisplay().workArea
   overlay.setPosition(wa.x + wa.width - 78, Math.round(wa.y + wa.height / 2 - 70))
   // Its chat opens on the side of the pill away from the part of the screen it's in, and it can be dragged
@@ -224,9 +393,11 @@ function openDashboard(focus = '') {
   showDock()
   dash = page('dashboard.html', {
     width: Math.min(1500, wa.width), height: Math.min(940, wa.height), minWidth: 980, minHeight: 560,
-    titleBarStyle: 'hiddenInset', backgroundColor: nativeTheme.shouldUseDarkColors ? '#161719' : '#f3f3f6', title: 'Crew',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#161719' : '#f3f3f6', title: 'Crew',
+    // a Mac's traffic lights sit in the page's titlebar; Windows draws its window buttons over the titlebar's right end
+    ...(MAC ? { titleBarStyle: 'hiddenInset' } : { titleBarStyle: 'hidden', titleBarOverlay: captionColors(), icon: path.join(dir, 'assets', 'icon.png') }),
   }, { focus })
-  dash.once('ready-to-show', () => dash.show())
+  dash.once('ready-to-show', () => (dash.show(), showNeedsBadge()))
   dash.on('show', () => overlay.hide())
   dash.on('restore', () => overlay.hide())
   dash.on('minimize', showChat)
@@ -247,6 +418,10 @@ function openDashboard(focus = '') {
     showChat()
   })
 }
+
+// Windows' window buttons over the dashboard's titlebar, in the titlebar's colors (--bg and --fg in ui/common.css); 45px
+// tall, so the line under the titlebar shows under them too.
+const captionColors = () => ({ height: 45, ...(nativeTheme.shouldUseDarkColors ? { color: '#161719', symbolColor: '#f2f2f4' } : { color: '#f4f4f7', symbolColor: '#1d1d1f' }) })
 
 // `npm run dev` runs Electron's generic app, so give the Dock our icon each time it appears (Crew.app has it built in).
 function showDock() {
@@ -356,16 +531,22 @@ const actions = {
   openFile: (file) => [ATTACHMENTS, CACHE].some((d) => String(file).startsWith(d + path.sep)) && shell.openPath(file),
   openUrl: (url) => /^https?:\/\//.test(url) && shell.openExternal(url),
   copy: (text) => clipboard.writeText(String(text)),
+  // What went wrong on a page, for Crew's log (the page tells you in words).
+  log: (text) => logLine('page', String(text).slice(0, 4000)),
   theme: (theme) => hub.setTheme(theme),
   dashboard: (focus) => {
     trayWin.hide()
     openDashboard(focus)
   },
-  // In your text editor: the default app for .json files is often Xcode or a browser.
-  config: () => {
-    trayWin.hide()
-    execFile('open', ['-t', CONFIG])
-  },
+  // Running from source: config.json in your text editor (on a Mac the default app for .json is often Xcode or a
+  // browser; on Windows Notepad when nothing is set for .json).
+  ...(!app.isPackaged && {
+    config: () => {
+      trayWin.hide()
+      if (MAC) return void execFile('open', ['-t', CONFIG])
+      shell.openPath(CONFIG).then((failed) => failed && execFile('notepad.exe', [CONFIG]))
+    },
+  }),
   pickFolder: async (home) => {
     if (home) throw new Error(`Folders are on ${crew.links.get(home)?.name ?? home}: type the path`)
     return (await dialog.showOpenDialog(dash, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0]
@@ -373,7 +554,7 @@ const actions = {
   quit: () => app.quit(),
 }
 
-// A new pairing code for the dashboard's page that asked -> { code, qr, expires }, made once this Mac's addresses are
+// A new pairing code for the dashboard's page that asked -> { code, qr, expires }, made once this computer's addresses are
 // known (which can take a moment: Tailscale is asked), unless that page has closed or reloaded since.
 async function phoneCode(page) {
   const hosts = (await addresses()).map((h) => h.address)
@@ -409,12 +590,18 @@ function qrSvg(text) {
 }
 
 function wire() {
+  // An error goes back as its message, which Crew's own errors write for you to read ("Mac mini is unreachable right
+  // now"). Anything else (a bug, a file system error) is logged with its stack too.
   ipcMain.handle('call', async (_e, name, ...args) => {
     try {
-      if (!Object.hasOwn(actions, name)) return { error: `unknown action "${name}"` }
+      if (!Object.hasOwn(actions, name)) {
+        logLine('action', `a page asked for "${name}", which this Crew doesn't have`)
+        return { error: "Crew can't do that right now. Quit Crew and open it again, then try once more." }
+      }
       return { ok: await actions[name](...args) }
     } catch (e) {
-      return { error: e.message }
+      if (!(e instanceof Error) || e.constructor !== Error || e.code) logLine('action', `${name}: ${e?.stack ?? e}`)
+      return { error: e?.message ?? String(e) }
     }
   })
   // Dragging the pill (or the chat by its header): the page reports the pointer, letting go settles it.
@@ -429,7 +616,10 @@ function wire() {
       if (!win) return
       const size = [width, Math.min(height, screen.getDisplayMatching(win.getBounds()).workArea.height - 20)]
       const [w, h] = win.getContentSize()
-      return (w !== size[0] || h !== size[1]) && win.setContentSize(...size)
+      if (w === size[0] && h === size[1]) return
+      win.setContentSize(...size)
+      if (win === trayWin && trayWin.isVisible()) placeTray()
+      return
     }
     pill.fit(width, height, inside)
     if (focus) {
@@ -440,16 +630,19 @@ function wire() {
 
   crew.on('pty', (name, data) => dash?.webContents.send('pty', name, data))
 
-  // The menu bar's title redraws the status item, so it's set only when it reads differently.
+  // The menu bar's title redraws the status item, so it's set only when it reads differently. Windows: the icon.
   let title = null
   crew.on('state', (state) => {
     if (nativeTheme.themeSource !== state.theme) nativeTheme.themeSource = state.theme
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('state', state)
-    const next = trayTitle(state)
-    if (next !== title) tray.setTitle((title = next), { fontType: 'monospacedDigit' })
+    const counts = trayCounts(state)
+    if (!MAC) drawTrayIcon(counts).catch((e) => logLine('tray', e?.stack ?? String(e)))
+    else if (trayTitle(counts) !== title) tray.setTitle((title = trayTitle(counts)), { fontType: 'monospacedDigit' })
     keepAwake()
   })
   crew.changed()
+  // the theme changed (Crew's, or the system's while Crew follows it): Windows' window buttons follow the titlebar
+  nativeTheme.on('updated', () => !MAC && dash && !dash.isDestroyed() && dash.setTitleBarOverlay(captionColors()))
 
   // From any workspace: with workspaces, the title says which, and a click puts that one on screen first.
   // (your accounts' limits are no workspace's)
@@ -497,26 +690,40 @@ function wireVoice() {
     overlay.webContents.send('toggle', { open: true, focus: true })
     overlay.webContents.send('voice', { type: 'toggle' })
   }
-  if (key && !globalShortcut.register(key, dictate)) hub.post({ kind: 'event', from: 'crew', text: `voice hotkey ${key} is taken, set another "voiceHotkey" in config.json` })
+  if (key && !globalShortcut.register(key, dictate)) hub.post({ kind: 'event', from: 'crew', text: shortcutTaken(key, 'starts dictation', "click the microphone in the chat's message box") })
 }
 
-// "2/5": agents at work out of those on; one counts as working while it or any of its clones is. With workspaces, every
-// open one counts.
-function trayTitle(state) {
+// How many need you, are at work, and are on; one counts as working while it or any of its clones is. With workspaces,
+// every open one counts.
+function trayCounts(state) {
   if (state.workspaces?.length > 1) {
     const sum = (k) => state.workspaces.reduce((n, w) => n + (w.parked ? 0 : w[k]), 0)
-    const [waiting, working, on] = [sum('waiting'), sum('working'), sum('on')]
-    return waiting ? ` ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? ` ${working}/${on}` : ''
+    return { waiting: sum('waiting'), working: sum('working'), on: sum('on') }
   }
   const on = state.agents.filter((a) => a.on)
   const agents = on.filter((a) => !a.cloneOf)
   const waiting = on.filter((a) => a.status === 'waiting').length
   const working = agents.filter((a) => [a, ...on.filter((c) => c.cloneOf === a.name)].some((x) => x.status === 'working')).length
-  return waiting ? ` ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? ` ${working}/${agents.length}` : ''
+  return { waiting, working, on: agents.length }
+}
+// The menu bar's "2/5" (at work out of those on), or "1 needs you".
+const trayTitle = ({ waiting, working, on }) => (waiting ? ` ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? ` ${working}/${on}` : '')
+
+// Crew's log (LOG): what went wrong that nobody saw, a crash in here or a page's error. Kept under LOG_MAX: past that it
+// starts again, the last one kept as crew.old.log.
+function logLine(kind, text) {
+  try {
+    fs.mkdirSync(path.dirname(LOG), { recursive: true })
+    if ((fs.statSync(LOG, { throwIfNoEntry: false })?.size ?? 0) > LOG_MAX) fs.renameSync(LOG, LOG.replace(/\.log$/, '.old.log'))
+    fs.appendFileSync(LOG, `${new Date().toISOString()} [${kind}] ${text}\n`)
+  } catch {}
+  if (!app.isPackaged) console.error(`[${kind}]`, text)
 }
 
 // Apps opened from Finder get a bare PATH; borrow the login shell's environment so `claude` and friends resolve.
+// Windows apps get the user's environment as it is, so there's nothing to borrow.
 function loadShellEnv() {
+  if (WINDOWS) return
   if (process.env.TERM_PROGRAM) return // launched from a terminal, env is already right
   try {
     const out = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf "\\n__CREW__\\n"; env -0'], { encoding: 'utf8', timeout: 8000 })

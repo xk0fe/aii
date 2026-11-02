@@ -2,8 +2,17 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const listen = (channel) => (fn) => ipcRenderer.on(channel, (_e, ...args) => fn(...args))
+// main.js passes these to every page (webPreferences.additionalArguments): --crew-home=<your home folder>, and --crew-dev
+// when Crew runs unpackaged (npm run dev).
+const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
 
 contextBridge.exposeInMainWorld('crew', {
+  // Which computer this is: 'darwin' or 'win32'. The pages use it for keys (⌘ or Ctrl), words (this Mac or this PC) and
+  // paths; your home folder shows as ~.
+  platform: process.platform,
+  home: arg('crew-home') ?? '',
+  // Running from source: the developer's extras (Open config.json) show.
+  dev: process.argv.includes('--crew-dev'),
   // Runs one of the `actions` in main.js and returns its result (or throws its error).
   call: async (action, ...args) => {
     const res = await ipcRenderer.invoke('call', action, ...args)
