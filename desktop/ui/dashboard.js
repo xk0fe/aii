@@ -1,5 +1,5 @@
 // Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
-/* global isUnread, mountWorkspaces, shortPath, burst, wsColor, wsTile, statusClass, rosterParts, mountConvoHead, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, brainLabel, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, paceWarning, usageTip, usageLine, resetsText */
+/* global isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, rosterParts, mountConvoHead, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, brainLabel, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, paceWarning, usageTip, usageLine, resetsText */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -52,6 +52,9 @@ $('.tb-more').innerHTML = ICONS.more
 $('#link .h-icon').innerHTML = ICONS.computers
 $('#link [data-link-add]').innerHTML = `${ICONS.link}Link a computer…`
 $('#import .h-icon').innerHTML = ICONS.import
+// the page's own hints in this computer's keys (⌘F is Ctrl+F on Windows)
+for (const el of document.querySelectorAll('[title]')) el.title = keysIn(el.title)
+$('.find kbd').textContent = keys('⌘F')
 
 // The sidebar and the chat can each be put away for more room in the middle (the ⋯ menu, ⌘⌥S, ⌘⌥C); remembered
 // across launches.
@@ -84,15 +87,15 @@ function showNeeds(name) {
 }
 $('.tb-needs').addEventListener('click', () => showNeeds())
 
-// Everything the titlebar used to carry: the panels, Computers, the theme and config.json.
-const THEME_CHOICES = [['system', 'Auto', 'auto', 'follows macOS'], ['light', 'Light', 'sun', ''], ['dark', 'Dark', 'moon', '']]
+// Everything the titlebar used to carry: the panels, Computers and the theme (and, running from source, config.json).
+const THEME_CHOICES = [['system', 'Auto', 'auto', `follows ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light', 'sun', ''], ['dark', 'Dark', 'moon', '']]
 $('.tb-more').addEventListener('click', (e) => {
   const theme = state.theme ?? 'system'
   const unread = state.feed.filter((x) => isUnread(x, state.reads))
   popMenu(e.currentTarget, [
     ...(unread.length ? [{ label: `Jump to ${unread.length} new ${unread.length === 1 ? 'reply' : 'replies'}`, icon: ICONS.reply, act: 'unread' }, '-'] : []),
-    { label: panelShown('side') ? 'Hide the crew' : 'Show the crew', icon: ICONS.sidebar, act: 'side', hint: '⌥⌘S' },
-    { label: panelShown('chat') ? 'Hide the chat' : 'Show the chat', icon: ICONS.chatPanel, act: 'chat', hint: '⌥⌘C' },
+    { label: panelShown('side') ? 'Hide the crew' : 'Show the crew', icon: ICONS.sidebar, act: 'side', hint: keys('⌥⌘S') },
+    { label: panelShown('chat') ? 'Hide the chat' : 'Show the chat', icon: ICONS.chatPanel, act: 'chat', hint: keys('⌥⌘C') },
     '-',
     { label: 'Computers…', icon: ICONS.computers, act: 'computers' },
     '-',
@@ -123,13 +126,14 @@ function createTile(name, before = null) {
   $('.terms').insertBefore(tile, before)
   drawShow()
 
-  const term = new Terminal({ theme: THEME, fontFamily: '"SF Mono", Menlo, monospace', fontSize: 12, lineHeight: 1.12, cursorBlink: true, macOptionIsMeta: true, scrollback: 5000 })
+  const term = new Terminal({ theme: THEME, fontFamily: '"SF Mono", Menlo, "Cascadia Mono", Consolas, monospace', fontSize: 12, lineHeight: 1.12, cursorBlink: true, macOptionIsMeta: true, scrollback: 5000 })
   const fit = new FitAddon.FitAddon()
   term.loadAddon(fit)
   term.open(tile.querySelector('.term'))
   quietSelection(term)
   // Shift+Enter = newline in Claude Code, same as /terminal-setup configures.
   term.attachCustomKeyEventHandler((e) => {
+    if (ON_WINDOWS && !windowsTerminalKey(term, e)) return false
     if (e.type !== 'keydown' || e.key !== 'Enter' || !e.shiftKey) return true
     crew.input(name, '\x1b\r')
     return false
@@ -145,6 +149,25 @@ function createTile(name, before = null) {
   }).observe(tile.querySelector('.term'))
   replay(t)
   return t
+}
+
+// On Windows, Ctrl is the terminal's own key (Ctrl+C stops what the agent runs), so copy and paste go as in Windows
+// Terminal: Ctrl+C copies when there's a selection, Ctrl+Shift+C always, Ctrl+V and Ctrl+Shift+V paste (the page's paste,
+// which xterm types in). Ctrl+1–4 and Ctrl+Alt+S/C stay Crew's (a Mac's ⌘ keys never reach the terminal); the other
+// Ctrl keys go to the agent. false: xterm leaves the key alone.
+function windowsTerminalKey(term, e) {
+  if (e.type !== 'keydown' || !e.ctrlKey || e.metaKey || e.getModifierState('AltGraph')) return true
+  const key = e.key.toLowerCase()
+  if (key === 'c' && !e.altKey && (e.shiftKey || term.hasSelection())) {
+    e.preventDefault()
+    if (term.hasSelection()) crew.call('copy', term.getSelection()).catch(() => {})
+    if (!e.shiftKey) term.clearSelection()
+    return false
+  }
+  if (key === 'v' && !e.altKey) return false
+  if (/^[1-4]$/.test(e.key) && !e.altKey && !e.shiftKey) return false
+  if ((e.code === 'KeyS' || e.code === 'KeyC') && e.altKey) return false
+  return true
 }
 
 // xterm redraws a terminal's selection every time its output scrolls a line, and its DOM renderer does that by
@@ -432,11 +455,12 @@ $('[data-show]').addEventListener('click', (e) => {
   drawShow()
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 })
-// ⌘1 Crew, ⌘2 Tasks, ⌘3 the terminals side by side, ⌘4 one big; ⌘F finds an agent, ⌘N makes one
+// ⌘1 Crew, ⌘2 Tasks, ⌘3 the terminals side by side, ⌘4 one big; ⌘F finds an agent, ⌘N makes one (Ctrl on Windows,
+// where Ctrl+F and Ctrl+N typed in a terminal are the agent's: windowsTerminalKey)
 const KEYS = { 1: 'crew', 2: 'tasks', 3: 'grid', 4: 'focus' }
-document.querySelectorAll('.seg.views button').forEach((b, i) => (b.title += ` (⌘${i + 1})`))
+document.querySelectorAll('.seg.views button').forEach((b, i) => (b.title += ` (${keys(`⌘${i + 1}`)})`))
 document.addEventListener('keydown', (e) => {
-  if (!e.metaKey || e.ctrlKey) return
+  if (!commandKey(e)) return
   if (document.querySelector('.ed-layer.open, dialog[open]')) return // the agent's sheet or a dialog is in front
   if (KEYS[e.key] && !e.altKey) return void (e.preventDefault(), setView(KEYS[e.key]))
   if (e.code === 'KeyS' && e.altKey) return void (e.preventDefault(), setPanel('side', document.body.classList.contains('no-side')))
@@ -446,12 +470,14 @@ document.addEventListener('keydown', (e) => {
 })
 
 // ⌃1–9: the workspaces, in the switcher's order (a parked one opens). ⌃Tab and ⌃⇧Tab: the next and previous open one.
-// Ahead of the terminals (capture), which would take ⌃1 as a key of their own.
+// On Windows, Alt+1–9 (Ctrl+1–4 are the views there) and Ctrl+Tab. Ahead of the terminals (capture), which would take ⌃1
+// as a key of their own.
 document.addEventListener('keydown', (e) => {
-  if (!e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.ed-layer.open, dialog[open]')) return
+  const tab = e.key === 'Tab' && e.ctrlKey && !e.metaKey && !e.altKey
+  if (!(tab || workspaceKey(e)) || document.querySelector('.ed-layer.open, dialog[open]')) return
   const list = state.workspaces ?? []
   if (list.length < 2) return // nothing to switch to: ⌃1 stays the terminal's
-  if (e.key === 'Tab') {
+  if (tab) {
     const open = list.filter((w) => !w.parked || w.current)
     const at = open.findIndex((w) => w.current)
     const next = open[(at + (e.shiftKey ? -1 : 1) + open.length) % open.length]
@@ -725,15 +751,15 @@ function drawFoot(state) {
   const pilot = $('.side .autopilot')
   pilot.querySelector('.switch').checked = state.autopilot
   pilot.title = `${state.autopilot ? 'Hand-offs go through' : 'Hand-offs wait for you'}\nOn: agents hand work to each other without asking. Off: each hand-off waits in the chat for your Send it.`
-  // Computers: how many, or This Mac; a hollow dot when a linked one can't be reached
+  // Computers: how many, or This Mac (This PC); a hollow dot when a linked one can't be reached
   const c = state.computers ?? { me: {}, links: [] }
   const away = c.links.filter((l) => !l.online)
   const chip = $('.link-chip')
-  const label = `${ICONS.computers}<span>${c.links.length ? `${c.links.length + 1} computers` : 'This Mac'}</span>${away.length ? '<i class="pc-off"></i>' : ''}`
+  const label = `${ICONS.computers}<span>${c.links.length ? `${c.links.length + 1} computers` : upFirst(THIS_COMPUTER)}</span>${away.length ? '<i class="pc-off"></i>' : ''}`
   if (chip.label !== label) chip.innerHTML = chip.label = label // asked on every push, replaced only when it changes
   chip.title = c.links.length
-    ? `Computers: this Mac and ${c.links.map((l) => `${l.name} (${l.online ? 'online' : 'offline'})`).join(', ')}`
-    : `Computers: link your other Macs into one crew${c.me.sharing ? '. This Mac lets others link to it' : ''}`
+    ? `Computers: ${THIS_COMPUTER} and ${c.links.map((l) => `${l.name} (${l.online ? 'online' : 'offline'})`).join(', ')}`
+    : `Computers: link your other computers into one crew${c.me.sharing ? `. ${upFirst(THIS_COMPUTER)} lets others link to it` : ''}`
   // Usage: the account closest to its limit, its fullest window as a little gauge. Amber only when it will run out
   // before it resets, at this pace.
   const accounts = Object.values(state.usage ?? {}).filter((u) => u.windows?.length)
@@ -869,9 +895,9 @@ const machineIcon = (name) => (/book|laptop/i.test(name ?? '') ? ICONS.laptop : 
 function computersHTML({ me, links, phones }) {
   const mine = `
     <div class="lk-li"><span class="lk-ic">${machineIcon(me.name)}</span><div class="lk-k">
-      <input class="me-name" data-me-name value="${esc(me.name)}" spellcheck="false" title="This Mac's name: click to rename it. Linked computers see its agents as name@${esc(me.slug)}">
+      <input class="me-name" data-me-name value="${esc(me.name)}" spellcheck="false" title="${esc(upFirst(THIS_COMPUTER))}'s name: click to rename it. Linked computers see its agents as name@${esc(me.slug)}">
       <small>${plural(me.agents ?? 0, 'agent')} run here</small></div></div>
-    <label class="lk-li lk-sw"><div class="lk-k">Let your other Macs link to this one</div><input type="checkbox" class="switch" data-link-share ${me.sharing ? 'checked' : ''}></label>
+    <label class="lk-li lk-sw"><div class="lk-k">Let your other computers link to this one</div><input type="checkbox" class="switch" data-link-share ${me.sharing ? 'checked' : ''}></label>
     ${me.sharing ? `
       <div class="lk-li"><button class="btn primary lk-copy" data-link-copy title="Anyone with this code can use and drive your agents, so keep it to your own Macs">${linkOpen.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy link code`}</button>
         <span class="lk-note">Paste it on the other Mac, under Link a computer.</span></div>
@@ -886,13 +912,13 @@ function computersHTML({ me, links, phones }) {
   const form = linkOpen.form || linkErr ? `
     <div class="lk-label">Link a computer</div>
     <div class="lk-list"><div class="lk-form">
-      <p>Paste the code from the other Mac's <b>Copy link code</b>. Linking works both ways: each Mac sees the other's agents.</p>
+      <p>Paste the code from the other computer's <b>Copy link code</b>. Linking works both ways: each computer sees the other's agents.</p>
       <div class="code-in"><textarea data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Link</button></div>
       <p class="err" data-link-err>${esc(linkErr)}</p>
     </div></div>` : ''
-  return `<div class="lk-label">This Mac</div><div class="lk-list">${mine}</div>
+  return `<div class="lk-label">${upFirst(THIS_COMPUTER)}</div><div class="lk-list">${mine}</div>
     <div class="lk-label">Linked</div>
-    <div class="lk-list">${links.length ? links.map(linkHTML).join('') : '<div class="lk-li lk-empty">No other Macs yet. Copy the link code on one, then Link a computer… here.</div>'}</div>
+    <div class="lk-list">${links.length ? links.map(linkHTML).join('') : '<div class="lk-li lk-empty">No other computers yet. Copy the link code on one, then Link a computer… here.</div>'}</div>
     ${form}
     <div class="lk-label">Phones</div>
     ${phonesHTML(phones ?? { devices: [] })}`
@@ -904,8 +930,8 @@ function linkStatus(l) {
   const count = used < l.agents.length ? `${used} of ${plural(l.agents.length, 'agent')}` : plural(l.agents.length, 'agent')
   if (!l.online) return { text: `Offline · ${count}`, tip: `${l.status?.error ?? 'Unreachable'}: it reconnects on its own` }
   const addr = l.status?.address
-  const via = !addr ? 'linked to this Mac' : /\.ts\.net$/.test(addr) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(addr) ? 'Tailscale' : 'local network'
-  return { text: `Online · ${via} · ${count}`, tip: addr ? `Linked via ${addr}` : 'It linked to this Mac' }
+  const via = !addr ? `linked to ${THIS_COMPUTER}` : /\.ts\.net$/.test(addr) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(addr) ? 'Tailscale' : 'local network'
+  return { text: `Online · ${via} · ${count}`, tip: addr ? `Linked via ${addr}` : `It linked to ${THIS_COMPUTER}` }
 }
 
 // A linked computer: one row (its faces, how it is); its chevron unfolds its agents, to tick the ones to use from here
@@ -924,7 +950,7 @@ function linkHTML(l) {
       ${LINK_CHEV}
     </button>
     ${open ? `<div class="lk-body">
-      ${fresh === l.slug ? `<p><b>Pick which of ${esc(l.name)}'s agents to use here.</b> The rest keep running there. Move one here to run it on this Mac instead.</p>` : ''}
+      ${fresh === l.slug ? `<p><b>Pick which of ${esc(l.name)}'s agents to use here.</b> The rest keep running there. Move one here to run it on ${THIS_COMPUTER} instead.</p>` : ''}
       ${l.agents.length ? `<ul class="lk-agents">${l.agents.map((a) => `
         <li class="${a.hidden ? 'unused' : ''}">${avatarHTML(a, { size: 30, mood: 'still' })}
           <span class="who"><b>${esc(a.seed)}</b><small>${esc(a.area || 'no area')}</small></span>
@@ -932,7 +958,7 @@ function linkHTML(l) {
           <label class="use"><input type="checkbox" class="switch" data-use="${esc(a.name)}" ${a.hidden ? '' : 'checked'}>Use</label>
         </li>`).join('')}</ul>` : `<p>${l.online ? 'No agents there yet.' : 'Its agents show here once it\'s back.'}</p>`}
       <div class="lk-row"><span title="Move one with its Move to…, or drag it onto a computer in the sidebar">${l.agents.length > 1 ? `Using ${used} of ${l.agents.length}` : ''}</span>
-        <span class="lk-btns">${l.agents.length > 1 ? `<button class="btn small" data-use-all="${esc(l.slug)}">All</button><button class="btn small" data-use-none="${esc(l.slug)}">None</button>` : ''}${l.saved ? `<button class="btn small" data-forget="${esc(l.slug)}" title="Unlink it from this Mac">Forget</button>` : ''}</span></div>
+        <span class="lk-btns">${l.agents.length > 1 ? `<button class="btn small" data-use-all="${esc(l.slug)}">All</button><button class="btn small" data-use-none="${esc(l.slug)}">None</button>` : ''}${l.saved ? `<button class="btn small" data-forget="${esc(l.slug)}" title="Unlink it from ${THIS_COMPUTER}">Forget</button>` : ''}</span></div>
     </div>` : ''}
   </section>`
 }
@@ -979,7 +1005,7 @@ async function phoneAction(t) {
   if (t.closest('[data-phone-add]')) return openPairing()
   const remove = t.closest('[data-phone-remove]')?.dataset.phoneRemove
   const phone = remove && state.computers.phones.devices.find((d) => d.id === remove)
-  if (phone && confirm(`Remove ${phone.name}? It can't reach this Mac any more, until you pair it again.`)) await crew.call('phones', 'revoke', remove)
+  if (phone && confirm(`Remove ${phone.name}? It can't reach ${THIS_COMPUTER} any more, until you pair it again.`)) await crew.call('phones', 'revoke', remove)
 }
 
 // The QR card: as big as the window leaves room for, high in the dialog so the phone looks straight at it. The code's
@@ -1179,7 +1205,7 @@ linkDialog.addEventListener('click', async (e) => {
       const name = move.dataset.move
       const from = state.agents.find((a) => a.name === name)?.home ?? ''
       const places = crewGroups(state).filter((g) => g.key !== from)
-      popMenu(move, [{ head: 'Move to' }, ...places.map((g) => ({ label: g.name, icon: g.here ? ICONS.desktop : ICONS.laptop, act: g.key || ':here', disabled: !g.online, hint: g.here ? 'this Mac' : g.online ? '' : 'offline' }))], (home) => {
+      popMenu(move, [{ head: 'Move to' }, ...places.map((g) => ({ label: g.name, icon: g.here ? ICONS.desktop : ICONS.laptop, act: g.key || ':here', disabled: !g.online, hint: g.here ? THIS_COMPUTER : g.online ? '' : 'offline' }))], (home) => {
         linkDialog.close()
         moveSheet(name, home === ':here' ? '' : home)
       })
@@ -1257,7 +1283,7 @@ async function moveSheet(name, home) {
   crew.call('folders', home, name).then((list) => {
     if (moving?.name !== name) return
     // each one by its folder's name, with who works there (or "same folder as now") beside it
-    const short = (f) => (f.label === 'home folder' ? 'Home' : f.path.split('/').filter(Boolean).pop() || f.path)
+    const short = (f) => (f.label === 'home folder' ? 'Home' : pathParts(f.path).pop() || f.path)
     moveDialog.querySelector('[data-mv-sugs]').innerHTML = (list ?? []).map((f) => `<button class="mv-sug ${f.path === moving.folder || f.path === moving.check?.path ? 'on' : ''}" data-mv-sug="${esc(f.path)}" title="${esc(f.path)}">${ICONS.folder}<span>${esc(short(f))}</span>${f.label && f.label !== 'home folder' ? `<small>${esc(f.label)}</small>` : ''}</button>`).join('')
   }, () => {})
 }

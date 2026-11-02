@@ -3,6 +3,45 @@
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
+// ---- this computer: a Mac or a Windows PC (preload.cjs says which) ---------------------------------------------------
+// Its keys (⌘ or Ctrl), its words (this Mac, this PC) and how its paths are written. The page's <html> says it too
+// (data-os="mac" or "win"), for the CSS: the fonts, and room for Windows' window buttons in the dashboard's titlebar.
+const ON_WINDOWS = window.crew?.platform === 'win32'
+document.documentElement.dataset.os = ON_WINDOWS ? 'win' : 'mac'
+const THIS_COMPUTER = ON_WINDOWS ? 'this PC' : 'this Mac'
+const upFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+
+// A shortcut as this computer writes it: ⌥⌘S on a Mac is Ctrl+Alt+S on Windows, ⌘-click is Ctrl+click. The workspaces'
+// ⌃1–9 is Alt+1–9 there, since Ctrl+1–4 are the views (⌘1–4 on a Mac).
+function keys(mac) {
+  if (!ON_WINDOWS) return mac
+  const names = { '⌃': 'Alt', '⌘': 'Ctrl', '⌥': 'Alt', '⇧': 'Shift' }
+  const held = new Set([...mac].filter((c) => names[c]).map((c) => names[c]))
+  const rest = [...mac].filter((c) => !names[c]).join('').replace(/^-/, '')
+  return [...['Ctrl', 'Alt', 'Shift'].filter((m) => held.has(m)), rest].join('+')
+}
+// Every shortcut in a hint, as this computer writes them: "Find an agent (⌘F)" is "Find an agent (Ctrl+F)" on Windows.
+const keysIn = (text) => (ON_WINDOWS ? String(text).replace(/[⌃⌥⇧⌘]+[^\s),]+/g, keys) : String(text))
+// The key Crew's shortcuts go with: ⌘ on a Mac, Ctrl on Windows (not AltGr, which is Ctrl+Alt there and types letters).
+const commandKey = (e) => (ON_WINDOWS ? e.ctrlKey && !e.metaKey && !e.getModifierState?.('AltGraph') : e.metaKey && !e.ctrlKey)
+// The workspaces' key: ⌃ on a Mac, Alt on Windows.
+const workspaceKey = (e) => (ON_WINDOWS ? e.altKey && !e.ctrlKey && !e.metaKey && !e.getModifierState?.('AltGraph') : e.ctrlKey && !e.metaKey && !e.altKey)
+
+// A path with your home folder as ~, in the separators it was written with: /Users/you/code/app is ~/code/app, and
+// C:\Users\you\code\app is ~\code\app. A linked computer's paths shorten the same way, with its own home.
+const HOME_DIR = /^(?:\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:[\\/]Users[\\/][^\\/]+)(?=[\\/]|$)/i
+function tildePath(p) {
+  const s = String(p ?? '')
+  const home = window.crew?.home || null
+  const inHome = home && (ON_WINDOWS ? s.toLowerCase().startsWith(home.toLowerCase()) : s.startsWith(home)) && (s.length === home.length || /[\\/]/.test(s[home.length]))
+  return inHome ? `~${s.slice(home.length)}` : s.replace(HOME_DIR, '~')
+}
+// The same in a field you type in. On Windows it stays written out: Crew reads ~ only as ~/ (~/code/app), and
+// C:\Users\you\code\app is what Windows writes.
+const pathField = (p) => (ON_WINDOWS ? String(p ?? '') : tildePath(p))
+// A path's folders, split on either separator when it's written the Windows way.
+const pathParts = (p) => String(p ?? '').split(/^[A-Za-z]:|\\/.test(String(p ?? '')) ? /[\\/]/ : '/').filter(Boolean)
+
 const svg = (paths, attrs = '') =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${attrs}>${paths}</svg>`
 
@@ -634,11 +673,12 @@ function wsTile(w, { size = 22, cls = '' } = {}) {
   const face = plain ? markSVG('0 4 24 18') : w?.icon ? `<span class="ws-emoji">${esc(w.icon)}</span>` : esc(wsInitial(w?.name))
   return `<span class="ws-tile ${plain ? 'plain' : ''} ${w?.parked ? 'parked' : ''} ${cls}" style="--s:${size}px${color ? `;--w:${esc(color)}` : ''}" aria-hidden="true">${face}</span>`
 }
-// A folder in a few characters: ~ for your home, and only its last two folders when it's long.
+// A folder in a few characters: ~ for your home, and only its last two folders when it's long (in its own separators).
 function shortPath(p) {
-  const t = String(p ?? '').replace(/^\/Users\/[^/]+/, '~')
-  const parts = t.split('/').filter(Boolean)
-  return t.length > 30 && parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : t
+  const t = tildePath(p)
+  const parts = pathParts(t)
+  const sep = /^[A-Za-z]:|\\/.test(t) ? '\\' : '/'
+  return t.length > 30 && parts.length > 2 ? `…${sep}${parts.slice(-2).join(sep)}` : t
 }
 // Workspaces worth a switcher: more than the default, or a default you've given a look.
 const hasWorkspaces = (state) => (state.workspaces?.length ?? 0) > 1 || Boolean(state.workspace?.color || state.workspace?.icon || (state.workspace && state.workspace.name !== 'Home'))
@@ -1711,7 +1751,17 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   return api
 }
 
-const fileURL = (p) => `file://${String(p).split('/').map(encodeURIComponent).join('/')}`
+// A file on disk as a URL an <img> can load: /Users/you/a b.png, C:\Users\you\a.png (drive letter kept, backslashes as
+// slashes) and \\server\share\a.png (the server as the URL's host). Every folder's name is escaped (spaces, #, %).
+function fileURL(p) {
+  const s = String(p ?? '').replace(/^\\\\[?.]\\(?=[A-Za-z]:)/, '') // \\?\C:\… is C:\…
+  const enc = (parts) => parts.map(encodeURIComponent).join('/')
+  const unc = /^[\\/]{2}([^\\/]+)[\\/](.*)$/.exec(s)
+  if (unc) return `file://${unc[1]}/${enc(unc[2].split(/[\\/]/))}`
+  const drive = /^([A-Za-z]):[\\/]?(.*)$/.exec(s)
+  if (drive) return `file:///${drive[1].toUpperCase()}:/${enc(drive[2].split(/[\\/]/))}`
+  return `file://${enc(s.split('/'))}`
+}
 // Where a dropped file or folder is on disk ('' when it isn't one, or the page has no way to tell).
 const pathOf = (file) => {
   try {
@@ -2361,8 +2411,8 @@ document.addEventListener('change', (e) => {
   crew.call('update', power, { off: !e.target.checked })
 })
 
-// Theme button: Auto (follow macOS) → Light → Dark. Saved in config.json, applied to every window.
-const THEMES = { system: ['auto', 'Theme: follows macOS'], light: ['sun', 'Theme: light'], dark: ['moon', 'Theme: dark'] }
+// Theme button: Auto (follow the system's) → Light → Dark. Saved in config.json, applied to every window.
+const THEMES = { system: ['auto', `Theme: follows ${ON_WINDOWS ? 'Windows' : 'macOS'}`], light: ['sun', 'Theme: light'], dark: ['moon', 'Theme: dark'] }
 const NEXT_THEME = { system: 'light', light: 'dark', dark: 'system' }
 function themeButton(btn) {
   let theme = 'system'

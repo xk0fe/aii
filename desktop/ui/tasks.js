@@ -2,7 +2,7 @@
 // Add one with New task or a column's + (or from the chat). Starting one hands it to its owner in a fresh
 // conversation, so tasks don't pile into one long context; you review what comes back. Board or list, filtered by
 // kind, owner or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via crew.call('task').
-/* global ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE */
+/* global ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine */
 
 const STATUS = [
   { id: 'new', label: 'To do' },
@@ -564,7 +564,7 @@ function mountTasks(root, { onTerminal }) {
     const summary = review && t.fix ? `<p class="tk-summary">${esc(snippet(t.fix))}</p>` : ''
     const verdict = `<div class="tk-verdict"><button class="tk-btn" data-act="sendBack" title="Tell @${esc(t.fixer ?? 'them')} what's ${t.kind === 'bug' ? 'still broken' : 'missing'}">Send back</button><button class="tk-btn good" data-act="accept" title="It's done">Accept</button></div>`
     return `<article class="tc st-${t.status} kind-${t.kind}${isUrgent(t) ? ' urgent' : ''}${selected === t.key ? ' sel' : ''}${picked.has(t.key) ? ' picked' : ''}" data-name="${esc(t.key)}" draggable="true">
-      <i class="tc-check" data-pick title="${picked.has(t.key) ? 'Let go' : 'Pick'} (⌘-click)">${ICONS.check}</i>
+      <i class="tc-check" data-pick title="${picked.has(t.key) ? 'Let go' : 'Pick'} (${keys('⌘-click')})">${ICONS.check}</i>
       <div class="tc-top">${KIND_ICON[t.kind]}<span class="tk-id">#${t.id}</span>${t.home ? `<span class="tk-home" title="On ${esc(t.homeName)}">${esc(t.homeName)}</span>` : ''}${t.dupOf ? `<span class="tk-home">same as #${t.dupOf}</span>` : ''}${isUrgent(t) ? urgentHTML : ''}</div>
       <div class="tc-title">${esc(t.title)}</div>
       ${pics}${summary}
@@ -779,7 +779,7 @@ function mountTasks(root, { onTerminal }) {
     menu(anchor, [
       { value: 'flow', label: 'Workflow…', hint: flow, icon: GEAR, attr: 'data-flow' },
       ...(ready.length > 1 ? [{ value: 'start', label: `Start the ${ready.length} ready`, hint: 'each in a new conversation', icon: `<span class="tk-pop-ico">${ICONS.fresh}</span>` }] : []),
-      ...(shown.length ? [{ value: 'pick', label: 'Select all shown', hint: '⌘A', icon: PICK_ALL }] : []),
+      ...(shown.length ? [{ value: 'pick', label: 'Select all shown', hint: keys('⌘A'), icon: PICK_ALL }] : []),
       ...(open.length ? [{ value: 'close', label: filtered ? `Close the ${open.length} open shown` : `Close all ${open.length} open`, hint: 'to Done', icon: STATUS_ICON.done }] : []),
       ...(done.length ? [{ value: 'clear', label: 'Clear Done', hint: 'deletes them', icon: `<span class="danger-ico">${ICONS.close}</span>` }] : []),
     ], (v) => {

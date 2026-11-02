@@ -136,13 +136,13 @@
     .tile-head .t-state.stopped, .tile-head .t-state.away { color: var(--fg3); }
     .tile-head .t-state[data-act] { cursor: pointer; }
     .tile-head .t-model { flex: none; font-size: 12px; color: var(--fg3); }
-    .t-chip { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 6px 0 4px; border-radius: 999px; background: var(--btn); color: var(--fg2); font: 700 11px/1 -apple-system, sans-serif; font-variant-numeric: tabular-nums; cursor: help; }
+    .t-chip { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 6px 0 4px; border-radius: 999px; background: var(--btn); color: var(--fg2); font: 700 11px/1 var(--ui); font-variant-numeric: tabular-nums; cursor: help; }
     .t-chip svg { width: 12px; height: 12px; }
     .t-chip.clones { padding-left: 2px; }
     .t-chip .av + .av { margin-left: -7px; }
     /* What this view is. These aren't terminal apps: the badge says whether typing reaches the agent right now (LIVE, or
        MIRROR from another computer), or that it's being redrawn (REPLAY), or frozen (OFFLINE, ENDED). See tileMode(). */
-    .t-badge { --rb: #4cd964; flex: none; display: inline-flex; align-items: center; gap: 5px; height: 17px; padding: 0 7px 0 6px; border-radius: 5px; font: 700 9px/1 -apple-system, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: var(--rb); background: color-mix(in srgb, var(--rb) 14%, transparent); cursor: help; }
+    .t-badge { --rb: #4cd964; flex: none; display: inline-flex; align-items: center; gap: 5px; height: 17px; padding: 0 7px 0 6px; border-radius: 5px; font: 700 9px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--rb); background: color-mix(in srgb, var(--rb) 14%, transparent); cursor: help; }
     .t-badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
     .t-badge[data-mode=live]::before, .t-badge[data-mode=mirror]::before, .t-badge[data-mode=replay]::before { animation: pulse 2.4s ease-in-out infinite; }
     .t-badge[data-mode=mirror] { --rb: #7aa2ff; }
@@ -204,7 +204,7 @@
     .lk-more > span:first-child { flex: 1; }
     .lk-faces { flex: none; display: inline-flex; align-items: center; }
     .lk-faces .av + .av { margin-left: -7px; }
-    .lk-faces i { margin-left: 4px; font: 650 11px -apple-system, sans-serif; font-style: normal; color: var(--fg3); }
+    .lk-faces i { margin-left: 4px; font: 650 11px var(--ui); font-style: normal; color: var(--fg3); }
     .lk-pc.fresh { border-radius: 14px; box-shadow: 0 0 0 2px var(--accent); }
     .lk-body { padding: 0 14px 12px 16px; }
     .lk-body > p { margin: 0 0 8px; font-size: 12.5px; color: var(--fg2); line-height: 1.45; }
@@ -304,7 +304,7 @@
     /* the Tasks tab counts what's waiting, in its corner: out of the layout, so the label stays centered */
     .seg.views button { position: relative; }
     .seg.views button[data-view=tasks] { padding-right: 24px; } /* room for the count in its corner */
-    .seg-badge { position: absolute; top: 50%; right: 6px; margin-top: -8px; display: grid; place-items: center; min-width: 14px; height: 16px; font: 700 11px/1 -apple-system, sans-serif; font-style: normal; font-variant-numeric: tabular-nums; color: var(--fg3); pointer-events: none; transition: opacity .2s, transform .35s var(--spring); }
+    .seg-badge { position: absolute; top: 50%; right: 6px; margin-top: -8px; display: grid; place-items: center; min-width: 14px; height: 16px; font: 700 11px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: var(--fg3); pointer-events: none; transition: opacity .2s, transform .35s var(--spring); }
     .seg-badge:empty { opacity: 0; transform: scale(.5); }
     .seg-badge.review { color: var(--waiting-ink); }
     .tile-head .ctx { --ctx-calm: rgba(255, 255, 255, .5); --track: rgba(255, 255, 255, .14); }
@@ -403,7 +403,7 @@
 
   <dialog id="link" class="sheet">
     <h3><span class="h-icon"></span>Computers</h3>
-    <p class="lead" title="Each agent runs on one of them; linked computers see every agent, talk to them and hand work around.">One crew across your Macs, over the same Wi-Fi or Tailscale.</p>
+    <p class="lead" title="Each agent runs on one of them; linked computers see every agent, talk to them and hand work around.">One crew across your computers, over the same Wi-Fi or Tailscale.</p>
     <div class="sheet-body link-body"></div>
     <div class="buttons"><button class="btn" data-link-add aria-pressed="false"></button><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
     <div class="pair-view" tabindex="-1"></div>

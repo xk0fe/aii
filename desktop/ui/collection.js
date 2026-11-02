@@ -2,7 +2,7 @@
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, level, a few facts), everything you can set on the right,
 // in four tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
-/* global activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel */
+/* global activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -162,7 +162,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const parts = grouped(groups) && filled.length
       ? filled.map((g, i) => ({
           start: `<section class="col-group" data-home="${esc(g.key)}">
-          <h3>${g.here ? ICONS.desktop : ICONS.laptop}<b>${esc(g.name)}</b><span>${plural(g.agents.length, 'agent')}${g.here ? ' · this Mac' : g.online ? '' : ' · offline'}</span></h3>
+          <h3>${g.here ? ICONS.desktop : ICONS.laptop}<b>${esc(g.name)}</b><span>${plural(g.agents.length, 'agent')}${g.here ? ` · ${THIS_COMPUTER}` : g.online ? '' : ' · offline'}</span></h3>
           <div class="col-cards ${m}">`,
           end: '</div></section>', slot: '.col-cards', parts: [...order(g.agents).map(one), ...(i === 0 ? [add] : [])],
         }))
@@ -207,12 +207,12 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     picked[picked.has(c.dataset.name) ? 'delete' : 'add'](c.dataset.name)
     drawGrid()
   })
-  // ⋯ in the header: a new agent (also the dashed card, the sidebar's + and ⌘N), picking several agents, the whole crew
+  // ⋯ in the header: a new agent (also the dashed card, the sidebar's + and ⌘N or Ctrl+N), picking several agents, the whole crew
   // as a .crew file, and bringing agents in from one.
   function headMenu(anchor) {
     const out = roster().filter((a) => a.status !== 'away') // an asleep computer can't pack its agents
     popMenu(anchor, [
-      { label: 'New agent…', icon: ICONS.plus, act: 'new', hint: '⌘N' },
+      { label: 'New agent…', icon: ICONS.plus, act: 'new', hint: keys('⌘N') },
       '-',
       { label: selecting ? 'Done selecting' : 'Select…', icon: ICONS.task, act: 'select', disabled: !selecting && modeNow() === 'stats', hint: !selecting && modeNow() === 'stats' ? 'in the card views' : 'change several at once' },
       '-',
@@ -520,7 +520,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         <footer class="pd-foot">
           <span class="pd-msg"></span><span class="grow"></span><span class="pd-dirty">Unsaved changes</span>
           <button class="btn" data-act="back">Cancel</button>
-          <button class="btn primary" data-act="save" title="Save (⌘S)">${live ? 'Save' : 'Add to crew'}</button>
+          <button class="btn primary" data-act="save" title="Save (${keys('⌘S')})">${live ? 'Save' : 'Add to crew'}</button>
         </footer>
       </div>`
     drawTab()
@@ -818,7 +818,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const at = places.find((p) => p.slug === (d.home ?? '')) ?? { name: d.home, online: false }
     const computer = places.length < 2 && !d.home ? ''
       : live
-        ? row('Computer', `<span class="ed-pc">${at.here ? ICONS.desktop : ICONS.laptop}<b>${esc(at.name)}</b>${at.here ? '<small>this Mac</small>' : ''}</span><button class="btn small" data-act="move-to" title="Its chat comes along" ${places.some((p) => p.slug !== (d.home ?? '') && p.online) ? '' : 'disabled'}>${ICONS.move}<span>Move…</span></button>`)
+        ? row('Computer', `<span class="ed-pc">${at.here ? ICONS.desktop : ICONS.laptop}<b>${esc(at.name)}</b>${at.here ? `<small>${THIS_COMPUTER}</small>` : ''}</span><button class="btn small" data-act="move-to" title="Its chat comes along" ${places.some((p) => p.slug !== (d.home ?? '') && p.online) ? '' : 'disabled'}>${ICONS.move}<span>Move…</span></button>`)
         : row('Computer', `<div class="pills" data-pick="home">${places.filter((p) => p.online || p.slug === d.home).map((p) => pill(p.slug, esc(p.name), d.home === p.slug)).join('')}</div>`)
     // in a workspace other than the default: whether it's one of your shared agents or only this workspace's, and its
     // folder is the workspace's unless it has one of its own
@@ -827,7 +827,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       : live
         ? row('Lives in', `<span class="ed-pc">${wsTile(ws, { size: 18 })}<b>${live.shared ? 'Your crew' : `${esc(ws.name)} only`}</b></span>`, { note: live.shared ? 'the same agent in every workspace it works in' : `only ${esc(ws.name)} has it` })
         : row('Lives in', `<div class="pills" data-pick="shared">${pill('', `${esc(ws.name)} only`, !d.shared)}${pill('1', 'Your whole crew', Boolean(d.shared))}</div>`, { note: d.shared ? `joins your crew, and works here in ${esc(ws.name)}` : `only ${esc(ws.name)} has it` })
-    const folder = ws?.folder ? ws.folder.replace(/^\/Users\/[^/]+/, '~') : ''
+    const folder = ws?.folder ? tildePath(ws.folder) : ''
     card.querySelector('.where').innerHTML = lives +
       row('Folder', `<input class="ed-input mono" data-k="cwd" value="${esc(d.cwd)}" placeholder="${esc(folder || '~/code/my-app')}" autocomplete="off" spellcheck="false">${d.home ? '' : '<button type="button" class="btn small" data-act="pick">Choose…</button>'}`, { note: d.home ? `a path on ${esc(at.name)}` : folder && !d.cwd ? `${esc(ws.name)}'s folder` : '' }) +
       computer
@@ -999,7 +999,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   function moveMenu(anchor) {
     const c = state.computers ?? { me: {}, links: [] }
     const places = [{ slug: '', name: c.me?.name || 'This computer', online: true, here: true }, ...linkedHere(c)].filter((p) => p.slug !== (draft.home ?? ''))
-    popMenu(anchor, [{ head: 'Move to' }, ...places.map((p) => ({ label: p.name, icon: p.here ? ICONS.desktop : ICONS.laptop, act: p.slug, disabled: !p.online, hint: p.online ? (p.here ? 'this Mac' : '') : 'offline' }))], (home) => {
+    popMenu(anchor, [{ head: 'Move to' }, ...places.map((p) => ({ label: p.name, icon: p.here ? ICONS.desktop : ICONS.laptop, act: p.slug, disabled: !p.online, hint: p.online ? (p.here ? THIS_COMPUTER : '') : 'offline' }))], (home) => {
       const name = editing
       if (close()) onMove?.(name, home)
     })
@@ -1076,7 +1076,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   }
 
   document.addEventListener('keydown', (e) => {
-    if (editing && e.metaKey && e.key === 's') return void (e.preventDefault(), save())
+    if (editing && commandKey(e) && !e.altKey && e.key === 's') return void (e.preventDefault(), save())
     if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open], .menu, .mentions:not(.hidden)')) return
     if (editing) return void (e.preventDefault(), close())
     if (selecting && root.offsetParent) setSelecting(false)

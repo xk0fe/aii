@@ -327,6 +327,22 @@ function workspaceAction(op, id, arg) {
 }
 const emit = () => setTimeout(() => window.__crewEmit('state', state), 30)
 let nextTask = 14
+// ?platform=win32: the pages as Windows shows them (Ctrl for ⌘, "this PC", paths with drive letters, the titlebar with
+// room for the window buttons), rendered on a Mac. This computer's folders are Windows paths; a linked Mac's stay its
+// own. ?dev=1: as when Crew runs from source (npm run dev), with the developer's extras.
+const QUERY = new URLSearchParams(location.search)
+const PLATFORM = QUERY.get('platform') === 'win32' ? 'win32' : 'darwin'
+const HOME = PLATFORM === 'win32' ? 'C:\\Users\\you' : '/Users/you'
+if (PLATFORM === 'win32') {
+  const win = (p) => (p ? p.replace(/^\/Users\/you/, HOME).replace(/\//g, '\\') : p)
+  Object.assign(COMPUTERS.me, { name: 'Studio PC', slug: 'studio-pc' })
+  FOLDERS[''] = FOLDERS[''].map(([p, label]) => [win(p), label])
+  for (const w of WORKSPACES) {
+    w.folder = win(w.folder)
+    for (const m of w.members ?? []) m.folder = win(m.folder)
+  }
+  for (const a of state.roster ?? []) a.cwd = win(a.cwd)
+}
 
 // Enough of the task actions for the recordings: add, start, accept.
 function taskAction(op, key, arg) {
@@ -436,6 +452,9 @@ window.__crewFit = null
 window.__crewEmit = (channel, ...args) => listeners[channel]?.forEach((fn) => fn(...args))
 window.__crewState = state
 window.crew = {
+  platform: PLATFORM,
+  home: HOME,
+  dev: QUERY.get('dev') === '1',
   call: async (action, ...args) => {
     if (action === 'state') return state
     // sending from the chat: your message lands in the feed (Auto goes to joseph), threaded when it's a reply
@@ -493,7 +512,7 @@ window.crew = {
     // moving an agent to another computer: its folders there, then the move itself
     if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? []).map(([path, label]) => ({ path, label }))
     if (action === 'folderInfo') {
-      const full = String(args[1]).replace(/^~/, '/Users/you')
+      const full = String(args[1]).replace(/^~/, args[0] ? '/Users/you' : HOME)
       return { exists: (FOLDERS[args[0] ?? ''] ?? []).some(([p]) => p === full), path: full }
     }
     if (action === 'pickFolder') return '~/code/site'
