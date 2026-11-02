@@ -869,8 +869,8 @@ const linkDialog = $('#link')
 let linkKey = ''
 let fresh = null // a computer just linked: its agents are shown to pick from
 let linkErr = '' // kept across redraws until the next try
-// what's unfolded: this Mac's addresses, each linked computer's agents, the paste-a-code form; and "Copied" for a moment
-const linkOpen = { details: false, computers: new Set(), form: false, copied: false }
+// what's unfolded: this computer's security details, each linked computer's agents, the paste-a-code form; and "Copied" for a moment
+const linkOpen = { details: false, computers: new Set(), form: false, copied: false, detailsCopied: false }
 let copiedTimer = null
 
 function drawComputers(state) {
@@ -892,8 +892,9 @@ const LINK_CHEV = `<span class="lk-chev">${ICONS.chevron}</span>`
 // A computer's icon by its name: a MacBook is a laptop, anything else a desktop.
 const machineIcon = (name) => (/book|laptop/i.test(name ?? '') ? ICONS.laptop : ICONS.desktop)
 
-// This Mac (its name, sharing, the code and the details behind it), the linked computers, the paste-a-code form
-// when it's asked for, and phones.
+// This computer (its name, sharing, the code to copy, and how safe it is behind that), the linked computers, the
+// paste-a-code form when it's asked for, and phones. The code itself, the addresses and the port aren't shown: Copy link
+// code is what you need, and Copy connection details has the rest for when something doesn't connect.
 function computersHTML({ me, links, phones }) {
   const mine = `
     <div class="lk-li"><span class="lk-ic">${machineIcon(me.name)}</span><div class="lk-k">
@@ -901,14 +902,13 @@ function computersHTML({ me, links, phones }) {
       <small>${plural(me.agents ?? 0, 'agent')} run here</small></div></div>
     <label class="lk-li lk-sw"><div class="lk-k">Let your other computers link to this one</div><input type="checkbox" class="switch" data-link-share ${me.sharing ? 'checked' : ''}></label>
     ${me.sharing ? `
-      <div class="lk-li"><button class="btn primary lk-copy" data-link-copy title="Anyone with this code can use and drive your agents, so keep it to your own Macs">${linkOpen.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy link code`}</button>
-        <span class="lk-note">Paste it on the other Mac, under Link a computer.</span></div>
-      <button class="lk-li lk-more" data-lk-details aria-expanded="${linkOpen.details}"><span>Addresses, port and a new code</span>${LINK_CHEV}</button>
+      <div class="lk-li"><button class="btn primary lk-copy" data-link-copy title="Anyone with this code can use and drive your agents, so keep it to your own computers">${linkOpen.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy link code`}</button>
+        <span class="lk-note"><b>Ready to link.</b> Paste the code on your other computer, under Link a computer.</span></div>
+      <button class="lk-li lk-more" data-lk-details aria-expanded="${linkOpen.details}"><span>Security and a new code</span>${LINK_CHEV}</button>
       ${linkOpen.details ? `<div class="lk-details">
-        <p>Anyone with the link code can use and drive your agents, so keep it to your own Macs. Linked computers see these agents as <b>name@${esc(me.slug)}</b>.</p>
-        <code>${esc(me.code)}</code>
-        <div class="addr">${(me.hosts ?? []).map((h) => `<span><b>${esc(h.address)}</b> ${esc(h.via)}</span>`).join('')}</div>
-        <div class="lk-row"><span>Port ${me.port}</span><button class="btn small" data-link-reset title="Makes a new code; computers using the old one are disconnected">New code</button></div>
+        <p>Anyone with the link code can use and drive your agents, so keep it to your own computers. Linked computers see these agents as <b>name@${esc(me.slug)}</b>.</p>
+        <p>${esc(reachText(me.hosts))}</p>
+        <div class="lk-row"><span>A new code disconnects the computers using this one, until they link again.</span><span class="lk-btns"><button class="btn small" data-link-details-copy title="This computer's addresses and port, for when a computer can't connect">${linkOpen.detailsCopied ? 'Copied' : 'Copy connection details'}</button><button class="btn small" data-link-reset>New code</button></span></div>
       </div>` : ''}`
     : me.error ? `<div class="lk-li"><p class="err">${esc(errorReason(me.error) || "Crew couldn't start sharing this computer. Turn it off and on again.")}</p></div>` : ''}`
   const form = linkOpen.form || linkErr ? `
@@ -925,6 +925,14 @@ function computersHTML({ me, links, phones }) {
     <div class="lk-label">Phones</div>
     ${phonesHTML(phones ?? { devices: [] })}`
 }
+
+// How others reach this computer, in words: "Reachable over your local network and Tailscale."
+function reachText(hosts = []) {
+  const ways = [...new Set(hosts.map((h) => (/tailscale/i.test(h.via) ? 'Tailscale' : 'your local network')))]
+  return ways.length ? `Reachable over ${ways.join(' and ')}.` : 'Not reachable over a network right now: check this computer is on Wi-Fi or Ethernet.'
+}
+// For Copy connection details: what someone helping you would ask for.
+const connectionDetails = (me) => [`${me.name} (${me.slug}), Crew Link port ${me.port}`, ...(me.hosts ?? []).map((h) => `${h.address} (${h.via})`)].join('\n')
 
 // How a linked computer is: "Online · local network · 7 agents", or "Offline · 3 agents" (why, on hover).
 function linkStatus(l) {
@@ -1136,7 +1144,7 @@ watchScale()
 function openComputers() {
   fresh = null
   linkErr = ''
-  Object.assign(linkOpen, { details: false, form: false, copied: false })
+  Object.assign(linkOpen, { details: false, form: false, copied: false, detailsCopied: false })
   linkOpen.computers.clear()
   phoneFresh = null
   phoneErr = ''
@@ -1175,6 +1183,12 @@ linkDialog.addEventListener('click', async (e) => {
       drawComputers(state)
       clearTimeout(copiedTimer)
       copiedTimer = setTimeout(() => ((linkOpen.copied = false), drawComputers(state)), 1800)
+    }
+    if (t.closest('[data-link-details-copy]')) {
+      await crew.call('copy', connectionDetails(state.computers.me))
+      linkOpen.detailsCopied = true
+      drawComputers(state)
+      setTimeout(() => ((linkOpen.detailsCopied = false), drawComputers(state)), 1800)
     }
     if (t.closest('[data-link-reset]') && confirm('Make a new code? Computers using the current one are disconnected until they link again with the new one.')) await crew.call('link', 'reset')
     if (t.closest('[data-link-connect]')) {
