@@ -16,7 +16,7 @@ process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-workspaces-'
 // stand-in codex there (test/helpers/clis.mjs) can't run, which is as good
 if (process.platform !== 'win32') process.env.PATH = '/usr/bin:/bin'
 const HOME = process.env.CREW_HOME
-const { Hub, CONFIG, openConfig } = await import('../core/hub.js')
+const { Hub, CONFIG, openConfig, fileKey, filePath } = await import('../core/hub.js')
 const { DEFAULT, dirOf, space, workspacesIn, forget, renameShared, sharedNames } = await import('../core/workspaces.js')
 const { Scoped } = await import('../core/runner.js')
 const { serve } = await import('../core/server.js')
@@ -644,7 +644,8 @@ test('a file is edited by one agent at a time, whichever workspace it works in; 
   assert.ok(ws.lease('joseph', edit(file)), "Golf's joseph is another agent: turned away too")
   home.release('joseph') // its turn ends
   assert.equal(ws.lease('kim', edit(file)), '')
-  assert.equal(home.leases.get(file).ws, 'golf', 'one record: Home sees Golf has it')
+  // held under the file's key (on Windows its path in lower case)
+  assert.equal(home.leases.get(fileKey(filePath(file, API))).ws, 'golf', 'one record: Home sees Golf has it')
 })
 
 test('crew lease: one simulator for every workspace; it goes to whoever waits for it, in any of them', async () => {
