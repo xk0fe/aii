@@ -449,7 +449,7 @@ export class Hub extends EventEmitter {
   // A first draft of an agent's instructions, written by its own brain from its name and area.
   draftPrompt(agent) {
     const provider = this.providers[agent.provider ?? 'claude']
-    if (!provider) throw new Error(`unknown provider "${agent.provider}"`)
+    if (!provider) throw new Error(`Crew doesn't know how to run "${agent.provider}": pick Claude Code or Codex`)
     if (provider.missing.length) throw new Error(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const teammates = [...this.agents.values()].filter((a) => a.name !== agent.name && !a.cloneOf).map((a) => `${a.name} (${a.area || 'general'})`).join(', ')
     return generatePrompt(agent, provider, teammates)
@@ -514,7 +514,7 @@ export class Hub extends EventEmitter {
       this.setStatus(a, 'stopped')
       this.post({ kind: 'event', from: a.name, text })
     }
-    if (!adapter) return fail(`unknown provider "${a.provider}", define it under "providers" in config.json`)
+    if (!adapter) return fail(`can't start: it's set to run "${a.provider}", which Crew doesn't know how to run. Pick Claude Code or Codex for it in its settings`)
     if (provider.missing.length) return fail(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const resume = this.sessions[a.name]
     const session = randomUUID()

@@ -400,7 +400,7 @@ test("a config.json that can't be read is said in the default workspace's chat, 
   const first = new Hub(new Scoped(new FakeRunner(), DEFAULT, true), { bin: BIN, config: cfg, token: 'tok' })
   const other = new Hub(new Scoped(new FakeRunner(), 'golf', false), { bin: BIN, workspace: 'golf', config: cfg, token: 'tok' })
   try {
-    assert.match(first.feed.at(-1)?.text ?? '', /^config\.json: /)
+    assert.match(first.feed.at(-1)?.text ?? '', /^Crew couldn't read its settings \(.*config\.json: .*\), so it carries on with the ones it had$/)
     assert.equal(first.space.autopilot, true)
     assert.equal(first.config.theme, 'system')
     assert.equal(first.agents.size, 0)
@@ -423,7 +423,7 @@ test("terminals still running for a workspace that's gone from config.json are s
   await c.start()
   try {
     assert.deepEqual(killed, ['old/kim'])
-    assert.match(c.hub.feed.at(-1).text, /stopped old\/kim: it was still running for a workspace that's no longer in config\.json/)
+    assert.match(c.hub.feed.at(-1).text, /stopped old\/kim: it was still running for a workspace that's been removed/)
   } finally {
     c.server.close()
     c.stop()
