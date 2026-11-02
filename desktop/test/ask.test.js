@@ -279,8 +279,11 @@ test('a question waiting for hours stays answerable after 200 newer entries', { 
 
 test('the hook prints nothing on an HTTP error and always ends before the agent would kill it', { timeout: 5000 }, async () => {
   const { adapters, ASK_WAIT } = await import('../core/adapters.js')
-  const claude = adapters.claude({ name: 'joseph' }, { session: 'x', attachments: '/tmp' })
-  const settings = JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
+  const settingsOf = (platform) => {
+    const claude = adapters.claude({ name: 'joseph' }, { session: 'x', attachments: '/tmp', platform, bin: platform === 'win32' ? 'C:\\Crew\\bin' : '/crew/bin' })
+    return JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
+  }
+  const settings = settingsOf('darwin')
   const hook = settings.hooks.PermissionRequest[0].hooks[0]
   assert.match(hook.command, /curl -sf -m 86390 /)
   assert.equal(hook.timeout, ASK_WAIT.claude)
@@ -288,7 +291,13 @@ test('the hook prints nothing on an HTTP error and always ends before the agent 
   // is free before a file tool writes it (core/hub.js lease), never waiting on you
   assert.deepEqual(settings.hooks.PreToolUse.map((h) => h.matcher), ['Agent|Task', 'Edit|Write|MultiEdit|NotebookEdit'])
   assert.doesNotMatch(JSON.stringify(settings.hooks.PreToolUse), /\/ask\//)
-  const codex = adapters.codex({ name: 'marc' }, {}).args.find((a) => a.startsWith('hooks.PermissionRequest='))
+  const codex = adapters.codex({ name: 'marc' }, { platform: 'darwin' }).args.find((a) => a.startsWith('hooks.PermissionRequest='))
   assert.match(codex, /curl -sf -m 1790 /)
   assert.match(codex, /timeout=1800/)
+  // Windows: crew-hook.exe gives up as curl does, 10 s before each CLI would kill it
+  const win = settingsOf('win32').hooks.PermissionRequest[0].hooks[0]
+  assert.deepEqual([win.args, win.timeout], [['ask', '86390'], ASK_WAIT.claude])
+  const winCodex = adapters.codex({ name: 'marc' }, { platform: 'win32' }).args.find((a) => a.startsWith('hooks.PermissionRequest='))
+  assert.match(winCodex, /crew-hook ask 1790/)
+  assert.match(winCodex, /timeout=1800/)
 })
