@@ -3,8 +3,8 @@
 // the arguments exactly as it got them. A program, because anything can start one with every argument intact (Claude
 // Code's hooks start crew-hook.exe with no shell at all; Codex's go through PowerShell or cmd), where cmd.exe would
 // cut a .cmd's argument at its first newline and read & | % " in it its own way, and PowerShell runs a .ps1 before
-// anything else of the name, or refuses to under the default execution policy. (Git Bash finds bin/crew and
-// bin/crew-status, the sh scripts, first: core/launch.js withTools.)
+// anything else of the name, or refuses to under the default execution policy. (Git Bash runs the copies of bin/crew
+// and bin/crew-status in the same folder: core/launch.js withTools.)
 //
 // Crew's runtime is its own Electron binary run as Node: CREW_NODE says where it is (core/hub.js sets it for every
 // agent), or else node.exe on PATH. ELECTRON_RUN_AS_NODE=1 is set here, for that one process: in the agent's own
@@ -18,11 +18,24 @@
 #include <windows.h>
 
 #define MAX_LINE 32768
+#define MAX_COMMAND 32766 // what CreateProcess takes, its terminating NUL aside
+
+static HANDLE job, child; // the child, and the job it runs in (when there's one)
 
 static void say(const char *text) {
   DWORD n;
   HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
   if (err && err != INVALID_HANDLE_VALUE) WriteFile(err, text, lstrlenA(text), &n, NULL);
+}
+
+static void say_code(const char *text, DWORD code) {
+  char digits[16];
+  int i = sizeof digits - 1;
+  digits[i] = 0;
+  do digits[--i] = (char)('0' + code % 10); while ((code /= 10) && i > 0);
+  say(text);
+  say(digits + i);
+  say(")\n");
 }
 
 // What follows the program's name in a command line, where CommandLineToArgvW would end that name.
@@ -38,7 +51,7 @@ static const wchar_t *after_program(const wchar_t *p) {
 }
 
 static int append(wchar_t *to, const wchar_t *text) {
-  if (lstrlenW(to) + lstrlenW(text) >= MAX_LINE) return 0;
+  if (lstrlenW(to) + lstrlenW(text) > MAX_COMMAND) return 0;
   lstrcatW(to, text);
   return 1;
 }
@@ -51,25 +64,30 @@ static HANDLE std_handle(DWORD which) {
   return h;
 }
 
-// Ctrl+C reaches the child too, in the same console: this program waits for it to finish rather than going first. (A
-// routine, not SetConsoleCtrlHandler(NULL, TRUE), which the child would inherit and then ignore Ctrl+C too.)
-static BOOL WINAPI wait_for_child(DWORD event) {
+// Ctrl+C (or the console closing) ends the child, then this program with its exit code. The child never hears it
+// itself: a GUI program given its handles, as Crew's Electron binary is here, doesn't attach to the console. (A routine,
+// not SetConsoleCtrlHandler(NULL, TRUE), which the child would inherit.)
+static BOOL WINAPI end_child(DWORD event) {
   (void)event;
+  if (job) TerminateJobObject(job, STATUS_CONTROL_C_EXIT);
+  else if (child) TerminateProcess(child, STATUS_CONTROL_C_EXIT);
   return TRUE;
 }
 
-// A job that ends the child with this program, whatever ends it, with an attribute list that starts the child in it.
-static LPPROC_THREAD_ATTRIBUTE_LIST in_job(HANDLE *job) {
-  *job = CreateJobObjectW(NULL, NULL);
-  if (!*job) return NULL;
+// A job that ends the child with this program, whatever ends it (made), and an attribute list that starts the child
+// in it; NULL when Windows won't, and then the child starts without one.
+static LPPROC_THREAD_ATTRIBUTE_LIST in_job(HANDLE *made) {
+  static HANDLE jobs[1];
+  *made = jobs[0] = CreateJobObjectW(NULL, NULL);
+  if (!*made) return NULL;
   JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {0};
   limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
   SIZE_T size = 0;
   InitializeProcThreadAttributeList(NULL, 1, 0, &size);
   LPPROC_THREAD_ATTRIBUTE_LIST list = HeapAlloc(GetProcessHeap(), 0, size);
-  if (list && SetInformationJobObject(*job, JobObjectExtendedLimitInformation, &limits, sizeof limits) &&
+  if (list && SetInformationJobObject(*made, JobObjectExtendedLimitInformation, &limits, sizeof limits) &&
       InitializeProcThreadAttributeList(list, 1, 0, &size)) {
-    if (UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, job, sizeof *job, NULL, NULL)) return list;
+    if (UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, jobs, sizeof jobs, NULL, NULL)) return list;
     DeleteProcThreadAttributeList(list);
   }
   return NULL;
@@ -108,26 +126,32 @@ int main(void) {
   }
 
   SetEnvironmentVariableW(L"ELECTRON_RUN_AS_NODE", L"1");
-  SetConsoleCtrlHandler(wait_for_child, TRUE);
+  SetConsoleCtrlHandler(end_child, TRUE);
 
   STARTUPINFOEXW si = {0};
   si.StartupInfo.cb = sizeof si;
-  si.StartupInfo.dwFlags = STARTF_USESTDHANDLES; // Crew's Electron binary is a GUI program: no handles unless given these
+  // Crew's Electron binary is a GUI program: it has no handles unless given these, and without FORCEOFFFEEDBACK
+  // Windows shows the busy cursor for every start (each hook, each status line) until it opens a window it never opens.
+  si.StartupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_FORCEOFFFEEDBACK;
   si.StartupInfo.hStdInput = std_handle(STD_INPUT_HANDLE);
   si.StartupInfo.hStdOutput = std_handle(STD_OUTPUT_HANDLE);
   si.StartupInfo.hStdError = std_handle(STD_ERROR_HANDLE);
-  HANDLE job = NULL;
-  si.lpAttributeList = in_job(&job);
+  HANDLE made = NULL;
+  si.lpAttributeList = in_job(&made);
   PROCESS_INFORMATION pi;
   BOOL started = si.lpAttributeList && CreateProcessW(runtime, line, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT, NULL, NULL, &si.StartupInfo, &pi);
-  if (!started) { // no job, then
+  if (started) {
+    job = made;
+  } else { // no job, then
+    if (made) CloseHandle(made);
     si.StartupInfo.cb = sizeof si.StartupInfo;
     started = CreateProcessW(runtime, line, NULL, NULL, TRUE, 0, NULL, NULL, &si.StartupInfo, &pi);
   }
   if (!started) {
-    say("crew: can't start Crew's runtime (CREW_NODE): is Crew still installed where it was?\n");
+    say_code("crew: can't start Crew's runtime, CREW_NODE (Windows error ", GetLastError());
     return 1;
   }
+  child = pi.hProcess;
   CloseHandle(pi.hThread);
   WaitForSingleObject(pi.hProcess, INFINITE);
   DWORD code = 1;

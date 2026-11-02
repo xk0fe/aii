@@ -172,7 +172,7 @@ test("crew-hook ask and lease: Crew's decision is printed, as ASCII that no shel
 })
 
 test("crew-status: tells Crew the context, then prints Crew's line, or yours (with the same JSON) when you have one", SIDE_BY_SIDE, async () => {
-  const crew = await crewServer(() => ({ body: '\x1b[32mcontext 12% · 24k of 200k\x1b[0m' }))
+  const crew = await crewServer(() => ({ body: '\x1b[32mcontext 12% · 24k of 200k\x1b[0m\n' }))
   const env = posixEnv(home('status', { url: crew.url }), { CREW_WORKSPACE: 'golf', COLUMNS: '80' })
   const input = JSON.stringify({ session_id: 's', context_window: { used_percentage: 12 } })
   const [sh, node] = await both.status({ env, input })
@@ -197,7 +197,10 @@ test("crew.mjs is started only as crew, crew-status or crew-hook, and never pass
   const crew = await crewServer()
   const env = posixEnv(home('runas', { url: crew.url }), { ELECTRON_RUN_AS_NODE: '1', CREW_STATUS_LINE: 'printf "%s" "${ELECTRON_RUN_AS_NODE:-unset}"' })
   assert.equal((await run(process.execPath, [CREW_MJS, 'crew-status'], { env, input: '{}' })).stdout, 'unset')
-  assert.equal((await run(process.execPath, [CREW_MJS, 'crew-hook', 'nonsense'], { env })).code, 2)
+  // a hook that came with no arguments (a Claude Code before 2.1.139 runs only the command) mustn't block anything: 0
+  const bare = await run(process.execPath, [CREW_MJS, 'crew-hook'], { env })
+  assert.deepEqual([bare.code, bare.stdout], [0, ''])
+  assert.match(bare.stderr, /2\.1\.139/)
   await crew.close()
 })
 
@@ -211,6 +214,13 @@ const zig = (() => {
     return false
   }
 })()
+
+test('bin/win32-x64 and bin/win32-arm64 hold bin/crew and bin/crew-status as they are, for Git Bash', async () => {
+  const { TARGETS, SCRIPTS } = await import('../scripts/build-shims.mjs')
+  for (const arch of Object.keys(TARGETS)) {
+    for (const name of SCRIPTS) assert.ok(fs.readFileSync(path.join(BIN, `win32-${arch}`, name)).equals(fs.readFileSync(path.join(BIN, name))), `bin/win32-${arch}/${name}: run node scripts/build-shims.mjs`)
+  }
+})
 
 test('bin/win32-x64 and bin/win32-arm64 are what native/crew-shim.c builds, one program under three names', { skip: !zig && 'needs zig' }, async () => {
   const { build, TARGETS, NAMES } = await import('../scripts/build-shims.mjs')
@@ -303,6 +313,9 @@ test('Windows: through PowerShell, cmd and Git Bash, the hooks, the status line 
       p.stdin.end(input)
     })
   const event = '{"hook_event_name":"Stop","last_assistant_message":"Grün ✓ & | > 100%"}'
+  // which crew each shell runs: the .exe in PowerShell (a PATHEXT name before the bare one), the sh copy in Git Bash
+  assert.match((await viaShell(pwsh, ['-NoProfile', '-Command', '(Get-Command crew).Source; (Get-Command crew-status).Source'])).stdout, /crew\.exe\r?\n.*crew-status\.exe/)
+  if (bash) assert.match((await viaShell(bash, ['-c', 'type -p crew crew-status'])).stdout, /\/crew\n.*\/crew-status\n/)
   // Codex's hooks
   await viaShell(pwsh, ['-NoProfile', '-Command', 'crew-hook hook'], event)
   assert.equal(crew.got.at(-1).body, event, 'PowerShell')
@@ -318,7 +331,7 @@ test('Windows: through PowerShell, cmd and Git Bash, the hooks, the status line 
   await viaShell(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', '"crew note "50% & done | ok""'], '', true)
   assert.equal(crew.got.at(-1).body, '50% & done | ok', 'cmd')
   if (bash) {
-    // bin/crew itself (sh + curl), found before crew.exe: a Windows program would get /api rewritten into Git's folder
+    // the copy of bin/crew (sh + curl) beside crew.exe: a Windows program would get /api rewritten into Git's folder
     await viaShell(bash, ['-c', `crew send bob $'line one\\nline "two" & | > 100% é'`])
     assert.equal(crew.got.at(-1).body, 'line one\nline "two" & | > 100% é', 'Git Bash')
     await viaShell(bash, ['-c', 'crew note "/api/v2 is the base path"'])

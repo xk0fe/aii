@@ -11,8 +11,8 @@
 // The contract with Crew (core/hub.js sets these for every agent; packaging keeps bin/ outside the asar):
 //   CREW_NODE       Crew's own runtime: its Electron binary (process.execPath), which crew.exe runs with
 //                   ELECTRON_RUN_AS_NODE=1 for this one process. Without it, node.exe on PATH.
-//   PATH            bin, then bin/win32-<arch>: Git Bash finds the sh scripts in bin (as macOS does), PowerShell and
-//                   cmd, which don't run a file without an extension, the .exe files (core/launch.js withTools).
+//   PATH            bin/win32-<arch> first. It also holds copies of bin/crew and bin/crew-status, which Git Bash runs
+//                   (as macOS does); PowerShell and cmd run the .exe files (core/launch.js withTools).
 //   CREW_HOME       where Crew writes its address (url) and token each time it starts; read on every call, since an
 //                   agent can outlive the Crew that started it. CREW_URL and CREW_TOKEN when those files aren't there.
 //   CREW_AGENT, CREW_WORKSPACE   who is asking, and in which workspace (none: the default).
@@ -34,7 +34,8 @@ const crewFile = (name) => {
 }
 const agent = env.CREW_AGENT ?? ''
 
-// One request to Crew, given up after `seconds`. -> { status, body (a Buffer) }, or null when Crew isn't there.
+// One request to Crew, given up `seconds` after it began (curl -m). -> { status, body (a Buffer) }, or null when Crew
+// isn't there or took too long.
 function call(url, route, { body, method = body === undefined ? 'GET' : 'POST', seconds = 5, token = crewFile('token') } = {}) {
   return new Promise((resolve) => {
     let target
@@ -43,14 +44,15 @@ function call(url, route, { body, method = body === undefined ? 'GET' : 'POST', 
     } catch {
       return resolve(null)
     }
+    const done = (result) => (clearTimeout(timer), resolve(result))
     const req = http.request(target, { method, headers: { 'X-Crew': token, 'X-Crew-Workspace': env.CREW_WORKSPACE ?? '' } }, (res) => {
       const chunks = []
       res.on('data', (c) => chunks.push(c))
-      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }))
-      res.on('error', () => resolve(null))
+      res.on('end', () => done({ status: res.statusCode, body: Buffer.concat(chunks) }))
+      res.on('error', () => done(null))
     })
-    req.setTimeout(seconds * 1000, () => req.destroy())
-    req.on('error', () => resolve(null))
+    const timer = setTimeout(() => (req.destroy(), done(null)), seconds * 1000)
+    req.on('error', () => done(null))
     req.end(body)
   })
 }
@@ -77,8 +79,9 @@ function decision(body) {
 
 // ---- crew-hook: what the CLIs' hooks run (core/adapters.js) ----------------------------------------------------
 
+// Like the sh hooks, it always ends with 0, whatever happens: 2 would tell Claude Code to block the prompt or tool.
 async function hook([kind, seconds]) {
-  if (!['hook', 'ask', 'lease'].includes(kind)) return stop('usage: crew-hook hook | ask <seconds> | lease', 2)
+  if (!['hook', 'ask', 'lease'].includes(kind)) return stop('crew-hook: hook | ask <seconds> | lease (is Claude Code 2.1.139 or later?)', 0)
   const url = crewFile('url')
   const input = await stdin()
   const route = `/${kind}/${agent}`
@@ -105,7 +108,7 @@ async function hook([kind, seconds]) {
 async function status() {
   const input = await stdin()
   const res = await call(crewFile('url'), `/status/${agent}`, { body: input, seconds: 1 })
-  const crews = () => write(res ? res.body.toString('utf8') : '')
+  const crews = () => write(res ? res.body.toString('utf8').replace(/\n+$/, '') : '') // as $(...) left it
   if (!env.CREW_STATUS_LINE) return crews()
   const { spawn } = await import('node:child_process')
   const [shell, ...args] = yourShell()
