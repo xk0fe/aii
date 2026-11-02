@@ -20,9 +20,10 @@ after(() => {
   setTimeout(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }), 800)
 })
 
-const until = async (f, ms = 8000) => {
+// why: what to say besides "timed out"; the host's log is said too
+const until = async (f, ms = 8000, why = () => '') => {
   for (const t = Date.now(); !f(); ) {
-    if (Date.now() - t > ms) throw new Error('timed out')
+    if (Date.now() - t > ms) throw new Error(`timed out ${why()}\n${fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').slice(-3000) : ''}`)
     await new Promise((r) => setTimeout(r, 25))
   }
 }
@@ -70,7 +71,7 @@ test('an exit comes with its tag; a stop on purpose ends it without an exit, as 
   // a new process under the same name isn't mistaken for the one it replaced
   r.start('david', run('setTimeout(() => {}, 30000)', 'old'))
   r.start('david', run('setTimeout(() => {}, 30000)', 'new'))
-  await until(() => events.some(([, , tag]) => tag === 'old'))
+  await until(() => events.some(([, , tag]) => tag === 'old'), 8000, () => JSON.stringify(events))
   assert.ok(r.running('david'))
   assert.ok(!events.some(([kind, name]) => kind === 'exit' && name === 'david'))
 })
@@ -80,7 +81,8 @@ test('one that ends while Crew is away is gone the next time, and quitting the h
   await until(() => last.pid('arie') > 0)
   last.detach()
   await until(() => !alive(last.pid('arie')))
-  await new Promise((r) => setTimeout(r, 300))
+  // node-pty says a Windows terminal ended a second after it did, once its output is drained
+  await new Promise((r) => setTimeout(r, process.platform === 'win32' ? 2500 : 300))
   const next = new HostRunner({ runtime: node })
   last = next
   const survivors = await next.connect()
