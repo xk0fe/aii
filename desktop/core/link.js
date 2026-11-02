@@ -3,12 +3,13 @@
 // The channel is TLS with a self-signed certificate that the pairing code pins, and the secret key in the code
 // is only sent after the certificate checks out, so it stays private even on shared networks.
 import { EventEmitter } from 'node:events'
-import { execFile, execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import https from 'node:https'
 import os from 'node:os'
 import path from 'node:path'
+import tls from 'node:tls'
 import { WebSocketServer, WebSocket } from 'ws'
 
 export const PROTOCOL = 2
@@ -17,19 +18,88 @@ export const DEFAULT_PORT = 7787
 // A computer's short name, as agents on it are addressed from elsewhere: gal@mac-mini.
 export const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'computer'
 
-// ---- identity: a certificate + key per host, made once with openssl --------------------------
+// ---- identity: a certificate + key per host, made once ----------------------------------------------
 
+// Made here, not by openssl, which Windows doesn't have. One an older Crew made with openssl is kept, so the computers
+// linked to this one keep their code, as long as TLS here can use it: macOS's own openssl (LibreSSL) wrote the curve
+// out in full, which Electron's BoringSSL can't read, so sharing never started with one of those and nothing can have
+// linked to it. That one is replaced.
 export function identity(dir) {
   fs.mkdirSync(dir, { recursive: true })
   const certFile = path.join(dir, 'cert.pem')
   const keyFile = path.join(dir, 'key.pem')
-  if (!fs.existsSync(certFile) || !fs.existsSync(keyFile)) {
-    execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
-      '-keyout', keyFile, '-out', certFile, '-days', '3650', '-subj', '/CN=crew-link'], { stdio: 'ignore' })
-    fs.chmodSync(keyFile, 0o600)
+  const saved = usable(certFile, keyFile)
+  if (saved) return saved
+  const made = selfSigned('crew-link')
+  fs.writeFileSync(keyFile, made.key, { mode: 0o600 })
+  fs.writeFileSync(certFile, made.cert)
+  return usable(certFile, keyFile)
+}
+
+// The saved certificate and key, if there are both and this runtime's TLS takes them; null if not.
+function usable(certFile, keyFile) {
+  let cert, key
+  try {
+    cert = fs.readFileSync(certFile, 'utf8')
+    key = fs.readFileSync(keyFile, 'utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') return null
+    throw e // there but unreadable: not a reason to make a new one, which would need a new code
   }
-  const cert = fs.readFileSync(certFile, 'utf8')
-  return { cert, key: fs.readFileSync(keyFile, 'utf8'), fingerprint: new crypto.X509Certificate(cert).fingerprint256 }
+  try {
+    tls.createSecureContext({ cert, key })
+    return { cert, key, fingerprint: new crypto.X509Certificate(cert).fingerprint256 }
+  } catch {
+    return null
+  }
+}
+
+// A self-signed X.509 certificate for a new P-256 key, valid for ten years: what `openssl req -x509 -newkey ec` made.
+// The pairing code pins its fingerprint, so nothing checks more of it than that it's well formed. -> { cert, key } (PEM)
+export function selfSigned(name, { days = 3650, now = new Date() } = {}) {
+  const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+  const serial = crypto.randomBytes(16)
+  serial[0] = serial[0] & 0x7f || 1 // positive, and no leading zero byte
+  const ecdsaWithSha256 = seq(oid('1.2.840.10045.4.3.2'))
+  const who = seq(set(seq(oid('2.5.4.3'), der(0x0c, Buffer.from(name))))) // CN=name
+  const tbs = seq(
+    der(0xa0, der(0x02, Buffer.from([2]))), // v3
+    der(0x02, serial),
+    ecdsaWithSha256,
+    who,
+    seq(time(now), time(new Date(now.getTime() + days * 864e5))),
+    who,
+    publicKey.export({ type: 'spki', format: 'der' }),
+  )
+  const signature = crypto.sign('sha256', tbs, privateKey) // DER, as X.509 has it
+  const body = seq(tbs, ecdsaWithSha256, der(0x03, Buffer.concat([Buffer.from([0]), signature])))
+  const pem = `-----BEGIN CERTIFICATE-----\n${body.toString('base64').match(/.{1,64}/g).join('\n')}\n-----END CERTIFICATE-----\n`
+  return { cert: pem, key: privateKey.export({ type: 'pkcs8', format: 'pem' }) }
+}
+
+// Just enough DER for that certificate.
+function der(tag, ...parts) {
+  const body = Buffer.concat(parts)
+  const n = body.length
+  const len = n < 0x80 ? [n] : n < 0x100 ? [0x81, n] : [0x82, n >> 8, n & 0xff]
+  return Buffer.concat([Buffer.from([tag, ...len]), body])
+}
+const seq = (...parts) => der(0x30, ...parts)
+const set = (...parts) => der(0x31, ...parts)
+function oid(dotted) {
+  const [a, b, ...rest] = dotted.split('.').map(Number)
+  const out = [40 * a + b]
+  for (let n of rest) {
+    const bytes = [n & 0x7f]
+    while ((n >>= 7)) bytes.unshift(0x80 | (n & 0x7f))
+    out.push(...bytes)
+  }
+  return der(0x06, Buffer.from(out))
+}
+// UTCTime up to 2049, GeneralizedTime after, as X.509 wants it
+function time(d) {
+  const s = d.toISOString().replace(/[-:T]/g, '').slice(0, 14) + 'Z'
+  return d.getUTCFullYear() < 2050 ? der(0x17, Buffer.from(s.slice(2))) : der(0x18, Buffer.from(s))
 }
 
 // ---- pairing codes ----------------------------------------------------------------------------------
