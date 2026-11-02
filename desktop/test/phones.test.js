@@ -268,7 +268,8 @@ test('a pairing code pairs one phone, once, within ten minutes; a new code ends 
   assert.equal((await phone.connect({ port: remote.port, key: macKey() })).device.id, ready.device.id)
   // phones.json is yours only; the app sees no keys
   const file = path.join(LINK_DIR, 'phones.json')
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+  // Windows has no Unix modes (the file is in your own profile there, where only you can read it)
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600)
   assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(file, 'utf8'))), ['macId', 'key', 'devices'])
   const view = crew.snapshot().computers.phones
   assert.deepEqual(Object.keys(view.devices[0]).sort(), ['app', 'id', 'name', 'online', 'paired', 'platform', 'seen'])
@@ -291,7 +292,8 @@ test('removing a phone ends its connection (4003), it is turned away from then o
 })
 
 test("a port that's taken: the app says so, and which setting changes it", async () => {
-  const taken = net.createServer().listen(remote.port)
+  // on the addresses Crew listens on: Windows lets an IPv4 listener share a port with an IPv6 one
+  const taken = net.createServer().listen(remote.port, '0.0.0.0')
   await new Promise((r) => taken.once('listening', r))
   try {
     await code()

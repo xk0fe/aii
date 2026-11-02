@@ -12,7 +12,9 @@ import { fileURLToPath } from 'node:url'
 import { WIN } from './helpers/platform.mjs'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-workspaces-'))
-process.env.PATH = '/usr/bin:/bin' // no codex to discover once a hub starts
+// no codex to discover once a hub starts; on Windows the agents' CLIs are found on PATH before they start, and the
+// stand-in codex there (test/helpers/clis.mjs) can't run, which is as good
+if (process.platform !== 'win32') process.env.PATH = '/usr/bin:/bin'
 const HOME = process.env.CREW_HOME
 const { Hub, CONFIG, openConfig } = await import('../core/hub.js')
 const { DEFAULT, dirOf, space, workspacesIn, forget, renameShared, sharedNames } = await import('../core/workspaces.js')
