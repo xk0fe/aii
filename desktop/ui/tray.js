@@ -1,7 +1,7 @@
 // Menu bar popover: what needs you first, who's at work, the accounts' limits, and the way into everything else.
 /* global activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, elsewhere, hasWorkspaces, crew, live, morph, esc, celebrate, markSVG, store, ICONS,
    needsYou, needText, usageTip, paceWarning, resetsText, runningSubs, subsTip, clonesOf, displayName, statusText, blockedOn, ago,
-   plural, modeChips, powerSwitch */
+   plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys */
 // Everything here is local: classic scripts share one global scope with common.js and avatar.js.
 ;(() => {
   const $ = (s) => document.querySelector(s)
@@ -11,6 +11,63 @@
   $('[data-act=dashboard]').innerHTML = ICONS.expand
   $('[data-act=settings]').innerHTML = ICONS.gear
   $('[data-act=quit]').innerHTML = ICONS.power
+
+  // ---- Windows: the icon in the notification area ------------------------------------------------------------
+  // Windows has no menu bar title for "2/5", so the icon carries the count, drawn here because a page has a canvas: the
+  // three buddies in their colors (they read on a light taskbar and a dark one), and in the corner how many need you
+  // (amber) or are at work (green). main.js asks for it at each size Windows may want (16px at 100%, 32px at 200%).
+  const BUDDY_COLORS = [COLORS.sky, COLORS.pink, COLORS.lime]
+  const buddies = [...new DOMParser().parseFromString(markSVG(), 'image/svg+xml').querySelectorAll('path')].map((p) => ({
+    path: new Path2D(p.getAttribute('d')),
+    turn: /rotate\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)/.exec(p.getAttribute('transform') ?? '')?.slice(1).map(Number),
+  }))
+  const BADGE = { need: ['#ff9f0a', '#241500'], work: ['#34c759', '#062b10'] }
+  function badge(ctx, px, count, tone, { x, y, r }) {
+    const [fill, ink] = BADGE[tone]
+    const text = count <= 9 ? String(count) : px >= 24 ? '9+' : '' // too small for two figures: just the dot
+    ctx.save()
+    ctx.globalCompositeOperation = 'destination-out' // a gap round the badge, so it never runs into the buddies
+    ctx.beginPath()
+    ctx.arc(x, y, r + Math.max(1, px / 16), 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+    ctx.fillStyle = fill
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+    if (!text) return
+    ctx.fillStyle = ink
+    ctx.font = `700 ${Math.round(r * (text.length > 1 ? 1.25 : 1.55))}px 'Segoe UI Variable Text', 'Segoe UI', -apple-system, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, x, y + r * 0.08)
+  }
+  // -> a PNG data URL for each size
+  window.crewTrayIcon = ({ count = 0, tone = '' } = {}, sizes = [16, 20, 24, 32]) => sizes.map((px) => {
+    const canvas = Object.assign(document.createElement('canvas'), { width: px, height: px })
+    const ctx = canvas.getContext('2d')
+    // the mark is 24 wide and about 9.5 tall: as wide as the icon, sitting a little low like a creature on the taskbar
+    const k = px / 24
+    ctx.save()
+    ctx.translate(0, px * 0.62 - 16.3 * k)
+    ctx.scale(k, k)
+    buddies.forEach((b, i) => {
+      ctx.save()
+      if (b.turn) ctx.translate(b.turn[1], b.turn[2]), ctx.rotate((b.turn[0] * Math.PI) / 180), ctx.translate(-b.turn[1], -b.turn[2])
+      ctx.fillStyle = BUDDY_COLORS[i]
+      ctx.fill(b.path, 'evenodd')
+      ctx.restore()
+    })
+    ctx.restore()
+    if (count > 0 && BADGE[tone]) badge(ctx, px, count, tone, { x: px * 0.72, y: px * 0.28, r: px * 0.28 })
+    return canvas.toDataURL('image/png')
+  })
+  // The taskbar button's overlay, while someone needs you: the badge alone, 16px (Windows draws it in the corner).
+  window.crewBadge = (count) => {
+    const canvas = Object.assign(document.createElement('canvas'), { width: 32, height: 32 })
+    badge(canvas.getContext('2d'), 32, count, 'need', { x: 16, y: 16, r: 15 })
+    return canvas.toDataURL('image/png')
+  }
 
   // An agent in the dashboard: its terminal, with the chat on it, where a question it asked waits for your answer.
   const openAgent = (name) => crew.call('dashboard', name)
@@ -197,7 +254,8 @@
     })
   })
 
-  // Settings: the theme and config.json. A second click on the gear closes it (the press outside already did).
+  // Settings: the theme (and, running from source, config.json). A second click on the gear closes it (the press outside
+  // already did).
   let settingsMenu = null
   let settingsWasOpen = false
   addEventListener('pointerdown', (e) => (settingsWasOpen = Boolean(e.target.closest?.('[data-act=settings]') && settingsMenu?.el.isConnected)), true)
@@ -206,9 +264,8 @@
     const theme = state.theme ?? 'system'
     settingsMenu = popMenu(btn, [
       { head: 'Theme' },
-      ...[['system', 'Match macOS'], ['light', 'Light'], ['dark', 'Dark']].map(([id, text]) => ({ label: text, act: `theme:${id}`, icon: id === theme ? ICONS.check : undefined })),
-      '-',
-      { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'in your editor' },
+      ...[['system', `Match ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light'], ['dark', 'Dark']].map(([id, text]) => ({ label: text, act: `theme:${id}`, icon: id === theme ? ICONS.check : undefined })),
+      ...(crew.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
     ], (act) => (act === 'config' ? crew.call('config') : crew.call('theme', act.slice('theme:'.length))))
   }
 

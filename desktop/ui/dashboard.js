@@ -101,8 +101,7 @@ $('.tb-more').addEventListener('click', (e) => {
     '-',
     { head: 'Theme' },
     ...THEME_CHOICES.map(([id, label, icon, note]) => ({ label, icon: ICONS[icon], act: `theme:${id}`, hint: theme === id ? '✓' : note })),
-    '-',
-    { label: 'Open config.json', icon: ICONS.braces, act: 'config' },
+    ...(crew.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
   ], (act) => {
     if (act === 'unread') {
       setPanel('chat', true)
