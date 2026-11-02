@@ -62,16 +62,24 @@ test('an exit comes with its tag; a stop on purpose ends it without an exit, as 
   const events = []
   r.on('exit', (name, code) => events.push(['exit', name, code]))
   r.on('ended', (name, tag) => events.push(['ended', name, tag]))
+  // the host is still there after each, and says so in its log if it isn't
+  const up = async (after) => {
+    await new Promise((res) => setTimeout(res, 2000))
+    assert.ok(alive(r.hostPid), `the host went after ${after}:\n${fs.readFileSync(LOG, 'utf8').slice(-3000)}`)
+  }
   r.start('joseph', run('process.exit(3)', 'run2'))
   await until(() => events.length >= 2)
   assert.deepEqual(events.splice(0), [['ended', 'joseph', 'run2'], ['exit', 'joseph', 3]])
   assert.ok(!r.running('joseph'))
+  await up('a terminal that ended by itself')
   await r.stop('gal')
   assert.deepEqual(events.splice(0), [['ended', 'gal', 'run1']])
+  await up('a terminal stopped')
   // a new process under the same name isn't mistaken for the one it replaced
   r.start('david', run('setTimeout(() => {}, 30000)', 'old'))
   r.start('david', run('setTimeout(() => {}, 30000)', 'new'))
   await until(() => events.some(([, , tag]) => tag === 'old'), 8000, () => JSON.stringify(events))
+  await up('a terminal replaced')
   assert.ok(r.running('david'))
   assert.ok(!events.some(([kind, name]) => kind === 'exit' && name === 'david'))
 })

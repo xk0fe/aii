@@ -201,6 +201,7 @@ function start({ name, file, args = [], cwd, env = {}, cols = 120, rows = 36, ta
     send({ t: 'data', name, data: d })
   })
   p.onExit(({ exitCode }) => {
+    log(`terminal host: ${name} (${tag}) ended (${exitCode})${x.killed ? ', stopped' : ''}`)
     if (procs.get(name) === x) procs.delete(name)
     // Windows: one that ended by itself still holds its pseudoconsole, and node-pty (1.1) the thread that reads it,
     // until it's killed, which a host that runs for days can't leave to its exit (core/runner.js release)
