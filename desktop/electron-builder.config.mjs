@@ -20,8 +20,9 @@ const azure = env.AZURE_SIGN_ENDPOINT && env.AZURE_SIGN_ACCOUNT && env.AZURE_SIG
 const [owner, repo] = (env.RELEASE_REPO ?? '').split('/')
 
 // What goes into the app: the code and its dependencies, not the tests, scripts or sources of native parts, and of
-// node-pty's prebuilt binaries only the one for the platform (darwin, win32) and arch being built. Given whole to each
-// platform: electron-builder lets a platform's list replace the top-level one rather than add to it.
+// node-pty's prebuilt binaries only the one for the platform (darwin, win32) and arch being built. Windows' tools for
+// agents (bin/win32-x64, bin/win32-arm64: crew.exe and co.) go only into the Windows app, the one for its arch. Given
+// whole to each platform: electron-builder lets a platform's list replace the top-level one rather than add to it.
 const files = (platform) => [
   'package.json',
   'main.js',
@@ -29,6 +30,8 @@ const files = (platform) => [
   'core/**',
   'ui/**',
   'bin/**',
+  platform === 'win32' ? '!bin/win32-!(${arch})/**' : '!bin/win32-*/**',
+  '!bin/.gitattributes',
   'assets/*.png',
   `!node_modules/node-pty/prebuilds/!(${platform}-\${arch})/**`,
   '!node_modules/node-pty/{src,deps,third_party,scripts,typings}/**',
@@ -47,8 +50,10 @@ export default {
 
   asar: true,
   // Files something outside Crew's own JavaScript runs: node-pty's helpers (spawn-helper on macOS; conpty.dll,
-  // OpenConsole.exe and winpty-agent.exe on Windows), and bin/, which agents get on their PATH.
-  asarUnpack: ['node_modules/node-pty/**', 'bin/**'],
+  // OpenConsole.exe and winpty-agent.exe on Windows), bin/, which agents get on their PATH, and the terminal host,
+  // which runs as Node outside the app (core/ptyclient.js; on Windows copied out with node-pty, so updates can replace
+  // Crew's files while agents keep running).
+  asarUnpack: ['node_modules/node-pty/**', 'bin/**', 'core/ptyhost.js'],
   // node-pty ships N-API prebuilds for every platform Crew does: nothing to compile.
   npmRebuild: false,
   nodeGypRebuild: false,

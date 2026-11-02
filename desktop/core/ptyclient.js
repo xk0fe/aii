@@ -16,7 +16,10 @@ import { pathKey } from './launch.js'
 import { PROTOCOL, RUN, LOG, address } from './ptyhost.js'
 
 const SCROLLBACK = 256 * 1024
-const HOST = fileURLToPath(new URL('./ptyhost.js', import.meta.url))
+// In an installed Crew the host and node-pty are unpacked next to app.asar (electron-builder.config.mjs asarUnpack):
+// the host runs from there as plain Node, and on Windows they're copied from there (stage).
+const unpacked = (file) => file.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
+const HOST = unpacked(fileURLToPath(new URL('./ptyhost.js', import.meta.url)))
 const LOG_KEEP = 1024 * 1024 // past this the log starts afresh, and the one before is kept as ptyhost.log.1
 // Where the host runs from on Windows: a copy per version (stage).
 export const RUNTIMES = path.join(RUN, 'runtime')
@@ -84,7 +87,7 @@ export class HostRunner extends EventEmitter {
     const packaged = process.platform === 'win32' && Boolean(process.versions.electron) && !process.defaultApp
     if (!(this.runtime.stage ?? packaged)) return [direct]
     try {
-      const pty = path.dirname(createRequire(import.meta.url).resolve('node-pty/package.json'))
+      const pty = unpacked(path.dirname(createRequire(import.meta.url).resolve('node-pty/package.json')))
       const copy = await stage({ exe: direct.file, script: HOST, pty, into: this.runtime.into ?? RUNTIMES })
       return [{ ...direct, ...copy, staged: true }, direct]
     } catch (e) {
