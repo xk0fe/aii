@@ -193,7 +193,8 @@ test('bin/crew-sh writes down each command\'s group and runs it as the shell wou
   else assert.deepEqual([...readGroups(file).keys()], [leader])
   // Crew wasn't running when the CLI ended: the next start sweeps it
   hub.sweepStale()
-  assert.ok(await gone(sleep, 8000), seen())
+  // the sweep lists every process first: PowerShell on Windows, seconds when the computer is busy
+  assert.ok(await gone(sleep, WIN ? 30000 : 8000), seen())
   assert.match(hub.feed.findLast((e) => e.kind === 'event')?.text ?? '', /left a process running \(sleep\)/, seen())
 })
 
