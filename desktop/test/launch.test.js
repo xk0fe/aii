@@ -97,6 +97,8 @@ test('Windows: a command is found the way cmd.exe finds it, by PATHEXT, in PATH 
   assert.equal(which('C:\\Tools\\claude.exe', where.env.Path, where), 'C:\\Tools\\claude.exe', 'a path stays as it is')
   const first = win({ 'C:\\Windows\\system32\\claude.cmd': '', [`${NPM}\\claude.exe`]: '' })
   assert.equal(which('claude', first.env.Path, first), 'C:\\Windows\\system32\\claude.cmd', 'an earlier folder wins')
+  const script = win({ 'C:\\Windows\\system32\\claude.js': '', 'C:\\Windows\\system32\\claude.vbs': '', [`${NPM}\\claude.exe`]: '' })
+  assert.equal(which('claude', script.env.Path, script), `${NPM}\\claude.exe`, "PATHEXT's .JS and .VBS aren't programs Crew can start")
 })
 
 test("Windows: PATH is the environment's own key, so an agent's environment never holds Path and PATH both", () => {

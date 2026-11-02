@@ -105,12 +105,13 @@ async function hook([kind, seconds]) {
 async function status() {
   const input = await stdin()
   const res = await call(crewFile('url'), `/status/${agent}`, { body: input, seconds: 1 })
-  if (!env.CREW_STATUS_LINE) return write(res ? res.body.toString('utf8') : '')
+  const crews = () => write(res ? res.body.toString('utf8') : '')
+  if (!env.CREW_STATUS_LINE) return crews()
   const { spawn } = await import('node:child_process')
   const [shell, ...args] = yourShell()
   return new Promise((resolve) => {
     const child = spawn(shell, [...args, env.CREW_STATUS_LINE], { stdio: ['pipe', 'inherit', 'inherit'], windowsHide: true })
-    child.on('error', () => resolve())
+    child.on('error', () => crews().then(resolve)) // no shell to run yours with: Crew's, rather than nothing
     child.on('exit', (code) => resolve((process.exitCode = code ?? 1)))
     child.stdin.on('error', () => {})
     child.stdin.end(input)

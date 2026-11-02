@@ -184,6 +184,8 @@ test("crew-status: tells Crew the context, then prints Crew's line, or yours (wi
   const [sh2, node2] = await both.status({ env: yours, input })
   assert.deepEqual(node2, sh2)
   assert.equal(node2.stdout, 'mine 80 {"session_id":')
+  const noShell = await run(process.execPath, [CREW_MJS, 'crew-status'], { env: { ...yours, SHELL: '/nowhere/sh' }, input })
+  assert.equal(noShell.stdout, '\x1b[32mcontext 12% · 24k of 200k\x1b[0m', "no shell to run yours with: Crew's line, not nothing")
   await crew.close()
   const [sh3, node3] = await both.status({ env, input })
   assert.deepEqual([node3.stdout, sh3.stdout], ['', ''], 'Crew closed: an empty line')

@@ -10,6 +10,9 @@ import path from 'node:path'
 
 const WIN = 'win32'
 const PATHEXT = '.COM;.EXE;.BAT;.CMD' // cmd.exe's own, when PATHEXT isn't set
+// Of PATHEXT, what Crew can start: a program, or a batch file it sees through (a .js or .vbs would need its file type's
+// program, which only cmd.exe and Explorer look up).
+const STARTABLE = new Set(['.com', '.exe', '.bat', '.cmd'])
 const BATCH = /\.(cmd|bat)$/i
 
 // Where each CLI's own Windows installers put it, for when Crew started before it was installed and its PATH doesn't
@@ -66,7 +69,7 @@ export function which(cmd, PATH = '', { platform = process.platform, env = proce
     return cmd
   }
   if (/[\\/:]/.test(cmd)) return cmd
-  const exts = (envOf(env, 'PATHEXT') || PATHEXT).split(';').filter(Boolean).map((e) => e.toLowerCase())
+  const exts = (envOf(env, 'PATHEXT') || PATHEXT).split(';').map((e) => e.toLowerCase()).filter((e) => STARTABLE.has(e))
   const tries = exts.includes(path.win32.extname(cmd).toLowerCase()) ? [''] : exts
   for (const entry of PATH.split(';')) {
     const dir = entry.trim().replace(/^"(.*)"$/, '$1')
