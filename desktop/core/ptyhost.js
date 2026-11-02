@@ -160,7 +160,7 @@ function handle(m) {
     case 'start':
       return start(m)
     case 'stop':
-      return x?.p.kill()
+      return kill(x)
     case 'write':
       return x?.p.write(String(m.data))
     case 'resize':
@@ -175,7 +175,7 @@ function handle(m) {
 }
 
 function start({ name, file, args = [], cwd, env = {}, cols = 120, rows = 36, tag }) {
-  procs.get(name)?.p.kill() // a terminal by this name is replaced; its exit still comes, with its own tag
+  kill(procs.get(name)) // a terminal by this name is replaced; its exit still comes, with its own tag
   let p
   try {
     p = pty.spawn(file, args, { name: 'xterm-256color', cols, rows, cwd, env })
@@ -193,12 +193,25 @@ function start({ name, file, args = [], cwd, env = {}, cols = 120, rows = 36, ta
   })
   p.onExit(({ exitCode }) => {
     if (procs.get(name) === x) procs.delete(name)
+    // Windows: one that ended by itself still holds its pseudoconsole, and node-pty (1.1) the thread that reads it,
+    // until it's killed, which a host that runs for days can't leave to its exit (core/runner.js release)
+    if (WIN && !x.killed) {
+      try {
+        p.kill()
+      } catch {}
+    }
     const e = { name, tag, code: exitCode, ms: Date.now() - x.startedAt }
     if (client) send({ t: 'exit', ...e })
     else gone.push(e)
     idle()
   })
   send({ t: 'started', name, tag, pid: p.pid })
+}
+
+function kill(x) {
+  if (!x) return
+  x.killed = true
+  x.p.kill()
 }
 
 // The last SCROLLBACK characters, as one chunk.
@@ -223,7 +236,7 @@ function idle() {
 }
 
 function quit() {
-  for (const x of procs.values()) x.p.kill()
+  for (const x of procs.values()) kill(x)
   if (!WIN) fs.rmSync(SOCKET, { force: true })
   else if (address()?.path === here) fs.rmSync(PIPE, { force: true }) // unless a newer host has said where it is
   // a moment for the terminals' processes to take the hint

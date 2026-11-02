@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { program, alive, gone } from './helpers/platform.mjs'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-host-'))
@@ -125,6 +126,19 @@ test("a program named without its folder is found on the agent's PATH, whatever 
   r.start('ada', { file: 'node', args: [], cwd: tmp, env: { [process.platform === 'win32' ? 'Path' : 'PATH']: path.dirname(process.execPath) }, tag: 'run5' })
   assert.equal(sent[0].t, 'start')
   assert.equal(sent[0].file.toLowerCase(), process.execPath.toLowerCase())
+})
+
+test('a terminal whose program ends by itself leaves nothing behind that keeps its process up', () => {
+  // as the terminal host and Crew's own runner hold terminals: on Windows node-pty kept the pseudoconsole and its
+  // reading thread until a kill, so the process could never end by itself
+  const runner = new URL('../core/runner.js', import.meta.url).href
+  const script = `
+    const { Runner } = await import(${JSON.stringify(runner)})
+    const r = new Runner()
+    r.on('exit', (name, code) => console.log('exited', code))
+    r.start('a', { file: process.execPath, args: ['-e', 'console.log(1)'], cwd: process.cwd(), env: {}, tag: 't' })`
+  const out = execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 60000, windowsHide: true })
+  assert.match(out, /exited 0/)
 })
 
 // ---- the parts that differ on Windows, checked on any computer ----------------------------------------------
