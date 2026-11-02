@@ -17,7 +17,7 @@ const hint = src.match(/say\(\(await crew\.call\('send', .*\)\)(\.trim\(\)[^\n]*
 const format = new Function('r', `return r${hint}`)
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-composer-'))
-const { Hub, CONFIG } = await import(path.join(A, 'core/hub.js'))
+const { Hub, CONFIG } = await import('../core/hub.js')
 const CREW = ['joseph', 'david', 'gal', 'arie', 'jeff'].map((name) => ({ name, area: name })).concat({ name: 'ye', area: 'x', off: true })
 class FakeRunner extends EventEmitter { on_ = new Set(); running = (n) => this.on_.has(n); submit() {}; write() {}; stop() {}; start() {} }
 let hub

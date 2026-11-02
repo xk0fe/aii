@@ -25,7 +25,7 @@ const { Remote, macKeys, seal, open } = await import('../core/remote.js')
 const { keyPair, privateKey, publicKey } = await import('../core/phones.js')
 const { VERSION, SALT, CLOSE, b64, unb64, utf8, concat, keyInfo, readPairCode, pack, unpack } = await import('../../shared/protocol.js')
 const { apply } = await import('../../shared/sync.js')
-const BIN = new URL('../bin', import.meta.url).pathname
+const BIN = fileURLToPath(new URL('../bin', import.meta.url))
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-phones-folders-'))
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

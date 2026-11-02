@@ -8,6 +8,7 @@ import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-workspaces-'))
 process.env.PATH = '/usr/bin:/bin' // no codex to discover once a hub starts
@@ -17,7 +18,7 @@ const { DEFAULT, dirOf, space, workspacesIn, forget, renameShared, sharedNames }
 const { Scoped } = await import('../core/runner.js')
 const { serve } = await import('../core/server.js')
 const { adapters } = await import('../core/adapters.js')
-const BIN = new URL('../bin', import.meta.url).pathname
+const BIN = fileURLToPath(new URL('../bin', import.meta.url))
 
 class FakeRunner extends EventEmitter {
   live = new Map() // name -> how it was started
