@@ -157,7 +157,7 @@ test("the host's log starts afresh once it's big, keeping the one before", () =>
 test("the copy has the runtime's program, DLLs and data, and only this computer's part of node-pty; old copies go once nothing runs from them", async () => {
   const root = fs.mkdtempSync(path.join(tmp, 'crew-stage-'))
   const put = (f, text = f) => (fs.mkdirSync(path.dirname(path.join(root, f)), { recursive: true }), fs.writeFileSync(path.join(root, f), text))
-  for (const f of ['rt/Crew.exe', 'rt/ffmpeg.dll', 'rt/icudtl.dat', 'rt/v8_context_snapshot.bin', 'rt/resources.pak', 'rt/locales/en-US.pak', 'rt/resources/app.asar']) put(f)
+  for (const f of ['rt/Crew.exe', 'rt/ffmpeg.dll', 'rt/icudtl.dat', 'rt/v8_context_snapshot.bin', 'rt/resources.pak', 'rt/vk_swiftshader_icd.json', 'rt/LICENSES.chromium.html', 'rt/Uninstall Crew.exe', 'rt/locales/en-US.pak', 'rt/resources/app.asar']) put(f)
   put('host.js', '// the host')
   const here = `prebuilds/${process.platform}-${process.arch}`
   for (const f of ['package.json', 'lib/index.js', 'lib/worker/conoutSocketWorker.js', 'lib/index.test.js', 'lib/index.js.map', `${here}/pty.node`, `${here}/pty.pdb`, `${here}/conpty/OpenConsole.exe`, 'prebuilds/sunos-sparc/pty.node', 'build/Release/pty.node', 'src/pty.cc']) put(`pty/${f}`)
@@ -173,8 +173,8 @@ test("the copy has the runtime's program, DLLs and data, and only this computer'
   assert.equal(fs.readFileSync(first.file, 'utf8'), 'rt/Crew.exe')
   assert.equal(first.script, path.join(home, 'app', 'ptyhost.js'))
   assert.equal(fs.readFileSync(first.script, 'utf8'), '// the host')
-  for (const f of ['ffmpeg.dll', 'icudtl.dat', 'v8_context_snapshot.bin', 'app/package.json']) assert.ok(has(f), f)
-  for (const f of ['resources.pak', 'locales', 'resources', 'Crew.exe']) assert.ok(!has(f), `${f} isn't needed`)
+  for (const f of ['ffmpeg.dll', 'icudtl.dat', 'v8_context_snapshot.bin', 'resources.pak', 'vk_swiftshader_icd.json', 'app/package.json']) assert.ok(has(f), f)
+  for (const f of ['locales', 'resources', 'Crew.exe', 'Uninstall Crew.exe', 'LICENSES.chromium.html']) assert.ok(!has(f), `${f} isn't needed`)
   const pty = (f) => has(`app/node_modules/node-pty/${f}`)
   for (const f of ['package.json', 'lib/index.js', 'lib/worker/conoutSocketWorker.js', `${here}/pty.node`, `${here}/conpty/OpenConsole.exe`, 'build/Release/pty.node']) assert.ok(pty(f), f)
   for (const f of ['lib/index.test.js', 'lib/index.js.map', `${here}/pty.pdb`, 'prebuilds/sunos-sparc', 'src']) assert.ok(!pty(f), `${f} isn't needed`)
@@ -197,5 +197,8 @@ test("the copy has the runtime's program, DLLs and data, and only this computer'
   await stage(args)
   assert.ok(!fs.existsSync(home), 'gone once nothing runs from it')
   assert.deepEqual(fs.readdirSync(into), [path.basename(path.dirname(second.file))])
+  // a copy that didn't start (connect marks it) isn't tried again: the host runs from where Crew is
+  fs.writeFileSync(path.join(path.dirname(second.file), '.broken'), '')
+  await assert.rejects(stage(args), /didn't start before/)
   fs.rmSync(root, { recursive: true, force: true })
 })

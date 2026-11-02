@@ -51,6 +51,11 @@ export class HostRunner extends EventEmitter {
           this.started = runtime // what the host Crew started runs from
           break
         }
+        // next time straight to where Crew is, without the wait
+        if (runtime.staged) {
+          note(`terminal host: the copy in ${path.dirname(runtime.file)} didn't start, so it runs from Crew's folder`)
+          fs.writeFileSync(path.join(path.dirname(runtime.file), '.broken'), '')
+        }
       }
       if (!line) throw new Error(`couldn't start the terminal host (see ${LOG})`)
     }
@@ -296,10 +301,12 @@ export function rotate(file, keep = LOG_KEEP) {
 //   <version>/crew-host.exe      Crew's own binary (Electron, run as Node), with the DLLs and data files beside it
 //   <version>/app/ptyhost.js     this host, with node-pty in app/node_modules
 // Copies no host runs from any more are removed. Windows won't remove a running program's file, which is how `busy`
-// tells by default. Files inside Crew's app.asar are read the way Electron reads them. -> { file, script }
+// tells by default. Files inside Crew's app.asar are read the way Electron reads them. A copy that didn't start once
+// (connect marks it .broken) isn't tried again. -> { file, script }
 export async function stage({ exe, script, pty, into, busy = running }) {
   const fsp = fs.promises
-  const beside = (await fsp.readdir(path.dirname(exe))).filter((f) => /\.(dll|dat|bin)$/i.test(f)).sort()
+  // what Electron loads beside its program; not locales/ and resources/, which only windows need
+  const beside = (await fsp.readdir(path.dirname(exe))).filter((f) => /\.(dll|dat|bin|pak|json)$/i.test(f)).sort()
   const { size, mtimeMs } = await fsp.stat(exe)
   const version = crypto.createHash('sha256')
     .update(JSON.stringify([size, mtimeMs, beside, process.arch]))
@@ -308,6 +315,7 @@ export async function stage({ exe, script, pty, into, busy = running }) {
     .digest('hex').slice(0, 16)
   const home = path.join(into, version)
   const out = { file: path.join(home, 'crew-host.exe'), script: path.join(home, 'app', 'ptyhost.js') }
+  if (fs.existsSync(path.join(home, '.broken'))) throw new Error("the copy didn't start before")
   await fsp.mkdir(into, { recursive: true })
   if (!fs.existsSync(path.join(home, '.complete'))) {
     // copied aside first and moved into place whole, so a copy cut short is never run
