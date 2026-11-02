@@ -182,6 +182,7 @@ function start({ name, file, args = [], cwd, env = {}, cols = 120, rows = 36, ta
   try {
     p = pty.spawn(file, args, { name: 'xterm-256color', cols, rows, cwd, env })
   } catch (e) {
+    log(`terminal host: ${name} didn't start (${file}): ${e.stack ?? e.message}`, true)
     return send({ t: 'exit', name, tag, code: -1, ms: 0, error: e.message })
   }
   const x = { p, tag, chunks: [], size: 0, startedAt: Date.now(), lastOutput: Date.now(), cols, rows }
