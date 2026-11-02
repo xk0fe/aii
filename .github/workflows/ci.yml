@@ -50,9 +50,11 @@ jobs:
       - name: install
         working-directory: desktop
         run: npm ci
+      # a test that hangs fails after 3 minutes, with its name, instead of holding the job up for hours
       - name: desktop
         working-directory: desktop
-        run: node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.xml test/*.test.js
+        timeout-minutes: 30
+        run: node --test --test-timeout=180000 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results.xml test/*.test.js
       - name: what failed
         if: always()
         working-directory: desktop
