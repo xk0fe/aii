@@ -117,7 +117,7 @@ export class Hub extends EventEmitter {
     // A file, or a simulator, is one thing whichever workspace's agent uses it: every workspace's hub shares these, and
     // each entry says whose workspace (ws) its holder works in (see hubOf).
     this.locks = locks ?? { files: new Map(), held: new Map(), waits: [] }
-    this.leases = this.locks.files // absolute path -> { name, ws, at }
+    this.leases = this.locks.files // absolute path (see fileKey) -> { name, ws, at }
     this.held = this.locks.held // a thing only one agent can use at a time (crew lease), lowercased -> { thing, name, ws, why, at }
     this.leaseWaits = this.locks.waits // `crew lease`s waiting for a thing someone else has: { key, from, ws, thing, why, resolve }
     this.runs = new Map() // launch id -> { name, file, pid, at }: each CLI process and the file of groups it started
@@ -2084,16 +2084,16 @@ export class Hub extends EventEmitter {
     const a = this.agents.get(name)
     if (!a || !e) return ''
     const files = editedFiles(e, expand(a.cwd))
-    for (const file of files) {
-      const held = this.leases.get(file)
+    for (const [key, file] of files) {
+      const held = this.leases.get(key)
       if (!held || this.mine(held, name)) continue
       const there = this.hubOf(held.ws ?? this.ws)
       const holder = there?.agents.get(held.name)
       if (!holder || !there.holding(holder, held) || (there === this && this.waitPath(holder.name, name))) continue
       const short = path.basename(file)
       const away = there !== this && there.space.name
-      if (!this.turnedAway.has(`${name}:${file}`)) {
-        this.turnedAway.add(`${name}:${file}`)
+      if (!this.turnedAway.has(`${name}:${key}`)) {
+        this.turnedAway.add(`${name}:${key}`)
         this.ruling('file', name, holder.name, { file: short, ...(away && { in: away }) })
       }
       const reason = away
@@ -2101,11 +2101,11 @@ export class Hub extends EventEmitter {
         : `${short} is being edited by @${holder.name} right now, and Crew lets one agent edit a file at a time. Leave it to @${holder.name} and do the rest of your work: the file is free again once @${holder.name} finishes its turn. If you need a change in it, crew ask ${holder.name}.`
       return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } })
     }
-    for (const file of files) {
-      const held = this.leases.get(file)
+    for (const key of files.keys()) {
+      const held = this.leases.get(key)
       const there = held && this.hubOf(held.ws ?? this.ws)
       // free, or its own already: it's this agent's now (one answering the holder edits under the holder's lease)
-      if (!held || this.mine(held, name) || !there?.holding(there.agents.get(held.name), held)) this.leases.set(file, { name, ws: this.ws, at: Date.now() })
+      if (!held || this.mine(held, name) || !there?.holding(there.agents.get(held.name), held)) this.leases.set(key, { name, ws: this.ws, at: Date.now() })
     }
     return ''
   }
@@ -3070,10 +3070,10 @@ const gist = (text, max = 100) => {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
 }
 
-// The files a tool call is about to write, as absolute paths: Claude Code's file tools name one, and Codex's
-// apply_patch lists them in the patch (in whichever field its input carries it).
+// The files a tool call is about to write: Claude Code's file tools name one, and Codex's apply_patch lists them in the
+// patch (in whichever field its input carries it). -> Map of lease key (see fileKey) -> the file's absolute path
 function editedFiles({ tool_name: tool = '', tool_input: input } = {}, cwd) {
-  if (!input || typeof input !== 'object') return []
+  if (!input || typeof input !== 'object') return new Map()
   const named = input.file_path ?? input.notebook_path
   const strings = Object.values(input).flatMap((v) => (typeof v === 'string' ? [v] : Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []))
   // a patch counts when it's apply_patch's own input, or a shell command that runs apply_patch (not a `crew ask` that
@@ -3081,8 +3081,21 @@ function editedFiles({ tool_name: tool = '', tool_input: input } = {}, cwd) {
   const patch = tool === 'apply_patch' || strings.some((x) => /(^|[\s;&|(])apply_patch\b/.test(x) && !/^\s*crew\s/.test(x))
   const patched = (x) => [...x.matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)].map((m) => m[1].trim())
   const paths = typeof named === 'string' ? [named] : patch ? strings.flatMap(patched) : []
-  return [...new Set(paths.filter(Boolean).map((p) => path.resolve(cwd, p)))]
+  return new Map(paths.filter(Boolean).map((p) => filePath(p, cwd)).map((file) => [fileKey(file), file]))
 }
+
+// A file an agent names, as an absolute path, however it wrote it. On Windows that can be C:\Users\me\app\x.js,
+// C:/Users/me/app/x.js, or Git Bash's /c/Users/me/app/x.js (Claude Code runs its commands in Git Bash there), relative to
+// a folder written any of those ways.
+export function filePath(file, cwd, platform = process.platform) {
+  if (platform !== 'win32') return path.posix.resolve(cwd, file)
+  const drive = (p) => String(p).replace(/^\\\\[?.]\\(?=[a-zA-Z]:)/, '').replace(/^\/(?:cygdrive\/)?([a-zA-Z])(?=\/|$)/, '$1:\\')
+  return path.win32.resolve(drive(cwd), drive(file)).replace(/^[a-z](?=:)/, (d) => d.toUpperCase())
+}
+
+// What a file's lease is held under: its path, and on Windows, where README.md and readme.md are one file, in lower
+// case. macOS keeps the case: a case-sensitive volume can have both.
+export const fileKey = (file, platform = process.platform) => (platform === 'win32' ? file.toLowerCase() : file)
 
 function readJSON(file) {
   try {
@@ -3206,7 +3219,7 @@ function decide(ask, input, cli, reply) {
   return { output: out({ behavior: 'deny', message }), answer: { allow: false, ...(note && { note }) } }
 }
 
-const expand = (dir) => (dir ? dir.replace(/^~(?=\/|$)/, os.homedir()) : os.homedir())
+const expand = (dir) => (dir ? dir.replace(/^~(?=[\\/]|$)/, os.homedir()) : os.homedir()) // ~/code or, on Windows, ~\code
 // What an agent's conversation is tied to: the CLI that keeps it, and the folder it was started in.
 const sessionHome = (a) => JSON.stringify([a.provider ?? a.cli ?? 'claude', expand(a.cwd)])
 

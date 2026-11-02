@@ -10,6 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
+import { fileURLToPath } from 'node:url'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const port = 20000 + Math.floor(Math.random() * 20000)
@@ -19,7 +20,7 @@ function computer(name, linkPort, config) {
   fs.mkdirSync(path.join(home, 'link'))
   fs.writeFileSync(path.join(home, 'link', 'link.json'), JSON.stringify({ name, port: linkPort }))
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(config))
-  const p = spawn(process.execPath, [new URL('./helpers/computer.mjs', import.meta.url).pathname], { env: { ...process.env, CREW_HOME: home, NAME: name }, stdio: ['pipe', 'pipe', 'inherit'] })
+  const p = spawn(process.execPath, [fileURLToPath(new URL('./helpers/computer.mjs', import.meta.url))], { env: { ...process.env, CREW_HOME: home, NAME: name }, stdio: ['pipe', 'pipe', 'inherit'] })
   const waiting = new Map()
   let seq = 0
   let ready
