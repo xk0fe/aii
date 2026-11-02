@@ -286,13 +286,13 @@ A Codex-backed agent runs in Codex's `workspace-write` sandbox with network acce
 
 The Crew app on your phone keeps you with your crew when you're away from your desk: the chat, and the questions agents wait on you for. A phone isn't a computer. It runs no agents and never shows up under Computers. It's you: what you send from it shows up in the chat as yours.
 
-1. **On the Mac:** click **Computers** in the dashboard titlebar, then **Add a phone** under **Phones**. Crew shows a QR code, and the same code as text to copy.
-2. **On the phone:** open Crew and scan the code, or paste it. The phone shows up under **Phones**, and from then on it connects by itself.
+1. **On the Mac:** click **Computers** in the dashboard titlebar, then **Add a phone** under **Phones**. Crew shows a big QR code. **Copy code** puts the same code on the clipboard, to paste instead.
+2. **On the phone:** open Crew and scan the code, or paste it. The Mac says which phone paired, and it shows up under **Phones**. From then on it connects by itself.
 
 - **One workspace at a time, its own.** The phone picks which workspace it watches, whatever the Mac shows. What you do there lands in that workspace, and the Mac stays where it was.
 - **What it can do:** send messages and photos, answer question cards, approve or drop hand-offs, add, start, accept, send back and move tasks, turn agents on or off, switch YOLO and Fast, start a new conversation, restart an agent, and watch and type into its terminal. Making and editing agents, workspaces and computers stays on the Mac.
 - **Networks:** the same Wi-Fi, or Tailscale, as for linked computers. The code lists every address the Mac has. Crew listens for phones on port 7788, and only while a phone is paired or a code is open. To change the port, set `"phonePort"` in `~/.crew/link/link.json`.
-- **Security:** everything between the phone and the Mac is encrypted end to end, with keys only the two of them hold. A code pairs one phone within ten minutes, and a new code ends the old one. A phone never gets Crew Link's code or the agents' instructions. **Remove** unpairs a phone and ends its connection.
+- **Security:** everything between the phone and the Mac is encrypted end to end, with keys only the two of them hold. A code pairs one phone, and only one code is open at a time. Each lasts ten minutes, and while **Add a phone** is open Crew swaps in a new one before that (the QR code just changes). Cancel, or closing the dialog, ends it. A phone never gets Crew Link's code or the agents' instructions. **Remove** unpairs a phone and ends its connection.
 - **Not there yet:**
   - The Tasks board and the terminals. Crew on the Mac already answers a phone's calls for them (the list above); the app doesn't show them yet.
   - Notifications. Until push lands, the phone hears that an agent needs you only while the app is open.

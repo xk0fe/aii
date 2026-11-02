@@ -847,9 +847,8 @@ let copiedTimer = null
 
 function drawComputers(state) {
   const c = state.computers ?? { me: {}, links: [] }
-  const paired = phonePair && c.phones?.devices.find((d) => d.paired >= phonePair.made)
-  if (paired) (phoneFresh = paired.id), (phonePair = null) // the code on screen did its job: the new phone is highlighted
-  const next = JSON.stringify([c, fresh, linkErr, phonePair?.expires, phonePair && Date.now() >= phonePair.expires, phoneFresh, phoneErr, phoneBusy, linkOpen, [...linkOpen.computers]])
+  drawPairing(c.phones)
+  const next = JSON.stringify([c, fresh, linkErr, phoneFresh, phoneErr, linkOpen, [...linkOpen.computers]])
   if (next === linkKey) return
   linkKey = next
   // keep what's being typed across redraws
@@ -939,28 +938,19 @@ function linkHTML(l) {
 }
 
 // ---- Phones (core/phones.js): the Crew app on your phone, paired with a code it scans ----------------------------
+// Add a phone turns the dialog into the pairing view: one big code to scan, and nothing to keep an eye on. A code ends
+// after ten minutes, so the view asks for a new one a minute before (the QR just changes), until a phone pairs with it
+// or the view closes, which ends it.
 
-let phonePair = null // the code this window shows: { code, qr (SVG), expires, made }
-let phoneFresh = null // the phone that just paired with it
+let phonePair = null // the pairing view while it's open: { made, code, qr, expires, renewAt, making, err, copied, phone }
+let phoneFresh = null // the phone that just paired: highlighted in the list
 let phoneErr = ''
-let phoneBusy = false // making a code
+let pairTick = null
 
 function phonesHTML(p) {
-  const code = phonePair
-  const expired = code && Date.now() >= code.expires
-  const until = code && new Date(code.expires).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   return `<section class="lk-list phones">
     <div class="ph-head"><div class="grow"><p style="margin:0">The chat and the questions agents wait on you for, in the Crew app on your phone, over the same Wi-Fi or Tailscale.</p></div>
-      <button class="btn" data-phone-add ${phoneBusy ? 'disabled' : ''}>${phoneBusy ? 'Making a code…' : code ? 'New code' : 'Add a phone'}</button></div>
-    ${code ? `<div class="ph-pair ${expired ? 'expired' : ''}">
-      <div class="ph-qr">${code.qr}${expired ? '<span>Expired</span>' : ''}</div>
-      <div class="ph-side">
-        <b>${expired ? 'This code has expired' : 'Scan it with the Crew app'}</b>
-        <p>${expired ? 'A code works for ten minutes and pairs one phone. Make a new one to add a phone.' : 'Open Crew on your phone and scan this code, or copy it and paste it there. It pairs one phone.'}</p>
-        <code>${esc(code.code)}</code>
-        <div class="ls-row small"><span>${expired ? `Ended at ${until}` : `Works until ${until}`}</span><span class="ph-btns">${expired ? '' : '<button class="btn small" data-phone-copy>Copy code</button>'}<button class="btn small" data-phone-cancel>${expired ? 'Done' : 'Cancel'}</button></span></div>
-      </div>
-    </div>` : ''}
+      <button class="btn" data-phone-add>Add a phone</button></div>
     ${p.devices.length ? `<ul class="ph-list">${p.devices.map(phoneHTML).join('')}</ul>` : ''}
     <p class="err">${esc(phoneErr || p.error || '')}</p>
   </section>`
@@ -986,49 +976,142 @@ function phoneDay(ts) {
 }
 
 async function phoneAction(t) {
-  if (t.closest('[data-phone-add]')) {
-    const made = Date.now()
-    phoneBusy = true
-    phoneErr = ''
-    drawComputers(state)
-    try {
-      phonePair = { ...(await crew.call('phones', 'code')), made }
-      phoneFresh = null
-    } catch (x) {
-      phoneErr = x.message
-    } finally {
-      phoneBusy = false
-      drawComputers(state)
-    }
-  }
-  if (t.closest('[data-phone-copy]')) {
-    await crew.call('copy', phonePair.code)
-    t.closest('[data-phone-copy]').textContent = 'Copied ✓'
-  }
-  if (t.closest('[data-phone-cancel]')) {
-    const open = Date.now() < phonePair.expires
-    phonePair = null
-    drawComputers(state)
-    if (open) await crew.call('phones', 'cancel')
-  }
+  if (t.closest('[data-phone-add]')) return openPairing()
   const remove = t.closest('[data-phone-remove]')?.dataset.phoneRemove
   const phone = remove && state.computers.phones.devices.find((d) => d.id === remove)
   if (phone && confirm(`Remove ${phone.name}? It can't reach this Mac any more, until you pair it again.`)) await crew.call('phones', 'revoke', remove)
 }
 
-async function openComputers() {
+// The QR card: as big as the window leaves room for, high in the dialog so the phone looks straight at it. The code's
+// modules land on whole screen pixels (one drawn between them blurs, and a blurry code is what makes a phone hunt), and
+// the card's white margin round it, at least four modules, is the quiet zone a camera needs, in dark mode too.
+function qrFit(qr) {
+  const card = Math.max(220, Math.min(336, innerHeight - 300))
+  const n = Number(/viewBox="0 0 (\d+)/.exec(qr ?? '')?.[1]) || 0
+  const px = devicePixelRatio || 1
+  return { card, size: n && (n * Math.floor((card * px) / (n + 8))) / px }
+}
+
+function pairHTML(v) {
+  const { card, size } = qrFit(v.qr)
+  const look = v.phone ? 'paired' : v.err ? 'off' : v.qr ? '' : 'wait'
+  const line = v.phone ? `<b>${esc(v.phone.name)}</b> is paired` : v.err ? esc(v.err.charAt(0).toUpperCase() + v.err.slice(1)) : 'Scan this with Crew on your phone'
+  return `<h3><span class="h-icon">${ICONS.phone}</span>Add a phone</h3>
+    <div class="pv-card ${look}" style="--card: ${card}px; --qr: ${size}px">${v.err && !v.phone ? `<span class="pv-off">${ICONS.phone}</span>` : v.qr ?? ''}${v.phone ? `<span class="pv-done">${ICONS.check}</span>` : ''}</div>
+    <p class="pv-line ${v.err && !v.phone ? 'failed' : ''}" aria-live="polite">${line}</p>
+    <div class="buttons">
+      ${v.err && !v.phone ? `<button class="btn pv-act" data-pair-retry ${v.making ? 'disabled' : ''}>${ICONS.restart}${v.making ? 'Trying…' : 'Try again'}</button>`
+        : `<button class="btn pv-act" data-pair-copy ${v.code && !v.phone ? '' : 'disabled'} ${v.phone ? 'hidden' : ''} title="To paste it in Crew on your phone instead">${v.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy code`}</button>`}
+      <span class="grow"></span><button class="btn pv-close" data-pair-close>${v.phone ? 'Done' : 'Cancel'}</button>
+    </div>`
+}
+
+// The view as it is now. A phone that paired with its code (any of them): the view says so, then hands over to the
+// list with that phone highlighted.
+function drawPairing(phones) {
+  const view = phonePair
+  const paired = view && !view.phone && phones?.devices.find((d) => d.paired >= view.made)
+  if (paired) {
+    view.phone = { id: paired.id, name: paired.name }
+    phoneFresh = paired.id
+    clearInterval(pairTick)
+    crew.call('phones', 'cancel').catch(() => {}) // its code is used up; one renewed just as it paired ends here
+    setTimeout(() => phonePair === view && closePairing(), 1800)
+  }
+  linkDialog.classList.toggle('pairing', Boolean(view))
+  if (view) morph(linkDialog.querySelector('.pair-view'), pairHTML(view))
+  if (paired && !linkDialog.contains(document.activeElement)) linkDialog.querySelector('.pair-view').focus({ preventScroll: true }) // Copy code, which had it, steps aside
+}
+
+function openPairing() {
+  phonePair = { made: Date.now(), renewAt: Infinity }
+  phoneFresh = null
+  phoneErr = ''
+  // the clock is checked rather than one timer set: a Mac that slept, or a window in the background, still renews in time
+  clearInterval(pairTick)
+  pairTick = setInterval(() => phonePair?.renewAt <= Date.now() && pairCode(), 1000)
+  drawComputers(state)
+  linkDialog.querySelector('.pair-view').focus({ preventScroll: true })
+  pairCode()
+}
+
+// A code for the view: its first, the next one before that one ends, or another try after an error. -> that request,
+// or the one already under way.
+function pairCode() {
+  const view = phonePair
+  if (!view || view.phone) return Promise.resolve()
+  if (!view.making) {
+    view.making = makeCode(view)
+    drawComputers(state) // Try again says it's trying
+  }
+  return view.making
+}
+
+async function makeCode(view) {
+  try {
+    const made = await crew.call('phones', 'code')
+    if (phonePair === view && !view.phone) {
+      const left = made.expires - Date.now()
+      Object.assign(view, made, { err: '', renewAt: made.expires - Math.min(60000, left / 6) })
+    } else if (!phonePair || phonePair === view) {
+      crew.call('phones', 'cancel').catch(() => {}) // the view closed, or a phone paired, while this one was being made
+    }
+  } catch (x) {
+    if (phonePair === view) Object.assign(view, { code: null, qr: null, err: x.message, renewAt: Infinity })
+  } finally {
+    view.making = null
+    drawComputers(state)
+  }
+}
+
+// Back to the list, which is where it was: a code still open ends here, and a phone that just paired is in view.
+function closePairing() {
+  const view = phonePair
+  if (!view) return
+  phonePair = null
+  clearInterval(pairTick)
+  if (!view.phone) crew.call('phones', 'cancel').catch(() => {})
+  drawComputers(state)
+  if (!linkDialog.open) return
+  linkDialog.classList.add('back')
+  setTimeout(() => linkDialog.classList.remove('back'), 400)
+  linkDialog.querySelector(view.phone ? `[data-phone="${CSS.escape(view.phone.id)}"]` : '.phones')?.scrollIntoView({ block: 'nearest' })
+  linkDialog.querySelector('[data-phone-add]')?.focus({ preventScroll: true })
+}
+
+async function pairAction(t) {
+  const view = phonePair
+  if (!view) return
+  if (t.closest('[data-pair-close]')) return closePairing()
+  if (t.closest('[data-pair-retry]')) return pairCode()
+  if (t.closest('[data-pair-copy]') && view.code) {
+    // a code to paste on the phone has a few minutes in it: one that's renewed soon is renewed first
+    if (view.renewAt - Date.now() < 4 * 60000) await pairCode()
+    if (phonePair !== view || !view.code) return
+    await crew.call('copy', view.code)
+    view.copied = true
+    drawComputers(state)
+    clearTimeout(view.copiedTimer)
+    view.copiedTimer = setTimeout(() => ((view.copied = false), drawComputers(state)), 1600)
+  }
+}
+
+// The QR card fits the window, and its modules the screen's pixels: on a resize, and on a move to a display of another
+// scale, which fires no resize.
+const refitPairing = () => phonePair && drawComputers(state)
+addEventListener('resize', refitPairing)
+function watchScale() {
+  matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', () => (refitPairing(), watchScale()), { once: true })
+}
+watchScale()
+
+function openComputers() {
   fresh = null
   linkErr = ''
   Object.assign(linkOpen, { details: false, form: false, copied: false })
   linkOpen.computers.clear()
   phoneFresh = null
   phoneErr = ''
-  if (phonePair && Date.now() >= phonePair.expires) phonePair = null // long gone: no need to say so
-  // one made before this window opened, and still open: shown again, to scan or to cancel (codes last ten minutes)
-  if (!phonePair && state.computers?.phones?.pairing) {
-    const open = await crew.call('phones', 'open').catch(() => null)
-    if (open) phonePair = { ...open, made: open.expires - 10 * 60000 }
-  }
   linkKey = ''
   drawComputers(state)
   linkDialog.showModal()
@@ -1044,6 +1127,7 @@ linkDialog.addEventListener('click', async (e) => {
     drawComputers(state)
   }
   if (t.closest('.phones')) return phoneAction(t).catch((x) => ((phoneErr = x.message), drawComputers(state)))
+  if (t.closest('.pair-view')) return pairAction(t)
   // what folds: the details, a linked computer's agents, the paste-a-code form
   if (t.closest('[data-lk-details]')) return void ((linkOpen.details = !linkOpen.details), drawComputers(state))
   const pc = t.closest('[data-lk-open]')?.dataset.lkOpen
@@ -1121,6 +1205,11 @@ linkDialog.addEventListener('change', async (e) => {
   }
 })
 linkDialog.addEventListener('keydown', (e) => e.key === 'Enter' && e.target.matches('[data-me-name]') && e.target.blur())
+// Esc in the pairing view goes back to the list. On keydown, since Chromium lets a dialog's cancel be stopped only so
+// often before it closes the dialog anyway; cancel covers an Esc from outside it. Closing the dialog ends the pairing.
+linkDialog.addEventListener('keydown', (e) => e.key === 'Escape' && phonePair && (e.preventDefault(), closePairing()))
+linkDialog.addEventListener('cancel', (e) => phonePair && (e.preventDefault(), closePairing()))
+linkDialog.addEventListener('close', closePairing)
 
 // ---- moving an agent to another computer ------------------------------------------
 // From any computer, to any linked one: drag it onto a computer in the sidebar, pick Move to… on it, or choose
