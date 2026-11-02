@@ -80,19 +80,27 @@ function main() {
   })
   here = WIN ? pipeName() : SOCKET
   for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => quit())
-  const listen = () => server.listen(here, () => {
-    if (WIN) {
-      // the pipe and its token at once, so Crew never reads one host's pipe with another's token
-      const tmp = `${PIPE}.${process.pid}`
-      fs.writeFileSync(tmp, JSON.stringify({ pipe: here, token, pid: process.pid }) + '\n', { mode: 0o600 })
-      fs.renameSync(tmp, PIPE)
-    } else {
-      fs.chmodSync(SOCKET, 0o600)
-      fs.writeFileSync(TOKEN, token, { mode: 0o600 })
+  const listen = () => {
+    // macOS: the token before the socket, so a Crew that finds the socket reads this host's token with it, not the last
+    // host's (it was turned away, and ran its agents without a host, when it came in between)
+    if (!WIN) {
+      const tmp = `${TOKEN}.${process.pid}`
+      fs.writeFileSync(tmp, token, { mode: 0o600 })
+      fs.renameSync(tmp, TOKEN)
     }
-    log(`terminal host ${process.pid} listening`)
-    idle()
-  })
+    server.listen(here, () => {
+      if (WIN) {
+        // the pipe and its token at once, so Crew never reads one host's pipe with another's token
+        const tmp = `${PIPE}.${process.pid}`
+        fs.writeFileSync(tmp, JSON.stringify({ pipe: here, token, pid: process.pid }) + '\n', { mode: 0o600 })
+        fs.renameSync(tmp, PIPE)
+      } else {
+        fs.chmodSync(SOCKET, 0o600)
+      }
+      log(`terminal host ${process.pid} listening`)
+      idle()
+    })
+  }
   // A socket file left by a host that died is in the way; one that answers belongs to a host that's alive.
   const was = address()
   if (!was) return listen()
