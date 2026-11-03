@@ -1,16 +1,17 @@
-// How Crew is packaged for people to install (electron-builder): Crew.app as a DMG and a zip for Apple Silicon and
-// Intel, and a per-user Windows installer for x64 and arm64. scripts/dist.mjs runs it (npm run dist).
+// How CLIque is packaged for people to install (electron-builder): CLIque.app as a DMG and a zip for Apple Silicon and
+// Intel, and a per-user Windows installer for x64 and arm64. scripts/dist.mjs runs it (npm run dist). The name is
+// PRODUCT_NAME (core/appid.js).
 //
 // Signing switches on from the environment alone; nothing in here changes for it:
 //   macOS    CSC_LINK + CSC_KEY_PASSWORD: the Developer ID Application certificate (.p12, as a path or base64), or
 //            CSC_NAME: one already in the keychain. Notarization: APPLE_API_KEY (path to the .p8) + APPLE_API_KEY_ID +
 //            APPLE_API_ISSUER, or APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID.
-//            Without a certificate Crew.app is signed ad hoc: it runs, but Gatekeeper warns on other Macs.
+//            Without a certificate CLIque.app is signed ad hoc: it runs, but Gatekeeper warns on other Macs.
 //   Windows  WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD: an Authenticode .pfx, or Azure Trusted Signing with
 //            AZURE_SIGN_ENDPOINT + AZURE_SIGN_ACCOUNT + AZURE_SIGN_PROFILE (and AZURE_TENANT_ID, AZURE_CLIENT_ID,
 //            AZURE_CLIENT_SECRET for the account). Without either the installer is unsigned and SmartScreen warns.
 //   RELEASE_REPO=owner/name: the public GitHub repo releases go to, written into the update metadata.
-import { APP_ID } from './core/appid.js'
+import { APP_ID, PRODUCT_NAME } from './core/appid.js'
 import { afterPack } from './scripts/after-pack.mjs'
 
 const env = process.env
@@ -44,10 +45,13 @@ const files = (platform) => [
 
 export default {
   appId: APP_ID,
-  productName: 'Crew',
+  // The name on the app, its windows, shortcuts and installers. Two folders keep their names from before the rename:
+  // the Windows install folder, which a per-user one-click installer names after package.json's name
+  // (%LOCALAPPDATA%\Programs\crew), and Electron's own folder for the app (userData, pinned in main.js).
+  productName: PRODUCT_NAME,
   copyright: `© ${new Date().getFullYear()} Greengrass`,
   directories: { output: 'release', buildResources: 'build' },
-  artifactName: 'Crew-${version}-${os}-${arch}.${ext}',
+  artifactName: `${PRODUCT_NAME}-\${version}-\${os}-\${arch}.\${ext}`,
 
   asar: true,
   // Files something outside Crew's own JavaScript runs: node-pty's helpers (spawn-helper on macOS; conpty.dll,
@@ -67,8 +71,8 @@ export default {
   ],
   afterPack,
 
-  // .crew agent packs open in Crew (Finder and Mail on macOS, Explorer on Windows)
-  fileAssociations: [{ ext: 'crew', name: 'Crew agents', description: 'Crew agents', role: 'Viewer', rank: 'Owner' }],
+  // .crew agent packs open in the app (Finder and Mail on macOS, Explorer on Windows)
+  fileAssociations: [{ ext: 'crew', name: `${PRODUCT_NAME} agents`, description: `${PRODUCT_NAME} agents`, role: 'Viewer', rank: 'Owner' }],
 
   electronFuses: {
     // The terminal host is Crew's own binary run as Node (core/ptyclient.js): this one has to stay on.
@@ -89,19 +93,19 @@ export default {
     entitlements: macCertificate ? 'build/entitlements.mac.plist' : 'build/entitlements.adhoc.plist',
     entitlementsInherit: macCertificate ? 'build/entitlements.mac.plist' : 'build/entitlements.adhoc.plist',
     notarize,
-    // What macOS shows when Crew first asks for the microphone, speech recognition (dictation, before macOS 26) and
-    // the local network (Crew Link, phones)
+    // What macOS shows when the app first asks for the microphone, speech recognition (dictation, before macOS 26) and
+    // the local network (linked computers, phones)
     extendInfo: {
-      NSMicrophoneUsageDescription: 'Crew listens while you dictate a message to your agents.',
-      NSSpeechRecognitionUsageDescription: 'Crew turns what you say into text, on this Mac.',
-      NSLocalNetworkUsageDescription: 'Crew connects to your other computers and your phone on this network.',
+      NSMicrophoneUsageDescription: `${PRODUCT_NAME} listens while you dictate a message to your agents.`,
+      NSSpeechRecognitionUsageDescription: `${PRODUCT_NAME} turns what you say into text, on this Mac.`,
+      NSLocalNetworkUsageDescription: `${PRODUCT_NAME} connects to your other computers and your phone on this network.`,
     },
   },
   win: {
     icon: 'assets/icon.ico',
     files: files('win32'),
     target: ['nsis'],
-    executableName: 'Crew',
+    executableName: PRODUCT_NAME,
     ...(azure && {
       azureSignOptions: {
         endpoint: env.AZURE_SIGN_ENDPOINT,
@@ -114,13 +118,13 @@ export default {
   nsis: {
     oneClick: true,
     perMachine: false,
-    shortcutName: 'Crew',
+    shortcutName: PRODUCT_NAME,
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     runAfterFinish: true,
     deleteAppDataOnUninstall: false,
     include: 'build/installer.nsh',
-    artifactName: 'Crew-Setup-${version}-${arch}.${ext}',
+    artifactName: `${PRODUCT_NAME}-Setup-\${version}-\${arch}.\${ext}`,
   },
 
   publish: owner && repo ? [{ provider: 'github', owner, repo, releaseType: 'draft' }] : null,
