@@ -79,20 +79,30 @@ function main() {
     process.exit(1)
   })
   here = WIN ? pipeName() : SOCKET
-  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => quit())
-  const listen = () => server.listen(here, () => {
-    if (WIN) {
-      // the pipe and its token at once, so Crew never reads one host's pipe with another's token
-      const tmp = `${PIPE}.${process.pid}`
-      fs.writeFileSync(tmp, JSON.stringify({ pipe: here, token, pid: process.pid }) + '\n', { mode: 0o600 })
-      fs.renameSync(tmp, PIPE)
-    } else {
-      fs.chmodSync(SOCKET, 0o600)
-      fs.writeFileSync(TOKEN, token, { mode: 0o600 })
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => quit(signal))
+  // why it went, in its log: nothing there after "listening" means it crashed outside JavaScript
+  process.on('exit', (code) => log(`terminal host ${process.pid} exits (${code})`))
+  const listen = () => {
+    // macOS: the token before the socket, so a Crew that finds the socket reads this host's token with it, not the last
+    // host's (it was turned away, and ran its agents without a host, when it came in between)
+    if (!WIN) {
+      const tmp = `${TOKEN}.${process.pid}`
+      fs.writeFileSync(tmp, token, { mode: 0o600 })
+      fs.renameSync(tmp, TOKEN)
     }
-    log(`terminal host ${process.pid} listening`)
-    idle()
-  })
+    server.listen(here, () => {
+      if (WIN) {
+        // the pipe and its token at once, so Crew never reads one host's pipe with another's token
+        const tmp = `${PIPE}.${process.pid}`
+        fs.writeFileSync(tmp, JSON.stringify({ pipe: here, token, pid: process.pid }) + '\n', { mode: 0o600 })
+        fs.renameSync(tmp, PIPE)
+      } else {
+        fs.chmodSync(SOCKET, 0o600)
+      }
+      log(`terminal host ${process.pid} listening`)
+      idle()
+    })
+  }
   // A socket file left by a host that died is in the way; one that answers belongs to a host that's alive.
   const was = address()
   if (!was) return listen()
@@ -125,10 +135,16 @@ function welcome(sock, token) {
         continue
       }
       if (!ok) {
-        if (m.t !== 'hello' || m.token !== token) return sock.destroy()
+        if (m.t !== 'hello' || m.token !== token) {
+          log('terminal host: turned away a connection without its token')
+          return sock.destroy()
+        }
         ok = true
         // one Crew at a time: a newer one takes over
-        if (client && client !== sock) client.destroy()
+        if (client && client !== sock) {
+          log('terminal host: a newer Crew connected, so the one before is let go')
+          client.destroy()
+        }
         client = sock
         clearTimeout(idleTimer)
         const list = [...procs].map(([name, x]) => ({ name, tag: x.tag, pid: x.p.pid, cols: x.cols, rows: x.rows, startedAt: x.startedAt, lastOutput: x.lastOutput, data: scrollback(x) }))
@@ -152,7 +168,7 @@ function handle(m) {
     case 'start':
       return start(m)
     case 'stop':
-      return x?.p.kill()
+      return kill(x)
     case 'write':
       return x?.p.write(String(m.data))
     case 'resize':
@@ -162,16 +178,17 @@ function handle(m) {
       }
       return
     case 'quit':
-      return quit()
+      return quit('Crew asked it to')
   }
 }
 
 function start({ name, file, args = [], cwd, env = {}, cols = 120, rows = 36, tag }) {
-  procs.get(name)?.p.kill() // a terminal by this name is replaced; its exit still comes, with its own tag
+  kill(procs.get(name)) // a terminal by this name is replaced; its exit still comes, with its own tag
   let p
   try {
     p = pty.spawn(file, args, { name: 'xterm-256color', cols, rows, cwd, env })
   } catch (e) {
+    log(`terminal host: ${name} didn't start (${file}): ${e.stack ?? e.message}`, true)
     return send({ t: 'exit', name, tag, code: -1, ms: 0, error: e.message })
   }
   const x = { p, tag, chunks: [], size: 0, startedAt: Date.now(), lastOutput: Date.now(), cols, rows }
@@ -184,13 +201,30 @@ function start({ name, file, args = [], cwd, env = {}, cols = 120, rows = 36, ta
     send({ t: 'data', name, data: d })
   })
   p.onExit(({ exitCode }) => {
+    log(`terminal host: ${name} (${tag}) ended (${exitCode})${x.killed ? ', stopped' : ''}`)
     if (procs.get(name) === x) procs.delete(name)
+    // Windows: one that ended by itself still holds its pseudoconsole, and node-pty (1.1) the thread that reads it,
+    // until it's killed, which a host that runs for days can't leave to its exit (core/runner.js release)
+    if (WIN && !x.killed) {
+      x.killed = true
+      try {
+        p.kill()
+      } catch {}
+    }
     const e = { name, tag, code: exitCode, ms: Date.now() - x.startedAt }
     if (client) send({ t: 'exit', ...e })
     else gone.push(e)
     idle()
   })
   send({ t: 'started', name, tag, pid: p.pid })
+}
+
+// Once per terminal: on Windows a second kill closes its pseudoconsole a second time, which takes the whole host
+// down, every agent's terminal with it (Crew's "stop, then start again" did it to every restart).
+function kill(x) {
+  if (!x || x.killed) return
+  x.killed = true
+  x.p.kill()
 }
 
 // The last SCROLLBACK characters, as one chunk.
@@ -211,11 +245,12 @@ function send(m) {
 function idle() {
   clearTimeout(idleTimer)
   if (procs.size || client) return
-  idleTimer = setTimeout(() => quit(), IDLE)
+  idleTimer = setTimeout(() => quit('nothing to keep'), IDLE)
 }
 
-function quit() {
-  for (const x of procs.values()) x.p.kill()
+function quit(why) {
+  log(`terminal host ${process.pid} quits: ${why}`)
+  for (const x of procs.values()) kill(x)
   if (!WIN) fs.rmSync(SOCKET, { force: true })
   else if (address()?.path === here) fs.rmSync(PIPE, { force: true }) // unless a newer host has said where it is
   // a moment for the terminals' processes to take the hint

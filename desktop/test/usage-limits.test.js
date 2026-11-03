@@ -52,7 +52,7 @@ afterEach(() => {
   clearTimeout(hub.convoTimer)
   clearTimeout(hub.usageTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 // A status line from `name` with its context and the account's windows: { five_hour: [pct, hours until it resets] }
 const line = (windows) => ({

@@ -13,7 +13,7 @@ vm.runInContext(fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8') + ';global
 const { feedView } = ctx.__x
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-feed-'))
-const { Hub, CONFIG } = await import(path.join(A, 'core/hub.js'))
+const { Hub, CONFIG } = await import('../core/hub.js')
 const CREW = ['joseph', 'david', 'gal', 'arie'].map((name) => ({ name, area: name }))
 class FakeRunner extends EventEmitter { on_ = new Set(); running = (n) => this.on_.has(n); submit() {}; write() {}; stop() {}; start() {} }
 let hub
@@ -25,7 +25,7 @@ beforeEach(() => {
   hub.feed.length = 0
 })
 afterEach(() => { for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer); clearTimeout(hub.statsTimer) })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const msgs = () => hub.feed.filter((m) => m.kind === 'msg')
 const render = (feed, { open = new Set(), limit = 200 } = {}) => {

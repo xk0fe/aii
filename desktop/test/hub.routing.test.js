@@ -41,7 +41,7 @@ beforeEach(() => {
     a.status = 'working'
   }
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 afterEach(() => {
   for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer)
   clearTimeout(hub.statsTimer)

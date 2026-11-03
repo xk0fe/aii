@@ -61,7 +61,7 @@ export function discoverCodex() {
     } catch {
       return resolve(null)
     }
-    execFile(codex.file, codex.args, { timeout: 15000, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
+    const done = (err, stdout) => {
       if (err) return resolve(null)
       try {
         const list = JSON.parse(stdout).models ?? []
@@ -80,6 +80,13 @@ export function discoverCodex() {
       } catch {
         resolve(null)
       }
-    })
+    }
+    // a codex that isn't a program the system can start (an empty or broken codex.exe on PATH) throws right here
+    // rather than calling back, which took Crew's start down with it
+    try {
+      execFile(codex.file, codex.args, { timeout: 15000, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, done)
+    } catch (e) {
+      done(e)
+    }
   })
 }

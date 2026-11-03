@@ -10,7 +10,9 @@ import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'
+import { ELECTRON } from './helpers/platform.mjs'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-phones-'))
 process.env.PATH = '/usr/bin:/bin' // no codex to discover once a hub starts
@@ -23,7 +25,7 @@ const { Remote, macKeys, seal, open } = await import('../core/remote.js')
 const { keyPair, privateKey, publicKey } = await import('../core/phones.js')
 const { VERSION, SALT, CLOSE, b64, unb64, utf8, concat, keyInfo, readPairCode, pack, unpack } = await import('../../shared/protocol.js')
 const { apply } = await import('../../shared/sync.js')
-const BIN = new URL('../bin', import.meta.url).pathname
+const BIN = fileURLToPath(new URL('../bin', import.meta.url))
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-phones-folders-'))
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -159,8 +161,8 @@ after(() => {
   for (const h of crew.hubs.values()) h.dispose()
   clearTimeout(crew.changeTimer)
   fs.unwatchFile(CONFIG)
-  fs.rmSync(HOME, { recursive: true, force: true })
-  fs.rmSync(ROOT, { recursive: true, force: true })
+  fs.rmSync(HOME, { recursive: true, force: true, maxRetries: 10 })
+  fs.rmSync(ROOT, { recursive: true, force: true, maxRetries: 10 })
 })
 
 beforeEach(async () => {
@@ -223,12 +225,11 @@ test("this Mac's crypto reproduces shared/vectors.json", () => {
 
 // Crew runs in Electron, whose BoringSSL lacks some of what Node's OpenSSL has (ChaCha20-Poly1305, for one, which once
 // turned every phone away while these tests passed): the vectors once more, there.
-const ELECTRON = new URL('../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron', import.meta.url).pathname
 test('…and does so in Electron, where Crew runs', { skip: !fs.existsSync(ELECTRON) && 'no Electron to run' }, () => {
   const script = `
     import fs from 'node:fs'
     const { macKeys, seal, open } = await import(${JSON.stringify(new URL('../core/remote.js', import.meta.url).href)})
-    const { vectors } = JSON.parse(fs.readFileSync(${JSON.stringify(new URL('../../shared/vectors.json', import.meta.url).pathname)}, 'utf8'))
+    const { vectors } = JSON.parse(fs.readFileSync(${JSON.stringify(fileURLToPath(new URL('../../shared/vectors.json', import.meta.url)))}, 'utf8'))
     const bytes = (h) => Buffer.from(h, 'hex')
     const out = vectors.map((v) => {
       const k = macKeys({ m: { pub: bytes(v.public.m), priv: bytes(v.private.m) }, f: { pub: bytes(v.public.f), priv: bytes(v.private.f) }, e: bytes(v.public.e), d: bytes(v.public.d), secret: v.secret && bytes(v.secret) })
@@ -267,7 +268,8 @@ test('a pairing code pairs one phone, once, within ten minutes; a new code ends 
   assert.equal((await phone.connect({ port: remote.port, key: macKey() })).device.id, ready.device.id)
   // phones.json is yours only; the app sees no keys
   const file = path.join(LINK_DIR, 'phones.json')
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+  // Windows has no Unix modes (the file is in your own profile there, where only you can read it)
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600)
   assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(file, 'utf8'))), ['macId', 'key', 'devices'])
   const view = crew.snapshot().computers.phones
   assert.deepEqual(Object.keys(view.devices[0]).sort(), ['app', 'id', 'name', 'online', 'paired', 'platform', 'seen'])
@@ -290,7 +292,8 @@ test('removing a phone ends its connection (4003), it is turned away from then o
 })
 
 test("a port that's taken: the app says so, and which setting changes it", async () => {
-  const taken = net.createServer().listen(remote.port)
+  // on the addresses Crew listens on: Windows lets an IPv4 listener share a port with an IPv6 one
+  const taken = net.createServer().listen(remote.port, '0.0.0.0')
   await new Promise((r) => taken.once('listening', r))
   try {
     await code()

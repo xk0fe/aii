@@ -166,7 +166,7 @@ test('macOS: a command is still the first runnable file on PATH, and one that is
   assert.deepEqual(resolveCommand('claude', ['-x'], { PATH }, { platform: 'darwin' }), { file: path.join(tmp, 'claude'), args: ['-x'] })
   assert.deepEqual(resolveCommand('codex', [], { PATH }, { platform: 'darwin' }), { file: 'codex', args: [] }, "not executable: as before, pty.spawn says so")
   assert.equal(which('/bin/sh', PATH), '/bin/sh')
-  fs.rmSync(tmp, { recursive: true, force: true })
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10 })
 })
 
 // ---- what the CLIs are given --------------------------------------------------------------------------------
@@ -223,4 +223,20 @@ test('macOS: the hooks and status line are what they always were', () => {
   assert.equal(settings.hooks.Stop[0].hooks[0].args, undefined)
   assert.deepEqual(settings.permissions.allow, ['Bash(crew *)'])
   assert.match(adapters.codex({ name: 'm' }, { platform: 'darwin' }).args.find((x) => x.startsWith('hooks.Stop=')), /curl -sf -m 2 /)
+})
+
+test("a codex on PATH that isn't a program the system can start leaves Codex's models unknown, and Crew running", async () => {
+  const { discoverCodex } = await import('../core/providers.js')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-broken-codex-'))
+  // an empty codex.exe on Windows; a file marked executable that isn't a program, elsewhere
+  fs.writeFileSync(path.join(dir, process.platform === 'win32' ? 'codex.exe' : 'codex'), '\0\0\0\0', { mode: 0o755 })
+  const key = pathKey()
+  const was = process.env[key]
+  process.env[key] = `${dir}${path.delimiter}${was ?? ''}`
+  try {
+    assert.equal(await discoverCodex(), null)
+  } finally {
+    process.env[key] = was
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 })
+  }
 })

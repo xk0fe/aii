@@ -9,6 +9,10 @@ import { build, Platform, Arch } from 'electron-builder'
 import config from '../electron-builder.config.mjs'
 import { buildMac, buildWin } from './build-voice.mjs'
 
+// CI hands every signing secret over, set or not, and electron-builder takes an empty CSC_LINK for a certificate at
+// "" (the folder it runs in): without a certificate there's nothing to sign with, so an empty one isn't there at all.
+for (const [key, value] of Object.entries(process.env)) if (value === '' && /^(WIN_)?CSC_|^APPLE_|^AZURE_/.test(key)) delete process.env[key]
+
 const args = process.argv.slice(2)
 const only = args.find((a) => a.startsWith('--arch='))?.slice(7).split(',')
 const wanted = args.filter((a) => a === '--mac' || a === '--win').map((a) => a.slice(2))

@@ -60,7 +60,7 @@ beforeEach(() => {
   hub.on('notice', (n) => notices.push(n))
 })
 afterEach(() => clearTimeout(hub.usageTimer))
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 5 }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const paceLines = () => hub.feed.filter((e) => e.kind === 'event' && /At this pace/.test(e.text))
 

@@ -4,6 +4,7 @@
 //   node shared/make-vectors.mjs --check  exit 1 if vectors.json differs from what this computes
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { b64, concat, keyInfo, nonce, utf8, SALT } from './protocol.js'
 
 const PKCS8 = Buffer.from('302e020100300506032b656e04220420', 'hex')
@@ -54,8 +55,9 @@ const vectors = { about: 'PROTOCOL.md test vectors: X25519, HKDF-SHA256, ChaCha2
 const text = JSON.stringify(vectors, null, 2) + '\n'
 const file = new URL('./vectors.json', import.meta.url)
 if (process.argv.includes('--check')) {
-  if (fs.readFileSync(file, 'utf8') !== text) {
+  // as checked out: a Windows checkout may end its lines in CRLF
+  if (fs.readFileSync(file, 'utf8').replaceAll('\r\n', '\n') !== text) {
     console.error('vectors.json differs from what make-vectors.mjs computes')
     process.exit(1)
   }
-} else if (process.argv[1] && new URL(import.meta.url).pathname === fs.realpathSync(process.argv[1])) fs.writeFileSync(file, text)
+} else if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) fs.writeFileSync(file, text)

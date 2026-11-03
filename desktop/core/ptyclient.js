@@ -12,10 +12,14 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { which, cleanEnv, TITLE_ONLY } from './runner.js'
+import { pathKey } from './launch.js'
 import { PROTOCOL, RUN, LOG, address } from './ptyhost.js'
 
 const SCROLLBACK = 256 * 1024
-const HOST = fileURLToPath(new URL('./ptyhost.js', import.meta.url))
+// In an installed Crew the host and node-pty are unpacked next to app.asar (electron-builder.config.mjs asarUnpack):
+// the host runs from there as plain Node, and on Windows they're copied from there (stage).
+const unpacked = (file) => file.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
+const HOST = unpacked(fileURLToPath(new URL('./ptyhost.js', import.meta.url)))
 const LOG_KEEP = 1024 * 1024 // past this the log starts afresh, and the one before is kept as ptyhost.log.1
 // Where the host runs from on Windows: a copy per version (stage).
 export const RUNTIMES = path.join(RUN, 'runtime')
@@ -69,6 +73,7 @@ export class HostRunner extends EventEmitter {
       return this.connect()
     }
     this.attach(line.sock)
+    this.hostPid = hello.pid
     for (const x of hello.procs) {
       this.procs.set(x.name, { pid: x.pid, tag: x.tag, chunks: x.data ? [x.data] : [], size: x.data?.length ?? 0, startedAt: x.startedAt, lastOutput: x.lastOutput, cols: x.cols, rows: x.rows })
     }
@@ -83,7 +88,7 @@ export class HostRunner extends EventEmitter {
     const packaged = process.platform === 'win32' && Boolean(process.versions.electron) && !process.defaultApp
     if (!(this.runtime.stage ?? packaged)) return [direct]
     try {
-      const pty = path.dirname(createRequire(import.meta.url).resolve('node-pty/package.json'))
+      const pty = unpacked(path.dirname(createRequire(import.meta.url).resolve('node-pty/package.json')))
       const copy = await stage({ exe: direct.file, script: HOST, pty, into: this.runtime.into ?? RUNTIMES })
       return [{ ...direct, ...copy, staged: true }, direct]
     } catch (e) {
@@ -147,11 +152,13 @@ export class HostRunner extends EventEmitter {
         } catch {}
       }
     })
+    sock.on('error', (e) => note(`terminal host: the connection to it failed (${e.message})`))
     sock.on('close', () => {
       if (this.sock !== sock) return
       this.sock = null
       if (this.detached) return
       // the host is gone, and its terminals with it
+      note('terminal host: the connection to it closed, so its terminals count as gone')
       for (const [name, x] of [...this.procs]) {
         this.procs.delete(name)
         this.emit('ended', name, x.tag)
@@ -195,7 +202,8 @@ export class HostRunner extends EventEmitter {
     this.stop(name)
     const fullEnv = cleanEnv({ ...process.env, ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' })
     this.procs.set(name, { pid: undefined, tag, chunks: [], size: 0, startedAt: Date.now(), lastOutput: Date.now(), cols: 120, rows: 36 })
-    this.send({ t: 'start', name, file: which(file, fullEnv.PATH), args, cwd, env: fullEnv, cols: 120, rows: 36, tag })
+    // looked up as core/runner.js does: under whatever name the environment gives PATH (Windows': Path)
+    this.send({ t: 'start', name, file: which(file, fullEnv[pathKey(fullEnv)]), args, cwd, env: fullEnv, cols: 120, rows: 36, tag })
   }
 
   // Letting go of it first means a deliberate stop never emits 'exit' (as in core/runner.js). Resolves once it's gone,

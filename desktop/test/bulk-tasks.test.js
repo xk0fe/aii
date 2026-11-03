@@ -42,7 +42,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 // A task on the board, with its owner and where it stands: its number.
 const add = (text, { owner, status = 'new', kind = 'task', on = hub } = {}) => {

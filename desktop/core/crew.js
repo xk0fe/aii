@@ -214,7 +214,7 @@ export class Crew extends EventEmitter {
     // terminals still running for a workspace that's gone from config.json: nothing would ever hear from them again
     const stray = survivors.filter((s) => ![...this.hubs.values()].some((hub) => hub.runner.own(s.name)))
     for (const s of stray) this.runner.stop(s.name)
-    if (stray.length) this.hub.post({ kind: 'event', from: 'crew', text: `stopped ${stray.map((s) => s.name).join(', ')}: ${stray.length === 1 ? 'it was' : 'they were'} still running for a workspace that's no longer in config.json` })
+    if (stray.length) this.hub.post({ kind: 'event', from: 'crew', text: `stopped ${stray.map((s) => s.name).join(', ')}: ${stray.length === 1 ? 'it was' : 'they were'} still running for a workspace that's been removed` })
     const pushAll = (...msg) => this.pushAll(...msg)
     // Terminal output is batched per frame so a chatty agent doesn't flood IPC or the network. The app gets the
     // terminals of the workspace on screen by its agents' names. Linked computers get the default's by name, and any

@@ -43,7 +43,7 @@ function computer(name, linkPort, config) {
       waiting.set(id, { resolve, reject })
       p.stdin.write(JSON.stringify({ id, code }) + '\n')
     })
-  return { up, run, home, config: () => JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')), stop: () => (p.kill(), fs.rmSync(home, { recursive: true, force: true, maxRetries: 5 })) }
+  return { up, run, home, config: () => JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')), stop: () => (p.kill(), fs.rmSync(home, { recursive: true, force: true, maxRetries: 10 })) }
 }
 
 const off = { off: true }

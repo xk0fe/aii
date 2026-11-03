@@ -13,6 +13,16 @@ export const TITLE_ONLY = /^(?:\x1b\][012];[^\x07\x1b]*(?:\x07|\x1b\\))+$/
 // Inherited, they make the agent think it's a child session and stop saving transcripts, which breaks resume.
 const PARENT_SESSION_VARS = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_CODE_(ENTRYPOINT|EXECPATH|SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|MESSAGING_\w+))$/
 
+// Windows: a terminal whose program ends by itself keeps its pseudoconsole, and node-pty (1.1) the thread that reads
+// it, until it's killed: node-pty lets go of them only in kill(). Without this every agent that exits leaves both
+// behind for as long as the process that ran it lives (it never could exit by itself). The terminal host does the same.
+export function release(p, platform = process.platform) {
+  if (platform !== 'win32') return
+  try {
+    p.kill()
+  } catch {}
+}
+
 export function cleanEnv(env) {
   for (const key of Object.keys(env)) if (PARENT_SESSION_VARS.test(key)) delete env[key]
   return env
@@ -38,7 +48,8 @@ export class Runner extends EventEmitter {
     })
     p.onExit(({ exitCode }) => {
       this.emit('ended', name, tag)
-      if (this.procs.get(name) !== proc) return
+      if (this.procs.get(name) !== proc) return // stopped or replaced: killed already
+      release(p)
       this.procs.delete(name)
       this.emit('exit', name, exitCode, Date.now() - proc.startedAt)
     })

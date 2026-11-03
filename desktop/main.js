@@ -16,14 +16,14 @@ import { Remote } from './core/remote.js'
 import { readPack } from './core/pack.js'
 import { Voice, voiceActions, voiceAudio } from './core/voice.js'
 import { pillWindow } from './core/pill.js'
+// Crew's app id (core/appid.js), which packaging uses too: on Windows notifications carry it, and it must match the
+// installer's Start menu shortcut.
+import { APP_ID } from './core/appid.js'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
 const TRAY_WIDTH = 340
 const MAC = process.platform === 'darwin'
 const WINDOWS = process.platform === 'win32'
-// Crew's app id on Windows: notifications carry it, and the installer's Start menu shortcut must have the same one
-// (packaging's appId). A placeholder until the name is settled.
-const APP_ID = 'com.greengrass.crew'
 const LOG = path.join(HOME, 'logs', 'crew.log') // ~/.crew/logs/crew.log (logLine)
 const LOG_MAX = 1024 * 1024
 

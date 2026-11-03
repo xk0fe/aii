@@ -36,7 +36,7 @@ test('a computer reachable on several addresses gets one connection, and keeps i
     client.close()
     mine.close()
     host.stop()
-    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 })
   }
 })
 

@@ -17,7 +17,7 @@ const hint = src.match(/say\(\(await crew\.call\('send', .*\)\)(\.trim\(\)[^\n]*
 const format = new Function('r', `return r${hint}`)
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-composer-'))
-const { Hub, CONFIG } = await import(path.join(A, 'core/hub.js'))
+const { Hub, CONFIG } = await import('../core/hub.js')
 const CREW = ['joseph', 'david', 'gal', 'arie', 'jeff'].map((name) => ({ name, area: name })).concat({ name: 'ye', area: 'x', off: true })
 class FakeRunner extends EventEmitter { on_ = new Set(); running = (n) => this.on_.has(n); submit() {}; write() {}; stop() {}; start() {} }
 let hub
@@ -28,7 +28,7 @@ beforeEach(() => {
   for (const a of hub.agents.values()) if (!a.off) (r.on_.add(a.name), (a.status = 'working'))
 })
 afterEach(() => { for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer); clearTimeout(hub.statsTimer); clearTimeout(hub.convoTimer) })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 const send = (target, text) => format(hub.send({ to: composerTo(target, text), text }))
 const queued = () => Object.fromEntries([...hub.agents.values()].filter((a) => a.inbox.length).map((a) => [a.name, a.inbox.length]))
 

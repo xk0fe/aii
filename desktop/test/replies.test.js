@@ -33,7 +33,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.readsTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 // joseph answers whatever it was last handed
 const answer = (name, text) => {

@@ -13,7 +13,7 @@ vm.runInContext(fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8') + ';global
 const { feedView, inConvo, familyOf, isConvo } = ctx.__x
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-convo-'))
-const { Hub, CONFIG } = await import(path.join(A, 'core/hub.js'))
+const { Hub, CONFIG } = await import('../core/hub.js')
 const CREW = ['joseph', 'david', 'gal'].map((name) => ({ name, area: name })).concat({ name: 'marc', area: 'art', clones: 2 })
 class FakeRunner extends EventEmitter { on_ = new Set(); running = (n) => this.on_.has(n); submit() {}; write() {}; stop() {}; start(n) { this.on_.add(n) } }
 let hub
@@ -25,7 +25,7 @@ beforeEach(() => {
   hub.feed.length = 0
 })
 afterEach(() => { for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer), clearTimeout(a.linger); clearTimeout(hub.statsTimer); clearTimeout(hub.convoTimer) })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const agents = () => [...hub.agents.values()].map((a) => ({ name: a.name, cloneOf: a.cloneOf, clone: a.clone }))
 // (the vm's arrays come from another realm, so copy them into this one for deepEqual)

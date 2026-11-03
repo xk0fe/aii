@@ -21,7 +21,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-windows-'))
 const servers = new Set()
 after(() => {
   for (const server of servers) server.close(), server.closeAllConnections()
-  fs.rmSync(tmp, { recursive: true, force: true })
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10 })
 })
 
 // A Crew that writes down every request and answers as told.
@@ -144,7 +144,7 @@ test('crew-hook hook: the same event reaches Crew, and the same line lands in th
     const spool = path.join(dir, 'workspaces', 'golf', 'spool', 'david.jsonl')
     await run('/bin/sh', ['-c', SH.hook], { env, input: event })
     const shLine = fs.readFileSync(spool, 'utf8')
-    fs.rmSync(path.join(dir, 'workspaces'), { recursive: true })
+    fs.rmSync(path.join(dir, 'workspaces'), { recursive: true, maxRetries: 10 })
     await run(process.execPath, [CREW_MJS, 'crew-hook', 'hook'], { env, input: event })
     assert.equal(fs.readFileSync(spool, 'utf8'), shLine, name)
     assert.equal(JSON.parse(shLine).last_assistant_message, TRICKY)
@@ -215,7 +215,7 @@ const zig = (() => {
   }
 })()
 
-test('bin/win32-x64 and bin/win32-arm64 hold bin/crew and bin/crew-status as they are, for Git Bash', async () => {
+test('bin/win32-x64 and bin/win32-arm64 hold bin/crew, bin/crew-status and bin/crew-sh(.cmd) as they are, for Git Bash', async () => {
   const { TARGETS, SCRIPTS } = await import('../scripts/build-shims.mjs')
   for (const arch of Object.keys(TARGETS)) {
     for (const name of SCRIPTS) assert.ok(fs.readFileSync(path.join(BIN, `win32-${arch}`, name)).equals(fs.readFileSync(path.join(BIN, name))), `bin/win32-${arch}/${name}: run node scripts/build-shims.mjs`)

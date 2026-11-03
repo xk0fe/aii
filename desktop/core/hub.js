@@ -449,7 +449,7 @@ export class Hub extends EventEmitter {
   // A first draft of an agent's instructions, written by its own brain from its name and area.
   draftPrompt(agent) {
     const provider = this.providers[agent.provider ?? 'claude']
-    if (!provider) throw new Error(`unknown provider "${agent.provider}"`)
+    if (!provider) throw new Error(`Crew doesn't know how to run "${agent.provider}": pick Claude Code or Codex`)
     if (provider.missing.length) throw new Error(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const teammates = [...this.agents.values()].filter((a) => a.name !== agent.name && !a.cloneOf).map((a) => `${a.name} (${a.area || 'general'})`).join(', ')
     return generatePrompt(agent, provider, teammates)
@@ -514,7 +514,7 @@ export class Hub extends EventEmitter {
       this.setStatus(a, 'stopped')
       this.post({ kind: 'event', from: a.name, text })
     }
-    if (!adapter) return fail(`unknown provider "${a.provider}", define it under "providers" in config.json`)
+    if (!adapter) return fail(`can't start: it's set to run "${a.provider}", which Crew doesn't know how to run. Pick Claude Code or Codex for it in its settings`)
     if (provider.missing.length) return fail(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const resume = this.sessions[a.name]
     const session = randomUUID()
@@ -1151,8 +1151,11 @@ export class Hub extends EventEmitter {
     const left = leftovers(procs, groups, keep, spans)
     if (!left.length) return
     stopProcesses(left)
-    const n = left.length
-    if (!run.quiet) this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(left)}), so Crew stopped ${n === 1 ? 'it' : 'them'}` })
+    // Windows starts a console host for a console program that has no console: that program's window, not something
+    // the agent left, so it goes without a word
+    const said = left.filter((p) => !/^(conhost|OpenConsole)$/i.test(p.name))
+    const n = said.length
+    if (!run.quiet && n) this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(said)}), so Crew stopped ${n === 1 ? 'it' : 'them'}` })
   }
 
   // Launches that ended while Crew wasn't there to see it (it quit, or crashed): swept now.
@@ -2034,7 +2037,7 @@ export class Hub extends EventEmitter {
     const reply = this.post({ kind: 'reply', from, text: text.slice(0, 4000), re: m.id })
     this.respond(this.calls.get(m.id), { by: from, text, reply })
     const left = all.length - 1
-    return `@${m.from} has your answer.${left ? ` ${left} more question${left > 1 ? 's' : ''} waiting: crew answer @name "…"` : ''}\n`
+    return `@${m.from} has your answer.${left ? ` ${left} more question${left > 1 ? 's' : ''} waiting: crew answer "@name" "…"` : ''}\n`
   }
 
   // An agent's turn is over: the questions it was answering get its final message (or why there isn't one). One it
@@ -3038,16 +3041,20 @@ const leaseKey = (thing) => String(thing ?? '').trim().toLowerCase().replace(/\s
 
 // Claude Code runs every command through bin/crew-sh, which writes down its process group (see Hub.sweep). Your own
 // prefix, if you have one, still runs after it (unless it's crew-sh itself: Crew started from an agent's terminal).
-// Claude Code quotes the prefix, spaces and all, but takes whatever follows its last " -" as options for it, so in a
-// folder with " -" in its name there's none, and the agent's process tree alone says what it leaves running. On
-// Windows Git Bash runs the commands, and reads C:/ paths best; CREW_BASH is that Git Bash, for bin/crew-sh.cmd. There
-// crew-sh is tried once first (prefixWorks): if Git Bash won't run it right, commands run without it instead of failing.
+// Claude Code (2.1.316) shell-quotes the prefix, spaces and all, but takes whatever follows its last " -" as options for
+// it, so in a folder with " -" in its name there's none, and the agent's process tree alone says what it leaves running.
+// Its docs promise only "<prefix> '<command>'" (env-vars: CLAUDE_CODE_SHELL_PREFIX), so on Windows, where Crew's
+// folder is under C:\Users\<you> and often has spaces, the prefix is the bare name crew-sh: Git Bash finds it on the
+// agent's PATH, in bin\win32-<arch> (core/launch.js withTools), where copies of crew-sh and crew-sh.cmd sit, and an
+// MCP server's start finds crew-sh.cmd there. CREW_BASH is the Git Bash Claude Code runs commands with, for
+// crew-sh.cmd. There crew-sh is tried once first (prefixWorks), with the agent's PATH: if Git Bash won't find it or run
+// it right, commands run without it instead of failing.
 export const shellPrefix = (bin, env = process.env, platform = process.platform, works = prefixWorks) => {
   const win = platform === 'win32'
-  const sh = win ? path.win32.join(bin, 'crew-sh').replaceAll('\\', '/') : path.posix.join(bin, 'crew-sh')
+  const sh = win ? 'crew-sh' : path.posix.join(bin, 'crew-sh')
   if (sh.includes(' -')) return {}
   const bash = win ? gitBash(env) : null
-  if (win && !works(sh, bash)) return {}
+  if (win && !works(sh, bash, withTools(env, bin, { platform }))) return {}
   const yours = env.CLAUDE_CODE_SHELL_PREFIX
   const again = yours && /^crew-sh(\.cmd)?$/i.test(path.posix.basename(yours.replaceAll('\\', '/')))
   return { CLAUDE_CODE_SHELL_PREFIX: sh, ...(yours && !again && { CREW_SHELL_PREFIX: yours }), ...(win && { CREW_BASH: bash }) }
@@ -3189,6 +3196,8 @@ function askOf({ tool_name: tool = '', tool_input: input = {}, permission_sugges
   const name = file ? path.basename(file) : ''
   const shown = {
     Bash: { title: 'Run a command', code: clip(input.command), detail: input.description },
+    // Claude Code's PowerShell tool, on Windows: a command like any other to whoever answers
+    PowerShell: { title: 'Run a command', code: clip(input.command), detail: input.description },
     Edit: { title: `Edit ${name}`, code: firstLines(`- ${String(input.old_string ?? '').split('\n').join('\n- ')}\n+ ${String(input.new_string ?? '').split('\n').join('\n+ ')}`, 40), detail: file },
     MultiEdit: { title: `Edit ${name}`, code: firstLines((input.edits ?? []).map((x) => `- ${x.old_string}\n+ ${x.new_string}`).join('\n'), 40), detail: file },
     Write: { title: `Write ${name}`, code: firstLines(input.content, 30), detail: file },

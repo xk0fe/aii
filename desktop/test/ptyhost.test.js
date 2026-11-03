@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { program, alive, gone } from './helpers/platform.mjs'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-host-'))
@@ -16,12 +17,13 @@ const node = { file: process.execPath, env: {} }
 let last
 after(() => {
   last?.quit()
-  setTimeout(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 5 }), 800)
+  setTimeout(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }), 800)
 })
 
-const until = async (f, ms = 8000) => {
+// why: what to say besides "timed out"; the host's log is said too
+const until = async (f, ms = 8000, why = () => '') => {
   for (const t = Date.now(); !f(); ) {
-    if (Date.now() - t > ms) throw new Error('timed out')
+    if (Date.now() - t > ms) throw new Error(`timed out ${why()}\n${fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').slice(-3000) : ''}`)
     await new Promise((r) => setTimeout(r, 25))
   }
 }
@@ -60,16 +62,24 @@ test('an exit comes with its tag; a stop on purpose ends it without an exit, as 
   const events = []
   r.on('exit', (name, code) => events.push(['exit', name, code]))
   r.on('ended', (name, tag) => events.push(['ended', name, tag]))
+  // the host is still there after each, and says so in its log if it isn't
+  const up = async (after) => {
+    await new Promise((res) => setTimeout(res, 2000))
+    assert.ok(alive(r.hostPid), `the host went after ${after}:\n${fs.readFileSync(LOG, 'utf8').slice(-3000)}`)
+  }
   r.start('joseph', run('process.exit(3)', 'run2'))
   await until(() => events.length >= 2)
   assert.deepEqual(events.splice(0), [['ended', 'joseph', 'run2'], ['exit', 'joseph', 3]])
   assert.ok(!r.running('joseph'))
+  await up('a terminal that ended by itself')
   await r.stop('gal')
   assert.deepEqual(events.splice(0), [['ended', 'gal', 'run1']])
+  await up('a terminal stopped')
   // a new process under the same name isn't mistaken for the one it replaced
   r.start('david', run('setTimeout(() => {}, 30000)', 'old'))
   r.start('david', run('setTimeout(() => {}, 30000)', 'new'))
-  await until(() => events.some(([, , tag]) => tag === 'old'))
+  await until(() => events.some(([, , tag]) => tag === 'old'), 8000, () => JSON.stringify(events))
+  await up('a terminal replaced')
   assert.ok(r.running('david'))
   assert.ok(!events.some(([kind, name]) => kind === 'exit' && name === 'david'))
 })
@@ -79,7 +89,8 @@ test('one that ends while Crew is away is gone the next time, and quitting the h
   await until(() => last.pid('arie') > 0)
   last.detach()
   await until(() => !alive(last.pid('arie')))
-  await new Promise((r) => setTimeout(r, 300))
+  // node-pty says a Windows terminal ended a second after it did, once its output is drained
+  await new Promise((r) => setTimeout(r, process.platform === 'win32' ? 2500 : 300))
   const next = new HostRunner({ runtime: node })
   last = next
   const survivors = await next.connect()
@@ -118,6 +129,28 @@ test('the host runs from a copy of what it needs', async () => {
   last = null
 })
 
+test("a program named without its folder is found on the agent's PATH, whatever its environment calls it (Windows: Path)", () => {
+  const r = new HostRunner({ runtime: node })
+  const sent = []
+  r.sock = { write: (line) => sent.push(JSON.parse(line)) }
+  r.start('ada', { file: 'node', args: [], cwd: tmp, env: { [process.platform === 'win32' ? 'Path' : 'PATH']: path.dirname(process.execPath) }, tag: 'run5' })
+  assert.equal(sent[0].t, 'start')
+  assert.equal(sent[0].file.toLowerCase(), process.execPath.toLowerCase())
+})
+
+test('a terminal whose program ends by itself leaves nothing behind that keeps its process up', () => {
+  // as the terminal host and Crew's own runner hold terminals: on Windows node-pty kept the pseudoconsole and its
+  // reading thread until a kill, so the process could never end by itself
+  const runner = new URL('../core/runner.js', import.meta.url).href
+  const script = `
+    const { Runner } = await import(${JSON.stringify(runner)})
+    const r = new Runner()
+    r.on('exit', (name, code) => console.log('exited', code))
+    r.start('a', { file: process.execPath, args: ['-e', 'console.log(1)'], cwd: process.cwd(), env: {}, tag: 't' })`
+  const out = execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 60000, windowsHide: true })
+  assert.match(out, /exited 0/)
+})
+
 // ---- the parts that differ on Windows, checked on any computer ----------------------------------------------
 
 test('on Windows the host listens on a pipe nobody can guess, a new one each time', () => {
@@ -138,7 +171,7 @@ test('the host knows it was run, from a folder with spaces in its name, or a Win
   assert.ok(isMain('C:\\Program Files\\Crew\\Core\\PtyHost.js', 'c:\\program files\\crew\\core\\ptyhost.js', true))
   assert.ok(!isMain('C:\\Program Files\\Crew\\Core\\PtyHost.js', 'c:\\program files\\crew\\core\\ptyhost.js', false))
   assert.ok(!isMain(undefined, file))
-  fs.rmSync(dir, { recursive: true, force: true })
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 })
 })
 
 test("the host's log starts afresh once it's big, keeping the one before", () => {
@@ -200,5 +233,5 @@ test("the copy has the runtime's program, DLLs and data, and only this computer'
   // a copy that didn't start (connect marks it) isn't tried again: the host runs from where Crew is
   fs.writeFileSync(path.join(path.dirname(second.file), '.broken'), '')
   await assert.rejects(stage(args), /didn't start before/)
-  fs.rmSync(root, { recursive: true, force: true })
+  fs.rmSync(root, { recursive: true, force: true, maxRetries: 10 })
 })

@@ -13,7 +13,7 @@
   "scripts": {
     "start": "node scripts/build-app.mjs --open",
     "dev": "electron .",
-    "test": "node --test test/*.test.js",
+    "test": "node --test --import ./test/helpers/clis.mjs test/*.test.js",
     "postinstall": "node scripts/postinstall.mjs",
     "app": "node scripts/build-app.mjs",
     "dist": "node scripts/dist.mjs",

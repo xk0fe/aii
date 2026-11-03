@@ -110,7 +110,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const t of ['statsTimer', 'convoTimer', 'spendTimer', 'ticketsTimer', 'usageTimer']) clearTimeout(hub[t])
 })
-after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 }))
+after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10 }))
 
 const line = (name, session, cost) => hub.onStatusLine(name, { session_id: session, cost: { total_cost_usd: cost } })
 const stats = (name) => hub.snapshot().agents.find((a) => a.name === name).stats

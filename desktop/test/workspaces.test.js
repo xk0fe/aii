@@ -8,16 +8,21 @@ import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { WIN } from './helpers/platform.mjs'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-workspaces-'))
-process.env.PATH = '/usr/bin:/bin' // no codex to discover once a hub starts
+// no codex to discover once a hub starts; on Windows the agents' CLIs are found on PATH before they start, and the
+// stand-in codex there (test/helpers/clis.mjs) can't run, which is as good
+if (process.platform !== 'win32') process.env.PATH = '/usr/bin:/bin'
 const HOME = process.env.CREW_HOME
-const { Hub, CONFIG, openConfig } = await import('../core/hub.js')
+const { Hub, CONFIG, openConfig, fileKey, filePath } = await import('../core/hub.js')
 const { DEFAULT, dirOf, space, workspacesIn, forget, renameShared, sharedNames } = await import('../core/workspaces.js')
 const { Scoped } = await import('../core/runner.js')
 const { serve } = await import('../core/server.js')
 const { adapters } = await import('../core/adapters.js')
-const BIN = new URL('../bin', import.meta.url).pathname
+const { toolsDir } = await import('../core/launch.js')
+const BIN = fileURLToPath(new URL('../bin', import.meta.url))
 
 class FakeRunner extends EventEmitter {
   live = new Map() // name -> how it was started
@@ -73,8 +78,8 @@ afterEach(() => {
   fs.unwatchFile(CONFIG)
 })
 after(() => {
-  fs.rmSync(HOME, { recursive: true, force: true })
-  fs.rmSync(ROOT, { recursive: true, force: true })
+  fs.rmSync(HOME, { recursive: true, force: true, maxRetries: 10 })
+  fs.rmSync(ROOT, { recursive: true, force: true, maxRetries: 10 })
 })
 
 // ---- what config.json says ------------------------------------------------------------------------------
@@ -222,7 +227,7 @@ test('a parked workspace starts nothing, and its terminals are its own', () => {
   runner.survivors = [{ name: 'golf/joseph', tag: 't1', pid: 1 }, { name: 'joseph', tag: 't2', pid: 2 }]
   assert.deepEqual(ws.runner.survivors, [{ name: 'joseph', tag: 't1', pid: 1 }])
   assert.deepEqual(home.runner.survivors, [{ name: 'joseph', tag: 't2', pid: 2 }])
-  fs.rmSync(tmp, { recursive: true, force: true })
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10 })
 })
 
 test('a shared agent edited in one workspace is that agent in all of them; where it works changes only there', () => {
@@ -326,7 +331,7 @@ test("a workspace gone from config.json stops its agents; a hub's settings are i
   config.load()
   assert.ok(!runner.running('golf/joseph'))
   assert.equal(ws.agents.size, 0)
-  fs.rmSync(tmp, { recursive: true, force: true })
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10 })
 })
 
 // ---- agents' requests reach their own workspace -----------------------------------------------------------
@@ -335,8 +340,11 @@ test("`crew` and the hooks say which workspace they're from, and land there", as
   const server = await serve({ token: 'tok', hubFor: (id) => hubs.get(id) })
   fs.writeFileSync(path.join(HOME, 'url'), `http://127.0.0.1:${server.address().port}`)
   fs.writeFileSync(path.join(HOME, 'token'), 'tok')
-  const crewCli = (env, ...args) =>
-    new Promise((resolve, reject) => execFile(path.join(BIN, 'crew'), args, { env: { ...process.env, CREW_HOME: HOME, ...env } }, (e, out) => (e ? reject(e) : resolve(out))))
+  // as agents run them: bin/crew and sh hooks on macOS; crew.exe, and crew-hook.exe started with no shell, on Windows,
+  // both running bin/crew.mjs with CREW_NODE (core/launch.js, core/adapters.js)
+  const run = (file, args, env, input = '') =>
+    new Promise((resolve, reject) => execFile(file, args, { env: { ...process.env, CREW_HOME: HOME, CREW_NODE: process.execPath, ...env } }, (e, out) => (e ? reject(e) : resolve(out))).stdin.end(input))
+  const crewCli = (env, ...args) => (WIN ? run(path.join(toolsDir(BIN), 'crew.exe'), args, env) : run(path.join(BIN, 'crew'), args, env))
   assert.equal(await crewCli({ CREW_AGENT: 'joseph', CREW_WORKSPACE: 'golf' }, 'note', 'golf runs on pnpm'), 'shared with the crew\n')
   assert.equal(await crewCli({ CREW_AGENT: 'joseph', CREW_WORKSPACE: '' }, 'note', 'the default runs on npm'), 'shared with the crew\n')
   assert.match(ws.board(), /pnpm/)
@@ -345,13 +353,14 @@ test("`crew` and the hooks say which workspace they're from, and land there", as
   assert.doesNotMatch(await crewCli({ CREW_WORKSPACE: 'golf' }, 'who'), /\bgal\b/, 'only who is in golf')
   assert.match(await crewCli({ CREW_WORKSPACE: 'gone' }, 'who'), /no workspace "gone"/)
   // a hook: to the hub while Crew is there, to golf's spool while it isn't, and replayed in golf
-  const hook = JSON.parse(adapters.claude({ name: 'kim' }, { session: 's', attachments: '/tmp' }).args.find((x) => x.startsWith('{"permissions"'))).hooks.UserPromptSubmit[0].hooks[0].command
-  const env = { ...process.env, CREW_HOME: HOME, CREW_AGENT: 'kim', CREW_WORKSPACE: 'golf' }
-  await new Promise((resolve, reject) => execFile('/bin/sh', ['-c', hook], { env }, (e) => (e ? reject(e) : resolve())).stdin.end(JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'write the docs' })))
+  const hook = JSON.parse(adapters.claude({ name: 'kim' }, { session: 's', attachments: os.tmpdir(), bin: BIN }).args.find((x) => x.startsWith('{"permissions"'))).hooks.UserPromptSubmit[0].hooks[0]
+  const env = { CREW_AGENT: 'kim', CREW_WORKSPACE: 'golf' }
+  const runHook = (input) => (WIN ? run(hook.command, hook.args, env, input) : run('/bin/sh', ['-c', hook.command], env, input))
+  await runHook(JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'write the docs' }))
   assert.equal(ws.agents.get('kim').status, 'working')
   server.close()
   fs.writeFileSync(path.join(HOME, 'url'), 'http://127.0.0.1:9')
-  execFileSync('/bin/sh', ['-c', hook], { env, input: JSON.stringify({ hook_event_name: 'Stop', last_assistant_message: 'docs written' }) })
+  await runHook(JSON.stringify({ hook_event_name: 'Stop', last_assistant_message: 'docs written' }))
   assert.ok(fs.existsSync(path.join(HOME, 'workspaces', 'golf', 'spool', 'kim.jsonl')))
   assert.ok(!fs.existsSync(path.join(HOME, 'spool', 'kim.jsonl')))
   ws.replaySpool()
@@ -400,7 +409,7 @@ test("a config.json that can't be read is said in the default workspace's chat, 
   const first = new Hub(new Scoped(new FakeRunner(), DEFAULT, true), { bin: BIN, config: cfg, token: 'tok' })
   const other = new Hub(new Scoped(new FakeRunner(), 'golf', false), { bin: BIN, workspace: 'golf', config: cfg, token: 'tok' })
   try {
-    assert.match(first.feed.at(-1)?.text ?? '', /^config\.json: /)
+    assert.match(first.feed.at(-1)?.text ?? '', /^Crew couldn't read its settings \(.*config\.json: .*\), so it carries on with the ones it had$/)
     assert.equal(first.space.autopilot, true)
     assert.equal(first.config.theme, 'system')
     assert.equal(first.agents.size, 0)
@@ -423,7 +432,7 @@ test("terminals still running for a workspace that's gone from config.json are s
   await c.start()
   try {
     assert.deepEqual(killed, ['old/kim'])
-    assert.match(c.hub.feed.at(-1).text, /stopped old\/kim: it was still running for a workspace that's no longer in config\.json/)
+    assert.match(c.hub.feed.at(-1).text, /stopped old\/kim: it was still running for a workspace that's been removed/)
   } finally {
     c.server.close()
     c.stop()
@@ -635,7 +644,8 @@ test('a file is edited by one agent at a time, whichever workspace it works in; 
   assert.ok(ws.lease('joseph', edit(file)), "Golf's joseph is another agent: turned away too")
   home.release('joseph') // its turn ends
   assert.equal(ws.lease('kim', edit(file)), '')
-  assert.equal(home.leases.get(file).ws, 'golf', 'one record: Home sees Golf has it')
+  // held under the file's key (on Windows its path in lower case)
+  assert.equal(home.leases.get(fileKey(filePath(file, API))).ws, 'golf', 'one record: Home sees Golf has it')
 })
 
 test('crew lease: one simulator for every workspace; it goes to whoever waits for it, in any of them', async () => {

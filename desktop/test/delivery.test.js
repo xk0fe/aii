@@ -41,7 +41,7 @@ afterEach(async () => {
   clearTimeout(hub.convoTimer)
   await hub.saving // feed.jsonl is appended in the background: let it land before the next test, or the cleanup, clears it
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true }))
+after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const levi = () => hub.agents.get('levi')
 const enters = () => runner.writes.filter((w) => w.data === '\r').length

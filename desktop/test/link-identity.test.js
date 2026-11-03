@@ -11,6 +11,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { identity, selfSigned } from '../core/link.js'
+import { ELECTRON } from './helpers/platform.mjs'
 
 // What an older Crew made with `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1` (test keys, made
 // for these tests only). OpenSSL 3 names the curve; macOS's own openssl, LibreSSL 3, writes its parameters out, which
@@ -71,7 +72,7 @@ const tmp = () => {
   return dir
 }
 const saved = (dir, { cert, key }) => (fs.writeFileSync(path.join(dir, 'cert.pem'), cert), fs.writeFileSync(path.join(dir, 'key.pem'), key), dir)
-test.after(() => made.forEach((d) => fs.rmSync(d, { recursive: true, force: true })))
+test.after(() => made.forEach((d) => fs.rmSync(d, { recursive: true, force: true, maxRetries: 10 })))
 
 test('a computer gets its certificate without openssl, or any other program', () => {
   const dir = tmp()
@@ -151,7 +152,7 @@ const LINKS = `
     } catch (e) {
       out[name] = { error: e.message }
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 })
     }
   }
   console.log(JSON.stringify(out))
@@ -170,8 +171,6 @@ test('linking works with each of them in Node', () => {
   })
 })
 
-const DIST = fileURLToPath(new URL('../node_modules/electron/dist/', import.meta.url))
-const ELECTRON = path.join(DIST, { darwin: 'Electron.app/Contents/MacOS/Electron', win32: 'electron.exe' }[process.platform] ?? 'electron')
 test('…and in Electron, where Crew runs: a LibreSSL one is made anew there', { skip: !fs.existsSync(ELECTRON) && 'no Electron to run' }, () => {
   assert.deepEqual(run(ELECTRON, { ELECTRON_RUN_AS_NODE: '1' }), {
     fresh: { kept: null, answer: 'pong ping' },
