@@ -15,7 +15,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 export const PROTOCOL = 2
 export const DEFAULT_PORT = 7787
 
-// A computer's short name, as agents on it are addressed from elsewhere: gal@mac-mini.
+// A computer's short name, as agents on it are addressed from elsewhere: iris@workstation.
 export const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'computer'
 
 // ---- identity: a certificate + key per host, made once ----------------------------------------------

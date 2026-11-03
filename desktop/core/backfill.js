@@ -33,7 +33,7 @@ export function costOf(usage, model) {
 }
 
 // A task's brief opens its conversation: "[bug #12] …", with "crew task done 12" further down. A task that lives on
-// another computer reads "crew task done 12@air", and isn't this computer's #12.
+// another computer reads "crew task done 12@laptop", and isn't this computer's #12.
 export function taskOf(text) {
   const m = String(text ?? '').slice(0, 4000).match(/\[(?:bug|task|feature) #(\d+)\]/)
   const ref = String(text ?? '').match(/crew task done (\S+)/)?.[1]

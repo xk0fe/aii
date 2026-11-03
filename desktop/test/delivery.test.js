@@ -28,7 +28,7 @@ let hub, runner
 beforeEach(() => {
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'levi', area: 'client code' }] }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'noor', area: 'client code' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
   hub.url = 'http://127.0.0.1:1'
@@ -43,15 +43,15 @@ afterEach(async () => {
 })
 after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
-const levi = () => hub.agents.get('levi')
+const noor = () => hub.agents.get('noor')
 const enters = () => runner.writes.filter((w) => w.data === '\r').length
 const alerts = () => hub.feed.filter((e) => e.kind === 'event' && e.alert)
 
 test('the runner pastes even one-line text, then presses Enter on its own', () => {
   const r = new Runner()
   const writes = []
-  r.procs.set('levi', { p: { write: (d) => writes.push(d) }, lastOutput: Date.now() })
-  r.submit('levi', 'fix the header')
+  r.procs.set('noor', { p: { write: (d) => writes.push(d) }, lastOutput: Date.now() })
+  r.submit('noor', 'fix the header')
   assert.deepEqual(writes, ['\x1b[200~fix the header\x1b[201~'])
   mock.timers.tick(150)
   assert.deepEqual(writes.at(-1), '\r')
@@ -59,15 +59,15 @@ test('the runner pastes even one-line text, then presses Enter on its own', () =
 
 test('the runner knows how long a terminal has been quiet', () => {
   const r = new Runner()
-  r.procs.set('levi', { lastOutput: Date.now() })
+  r.procs.set('noor', { lastOutput: Date.now() })
   mock.timers.tick(900)
-  assert.equal(r.quietFor('levi'), 900)
+  assert.equal(r.quietFor('noor'), 900)
   assert.equal(r.quietFor('nobody'), 0)
 })
 
 test('a message waits while the terminal is still drawing, and goes in once it settles', () => {
   runner.quiet = 0 // a Stop hook's spinner
-  hub.send({ to: 'levi', text: 'fix the header' })
+  hub.send({ to: 'noor', text: 'fix the header' })
   assert.equal(runner.submitted.length, 0)
   mock.timers.tick(5000)
   assert.equal(runner.submitted.length, 0)
@@ -78,7 +78,7 @@ test('a message waits while the terminal is still drawing, and goes in once it s
 
 test('a terminal that never settles still gets the message, after SETTLE_MAX', () => {
   runner.quiet = 0
-  hub.send({ to: 'levi', text: 'fix the header' })
+  hub.send({ to: 'noor', text: 'fix the header' })
   mock.timers.tick(19000)
   assert.equal(runner.submitted.length, 0)
   mock.timers.tick(1500)
@@ -91,7 +91,7 @@ const wait = (ms) => {
 }
 
 test('Enter is pressed again for minutes, and only then does Crew call for help', () => {
-  hub.send({ to: 'levi', text: 'fix the header' })
+  hub.send({ to: 'noor', text: 'fix the header' })
   wait(20000) // the old code gave up here
   assert.equal(alerts().length, 0)
   wait(111000)
@@ -99,22 +99,22 @@ test('Enter is pressed again for minutes, and only then does Crew call for help'
   assert.equal(alerts().length, 0)
   wait(61000)
   assert.equal(alerts().length, 1)
-  assert.equal(levi().status, 'waiting')
+  assert.equal(noor().status, 'waiting')
 })
 
 test('the agent reporting the prompt stops the Enter presses', () => {
-  hub.send({ to: 'levi', text: 'fix the header' })
+  hub.send({ to: 'noor', text: 'fix the header' })
   mock.timers.tick(2500)
-  hub.onHook('levi', { hook_event_name: 'UserPromptSubmit', prompt: '[from @you] fix the header' })
+  hub.onHook('noor', { hook_event_name: 'UserPromptSubmit', prompt: '[from @you] fix the header' })
   mock.timers.tick(300000)
   assert.equal(enters(), 1)
   assert.equal(alerts().length, 0)
 })
 
 test('no Enter while you are typing in its terminal', () => {
-  hub.send({ to: 'levi', text: 'fix the header' })
+  hub.send({ to: 'noor', text: 'fix the header' })
   mock.timers.tick(2000)
-  hub.input('levi', 'w')
+  hub.input('noor', 'w')
   mock.timers.tick(600) // the first retry is due now, but you typed 600ms ago
   assert.equal(enters(), 0)
 })

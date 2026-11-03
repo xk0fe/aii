@@ -2,6 +2,7 @@
   "name": "crew-mobile",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Crew for your phone: see who's working, answer when someone needs you, send a message",
   "main": "expo-router/entry",
   "scripts": {

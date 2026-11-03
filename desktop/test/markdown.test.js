@@ -23,7 +23,7 @@ test('delimiter colons set column alignment', () => {
 })
 
 test('cells render inline Markdown', () => {
-  assert.match(md('| Who | Note |\n|---|---|\n| **joseph** | `GET /x` and [doc](https://a.b) |'), /<td><b>joseph<\/b><\/td><td><code>GET \/x<\/code> and <a href="https:\/\/a.b">doc<\/a><\/td>/)
+  assert.match(md('| Who | Note |\n|---|---|\n| **june** | `GET /x` and [doc](https://a.b) |'), /<td><b>june<\/b><\/td><td><code>GET \/x<\/code> and <a href="https:\/\/a.b">doc<\/a><\/td>/)
 })
 
 test('an escaped pipe stays inside its cell, in text and in inline code', () => {
@@ -65,8 +65,8 @@ test('a quoted table reads as words, not pipes', () => {
 })
 
 test('@mentions are marked the way the hub reads them: not emails, packages, possessives or code', () => {
-  assert.match(md('@david fix it, then @gal@mac-mini.'), /<span class="mention" data-m="david">@david<\/span> fix it, then <span class="mention" data-m="gal@mac-mini">@gal@mac-mini<\/span>\./)
-  for (const text of ["@david's branch", 'mail a@b.com', 'bump @types/node', 'run `@nobody`', 'ask @you']) assert.doesNotMatch(md(text), /class="mention"/, text)
+  assert.match(md('@ada fix it, then @iris@workstation.'), /<span class="mention" data-m="ada">@ada<\/span> fix it, then <span class="mention" data-m="iris@workstation">@iris@workstation<\/span>\./)
+  for (const text of ["@ada's branch", 'mail a@b.com', 'bump @types/node', 'run `@nobody`', 'ask @you']) assert.doesNotMatch(md(text), /class="mention"/, text)
 })
 
 test('an ordered list starts at its first number, so an answer that starts with one reads as written', () => {
