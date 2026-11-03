@@ -5,6 +5,6 @@
 // is when the app is first uploaded to Google Play, the Android package can never change after that (a new package
 // is a new app). CREW_BUNDLE_ID still overrides the iOS one for a build signed with your own team (app.config.js).
 module.exports = {
-  APP_NAME: 'Crew',
+  APP_NAME: 'CLIque',
   APP_ID: 'com.greengrass.crew',
 }

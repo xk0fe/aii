@@ -27,8 +27,8 @@ test('a pairing code says which Mac, its key, the secret and where to find it', 
   assert.ok(code.startsWith(PAIR_PREFIX))
   const back = readPairCode(` ${code}\n`)
   assert.deepEqual(back, { id: 'abc', name: 'Studio', key, secret, hosts: ['192.168.1.20', 'studio.tail.ts.net'], port: 7788 })
-  assert.throws(() => readPairCode('crew1.abc'), /not a Crew phone code/)
-  assert.throws(() => readPairCode(PAIR_PREFIX + 'not-json'), /not a Crew phone code/)
+  assert.throws(() => readPairCode('crew1.abc'), /not a CLIque phone code/)
+  assert.throws(() => readPairCode(PAIR_PREFIX + 'not-json'), /not a CLIque phone code/)
 })
 
 test('bytes travel inside JSON', () => {
