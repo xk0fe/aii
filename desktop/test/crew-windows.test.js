@@ -65,8 +65,8 @@ function run(file, args, { env, input = '' }) {
   })
 }
 
-const posixEnv = (crewHome, over = {}) => ({ PATH: '/usr/bin:/bin', HOME: tmp, SHELL: '/bin/sh', CREW_HOME: crewHome, CREW_AGENT: 'david', CREW_WORKSPACE: '', ...over })
-const settings = JSON.parse(adapters.claude({ name: 'david' }, { session: 's', attachments: '/tmp', platform: 'darwin' }).args.find((x) => x.startsWith('{"permissions"')))
+const posixEnv = (crewHome, over = {}) => ({ PATH: '/usr/bin:/bin', HOME: tmp, SHELL: '/bin/sh', CREW_HOME: crewHome, CREW_AGENT: 'ada', CREW_WORKSPACE: '', ...over })
+const settings = JSON.parse(adapters.claude({ name: 'ada' }, { session: 's', attachments: '/tmp', platform: 'darwin' }).args.find((x) => x.startsWith('{"permissions"')))
 // the macOS hooks, as Claude Code runs them, and what crew-hook.exe runs for each on Windows
 const SH = { hook: settings.hooks.Stop[0].hooks[0].command, ask: settings.hooks.PermissionRequest[0].hooks[0].command.replace('-m 86390', '-m 1'), lease: settings.hooks.PreToolUse[1].hooks[0].command }
 const NODE_ARGS = { hook: ['hook'], ask: ['ask', '1'], lease: ['lease'] }
@@ -86,7 +86,7 @@ const TRICKY = 'fix the build\nthen ship it & tell me | 100% "done" > é ✓ $HO
 
 test('crew: every command asks Crew the same thing as bin/crew and prints the same, usage errors and help too', SIDE_BY_SIDE, async () => {
   const crew = await crewServer((r) => (r.route === 'answer' ? { status: 400, body: 'nobody asked you anything\n' } : { body: `${r.route}: ${r.body.replaceAll('\0', '|')}\n` }))
-  const env = posixEnv(home('cli', { url: crew.url }), { CREW_WORKSPACE: 'golf' })
+  const env = posixEnv(home('cli', { url: crew.url }), { CREW_WORKSPACE: 'storefront' })
   const cases = [
     ['who'], ['board'], ['leases'], ['send', 'bob', TRICKY], ['send', 'bob'], ['send'], ['ask', 'any', 'which port?', 'the dev one'], ['ask', 'any'], ['wait'],
     ['answer', '@bob', 'port 3000'], ['answer', 'yes'], ['answer', '@bob'], ['lease', 'iOS Simulator', 'UI tests'], ['lease'], ['release'], ['release', 'iOS Simulator'],
@@ -125,7 +125,7 @@ test("crew: Crew not running says so, and the address and token come from the en
 test('crew-hook hook: the same event reaches Crew, and the same line lands in the spool while Crew is closed', SIDE_BY_SIDE, async () => {
   const crew = await crewServer()
   const event = `${JSON.stringify({ hook_event_name: 'Stop', last_assistant_message: TRICKY }, null, 2)}\n`
-  for (const ws of ['', 'golf']) {
+  for (const ws of ['', 'storefront']) {
     const env = posixEnv(home(`hook-${ws || 'default'}`, { url: crew.url }), { CREW_WORKSPACE: ws })
     crew.got.length = 0
     const [sh, node] = await both.hook('hook', { env, input: event })
@@ -133,15 +133,15 @@ test('crew-hook hook: the same event reaches Crew, and the same line lands in th
     assert.deepEqual(node, { code: 0, stdout: '', stderr: '' })
     assert.equal(crew.got.length, 2)
     assert.deepEqual(crew.got[1], crew.got[0])
-    assert.deepEqual(crew.got[0], { method: 'POST', url: '/hook/david', route: 'hook', token: 'tok', ws, body: event.trimEnd() })
+    assert.deepEqual(crew.got[0], { method: 'POST', url: '/hook/ada', route: 'hook', token: 'tok', ws, body: event.trimEnd() })
   }
   await crew.close()
   // closed (nothing at its address), or a stale token: both spool
   const gone = await crewServer(() => ({ status: 403, body: 'bad token, is crew running?\n' }))
   for (const [name, url] of [['closed', 'http://127.0.0.1:9'], ['forbidden', gone.url]]) {
     const dir = home(`spool-${name}`, { url })
-    const env = posixEnv(dir, { CREW_WORKSPACE: 'golf' })
-    const spool = path.join(dir, 'workspaces', 'golf', 'spool', 'david.jsonl')
+    const env = posixEnv(dir, { CREW_WORKSPACE: 'storefront' })
+    const spool = path.join(dir, 'workspaces', 'storefront', 'spool', 'ada.jsonl')
     await run('/bin/sh', ['-c', SH.hook], { env, input: event })
     const shLine = fs.readFileSync(spool, 'utf8')
     fs.rmSync(path.join(dir, 'workspaces'), { recursive: true, maxRetries: 10 })
@@ -160,7 +160,7 @@ test("crew-hook ask and lease: Crew's decision is printed, as ASCII that no shel
     const [sh, node] = await both.hook(kind, { env, input: '{"tool_name":"AskUserQuestion"}' })
     assert.deepEqual(JSON.parse(node.stdout), JSON.parse(sh.stdout), kind)
     assert.match(node.stdout, /^[\x20-\x7e]+$/, 'ASCII only')
-    assert.deepEqual(crew.got.at(-1), { ...crew.got.at(-2), url: `/${kind}/david`, route: kind })
+    assert.deepEqual(crew.got.at(-1), { ...crew.got.at(-2), url: `/${kind}/ada`, route: kind })
     const [sh2, node2] = await both.hook(kind, { env, input: '{"broken":1}' })
     assert.deepEqual([node2.stdout, sh2.stdout], ['', ''])
   }
@@ -173,13 +173,13 @@ test("crew-hook ask and lease: Crew's decision is printed, as ASCII that no shel
 
 test("crew-status: tells Crew the context, then prints Crew's line, or yours (with the same JSON) when you have one", SIDE_BY_SIDE, async () => {
   const crew = await crewServer(() => ({ body: '\x1b[32mcontext 12% · 24k of 200k\x1b[0m\n' }))
-  const env = posixEnv(home('status', { url: crew.url }), { CREW_WORKSPACE: 'golf', COLUMNS: '80' })
+  const env = posixEnv(home('status', { url: crew.url }), { CREW_WORKSPACE: 'storefront', COLUMNS: '80' })
   const input = JSON.stringify({ session_id: 's', context_window: { used_percentage: 12 } })
   const [sh, node] = await both.status({ env, input })
   assert.deepEqual(node, sh)
   assert.equal(node.stdout, '\x1b[32mcontext 12% · 24k of 200k\x1b[0m')
   assert.deepEqual(crew.got[1], crew.got[0])
-  assert.deepEqual(crew.got[0], { method: 'POST', url: '/status/david', route: 'status', token: 'tok', ws: 'golf', body: input })
+  assert.deepEqual(crew.got[0], { method: 'POST', url: '/status/ada', route: 'status', token: 'tok', ws: 'storefront', body: input })
   const yours = { ...env, CREW_STATUS_LINE: 'printf "mine %s " "$COLUMNS"; head -c 14' }
   const [sh2, node2] = await both.status({ env: yours, input })
   assert.deepEqual(node2, sh2)
@@ -253,20 +253,20 @@ async function exe(name, args, { env, input = '' }) {
   return { code, stdout: fs.readFileSync(path.join(io, 'out'), 'utf8'), stderr: fs.readFileSync(path.join(io, 'err'), 'utf8') }
 }
 
-const winEnv = (crewHome, over = {}) => ({ CREW_HOME: crewHome, CREW_AGENT: 'david', CREW_WORKSPACE: '', ...over })
+const winEnv = (crewHome, over = {}) => ({ CREW_HOME: crewHome, CREW_AGENT: 'ada', CREW_WORKSPACE: '', ...over })
 
 test('Windows: crew-hook.exe, started with no shell as Claude Code starts it, reaches Crew, spools while Crew is closed, prints decisions', { skip: !real && 'Windows only (or CREW_WINE_NODE)', timeout: 120000 }, async () => {
   const crew = await crewServer((r) => (r.route === 'ask' ? { body: JSON.stringify({ decision: { behavior: 'allow', message: 'Grün ✓' } }) } : { body: 'ok\n' }))
   const dir = home('win-hook', { url: crew.url })
   const event = JSON.stringify({ hook_event_name: 'Stop', last_assistant_message: TRICKY })
-  assert.deepEqual(await exe('crew-hook', ['hook'], { env: winEnv(dir, { CREW_WORKSPACE: 'golf' }), input: event }), { code: 0, stdout: '', stderr: '' })
-  assert.deepEqual(crew.got.at(-1), { method: 'POST', url: '/hook/david', route: 'hook', token: 'tok', ws: 'golf', body: event })
+  assert.deepEqual(await exe('crew-hook', ['hook'], { env: winEnv(dir, { CREW_WORKSPACE: 'storefront' }), input: event }), { code: 0, stdout: '', stderr: '' })
+  assert.deepEqual(crew.got.at(-1), { method: 'POST', url: '/hook/ada', route: 'hook', token: 'tok', ws: 'storefront', body: event })
   const asked = await exe('crew-hook', ['ask', '5'], { env: winEnv(dir), input: '{"tool_name":"Bash"}' })
   assert.equal(JSON.parse(asked.stdout).decision.message, 'Grün ✓')
   assert.match(asked.stdout, /^[\x20-\x7e]+$/)
   await crew.close()
-  await exe('crew-hook', ['hook'], { env: winEnv(dir, { CREW_WORKSPACE: 'golf' }), input: event })
-  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'workspaces', 'golf', 'spool', 'david.jsonl'), 'utf8')).last_assistant_message, TRICKY)
+  await exe('crew-hook', ['hook'], { env: winEnv(dir, { CREW_WORKSPACE: 'storefront' }), input: event })
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'workspaces', 'storefront', 'spool', 'ada.jsonl'), 'utf8')).last_assistant_message, TRICKY)
 })
 
 test('Windows: crew.exe and crew-status.exe pass every argument and byte through, and say when Crew is gone', { skip: !real && 'Windows only (or CREW_WINE_NODE)', timeout: 120000 }, async () => {

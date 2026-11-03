@@ -21,18 +21,18 @@ class FakeRunner extends EventEmitter {
   write() {}
 }
 
-let hub, runner, levi, task
+let hub, runner, noor, task
 beforeEach(() => {
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'levi', area: 'client code' }, { name: 'gal', area: 'design' }] }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'noor', area: 'client code' }, { name: 'iris', area: 'design' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
   hub.url = 'http://127.0.0.1:1'
   for (const a of hub.agents.values()) (runner.live.add(a.name), (a.status = 'idle'))
-  levi = hub.agents.get('levi')
-  // levi is on a task when the error hits
-  hub.send({ to: 'levi', text: 'build option C' })
+  noor = hub.agents.get('noor')
+  // noor is on a task when the error hits
+  hub.send({ to: 'noor', text: 'build option C' })
   task = hub.feed.find((e) => e.text === 'build option C')
   hook({ hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
 })
@@ -45,14 +45,14 @@ afterEach(async () => {
 })
 after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
-const hook = (e) => hub.onHook('levi', e)
+const hook = (e) => hub.onHook('noor', e)
 const fail = (error, text = 'API Error: Connection lost mid-response.') => hook({ hook_event_name: 'StopFailure', error, last_assistant_message: text })
-const events = () => hub.feed.filter((e) => e.kind === 'event' && e.from === 'levi').map((e) => e.text)
+const events = () => hub.feed.filter((e) => e.kind === 'event' && e.from === 'noor').map((e) => e.text)
 
 test('a dropped connection: Crew types "continue", and the turn goes on answering the same task', () => {
-  const tasks = hub.stats.levi.tasks
+  const tasks = hub.stats.noor.tasks
   fail('server_error')
-  assert.equal(levi.status, 'working')
+  assert.equal(noor.status, 'working')
   assert.match(events().at(-1), /lost its turn to an API error \(server_error\), so Crew types "continue" for it in 20s/)
   mock.timers.tick(19000)
   assert.notEqual(runner.submitted.at(-1), 'continue')
@@ -60,10 +60,10 @@ test('a dropped connection: Crew types "continue", and the turn goes on answerin
   assert.equal(runner.submitted.at(-1), 'continue')
   hook({ hook_event_name: 'UserPromptSubmit', prompt: 'continue' })
   assert.equal(hub.feed.filter((e) => e.text === 'continue').length, 0) // not a message of yours in the chat
-  assert.equal(hub.stats.levi.tasks, tasks) // nor a new task
+  assert.equal(hub.stats.noor.tasks, tasks) // nor a new task
   hook({ hook_event_name: 'Stop', last_assistant_message: 'Option C is up as a PR.' })
   assert.equal(hub.feed.at(-1).re, task.id)
-  assert.equal(levi.status, 'idle')
+  assert.equal(noor.status, 'idle')
 })
 
 test('it waits longer each time, and after three tries it calls you', () => {
@@ -75,14 +75,14 @@ test('it waits longer each time, and after three tries it calls you', () => {
     hook({ hook_event_name: 'UserPromptSubmit', prompt: 'continue' })
   }
   fail('overloaded', 'API Error: 529 Overloaded.')
-  assert.equal(levi.status, 'waiting')
+  assert.equal(noor.status, 'waiting')
   assert.match(events().at(-1), /stopped on an API error \(overloaded\): API Error: 529 Overloaded\. Type "continue" in its terminal/)
   assert.equal(hub.feed.at(-1).alert, true)
 })
 
 test('a usage limit is for you, right away', () => {
   fail('rate_limit', "You've hit your session limit · resets 9:10pm")
-  assert.equal(levi.status, 'waiting')
+  assert.equal(noor.status, 'waiting')
   assert.match(events().at(-1), /stopped on an API error \(rate_limit\): You've hit your session limit · resets 9:10pm/)
   mock.timers.tick(200000)
   assert.ok(!runner.submitted.includes('continue'))
@@ -93,7 +93,7 @@ test('a turn that ends well starts the count again', () => {
   mock.timers.tick(20000)
   hook({ hook_event_name: 'UserPromptSubmit', prompt: 'continue' })
   hook({ hook_event_name: 'Stop', last_assistant_message: 'ok' })
-  hub.send({ to: 'levi', text: 'and the TV mirror' })
+  hub.send({ to: 'noor', text: 'and the TV mirror' })
   hook({ hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
   fail('server_error')
   assert.match(events().at(-1), /in 20s$/)
@@ -109,10 +109,10 @@ test('you typed in its terminal first: no "continue" from Crew', () => {
 test('while it waits, no "needs your input" alert, and no question is typed into it', () => {
   fail('server_error')
   hook({ hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'Claude is waiting for your input' })
-  assert.equal(levi.status, 'working')
+  assert.equal(noor.status, 'working')
   assert.ok(!events().some((t) => /waiting for your input/.test(t)))
   const before = runner.submitted.length
-  hub.question({ from: 'gal', to: 'levi', text: 'is C up yet?' })
+  hub.question({ from: 'iris', to: 'noor', text: 'is C up yet?' })
   assert.equal(runner.submitted.length, before) // it goes in once the turn is going again
   mock.timers.tick(20000)
   assert.equal(runner.submitted.at(-1), 'continue')

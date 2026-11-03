@@ -21,7 +21,7 @@ test('a computer reachable on several addresses gets one connection, and keeps i
   const port = 20000 + Math.floor(Math.random() * 20000)
   await host.start(port)
   const code = makeCode({ name: 'Studio Mac', port, key, fingerprint: id.fingerprint, hosts: ['127.0.0.1', 'localhost', '127.0.0.1'] })
-  const client = new LinkClient(code, { name: 'Air', handle: async () => null })
+  const client = new LinkClient(code, { name: 'Laptop', handle: async () => null })
   const linked = new Promise((r) => client.once('peer', r))
   client.connect()
   const mine = await linked
@@ -30,7 +30,7 @@ test('a computer reachable on several addresses gets one connection, and keeps i
     assert.equal(peers.length, 1, 'only the address that answered first was sent the key')
     assert.equal(peers[0].ws.readyState, 1, "the sharing computer's side is still open")
     const heard = new Promise((r) => mine.once('alert', (name, text) => r(text)))
-    peers[0].push('alert', 'gal', 'still here')
+    peers[0].push('alert', 'iris', 'still here')
     assert.equal(await heard, 'still here', 'and what it sends still arrives')
   } finally {
     client.close()

@@ -34,7 +34,7 @@ const setup = (agents) => {
   hub.url = 'http://127.0.0.1:1' // launches go through the fake runner
   for (const a of hub.agents.values()) (runner.live.add(a.name), (a.status = 'idle'))
 }
-beforeEach(() => setup([{ name: 'joseph', area: 'backend', contextLimit: 250000 }, { name: 'gal', area: 'design', contextLimit: 250000, onContextLimit: 'notify' }, { name: 'arie', area: 'admin' }]))
+beforeEach(() => setup([{ name: 'june', area: 'backend', contextLimit: 250000 }, { name: 'iris', area: 'design', contextLimit: 250000, onContextLimit: 'notify' }, { name: 'abe', area: 'admin' }]))
 afterEach(() => {
   mock.timers.reset()
   for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer), clearTimeout(a.readyTimer)
@@ -61,166 +61,166 @@ const turn = (name, prompt, stop = {}) => {
 const up = (name) => (hub.onHook(name, { hook_event_name: 'SessionStart', source: 'startup' }), mock.timers.tick(3000))
 
 test('the gauge and the status line measure against the limit, not the model window', () => {
-  const line = report('joseph', 200000)
+  const line = report('june', 200000)
   assert.match(line, /context 80% · 200k of 250k limit/)
-  assert.deepEqual({ ...view('joseph').convo.context }, { used: 200000, size: 250000, window: 1000000, limit: 250000, pct: 80 })
-  assert.equal(view('joseph').contextLimit, 250000)
-  assert.equal(view('arie').contextLimit, null)
+  assert.deepEqual({ ...view('june').convo.context }, { used: 200000, size: 250000, window: 1000000, limit: 250000, pct: 80 })
+  assert.equal(view('june').contextLimit, 250000)
+  assert.equal(view('abe').contextLimit, null)
 })
 
 test('past the limit while free: it says it was done, then a new conversation', () => {
   runner.starts.length = 0
-  report('joseph', 260000)
+  report('june', 260000)
   assert.ok(asked())
   assert.deepEqual(runner.starts, [])
-  answer('joseph', 'done')
-  assert.deepEqual(runner.starts, ['joseph'])
-  assert.equal(hub.agents.get('joseph').status, 'starting')
-  assert.match(events('joseph').at(-1), /started a new conversation \(it passed its 250k context limit\)$/)
+  answer('june', 'done')
+  assert.deepEqual(runner.starts, ['june'])
+  assert.equal(hub.agents.get('june').status, 'starting')
+  assert.match(events('june').at(-1), /started a new conversation \(it passed its 250k context limit\)$/)
   assert.equal(hub.feed.at(-1).fresh, true)
   assert.equal(hub.feed.filter((e) => e.kind === 'reply').length, 0) // its answer is for Crew, not the chat
-  assert.equal(hub.agents.get('joseph').inbox.length, 0)
+  assert.equal(hub.agents.get('june').inbox.length, 0)
 })
 
 test('past the limit mid-task: it finishes the task first', () => {
-  const joseph = hub.agents.get('joseph')
-  joseph.status = 'working'
+  const june = hub.agents.get('june')
+  june.status = 'working'
   runner.starts.length = 0
-  report('joseph', 300000)
-  assert.equal(joseph.status, 'working')
-  assert.equal(view('joseph').freshPending, true)
-  assert.match(events('joseph').at(-1), /passed its 250k context limit \(300k used\), so it starts a new conversation when it finishes this task/)
-  report('joseph', 310000) // more reports past the limit don't pile up
-  assert.equal(events('joseph').length, 1)
-  hub.onHook('joseph', { hook_event_name: 'Stop' })
+  report('june', 300000)
+  assert.equal(june.status, 'working')
+  assert.equal(view('june').freshPending, true)
+  assert.match(events('june').at(-1), /passed its 250k context limit \(300k used\), so it starts a new conversation when it finishes this task/)
+  report('june', 310000) // more reports past the limit don't pile up
+  assert.equal(events('june').length, 1)
+  hub.onHook('june', { hook_event_name: 'Stop' })
   mock.timers.tick(1000)
   assert.ok(asked())
-  answer('joseph', 'Done.')
-  assert.deepEqual(runner.starts, ['joseph'])
-  assert.match(events('joseph').at(-1), /started a new conversation \(it passed its 250k context limit\)$/)
+  answer('june', 'Done.')
+  assert.deepEqual(runner.starts, ['june'])
+  assert.match(events('june').at(-1), /started a new conversation \(it passed its 250k context limit\)$/)
 })
 
 test('an unfinished task carries over: where it left off is the first thing in the new conversation', () => {
-  hub.send({ to: 'joseph', text: 'fix the payload' })
+  hub.send({ to: 'june', text: 'fix the payload' })
   const task = hub.feed.find((e) => e.text === 'fix the payload')
-  hub.onHook('joseph', { hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
-  report('joseph', 300000)
-  hub.onHook('joseph', { hook_event_name: 'Stop', last_assistant_message: 'Waiting on the build.' })
+  hub.onHook('june', { hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
+  report('june', 300000)
+  hub.onHook('june', { hook_event_name: 'Stop', last_assistant_message: 'Waiting on the build.' })
   mock.timers.tick(1000)
   runner.starts.length = 0
-  answer('joseph', 'Not finished. Worktree bga-payload, branch fix/payload, fix committed. Left: run the sim check, open the PR.')
-  assert.deepEqual(runner.starts, ['joseph'])
-  assert.match(events('joseph').at(-1), /started a new conversation \(it passed its 250k context limit\), and picks up where it left off: Not finished\. Worktree bga-payload/)
-  up('joseph')
+  answer('june', 'Not finished. Worktree bga-payload, branch fix/payload, fix committed. Left: run the sim check, open the PR.')
+  assert.deepEqual(runner.starts, ['june'])
+  assert.match(events('june').at(-1), /started a new conversation \(it passed its 250k context limit\), and picks up where it left off: Not finished\. Worktree bga-payload/)
+  up('june')
   assert.match(runner.submitted.at(-1), /^\[crew\] Your last conversation passed its context limit[\s\S]*branch fix\/payload[\s\S]*open the PR\.\n\nCheck where things stand, then carry on\.$/)
   // its reply threads to the task it was on
-  hub.onHook('joseph', { hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
-  hub.onHook('joseph', { hook_event_name: 'Stop', last_assistant_message: 'PR is open.' })
+  hub.onHook('june', { hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
+  hub.onHook('june', { hook_event_name: 'Stop', last_assistant_message: 'PR is open.' })
   assert.equal(hub.feed.at(-1).re, task.id)
 })
 
 test('stopped before it says where things stand: the new conversation starts anyway', () => {
-  report('joseph', 260000)
+  report('june', 260000)
   assert.ok(asked())
-  hub.onHook('joseph', { hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
+  hub.onHook('june', { hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
   runner.starts.length = 0
-  hub.onHook('joseph', { hook_event_name: 'Interrupt' })
-  assert.deepEqual(runner.starts, ['joseph'])
-  assert.match(events('joseph').at(-1), /started a new conversation \(it passed its 250k context limit\)$/)
+  hub.onHook('june', { hook_event_name: 'Interrupt' })
+  assert.deepEqual(runner.starts, ['june'])
+  assert.match(events('june').at(-1), /started a new conversation \(it passed its 250k context limit\)$/)
 })
 
 test('it waits for what it left running in the background, then asks', () => {
-  const joseph = hub.agents.get('joseph')
-  joseph.status = 'working'
-  report('joseph', 300000)
-  hub.onHook('joseph', { hook_event_name: 'Stop', last_assistant_message: "I'll screenshot once the bundle loads.", background_tasks: [{ id: 'b1', type: 'shell', status: 'running', description: 'metro' }] })
+  const june = hub.agents.get('june')
+  june.status = 'working'
+  report('june', 300000)
+  hub.onHook('june', { hook_event_name: 'Stop', last_assistant_message: "I'll screenshot once the bundle loads.", background_tasks: [{ id: 'b1', type: 'shell', status: 'running', description: 'metro' }] })
   mock.timers.tick(1000)
   assert.ok(!asked())
-  assert.match(events('joseph').at(-1), /waits for the task it left running in the background, then starts a new conversation/)
+  assert.match(events('june').at(-1), /waits for the task it left running in the background, then starts a new conversation/)
   // the build is done: it's called back, and this time nothing is left running
-  turn('joseph', '<task-notification>bundle loaded</task-notification>', { background_tasks: [] })
+  turn('june', '<task-notification>bundle loaded</task-notification>', { background_tasks: [] })
   mock.timers.tick(1000)
   assert.ok(asked())
-  answer('joseph', 'done')
-  assert.equal(joseph.status, 'starting')
+  answer('june', 'done')
+  assert.equal(june.status, 'starting')
 })
 
 test('a new task while it waits on the background: it says where things stand, and the task goes to the new conversation', () => {
-  const joseph = hub.agents.get('joseph')
-  joseph.status = 'working'
-  report('joseph', 300000)
-  hub.onHook('joseph', { hook_event_name: 'Stop', background_tasks: [{ id: 'm1', type: 'shell', status: 'running', description: 'dev server' }] })
+  const june = hub.agents.get('june')
+  june.status = 'working'
+  report('june', 300000)
+  hub.onHook('june', { hook_event_name: 'Stop', background_tasks: [{ id: 'm1', type: 'shell', status: 'running', description: 'dev server' }] })
   mock.timers.tick(1000)
-  hub.send({ to: 'joseph', text: 'next: the header' })
+  hub.send({ to: 'june', text: 'next: the header' })
   assert.ok(asked())
-  answer('joseph', 'done')
-  assert.equal(joseph.status, 'starting')
-  up('joseph')
+  answer('june', 'done')
+  assert.equal(june.status, 'starting')
+  up('june')
   assert.equal(runner.submitted.at(-1), 'next: the header')
 })
 
 test("a late status line from the conversation it just replaced doesn't count against the new one", () => {
-  const joseph = hub.agents.get('joseph')
-  const old = (used) => hub.onStatusLine('joseph', { session_id: 'old-session', context_window: { context_window_size: 1000000, used_percentage: used / 10000, current_usage: { input_tokens: used } } })
-  joseph.sessionId = 'old-session'
+  const june = hub.agents.get('june')
+  const old = (used) => hub.onStatusLine('june', { session_id: 'old-session', context_window: { context_window_size: 1000000, used_percentage: used / 10000, current_usage: { input_tokens: used } } })
+  june.sessionId = 'old-session'
   old(260000)
   assert.ok(asked())
-  answer('joseph', 'done')
-  assert.equal(joseph.status, 'starting')
-  assert.notEqual(joseph.sessionId, 'old-session', 'the new process runs a new conversation')
+  answer('june', 'done')
+  assert.equal(june.status, 'starting')
+  assert.notEqual(june.sessionId, 'old-session', 'the new process runs a new conversation')
   // the old process, on its way out, draws its status line once more
   assert.equal(old(261000), '')
-  assert.equal(hub.convos.joseph.context, undefined)
-  assert.equal(joseph.freshPending, false)
+  assert.equal(hub.convos.june.context, undefined)
+  assert.equal(june.freshPending, false)
   const typed = runner.submitted.length
-  up('joseph')
+  up('june')
   assert.ok(!runner.submitted.slice(typed).some((t) => t.includes('passed its context limit')), 'no second wrap-up for the new conversation')
-  assert.deepEqual(events('joseph').filter((t) => /context limit \(\d+k used\)/.test(t)), [], 'no second limit hit')
+  assert.deepEqual(events('june').filter((t) => /context limit \(\d+k used\)/.test(t)), [], 'no second limit hit')
   // the new conversation's own reports count
-  hub.onStatusLine('joseph', { session_id: joseph.sessionId, context_window: { context_window_size: 1000000, used_percentage: 3, current_usage: { input_tokens: 30000 } } })
-  assert.equal(hub.convos.joseph.context.used, 30000)
+  hub.onStatusLine('june', { session_id: june.sessionId, context_window: { context_window_size: 1000000, used_percentage: 3, current_usage: { input_tokens: 30000 } } })
+  assert.equal(hub.convos.june.context.used, 30000)
 })
 
 test('/clear starts another conversation in the same process: its status line counts', () => {
-  const joseph = hub.agents.get('joseph')
-  joseph.sessionId = 'first'
-  hub.onHook('joseph', { hook_event_name: 'SessionStart', source: 'clear', session_id: 'after-clear' })
-  hub.onStatusLine('joseph', { session_id: 'after-clear', context_window: { context_window_size: 1000000, used_percentage: 2, current_usage: { input_tokens: 20000 } } })
-  assert.equal(hub.convos.joseph.context.used, 20000)
+  const june = hub.agents.get('june')
+  june.sessionId = 'first'
+  hub.onHook('june', { hook_event_name: 'SessionStart', source: 'clear', session_id: 'after-clear' })
+  hub.onStatusLine('june', { session_id: 'after-clear', context_window: { context_window_size: 1000000, used_percentage: 2, current_usage: { input_tokens: 20000 } } })
+  assert.equal(hub.convos.june.context.used, 20000)
 })
 
 test('"notify" only tells you, once per conversation, and re-arms after the conversation shrinks', () => {
   const notices = []
   hub.on('notice', (n) => notices.push(n))
   runner.starts.length = 0
-  report('gal', 260000)
-  report('gal', 270000)
+  report('iris', 260000)
+  report('iris', 270000)
   assert.deepEqual(runner.starts, [])
   assert.equal(notices.length, 1)
-  assert.match(notices[0].title, /@gal passed its 250k context limit/)
+  assert.match(notices[0].title, /@iris passed its 250k context limit/)
   assert.equal(hub.feed.at(-1).alert, true)
-  report('gal', 90000) // compacted
-  report('gal', 255000)
+  report('iris', 90000) // compacted
+  report('iris', 255000)
   assert.equal(notices.length, 2)
 })
 
 test('setting a limit the conversation is already past acts on it; no limit, or one past the window, does nothing', () => {
   runner.starts.length = 0
-  report('arie', 400000)
+  report('abe', 400000)
   assert.deepEqual(runner.starts, [])
-  hub.update('arie', { contextLimit: 2000000 }) // bigger than the window: the window is the limit
+  hub.update('abe', { contextLimit: 2000000 }) // bigger than the window: the window is the limit
   assert.deepEqual(runner.starts, [])
-  assert.equal(view('arie').convo.context.size, 1000000)
-  hub.update('arie', { contextLimit: 300000 })
+  assert.equal(view('abe').convo.context.size, 1000000)
+  hub.update('abe', { contextLimit: 300000 })
   assert.ok(asked())
-  answer('arie', 'done')
-  assert.deepEqual(runner.starts, ['arie'])
+  answer('abe', 'done')
+  assert.deepEqual(runner.starts, ['abe'])
 })
 
 test('an agent that is off or exited is left alone', () => {
-  hub.agents.get('joseph').status = 'stopped'
+  hub.agents.get('june').status = 'stopped'
   runner.starts.length = 0
-  report('joseph', 400000)
+  report('june', 400000)
   assert.deepEqual(runner.starts, [])
 })
 

@@ -14,10 +14,13 @@ import { LinkHost, LinkClient, identity, addresses, firewallWarning, makeCode, r
 import { packAgents, unpackAgents } from './pack.js'
 import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, folderInfo, folders } from './move.js'
 import { Phones } from './phones.js'
+import { sweepFiles, ATTACHMENT_DAYS, CACHE_DAYS } from './keep.js'
 
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
 const SETTINGS = path.join(LINK_DIR, 'link.json')
+// Images nothing needs any more go this long after Crew starts (sweepImages), once its workspaces have read their chats.
+const SWEEP_AFTER = 60000
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const readJSON = (file) => {
   try {
@@ -253,6 +256,36 @@ export class Crew extends EventEmitter {
     })
     if (this.settings.share) await this.share(true).catch(() => {})
     for (const code of this.settings.peers ?? []) this.connect(code, { save: false }).catch(() => {})
+    this.sweepTimer = setTimeout(() => this.sweepImages(), SWEEP_AFTER)
+    this.sweepTimer.unref?.()
+  }
+
+  // Images nothing needs any more (core/keep.js): attachments that no workspace's chat, task or agent refers to, saved
+  // over ATTACHMENT_DAYS ago, and linked computers' images fetched over CACHE_DAYS ago (fetched again when they're
+  // shown). -> { attachments, cache }: how many went.
+  sweepImages(now = Date.now()) {
+    const key = (p) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p))
+    const used = new Set()
+    const add = (images) => {
+      for (const p of [].concat(images ?? [])) if (typeof p === 'string') used.add(key(p))
+    }
+    for (const hub of this.hubs.values()) {
+      for (const e of hub.feed) add(e.images)
+      for (const t of hub.tickets.all) add(t.images)
+      for (const a of hub.agents.values()) {
+        add(a.images)
+        for (const m of [...(a.inbox ?? []), ...(a.serving ?? []), ...(a.expect?.msgs ?? []), ...(a.steering?.msgs ?? [])]) add(m?.images)
+      }
+      for (const c of hub.calls.values()) add(c.msg?.images)
+    }
+    const attachments = sweepFiles(ATTACHMENTS, { days: ATTACHMENT_DAYS, inUse: (f) => used.has(key(f)), now })
+    let cache = 0
+    let computers = []
+    try {
+      computers = fs.readdirSync(CACHE, { withFileTypes: true }).filter((d) => d.isDirectory())
+    } catch {}
+    for (const d of computers) cache += sweepFiles(path.join(CACHE, d.name), { days: CACHE_DAYS, now })
+    return { attachments, cache }
   }
 
   // Quitting, agents and all ("Stop agents and quit"), or with agents kept running in the terminal host (detach): the
@@ -271,6 +304,7 @@ export class Crew extends EventEmitter {
   }
 
   close() {
+    clearTimeout(this.sweepTimer)
     for (const l of this.links.values()) {
       l.client?.close()
       l.peer?.close()
@@ -301,8 +335,9 @@ export class Crew extends EventEmitter {
   }
 
   // ---- Crew Link and workspaces ------------------------------------------------------------------
-  // A workspace is the same project on every computer that has one with its id: "golf" here and "golf" on the Mac mini
-  // are one crew, each computer's agents working in its own checkout. The default workspace is the default everywhere.
+  // A workspace is the same project on every computer that has one with its id: "storefront" here and "storefront" on
+  // the Workstation are one crew, each computer's agents working in its own checkout. The default workspace is the
+  // default everywhere.
   // A linked computer gets the default's state, terminals and alerts as always, and those of every other workspace
   // ('space' messages, workspace/name for terminals and alerts) once it has said it knows about workspaces (aware, see
   // attach). Calls for a workspace other than the default go through 'in'.
@@ -579,7 +614,7 @@ export class Crew extends EventEmitter {
     return `${await this.linkCall(l, 'addAgent', [{ ...fields, images: await this.toHome(fields.images, l) }], here.ws)}@${l.slug}`
   }
 
-  // A Tasks board action. A task lives on the computer it was added on: 12@air is #12 on Air.
+  // A Tasks board action. A task lives on the computer it was added on: 12@laptop is #12 on Laptop.
   async ticket(op, key, arg, here = this.here) {
     if (op === 'file') return here.fileTask(arg)
     if (op === 'bulk') return this.bulkTickets(arg, here)

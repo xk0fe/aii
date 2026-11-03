@@ -31,7 +31,7 @@ const newHub = () => {
 }
 beforeEach(() => {
   for (const f of ['feed.jsonl', 'stats.json', 'spend.json', 'tickets.json', 'conversations.json', 'sessions.json']) fs.rmSync(at(f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'levi', area: 'mobile app', clones: 1 }, { name: 'estee', area: 'release', provider: 'codex' }] }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'noor', area: 'mobile app', clones: 1 }, { name: 'eli', area: 'release', provider: 'codex' }] }))
   newHub()
 })
 const quiet = () => {
@@ -60,10 +60,10 @@ test("the status line's cost block, numbers only", () => {
 })
 
 test('what grew since the last report goes to the agent, its day and the hour', () => {
-  line('levi', 's1', 0.4, 10, 2)
-  line('levi', 's1', 1.0, 25, 5)
-  line('levi', 's1', 1.0, 25, 5) // the same report again counts nothing
-  const s = stats('levi')
+  line('noor', 's1', 0.4, 10, 2)
+  line('noor', 's1', 1.0, 25, 5)
+  line('noor', 's1', 1.0, 25, 5) // the same report again counts nothing
+  const s = stats('noor')
   near(s.cost, 1.0)
   near(s.costToday, 1.0)
   assert.equal(s.linesAdded, 25)
@@ -73,41 +73,41 @@ test('what grew since the last report goes to the agent, its day and the hour', 
 })
 
 test('a task gets what its conversation spent on it, and a clone counts as its original', () => {
-  const t = hub.tickets.add({ title: 'Round complete card', owner: 'levi' })
-  hub.convos.levi = { since: Date.now(), tasks: 1, compactions: 0, ticket: t.id }
-  line('levi', 's1', 2.5, 40, 4)
+  const t = hub.tickets.add({ title: 'Round complete card', owner: 'noor' })
+  hub.convos.noor = { since: Date.now(), tasks: 1, compactions: 0, ticket: t.id }
+  line('noor', 's1', 2.5, 40, 4)
   assert.deepEqual(hub.tickets.get(t.id).spent, { cost: 2.5, tokens: 0, added: 40, removed: 4 })
-  const clone = hub.spawnClone(hub.agents.get('levi'), { id: 'm1' })
+  const clone = hub.spawnClone(hub.agents.get('noor'), { id: 'm1' })
   clone.run = 'run-clone'
   line(clone.name, clone.sessionId, 1.5)
-  near(stats('levi').cost, 4.0)
+  near(stats('noor').cost, 4.0)
   assert.equal(hub.tickets.get(t.id).spent.cost, 2.5, "the clone's conversation isn't on that task")
 })
 
 test('nothing is counted twice: a counter that starts over, a restarted CLI, a resumed session Crew never saw', () => {
-  line('levi', 's1', 1.0)
-  line('levi', 's1', 0.3) // /clear or the like: its counter started over
-  near(stats('levi').cost, 1.3)
+  line('noor', 's1', 1.0)
+  line('noor', 's1', 0.3) // /clear or the like: its counter started over
+  near(stats('noor').cost, 1.3)
   // a new process resuming s1, its total picked back up: only what grew beyond the last report counts
-  const levi = hub.agents.get('levi')
-  levi.run = 'run-2'
-  line('levi', 's1', 0.9)
-  near(stats('levi').cost, 1.9)
+  const noor = hub.agents.get('noor')
+  noor.run = 'run-2'
+  line('noor', 's1', 0.9)
+  near(stats('noor').cost, 1.9)
   // another new process that started counting from zero
-  levi.run = 'run-3'
-  line('levi', 's1', 0.2)
-  near(stats('levi').cost, 2.1)
+  noor.run = 'run-3'
+  line('noor', 's1', 0.2)
+  near(stats('noor').cost, 2.1)
   // a session from before Crew counted spend, resumed: from here on
-  levi.run = 'run-4'
-  levi.resumed = true
-  line('levi', 'old', 40)
-  line('levi', 'old', 41)
-  near(stats('levi').cost, 3.1)
+  noor.run = 'run-4'
+  noor.resumed = true
+  line('noor', 'old', 40)
+  line('noor', 'old', 41)
+  near(stats('noor').cost, 3.1)
   // after a restart of Crew, what it saw is still known
   restart()
-  hub.agents.get('levi').run = 'run-4'
-  line('levi', 'old', 42)
-  near(stats('levi').cost, 4.1)
+  hub.agents.get('noor').run = 'run-4'
+  line('noor', 'old', 42)
+  near(stats('noor').cost, 4.1)
 })
 
 test('Codex agents count the tokens in their session log', () => {
@@ -115,11 +115,11 @@ test('Codex agents count the tokens in their session log', () => {
   const count = (total) => JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: total - 100, output_tokens: 100, total_tokens: total }, last_token_usage: { total_tokens: 50 }, model_context_window: 258400 } } })
   fs.writeFileSync(log, [count(12000), '{not json', ''].join('\n'))
   assert.deepEqual(codexSpent(log), { tokens: 12000 })
-  hub.onHook('estee', { hook_event_name: 'Stop', session_id: 'c1', transcript_path: log, last_assistant_message: 'done' })
+  hub.onHook('eli', { hook_event_name: 'Stop', session_id: 'c1', transcript_path: log, last_assistant_message: 'done' })
   fs.appendFileSync(log, count(20000) + '\n')
-  hub.agents.get('estee').contextAt = 0
-  hub.onHook('estee', { hook_event_name: 'Stop', session_id: 'c1', transcript_path: log, last_assistant_message: 'done' })
-  const s = stats('estee')
+  hub.agents.get('eli').contextAt = 0
+  hub.onHook('eli', { hook_event_name: 'Stop', session_id: 'c1', transcript_path: log, last_assistant_message: 'done' })
+  const s = stats('eli')
   assert.equal(s.tokens, 20000)
   assert.equal(s.cost, 0)
 })
@@ -128,7 +128,7 @@ test("today against what's usual by now, on the days the crew spent anything", (
   const day = (n) => new Date(Date.now() - n * 864e5 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
   const flat = (perHour) => Array(24).fill(perHour)
   hub.spend.hours = { [day(1)]: flat(1), [day(2)]: flat(2), [day(3)]: flat(3), [day(40)]: flat(100) } // 40 days ago is too old
-  hub.stats.levi = { first: Date.now(), days: { [day(0)]: { cost: 5 }, [day(1)]: { cost: 24 }, [day(8)]: { cost: 7 } }, cost: 36 }
+  hub.stats.noor = { first: Date.now(), days: { [day(0)]: { cost: 5 }, [day(1)]: { cost: 24 }, [day(8)]: { cost: 7 } }, cost: 36 }
   const sp = hub.snapshot().spend
   const now = new Date()
   const hours = now.getHours() + now.getMinutes() / 60

@@ -8,11 +8,11 @@
 //
 // In config.json, next to "agents" (the shared ones):
 //   "workspaces": [{
-//     "id": "golf", "name": "Golf", "folder": "~/code/api",            where its agents work
-//     "members": { "joseph": {}, "david": { "folder": "~/code/app" } }, shared agents in it, one with a folder of its own
-//     "agents": [{ "name": "kim", "area": "docs" }],                    its own agents, set up like shared ones
-//     "autopilot": false, "triage": "joseph", "autofix": true          as the top-level ones, which are the default's
-//     "color": "teal", "icon": "⛳", "parked": true                      its look, and whether its agents are stopped
+//     "id": "storefront", "name": "Storefront", "folder": "~/Projects/storefront",  where its agents work
+//     "members": { "ada": {}, "milo": { "folder": "~/Projects/storefront-web" } },  shared agents in it, one with a folder of its own
+//     "agents": [{ "name": "june", "area": "docs" }],                                its own agents, set up like shared ones
+//     "autopilot": false, "triage": "ada", "autofix": true                           as the top-level ones, which are the default's
+//     "color": "teal", "icon": "🛒", "parked": true                                  its look, and whether its agents are stopped
 //   }]
 // The default one's look and switch are top-level too ("name", "color", "icon", "parked"), and "current" is the
 // workspace on screen.
@@ -139,7 +139,7 @@ export function space(config, id) {
   }
 }
 
-// A free id for a new workspace, from its name: "Golf app" -> golf-app, golf-app-2.
+// A free id for a new workspace, from its name: "Docs site" -> docs-site, docs-site-2.
 export function newId(config, name) {
   const base = String(name ?? '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'workspace'
   const taken = new Set([DEFAULT, ...workspacesIn(config).map((w) => w.id)])

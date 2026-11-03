@@ -227,7 +227,7 @@ app.on('before-quit', (e) => {
   else crew.detach()
 })
 
-// A Mac's friendly name ("Sasha's MacBook Air"); a PC's is its device name (Settings > System > About).
+// A Mac's friendly name ("Studio", "Ann's MacBook Pro"); a PC's is its device name (Settings > System > About).
 const computerName = () => {
   if (!MAC) return os.hostname()
   try {
@@ -431,16 +431,16 @@ function showDock() {
 // ---- wiring ------------------------------------------------------------------
 
 // Every action the UI can take: crew.call('<name>', ...args). Agents are addressed by the name the UI shows,
-// so an agent on another computer (gal@mac-mini) is handled there. What the UI does lands in the workspace on screen.
+// so an agent on another computer (iris@workstation) is handled there. What the UI does lands in the workspace on screen.
 const actions = {
   state: () => crew.snapshot(),
-  // The switcher and the workspace sheet: workspace('switch', 'golf'), workspace('create', null, { name, … }), and
+  // The switcher and the workspace sheet: workspace('switch', 'storefront'), workspace('create', null, { name, … }), and
   // edit, open, park, remove, members (see Crew.workspaceAction). -> { id, state }
   workspace: (op, id, arg) => crew.workspaceAction(op, id, arg),
   send: (to, text, images, opts) => crew.send(to, text, images, opts),
   // A new conversation for an agent (after its current task, if it's busy).
   freshStart: (name) => crew.at(name, 'freshStart'),
-  // The Tasks board: task('file', null, { text, images, kind }), task('dispatch', '12'), task('accept', '12@air')…
+  // The Tasks board: task('file', null, { text, images, kind }), task('dispatch', '12'), task('accept', '12@laptop')…
   task: (op, key, arg) => crew.ticket(op, key, arg),
   taskSettings: (patch) => crew.here.setTaskSettings(patch),
   saveImage: (name, type, bytes) => crew.here.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
@@ -590,8 +590,8 @@ function qrSvg(text) {
 }
 
 function wire() {
-  // An error goes back as its message, which Crew's own errors write for you to read ("Mac mini is unreachable right
-  // now"). Anything else (a bug, a file system error) is logged with its stack too.
+  // An error goes back as its message, which Crew's own errors write for you to read ("Workstation is unreachable
+  // right now"). Anything else (a bug, a file system error) is logged with its stack too.
   ipcMain.handle('call', async (_e, name, ...args) => {
     try {
       if (!Object.hasOwn(actions, name)) {
@@ -657,7 +657,7 @@ function wire() {
     note.show()
   })
 
-  // e.g. "@david fixed #12": click to check it in the Bugs lane
+  // e.g. "@ada fixed #12": click to check it in the Bugs lane
   crew.on('notice', ({ title, body, focus, workspace }) => {
     const note = new Notification({ title: `${from(workspace)}${title}`, body })
     note.on('click', () => goTo(workspace, focus))

@@ -181,7 +181,7 @@ export function ticketText(t) {
 }
 
 // The brief whoever picks a task up gets: everything about it, in a conversation of its own. `ref` is how the
-// agent names it in `crew task` (12, or 12@air when it lives on another computer). `again`: you sent it back,
+// agent names it in `crew task` (12, or 12@laptop when it lives on another computer). `again`: you sent it back,
 // and the agent is still in the conversation where it worked on it.
 export function fixPrompt(t, ref, note, again) {
   const bug = t.kind === 'bug'

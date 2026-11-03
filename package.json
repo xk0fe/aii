@@ -1,6 +1,7 @@
 {
   "name": "crew-monorepo",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Crew: the desktop app for macOS and Windows (desktop/), the phone app (mobile/) and what they share (shared/)",
   "scripts": {
     "postinstall": "npm --prefix desktop install",

@@ -45,91 +45,91 @@ function computer(name, linkPort, agents) {
 }
 
 const studio = computer('Studio Mac', port, [
-  { name: 'gal', area: 'design, 3D, illustrations' },
+  { name: 'iris', area: 'design, 3D, illustrations' },
   { name: 'bob', area: 'backend api servers' },
 ])
-const air = computer('Air', port + 1, [{ name: 'ann', area: 'docs writing' }])
+const laptop = computer('Laptop', port + 1, [{ name: 'ann', area: 'docs writing' }])
 const names = async (c) => (await c.run(`crew.snapshot().agents.map((a) => a.name)`)).sort()
 
 before(async () => {
-  await Promise.all([studio.up, air.up])
+  await Promise.all([studio.up, laptop.up])
   await studio.run(`crew.share(true)`)
   const code = await studio.run(`crew.snapshot().computers.me.code`)
-  assert.equal(await air.run(`crew.connect(${JSON.stringify(code)})`), 'studio-mac')
-  assert.equal(await air.run(`crew.connect(${JSON.stringify(code)})`), 'studio-mac', 'linking twice reuses the link')
+  assert.equal(await laptop.run(`crew.connect(${JSON.stringify(code)})`), 'studio-mac')
+  assert.equal(await laptop.run(`crew.connect(${JSON.stringify(code)})`), 'studio-mac', 'linking twice reuses the link')
   await sleep(300)
 })
 after(() => {
   studio.stop()
-  air.stop()
+  laptop.stop()
 })
 
 test('each computer sees the whole crew, the other computer\'s agents as name@computer', async () => {
-  assert.deepEqual(await names(air), ['ann', 'bob@studio-mac', 'gal@studio-mac'])
-  assert.deepEqual(await names(studio), ['ann@air', 'bob', 'gal'])
+  assert.deepEqual(await names(laptop), ['ann', 'bob@studio-mac', 'iris@studio-mac'])
+  assert.deepEqual(await names(studio), ['ann@laptop', 'bob', 'iris'])
 })
 
 test('a bare name finds the agent wherever it lives; this computer wins a tie', async () => {
-  assert.equal(await air.run(`crew.resolve('gal')`), 'gal@studio-mac')
-  assert.equal(await air.run(`crew.resolve('ann')`), 'ann')
-  await assert.rejects(air.run(`crew.resolve('nobody')`), /no agent named/)
+  assert.equal(await laptop.run(`crew.resolve('iris')`), 'iris@studio-mac')
+  assert.equal(await laptop.run(`crew.resolve('ann')`), 'ann')
+  await assert.rejects(laptop.run(`crew.resolve('nobody')`), /no agent named/)
 })
 
 test('edits reach the computer the agent lives on', async () => {
-  await air.run(`crew.update('gal@studio-mac', { area: 'design and 3D' })`)
+  await laptop.run(`crew.update('iris@studio-mac', { area: 'design and 3D' })`)
   await sleep(200)
-  assert.equal(await studio.run(`crew.hub.agents.get('gal').area`), 'design and 3D')
-  assert.equal(await air.run(`crew.snapshot().agents.find((a) => a.name === 'gal@studio-mac').area`), 'design and 3D')
+  assert.equal(await studio.run(`crew.hub.agents.get('iris').area`), 'design and 3D')
+  assert.equal(await laptop.run(`crew.snapshot().agents.find((a) => a.name === 'iris@studio-mac').area`), 'design and 3D')
 })
 
 test('hiding a linked computer\'s agent takes it out of this crew only', async () => {
-  await air.run(`crew.setHidden(['bob@studio-mac'], true)`)
-  assert.deepEqual(await names(air), ['ann', 'gal@studio-mac'])
-  assert.equal(await air.run(`crew.snapshot().computers.links[0].agents.find((a) => a.name === 'bob@studio-mac').hidden`), true)
+  await laptop.run(`crew.setHidden(['bob@studio-mac'], true)`)
+  assert.deepEqual(await names(laptop), ['ann', 'iris@studio-mac'])
+  assert.equal(await laptop.run(`crew.snapshot().computers.links[0].agents.find((a) => a.name === 'bob@studio-mac').hidden`), true)
   assert.ok((await names(studio)).includes('bob'))
-  await air.run(`crew.setHidden(['bob@studio-mac'], false)`)
+  await laptop.run(`crew.setHidden(['bob@studio-mac'], false)`)
 })
 
 test('an agent\'s `crew send` reaches a teammate on the other computer, by bare name', async () => {
   await studio.run(`(crew.hub.agents.get('bob').off = false, 1)`) // on, not launched: the message queues
-  assert.match(await air.run(`crew.hub.send({ from: 'ann', to: 'bob', text: 'check the api' })`), /bob/)
+  assert.match(await laptop.run(`crew.hub.send({ from: 'ann', to: 'bob', text: 'check the api' })`), /bob/)
   await sleep(300)
   const there = await studio.run(`crew.hub.feed.filter((e) => e.kind === 'msg').map((e) => e.from + '>' + e.to)`)
-  assert.ok(there.includes('ann@air>bob'), there)
-  const here = await air.run(`crew.snapshot().feed.filter((e) => e.kind === 'msg').map((e) => e.from + '>' + e.to)`)
+  assert.ok(there.includes('ann@laptop>bob'), there)
+  const here = await laptop.run(`crew.snapshot().feed.filter((e) => e.kind === 'msg').map((e) => e.from + '>' + e.to)`)
   assert.ok(here.includes('ann>bob@studio-mac'), here)
-  assert.match(await air.run(`crew.hub.who()`), /bob@studio-mac/)
+  assert.match(await laptop.run(`crew.hub.who()`), /bob@studio-mac/)
 })
 
 test('sending to an agent that is off on the other computer says so', async () => {
-  await assert.rejects(air.run(`crew.send('gal', 'hi')`), /turned off/)
+  await assert.rejects(laptop.run(`crew.send('iris', 'hi')`), /turned off/)
 })
 
 test('export from both computers, import onto either', async () => {
-  const pack = await air.run(`crew.exportAgents(['gal@studio-mac', 'ann'])`)
-  assert.deepEqual(pack.agents.map((a) => a.name), ['gal', 'ann'])
-  assert.equal(pack.agents[0].avatar.seed, 'gal', 'the look survives a rename')
-  const preview = await air.run(`crew.importPreview(${JSON.stringify(pack)})`)
-  assert.deepEqual(preview.map((a) => a.name), ['gal', 'ann-2'], 'names already taken here get a free one')
-  const added = await air.run(`crew.importAgents(${JSON.stringify(pack)}, [{ index: 0, name: 'gal-copy', home: 'studio-mac' }, { index: 1, name: 'ann-2' }])`)
-  assert.deepEqual(added, ['gal-copy@studio-mac', 'ann-2'])
-  assert.equal(await studio.run(`crew.hub.agents.get('gal-copy').off`), true, 'imported agents start off')
+  const pack = await laptop.run(`crew.exportAgents(['iris@studio-mac', 'ann'])`)
+  assert.deepEqual(pack.agents.map((a) => a.name), ['iris', 'ann'])
+  assert.equal(pack.agents[0].avatar.seed, 'iris', 'the look survives a rename')
+  const preview = await laptop.run(`crew.importPreview(${JSON.stringify(pack)})`)
+  assert.deepEqual(preview.map((a) => a.name), ['iris', 'ann-2'], 'names already taken here get a free one')
+  const added = await laptop.run(`crew.importAgents(${JSON.stringify(pack)}, [{ index: 0, name: 'iris-copy', home: 'studio-mac' }, { index: 1, name: 'ann-2' }])`)
+  assert.deepEqual(added, ['iris-copy@studio-mac', 'ann-2'])
+  assert.equal(await studio.run(`crew.hub.agents.get('iris-copy').off`), true, 'imported agents start off')
 })
 
 test('moving an agent takes its definition and work experience, from either side', async () => {
-  await studio.run(`(crew.hub.stats.gal = { first: 1, days: {}, tasks: 3 }, crew.hub.saveStats(), 1)`)
-  assert.deepEqual(await air.run(`crew.moveAgent('gal@studio-mac', '', '~')`), { name: 'gal', conversation: 'fresh', reason: "it hadn't started a conversation yet" })
+  await studio.run(`(crew.hub.stats.iris = { first: 1, days: {}, tasks: 3 }, crew.hub.saveStats(), 1)`)
+  assert.deepEqual(await laptop.run(`crew.moveAgent('iris@studio-mac', '', '~')`), { name: 'iris', conversation: 'fresh', reason: "it hadn't started a conversation yet" })
   await sleep(200)
-  assert.equal(await studio.run(`crew.hub.agents.has('gal')`), false)
-  assert.equal(await air.run(`crew.hub.stats.gal.tasks`), 3)
-  assert.equal((await studio.run(`crew.moveAgent('gal@air', '')`)).name, 'gal')
+  assert.equal(await studio.run(`crew.hub.agents.has('iris')`), false)
+  assert.equal(await laptop.run(`crew.hub.stats.iris.tasks`), 3)
+  assert.equal((await studio.run(`crew.moveAgent('iris@laptop', '')`)).name, 'iris')
   await sleep(200)
-  assert.deepEqual((await names(air)).filter((n) => n.startsWith('gal')), ['gal-copy@studio-mac', 'gal@studio-mac'])
+  assert.deepEqual((await names(laptop)).filter((n) => n.startsWith('iris')), ['iris-copy@studio-mac', 'iris@studio-mac'])
 })
 
 test('forgetting a computer drops its agents here, and it drops ours', async () => {
-  await air.run(`crew.forget('studio-mac')`)
+  await laptop.run(`crew.forget('studio-mac')`)
   await sleep(300)
-  assert.deepEqual(await names(air), ['ann', 'ann-2'])
+  assert.deepEqual(await names(laptop), ['ann', 'ann-2'])
   assert.equal((await names(studio)).some((n) => n.includes('@')), false)
 })

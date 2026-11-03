@@ -30,21 +30,21 @@ test('a pack carries the definition, look, images and custom providers, not fold
   const src = fakeHub([], { mine: { label: 'Mine', cli: 'claude' } })
   const image = path.join(src.dir, 'ref.png')
   fs.writeFileSync(image, 'png bytes')
-  src.config.agents.push({ name: 'gal', area: 'design', prompt: 'be nice', provider: 'mine', model: 'opus', yolo: true, cwd: '/Users/me/code/app', images: [image], avatar: { color: 'pink' } })
-  const pack = packAgents(src, ['gal'])
+  src.config.agents.push({ name: 'iris', area: 'design', prompt: 'be nice', provider: 'mine', model: 'opus', yolo: true, cwd: '/Users/me/code/app', images: [image], avatar: { color: 'pink' } })
+  const pack = packAgents(src, ['iris'])
   const [a] = pack.agents
   assert.equal(a.folder, 'app')
   assert.equal(a.cwd, undefined)
-  assert.deepEqual(a.avatar, { seed: 'gal', color: 'pink' })
+  assert.deepEqual(a.avatar, { seed: 'iris', color: 'pink' })
   assert.equal(Buffer.from(a.images[0].data, 'base64').toString(), 'png bytes')
   assert.deepEqual(pack.providers, { mine: { label: 'Mine', cli: 'claude' } })
   assert.equal(a.stats, undefined, 'work experience only travels in moves')
 })
 
 test('importing: chosen name and folder, starts off, never overrides your providers', () => {
-  const pack = readPack(JSON.stringify({ crew: 1, agents: [{ name: 'gal', area: 'design', provider: 'mine', images: [{ type: 'image/png', data: Buffer.from('x').toString('base64') }] }], providers: { mine: { label: 'Theirs' } } }))
+  const pack = readPack(JSON.stringify({ crew: 1, agents: [{ name: 'iris', area: 'design', provider: 'mine', images: [{ type: 'image/png', data: Buffer.from('x').toString('base64') }] }], providers: { mine: { label: 'Theirs' } } }))
   const dst = fakeHub([], { mine: { label: 'Mine' } })
-  assert.deepEqual(unpackAgents(dst, pack, [{ index: 0, name: 'gal-2', folder: '~/work', on: false }]), ['gal-2'])
+  assert.deepEqual(unpackAgents(dst, pack, [{ index: 0, name: 'iris-2', folder: '~/work', on: false }]), ['iris-2'])
   const [added] = dst.added
   assert.equal(added.cwd, '~/work')
   assert.equal(added.off, true)

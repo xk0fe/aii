@@ -47,7 +47,7 @@ const until = (voice, id, type) =>
 
 test('dictation: talking-speed audio in, the sentence back, live words along the way', { skip: can !== true && can, timeout: 240000 }, async () => {
   const voice = new Voice({ root })
-  const samples = speak(root, 'Hey Joseph, please hand the release notes to David.')
+  const samples = speak(root, 'Hey June, please hand the release notes to Ada.')
   const id = await voice.start('en-US')
   const events = until(voice, id, 'done')
   for (let i = 0; i < samples.length; i += 1600) {
@@ -62,8 +62,8 @@ test('dictation: talking-speed audio in, the sentence back, live words along the
   assert.ok(seen.some((e) => e.type === 'text' && e.volatile), 'words show up while you talk, before they settle')
   const done = seen.at(-1)
   assert.equal(done.type, 'done')
-  assert.match(done.text, /joseph/i)
-  assert.match(done.text, /david/i)
+  assert.match(done.text, /june/i)
+  assert.match(done.text, /ada/i)
   assert.match(done.text, /release notes/i)
 })
 

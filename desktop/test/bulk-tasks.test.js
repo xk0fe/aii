@@ -14,8 +14,8 @@ const { Hub, CONFIG } = await import('../core/hub.js')
 const { Crew } = await import('../core/crew.js')
 
 const CREW = [
-  { name: 'david', area: 'game client: controls, input, pause menu, UI screens' },
-  { name: 'joseph', area: 'backend api, servers, leaderboards' },
+  { name: 'ada', area: 'game client: controls, input, pause menu, UI screens' },
+  { name: 'june', area: 'backend api, servers, leaderboards' },
 ]
 
 class FakeRunner extends EventEmitter {
@@ -70,7 +70,7 @@ async function writesDuring(fn) {
 }
 
 test('closing many tasks is one write and one line in the chat; one already closed is left alone', async () => {
-  const ids = [add('Pause menu overlaps', { owner: 'david' }), add('Leaderboard is slow', { owner: 'joseph', status: 'fixing' }), add('Rename Volumn', { status: 'check' }), add('Old one', { status: 'done' })]
+  const ids = [add('Pause menu overlaps', { owner: 'ada' }), add('Leaderboard is slow', { owner: 'june', status: 'fixing' }), add('Rename Volumn', { status: 'check' }), add('Old one', { status: 'done' })]
   const before = hub.feed.length
   let out
   assert.equal(await writesDuring(async () => (out = await hub.bulk('close', ids.map(String)))), 1)
@@ -84,22 +84,22 @@ test('closing many tasks is one write and one line in the chat; one already clos
 })
 
 test('bulk Start hands each owned task to its owner in a new conversation, with one line for all of them', async () => {
-  const mine = add('Pause menu overlaps', { owner: 'david' })
-  const theirs = add('Leaderboard is slow', { owner: 'joseph' })
+  const mine = add('Pause menu overlaps', { owner: 'ada' })
+  const theirs = add('Leaderboard is slow', { owner: 'june' })
   const nobody = add('Daily challenge')
-  const review = add('Rename Volumn', { owner: 'david', status: 'check' })
+  const review = add('Rename Volumn', { owner: 'ada', status: 'check' })
   const before = hub.feed.length
   let out
   const writes = await writesDuring(async () => (out = await hub.bulk('start', [mine, theirs, nobody, review].map(String))))
   assert.equal(writes, 1)
   assert.match(out, /^started 2 tasks, each in a new conversation\n$/)
   assert.deepEqual([task(mine).status, task(theirs).status, task(nobody).status, task(review).status], ['fixing', 'fixing', 'new', 'check'])
-  assert.deepEqual([task(mine).fixer, task(theirs).fixer], ['david', 'joseph'])
+  assert.deepEqual([task(mine).fixer, task(theirs).fixer], ['ada', 'june'])
   // each went as a message of its own, for a new conversation, and each agent started one
   const sent = hub.feed.slice(before).filter((e) => e.kind === 'msg' && e.ticket !== undefined)
-  assert.deepEqual(sent.map((e) => [e.to, e.ticket, Boolean(e.fresh)]), [['david', mine, true], ['joseph', theirs, true]])
-  assert.deepEqual(runner.starts.sort(), ['david', 'joseph'])
-  // the chat: one line for the lot, none of the single "went to @david" ones
+  assert.deepEqual(sent.map((e) => [e.to, e.ticket, Boolean(e.fresh)]), [['ada', mine, true], ['june', theirs, true]])
+  assert.deepEqual(runner.starts.sort(), ['ada', 'june'])
+  // the chat: one line for the lot, none of the single "went to @ada" ones
   const lines = linesAfter(before)
   assert.deepEqual(lines.map((e) => e.act), ['bulk'])
   assert.equal(lines[0].text, 'started 2 tasks, each in a new conversation')
@@ -108,8 +108,8 @@ test('bulk Start hands each owned task to its owner in a new conversation, with 
 test('a task Start can not hand on is left in To do, and the answer says why', async () => {
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [CREW[0], { ...CREW[1], off: true }] }))
   hub.loadConfig()
-  const ok = add('Pause menu overlaps', { owner: 'david' })
-  const off = add('Leaderboard is slow', { owner: 'joseph' })
+  const ok = add('Pause menu overlaps', { owner: 'ada' })
+  const off = add('Leaderboard is slow', { owner: 'june' })
   const out = await hub.bulk('start', [ok, off])
   assert.match(out, /^started 1 task, each in a new conversation\n/)
   assert.match(out, new RegExp(`#${off}: .*turned off`))
@@ -117,12 +117,12 @@ test('a task Start can not hand on is left in To do, and the answer says why', a
 })
 
 test('owner, priority and moves change only the tasks they apply to; nothing to change says so', async () => {
-  const a = add('Pause menu overlaps', { owner: 'david' })
+  const a = add('Pause menu overlaps', { owner: 'ada' })
   const b = add('Daily challenge')
-  const c = add('Old one', { owner: 'david', status: 'done' })
-  assert.equal(await hub.bulk('owner', [a, b, c], 'joseph'), 'gave 2 tasks to @joseph\n', 'a closed task keeps its owner')
-  assert.deepEqual([task(a).owner, task(b).owner, task(c).owner], ['joseph', 'joseph', 'david'])
-  assert.equal(await hub.bulk('owner', [a, b], 'joseph'), 'nothing to change\n')
+  const c = add('Old one', { owner: 'ada', status: 'done' })
+  assert.equal(await hub.bulk('owner', [a, b, c], 'june'), 'gave 2 tasks to @june\n', 'a closed task keeps its owner')
+  assert.deepEqual([task(a).owner, task(b).owner, task(c).owner], ['june', 'june', 'ada'])
+  assert.equal(await hub.bulk('owner', [a, b], 'june'), 'nothing to change\n')
   assert.equal(await hub.bulk('owner', [a], ''), 'unassigned 1 task\n')
   assert.equal(task(a).owner, null)
   assert.equal(await hub.bulk('priority', [a, b, c], 'urgent'), 'made 2 tasks urgent priority\n')
@@ -135,7 +135,7 @@ test('owner, priority and moves change only the tasks they apply to; nothing to 
 })
 
 test('delete takes the picked tasks; Clear Done takes every done task, picked or not', async () => {
-  const open = add('Pause menu overlaps', { owner: 'david' })
+  const open = add('Pause menu overlaps', { owner: 'ada' })
   const gone = add('Daily challenge')
   const done = [add('One', { status: 'done' }), add('Two', { status: 'done' }), add('Three', { status: 'done' })]
   assert.equal(await hub.bulk('remove', [gone, 999]), 'deleted 1 task\n', 'a task already gone is skipped')
@@ -147,9 +147,9 @@ test('delete takes the picked tasks; Clear Done takes every done task, picked or
 
 test('a bulk action goes to each computer with its own tasks; an older Crew gets them one at a time', async () => {
   const crew = new Crew({ bin: '/nonexistent', computerName: 'Studio' })
-  const here = add('Pause menu overlaps', { owner: 'david', on: crew.hub })
+  const here = add('Pause menu overlaps', { owner: 'ada', on: crew.hub })
   const calls = []
-  crew.links.set('air', { slug: 'air', name: 'Air', peer: { call: async (fn, args) => (calls.push([fn, args]), fn === 'bulk' ? `closed ${args[1].length} tasks\n` : undefined) } })
+  crew.links.set('laptop', { slug: 'laptop', name: 'Laptop', peer: { call: async (fn, args) => (calls.push([fn, args]), fn === 'bulk' ? `closed ${args[1].length} tasks\n` : undefined) } })
   crew.links.set('old', {
     slug: 'old', name: 'Old Mac',
     peer: { call: async (fn, args) => {
@@ -158,8 +158,8 @@ test('a bulk action goes to each computer with its own tasks; an older Crew gets
     } },
   })
   crew.links.set('gone', { slug: 'gone', name: 'Gone', peer: null })
-  const out = await crew.ticket('bulk', null, { op: 'close', keys: [`${here}@studio`, '7@air', '8@air', '3@old', '4@old', '5@gone'] })
-  assert.equal(out, "closed 1 task\non Air: closed 2 tasks\non Old Mac: 2 of 2 done one at a time (it runs an older Crew)\n1 on Gone left as they were: it's unreachable right now\n")
+  const out = await crew.ticket('bulk', null, { op: 'close', keys: [`${here}@studio`, '7@laptop', '8@laptop', '3@old', '4@old', '5@gone'] })
+  assert.equal(out, "closed 1 task\non Laptop: closed 2 tasks\non Old Mac: 2 of 2 done one at a time (it runs an older Crew)\n1 on Gone left as they were: it's unreachable right now\n")
   assert.equal(crew.hub.tickets.all.find((t) => t.id === here).status, 'done')
   assert.deepEqual(calls, [
     ['bulk', ['close', ['7', '8'], undefined]],
@@ -169,7 +169,7 @@ test('a bulk action goes to each computer with its own tasks; an older Crew gets
   ])
   // an owner, as the other computer names it: ours with @this-computer, its own bare
   calls.length = 0
-  await crew.ticket('bulk', null, { op: 'owner', keys: ['7@air'], arg: 'david' })
-  await crew.ticket('bulk', null, { op: 'owner', keys: ['7@air'], arg: 'ann@air' })
-  assert.deepEqual(calls.map(([, args]) => args[2]), ['david@studio', 'ann'])
+  await crew.ticket('bulk', null, { op: 'owner', keys: ['7@laptop'], arg: 'ada' })
+  await crew.ticket('bulk', null, { op: 'owner', keys: ['7@laptop'], arg: 'ann@laptop' })
+  assert.deepEqual(calls.map(([, args]) => args[2]), ['ada@studio', 'ann'])
 })

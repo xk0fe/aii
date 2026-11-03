@@ -15,6 +15,7 @@ import { callResult } from './transcript.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
 import { DEFAULT, dirOf, space, forget, renameShared, sharedNames } from './workspaces.js'
+import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
 export const CONFIG = path.join(HOME, 'config.json')
@@ -46,7 +47,6 @@ const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'eff
 const RESERVED = new Set(['you', 'any', 'crew'])
 const SUB_TOOLS = new Set(['Agent', 'Task']) // Claude Code's sub-agent tool ("Task" in older versions)
 const SUB_LINGER = 6000 // a finished sub-agent stays in the live view this long
-const FEED_KEEP = 300
 // A clone with nothing to do waits this long before it goes away, in case a teammate's answer is on its way.
 const CLONE_LINGER = 5 * 60000
 export const MAX_CLONES = 5
@@ -93,7 +93,7 @@ const STOP_WORDS = new Set(
 // One workspace's crew (core/workspaces.js): its agents as they work there, its chat, notes and tasks. Crew runs one
 // per workspace, all on the one config.json (config) and local server (token).
 export class Hub extends EventEmitter {
-  agents = new Map() // name -> agent; clones too (gal.2), with cloneOf: 'gal'
+  agents = new Map() // name -> agent; clones too (iris.2), with cloneOf: 'iris'
   pinned = new WeakSet() // messages that only one particular clone (or the original) should take
   url = null
   parked = false // started, but its agents only run once it's opened (see start)
@@ -111,7 +111,12 @@ export class Hub extends EventEmitter {
     this.token = token ?? randomBytes(16).toString('hex')
     this.sessions = readJSON(this.at('sessions.json')) ?? {}
     this.stats = readJSON(this.at('stats.json')) ?? {}
-    this.feed = loadFeed(this.at('feed.jsonl'))
+    // The chat (core/keep.js says how much of it is kept). feedFile: how much feed.jsonl holds, amendments included,
+    // and when it's written anew (see save); sizes: each line's length there, worked out once.
+    const { feed, lines, bytes } = loadFeed(this.at('feed.jsonl'), runtimeIds(readJSON(this.at(RUNTIME))))
+    this.feed = feed
+    this.sizes = new WeakMap()
+    this.feedFile = { lines, bytes, at: rewriteAt(feed.length, feed.reduce((n, e) => n + this.sizeOf(e), 0)) }
     this.asks = new Map() // feed id of an open question -> { resolve, name, cli, input }
     // Right of way (see question): what each `crew ask` is still owed, and which agent edits which file.
     this.calls = new Map() // id (the question's feed id) -> { id, msg, from, to, parent, at, hold, remote }
@@ -460,7 +465,7 @@ export class Hub extends EventEmitter {
   }
 
   // You've seen an agent's replies up to `ts` (the chat marks what's been on screen): { name: ts }.
-  // Names can be agents on other computers (gal@mac-mini): what you've read is this computer's to remember.
+  // Names can be agents on other computers (iris@workstation): what you've read is this computer's to remember.
   read(seen) {
     let moved = false
     for (const [name, ts] of Object.entries(seen ?? {})) {
@@ -583,7 +588,7 @@ export class Hub extends EventEmitter {
 
   // ---- clones: one agent on several tasks at once ---------------------------------------------------
   // An agent with `clones: n` doesn't make a message wait while it's busy. A clone takes it: the same agent (its
-  // settings, instructions, folder and look) in a terminal and conversation of its own, named gal.2, gal.3… up to
+  // settings, instructions, folder and look) in a terminal and conversation of its own, named iris.2, iris.3… up to
   // n of them. A clone with nothing left to do goes away after CLONE_LINGER, and its work counts as the agent's.
 
   clones() {
@@ -600,7 +605,7 @@ export class Hub extends EventEmitter {
   }
 
   // The agent a name belongs to: a clone's original, or the agent itself. A clone that went away still names its
-  // original (gal.2 -> gal), and so does one on another computer (gal.2@air -> gal@air).
+  // original (iris.2 -> iris), and so does one on another computer (iris.2@laptop -> iris@laptop).
   baseOf(name) {
     const a = this.agents.get(name)
     return a ? (a.cloneOf ?? a.name) : String(name).replace(/\.\d+(?=@|$)/, '')
@@ -1708,7 +1713,7 @@ export class Hub extends EventEmitter {
   // Who gets a message: the `to` field (a name, several names, or "any") plus every @name in the text.
   // Explicit recipients skip routing. All of them are checked before anything is posted, so one unknown,
   // turned-off or self recipient rejects the whole send rather than reaching half the crew.
-  // Names on another computer (gal@mac-mini) go to `relay`, which main.js wires to Crew Link; `mentions: false`
+  // Names on another computer (iris@workstation) go to `relay`, which main.js wires to Crew Link; `mentions: false`
   // means `to` is final (the message was already addressed on another computer).
   // `fresh`: deliver into a new conversation (started when it's this message's turn). `ticket`: the bug it's about.
   // `re`: the message you're replying to (a feed id here); the copy links to it, so the feed threads it. `quote`
@@ -2525,7 +2530,7 @@ export class Hub extends EventEmitter {
     }
     if (flags.priority !== undefined && !priorityOf(flags.priority)) throw new Error('--priority is one of: urgent, high, medium, low')
     if (flags.kind !== undefined && !KINDS.includes(flags.kind)) throw new Error(`--kind is one of: ${KINDS.join(', ')}`)
-    // 12 is a task here; 12@air one that lives on another computer (12@<this computer> is here too)
+    // 12 is a task here; 12@laptop one that lives on another computer (12@<this computer> is here too)
     const split = (r) => {
       const [id, host] = String(r ?? '').replace(/^#/, '').split('@')
       return { id, host: host && host !== this.self ? host : null }
@@ -2734,14 +2739,19 @@ export class Hub extends EventEmitter {
     text = String(text ?? '').trim()
     if (!text) throw new Error('nothing to note')
     const when = new Date().toISOString().slice(0, 16).replace('T', ' ')
-    fs.appendFileSync(this.at('board.md'), `- **${from}** (${when}): ${text.replace(/\s*\n\s*/g, ' ')}\n`)
+    const file = this.at('board.md')
+    fs.appendFileSync(file, `- **${from}** (${when}): ${text.replace(/\s*\n\s*/g, ' ')}\n`)
+    // the last BOARD_KEEP notes are what `crew board` shows: past BOARD_MAX, only they're kept (core/keep.js)
+    try {
+      if (fs.statSync(file).size > BOARD_MAX) replaceFile(file, keepLines(fs.readFileSync(file, 'utf8')))
+    } catch {} // the note is in: it's kept whole next time
     this.post({ kind: 'note', from, text })
     return 'shared with the crew\n'
   }
 
   board() {
     try {
-      return fs.readFileSync(this.at('board.md'), 'utf8').split('\n').slice(-200).join('\n')
+      return fs.readFileSync(this.at('board.md'), 'utf8').split('\n').slice(-BOARD_KEEP).join('\n')
     } catch {
       return '(no shared notes yet)\n'
     }
@@ -2780,44 +2790,84 @@ export class Hub extends EventEmitter {
   post(entry) {
     const e = { id: randomUUID().slice(0, 8), ts: Date.now(), ...entry }
     this.feed.push(e)
-    if (this.feed.length > FEED_KEEP) this.feed.splice(0, this.feed.length - FEED_KEEP)
+    this.trimFeed()
     this.save(e)
     this.changed()
     return e
   }
 
+  // The chat's history down to what's kept of it (core/keep.js): the newest lines, and every older one still in use
+  // (neededLines), plus `keep` (ids). Lines that go stay in feed.jsonl until it's next written anew.
+  trimFeed(keep) {
+    let needed
+    const kept = keepFeed(this.feed, { size: (e) => this.sizeOf(e), needed: (e) => (needed ??= this.neededLines(keep))(e) })
+    if (kept.length < this.feed.length) this.feed = kept
+  }
+
+  sizeOf(e) {
+    let n = this.sizes.get(e)
+    if (n === undefined) this.sizes.set(e, (n = lineSize(e)))
+    return n
+  }
+
+  // The lines the chat can't let go of yet, however old: a question waiting for your answer, a message still queued
+  // or held for its agent, one an agent is answering, what a teammate's `crew ask` is about, and an agent's lines on
+  // their way to another computer (core/move.js). -> (entry) => whether it's needed
+  neededLines(keep = []) {
+    const ids = new Set(keep)
+    for (const a of this.agents.values()) {
+      if (a.current) ids.add(a.current)
+      for (const m of [...(a.inbox ?? []), ...(a.serving ?? []), ...(a.expect?.msgs ?? []), ...(a.steering?.msgs ?? [])]) if (m?.id) ids.add(m.id)
+    }
+    for (const c of this.calls.values()) if (c.msg?.id) ids.add(c.msg.id)
+    for (const id of this.asks.keys()) ids.add(id)
+    for (const m of this.moves?.values() ?? []) for (const id of m.ids) ids.add(id)
+    return (e) => ids.has(e.id) || (e.kind === 'ask' && !e.answer) || Boolean(e.queued || e.held)
+  }
+
   // A later change to a feed entry (a question's answer), saved after it so it survives a restart.
   amend(e, patch) {
     Object.assign(e, patch)
+    this.sizes.delete(e)
     this.save({ amend: e.id, ...patch })
     this.changed()
   }
 
+  // Appended, one line after another, until feed.jsonl holds about twice what's kept (rewriteAt): then it's written
+  // anew with what's kept (the line included), so it never grows past about that.
   save(line) {
-    this.saving = this.saving.then(() => fs.promises.appendFile(this.at('feed.jsonl'), JSON.stringify(line) + '\n')).catch(() => {})
+    const text = JSON.stringify(line) + '\n'
+    this.feedFile.lines++
+    this.feedFile.bytes += Buffer.byteLength(text)
+    if (this.feedFile.lines > this.feedFile.at.lines || this.feedFile.bytes > this.feedFile.at.bytes) return this.rewriteFeed()
+    this.saving = this.saving.then(() => fs.promises.appendFile(this.at('feed.jsonl'), text)).catch(() => {})
   }
 
   // ---- an agent moving between computers (core/move.js) ---------------------------------------------
 
-  // feed.jsonl, written anew: it only ever grows, but lines leave with an agent that moves away and arrive (older
-  // than what's here) with one that moves in. The lines are taken now, so one posted meanwhile lands after them.
-  rewriteFeed() {
+  // feed.jsonl, written anew with what's kept of the chat: when it holds twice that (save), and when lines leave with an
+  // agent that moves away or arrive (older than what's here) with one that moves in. The lines are taken now, so one
+  // posted meanwhile lands after them. `keep`: ids to keep however old (see trimFeed).
+  rewriteFeed(keep) {
+    this.trimFeed(keep)
     const text = this.feed.map((e) => JSON.stringify(e) + '\n').join('')
-    this.saving = this.saving.then(() => fs.promises.writeFile(this.at('feed.jsonl'), text)).catch(() => {})
+    const bytes = Buffer.byteLength(text)
+    this.feedFile = { lines: this.feed.length, bytes, at: rewriteAt(this.feed.length, bytes) }
+    this.saving = this.saving.then(() => replaceFileAsync(this.at('feed.jsonl'), text)).catch(() => {})
   }
 
-  // Lines from another computer, for an agent that moved here: merged in by time.
-  adoptFeed(entries) {
+  // Lines from another computer, for an agent that moved here: merged in by time. `keep`: the ids of the ones it still
+  // needs (what it was answering), kept however old they are.
+  adoptFeed(entries, keep = []) {
     const have = new Set(this.feed.map((e) => e.id))
     this.feed.push(...entries.filter((e) => !have.has(e.id)))
     this.feed.sort((x, y) => x.ts - y.ts)
-    if (this.feed.length > FEED_KEEP) this.feed.splice(0, this.feed.length - FEED_KEEP)
-    this.rewriteFeed()
+    this.rewriteFeed(keep)
     this.changed()
   }
 
   // An agent goes by another name now (it moved to another computer, or here): `from` and `to` as this computer
-  // writes them (gal, gal@air). Lines in the chat, the Tasks board and what you've read follow it.
+  // writes them (iris, iris@laptop). Lines in the chat, the Tasks board and what you've read follow it.
   // Returns whether the feed changed (the caller rewrites it).
   renameRefs(from, to) {
     if (!from || !to || from === to) return false
@@ -2928,12 +2978,17 @@ export class Hub extends EventEmitter {
     return adopted
   }
 
-  // What agents' hooks couldn't tell Crew while it was closed, in the order it happened.
+  // What agents' hooks couldn't tell Crew while it was closed, in the order it happened: an agent's <name>.jsonl.1
+  // (what came before its spool filled up: SPOOL_MAX, core/keep.js), then one a hook was moving there when it was cut
+  // short (<name>.jsonl.<its pid>), then its <name>.jsonl.
   replaySpool() {
     let files = []
     try {
       files = fs.readdirSync(this.at(SPOOL))
     } catch {}
+    const nameOf = (f) => f.replace(/\.jsonl(\.\d+)?$/, '')
+    const order = (f) => `${nameOf(f)}\0${f.endsWith('.jsonl.1') ? 0 : f.endsWith('.jsonl') ? 2 : 1}`
+    files.sort((x, y) => (order(x) < order(y) ? -1 : 1))
     for (const f of files) {
       const file = this.at(SPOOL, f)
       let text = ''
@@ -2943,7 +2998,7 @@ export class Hub extends EventEmitter {
       } catch {
         continue
       }
-      const name = f.replace(/\.jsonl$/, '')
+      const name = nameOf(f)
       if (!this.agents.has(name)) continue
       for (const line of text.split('\n')) {
         let e
@@ -2978,7 +3033,7 @@ export class Hub extends EventEmitter {
         freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
         // in a workspace other than the default: one of your shared agents (in other workspaces too), or only this one's
         ...(this.ws !== DEFAULT && !a.cloneOf && { shared: Boolean(a.shared) }),
-        // a clone: whose, and its number (gal.2 is clone 2); it looks like its original
+        // a clone: whose, and its number (iris.2 is clone 2); it looks like its original
         clones: this.maxClones(a), ...(a.cloneOf && { cloneOf: a.cloneOf, clone: a.clone, avatar: { seed: a.avatar?.seed ?? a.cloneOf, ...a.avatar } }),
         // its sub-agents: the running ones, and ones that just finished
         subs: [...(a.subs?.values() ?? [])].filter((x) => !x.ended || Date.now() - x.ended < SUB_LINGER).map(({ id, type, description, started, ended, tools, activity }) => ({ id, type, description, started, ended, tools, activity })),
@@ -3131,18 +3186,18 @@ function readJSON(file) {
   }
 }
 
-function loadFeed(file) {
-  let lines
+// The chat as feed.jsonl has it, down to what's kept of it (core/keep.js): `keep` holds the ids of lines the agents at
+// work still point at (runtimeIds). A file that holds more than twice that is written anew. -> { feed, lines, bytes }:
+// the lines, and how much the file holds now.
+function loadFeed(file, keep = new Set()) {
+  let text
   try {
-    lines = fs.readFileSync(file, 'utf8').trim().split('\n')
+    text = fs.readFileSync(file, 'utf8')
   } catch {
-    return []
+    return { feed: [], lines: 0, bytes: 0 }
   }
-  if (lines.length > FEED_KEEP * 2) {
-    lines = lines.slice(-FEED_KEEP)
-    fs.writeFileSync(file, lines.join('\n') + '\n')
-  }
-  const feed = []
+  const lines = text.split('\n').filter((l) => l.trim())
+  const all = []
   const byId = new Map()
   for (const line of lines) {
     let e
@@ -3157,12 +3212,34 @@ function loadFeed(file) {
       continue
     }
     const entry = { ...e, queued: false, held: false }
-    feed.push(entry)
+    all.push(entry)
     byId.set(entry.id, entry)
   }
   // An unanswered question's hook ended with the last run: the agent isn't waiting on it any more.
-  for (const e of feed) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true }
-  return feed.slice(-FEED_KEEP) // amendments don't count against the history kept
+  for (const e of all) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true }
+  const feed = keepFeed(all, { needed: (e) => keep.has(e.id) })
+  const bytes = Buffer.byteLength(text)
+  const at = rewriteAt(feed.length, feed.reduce((n, e) => n + lineSize(e), 0))
+  if (lines.length <= at.lines && bytes <= at.bytes) return { feed, lines: lines.length, bytes }
+  const kept = feed.map((e) => JSON.stringify(e) + '\n').join('')
+  try {
+    replaceFile(file, kept)
+  } catch {
+    return { feed, lines: lines.length, bytes }
+  }
+  return { feed, lines: feed.length, bytes: Buffer.byteLength(kept) }
+}
+
+// The ids of the feed lines that what Crew saved about its agents at work (runtime.json, see saveRuntime) points at:
+// what each is answering, its queue, what a teammate's question is about.
+function runtimeIds(saved) {
+  const ids = new Set()
+  for (const s of Object.values(saved?.agents ?? {})) {
+    if (s?.current) ids.add(s.current)
+    for (const m of [...(s?.inbox ?? []), ...(s?.serving ?? []), ...(s?.expect?.msgs ?? []), ...(s?.steering?.msgs ?? [])]) if (m?.id) ids.add(m.id)
+  }
+  for (const c of saved?.calls ?? []) if (c?.msg) ids.add(c.msg)
+  return ids
 }
 
 // ---- questions: what the agent wants, as a card; your answer, as its hook's decision ----------------
@@ -3273,11 +3350,11 @@ const intents = (s) => {
   )
 }
 
-// Who a message is addressed to: `to` (one name, "david,joseph", "david joseph", or "any"/empty) plus every
+// Who a message is addressed to: `to` (one name, "ada,june", "ada june", or "any"/empty) plus every
 // bare @name in the text, wherever it is. The text itself is left as written. Not addresses: @words glued to
-// something (someone@example.com, @types/node, @david's), code in backticks, and @any/@you/@crew.
+// something (someone@example.com, @types/node, @ada's), code in backticks, and @any/@you/@crew.
 // Names are case-insensitive and come back lowercase, without duplicates, in the order they appear.
-// An agent on another computer is name@computer: "@gal@mac-mini" in text, or "gal@mac-mini" in `to`.
+// An agent on another computer is name@computer: "@iris@workstation" in text, or "iris@workstation" in `to`.
 export function addressees(to, text) {
   const prose = String(text).replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ')
   const mentions = [...prose.matchAll(/(?<![\w.@/'-])@([\w-]+(?:@[\w-]+)?)(?![\w@/'-]|\.\w)/g)].map((m) => m[1])

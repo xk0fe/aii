@@ -22,7 +22,7 @@ class FakeRunner extends EventEmitter {
 let hub
 beforeEach(() => {
   for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'joseph', area: 'backend' }] }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'june', area: 'backend' }] }))
   hub = new Hub(new FakeRunner(), { bin: '/nonexistent' })
   for (const a of hub.agents.values()) (hub.runner.live.add(a.name), (a.status = 'idle'))
 })
@@ -33,9 +33,9 @@ afterEach(() => {
 })
 after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
-const hook = (e) => hub.onHook('joseph', e)
+const hook = (e) => hub.onHook('june', e)
 const subs = () => hub.snapshot().agents[0].subs
-const joseph = () => hub.agents.get('joseph')
+const june = () => hub.agents.get('june')
 const agentCall = (id, description, extra = {}) => ({ tool_name: 'Agent', tool_use_id: `toolu_${id}`, tool_input: { description, prompt: '…', ...extra } })
 
 // Two sub-agents at once, in the background: the Agent calls return right away, the sub-agents keep working
@@ -50,21 +50,21 @@ test('parallel background sub-agents: named, followed tool by tool, finished, an
   hook({ hook_event_name: 'PostToolUse', ...agentCall(2, 'Read a.txt'), tool_response: { isAsync: true, status: 'async_launched', agentId: 'a2', description: 'Read a.txt' } })
   assert.deepEqual(subs().map((s) => [s.id, s.type, s.description]), [['a1', 'general-purpose', 'Count files'], ['a2', 'general-purpose', 'Read a.txt']])
 
-  joseph().activity = 'Agent · Read a.txt'
+  june().activity = 'Agent · Read a.txt'
   hook({ hook_event_name: 'PostToolUse', agent_id: 'a1', agent_type: 'general-purpose', tool_name: 'Bash', tool_input: { command: 'ls' } })
   hook({ hook_event_name: 'PostToolUse', agent_id: 'a2', agent_type: 'general-purpose', tool_name: 'Read', tool_input: { file_path: '/x/a.txt' } })
   assert.deepEqual(subs().map((s) => [s.tools, s.activity]), [[1, 'Bash · ls'], [1, 'Read · a.txt']])
-  assert.equal(joseph().activity, 'Agent · Read a.txt', "a sub-agent's step isn't the agent's own")
+  assert.equal(june().activity, 'Agent · Read a.txt', "a sub-agent's step isn't the agent's own")
 
   // its own turn ends while both still run
   const running = [{ id: 'a1', type: 'subagent', status: 'running', description: 'Count files', agent_type: 'general-purpose' }, { id: 'a2', type: 'subagent', status: 'running', description: 'Read a.txt', agent_type: 'general-purpose' }]
   hook({ hook_event_name: 'Stop', last_assistant_message: 'DONE', background_tasks: running })
-  assert.equal(joseph().status, 'idle')
+  assert.equal(june().status, 'idle')
   assert.deepEqual(hub.feed.at(-1).subs.map((s) => [s.description, s.running]), [['Count files', true], ['Read a.txt', true]])
   assert.equal(subs().length, 2, 'still shown: they keep working after its turn')
 
   hook({ hook_event_name: 'PostToolUse', agent_id: 'a1', agent_type: 'general-purpose', tool_name: 'Bash', tool_input: { command: 'ls -la' } })
-  assert.equal(joseph().status, 'idle', 'a background sub-agent working leaves the agent free')
+  assert.equal(june().status, 'idle', 'a background sub-agent working leaves the agent free')
   hook({ hook_event_name: 'SubagentStop', agent_id: 'a1', agent_type: 'general-purpose', last_assistant_message: 'One entry, a.txt', background_tasks: running })
   hook({ hook_event_name: 'Stop', last_assistant_message: 'Count files finished: 1 file', background_tasks: [running[1]] })
   assert.deepEqual(hub.feed.at(-1).subs.map((s) => [s.description, s.tools, s.running]), [['Count files', 2, false], ['Read a.txt', 1, true]])
@@ -73,7 +73,7 @@ test('parallel background sub-agents: named, followed tool by tool, finished, an
   hook({ hook_event_name: 'Stop', last_assistant_message: 'Both done', background_tasks: [] })
   assert.deepEqual(hub.feed.at(-1).subs.map((s) => [s.description, s.running]), [['Read a.txt', false]])
   // finished ones leave the live view after a moment
-  for (const s of joseph().subs.values()) s.ended -= 60000
+  for (const s of june().subs.values()) s.ended -= 60000
   assert.deepEqual(subs(), [])
 })
 
@@ -94,6 +94,6 @@ test('replies without sub-agents carry nothing extra; a restart forgets them', (
   hook({ hook_event_name: 'SubagentStart', agent_id: 'z', agent_type: 'Explore' })
   assert.equal(subs().length, 1)
   hub.url = 'http://127.0.0.1:1'
-  hub.launch(joseph())
+  hub.launch(june())
   assert.deepEqual(subs(), [])
 })
