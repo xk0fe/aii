@@ -19,7 +19,7 @@ import { FeedItem, type FeedCtx } from '@/ui/feed'
 import { displayName, plural, rowLine } from '@/ui/format'
 import { useNow } from '@/ui/hooks'
 import { Icon } from '@/ui/icon'
-import { Button, Faces, inkFor, Pill, Press } from '@/ui/parts'
+import { Button, Faces, inkFor, Press } from '@/ui/parts'
 import { offlineText, TopBar } from '@/ui/topbar'
 import { fonts, useTheme, type Theme } from '@/ui/theme'
 
@@ -156,12 +156,16 @@ function Line({ t, d, here, onAll, offline, parked }: { t: Theme; d: Derived; he
         </Text>
       </View>
     )
+  // who's at work and who needs you, in a few plain words (the line keeps its height in every mode)
+  const bits = parked ? [{ text: 'Parked', ink: t.fg2 }] : [d.waiting ? { text: (d.waiting === 1 ? '1 needs' : d.waiting + ' need') + ' you', ink: t.waitingInk } : null, d.working ? { text: d.working + ' at work', ink: t.fg2 } : null].filter((x): x is { text: string; ink: string } => Boolean(x))
+  if (!bits.length && d.agents.length) bits.push({ text: d.agents.some((a) => a.on) ? 'Everyone is idle' : 'Everyone is off', ink: t.fg2 })
   return (
     <View style={styles.line}>
-      {parked ? <Pill t={t} kind="parked" text="parked" /> : null}
-      {d.working ? <Pill t={t} kind="working" text={`${d.working} working`} /> : null}
-      {d.waiting ? <Pill t={t} kind="waiting" text={`${d.waiting} need${d.waiting === 1 ? 's' : ''} you`} /> : null}
-      {!parked && !d.working && !d.waiting && d.agents.length ? <Pill t={t} kind="idle" text={d.agents.some((a) => a.on) ? 'all free' : 'all off'} /> : null}
+      {bits.map((b) => (
+        <Text key={b.text} style={[styles.lineText, { color: b.ink }]}>
+          {b.text}
+        </Text>
+      ))}
     </View>
   )
 }
@@ -182,7 +186,7 @@ export default function ChatScreen() {
   const tabH = insets.bottom
   const here = convo ? (d.byName.get(convo) ?? null) : null
   const offline = client && link.status === 'offline' ? offlineText(link, client.macName) : ''
-  const disabled = !client ? 'Pair with your Mac to send' : offline ? `Can't send: ${client.macName} is offline` : link.status === 'connecting' || !state ? `Connecting to ${client.macName}…` : switching ? `Opening ${state.workspaces?.find((w) => w.id === ws)?.name ?? 'the workspace'}…` : null
+  const disabled = !client ? 'Pair with your computer to send' : offline ? `Can't send: ${client.macName} is offline` : link.status === 'connecting' || !state ? `Connecting to ${client.macName}…` : switching ? `Opening ${state.workspaces?.find((w) => w.id === ws)?.name ?? 'the workspace'}…` : null
 
   const { items, byId } = useMemo(() => {
     const merged = mergeSends((state?.feed ?? []).filter((e) => !(e as FeedEntry & { answers?: unknown }).answers))
@@ -216,9 +220,9 @@ export default function ChatScreen() {
   if (!client) {
     return (
       <View style={[styles.empty, { backgroundColor: t.panel, paddingTop: insets.top }]}>
-        <Text style={[styles.emptyTitle, { color: t.fg }]}>No Mac yet</Text>
-        <Text style={[styles.emptyText, { color: t.fg2 }]}>Pair this phone with Crew on your Mac, or look around the demo crew.</Text>
-        <Button t={t} kind="primary" title="Pair with your Mac" onPress={() => router.push('/pair')} />
+        <Text style={[styles.emptyTitle, { color: t.fg }]}>No computer yet</Text>
+        <Text style={[styles.emptyText, { color: t.fg2 }]}>Pair this phone with your computer, or look around the demo crew.</Text>
+        <Button t={t} kind="primary" title="Pair with your computer" onPress={() => router.push('/pair')} />
       </View>
     )
   }
@@ -273,16 +277,17 @@ const styles = StyleSheet.create({
   listInner: { paddingBottom: 8 },
   listEmpty: { paddingVertical: 40, paddingHorizontal: 32, alignItems: 'center', gap: 12, transform: [{ scaleY: -1 }] },
   line: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 40 },
-  offline: { fontSize: 14, fontWeight: '600', flexShrink: 1 },
+  offline: { fontSize: 15, fontWeight: '500', flexShrink: 1 },
+  lineText: { fontSize: 15, lineHeight: 20, fontWeight: '500' },
   back: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 30, paddingLeft: 8, paddingRight: 11, borderRadius: 15 },
   backText: { fontSize: 14, fontWeight: '600' },
   backCount: { fontSize: 13, fontWeight: '700', marginLeft: 3 },
   convo: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
-  convoName: { fontSize: 16, fontWeight: '700' },
+  convoName: { fontSize: 17, fontWeight: '600' },
   convoLine: { fontSize: 12.5 },
   working: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, gap: 8 },
   workRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  workName: { fontSize: 14, fontWeight: '700' },
+  workName: { fontSize: 15, fontWeight: '600' },
   workWhat: { flex: 1, fontSize: 13.5 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 22, fontWeight: '800' },

@@ -46,7 +46,7 @@ export function Composer({ t, agents, convo, unread, disabled, onFace, onSend }:
         .map((x) => x.a)
     : []
   const target = convo ? agents.find((a) => a.name === convo) : null
-  const placeholder = disabled ?? (target ? `Message ${displayName(target.name).base}…` : 'Message the crew, Crew picks who…')
+  const placeholder = disabled ?? (target ? `Message ${displayName(target.name).base}…` : 'Message the crew')
 
   const insert = (a: Agent) => {
     if (!at) return
@@ -124,7 +124,7 @@ export function Composer({ t, agents, convo, unread, disabled, onFace, onSend }:
           style={[styles.input, { color: t.fg }]}
           accessibilityLabel="Message"
         />
-        <Press onPress={send} disabled={!text.trim() || busy || Boolean(disabled)} style={[styles.send, { backgroundColor: text.trim() && !disabled ? t.accent : t.btn }]} accessibilityRole="button" accessibilityLabel="Send">
+        <Press onPress={send} disabled={!text.trim() || busy || Boolean(disabled)} style={[styles.send, { backgroundColor: text.trim() && !disabled ? t.brand : t.btn }]} accessibilityRole="button" accessibilityLabel="Send">
           {busy ? <ActivityIndicator size="small" color="#fff" /> : <Icon name="send" size={16} color={text.trim() && !disabled ? '#fff' : t.fg3} weight="bold" />}
         </Press>
       </View>

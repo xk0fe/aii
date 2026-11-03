@@ -70,7 +70,7 @@ function Said({ e, c, cont, caption, children }: { e: FeedEntry; c: FeedCtx; con
   return (
     <View style={[styles.said, cont && styles.cont]}>
       <Press style={styles.face} onPress={() => c.onFace(familyOf(e.from))} disabled={cont || c.here === familyOf(e.from)} accessibilityLabel={`Talk to ${displayName(e.from).base}`}>
-        {cont ? null : <Creature agent={a} size={30} mood="still" badge={false} />}
+        {cont ? null : <Creature agent={a} size={30} mood="still" />}
       </Press>
       <View style={styles.stack}>
         {cont ? null : (
@@ -115,7 +115,7 @@ function AskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
   const title = ask.type === 'permission' ? (ask.title ?? 'Use a tool') : ask.type === 'plan' ? 'A plan to approve' : (ask.questions[0]?.question ?? 'A question')
   const sub = ask.type === 'permission' ? (ask.code ?? '').split('\n')[0] : ask.type === 'question' ? ask.questions[0]?.options.map((o) => o.label).join(' · ') : ''
   return (
-    <Press onPress={() => c.onAsk(e.id)} style={[styles.askLine, { backgroundColor: t.card, borderColor: t.waiting }]} accessibilityRole="button" accessibilityLabel={`Answer ${displayName(e.from).base}`}>
+    <Press onPress={() => c.onAsk(e.id)} style={[styles.askLine, { backgroundColor: t.surface, borderColor: t.line }]} accessibilityRole="button" accessibilityLabel={`Answer ${displayName(e.from).base}`}>
       <View style={styles.askText}>
         <Text style={[styles.askTitle, { color: t.fg }]} numberOfLines={3}>
           {title}
@@ -126,8 +126,8 @@ function AskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
           </Text>
         ) : null}
       </View>
-      <View style={[styles.answerChip, { backgroundColor: t.waiting }]}>
-        <Text style={styles.answerChipText}>Answer</Text>
+      <View style={[styles.answerChip, { backgroundColor: t.fill }]}>
+        <Text style={[styles.answerChipText, { color: t.fg }]}>Answer</Text>
       </View>
     </Press>
   )
@@ -177,7 +177,7 @@ function TaskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
         <Text style={[styles.taskText, { color: c.t.fg2 }]} numberOfLines={2}>
           {who}
           {e.act === 'triaged' ? ' ' : verb}
-          <Text style={{ color: c.t.fg, fontWeight: '700' }}>#{key}</Text> <Text style={{ color: c.t.fg, fontWeight: '600' }}>{e.title}</Text>
+          <Text style={{ color: c.t.fg2, fontWeight: '500' }}>#{key}</Text> <Text style={{ color: c.t.fg, fontWeight: '600' }}>{e.title}</Text>
         </Text>
         {(e.act === 'fixed' || e.act === 'note') && e.text ? (
           <Text style={[styles.taskText, { color: c.t.fg3 }]} numberOfLines={2}>
@@ -268,7 +268,7 @@ function Entry({ e, c, cont }: { e: FeedEntry; c: FeedCtx; cont: boolean }) {
         <View style={[styles.bubble, styles.bubbleMe, styles.ticket, { backgroundColor: t.bubbleMe }]}>
           <Icon name={(e.type ?? 'bug') === 'bug' ? 'bug' : 'task'} size={15} color="#fff" />
           <Text style={styles.ticketText}>
-            <Text style={{ fontWeight: '800' }}>#{String(e.ticket).split('@')[0]}</Text> {e.title}
+            <Text style={{ fontWeight: '600' }}>#{String(e.ticket).split('@')[0]}</Text> {e.title}
           </Text>
         </View>
       </View>
@@ -363,12 +363,12 @@ const styles = StyleSheet.create({
   ticketText: { color: '#fff', fontSize: 16, flexShrink: 1 },
   quote: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '100%', paddingHorizontal: 2 },
   quoteText: { fontSize: 12.5, flexShrink: 1 },
-  askLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 14, paddingRight: 10, borderRadius: 16, borderTopLeftRadius: 6, borderWidth: 1.5, alignSelf: 'stretch' },
+  askLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 14, paddingRight: 10, borderRadius: 14, borderTopLeftRadius: 4, borderWidth: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
   askText: { flex: 1, gap: 1 },
   askTitle: { fontSize: 15, fontWeight: '600' },
   askSub: { fontSize: 12.5, lineHeight: 17 },
-  answerChip: { paddingHorizontal: 12, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  answerChipText: { color: '#241500', fontSize: 14, fontWeight: '700' },
+  answerChip: { paddingHorizontal: 14, minHeight: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  answerChipText: { fontSize: 15, fontWeight: '600' },
   quietRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, marginTop: 14 },
   quiet: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 5, justifyContent: 'center', marginHorizontal: 'auto' },
   quietText: { fontSize: 12.5, lineHeight: 17, textAlign: 'center', flexShrink: 1 },
@@ -376,7 +376,7 @@ const styles = StyleSheet.create({
   taskRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginHorizontal: 12, marginTop: 14, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14 },
   taskText: { fontSize: 13.5, lineHeight: 18 },
   newLine: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, marginTop: 16 },
-  newText: { fontSize: 11.5, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  newText: { fontSize: 13, fontWeight: '600' },
   held: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   heldText: { fontSize: 12.5 },
   subs: { fontSize: 12, paddingLeft: 4 },
