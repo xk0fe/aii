@@ -738,17 +738,92 @@ function wsStatus(w) {
 }
 
 // Segmented control: marks the segment that isOn() picks and slides the thumb to it (see .seg in common.css).
-function segmented(el, isOn) {
-  const buttons = [...el.querySelectorAll('button')]
-  const i = Math.max(0, buttons.findIndex(isOn))
-  buttons.forEach((b, j) => {
-    b.classList.toggle('on', j === i)
-    b.setAttribute('aria-pressed', String(j === i))
+// Every child is a segment (a typed value can be one: the sheet's custom context limit). none: nothing may be picked
+// (an effort left to the model), and the thumb goes away; otherwise the first is, when isOn() picks none.
+function segmented(el, isOn, { none = false } = {}) {
+  const segs = [...el.children]
+  const found = segs.findIndex(isOn)
+  const i = found < 0 && !none ? 0 : found
+  segs.forEach((s, j) => {
+    s.classList.toggle('on', j === i)
+    if (s.matches('button')) s.setAttribute('aria-pressed', String(j === i))
   })
-  el.style.setProperty('--n', buttons.length)
-  el.style.setProperty('--i', i)
+  el.classList.toggle('none', i < 0)
+  el.style.setProperty('--n', segs.length)
+  if (i >= 0) el.style.setProperty('--i', i)
   // no slide on first paint, only when you switch
   if (!el.classList.contains('ready')) requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('ready')))
+}
+
+// ---- a place's header (common.css .page-head): #crew, a conversation, Agents, Tasks and Terminals all use it ----
+// headTitle is its left end: the place's glyph, its name (and marks after it), one line about it.
+function headTitle({ glyph = '', title = '', after = '', sub = '', tip = '' }) {
+  return `${glyph ? `<span class="ph-glyph" aria-hidden="true">${glyph}</span>` : ''}<h1 class="ph-name">${title}</h1>${after}<span class="ph-sub"${tip ? ` title="${esc(tip)}"` : ''}>${sub}</span>`
+}
+// The whole row: id says whose it is (the dashboard shows the open place's), tools sit at the right end.
+function pageHead({ id, tools = '', ...title }) {
+  return `<header class="page-head" data-for="${esc(id)}"><div class="ph-title">${headTitle(title)}</div><div class="ph-tools">${tools}</div></header>`
+}
+
+// A place's search: a magnifier in its header that opens into a field where it stands (common.css .hsearch). What you
+// type goes to onSearch (after delay ms), which narrows the place and says how many match (a number, or words); × and
+// Esc clear it, and leaving it empty closes it. onClose({ keep, escape }): keep, it was closed by a result being picked.
+function mountSearch(box, { label, placeholder = label, delay = 0, onSearch, onOpen, onClose }) {
+  box.classList.add('hsearch')
+  box.setAttribute('role', 'search')
+  box.innerHTML = `<button class="icon hs-open" title="${esc(keysIn(`${label} (⌘F)`))}" aria-label="${esc(label)}">${ICONS.search}</button><label class="hs-field field">${ICONS.search}<input type="search" spellcheck="false" autocomplete="off" aria-label="${esc(label)}"><span class="hs-count" aria-live="polite"></span><button class="icon hs-clear" title="Clear" aria-label="Clear the search">${ICONS.close}</button></label>`
+  const input = box.querySelector('input')
+  const count = box.querySelector('.hs-count')
+  let timer = null
+  const isOpen = () => box.classList.contains('on')
+  function run() {
+    clearTimeout(timer)
+    const q = input.value.trim() ? input.value : ''
+    const n = onSearch(q)
+    setCount(q ? n : '')
+  }
+  // how many match, in the field: a number, or words
+  function setCount(n) {
+    const said = typeof n === 'number' ? (n ? String(n) : 'none') : (n ?? '')
+    if (count.textContent !== said) count.textContent = said
+  }
+  function open() {
+    if (!isOpen()) onOpen?.()
+    box.classList.add('on')
+    input.placeholder = typeof placeholder === 'function' ? placeholder() : placeholder
+    input.focus()
+    input.select()
+  }
+  function close({ keep = false, escape = false } = {}) {
+    clearTimeout(timer)
+    if (!isOpen() && !input.value) return
+    const had = Boolean(input.value.trim())
+    input.value = ''
+    count.textContent = ''
+    box.classList.remove('on', 'typed')
+    if (had && !keep) onSearch('')
+    onClose?.({ keep, escape })
+  }
+  box.querySelector('.hs-open').addEventListener('click', open)
+  box.querySelector('.hs-clear').addEventListener('mousedown', (e) => e.preventDefault()) // the field keeps the focus
+  box.querySelector('.hs-clear').addEventListener('click', () => {
+    input.value = ''
+    box.classList.remove('typed')
+    run()
+    input.focus()
+  })
+  input.addEventListener('input', () => {
+    box.classList.toggle('typed', Boolean(input.value))
+    clearTimeout(timer)
+    if (delay) timer = setTimeout(run, delay)
+    else run()
+  })
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') return void (e.preventDefault(), e.stopPropagation(), close({ escape: true }))
+    if (e.key === 'Enter') run()
+  })
+  input.addEventListener('blur', () => !input.value && setTimeout(() => document.activeElement !== input && !input.value && close(), 150))
+  return { open, close, isOpen, setCount, input, get value() { return input.value } }
 }
 
 // ---- motion: one vocabulary for the whole app, the same as common.css's --out, --in, --move and --t-* ----
@@ -1799,11 +1874,11 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
 
   const emptyHTML = (agents) => {
     const a = convo && (agents.find((x) => x.name === talkingTo) ?? agents.find((x) => x.name === convo))
-    if (words.length) return `<div class="empty">${ICONS.search}<b>Nothing matches</b><span>No message${a ? ` with ${esc(displayName(a))}` : ''} has ${words.length > 1 ? 'all of those words' : 'that word'}.</span></div>`
+    if (words.length) return `<div class="empty empty-state small">${ICONS.search}<b>Nothing matches</b><span>No message${a ? ` with ${esc(displayName(a))}` : ''} has ${words.length > 1 ? 'all of those words' : 'that word'}.</span></div>`
     if (!a && welcome?.()) return welcome()
-    if (!a) return `<div class="empty">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
+    if (!a) return `<div class="empty empty-state small">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
     const n = esc(plainName(a))
-    return `<div class="empty convo-empty">${avatarHTML(a, { size: 56 })}<b>You and ${esc(displayName(a))}</b><span>What you send here goes to ${n}${a.on ? '' : ` once it's back on`}. @mention someone to bring them in too.</span></div>`
+    return `<div class="empty empty-state small convo-empty">${avatarHTML(a, { size: 56 })}<b>You and ${esc(displayName(a))}</b><span>What you send here goes to ${n}${a.on ? '' : ` once it's back on`}. @mention someone to bring them in too.</span></div>`
   }
   // Where a conversation opens: at the message you pressed Reply on, else at its first reply you haven't read,
   // else at the end. A chat that's hidden (the floating panel closed, the dashboard's put away) can't scroll, so it
@@ -2733,7 +2808,7 @@ function popMenu(at, items, onPick) {
   el.className = 'menu'
   el.setAttribute('role', 'menu')
   el.innerHTML = items.map((it) => (it === '-' ? '<hr>' : it.head ? `<div class="menu-head">${esc(it.head)}</div>`
-    : `<button role="menuitem" class="${it.danger ? 'danger' : ''}" data-menu-act="${esc(it.act)}" ${it.disabled ? 'disabled' : ''}>${it.icon ?? '<i></i>'}<span>${esc(it.label)}</span>${it.hint ? `<small>${esc(it.hint)}</small>` : ''}</button>`)).join('')
+    : `<button role="menuitem" class="${[it.danger && 'danger', it.on && 'on'].filter(Boolean).join(' ')}" data-menu-act="${esc(it.act)}" ${it.disabled ? 'disabled' : ''}>${it.icon ?? '<i></i>'}<span>${esc(it.label)}</span>${it.hint ? `<small>${esc(it.hint)}</small>` : ''}${it.on ? `<i class="check">${ICONS.check}</i>` : ''}</button>`)).join('')
   // inside a modal dialog it has to be in the dialog too, or the dialog's top layer would cover it
   ;((at instanceof Element && at.closest('dialog[open]')) || document.body).append(el)
   const r = at instanceof Element ? at.getBoundingClientRect() : { left: at.x, right: at.x, top: at.y, bottom: at.y }

@@ -1,6 +1,6 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: #crew, one agent's conversation with its terminal docked beside it, Agents, Tasks or Terminals.
-/* global glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup */
+/* global pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -27,11 +27,12 @@ const feed = mountFeed($('.feed'), {
 })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to), onDictate: () => place === 'chat' || place === 'dm' || goPlace('chat') })
 const collection = mountCollection($('.collection'), {
+  headIn: $('.heads'),
   onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home),
   onWorkspace: () => workspaces.settings(),
   onRenamed: (from, to) => renamed(from, to),
 })
-const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
+const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onTerminal: (name) => select(name) })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next), onMembers: (at) => openMembers(at) })
 // first run: Claude Code and Codex, what to install or sign in to, then the first agent (ui/setup.js)
 const setup = mountSetup({ onAdd: () => addAgent() })
@@ -66,17 +67,24 @@ $('.blank .blank-mark').outerHTML = ICONS.mark
 if (ON_WINDOWS) $('.side-top').innerHTML = `<span class="app-mark" aria-hidden="true">${markSVG('0 4 24 18')}</span>`
 const NAV_ICON = { crew: markSVG('0 4 24 18'), tasks: ICONS.task, terminals: ICONS.terminal }
 for (const b of document.querySelectorAll('.nv .nv-icon')) b.outerHTML = NAV_ICON[b.closest('.nv').dataset.place]
-$('[data-layout=grid]').innerHTML = ICONS.grid
-$('[data-layout=focus]').innerHTML = ICONS.focus
+// Terminals' header: which terminals (with how many), and the grid or one big one
+$('.heads').insertAdjacentHTML('beforeend', pageHead({
+  id: 'terminals', glyph: ICONS.terminal, title: 'Terminals', sub: 'Every agent’s terminal, live',
+  tools: `<div class="seg tv-show" data-show><button data-show="all" title="Every terminal">All <i class="n"></i></button><button data-show="busy" title="The ones working, starting or waiting on you">Busy <i class="n"></i></button><button data-show="needs" title="The ones waiting on you">Needs you <i class="n"></i></button></div>
+    <div class="seg icons tv-layout" data-layout><button data-layout="grid" title="Every terminal side by side" aria-label="Grid">${ICONS.grid}</button><button data-layout="focus" title="One terminal, big" aria-label="Focus">${ICONS.focus}</button></div>`,
+}))
+// Only the open place's header shows, from the first paint (the state that draws the rest comes a moment later).
+function showHead() {
+  for (const h of document.querySelectorAll('.heads > .page-head')) h.classList.toggle('hidden', h.dataset.for !== (place === 'dm' ? 'chat' : place))
+}
+showHead()
 $('.find-icon').outerHTML = ICONS.search
-$('.ms-icon').outerHTML = ICONS.search
-$('.ms-open').innerHTML = ICONS.search
 $('[data-act=find]').innerHTML = ICONS.search
 $('.side-ws [data-act=add]').innerHTML = ICONS.plus
 $('.side-more').innerHTML = ICONS.more
-$('#link .h-icon').innerHTML = ICONS.computers
+$('#link .h-icon').outerHTML = ICONS.computers
 $('#link [data-link-add]').innerHTML = `${ICONS.link}Link a computer…`
-$('#import .h-icon').innerHTML = ICONS.import
+$('#import .h-icon').outerHTML = ICONS.import
 const DOWN = svg('<path d="M12 5v14M5 12l7 7 7-7"/>', 'stroke-width="2.4"')
 // the page's own hints in this computer's keys (⌘F is Ctrl+F on Windows)
 for (const el of document.querySelectorAll('[title]')) el.title = keysIn(el.title)
@@ -116,6 +124,7 @@ function showPlace(next) {
   $('.stage').classList.toggle('docked', dock)
   $('.terms').classList.toggle('focus', dock || layout === 'focus')
   for (const b of document.querySelectorAll('.nv')) b.dataset.place === place ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')
+  showHead()
   segmented($('[data-layout]'), (b) => b.dataset.layout === layout)
   $('[data-show]').classList.toggle('idle', layout === 'focus') // stays in place, so nothing moves
   if (!terms.has(selected)) selected = terms.keys().next().value ?? null
@@ -180,11 +189,13 @@ function openDM(name, { terminal = false } = {}) {
 
 // ---- the header: #crew, or who you're talking to ---------------------------------------------------------------
 
+const chatHeadEl = $('.page-head[data-for=chat]')
 function drawHead() {
-  const h = $('.mh-main')
-  const html = place === 'chat' ? chatHead() : place === 'dm' && dmAgent() ? dmHead(dmAgent()) : ''
-  $('.mainhead').classList.toggle('none', !html)
-  morph(h, html)
+  const a = place === 'dm' ? dmAgent() : null
+  const [title, acts] = place === 'chat' ? chatHead() : a ? dmHead(a) : ['', '']
+  chatHeadEl.classList.toggle('none', !title)
+  morph(chatHeadEl.querySelector('.ph-title'), title)
+  morph(chatHeadEl.querySelector('.ph-acts'), acts)
 }
 // #crew: who it reaches, what's waiting on you (a click goes to the oldest), and who's in it (a click opens Agents).
 function chatHead() {
@@ -193,11 +204,9 @@ function chatHead() {
   const faces = [...members.filter((a) => a.on), ...members.filter((a) => !a.on)]
   const who = hasWorkspaces(state) ? `Everyone in ${state.workspace.name}` : 'Your whole crew'
   const folder = state.workspace?.folder
-  return `<h1 class="mh-title"><span class="hash" aria-hidden="true">#</span>crew</h1><span class="mh-sub" title="${esc(folder ? `Its agents work in ${folder}, unless one has a folder of its own here` : 'Each agent works in its own folder')}">${esc(who)} · ${folder ? esc(tildePath(folder)) : 'Auto picks who answers'}</span>
-    <span class="mh-acts">
-      ${needs.length ? `<button class="mh-needs" data-head="needs" title="${esc(`${needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick for the oldest`)}">${needs.length} waiting on you${DOWN}</button>` : ''}
-      ${members.length ? `<button class="mh-faces" data-head="members" aria-haspopup="dialog" title="${esc(`Who works here: ${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 26, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}
-    </span>`
+  return [headTitle({ glyph: '#', title: 'crew', sub: `${esc(who)} · ${folder ? esc(tildePath(folder)) : 'Auto picks who answers'}`, tip: folder ? `Its agents work in ${folder}, unless one has a folder of its own here` : 'Each agent works in its own folder' }),
+    `${needs.length ? `<button class="mh-needs" data-head="needs" title="${esc(`${needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick for the oldest`)}">${needs.length} waiting on you${DOWN}</button>` : ''}
+      ${members.length ? `<button class="mh-faces" data-head="members" aria-haspopup="dialog" title="${esc(`Who works here: ${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 24, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}`]
 }
 // An agent: its creature and name, what it is and its brain in one line (with its clones or helpers), then its
 // switches (YOLO, Fast, on/off), its terminal, its profile (the sheet) and everything else (⋯).
@@ -206,17 +215,15 @@ function dmHead(a) {
   const helpers = runningSubs(a).length
   const meta = [a.area, brainWords(a, state.providers, { short: true }), clones.length ? plural(clones.length, 'clone') : helpers ? plural(helpers, 'helper') : ''].filter(Boolean)
   const canDock = family(a.name).length > 0
-  return `<span class="mh-face">${avatarHTML(a, { size: 30 })}</span><h1 class="mh-name">${nameHTML({ ...a, cloneOf: null })}</h1>
-    <span class="mh-sub" title="${esc([statusText(a), brainLabel(a, state.providers)].join('\n'))}">${esc(meta.join(' · '))}</span>
-    <span class="mh-acts">
-      ${modeChips(a)}
+  return [headTitle({ glyph: avatarHTML(a, { size: 28 }), title: nameHTML({ ...a, cloneOf: null }), sub: esc(meta.join(' · ')), tip: [statusText(a), brainLabel(a, state.providers)].join('\n') }),
+    `${modeChips(a)}
       <label class="mh-power" title="${esc(a.on ? 'On: turn it off (it stays off after restarts)' : 'Off: turn it on (it picks up its session)')}">${powerSwitch(a)}<span>${a.on ? 'On' : 'Off'}</span></label>
       <button class="btn" data-head="terminal" aria-pressed="${docked()}" ${canDock ? '' : 'disabled'} title="${canDock ? (docked() ? 'Put its terminal away' : 'Show its terminal beside the conversation') : `${esc(a.seed ?? a.name)} is off: no terminal`}">${ICONS.terminal}<span>Terminal</span></button>
-      <button class="btn" data-head="profile" title="Its brain, folder, rules, instructions and look">Profile</button>
-      <button class="icon" data-head="menu" title="More" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>
-    </span>`
+      <button class="btn" data-head="profile" title="Its brain, folder, rules, instructions and look">${ICONS.edit}<span>Profile</span></button>
+      <button class="icon" data-head="menu" title="More" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`]
 }
-$('.mainhead').addEventListener('click', (e) => {
+chatHeadEl.addEventListener('click', (e) => {
+  if (e.target.closest('.ph-glyph')) return dmAgent() && place === 'dm' && edit(dmAgent().name) // its creature: its profile
   const b = e.target.closest('[data-head], [data-place]')
   if (!b) return
   if (b.dataset.place) return goPlace(b.dataset.place)
@@ -247,7 +254,7 @@ function openMembers(at) {
   drawMembers()
   if (!membersPop.matches(':popover-open')) membersPop.showPopover()
   membersPop.focus({ preventScroll: true }) // Tab goes on into the list
-  const r = (at?.isConnected ? at : $('.mainhead')).getBoundingClientRect()
+  const r = (at?.isConnected ? at : chatHeadEl).getBoundingClientRect()
   const w = membersPop.offsetWidth
   membersPop.style.left = `${Math.round(Math.max(8, Math.min(innerWidth - w - 8, r.right - w)))}px`
   membersPop.style.top = `${Math.round(Math.min(r.bottom + 6, innerHeight - membersPop.offsetHeight - 8))}px`
@@ -259,12 +266,12 @@ function drawMembers() {
   const here = state.agents.filter((a) => !a.cloneOf)
   const others = named ? (state.roster ?? []).filter((r) => !here.some((a) => a.name === r.name)) : []
   const row = (a, end) => `<div class="mp-row" data-agent="${esc(a.name)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span class="mp-who"><b>${esc(a.seed ?? a.name)}</b><small>${esc(a.area || (a.status ? upFirst(statusText(a)) : ''))}</small></span>${end}</div>`
-  const take = (a) => (named && a.shared ? `<button class="btn plain mp-take" data-mp-take="${esc(a.name)}" title="${esc(`Take ${a.name} out of ${w.name}: it stays in your crew and your other workspaces`)}">Take out</button>` : named ? '<span class="mp-only" title="Made for this workspace: it works only here">only here</span>' : '')
+  const take = (a) => (named && a.shared ? `<button class="btn sm plain mp-take" data-mp-take="${esc(a.name)}" title="${esc(`Take ${a.name} out of ${w.name}: it stays in your crew and your other workspaces`)}">Take out</button>` : named ? '<span class="mp-only" title="Made for this workspace: it works only here">only here</span>' : '')
   morph(membersPop, `<header class="mp-head"><b>Who works here</b><span>${here.length}</span></header>
     <p class="mp-lead">${named ? `${esc(w.name)}'s agents${w.folder ? `, in ${esc(tildePath(w.folder))}` : ''}. One from your crew works here in a conversation of its own.` : 'Everyone in your crew works here, each in its own folder.'}</p>
     <div class="mp-body">
       ${here.length ? here.map((a) => row(a, take(a))).join('') : `<p class="mp-lead">Nobody yet.</p>`}
-      ${others.length ? `<div class="mp-sec">From your crew</div>${others.map((r) => row({ ...r, status: '' }, `<button class="btn mp-add" data-mp-add="${esc(r.name)}">Add</button>`)).join('')}` : ''}
+      ${others.length ? `<div class="mp-sec section-label">From your crew</div>${others.map((r) => row({ ...r, status: '' }, `<button class="btn sm mp-add" data-mp-add="${esc(r.name)}">Add</button>`)).join('')}` : ''}
     </div>
     <footer class="mp-foot"><button class="btn" data-mp-new>${ICONS.plus}<span>New agent${named ? ` for ${esc(w.name)}` : ''}</span></button><span class="grow"></span><button class="btn plain" data-mp-agents>All agents</button></footer>`)
 }
@@ -302,9 +309,9 @@ function welcomeHTML() {
   const w = state.workspace ?? { id: 'default', name: 'Home' }
   const named = w.id !== 'default'
   const here = state.agents.filter((a) => !a.cloneOf)
-  const step = (done, act, title, sub) => `<button class="wl-step ${done ? 'done' : ''}" data-welcome="${act}"><i class="wl-mark">${done ? ICONS.check : ''}</i><span><b>${esc(title)}</b><small>${esc(sub)}</small></span><i class="wl-go">${ICONS.chevron}</i></button>`
-  return `<div class="welcome">${wsTile(w, { size: 64 })}<h2>${hasWorkspaces(state) ? `Welcome to ${esc(w.name)}` : 'Welcome to #crew'}</h2>
-    <p>Everyone here sees what's said in #crew. Ask for something and Auto picks who answers, or @name someone.</p>
+  const step = (done, act, title, sub) => `<button class="wl-step ${done ? 'done' : ''}" data-welcome="${act}"><i class="pick ${done ? 'on' : ''}">${ICONS.check}</i><span><b>${esc(title)}</b><small>${esc(sub)}</small></span><i class="wl-go">${ICONS.chevron}</i></button>`
+  return `<div class="welcome empty-state">${wsTile(w, { size: 64 })}<h2 class="display">${hasWorkspaces(state) ? `Welcome to ${esc(w.name)}` : 'Welcome to #crew'}</h2>
+    <p class="lead">Everyone here sees what's said in #crew. Ask for something and Auto picks who answers, or @name someone.</p>
     <div class="wl-steps">
       ${step(here.length > 0, 'members', here.length ? `${plural(here.length, 'agent')} work${here.length > 1 ? '' : 's'} here` : 'Choose who works here', named ? 'Agents from your crew, or new ones just for this workspace' : 'Everyone in your crew, each in its own folder')}
       ${named ? step(Boolean(w.folder), 'settings', w.folder ? `They work in ${tildePath(w.folder)}` : 'Pick its folder', 'Where its agents work, unless one has a folder of its own') : ''}
@@ -331,46 +338,22 @@ function answerOldest() {
 
 // The magnifier opens a field; what you type narrows the chat to the messages with every word (marked), with how many
 // in the field. A click on one shows it where it was. Esc, or leaving, ends it.
-const msearch = $('.msearch')
-const msq = $('[data-ms-q]')
-let msTimer = null
-function openSearch() {
-  msearch.classList.add('on')
-  msq.placeholder = place === 'dm' && dmAgent() ? `Search with ${dmAgent().seed ?? dmAgent().name}` : 'Search #crew'
-  msq.focus()
-  msq.select()
-}
-// keep: the search ended on its own (a result was clicked): only the field goes
-function closeSearch({ keep = false } = {}) {
-  clearTimeout(msTimer)
-  if (!msearch.classList.contains('on') && !msq.value) return
-  msq.value = ''
-  $('.ms-count').textContent = ''
-  msearch.classList.remove('on')
-  $('.feed').classList.remove('searching')
-  if (!keep) feed.search('')
-}
-function runSearch() {
-  const n = feed.search(msq.value)
-  const on = Boolean(msq.value.trim())
-  $('.feed').classList.toggle('searching', on)
-  $('.ms-count').textContent = on ? (n ? `${n}${n >= 200 ? '+' : ''}` : 'none') : ''
-}
-$('.ms-open').addEventListener('click', openSearch)
-msq.addEventListener('input', () => {
-  clearTimeout(msTimer)
-  msTimer = setTimeout(runSearch, 120)
+const msearch = mountSearch($('.chat-search'), {
+  label: 'Search messages',
+  placeholder: () => (place === 'dm' && dmAgent() ? `Search with ${dmAgent().seed ?? dmAgent().name}` : 'Search #crew'),
+  delay: 120,
+  onSearch: (q) => {
+    const n = feed.search(q)
+    $('.feed').classList.toggle('searching', Boolean(q.trim()))
+    return n >= 200 ? `${n}+` : n
+  },
+  onClose: ({ escape }) => {
+    $('.feed').classList.remove('searching')
+    if (escape) composer.focus()
+  },
 })
-msq.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    e.stopPropagation()
-    closeSearch()
-    composer.focus()
-  }
-  if (e.key === 'Enter') (clearTimeout(msTimer), runSearch())
-})
-msq.addEventListener('blur', () => !msq.value && setTimeout(() => document.activeElement !== msq && !msq.value && closeSearch(), 150))
+const openSearch = () => msearch.open()
+const closeSearch = (opts) => msearch.close(opts)
 
 // ---- the dock: the conversation's agent's terminal, with a tab for each of its clones -----------------------------
 
@@ -686,14 +669,18 @@ function drawBlank() {
   const on = state.agents.filter((a) => a.on && a.status !== 'parked').length
   $('.blank').classList.toggle('hidden', place !== 'terminals' || on > 0)
   const parked = state.parked && state.agents.some((a) => a.on)
-  $('.blank b').textContent = parked ? `${state.workspace.name} is parked` : state.agents.length ? 'All agents are off' : 'No agents yet'
-  $('.blank span').textContent = parked ? 'Open it to start its agents: each picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
+  $('.blank h1').textContent = parked ? `${state.workspace.name} is parked` : state.agents.length ? 'All agents are off' : 'No agents yet'
+  $('.blank .lead').textContent = parked ? 'Open it to start its agents: each picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
+  $('.blank .acts').classList.toggle('hidden', state.agents.length > 0) // Add your first agent, only when there's none
 }
 
 // The grid shows every terminal, the busy ones (working, starting or waiting on you), or the ones waiting on you; each
 // with how many there are. The dock shows its own, whatever the grid's filter.
 const busy = (a) => a && (a.status === 'working' || a.status === 'waiting' || a.status === 'starting')
-const SHOW_NONE = { busy: 'Nobody is busy right now', needs: 'Nobody needs you right now' }
+const SHOW_NONE = {
+  busy: ['Nobody is busy right now', 'A terminal shows here while its agent works.'],
+  needs: ['Nobody needs you right now', 'A terminal shows here when its agent waits on you.'],
+}
 function drawShow() {
   segmented($('[data-show]'), (b) => b.dataset.show === show)
   const waiting = new Set(needsYou(state).map((x) => x.agent.name))
@@ -717,8 +704,10 @@ function drawShow() {
   freshen()
   const none = $('.terms .terms-none')
   if (grid && SHOW_NONE[show] && !shown && terms.size) {
-    if (!none) $('.terms').insertAdjacentHTML('beforeend', `<p class="terms-none">${SHOW_NONE[show]}</p>`)
-    else if (none.textContent !== SHOW_NONE[show]) none.textContent = SHOW_NONE[show]
+    const [title, line] = SHOW_NONE[show]
+    const html = `${ICONS.terminal}<b>${title}</b><span>${line}</span>`
+    if (!none) $('.terms').insertAdjacentHTML('beforeend', `<div class="terms-none empty-state small" data-none="${show}">${html}</div>`)
+    else if (none.dataset.none !== show) (none.dataset.none = show), (none.innerHTML = html)
   } else none?.remove()
 }
 
@@ -748,7 +737,7 @@ document.addEventListener('keydown', (e) => {
   if (!commandKey(e)) return
   if (document.querySelector('.ed-layer.open, dialog[open]')) return // the agent's sheet or a dialog is in front
   if (KEYS[e.key] && !e.altKey && !e.shiftKey) return void (e.preventDefault(), goPlace(KEYS[e.key]))
-  if (e.key === 'f' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), place === 'chat' || place === 'dm' ? openSearch() : startFind())
+  if (e.key === 'f' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), place === 'chat' || place === 'dm' ? openSearch() : place === 'tasks' ? tasks.search() : startFind())
   if (e.key === 'k' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), startFind())
   if (e.key === 'n' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), addAgent())
 })
@@ -1068,7 +1057,7 @@ function agentMenu(name, at) {
   })
 }
 document.addEventListener('contextmenu', (e) => {
-  const el = e.target.closest('.roster .dm, .pcard[data-name], .tile-head, .dock-tab, .mainhead .mh-face, .mainhead .mh-name')
+  const el = e.target.closest('.roster .dm, .pcard[data-name], .tile-head, .dock-tab, .page-head[data-for=chat] .ph-glyph .av, .page-head[data-for=chat] .ph-name')
   if (!el) return
   e.preventDefault()
   agentMenu(el.dataset.agent ?? el.dataset.name ?? el.dataset.dock ?? el.closest('.tile')?.dataset.name ?? dmAgent()?.name, { x: e.clientX, y: e.clientY })
@@ -1275,21 +1264,21 @@ function computersHTML({ me, links, phones }) {
       ${linkOpen.details ? `<div class="lk-details">
         <p>Anyone with the link code can use and drive your agents, so keep it to your own computers. Linked computers see these agents as <b>name@${esc(me.slug)}</b>.</p>
         <p>${esc(reachText(me.hosts))}</p>
-        <div class="lk-row"><span>A new code disconnects the computers using this one, until they link again.</span><span class="lk-btns"><button class="btn small" data-link-details-copy title="This computer's addresses and port, for when a computer can't connect">${linkOpen.detailsCopied ? 'Copied' : 'Copy connection details'}</button><button class="btn small" data-link-reset>New code</button></span></div>
+        <div class="lk-row"><span>A new code disconnects the computers using this one, until they link again.</span><span class="lk-btns"><button class="btn sm" data-link-details-copy title="This computer's addresses and port, for when a computer can't connect">${linkOpen.detailsCopied ? 'Copied' : 'Copy connection details'}</button><button class="btn sm" data-link-reset>New code</button></span></div>
       </div>` : ''}`
     : me.error ? `<div class="lk-li"><p class="err">${esc(sharingError(me.error))}</p></div>` : ''}`
   const form = linkOpen.form || linkErr ? `
-    <div class="lk-label">Link a computer</div>
-    <div class="lk-list"><div class="lk-form">
+    <div class="section-label">Link a computer</div>
+    <div class="group-list"><div class="lk-form">
       <p>Paste the code from the other computer's <b>Copy link code</b>. Linking works both ways: each computer sees the other's agents.</p>
-      <div class="code-in"><textarea data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Link</button></div>
+      <div class="code-in"><textarea class="field" data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Link</button></div>
       <p class="err" data-link-err>${esc(linkErr)}</p>
     </div></div>` : ''
-  return `<div class="lk-label">${upFirst(THIS_COMPUTER)}</div><div class="lk-list">${mine}</div>
-    <div class="lk-label">Linked</div>
-    <div class="lk-list">${links.length ? links.map(linkHTML).join('') : '<div class="lk-li lk-empty">No other computers yet. Copy the link code on one, then Link a computer… here.</div>'}</div>
+  return `<div class="section-label">${upFirst(THIS_COMPUTER)}</div><div class="group-list">${mine}</div>
+    <div class="section-label">Linked</div>
+    <div class="group-list">${links.length ? links.map(linkHTML).join('') : '<div class="lk-li lk-empty">No other computers yet. Copy the link code on one, then Link a computer… here.</div>'}</div>
     ${form}
-    <div class="lk-label">Phones</div>
+    <div class="section-label">Phones</div>
     ${phonesHTML(phones ?? { devices: [] })}`
 }
 
@@ -1322,13 +1311,12 @@ function linkHTML(l) {
   const open = linkOpen.computers.has(l.slug)
   const status = linkStatus(l)
   const shown = l.agents.filter((a) => !a.hidden)
-  const faces = (shown.length ? shown : l.agents).slice(0, 4)
   const used = shown.length
   return `<section class="lk-pc ${fresh === l.slug ? 'fresh' : ''}" data-computer="${esc(l.slug)}">
     <button class="lk-li" data-lk-open="${esc(l.slug)}" aria-expanded="${open}">
       <span class="lk-ic">${machineIcon(l.name)}</span>
-      <span class="lk-k">${esc(l.name)}<small title="${esc(status.tip)}"><span class="lk-dot ${l.online ? '' : 'off'}"></span>${esc(status.text)}</small></span>
-      ${faces.length ? `<span class="lk-faces">${faces.map((a) => avatarHTML(a, { size: 24, mood: 'still' })).join('')}${l.agents.length > faces.length ? `<i>+${l.agents.length - faces.length}</i>` : ''}</span>` : ''}
+      <span class="lk-k">${esc(l.name)}<small title="${esc(status.tip)}"><span class="dot ${l.online ? 'working' : 'away'}"></span>${esc(status.text)}</small></span>
+      ${l.agents.length ? faceStack(shown.length ? shown : l.agents, 4) : ''}
       ${LINK_CHEV}
     </button>
     ${open ? `<div class="lk-body">
@@ -1336,11 +1324,11 @@ function linkHTML(l) {
       ${l.agents.length ? `<ul class="lk-agents">${l.agents.map((a) => `
         <li class="${a.hidden ? 'unused' : ''}">${avatarHTML(a, { size: 30, mood: 'still' })}
           <span class="who"><b>${esc(a.seed)}</b><small>${esc(a.area || 'no area')}</small></span>
-          ${l.online ? `<button class="btn small lk-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
+          ${l.online ? `<button class="btn sm lk-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
           <label class="use"><input type="checkbox" class="switch" data-use="${esc(a.name)}" ${a.hidden ? '' : 'checked'}>Use</label>
         </li>`).join('')}</ul>` : `<p>${l.online ? 'No agents there yet.' : 'Its agents show here once it\'s back.'}</p>`}
       <div class="lk-row"><span title="Move one with its Move to…, or drag it onto a computer in the sidebar">${l.agents.length > 1 ? `Using ${used} of ${l.agents.length}` : ''}</span>
-        <span class="lk-btns">${l.agents.length > 1 ? `<button class="btn small" data-use-all="${esc(l.slug)}">All</button><button class="btn small" data-use-none="${esc(l.slug)}">None</button>` : ''}${l.saved ? `<button class="btn small" data-forget="${esc(l.slug)}" title="Unlink it from ${THIS_COMPUTER}">Forget</button>` : ''}</span></div>
+        <span class="lk-btns">${l.agents.length > 1 ? `<button class="btn sm" data-use-all="${esc(l.slug)}">All</button><button class="btn sm" data-use-none="${esc(l.slug)}">None</button>` : ''}${l.saved ? `<button class="btn sm" data-forget="${esc(l.slug)}" title="Unlink it from ${THIS_COMPUTER}">Forget</button>` : ''}</span></div>
     </div>` : ''}
   </section>`
 }
@@ -1356,23 +1344,24 @@ let phoneErr = ''
 let pairTick = null
 
 function phonesHTML(p) {
-  return `<section class="lk-list phones">
-    <div class="ph-head"><div class="grow"><p style="margin:0">The chat and the questions agents wait on you for, in the ${PRODUCT_NAME} app on your phone, over the same Wi-Fi or Tailscale.</p></div>
+  const err = phoneErr || p.error || p.warning
+  return `<section class="group-list phones">
+    <div class="lk-li"><p class="lk-note">The chat and the questions agents wait on you for, in the ${PRODUCT_NAME} app on your phone, over the same Wi-Fi or Tailscale.</p>
       <button class="btn" data-phone-add>Add a phone</button></div>
-    ${p.devices.length ? `<ul class="ph-list">${p.devices.map(phoneHTML).join('')}</ul>` : ''}
-    <p class="err">${esc(phoneErr || p.error || p.warning || '')}</p>
+    ${p.devices.map(phoneHTML).join('')}
+    ${err ? `<div class="lk-li"><p class="err">${esc(err)}</p></div>` : ''}
   </section>`
 }
 
 function phoneHTML(d) {
   const kind = { ios: 'iPhone', android: 'Android' }[d.platform] ?? 'Phone'
   const seen = d.online ? 'Connected' : phoneDay(d.seen) === 'today' ? `Seen at ${new Date(d.seen).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : `Seen ${phoneDay(d.seen)}`
-  return `<li class="${d.id === phoneFresh ? 'fresh' : ''}" data-phone="${esc(d.id)}">
-    <span class="ph-icon">${ICONS.phone}</span>
-    <span class="who"><b>${esc(d.name)}</b><small>${kind}${d.app ? ` · ${PRODUCT_NAME} ${esc(d.app)}` : ''} · paired ${phoneDay(d.paired)}</small></span>
-    <span class="ph-seen"><span class="dot ${d.online ? 'live' : 'off'}"></span>${seen}</span>
-    <button class="btn small" data-phone-remove="${esc(d.id)}">Remove</button>
-  </li>`
+  return `<div class="lk-li lk-phone ${d.id === phoneFresh ? 'fresh' : ''}" data-phone="${esc(d.id)}">
+    <span class="lk-ic">${ICONS.phone}</span>
+    <span class="lk-k">${esc(d.name)}<small>${kind}${d.app ? ` · ${PRODUCT_NAME} ${esc(d.app)}` : ''} · paired ${phoneDay(d.paired)}</small></span>
+    <span class="ph-seen"><span class="dot ${d.online ? 'working' : 'away'}"></span>${seen}</span>
+    <button class="btn sm" data-phone-remove="${esc(d.id)}">Remove</button>
+  </div>`
 }
 
 // 'today', 'yesterday' or '12 Oct'
@@ -1404,10 +1393,10 @@ function pairHTML(v) {
   const { card, size } = qrFit(v.qr)
   const look = v.phone ? 'paired' : v.err ? 'off' : v.qr ? '' : 'wait'
   const line = v.phone ? `<b>${esc(v.phone.name)}</b> is paired` : v.err ? esc(v.err.charAt(0).toUpperCase() + v.err.slice(1)) : `Scan this with ${PRODUCT_NAME} on your phone`
-  return `<h3><span class="h-icon">${ICONS.phone}</span>Add a phone</h3>
+  return `<h2 class="sheet-title">${ICONS.phone}Add a phone</h2>
     <div class="pv-card ${look}" style="--card: ${card}px; --qr: ${size}px">${v.err && !v.phone ? `<span class="pv-off">${ICONS.phone}</span>` : v.qr ?? ''}${v.phone ? `<span class="pv-done">${ICONS.check}</span>` : ''}</div>
     <p class="pv-line ${v.err && !v.phone ? 'failed' : ''}" aria-live="polite">${line}</p>
-    <div class="buttons">
+    <div class="sheet-foot">
       ${v.err && !v.phone ? `<button class="btn pv-act" data-pair-retry ${v.making ? 'disabled' : ''}>${ICONS.restart}${v.making ? 'Trying…' : 'Try again'}</button>`
         : `<button class="btn pv-act" data-pair-copy ${v.code && !v.phone ? '' : 'disabled'} ${v.phone ? 'hidden' : ''} title="To paste it in ${PRODUCT_NAME} on your phone instead">${v.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy code`}</button>`}
       <span class="grow"></span><button class="btn pv-close" data-pair-close>${v.phone ? 'Done' : 'Cancel'}</button>
@@ -1645,14 +1634,14 @@ async function moveSheet(name, home) {
   const working = busy(a)
   const clonesAt = state.agents.filter((x) => x.cloneOf === a.name)
   moveDialog.querySelector('.mv-body').innerHTML = `
+    <h2 class="sheet-title">Move ${who} to ${esc(to.name)}</h2>
     <div class="mv-route" style="--c:${agentColor(a)}">
       <span class="mv-pc">${from.here ? ICONS.desktop : ICONS.laptop}<b>${esc(from.name)}</b></span>
       <span class="mv-path"><i></i><span class="mv-av">${avatarHTML(a, { size: 46 })}</span><i></i></span>
       <span class="mv-pc to">${to.here ? ICONS.desktop : ICONS.laptop}<b>${esc(to.name)}</b></span>
     </div>
-    <h3>Move ${who} to ${esc(to.name)}</h3>
     <label class="mv-folder"><span>Folder on ${esc(to.name)}</span>
-      <span class="mv-field"><input data-mv-folder value="${esc(moving.folder)}" spellcheck="false" autocomplete="off">${to.here ? '<button class="btn small" data-mv-pick>Choose…</button>' : ''}</span>
+      <span class="mv-field field"><input data-mv-folder value="${esc(moving.folder)}" spellcheck="false" autocomplete="off">${to.here ? '<button class="btn" data-mv-pick>Choose…</button>' : ''}</span>
       <span class="mv-check" data-mv-check></span>
     </label>
     <div class="mv-sugs" data-mv-sugs></div>
@@ -1779,10 +1768,10 @@ function drawImport() {
     <div class="imp" data-i="${a.index}">
       <input type="checkbox" class="switch" data-take checked>
       ${avatarHTML({ name: a.seed, avatar: a.avatar }, { size: 40, mood: 'still' })}
-      <div class="imp-what"><input type="text" class="imp-name" data-name value="${esc(a.name)}" spellcheck="false" title="Its name here"><small title="${esc(a.area)}">${esc(a.area || 'no area')} · ${esc(brain(a))}${a.yolo ? ' · YOLO' : ''}${a.images ? ` · ${a.images} reference image${a.images > 1 ? 's' : ''}` : ''}</small></div>
+      <div class="imp-what"><input type="text" class="imp-name field" data-name value="${esc(a.name)}" spellcheck="false" title="Its name here"><small title="${esc(a.area)}">${esc(a.area || 'no area')} · ${esc(brain(a))}${a.yolo ? ' · YOLO' : ''}${a.images ? ` · ${a.images} reference image${a.images > 1 ? 's' : ''}` : ''}</small></div>
       <div class="imp-fields">
-        <input type="text" class="imp-folder" data-folder placeholder="Folder (home if empty)${a.folder ? `, it worked in …/${esc(a.folder)}` : ''}" spellcheck="false">
-        ${places.length > 1 ? `<select data-home title="Which computer it runs on">${places.map((p) => `<option value="${esc(p.slug)}">on ${esc(p.name)}</option>`).join('')}</select>` : ''}
+        <input type="text" class="imp-folder field" data-folder placeholder="Folder (home if empty)${a.folder ? `, it worked in …/${esc(a.folder)}` : ''}" spellcheck="false">
+        ${places.length > 1 ? `<select class="field" data-home title="Which computer it runs on">${places.map((p) => `<option value="${esc(p.slug)}">on ${esc(p.name)}</option>`).join('')}</select>` : ''}
       </div>
     </div>`).join('')
   importDialog.querySelector('[data-import-err]').textContent = ''

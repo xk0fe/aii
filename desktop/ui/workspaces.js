@@ -209,21 +209,21 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
         <input class="ws-title" data-ws-name placeholder="Name it" spellcheck="false" maxlength="40" autocomplete="off">
         <span class="ws-hero-sub"></span>
       </div>
-      <button type="button" class="icon ws-x" data-close aria-label="Close">${ICONS.close}</button>
+      <button type="button" class="icon sheet-x" data-close aria-label="Close">${ICONS.close}</button>
     </header>
     <div class="sheet-body ws-body">
       <section class="ws-sec">
-        <h4>Look</h4>
+        <h4 class="section-label">Look</h4>
         <div class="ws-swatches" role="radiogroup" aria-label="Color"></div>
         <div class="ws-icons" role="radiogroup" aria-label="Icon"></div>
       </section>
       <section class="ws-sec" data-sec="folder">
-        <h4>Folder</h4>
-        <div class="mv-field"><input data-ws-folder class="mono" placeholder="~/code/my-app" spellcheck="false" autocomplete="off"><button type="button" class="btn small" data-ws-pick>Choose…</button></div>
+        <h4 class="section-label">Folder</h4>
+        <div class="mv-field field"><input data-ws-folder class="mono" placeholder="~/code/my-app" spellcheck="false" autocomplete="off"><button type="button" class="btn" data-ws-pick>Choose…</button></div>
         <p class="ws-note">Where its agents work, unless one has a folder of its own here.</p>
       </section>
       <section class="ws-sec" data-sec="crew">
-        <h4><span data-crew-title>Who works here</span> <small class="ws-count"></small></h4>
+        <h4 class="section-label"><span data-crew-title>Who works here</span><small class="ws-count"></small></h4>
         <ul class="ws-crew"></ul>
         <p class="ws-note" data-crew-note></p>
       </section>
@@ -232,8 +232,8 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       </section>
     </div>
     <p class="err" data-ws-err></p>
-    <div class="buttons">
-      <button type="button" class="btn ws-remove" data-ws-remove>${ICONS.trash}<span>Remove workspace…</span></button>
+    <div class="sheet-foot">
+      <button type="button" class="btn danger" data-ws-remove>${ICONS.trash}<span>Remove workspace…</span></button>
       <span class="grow"></span>
       <button type="button" class="btn" data-close>Cancel</button>
       <button type="button" class="btn primary" data-ws-save></button>
@@ -369,7 +369,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     if (own) {
       // in place: a field for its folder here, empty for the workspace's
       const name = own.dataset.wsOwn
-      own.outerHTML = `<input class="ws-own-input mono" data-ws-own-input="${esc(name)}" value="${esc(tilde(draft.folders[name] ?? ''))}" placeholder="${esc(draft.id === 'default' ? '~ (your home folder)' : tilde(draft.folder) || '~/code/…')}" spellcheck="false">`
+      own.outerHTML = `<input class="ws-own-input field mono" data-ws-own-input="${esc(name)}" value="${esc(tilde(draft.folders[name] ?? ''))}" placeholder="${esc(draft.id === 'default' ? '~ (your home folder)' : tilde(draft.folder) || '~/code/…')}" spellcheck="false">`
       const input = dialog.querySelector(`[data-ws-own-input="${CSS.escape(name)}"]`)
       input.focus()
       input.addEventListener('keydown', (k) => k.key === 'Enter' && (k.preventDefault(), setOwn(input)))

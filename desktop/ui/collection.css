@@ -1,29 +1,15 @@
-/* The crew collection: a header, cards grouped by computer, bulk select, the stats table, and the agent's sheet. */
-.collection { overflow: hidden; }
+/* The crew collection: cards grouped by computer, bulk select, the stats table, and the agent's sheet. */
+/* a container, so the bulk bar floating over the list can lay itself out for the room it has */
+.collection { overflow: hidden; container: collection / inline-size; }
 .col-list { position: absolute; inset: 0; overflow-y: auto; scrollbar-gutter: stable; container-type: inline-size; }
 /* a narrow middle (small window, both panels out): the header keeps its controls and lets the words go */
 @container (max-width: 640px) {
-  .col-head { padding: 16px 16px 12px; }
-  .col-head h2.display { font-size: 24px; line-height: 30px; }
-  .col-grid { padding: 4px 16px 120px; }
   .col-cards { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 }
+.empty .col-grid, .empty .col-stats { display: none !important; }
 
-/* The header: one line in the brand face saying how the crew is, a plain sentence under it, and the view's tools.
-   Both lines keep one line each (the full text on hover), so a change of words never moves what's below. */
-.col-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 20px 24px 16px; }
-.col-head h2.display { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.col-sub { grid-column: 1 / -1; margin: 4px 0 0; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.col-tools { display: flex; align-items: center; gap: 8px; }
-.col-on { color: var(--fg2); white-space: nowrap; font-variant-numeric: tabular-nums; margin-right: 4px; }
-.col-more { width: 28px; height: 28px; padding: 0; flex: none; }
-.col-more svg { width: 16px; height: 16px; }
-.seg.icons { height: 28px; align-items: stretch; }
-.seg.icons button { display: grid; place-items: center; padding: 0 8px; }
-.seg.icons button svg { width: 16px; height: 16px; }
-.empty .col-head, .empty .col-grid, .empty .col-stats { display: none !important; }
-
-.col-grid { padding: 8px 24px 130px; display: flex; flex-direction: column; gap: 24px; }
+/* under the header (the place's, common.css .page-head): the same gutter as every place */
+.col-grid { padding: 20px var(--gx, 24px) 130px; display: flex; flex-direction: column; gap: 24px; }
 .col-group h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; height: 26px; padding-top: 6px; font-size: 13px; font-weight: 600; }
 .col-group h3 b { color: var(--fg); font-weight: 600; }
 .col-group h3 span { font-size: 12px; font-weight: 400; color: var(--fg2); }
@@ -84,41 +70,51 @@
 .pcard.mini .pc-check { right: 10px; top: 10px; }
 .pcard.mini.add { height: 88px; }
 
-/* ---- select mode ---- */
-.pc-check { position: absolute; right: 16px; top: 16px; z-index: 5; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--line-strong); color: transparent; opacity: 0; transition: opacity .2s, background .2s; pointer-events: none; }
-.pc-check svg { width: 13px; height: 13px; }
+/* ---- select mode: each card's pick check (common.css .pick) in its top right corner, there only while selecting ---- */
+.pc-check { position: absolute; right: 16px; top: 16px; z-index: 5; opacity: 0; pointer-events: none; transition: opacity .2s, background var(--t-quick), box-shadow var(--t-quick), color var(--t-quick); }
 .selecting .pc-check { opacity: 1; }
 .selecting .pcard:not(.picked):not(.add) { opacity: .7; }
 .pcard.picked { box-shadow: inset 0 0 0 1.5px var(--accent); }
-.pcard.picked .pc-check { background: var(--accent); box-shadow: none; color: var(--on-accent); }
 .selecting .pcard.add { display: none; }
 
-/* the bulk bar: a solid sheet pinned to the bottom, who's picked and the actions on top, what to change below */
-.bulk {
-  position: sticky; bottom: 18px; margin: 0 24px; display: none; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px;
-  padding: 10px 12px; border-radius: var(--r-window); background: var(--float); box-shadow: var(--shadow-float);
+/* the bulk bar (common.css .bulk-bar), over the cards while the list scrolls under it (.col-grid leaves the room):
+   who's picked, what to change, Export and Apply, × to stop. One line when there's room; in a narrow middle what to
+   change takes a line of its own under the rest. Fixed widths for what changes as you pick, so nothing shifts. */
+.bulk { display: none; }
+.selecting .bulk { display: flex; }
+.bulk.bulk-bar { width: max-content; flex-wrap: wrap; row-gap: 8px; }
+.bulk .bulk-count { min-width: 160px; }
+.bulk-faces { display: inline-flex; }
+.bulk-faces .av + .av { margin-left: -8px; }
+.bulk [data-act=apply] { min-width: 100px; }
+.bulk [data-act=done] { width: 28px; height: 28px; padding: 0; }
+.bulk [data-act=done] svg { width: 16px; height: 16px; }
+.bulk-fields { display: flex; align-items: center; gap: 6px; margin: 0 4px; }
+/* its fields look like the sheet's: a field's fill and hairline, the name of the field until you pick, a chevron */
+.bulk-field { position: relative; display: grid; min-width: 0; }
+.bulk-field > :is(select, input) {
+  width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-control); outline: 0; background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--fg); font-size: 13px; transition: box-shadow var(--t-quick);
 }
-.selecting .bulk { display: flex; animation: bulk-in var(--t-move) var(--out); }
-@keyframes bulk-in { from { opacity: 0; transform: translateY(16px); } }
-.bulk::after { content: ''; order: 3; flex-basis: 100%; height: 0; }
-.bulk [data-act=all] { order: 1; }
-.bulk [data-act=export] { order: 2; }
-.bulk [data-act=done], .bulk [data-act=apply] { order: 2; }
-.bulk .btn svg { width: 14px; height: 14px; }
-.bulk select, .bulk input { order: 4; flex: 1 1 0; height: 28px; background: var(--btn); border: 0; border-radius: var(--r-control); padding: 0 8px; outline: 0; font-size: 13px; min-width: 0; cursor: pointer; transition: background .15s; }
-.bulk select:hover { background: var(--btn-hover); }
-.bulk input { flex-grow: 1.4; user-select: text; cursor: text; }
-.bulk-who { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; }
-.bulk-who .av { margin-right: -9px; }
-.bulk-who b { margin-left: 16px; font-weight: 600; }
+.bulk-field > select { appearance: none; padding-right: 26px; cursor: pointer; }
+.bulk-field > select:has(> option[value=""]:checked) { color: var(--fg2); }
+.bulk-field > select:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 22%, transparent); }
+.bulk-field > input { width: 116px; user-select: text; }
+.bulk-field > input::placeholder { color: var(--fg2); }
+.bulk-field > :is(select:focus-visible, input:focus) { box-shadow: var(--focus-ring); }
+.bulk-field > i { position: absolute; top: 7px; right: 7px; display: grid; color: var(--fg3); pointer-events: none; }
+.bulk-field > i svg { width: 14px; height: 14px; }
+@container collection (max-width: 1120px) {
+  .bulk-fields { order: 1; flex: 1 0 100%; margin: 0; }
+  .bulk-fields > .bulk-field { flex: 1 1 0; }
+  .bulk-field > input { width: 100%; }
+  .bulk [data-act=export] { margin-left: auto; }
+}
 
-/* ---- nobody yet: one creature pops up in an empty room and asks who it should be ---- */
-.col-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 48px 40px; text-align: center; }
-.col-empty h1 { margin: 24px 0 0; }
-.col-empty .lead { max-width: 420px; margin: 8px 0 0; color: var(--fg2); font-size: 15px; line-height: 22px; text-wrap: pretty; }
-.col-empty .acts { display: flex; gap: 8px; margin-top: 24px; }
+/* ---- nobody yet (common.css .empty-state): one creature pops up in an empty room and asks who it should be ---- */
+.col-empty { position: absolute; inset: 0; }
 /* ---- stats table ---- */
-.col-stats { display: none; padding: 8px 20px 40px 24px; overflow-x: auto; container-type: inline-size; }
+.col-stats { display: none; padding: 20px var(--gx, 24px) 40px; overflow-x: auto; container-type: inline-size; }
 .stats-mode .col-stats { display: block; }
 .stats-mode .col-grid { display: none; }
 .stats-spend { margin: 0 2px 4px; font-size: 13px; color: var(--fg2); cursor: help; }
@@ -177,7 +173,7 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 /* left: the card, opened up. Its creature on its felt patch, then who it is and a few plain facts, on a quiet side;
    its level and the numbers are on the Stats tab. */
 .ed-id {
-  position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-height: 0; padding: 18px 20px; overflow: hidden;
+  position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-height: 0; padding: 14px 20px 18px; overflow: hidden;
   color: var(--fg); background: var(--surface-2); box-shadow: inset -1px 0 0 var(--line);
 }
 .ed-top { position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; }
@@ -196,7 +192,7 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .pd-area { position: relative; z-index: 1; margin: -4px -8px 0; width: calc(100% + 16px); padding: 4px 8px; border: 0; border-radius: var(--r-control); background: none; outline: 0; resize: none; font-size: 13px; line-height: 1.4; color: var(--fg2); user-select: text; transition: background .15s, box-shadow .15s; }
 .pd-name::placeholder, .pd-area::placeholder { color: var(--fg3); }
 .pd-name:hover, .pd-area:hover { background: var(--fill); }
-.pd-name:focus, .pd-area:focus { background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--fg); }
+.pd-name:focus, .pd-area:focus { background: var(--field); box-shadow: var(--focus-ring); color: var(--fg); }
 .ed-level { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; font-weight: 650; }
 .ed-level:empty { display: none; }
 .ed-level .lv { font-weight: 800; font-size: 13px; }
@@ -219,55 +215,42 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .ed-clone.waiting { box-shadow: inset 0 0 0 1.5px var(--needs); }
 .ed-clone .clone-no { position: absolute; right: -5px; top: -5px; margin: 0; height: 15px; min-width: 15px; font-size: 9px; background: var(--surface); }
 .ed-id-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.ed-id-acts .btn { height: 32px; }
-.ed-id-acts .btn svg { width: 15px; height: 15px; }
 
-/* right: tabs, the pane, the footer */
+/* right: tabs (and × at the corner, common.css .sheet-x), the pane, the footer (.sheet-foot) */
 .ed-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.ed-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 16px 16px 8px 24px; }
-.ed-tabs { height: 28px; align-items: stretch; }
-.ed-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 14px; }
+.ed-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 56px 8px 24px; }
 .ed-tabs button svg { width: 15px; height: 15px; flex: none; }
-.ed-tabs button:disabled { opacity: .4; cursor: default; }
-.ed-close { width: 28px; height: 28px; padding: 0; }
 .ed-panes { position: relative; flex: 1; min-height: 0; }
 /* the scrollbar's room is kept, so unfolding Advanced (the one thing that can outgrow a pane) moves nothing sideways */
 .ed-pane { position: absolute; inset: 0; display: none; flex-direction: column; padding: 4px 14px 16px 24px; overflow-y: auto; scrollbar-gutter: stable; }
 .ed-pane.on { display: flex; animation: pane-in var(--t-move) var(--out); }
 @keyframes pane-in { from { opacity: 0; transform: translateY(6px); } }
-.ed-pane h4 { flex: none; margin: 12px 2px 6px; font-size: 12px; font-weight: 500; color: var(--fg2); }
-.ed-pane h4:first-child { margin-top: 4px; }
+.ed-pane > .section-label { flex: none; margin-top: 16px; }
+.ed-pane > .section-label:first-child { margin-top: 4px; }
 .ed-pane-head { flex: none; display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
 .ed-pane-head p { flex: 1; margin: 0; font-size: 13px; line-height: 1.4; color: var(--fg2); }
-.btn.small { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; font-size: 13px; white-space: nowrap; flex: none; }
-.btn.small svg { width: 14px; height: 14px; }
-.btn:disabled { opacity: .4; cursor: default; }
-.btn.danger { color: var(--danger); }
-.btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 
-/* a grouped list, like System Settings: label (and a one-line hint) on the left, control on the right */
-.ed-list { flex: none; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+/* a grouped list (common.css .group-list), its rows like System Settings: label (and a one-line hint) on the left,
+   control on the right */
+.ed-list { flex: none; }
 .ed-row { display: grid; grid-template-columns: 116px minmax(0, 1fr); align-items: center; gap: 14px; min-height: 46px; padding: 7px 12px 7px 16px; transition: opacity .2s; }
-.ed-row + .ed-row { box-shadow: inset 0 1px 0 var(--line); }
 .ed-row.off { opacity: .4; pointer-events: none; }
 .ed-label { font-size: 13px; font-weight: 500; color: var(--fg); }
 .ed-label small { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--fg2); }
 .ed-ctl { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ed-ctl em { color: var(--fg2); font-size: 13px; font-style: normal; }
-.ed-input { flex: 1; min-width: 0; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-control); background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); outline: 0; font-size: 13px; user-select: text; transition: box-shadow .15s; }
+.ed-input { flex: 1; min-width: 0; height: 28px; padding: 0 8px; font-size: 13px; }
 .ed-input.mono { font: 12.5px var(--mono); }
-.ed-input:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
 .ed-pc { display: inline-flex; align-items: center; gap: 7px; flex: 1; min-width: 0; font-size: 13px; }
 .ed-pc svg { width: 16px; height: 16px; color: var(--fg3); flex: none; }
 .ed-pc small { color: var(--fg3); font-size: 12.5px; }
-.ed-row.clones-row { box-shadow: inset 0 1px 0 var(--line); }
 .limit-note { margin: 0; padding: 0 16px 10px; font-size: 12px; line-height: 1.4; color: var(--fg2); }
 .limit-note.past { color: var(--needs-ink); }
 
 /* Model: provider and model in one control; the menu behind it lists each provider's models */
 .ed-model { all: unset; box-sizing: border-box; flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: var(--r-control); background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 13px; cursor: pointer; transition: box-shadow .15s; }
 .ed-model:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 22%, transparent); }
-.ed-model:focus-visible, .ed-model.typing { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+.ed-model:focus-visible, .ed-model.typing { box-shadow: var(--focus-ring); }
 .ed-model .prov { flex: none; color: var(--fg2); }
 .ed-model b { min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ed-model .def { color: var(--fg3); }
@@ -278,47 +261,39 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .ed-model.typing input { flex: 1; min-width: 0; height: 100%; border: 0; padding: 0; background: none; outline: 0; font: inherit; font-weight: 500; user-select: text; }
 .menu.ed-model-menu { overflow-y: auto; }
 
-/* one choice of a few: a segmented control in the app's neutral style, on one line */
-.pills { display: inline-flex; gap: 2px; min-width: 0; max-width: 100%; padding: 2px; border-radius: var(--r-control); background: var(--btn); overflow-x: auto; scrollbar-width: none; }
-.pills::-webkit-scrollbar { display: none; }
-.pills.fill { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); width: 100%; }
-.pill { flex: none; min-width: 0; height: 24px; padding: 0 12px; border: 0; border-radius: var(--r-tag); background: none; color: var(--fg2); font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: background .2s, color .2s, box-shadow .2s; }
-.pill:hover { color: var(--fg); }
-.pill.on { background: var(--seg-on); color: var(--fg); box-shadow: var(--shadow-sm); }
-.pill:disabled { opacity: .45; cursor: default; }
-.limit-custom { display: inline-flex; align-items: center; justify-content: center; gap: 1px; min-width: 0; height: 24px; padding: 0 8px; border-radius: var(--r-tag); color: var(--fg2); font-size: 13px; font-weight: 500; cursor: text; transition: background .2s, box-shadow .2s; }
-.limit-custom input { width: 40px; border: 0; padding: 0; background: none; outline: 0; font: inherit; color: var(--fg); text-align: right; user-select: text; }
+/* a context limit of your own: typed into the last segment of the choice (the thumb under it once it's the pick) */
+.limit-custom { display: inline-flex; align-items: center; justify-content: center; gap: 1px; min-width: 0; padding: 0 8px; border-radius: var(--r-tag); color: var(--fg2); font-weight: 500; cursor: text; transition: box-shadow var(--t-quick); }
+.limit-custom input { width: 40px; min-width: 0; border: 0; padding: 0; background: none; outline: 0; font: inherit; color: var(--fg); text-align: right; user-select: text; }
 .limit-custom input::placeholder { color: var(--fg2); font-weight: 500; }
 .limit-custom input::-webkit-inner-spin-button { display: none; }
 .limit-custom input:placeholder-shown { width: 52px; text-align: center; }
 .limit-custom input:placeholder-shown + span { display: none; }
-.limit-custom.on { background: var(--seg-on); box-shadow: var(--shadow-sm); color: var(--fg2); }
-.limit-custom:focus-within { box-shadow: inset 0 0 0 1px var(--accent); }
+.limit-custom:focus-within { box-shadow: var(--focus-ring); }
 
 /* On, YOLO, Fast: switch rows. Fast stays put, dimmed, for brains other than Codex. */
 .ed-row.sw { grid-template-columns: minmax(0, 1fr) auto; cursor: pointer; }
 .ed-row.sw.dim { opacity: .45; cursor: default; }
 
 
-/* Advanced: one row that sums it up, folded until you need it */
-.ed-adv { flex: none; margin-top: 12px; scroll-margin-bottom: 16px; border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line); transition: background .2s; }
-.ed-adv.open { background: var(--surface-2); }
-.ed-adv-head { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 0 16px 0 14px; border-radius: var(--r-md); cursor: pointer; transition: background .15s; }
-.ed-adv-head:hover { background: var(--btn); }
-.ed-adv.open .ed-adv-head { border-radius: var(--r-md) var(--r-md) 0 0; }
+/* Advanced: one row that sums it up, folded until you need it; the same grouped card as the lists above */
+.ed-adv { flex: none; margin-top: 16px; scroll-margin-bottom: 16px; }
+.ed-adv-head { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 0 16px 0 14px; border-radius: var(--r-card); cursor: pointer; transition: background var(--t-quick); }
+.ed-adv-head:hover { background: var(--fill); }
+.ed-adv.open .ed-adv-head { border-radius: var(--r-card) var(--r-card) 0 0; }
 .ed-adv-head:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .ed-adv-chev { flex: none; display: grid; color: var(--fg3); transition: transform .25s var(--out); }
 .ed-adv-chev svg { width: 14px; height: 14px; }
 .ed-adv.open .ed-adv-chev { transform: rotate(90deg); }
 .ed-adv-head b { flex: none; font-size: 13px; font-weight: 500; }
 .ed-adv-sum { flex: 1; min-width: 0; font-size: 13px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ed-adv-body { display: none; box-shadow: inset 0 1px 0 var(--line); }
+.ed-adv-body { display: none; }
 .ed-adv.open .ed-adv-body { display: block; animation: pane-in var(--t-move) var(--out); }
-.limit + .flags .ed-row { box-shadow: inset 0 1px 0 var(--line); }
+/* its rows aren't the card's own children, so they draw the hairlines between them themselves */
+.ed-adv-body .ed-row + .ed-row, .ed-adv-body .clones-row, .ed-adv-body .flags .ed-row { box-shadow: inset 0 1px 0 var(--line); }
 
 /* Instructions: the text fills the pane */
 .pd-prompt { flex: 1; min-height: 160px; width: 100%; border: 0; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); border-radius: var(--r-card); padding: 12px 14px; resize: none; outline: 0; font-size: 13px; line-height: 1.55; user-select: text; transition: box-shadow .2s, background .2s; }
-.pd-prompt:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); background: var(--field); }
+.pd-prompt:focus { box-shadow: var(--focus-ring); background: var(--field); }
 .pd-prompt.dropping { outline-offset: -3px; }
 /* its brain drafts the instructions: the field waits, quietly (no moving gradient: motion is for what needs you) */
 .pd-prompt.writing { color: var(--fg2); background: var(--fill); }
@@ -340,9 +315,7 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 
 /* Stats */
 .experience { display: flex; flex-direction: column; gap: 18px; padding-top: 6px; }
-.xp-empty { margin: auto; display: grid; justify-items: center; gap: 6px; padding-top: 120px; color: var(--fg3); text-align: center; }
-.xp-empty svg { width: 34px; height: 34px; opacity: .6; }
-.xp-empty b { color: var(--fg); font-size: 15px; font-weight: 600; }
+.experience > .xp-empty { padding-top: 112px; } /* common.css .empty-state.small, where the numbers would be */
 .xp-big { display: flex; align-items: center; gap: 14px; }
 .xp-big .lv { font: 600 28px/34px var(--font-brand); color: var(--fg); }
 .xp-big .grow { display: flex; flex-direction: column; gap: 6px; }
@@ -352,11 +325,11 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 @starting-style { .xpbar b, .mbar b { transform: scaleX(0); } }
 .xp-big .xpbar { height: 10px; flex: none; }
 .xp-big .xpbar b { background: var(--fg2); }
-.base-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 28px; padding: 16px; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+.base-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 28px; padding: 16px; }
 .bs-row { display: grid; grid-template-columns: 84px 84px 1fr; align-items: center; gap: 8px; font-size: 13px; }
 .bs-label { color: var(--fg2); font-size: 12px; }
 .bs-row b { display: inline-flex; align-items: center; gap: 4px; font-weight: 500; white-space: nowrap; }
-.days { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+.days { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
 .days .spark { height: 64px; gap: 6px; }
 .days .spark i { flex: 1; width: auto; border-radius: 4px; }
 .spark { display: inline-flex; align-items: flex-end; gap: 2px; height: 26px; }
@@ -364,7 +337,7 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 @starting-style { .spark i { transform: scaleY(0); } }
 .spark i.on { background: var(--fg2); }
 /* this conversation: how full, its account's limits, and a clean slate */
-.convo-stat { flex: none; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+.convo-stat { flex: none; display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
 .convo-gauge { position: relative; width: 44px; height: 44px; flex: none; display: grid; place-items: center; }
 .convo-gauge .ctx { position: absolute; inset: 0; display: grid; place-items: center; cursor: inherit; }
 .convo-gauge .ctx svg { animation: none; }
@@ -381,16 +354,14 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .convo-stat .usage-line .warm { color: var(--needs-ink); }
 .convo-stat .usage-line .hot { color: var(--bug-ink); }
 .convo-fresh { align-self: center; }
-.xp-empty + .convo-stat { margin-top: 24px; }
 .best, .slow { display: inline-grid; vertical-align: -2px; margin-left: 3px; font-style: normal; }
 .best svg, .slow svg { width: 13px; height: 13px; }
 .best { color: var(--fg2); }
 .slow { color: var(--fg2); }
 
-.pd-foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 18px 14px 24px; border-top: 1px solid var(--line); background: var(--surface); }
+/* the footer (common.css .sheet-foot): what just happened, unsaved changes, Cancel and Save */
 .pd-msg { color: var(--fg2); font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pd-dirty { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg2); white-space: nowrap; opacity: 0; transition: opacity .2s; }
 .pd-dirty::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.pd-foot.dirty .pd-dirty { opacity: 1; }
-.pd-foot .btn { height: 28px; padding: 0 14px; }
+.sheet-foot.dirty .pd-dirty { opacity: 1; }
 .pc-state .ctx { margin-left: 6px; }

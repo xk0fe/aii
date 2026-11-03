@@ -67,6 +67,8 @@
   --ctx-warm: var(--needs);
   --ctx-hot: var(--danger);
   --ring: color-mix(in srgb, var(--accent) 55%, transparent);
+  /* a field you're typing in: its edge in ink and a soft halo (every input, search and text box) */
+  --focus-ring: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
   /* the brand: Berry on primary buttons (white on it 5.17:1), the brand face, and felt for brand surfaces only */
   --brand: #CC2277;
   --brand-hover: #B81D6B;
@@ -188,7 +190,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 /* ---- buttons: 28px, radius 6, a quiet fill. Primary is ink, once per decision; Berry only when the decision answers
    something that needs you (Allow, Send answer, Accept a review, Send a held hand-off). ---- */
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 0 12px;
+  display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 0 12px;
   border: 0; border-radius: var(--r-control); background: var(--fill); color: var(--fg); font-weight: 500; cursor: pointer; white-space: nowrap;
   transition: background .15s, color .15s, opacity .2s;
 }
@@ -204,6 +206,16 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .btn.lg { min-height: 32px; padding: 0 16px; }
 .btn.has-menu { padding-right: 8px; }
 .btn.has-menu > svg:last-child { width: 12px; height: 12px; transform: rotate(90deg); }
+/* sizes: .sm (24px) on cards, rows and in a composer; the default (28px) everywhere else; .lg (32px) for a page's one
+   big action. .danger is for removing things. */
+.btn.sm { min-height: 24px; height: 24px; padding: 0 9px; gap: 4px; font-size: 12px; }
+.btn.sm svg, .btn.sm .ti { width: 13px; height: 13px; }
+.btn.square { width: 28px; padding: 0; }
+.btn.sm.square { width: 24px; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.danger { color: var(--danger); }
+.btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.btn.danger svg { color: inherit; }
 .icon {
   border: 0; background: none; padding: 5px; border-radius: var(--r-control); cursor: pointer;
   color: var(--fg2); display: inline-grid; place-items: center; transition: background .15s, color .15s;
@@ -219,15 +231,78 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 
 /* Segmented control: equal-width segments on a quiet track, the picked one lifted by a hairline; the thumb slides
    between them, so switching never moves anything (segmented() in common.js sets --n and --i). */
-.seg { position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; border-radius: var(--r-control); background: var(--fill); isolation: isolate; flex: none; }
+.seg { position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: stretch; height: 28px; padding: 2px; border-radius: var(--r-control); background: var(--fill); isolation: isolate; flex: none; }
 .seg::before {
   content: ''; position: absolute; z-index: -1; top: 2px; bottom: 2px; left: 2px; width: calc((100% - 4px) / var(--n, 2));
   border-radius: var(--r-tag); background: var(--seg-on); box-shadow: var(--shadow-sm); transform: translateX(calc(var(--i, 0) * 100%));
 }
 .seg.ready::before { transition: transform var(--t-move) var(--move); }
-.seg button { border: 0; background: none; padding: 4px 12px; border-radius: var(--r-tag); cursor: pointer; color: var(--fg2); font-weight: 500; white-space: nowrap; transition: color .2s; }
+.seg button { min-width: 0; border: 0; background: none; padding: 0 12px; border-radius: var(--r-tag); cursor: pointer; color: var(--fg2); font-weight: 500; white-space: nowrap; transition: color .2s; }
 .seg button:hover { color: var(--fg); }
 .seg button.on { color: var(--fg); }
+.seg button:disabled { opacity: .4; cursor: default; }
+/* .fill: as wide as its row, the segments sharing it; .none: nothing picked (segmented(…, { none: true })) */
+.seg.fill { display: grid; width: 100%; grid-auto-columns: minmax(0, 1fr); }
+.seg.none::before { opacity: 0; }
+/* the same control with icons for words (Cards · Compact · Stats, Board · List, Grid · Focus) */
+.seg.icons button { display: grid; place-items: center; padding: 0 8px; }
+.seg.icons button svg, .seg.icons button .ti { width: 16px; height: 16px; }
+/* a segment's count (All 6 · Busy 5 · Needs you 2) */
+.seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.seg .n { font-style: normal; font-weight: 500; color: var(--fg2); font-variant-numeric: tabular-nums; }
+.seg .n.needs { color: var(--needs-ink); }
+
+/* ---- a place's header: #crew, a conversation, Agents, Tasks and Terminals all open under the same one row ----
+   [glyph] Title  its line ...................... [search] [what needs you] [filters] [view] [the one action] [⋯]
+   56px over a hairline, the title in the brand face, every tool 28px and in that order, so going from place to place
+   changes words, never where things are. The window is dragged by it (on Windows its buttons sit over the right end,
+   with the sidebar put away a Mac's traffic lights over the left: --caption-w and --lights-w, set by the dashboard). */
+.page-head {
+  flex: none; position: relative; display: flex; align-items: center; gap: 16px; height: 56px;
+  padding: 0 calc(16px + var(--caption-w, 0px)) 0 calc(var(--gx, 24px) + var(--lights-w, 0px));
+  border-bottom: 1px solid var(--line); background: var(--surface); container-type: inline-size; -webkit-app-region: drag;
+}
+.page-head :is(button, input, label, select, a, [role=button], .seg, .ph-glyph .av) { -webkit-app-region: no-drag; }
+.ph-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; overflow: hidden; }
+/* what the place is, in the sidebar's own glyph (# for the channel, a creature for a conversation) */
+.ph-glyph { flex: none; display: grid; place-items: center; min-width: 20px; height: 28px; color: var(--fg3); font: 600 20px/1 var(--font-brand); }
+.ph-glyph svg { width: 18px; height: 18px; }
+.ph-glyph .av { cursor: pointer; }
+/* the name keeps its width: the line beside it gives way first */
+.ph-name { flex: none; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 18px/24px var(--font-brand); color: var(--fg); }
+.ph-name .at { font-family: var(--ui); }
+.ph-title > .tag { flex: none; }
+.ph-sub { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--fg2); }
+.ph-sub .needs { color: var(--needs-ink); font-weight: 600; }
+.ph-sub .strong { color: var(--fg); font-weight: 600; }
+.ph-tools { flex: none; display: flex; align-items: center; gap: 6px; }
+.ph-tools > .ph-acts { display: contents; }
+.ph-tools .btn { height: 28px; }
+.ph-tools .btn[aria-pressed=true], .ph-tools .btn.on { background: var(--fill-hover); }
+.ph-tools .icon { width: 28px; height: 28px; padding: 0; }
+/* a narrow middle (a small window): buttons keep their icons and let their words go, then the line goes */
+@container (max-width: 780px) {
+  .ph-tools .btn:has(> svg) > span { display: none; }
+  .ph-tools .btn:has(> svg) { padding: 0 8px; }
+  .hs-field { width: 180px; }
+}
+@container (max-width: 560px) { .ph-sub { display: none; } }
+
+/* ---- a place's search (#crew, a conversation, Tasks): a magnifier that opens into a field where it stands, with
+   how many match and × to clear it; Esc, or leaving it empty, closes it (mountSearch in common.js) ---- */
+.hsearch { flex: none; display: flex; align-items: center; }
+.hs-field { display: none; align-items: center; gap: 7px; width: 240px; height: 28px; padding: 0 3px 0 9px; color: var(--fg3); cursor: text; animation: hs-in var(--t-pop) var(--out); }
+.hs-field > svg { width: 15px; height: 15px; flex: none; }
+.hs-field input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; padding: 0; background: none; font-size: 13px; color: var(--fg); user-select: text; }
+.hs-field input::placeholder { color: var(--fg3); }
+.hs-field input::-webkit-search-cancel-button { display: none; }
+.hs-count { flex: none; font-size: 12px; color: var(--fg3); font-variant-numeric: tabular-nums; }
+.hsearch .hs-clear { flex: none; width: 22px; height: 22px; padding: 0; border-radius: var(--r-tag); color: var(--fg3); }
+.hsearch .hs-clear svg { width: 12px; height: 12px; }
+.hsearch:not(.typed) .hs-clear { visibility: hidden; }
+.hsearch.on .hs-field { display: flex; }
+.hsearch.on .hs-open { display: none; }
+@keyframes hs-in { from { opacity: 0; transform: translateX(6px); } }
 
 /* switches: full round (one of the three things allowed to be), the accent when on */
 .switch { appearance: none; width: 36px; height: 20px; border-radius: 10px; background: var(--fill-hover); position: relative; cursor: pointer; flex: none; transition: background .2s; margin: 0; }
@@ -388,6 +463,8 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 /* a note at the bottom of the window (notify() in common.js); one about an error has Copy details */
 .toast { position: fixed; left: 50%; bottom: 22px; z-index: 300; display: flex; align-items: center; gap: 12px; width: max-content; max-width: min(560px, calc(100vw - 24px)); padding: 10px 16px; border-radius: var(--r-card); background: var(--tip); color: var(--tip-fg); font-size: 13px; font-weight: 500; line-height: 1.4; box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity var(--t-pop), transform var(--t-move) var(--out); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* over a bulk bar (tasks picked), it steps up above it */
+body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 .toast.show.has-detail button { pointer-events: auto; } /* only Copy details takes clicks: the note never covers what's under it */
 .toast.warn { background: var(--needs); color: #241500; }
 .toast button { all: unset; flex: none; padding: 3px 9px; border-radius: var(--r-control); font-size: 12px; font-weight: 500; white-space: nowrap; background: color-mix(in srgb, currentColor 14%, transparent); cursor: pointer; }
@@ -399,7 +476,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .menu.leaving { pointer-events: none; }
 .menu button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 10px 0 8px; border-radius: var(--r-control); font-size: 13px; cursor: default; white-space: nowrap; }
 .menu button svg, .menu button > i { width: 16px; height: 16px; flex: none; color: var(--fg2); }
-.menu button span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.menu button > span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .menu button small { color: var(--fg2); font-size: 12px; }
 .menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--accent); color: var(--on-accent); outline: 0; }
 .menu button:hover:not(:disabled) svg, .menu button:hover:not(:disabled) small, .menu button:focus-visible svg { color: var(--on-accent); }
@@ -408,7 +485,65 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .menu button.danger:hover { background: var(--danger); color: #fff; }
 .menu button:disabled { opacity: .4; }
 .menu hr { border: 0; height: 1px; margin: 4px 6px; background: var(--line); }
-.menu-head { padding: 6px 8px 3px; font-size: 12px; font-weight: 500; color: var(--fg2); }
+.menu-head { padding: 6px 8px 3px; font-size: 12px; font-weight: 600; color: var(--fg2); }
+/* a menu item that's the current pick: a check at its end */
+.menu button .check { display: grid; margin-left: auto; padding-left: 8px; color: var(--fg2); }
+.menu button:not(.on) > .check { visibility: hidden; } /* every row keeps the check's room, so hints line up */
+/* a glyph cut out in the surface colour (a status ring's tick) stays cut out on the ink of a hovered row */
+.menu button:is(:hover, :focus-visible):not(:disabled) .ti { --surface: var(--accent); }
+.menu button .check svg { width: 14px; height: 14px; }
+.menu button:hover:not(:disabled) .check, .menu button:focus-visible .check { color: var(--on-accent); }
+.menu button.on > span { font-weight: 600; }
+.menu button > .av, .menu button > .ti, .menu button > .ki { flex: none; }
+.menu.wide { max-width: 360px; }
+
+/* ---- the pieces every view builds from (common.js and the views use these, not look-alikes of their own) ---- */
+
+/* a label over a group (Brain, This Mac, Activity, Kind…): small, grey, the same in sheets, panels and popovers */
+.section-label { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: 12px; font-weight: 600; line-height: 16px; color: var(--fg2); }
+.section-label small { font-size: 12px; font-weight: 400; color: var(--fg2); }
+.section-label .link { padding: 0; font-size: 12px; color: var(--link); }
+
+/* a text field: the field's fill, a hairline edge, and the one focus while you type. On an input, or on a box that
+   holds one (a search, a folder with its Choose…) */
+.field { border: 0; border-radius: var(--r-control); outline: 0; background: var(--field); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line-strong); user-select: text; transition: box-shadow var(--t-quick); }
+.field:is(:focus, :focus-within) { box-shadow: var(--focus-ring); }
+.field.mono, .field .mono { font-family: var(--mono); }
+
+/* a quiet card: a box of facts or a live line inside a sheet or panel (a conversation's gauge, who's on a task) */
+.well, .group-list { border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+/* a grouped list, like System Settings: rows on one quiet card, a hairline between them (the rows lay themselves out) */
+.group-list > * + * { box-shadow: inset 0 1px 0 var(--line); }
+
+/* nothing here yet: art (a room, the mark), a headline in the brand face, one plain line, what to do. .small: a line
+   where a list would be (no results, nobody busy) */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 48px 40px; color: var(--fg2); }
+.empty-state > h1, .empty-state > h2 { margin: 24px 0 0; color: var(--fg); text-wrap: balance; }
+.empty-state > :is(h1, h2):first-child { margin-top: 0; }
+.empty-state > .lead { max-width: 440px; margin: 8px 0 0; font-size: 15px; line-height: 22px; text-wrap: pretty; }
+.empty-state > .acts { display: flex; gap: 8px; margin-top: 24px; }
+.empty-state.small { gap: 6px; padding: 24px; font-size: 13px; line-height: 1.45; }
+.empty-state.small > svg { width: 28px; height: 28px; margin-bottom: 4px; color: var(--fg3); }
+.empty-state.small > b { font-size: 15px; font-weight: 600; color: var(--fg); }
+.empty-state.small > .acts { margin-top: 8px; }
+
+/* picking several (Agents' Select, Tasks' ⌘-click): one round check, ink once picked */
+.pick { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg3) 80%, transparent); color: transparent; transition: background var(--t-quick), box-shadow var(--t-quick), color var(--t-quick); }
+.pick svg { width: 12px; height: 12px; stroke-width: 3; }
+.picked .pick, .pick.on { background: var(--accent); box-shadow: none; color: var(--on-accent); }
+
+/* acting on many at once: a bar floating at the bottom of the view, how many on the left, what to do, × to stop */
+.bulk-bar { position: absolute; left: 50%; bottom: 20px; z-index: 7; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 2 * var(--gx, 24px)); padding: 6px 6px 6px 14px; border-radius: var(--r-window); background: var(--float); box-shadow: var(--shadow-float); transform: translateX(-50%); white-space: nowrap; animation: bulk-bar-in var(--t-move) var(--out); }
+@keyframes bulk-bar-in { from { opacity: 0; transform: translate(-50%, 16px); } }
+.bulk-count { display: inline-flex; align-items: center; gap: 8px; margin-right: 6px; font-size: 13px; font-weight: 600; color: var(--fg2); }
+.bulk-count b { color: var(--fg); font-variant-numeric: tabular-nums; }
+
+/* sheets and side panels: the title in the brand face, × at the top right, the buttons along a footer */
+.sheet-title { display: flex; align-items: center; gap: 10px; margin: 0; font: 600 20px/26px var(--font-brand); color: var(--fg); }
+.sheet-title svg { width: 20px; height: 20px; color: var(--fg2); }
+.sheet-x { position: absolute; top: 12px; right: 12px; z-index: 3; width: 28px; height: 28px; padding: 0; }
+.sheet-x svg { width: 16px; height: 16px; }
+.sheet-foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 16px 14px 24px; border-top: 1px solid var(--line); background: var(--surface); }
 
 /* ---- context gauge: how full an agent's conversation is ---- */
 .ctx { --s: 15px; --k: var(--ctx-calm); display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--k); font: 500 11px/1 var(--ui); font-variant-numeric: tabular-nums; cursor: help; }
@@ -445,9 +580,8 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 10px), transparent);
 }
 .feed-list { display: contents; }
-.feed .empty { margin: auto; padding: 24px; max-width: 250px; display: grid; justify-items: center; gap: 6px; text-align: center; color: var(--fg3); font-size: 12.5px; line-height: 1.45; }
-.feed .empty .mark { width: 56px; height: 37px; color: var(--fg3); opacity: .45; margin-bottom: 6px; }
-.feed .empty b { color: var(--fg); font-size: 15px; font-weight: 600; }
+.feed .empty { margin: auto; max-width: 280px; } /* .empty-state.small, in the middle of the chat */
+.feed .empty > .mark { width: 56px; height: 37px; opacity: .45; }
 .item { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; }
 .item.me { align-self: flex-end; align-items: flex-end; max-width: 86%; }
 .item.cont { margin-top: -10px; }

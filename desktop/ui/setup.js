@@ -53,7 +53,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
     const how = c.how
     const step = how
       ? `<div class="su-how"><span class="su-step">${esc(stepWords(c))}</span>
-          <div class="su-cmd"><code>${esc(how.command)}</code><button type="button" class="btn su-copy" data-copy="${esc(c.id)}">${copied === c.id ? 'Copied' : 'Copy'}</button></div>
+          <div class="su-cmd"><code>${esc(how.command)}</code><button type="button" class="btn sm su-copy" data-copy="${esc(c.id)}">${copied === c.id ? 'Copied' : 'Copy'}</button></div>
           <button type="button" class="su-link" data-url="${esc(how.page)}">${LINK_WORDS[c.state] ?? 'Other ways to install'}</button></div>`
       : ''
     const tip = c.version ? `Version ${c.version}${c.needs ? `; ${PRODUCT_NAME} needs ${c.needs} or later` : ''}` : ''
@@ -111,14 +111,15 @@ function mountSetup({ onAdd = () => {} } = {}) {
     const s = status()?.checked ? status() : { clis: [], git: null }
     const creature = { name: 'New', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, status: 'starting' }
     const off = (act) => act === 'check' && (checking || !status()?.checked)
-    const btn = ([act, label], cls) => `<button type="button" class="btn su-btn ${cls}" data-act="${act}" ${off(act) ? 'disabled' : ''}>${esc(label)}</button>`
-    morph(view, `<div class="su-col">
+    const btn = ([act, label], cls) => `<button type="button" class="btn lg ${cls}" data-act="${act}" ${off(act) ? 'disabled' : ''}>${esc(label)}</button>`
+    // the empty-state column (common.css .empty-state): the room for its art, the headline, one line, then the list
+    morph(view, `<div class="empty-state su-col">
       <div class="su-scene">${typeof roomFeltHTML === 'function' ? roomFeltHTML(52) : ''}<span class="su-spot" style="left:52px"></span><span class="su-spot" style="left:128px"></span><span class="su-spot" style="right:56px"></span>
         <span class="su-who">${avatarHTML(creature, { size: 96, mood: 'starting', pose: 'pop' })}</span><span class="su-say">${esc(w.say)}</span></div>
-      <h1 class="su-title">${esc(w.title)}</h1>
-      <p class="su-lead">${esc(w.lead)}</p>
-      <div class="su-list">${s.clis.map(cliRow).join('')}${s.git ? gitRow(s.git) : ''}</div>
-      <div class="su-acts">${btn(w.primary, 'su-primary')}${w.more.map((b) => btn(b, '')).join('')}</div>
+      <h1 class="display">${esc(w.title)}</h1>
+      <p class="lead">${esc(w.lead)}</p>
+      <div class="group-list su-list">${s.clis.map(cliRow).join('')}${s.git ? gitRow(s.git) : ''}</div>
+      <div class="acts">${btn(w.primary, 'brand-btn su-primary')}${w.more.map((b) => btn(b, '')).join('')}</div>
       <p class="su-more">Want other models? <button type="button" class="su-link" data-act="providers">Add a provider…</button></p>
     </div>`)
   }
@@ -172,8 +173,8 @@ function mountSetup({ onAdd = () => {} } = {}) {
     }
   })
   addEventListener('keydown', (e) => {
-    // not one another layer took (the agent's sheet over this screen, a menu, a dialog)
-    if (e.key !== 'Escape' || e.defaultPrevented || view.hidden || document.querySelector('dialog[open], .ed-layer.open, .menu:not(.leaving), [popover]:popover-open')) return
+    // not one another layer took (the agent's sheet over this screen, a menu, a popover, a dialog); Tasks' filter menu waits hidden
+    if (e.key !== 'Escape' || e.defaultPrevented || view.hidden || document.querySelector('dialog[open], .ed-layer.open, .menu:not(.leaving, .hidden), [popover]:popover-open')) return
     close()
   })
 
@@ -201,20 +202,20 @@ function mountSetup({ onAdd = () => {} } = {}) {
   function drawSheet() {
     if (!sheet.open) return
     const providers = state?.providers ?? {}
-    morph(sheet, `<h3>Add a provider</h3>
+    morph(sheet, `<h2 class="sheet-title">Add a provider</h2>
       <p class="lead">Claude Code and Codex are always in the model menu. These add other models, run through them.</p>
-      <div class="sheet-body su-plist">${PROVIDERS.map((p) => {
+      <div class="sheet-body"><div class="group-list su-plist">${PROVIDERS.map((p) => {
         const { added, optional } = providers[p.id] ?? {}
         // one of your own in config.json's providers stays: only what Add put there can be removed
         const act = added
-          ? `<span class="su-added">Added</span>${optional ? `<button type="button" class="btn su-btn" data-remove="${p.id}">Remove</button>` : ''}`
-          : `<button type="button" class="btn su-btn" data-add="${p.id}">Add ${esc(p.name)}</button>`
+          ? `<span class="su-added">Added</span>${optional ? `<button type="button" class="btn" data-remove="${p.id}">Remove</button>` : ''}`
+          : `<button type="button" class="btn" data-add="${p.id}">Add ${esc(p.name)}</button>`
         return `<div class="su-prow" data-provider="${p.id}">
           <div class="su-top"><span class="su-name">${esc(p.name)}</span><span class="su-pact">${act}</span></div>
           <div class="su-by">${esc(p.by)}</div><div class="su-step">${esc(p.needs)}</div>${providerLines(p)}</div>`
-      }).join('')}</div>
+      }).join('')}</div></div>
       <p class="err su-err">${esc(sheetError)}</p>
-      <div class="buttons"><button type="button" class="btn" data-act="check" ${checking ? 'disabled' : ''}>${checking ? 'Checking…' : 'Check again'}</button><span class="grow"></span><button type="button" class="btn" data-act="done">Done</button></div>`)
+      <div class="sheet-foot"><button type="button" class="btn" data-act="check" ${checking ? 'disabled' : ''}>${checking ? 'Checking…' : 'Check again'}</button><span class="grow"></span><button type="button" class="btn" data-act="done">Done</button></div>`)
   }
 
   async function lookAtProviders() {

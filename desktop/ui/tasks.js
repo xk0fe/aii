@@ -2,7 +2,7 @@
 // Add one with New task or a column's + (or from the chat). Starting one hands it to its owner in a fresh
 // conversation, so tasks don't pile into one long context; you review what comes back. Board or list, filtered by
 // kind, owner or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via crew.call('task').
-/* global PRODUCT_NAME, ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine */
+/* global pageHead, mountSearch, notify, oops, reduceMotion, PRODUCT_NAME, ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine */
 
 const STATUS = [
   { id: 'new', label: 'To do' },
@@ -54,44 +54,47 @@ const TK_FUNNEL = icon('<path d="M2.6 3.4h10.8L9.3 8.4v4.3l-2.6-1.3v-3z" fill="n
 // The columns you can add to with their +: To do adds, In progress adds and starts it right away.
 const TK_ADD_TO = { new: 'Add a task', fixing: 'Start a new task' }
 
-function mountTasks(root, { onTerminal }) {
+function mountTasks(root, { headIn = root, onTerminal }) {
+  // the header: in the dashboard's row of place headers (common.js pageHead), like every place's. Search, the filters
+  // that are on and Filter, board or list, New task, ⋯.
+  headIn.insertAdjacentHTML('beforeend', pageHead({
+    id: 'tasks', glyph: ICONS.task, title: 'Tasks',
+    tools: `<div class="tk-search"></div><span class="tk-active"></span>
+      <button class="btn" data-filter-btn title="Filter by kind or owner" aria-haspopup="true" aria-expanded="false">${TK_FUNNEL}<span>Filter</span></button>
+      <div class="seg icons tk-views"><button data-mode="board" title="Board" aria-label="Board">${BOARD}</button><button data-mode="list" title="List" aria-label="List">${LIST}</button></div>
+      <button class="btn primary" data-new-task title="New task (N)">${ICONS.plus}<span>New task</span></button>
+      <button class="icon" data-board-menu title="Workflow, and acting on many tasks at once" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`,
+  }))
+  const head = headIn.lastElementChild
+  // what floats over the page (the filters, the list's composer) hangs from the header too: it lives on the page's top
+  const floats = document.createElement('div')
+  floats.className = 'tk-floats'
+  floats.innerHTML = '<div class="menu tk-fpop hidden" data-filter-pop role="menu" aria-label="Filter"></div><div class="tk-add-pop hidden"></div>'
+  document.body.append(floats)
   root.innerHTML = `
     <section class="tasks">
-      <header class="tk-head">
-        <div class="tk-headline"><h2>Tasks</h2><div class="tk-sub"></div></div>
-        <span class="grow"></span>
-        <div class="tk-search"><input type="search" placeholder="Search tasks" spellcheck="false" data-search><button class="icon tk-search-btn" data-search-btn></button></div>
-        <span class="tk-active"></span>
-        <button class="btn tk-hbtn" data-filter-btn title="Filter by kind or owner" aria-haspopup="true" aria-expanded="false">${TK_FUNNEL}<span>Filter</span></button>
-        <div class="seg tk-views"><button data-mode="board" title="Board">${BOARD}</button><button data-mode="list" title="List">${LIST}</button></div>
-        <button class="btn primary tk-hbtn" data-new-task title="New task (N)">${ICONS.plus}<span>New task</span></button>
-        <button class="icon tk-more" data-board-menu title="Workflow, and acting on many tasks at once">${ICONS.more}</button>
-      </header>
       <div class="tk-body">
         <div class="tk-board"></div>
         <div class="tk-list"></div>
         <div class="tk-empty"></div>
       </div>
-      <div class="tk-fpop hidden" data-filter-pop role="menu" aria-label="Filter"></div>
-      <div class="tk-add-pop hidden"></div>
       <div class="tk-add-home hidden">
         <div class="tk-add" data-kind="task">
           <textarea rows="1" spellcheck="true" data-add></textarea>
           <div class="thumbs tk-add-shots hidden"></div>
           <div class="tk-add-foot">
-            <button class="tk-kind" data-kind-pick title="Kind (click to change)"></button>
+            <button class="btn sm has-menu tk-kind" data-kind-pick title="Kind (click to change)" aria-haspopup="menu"></button>
             <span class="tk-to"></span>
             <span class="grow"></span>
             <button class="icon attach" title="Add a screenshot (or paste / drop one)">${PICTURE}</button>
-            <button class="tk-btn go tk-add-go" disabled>Add</button>
+            <button class="btn sm tk-add-go" disabled>Add</button>
           </div>
         </div>
       </div>
-      <div class="tk-bulk"></div>
-      <div class="tk-toast"></div>
+      <div class="bulk-bar tk-bulk" role="toolbar" aria-label="Picked tasks"></div>
     </section>
     <aside class="tp"></aside>`
-  const $ = (s) => root.querySelector(s)
+  const $ = (s) => root.querySelector(s) ?? head.querySelector(s) ?? floats.querySelector(s)
   const tp = $('.tp')
   const add = $('[data-add]')
   let ink = null // mentions in color (mountInk), set up with the composer's other listeners below
@@ -120,75 +123,98 @@ function mountTasks(root, { onTerminal }) {
   const worker = (t) => (t.fixer ? (state.agents.find((a) => (a.name === t.fixer || a.cloneOf === t.fixer) && String(a.ticket) === t.key) ?? agent(t.fixer)) : null)
   const ticket = (key) => tickets.find((t) => t.key === key)
   const who = (n) => (n === 'you' ? 'You' : n === 'crew' ? PRODUCT_NAME : `@${esc(n)}`)
+  // what went wrong goes to the window's note at the bottom (common.js notify), like everywhere else
   const call = async (...args) => {
     try {
       return await crew.call('task', ...args)
     } catch (e) {
-      toast(errorLine(e), true)
+      notify(errorLine(e), { warn: true })
       throw e
     }
   }
-  const toast = (text, error = false) => {
-    const el = $('.tk-toast')
-    el.textContent = text
-    el.className = `tk-toast show ${error ? 'error' : ''}`
-    clearTimeout(toast.timer)
-    toast.timer = setTimeout(() => el.classList.remove('show'), error ? 5000 : 2600)
-  }
 
-  // ---- pop-up menus: status, priority, kind, owner, and the workflow settings ---------------------
+  // ---- pop-up menus: status, priority, kind, owner, the ⋯s and the bulk bar's ----------------------------
+  // The app's own menu (common.css .menu, like common.js popMenu's): rows with an icon, a label and a hint, the current
+  // pick checked. Tasks places and closes its own so a menu can say what's picked, and its button can close it again.
 
   let pop = null
+  let popFrom = null // the button it hangs from: a scroll that moves it closes the menu
   function closePop() {
-    pop?.remove()
+    if (!pop) return
+    const el = pop
     pop = null
     document.removeEventListener('pointerdown', outside, true)
+    document.removeEventListener('scroll', scrolled, true)
+    removeEventListener('blur', closePop)
+    // it fades away like every menu, quicker than it came, and takes no more clicks or focus while it does
+    el.classList.add('leaving')
+    if (el.contains(document.activeElement)) document.activeElement.blur()
+    el.inert = true
+    if (reduceMotion()) el.remove()
+    else el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: DUR.leave, easing: EASE.in, fill: 'forwards' }).finished.then(() => el.remove(), () => el.remove())
   }
   const outside = (e) => pop && !pop.contains(e.target) && !e.target.closest('[data-board-menu], [data-menu], [data-kind-pick]') && closePop()
-  function openPop(anchor, html, { width } = {}) {
+  const scrolled = (e) => pop && (e.target === document || e.target.contains?.(popFrom)) && closePop()
+  // cls: 'wide' for long rows; form: a few settings rather than a menu (it stays open while a <select> is open)
+  function openPop(anchor, html, { cls = '', form = false } = {}) {
     closePop()
     pop = document.createElement('div')
-    pop.className = 'tk-pop'
-    if (width) pop.style.width = `${width}px`
+    pop.className = `menu tk-pop ${cls}`
+    pop.setAttribute('role', form ? 'dialog' : 'menu')
     pop.innerHTML = html
     document.body.append(pop)
     const r = anchor.getBoundingClientRect()
     const w = pop.offsetWidth
     const h = pop.offsetHeight
-    const left = Math.min(Math.max(8, r.left), innerWidth - w - 8)
-    const top = r.bottom + 6 + h > innerHeight - 8 ? Math.max(8, r.top - h - 6) : r.bottom + 6
-    Object.assign(pop.style, { left: `${left}px`, top: `${top}px` })
-    setTimeout(() => document.addEventListener('pointerdown', outside, true))
+    const up = r.bottom + 4 + h > innerHeight - 8 // no room under it: it opens upwards, growing from its button
+    pop.classList.toggle('up', up)
+    Object.assign(pop.style, { left: `${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`, top: `${up ? Math.max(8, r.top - h - 4) : r.bottom + 4}px` })
+    popFrom = anchor
+    const el = pop
+    setTimeout(() => {
+      if (pop !== el) return
+      document.addEventListener('pointerdown', outside, true)
+      document.addEventListener('scroll', scrolled, true)
+      if (!form) addEventListener('blur', closePop)
+    })
     return pop
   }
-  // items: [{ value, label, icon, hint, on, attr }]
-  function menu(anchor, items, onPick) {
-    const el = openPop(anchor, items.map((it, i) => `<button class="tk-pop-item ${it.on ? 'on' : ''}" data-i="${i}" ${it.attr ?? ''}>${it.icon ?? ''}<span class="tk-pop-label">${esc(it.label)}</span>${it.hint ? `<small>${esc(it.hint)}</small>` : ''}${it.on ? `<i class="tk-pop-check">${ICONS.check}</i>` : ''}</button>`).join(''))
+  // items: [{ value, label, icon, hint, on, danger, attr }] or '-' for a rule. In a menu that has a current pick, every
+  // row keeps room for the check, so the hints line up.
+  function menu(anchor, items, onPick, { wide = false } = {}) {
+    const picks = items.some((it) => it.on)
+    const row = (it, i) => `<button role="${picks ? 'menuitemradio' : 'menuitem'}" class="${it.on ? 'on' : ''}${it.danger ? ' danger' : ''}" data-i="${i}"${picks ? ` aria-checked="${Boolean(it.on)}"` : ''} ${it.attr ?? ''}>${it.icon ?? '<i></i>'}<span>${esc(it.label)}</span>${it.hint ? `<small>${esc(it.hint)}</small>` : ''}${picks ? `<i class="check">${ICONS.check}</i>` : ''}</button>`
+    const el = openPop(anchor, items.map((it, i) => (it === '-' ? '<hr>' : row(it, i))).join(''), { cls: wide ? 'wide' : '' })
     el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-i]')
       if (!b) return
       closePop()
       onPick(items[b.dataset.i].value)
     })
-    el.querySelector('.on, .tk-pop-item')?.focus()
+    el.querySelector('.on, button')?.focus({ preventScroll: true })
     el.addEventListener('keydown', (e) => {
-      const list = [...el.querySelectorAll('.tk-pop-item')]
-      const i = list.indexOf(document.activeElement)
-      if (e.key === 'ArrowDown') (e.preventDefault(), list[(i + 1) % list.length].focus())
-      if (e.key === 'ArrowUp') (e.preventDefault(), list[(i - 1 + list.length) % list.length].focus())
+      const step = { ArrowDown: 1, ArrowUp: -1 }[e.key]
+      if (!step) return
+      e.preventDefault()
+      const list = [...el.querySelectorAll('button:not(:disabled)')]
+      list[(list.indexOf(document.activeElement) + step + list.length) % list.length]?.focus()
     })
   }
-  const ownerItems = (current) => [
-    ...state.agents.filter((a) => !a.cloneOf && (a.on || a.name === current)).map((a) => ({ value: a.name, label: a.home ? `${a.seed}@${a.home}` : a.name, hint: a.area, icon: avatarHTML(a, { size: 20, mood: 'still' }), on: a.name === current })),
-    { value: '', label: 'Nobody', icon: '<i class="tk-nobody">?</i>', on: !current },
-  ]
+  // a rule only between two groups that are both there
+  const rules = (items) => items.filter((it, i, all) => it !== '-' || (i > 0 && i < all.length - 1 && all[i - 1] !== '-'))
+  const NOBODY = '<i class="tk-nobody">?</i>'
+  const ownerItems = (current) => rules([
+    ...state.agents.filter((a) => !a.cloneOf && (a.on || a.name === current)).map((a) => ({ value: a.name, label: a.home ? `${a.seed}@${a.home}` : a.name, hint: a.area, icon: avatarHTML(a, { size: 16, mood: 'still' }), on: a.name === current })),
+    '-',
+    { value: '', label: 'Nobody', icon: NOBODY, on: !current },
+  ])
   const statusItems = (t) => STATUS.map((s) => ({ value: s.id, label: s.label, icon: STATUS_ICON[s.id], on: t.status === s.id, hint: s.id === 'fixing' && t.status !== 'fixing' ? 'starts it' : '' }))
   const priorityItems = (t) => PRIORITIES.map((p) => ({ value: p.id, label: p.label, icon: PRIORITY_ICON[p.id], on: t.severity === p.id }))
   const kindItems = (current) => KINDS.map((k) => ({ value: k.id, label: k.label, icon: KIND_ICON[k.id], on: current === k.id }))
 
   // A task's property, changed from a menu.
   function pick(t, prop, anchor) {
-    if (prop === 'owner') return menu(anchor, ownerItems(t.owner), (v) => v !== (t.owner ?? '') && call('edit', t.key, { owner: v }).catch(() => {}))
+    if (prop === 'owner') return menu(anchor, ownerItems(t.owner), (v) => v !== (t.owner ?? '') && call('edit', t.key, { owner: v }).catch(() => {}), { wide: true })
     if (prop === 'priority') return menu(anchor, priorityItems(t), (v) => v !== t.severity && call('edit', t.key, { severity: v }).catch(() => {}))
     if (prop === 'kind') return menu(anchor, kindItems(t.kind), (v) => v !== t.kind && call('edit', t.key, { kind: v }).catch(() => {}))
     if (prop === 'status') return menu(anchor, statusItems(t), (v) => move(t, v))
@@ -197,22 +223,22 @@ function mountTasks(root, { onTerminal }) {
   async function move(t, status) {
     if (t.status === status) return
     if (status === 'fixing' && !t.owner) {
-      toast(`Pick who does #${t.id} first`, true)
+      notify(`Pick who does #${t.id} first`, { warn: true })
       return open(t.key)
     }
     await call('move', t.key, status).catch(() => {})
-    if (status === 'fixing') toast(`#${t.id} went to @${t.owner}, in a new conversation`)
+    if (status === 'fixing') notify(`#${t.id} went to @${t.owner}, in a new conversation`)
   }
 
-  // Triage and Auto-start, from the header's ⋯.
+  // Triage and Auto-start, from the header's ⋯: two settings in the menu's box (a form, so no row lights up)
   function workflow(anchor) {
     const el = openPop(anchor, `
-      <div class="tk-flow-pop" data-flow-pop>
+      <div class="tk-flow-pop" data-flow-pop aria-label="Workflow">
         <label class="tk-flow-row"><span><b>Triage</b><small>An agent that makes what you add clear (steps, priority, kind), gives it to the right agent and spots duplicates. Without one, tasks go to whoever's area they match.</small></span>
           <select data-triage><option value="">Nobody</option>${state.agents.filter((a) => !a.home && !a.cloneOf).map((a) => `<option value="${esc(a.name)}" ${state.tasks.triage === a.name ? 'selected' : ''}>${esc(a.name)}${a.on ? '' : ' (off)'}</option>`).join('')}</select></label>
         <label class="tk-flow-row"><span><b>Auto-start</b><small>A task goes to its owner as soon as it has one, in a fresh conversation. Off: you start each one.</small></span>
           <input type="checkbox" class="switch sm" data-autofix ${state.tasks.autofix ? 'checked' : ''}></label>
-      </div>`, { width: 360 })
+      </div>`, { cls: 'wide tk-flow', form: true })
     el.addEventListener('change', (e) => {
       if ('triage' in e.target.dataset) crew.call('taskSettings', { triage: e.target.value || null })
       if ('autofix' in e.target.dataset) crew.call('taskSettings', { autofix: e.target.checked })
@@ -232,7 +258,7 @@ function mountTasks(root, { onTerminal }) {
     tray: $('.tk-add-shots'),
     button: composer.querySelector('.attach'),
     onChange: () => syncAdd(),
-    onError: (msg) => toast(msg, true),
+    onError: (msg) => notify(msg, { warn: true }),
   })
   const drafted = () => Boolean(add.value.trim() || attach.get().length)
   function syncAdd() {
@@ -246,7 +272,7 @@ function mountTasks(root, { onTerminal }) {
     if (addGo.textContent !== (starting ? 'Start' : 'Add')) addGo.textContent = starting ? 'Start' : 'Add'
     add.placeholder = starting ? 'Start a task…  @name does it' : 'Add a task…  @name assigns it'
     ink?.paint()
-    morph($('[data-kind-pick]'), `${KIND_ICON[addKind]}<span>${KIND_LABEL[addKind]}</span>${CHEVRON}`)
+    morph($('[data-kind-pick]'), `${KIND_ICON[addKind]}<span>${KIND_LABEL[addKind]}</span>${ICONS.chevron}`)
     composer.dataset.kind = addKind
     // who it'll go to, as you type @name
     const { owner } = state ? ownerIn(add.value, state.agents) : { owner: null }
@@ -294,13 +320,11 @@ function mountTasks(root, { onTerminal }) {
   // The list's popover: under the button, its right edge on the button's (above it if there's no room below).
   function placeAddPop(from) {
     addPop.classList.remove('hidden')
-    const box = $('.tasks').getBoundingClientRect()
     const r = from.getBoundingClientRect()
     const w = addPop.offsetWidth
     const h = addPop.offsetHeight
-    const below = r.bottom - box.top + 6
-    addPop.style.left = `${Math.max(16, Math.min(r.right - box.left - w, box.width - w - 16))}px`
-    addPop.style.top = `${below + h > box.height - 8 ? Math.max(8, r.top - box.top - h - 6) : below}px`
+    addPop.style.left = `${Math.max(16, Math.min(r.right - w, innerWidth - w - 16))}px`
+    addPop.style.top = `${r.bottom + 6 + h > innerHeight - 8 ? Math.max(8, r.top - h - 6) : r.bottom + 6}px`
   }
   // A click somewhere else closes it, unless something's written in it (Escape always does).
   const composeOutside = (e) => {
@@ -322,14 +346,14 @@ function mountTasks(root, { onTerminal }) {
       add.value = ''
       attach.set([], false)
       // with a triage agent on it and no @name, the triage agent assigns it first: starting it too would send it twice
-      if (start && id && /is triaging it/.test(out)) toast(`${out.charAt(0).toUpperCase() + out.slice(1)}. It starts once it has an owner`)
+      if (start && id && /is triaging it/.test(out)) notify(`${out.charAt(0).toUpperCase() + out.slice(1)}. It starts once it has an owner`)
       else if (start && id) {
         // In progress's +: it goes to its owner (the @name, or whoever's area it is) now, in a new conversation
-        const went = await crew.call('task', 'dispatch', id).then(() => true, (e) => (toast(errorLine(e), true), false))
-        if (went) toast(`#${id} went to ${owner ? `@${owner}` : 'its owner'}, in a new conversation`)
-      } else toast(out.charAt(0).toUpperCase() + out.slice(1))
+        const went = await crew.call('task', 'dispatch', id).then(() => true, (e) => (oops(`Couldn't start #${id}`, e), false))
+        if (went) notify(`#${id} went to ${owner ? `@${owner}` : 'its owner'}, in a new conversation`)
+      } else notify(out.charAt(0).toUpperCase() + out.slice(1))
     } catch (e) {
-      toast(errorLine(e), true)
+      oops("Couldn't add the task", e)
     }
     syncAdd()
   }
@@ -360,42 +384,16 @@ function mountTasks(root, { onTerminal }) {
 
   // ---- header: search, filters, board or list, the ⋯ menu ------------------------------------------
 
-  // Search: a magnifier that opens a field to its left, so nothing beside it moves; it closes when you leave it empty.
-  const search = $('[data-search]')
-  const searchBox = $('.tk-search')
-  const searchBtn = $('[data-search-btn]')
-  function drawSearch() {
-    const open = searchBox.classList.contains('open')
-    morph(searchBtn, filter.q ? ICONS.close : ICONS.search)
-    searchBtn.title = filter.q ? 'Clear the search' : open ? 'Close the search' : 'Search tasks'
-  }
-  function openSearch() {
-    closeFilters()
-    searchBox.classList.add('open')
-    search.focus()
-    drawSearch()
-  }
-  function closeSearch() {
-    if (search.value) {
-      search.value = ''
-      filter.q = ''
+  // Search: the places' own (common.js mountSearch), narrowing the board or list to the tasks with the words.
+  const search = mountSearch($('.tk-search'), {
+    label: 'Search tasks',
+    onOpen: () => closeFilters(),
+    onSearch: (q) => {
+      filter.q = q.trim().toLowerCase()
       draw()
-    }
-    searchBox.classList.remove('open')
-    drawSearch()
-  }
-  searchBtn.addEventListener('mousedown', (e) => e.preventDefault()) // the field keeps the focus, so a click toggles it
-  searchBtn.addEventListener('click', () => (searchBox.classList.contains('open') ? closeSearch() : openSearch()))
-  search.addEventListener('input', () => {
-    filter.q = search.value.trim().toLowerCase()
-    drawSearch()
-    draw()
+      return Object.values(grouped()).flat().length
+    },
   })
-  search.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') (e.preventDefault(), e.stopPropagation(), closeSearch(), search.blur())
-    if (e.key === 'Enter') search.blur()
-  })
-  search.addEventListener('blur', () => !search.value && (searchBox.classList.remove('open'), drawSearch()))
 
   // Filters: kind and owner, in the Filter button's popover. While some are on, one chip beside the button says
   // which ("Bugs · Iris") and its × clears them.
@@ -407,12 +405,11 @@ function mountTasks(root, { onTerminal }) {
     fpop.classList.remove('hidden')
     fbtn.classList.add('on')
     fbtn.setAttribute('aria-expanded', 'true')
-    const box = $('.tasks').getBoundingClientRect()
     const r = fbtn.getBoundingClientRect()
-    fpop.style.left = `${Math.max(16, Math.min(r.left - box.left, box.width - fpop.offsetWidth - 16))}px`
-    fpop.style.top = `${r.bottom - box.top + 6}px`
+    fpop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - fpop.offsetWidth - 8))}px`
+    fpop.style.top = `${r.bottom + 6}px`
     document.addEventListener('pointerdown', filtersOutside, true)
-    fpop.querySelector('.tk-fp-item.on, .tk-fp-item')?.focus({ preventScroll: true })
+    fpop.querySelector('button.on, button')?.focus({ preventScroll: true })
   }
   function closeFilters() {
     if (!filtersOpen()) return
@@ -427,9 +424,7 @@ function mountTasks(root, { onTerminal }) {
     Object.assign(filter, { kind: '', owner: '' })
     if (all) {
       filter.q = ''
-      search.value = ''
-      if (document.activeElement !== search) searchBox.classList.remove('open')
-      drawSearch()
+      search.close({ keep: true })
     }
     draw()
   }
@@ -489,15 +484,16 @@ function mountTasks(root, { onTerminal }) {
   function drawFilters() {
     const open = tickets.filter((t) => t.status !== 'done')
     const count = (pred) => open.filter(pred).length
-    const item = (k, v, label, n, iconHTML) => `<button class="tk-fp-item ${filter[k] === v ? 'on' : ''}" data-filter="${k}:${esc(v)}" role="menuitemcheckbox" aria-checked="${filter[k] === v}">${iconHTML}<span class="tk-fp-label">${label}</span><i class="tk-fp-n">${n || ''}</i><i class="tk-fp-check">${ICONS.check}</i></button>`
+    // a menu row (common.css .menu): what, how many open, and a check on the one that's on (its room kept on every row)
+    const item = (k, v, label, n, iconHTML) => `<button class="${filter[k] === v ? 'on' : ''}" data-filter="${k}:${esc(v)}" role="menuitemcheckbox" aria-checked="${filter[k] === v}">${iconHTML}<span>${label}</span><small>${n || ''}</small><i class="check">${ICONS.check}</i></button>`
     // owners in name order, so a push never shuffles the list under your pointer (and the one filtered stays)
     const owners = [...new Set([...open.map((t) => t.fixer ?? t.owner), filter.owner !== ':none' && filter.owner].filter(Boolean))].sort()
     const unassigned = count((t) => !t.owner)
     const any = filter.kind || filter.owner
     morph(fpop,
-      `<div class="tk-fp-sec"><h6>Kind</h6>${KINDS.map((k) => item('kind', k.id, k.plural, count((t) => t.kind === k.id), KIND_ICON[k.id])).join('')}</div>` +
-      (owners.length || unassigned || filter.owner ? `<div class="tk-fp-sec tk-fp-owners"><h6>Owner</h6>${owners.map((n) => item('owner', n, nameHTML(agent(n)), count((t) => (t.fixer ?? t.owner) === n), avatarHTML(agent(n), { size: 20, mood: 'still' }))).join('')}${unassigned || filter.owner === ':none' ? item('owner', ':none', 'Unassigned', unassigned, '<i class="tk-nobody">?</i>') : ''}</div>` : '') +
-      `<div class="tk-fp-foot"><button class="tk-fp-clear" data-filter="clear:pick" ${any ? '' : 'disabled'}>Clear filters</button></div>`)
+      `<div class="menu-head">Kind</div>${KINDS.map((k) => item('kind', k.id, k.plural, count((t) => t.kind === k.id), KIND_ICON[k.id])).join('')}` +
+      (owners.length || unassigned || filter.owner ? `<hr><div class="menu-head">Owner</div>${owners.map((n) => item('owner', n, nameHTML(agent(n)), count((t) => (t.fixer ?? t.owner) === n), avatarHTML(agent(n), { size: 16, mood: 'still' }))).join('')}${unassigned || filter.owner === ':none' ? item('owner', ':none', 'Unassigned', unassigned, NOBODY) : ''}` : '') +
+      `<hr><button data-filter="clear:pick" ${any ? '' : 'disabled'}>${ICONS.close}<span>Clear filters</span></button>`)
     const words = [filter.kind && KINDS.find((k) => k.id === filter.kind)?.plural, filter.owner && (filter.owner === ':none' ? 'Unassigned' : esc(filter.owner))].filter(Boolean)
     morph($('.tk-active'), words.length ? `<span class="tk-on-chip"><button class="tk-on-what" data-filter-open title="Change the filters">${words.join(' · ')}</button><button class="tk-on-x" data-filter="clear:pick" title="Clear filters">${ICONS.close}</button></span>` : '')
   }
@@ -539,8 +535,8 @@ function mountTasks(root, { onTerminal }) {
   // A task whose owner is switched off waits for it: no Start until it's back on.
   const ownerOff = (t) => Boolean(t.owner) && !agent(t.owner).on
   const offHTML = (t) => `<span class="tk-state" title="@${esc(t.owner)} is turned off: turn it on, or give this task to someone else"><i class="dot off"></i>off</span>`
-  const startHTML = (t) => `<button class="tk-btn go tk-start" data-act="start" title="Hand it to @${esc(t.owner)} in a new conversation">Start</button>`
-  const urgentHTML = '<span class="tk-urgent">Urgent</span>'
+  const startHTML = (t) => `<button class="btn sm tk-start" data-act="start" title="Hand it to @${esc(t.owner)} in a new conversation">Start</button>`
+  const urgentHTML = '<span class="tag tk-urgent">Urgent</span>'
   const isUrgent = (t) => t.severity === 'blocker' && t.status !== 'done'
 
   // The bottom of a card: who, and on the right what's happening with it (or Start, when you point at it).
@@ -563,9 +559,9 @@ function mountTasks(root, { onTerminal }) {
       : ''
     const review = t.status === 'check'
     const summary = review && t.fix ? `<p class="tk-summary">${esc(snippet(t.fix))}</p>` : ''
-    const verdict = `<div class="tk-verdict"><button class="tk-btn" data-act="sendBack" title="Tell @${esc(t.fixer ?? 'them')} what's ${t.kind === 'bug' ? 'still broken' : 'missing'}">Send back</button><button class="tk-btn good" data-act="accept" title="It's done">Accept</button></div>`
+    const verdict = `<div class="tk-verdict"><button class="btn" data-act="sendBack" title="Tell @${esc(t.fixer ?? 'them')} what's ${t.kind === 'bug' ? 'still broken' : 'missing'}">Send back</button><button class="btn brand-btn" data-act="accept" title="It's done">Accept</button></div>`
     return `<article class="tc st-${t.status} kind-${t.kind}${isUrgent(t) ? ' urgent' : ''}${selected === t.key ? ' sel' : ''}${picked.has(t.key) ? ' picked' : ''}" data-name="${esc(t.key)}" draggable="true">
-      <i class="tc-check" data-pick title="${picked.has(t.key) ? 'Let go' : 'Pick'} (${keys('⌘-click')})">${ICONS.check}</i>
+      <span class="pick tc-check" data-pick title="${picked.has(t.key) ? 'Let go' : 'Pick'} (${keys('⌘-click')})">${ICONS.check}</span>
       <div class="tc-top">${KIND_ICON[t.kind]}<span class="tk-id">#${t.id}</span>${t.home ? `<span class="tk-home" title="On ${esc(t.homeName)}">${esc(t.homeName)}</span>` : ''}${t.dupOf ? `<span class="tk-home">same as #${t.dupOf}</span>` : ''}${isUrgent(t) ? urgentHTML : ''}</div>
       <div class="tc-title">${esc(t.title)}</div>
       ${pics}${summary}
@@ -579,10 +575,10 @@ function mountTasks(root, { onTerminal }) {
       t.status === 'new' && ownerOff(t) ? offHTML(t)
       : t.status === 'new' && t.owner ? startHTML(t)
       : t.status === 'fixing' ? stateHTML(t)
-      : t.status === 'check' ? `<button class="tk-btn only" data-act="sendBack" title="Send back">${BACK}</button><button class="tk-btn good" data-act="accept">Accept</button>`
+      : t.status === 'check' ? `<button class="btn sm square" data-act="sendBack" title="Send back" aria-label="Send back">${BACK}</button><button class="btn sm brand-btn" data-act="accept">Accept</button>`
       : ''
     // while some are picked, each row leads with its check instead of its kind
-    const lead = picked.size ? `<i class="tr-check" data-pick title="${picked.has(t.key) ? 'Let go' : 'Pick'}">${ICONS.check}</i>` : KIND_ICON[t.kind]
+    const lead = picked.size ? `<span class="pick tr-check" data-pick title="${picked.has(t.key) ? 'Let go' : 'Pick'}">${ICONS.check}</span>` : KIND_ICON[t.kind]
     return `<div class="tr st-${t.status}${selected === t.key ? ' sel' : ''}${picked.has(t.key) ? ' picked' : ''}" data-name="${esc(t.key)}" draggable="true">
       ${lead}
       <span class="tk-id">#${t.id}</span>
@@ -667,8 +663,10 @@ function mountTasks(root, { onTerminal }) {
     const none = !tickets.length
     // nothing yet: the board's columns stay (so nothing jumps when the first task lands), and the crew waits with mugs
     const crewNow = state.agents.filter((a) => !a.cloneOf)
-    morph($('.tk-empty'), none ? `<div class="tk-hello">${crewNow.length ? mugsRoomHTML(crewNow.filter((a) => a.on).concat(crewNow.filter((a) => !a.on))) : ''}<h1 class="display">${crewNow.length ? 'We’re all here. What should we work on?' : 'Nothing to work on yet'}</h1><p>Add a task, or just ask in the chat: whoever’s free picks it up.</p><div><button class="btn primary lg" data-add-to="new">${ICONS.plus}New task</button></div></div>`
-      : !shown ? '<div class="tk-hello small"><b>No tasks match</b><button class="btn" data-filter="clear:1">Clear filters</button></div>' : '')
+    // (common.css .empty-state); some, but none that match: what's narrowing it, and a way back to all of them
+    const narrowed = filter.kind || filter.owner
+    morph($('.tk-empty'), none ? `<div class="empty-state">${crewNow.length ? mugsRoomHTML(crewNow.filter((a) => a.on).concat(crewNow.filter((a) => !a.on))) : ''}<h1 class="display">${crewNow.length ? 'We’re all here. What should we work on?' : 'Nothing to work on yet'}</h1><p class="lead">Add a task, or just ask in the chat: whoever’s free picks it up.</p><div class="acts"><button class="btn primary lg" data-add-to="new">${ICONS.plus}New task</button></div></div>`
+      : !shown ? `<div class="empty-state small">${narrowed ? TK_FUNNEL : ICONS.search}<b>No tasks match</b><span>${narrowed && filter.q ? 'Nothing has those words with these filters on.' : narrowed ? 'Nothing open or done fits these filters.' : 'No task has those words.'}</span><div class="acts"><button class="btn" data-filter="clear:1">${narrowed ? 'Clear filters' : 'Clear the search'}</button></div></div>` : '')
     $('.tk-body').classList.toggle('empty', none || !shown)
     if (mode === 'board') drawBoard(by)
     else drawList(by)
@@ -696,7 +694,7 @@ function mountTasks(root, { onTerminal }) {
     const open = tickets.filter((t) => t.status !== 'done').length
     const review = tickets.filter((t) => t.status === 'check').length
     const urgent = tickets.filter((t) => t.status !== 'done' && t.severity === 'blocker').length
-    morph($('.tk-sub'), [open ? `${open} open` : 'Nothing open', urgent && `<span class="sub-urgent">${urgent} urgent</span>`, review && `<span class="sub-review">${review} to review</span>`].filter(Boolean).join(' · '))
+    morph(head.querySelector('.ph-sub'), [open ? `${open} open` : 'Nothing open', urgent && `<span class="strong">${urgent} urgent</span>`, review && `<span class="needs">${review} to review</span>`].filter(Boolean).join(' · '))
   }
 
   // ---- picking several tasks, and the bar that acts on them all at once ----------------------------
@@ -730,7 +728,7 @@ function mountTasks(root, { onTerminal }) {
   // may want to change some more (a new owner, a priority); the rest have moved on.
   async function bulk(op, keys, arg, { keep = false } = {}) {
     const out = (await call('bulk', null, { op, keys, arg }).catch(() => null))?.trim()
-    if (out) toast(out.charAt(0).toUpperCase() + out.slice(1).replace(/\n/g, ' · '))
+    if (out) notify(out.charAt(0).toUpperCase() + out.slice(1).replace(/\n/g, ' · '))
     if (!keep) unpick()
   }
 
@@ -740,13 +738,15 @@ function mountTasks(root, { onTerminal }) {
     const open = list.filter((t) => t.status !== 'done')
     const ready = list.filter((t) => t.status === 'new' && t.owner && !ownerOff(t))
     const moves = STATUS.filter((s) => s.id !== 'fixing' && list.some((t) => t.status !== s.id && (s.id !== 'check' || t.status !== 'done')))
-    morph($('.tk-bulk'), `<span class="tk-bulk-count"><b>${list.length}</b> selected</span>` +
-      (ready.length ? `<button class="tk-btn go" data-bulk="start" title="Hand each to its owner, in a new conversation">${ICONS.fresh}Start ${ready.length}</button>` : '') +
-      (open.length ? `<button class="tk-btn" data-bulk="owner">Assign${CHEVRON}</button><button class="tk-btn" data-bulk="priority">Priority${CHEVRON}</button>` : '') +
-      (moves.length ? `<button class="tk-btn" data-bulk="move">Move to${CHEVRON}</button>` : '') +
-      (open.length ? `<button class="tk-btn" data-bulk="close" title="Move ${open.length > 1 ? 'them' : 'it'} to Done">${ICONS.check}Close ${open.length}</button>` : '') +
-      `<button class="tk-btn danger" data-bulk="remove">Delete</button>` +
-      `<button class="icon tk-bulk-x" data-bulk="unpick" title="Let them go (Esc)">${ICONS.close}</button>`)
+    // the app's bulk bar (common.css .bulk-bar): how many, what to do with them all, × to let them go
+    const opens = (op, label) => `<button class="btn has-menu" data-bulk="${op}" aria-haspopup="menu">${label}${ICONS.chevron}</button>`
+    morph($('.tk-bulk'), `<span class="bulk-count"><b>${list.length}</b> selected</span>` +
+      (ready.length ? `<button class="btn" data-bulk="start" title="Hand each to its owner, in a new conversation">${ICONS.fresh}Start ${ready.length}</button>` : '') +
+      (open.length ? opens('owner', 'Assign') + opens('priority', 'Priority') : '') +
+      (moves.length ? opens('move', 'Move to') : '') +
+      (open.length ? `<button class="btn" data-bulk="close" title="Move ${open.length > 1 ? 'them' : 'it'} to Done">${ICONS.check}Close ${open.length}</button>` : '') +
+      `<button class="btn danger" data-bulk="remove">Delete</button>` +
+      `<button class="icon" data-bulk="unpick" title="Let them go (Esc)" aria-label="Let them go">${ICONS.close}</button>`)
   }
 
   $('.tk-bulk').addEventListener('click', (e) => {
@@ -762,7 +762,7 @@ function mountTasks(root, { onTerminal }) {
     if (op === 'start') return bulk('start', keys(list.filter((t) => t.status === 'new' && t.owner && !ownerOff(t))))
     if (op === 'close') return bulk('close', keys(open))
     if (op === 'remove') return confirm(`Delete ${list.length > 1 ? `these ${list.length} tasks` : `#${list[0].id}`}? ${list.length > 1 ? "They're" : "It's"} gone for good.`) && bulk('remove', keys(list))
-    if (op === 'owner') return menu(b, ownerItems(same((t) => t.owner ?? '') ?? ':mixed'), (v) => bulk('owner', keys(open), v, { keep: true }))
+    if (op === 'owner') return menu(b, ownerItems(same((t) => t.owner ?? '') ?? ':mixed'), (v) => bulk('owner', keys(open), v, { keep: true }), { wide: true })
     if (op === 'priority') return menu(b, priorityItems({ severity: same((t) => t.severity) }), (v) => bulk('priority', keys(open), v, { keep: true }))
     if (op === 'move') {
       const items = STATUS.filter((s) => s.id !== 'fixing' && list.some((t) => t.status !== s.id && (s.id !== 'check' || t.status !== 'done')))
@@ -779,20 +779,22 @@ function mountTasks(root, { onTerminal }) {
     const done = tickets.filter((t) => t.status === 'done')
     const shown = onScreen()
     const flow = `Triage ${state.tasks.triage ? `@${state.tasks.triage}` : 'off'} · Auto-start ${state.tasks.autofix ? 'on' : 'off'}`
-    menu(anchor, [
+    menu(anchor, rules([
       { value: 'flow', label: 'Workflow…', hint: flow, icon: GEAR, attr: 'data-flow' },
-      ...(ready.length > 1 ? [{ value: 'start', label: `Start the ${ready.length} ready`, hint: 'each in a new conversation', icon: `<span class="tk-pop-ico">${ICONS.fresh}</span>` }] : []),
+      '-',
+      ...(ready.length > 1 ? [{ value: 'start', label: `Start the ${ready.length} ready`, hint: 'each in a new conversation', icon: ICONS.fresh }] : []),
       ...(shown.length ? [{ value: 'pick', label: 'Select all shown', hint: keys('⌘A'), icon: PICK_ALL }] : []),
       ...(open.length ? [{ value: 'close', label: filtered ? `Close the ${open.length} open shown` : `Close all ${open.length} open`, hint: 'to Done', icon: STATUS_ICON.done }] : []),
-      ...(done.length ? [{ value: 'clear', label: 'Clear Done', hint: 'deletes them', icon: `<span class="danger-ico">${ICONS.close}</span>` }] : []),
-    ], (v) => {
+      '-',
+      ...(done.length ? [{ value: 'clear', label: 'Clear Done', hint: 'deletes them', icon: ICONS.trash, danger: true }] : []),
+    ]), (v) => {
       if (v === 'flow') workflow(anchor)
       if (v === 'start') bulk('start', ready.map((t) => t.key), null, { keep: true })
       if (v === 'pick') pickAll(shown, false)
       if (v === 'close' && confirm(`Close ${open.length > 1 ? `all ${open.length} open tasks${filtered ? ' shown' : ''}` : `#${open[0].id}`}? ${open.length > 1 ? 'They move' : 'It moves'} to Done.`)) bulk('close', open.map((t) => t.key))
       // every task in Done goes, on every computer with some there (older ones beyond what the board shows too)
       if (v === 'clear' && confirm("Delete every task in Done? They're gone for good.")) bulk('clear', done.map((t) => t.key))
-    })
+    }, { wide: true })
   }
 
   // ---- dragging between lanes (or list groups) -----------------------------------------------------
@@ -853,7 +855,7 @@ function mountTasks(root, { onTerminal }) {
     if (act && t) {
       if (act === 'start') {
         bounce(item.querySelector('.av'), 'pop')
-        return call('dispatch', t.key).then(() => toast(`#${t.id} went to @${t.owner}, in a new conversation`), () => {})
+        return call('dispatch', t.key).then(() => notify(`#${t.id} went to @${t.owner}, in a new conversation`), () => {})
       }
       if (act === 'accept') {
         burst(e.target.closest('[data-act]'))
@@ -923,7 +925,7 @@ function mountTasks(root, { onTerminal }) {
     if (t.status !== 'fixing' || !t.fixer) return ''
     const a = worker(t)
     const s = live(t)
-    return `<div class="tp-live ${s.cls}" style="--c:${agentColor(a)}">
+    return `<div class="tp-live well ${s.cls}" style="--c:${agentColor(a)}">
       <span class="tp-live-av" data-agent="${esc(a.name)}">${avatarHTML(a, { size: 38 })}</span>
       <div class="tp-live-what"><b>${nameHTML(a)}</b><span class="${s.shimmer ? 'shimmer' : ''}">${esc(s.text)}</span></div>
       ${contextRing(a)}
@@ -935,10 +937,10 @@ function mountTasks(root, { onTerminal }) {
     if (!t.fix) return ''
     const a = agent(t.fixer)
     const review = t.status === 'check'
-    return `<div class="tp-review ${review ? 'open' : ''}">
-      <div class="tp-review-head">${a ? avatarHTML(a, { size: 24, mood: 'still' }) : ''}<b>${who(t.fixer)}</b><span>${t.kind === 'bug' ? 'fixed it' : 'did it'}</span>${review ? '<span class="tp-badge">to review</span>' : ''}</div>
+    return `<div class="tp-review well ${review ? 'open' : ''}">
+      <div class="tp-review-head">${a ? avatarHTML(a, { size: 24, mood: 'still' }) : ''}<b>${who(t.fixer)}</b><span>${t.kind === 'bug' ? 'fixed it' : 'did it'}</span>${review ? '<span class="count-badge needs tp-badge">to review</span>' : ''}</div>
       <div class="tp-review-text bubble">${md(t.fix)}</div>
-      ${review ? `<div class="tp-review-acts"><button class="btn" data-tp="sendback" aria-pressed="${sendingBack}">Send back…</button><span class="grow"></span><button class="btn primary good" data-tp="accept">${ICONS.check}Accept</button></div>
+      ${review ? `<div class="tp-review-acts"><button class="btn" data-tp="sendback" aria-pressed="${sendingBack}">Send back…</button><span class="grow"></span><button class="btn brand-btn" data-tp="accept">${ICONS.check}Accept</button></div>
         <div class="tp-sendback ${sendingBack ? 'open' : ''}"><textarea rows="2" data-sendback-note placeholder="What's ${t.kind === 'bug' ? 'still broken' : 'missing'}? It goes back to @${esc(t.fixer)}, in the same conversation."></textarea><button class="btn primary" data-tp="send-back">Send back</button></div>` : ''}
     </div>`
   }
@@ -974,29 +976,30 @@ function mountTasks(root, { onTerminal }) {
     if (panelFor !== t.key) {
       panelFor = t.key
       tp.innerHTML = `
+        <button class="icon sheet-x" data-tp="close" title="Close (Esc)" aria-label="Close">${ICONS.close}</button>
         <header class="tp-head"></header>
         <div class="tp-body">
           <textarea class="tp-title" rows="1" data-field="title" spellcheck="false"></textarea>
           <div class="tp-props"></div>
           <div class="tp-live-slot"></div>
           <div class="tp-review-slot"></div>
-          <section class="tp-sec"><h5>Description <button class="link" data-tp="edit-body">Edit</button></h5>
+          <section class="tp-sec"><h5 class="section-label">Description <button class="link" data-tp="edit-body">Edit</button></h5>
             <div class="tp-desc" data-tp="edit-body"></div>
             <textarea class="tp-details hidden" data-field="body" rows="5" placeholder="What's wanted, how to tell it's done${t.kind === 'bug' ? ', steps to reproduce' : ''}…"></textarea></section>
           <section class="tp-sec tp-orig-slot"></section>
-          <section class="tp-sec"><h5>Attachments <button type="button" class="link" data-shot>+ Add</button></h5><div class="thumbs tp-shots"></div><p class="tp-none" data-no-shots>None. Paste or drop screenshots here.</p></section>
-          <section class="tp-sec"><h5>Activity</h5>
+          <section class="tp-sec"><h5 class="section-label">Attachments <button type="button" class="link" data-shot>+ Add</button></h5><div class="thumbs tp-shots"></div><p class="tp-none" data-no-shots>None. Paste or drop screenshots here.</p></section>
+          <section class="tp-sec"><h5 class="section-label">Activity</h5>
             <div class="tp-note"><textarea rows="1" data-note placeholder="Leave a note for whoever does it…"></textarea><button class="btn" data-tp="note">Add</button></div>
             <ol class="tp-log"></ol></section>
         </div>
-        <footer class="tp-foot"></footer>`
+        <footer class="tp-foot sheet-foot"></footer>`
       shots = mountAttach({
         zone: tp.querySelector('.tp-body'),
         field: tp.querySelector('.tp-details'),
         tray: tp.querySelector('.tp-shots'),
         button: tp.querySelector('[data-shot]'),
         onChange: (images) => call('edit', t.key, { images }).catch(() => {}),
-        onError: (msg) => toast(msg, true),
+        onError: (msg) => notify(msg, { warn: true }),
       })
       shots.set(t.images, false)
       tp.dataset.images = JSON.stringify(t.images)
@@ -1007,7 +1010,7 @@ function mountTasks(root, { onTerminal }) {
         tp.querySelector('.tp-body').scrollTop = 0
       })
     }
-    morph(tp.querySelector('.tp-head'), `${KIND_ICON[t.kind]}<span class="tk-id">#${t.id}</span><span class="tp-status st-${t.status}">${STATUS_ICON[t.status]}${STATUS_LABEL[t.status]}</span>${t.dupOf ? `<span class="tp-status">same as #${t.dupOf}</span>` : ''}<span class="grow"></span><button class="icon" data-tp="close" title="Close (Esc)">${ICONS.close}</button>`)
+    morph(tp.querySelector('.tp-head'), `${KIND_ICON[t.kind]}<span class="tk-id">#${t.id}</span><span class="tp-status st-${t.status}">${STATUS_ICON[t.status]}${STATUS_LABEL[t.status]}</span>${t.dupOf ? `<span class="tp-status">same as #${t.dupOf}</span>` : ''}`)
     morph(tp.querySelector('.tp-props'), propsHTML(t))
     morph(tp.querySelector('.tp-live-slot'), liveHTML(t))
     const reviewSlot = tp.querySelector('.tp-review-slot')
@@ -1019,7 +1022,7 @@ function mountTasks(root, { onTerminal }) {
     tp.querySelector('.tp-desc').classList.toggle('hidden', editingBody)
     tp.querySelector('.tp-details').classList.toggle('hidden', !editingBody)
     const reworded = t.report && t.report !== t.body && t.report !== t.title
-    morph(tp.querySelector('.tp-orig-slot'), reworded ? `<h5>As you wrote it</h5><blockquote class="tp-orig">${esc(t.report)}</blockquote>` : '')
+    morph(tp.querySelector('.tp-orig-slot'), reworded ? `<h5 class="section-label">As you wrote it</h5><blockquote class="tp-orig">${esc(t.report)}</blockquote>` : '')
     tp.querySelector('.tp-orig-slot').classList.toggle('hidden', !reworded)
     tp.querySelector('[data-no-shots]').classList.toggle('hidden', t.images.length > 0)
     morph(tp.querySelector('.tp-log'), logHTML(t))
@@ -1083,7 +1086,7 @@ function mountTasks(root, { onTerminal }) {
       box.value = ''
       return fit(box)
     }
-    if (op === 'start') return call('dispatch', t.key).then(() => toast(`#${t.id} went to @${t.owner}, in a new conversation`), () => {})
+    if (op === 'start') return call('dispatch', t.key).then(() => notify(`#${t.id} went to @${t.owner}, in a new conversation`), () => {})
     if (op === 'terminal') return onTerminal(worker(t)?.name ?? t.fixer)
     if (op === 'mark-done') return call('move', t.key, 'check').catch(() => {})
     if (op === 'accept') {
@@ -1101,21 +1104,22 @@ function mountTasks(root, { onTerminal }) {
       const box = tp.querySelector('[data-sendback-note]')
       await call('sendBack', t.key, box.value.trim()).catch(() => {})
       sendingBack = false
-      toast(t.fixer ? `Sent #${t.id} back to @${t.fixer}` : `#${t.id} is open again`)
+      notify(t.fixer ? `Sent #${t.id} back to @${t.fixer}` : `#${t.id} is open again`)
       return drawPanel()
     }
     if (op === 'reopen') return call('move', t.key, 'new').catch(() => {})
     if (op === 'more') {
       const dups = tickets.filter((x) => x.status !== 'done' && x.key !== t.key && x.home === t.home)
-      return menu(e.target.closest('[data-tp]'), [
+      return menu(e.target.closest('[data-tp]'), rules([
         ...(dups.length ? [{ value: 'dup', label: 'Same as another task…', icon: icon('<rect x="2" y="4.5" width="8" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 4.5V3.6A1.6 1.6 0 0 1 7.6 2H12.4A1.6 1.6 0 0 1 14 3.6v6.8A1.6 1.6 0 0 1 12.4 12H10" fill="none" stroke="currentColor" stroke-width="1.5"/>') }] : []),
-        { value: 'remove', label: 'Delete', icon: `<span class="danger-ico">${ICONS.close}</span>` },
-      ], (v) => {
+        '-',
+        { value: 'remove', label: 'Delete', icon: ICONS.trash, danger: true },
+      ]), (v) => {
         if (v === 'remove' && confirm(`Delete #${t.id}? It's gone for good.`)) call('remove', t.key).then(close, () => {})
         if (v === 'dup') {
           setTimeout(() => menu(tp.querySelector('[data-tp=more]'), dups.map((x) => ({ value: x.id, label: `#${x.id} ${x.title}`, icon: KIND_ICON[x.kind] })), (id) => {
             if (confirm(`Close #${t.id} as the same as #${id}? It counts as another report there.`)) call('dup', t.key, id).then(close, () => {})
-          }))
+          }, { wide: true }))
         }
       })
     }
@@ -1141,7 +1145,6 @@ function mountTasks(root, { onTerminal }) {
   })
 
   syncAdd()
-  drawSearch()
   // While another view is up, the board isn't redrawn on every push: it catches up just before it's shown again,
   // without the slide-ins it would have played out of sight.
   let shown = true
@@ -1155,10 +1158,13 @@ function mountTasks(root, { onTerminal }) {
         draw()
         if (selected) drawPanel()
         syncAdd()
+        if (filter.q) search.setCount(Object.values(grouped()).flat().length) // a push can add or take away matches
       } else stale = true
     },
     setVisible(on) {
       shown = on
+      floats.classList.toggle('hidden', !on) // its popovers go with it (they're on the page's top layer)
+      if (!on) (closeFilters(), closePop()) // and its menus close, so nothing open is left behind for Esc to find
       if (!on || !stale || !state) return
       stale = false
       first = true
@@ -1168,6 +1174,7 @@ function mountTasks(root, { onTerminal }) {
     },
     open: (key) => (state ? open(String(key)) : setTimeout(() => open(String(key)), 300)),
     focus: () => openComposer('new'),
+    search: () => search.open(),
     close: () => selected && close(),
     // the titlebar tab's count: tasks waiting on your review first
     badge: (next) => {

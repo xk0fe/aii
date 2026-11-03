@@ -38,7 +38,7 @@ function page({ layers = null } = {}) {
   // a click on one of its buttons, as the page's own handler sees it
   const press = (el, dataset) => el.on.click({ target: { closest: () => ({ dataset }) } })
   const buttons = () => [...view.html.matchAll(/data-act="(\w+)"[^>]*>([^<]*)</g)].map((m) => m[2])
-  const title = () => view.html.match(/su-title">([^<]*)</)?.[1]
+  const title = () => view.html.match(/<h1 class="display">([^<]*)</)?.[1]
   return { screen, view, sheet, escape, press, buttons, title, calls }
 }
 
