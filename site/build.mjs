@@ -197,6 +197,18 @@ const fill = (tpl, vars) => tpl.replace(/\{\{(\w+)\}\}/g, (m, k) => {
 })
 const contact = hasEmail ? `<a href="mailto:${esc(CONTACT_EMAIL)}">${esc(CONTACT_EMAIL)}</a>` : '<span class="placeholder">CONTACT_EMAIL</span>'
 
+// A small Markdown reader for privacy.md: headings, paragraphs, lists, **bold** and `code`.
+function markdown(md) {
+  const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`(.+?)`/g, '<code>$1</code>').replace(/CONTACT_EMAIL/g, contact)
+  const blocks = md.trim().split(/\n{2,}/)
+  return blocks.map((b) => {
+    if (b.startsWith('# ')) return `<h1>${inline(b.slice(2))}</h1>`
+    if (b.startsWith('## ')) return `<h2>${inline(b.slice(3))}</h2>`
+    if (b.startsWith('- ')) return `<ul>${b.split(/\n(?=- )/).map((li) => `<li>${inline(li.slice(2).replace(/\n/g, ' '))}</li>`).join('')}</ul>`
+    return `<p>${inline(b.replace(/\n/g, ' '))}</p>`
+  }).join('\n')
+}
+
 const DESCRIPTION = `Run Claude Code and Codex agents side by side on your Mac or PC. They split the work, ask when they need you, and you answer from your phone.`
 const vars = {
   product: esc(PRODUCT),
@@ -221,6 +233,7 @@ if (DOMAIN) fs.writeFileSync(path.join(out, 'CNAME'), DOMAIN + '\n')
 
 page({ file: 'index.html', title: `${PRODUCT}: your AI agents, working as a crew`, description: DESCRIPTION, creatures: true, main: fill(read('src/index.html'), vars) })
 page({ file: 'support.html', title: `Support · ${PRODUCT}`, description: `How to get help with ${PRODUCT}.`, main: fill(read('src/support.html'), vars) })
+page({ file: 'privacy.html', title: `Privacy · ${PRODUCT}`, description: `What ${PRODUCT} does with your data: it collects nothing, and your work stays on your own devices.`, main: `<article class="prose">${markdown(read('privacy.md').replace(/\bCrew\b/g, PRODUCT))}</article>` })
 page({ file: '404.html', title: `Not found · ${PRODUCT}`, description: DESCRIPTION, creatures: ['noor'], main: fill(read('src/404.html'), vars) })
 // --og: also the link-preview card (tools/icons.mjs takes its picture as og.png). Not part of the site.
 if (args.includes('--og')) {
