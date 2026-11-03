@@ -1741,6 +1741,8 @@ export class Hub extends EventEmitter {
     if (away.length && !names.length) return this.relay(from, away, text, images, extra)
     const targets = names.length ? this.recipients(names, from) : [this.route(text, from)]
     if (!targets[0]) throw new Error('no agents to send to')
+    // nobody named: the crew picked who takes it, and the chat says so rather than that you chose them
+    const routed = !names.length && { auto: true }
     // Work can't go back to a teammate that's waiting on your answer: your final message goes back to it by itself.
     for (const t of this.agents.has(from) ? targets : []) {
       const answering = this.agents.get(from).serving ?? []
@@ -1766,7 +1768,7 @@ export class Hub extends EventEmitter {
     const said = quoted ? { from: quoted.from, text: quoted.ticket !== undefined ? `#${quoted.ticket} ${quoted.title ?? ''}` : quoted.text } : quote
     const msgs = targets.map((a) => {
       const replying = said && this.replyTag(a, said, quoted)
-      return this.post({ kind: 'msg', from, to: a.name, text, ...group, ...extra, ...(images.length && { images }), ...(re && { re }), ...(replying && { replying }), queued: !held, held })
+      return this.post({ kind: 'msg', from, to: a.name, text, ...group, ...routed, ...extra, ...(images.length && { images }), ...(re && { re }), ...(replying && { replying }), queued: !held, held })
     })
     if (held) return `waiting for the user to approve this hand-off to ${targets.map((a) => `@${a.name}`).join(' ')}\n`
     const here = targets.map((a, i) => this.enqueue(a, msgs[i])).join('')

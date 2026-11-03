@@ -1182,7 +1182,7 @@ function feedItem(e, prev, ctx) {
   }
   const name = (n) => (n === 'you' ? 'You' : `<span class="who${here(n)}" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">${label(n)}</span>`)
   const time = new Date(e.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  const repeat = prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && e.ts - prev.ts < 120000 && !e.re
+  const repeat = prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && !prev.auto === !e.auto && e.ts - prev.ts < 120000 && !e.re
   const tags = (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
   const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
@@ -1214,7 +1214,9 @@ function feedItem(e, prev, ctx) {
   const said = (cls, capHTML, rest = '', body = bubble, withTools = true) =>
     `<div class="item said ${cls}${cont}${fresh ? ' unread' : ''}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"${seen}><span class="face${here(e.from)}" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: ctx.face, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div>${withTools ? tools : ''}</div>`
 
-  const toWhom = (names) => (ctx.here && names.every((n) => familyOf(n) === familyOf(ctx.here)) ? '' : `<span class="to">to ${names.map(who).join(' ')}</span>`)
+  // sent to the crew with nobody named: Auto chose who took it, not you
+  const toLine = (names) => `${e.auto ? 'Auto picked' : 'to'} ${names.map(who).join(' ')}`
+  const toWhom = (names) => (ctx.here && names.every((n) => familyOf(n) === familyOf(ctx.here)) ? '' : `<span class="to">${toLine(names)}</span>`)
   const mine = (cls, body) => `<div class="item said mine ${cls}${cont}" id="m-${e.id}" title="${time}"><span class="face">${cont ? '' : YOU_FACE}</span><div class="stack">${cap(`<span class="you">You</span>${toWhom(e.cc ?? [e.to])}`)}${body}${replied}</div>${withTools(cls)}</div>`
   const withTools = (cls) => (cls.includes('ticket') ? '' : tools)
 
@@ -1244,7 +1246,7 @@ function feedItem(e, prev, ctx) {
     return said(`ask ${e.answer ? 'answered' : 'open'}`, `${name(e.from)} <span>${verb}</span>`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`, false)
   }
   if (e.from === 'you' && ctx.rows) return mine('', bubble)
-  if (e.from === 'you') return `<div class="item me${cont}" id="m-${e.id}" title="${time}">${cap(`to ${(e.cc ?? [e.to]).map(who).join(' ')}`)}${bubble}${replied}${tools}</div>`
+  if (e.from === 'you') return `<div class="item me${cont}" id="m-${e.id}" title="${time}">${cap(toLine(e.cc ?? [e.to]))}${bubble}${replied}${tools}</div>`
   const actions = e.held
     ? `<div class="actions"><button class="btn primary" data-act="approve" data-id="${e.id}">Send it</button><button class="btn" data-act="drop" data-id="${e.id}">Drop</button></div>`
     : ''

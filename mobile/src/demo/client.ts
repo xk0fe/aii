@@ -134,7 +134,7 @@ export class DemoClient implements CrewLink {
     const pick = names.length ? names : [(agents.find((a) => a.on && a.status === 'idle') ?? agents.find((a) => a.on))?.name].filter(Boolean) as string[]
     if (!pick.length) throw new Error('no agents to send to')
     const group = pick.length > 1 ? { cc: pick, sendId: `s${Date.now()}` } : {}
-    const sent = pick.map((n) => this.post(id, { kind: 'msg', from: 'you', to: n, text, ...group, ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }) }))
+    const sent = pick.map((n) => this.post(id, { kind: 'msg', from: 'you', to: n, text, ...group, ...(!names.length && { auto: true }), ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }) }))
     this.emit()
     pick.forEach((n, i) => {
       const was = agents.find((a) => a.name === n)

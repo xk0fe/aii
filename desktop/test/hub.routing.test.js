@@ -65,6 +65,16 @@ test('`to` picks the agent, as the CLI and composer chip do', () => {
   assert.deepEqual(queued(), { ada: 1 })
 })
 
+test('naming nobody lets Auto pick, and the message says Auto picked, not you', () => {
+  hub.send({ text: 'ui/ux designer needed for the login screen' })
+  const [m] = sent()
+  assert.equal(m.to, 'iris')
+  assert.equal(m.auto, true)
+  hub.send({ to: 'iris', text: 'and the colours' })
+  hub.send({ text: '@iris and the spacing' })
+  assert.deepEqual(sent().slice(1).map((x) => x.auto), [undefined, undefined])
+})
+
 test('an idle agent gets the message typed in straight away, tagged with the sender and whose it is now', () => {
   const ada = hub.agents.get('ada')
   ada.status = 'idle'

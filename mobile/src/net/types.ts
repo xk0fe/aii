@@ -72,6 +72,7 @@ export type FeedEntry = {
   from: string
   to?: string
   cc?: string[]
+  auto?: boolean // you named nobody: Auto picked `to`
   text?: string
   re?: string
   also?: string[]
