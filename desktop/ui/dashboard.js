@@ -673,22 +673,29 @@ function drawSaverModes() {
     .map(([mode, m]) => `<div class="sv-mode" title="${esc(mode)}"><span>${esc(MODE_NAMES(mode, all))}</span><b>${m.cost >= 0.005 ? money(m.cost / m.turns) : tok(m.tokens / m.turns)}</b><small>${plural(m.turns, 'turn')}${m.tools ? ` · ${(m.tools / m.turns).toFixed(1)} tool calls each` : ''}</small></div>`)
     .join('')}</div><p class="sv-note">${esc(SPEND_NOTE)} Different weeks bring different work, so compare over a while.</p>`
 }
-function drawSavers() {
+// Drawn again only when what it shows changed (counts move with every turn while agents work), and patched in place,
+// so a switch keeps its focus and a click isn't lost to a row being replaced under it.
+let saversKey = ''
+function drawSavers(force = false) {
   if (!state.savers) return
+  const key = JSON.stringify(state.savers)
+  if (!force && key === saversKey) return
+  saversKey = key
   const { list, on, forced } = state.savers
-  saversDialog.querySelector('.sv-list').innerHTML = list.map((s) => `
+  morph(saversDialog.querySelector('.sv-list'), list.map((s) => `
     <label class="sv" data-saver="${esc(s.id)}">
       <b>${esc(s.label)}</b>
       <span class="sv-about">${esc(s.about)}</span>
       ${saverCount(s.id)}
       <input type="checkbox" class="switch" data-sv="${esc(s.id)}" ${on[s.id] ? 'checked' : ''} ${forced ? 'disabled' : ''} aria-label="${esc(s.label)}">
-    </label>`).join('')
-  saversDialog.querySelector('.sv-modes').innerHTML = drawSaverModes()
+    </label>`).join(''))
+  morph(saversDialog.querySelector('.sv-modes'), drawSaverModes())
+  for (const sw of saversDialog.querySelectorAll('[data-sv]')) sw.checked = Boolean(on[sw.dataset.sv]) // a property morph leaves be
   saversDialog.querySelector('.sv-forced').textContent = forced ? 'CREW_SAVERS is set, so it decides which are on.' : ''
 }
 function openSavers() {
   saversDialog.querySelector('[data-sv-err]').textContent = ''
-  drawSavers()
+  drawSavers(true)
   saversDialog.showModal()
 }
 saversDialog.addEventListener('change', (e) => {

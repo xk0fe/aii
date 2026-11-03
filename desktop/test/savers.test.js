@@ -102,32 +102,35 @@ test("spend is filed under the savers that were on, so cost per turn compares wi
 test('coldStart: a message to a big conversation gone cold starts a new one, with a note of where it stood', () => {
   on('coldStart')
   conversation('june', 230000, 2 * HOUR)
-  hub.send({ to: 'june', text: 'add rate limiting to the api' })
+  hub.send({ from: 'abe', to: 'june', text: 'add rate limiting to the api' })
   assert.match(events('june').at(-1), /^started a new conversation: the last one had sat idle 2 hours, and picking it back up would have re-read its 230k tokens/)
   assert.equal(hub.sessions.june, undefined) // a new session, not --resume
   assert.equal(runner.starts.filter((n) => n === 'june').length, 1)
   assert.deepEqual(typedTo('june'), []) // nothing typed into the old one
   up('june')
   const [text] = typedTo('june')
-  assert.match(text, /^\[crew\] This is a new conversation\. Your last one sat idle 2 hours, so CLIque started fresh rather than have you re-read all of it\. The last thing you said in it: "Should I migrate the tests too\?"\n\nadd rate limiting to the api$/)
+  assert.match(text, /^\[crew\] This is a new conversation\. Your last one sat idle 2 hours, so CLIque started fresh rather than have you re-read all of it\. The last thing you said in it: "Should I migrate the tests too\?"\n\n\[from @abe: it's yours now, no need to report back\] add rate limiting to the api$/)
   assert.deepEqual(ledger('coldStart').on, { n: 1, tokens: 460000 }) // a 1-hour cache write costs 2x
 })
 
 test('coldStart off: the message picks the cold conversation up as before, and the ledger counts what that re-read', () => {
   on('off')
   conversation('june', 230000, 2 * HOUR)
-  hub.send({ to: 'june', text: 'add rate limiting to the api' })
-  assert.deepEqual(typedTo('june'), ['add rate limiting to the api'])
+  hub.send({ from: 'abe', to: 'june', text: 'add rate limiting to the api' })
+  assert.deepEqual(typedTo('june'), ["[from @abe: it's yours now, no need to report back] add rate limiting to the api"])
   hub.pump(hub.agents.get('june')) // looked at again: counted once
   assert.deepEqual(ledger('coldStart').off, { n: 1, tokens: 460000 })
   assert.equal(runner.starts.length, 0)
 })
 
-test('coldStart leaves a conversation alone when the message follows on from it, or picking it up costs less', () => {
+test('coldStart leaves a conversation alone when what comes in follows on from it, or picking it up costs less', () => {
   on('coldStart')
-  // a reply to what it said in that conversation
+  // you, in its chat or by name: you meant that conversation ("yes" after its question)
   conversation('june', 230000, 2 * HOUR)
-  hub.send({ to: 'june', text: 'yes, migrate them', re: 'r-june' })
+  hub.send({ to: 'june', text: 'yes' })
+  // a reply to what it said in that conversation
+  conversation('kit', 230000, 2 * HOUR)
+  hub.send({ from: 'abe', to: 'kit', text: 'yes, migrate them', re: 'r-kit' })
   // the task it was on, sent back
   conversation('iris', 230000, 2 * HOUR, { ticket: 4 })
   hub.send({ to: 'iris', text: 'still broken', ticket: 4, title: 'x' })
@@ -135,16 +138,38 @@ test('coldStart leaves a conversation alone when the message follows on from it,
   conversation('abe', 230000, 2 * HOUR)
   hub.send({ from: 'iris', to: 'abe', text: 'which port?', ask: true })
   assert.equal(runner.starts.length, 0)
-  assert.equal(typedTo('june').length + typedTo('iris').length + typedTo('abe').length, 3)
+  assert.equal(typedTo('june').length + typedTo('kit').length + typedTo('iris').length + typedTo('abe').length, 4)
+  // moved here with its conversation, and not told yet
+  setup()
+  on('coldStart')
+  conversation('june', 230000, 2 * HOUR)
+  hub.convos.june.note = '[crew] You were moved to this computer.'
+  hub.send({ from: 'abe', to: 'june', text: 'one' })
+  // a follow-up that goes in with a new hand-off, in the same turn
+  conversation('kit', 230000, 2 * HOUR)
+  hub.agents.get('kit').status = 'working'
+  hub.send({ from: 'abe', to: 'kit', text: 'a new thing' })
+  hub.send({ from: 'abe', to: 'kit', text: 'and yes, migrate them', re: 'r-kit' })
+  Object.assign(hub.agents.get('kit'), { status: 'idle' })
+  hub.pump(hub.agents.get('kit'))
+  assert.equal(runner.starts.length, 0)
+  assert.match(typedTo('kit')[0], /^\[2 hand-offs came in while you were busy/)
   // under an hour, or small enough that a rewrite costs less than a new conversation (120k / 2x = 60k)
   setup()
   on('coldStart')
   conversation('june', 230000, 50 * 60000)
   conversation('iris', 55000, 3 * HOUR)
-  hub.send({ to: 'june', text: 'one' })
-  hub.send({ to: 'iris', text: 'two' })
+  hub.send({ from: 'abe', to: 'june', text: 'one' })
+  hub.send({ from: 'abe', to: 'iris', text: 'two' })
   assert.equal(runner.starts.length, 0)
   assert.deepEqual(ledger('coldStart'), {})
+})
+
+test("coldStart: what Auto picks for you isn't a follow-up", () => {
+  on('coldStart')
+  conversation('iris', 230000, 2 * HOUR)
+  hub.send({ text: 'the ui screens look off on small phones' })
+  assert.deepEqual(runner.starts, ['iris'])
 })
 
 test('coldStart measures by what a cache write costs: 5-minute caches (an API key) at 1.25x, Codex at 1x', () => {
@@ -154,16 +179,16 @@ test('coldStart measures by what a cache write costs: 5-minute caches (an API ke
   fs.writeFileSync(transcript, `${JSON.stringify({ message: { usage: { cache_creation: { ephemeral_5m_input_tokens: 900, ephemeral_1h_input_tokens: 0 } } } })}\n`)
   hub.agents.get('june').transcript = { id: 'june-session', path: transcript }
   conversation('june', 90000, 2 * HOUR)
-  hub.send({ to: 'june', text: 'one' })
+  hub.send({ from: 'abe', to: 'june', text: 'one' })
   assert.equal(runner.starts.length, 0)
   Object.assign(hub.agents.get('june'), { status: 'idle', expect: null }) // done with it
   conversation('june', 100000, 2 * HOUR)
-  hub.send({ to: 'june', text: 'two' })
+  hub.send({ from: 'abe', to: 'june', text: 'two' })
   assert.deepEqual(runner.starts, ['june'])
   assert.deepEqual(ledger('coldStart').on, { n: 1, tokens: 125000 })
   // Codex: no write premium, so only past 120k
   conversation('kit', 110000, 2 * HOUR)
-  hub.send({ to: 'kit', text: 'three' })
+  hub.send({ from: 'abe', to: 'kit', text: 'three' })
   assert.deepEqual(runner.starts, ['june'])
 })
 
@@ -191,7 +216,11 @@ test("boardNew: an agent's first look shows the newest 20, then only what's new 
   assert.match(hub.board('june', ['nothing-like-it']), /^\(no note mentions "nothing-like-it"\)/)
   assert.equal(hub.board('june', ['--all']).split('\n').filter(Boolean).length, 26)
   assert.equal(hub.board('you').split('\n').filter(Boolean).length, 26)
-  assert.equal(ledger('boardNew').on.n, 5)
+  // compacted: what it had read is summarized away, so the newest come again
+  hub.board('june')
+  hub.onHook('june', { hook_event_name: 'SessionStart', source: 'compact' })
+  assert.match(hub.board('june'), /\(the last 20 notes; 6 older/)
+  assert.equal(ledger('boardNew').on.n, 7)
   assert.ok(ledger('boardNew').on.tokens > 0)
 })
 
@@ -259,13 +288,24 @@ test('busyCheck: what an agent checks before it builds is decided at launch, and
   assert.equal(hub.checksFor(hub.agents.get('june')), 'busy')
 })
 
-test('busyCheck: a teammate joining a lone agent changes its check, so it starts again once it is free', () => {
+test('busyCheck: switching it starts running agents again once they are free; a teammate joining does not', () => {
   on('busyCheck')
   setup([{ name: 'june' }])
+  hub.launch(hub.agents.get('june')) // launched alone: no check
+  assert.equal(hub.agents.get('june').checks, 'none')
   hub.agents.get('june').status = 'idle'
+  runner.starts = []
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'june' }, { name: 'iris' }] }))
   hub.loadConfig()
+  assert.ok(!runner.starts.includes('june')) // its next launch has the check
+  on('off')
+  hub.agents.get('june').status = 'working'
+  hub.loadConfig()
+  assert.equal(hub.agents.get('june').relaunch, true) // busy: once it's free
+  hub.agents.get('june').status = 'idle'
+  hub.loadConfig()
   assert.ok(runner.starts.includes('june'))
+  assert.equal(hub.agents.get('june').checks, 'full')
 })
 
 // ---- 4. quickTriage ----
@@ -297,7 +337,8 @@ test("quickTriage: one short call triages the task, and the triage agent's conve
   // what the call was given: the report, the open tasks, and who can own it
   assert.match(calls[0].prompt, /login gives a 500 since the deploy, see api\/auth\.js[\s\S]*Open tasks:\n\(none\)[\s\S]*june {2}idle {2}backend api, servers/)
   assert.deepEqual(ledger('quickTriage').on, { n: 1, cost: 0.0021, tokens: 3100 })
-  assert.equal(hub.stats.abe.cost, 0.0021) // its cost is the triage agent's
+  assert.equal(hub.stats.abe.cost, 0.0021) // its cost is the triage agent's, and the task's
+  assert.equal(t.spent.cost, 0.0021)
 })
 
 test('quickTriage: the same as an open task is closed as its duplicate', async () => {
@@ -324,6 +365,25 @@ test("quickTriage: when the call fails or its answer doesn't hold, the triage ag
   take('abe')
   hub.addSpend(hub.agents.get('abe'), { cost: 0.04 })
   assert.equal(ledger('quickTriage').on.cost, 0.04)
+})
+
+test('quickTriage: a task with a screenshot goes to the triage agent, and one nobody can triage goes by area', async () => {
+  on('quickTriage')
+  const calls = triageWith('{"dup": 1}')
+  hub.fileTask({ kind: 'bug', text: 'look at this', images: [path.join(process.env.CREW_HOME, 'attachments', 'x.png')] })
+  await settle()
+  assert.equal(calls.length, 0)
+  assert.match(typedTo('abe').at(-1), /^\[bug #1 to triage\]/)
+  assert.deepEqual(ledger('quickTriage').on, { n: 1, images: 1 })
+  // the call fails, and by then the triage agent is off: the owner by area takes it
+  setup()
+  on('quickTriage')
+  triageWith(new Error('rate limited'))
+  hub.fileTask({ kind: 'bug', text: 'the backend api returns 500' })
+  hub.agents.get('abe').off = true
+  await settle()
+  assert.equal(hub.tickets.get(1).owner, 'june')
+  assert.match(events('crew').at(-1), /^couldn't triage #1, so it goes to @june, whose area it is/)
 })
 
 test("quickTriage off: the triage agent's turn, as before, and what it cost goes in the ledger", async () => {
@@ -389,7 +449,15 @@ test("noReportBack: an agent can't report back to the teammate whose hand-off it
   assert.match(hub.send({ from: 'june', to: 'iris', text: 'now the screen can call it: wire up the button', newWork: true }), /@iris/)
   assert.match(hub.send({ from: 'june', to: 'iris', text: 'which error copy do you want?', ask: true }), /^asked @iris/)
   assert.match(hub.send({ from: 'june', to: 'abe', text: 'deploy it when you can' }), /@abe/)
+  // naming the teammate in the text isn't sending it a report
+  assert.match(hub.send({ from: 'june', to: 'abe', text: 'deploy it so @iris can try it' }), /@abe/)
   assert.equal(ledger('noReportBack').on.n, 2)
+  // a hand-off that asked something (the old way, by crew send) gets its answer back
+  setup()
+  on('noReportBack')
+  hub.send({ from: 'iris', to: 'june', text: 'what does the login endpoint return?' })
+  take('june')
+  assert.match(hub.send({ from: 'june', to: 'iris', text: 'a token and the user' }), /@iris/)
 })
 
 test('noReportBack off: the report goes, and the ledger counts it', () => {

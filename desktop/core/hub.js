@@ -39,7 +39,7 @@ const RUNTIME = 'runtime.json'
 // How far back the first look through the agents' logs goes for what their work cost (Hub.lookBack, core/backfill.js).
 const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
-  'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'retrying', 'apiRetries', 'cloneOf', 'clone']
+  'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 // config.json, for every workspace's hub to share.
@@ -297,6 +297,10 @@ export class Hub extends EventEmitter {
       if (this.runner.running(n) && this.launchKey(a) !== key) this.relaunchWhenFree(a)
       if (a.contextLimit !== limit || a.onContextLimit !== onLimit) this.checkLimit(a)
     }
+    // busyCheck switched on or off: what a running agent checks before building is in its system prompt, so it starts
+    // again with the new one once it's free. A teammate coming or going doesn't count (a lone agent's 'none' and 'busy'):
+    // that would rewrite its whole cache for one line, so it waits for its next launch.
+    for (const a of this.agents.values()) if (a.checks && this.runner.running(a.name) && (a.checks === 'full') !== (this.checksFor(a) === 'full')) this.relaunchWhenFree(a)
     // parked or opened in config.json, from the app or by hand
     if (this.url && this.space.parked !== this.parked) this.space.parked ? this.park() : this.unpark()
     this.changed()
@@ -456,7 +460,7 @@ export class Hub extends EventEmitter {
   }
 
   launchKey(a) {
-    return a && JSON.stringify([this.providerOf(a)?.id, a.model, a.effort, a.tier, a.cwd, a.args, a.yolo, a.area, a.prompt, a.images, this.checksFor(a)])
+    return a && JSON.stringify([this.providerOf(a)?.id, a.model, a.effort, a.tier, a.cwd, a.args, a.yolo, a.area, a.prompt, a.images])
   }
 
   relaunchWhenFree(a) {
@@ -555,7 +559,8 @@ export class Hub extends EventEmitter {
     if (provider.missing.length) return fail(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const resume = this.sessions[a.name]
     const session = randomUUID()
-    const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session, attachments: ATTACHMENTS, bin: this.bin, checks: this.checksFor(a) })
+    a.checks = this.checksFor(a) // what it checks before building, as its system prompt says (see apply)
+    const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session, attachments: ATTACHMENTS, bin: this.bin, checks: a.checks })
     a.sessionId = resume ?? session // the conversation this process runs (see onStatusLine)
     Object.assign(a, { readyAfter, trust, trustAsk: false, boot: '' }) // see onOutput
     a.resumed = Boolean(resume)
@@ -848,14 +853,14 @@ export class Hub extends EventEmitter {
     return { used, warm, wake: Math.round(used * (warm ? 0.1 : writePrice({ cli: this.providerOf(a)?.cli, ttl }))) }
   }
 
-  // coldStart: a message that would wake a conversation whose cache has gone cold. { used, idle, recache } when picking
-  // it back up (rewriting all of its cache) costs more than starting fresh (RESTART), after an hour or more away; null
-  // otherwise. Never for a message that follows on from that conversation: an answer to its question, a teammate's
-  // question, the task it was on sent back, a reply to something it said in it. Nor for Crew's own prompts, a clone (it
-  // goes away when it's done), or an agent with something still running in the background or a question out.
-  coldFor(a, m) {
-    if (a.cloneOf || !this.sessions[a.name] || m.crew || m.fresh || m.answers || m.ask || a.background || a.freshPending) return null
+  // coldStart: the messages that would wake a conversation whose cache has gone cold (what goes in next: peek). { used,
+  // idle, recache } when picking it back up (rewriting all of its cache) costs more than starting fresh (RESTART), after
+  // an hour or more away; null otherwise. Never when one of them follows on from that conversation (followsOn), nor for
+  // a clone (it goes away when it's done), one that moved here with its conversation and hasn't been told yet, or an
+  // agent with something still running in the background or a question out.
+  coldFor(a, msgs) {
     const c = this.convos[a.name]
+    if (a.cloneOf || !this.sessions[a.name] || a.background || a.freshPending || c?.note || msgs.some((m) => this.followsOn(a, m))) return null
     const used = c?.context?.used
     const last = c?.lastAt ?? mtimeOf(a.transcript?.path)
     if (!(used > 0) || !last) return null
@@ -863,11 +868,19 @@ export class Hub extends EventEmitter {
     const idle = Date.now() - last
     const recache = Math.round(used * writePrice({ cli: this.providerOf(a)?.cli, ttl }))
     if (idle < Math.max(ttl, HOUR) || recache < RESTART) return null
-    if (m.ticket !== undefined && m.ticket === c.ticket) return null
-    const re = m.re && this.feed.findLast((e) => e.id === m.re)
-    if (re && re.ts >= (c.since ?? 0) && (re.from === a.name || re.to === a.name)) return null
     if ([...this.calls.values()].some((call) => call.from === a.name)) return null
     return { used, idle, recache }
+  }
+
+  // A message that belongs in the conversation it finds: one you sent this agent yourself (in its chat, or by name: Auto's
+  // picks don't count), an answer to its question, a teammate's question, Crew's own prompt, the task it was on sent
+  // back, or a reply to something it said there. Those never start a new conversation.
+  followsOn(a, m) {
+    const c = this.convos[a.name]
+    if (m.crew || m.fresh || m.answers || m.ask || (m.from === 'you' && !m.auto)) return true
+    if (m.ticket !== undefined && m.ticket === c?.ticket) return true
+    const re = m.re && this.feed.findLast((e) => e.id === m.re)
+    return Boolean(re && re.ts >= (c?.since ?? 0) && (re.from === a.name || re.to === a.name))
   }
 
   // A new conversation instead of a cold one, and on top of the message, a note of where the last one stood, from what
@@ -916,19 +929,48 @@ export class Hub extends EventEmitter {
     let r = null
     try {
       r = await this.oneShot(this.providerOf(a), { prompt: quickTriagePrompt(t, this.tickets.open().filter((x) => x.id !== t.id), this.teammates()) })
-      if (r.cost || r.tokens) this.addSpend(a, { cost: r.cost, ...(this.providerOf(a)?.cli === 'codex' && { tokens: r.tokens }) })
+      this.quickSpend(a, t, r)
       if (t.triaged || t.status !== 'new') return // you got to it first
       const d = readTriage(r.text)
       if (!d) throw new Error("its answer wasn't a triage")
       if (d.dup) this.taskCommand(name, ['dup', String(t.id), String(d.dup)])
       else this.taskCommand(name, ['triage', String(t.id), ...(d.owner ? ['--owner', d.owner] : []), '--priority', d.priority, '--kind', d.kind, '--title', d.title, '--details', d.details])
       this.ledger.add('quickTriage', true, { n: 1, cost: r.cost, tokens: r.tokens })
-    } catch (e) {
+    } catch {
       this.ledger.add('quickTriage', true, { n: 1, failed: 1, cost: r?.cost, tokens: r?.tokens })
-      if (t.triaged || t.status !== 'new' || !this.triager()) return
-      this.fellBack.add(t.id) // its turn is the saver's to count
-      this.send({ from: 'you', to: name, text: triagePrompt(t, t.id), images: t.images, mentions: false, ticket: t.id, title: t.title, type: t.kind, triage: true })
+      if (!t.triaged && t.status === 'new') this.triageByAgent(t, true)
     }
+  }
+
+  // The triage agent triages it in its own conversation, as without quick triage (fellBack: the saver handed it over, so
+  // the turn's cost is the saver's to count). If that can't be (it's off, gone or moving), the agent whose area it is
+  // gets it, as with no triage agent; failing that, it waits in To do.
+  triageByAgent(t, fellBack) {
+    const to = this.triager()
+    try {
+      if (!to) throw new Error('no triage agent')
+      if (fellBack) this.fellBack.add(t.id)
+      this.send({ from: 'you', to, text: triagePrompt(t, t.id), images: t.images, mentions: false, ticket: t.id, title: t.title, type: t.kind, triage: true })
+    } catch {
+      this.fellBack.delete(t.id)
+      const owner = ownerFor(`${t.title} ${t.body}`, this.teammates())
+      if (owner) this.tickets.edit(t.id, { owner: owner.name }, 'crew')
+      this.post({ kind: 'event', from: 'crew', text: owner ? `couldn't triage #${t.id}, so it goes to @${owner.name}, whose area it is` : `couldn't triage #${t.id}: it waits in To do for you` })
+      if (owner && this.space.autofix) this.autoDispatch(t)
+    }
+  }
+
+  // What a quick call cost: the triage agent's spend and the crew's, and the task's it was about (not whatever the triage
+  // agent's own conversation is on, as addSpend would have it).
+  quickSpend(a, t, r) {
+    const cost = r?.cost > 0 ? r.cost : 0
+    const tokens = this.providerOf(a)?.cli === 'codex' && r?.tokens > 0 ? r.tokens : 0
+    if (!cost && !tokens) return
+    this.record(a.name, { ...(cost && { cost }), ...(tokens && { tokens }) })
+    if (cost) (this.spend.hours[localDay()] ??= Array(24).fill(0))[new Date().getHours()] += cost
+    this.saveSpend()
+    t.spent = { cost: (t.spent?.cost ?? 0) + cost, tokens: (t.spent?.tokens ?? 0) + tokens, added: t.spent?.added ?? 0, removed: t.spent?.removed ?? 0 }
+    this.tickets.save()
   }
 
   // One short call to a provider (core/promptgen.js). Tests put a stand-in here.
@@ -964,7 +1006,7 @@ export class Hub extends EventEmitter {
     const c = this.convoOf(a)
     if (JSON.stringify(c.context) === JSON.stringify(context)) return
     // much smaller than it was: the CLI compacted it (Codex says so nowhere else), and the briefs went with the rest
-    if (c.briefs && c.context?.used > 0 && context?.used < c.context.used / 2) delete c.briefs
+    if (c.context?.used > 0 && context?.used < c.context.used / 2) delete c.briefs, delete c.boardSeen
     c.context = context
     this.saveConvos()
     this.checkLimit(a)
@@ -1358,6 +1400,7 @@ export class Hub extends EventEmitter {
           // The CLI summarized the conversation to make room: older details are now fuzzy.
           this.convoOf(a).compactions += 1
           delete this.convoOf(a).briefs // summarized with the rest: each channel's brief comes again with its next message
+          delete this.convoOf(a).boardSeen // and the notes it had read: crew board shows the newest again
           this.saveConvos()
           this.post({ kind: 'event', from: name, text: 'ran out of room and compacted its conversation (older details are summarized now)' })
           return
@@ -1939,9 +1982,12 @@ export class Hub extends EventEmitter {
     }
     // noReportBack: a report to the teammate whose hand-off this agent is on. That teammate needs nothing back, and the
     // agent's final message shows in the chat by itself. New work for it goes with `crew send <name> --new`.
+    // Only a teammate named in `to` (not one @mentioned in the text, nor Auto's pick), and not when its hand-off asked
+    // something (a question the old way, by crew send: the answer goes back to it).
     const sender = !newWork && this.agents.get(from)
-    const handers = new Set((sender?.serving ?? []).filter((m) => m.from !== 'you' && !m.ask && !m.answers && !m.crew).map((m) => this.baseOf(m.from)))
-    const back = targets.find((t) => handers.has(this.baseOf(t.name)))
+    const handers = new Set((sender?.serving ?? []).filter((m) => m.from !== 'you' && !m.ask && !m.answers && !m.crew && !/\?\s*$/m.test(m.text ?? '')).map((m) => this.baseOf(m.from)))
+    const named = new Set(addressees(to, '').map((n) => this.baseOf(local(n) ?? n)))
+    const back = targets.find((t) => handers.has(this.baseOf(t.name)) && named.has(this.baseOf(t.name)))
     if (back) {
       this.ledger.add('noReportBack', this.savers.noReportBack, { n: 1, tokens: this.warmth(back).wake })
       if (this.savers.noReportBack) throw new Error(`not sent: @${back.name} handed you this and needs nothing back. Your final message shows in the chat by itself. If this is new work for @${back.name}, send it with: crew send ${back.name} --new "…"${targets.length > 1 ? ' (nothing was sent)' : ''}`)
@@ -2462,7 +2508,7 @@ export class Hub extends EventEmitter {
       return this.startFresh(a, a.inbox[0].ticket !== undefined ? ` for #${a.inbox[0].ticket}` : ' for its next task')
     }
     // A conversation whose cache has gone cold, and a message that doesn't follow on from it (coldStart)
-    const cold = this.coldFor(a, a.inbox[0])
+    const cold = this.coldFor(a, this.peek(a))
     if (cold && this.savers.coldStart) return this.coldStart(a, cold)
     if (cold && a.coldSeen !== a.inbox[0].id) (a.coldSeen = a.inbox[0].id), this.ledger.add('coldStart', false, { n: 1, tokens: cold.recache })
     // Still drawing: starting up, or finishing a turn under a hook's spinner. Text typed now can be dropped, or read
@@ -2497,13 +2543,18 @@ export class Hub extends EventEmitter {
   // of one each, and two that crossed are read side by side. A question, a message from you and a task each get a
   // turn of their own.
   nextUp(a) {
+    const msgs = this.peek(a)
+    for (const m of msgs) a.inbox.splice(a.inbox.indexOf(m), 1)
+    return msgs
+  }
+
+  // What nextUp would take, left in the queue.
+  peek(a) {
     const kind = (m) => (m.answers ? 'answer' : !m.ask && !m.fresh && m.ticket === undefined && m.from !== 'you' && !m.crew ? 'handoff' : null)
     const k = kind(a.inbox[0])
     // ...and only from one channel at a time: what comes of them goes back to the channel each was said in
     const where = a.inbox[0].channel
-    const msgs = k ? a.inbox.filter((m) => kind(m) === k && (k === 'answer' || m.channel === where)) : [a.inbox[0]]
-    for (const m of msgs) a.inbox.splice(a.inbox.indexOf(m), 1)
-    return msgs
+    return k ? a.inbox.filter((m) => kind(m) === k && (k === 'answer' || m.channel === where)) : [a.inbox[0]]
   }
 
   // A message as the agent reads it: in brackets, what it is and who it's from, so it knows what's expected of it.
@@ -2600,8 +2651,12 @@ export class Hub extends EventEmitter {
       if (owner) this.tickets.edit(t.id, { owner: owner.name }, 'crew')
     }
     this.postTask(t, by, 'filed')
-    if (triage && this.savers.quickTriage) this.quickTriage(t, triage)
-    else if (triage) {
+    if (triage && this.savers.quickTriage && !t.images.length) this.quickTriage(t, triage)
+    else if (triage && this.savers.quickTriage) {
+      // quick triage reads text only: a screenshot needs the triage agent's eyes
+      this.ledger.add('quickTriage', true, { n: 1, images: 1 })
+      this.triageByAgent(t, true)
+    } else if (triage) {
       this.ledger.add('quickTriage', false, { n: 1 })
       this.send({ from: 'you', to: triage, text: triagePrompt(t, t.id), images: t.images, mentions: false, ticket: t.id, title: t.title, type: t.kind, triage: true })
     } else if (this.space.autofix && t.owner) this.autoDispatch(t)

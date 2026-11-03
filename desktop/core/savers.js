@@ -12,7 +12,7 @@ export const SAVERS = [
   {
     id: 'coldStart',
     label: 'Start fresh after a long break',
-    about: "After an hour away, a big conversation costs double to pick back up. A message that doesn't follow on from it starts a new one, with a note of where things stood.",
+    about: "After an hour away, a big conversation costs double to pick back up. A hand-off that doesn't follow on from it starts a new one, with a note of where things stood. What you send never does.",
   },
   {
     id: 'boardNew',
