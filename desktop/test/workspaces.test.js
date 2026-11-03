@@ -499,6 +499,7 @@ test('the order workspaces are listed in: changed from the app, the default firs
     const { state } = c.workspaceAction('order', null, ['lab', DEFAULT, 'storefront'])
     assert.deepEqual(saved().workspaces.map((w) => w.id), ['lab', 'storefront', 'docs'], 'the default isn\'t in the list to move')
     assert.deepEqual(state.workspaces.map((w) => w.id), [DEFAULT, 'lab', 'storefront', 'docs'], 'the default stays first')
+    c.config.data.workspaces.push(null) // a hand-edited config.json with a hole in it
     c.workspaceAction('order', null, ['docs', 'nope'])
     assert.deepEqual(c.workspaces().map((w) => w.id), [DEFAULT, 'docs', 'lab', 'storefront'], 'unknown ids are ignored; the rest keep their order')
   } finally {

@@ -158,6 +158,7 @@
     .use-pop small.warn { color: var(--needs-ink); font-weight: 500; }
     /* ---- who works here: the workspace's agents (take one out), the rest of your crew (bring one in), a new one ---- */
     .members-pop { inset: auto; margin: 0; width: 340px; max-height: min(560px, calc(100vh - 80px)); padding: 0; border: 0; border-radius: var(--r-window); background: var(--float); color: var(--fg); box-shadow: var(--shadow-float); overflow: hidden; }
+    .members-pop:focus { outline: none; }
     .members-pop:popover-open { display: flex; flex-direction: column; animation: mp-in var(--t-pop) var(--out); }
     @keyframes mp-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
     .mp-head { flex: none; display: flex; align-items: baseline; gap: 8px; padding: 14px 16px 6px; }
@@ -633,7 +634,7 @@
     <div class="pair-view" tabindex="-1"></div>
   </dialog>
   <div class="use-pop" id="use-pop" popover></div>
-  <div class="members-pop" id="members-pop" popover aria-label="Who works here"></div>
+  <div class="members-pop" id="members-pop" popover tabindex="-1" role="dialog" aria-label="Who works here"></div>
 
   <dialog id="move" class="sheet move-sheet">
     <div class="mv-body"></div>

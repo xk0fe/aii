@@ -238,10 +238,15 @@ $('.mainhead').addEventListener('click', (e) => {
 // in: it starts here in a conversation of its own), and a new agent. The default workspace has everyone.
 const membersPop = $('.members-pop')
 let membersAt = null
+// a second click on what opened it closes it: the press already did (light dismiss), so the click doesn't reopen it
+let membersWasOpen = false
+document.addEventListener('pointerdown', (e) => (membersWasOpen = membersPop.matches(':popover-open') && Boolean(e.target.closest?.('[data-head=members]'))), true)
 function openMembers(at) {
+  if (membersWasOpen) return void (membersWasOpen = false)
   membersAt = at
   drawMembers()
   if (!membersPop.matches(':popover-open')) membersPop.showPopover()
+  membersPop.focus({ preventScroll: true }) // Tab goes on into the list
   const r = (at?.isConnected ? at : $('.mainhead')).getBoundingClientRect()
   const w = membersPop.offsetWidth
   membersPop.style.left = `${Math.round(Math.max(8, Math.min(innerWidth - w - 8, r.right - w)))}px`
@@ -263,6 +268,8 @@ function drawMembers() {
     </div>
     <footer class="mp-foot"><button class="btn" data-mp-new>${ICONS.plus}<span>New agent${named ? ` for ${esc(w.name)}` : ''}</span></button><span class="grow"></span><button class="btn plain" data-mp-agents>All agents</button></footer>`)
 }
+// closed with Esc or a click outside: the focus goes back to what opened it, if nothing else took it
+membersPop.addEventListener('toggle', (e) => e.newState === 'closed' && (document.activeElement === document.body || membersPop.contains(document.activeElement)) && membersAt?.isConnected && membersAt.focus({ preventScroll: true }))
 membersPop.addEventListener('click', async (e) => {
   const w = state.workspace
   const add = e.target.closest('[data-mp-add]')?.dataset.mpAdd
@@ -288,6 +295,8 @@ membersPop.addEventListener('click', async (e) => {
 
 // ---- an empty #crew: its first steps, like Discord's welcome to a new server ------------------------------------
 // Who works here, its folder (a workspace of your own), and the first message; each a click away, ticked once done.
+// "Ada", "Ada and Iris", "Ada, Iris and June", "Ada, Iris and 3 others"
+const nameList = (list) => (list.length > 3 ? `${list.slice(0, 2).join(', ')} and ${list.length - 2} others` : list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0] ?? '')
 function welcomeHTML() {
   if (!state.agents.length && !hasWorkspaces(state)) return '' // the very first run: setup and Agents say what to do
   const w = state.workspace ?? { id: 'default', name: 'Home' }
@@ -299,7 +308,7 @@ function welcomeHTML() {
     <div class="wl-steps">
       ${step(here.length > 0, 'members', here.length ? `${plural(here.length, 'agent')} work${here.length > 1 ? '' : 's'} here` : 'Choose who works here', named ? 'Agents from your crew, or new ones just for this workspace' : 'Everyone in your crew, each in its own folder')}
       ${named ? step(Boolean(w.folder), 'settings', w.folder ? `They work in ${tildePath(w.folder)}` : 'Pick its folder', 'Where its agents work, unless one has a folder of its own') : ''}
-      ${step(false, 'message', 'Send the first message', here.length ? `${here.slice(0, 3).map((a) => a.seed ?? a.name).join(', ')}${here.length > 3 ? ' and the others' : ''} will see it` : 'Once someone works here')}
+      ${step(false, 'message', 'Send the first message', here.length ? `${nameList(here.map((a) => a.seed ?? a.name))} ${here.length > 2 ? 'all see' : here.length > 1 ? 'both see' : 'sees'} it` : 'Once someone works here')}
     </div></div>`
 }
 $('.feed').addEventListener('click', (e) => {
@@ -795,7 +804,10 @@ async function switchTo(id, { open = false } = {}) {
 // A workspace the sheet just made: already on screen in Crew, now here too.
 function switched(next) {
   slide(1, async () => (push ??= await ready)(next))
-  setTimeout(() => burst($('.ws-switch .ws-tile'), { count: 9, color: wsColor(next.workspace) ?? undefined }), 520)
+  setTimeout(() => {
+    const tile = $(`.rail-ws[data-ws="${CSS.escape(next.workspace?.id ?? '')}"] .ws-tile`)
+    if (tile) burst(tile, { count: 9, color: wsColor(next.workspace) ?? undefined })
+  }, 520)
 }
 let sliding = 0 // transitions under way: a second switch mid-slide mustn't drop the first one's class from under it
 function slide(dir, update) {
@@ -823,6 +835,8 @@ function workspaceChanged(next) {
   terms.clear()
   selected = null
   composer.stopReply() // the message it answered is in the other workspace's chat
+  openMenu?.close() // a menu or the list of who works here was about the last one
+  if (membersPop.matches(':popover-open')) membersPop.hidePopover()
   composer.setTarget('auto')
   const unsaved = collection.unsaved() // switched from the menu bar or a notification, with an agent's sheet open
   collection.close()

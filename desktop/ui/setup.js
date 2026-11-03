@@ -173,7 +173,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
   })
   addEventListener('keydown', (e) => {
     // not one another layer took (the agent's sheet over this screen, a menu, a dialog)
-    if (e.key !== 'Escape' || e.defaultPrevented || view.hidden || document.querySelector('dialog[open], .ed-layer.open, .menu:not(.leaving)')) return
+    if (e.key !== 'Escape' || e.defaultPrevented || view.hidden || document.querySelector('dialog[open], .ed-layer.open, .menu:not(.leaving), [popover]:popover-open')) return
     close()
   })
 

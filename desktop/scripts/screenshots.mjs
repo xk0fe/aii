@@ -382,28 +382,27 @@ const SHOTS = {
     win.destroy()
   },
   // Switching workspaces: the switcher, Storefront, then back to Docs site from the sidebar's dock. The crew slides over.
+  // Workspaces on the rail: switch to the one that needs you, back, then see who works there.
   async workspacesGif() {
-    const win = await dashboard('light', 'crew', { fixture: 'workspaces', width: 1280, height: 800 })
+    const win = await dashboard('light', 'chat', { fixture: 'workspaces', width: 1280, height: 800 })
     await sleep(1200)
     await record(win, 'workspaces', {
-      ms: 7600, width: 1000,
+      ms: 8200, width: 1000,
       during: async () => {
         let at = { x: 640, y: 420 }
-        at = await glide(win, at, await center(win, '.ws-switch'), 650)
-        await tap(win, at)
-        await sleep(900)
-        at = await glide(win, at, await center(win, '.ws-row[data-ws=default]'), 600)
+        at = await glide(win, at, await center(win, '.rail-ws[data-ws=default]'), 700)
         await sleep(350)
         await tap(win, at)
         await sleep(1500)
-        at = await glide(win, at, await center(win, '.ws-switch'), 650)
-        await tap(win, at)
-        await sleep(900)
-        at = await glide(win, at, await center(win, '.ws-row[data-ws=docs]'), 600)
+        at = await glide(win, at, await center(win, '.rail-ws[data-ws=docs]'), 500)
         await sleep(300)
         await tap(win, at)
-        await sleep(1400)
-        await glide(win, at, { x: at.x + 260, y: at.y - 240 }, 500)
+        await sleep(1300)
+        at = await glide(win, at, await center(win, '.mh-faces'), 900)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1500)
+        await glide(win, at, { x: at.x - 260, y: at.y + 300 }, 500)
       },
     })
     win.destroy()
@@ -1359,7 +1358,7 @@ const SHOTS = {
     await js(win, "openMenu?.close()")
     await sleep(300)
     // a new workspace's empty #crew: its first steps
-    await js(win, "await crew.call('workspace', 'create', null, { name: 'Checkout', icon: '🛒', color: 'teal', members: ['Ada', 'Iris'] }); window.__crewState.feed = []; window.__crewEmit('state', window.__crewState)")
+    await js(win, "await crew.call('workspace', 'create', null, { name: 'Checkout', icon: '🛒', color: 'teal', members: ['Ada', 'Iris'] }); const s = window.__crewState; s.feed = []; s.agents = s.agents.map((a) => ({ ...a, status: 'idle', activity: '', subs: [], unread: 0 })); window.__crewEmit('state', s)")
     await sleep(900)
     await save(win, `ws-welcome-${theme}`)
     await js(win, "window.__crewEmit('state', (window.__crewShow('research'), window.__crewState))")

@@ -32,7 +32,13 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
 
   // ---- the name's menu: what you do with the workspace on screen (like Discord's server menu) ---------------------
 
+  // A second click on the name closes its menu (the press outside already did): it doesn't open another. The menu
+  // gives the focus back to the name when nothing else took it.
+  let current = null
+  let wasOpen = false
+  button.addEventListener('pointerdown', () => (wasOpen = Boolean(current)))
   function menu() {
+    if (wasOpen) return void (wasOpen = false)
     const w = state.workspace
     const list = state.workspaces ?? []
     const named = w && w.id !== 'default'
@@ -52,8 +58,16 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       if (act === 'park') park(w)
       if (act === 'new') openSheet(null)
     })
+    current = m
     // the menu says when it's gone (it closes itself on a pick, Esc or a click elsewhere)
-    new MutationObserver((_, o) => !m.el.isConnected && (o.disconnect(), button.setAttribute('aria-expanded', 'false'))).observe(document.body, { childList: true })
+    new MutationObserver((_, o) => {
+      if (m.el.isConnected) return
+      o.disconnect()
+      if (current !== m) return
+      current = null
+      button.setAttribute('aria-expanded', 'false')
+      if (document.activeElement === document.body) button.focus({ preventScroll: true })
+    }).observe(document.body, { childList: true })
   }
   button.addEventListener('click', menu)
 
@@ -124,7 +138,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
   })
   const target = (e) => {
     const el = e.target.closest('.rail-ws')
-    if (!el || !dragging) return null
+    if (!el || !dragging || el.dataset.ws === dragging) return null // back where it was: nowhere to move to
     const r = el.getBoundingClientRect()
     const after = e.clientY > r.top + r.height / 2
     if (el.dataset.ws === 'default' && !after) return null // nothing goes above the default
@@ -132,10 +146,10 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
   }
   dock.addEventListener('dragover', (e) => {
     const t = target(e)
+    for (const x of marks()) if (x !== t?.el) x.classList.remove('drop-before', 'drop-after') // the line is only where it'd land
     if (!t) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    for (const x of marks()) if (x !== t.el) x.classList.remove('drop-before', 'drop-after')
     t.el.classList.toggle('drop-before', !t.after)
     t.el.classList.toggle('drop-after', t.after)
   })
@@ -160,6 +174,9 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     if (railStale) drawDock()
   }
   dock.addEventListener('dragend', endDrag)
+  // on the document too: the tile you started from may be gone by the time you let go
+  document.addEventListener('dragend', endDrag)
+  document.addEventListener('drop', endDrag)
   dock.addEventListener('dragleave', (e) => !dock.contains(e.relatedTarget) && marks().forEach((x) => x.classList.remove('drop-before', 'drop-after')))
 
   // ---- the banner over a parked workspace ------------------------------------------------------------------

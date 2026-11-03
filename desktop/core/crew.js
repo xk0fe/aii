@@ -175,7 +175,7 @@ export class Crew extends EventEmitter {
       remove: () => dropWorkspace(data, id),
       order: () => {
         const ids = Array.isArray(arg) ? arg.map(String) : []
-        const at = (w) => (ids.includes(w.id) ? ids.indexOf(w.id) : ids.length)
+        const at = (w) => (w && ids.includes(w.id) ? ids.indexOf(w.id) : ids.length)
         if (Array.isArray(data.workspaces)) data.workspaces = data.workspaces.map((w, i) => [w, i]).sort(([a, i], [b, j]) => at(a) - at(b) || i - j).map(([w]) => w)
       },
       members: () => {
