@@ -448,9 +448,27 @@ function createTile(name, before = null) {
     clearTimeout(timer)
     timer = setTimeout(() => resize(name), 40)
   }).observe(tile.querySelector('.term'))
+  shownTerm.observe(tile.querySelector('.term'))
   replay(t)
   return t
 }
+
+function dropTile(t) {
+  shownTerm.unobserve(t.tile.querySelector('.term'))
+  t.term.dispose()
+  t.tile.remove()
+}
+
+// A terminal out of sight replays once it comes into view. xterm keeps each character's width as it draws a row, but
+// in a hidden terminal every character measures 0 wide and nothing is kept, so it lays the window out again for every
+// character of every row. Replaying a workspace's terminals while you were in #crew (every switch) held the window for
+// seconds.
+const shownTerm = new IntersectionObserver((seen) => {
+  for (const e of seen) {
+    const t = e.isIntersecting && terms.get(e.target.closest('.tile').dataset.name)
+    if (t?.waiting) replay(t)
+  }
+})
 
 // On Windows, Ctrl is the terminal's own key (Ctrl+C stops what the agent runs), so copy and paste go as in Windows
 // Terminal: Ctrl+C copies when there's a selection, Ctrl+Shift+C always, Ctrl+V and Ctrl+Shift+V paste (the page's paste,
@@ -491,6 +509,9 @@ function quietSelection(term) {
 // Live chunks that arrive before this are already in the buffer. Again after an agent's computer comes back.
 function replay(t) {
   const name = t.tile.dataset.name
+  // out of sight (in #crew, or Focus showing another one): shownTerm replays it when it shows
+  t.waiting = !t.tile.querySelector('.term').offsetWidth
+  if (t.waiting) return void (t.ready = false)
   const done = () => {
     t.ready = true
     t.replaying = false
@@ -817,10 +838,7 @@ function workspaceChanged(next) {
   const first = shownWorkspace === null
   shownWorkspace = id
   if (first) return
-  for (const t of terms.values()) {
-    t.term.dispose()
-    t.tile.remove()
-  }
+  for (const t of terms.values()) dropTile(t)
   terms.clear()
   selected = null
   composer.stopReply() // the message it answered is in the other workspace's chat
@@ -1180,8 +1198,7 @@ const ready = live((next) => {
   const names = new Set(on.map((a) => a.name))
   for (const [name, t] of terms) {
     if (names.has(name)) continue
-    t.term.dispose()
-    t.tile.remove()
+    dropTile(t)
     terms.delete(name)
   }
   on.forEach((a, i) => {
