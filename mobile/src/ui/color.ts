@@ -43,6 +43,6 @@ export function dim(color: string, s = 0.3, b = 0.82) {
   return hex(out)
 }
 
-// An agent's name in its creature's color, mixed toward the text color so it reads on either background (the Mac's
-// color-mix(in oklab, var(--c) 62%, var(--fg))). Never the raw creature color.
-export const nameInk = (creature: string, fg: string, p = 0.62) => mix(creature, fg, p)
+// An agent's name, written in the text colour: the agent's colour lives only in its creature (SPEC rule 2), never in
+// text. The creature's colour is still passed in, so every place that names an agent goes through here.
+export const nameInk = (_creature: string, fg: string) => fg
