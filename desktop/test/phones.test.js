@@ -142,8 +142,8 @@ const phones = []
 before(async () => {
   fs.writeFileSync(CONFIG, JSON.stringify({
     autopilot: true,
-    agents: [{ name: 'joseph', area: 'backend', cwd: ROOT, prompt: 'PROMPT-NEVER-ON-A-PHONE' }],
-    workspaces: [{ id: 'golf', name: 'Golf', folder: ROOT, members: { joseph: {} }, agents: [{ name: 'kim', area: 'docs', prompt: 'KIM-PROMPT' }] }],
+    agents: [{ name: 'june', area: 'backend', cwd: ROOT, prompt: 'PROMPT-NEVER-ON-A-PHONE' }],
+    workspaces: [{ id: 'storefront', name: 'Storefront', folder: ROOT, members: { june: {} }, agents: [{ name: 'milo', area: 'docs', prompt: 'MILO-PROMPT' }] }],
   }))
   crew = new Crew({ bin: BIN, computerName: 'Studio' })
   runner = new FakeRunner()
@@ -252,9 +252,9 @@ test('a pairing code pairs one phone, once, within ten minutes; a new code ends 
   // the first code's secret no longer opens anything: its phone's hi doesn't open
   await assert.rejects(newPhone().connect({ ...first, pair: true }), { code: CLOSE.badFrame })
   const phone = newPhone()
-  const ready = await phone.connect({ ...second, pair: true, name: "Sasha's iPhone" })
+  const ready = await phone.connect({ ...second, pair: true, name: "Ann's iPhone" })
   assert.deepEqual(ready.mac, { id: crew.phones.macId, name: 'Studio' })
-  assert.deepEqual(crew.phones.devices.map((d) => [d.id, d.name, d.platform, d.app, d.pub]), [[ready.device.id, "Sasha's iPhone", 'android', '0.1.0', b64(phone.d.pub)]])
+  assert.deepEqual(crew.phones.devices.map((d) => [d.id, d.name, d.platform, d.app, d.pub]), [[ready.device.id, "Ann's iPhone", 'android', '0.1.0', b64(phone.d.pub)]])
   assert.equal(crew.phones.open(), null, 'used up')
   await assert.rejects(newPhone().connect({ ...second, pair: true }), { code: CLOSE.noCode })
   // one that ran out
@@ -279,8 +279,8 @@ test('a pairing code pairs one phone, once, within ten minutes; a new code ends 
 
 test('removing a phone ends its connection (4003), it is turned away from then on, and the last one gone stops the listening', async () => {
   const a = await paired('Pixel 9')
-  const b = await paired("Sasha's iPhone")
-  assert.deepEqual(crew.phones.view().devices.map((d) => [d.name, d.online]), [['Pixel 9', true], ["Sasha's iPhone", true]])
+  const b = await paired("Ann's iPhone")
+  assert.deepEqual(crew.phones.view().devices.map((d) => [d.name, d.online]), [['Pixel 9', true], ["Ann's iPhone", true]])
   crew.phones.revoke(a.ready.device.id)
   assert.equal(await a.phone.closed, CLOSE.notPaired)
   await assert.rejects(a.phone.connect({ port: remote.port, key: macKey() }), { code: CLOSE.notPaired })
@@ -316,12 +316,12 @@ test('an address that keeps failing the handshake waits a minute (4008)', async 
 test('a phone watches a workspace of its own: state without secrets, patches, alerts, answers, and what it sends lands there, whatever the Mac shows', async () => {
   const { phone } = await paired()
   const session = () => [...remote.sessions][0]
-  const golf = crew.hubs.get('golf')
+  const storefront = crew.hubs.get('storefront')
 
   // the state: the Mac's own has Crew Link's code and the agents' instructions; the phone's has neither
   const mine = crew.snapshot()
   assert.match(mine.computers.me.code, /^crew1\./)
-  assert.equal(mine.agents.find((a) => a.name === 'joseph').prompt, 'PROMPT-NEVER-ON-A-PHONE')
+  assert.equal(mine.agents.find((a) => a.name === 'june').prompt, 'PROMPT-NEVER-ON-A-PHONE')
   const { v, state } = await phone.watch(DEFAULT)
   assert.equal(v, 1)
   const text = JSON.stringify(state)
@@ -332,7 +332,7 @@ test('a phone watches a workspace of its own: state without secrets, patches, al
   for (const a of state.agents) for (const k of ['prompt', 'args', 'images', 'cwd']) assert.ok(!(k in a), k)
   assert.deepEqual(state.providers.claude, { label: 'Claude' })
   assert.deepEqual(Object.keys(state).sort(), ['agents', 'autopilot', 'computers', 'feed', 'parked', 'providers', 'reads', 'spend', 'tasks', 'usage', 'workspace', 'workspaces'])
-  assert.deepEqual(state.workspaces.map((w) => w.id), [DEFAULT, 'golf'])
+  assert.deepEqual(state.workspaces.map((w) => w.id), [DEFAULT, 'storefront'])
 
   // changes come as patches, at most one every 200 ms, and turn what the phone has into what the Mac has
   for (let i = 0; i < 4; i++) {
@@ -349,62 +349,62 @@ test('a phone watches a workspace of its own: state without secrets, patches, al
   phone.inbox.length = 0
 
   // a question: its alert, its card, and the answer the agent's hook gets
-  const asked = crew.hub.ask('joseph', BASH)
-  assert.deepEqual(await phone.next((m) => m.t === 'alert'), { t: 'alert', ws: DEFAULT, name: 'joseph', text: 'wants to run a command: npm test' })
+  const asked = crew.hub.ask('june', BASH)
+  assert.deepEqual(await phone.next((m) => m.t === 'alert'), { t: 'alert', ws: DEFAULT, name: 'june', text: 'wants to run a command: npm test' })
   await sleep(450)
   const card = phone.state.feed.find((e) => e.kind === 'ask' && !e.answer)
-  assert.equal(card?.from, 'joseph')
+  assert.equal(card?.from, 'june')
   assert.equal(await phone.call('answer', DEFAULT, card.id, { allow: true }), null)
   assert.equal(JSON.parse(await asked).hookSpecificOutput.decision.behavior, 'allow')
   await assert.rejects(phone.call('answer', DEFAULT, card.id, { allow: true }), /already been answered/)
   await sleep(450)
   assert.equal(phone.state.feed.find((e) => e.id === card.id).answer.by, 'you')
 
-  // what it sends lands in the workspace it names: Golf, while the Mac shows Home...
+  // what it sends lands in the workspace it names: Storefront, while the Mac shows Home...
   assert.equal(crew.current, DEFAULT)
-  assert.match(await phone.call('send', 'golf', 'kim', 'write the release notes'), /@kim/)
-  assert.ok(golf.feed.some((e) => e.kind === 'msg' && e.from === 'you' && e.to === 'kim' && e.text === 'write the release notes'))
+  assert.match(await phone.call('send', 'storefront', 'milo', 'write the release notes'), /@milo/)
+  assert.ok(storefront.feed.some((e) => e.kind === 'msg' && e.from === 'you' && e.to === 'milo' && e.text === 'write the release notes'))
   assert.ok(!crew.hub.feed.some((e) => e.text === 'write the release notes'))
   assert.equal(crew.current, DEFAULT, 'the Mac still shows Home')
   assert.equal(crew.snapshot().workspace.id, DEFAULT)
-  // ...and Home while the Mac shows Golf, though joseph works in both
-  crew.workspaceAction('switch', 'golf')
-  assert.match(await phone.call('send', DEFAULT, 'joseph', 'check the staging API'), /@joseph/)
-  assert.ok(crew.hub.feed.some((e) => e.to === 'joseph' && e.text === 'check the staging API'))
-  assert.ok(!golf.feed.some((e) => e.text === 'check the staging API'))
-  assert.equal(crew.current, 'golf')
+  // ...and Home while the Mac shows Storefront, though june works in both
+  crew.workspaceAction('switch', 'storefront')
+  assert.match(await phone.call('send', DEFAULT, 'june', 'check the staging API'), /@june/)
+  assert.ok(crew.hub.feed.some((e) => e.to === 'june' && e.text === 'check the staging API'))
+  assert.ok(!storefront.feed.some((e) => e.text === 'check the staging API'))
+  assert.equal(crew.current, 'storefront')
   crew.workspaceAction('switch', DEFAULT)
   // the rest of its calls do the same
-  await phone.call('set', 'golf', 'kim', { yolo: true })
-  await phone.call('read', 'golf', { kim: 1234 })
+  await phone.call('set', 'storefront', 'milo', { yolo: true })
+  await phone.call('read', 'storefront', { milo: 1234 })
   assert.equal(JSON.parse(fs.readFileSync(CONFIG, 'utf8')).workspaces[0].agents[0].yolo, true)
-  assert.equal(golf.reads.agents.kim, 1234)
-  assert.equal(crew.hub.reads.agents.kim, undefined)
+  assert.equal(storefront.reads.agents.milo, 1234)
+  assert.equal(crew.hub.reads.agents.milo, undefined)
   // a notice from another workspace says which
-  golf.emit('notice', { title: '#3 is in Review', body: 'kim finished it', focus: 'task:3' })
-  assert.deepEqual(await phone.next((m) => m.t === 'notice'), { t: 'notice', ws: 'golf', title: '#3 is in Review', body: 'kim finished it', focus: 'task:3' })
+  storefront.emit('notice', { title: '#3 is in Review', body: 'milo finished it', focus: 'task:3' })
+  assert.deepEqual(await phone.next((m) => m.t === 'notice'), { t: 'notice', ws: 'storefront', title: '#3 is in Review', body: 'milo finished it', focus: 'task:3' })
 
   // watching another workspace: its state, its patches
-  const there = await phone.watch('golf')
-  assert.equal(there.state.workspace.id, 'golf')
-  assert.deepEqual(there.state.agents.map((a) => a.name).sort(), ['joseph', 'kim'])
+  const there = await phone.watch('storefront')
+  assert.equal(there.state.workspace.id, 'storefront')
+  assert.deepEqual(there.state.agents.map((a) => a.name).sort(), ['june', 'milo'])
   assert.ok(there.state.feed.some((e) => e.text === 'write the release notes'))
-  assert.ok(!JSON.stringify(there.state).includes('KIM-PROMPT'))
-  golf.post({ kind: 'note', from: 'you', text: 'golf only' })
+  assert.ok(!JSON.stringify(there.state).includes('MILO-PROMPT'))
+  storefront.post({ kind: 'note', from: 'you', text: 'storefront only' })
   crew.hub.post({ kind: 'note', from: 'you', text: 'home only' })
   await sleep(450)
-  assert.ok(phone.state.feed.some((e) => e.text === 'golf only') && !phone.state.feed.some((e) => e.text === 'home only'))
+  assert.ok(phone.state.feed.some((e) => e.text === 'storefront only') && !phone.state.feed.some((e) => e.text === 'home only'))
   assert.deepEqual(phone.state, session().state)
   phone.inbox.length = 0
 
   // a terminal it asked for, and only that one
-  assert.deepEqual(await phone.call('terminal', 'golf', 'kim', true), { data: 'the screen of golf/kim', cols: 100, rows: 30 })
-  runner.emit('data', 'golf/kim', 'hello ')
-  runner.emit('data', 'joseph', 'not asked for')
-  runner.emit('data', 'golf/kim', 'world')
-  assert.deepEqual(await phone.next((m) => m.t === 'pty'), { t: 'pty', ws: 'golf', name: 'kim', data: 'hello world' })
-  await phone.call('terminal', 'golf', 'kim', false)
-  runner.emit('data', 'golf/kim', 'after')
+  assert.deepEqual(await phone.call('terminal', 'storefront', 'milo', true), { data: 'the screen of storefront/milo', cols: 100, rows: 30 })
+  runner.emit('data', 'storefront/milo', 'hello ')
+  runner.emit('data', 'june', 'not asked for')
+  runner.emit('data', 'storefront/milo', 'world')
+  assert.deepEqual(await phone.next((m) => m.t === 'pty'), { t: 'pty', ws: 'storefront', name: 'milo', data: 'hello world' })
+  await phone.call('terminal', 'storefront', 'milo', false)
+  runner.emit('data', 'storefront/milo', 'after')
   await sleep(150)
   assert.deepEqual(phone.inbox.filter((m) => m.t === 'pty'), [])
 
@@ -416,7 +416,7 @@ test('a phone watches a workspace of its own: state without secrets, patches, al
   for (const bad of [CONFIG, path.join(ATTACHMENTS, '..', 'config.json'), `${ATTACHMENTS}/../link/phones.json`]) await assert.rejects(phone.call('image', bad), /isn't an image from Crew/)
 
   // what a phone can't do
-  for (const name of ['removeAgent', 'workspace', 'in', 'exportAgents', 'link', 'toString', '__proto__']) await assert.rejects(phone.call(name, DEFAULT, 'joseph'), { message: `"${name}" isn't available on a phone` })
+  for (const name of ['removeAgent', 'workspace', 'in', 'exportAgents', 'link', 'toString', '__proto__']) await assert.rejects(phone.call(name, DEFAULT, 'june'), { message: `"${name}" isn't available on a phone` })
   await assert.rejects(phone.call('task', DEFAULT, 'remove', '1'), /isn't a task action on a phone/)
   await assert.rejects(phone.call('send', 'nowhere', '', 'hi'), /no workspace "nowhere"/)
 
@@ -435,20 +435,20 @@ test("what a phone can't get away with: being heard once it's removed, files tha
   await phone.watch(DEFAULT)
   // a terminal turned off while it was still being opened stays off
   runner.slow = 100
-  const opening = phone.call('terminal', DEFAULT, 'joseph', true)
-  await phone.call('terminal', DEFAULT, 'joseph', false)
+  const opening = phone.call('terminal', DEFAULT, 'june', true)
+  await phone.call('terminal', DEFAULT, 'june', false)
   await opening
   runner.slow = 0
-  runner.emit('data', 'joseph', 'after it was turned off')
+  runner.emit('data', 'june', 'after it was turned off')
   await sleep(150)
   assert.deepEqual(phone.inbox.filter((m) => m.t === 'pty'), [])
   // only photos it saved here go along: Crew would carry any other file to a linked computer
-  await assert.rejects(phone.call('send', DEFAULT, 'joseph', 'look', [path.join(LINK_DIR, 'phones.json')]), /isn't one the phone saved here/)
+  await assert.rejects(phone.call('send', DEFAULT, 'june', 'look', [path.join(LINK_DIR, 'phones.json')]), /isn't one the phone saved here/)
   await assert.rejects(phone.call('task', DEFAULT, 'file', null, { text: 'look', images: [CONFIG] }), /isn't one the phone saved here/)
   await assert.rejects(phone.call('saveImage', 'x', 'constructor', new Uint8Array([1])), /only PNG, JPEG, GIF and WebP/)
   // removed: what it sends from then on isn't done, though it hasn't seen the close yet
   crew.phones.revoke(ready.device.id)
-  phone.send({ t: 'call', id: 99, name: 'send', args: [DEFAULT, 'joseph', 'sent after it was removed'] })
+  phone.send({ t: 'call', id: 99, name: 'send', args: [DEFAULT, 'june', 'sent after it was removed'] })
   assert.equal(await phone.closed, CLOSE.notPaired)
   await sleep(100)
   assert.ok(!crew.hub.feed.some((e) => e.text === 'sent after it was removed'))

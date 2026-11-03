@@ -18,22 +18,22 @@ const heads = (html) => [...html.matchAll(/<div class="cgroup-head"[\s\S]*?<b>([
 const state = (agents, links = []) => ({ agents, computers: { me: { name: 'Studio Mac', slug: 'studio-mac' }, links } })
 
 test('one computer: no group headers, agents in config order', () => {
-  const s = state([agent('joseph'), agent('david', { status: 'working' }), agent('gal')])
+  const s = state([agent('june'), agent('ada', { status: 'working' }), agent('iris')])
   assert.equal(grouped(crewGroups(s)), false)
   const html = rosterHTML(s)
   assert.deepEqual(heads(html), [])
-  assert.deepEqual(rows(html), ['joseph', 'david', 'gal'])
+  assert.deepEqual(rows(html), ['june', 'ada', 'iris'])
 })
 
 test('linked computers: one group each, this computer first, a linked one listed even when empty', () => {
   const s = state(
-    [agent('joseph'), remote('scarlett', 'mac-mini', 'Mac mini'), agent('david')],
-    [{ slug: 'mac-mini', name: 'Mac mini', online: true }, { slug: 'air', name: 'MacBook Air', online: false }],
+    [agent('june'), remote('theo', 'workstation', 'Workstation'), agent('ada')],
+    [{ slug: 'workstation', name: 'Workstation', online: true }, { slug: 'laptop', name: 'Laptop', online: false }],
   )
   const html = rosterHTML(s)
-  assert.deepEqual(heads(html), ['Studio Mac', 'Mac mini', 'MacBook Air'])
-  assert.deepEqual(rows(html), ['joseph', 'david', 'scarlett@mac-mini'])
-  assert.match(html, /data-home="air"[\s\S]*offline[\s\S]*No agents/)
+  assert.deepEqual(heads(html), ['Studio Mac', 'Workstation', 'Laptop'])
+  assert.deepEqual(rows(html), ['june', 'ada', 'theo@workstation'])
+  assert.match(html, /data-home="laptop"[\s\S]*offline[\s\S]*No agents/)
 })
 
 test('status changes never reorder rows', () => {
@@ -45,25 +45,25 @@ test('status changes never reorder rows', () => {
 })
 
 test('off agents fold into one line per group until it is opened', () => {
-  const s = state([agent('joseph'), agent('ye', { on: false, status: 'off' }), agent('pia', { on: false, status: 'off' })])
+  const s = state([agent('june'), agent('uma', { on: false, status: 'off' }), agent('pia', { on: false, status: 'off' })])
   const folded = rosterHTML(s)
-  assert.deepEqual(rows(folded), ['joseph'])
+  assert.deepEqual(rows(folded), ['june'])
   assert.match(folded, /data-fold="off:"[\s\S]*2 off/)
-  assert.deepEqual(rows(rosterHTML(s, { folds: new Set(['off:']) })), ['joseph', 'ye', 'pia'])
+  assert.deepEqual(rows(rosterHTML(s, { folds: new Set(['off:']) })), ['june', 'uma', 'pia'])
 })
 
 test('a folded computer keeps its header and its faces, and hides its rows', () => {
-  const s = state([agent('joseph'), remote('bo', 'mac-mini', 'Mac mini', { status: 'working' }), remote('ivy', 'mac-mini', 'Mac mini', { status: 'waiting' })], [{ slug: 'mac-mini', name: 'Mac mini', online: true }])
-  const html = rosterHTML(s, { folds: new Set(['group:mac-mini']) })
-  assert.deepEqual(rows(html), ['joseph'])
-  assert.match(html, /class="cgroup folded[^"]*" data-home="mac-mini"/)
-  assert.match(html, /data-home="mac-mini"[\s\S]*class="faces"><av:bo@mac-mini><av:ivy@mac-mini>/)
+  const s = state([agent('june'), remote('bo', 'workstation', 'Workstation', { status: 'working' }), remote('ivo', 'workstation', 'Workstation', { status: 'waiting' })], [{ slug: 'workstation', name: 'Workstation', online: true }])
+  const html = rosterHTML(s, { folds: new Set(['group:workstation']) })
+  assert.deepEqual(rows(html), ['june'])
+  assert.match(html, /class="cgroup folded[^"]*" data-home="workstation"/)
+  assert.match(html, /data-home="workstation"[\s\S]*class="faces"><av:bo@workstation><av:ivo@workstation>/)
 })
 
 test('search matches names and areas, and shows through folds', () => {
-  const s = state([agent('joseph', { area: 'backend' }), agent('ye', { on: false, status: 'off', area: 'analytics' }), remote('bo', 'mac-mini', 'Mac mini', { area: 'iOS builds' })], [{ slug: 'mac-mini', name: 'Mac mini', online: true }])
-  assert.deepEqual(rows(rosterHTML(s, { filter: 'anal' })), ['ye'])
-  assert.deepEqual(rows(rosterHTML(s, { filter: 'ios', folds: new Set(['group:mac-mini']) })), ['bo@mac-mini'])
+  const s = state([agent('june', { area: 'backend' }), agent('uma', { on: false, status: 'off', area: 'analytics' }), remote('bo', 'workstation', 'Workstation', { area: 'iOS builds' })], [{ slug: 'workstation', name: 'Workstation', online: true }])
+  assert.deepEqual(rows(rosterHTML(s, { filter: 'anal' })), ['uma'])
+  assert.deepEqual(rows(rosterHTML(s, { filter: 'ios', folds: new Set(['group:workstation']) })), ['bo@workstation'])
   assert.match(rosterHTML(s, { filter: 'zzz' }), /No one matches/)
 })
 

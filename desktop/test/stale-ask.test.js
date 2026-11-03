@@ -26,18 +26,18 @@ const DENIED = "Permission for this command was denied by a built-in Claude Code
 const use = (id, input = RM, name = 'Bash') => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input }], stop_reason: 'tool_use' } })
 const result = (id, content, is_error = false) => ({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content, is_error }] } })
 
-let hub, transcript, joseph
+let hub, transcript, june
 const write = (...lines) => fs.appendFileSync(transcript, lines.map((l) => JSON.stringify(l) + '\n').join(''))
-const ask = (extra = {}) => hub.ask('joseph', { hook_event_name: 'PermissionRequest', transcript_path: transcript, tool_name: 'Bash', tool_input: RM, permission_suggestions: [], ...extra })
+const ask = (extra = {}) => hub.ask('june', { hook_event_name: 'PermissionRequest', transcript_path: transcript, tool_name: 'Bash', tool_input: RM, permission_suggestions: [], ...extra })
 const card = () => hub.feed.findLast((e) => e.kind === 'ask')
 
 beforeEach(() => {
   mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: Date.now() })
   for (const f of ['feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'joseph', area: 'backend' }, { name: 'marc', area: 'art', provider: 'codex' }] }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'june', area: 'backend' }, { name: 'rex', area: 'art', provider: 'codex' }] }))
   hub = new Hub(new FakeRunner(), { bin: '/nonexistent' })
   for (const a of hub.agents.values()) a.status = 'working'
-  joseph = hub.agents.get('joseph')
+  june = hub.agents.get('june')
   transcript = path.join(process.env.CREW_HOME, `t-${Math.random()}.jsonl`)
   write({ type: 'user', message: { role: 'user', content: 'clear the junk folder' } }, use('toolu_018Dw'))
 })
@@ -50,15 +50,15 @@ afterEach(() => {
 
 test("Claude Code's safety check turns it down: the card closes and says so, and the agent is back to work", async () => {
   const hook = ask()
-  assert.equal(joseph.status, 'waiting')
+  assert.equal(june.status, 'waiting')
   mock.timers.tick(115000)
   assert.equal(card().answer, undefined)
   write(result('toolu_018Dw', DENIED, true))
   mock.timers.tick(5000)
   assert.deepEqual({ ...card().answer, at: 0 }, { by: 'cli', why: 'its safety check', at: 0 })
   assert.equal(await hook, '', 'the hook prints no decision')
-  assert.equal(joseph.status, 'working')
-  assert.equal(hub.asking('joseph'), false)
+  assert.equal(june.status, 'working')
+  assert.equal(hub.asking('june'), false)
 })
 
 test('a call that ran while the hook was still up was allowed in its terminal', () => {
@@ -95,7 +95,7 @@ test("the turn ends: its open question isn't waiting any more, but a sub-agent's
   const mine = card()
   ask({ agent_id: 'a1b2c3', agent_type: 'general-purpose' })
   const sub = card()
-  hub.onHook('joseph', { hook_event_name: 'Stop', last_assistant_message: 'Done.' })
+  hub.onHook('june', { hook_event_name: 'Stop', last_assistant_message: 'Done.' })
   assert.equal(mine.answer.stale, true)
   assert.equal(sub.answer, undefined)
   assert.equal(hub.asks.size, 1)
@@ -104,19 +104,19 @@ test("the turn ends: its open question isn't waiting any more, but a sub-agent's
 test('the turn ends right after the denial: the card still says what happened', () => {
   ask()
   write(result('toolu_018Dw', DENIED, true))
-  hub.onHook('joseph', { hook_event_name: 'Stop', last_assistant_message: 'The safety check blocked it.' })
+  hub.onHook('june', { hook_event_name: 'Stop', last_assistant_message: 'The safety check blocked it.' })
   assert.equal(card().answer.by, 'cli')
-  assert.equal(joseph.status, 'idle')
+  assert.equal(june.status, 'idle')
 })
 
 test("an API error ends the turn: same, no stale card", () => {
   ask()
-  hub.onHook('joseph', { hook_event_name: 'StopFailure', error: 'rate_limit' })
+  hub.onHook('june', { hook_event_name: 'StopFailure', error: 'rate_limit' })
   assert.equal(card().answer.stale, true)
 })
 
 test("Codex isn't watched: it waits on its hook, so it can't move on without an answer", () => {
-  hub.ask('marc', { hook_event_name: 'PermissionRequest', transcript_path: transcript, tool_name: 'Bash', tool_input: RM })
+  hub.ask('rex', { hook_event_name: 'PermissionRequest', transcript_path: transcript, tool_name: 'Bash', tool_input: RM })
   write(result('toolu_018Dw', DENIED, true))
   mock.timers.tick(60000)
   assert.equal(card().answer, undefined)

@@ -289,10 +289,12 @@ function dial() {
   })
 }
 
-// A line in the host's log, from this side of it.
-function note(line) {
+// A line in the host's log, from this side of it. The host holds the log open while it runs, so it can't start afresh
+// then (rotate): past `max` this side's lines aren't kept.
+export function note(line, file = LOG, max = 2 * LOG_KEEP) {
   try {
-    fs.appendFileSync(LOG, `${new Date().toISOString()} ${line}\n`)
+    if ((fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0) > max) return
+    fs.appendFileSync(file, `${new Date().toISOString()} ${line}\n`)
   } catch {}
 }
 

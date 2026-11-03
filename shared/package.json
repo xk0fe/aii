@@ -1,6 +1,7 @@
 {
   "name": "crew-shared",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "description": "What the Mac app and the phone app both speak (PROTOCOL.md). No dependencies.",
   "scripts": {
