@@ -1,5 +1,5 @@
 // Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
-/* global isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, rosterParts, mountConvoHead, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, brainLabel, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, paceWarning, usageTip, usageLine, resetsText */
+/* global glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, rosterParts, mountConvoHead, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, brainLabel, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, paceWarning, usageTip, usageLine, resetsText */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -19,10 +19,8 @@ const feed = mountFeed($('.feed'), {
   onReply: (e) => composer.replyTo(e),
 })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to)) })
-// A creature picked in the Crew room: its row lights up, and what it's asking you comes up in the chat.
 const collection = mountCollection($('.collection'), {
   onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home),
-  onSelect: (name, needs) => (highlight(name), needs && showNeeds(name)),
   onWorkspace: () => workspaces.settings(),
 })
 const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
@@ -67,13 +65,33 @@ $('.find kbd').textContent = keys('⌘F')
 
 // The sidebar and the chat can each be put away for more room in the middle (the ⋯ menu, ⌘⌥S, ⌘⌥C); remembered
 // across launches.
+// Putting a side away, or bringing it back. The grid's columns change in one step, so the middle is laid out once at
+// its new width (never squeezed through every width in between, cards hopping between column counts on the way):
+// the panel slides out over it, or in, and what's in the middle glides to its new place (glide() in common.js).
+const GLIDING = '.col-head > *, .col-group > h3, .pcard, .col-stats, .tk-head > *, .lane, .tl-group, .tv-head > *, .tile'
+let panelsDrawn = false
 function setPanel(which, on) {
-  document.body.classList.toggle(`no-${which}`, !on)
   store.set(`crew.panel.${which}`, on ? '1' : '0')
-  setTimeout(() => terms.forEach((_, name) => resize(name)), 340)
+  if (panelsDrawn && panelShown(which) === on) return
+  const panel = $(which === 'side' ? '.side' : '.chat')
+  const away = `translateX(${which === 'side' ? -16 : 16}px)`
+  const animate = panelsDrawn && !reduceMotion()
+  panel.getAnimations().forEach((a) => a.cancel()) // turned around mid-slide
+  panel.classList.remove('leaving')
+  panel.style.width = ''
+  if (animate && !on) {
+    panel.style.width = `${panel.getBoundingClientRect().width}px`
+    panel.classList.add('leaving')
+    const out = panel.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: away }], { duration: DUR.move - 60, easing: EASE.in, fill: 'forwards' })
+    out.finished.then(() => (panel.classList.remove('leaving'), (panel.style.width = ''), out.cancel()), () => {})
+  }
+  glide(animate ? () => $('.center').querySelectorAll(GLIDING) : [], () => document.body.classList.toggle(`no-${which}`, !on))
+  if (animate && on) panel.animate([{ offset: 0, opacity: 0, transform: away }], { duration: DUR.move, easing: EASE.out })
+  requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 }
 const panelShown = (which) => !document.body.classList.contains(`no-${which}`)
 for (const which of ['side', 'chat']) setPanel(which, store.get(`crew.panel.${which}`) !== '0')
+panelsDrawn = true
 
 // ---- the titlebar's right end: who needs you, and ⋯ for the rest ------------------------------------------
 
@@ -583,7 +601,8 @@ let cursor = null // the search's marked match, kept across redraws
 function toggleFold(key) {
   folds.has(key) ? folds.delete(key) : folds.add(key)
   store.set('crew.folds', JSON.stringify([...folds]))
-  drawRoster()
+  // the rows under it glide up or down to make room, and what it opens fades in (never a height animated)
+  glide(() => $('.roster').querySelectorAll('.cgroup-head, .cgroup-body > *'), () => drawRoster(), { appear: true })
 }
 
 const findBox = $('[data-find]')

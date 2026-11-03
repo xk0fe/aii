@@ -41,14 +41,14 @@
 .tk-search.open { flex: 1000 0 96px; max-width: 220px; background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .tk-search.open:focus-within { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
 .tk-search input { display: none; flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; padding: 0 0 0 11px; font-size: 13px; user-select: text; }
-.tk-search.open input { display: block; animation: fade-in .18s var(--out); }
+.tk-search.open input { display: block; animation: fade-in var(--t-pop) var(--out); }
 .tk-search input::-webkit-search-cancel-button { display: none; }
 .tk-search-btn { flex: none; width: 28px; height: 28px; margin-left: auto; }
 .tk-search-btn svg { width: 15px; height: 15px; }
 .tk-search.open .tk-search-btn:hover { background: none; }
 /* the filters that are on, as one chip beside Filter: what they are, and × to clear them */
 .tk-active { display: contents; }
-.tk-on-chip { display: inline-flex; align-items: center; height: 28px; flex: none; border-radius: var(--r-control); background: var(--btn); color: var(--fg); font-size: 13px; font-weight: 600; white-space: nowrap; animation: fade-in .18s var(--out); }
+.tk-on-chip { display: inline-flex; align-items: center; height: 28px; flex: none; border-radius: var(--r-control); background: var(--btn); color: var(--fg); font-size: 13px; font-weight: 600; white-space: nowrap; animation: fade-in var(--t-pop) var(--out); }
 .tk-on-chip button { all: unset; cursor: pointer; }
 .tk-on-chip .tk-on-what { display: block; max-width: 180px; padding: 0 3px 0 12px; line-height: 28px; overflow: hidden; text-overflow: ellipsis; }
 .tk-on-chip .tk-on-x { display: grid; place-items: center; width: 22px; height: 22px; margin-right: 3px; border-radius: 50%; color: var(--fg2); transition: background .15s, color .15s; }
@@ -57,7 +57,7 @@
 .tk-on-chip button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: var(--r-control); }
 
 /* ---- the filter popover: kind and owner, one pick each ---- */
-.tk-fpop { position: absolute; z-index: 9; width: 250px; max-height: calc(100% - 110px); overflow-y: auto; padding: 4px; border-radius: var(--r-card); background: var(--float); box-shadow: var(--shadow-float); animation: pop-in .18s var(--out); }
+.tk-fpop { position: absolute; z-index: 9; width: 250px; max-height: calc(100% - 110px); overflow-y: auto; padding: 4px; border-radius: var(--r-card); background: var(--float); box-shadow: var(--shadow-float); animation: pop-in var(--t-pop) var(--out); }
 .tk-fp-sec + .tk-fp-sec { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
 .tk-fp-sec h6 { margin: 6px 8px 4px; font-size: 12px; font-weight: 600; color: var(--fg2); }
 .tk-fp-item { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 8px; border-radius: var(--r-control); font-size: 13px; cursor: pointer; }
@@ -90,7 +90,7 @@
 .tk-kind:hover { background: var(--fill-hover); }
 .tk-kind > .ti { width: 12px; height: 12px; color: var(--fg2); }
 .tk-to { display: flex; min-width: 0; }
-.tk-to-chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 4px; border-radius: var(--r-control); background: var(--btn); color: var(--fg2); font-size: 12px; font-weight: 600; white-space: nowrap; animation: chip-on .35s var(--spring); }
+.tk-to-chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 4px; border-radius: var(--r-control); background: var(--btn); color: var(--fg2); font-size: 12px; font-weight: 600; white-space: nowrap; animation: chip-on var(--t-pop) var(--out); }
 /* a slim column has room for the face, not the name (the @name is in the title, in its colour) */
 @container (max-width: 300px) { .tk-to-name { display: none; } .tk-to-chip { padding-right: 4px; } }
 .tk-add .attach { width: 26px; height: 26px; padding: 0; flex: none; }
@@ -118,7 +118,7 @@
 .tk-hello.small { gap: 12px; padding: 30px; border-radius: var(--r-window); background: var(--bg); }
 
 /* board */
-.tk-board { display: grid; grid-template-columns: repeat(4, minmax(186px, 1fr)); gap: 12px; padding: 0 24px 20px; overflow-x: auto; transition: grid-template-columns .4s var(--sheet); }
+.tk-board { display: grid; grid-template-columns: repeat(4, minmax(186px, 1fr)); gap: 12px; padding: 0 24px 20px; overflow-x: auto; transition: grid-template-columns var(--t-move) var(--move); }
 .tk-board.done-folded { grid-template-columns: repeat(3, minmax(196px, 1fr)) 46px; }
 .lane { --k: var(--accent); display: flex; flex-direction: column; min-height: 0; border-radius: var(--r-card); background: color-mix(in srgb, var(--fg) 2.5%, var(--bg)); transition: background .2s, box-shadow .2s; }
 .lane-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 14px; flex: none; font-size: 13px; }
@@ -226,7 +226,7 @@
 }
 
 /* ---- picking several (⌘-click, Shift-click, a lane's select-all) and the bar that acts on them all ---- */
-.tc-check, .tr-check { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-style: normal; color: transparent; background: var(--surface); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg3) 80%, transparent); cursor: pointer; transition: transform .3s cubic-bezier(.3, 1.7, .5, 1), background .15s, box-shadow .15s, color .15s; }
+.tc-check, .tr-check { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-style: normal; color: transparent; background: var(--surface); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg3) 80%, transparent); cursor: pointer; transition: transform var(--t-quick) var(--out), background .15s, box-shadow .15s, color .15s; }
 .tc-check svg, .tr-check svg { width: 11px; height: 11px; stroke-width: 3.2; }
 /* on a card it takes the kind's place, top left, while some are picked */
 .tc-check { position: absolute; left: 13px; top: 12px; z-index: 1; transform: scale(0); }
@@ -248,7 +248,7 @@
   position: absolute; left: 50%; bottom: 20px; z-index: 7; display: none; align-items: center; gap: 5px; max-width: calc(100% - 48px);
   padding: 6px 6px 6px 16px; border-radius: var(--r-card); background: var(--float); box-shadow: var(--shadow-float); transform: translateX(-50%); white-space: nowrap;
 }
-.picking .tk-bulk { display: flex; animation: tk-bulk-in .45s var(--bounce); }
+.picking .tk-bulk { display: flex; animation: tk-bulk-in var(--t-move) var(--out); }
 @keyframes tk-bulk-in { from { opacity: 0; transform: translate(-50%, 26px) scale(.96); } }
 .panel-open .tk-bulk { left: calc(50% - 235px); }
 .tk-bulk-count { margin-right: 8px; font-size: 13px; font-weight: 600; color: var(--fg2); }
@@ -265,7 +265,7 @@
 .picking .tk-list { padding-bottom: 76px; }
 
 /* ---- pop-up menus ---- */
-.tk-pop { position: fixed; z-index: 50; min-width: 190px; max-width: 340px; padding: 4px; border-radius: var(--r-card); background: var(--float); box-shadow: var(--shadow-float); animation: pop-in .22s var(--out); }
+.tk-pop { position: fixed; z-index: 50; min-width: 190px; max-width: 340px; padding: 4px; border-radius: var(--r-card); background: var(--float); box-shadow: var(--shadow-float); animation: pop-in var(--t-pop) var(--out); }
 @keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
 .tk-pop-item { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 5px 9px; border-radius: var(--r-control); font-size: 13px; cursor: pointer; }
 .tk-pop-item:hover, .tk-pop-item:focus { background: var(--btn); }
@@ -291,7 +291,7 @@
   border-radius: var(--r-window); background: var(--surface); box-shadow: var(--shadow-float); transform: translateX(calc(100% + 24px)); visibility: hidden;
   transition: transform .45s var(--sheet), visibility 0s .45s;
 }
-.tp.open { transform: none; visibility: visible; transition: transform .5s var(--sheet), visibility 0s; }
+.tp.open { transform: none; visibility: visible; transition: transform var(--t-move) var(--move), visibility 0s; }
 .tp-head { display: flex; align-items: center; gap: 8px; padding: 14px 12px 4px 18px; flex: none; }
 .tp-head .tk-id { font-size: 13px; }
 .tp-status { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px 0 6px; border-radius: var(--r-control); font-size: 12px; font-weight: 500; background: var(--btn); color: var(--fg2); }
@@ -330,7 +330,7 @@
 .tp-review-acts .btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; }
 .tp-review-acts .btn svg { width: 15px; height: 15px; }
 .tp-review-acts .btn[aria-pressed=true] { background: var(--needs-tint); color: var(--needs-ink); }
-.tp-sendback { display: flex; gap: 8px; align-items: flex-end; max-height: 0; overflow: hidden; transition: max-height .35s var(--sheet), margin .35s var(--sheet); }
+.tp-sendback { display: flex; gap: 8px; align-items: flex-end; max-height: 0; overflow: hidden; transition: max-height var(--t-move) var(--move), margin var(--t-move) var(--move); }
 .tp-sendback.open { max-height: 140px; margin-top: 10px; }
 .tp-sendback textarea, .tp-note textarea { flex: 1; border: 0; outline: 0; resize: none; border-radius: var(--r-card); background: var(--btn); padding: 7px 10px; font-size: 13px; line-height: 1.4; user-select: text; min-width: 0; }
 .tp-sendback textarea { background: var(--surface); }
@@ -368,6 +368,6 @@
 .tp-foot .btn svg { width: 15px; height: 15px; }
 
 /* ---- a word from the board ---- */
-.tk-toast { position: absolute; left: 50%; bottom: 22px; z-index: 8; transform: translate(-50%, 8px); opacity: 0; pointer-events: none; padding: 9px 16px; border-radius: var(--r-card); background: var(--tip); color: var(--tip-fg); font-size: 13px; font-weight: 500; box-shadow: var(--shadow-float); transition: opacity .25s, transform .3s var(--out); }
+.tk-toast { position: absolute; left: 50%; bottom: 22px; z-index: 8; transform: translate(-50%, 8px); opacity: 0; pointer-events: none; padding: 9px 16px; border-radius: var(--r-card); background: var(--tip); color: var(--tip-fg); font-size: 13px; font-weight: 500; box-shadow: var(--shadow-float); transition: opacity var(--t-move), transform var(--t-move) var(--out); }
 .tk-toast.show { opacity: 1; transform: translate(-50%, 0); }
 .tk-toast.error { background: var(--danger); color: #fff; }

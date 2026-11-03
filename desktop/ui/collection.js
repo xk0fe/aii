@@ -1,9 +1,9 @@
-// The crew as a collection: the Crew room on top (the whole crew in one felt scene, each acting out its status, and
-// one line saying how things are), then a card per agent, grouped by the computer each one runs on. Cards come big
+// The crew as a collection: one line saying how things are on top, then a card per agent, grouped by the computer
+// each one runs on, in your order (turning one off or on never moves its card). Cards come big
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, a few facts), everything you can set on the right, in four
 // tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
-/* global roomHTML, roomCast, crewHeadline, crewSentence, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
+/* global powerSwitch, crewHeadline, crewSentence, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -28,14 +28,13 @@ const TABS = [
 // at work: what it's doing says more than its status. Waiting on a teammate, the status says it (who it waits on).
 const atWork = (a) => (a?.status === 'working' && !a.waitingOn?.length) || a?.status === 'waiting'
 
-function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorkspace }) {
+function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
   root.innerHTML = `
     <section class="col-list">
       <header class="col-head">
         <h2 class="display"></h2>
         <div class="col-tools">
           <span class="col-on"></span>
-          <button class="icon room-fold" data-act="room" aria-expanded="true">${ICONS.chevron}</button>
           <div class="seg icons" data-mode-switch>
             <button data-mode="cards" title="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the crew">${ICONS.table}</button>
           </div>
@@ -43,7 +42,6 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
         </div>
         <p class="col-sub"></p>
       </header>
-      <div class="room-wrap"><div class="room-box"></div></div>
       <div class="col-grid"></div>
       <div class="col-stats"></div>
       <div class="col-empty hidden"></div>
@@ -52,7 +50,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
   // The sheet lives at the top of the page, over everything (sidebar and chat included), not inside the view.
   const sheet = document.createElement('div')
   sheet.className = 'ed-layer'
-  sheet.innerHTML = '<div class="ed-scrim" data-act="back"></div><section class="ed" role="dialog" aria-modal="true"></section>'
+  sheet.innerHTML = '<div class="ed-scrim" data-act="back"></div><section class="ed" role="dialog" aria-modal="true" tabindex="-1"></section>'
   document.body.append(sheet)
   sheet.querySelector('.ed-scrim').addEventListener('click', () => close())
   const $ = (s) => root.querySelector(s)
@@ -60,12 +58,8 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
   const card = sheet.querySelector('.ed')
   const bulk = $('.bulk')
   const list = $('.col-list')
-  const roomWrap = $('.room-wrap')
-  const roomBox = $('.room-box')
   const empty = $('.col-empty')
   const picked = new Set()
-  // View Transitions move the creature from its card into the sheet and back; without them, a plain fade.
-  const canMorph = typeof document.startViewTransition === 'function'
   let state = null
   let gridKey = ''
   let selecting = false
@@ -79,12 +73,6 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
   let advOpen = false // the Setup tab's Advanced fold
   let modelTyping = false // the Model row is a text field (a model the menu doesn't list)
   let reopen = null // name to open once it shows up in state (after add/rename)
-  let transitioning = false
-  // The room: folded away or not (remembered), how wide it is, and the creature you picked in it.
-  let roomFolded = store.get('crew.room') === 'folded'
-  let roomW = 0
-  let roomKey = ''
-  let roomPick = null
 
   const modeNow = () => mode ?? (state.agents.length > 9 ? 'tiles' : 'cards')
   const agentNamed = (name) => state.agents.find((a) => a.name === name)
@@ -144,14 +132,15 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
     const huddle = Math.min(3, subs.length + clones.length)
     const helpers = huddle ? `<span class="c2-helpers">${Array.from({ length: huddle }, (_, i) => avatarHTML({ ...a, name: `${a.name}·${i + 2}`, avatar: look, status: 'working', on: true }, { size: 42, mood: 'working', pose: 'laptop', poseMin: 40 })).join('')}</span>` : ''
     const pose = poseOf(a, { ask })
-    return `<button class="pcard c2 ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''} ${a.name === roomPick ? 'sel' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}">
+    return `<div class="pcard c2 ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" role="button" tabindex="0" aria-label="${esc(`${a.seed ?? a.name}: ${statusWord(a, ask)}`)}">
       <span class="c-name"><b>${esc(a.seed ?? a.name)}</b>${a.yolo ? '<i class="tag" title="YOLO: skips every permission prompt">YOLO</i>' : ''}</span>
+      <span class="pc-power">${powerSwitch(a)}</span>
       <span class="c-job" title="${esc(a.area)}">${esc(a.area || 'No job yet. Open the card to give it one.')}</span>
       <span class="c-brain" title="${esc(brainLabel(a, state.providers))}">${esc(brainWords(a, state.providers))}</span>
       <span class="c-state">${statusLine(a)}${what ? `<span class="c-doing" title="${esc(what.tip)}">${esc(what.text)}</span>` : ''}${meta.length ? `<span class="c-meta">${meta.join('')}</span>` : ''}</span>
       <span class="c2-stage felt${huddle ? ' has-helpers' : ''}">${patchSVG(136, 136, { r: 8, inset: 5, dash: '4 3' })}<span class="c2-av">${avatarHTML(a, { size: huddle ? 92 : 112, pose })}</span>${helpers}${a.on && a.status === 'waiting' ? '<i class="dot needs c2-dot"></i>' : ''}</span>
       <span class="pc-check">${ICONS.check}</span>
-    </button>`
+    </div>`
   }
 
   // Compact: the creature, the name and how it is, in one line: its step while it works, otherwise its status (what
@@ -166,17 +155,17 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
     const line = atWork(a) && a.status !== 'waiting' && a.activity ? activityWords(a.activity) : statusWord(a, ask)
     const cls = !a.on ? 'off' : a.status === 'waiting' ? 'needs' : a.status === 'working' && !a.waitingOn?.length ? 'working' : a.status === 'starting' ? 'starting' : 'idle'
     const said = a.status === 'waiting' && a.on ? statusWord(a, ask) : line
-    return `<button class="pcard mini ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''} ${a.name === roomPick ? 'sel' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, brainWords(a, state.providers), what?.tip].filter(Boolean).join('\n'))}">
+    return `<div class="pcard mini ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, brainWords(a, state.providers), what?.tip].filter(Boolean).join('\n'))}" role="button" tabindex="0" aria-label="${esc(`${a.seed ?? a.name}: ${said}`)}">
       <span class="pc-name"><b>${esc(a.seed ?? a.name)}</b>${a.yolo ? '<i class="tag">YOLO</i>' : ''}</span>
+      <span class="pc-power">${powerSwitch(a)}</span>
       <span class="pc-line ${cls === 'needs' ? 'needs-text' : ''}"><i class="dot ${cls}"></i><span>${esc(said)}</span></span>
       <span class="pc-tags">${esc(brainWords(a, state.providers, { short: true }))}${subs.length ? ` · ${helpersText(a)}` : ''}${clones ? ` · ${plural(clones, 'clone')}` : ''}</span>
       <span class="pc-av">${avatarHTML(a, { size: 56 })}</span>
       <span class="pc-check">${ICONS.check}</span>
-    </button>`
+    </div>`
   }
 
   function drawGrid() {
-    if (transitioning) return
     const m = modeNow()
     root.classList.toggle('stats-mode', m === 'stats')
     segmented($('[data-mode-switch]'), (b) => b.dataset.mode === m)
@@ -185,18 +174,15 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
     needsByName = new Map(needs.map((n) => [n.agent.name, n]))
     asksByName = askTypes(state)
     drawHead(needs)
-    drawRoom()
     const none = !roster().length
     root.classList.toggle('empty', none)
     empty.classList.toggle('hidden', !none)
     if (none) drawEmpty()
     if (m === 'stats') drawStatsTable()
-    const next = JSON.stringify([m, selecting, [...picked], roomPick, groups.map((g) => [g.key, g.name, g.online]), roster().map((a) => [a.name, a.status, a.since && Math.floor((Date.now() - a.since) / 60000), a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, a.area, a.queue, a.convo?.context?.pct, a.convo?.compactions, doingOf(a), asksByName.get(a.name), runningSubs(a).length, clonesOf(state.agents, a).map((c) => [c.name, c.status, c.activity])])])
+    const next = JSON.stringify([m, selecting, [...picked], groups.map((g) => [g.key, g.name, g.online]), roster().map((a) => [a.name, a.status, a.since && Math.floor((Date.now() - a.since) / 60000), a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, a.area, a.queue, a.convo?.context?.pct, a.convo?.compactions, doingOf(a), asksByName.get(a.name), runningSubs(a).length, clonesOf(state.agents, a).map((c) => [c.name, c.status, c.activity])])])
     if (next === gridKey) return
     gridKey = next
     const one = (a) => (m === 'tiles' ? tileHTML(a) : cardHTML(a))
-    // on agents first in each group, off ones after them; your order otherwise
-    const order = (agents) => [...agents.filter((a) => a.on), ...agents.filter((a) => !a.on)]
     const add = `<button class="pcard add ${m === 'tiles' ? 'mini' : ''}" data-act="new">${ICONS.plus}<span>New agent</span></button>`
     // in parts (see morph): a push that changes one agent re-reads its card alone
     const filled = groups.filter((g) => g.agents.length)
@@ -206,16 +192,16 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
           start: `<section class="col-group" data-home="${esc(g.key)}">
           <h3><b>${esc(g.name)}</b><span>${where(g)}</span></h3>
           <div class="col-cards ${m}">`,
-          end: '</div></section>', slot: '.col-cards', parts: [...order(g.agents).map(one), ...(i === 0 ? [add] : [])],
+          end: '</div></section>', slot: '.col-cards', parts: [...g.agents.map(one), ...(i === 0 ? [add] : [])],
         }))
-      : [{ start: `<div class="col-cards ${m}">`, end: '</div>', slot: '.col-cards', parts: [...order(roster()).map(one), add] }]
+      : [{ start: `<div class="col-cards ${m}">`, end: '</div>', slot: '.col-cards', parts: [...roster().map(one), add] }]
     morph(grid, none ? '' : parts)
     celebrate(grid, state.agents)
     root.classList.toggle('selecting', selecting)
     drawBulkCount()
   }
 
-  // The header: the one line the room says (in the brand face), the sentence under it, and how many are on.
+  // The header: one line saying how the crew is (in the brand face), the sentence under it, and how many are on.
   function drawHead(needs) {
     const crewNow = roster()
     const parked = state.parked && crewNow.length
@@ -230,65 +216,6 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
     sub.title = sentence
     const on = crewNow.filter((a) => a.on).length
     $('.col-on').textContent = crewNow.length ? `${on} of ${crewNow.length} on` : ''
-    const fold = $('.room-fold')
-    fold.title = roomFolded ? 'Show the crew room' : 'Fold the crew room away'
-    fold.setAttribute('aria-expanded', String(!roomFolded))
-  }
-
-  // ---- the Crew room ------------------------------------------------------------
-
-  // Folded away or not, remembered. Drawn folded from the first frame, so nothing jumps on the way in.
-  roomWrap.classList.toggle('folded', roomFolded)
-  function setRoomFolded(on) {
-    roomFolded = on
-    store.set('crew.room', on ? 'folded' : 'open')
-    roomWrap.classList.toggle('folded', on)
-    roomWrap.classList.add('moving')
-    setTimeout(() => roomWrap.classList.remove('moving'), 320)
-    drawHead(needsYou(state))
-  }
-  // How many fit depends on its width: measured when it changes (a resized window, a panel put away).
-  const widthNow = () => roomBox.clientWidth || roomWrap.clientWidth
-  new ResizeObserver(() => {
-    const w = widthNow()
-    if (!w || Math.abs(w - roomW) < 1) return
-    roomW = w
-    if (state) drawRoom()
-  }).observe(roomWrap)
-
-  function drawRoom() {
-    const crewNow = roster()
-    if (!roomW) roomW = widthNow() || 728
-    const asks = asksByName
-    const fits = roomCast(crewNow, roomW)
-    const next = JSON.stringify([fits.size, fits.cast.length, roomPick, crewNow.map((a) => [a.name, a.seed, a.status, a.on, a.avatar, a.waitingOn?.length ?? 0, asks.get(a.name)])])
-    roomWrap.classList.toggle('hidden', !crewNow.length)
-    if (next === roomKey) return
-    roomKey = next
-    morph(roomBox, crewNow.length ? roomHTML(crewNow, { width: roomW, asks, picked: roomPick }) : '')
-  }
-
-  // A creature in the room, clicked: it's picked (its card comes into view, its row lights up, and what it asks you
-  // comes up in the chat). Clicked again, its card opens.
-  roomBox.addEventListener('click', (e) => {
-    const who = e.target.closest('[data-room]')
-    if (!who) return
-    const name = who.dataset.room
-    if (selecting) {
-      picked[picked.has(name) ? 'delete' : 'add'](name)
-      gridKey = ''
-      return drawGrid()
-    }
-    if (roomPick === name) return open(name)
-    pickInRoom(name)
-  })
-  function pickInRoom(name) {
-    roomPick = name
-    roomKey = gridKey = ''
-    drawGrid()
-    const tile = grid.querySelector(`.pcard[data-name="${CSS.escape(name)}"]`)
-    tile?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
-    onSelect?.(name, needsByName.has(name))
   }
 
   // ---- no crew yet: one creature pops up in an empty room and asks who it should be ----
@@ -325,11 +252,17 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
 
   grid.addEventListener('click', (e) => {
     const c = e.target.closest('.pcard')
-    if (!c) return
+    if (!c || e.target.closest('.pc-power')) return // its on/off switch: handled with every other power switch (common.js)
     if (c.dataset.act === 'new') return open(null)
     if (!selecting) return open(c.dataset.name)
     picked[picked.has(c.dataset.name) ? 'delete' : 'add'](c.dataset.name)
     drawGrid()
+  })
+  // a card is a button to the keyboard too: Enter or Space opens it (or picks it while selecting)
+  grid.addEventListener('keydown', (e) => {
+    if ((e.key !== 'Enter' && e.key !== ' ') || !e.target.matches?.('.pcard[data-name]')) return
+    e.preventDefault()
+    e.target.click()
   })
   // ⋯ in the header: a new agent (also the dashed card, the sidebar's + and ⌘N or Ctrl+N), picking several agents, the whole crew
   // as a .crew file, and bringing agents in from one.
@@ -353,7 +286,6 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
   $('.col-head').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-act]')
     if (btn?.dataset.act === 'more') headMenu(btn)
-    if (btn?.dataset.act === 'room') return setRoomFolded(!roomFolded)
     const m = e.target.closest('[data-mode]')?.dataset.mode
     if (m) {
       mode = m
@@ -541,11 +473,16 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
     if (!force) advOpen = false
     modelTyping = false
     const scrolled = force && sheet.classList.contains('open') ? card.querySelector('.ed-pane.on')?.scrollTop ?? 0 : 0
+    const opening = !sheet.classList.contains('open')
     morphTo(a?.name, 'open', () => {
       drawCard()
       if (scrolled) card.querySelector('.ed-pane.on').scrollTop = scrolled
       sheet.classList.add('open')
     })
+    // the keyboard goes with it: into the sheet, and not to the cards behind it (their switches would turn agents off
+    // under the sheet) until it closes
+    list.inert = true
+    if (opening && !card.contains(document.activeElement)) card.focus({ preventScroll: true })
     if (!a) setTimeout(() => card.querySelector('.pd-name')?.focus(), 250)
   }
 
@@ -554,41 +491,20 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
     const name = editing
     editing = null
     morphTo(name, 'close', () => sheet.classList.remove('open'))
+    list.inert = false
+    // focus back where it came from: the agent's card (when the keyboard was in the sheet)
+    if (!document.activeElement || document.activeElement === document.body || card.contains(document.activeElement)) {
+      const from = name && grid.querySelector(`.pcard[data-name="${CSS.escape(name)}"]`)
+      if (from) from.focus({ preventScroll: true })
+      else document.activeElement?.blur?.()
+    }
     return true
   }
 
-  // Card <-> sheet as one motion: the card grows into the sheet's left side and its creature travels with it.
-  // Elements share a view-transition-name only for the length of the transition.
+  // Card <-> sheet: the sheet rises over a fading scrim and sinks back, quicker (collection.css .ed-layer). Opacity and
+  // transforms only: nothing is snapshotted or stretched, and the grid keeps drawing underneath.
   function morphTo(name, dir, update) {
-    const tile = name && modeNow() !== 'stats' && root.offsetParent ? grid.querySelector(`.pcard[data-name="${CSS.escape(name)}"]`) : null
-    const already = dir === 'open' && sheet.classList.contains('open') // e.g. reopening after Save
-    if (!canMorph || !tile?.getClientRects().length || already || matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      update()
-      if (dir === 'open' && !already) card.classList.remove('enter'), void card.offsetWidth, card.classList.add('enter') // the plain rise
-      return
-    }
-    const parts = (inCard) => (inCard
-      ? [[tile, 'pd-hero'], [tile.querySelector('.av'), 'pd-av']]
-      : [[card.querySelector('.ed-id'), 'pd-hero'], [card.querySelector('.ed-av .av'), 'pd-av']])
-    const tag = (pairs, on) => pairs.forEach(([el, n]) => el && (el.style.viewTransitionName = on ? n : ''))
-    let from = parts(dir === 'open')
-    tag(from, true)
-    transitioning = true // a redraw now would drop the names or swap the creature out from under the snapshot
-    sheet.classList.add('vt')
-    const t = document.startViewTransition(() => {
-      tag(from, false)
-      update()
-      from = parts(dir !== 'open')
-      tag(from, true)
-    })
-    t.ready.catch(() => {}) // skipped (another opened right after it): the update still ran, nothing to report
-    t.finished.finally(() => {
-      tag(from, false)
-      sheet.classList.remove('vt')
-      transitioning = false
-      gridKey = ''
-      drawGrid()
-    })
+    update()
   }
 
   const dirty = () => (original ? JSON.stringify(draft) !== JSON.stringify(original) : Boolean(draft?.name.trim()))
@@ -673,6 +589,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
   function drawTab() {
     segmented(card.querySelector('.ed-tabs'), (b) => b.dataset.tab === tab)
     for (const p of card.querySelectorAll('.ed-pane')) p.classList.toggle('on', p.dataset.pane === tab)
+    card.dataset.tab = tab // on Look, an agent that's off shows its colours: they're what you're choosing
   }
 
   function setTab(next) {
@@ -1193,7 +1110,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
 
   document.addEventListener('keydown', (e) => {
     if (editing && commandKey(e) && !e.altKey && e.key === 's') return void (e.preventDefault(), save())
-    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open], .menu, .mentions:not(.hidden)')) return
+    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open], .menu:not(.leaving), .mentions:not(.hidden)')) return
     if (editing) return void (e.preventDefault(), close())
     if (selecting && root.offsetParent) setSelecting(false)
   })
@@ -1215,8 +1132,10 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
         drawAvatar(true)
         card.querySelector('.pd-msg').textContent = 'Saved'
       } else if (editing && editing !== ':new' && !agentNamed(editing)) {
-        editing = null
+        editing = null // it's gone (removed, or moved away): its sheet closes with it
         sheet.classList.remove('open')
+        list.inert = false
+        if (card.contains(document.activeElement)) document.activeElement.blur()
       } else if (editing) {
         drawState()
         drawFacts()

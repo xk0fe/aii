@@ -159,7 +159,7 @@ function ensureDefs() {
   )
 }
 
-const MOODS = { working: 'working', waiting: 'waiting', starting: 'starting', off: 'sleep', stopped: 'sleep' }
+const MOODS = { working: 'working', waiting: 'waiting', starting: 'starting', off: 'sleep', stopped: 'sleep', parked: 'sleep', away: 'sleep' }
 const colorOf = (spec) => COLORS[spec.color] ?? spec.color
 
 // How far each kind of eye reaches above and below its center (Chrome's tight bounds of the shapes in EYES), so the
@@ -177,7 +177,7 @@ function avatarHTML(agent, { size = 48, mood, pose, poseMin = 64 } = {}) {
   // waiting on a teammate's answer, it rests instead of hopping: it isn't working, it's waiting (core/hub.js question)
   mood ??= agent.status === 'working' && agent.waitingOn?.length ? 'idle' : (MOODS[agent.status] ?? 'idle')
   if (size < poseMin || !POSES.has(pose)) pose = undefined
-  const key = `${agent.name}\u0000${agent.seed ?? ''}\u0000${size}\u0000${mood}\u0000${pose ?? ''}\u0000${agent.avatar ? JSON.stringify(agent.avatar) : ''}`
+  const key = `${agent.name}\u0000${agent.seed ?? ''}\u0000${size}\u0000${mood}\u0000${pose ?? ''}\u0000${asleepNow(agent, mood) ? 1 : 0}\u0000${agent.avatar ? JSON.stringify(agent.avatar) : ''}`
   let html = avatarCache.get(key)
   if (html === undefined) {
     if (avatarCache.size > 2000) avatarCache.clear()
@@ -185,6 +185,10 @@ function avatarHTML(agent, { size = 48, mood, pose, poseMin = 64 } = {}) {
   }
   return html
 }
+
+// Asleep: off, stopped, parked, or on a computer that's asleep. It's drawn in black and white, whatever its mood (a
+// still face in a list included), so an agent that isn't running never shows its colours.
+const asleepNow = (agent, mood) => mood === 'sleep' || agent.on === false || ['off', 'stopped', 'parked', 'away'].includes(agent.status)
 
 // ---- poses: the creature acts out its status with a felt prop ----
 const POSES = new Set(['laptop', 'mug', 'sign', 'question', 'pop', 'sleep'])
@@ -293,7 +297,8 @@ function creatureHTML(agent, size, mood, pose) {
   const front = `${(MOUTHS[s.mouth] ?? MOUTHS.none)(...b.mouth)}${FACEWEAR[s.hat]?.(b) ?? ''}`
   const over = front && `<g class="av-front">${front}</g>`
   const delay = -((hash(agent.name) % 4000) / 1000).toFixed(2)
-  const sig = hash(JSON.stringify([s, mood, size, pose ?? ''])) // lets morph() keep a running avatar untouched
+  const grey = asleepNow(agent, mood)
+  const sig = hash(JSON.stringify([s, mood, size, pose ?? '', grey])) // lets morph() keep a running avatar untouched
   const p = pose ? poseLayers(pose, b, s.body, color, fuzz) : null
   const layer = (cls, inner) => (inner ? `<svg viewBox="0 0 100 100" class="av-prop ${cls}" aria-hidden="true">${inner}</svg>` : '')
   let figure = `<svg viewBox="0 0 100 100" class="av-body" aria-hidden="true">
@@ -309,7 +314,7 @@ function creatureHTML(agent, size, mood, pose) {
     if (p.clip) figure = `<span class="av-clip" style="clip-path:inset(-40% -40% ${p.clip}% -40%)">${figure}</span>`
   }
   const paws = p?.paws ? p.paws.map((g, i) => `<span class="av-paw p${i}">${layer('', g)}</span>`).join('') : ''
-  return `<span class="av ${mood}${pose ? ` posed pose-${pose}` : ''}" data-sig="${sig}" style="--size:${size}px;--delay:${delay}s" title="${String(agent.name).replace(/"/g, '')}">
+  return `<span class="av ${mood}${pose ? ` posed pose-${pose}` : ''}${grey ? ' asleep' : ''}" data-sig="${sig}" style="--size:${size}px;--delay:${delay}s" title="${String(agent.name).replace(/"/g, '')}">
     ${layer('av-back', p?.back)}<span class="av-in">
       ${figure}${layer('av-held', p?.held)}
     </span>${layer('av-stand', p?.stand)}${paws}${p?.float ? `<span class="av-float">${layer('', p.float)}</span>` : ''}

@@ -1,11 +1,10 @@
-/* The crew collection: the Crew room, cards grouped by computer, bulk select, the stats table, and the agent's sheet. */
+/* The crew collection: a header, cards grouped by computer, bulk select, the stats table, and the agent's sheet. */
 .collection { overflow: hidden; }
 .col-list { position: absolute; inset: 0; overflow-y: auto; scrollbar-gutter: stable; container-type: inline-size; }
 /* a narrow middle (small window, both panels out): the header keeps its controls and lets the words go */
 @container (max-width: 640px) {
   .col-head { padding: 16px 16px 12px; }
   .col-head h2.display { font-size: 24px; line-height: 30px; }
-  .room-wrap { margin-left: 16px; margin-right: 16px; }
   .col-grid { padding: 4px 16px 120px; }
   .col-cards { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 }
@@ -17,36 +16,12 @@
 .col-sub { grid-column: 1 / -1; margin: 4px 0 0; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-tools { display: flex; align-items: center; gap: 8px; }
 .col-on { color: var(--fg2); white-space: nowrap; font-variant-numeric: tabular-nums; margin-right: 4px; }
-.col-more, .room-fold { width: 28px; height: 28px; padding: 0; flex: none; }
+.col-more { width: 28px; height: 28px; padding: 0; flex: none; }
 .col-more svg { width: 16px; height: 16px; }
-.room-fold svg { width: 14px; height: 14px; transform: rotate(-90deg); transition: transform .25s var(--out); }
-.room-fold[aria-expanded=false] svg { transform: rotate(90deg); }
 .seg.icons { height: 28px; align-items: stretch; }
 .seg.icons button { display: grid; place-items: center; padding: 0 8px; }
 .seg.icons button svg { width: 16px; height: 16px; }
-.empty .col-head, .empty .room-wrap, .empty .col-grid, .empty .col-stats { display: none !important; }
-
-/* ---- the Crew room: one felt surface, the whole crew on its floor acting out its status, names under it ----
-   Its height never changes; folding it away (remembered) closes it to nothing. */
-.room-wrap { display: grid; grid-template-rows: 1fr; margin: 0 24px 8px; }
-.room-wrap.moving { transition: grid-template-rows .3s var(--out), margin-bottom .3s var(--out); }
-.room-wrap.folded { grid-template-rows: 0fr; margin-bottom: 0; }
-.room-box { min-height: 0; overflow: hidden; }
-.room-wrap.folded .room-box { visibility: hidden; }
-.room-wrap:not(.moving).folded .room-box { display: none; }
-.room { position: relative; height: 168px; }
-.room-crew { position: absolute; left: 0; right: 0; bottom: 14px; display: flex; justify-content: space-around; align-items: flex-end; padding: 0 12px; }
-.room-who, .room-name { all: unset; box-sizing: border-box; flex: none; width: var(--slot); cursor: pointer; }
-.room-who { position: relative; line-height: 0; border-radius: var(--r-card); }
-.room-who:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-.room-more { flex: none; width: var(--slot); }
-.room-names { display: flex; justify-content: space-around; margin-top: 8px; padding: 0 12px; height: 20px; }
-.room-name { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 20px; border-radius: var(--r-control); font: 500 13px/16px var(--font-brand); color: var(--fg2); white-space: nowrap; }
-.room-name span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.room-name .dot { width: 7px; height: 7px; }
-.room-name.on { color: var(--fg); }
-.room-name.on span { text-decoration: underline; text-decoration-color: var(--fg3); text-underline-offset: 4px; }
-.room-name.room-extra { cursor: default; font-family: var(--ui); font-size: 12px; }
+.empty .col-head, .empty .col-grid, .empty .col-stats { display: none !important; }
 
 .col-grid { padding: 8px 24px 130px; display: flex; flex-direction: column; gap: 24px; }
 .col-group h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; height: 26px; padding-top: 6px; font-size: 13px; font-weight: 600; }
@@ -62,14 +37,17 @@
   position: relative; display: flex; flex-direction: column; align-items: stretch; height: 152px; padding: 16px; border: 0;
   border-radius: var(--r-card); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg);
   text-align: left; cursor: pointer; overflow: hidden; font: inherit; transition: box-shadow .15s, opacity .2s;
-  animation: card-in .4s var(--out) backwards; animation-delay: calc(sibling-index() * 30ms);
+  animation: card-in var(--t-move) var(--out) backwards; animation-delay: calc(min(sibling-index(), 10) * 20ms);
 }
 .pcard:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
 .pcard:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-/* picked in the room */
-.pcard.sel { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg) 40%, transparent); }
 @keyframes card-in { from { opacity: 0; transform: translateY(8px); } }
-.pcard .c-name { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: calc(100% - 144px); }
+.pcard .c-name { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: calc(100% - 188px); height: 20px; }
+/* its on/off switch: one click away on every card, at the end of the name's line (never on the felt); off, the card
+   stays where it is and its creature goes grey and falls asleep */
+.pc-power { position: absolute; z-index: 2; top: 18px; right: 160px; display: flex; line-height: 0; }
+.pcard.mini .pc-power { top: 13px; right: 70px; }
+.selecting .pc-power { visibility: hidden; }
 .pcard .c-name b { font: 600 17px/20px var(--font-brand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pcard .c-job, .pcard .c-brain { max-width: calc(100% - 144px); margin-top: 4px; color: var(--fg2); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pcard .c-brain { margin-top: 2px; }
@@ -96,7 +74,7 @@
 
 /* ---- compact cards: a big crew on one screen (the creature plain, no patch) ---- */
 .pcard.mini { height: 88px; padding: 12px 14px; gap: 2px; }
-.pcard.mini .pc-name { display: flex; align-items: center; gap: 6px; max-width: calc(100% - 60px); min-width: 0; }
+.pcard.mini .pc-name { display: flex; align-items: center; gap: 6px; max-width: calc(100% - 108px); min-width: 0; height: 20px; }
 .pcard.mini .pc-name b { font: 600 15px/20px var(--font-brand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pc-line { display: flex; align-items: center; gap: 6px; max-width: calc(100% - 60px); font-size: 12px; font-weight: 500; min-width: 0; }
 .pc-line > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -120,7 +98,7 @@
   position: sticky; bottom: 18px; margin: 0 24px; display: none; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px;
   padding: 10px 12px; border-radius: var(--r-window); background: var(--float); box-shadow: var(--shadow-float);
 }
-.selecting .bulk { display: flex; animation: bulk-in .3s var(--out); }
+.selecting .bulk { display: flex; animation: bulk-in var(--t-move) var(--out); }
 @keyframes bulk-in { from { opacity: 0; transform: translateY(16px); } }
 .bulk::after { content: ''; order: 3; flex-basis: 100%; height: 0; }
 .bulk [data-act=all] { order: 1; }
@@ -151,7 +129,7 @@
 .stats-table th[data-sort] { cursor: pointer; transition: color .15s; }
 .stats-table th[data-sort]:hover, .stats-table th.on { color: var(--fg); }
 .stats-table th.on::after { content: '\00a0↓'; }
-.stats-table tbody tr { animation: row-in .35s var(--out) backwards; animation-delay: calc(sibling-index() * 25ms); }
+.stats-table tbody tr { animation: row-in var(--t-move) var(--out) backwards; animation-delay: calc(min(sibling-index(), 10) * 20ms); }
 @keyframes row-in { from { opacity: 0; transform: translateY(10px); } }
 .stats-table td { padding: 8px 4px; vertical-align: middle; min-width: 46px; border-top: 1px solid var(--line); transition: background .15s; }
 .stats-table td:first-child { padding-left: 14px; }
@@ -178,29 +156,23 @@
 /* ---- the agent's sheet ----
    Over the whole window: who it is on the left (the card, opened up), what you can set on the right, in tabs that
    each fit without scrolling. Save and Cancel are always in reach at the bottom. */
-.ed-layer { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; pointer-events: none; visibility: hidden; }
-.ed-layer.open { pointer-events: auto; visibility: visible; }
-.ed-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .28); opacity: 0; transition: opacity .25s; }
-.ed-layer.open .ed-scrim { opacity: 1; }
+.ed-layer { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; pointer-events: none; visibility: hidden; transition: visibility 0s var(--t-pop); }
+.ed-layer.open { pointer-events: auto; visibility: visible; transition: none; }
+.ed-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .28); opacity: 0; transition: opacity var(--t-pop) var(--in); }
+.ed-layer.open .ed-scrim { opacity: 1; transition: opacity var(--t-move) var(--out); }
 .ed {
   --c: #888; position: relative; display: grid; grid-template-columns: 296px minmax(0, 1fr);
   width: min(1040px, calc(100vw - 56px)); height: min(720px, calc(100vh - 48px)); border-radius: var(--r-window); overflow: hidden;
   background: var(--surface); box-shadow: var(--shadow-float);
-  opacity: 0; transform: translateY(12px) scale(.98); transition: opacity .2s, transform .4s var(--sheet);
+  opacity: 0; transform: translateY(8px) scale(.985); transition: opacity var(--t-leave) var(--in), transform var(--t-pop) var(--in);
 }
-.ed-layer.open .ed { opacity: 1; transform: none; }
+.ed[data-tab=look] .pd-av .av.asleep { filter: none; }
+.ed:focus { outline: none; } /* focused as it opens, so the keyboard is in it (the ring is for what's inside) */
+.ed-layer.open .ed { opacity: 1; transform: none; transition: opacity var(--t-pop) var(--out), transform var(--t-move) var(--move); }
 /* on Windows its corners stay clear of the window buttons over the titlebar */
 html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
-.ed-layer.vt .ed, .ed-layer.vt .ed-scrim { transition: none; }
-.ed.enter { animation: ed-in .4s var(--out); }
-@keyframes ed-in { from { opacity: 0; transform: translateY(12px) scale(.98); } }
-::view-transition-group(*) { animation-duration: .5s; animation-timing-function: var(--sheet); }
-::view-transition-old(pd-hero), ::view-transition-new(pd-hero) { width: 100%; height: 100%; object-fit: cover; }
-::view-transition-old(pd-hero) { animation: vt-out .18s ease-out both; }
-::view-transition-new(pd-hero) { animation: vt-in .3s ease-out both; }
-@keyframes vt-out { to { opacity: 0; } }
-@keyframes vt-in { from { opacity: 0; } }
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; }
+::view-transition-group(*) { animation-duration: var(--t-move); animation-timing-function: var(--move); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--t-move); }
 
 /* left: the card, opened up. Its creature on its felt patch, then who it is and a few plain facts, on a quiet side;
    its level and the numbers are on the Stats tab. */
@@ -261,7 +233,7 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .ed-panes { position: relative; flex: 1; min-height: 0; }
 /* the scrollbar's room is kept, so unfolding Advanced (the one thing that can outgrow a pane) moves nothing sideways */
 .ed-pane { position: absolute; inset: 0; display: none; flex-direction: column; padding: 4px 14px 16px 24px; overflow-y: auto; scrollbar-gutter: stable; }
-.ed-pane.on { display: flex; animation: pane-in .3s var(--out); }
+.ed-pane.on { display: flex; animation: pane-in var(--t-move) var(--out); }
 @keyframes pane-in { from { opacity: 0; transform: translateY(6px); } }
 .ed-pane h4 { flex: none; margin: 12px 2px 6px; font-size: 12px; font-weight: 500; color: var(--fg2); }
 .ed-pane h4:first-child { margin-top: 4px; }
@@ -341,7 +313,7 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .ed-adv-head b { flex: none; font-size: 13px; font-weight: 500; }
 .ed-adv-sum { flex: 1; min-width: 0; font-size: 13px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ed-adv-body { display: none; box-shadow: inset 0 1px 0 var(--line); }
-.ed-adv.open .ed-adv-body { display: block; animation: pane-in .3s var(--out); }
+.ed-adv.open .ed-adv-body { display: block; animation: pane-in var(--t-move) var(--out); }
 .limit + .flags .ed-row { box-shadow: inset 0 1px 0 var(--line); }
 
 /* Instructions: the text fills the pane */
@@ -388,7 +360,7 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .days .spark { height: 64px; gap: 6px; }
 .days .spark i { flex: 1; width: auto; border-radius: 4px; }
 .spark { display: inline-flex; align-items: flex-end; gap: 2px; height: 26px; }
-.spark i { width: 5px; border-radius: 2px; background: var(--track); transform-origin: bottom; transition: transform .6s var(--bounce); }
+.spark i { width: 5px; border-radius: 2px; background: var(--track); transform-origin: bottom; transition: transform .6s var(--out); }
 @starting-style { .spark i { transform: scaleY(0); } }
 .spark i.on { background: var(--fg2); }
 /* this conversation: how full, its account's limits, and a clean slate */

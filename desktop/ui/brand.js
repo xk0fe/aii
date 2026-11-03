@@ -1,5 +1,5 @@
-// Crew's brand layer: the name the app shows, its felt, and the Crew room. Felt is the creatures' material, and the
-// brand surfaces are made of it too: the room at the top of the Crew view, each creature's patch on its card, empty
+// Crew's brand layer: the name the app shows, its felt, and the Crew view's header. Felt is the creatures' material,
+// and the brand surfaces are made of it too: each creature's patch on its card, the menu bar's crew strip, empty
 // states and the wordmark. Never on controls, and text never sits on it. One felt surface per region.
 /* global avatarHTML, poseOf, statusWord, plainName, esc */
 
@@ -82,9 +82,9 @@ function redrawWordmarks() {
   for (const el of document.querySelectorAll('.wordmark.stale')) el.outerHTML = wordmarkHTML(Number(el.dataset.size), { stitch: el.dataset.stitch === '1' })
 }
 
-// ---- the Crew room: the whole crew in one felt scene, each acting out its status ----
+// ---- the Crew view's header ----
 
-// The one line the room says, in plain words: who needs you comes first, then how busy everyone is.
+// The one line the header says, in plain words: who needs you comes first, then how busy everyone is.
 const crewKey = (a) => a.cloneOf ?? a.name
 function crewHeadline(agents, needs) {
   const asking = [...new Map(needs.map((n) => [crewKey(n.agent), n.agent])).values()]
@@ -124,29 +124,8 @@ function crewSentence(agents, needs) {
   return 'Nobody’s working right now. Send a message or add a task, and whoever’s free picks it up.'
 }
 
-// Who stands in a room this wide: everyone if they fit at 64px or more, else the ones that matter most right now
-// (needing you, then working, starting, free, off), kept in your order so nobody swaps places.
+// Who matters most right now, for a strip too small for everyone: needing you, then working, starting, free, off.
 const ROOM_RANK = { waiting: 0, working: 1, starting: 2, idle: 3 }
-function roomCast(agents, width) {
-  const fit = Math.max(1, Math.floor(width / 76))
-  if (agents.length <= fit) return { cast: agents, more: 0, size: Math.max(64, Math.min(96, Math.floor(width / agents.length) - 8)) }
-  const keep = new Set([...agents].sort((x, y) => (ROOM_RANK[x.on ? x.status : 'off'] ?? 4) - (ROOM_RANK[y.on ? y.status : 'off'] ?? 4)).slice(0, fit - 1).map((a) => a.name))
-  return { cast: agents.filter((a) => keep.has(a.name)), more: agents.length - keep.size, size: 64 }
-}
-
-// The room: its felt, the crew standing on its floor (each a button: a click picks it), and their names under it
-// (off the felt). asks: agent name -> its open ask's type, so a question gets the speech bubble and an OK the sign.
-function roomHTML(agents, { width = 728, asks = new Map(), picked = null } = {}) {
-  const { cast, more, size } = roomCast(agents, width)
-  const nameOf = (a) => a.seed ?? a.name
-  const said = (a) => `${nameOf(a)}: ${statusWord(a, asks.get(a.name))}`
-  const slot = (a) => `<button class="room-who${a.name === picked ? ' on' : ''}" data-room="${esc(a.name)}" style="--slot:${size}px" aria-label="${esc(said(a))}">${avatarHTML(a, { size, pose: poseOf(a, { ask: asks.get(a.name) }) })}</button>`
-  const dot = (a) => (a.on && (a.status === 'working' || a.status === 'waiting') ? `<i class="dot ${a.status === 'waiting' ? 'needs' : a.waitingOn?.length ? 'idle' : 'working'}"></i>` : '')
-  const name = (a) => `<button class="room-name${a.name === picked ? ' on' : ''}" data-room="${esc(a.name)}" style="--slot:${size}px" tabindex="-1">${dot(a)}<span>${esc(nameOf(a))}</span></button>`
-  const extra = more ? `<span class="room-more" style="--slot:${size}px"></span>` : ''
-  return `<div class="room">${roomFeltHTML(44)}<div class="room-crew">${cast.map(slot).join('')}${extra}</div></div>
-    <div class="room-names">${cast.map(name).join('')}${more ? `<span class="room-name room-extra" style="--slot:${size}px">${more} more</span>` : ''}</div>`
-}
 
 // The mini crew strip, for the menu bar's popover: the room in small, the crew on its floor (plain creatures at this
 // size, hopping while they work, wiggling when they need you, asleep when off). A click opens one (data-open). A crew
