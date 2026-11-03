@@ -5,6 +5,7 @@ import { getRandomBytes } from 'expo-crypto'
 import * as Device from 'expo-device'
 import { AppState, Platform } from 'react-native'
 
+import { APP_NAME } from '@/brand'
 import { DemoClient } from '@/demo/client'
 import { CrewClient, type Deps, type Link, type Snapshot, type Try } from '@/net/client'
 import { parsePairCode } from '@/net/pairing'
@@ -58,9 +59,9 @@ function trouble(name: string, link: Offline) {
       return new PairError('Too many tries', `${name} listens again in a minute.`, more)
     case CLOSE.noCode:
     case CLOSE.badFrame:
-      return new PairError('That code is no longer valid', 'Make a new one on the Mac.', { ...more, fatal: true })
+      return new PairError('That code is no longer valid', 'Make a new one on your computer.', { ...more, fatal: true })
     case CLOSE.version:
-      return new PairError(`${name} runs another version of Crew`, 'Update both.', more)
+      return new PairError(`${name} runs another version of ${APP_NAME}`, 'Update both.', more)
     default:
       return link.fatal ? new PairError(link.reason, '', more) : new PairError(`Can't reach ${name}`, REACH, more)
   }

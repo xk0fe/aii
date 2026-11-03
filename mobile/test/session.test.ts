@@ -20,7 +20,7 @@ jest.mock('@/state/storage', () => ({
 jest.mock('expo-crypto', () => ({ getRandomBytes: (n: number) => new Uint8Array(require('node:crypto').randomBytes(n)) }))
 
 const random = (n: number) => new Uint8Array(crypto.randomBytes(n))
-const STATE = { agents: [{ name: 'joseph', status: 'idle', on: true }], feed: [], workspaces: [{ id: 'default', name: 'Home' }] }
+const STATE = { agents: [{ name: 'Ada', status: 'idle', on: true }], feed: [], workspaces: [{ id: 'default', name: 'Home' }] }
 const LAN = 'ws://192.168.1.20:7788'
 
 function setup(timing: Partial<Timing> = {}) {
@@ -59,7 +59,7 @@ test('a first round that fails is ridden out: the Mac answers on a later try, an
   })
   await attempt.done
   expect(retried).toBe(1)
-  expect(session.getSnapshot()).toMatchObject({ active: mac.id, macs: [expect.objectContaining({ id: mac.id, name: 'Mac mini' })] })
+  expect(session.getSnapshot()).toMatchObject({ active: mac.id, macs: [expect.objectContaining({ id: mac.id, name: 'Studio' })] })
   expect(mockSaved.active).toBe(mac.id)
   expect(mockSaved.secrets.has(mac.id)).toBe(true)
   expect(session.client?.getSnapshot().link.status).toBe('online')
@@ -73,7 +73,7 @@ test('a used-up code ends it at once, in few words', async () => {
   const started = Date.now()
   const e = await failure(session.pair(code, { timeout: 5000 }).done)
   expect(Date.now() - started).toBeLessThan(1000)
-  expect(e).toMatchObject({ title: 'That code is no longer valid', hint: 'Make a new one on the Mac.', more: { fatal: true } })
+  expect(e).toMatchObject({ title: 'That code is no longer valid', hint: 'Make a new one on your computer.', more: { fatal: true } })
   expect(session.getSnapshot().active).toBeNull()
 })
 
@@ -86,7 +86,7 @@ test("a Mac it can't reach: it keeps trying until the timeout, then says so, wit
   expect(Date.now() - started).toBeGreaterThan(400) // or as soon as the next round would start too late
   expect(retried).toBe(1)
   expect(net.opened.filter((u) => u === LAN).length).toBeGreaterThan(1) // more than one round
-  expect(e).toMatchObject({ title: "Can't reach Mac mini", hint: 'Same Wi-Fi or Tailscale on both?' })
+  expect(e).toMatchObject({ title: "Can't reach Studio", hint: 'Same Wi-Fi or Tailscale on both?' })
   expect(e.more.fatal).toBeFalsy()
   expect(lines(e)).toEqual(['100.101.102.103 · unreachable', '192.168.1.20 · no answer'])
 })
@@ -97,7 +97,7 @@ test('"too many tries" from the Mac beats "can\'t reach", and ends it at once: t
   const started = Date.now()
   const e = await failure(session.pair(code, { timeout: 5000 }).done)
   expect(Date.now() - started).toBeLessThan(1000)
-  expect(e).toMatchObject({ title: 'Too many tries', hint: 'Mac mini listens again in a minute.' })
+  expect(e).toMatchObject({ title: 'Too many tries', hint: 'Studio listens again in a minute.' })
   expect(e.more.fatal).toBeFalsy()
   expect(e.more.retryAt).toBeGreaterThan(Date.now() + 50_000)
   expect(lines(e)).toEqual(['100.101.102.103 · unreachable', '192.168.1.20 · closed 4008'])
@@ -123,7 +123,7 @@ test('a round still under way at the deadline may finish: a slow `ready` pairs i
 test("only the Mac's minute says when to try a code again, not the phone's own backoff", async () => {
   const { session, code } = setup({ backoff: [40, 80, 160, 320, 640] }) // nothing listens: every round fails at once
   const e = await failure(session.pair(code, { timeout: 700 }).done)
-  expect(e.title).toBe("Can't reach Mac mini")
+  expect(e.title).toBe("Can't reach Studio")
   expect(e.more.retryAt).toBeUndefined()
 })
 
