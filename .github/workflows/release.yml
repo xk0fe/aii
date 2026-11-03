@@ -84,7 +84,6 @@ jobs:
           NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER != '' }}
           WIN_CERTIFICATE: ${{ secrets.WIN_CERTIFICATE != '' }}
           AZURE: ${{ secrets.AZURE_CLIENT_SECRET != '' && vars.AZURE_SIGN_ENDPOINT != '' && vars.AZURE_SIGN_ACCOUNT != '' && vars.AZURE_SIGN_PROFILE != '' }}
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
         run: |
           say() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
           if [ "$MAC_CERTIFICATE" = true ] && [ "$NOTARY_KEY" = true ]; then
@@ -102,6 +101,11 @@ jobs:
             echo "::warning title=Windows installer unsigned::No Windows signing: the installers work, but SmartScreen shows \"Windows protected your PC\" (Unknown publisher) until people choose More info › Run anyway."
             say "- Windows: **unsigned**: SmartScreen says \"Windows protected your PC\" until people choose More info › Run anyway"
           fi
+      - name: where it goes
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          say() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
           if [ -z "$RELEASE_REPO" ]; then
             echo "::notice title=No public repo::The repository variable RELEASE_REPO isn't set: the apps are kept as this run's artifacts only, and the site isn't deployed."
             say "- Release: none (RELEASE_REPO isn't set): the apps are this run's artifacts"
@@ -109,7 +113,7 @@ jobs:
             echo "::error title=No token::RELEASE_REPO is $RELEASE_REPO but the secret RELEASE_TOKEN isn't set: nothing can be put there."
             exit 1
           else
-            say "- Release: a draft on $RELEASE_REPO"
+            say "- Release: a draft on $RELEASE_REPO; site: its GitHub Pages"
           fi
 
   build-mac:
@@ -168,7 +172,10 @@ jobs:
               echo "::warning title=Not notarized::$app has no notarization ticket"
             fi
           done
-          for dmg in ./*.dmg; do hdiutil verify -quiet "$dmg" && echo "$dmg verifies"; done
+          for dmg in ./*.dmg; do
+            hdiutil verify -quiet "$dmg"
+            echo "$dmg verifies"
+          done
           ls -l ./*.dmg ./*.zip
       - uses: actions/upload-artifact@v4
         with:
@@ -227,6 +234,7 @@ jobs:
             $head = [IO.File]::ReadAllBytes($exe.FullName)[0..1]
             if ([Text.Encoding]::ASCII.GetString($head) -ne 'MZ') { throw "$($exe.Name) is not a Windows program" }
             $inside = 7z l $exe.FullName
+            if ($LASTEXITCODE -gt 1) { $inside; throw "7-Zip couldn't read $($exe.Name)" }
             if (-not ($inside | Select-String "app-$($arch -replace 'x64', '64').7z")) { $inside; throw "$($exe.Name) doesn't carry the $arch app" }
             $sig = Get-AuthenticodeSignature $exe.FullName
             if ($sig.Status -eq 'Valid') { Write-Output "$($exe.Name): signed by $($sig.SignerCertificate.Subject)" }
@@ -242,6 +250,8 @@ jobs:
           Start-Process "$dir\Uninstall Crew.exe" -ArgumentList '/S' -Wait
           for ($i = 0; $i -lt 60 -and (Test-Path "$dir\Crew.exe"); $i++) { Start-Sleep -Seconds 1 }
           if (Test-Path "$dir\Crew.exe") { throw 'uninstalling left Crew.exe behind' }
+          # the step ends with the last program's exit code otherwise, and 7-Zip's 1 is only a warning
+          exit 0
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows
@@ -307,7 +317,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          gh api "repos/$RELEASE_REPO/releases/latest" > latest.json 2>/dev/null || echo '{}' > latest.json
+          # none published yet (404) is fine: the buttons say "Coming soon". Any other error stops the deploy, so a
+          # bad token or an outage can't put up a site without downloads.
+          if ! gh api "repos/$RELEASE_REPO/releases/latest" > latest.json 2> error.txt; then
+            if grep -q 'HTTP 404' error.txt; then echo '{}' > latest.json; else cat error.txt; exit 1; fi
+          fi
           node -p "'newest published release: ' + (require('./latest.json').tag_name ?? 'none yet')"
       - name: build
         env:
