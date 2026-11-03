@@ -223,7 +223,7 @@ function RuleLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
 
 export const FeedItem = memo(function FeedItem({ e, prev, c }: { e: FeedEntry; prev?: FeedEntry; c: FeedCtx }) {
   const t = c.t
-  const cont = Boolean(prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && e.ts - prev.ts < 120000 && !e.re && e.kind !== 'ask' && e.kind !== 'event')
+  const cont = Boolean(prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && !prev.auto === !e.auto && e.ts - prev.ts < 120000 && !e.re && e.kind !== 'ask' && e.kind !== 'event')
   const divider = c.divider === e.id ? (
     <View style={styles.newLine} accessibilityLabel="New replies">
       <View style={[styles.rule, { backgroundColor: t.accent, opacity: 0.4 }]} />
@@ -281,7 +281,7 @@ function Entry({ e, c, cont }: { e: FeedEntry; c: FeedCtx; cont: boolean }) {
         {cont ? null : (
           <View style={styles.meCap}>
             <Text style={[styles.capText, { color: t.fg2 }]} numberOfLines={1}>
-              to{' '}
+              {e.auto ? 'Auto picked' : 'to'}{' '}
               {to.map((n, i) => (
                 <Text key={n}>
                   {i ? ' ' : ''}

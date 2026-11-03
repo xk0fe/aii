@@ -565,6 +565,7 @@ export class Crew extends EventEmitter {
     const idThere = (slug) => (id) => (slug ? (id?.endsWith(`@${slug}`) ? id.slice(0, -slug.length - 1) : undefined) : id && !id.includes('@') ? id : undefined)
     const unq = (slug) => (name) => (slug && String(name).endsWith(`@${slug}`) ? String(name).slice(0, -slug.length - 1) : name)
     let names = addressees(to, text).map((n) => this.resolve(n, here))
+    const auto = !names.length && { auto: true } // nobody named: Auto picks, and the chat says Auto picked them
     if (!names.length) {
       // agents, not their clones; one here that can clone itself counts as free
       const ready = this.snapshot(here).agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status))
@@ -575,10 +576,10 @@ export class Crew extends EventEmitter {
     const out = []
     for (const [home, bases] of this.group(names)) {
       const reply = quoted ? { re: idThere(home)(re), quote: { ...quote, from: unq(home)(quote.from) } } : {}
-      if (!home) out.push(await here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...reply }))
+      if (!home) out.push(await here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...auto, ...reply }))
       else {
         const l = this.link(home)
-        out.push(await this.linkCall(l, 'deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...reply }], here.ws))
+        out.push(await this.linkCall(l, 'deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...auto, ...reply }], here.ws))
       }
     }
     return out.join('')
