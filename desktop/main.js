@@ -16,6 +16,8 @@ import { Remote } from './core/remote.js'
 import { readPack } from './core/pack.js'
 import { Voice, voiceActions, voiceAudio } from './core/voice.js'
 import { pillWindow } from './core/pill.js'
+import { Setup, withSetup, hasAgents } from './core/setup.js'
+import { addProvider, removeProvider, checkProvider, keepProvidersInUse } from './core/providers.js'
 // Crew's app id (core/appid.js), which packaging uses too: on Windows notifications carry it, and it must match the
 // installer's Start menu shortcut.
 import { APP_ID } from './core/appid.js'
@@ -35,6 +37,7 @@ let trayHiddenAt = 0
 let quitting = false
 let started = false // Crew is up: its windows exist, so a second launch or a .crew file can show them
 let awake = null
+const setup = new Setup() // can Claude Code and Codex run here (core/setup.js): the first-run screen, ui/setup.js
 
 // Something that went wrong in here and nothing caught: written to Crew's log, and Crew carries on. Without this
 // Electron shows a dialog with the stack; the agents run in the terminal host either way, so they never stop for it.
@@ -100,6 +103,7 @@ async function start() {
   const bin = path.join(dir, 'bin').replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
   crew = new Crew({ bin, computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
   hub = crew.hub
+  setup.check().then(() => crew.changed()) // meanwhile, in the background
   await crew.start()
   remote = new Remote(crew)
   await remote.start()
@@ -123,6 +127,9 @@ async function start() {
   }
   started = true
   openPackFile() // Crew was opened by double-clicking a .crew file
+  keepProvidersInUse(crew.config)
+  // A first run: no agents yet, so Crew opens on its dashboard, which says what to set up or invites the first agent
+  if (!hasAgents(crew.config.data)) openDashboard()
 }
 
 // Crew couldn't start (its terminal host, say): say so and quit, rather than run on with no icon and no window, holding
@@ -433,7 +440,24 @@ function showDock() {
 // Every action the UI can take: crew.call('<name>', ...args). Agents are addressed by the name the UI shows,
 // so an agent on another computer (gal@mac-mini) is handled there. What the UI does lands in the workspace on screen.
 const actions = {
-  state: () => crew.snapshot(),
+  state: () => withSetup(crew.snapshot(), crew.config.data, setup.status),
+  // The first-run screen and Add provider… (ui/setup.js): setup('check') looks again, setup('provider', id) says what
+  // GLM or Ollama needs, setup('add' | 'remove', id) offers it in the model picker or stops.
+  setup: async (op, id) => {
+    const ops = {
+      check: async () => {
+        if (await setup.refresh()) crew.config.load() // a key set since Crew started: providers say so
+        const status = await setup.check({ again: true })
+        crew.changed()
+        return status
+      },
+      provider: () => checkProvider(id),
+      add: () => addProvider(crew.config, id),
+      remove: () => removeProvider(crew.config, id),
+    }
+    if (!Object.hasOwn(ops, op)) throw new Error(`unknown setup action "${op}"`)
+    return ops[op]()
+  },
   // The switcher and the workspace sheet: workspace('switch', 'golf'), workspace('create', null, { name, … }), and
   // edit, open, park, remove, members (see Crew.workspaceAction). -> { id, state }
   workspace: (op, id, arg) => crew.workspaceAction(op, id, arg),
@@ -632,7 +656,8 @@ function wire() {
 
   // The menu bar's title redraws the status item, so it's set only when it reads differently. Windows: the icon.
   let title = null
-  crew.on('state', (state) => {
+  crew.on('state', (snapshot) => {
+    const state = withSetup(snapshot, crew.config.data, setup.status)
     if (nativeTheme.themeSource !== state.theme) nativeTheme.themeSource = state.theme
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('state', state)
     const counts = trayCounts(state)

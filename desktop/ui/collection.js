@@ -322,7 +322,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   }
 
   function drawBulk() {
-    const providers = Object.entries(state.providers)
+    const providers = Object.entries(state.providers).filter(([, p]) => p.added !== false)
     const efforts = [...new Set(providers.flatMap(([, p]) => p.efforts))]
     const models = [...new Set(providers.flatMap(([, p]) => p.models))]
     bulk.innerHTML = `
@@ -744,6 +744,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const choices = []
     const items = []
     for (const [id, p] of Object.entries(state.providers)) {
+      if (p.added === false && draft.provider !== id) continue // GLM and Ollama, until Add provider… (ui/setup.js)
       if (items.length) items.push('-')
       items.push({ head: p.missing?.length ? `${p.label} ⚠︎ needs ${p.missing.join(', ')}` : p.label })
       const models = draft.provider === id && draft.model && !p.models.includes(draft.model) ? [...p.models, draft.model] : p.models
@@ -753,9 +754,10 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         choices.push({ provider: id, model: m })
       }
     }
-    items.push('-', { label: 'Type a model…', icon: ICONS.edit, act: 'type', hint: `for ${providerOf(draft.provider).label}` })
+    items.push('-', { label: 'Type a model…', icon: ICONS.edit, act: 'type', hint: `for ${providerOf(draft.provider).label}` }, { label: 'Add provider…', icon: ICONS.plus, act: 'provider' })
     const menu = popMenu(anchor, items, (act) => {
       if (act === 'type') return typeModel()
+      if (act === 'provider') return openAddProvider()
       const pick = choices[Number(act)]
       if (!pick) return
       if (pick.provider !== draft.provider) Object.assign(draft, { provider: pick.provider, effort: '', tier: '' })
