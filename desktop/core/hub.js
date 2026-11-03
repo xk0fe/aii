@@ -1720,7 +1720,7 @@ export class Hub extends EventEmitter {
   // ({ from, text }): the same for a message that lives on another computer, which can only be quoted.
   // From a linked computer, `ask` is a question asked there (its id there: the answer goes back with it), and
   // `answers` the answer to one asked here.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers }) {
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false }) {
     text = String(text ?? '').trim()
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -1741,8 +1741,9 @@ export class Hub extends EventEmitter {
     if (away.length && !names.length) return this.relay(from, away, text, images, extra)
     const targets = names.length ? this.recipients(names, from) : [this.route(text, from)]
     if (!targets[0]) throw new Error('no agents to send to')
-    // nobody named: the crew picked who takes it, and the chat says so rather than that you chose them
-    const routed = !names.length && { auto: true }
+    // nobody named: the crew picked who takes it (here, or in Crew.send for you), and the chat says so rather than that
+    // you chose them
+    const routed = (auto || !names.length) && { auto: true }
     // Work can't go back to a teammate that's waiting on your answer: your final message goes back to it by itself.
     for (const t of this.agents.has(from) ? targets : []) {
       const answering = this.agents.get(from).serving ?? []
