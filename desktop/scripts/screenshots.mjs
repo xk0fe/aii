@@ -158,6 +158,15 @@ const SHOTS = {
     await save(win, `channel-${theme}`)
     win.destroy()
   },
+  // Searching #crew: only the messages with every word, the words marked, how many in the field
+  async chatSearch(theme) {
+    const win = await dashboard(theme, 'chat')
+    await sleep(900)
+    await js(win, "openSearch(); const q = document.querySelector('[data-ms-q]'); q.value = 'totals'; q.dispatchEvent(new Event('input'))")
+    await sleep(900)
+    await save(win, `chat-search-${theme}`)
+    win.destroy()
+  },
   // A conversation with one agent, its terminal docked beside it (and its clones' as tabs)
   async direct(theme) {
     const win = await dashboard(theme, 'chat')

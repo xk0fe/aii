@@ -133,7 +133,8 @@
     /* with the sidebar put away, a Mac's traffic lights sit over the header's left end */
     html:not([data-os=win]) body.no-side .center { --lights-w: 76px; }
     .mainhead { flex: none; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 calc(14px + var(--caption-w)) 0 calc(24px + var(--lights-w, 0px)); border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
-    .mainhead:empty { display: none; }
+    .mainhead.none { display: none; }
+    .mh-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; }
     .mainhead :is(button, input, label, a) { -webkit-app-region: no-drag; }
     .tk-head, .col-head, .tv-head { -webkit-app-region: drag; }
     :is(.tk-head, .col-head, .tv-head) :is(button, input, label, select, .seg, a, [role=button]) { -webkit-app-region: no-drag; }
@@ -162,6 +163,26 @@
     .mh-faces { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px 0 4px; border: 0; border-radius: 9px; background: none; color: var(--fg2); font: inherit; font-size: 13px; cursor: pointer; }
     .mh-faces:hover { background: var(--fill); color: var(--fg); }
     .mh-faces .av + .av { margin-left: -8px; }
+    /* searching the messages: a magnifier at the header's end that opens into a field, with how many match */
+    .msearch { flex: none; display: flex; align-items: center; }
+    .msearch .icon { width: 30px; height: 30px; padding: 0; }
+    .msearch .icon svg { width: 16px; height: 16px; }
+    .ms-field { display: none; align-items: center; gap: 7px; width: 260px; height: 32px; padding: 0 10px; border-radius: 9px; background: var(--fill); color: var(--fg3); cursor: text; animation: ms-in var(--t-pop) var(--out); }
+    .ms-field:focus-within { background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); }
+    .ms-field svg { width: 15px; height: 15px; flex: none; }
+    .ms-field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 13px; color: var(--fg); user-select: text; }
+    .ms-field input::placeholder { color: var(--fg3); }
+    .ms-field input::-webkit-search-cancel-button { display: none; }
+    .ms-count { flex: none; font-size: 12px; color: var(--fg3); font-variant-numeric: tabular-nums; }
+    .msearch.on .ms-field { display: flex; }
+    .msearch.on .ms-open { display: none; }
+    @keyframes ms-in { from { opacity: 0; transform: translateX(6px); } }
+    @media (max-width: 1240px) { .ms-field { width: 200px; } }
+    /* the words found, in the results */
+    .chat mark { background: color-mix(in srgb, var(--accent) 14%, transparent); color: inherit; border-radius: 3px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent); }
+    .chat .feed.searching .item, .chat .feed.searching .task-ev, .chat .feed.searching .event { cursor: pointer; }
+    .chat .feed.searching .item:hover { background: var(--fill); border-radius: var(--r-card); box-shadow: 0 0 0 6px var(--fill); }
+    .chat .feed .empty svg { width: 28px; height: 28px; color: var(--fg3); }
 
     .stage { position: relative; flex: 1; min-height: 0; }
     .center > .ws-banner { position: relative; inset: auto; flex: none; margin: 10px 14px 2px; } /* above what's open, never over it */
@@ -413,12 +434,12 @@
     .mv-busy { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--r-control); font-size: 13px; line-height: 1.45; color: var(--fg); background: var(--needs-tint); }
 
     /* ---- the chat: #crew (everyone), or your conversation with one agent ----
-       Messages in one column (880px at most) down the left, like a group chat: each sender's creature beside what it
-       said, you included. What needs you is a card in the conversation, answered where it is. */
+       Messages across the window, down the left like a group chat: each sender's creature beside what it said, you
+       included. What needs you is a card in the conversation (760px at most, as wide as the lines of who's at work),
+       answered where it is. */
     .chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--surface); }
-    .chat { --col-pad: max(28px, calc(100% - 908px)); }
-    .chat .feed { flex: 1; gap: 14px; padding: 20px var(--col-pad) 12px 28px; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12px); }
-    .chat .composer { padding: 6px var(--col-pad) 18px 28px; }
+    .chat .feed { flex: 1; gap: 14px; padding: 20px 28px 12px; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12px); }
+    .chat .composer { padding: 6px 28px 18px; }
     .chat .needs-queue { display: none !important; }
     .chat .item.said { gap: 12px; }
     .chat .item.said .face { width: 36px; }
@@ -431,10 +452,12 @@
     .you-av { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--fg); color: var(--surface); font: 600 11px/1 var(--ui); letter-spacing: .01em; }
     .chat .event, .chat .rule-ev { align-self: flex-start; margin-left: 48px; text-align: left; }
     .chat .fresh-ev, .chat .task-ev { margin-left: 48px; }
-    .chat .ask-card { width: min(640px, 100%); margin-top: 6px; padding: 14px 16px; border-radius: 14px; }
+    .chat .ask-card { width: min(760px, 100%); margin-top: 6px; padding: 14px 16px; border-radius: 14px; }
     .chat .item.ask.open .ask-card { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--needs) 62%, transparent); }
     .chat .item.ask.open .ask-title svg { color: var(--needs-ink); }
     .chat .typing-row { margin-left: 48px; }
+    .chat .typing-row, .chat .sub-tree { max-width: 760px; } /* the line stays near its words: its dots and steps don't drift to the far edge */
+    .chat .typing-row .tr-what { flex: 0 1 auto; }
     /* a question's options: one line each, its words after its label, so a card stays a glance tall */
     .chat .ask-options { gap: 4px; }
     .chat .ask-option { flex-direction: row; align-items: baseline; gap: 10px; padding: 7px 34px 7px 12px; }
@@ -486,7 +509,7 @@
       </div>
       <div class="side-sec">
         <span class="sec-label">Direct</span>
-        <button class="icon" data-act="find" title="Find an agent (⌘F)" aria-label="Find an agent"></button>
+        <button class="icon" data-act="find" title="Find an agent (⌘K)" aria-label="Find an agent"></button>
         <label class="find"><span class="find-icon"></span><input type="search" data-find spellcheck="false" autocomplete="off" aria-label="Find an agent"></label>
       </div>
       <div class="roster"></div>
@@ -497,7 +520,13 @@
       </footer>
     </nav>
     <section class="center">
-      <header class="mainhead"></header>
+      <header class="mainhead">
+        <div class="mh-main"></div>
+        <div class="msearch" role="search">
+          <button class="icon ms-open" data-ms="open" title="Search messages (⌘F)" aria-label="Search messages"></button>
+          <label class="ms-field"><span class="ms-icon"></span><input type="search" data-ms-q spellcheck="false" autocomplete="off" aria-label="Search messages"><span class="ms-count" aria-live="polite"></span></label>
+        </div>
+      </header>
       <div class="ws-banner hidden"></div>
       <div class="stage">
         <aside class="chat" aria-label="Messages">

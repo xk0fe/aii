@@ -22,6 +22,7 @@ const feed = mountFeed($('.feed'), {
   onLeave: () => composer.setTarget('auto'),
   onTicket: (key) => openTask(key),
   onReply: (e) => composer.replyTo(e),
+  onFound: () => closeSearch({ keep: true }),
 })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to), onDictate: () => place === 'chat' || place === 'dm' || goPlace('chat') })
 const collection = mountCollection($('.collection'), {
@@ -67,6 +68,8 @@ for (const b of document.querySelectorAll('.nv .nv-icon')) b.outerHTML = NAV_ICO
 $('[data-layout=grid]').innerHTML = ICONS.grid
 $('[data-layout=focus]').innerHTML = ICONS.focus
 $('.find-icon').outerHTML = ICONS.search
+$('.ms-icon').outerHTML = ICONS.search
+$('.ms-open').innerHTML = ICONS.search
 $('[data-act=find]').innerHTML = ICONS.search
 $('.side-ws [data-act=add]').innerHTML = ICONS.plus
 $('.side-more').innerHTML = ICONS.more
@@ -97,6 +100,7 @@ function showPlace(next) {
   if (next === 'dm' && !isConvo(composer.target())) next = 'chat'
   const moved = next !== place
   if (moved) (openMenu?.close(), document.querySelector('.use-pop:popover-open')?.hidePopover()) // a menu from the last place doesn't float over this one
+  if (moved) closeSearch()
   place = next
   store.set('crew.place', next)
   if (place === 'dm') lastDm = dmAgent()?.name ?? lastDm
@@ -138,6 +142,7 @@ function goPlace(next) {
 function targetChanged(to) {
   feed.setConvo(to)
   if (!booted) return
+  closeSearch() // the search was the last conversation's
   if (place === 'dm' && !isConvo(to)) left = { name: lastDm, at: Date.now() }
   dockPick = null
   if (isConvo(to)) showPlace('dm')
@@ -175,10 +180,10 @@ function openDM(name, { terminal = false } = {}) {
 // ---- the header: #crew, or who you're talking to ---------------------------------------------------------------
 
 function drawHead() {
-  const h = $('.mainhead')
-  if (place === 'chat') return morph(h, chatHead())
-  if (place === 'dm' && dmAgent()) return morph(h, dmHead(dmAgent()))
-  morph(h, '')
+  const h = $('.mh-main')
+  const html = place === 'chat' ? chatHead() : place === 'dm' && dmAgent() ? dmHead(dmAgent()) : ''
+  $('.mainhead').classList.toggle('none', !html)
+  morph(h, html)
 }
 // #crew: who it reaches, what's waiting on you (a click goes to the oldest), and who's in it (a click opens Agents).
 function chatHead() {
@@ -233,6 +238,51 @@ function answerOldest() {
   if (place !== 'chat') goPlace('chat')
   requestAnimationFrame(() => feed.jump(n.ask.id))
 }
+
+// ---- searching the messages: #crew's, or the conversation's ------------------------------------------------------
+
+// The magnifier opens a field; what you type narrows the chat to the messages with every word (marked), with how many
+// in the field. A click on one shows it where it was. Esc, or leaving, ends it.
+const msearch = $('.msearch')
+const msq = $('[data-ms-q]')
+let msTimer = null
+function openSearch() {
+  msearch.classList.add('on')
+  msq.placeholder = place === 'dm' && dmAgent() ? `Search with ${dmAgent().seed ?? dmAgent().name}` : 'Search #crew'
+  msq.focus()
+  msq.select()
+}
+// keep: the search ended on its own (a result was clicked): only the field goes
+function closeSearch({ keep = false } = {}) {
+  clearTimeout(msTimer)
+  if (!msearch.classList.contains('on') && !msq.value) return
+  msq.value = ''
+  $('.ms-count').textContent = ''
+  msearch.classList.remove('on')
+  $('.feed').classList.remove('searching')
+  if (!keep) feed.search('')
+}
+function runSearch() {
+  const n = feed.search(msq.value)
+  const on = Boolean(msq.value.trim())
+  $('.feed').classList.toggle('searching', on)
+  $('.ms-count').textContent = on ? (n ? `${n}${n >= 200 ? '+' : ''}` : 'none') : ''
+}
+$('.ms-open').addEventListener('click', openSearch)
+msq.addEventListener('input', () => {
+  clearTimeout(msTimer)
+  msTimer = setTimeout(runSearch, 120)
+})
+msq.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    e.stopPropagation()
+    closeSearch()
+    composer.focus()
+  }
+  if (e.key === 'Enter') (clearTimeout(msTimer), runSearch())
+})
+msq.addEventListener('blur', () => !msq.value && setTimeout(() => document.activeElement !== msq && !msq.value && closeSearch(), 150))
 
 // ---- the dock: the conversation's agent's terminal, with a tab for each of its clones -----------------------------
 
@@ -602,14 +652,16 @@ $('[data-show]').addEventListener('click', (e) => {
   drawShow()
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 })
-// ⌘1 #crew, ⌘2 Agents, ⌘3 Tasks, ⌘4 Terminals; ⌘F finds an agent, ⌘N makes one (Ctrl on Windows, where Ctrl+F and
-// Ctrl+N typed in a terminal are the agent's: windowsTerminalKey)
+// ⌘1 #crew, ⌘2 Agents, ⌘3 Tasks, ⌘4 Terminals; ⌘F searches the messages in #crew and a conversation (elsewhere it
+// finds an agent), ⌘K finds an agent, ⌘N makes one (Ctrl on Windows, where Ctrl+F and Ctrl+N typed in a terminal are
+// the agent's: windowsTerminalKey)
 const KEYS = { 1: 'chat', 2: 'crew', 3: 'tasks', 4: 'terminals' }
 document.addEventListener('keydown', (e) => {
   if (!commandKey(e)) return
   if (document.querySelector('.ed-layer.open, dialog[open]')) return // the agent's sheet or a dialog is in front
   if (KEYS[e.key] && !e.altKey && !e.shiftKey) return void (e.preventDefault(), goPlace(KEYS[e.key]))
-  if (e.key === 'f' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), startFind())
+  if (e.key === 'f' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), place === 'chat' || place === 'dm' ? openSearch() : startFind())
+  if (e.key === 'k' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), startFind())
   if (e.key === 'n' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), addAgent())
 })
 
