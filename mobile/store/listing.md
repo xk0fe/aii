@@ -1,26 +1,28 @@
 # Store listing (draft)
 
-The product name is still open. Everything below says Crew, from `APP_NAME` in `src/brand.js`; a rename changes it there
-and in this file. Copy rules: plain, short, sentence case, no em dashes, no "seamless", "effortless" or "powerful".
+The product is CLIque (CLI + clique: keep the capitals), from `APP_NAME` in `src/brand.js`, which is also the name under
+the icon; a rename changes it there and in this file. Copy rules: plain, short, sentence case, no em dashes, no
+"seamless", "effortless" or "powerful".
 
 ## Names
 
 | Field | Limit | Draft |
 |---|---|---|
-| App Store name | 30 | Crew |
+| App Store name | 30 | CLIque: coding agents (21) |
 | App Store subtitle | 30 | Answer your agents anywhere (27) |
-| Google Play name | 30 | Crew |
+| Google Play name | 30 | CLIque: coding agents (21) |
 | Google Play short description | 80 | See your coding agents at work and answer when they need you. (61) |
 | App Store promotional text | 170 | See who's working, allow a command, answer a question. Your crew keeps going while you're away from your desk. |
 
-"Crew" alone is very likely taken on both stores. Check availability before Friday; fallbacks that keep the name:
-"Crew: coding agents" (19) or "Crew for your agents" (20). Don't put "Claude" or "Codex" in the name, subtitle or
+"CLIque" alone is likely taken on the App Store (many apps there start with "Clique", none of them a developer tool),
+hence the tail. Check availability before Friday; another that keeps the name: "CLIque for your agents" (22). The name
+under the icon stays CLIque either way. Don't put "Claude" or "Codex" in the name, subtitle or
 keywords (Apple 2.3.7, Google's metadata policy): they're other companies' trademarks. Saying the app works with them in
 the description is fine.
 
 ## Full description (App Store and Google Play, under 4000 characters)
 
-Crew on your phone keeps you close to the AI coding agents working on your computer.
+CLIque on your phone keeps you close to the AI coding agents working on your computer.
 
 See who's busy and on what. When an agent wants to run a command or has a question, it asks you on your phone, in its
 own words, and you answer with one tap. Send a message to the whole crew or to one agent, from anywhere your phone can
@@ -34,10 +36,10 @@ What you can do
 - Switch workspaces, turn agents on and off, and flip YOLO or Fast.
 
 How it works
-Your phone talks straight to Crew on your Mac or Windows PC, over your Wi-Fi or Tailscale. Every message is encrypted
+Your phone talks straight to CLIque on your Mac or Windows PC, over your Wi-Fi or Tailscale. Every message is encrypted
 end to end between the two. There's no account, no server in between, and nothing about you is collected.
 
-You need Crew on your computer, running Claude Code or Codex. Crew is free. Bring your own Claude or Codex account.
+You need CLIque on your computer, running Claude Code or Codex. CLIque is free. Bring your own Claude or Codex account.
 
 Not ready to pair? Try the demo crew: a made-up team that lives only on your phone.
 

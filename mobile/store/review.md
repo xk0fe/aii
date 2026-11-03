@@ -20,13 +20,13 @@ developers), which keeps it out of the Families programme.
 
 ## App Store review notes (paste into "Notes" under App Review Information)
 
-> Crew on the phone is the companion to Crew, a free desktop app for Mac and Windows that runs AI coding agents (Claude
+> CLIque on the phone is the companion to CLIque, a free desktop app for Mac and Windows that runs AI coding agents (Claude
 > Code or Codex) on the user's own computer. The phone pairs straight with that computer over the local network or
 > Tailscale. There is no account, no sign-in and no server of ours.
 >
 > To review without a computer: on the first screen, tap "Try the demo crew". It opens a made-up crew that lives only
 > on the phone and answers like a real one. Things to try: in Needs you, tap Allow for Milo's command, or tap one of
-> Iris's answers; in Chat, send a message; in Crew, tap an agent and switch YOLO or On. Computers › Leave the demo goes
+> Iris's answers; in Chat, send a message; in the Crew tab, tap an agent and switch YOLO or On. Computers › Leave the demo goes
 > back to the first screen.
 >
 > Permissions: the camera, only to scan the pairing QR code the desktop app shows (pasting the code works too); the
@@ -40,7 +40,7 @@ developers), which keeps it out of the Families programme.
 
 ## Google Play: App access
 
-"All or some functionality is restricted": real use needs Crew on the user's computer. Instructions: "On the first
+"All or some functionality is restricted": real use needs CLIque on the user's computer. Instructions: "On the first
 screen, tap Try the demo crew. Everything in the app works with the made-up crew, with no account or computer."
 
 ## Other Play declarations

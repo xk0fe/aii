@@ -50,6 +50,6 @@ messages on it are encrypted by the app.
 
 ## iOS permission prompts
 
-- Camera: "Crew uses the camera to scan the pairing code your computer shows."
-- Local network: "Crew connects to Crew on your computer over your Wi-Fi, so you can see your crew and answer them
+- Camera: "CLIque uses the camera to scan the pairing code your computer shows."
+- Local network: "CLIque connects to CLIque on your computer over your Wi-Fi, so you can see your crew and answer them
   from your phone."
