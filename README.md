@@ -2,7 +2,7 @@
   <img src="docs/images/cover.webp" alt="Crew: your AI agents, working as a crew. Seven felt creatures in their room: two at laptops, one holding up an OK? sign, one asking a question, one with a mug, one popping up, one asleep">
 </p>
 
-Crew is a Mac app for running a team of AI coding agents. Each agent gets a name, a job, its own instructions and a small felt creature for a face. You talk to all of them in one chat. They hand work to each other, and when one of them needs a decision, it asks you.
+Crew is an app for your Mac or Windows PC that runs a team of AI coding agents. Each agent gets a name, a job, its own instructions and a small felt creature for a face. You talk to all of them in one chat. They hand work to each other, and when one of them needs a decision, it asks you.
 
 It runs Claude Code and Codex. GLM and local models (through Ollama) work too, and you can add other providers.
 
@@ -13,16 +13,23 @@ It runs Claude Code and Codex. GLM and local models (through Ollama) work too, a
 
 ## Get started
 
-You need macOS, Node.js, and Claude Code or Codex installed and signed in.
+You need a Mac (Apple silicon or Intel) or a Windows PC (Windows 10 or 11, x64 or Arm), and Claude Code or Codex installed and signed in with your own account. Crew runs them for you; it doesn't need an account of its own.
+
+- **On a Mac:** open the DMG and drag Crew into Applications.
+- **On Windows:** run the installer. It installs Crew for you alone, with shortcuts on the desktop and in the Start menu. Git for Windows is recommended: Claude Code runs its commands in Git Bash when it's there, and in PowerShell when it isn't.
+
+The first time you open Crew, it looks for Claude Code and Codex. If neither is ready yet, it shows what to install or sign in to, with the command to paste, and looks again when you press **Check again**. Once one is ready, it asks you to add your first agent. On Windows the same screen says whether Git for Windows is there, with a button to download it.
+
+Quitting Crew doesn't stop your agents: they keep working, and the next time you open Crew they're right where they were.
+
+To run it from this folder instead, you also need Node.js:
 
 ```sh
 npm install
 npm start
 ```
 
-The first `npm start` builds `Crew.app` and opens it. After that it opens right away. Drag `desktop/dist/Crew.app` to your Dock to keep it handy.
-
-Quitting Crew doesn't stop your agents: they keep working, and the next time you open Crew they're right where they were.
+On a Mac, the first `npm start` builds `Crew.app` and opens it; after that it opens right away. Drag `desktop/dist/Crew.app` to your Dock to keep it handy. On Windows, `npm start` runs Crew from the folder. `npm run dist` makes the installers.
 
 ## Meet your crew
 
@@ -48,7 +55,7 @@ If an agent is busy, your message waits and goes in the moment it's done.
 
 When an agent wants permission or has a question, it asks you at the top of the chat, in its own words ("Can I run `npm run build`?"). You answer there, no terminal needed.
 
-You can also hold the mic and talk. Dictation runs on your Mac, so your voice never leaves it.
+You can also hold the mic and talk. Dictation runs on your computer, so your voice never leaves it.
 
 <br clear="right">
 
@@ -98,9 +105,9 @@ Give an agent clones and it stops making you wait. While it's busy, a copy of it
   </picture>
 </p>
 
-A little pill sits on the edge of your screen with the crew inside. They hop while they work. Click it, or press `⌥⇧Space`, and the chat opens. Drag the pill anywhere; near the top or bottom of the screen it lies flat, like the Dock.
+A little pill sits on the edge of your screen with the crew inside. They hop while they work. Click it, or press `⌥⇧Space` (Alt+Shift+Space on Windows), and the chat opens. Drag the pill anywhere; near the top or bottom of the screen it lies flat, like the Dock.
 
-The menu bar has the crew too, standing in a little felt strip. Hover an agent to switch it on or off, or to let it skip permission prompts (YOLO).
+The menu bar (on Windows, Crew's icon in the taskbar) has the crew too, standing in a little felt strip. Hover an agent to switch it on or off, or to let it skip permission prompts (YOLO).
 
 ## A crew per project
 
@@ -113,14 +120,14 @@ Give each project a workspace: a folder, the agents who work on it, and its own 
 
 <p align="center"><img src="docs/images/workspaces-switch.webp" alt="Switching from Docs site to Storefront and back: the crew slides over" width="1000"></p>
 
-## All your Macs, one crew
+## All your computers, one crew
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/computers-dark.webp">
   <img src="docs/images/computers-light.webp" alt="Computers: Studio shares its crew, Workstation is linked, and an iPhone and a Pixel are paired">
 </picture>
 
-Link your Macs with a pairing code and each one sees the whole crew. Chat with any agent and watch its terminal from either side. You can move an agent to another Mac, and its conversation goes with it. Workspaces work across Macs too: give a project's workspace the same name on each one, and it's one crew.
+Link your computers, Macs and PCs alike, with a pairing code and each one sees the whole crew. Chat with any agent and watch its terminal from either side. You can move an agent to another computer, and its conversation goes with it. Workspaces work across computers too: give a project's workspace the same name on each one, and it's one crew.
 
 ## Share agents
 
@@ -151,4 +158,4 @@ Hand-offs show up in the chat with the sender's face next to them. Turn Autopilo
 
 - [The full guide](docs/guide.md) covers every setting, the files Crew keeps in `~/.crew`, and how it works inside.
 - `npm run shots` renders every screen with a made-up crew. That's where these pictures come from.
-- The Mac app's code is in `desktop/`, the phone app's in `mobile/`, and the protocol they share in `shared/`. Run everything from the top folder: `npm start`, `npm test` and `npm run shots` reach into `desktop/`.
+- The desktop app's code is in `desktop/`, the phone app's in `mobile/`, and the protocol they share in `shared/`. Run everything from the top folder: `npm start`, `npm test` and `npm run shots` reach into `desktop/`.
