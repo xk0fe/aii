@@ -253,8 +253,9 @@ function mountTasks(root, { onTerminal }) {
     morph($('.tk-to'), owner ? `<span class="tk-to-chip" title="It goes to @${esc(owner)}">→ ${avatarHTML(agent(owner), { size: 18, mood: 'still' })}<span class="tk-to-name">${nameHTML(agent(owner))}</span></span>` : '')
   }
 
+  /* global EASE, DUR */ // the app's motion lengths and curves (common.js)
   // The cards below the composer make room for it (or close the gap it leaves) by sliding, not jumping.
-  const slideList = (list, dy) => dy && list?.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.22, 1, .36, 1)' })
+  const slideList = (list, dy) => dy && list?.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: DUR.move, easing: EASE.move })
   function openComposer(lane = 'new', from = $('[data-new-task]')) {
     closeFilters()
     const slot = mode === 'board' ? root.querySelector(`.tk-board [data-lane=${lane}] .lane-compose`) : addPop
@@ -264,7 +265,7 @@ function mountTasks(root, { onTerminal }) {
       const was = slot.offsetHeight
       slot.append(composer)
       if (slot !== addPop) slideList(slot.nextElementSibling, was - slot.offsetHeight)
-      composer.animate([{ opacity: 0, transform: 'translateY(-6px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.22, 1, .36, 1)' })
+      composer.animate([{ opacity: 0, transform: 'translateY(-6px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: DUR.move, easing: EASE.out })
       document.addEventListener('pointerdown', composeOutside, true)
     }
     if (slot === addPop) placeAddPop(from) // (again, if another + in the list opened it)
@@ -674,13 +675,13 @@ function mountTasks(root, { onTerminal }) {
     for (const el of root.querySelectorAll('.tc, .tr')) {
       const was = before.get(el.dataset.name)
       if (!was) {
-        if (!first && (fresh === null || el.dataset.name === fresh)) el.animate([{ opacity: 0, transform: 'translateY(-8px) scale(.96)' }, { opacity: 1, transform: 'none' }], { duration: 460, easing: 'cubic-bezier(.3, 1.5, .5, 1)' })
+        if (!first && (fresh === null || el.dataset.name === fresh)) el.animate([{ opacity: 0, transform: 'translateY(-8px) scale(.96)' }, { opacity: 1, transform: 'none' }], { duration: DUR.move, easing: EASE.out })
         continue
       }
       const now = el.getBoundingClientRect()
       const dx = was.left - now.left
       const dy = was.top - now.top
-      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 500, easing: 'cubic-bezier(.22, 1, .36, 1)' })
+      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: DUR.move, easing: EASE.move })
     }
     const added = fresh && root.querySelector(`[data-name="${CSS.escape(fresh)}"]`)
     if (added) {

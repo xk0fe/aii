@@ -14,7 +14,7 @@
 .ws-switch .ws-chev svg { width: 13px; height: 13px; }
 .ws-switch:hover .ws-chev, .ws-switch[aria-expanded=true] .ws-chev { color: var(--fg2); }
 /* another workspace needs you: a count (orange) or a dot for new replies (blue), on the tile's corner */
-.ws-alert { position: absolute; top: -2px; left: 17px; display: grid; place-items: center; min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--r-control); font: 600 11px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: #fff; box-shadow: 0 0 0 2px var(--bg); animation: ws-alert-in .45s var(--spring); }
+.ws-alert { position: absolute; top: -2px; left: 17px; display: grid; place-items: center; min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--r-control); font: 600 11px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: #fff; box-shadow: 0 0 0 2px var(--bg); animation: ws-alert-in var(--t-move) var(--out); }
 .ws-alert.waiting { background: var(--needs); color: #241500; }
 .ws-alert.unread { min-width: 10px; width: 10px; height: 10px; padding: 0; top: 0; left: 20px; background: var(--accent); }
 @keyframes ws-alert-in { from { transform: scale(0); } }
@@ -23,9 +23,9 @@
 .ws-pop {
   position: fixed; z-index: 220; width: 360px; padding: 6px; border-radius: var(--r-window); background: var(--card); color: var(--fg);
   box-shadow: 0 0 0 1px var(--line-strong), 0 24px 56px -16px rgba(0, 0, 0, .38), 0 6px 14px -8px rgba(0, 0, 0, .18);
-  transform-origin: 18px -6px; animation: ws-pop-in .26s var(--spring);
+  transform-origin: 18px -6px; animation: ws-pop-in var(--t-pop) var(--out);
 }
-.ws-pop.closing { animation: ws-pop-out .14s var(--out) forwards; pointer-events: none; }
+.ws-pop.closing { animation: ws-pop-out var(--t-leave) var(--in) forwards; pointer-events: none; }
 @keyframes ws-pop-in { from { opacity: 0; transform: translateY(-6px) scale(.94); } }
 @keyframes ws-pop-out { to { opacity: 0; transform: translateY(-4px) scale(.97); } }
 .ws-pop-head { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 10px 6px; }
@@ -42,9 +42,9 @@
 .ws-row:focus-visible { box-shadow: inset 0 0 0 1.5px var(--ring); }
 /* the one on screen: a pill of its color at the edge, like a tab that's in front */
 .ws-row.current { background: var(--selected); }
-.ws-row.current::before { content: ''; position: absolute; left: -3px; top: 50%; width: 4px; height: 22px; margin-top: -11px; border-radius: 0 3px 3px 0; background: var(--w); animation: ws-bar .4s var(--spring); }
+.ws-row.current::before { content: ''; position: absolute; left: -3px; top: 50%; width: 4px; height: 22px; margin-top: -11px; border-radius: 0 3px 3px 0; background: var(--w); animation: ws-bar var(--t-move) var(--out); }
 @keyframes ws-bar { from { height: 6px; margin-top: -3px; opacity: 0; } }
-.ws-row .ws-tile { transition: transform .35s var(--spring), filter .3s, opacity .3s; }
+.ws-row .ws-tile { transition: transform var(--t-move) var(--out), filter .3s, opacity .3s; }
 .ws-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .ws-name { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .ws-name b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -84,7 +84,7 @@
 .ws-dock-item:not(.current) .ws-tile:not(.parked) { opacity: .78; filter: saturate(.85); }
 .ws-dock-item:hover .ws-tile:not(.parked) { opacity: 1; filter: none; }
 .ws-dock-item.current { background: var(--row-on); }
-.ws-dock-item.current::after { content: ''; position: absolute; bottom: 1px; left: 50%; width: 12px; height: 3px; margin-left: -6px; border-radius: var(--r-tag); background: var(--w); animation: ws-dot .45s var(--spring); }
+.ws-dock-item.current::after { content: ''; position: absolute; bottom: 1px; left: 50%; width: 12px; height: 3px; margin-left: -6px; border-radius: var(--r-tag); background: var(--w); animation: ws-dot var(--t-move) var(--out); }
 @keyframes ws-dot { from { width: 3px; margin-left: -1.5px; } }
 .ws-dock-item .ws-alert { top: 2px; left: 22px; box-shadow: 0 0 0 2px var(--side); }
 .ws-dock-item .ws-alert.unread { top: 4px; left: 25px; }
@@ -98,7 +98,7 @@
 .ws-banner {
   position: absolute; z-index: 5; top: 10px; left: 14px; right: 14px; display: flex; align-items: center; gap: 12px; padding: 9px 9px 9px 11px;
   border-radius: var(--r-window); background: color-mix(in srgb, var(--w, var(--fg3)) 9%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--w, var(--fg3)) 22%, var(--line)), var(--shadow-sm);
-  animation: ws-banner-in .45s var(--spring);
+  animation: ws-banner-in var(--t-move) var(--out);
 }
 @keyframes ws-banner-in { from { opacity: 0; transform: translateY(-8px) scale(.98); } }
 .ws-banner > div { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -110,8 +110,8 @@ body.ws-parked .center > .collection, body.ws-parked .center > .tasks-view, body
 
 /* ---- the sheet ---- */
 dialog.sheet.ws-sheet { width: 560px; padding: 0; overflow: hidden; }
-dialog.ws-sheet[open] { animation: ws-sheet-in .38s var(--sheet); }
-dialog.ws-sheet::backdrop { background: rgba(0, 0, 0, .28); animation: ws-fade .25s var(--out); }
+dialog.ws-sheet[open] { animation: ws-sheet-in var(--t-move) var(--move); }
+dialog.ws-sheet::backdrop { background: rgba(0, 0, 0, .28); animation: ws-fade var(--t-move) var(--out); }
 @keyframes ws-sheet-in { from { opacity: 0; transform: translateY(14px) scale(.97); } }
 @keyframes ws-fade { from { opacity: 0; } }
 .ws-hero { position: relative; display: flex; align-items: center; gap: 16px; padding: 22px 24px 18px; background: var(--surface); }
@@ -126,7 +126,7 @@ dialog.ws-sheet::backdrop { background: rgba(0, 0, 0, .28); animation: ws-fade .
 .ws-title:focus { background: var(--field); box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
 .ws-title::placeholder { color: var(--fg2); }
 .ws-hero-sub { display: flex; align-items: center; gap: 8px; min-height: 20px; font-size: 13px; color: var(--fg2); }
-.ws-hero-sub .faces .av { animation: ws-face-in .4s var(--spring) backwards; }
+.ws-hero-sub .faces .av { animation: ws-face-in var(--t-move) var(--out) backwards; }
 @keyframes ws-face-in { from { transform: scale(.4) translateY(6px); opacity: 0; } }
 .ws-x { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; padding: 0; }
 .ws-body { padding: 4px 24px 6px !important; margin: 0 !important; max-height: calc(100vh - 300px); }
@@ -137,7 +137,7 @@ dialog.ws-sheet::backdrop { background: rgba(0, 0, 0, .28); animation: ws-fade .
 .ws-note { margin: 9px 0 0; font-size: 12px; line-height: 1.45; color: var(--fg2); }
 .ws-swatches, .ws-icons { display: flex; flex-wrap: wrap; gap: 7px; }
 .ws-icons { margin-top: 10px; gap: 2px; }
-.ws-sw { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; background: var(--w); box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .15); transition: transform .3s var(--spring), box-shadow .2s; }
+.ws-sw { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; background: var(--w); box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .15); transition: transform var(--t-quick) var(--out), box-shadow .2s; }
 .ws-sw:hover { box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .15), 0 0 0 2px var(--surface), 0 0 0 3px var(--line-strong); }
 .ws-sw.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--w); }
 .ws-sw.none { background: var(--btn); position: relative; --w: var(--fg3); }
@@ -181,8 +181,8 @@ dialog.ws-sheet .buttons { align-items: center; padding: 12px 24px 18px; border-
 /* named only while switching: the cards' own transitions (card to sheet) mustn't slide the whole crew */
 html.ws-switching main { view-transition-name: ws-main; }
 html.ws-switching .ws-switch { view-transition-name: ws-switch; }
-html.ws-switching::view-transition-old(ws-main) { animation: ws-out .2s var(--out) both; }
-html.ws-switching::view-transition-new(ws-main) { animation: ws-in .42s var(--sheet) both; }
+html.ws-switching::view-transition-old(ws-main) { animation: ws-out var(--t-pop) var(--in) both; }
+html.ws-switching::view-transition-new(ws-main) { animation: ws-in var(--t-move) var(--move) both; }
 html.ws-switching::view-transition-old(root), html.ws-switching::view-transition-new(root) { animation-duration: .2s; }
 @keyframes ws-out { to { opacity: 0; transform: translateX(calc(var(--ws-dir, 1) * -28px)) scale(.99); } }
 @keyframes ws-in { from { opacity: 0; transform: translateX(calc(var(--ws-dir, 1) * 36px)) scale(.99); } }

@@ -30,7 +30,7 @@
     .seg.views button svg { width: 16px; height: 16px; flex: none; }
     /* the one loud thing up here: who needs you, their faces (they wiggle) and how many. Hidden while nobody does. */
     .tb-needs { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px 0 6px; border: 0; border-radius: var(--r-control); font: inherit; font-weight: 500; white-space: nowrap; color: var(--needs-ink); background: var(--needs-tint); cursor: pointer; transition: background .15s; }
-    .tb-needs:not(.hidden) { animation: tb-needs-in .3s var(--out); }
+    .tb-needs:not(.hidden) { animation: tb-needs-in var(--t-move) var(--out); }
     .tb-needs:hover { background: color-mix(in srgb, var(--needs) 18%, transparent); }
     .tb-faces { display: inline-flex; align-items: center; }
     .tb-faces .av + .av { margin-left: -6px; }
@@ -41,13 +41,18 @@
 
     /* One row, exactly the window's height. Left auto, the grid measures each column's natural height on every layout,
        and for the chat that means laying out its whole history again for each keystroke or status tick. */
-    main { --side-w: 264px; --chat-w: 384px; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--chat-w); grid-template-rows: minmax(0, 1fr); height: calc(100vh - 46px); transition: grid-template-columns .32s var(--sheet); }
-    /* either side can be put away for more room in the middle (the ⋯ menu, ⌘⌥S and ⌘⌥C) */
+    main { --side-w: 264px; --chat-w: 384px; position: relative; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--chat-w); grid-template-rows: minmax(0, 1fr); height: calc(100vh - 46px); }
+    main > .side { grid-area: 1 / 1; } main > .center { grid-area: 1 / 2; } main > .chat { grid-area: 1 / 3; }
+    /* either side can be put away for more room in the middle (the ⋯ menu, ⌘⌥S and ⌘⌥C). The columns change in one
+       step (dashboard.js setPanel): the panel slides out over the middle, pinned where it was (.leaving), or slides in,
+       while what's in the middle glides to its new place. */
     @media (max-width: 1240px) { main { --side-w: 232px; --chat-w: 336px; } .seg.views button { padding: 4px 11px; } }
     @media (max-width: 1060px) { .seg.views button span { display: none; } }
     body.no-side main { --side-w: 0px; }
     body.no-chat main { --chat-w: 0px; }
     body.no-side .side, body.no-chat .chat { visibility: hidden; overflow: hidden; }
+    body.no-side .side.leaving, body.no-chat .chat.leaving { position: absolute; top: 0; bottom: 0; z-index: 3; visibility: visible; pointer-events: none; }
+    body.no-side .side.leaving { left: 0; } body.no-chat .chat.leaving { right: 0; }
     .side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--side); }
     .side-top { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px; }
     .find { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: var(--r-control); background: var(--fill); color: var(--fg3); cursor: text; transition: box-shadow .15s, background .15s; }
@@ -111,7 +116,7 @@
     .terms.focus .tile:not(.on) { display: none; }
     .terms .tile.filtered { display: none; }
     .terms-none { grid-column: 1 / -1; align-self: center; justify-self: center; color: var(--fg2); font-size: 13px; }
-    .terms-view:not(.hidden) .tile { animation: tile-in .45s var(--out) backwards; animation-delay: calc(sibling-index() * 40ms); }
+    .terms-view:not(.hidden) .tile { animation: tile-in var(--t-move) var(--out) backwards; animation-delay: calc(min(sibling-index(), 10) * 20ms); }
     @keyframes tile-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
     /* terminals stay dark in light mode, so their headers carry dark tokens */
     .tile { --c: #888; --fg: #EDEDED; --fg2: #A0A0A0; --fg3: #6E6E6E; --line: rgba(255, 255, 255, 0.08); --line-strong: rgba(255, 255, 255, 0.14); --fill: rgba(255, 255, 255, 0.06); --fill-hover: rgba(255, 255, 255, 0.10); --btn: rgba(255, 255, 255, 0.06); --btn-hover: rgba(255, 255, 255, 0.10); --working-ink: #3DD68C; --needs: #F5A524; --needs-ink: #F5A524; --waiting-ink: #F5A524; --starting: #A0A0A0; --yolo-ink: #A0A0A0; --fast-ink: #A0A0A0; color: var(--fg); }
@@ -194,7 +199,7 @@
     .lk-note { flex: 1; min-width: 0; font-size: 13px; color: var(--fg2); }
     .lk-copy { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 150px; height: 28px; } /* Copied fits in place of Copy link code, without a nudge */
     .lk-copy svg { width: 15px; height: 15px; }
-    .lk-chev { flex: none; width: 14px; height: 14px; color: var(--fg3); transition: transform .3s var(--spring); }
+    .lk-chev { flex: none; width: 14px; height: 14px; color: var(--fg3); transition: transform var(--t-move) var(--out); }
     .lk-chev svg { display: block; width: 14px; height: 14px; }
     [aria-expanded=true] > .lk-chev { transform: rotate(90deg); }
     button.lk-li { cursor: pointer; transition: background .15s; }
@@ -259,9 +264,9 @@
        zone, whatever the theme), one line under it, and the buttons where the list's are. Nothing in it changes size:
        a new code, an error or a phone that paired only change what's on the card and the line. */
     #link.pairing > :not(.pair-view), #link:not(.pairing) > .pair-view { display: none; }
-    .pair-view { display: flex; flex-direction: column; animation: pv-in .3s var(--out); }
+    .pair-view { display: flex; flex-direction: column; animation: pv-in var(--t-move) var(--out); }
     .pair-view:focus-visible { outline: none; }
-    #link.back > :not(.pair-view) { animation: pv-back .3s var(--out); }
+    #link.back > :not(.pair-view) { animation: pv-back var(--t-move) var(--out); }
     @keyframes pv-in { from { opacity: 0; transform: translateX(14px); } }
     @keyframes pv-back { from { opacity: 0; transform: translateX(-14px); } }
     .pair-view h3 { margin-bottom: 18px; }

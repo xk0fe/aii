@@ -95,12 +95,23 @@
   --ui: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --mono: 'SF Mono', ui-monospace, Menlo, 'Cascadia Mono', Consolas, monospace;
   --rounded: ui-rounded, 'SF Pro Rounded', -apple-system, 'Segoe UI Variable Display', 'Segoe UI', sans-serif;
-  /* motion: springs overshoot a little, outs settle softly */
+  /* motion: one vocabulary for the whole app (EASE and DUR in common.js are the same).
+     --out: arriving or settling. --in: leaving. --move: travelling between two places (a panel, a sheet, a card
+     gliding to its new spot). --t-quick: colour and state (hover, a switch). --t-pop: menus and popovers coming in.
+     --t-leave: anything going away, always quicker than it came. --t-move: panels, sheets and folds.
+     Only transform and opacity move: never a width, a height or grid tracks (glide() in common.js moves layout).
+     --spring and --bounce belong to the creatures and celebrations, never to panels, menus or layout. */
+  --out: cubic-bezier(.22, 1, .36, 1);
+  --in: cubic-bezier(.4, 0, 1, 1);
+  --move: cubic-bezier(.32, .72, 0, 1);
+  --sheet: var(--move);
+  --press: cubic-bezier(.23, 1, .32, 1);
+  --t-quick: .15s;
+  --t-pop: .16s;
+  --t-leave: .12s;
+  --t-move: .26s;
   --spring: cubic-bezier(.34, 1.56, .64, 1);
   --bounce: cubic-bezier(.3, 1.5, .5, 1);
-  --out: cubic-bezier(.22, 1, .36, 1);
-  --press: cubic-bezier(.23, 1, .32, 1);
-  --sheet: cubic-bezier(.32, .72, 0, 1);
 }
 html[data-os=win] {
   --ui: 'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
@@ -209,14 +220,14 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
   content: ''; position: absolute; z-index: -1; top: 2px; bottom: 2px; left: 2px; width: calc((100% - 4px) / var(--n, 2));
   border-radius: var(--r-tag); background: var(--seg-on); box-shadow: var(--shadow-sm); transform: translateX(calc(var(--i, 0) * 100%));
 }
-.seg.ready::before { transition: transform .32s var(--out); }
+.seg.ready::before { transition: transform var(--t-move) var(--move); }
 .seg button { border: 0; background: none; padding: 4px 12px; border-radius: var(--r-tag); cursor: pointer; color: var(--fg2); font-weight: 500; white-space: nowrap; transition: color .2s; }
 .seg button:hover { color: var(--fg); }
 .seg button.on { color: var(--fg); }
 
 /* switches: full round (one of the three things allowed to be), the accent when on */
 .switch { appearance: none; width: 36px; height: 20px; border-radius: 10px; background: var(--fill-hover); position: relative; cursor: pointer; flex: none; transition: background .2s; margin: 0; }
-.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff; box-shadow: 0 0 0 .5px rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .12); transition: transform .25s var(--out); }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff; box-shadow: 0 0 0 .5px rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .12); transition: transform var(--t-move) var(--out); }
 .switch:checked { background: var(--accent); }
 .switch:checked::after { transform: translateX(16px); }
 .switch.sm { width: 32px; height: 18px; border-radius: 9px; }
@@ -343,7 +354,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .clone-line {
   position: relative; display: flex; align-items: center; gap: 6px; height: 28px; margin-left: 32px; padding: 0 8px; border-radius: var(--r-control); min-width: 0;
   font-size: 12px; color: var(--fg2); cursor: pointer; transition: background .15s;
-  animation: clone-in .4s var(--out) backwards;
+  animation: clone-in var(--t-move) var(--out) backwards;
 }
 .clone-line::before { content: ''; position: absolute; left: -12px; top: -4px; width: 9px; height: 17px; border: solid var(--line-strong); border-width: 0 0 1.5px 1.5px; border-bottom-left-radius: 6px; }
 .clone-line:hover { background: var(--row-hover); }
@@ -370,14 +381,17 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 
 /* ---- menus (popMenu in common.js): right-click an agent, or a More button ---- */
 /* a note at the bottom of the window (notify() in common.js); one about an error has Copy details */
-.toast { position: fixed; left: 50%; bottom: 22px; z-index: 300; display: flex; align-items: center; gap: 12px; width: max-content; max-width: min(560px, calc(100vw - 24px)); padding: 10px 16px; border-radius: var(--r-card); background: var(--tip); color: var(--tip-fg); font-size: 13px; font-weight: 500; line-height: 1.4; box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity .2s, transform .35s var(--spring); }
+.toast { position: fixed; left: 50%; bottom: 22px; z-index: 300; display: flex; align-items: center; gap: 12px; width: max-content; max-width: min(560px, calc(100vw - 24px)); padding: 10px 16px; border-radius: var(--r-card); background: var(--tip); color: var(--tip-fg); font-size: 13px; font-weight: 500; line-height: 1.4; box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity var(--t-pop), transform var(--t-move) var(--out); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.show.has-detail button { pointer-events: auto; } /* only Copy details takes clicks: the note never covers what's under it */
 .toast.warn { background: var(--needs); color: #241500; }
 .toast button { all: unset; flex: none; padding: 3px 9px; border-radius: var(--r-control); font-size: 12px; font-weight: 500; white-space: nowrap; background: color-mix(in srgb, currentColor 14%, transparent); cursor: pointer; }
 .toast button:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
 .toast button:focus-visible { outline: 2px solid currentColor; }
-.menu { position: fixed; z-index: 200; min-width: 210px; max-width: 300px; padding: 4px; border-radius: var(--r-card); background: var(--float); color: var(--fg); box-shadow: var(--shadow-float); animation: mn-in .14s var(--out); }
+.menu { position: fixed; z-index: 200; min-width: 210px; max-width: 300px; padding: 4px; border-radius: var(--r-card); background: var(--float); color: var(--fg); box-shadow: var(--shadow-float); transform-origin: 24px top; animation: mn-in var(--t-pop) var(--out); }
+/* opened upwards (no room under its anchor), it grows up out of it */
+.menu.up { transform-origin: 24px bottom; animation-name: mn-up; }
+.menu.leaving { pointer-events: none; }
 .menu button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 10px 0 8px; border-radius: var(--r-control); font-size: 13px; cursor: default; white-space: nowrap; }
 .menu button svg, .menu button > i { width: 16px; height: 16px; flex: none; color: var(--fg2); }
 .menu button span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
@@ -433,7 +447,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .item.me { align-self: flex-end; align-items: flex-end; max-width: 86%; }
 .item.cont { margin-top: -10px; }
 /* a new message rises in (transform and opacity only, so the compositor plays it) */
-.item.enter { animation: item-in .4s var(--out) backwards; transform-origin: 0 0; }
+.item.enter { animation: item-in var(--t-move) var(--out) backwards; transform-origin: 0 0; }
 .item.me.enter { transform-origin: 100% 100%; }
 @keyframes item-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 /* who and when, above the bubble */
@@ -454,7 +468,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 /* ---- a conversation with one agent: its header ----
    Back to everyone (a count for replies from the others meanwhile, an orange dot when one of them needs you),
    the creature and what it's doing, and its terminal. */
-.convo-head { display: flex; align-items: center; gap: 9px; min-width: 0; animation: convo-in .32s var(--out); }
+.convo-head { display: flex; align-items: center; gap: 9px; min-width: 0; animation: convo-in var(--t-move) var(--out); }
 .convo-head:empty { display: none; }
 @keyframes convo-in { from { opacity: 0; transform: translateX(10px); } }
 .ch-back { position: relative; flex: none; display: inline-flex; align-items: center; gap: 1px; height: 28px; padding: 0 9px 0 4px; border: 0; border-radius: var(--r-control); background: var(--fill); color: var(--fg2); font: 500 13px/1 var(--ui); cursor: pointer; transition: background .15s, color .15s; }
@@ -632,7 +646,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .ask-option span { font-size: 12px; color: var(--fg2); }
 .ask-option:hover { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
 .ask-option.on { background: color-mix(in srgb, var(--accent) 10%, var(--field)); box-shadow: inset 0 0 0 1.5px var(--accent); }
-.ask-option.on::after { content: ''; position: absolute; right: 14px; top: 50%; width: 5px; height: 10px; margin-top: -7px; border: solid var(--accent); border-width: 0 2px 2px 0; transform: rotate(45deg); animation: check-in .35s var(--spring); }
+.ask-option.on::after { content: ''; position: absolute; right: 14px; top: 50%; width: 5px; height: 10px; margin-top: -7px; border: solid var(--accent); border-width: 0 2px 2px 0; transform: rotate(45deg); animation: check-in var(--t-pop) var(--out); }
 @keyframes check-in { from { scale: 0; } }
 .ask-plan { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-card); max-height: 18em; overflow: auto; background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 12.5px; }
 .ask-plan > * { margin: 0; }
@@ -688,7 +702,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 /* who's on it right now: one slim line per busy agent under the last message, what it's doing in mono */
 .feed-list.typing-list { display: flex; flex-direction: column; gap: 2px; margin: -4px -6px 0; }
 .feed-list.typing-list:empty { display: none; }
-.typing-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 8px 2px 6px; border-radius: var(--r-control); cursor: pointer; font-size: 13px; color: var(--fg2); animation: item-in .45s var(--out) both; transition: background .15s; }
+.typing-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 8px 2px 6px; border-radius: var(--r-control); cursor: pointer; font-size: 13px; color: var(--fg2); animation: item-in var(--t-move) var(--out) both; transition: background .15s; }
 .typing-row:hover { background: var(--btn); }
 .typing-row .face { width: 22px; flex: none; line-height: 0; }
 .typing-row .tr-name { flex: none; font-weight: 600; color: var(--fg); }
@@ -734,7 +748,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .typing-row .tr-what.quiet { font-family: inherit; font-size: 12px; }
 .sub-tree { position: relative; display: flex; flex-direction: column; gap: 1px; margin: -2px 0 3px 17px; padding-left: 12px; cursor: pointer; }
 .sub-tree::before { content: ''; position: absolute; left: 0; top: -3px; bottom: 19px; width: 1.5px; border-radius: 1px; background: var(--line-strong); }
-.sub-row { position: relative; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 3px 8px 3px 4px; border-radius: var(--r-control); font-size: 12px; color: var(--fg2); white-space: nowrap; transition: opacity .5s, background .15s; animation: sub-in .45s var(--out) both; }
+.sub-row { position: relative; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 3px 8px 3px 4px; border-radius: var(--r-control); font-size: 12px; color: var(--fg2); white-space: nowrap; transition: opacity .5s, background .15s; animation: sub-in var(--t-move) var(--out) both; }
 .sub-row::before { content: ''; position: absolute; left: -12px; top: 50%; width: 10px; height: 1.5px; border-radius: 1px; background: var(--line-strong); }
 @keyframes sub-in { from { opacity: 0; transform: translateX(-6px) scale(.97); } }
 .sub-row:hover { background: var(--btn); }
@@ -757,7 +771,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .subs-used summary svg { width: 13px; height: 13px; flex: none; }
 .subs-used summary::after { content: ''; width: 5px; height: 5px; margin-left: 2px; border: solid currentColor; border-width: 0 1.6px 1.6px 0; transform: translateY(-2px) rotate(45deg); transition: transform .3s var(--out); }
 .subs-used[open] summary::after { transform: translateY(1px) rotate(-135deg); }
-.subs-list { margin-top: 6px; padding: 8px 10px; border-radius: var(--r-card); box-shadow: inset 0 0 0 1px var(--line-strong); display: flex; flex-direction: column; gap: 5px; animation: hint-in .25s var(--out); }
+.subs-list { margin-top: 6px; padding: 8px 10px; border-radius: var(--r-card); box-shadow: inset 0 0 0 1px var(--line-strong); display: flex; flex-direction: column; gap: 5px; animation: hint-in var(--t-move) var(--out); }
 .subs-item { display: flex; align-items: center; gap: 7px; min-width: 0; white-space: nowrap; }
 .subs-item .sub-job { font-size: 12px; font-weight: 500; }
 .subs-item .sub-meta br { display: none; }
@@ -775,7 +789,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .msg-tool { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border: 0; border-radius: var(--r-tag); background: none; color: var(--fg2); font-size: 12px; font-weight: 500; cursor: pointer; transition: background .15s, color .15s; }
 .msg-tool:hover { background: var(--btn); color: var(--fg); }
 .msg-tool svg { width: 13px; height: 13px; }
-.reply-to { display: flex; align-items: center; gap: 8px; margin: 6px 6px 0; padding: 6px 4px 6px 0; border-radius: var(--r-control); background: var(--btn); animation: hint-in .25s var(--out); }
+.reply-to { display: flex; align-items: center; gap: 8px; margin: 6px 6px 0; padding: 6px 4px 6px 0; border-radius: var(--r-control); background: var(--btn); animation: hint-in var(--t-move) var(--out); }
 .rt-icon { flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin-left: 5px; border-radius: var(--r-control); color: var(--fg2); }
 .rt-icon svg { width: 14px; height: 14px; }
 .rt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: 12px; line-height: 1.35; }
@@ -789,9 +803,9 @@ button.ask-elsewhere:hover { color: var(--fg); }
 @keyframes badge-in { from { transform: scale(0); } }
 .chip { position: relative; }
 .chip .unread-badge { right: -2px; bottom: -1px; min-width: 14px; height: 14px; padding: 0 3px; font-size: 9px; --orbit-ring: var(--panel); }
-.item.unread .cap::before { content: ''; flex: none; align-self: center; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: badge-in .4s var(--spring); }
+.item.unread .cap::before { content: ''; flex: none; align-self: center; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: badge-in var(--t-move) var(--out); }
 
-.new-line { display: flex; align-items: center; gap: 8px; margin: 0 2px -4px; animation: hint-in .3s var(--out); }
+.new-line { display: flex; align-items: center; gap: 8px; margin: 0 2px -4px; animation: hint-in var(--t-move) var(--out); }
 .new-line::before { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
 .new-line span { font-size: 12px; font-weight: 500; color: var(--accent); }
 /* Scrolled up while messages came in: a pill to jump back down. It sticks to the feed's bottom edge and takes no
@@ -801,9 +815,9 @@ button.ask-elsewhere:hover { color: var(--fg); }
   position: absolute; left: 0; bottom: 14px; translate: -50% 0; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 12px 0 9px;
   border: 0; border-radius: var(--r-control); background: var(--float); color: var(--fg); font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer;
   box-shadow: var(--shadow-float);
-  opacity: 0; scale: .85; visibility: hidden; transition: opacity .18s, scale .3s var(--spring), visibility 0s .3s;
+  opacity: 0; scale: .85; visibility: hidden; transition: opacity var(--t-leave) var(--in), scale var(--t-leave) var(--in), visibility 0s var(--t-leave);
 }
-.feed-latest.on button { opacity: 1; scale: 1; visibility: visible; transition: opacity .18s, scale .3s var(--spring), visibility 0s; }
+.feed-latest.on button { opacity: 1; scale: 1; visibility: visible; transition: opacity var(--t-pop) var(--out), scale var(--t-move) var(--out), visibility 0s; }
 .feed-latest button:hover { background: var(--surface-2); }
 .feed-latest svg { width: 14px; height: 14px; rotate: 180deg; }
 .sum.unread { color: var(--accent); }
@@ -821,8 +835,10 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .bubble .mention { font-weight: 500; }
 
 /* ---- @mentions (mountMentions in common.js) ---- */
-.mentions { position: fixed; z-index: 60; display: flex; flex-direction: column; min-height: 0; padding: 4px; border-radius: var(--r-card); background: var(--float); color: var(--fg); box-shadow: var(--shadow-float); animation: mn-in .16s var(--out); }
-@keyframes mn-in { from { opacity: 0; transform: translateY(4px) scale(.985); } }
+.mentions { position: fixed; z-index: 60; display: flex; flex-direction: column; min-height: 0; padding: 4px; border-radius: var(--r-card); background: var(--float); color: var(--fg); box-shadow: var(--shadow-float); transform-origin: 24px top; animation: mn-in var(--t-pop) var(--out); }
+.mentions.up { transform-origin: 24px bottom; animation-name: mn-up; }
+@keyframes mn-in { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
+@keyframes mn-up { from { opacity: 0; transform: translateY(4px) scale(.97); } }
 .mn-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px 6px; font-size: 12px; font-weight: 500; color: var(--fg2); }
 .mn-keys { display: inline-flex; align-items: center; gap: 3px; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11px; }
 .mn-keys span { margin-left: 3px; }
@@ -907,7 +923,7 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
   --lv: 0;
   position: relative; flex: none; height: 28px; width: 28px; border: 0; padding: 0; border-radius: 14px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--fg2); background: transparent;
-  transition: width .4s var(--spring), background .2s, color .2s, transform .3s var(--bounce), box-shadow .12s linear;
+  transition: width var(--t-move) var(--out), background .2s, color .2s, transform var(--t-quick) var(--out), box-shadow .12s linear;
 }
 .mic:hover { background: var(--btn); color: var(--fg); }
 .mic svg { width: 17px; height: 17px; flex: none; }
@@ -933,7 +949,7 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 @keyframes av-listen { 0%, 100% { transform: rotate(-7deg) scale(1.04); } 50% { transform: rotate(5deg) scale(1.04, 1.08); } }
 /* the status line takes the recipients' line (which keeps its space), so nothing moves when you start */
 .voice-note .chips { visibility: hidden; }
-.voice-hint { position: absolute; top: 8px; left: 14px; right: 14px; height: 30px; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--fg2); animation: hint-in .3s var(--out); white-space: nowrap; overflow: hidden; }
+.voice-hint { position: absolute; top: 8px; left: 14px; right: 14px; height: 30px; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--fg2); animation: hint-in var(--t-move) var(--out); white-space: nowrap; overflow: hidden; }
 .voice-hint .to { display: inline-flex; align-items: center; gap: 4px; min-width: 0; height: 22px; padding: 0 8px 0 5px; border-radius: 999px; background: var(--btn); color: var(--fg); font-weight: 600; }
 .voice-hint .to svg { width: 13px; height: 13px; }
 .voice-hint .to .av { margin: -4px 0 -4px -2px; }
@@ -954,7 +970,7 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 /* image attachments: thumbnails sit inside the message box, above the text */
 .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .input .thumbs { margin: 0; padding: 8px 8px 0; }
-.thumb { position: relative; width: 56px; height: 56px; border-radius: 10px; overflow: hidden; background: var(--btn); box-shadow: 0 0 0 1px var(--line); animation: thumb-in .35s var(--bounce); }
+.thumb { position: relative; width: 56px; height: 56px; border-radius: 10px; overflow: hidden; background: var(--btn); box-shadow: 0 0 0 1px var(--line); animation: thumb-in var(--t-move) var(--out); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; display: block; }
 .thumb button { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 50%; border: 0; padding: 0; background: rgba(0, 0, 0, .62); color: #fff; font-size: 13px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
 @keyframes thumb-in { from { opacity: 0; transform: scale(.6) rotate(-6deg); } }
@@ -975,7 +991,9 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .av:not(.still) .av-eye, .av:not(.still) .av-eyes + .av-face .av-front { will-change: transform; transform-box: fill-box; transform-origin: center; }
 .av.working .av-in { animation: av-hop .72s cubic-bezier(.3, .6, .4, 1) infinite var(--delay); }
 .av.waiting .av-in { animation: av-wiggle .55s ease-in-out infinite; }
-.av.sleep .av-in { animation-duration: 5.5s; filter: saturate(.3) brightness(.82); }
+/* asleep (off, parked, or on a computer that's asleep): black and white, props and all, breathing slowly */
+.av.asleep { filter: grayscale(1); }
+.av.sleep .av-in { animation-duration: 5.5s; }
 .av.starting .av-in { animation: av-pop .7s var(--bounce) both; }
 .av.cheer .av-in, .av.pop .av-in { animation: av-jump .6s var(--bounce); }
 .av.still .av-in, .av.still .av-eyes { animation: none; }
@@ -1021,7 +1039,6 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 /* starting: it rises out of its hole once */
 .av.posed.starting .av-in { animation: av-rise .9s cubic-bezier(.3, 1.4, .5, 1) both; }
 @keyframes av-rise { from { transform: translateY(30%); } }
-.av.posed.sleep .av-in { filter: saturate(.35) brightness(.86); }
 .av.still .av-paw, .av.still .av-float { animation: none; }
 /* the black felt accessories (the beret, the headphones) vanish on dark: lifted to a charcoal that still reads black */
 @media (prefers-color-scheme: dark) {
@@ -1030,8 +1047,8 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 }
 
 /* ---- dialogs ---- */
-dialog[open] { animation: dialog-in .3s var(--out); }
-dialog::backdrop { background: rgba(0, 0, 0, .28); animation: fade-in .25s ease-out; }
+dialog[open] { animation: dialog-in var(--t-move) var(--out); }
+dialog::backdrop { background: rgba(0, 0, 0, .28); animation: fade-in var(--t-move) var(--out); }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(.98); } }
 @keyframes fade-in { from { opacity: 0; } }
 

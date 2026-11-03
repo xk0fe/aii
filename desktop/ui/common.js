@@ -751,6 +751,53 @@ function segmented(el, isOn) {
   if (!el.classList.contains('ready')) requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('ready')))
 }
 
+// ---- motion: one vocabulary for the whole app, the same as common.css's --out, --in, --move and --t-* ----
+// out: arriving or settling. in: leaving (always quicker than arriving). move: travelling between two places.
+const EASE = { out: 'cubic-bezier(.22, 1, .36, 1)', in: 'cubic-bezier(.4, 0, 1, 1)', move: 'cubic-bezier(.32, .72, 0, 1)' }
+const DUR = { quick: 150, pop: 160, leave: 120, move: 260 }
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
+
+// A layout change, made smooth: whatever it moves glides from where it was to where it lands, as a transform (on the
+// compositor), instead of the layout itself being animated frame by frame. Animating a panel's width or a fold's
+// height lays out and repaints everything around it on every frame, and a grid of cards jumps between column counts
+// on the way; here the layout changes once and the pictures move. targets: the elements that may move (a list, or a
+// function that finds them, asked before and after the change; never one inside another). appear: elements that
+// weren't there before fade in. Returns what change() returns.
+const glides = new WeakMap() // element -> its running glide
+function glide(targets, change, { duration = DUR.move, easing = EASE.move, appear = false } = {}) {
+  if (reduceMotion()) return change()
+  const find = () => [...(typeof targets === 'function' ? targets() : targets)]
+  const before = new Map()
+  for (const el of find()) {
+    const r = el.getBoundingClientRect() // mid-glide, where it's drawn right now: a second change picks up from there
+    if (r.width || r.height) before.set(el, r)
+  }
+  for (const el of before.keys()) glides.get(el)?.cancel()
+  const out = change()
+  const seen = (r) => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth
+  for (const el of find()) {
+    const now = el.getBoundingClientRect()
+    if (!now.width && !now.height) continue
+    const was = before.get(el)
+    if (!was) {
+      if (appear && seen(now)) el.animate([{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }], { duration: DUR.move, easing: EASE.out, delay: 60, fill: 'backwards' })
+      continue
+    }
+    const dx = was.left - now.left
+    const dy = was.top - now.top
+    if ((Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) || (!seen(was) && !seen(now))) continue
+    // one that changes rows in a grid (it moves across and down) would fly over its neighbours: it fades in where it
+    // lands instead, while the ones that stay in their row slide along it
+    const jumps = Math.abs(dx) > now.width / 2 && Math.abs(dy) > now.height / 2
+    const anim = jumps
+      ? el.animate([{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration, easing: EASE.out, delay: 40, fill: 'backwards' })
+      : el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration, easing })
+    glides.set(el, anim)
+    anim.finished.then(() => glides.get(el) === anim && glides.delete(el), () => {})
+  }
+  return out
+}
+
 // Replays an avatar's one-shot animation (cheer, pop), then lets it go back to breathing.
 function bounce(av, cls = 'cheer') {
   if (!av) return
@@ -1411,7 +1458,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     if (queue.classList.contains('hidden')) return
     const open = queue.querySelector('.nq-item.open')
     ;(open?.querySelector('.ask-card :is(button, input):not(:disabled)') ?? open?.querySelector('button') ?? queue.querySelector('.nq-go'))?.focus({ preventScroll: true })
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) queue.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.02)' }, { transform: 'scale(1)' }], { duration: 420, easing: 'cubic-bezier(.3, 1.5, .5, 1)' })
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) queue.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.02)' }, { transform: 'scale(1)' }], { duration: DUR.move + 100, easing: EASE.out })
   }
   document.addEventListener('crew:needs', (ev) => {
     if (!el.isConnected) return
@@ -1773,7 +1820,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       if (!showing()) return
       // once more after this frame's layout: the header and the reply you're writing take some of its height
       requestAnimationFrame(() => talkingTo === next && !jumpTo && reveal(id))
-      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) el.animate([{ opacity: 0, transform: `translateX(${convo ? 14 : -14}px)` }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2, .8, .2, 1)' })
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) el.animate([{ opacity: 0, transform: `translateX(${convo ? 14 : -14}px)` }, { opacity: 1, transform: 'none' }], { duration: DUR.move, easing: EASE.out })
     },
     render({ feed, agents, reads, workspace: w }) {
       const workspace = w?.id
@@ -1984,6 +2031,7 @@ function mountMentions(field, { agents, box = field, place = 'above', heading = 
   const place_ = () => {
     const r = box.getBoundingClientRect()
     Object.assign(list.style, { left: `${r.left}px`, width: `${r.width}px` })
+    list.classList.toggle('up', place === 'above')
     if (place === 'above') Object.assign(list.style, { top: '', bottom: `${innerHeight - r.top + 6}px`, maxHeight: `${Math.max(140, r.top - 14)}px` })
     else Object.assign(list.style, { bottom: '', top: `${r.bottom + 6}px`, maxHeight: `${Math.max(140, innerHeight - r.bottom - 14)}px` })
   }
@@ -2590,10 +2638,16 @@ function popMenu(at, items, onPick) {
   const r = at instanceof Element ? at.getBoundingClientRect() : { left: at.x, right: at.x, top: at.y, bottom: at.y }
   const w = el.offsetWidth
   const h = el.offsetHeight
+  const up = r.bottom + 4 + h > innerHeight - 8 // no room under it: it opens upwards, growing from its anchor either way
+  el.classList.toggle('up', up)
   el.style.left = `${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`
-  el.style.top = `${r.bottom + 4 + h > innerHeight - 8 ? Math.max(8, r.top - h - 4) : r.bottom + 4}px`
+  el.style.top = `${up ? Math.max(8, r.top - h - 4) : r.bottom + 4}px`
   const close = () => {
-    el.remove()
+    // it fades away, quicker than it came, and takes no more clicks while it does
+    el.classList.add('leaving')
+    el.removeAttribute('role')
+    if (reduceMotion()) el.remove()
+    else el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: DUR.leave, easing: EASE.in, fill: 'forwards' }).finished.then(() => el.remove(), () => el.remove())
     removeEventListener('pointerdown', outside, true)
     removeEventListener('keydown', key, true)
     removeEventListener('blur', close)
