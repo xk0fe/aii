@@ -1,17 +1,5 @@
-/* The first-run screen and Add provider… (ui/setup.js). The brand comes from the v2 look's tokens (--brand, --on-brand,
-   --font-brand, --room-*), with their values here until they're there. One felt surface (the room); text never on it. */
-:root {
-  --su-wall: var(--room-wall, #F6EEEA);
-  --su-floor: var(--room-floor, #EEDFD8);
-  --su-thread: var(--room-thread, rgba(204, 34, 119, .32));
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --su-wall: var(--room-wall, #2A2326);
-    --su-floor: var(--room-floor, #332A2E);
-    --su-thread: var(--room-thread, rgba(255, 122, 192, .30));
-  }
-}
+/* The first-run screen and Add provider… (ui/setup.js). The brand is the v2 look's (common.css): Berry buttons, the
+   brand face, and the Crew room's felt (roomFeltHTML in brand.js). One felt surface (the room); text never on it. */
 
 /* over the dashboard below its titlebar (ui/setup.js sets top), scrolling when the window is short; top-aligned, so
    the room stays put when what's below it changes */
@@ -22,12 +10,11 @@
 
 /* the room: a creature pops up where the crew will stand, saying what's next in its own voice */
 .su-scene { position: relative; flex: none; width: 440px; max-width: 100%; height: 176px; }
-.su-scene > svg { position: absolute; top: 0; left: 0; }
 .su-who { position: absolute; left: calc(50% - 48px); bottom: 10px; line-height: 0; }
-.su-spot { position: absolute; bottom: 18px; width: 56px; height: 12px; border-radius: 50%; border: 1.5px dashed var(--su-thread); }
+.su-spot { position: absolute; bottom: 18px; width: 56px; height: 12px; border-radius: 50%; border: 1.5px dashed var(--room-thread); }
 .su-say { position: absolute; left: calc(50% + 36px); top: 36px; max-width: calc(50% - 46px); padding: 8px 12px; border-radius: 10px; border-bottom-left-radius: 4px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); font-size: 13px; line-height: 18px; text-align: left; }
 
-.su-title { margin: 20px 0 0; font-family: var(--font-brand, "Fredoka", ui-rounded, "SF Pro Rounded", system-ui, sans-serif); font-size: 30px; line-height: 36px; font-weight: 600; letter-spacing: -.005em; color: var(--fg); text-wrap: balance; }
+.su-title { margin: 24px 0 0; font: 600 32px/38px var(--font-brand); letter-spacing: -.005em; color: var(--fg); text-wrap: balance; } /* the brand face at the one display size, as .display */
 .su-lead { max-width: 440px; min-height: 22px; margin: 8px 0 0; color: var(--fg2); font-size: 15px; line-height: 22px; text-wrap: pretty; }
 
 /* Claude Code, Codex (and Git for Windows): one row each, its status on the right, what to do under it */
@@ -39,9 +26,9 @@
 .su-name { font-size: 15px; line-height: 20px; font-weight: 600; }
 .su-by { color: var(--fg2); font-size: 12px; line-height: 16px; }
 .su-state { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; color: var(--fg2); }
-.su-state i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--waiting); }
+.su-state i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--needs); }
 .su-state.ready i { background: var(--working); }
-.su-state.needs { color: var(--waiting-ink); }
+.su-state.needs { color: var(--needs-ink); }
 .su-state.quiet i { background: none; box-shadow: inset 0 0 0 1.5px var(--fg3); }
 .su-how { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 8px; }
 .su-step { color: var(--fg2); font-size: 13px; line-height: 18px; }
@@ -55,8 +42,8 @@
 .btn.su-btn { height: 32px; padding: 0 16px; border-radius: 6px; }
 .btn.su-btn:disabled { opacity: .6; cursor: default; }
 .btn.su-btn[data-act=check] { min-width: 120px; } /* Checking… fits in place of Check again */
-.btn.su-primary { min-width: 120px; background: var(--brand, #CC2277); color: var(--on-brand, #FFFFFF); }
-.btn.su-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--brand, #CC2277) 88%, #000); }
+.btn.su-primary { min-width: 120px; background: var(--brand); color: var(--on-brand); }
+.btn.su-primary:hover:not(:disabled) { background: var(--brand-hover); }
 .su-more { margin: 16px 0 0; color: var(--fg2); font-size: 13px; line-height: 18px; }
 
 /* Add provider…: GLM and Ollama, what each needs and whether it's there */
@@ -69,6 +56,6 @@
 .su-check { display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; color: var(--fg2); font-size: 13px; line-height: 18px; }
 .su-check i { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--fg3); }
 .su-check.ok i { background: var(--working); box-shadow: none; }
-.su-check.no i { background: var(--waiting); box-shadow: none; }
+.su-check.no i { background: var(--needs); box-shadow: none; }
 .su-err { min-height: 18px; margin: 8px 0 0; color: var(--danger); font-size: 12px; }
 .su-err:empty { visibility: hidden; }
