@@ -1,101 +1,65 @@
 <!doctype html>
-<!-- The README cover: an agent's sheet (its tinted side, the floating mark, the level bar) made for the whole crew.
-     Rendered by `npm run shots -- cover` at 1280×640. -->
+<!-- The README cover: the wordmark, one line in the brand face, and the crew in its felt room acting out what each one
+     is doing (the app's own CSS, avatar.js and brand.js, with the demo crew). Rendered by `npm run shots -- cover`
+     at 1280×640. -->
 <html>
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="../ui/common.css">
-  <link rel="stylesheet" href="../ui/collection.css">
   <style>
     html, body { width: 1280px; height: 640px; overflow: hidden; background: transparent !important; }
-    .cover {
-      --c: #a77bff;
-      position: relative; width: 1280px; height: 640px; border-radius: 44px; overflow: hidden;
-      color: color-mix(in srgb, var(--c) 30%, #141418);
-      background:
-        radial-gradient(42% 60% at 78% 88%, color-mix(in srgb, #ff45a8 30%, transparent), transparent 70%),
-        radial-gradient(40% 55% at 98% 18%, color-mix(in srgb, #3db8ff 26%, transparent), transparent 70%),
-        radial-gradient(55% 45% at 30% 30%, rgba(255, 255, 255, .6), transparent 70%),
-        linear-gradient(165deg, color-mix(in srgb, var(--c) 22%, #fff), color-mix(in srgb, var(--c) 46%, #fff));
-      box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, .7);
-    }
-    /* the foil sheen a card gets on hover, frozen mid-sweep */
-    .cover::after {
-      content: ''; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: soft-light;
-      background: linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, .55) 47%, rgba(255, 255, 255, 0) 56%);
-    }
-    .top { position: absolute; left: 56px; right: 56px; top: 44px; z-index: 3; display: flex; align-items: center; justify-content: space-between; }
-    .states { display: flex; gap: 10px; }
-    .cover .pd-state { height: 40px; padding: 0 18px 0 15px; gap: 9px; font-size: 18px; }
-    .cover .pd-state .dot { width: 11px; height: 11px; border-radius: 50%; }
-    .dot.w { background: var(--working); }
-    .dot.n { background: var(--waiting); }
-    .cover .pd-no { font-size: 20px; }
-    .cover .pd-mark { right: -120px; top: -150px; width: 620px; height: 620px; opacity: .45; animation: none; transform: rotate(-12deg); }
-
-    .who { position: absolute; left: 56px; top: 168px; z-index: 2; width: 600px; display: flex; flex-direction: column; gap: 18px; }
-    .who h1 { margin: 0 0 -6px -4px; font-size: 148px; line-height: .95; font-weight: 850; letter-spacing: -.045em; }
-    .who p { margin: 0; font-size: 30px; line-height: 1.28; font-weight: 600; letter-spacing: -.01em; opacity: .86; }
-    .cover .pc-chips { max-width: none; max-height: none; gap: 9px; margin-top: 6px; }
-    .cover .pc-chips span { font-size: 18px; padding: 7px 17px; background: rgba(255, 255, 255, .7); }
-    .cover .ed-level { margin-top: 14px; width: 470px; gap: 14px; font-size: 18px; }
-    .cover .ed-level .lv { font-size: 20px; }
-    .cover .ed-level .xpbar { height: 11px; border-radius: 6px; }
-    .cover .ed-level .xpbar b { width: 72%; border-radius: 6px; }
-
-    /* the crew, huddled on the right like the creature on the sheet */
-    .huddle { position: absolute; right: 30px; bottom: 6px; width: 620px; height: 470px; z-index: 2; }
-    .huddle .av { position: absolute; }
-    .huddle .av-bang { width: 46px; height: 46px; top: 16%; right: 0; font-size: 26px; }
-    .bubble-q {
-      position: absolute; z-index: 4; display: flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 18px 18px 18px 6px;
-      background: rgba(255, 255, 255, .86); color: #2a2a30; font-size: 16px; font-weight: 650; white-space: nowrap;
-      box-shadow: 0 10px 24px -14px rgba(60, 20, 120, .55);
-    }
-    .bubble-q b { font-weight: 800; }
-    .bubble-q.mine { border-radius: 18px 18px 6px 18px; background: #0a7cff; color: #fff; }
+    .cover { position: relative; width: 1280px; height: 640px; border-radius: 44px; overflow: hidden; background: #F5F5F4; color: #1C1C1C; }
+    .wm { position: absolute; left: 60px; top: 44px; }
+    h1 { position: absolute; left: 64px; top: 128px; margin: 0; font: 600 60px/64px var(--font-brand); letter-spacing: -.01em; }
+    h1 em { font-style: normal; color: #CC2277; }
+    .lead { position: absolute; left: 66px; top: 272px; margin: 0; max-width: 620px; font-size: 21px; line-height: 30px; color: #6B6B6B; }
+    .free { position: absolute; right: 64px; top: 64px; font-size: 16px; color: #6B6B6B; }
+    .room { position: absolute; left: 64px; right: 64px; top: 362px; height: 216px; }
+    .room-felt { position: absolute; inset: 0; border-radius: 18px; overflow: hidden; }
+    .room-felt > span { position: absolute; left: 0; right: 0; }
+    .crew { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; justify-content: space-around; align-items: flex-end; padding: 0 16px; }
+    .crew > span { line-height: 0; }
+    .names { position: absolute; left: 64px; right: 64px; top: 590px; display: flex; justify-content: space-around; padding: 0 16px; }
+    .names span { width: 120px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 500 17px/22px var(--font-brand); color: #6B6B6B; }
+    .names .dot { width: 9px; height: 9px; }
+    .bubble-say { position: absolute; z-index: 3; padding: 9px 14px; border-radius: 12px; border-bottom-left-radius: 4px; background: #fff; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08); font-size: 16px; line-height: 22px; white-space: nowrap; }
+    .bubble-say code { font: 15px var(--mono); }
   </style>
 </head>
 <body>
   <div class="cover">
-    <span class="pd-mark" id="mark"></span>
-    <div class="top">
-      <div class="states">
-        <span class="pd-state"><i class="dot w"></i>5 working</span>
-        <span class="pd-state"><i class="dot n"></i>2 need you</span>
-      </div>
-      <span class="pd-no">#001</span>
-    </div>
-    <div class="who">
-      <h1>Crew</h1>
-      <p>AI coding agents that work as a team,<br>right on your Mac.</p>
-      <div class="pc-chips"><span>Claude Code</span><span>Codex</span><span>GLM</span><span>Local models</span></div>
-      <div class="ed-level"><span class="lv">Lv 8</span><span class="xpbar"><b></b></span><span class="xp-n">1,240 XP</span></div>
-    </div>
-    <div class="huddle" id="huddle"></div>
+    <span class="wm" id="wm"></span>
+    <span class="free">Free. Bring your own Claude or Codex account.</span>
+    <h1>Your AI agents,<br>working as a <em>crew</em></h1>
+    <p class="lead">Claude Code and Codex agents with names, jobs and one chat for all of them. They split the work, and ask when they need you.</p>
+    <div class="room" id="room"></div>
+    <div class="names" id="names"></div>
   </div>
   <script src="../ui/avatar.js"></script>
   <script src="../ui/common.js"></script>
+  <script src="../ui/brand.js"></script>
   <script>
-    document.getElementById('mark').innerHTML = markSVG()
-    // back row first, so the front row overlaps it; x/y are the creature's top-left inside the huddle
+    // the demo crew (screenshot-preload.cjs), each in the pose its status gives it
     const crew = [
-      { name: 'arie', size: 172, x: 40, y: 150, avatar: { body: 'bunny', color: 'lilac', eyes: 'sparkle', mouth: 'grin', hat: 'crown', cheeks: true } },
-      { name: 'jeff', size: 168, x: 420, y: 160, waiting: true, avatar: { body: 'blob', color: 'teal', eyes: 'dot', mouth: 'none', hat: 'headphones', cheeks: false } },
-      { name: 'marc', size: 200, x: 226, y: 98, avatar: { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false } },
-      { name: 'david', size: 158, x: -10, y: 296, avatar: { body: 'cat', color: 'sky', eyes: 'happy', mouth: 'cat', hat: 'party', cheeks: true } },
-      { name: 'gal', size: 232, x: 128, y: 230, avatar: { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true } },
-      { name: 'scarlett', size: 156, x: 350, y: 304, avatar: { body: 'mochi', color: 'yellow', eyes: 'dot', mouth: 'smile', hat: 'sprout', cheeks: true } },
-      { name: 'joseph', size: 146, x: 484, y: 310, avatar: { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false } },
-    ]
-    const huddle = document.getElementById('huddle')
-    for (const a of crew) {
-      huddle.insertAdjacentHTML('beforeend', avatarHTML(a, { size: a.size, mood: a.waiting ? 'waiting' : 'idle' }))
-      Object.assign(huddle.lastElementChild.style, { left: `${a.x}px`, top: `${a.y}px` })
-    }
-    huddle.insertAdjacentHTML('beforeend', '<div class="bubble-q mine" style="left: 250px; top: 30px">@marc a hero image, pastel</div>')
-    // a still picture: everyone mid-breath, eyes open
-    document.querySelectorAll('.av-in, .av-eyes, .av-bang').forEach((el) => (el.style.animation = 'none'))
+      ['Ada', 'working', { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false }],
+      ['Milo', 'waiting', { body: 'cat', color: 'sky', eyes: 'happy', mouth: 'cat', hat: 'party', cheeks: true }, 'permission'],
+      ['Iris', 'waiting', { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true }, 'question'],
+      ['Theo', 'working', { body: 'frog', color: 'lime', eyes: 'googly', mouth: 'grin', hat: 'none', cheeks: false }],
+      ['June', 'idle', { body: 'bunny', color: 'peach', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true }],
+      ['Rex', 'starting', { body: 'mochi', color: 'yellow', eyes: 'dot', mouth: 'smile', hat: 'headphones', cheeks: true }],
+      ['Noor', 'off', { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false }],
+    ].map(([name, status, avatar, ask]) => ({ name, status, avatar, ask, on: status !== 'off' }))
+    document.getElementById('wm').innerHTML = wordmarkHTML(64)
+    document.getElementById('room').innerHTML = `${roomFeltHTML(58)}<div class="crew">${crew.map((a) => `<span>${avatarHTML(a, { size: 120, pose: poseOf(a, { ask: a.ask }) })}</span>`).join('')}</div>`
+    document.getElementById('names').innerHTML = crew.map((a) => `<span>${a.status === 'working' || a.status === 'waiting' ? `<i class="dot ${a.status === 'waiting' ? 'needs' : 'working'}"></i>` : ''}${a.name}</span>`).join('')
+    // two of them talking: Milo asks, Theo reports
+    const room = document.getElementById('room')
+    room.insertAdjacentHTML('beforeend', '<span class="bubble-say" style="left:236px;top:16px">Can I run <code>npm run build</code>?</span><span class="bubble-say" style="left:575px;top:26px">All 48 checkout tests pass</span>')
+    // a still picture: everyone mid-breath, eyes open, the riser already up
+    document.fonts.ready.then(() => {
+      document.getElementById('wm').innerHTML = wordmarkHTML(64)
+      for (const a of document.getAnimations()) { const t = a.effect?.getTiming?.(); if (t && t.iterations !== Infinity) a.finish(); else { a.pause(); a.currentTime = a.animationName === 'av-wiggle-soft' ? 400 : 0 } }
+    })
   </script>
 </body>
 </html>

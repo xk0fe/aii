@@ -96,7 +96,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit }) {
 
   function fail(message) {
     reset()
-    set('idle', message === 'mic-denied' ? `<span>Crew can't hear you: it needs the microphone.</span><button data-voice="settings">Open Settings</button>` : `<span>${esc(message)}</span>`)
+    set('idle', message === 'mic-denied' ? `<span>${PRODUCT_NAME} can't hear you: it needs the microphone.</span><button data-voice="settings">Open Settings</button>` : `<span>${esc(message)}</span>`)
     bar.classList.add('error')
     clearTimeout(fail.timer)
     fail.timer = setTimeout(() => state === 'idle' && ((hint = ''), show()), 8000)

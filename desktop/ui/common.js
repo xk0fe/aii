@@ -262,6 +262,16 @@ function levelOf(stats = {}) {
 const brainLabel = (a, providers = {}) => [providers[a.provider]?.label ?? a.provider, a.model || 'default', a.effort, a.fast && 'fast'].filter(Boolean).join(' · ')
 // The same without the filler, for tight rows: "Codex · high" (Fast has its own chip).
 const brainShort = (a, providers = {}) => [providers[a.provider]?.label ?? a.provider, a.model, a.effort].filter(Boolean).join(' · ')
+// Who it is, in one quiet line of plain words: "Claude Opus · High · Fast" on a card, "Opus · High · Fast" on a row
+// (short). A model with a plain name is capitalized (opus: Opus); one with a version stays as written (gpt-6-luna).
+const EFFORT_WORDS = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', minimal: 'Minimal' }
+const modelName = (m) => (/^[a-z]+$/.test(m ?? '') ? upFirst(m) : m)
+function brainWords(a, providers = {}, { short = false } = {}) {
+  const label = providers[a.provider]?.label ?? (a.provider ? upFirst(String(a.provider)) : '')
+  const model = a.model ? modelName(a.model) : ''
+  const who = short ? model || label : [label, model].filter(Boolean).join(' ')
+  return [who, EFFORT_WORDS[a.effort] ?? (a.effort ? upFirst(String(a.effort)) : ''), a.fast ? 'Fast' : ''].filter(Boolean).join(' · ')
+}
 
 const store = {
   get: (k) => { try { return localStorage.getItem(k) } catch { return null } },
@@ -284,13 +294,37 @@ function statusText(a) {
   switch (a.status) {
     case 'working': return `working · ${ago(a.since)}`
     case 'waiting': return 'needs you'
-    case 'idle': return 'free'
+    case 'idle': return 'idle'
     case 'starting': return Date.now() - a.since > 15000 ? 'starting… check its terminal' : 'starting…'
     case 'off': return 'off'
     case 'parked': return 'parked'
     case 'away': return 'unreachable'
     default: return 'exited'
   }
+}
+
+// Its status in a word or two, the way cards, rows and the room say it: Working, Needs your OK, Has a question, Idle.
+// ask: the type of the question it has open for you (needsYou), if any.
+function statusWord(a, ask) {
+  if (!a.on && a.status !== 'parked') return 'Off'
+  const on = blockedOn(a)
+  if (on) return `Waiting on ${String(on[0].name).split('@')[0]}`
+  switch (a.status) {
+    case 'working': return 'Working'
+    case 'waiting': return ask === 'question' ? 'Has a question' : ask === 'plan' ? 'Has a plan for you' : ask ? 'Needs your OK' : 'Needs you'
+    case 'idle': return 'Idle'
+    case 'starting': return 'Starting…'
+    case 'parked': return 'Parked'
+    case 'away': return 'Unreachable'
+    case 'off': return 'Off'
+    default: return 'Stopped'
+  }
+}
+// The type of each agent's oldest open question for you: name -> 'permission' | 'question' | 'plan'.
+function askTypes(state) {
+  const types = new Map()
+  for (const e of state.feed ?? []) if (e.kind === 'ask' && !e.answer && !types.has(e.from)) types.set(e.from, e.ask?.type ?? 'permission')
+  return types
 }
 
 // A chip you just clicked keeps its new value until the state agrees, so a push that was already on its way
@@ -320,18 +354,18 @@ function powerSwitch(a) {
 }
 
 // One row per agent: name and status / what it owns / brain and modes, plus what it's doing while it works.
-// An agent's name; one on another computer carries its computer: gal@mac-mini. A clone is its original's name
-// with its number: gal ②.
+// An agent's name; one on another computer carries its computer: Rex@workstation. A clone is its original's name
+// with its number: Theo ②.
 const nameHTML = (a) => `${esc(plainName(a))}${cloneTag(a)}${a.home ? `<span class="at" title="runs on ${esc(a.homeName)}">@${esc(a.home)}</span>` : ''}`
 const plainName = (a) => (a.cloneOf ? a.cloneOf.split('@')[0] : a.home ? a.seed : a.name)
 const cloneTag = (a) => (a.cloneOf ? `<span class="clone-no" title="Clone ${a.clone} of ${esc(a.cloneOf)}: it took a task while ${esc(plainName(a))} was busy">${a.clone}</span>` : '')
-// In plain text (tooltips, the ribbon): "gal 2".
+// In plain text (tooltips, the ribbon): "Theo 2".
 const displayName = (a) => (a.cloneOf ? `${plainName(a)} ${a.clone}` : a.name)
 
 // ---- clones: an agent busy with one task takes the next on a clone of itself (core/hub.js) -----------
 
 const clonesOf = (agents, a) => agents.filter((x) => x.cloneOf === a.name)
-// A clone that has gone keeps its original's face and name in the feed: gal.2 -> gal, clone 2.
+// A clone that has gone keeps its original's face and name in the feed: Theo.2 -> Theo, clone 2.
 function cloneGhost(name, byName) {
   const m = String(name).match(/^(.+)\.(\d+)((?:@[\w-]+)?)$/)
   const base = m && byName[m[1] + m[3]]
@@ -479,15 +513,18 @@ function crewGroups(state) {
 // Groups are worth a header once a second computer is linked or runs agents.
 const grouped = (groups) => groups.filter((g) => g.agents.length || !g.here).length > 1
 
-// What it's doing, in a few words: its current step while it works, otherwise how it is.
-function rowLine(a) {
-  if (!a.on) return { text: 'off', cls: 'off' }
-  if (blockedOn(a)) return { text: waitText(a.waitingOn), cls: 'blocked' }
-  if (a.status === 'working') return { text: a.activity ? activityWords(a.activity) : statusText(a), cls: 'working' }
-  if (a.status === 'waiting') return { text: a.activity ? `needs you · ${activityWords(a.activity)}` : 'needs you', cls: 'waiting' }
-  if (a.status === 'idle' && runningSubs(a).length) return { text: `free · ${plural(runningSubs(a).length, 'sub-agent')} working`, cls: 'idle' }
-  return { text: statusText(a), cls: a.status }
+// What it's doing, in a few words: its current step while it works, otherwise how it is (ask: its open question's
+// type, so "Needs your OK" and "Has a question" read apart).
+function rowLine(a, ask) {
+  if (!a.on) return { text: 'Off', cls: 'off' }
+  if (blockedOn(a)) return { text: statusWord(a), cls: 'blocked' }
+  if (a.status === 'working') return { text: a.activity ? activityWords(a.activity) : statusWord(a), cls: 'working' }
+  if (a.status === 'waiting') return { text: statusWord(a, ask), cls: 'waiting' }
+  if (a.status === 'idle' && runningSubs(a).length) return { text: 'Idle, its helpers are still working', cls: 'idle' }
+  return { text: statusWord(a), cls: a.status }
 }
+// Its sub-agents at work, as the row and card say it: "2 helpers".
+const helpersText = (a) => (runningSubs(a).length ? plural(runningSubs(a).length, 'helper') : '')
 
 // What an agent is doing, in plain words. core/hub.js describes a tool call as "Edit · hub.js" or "Bash · npm run e2e";
 // this says "Editing hub.js", "Running e2e". For the roster, the menu bar and Needs you.
@@ -532,11 +569,10 @@ function activityWords(text) {
   return mcp ? `Using ${mcp[1].replace(/_/g, ' ')}` : String(text).replace(/^./, (c) => c.toUpperCase())
 }
 
-// Modes that are on, as marks beside the name: YOLO (red) and Fast (amber). And what it has leased (crew lease), so
-// you can see who's on the simulator.
+// Modes that are on, as marks beside the name: YOLO, a quiet tag (Fast is a word in its model line). And what it
+// has leased (crew lease), so you can see who's on the simulator.
 const modeMarks = (a) =>
   (a.yolo ? '<i class="mark-yolo" title="YOLO: skips every permission prompt">YOLO</i>' : '') +
-  (a.fast ? `<i class="mark-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</i>` : '') +
   (a.holds?.length ? `<i class="mark-holds" title="${esc(`Has ${a.holds.join(', ')} (crew lease): nobody else uses it until it's done`)}">${esc(a.holds.join(', '))}</i>` : '')
 
 // Its clones at work, as their little faces and how many: click to show or fold their rows under it.
@@ -546,26 +582,30 @@ function cloneCount(a, clones, open) {
   return `<button class="crow-clones ${open ? 'open' : ''}" data-fold="clones:${esc(a.name)}" title="${esc(tip)}" aria-expanded="${open}">${clones.slice(0, 3).map((c) => avatarHTML(c, { size: 16, mood: 'still' })).join('')}<b>${clones.length}</b></button>`
 }
 
-function crewRow(a, { selected = false, drag = false, clones = [], clonesOpen = false } = {}) {
-  const line = rowLine(a)
+// The dot on a creature's shoulder: only where status is the message (working, needing you).
+const shoulderDot = (a) => (a.on && a.status === 'waiting' ? '<i class="dot needs"></i>' : a.on && a.status === 'working' && !blockedOn(a) ? '<i class="dot working"></i>' : '')
+
+function crewRow(a, { selected = false, drag = false, clones = [], clonesOpen = false, ask, providers } = {}) {
+  const line = rowLine(a, ask)
   const later = a.freshPending ? 'new conversation when free' : a.pending ? 'restarts when free' : ''
   const tip = [`${a.name}${a.area ? ` · ${a.area}` : ''}`, statusText(a), later, a.queue ? `${a.queue} queued` : ''].filter(Boolean).join('\n')
+  const helpers = helpersText(a)
   return `<div class="crow ${a.on ? a.status : 'off'} ${selected ? 'on' : ''}" data-agent="${esc(a.name)}" ${drag ? 'draggable="true"' : ''} style="--c:${agentColor(a)}" title="${esc(tip)}">
-    <span class="crow-av">${avatarHTML(a, { size: 30 })}${orbitHTML(a)}${unreadBadge(a.unread)}</span>
+    <span class="crow-av">${avatarHTML(a, { size: 32 })}${shoulderDot(a)}${unreadBadge(a.unread)}</span>
     <span class="crow-main">
-      <span class="crow-top"><b>${esc(a.seed ?? a.name)}</b>${modeMarks(a)}${subsChip(a)}</span>
-      <span class="crow-line ${line.cls}">${cloneCount(a, clones, clonesOpen)}${esc(line.text)}</span>
+      <span class="crow-top"><b>${esc(a.seed ?? a.name)}</b>${modeMarks(a)}<span class="crow-brain" title="${esc(brainLabel(a, providers))}">${esc(brainWords(a, providers, { short: true }))}</span></span>
+      <span class="crow-line ${line.cls}">${cloneCount(a, clones, clonesOpen)}<span class="crow-what">${esc(line.text)}</span>${helpers ? `<span class="crow-meta" title="${esc(`${plural(runningSubs(a).length, 'sub-agent')} working:\n${subsTip(runningSubs(a))}`)}">${helpers}</span>` : ''}</span>
     </span>
-    <span class="crow-end">${a.queue && a.on ? `<i class="crow-queue" title="${plural(a.queue, 'message')} queued">${a.queue}</i>` : ''}${later ? `<i class="crow-later" title="${esc(later)}">${a.freshPending ? ICONS.fresh : ICONS.restart}</i>` : ''}${a.convo?.context?.pct >= 80 ? contextRing(a, { label: false }) : ''}</span>
+    <span class="crow-end">${a.queue && a.on ? `<i class="crow-queue" title="${plural(a.queue, 'message')} queued">${a.queue}</i>` : ''}${later ? `<i class="crow-later" title="${esc(later)}">${a.freshPending ? ICONS.fresh : ICONS.restart}</i>` : ''}</span>
     <span class="crow-acts">${modeChips(a)}${powerSwitch(a)}</span>
   </div>`
 }
 
 // Under an agent's row, one slim line per clone: its number, and what it's on. Click it for its terminal.
 function cloneRow(c, { selected = false } = {}) {
-  const what = c.status === 'working' ? c.activity || `working · ${ago(c.since)}` : statusText(c)
+  const what = c.status === 'working' ? (c.activity ? activityWords(c.activity) : 'Working') : statusText(c)
   return `<div class="clone-line ${c.status} ${selected ? 'on' : ''}" data-clone="${esc(c.name)}" data-agent="${esc(c.name)}" style="--c:${agentColor(c)}" title="${esc(`${displayName(c)}: ${statusText(c)}${c.activity ? ` · ${c.activity}` : ''}. Click for its terminal`)}">
-    <span class="clone-av">${avatarHTML(c, { size: 18 })}${unreadBadge(c.unread)}</span>${cloneTag(c)}<span class="clone-what ${c.status === 'working' && c.activity ? 'mono' : ''}">${esc(what)}</span>${c.queue ? `<i class="crow-queue">${c.queue}</i>` : ''}
+    <span class="clone-av">${avatarHTML(c, { size: 18 })}${unreadBadge(c.unread)}</span>${cloneTag(c)}<span class="clone-what">${esc(what)}</span>${c.queue ? `<i class="crow-queue">${c.queue}</i>` : ''}
   </div>`
 }
 
@@ -586,6 +626,8 @@ function rosterParts(state, { folds = new Set(), selected, filter = '', drag = f
   const match = (a) => !q || `${a.name} ${a.area ?? ''}`.toLowerCase().includes(q)
   const groups = crewGroups(state)
   const headed = grouped(groups)
+  const asks = askTypes(state)
+  const providers = state.providers ?? {}
   const parts = groups.map((g) => {
     const agents = g.agents.filter(match)
     if (q && !agents.length) return null
@@ -596,20 +638,20 @@ function rosterParts(state, { folds = new Set(), selected, filter = '', drag = f
     const offOpen = q || folds.has(`off:${g.key}`)
     const head = headed
       ? `<div class="cgroup-head" data-fold="group:${esc(g.key)}" title="${esc(g.here ? `${g.name}: this computer` : `${g.name}: ${g.online ? 'linked' : 'unreachable, it reconnects on its own'}`)}">
-          <span class="chev">${ICONS.chevron}</span><span class="cg-icon ${g.online ? '' : 'away'}">${g.here ? ICONS.desktop : ICONS.laptop}</span>
-          <b>${esc(g.name)}</b>${g.online ? '' : '<span class="cg-tag away">offline</span>'}
+          <span class="chev">${ICONS.chevron}</span><b>${esc(g.name)}</b>${g.here ? `<span class="cg-here">${upFirst(THIS_COMPUTER)}</span>` : ''}${g.online ? '' : '<span class="cg-tag away">offline</span>'}
           <span class="grow"></span>${folded ? faceStack(on.length ? on : agents) : ''}
         </div>`
       : ''
     // its clones fold into a count on its row (and unfold on a click, or when one of them is the one you picked)
     const brood = (a) => g.clones.filter((c) => c.cloneOf === a.name)
     const clonesOpen = (a) => Boolean(q) || folds.has(`clones:${a.name}`) || brood(a).some((c) => c.name === selected)
+    const row = (a, extra = {}) => crewRow(a, { selected: a.name === selected, drag: drag && headed, ask: asks.get(a.name), providers, ...extra })
     const rows = on.flatMap((a) => [
-      crewRow(a, { selected: a.name === selected, drag: drag && headed, clones: brood(a), clonesOpen: clonesOpen(a) }),
+      row(a, { clones: brood(a), clonesOpen: clonesOpen(a) }),
       ...(clonesOpen(a) ? brood(a).map((c) => cloneRow(c, { selected: c.name === selected })) : []),
     ])
     const offRows = off.length
-      ? [`<div class="crow-fold ${offOpen ? 'open' : ''}" data-fold="off:${esc(g.key)}"><span class="chev">${ICONS.chevron}</span>${faceStack(off, 4)}<span>${off.length} off</span></div>`, ...(offOpen ? off.map((a) => crewRow(a, { selected: a.name === selected, drag: drag && headed })) : [])]
+      ? [`<div class="crow-fold ${offOpen ? 'open' : ''}" data-fold="off:${esc(g.key)}"><span class="chev">${ICONS.chevron}</span><span>${off.length} off</span>${faceStack(off, 4)}</div>`, ...(offOpen ? off.map((a) => row(a)) : [])]
       : []
     const empty = !agents.length ? [`<div class="cgroup-empty">${g.online ? 'No agents here yet' : 'No agents'}</div>`] : []
     return { start: `<section class="cgroup ${folded ? 'folded' : ''} ${g.online ? '' : 'away'}" data-home="${esc(g.key)}">${head}<div class="cgroup-body">`, end: '</div></section>', slot: '.cgroup-body', parts: folded ? [] : [...rows, ...offRows, ...empty] }
@@ -875,7 +917,7 @@ const mergeSends = (feed) => {
 // your conversation with it. Everything you send there goes to it, plus anyone you @mention. The target the
 // composer aims at is the conversation: 'auto' and 'task' are everyone's chat.
 const isConvo = (target) => Boolean(target) && target !== 'auto' && target !== 'task'
-// An agent and its clones are one conversation: a message to marc that a clone took says to: 'marc.2'.
+// An agent and its clones are one conversation: a message to Theo that a clone took says to: 'Theo.2'.
 const familyOf = (name) => String(name ?? '').replace(/\.\d+(?=@|$)/, '')
 // What belongs in its conversation: what you and it said to each other, its questions, the hand-offs it made or
 // got, what happened to its tasks (filed for it, triaged to it, sent to it, done by it), and its own events (a new
@@ -957,12 +999,12 @@ const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divide
 
 // ---- tasks (ui/tasks.js) in the chat -------------------------------------------------------------------
 
-// "Fix the login @david" -> the task and who it's for (an agent's name, typed as @name anywhere).
+// "Fix the coupon field @milo" -> the task and who it's for (an agent's name, typed as @name anywhere).
 function ownerIn(text, agents) {
-  const names = new Set(agents.map((a) => a.name))
+  const names = new Map(agents.map((a) => [String(a.name).toLowerCase(), a.name]))
   for (const m of String(text).matchAll(/(^|\s)@([\w-]+(?:@[\w-]+)?)\b/g)) {
-    const name = m[2].toLowerCase()
-    if (names.has(name)) return { owner: name, text: (text.slice(0, m.index) + m[1] + text.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim() }
+    const name = names.get(m[2].toLowerCase())
+    if (name) return { owner: name, text: (text.slice(0, m.index) + m[1] + text.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim() }
   }
   return { owner: null, text: String(text).trim() }
 }
@@ -1116,28 +1158,29 @@ function ruleLine(e, who, time) {
 // An agent's question as a card you answer right in the chat (see hub.ask): a permission prompt, its own
 // multiple-choice questions, or a plan to approve. Answered, it folds into a line saying what happened.
 // draft: what you've picked or typed so far, kept across re-renders.
-function askCard(e, draft = {}) {
+function askCard(e, draft = {}, { queue = false } = {}) {
   const q = e.ask ?? {}
-  const name = esc(String(e.from).split('@')[0].replace(/\.(\d+)$/, ' $1')) // a clone, gal.2: "gal 2"
+  const name = esc(String(e.from).split('@')[0].replace(/\.(\d+)$/, ' $1')) // a clone, Theo.2: "Theo 2"
   const icon = ICONS[{ permission: 'shield', question: 'ask', plan: 'plan' }[q.type] ?? 'ask']
   if (e.answer) return `<div class="ask-card done" data-ask="${e.id}">${askSummary(q, e.answer)}</div>`
   const code = q.code ? `<pre class="ask-code"><code>${esc(q.code)}</code></pre>` : ''
   const note = (placeholder) => `<input class="ask-note" data-note value="${esc(draft.note ?? '')}" placeholder="${placeholder}" spellcheck="false">`
+  // in the queue its terminal is the icon beside its name; a Codex agent's prompt is handed over from here
   const elsewhere = e.cli === 'codex'
     ? `<button class="ask-elsewhere" data-answer="terminal" title="${name} shows its own prompt once you hand it over">Answer in its terminal instead</button>`
-    : '<span class="ask-elsewhere">or answer in its terminal</span>'
+    : queue ? '' : '<span class="ask-elsewhere">or answer in its terminal</span>'
   if (q.type === 'question') {
     const picked = (qi, label) => [].concat(draft.picks?.[qi] ?? []).includes(label)
     const ready = q.questions.every((x, qi) => draft.other?.[qi]?.trim() || [].concat(draft.picks?.[qi] ?? []).length)
     const quick = q.questions.length === 1 && !q.questions[0].multiSelect // one tap answers
-    return `<div class="ask-card" data-ask="${e.id}">${q.questions.map((x, qi) => `
+    return `<div class="ask-card${q.questions.length === 1 ? ' one' : ''}" data-ask="${e.id}">${q.questions.map((x, qi) => `
       <div class="ask-q">
         <div class="ask-head">${x.header ? `<span class="ask-chip">${esc(x.header)}</span>` : ''}${x.multiSelect ? '<span class="ask-multi">pick any</span>' : ''}</div>
         <div class="ask-question">${esc(x.question)}</div>
         <div class="ask-options">${x.options.map((o) => `<button class="ask-option ${picked(qi, o.label) ? 'on' : ''}" data-pick="${qi}" data-label="${esc(o.label)}"><b>${esc(o.label)}</b>${o.description ? `<span>${esc(o.description)}</span>` : ''}</button>`).join('')}</div>
-        <input class="ask-other" data-other="${qi}" value="${esc(draft.other?.[qi] ?? '')}" placeholder="Something else…" spellcheck="false">
+        <input class="ask-other" data-other="${qi}" value="${esc(draft.other?.[qi] ?? '')}" placeholder="Something else" spellcheck="false">
       </div>`).join('')}
-      <div class="ask-actions">${quick ? '' : `<button class="btn primary" data-answer="send" ${ready ? '' : 'disabled'}>Send ${q.questions.length > 1 ? 'answers' : 'answer'}</button>`}${elsewhere}</div>
+      ${quick && !elsewhere ? '' : `<div class="ask-actions">${quick ? '' : `<button class="btn primary" data-answer="send" ${ready ? '' : 'disabled'}>Send ${q.questions.length > 1 ? 'answers' : 'answer'}</button>`}${elsewhere}</div>`}
       <div class="ask-error"></div>
     </div>`
   }
@@ -1150,34 +1193,54 @@ function askCard(e, draft = {}) {
       <div class="ask-error"></div>
     </div>`
   }
+  // the ways to allow it for good fold into one menu: Always allow ⌄
+  const always = q.always?.length ? `<button class="btn has-menu" data-always="${esc(e.id)}" title="Allow, and don't ask again" aria-haspopup="menu">Always allow${ICONS.chevron}</button>` : ''
   return `<div class="ask-card" data-ask="${e.id}">
     <div class="ask-title">${icon}<span>${esc(q.title ?? 'Use a tool')}</span></div>
     ${code}${q.detail ? `<div class="ask-detail">${esc(q.detail)}</div>` : ''}
-    <div class="ask-actions"><button class="btn primary" data-answer="allow">Allow</button><button class="btn deny" data-answer="deny">Deny</button></div>
-    ${q.always?.length ? `<div class="ask-always">${q.always.map((s) => `<button data-answer="always" data-i="${s.i}" title="Allow, and don't ask again">${ICONS.check}${esc(s.label)}</button>`).join('')}</div>` : ''}
-    ${note(`Or tell ${name} what to do instead… (Enter)`)}
-    <div class="ask-foot">${elsewhere}</div>
+    <div class="ask-actions"><button class="btn primary" data-answer="allow">Allow</button><button class="btn deny" data-answer="deny">Deny</button>${always}</div>
+    ${note(`Or tell ${name} what to do instead`)}
+    ${elsewhere ? `<div class="ask-foot">${elsewhere}</div>` : ''}
     <div class="ask-error"></div>
   </div>`
 }
 
-// The chat's Needs you queue (see mountFeed): who's waiting on you, oldest first. The open one shows its question card,
-// answered right there; the others are a line each until you open them. One asking in its terminal opens that.
-const NEED_VERBS = { permission: 'needs your OK', question: 'asks', plan: 'has a plan for you' }
-function needsHTML(needs, expanded, drafts = new Map()) {
-  const item = ({ agent: a, ask }) => {
-    const verb = ask ? NEED_VERBS[ask.ask?.type] ?? 'asks' : 'is waiting in its terminal'
-    const face = `<span class="nq-face">${avatarHTML(a, { size: 28 })}</span>`
-    const who = `<div class="nq-who"><b>${nameHTML(a)}</b> ${verb}</div>`
-    if (ask && ask.id === expanded) return `<article class="nq-item open" data-need="${esc(ask.id)}">${face}<div class="nq-main">${who}${askCard(ask, drafts.get(ask.id))}</div></article>`
-    const go = ask
-      ? `<button class="btn nq-go amber" data-needs-open="${esc(ask.id)}">Answer</button>`
-      : `<button class="btn nq-go" data-needs-term="${esc(a.name)}" title="Answer it in its terminal">Open</button>`
-    // asking in its terminal: the line says what it was doing, since "waiting in its terminal" is already said
-    const text = ask ? needText({ agent: a, ask }) : a.activity ? activityWords(a.activity) : 'Answer it there'
-    return `<article class="nq-item" ${ask ? `data-need="${esc(ask.id)}"` : ''}>${face}<div class="nq-main">${who}<p class="nq-text">${esc(text)}</p></div>${go}</article>`
+// What a creature says when it asks you, in its own words: "Can I run npm run build?", the question itself, "I have a
+// plan. Can I go ahead?". The plain title stays on the card under it, for scanning. HTML (a command is code).
+const lowerFirst = (s) => String(s).charAt(0).toLowerCase() + String(s).slice(1)
+function sayLine({ agent, ask }) {
+  const q = ask?.ask
+  if (!q) return agent.activity ? `I need you in my terminal. I was ${esc(lowerFirst(activityWords(agent.activity)))}.` : 'I need you in my terminal.'
+  if (q.type === 'question') {
+    const first = q.questions?.[0]?.question ?? 'I have a question for you.'
+    return esc(q.questions?.length > 1 ? `${first} And ${plural(q.questions.length - 1, 'more question')}.` : first)
   }
-  return `<header class="nq-head"><span>Needs you</span><b>${needs.length}</b>${needs.length > 1 ? '<span class="nq-order">oldest first</span>' : ''}</header>${needs.map(item).join('')}`
+  if (q.type === 'plan') return 'I have a plan. Can I go ahead?'
+  if (q.code) return `Can I run <code>${esc(q.code.split('\n')[0].trim())}</code>?`
+  const title = String(q.title ?? '').trim()
+  return /^(run|edit|write|read|use|open|fetch|create|delete|change|search|move|install|make|add|remove|update|start|stop|send|call)\b/i.test(title) ? `Can I ${esc(lowerFirst(title))}?` : 'Can I go ahead?'
+}
+
+// The chat's Needs you queue (see mountFeed): who's waiting on you, oldest first, each creature asking in its own
+// voice. The open one shows its card under its words, answered right there; the others are their words and an
+// Answer button until you open them. One asking in its terminal opens that.
+const NEED_VERBS = { permission: 'needs your OK', question: 'has a question', plan: 'has a plan for you' }
+function needsHTML(needs, expanded, drafts = new Map()) {
+  const item = (n) => {
+    const { agent: a, ask } = n
+    const verb = ask ? NEED_VERBS[ask.ask?.type] ?? 'needs your OK' : 'is waiting in its terminal'
+    const face = `<span class="nq-face">${avatarHTML(a, { size: 40, mood: 'waiting' })}</span>`
+    const term = `<button class="icon nq-term" data-needs-term="${esc(a.name)}" title="${esc(`Answer in ${displayName(a)}'s terminal`)}">${ICONS.terminal}</button>`
+    const since = n.since || Date.now()
+    const who = `<div class="nq-who"><b>${nameHTML(a)}</b><span class="nq-verb">${verb} · <span class="nq-ago" data-since="${since}">${ago(since)}</span></span>${ask && ask.id !== expanded ? '' : term}</div>`
+    const say = `<div class="nq-say">${sayLine(n)}</div>`
+    if (ask && ask.id === expanded) return `<article class="nq-item open" data-need="${esc(ask.id)}">${face}<div class="nq-main">${who}${say}${askCard(ask, drafts.get(ask.id), { queue: true })}</div></article>`
+    const go = ask
+      ? `<button class="btn nq-go" data-needs-open="${esc(ask.id)}">Answer</button>`
+      : `<button class="btn nq-go" data-needs-term="${esc(a.name)}" title="Answer it in its terminal">Open</button>`
+    return `<article class="nq-item" ${ask ? `data-need="${esc(ask.id)}"` : ''}>${face}<div class="nq-main">${who}<div class="nq-say-row">${say}${go}</div></div></article>`
+  }
+  return `<header class="nq-head"><i class="dot needs"></i><span>Needs you</span><b>${needs.length}</b>${needs.length > 1 ? '<span class="nq-order">Oldest first</span>' : ''}</header>${needs.map(item).join('')}`
 }
 
 // An answered card, in one line or two.
@@ -1339,13 +1402,15 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   let queued = new Map() // id -> an open question in the queue (it may be outside what the feed shows)
   let expanded = null // the queued question that's open: the oldest, until you open another
   let queueKey = ''
+  let alwaysMenu = null // { id, menu }: the open Always allow menu, and whose question it's for
   const entry = (id) => shown.get(id) ?? queued.get(id)
   // the title bar's "need you", a terminal's Answer, or a question's line in the feed: open it in the queue
   const showNeeds = (id) => {
     if (id && queued.has(id)) expanded = id
     if (last) api.render(last)
     if (queue.classList.contains('hidden')) return
-    queue.querySelector('.nq-item.open button, .nq-item.open input, .nq-go')?.focus({ preventScroll: true })
+    const open = queue.querySelector('.nq-item.open')
+    ;(open?.querySelector('.ask-card :is(button, input):not(:disabled)') ?? open?.querySelector('button') ?? queue.querySelector('.nq-go'))?.focus({ preventScroll: true })
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) queue.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.02)' }, { transform: 'scale(1)' }], { duration: 420, easing: 'cubic-bezier(.3, 1.5, .5, 1)' })
   }
   document.addEventListener('crew:needs', (ev) => {
@@ -1448,6 +1513,15 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     }
     const pick = ev.target.closest('[data-pick]')
     if (pick) return choose(pick)
+    // Always allow ⌄: its ways to allow it for good, in a menu
+    const always = ev.target.closest('[data-always]')
+    if (always) {
+      const id = always.dataset.always
+      const e = entry(id)
+      if (!e?.ask?.always?.length || e.answer) return
+      alwaysMenu = { id, menu: popMenu(always, e.ask.always.map((s) => ({ label: s.label, icon: ICONS.check, act: String(s.i) })), (i) => answerFrom(el.querySelector(`[data-ask="${CSS.escape(id)}"]`) ?? always.closest('[data-ask]'), 'always', i)) }
+      return
+    }
     const ans = ev.target.closest('[data-answer]')
     if (ans) return answerFrom(ans.closest('[data-ask]'), ans.dataset.answer, ans.dataset.i)
     const bug = ev.target.closest('[data-ticket]')
@@ -1650,7 +1724,14 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     const needs = needsYou({ feed, agents })
     queued = new Map(needs.filter((n) => n.ask).map((n) => [n.ask.id, n.ask]))
     if (!queued.has(expanded)) expanded = needs.find((n) => n.ask)?.ask.id ?? null
+    // a question answered elsewhere (or gone) takes its open Always allow menu with it
+    if (alwaysMenu && (!queued.has(alwaysMenu.id) || queued.get(alwaysMenu.id).answer)) (alwaysMenu.menu.close(), (alwaysMenu = null))
     const next = JSON.stringify([expanded, needs.map((n) => [n.agent.name, n.agent.activity, n.agent.avatar, n.ask?.id])])
+    // how long each one has waited ticks in place, without a redraw
+    for (const t of queue.querySelectorAll('.nq-ago[data-since]')) {
+      const now = ago(Number(t.dataset.since))
+      if (t.textContent !== now) t.textContent = now
+    }
     if (next === queueKey) return
     queueKey = next
     const active = queue.contains(document.activeElement) && document.activeElement.closest('[data-ask]') ? document.activeElement : null
@@ -1675,7 +1756,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       talkingTo = next
       convo = next && familyOf(next)
       key = ''
-      if (convo === was) return void (last && api.render(last)) // marc to its clone marc.2: the same conversation
+      if (convo === was) return void (last && api.render(last)) // Theo to its clone Theo.2: the same conversation
       divider = null
       clearTimeout(dividerTimer)
       dividerTimer = null
@@ -1859,7 +1940,7 @@ function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) 
 }
 
 // @mentions, like Slack or Discord: type @ and the crew pops up, filtered as you type (name first, then area).
-// ↑↓ move, Enter or Tab picks, Esc closes; a click picks too. Picking writes the agent's full name (gal@mac-mini
+// ↑↓ move, Enter or Tab picks, Esc closes; a click picks too. Picking writes the agent's full name (rex@workstation
 // for one on another computer) and a space. Agents that are off are listed but can't be picked: a message to one
 // would be refused. field: the textarea. box: what the list lines up with. place: 'above' or 'below' it.
 // Register it before the field's own keydown (Enter to send), so a pick doesn't also send.
@@ -1910,7 +1991,7 @@ function mountMentions(field, { agents, box = field, place = 'above', heading = 
     const was = at?.q
     at = find()
     if (!at) return close()
-    const all = agents().filter((a) => !a.cloneOf) // agents, not their clones: @gal reaches whichever of them is free
+    const all = agents().filter((a) => !a.cloneOf) // agents, not their clones: @theo reaches whichever of them is free
     items = all.map((a, i) => [rank(a, at.q), i, a]).filter(([r, , a]) => r >= 0 && a.on).sort((x, y) => x[0] - y[0] || x[1] - y[1]).map(([, , a]) => a)
     const off = all.filter((a) => !a.on && rank(a, at.q) >= 0)
     if (!items.length && !off.length) return close()
@@ -1970,17 +2051,18 @@ function mountMentions(field, { agents, box = field, place = 'above', heading = 
 }
 
 // What counts as an @mention: the hub's rule (addressees in core/hub.js), so the box colors exactly what will be
-// delivered. Not one: @words glued to something (a@b.com, @types/node, @david's), code in backticks, @you/@any/@crew.
+// delivered. Not one: @words glued to something (a@b.com, @types/node, @milo's), code in backticks, @you/@any/@crew.
 const MENTION = /(?<![\w.@/'-])@([\w-]+(?:@[\w-]+)?)(?![\w@/'-]|\.\w)/g
 const NOT_NAMES = new Set(['you', 'any', 'crew', 'auto'])
 // code spans blanked out, same length, so positions still line up with the text
 const proseOf = (text) => String(text).replace(/```[\s\S]*?```/g, (m) => ' '.repeat(m.length)).replace(/`[^`\n]*`/g, (m) => ' '.repeat(m.length))
-// @gal is the gal here, or the only gal on a linked computer (as the hub resolves it)
+// @iris is the Iris here, or the only Iris on a linked computer (as the hub resolves it)
 function mentioned(name, agents) {
   const n = name.toLowerCase()
-  const exact = agents.find((a) => a.name === n)
+  const low = (s) => String(s ?? '').toLowerCase() // names are matched whatever their case, as you'd type them
+  const exact = agents.find((a) => low(a.name) === n)
   if (exact || n.includes('@')) return exact
-  const there = agents.filter((a) => a.seed === n)
+  const there = agents.filter((a) => low(a.seed) === n)
   return there.length === 1 ? there[0] : undefined
 }
 
@@ -2082,7 +2164,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
   const quoteOf = (e) => (e.ticket !== undefined ? `#${String(e.ticket).split('@')[0]} ${e.title ?? ''}` : snippet(e.text))
   const short = (n) => String(n).split('@')[0]
   const listed = (names) => (names.length > 2 ? `${names.slice(0, -1).map(short).join(', ')} and ${short(names.at(-1))}` : names.map(short).join(' and '))
-  const nameOf = (n) => short(n).replace(/\.(\d+)$/, ' $1') // a clone, marc.2: "marc 2"
+  const nameOf = (n) => short(n).replace(/\.(\d+)$/, ' $1') // a clone, Theo.2: "Theo 2"
   const replyTo = (e) => {
     if (!e || !['reply', 'handoff', 'note', 'msg', 'task'].includes(e.kind) || e.ticket !== undefined && e.from !== 'you') return
     const to = e.from === 'you' ? [...(e.cc ?? [e.to])] : [e.from]
@@ -2422,7 +2504,7 @@ function notify(text, { warn = false, detail = '' } = {}) {
 }
 
 // What an error from main.js says, as a sentence for the screen, or '' when it's for a bug report. The ones Crew throws
-// on purpose say why ("Mac mini is unreachable right now", "\"gal\" already exists"); a crash or a file system error
+// on purpose say why ("Workstation is unreachable right now", "\"iris\" already exists"); a crash or a file system error
 // (ENOENT, "Cannot read properties of undefined", an unknown action) doesn't mean anything to you. Node's error codes
 // are named one by one: a computer called EMILY-PC is unreachable for a reason you can read. So are the network's own
 // words ("fetch failed", "socket hang up") and bare addresses, which say nothing you can act on.

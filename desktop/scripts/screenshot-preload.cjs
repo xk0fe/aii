@@ -1,5 +1,6 @@
-// Preload for scripts/screenshots.mjs: a fake window.crew with a made-up crew, so every view can be
-// rendered and captured without starting any agents or touching ~/.crew.
+// Preload for scripts/screenshots.mjs: a fake window.crew with a made-up crew, so every view can be rendered and
+// captured without starting any agents or touching ~/.crew. The crew is the neutral demo one: seven agents building a
+// small online shop (Storefront), on two computers, with two phones paired.
 const now = Date.now()
 const min = 60000
 // Every window starts on everyone's chat: the composer's target is the conversation it shows, and windows in one
@@ -9,157 +10,194 @@ try {
 } catch {}
 const day = 24 * 60 * min
 
+// ?fixture=big | row | clones | workspaces picks one of the variations below. ?platform=win32: the pages as Windows
+// shows them (Ctrl for ⌘, "this PC", paths with drive letters, the titlebar with room for the window buttons), rendered
+// on a Mac. ?dev=1: as when Crew runs from source (npm run dev), with the developer's extras.
+const QUERY = new URLSearchParams(location.search)
+const FIXTURE = QUERY.get('fixture')
+const BIG = FIXTURE === 'big'
+const PLATFORM = QUERY.get('platform') === 'win32' ? 'win32' : 'darwin'
+const HOME = PLATFORM === 'win32' ? 'C:\\Users\\you' : '/Users/you'
+// Paths are written here as a Mac's; on a Windows computer they're under C:\Users\you, with backslashes.
+const pathOn = (home) => (p) => (p && home.includes('\\') ? p.replace(/^\/Users\/you/, home).replace(/\//g, '\\') : p)
+const here = pathOn(HOME)
+
+// The two computers: Studio (a Mac) and Workstation (a Windows PC). On a Mac this one is Studio and Workstation is
+// linked to it; on Windows the other way round. Rex and Noor run on the linked one.
+const STUDIO = { slug: 'studio', name: 'Studio', home: '/Users/you', address: '192.168.1.20' }
+const WORKSTATION = { slug: 'workstation', name: 'Workstation', home: 'C:\\Users\\you', address: '192.168.1.21' }
+const [HERE, LINK] = PLATFORM === 'win32' ? [WORKSTATION, STUDIO] : [STUDIO, WORKSTATION]
+const onLink = pathOn(LINK.home)
+const REX = `Rex@${LINK.slug}`
+const NOOR = `Noor@${LINK.slug}`
+
 const days = (counts) => counts.map((tasks, i) => ({ day: new Date(now - (counts.length - 1 - i) * day).toISOString().slice(0, 10), tasks }))
 const stats = (tasks, fromYou, activeMin, avgTurnS, tools, handoffs, waits, queueS, spark) => ({
   tasks, fromYou, fromTeam: tasks - fromYou, turns: tasks, activeMs: activeMin * min, avgTurnMs: avgTurnS * 1000, tools, handoffs,
   waits, waitMs: waits * 95000, avgQueueMs: queueS * 1000, first: now - 12 * day, last: now - 4 * min, days: days(spark),
 })
-const none = stats(0, 0, 0, 0, 0, 0, 0, 0, Array(14).fill(0))
-none.first = undefined
-none.last = undefined
 
 const AGENTS = [
-  { name: 'joseph', area: 'Senior Backend SWE', provider: 'claude', model: 'opus', effort: 'medium', yolo: true, status: 'working', since: now - 3 * min, activity: 'Edit core/hub.js', queue: 0, stats: stats(48, 31, 412, 312, 940, 12, 3, 41, [2, 4, 3, 0, 5, 6, 2, 4, 7, 3, 1, 5, 4, 2]) },
-  { name: 'david', area: 'Executive SWE (frontend, mobile apps)', provider: 'claude', model: 'opus', effort: 'high', yolo: true, status: 'waiting', since: now - min, stats: stats(39, 22, 377, 402, 811, 9, 5, 64, [1, 3, 2, 4, 0, 3, 5, 2, 3, 4, 2, 6, 3, 1]) },
-  { name: 'gal', area: 'Executive UI/UX Designer', provider: 'claude', model: 'fable', effort: 'xhigh', yolo: false, status: 'waiting', since: now - min, activity: 'Bash: npm run build', stats: stats(11, 9, 96, 523, 214, 4, 6, 22, [0, 0, 1, 0, 2, 1, 0, 0, 3, 1, 0, 2, 1, 0]), avatar: { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true } },
-  { name: 'ye', area: 'marketing analytical mastermind, using posthog to get analytics', provider: 'claude', model: 'haiku', effort: 'medium', yolo: true, status: 'off', on: false, stats: stats(4, 4, 18, 270, 40, 0, 1, 12, [0, 0, 0, 1, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0]), avatar: { body: 'bean', color: 'purple', eyes: 'sparkle', mouth: 'none', hat: 'glasses', cheeks: true } },
-  { name: 'marc', area: 'artist, makes images', provider: 'codex', model: '', effort: 'high', tier: 'fast', fast: true, yolo: true, clones: 2, status: 'working', since: now - 12 * min, activity: 'image_gen: hero illustration, pastel', queue: 0, stats: stats(17, 12, 141, 488, 160, 2, 0, 140, [0, 1, 2, 0, 1, 3, 0, 2, 1, 2, 0, 1, 3, 1]), avatar: { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false } },
-  { name: 'arie', area: 'admin work, assistant, organiser', provider: 'codex', model: '', effort: 'medium', fast: false, yolo: true, status: 'idle', since: now - 30 * min, stats: stats(26, 14, 120, 210, 300, 21, 1, 30, [3, 1, 2, 2, 4, 1, 0, 3, 2, 1, 2, 3, 1, 1]), avatar: { body: 'bunny', color: 'lilac', eyes: 'sparkle', mouth: 'grin', hat: 'crown', cheeks: true } },
-  { name: 'jeff', area: 'technical support, professional yapper, good to talk to about anything else', provider: 'codex', model: '', effort: 'medium', fast: true, yolo: false, status: 'starting', since: now - 2000, stats: none, avatar: { body: 'blob', color: 'teal', eyes: 'dot', mouth: 'none', hat: 'headphones', cheeks: false } },
-  // runs on a linked computer: its terminal is a mirror streamed over Crew Link
-  { name: 'scarlett@mac-mini', seed: 'scarlett', home: 'mac-mini', homeName: 'Mac mini', area: 'QA, play-tests every build', provider: 'claude', model: 'sonnet', effort: 'medium', yolo: false, status: 'working', since: now - 6 * min, activity: 'Bash: npm run e2e', holds: ['simulator'], stats: stats(9, 5, 70, 300, 120, 1, 1, 20, [0, 1, 0, 2, 1, 0, 1, 0, 2, 1, 0, 1, 0, 0]), avatar: { body: 'mochi', color: 'yellow', eyes: 'dot', mouth: 'smile', hat: 'sprout', cheeks: true } },
-].map((a) => ({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: '~/code/app', prompt: '', images: [], ...a }))
+  { name: 'Ada', area: 'Backend developer', provider: 'claude', model: 'opus', effort: 'high', status: 'working', since: now - 3 * min, activity: 'Edit api/orders.ts', stats: stats(48, 31, 412, 312, 940, 12, 3, 41, [2, 4, 3, 0, 5, 6, 2, 4, 7, 3, 1, 5, 4, 2]), avatar: { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false } },
+  { name: 'Milo', area: 'Frontend developer', provider: 'claude', model: 'sonnet', effort: 'medium', yolo: true, status: 'waiting', since: now - 2 * min, activity: 'Bash: npm run build', stats: stats(39, 22, 377, 402, 811, 9, 5, 64, [1, 3, 2, 4, 0, 3, 5, 2, 3, 4, 2, 6, 3, 1]), avatar: { body: 'cat', color: 'sky', eyes: 'happy', mouth: 'cat', hat: 'party', cheeks: true } },
+  { name: 'Iris', area: 'Product designer', provider: 'claude', model: 'opus', effort: 'high', status: 'waiting', since: now - 5 * min, stats: stats(11, 9, 96, 523, 214, 4, 6, 22, [0, 0, 1, 0, 2, 1, 0, 0, 3, 1, 0, 2, 1, 0]), avatar: { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true } },
+  { name: 'Theo', area: 'Tester', provider: 'codex', model: '', effort: 'high', clones: 2, status: 'working', since: now - 12 * min, activity: 'Bash: npm test -- checkout', stats: stats(17, 12, 141, 488, 160, 2, 0, 140, [0, 1, 2, 0, 1, 3, 0, 2, 1, 2, 0, 1, 3, 1]), avatar: { body: 'frog', color: 'lime', eyes: 'googly', mouth: 'grin', hat: 'none', cheeks: false } },
+  { name: 'June', area: 'Writer, docs and release notes', provider: 'codex', model: '', effort: 'medium', fast: false, status: 'idle', since: now - 30 * min, stats: stats(26, 14, 120, 210, 300, 21, 1, 30, [3, 1, 2, 2, 4, 1, 0, 3, 2, 1, 2, 3, 1, 1]), avatar: { body: 'bunny', color: 'peach', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true } },
+  // Rex and Noor run on the linked computer: their terminals are mirrors streamed over Crew Link
+  { name: REX, seed: 'Rex', home: LINK.slug, homeName: LINK.name, area: 'Ops, builds and deploys', provider: 'claude', model: 'sonnet', effort: 'medium', fast: true, status: 'starting', since: now - 2000, stats: stats(9, 5, 70, 300, 120, 1, 1, 20, [0, 1, 0, 2, 1, 0, 1, 0, 2, 1, 0, 1, 0, 0]), avatar: { body: 'mochi', color: 'yellow', eyes: 'dot', mouth: 'smile', hat: 'headphones', cheeks: true } },
+  { name: NOOR, seed: 'Noor', home: LINK.slug, homeName: LINK.name, area: 'Reviewer', provider: 'codex', model: '', effort: 'high', status: 'off', on: false, stats: stats(4, 4, 18, 270, 40, 0, 1, 12, [0, 0, 0, 1, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0]), avatar: { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false } },
+].map((a) => ({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: '~/Projects/storefront', prompt: '', images: [], ...a }))
 
 // What each one's work has cost: Claude agents in dollars (from Claude Code's status line), Codex agents in tokens.
-const SPENT = { joseph: [61.4, 0, 3120, 940], david: [48.2, 0, 2210, 610], gal: [43.0, 0, 1460, 220], ye: [2.1, 0, 40, 12], marc: [0, 3.4e6, 1880, 300], arie: [0, 1.2e6, 310, 95], 'scarlett@mac-mini': [9.6, 0, 520, 140] }
+const SPENT = { Ada: [18.4, 0, 1240, 380], Milo: [12.6, 0, 860, 240], Iris: [9.2, 0, 310, 90], Theo: [0, 1.6e6, 420, 120], June: [0, 0.6e6, 180, 40], [REX]: [3.1, 0, 140, 30], [NOOR]: [0, 0.2e6, 20, 6] }
 for (const a of AGENTS) {
   const [cost, tokens, added, removed] = SPENT[a.name] ?? [0, 0, 0, 0]
   Object.assign(a.stats, { cost, tokens, costToday: cost * 0.18, costPerTask: a.stats.tasks && cost ? cost / a.stats.tasks : 0, linesAdded: added, linesRemoved: removed, apiMs: cost * 52000 })
 }
 
-// marc can clone itself: the two tasks that would wait in its queue are being drawn by its clones instead
+// ?fixture=clones: Theo can clone itself, and its clones took the two tasks that would wait in its queue.
 const cloneOf = (base, n, extra) => ({ ...base, name: `${base.name}.${n}`, cloneOf: base.name, clone: n, clones: 0, avatar: { seed: base.name, ...base.avatar }, queue: 0, ...extra })
-const MARC = AGENTS.find((a) => a.name === 'marc')
-AGENTS.splice(AGENTS.indexOf(MARC) + 1, 0,
-  cloneOf(MARC, 2, { status: 'working', since: now - 4 * min, activity: 'image_gen: empty Tasks board, felt look' }),
-  cloneOf(MARC, 3, { status: 'working', since: now - 1 * min, activity: 'Read assets/brand/palette.md' }))
+if (FIXTURE === 'clones') {
+  const theo = AGENTS.find((a) => a.name === 'Theo')
+  AGENTS.splice(AGENTS.indexOf(theo) + 1, 0,
+    cloneOf(theo, 2, { status: 'working', since: now - 4 * min, activity: 'Bash: npx playwright test cart' }),
+    cloneOf(theo, 3, { status: 'working', since: now - 1 * min, activity: 'Read tests/coupon.spec.ts' }))
+}
 
-// How full each conversation is (the context gauges) and which bug each fixer's conversation is about.
+// How full each conversation is (the context gauges) and which task each fixer's conversation is about.
 const convo = (tasks, pct, size, extra = {}) => ({ since: now - (40 + tasks * 9) * min, tasks, compactions: 0, context: { pct, size, used: Math.round((pct / 100) * size) }, ...extra })
 const CONVOS = {
-  joseph: [convo(9, 41, 1000000), 7],
-  david: [convo(14, 72, 200000), null],
-  gal: [convo(6, 88, 200000, { compactions: 1 }), null],
-  ye: [convo(2, 12, 200000), null],
-  marc: [convo(4, 23, 258400), 6],
-  arie: [convo(11, 18, 258400), null],
-  'marc.2': [convo(1, 9, 258400), null],
-  'marc.3': [convo(1, 4, 258400), null],
-  jeff: [{ since: now - 3000, tasks: 0, compactions: 0 }, 8],
+  Ada: [convo(9, 41, 1000000), 7],
+  Milo: [convo(14, 86, 200000, { compactions: 1 }), null],
+  Iris: [convo(6, 38, 200000), null],
+  Theo: [convo(4, 23, 258400), 6],
+  June: [convo(11, 58, 258400), null],
+  'Theo.2': [convo(1, 9, 258400), null],
+  'Theo.3': [convo(1, 4, 258400), null],
+  [REX]: [{ since: now - 3000, tasks: 0, compactions: 0 }, null],
 }
 for (const a of AGENTS) [a.convo, a.ticket] = CONVOS[a.name] ?? [null, null]
-// sub-agents at work: joseph has two going, arie finished its turn while one keeps working in the background
+// sub-agents at work: Ada has two going
 AGENTS[0].subs = [
-  { id: 's1', type: 'Explore', description: 'Find every reply path', started: now - 50000, ended: null, tools: 7, activity: 'Grep · sendId' },
+  { id: 's1', type: 'Explore', description: 'Find every place totals are computed', started: now - 50000, ended: null, tools: 7, activity: 'Grep · roundTotal' },
   { id: 's2', type: 'general-purpose', description: 'Run the test suite', started: now - 21000, ended: null, tools: 2, activity: 'Bash · npm test' },
 ]
-AGENTS.find((a) => a.name === 'arie').subs = [{ id: 's3', type: 'Plan', description: 'Draft the release checklist', started: now - 95000, ended: null, tools: 4, activity: 'Read · RELEASE.md' }]
-// joseph's 1M window is held to 250k: the hub reports its numbers against the limit (core/context.js againstLimit)
+// Ada's 1M window is held to 250k: the hub reports its numbers against the limit (core/context.js againstLimit)
 Object.assign(AGENTS[0], { contextLimit: 250000, onContextLimit: 'fresh' })
 AGENTS[0].convo.context = { used: 160000, size: 250000, window: 1000000, limit: 250000, pct: 64 }
 
-// ?fixture=big: a crew of 24 on three computers (the Mac mini linked and online, the Air asleep), for checking
+// ?fixture=big: a crew of 24 on three computers (Workstation linked and online, the Laptop asleep), for checking
 // how every view holds up with many agents.
-const BIG = new URLSearchParams(location.search).get('fixture') === 'big'
 if (BIG) {
+  const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1)
   const more = [
-    ['nova', 'Android client, Kotlin and Compose', 'claude', 'sonnet', 'high', 'working', 'Edit app/src/main/ShopScreen.kt', { body: 'cat', color: 'mint', eyes: 'sparkle', mouth: 'cat', hat: 'none', cheeks: true }],
-    ['kai', 'CI, build pipelines and release tooling', 'codex', '', 'medium', 'idle', '', { body: 'bean', color: 'orange', eyes: 'dot', mouth: 'grin', hat: 'party', cheeks: false }],
-    ['lena', 'docs, changelogs and help center articles', 'claude', 'haiku', 'low', 'idle', '', { body: 'bunny', color: 'peach', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true }],
-    ['otto', 'performance profiling and frame pacing', 'claude', 'opus', 'high', 'working', 'Bash: xcrun xctrace record', { body: 'frog', color: 'lime', eyes: 'googly', mouth: 'grin', hat: 'none', cheeks: false }],
-    ['pia', 'localization: 14 languages, string freezes', 'codex', '', 'low', 'off', '', { body: 'heart', color: 'red', eyes: 'dot', mouth: 'smile', hat: 'none', cheeks: true }],
-    ['rex', 'security review, auth and secrets', 'claude', 'opus', 'xhigh', 'waiting', 'Bash: gitleaks detect', { body: 'blob', color: 'blue', eyes: 'line', mouth: 'none', hat: 'glasses', cheeks: false }],
-    ['sol', 'data pipelines and the analytics warehouse', 'codex', '', 'high', 'off', '', { body: 'drop', color: 'sky', eyes: 'sleepy', mouth: 'smile', hat: 'none', cheeks: false }],
-  ].map(([name, area, provider, model, effort, status, activity, avatar]) => ({ name, area, provider, model, effort, status, activity, avatar }))
-  const remote = (home, homeName) => ([seed, area, provider, model, effort, status, activity, avatar]) => ({ name: `${seed}@${home}`, seed, home, homeName, area, provider, model, effort, status, activity, avatar })
-  const mini = [
-    ['bo', 'iOS builds and TestFlight', 'claude', 'sonnet', 'medium', 'working', 'Bash: xcodebuild archive', { body: 'mochi', color: 'teal', eyes: 'dot', mouth: 'smile', hat: 'headphones', cheeks: false }],
-    ['fin', 'store screenshots and listings', 'codex', '', 'medium', 'idle', '', { body: 'cat', color: 'yellow', eyes: 'happy', mouth: 'cat', hat: 'none', cheeks: true }],
-    ['ivy', 'release manager, keeps the train on time', 'claude', 'opus', 'medium', 'waiting', '', { body: 'bunny', color: 'lilac', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true }],
-    ['max', 'load tests against staging', 'codex', '', 'high', 'working', 'Bash: k6 run soak.js', { body: 'blob', color: 'red', eyes: 'googly', mouth: 'grin', hat: 'sprout', cheeks: false }],
-    ['uma', 'backend API, Postgres and queues', 'claude', 'opus', 'high', 'idle', '', { body: 'bean', color: 'purple', eyes: 'dot', mouth: 'smile', hat: 'none', cheeks: true }],
-    ['zed', 'analytics dashboards', 'claude', 'haiku', 'low', 'off', '', { body: 'drop', color: 'mint', eyes: 'line', mouth: 'none', hat: 'none', cheeks: false }],
-  ].map(remote('mac-mini', 'Mac mini'))
-  const air = [
-    ['mo', 'design assets and icon sets', 'claude', 'sonnet', 'medium', 'idle', '', { body: 'heart', color: 'orange', eyes: 'sparkle', mouth: 'cat', hat: 'beret', cheeks: true }],
-    ['tess', 'marketing copy and the website', 'claude', 'haiku', 'medium', 'idle', '', { body: 'mochi', color: 'pink', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true }],
-    ['vic', 'quick prototypes', 'codex', '', 'medium', 'idle', '', { body: 'frog', color: 'sky', eyes: 'dot', mouth: 'grin', hat: 'crown', cheeks: false }],
-  ].map(remote('air', 'MacBook Air')).map((a) => ({ ...a, status: 'away' }))
+    ['Nova', 'Android client, Kotlin and Compose', 'claude', 'sonnet', 'high', 'working', 'Edit app/src/main/ShopScreen.kt', { body: 'cat', color: 'mint', eyes: 'sparkle', mouth: 'cat', hat: 'none', cheeks: true }],
+    ['Kai', 'CI, build pipelines and release tooling', 'codex', '', 'medium', 'idle', '', { body: 'bean', color: 'orange', eyes: 'dot', mouth: 'grin', hat: 'party', cheeks: false }],
+    ['Lena', 'help center articles and FAQs', 'claude', 'haiku', 'low', 'idle', '', { body: 'bunny', color: 'lilac', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true }],
+    ['Otto', 'performance profiling and page speed', 'claude', 'opus', 'high', 'working', 'Bash: npx lighthouse http://localhost:3000', { body: 'frog', color: 'teal', eyes: 'googly', mouth: 'grin', hat: 'none', cheeks: false }],
+    ['Pia', 'localization: 14 languages, string freezes', 'codex', '', 'low', 'off', '', { body: 'heart', color: 'red', eyes: 'dot', mouth: 'smile', hat: 'none', cheeks: true }],
+    ['Sam', 'security review, auth and secrets', 'claude', 'opus', 'xhigh', 'waiting', 'Bash: gitleaks detect', { body: 'blob', color: 'blue', eyes: 'line', mouth: 'none', hat: 'glasses', cheeks: false }],
+    ['Sol', 'data pipelines and the analytics warehouse', 'codex', '', 'high', 'off', '', { body: 'drop', color: 'sky', eyes: 'sleepy', mouth: 'smile', hat: 'none', cheeks: false }],
+    ['Wren', 'accessibility checks and screen readers', 'claude', 'sonnet', 'medium', 'idle', '', { body: 'mochi', color: 'peach', eyes: 'sparkle', mouth: 'cat', hat: 'sprout', cheeks: true }],
+  ].map(([name, area, provider, model, effort, status, activity, avatar]) => ({ name, area: capital(area), provider, model, effort, status, activity, avatar }))
+  const remote = (home, homeName) => ([seed, area, provider, model, effort, status, activity, avatar]) => ({ name: `${seed}@${home}`, seed, home, homeName, area: capital(area), provider, model, effort, status, activity, avatar })
+  const linked = [
+    ['Bo', 'desktop builds and the installers', 'claude', 'sonnet', 'medium', 'working', 'Bash: npm run dist', { body: 'mochi', color: 'teal', eyes: 'dot', mouth: 'smile', hat: 'headphones', cheeks: false }],
+    ['Fin', 'store screenshots and listings', 'codex', '', 'medium', 'idle', '', { body: 'cat', color: 'yellow', eyes: 'happy', mouth: 'cat', hat: 'none', cheeks: true }],
+    ['Ivy', 'release manager, keeps the train on time', 'claude', 'opus', 'medium', 'waiting', '', { body: 'bunny', color: 'lilac', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true }],
+    ['Max', 'load tests against staging', 'codex', '', 'high', 'working', 'Bash: k6 run soak.js', { body: 'blob', color: 'red', eyes: 'googly', mouth: 'grin', hat: 'sprout', cheeks: false }],
+    ['Uma', 'backend API, Postgres and queues', 'claude', 'opus', 'high', 'idle', '', { body: 'bean', color: 'purple', eyes: 'dot', mouth: 'smile', hat: 'none', cheeks: true }],
+    ['Zed', 'analytics dashboards', 'claude', 'haiku', 'low', 'off', '', { body: 'drop', color: 'mint', eyes: 'line', mouth: 'none', hat: 'none', cheeks: false }],
+  ].map(remote(LINK.slug, LINK.name))
+  const laptop = [
+    ['Mo', 'design assets and icon sets', 'claude', 'sonnet', 'medium', 'idle', '', { body: 'heart', color: 'orange', eyes: 'sparkle', mouth: 'cat', hat: 'beret', cheeks: true }],
+    ['Tess', 'marketing copy and the website', 'claude', 'haiku', 'medium', 'idle', '', { body: 'mochi', color: 'pink', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true }],
+    ['Vic', 'quick prototypes', 'codex', '', 'medium', 'idle', '', { body: 'frog', color: 'sky', eyes: 'dot', mouth: 'grin', hat: 'crown', cheeks: false }],
+  ].map(remote('laptop', 'Laptop')).map((a) => ({ ...a, status: 'away' }))
   const spark = (n) => Array.from({ length: 14 }, (_, i) => (i * 7 + n) % 4)
-  for (const [i, a] of [...more, ...mini, ...air].entries()) {
+  for (const [i, a] of [...more, ...linked, ...laptop].entries()) {
     AGENTS.push({
-      on: a.status !== 'off', queue: a.name === 'nova' ? 1 : 0, pending: false, args: '', cwd: '~/code/app', prompt: '', images: [], yolo: i % 3 === 0, fast: a.provider === 'codex' ? i % 2 === 0 : undefined,
+      on: a.status !== 'off', queue: a.name === 'Nova' ? 1 : 0, clones: 0, pending: false, args: '', cwd: '~/Projects/storefront', prompt: '', images: [], yolo: i % 3 === 0, fast: a.provider === 'codex' ? i % 2 === 0 : undefined,
       since: now - (2 + i) * min, stats: stats(3 + i * 2, 2 + i, 20 + i * 9, 200 + i * 20, 30 + i * 12, i % 4, i % 3, 10 + i * 3, spark(i)),
       convo: a.status === 'off' ? null : convo(2 + (i % 5), 8 + ((i * 13) % 70), 200000), ticket: null, ...a,
     })
   }
+  const big = (n) => AGENTS.find((a) => a.seed === n || a.name === n)
+  // Kai finished its turn while a sub-agent keeps working in the background; Bo has booked staging (crew lease)
+  big('Kai').subs = [{ id: 's3', type: 'Plan', description: 'Draft the release checklist', started: now - 95000, ended: null, tools: 4, activity: 'Read · docs/release.md' }]
+  big('Bo').holds = ['staging']
 }
 
-// A made-up game screenshot for the tasks that come with one.
-const SHOT = require('path').join(require('os').tmpdir(), 'crew-shots-level2.svg')
-require('fs').writeFileSync(SHOT, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8ec5ff"/><stop offset="1" stop-color="#d9f0ff"/></linearGradient></defs><rect width="320" height="200" fill="url(#s)"/><circle cx="262" cy="42" r="20" fill="#ffe27a"/><rect y="150" width="320" height="50" fill="#6fcf6a"/><rect x="40" y="112" width="70" height="12" rx="6" fill="#a86b3c"/><rect x="190" y="96" width="80" height="12" rx="6" fill="#a86b3c"/><circle cx="72" cy="140" r="11" fill="#ff7eb6"/><circle cx="68" cy="137" r="2" fill="#222"/><circle cx="76" cy="137" r="2" fill="#222"/><rect x="110" y="60" width="100" height="44" rx="10" fill="rgba(0,0,0,.55)"/><text x="160" y="88" font-family="Helvetica" font-size="16" fill="#fff" text-anchor="middle">PAUSED</text></svg>`)
+// A made-up shop page for the tasks that come with a screenshot: the cart, empty.
+const SHOT = require('path').join(require('os').tmpdir(), 'crew-shots-empty-cart.svg')
+require('fs').writeFileSync(SHOT, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200"><rect width="320" height="200" fill="#f6f6f8"/><rect width="320" height="30" fill="#fff"/><rect y="30" width="320" height="1" fill="#e2e2e8"/><rect x="14" y="10" width="56" height="10" rx="5" fill="#2fd3a6"/><rect x="176" y="12" width="30" height="6" rx="3" fill="#d6d6de"/><rect x="214" y="12" width="30" height="6" rx="3" fill="#d6d6de"/><rect x="252" y="12" width="30" height="6" rx="3" fill="#d6d6de"/><path d="M292 10h3l2.5 9h8l2-6.5h-11.5" fill="none" stroke="#6e6e78" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M140 50h8l7 28h24l6-20h-34" fill="none" stroke="#b8b8c2" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="158" cy="86" r="3.5" fill="#b8b8c2"/><circle cx="176" cy="86" r="3.5" fill="#b8b8c2"/><text x="160" y="108" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#3a3a42" text-anchor="middle">Your cart is empty</text><rect x="120" y="116" width="80" height="18" rx="9" fill="#2f6bff"/><text x="160" y="128.5" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#fff" text-anchor="middle">Keep shopping</text><g fill="#fff" stroke="#e2e2e8"><rect x="34" y="148" width="72" height="40" rx="6"/><rect x="124" y="148" width="72" height="40" rx="6"/><rect x="214" y="148" width="72" height="40" rx="6"/></g><rect x="40" y="154" width="22" height="22" rx="4" fill="#ffd9c7"/><rect x="130" y="154" width="22" height="22" rx="4" fill="#cdeefe"/><rect x="220" y="154" width="22" height="22" rx="4" fill="#e7dcff"/><g fill="#d6d6de"><rect x="68" y="157" width="30" height="5" rx="2.5"/><rect x="68" y="166" width="20" height="5" rx="2.5"/><rect x="158" y="157" width="30" height="5" rx="2.5"/><rect x="158" y="166" width="20" height="5" rx="2.5"/><rect x="248" y="157" width="30" height="5" rx="2.5"/><rect x="248" y="166" width="20" height="5" rx="2.5"/></g></svg>`)
 
 const log = (...entries) => entries.map(([m, by, text, kind]) => ({ ts: now - m * min, by, text, ...(kind && { kind }) }))
 const ticket = (id, status, severity, title, owner, extra = {}) => ({
   id, key: String(id), home: null, kind: 'task', status, severity, title, body: '', owner, fixer: null, by: 'you', images: [], seen: 1, triaged: Boolean(owner),
-  created: now - (90 - id * 6) * min, updated: now - (60 - id * 4) * min, log: log([90 - id * 6, 'you', 'added it']), ...extra,
+  created: now - (100 - id * 6) * min, updated: now - (70 - id * 4) * min, log: log([100 - id * 6, 'you', 'added it']), ...extra,
 })
+// Storefront's board. To do: new, In progress: fixing, Review: check, Done: done.
 const TICKETS = [
-  ticket(12, 'new', 'blocker', 'Jump does nothing after unpausing', 'david', {
-    kind: 'bug',
-    body: '1. Start level 2\n2. Pause, then resume\n3. Press jump: nothing happens until you press it twice\n\nExpected: jumps right away. Happens on keyboard and gamepad.',
-    images: [SHOT], created: now - 2 * min, updated: now - 1 * min,
-    log: log([2, 'you', 'reported it'], [1.5, 'arie', 'gave it to @david, marked it blocker, updated the details'], [1, 'arie', 'Probably the input buffer isn\'t cleared on resume; see PauseMenu.onResume', 'note']),
+  ticket(12, 'new', 'high', 'Empty cart state', 'Iris', {
+    kind: 'feature',
+    body: 'An empty cart shows nothing but the header.\n\n1. Add an item to the cart\n2. Remove it\n3. The cart page is blank under the header\n\nWanted: a friendly line and a way back to the shop. Maybe a few suggestions.',
+    images: [SHOT], created: now - 15 * min, updated: now - 14 * min,
+    log: log([15, 'you', 'added it'], [14.5, 'June', 'gave it to @Iris, marked it high, updated the details'], [14, 'June', 'The cart page already has a slot for this; see Cart.tsx', 'note']),
   }),
-  ticket(11, 'new', 'high', 'Pause menu buttons overlap on small screens', 'gal', { kind: 'bug', seen: 3 }),
-  ticket(10, 'new', 'normal', 'Daily challenge with a shared leaderboard', null, { kind: 'feature', triaged: false, created: now - 0.4 * min }),
-  ticket(9, 'new', 'low', 'Rename "Volumn" to "Volume" in settings', 'david'),
-  ticket(13, 'new', 'normal', 'Onboarding hero illustrations, one per crew role', 'marc', { kind: 'feature' }),
-  // ye is switched off: its task waits for it (no Start until it's back on)
-  ticket(14, 'new', 'low', 'Weekly retention chart for the launch', 'ye'),
-  ticket(7, 'fixing', 'high', 'Coins counter resets after level 2', 'joseph', { kind: 'bug', fixer: 'joseph' }),
-  ticket(6, 'fixing', 'normal', 'Localize shop prices', 'marc', { fixer: 'marc' }),
-  ticket(8, 'fixing', 'normal', 'Offline mode for the avatar picker', 'jeff', { kind: 'feature', fixer: 'jeff' }),
-  ticket(5, 'check', 'high', 'Double jump fires twice on gamepad', 'david', {
-    kind: 'bug',
-    fixer: 'david', fix: 'Held buttons were read every frame. Debounced the jump input so a press fires once; checked keyboard and a DualSense on levels 1–3.',
-    log: log([60, 'you', 'reported it'], [55, 'you', 'sent it to @david, in a new conversation'], [12, 'david', 'fixed it: Debounced the jump input'], [12, 'david', 'Repro was 100% with a DualSense at 120Hz.', 'note']),
+  ticket(11, 'new', 'high', 'Promo banner covers the menu on small screens', 'Milo', { kind: 'bug', seen: 3 }),
+  ticket(10, 'new', 'normal', 'Save items for later', null, { kind: 'feature', triaged: false, created: now - 0.4 * min }),
+  ticket(9, 'new', 'low', 'Fix the "Adress" typo on the checkout form', 'Milo'),
+  ticket(13, 'new', 'normal', 'Write 1.2 release notes', 'June'),
+  // Noor is switched off: its task waits for it (no Start until it's back on)
+  ticket(14, 'new', 'low', 'Review the payment retry change', NOOR),
+  ticket(8, 'new', 'normal', 'Cache product images on the CDN', REX),
+  ticket(7, 'fixing', 'high', "Coupon code doesn't apply twice", 'Ada', { kind: 'bug', fixer: 'Ada' }),
+  ticket(6, 'fixing', 'normal', 'Flaky checkout test', 'Theo', { kind: 'bug', fixer: 'Theo' }),
+  ticket(5, 'check', 'high', 'Dark mode for settings', 'Milo', {
+    kind: 'feature',
+    fixer: 'Milo', fix: 'Settings follow the system theme now, with a switch under Appearance to pick one. Checked every settings page in light and dark.',
+    log: log([60, 'you', 'added it'], [55, 'you', 'sent it to @Milo, in a new conversation'], [12, 'Milo', 'finished it: Settings follow the system theme'], [12, 'Milo', 'The order history page needed its own colors too.', 'note']),
   }),
-  ticket(4, 'check', 'normal', 'Fade the music when the game pauses', 'marc', { fixer: 'marc', fix: 'Ducked the music bus when the pause menu opens, back up on resume.' }),
-  ticket(3, 'done', 'normal', 'Login spinner never stops', 'joseph', { kind: 'bug', fixer: 'joseph', fix: 'Missing timeout on the auth call; added one and an error state.' }),
-  ticket(2, 'done', 'low', 'Login spinner keeps spinning', 'joseph', { kind: 'bug', dupOf: 3 }),
-  ticket(1, 'done', 'normal', 'Tutorial: add a skip button', 'david', { kind: 'feature', fixer: 'david', fix: 'Skip in the top corner; remembers that you skipped.' }),
+  ticket(4, 'check', 'normal', 'Totals round wrong with 3 items', 'Ada', { kind: 'bug', fixer: 'Ada', fix: 'Rounding happened per line; now once on the total.' }),
+  ticket(3, 'done', 'normal', 'Search spinner never stops', 'Ada', { kind: 'bug', fixer: 'Ada', fix: 'Missing timeout on the search call; added one and an error state.' }),
+  ticket(2, 'done', 'low', 'Search keeps spinning', 'Ada', { kind: 'bug', dupOf: 3 }),
+  ticket(1, 'done', 'normal', 'Guest checkout', 'Milo', { kind: 'feature', fixer: 'Milo', fix: 'Checkout without an account; it offers one after the order.' }),
+  ticket(15, 'done', 'normal', 'Release notes for 1.1', 'June', { fixer: 'June', fix: 'Written up from the merged changes, with a line per fix.', created: now - 3 * day, updated: now - 2 * day }),
 ]
 
 const t = (m) => now - m * min
 const FEED = [
-  { id: 'f1', kind: 'msg', from: 'you', to: 'joseph', cc: ['joseph', 'david'], sendId: 's1', text: 'The feed merges multi-recipient sends. Can you two make sure replies thread back to the right bubble?', ts: t(26) },
-  { id: 'f2', kind: 'msg', from: 'you', to: 'david', cc: ['joseph', 'david'], sendId: 's1', text: 'The feed merges multi-recipient sends. Can you two make sure replies thread back to the right bubble?', ts: t(26) },
-  { id: 'f3', kind: 'reply', from: 'david', to: 'you', re: 'f2', text: 'Done on the client side. Replies now link to the **first visible copy**, so `mergeSends` stays the single source of truth.', ts: t(19) },
-  { id: 'f3b', kind: 'ask', from: 'joseph', to: 'you', cli: 'claude', re: 'f1', ts: t(17), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm test', always: [] }, answer: { by: 'you', allow: true, always: 'Always allow Bash(npm test:*)', at: t(16.5) } },
-  { id: 'f4', kind: 'handoff', from: 'joseph', to: 'gal', re: 'f1', text: 'Can you sanity-check the quote styling for threaded replies? It looks cramped on narrow panels.', ts: t(14) },
-  { id: 'f5', kind: 'note', from: 'arie', text: 'Standup moved to 10:30. @joseph cuts the release branch tomorrow.', ts: t(9) },
-  { id: 'f6', kind: 'handoff', from: 'gal', to: 'marc', held: true, text: 'Need three pastel hero illustrations for the onboarding, one per crew role. Soft felt look, like our creatures.', ts: t(5) },
-  { id: 'f6b', kind: 'handoff', from: 'david', to: 'arie', text: 'PUBLISHED: `083c613` is on GitHub. Branch and PR both read back the same commit.', ts: t(4.5) },
-  { id: 'f6c', kind: 'reply', from: 'arie', to: 'you', re: 'f6b', ts: t(4), text: "**Release blocker closed.** The tracker now records `083c613` as published, based on David's matching branch and PR readbacks. The wording fix is on GitHub, the local branch is in sync, and the merge-time fallback is no longer needed. Jeff has been told.\n\nThe remaining sequence is unchanged:\n\n1. Merge **#4645**, then **#4647**. Both are open and unmerged.\n2. Verify the cleanup in a store build.\n3. Joseph retires flag `928775`.\n4. Gal signs off the onboarding art.\n\nI'll post here when #4645 lands." },
-  { id: 'f7', kind: 'ask', from: 'gal', to: 'you', cli: 'claude', re: 'f4', ts: t(1), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'rm -rf dist && npm run build', detail: 'Clean the build folder and rebuild the app', alert: 'wants to run a command',
+  { id: 'f1', kind: 'msg', from: 'you', to: 'Ada', cc: ['Ada', 'Milo'], sendId: 's1', text: 'The cart and checkout show different totals for the same order. Can you two find where they split?', ts: t(40) },
+  { id: 'f2', kind: 'msg', from: 'you', to: 'Milo', cc: ['Ada', 'Milo'], sendId: 's1', text: 'The cart and checkout show different totals for the same order. Can you two find where they split?', ts: t(40) },
+  { id: 'f3', kind: 'reply', from: 'Milo', to: 'you', re: 'f2', text: 'Fixed on the page side. The cart reads its total from **the order API** now, so `orderTotal` is the single source of truth.', ts: t(33) },
+  { id: 'f3b', kind: 'ask', from: 'Ada', to: 'you', cli: 'claude', re: 'f1', ts: t(31), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm test', always: [] }, answer: { by: 'you', allow: true, always: 'Always allow Bash(npm test:*)', at: t(30.5) } },
+  { id: 'f4', kind: 'handoff', from: 'Ada', to: 'Iris', re: 'f1', text: 'Can you check how the totals line reads on narrow screens? It wraps onto two lines.', ts: t(28) },
+  { id: 'f5', kind: 'note', from: 'June', text: 'Release notes for 1.2 are due Thursday. @Rex builds the release that morning.', ts: t(25) },
+  { id: 'f6', kind: 'handoff', from: 'Iris', to: 'Theo', held: true, text: 'Once the empty cart lands, can you add it to the checkout tests? Empty, one item, and one with a coupon.', ts: t(22) },
+  { id: 'f6b', kind: 'handoff', from: 'Milo', to: 'June', text: 'Dark mode for settings is ready for review (#5). The switch lives under Settings, Appearance.', ts: t(20) },
+  { id: 'f6c', kind: 'reply', from: 'June', to: 'you', re: 'f6b', ts: t(19), text: "**Release notes for 1.2 are drafted.** Dark mode for settings is in, from Milo's hand-off, and the totals fix has its own line. Rex has the draft for the release page.\n\nWhat's left before 1.2 goes out:\n\n1. Ada finishes the coupon fix (#7), then Theo runs the checkout tests.\n2. You check dark mode in settings (#5).\n3. Rex builds the release and puts it on staging.\n4. Iris signs off the empty cart (#12).\n\nI'll post here when the build is on staging." },
+  { id: 'f8', kind: 'reply', from: 'Ada', to: 'you', re: 'f1', subs: [{ type: 'Explore', description: 'Find every place totals are computed', tools: 9, ms: 41000, running: false }, { type: 'general-purpose', description: 'Run the test suite', tools: 3, ms: 64000, running: false }], text: 'The order API agrees too:\n\n| where | total from |\n|---|---|\n| cart | ✓ order API |\n| checkout | ✓ order API |\n\nRan the suite, 42 passing.', ts: t(16) },
+  // the task flow in the chat: added, triaged, started in a new conversation, fixed
+  { id: 'b1', kind: 'task', type: 'feature', act: 'filed', from: 'you', ticket: 12, title: 'Empty cart state', ts: t(15) },
+  { id: 'b2', kind: 'task', type: 'feature', act: 'triaged', from: 'June', ticket: 12, title: 'Empty cart state', text: 'Iris', ts: t(14.5) },
+  { id: 'b3', kind: 'event', fresh: true, from: 'Ada', text: 'started a new conversation for #7', ts: t(14) },
+  { id: 'b4', kind: 'msg', from: 'you', to: 'Ada', ticket: 7, type: 'bug', title: "Coupon code doesn't apply twice", fresh: true, text: "[bug #7] Coupon code doesn't apply twice", ts: t(13.9) },
+  { id: 'b5', kind: 'task', type: 'bug', act: 'fixed', from: 'Ada', ticket: 4, title: 'Totals round wrong with 3 items', text: 'Rounding happened per line; now once on the total.', ts: t(12) },
+  { id: 'f10', kind: 'reply', from: 'Theo', to: 'you', text: 'All 48 checkout tests pass on Chrome and Safari.', ts: t(6) },
+  { id: 'f11', kind: 'msg', from: 'you', to: 'Iris', text: 'Can you sketch the empty cart?', ts: t(5.5) },
+  { id: 'f9', kind: 'ask', from: 'Iris', to: 'you', cli: 'claude', re: 'f11', ts: t(5), ask: { type: 'question', alert: 'asks: Should the empty cart show suggestions?', questions: [
+    { question: 'Should the empty cart show suggestions?', header: 'Empty cart', multiSelect: false, options: [{ label: 'Best sellers', description: 'Four popular items under the message' }, { label: 'Recently viewed', description: 'What you looked at last time' }, { label: 'Keep it plain', description: 'Just a line and a way back to the shop' }] }] } },
+  { id: 'f7', kind: 'ask', from: 'Milo', to: 'you', cli: 'claude', re: 'f2', ts: t(2), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm run build', detail: 'Build the app to check the settings page', alert: 'wants to run a command',
     always: [{ i: 0, label: 'Always allow Bash(npm run build:*)' }, { i: 1, label: 'Allow all edits this session' }] } },
-  { id: 'c1', kind: 'msg', from: 'you', to: 'marc.2', text: 'An illustration for the empty Tasks board too, same felt look', ts: t(4.2) },
-  { id: 'c2', kind: 'msg', from: 'you', to: 'marc.3', text: 'And a pastel palette sheet for the brand guide', ts: t(1.1) },
-  { id: 'f8', kind: 'reply', from: 'joseph', to: 'you', re: 'f1', subs: [{ type: 'Explore', description: 'Find every reply path', tools: 9, ms: 41000, running: false }, { type: 'general-purpose', description: 'Run the test suite', tools: 3, ms: 64000, running: false }], text: 'Server side is threaded too:\n\n| path | status |\n|---|---|\n| hub.send | ✓ sendId |\n| hub.reply | ✓ re |\n\nRan the suite, 42 passing.', ts: t(0.5) },
-  { id: 'f9', kind: 'ask', from: 'david', to: 'you', cli: 'claude', re: 'f2', ts: t(0.3), ask: { type: 'question', alert: 'asks: Which navigation pattern?', questions: [
-    { question: 'Which navigation pattern should the mobile app use?', header: 'Navigation', multiSelect: false, options: [{ label: 'Tab bar', description: 'Five tabs at the bottom, like iOS apps' }, { label: 'Drawer', description: 'A side menu behind a hamburger' }, { label: 'Both', description: 'Tabs for the main areas, a drawer for settings' }] }] } },
 ]
+// Theo's clones each got a message of their own
+if (FIXTURE === 'clones') {
+  FEED.splice(FEED.findIndex((e) => e.id === 'f11'), 0,
+    { id: 'c1', kind: 'msg', from: 'you', to: 'Theo.2', text: 'Run the cart tests on Firefox too', ts: t(4.2) },
+    { id: 'c2', kind: 'msg', from: 'you', to: 'Theo.3', text: 'And the coupon tests on a slow network', ts: t(1.1) })
+  FEED.sort((a, b) => a.ts - b.ts)
+}
 
 const PROVIDERS = {
   claude: { label: 'Claude', models: ['fable', 'opus', 'sonnet', 'haiku'], efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
@@ -171,37 +209,38 @@ const ESC = '\x1b['
 const TERM = [
   `${ESC}38;5;209m✻${ESC}0m ${ESC}1mWelcome to Claude Code${ESC}0m`,
   '',
-  `${ESC}2m  cwd: ~/code/app${ESC}0m`,
+  `${ESC}2m  cwd: ~/Projects/storefront${ESC}0m`,
   '',
-  `${ESC}1m>${ESC}0m make sure replies thread back to the right bubble`,
+  `${ESC}1m>${ESC}0m make the cart and checkout agree on the total`,
   '',
-  `${ESC}38;5;114m●${ESC}0m Read(core/hub.js)`,
-  `  ⎿  Read 649 lines`,
-  `${ESC}38;5;114m●${ESC}0m Update(core/hub.js)`,
-  `  ⎿  Updated core/hub.js with 6 additions and 2 removals`,
+  `${ESC}38;5;114m●${ESC}0m Read(api/orders.ts)`,
+  `  ⎿  Read 412 lines`,
+  `${ESC}38;5;114m●${ESC}0m Update(api/orders.ts)`,
+  `  ⎿  Updated api/orders.ts with 6 additions and 2 removals`,
   `${ESC}38;5;111m●${ESC}0m Bash(npm test)`,
   `  ⎿  ${ESC}32m✔ 42 passing${ESC}0m`,
   '',
-  `${ESC}38;5;209m✻${ESC}0m Threading replies… ${ESC}2m(esc to interrupt)${ESC}0m`,
+  `${ESC}38;5;209m✻${ESC}0m Fixing the totals… ${ESC}2m(esc to interrupt)${ESC}0m`,
 ].join('\r\n')
 
 // Linked computers, as Crew.computers() reports them: what each one runs.
 const linked = (slug, name, online) => ({
-  slug, name, online, saved: true, status: online ? { address: '192.168.1.24' } : { error: 'unreachable, it reconnects on its own' },
+  slug, name, online, saved: true, status: online ? { address: LINK.address } : { error: 'unreachable, it reconnects on its own' },
   agents: AGENTS.filter((a) => a.home === slug).map((a) => ({ name: a.name, seed: a.seed, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: false })),
 })
-// Phones paired with this Mac, as Phones.view() reports them (core/phones.js): one connected, one seen yesterday.
+// Phones paired with this computer, as Phones.view() reports them (core/phones.js): one connected, one seen yesterday.
 const PHONES = {
   devices: [
-    { id: 'p1', name: "Sasha's iPhone", platform: 'ios', app: '0.1.0', paired: now - 3 * day, seen: now - 2 * min, online: true },
-    { id: 'p2', name: 'Pixel 9', platform: 'android', app: '0.1.0', paired: now - 12 * day, seen: now - day - 3 * 60 * min, online: false },
+    { id: 'p1', name: 'iPhone', platform: 'ios', app: '0.1.0', paired: now - 3 * day, seen: now - 2 * min, online: true },
+    { id: 'p2', name: 'Pixel', platform: 'android', app: '0.1.0', paired: now - 12 * day, seen: now - day - 3 * 60 * min, online: false },
   ],
   pairing: null,
   error: null,
 }
+const TAILNET = `${HERE.slug}.example-tailnet.ts.net`
 const COMPUTERS = {
-  me: { name: 'Studio Mac', slug: 'studio-mac', sharing: true, agents: AGENTS.filter((a) => !a.home && !a.cloneOf).length, port: 7787, code: 'crew1.eyJuYW1lIjoiU3R1ZGlvIE1hYyJ9.k3y', hosts: [{ address: '192.168.1.20', via: 'Wi-Fi' }, { address: 'studio-mac.tail1234.ts.net', via: 'Tailscale' }] },
-  links: [linked('mac-mini', 'Mac mini', true), ...(BIG ? [linked('air', 'MacBook Air', false)] : [])],
+  me: { name: HERE.name, slug: HERE.slug, sharing: true, agents: AGENTS.filter((a) => !a.home && !a.cloneOf).length, port: 7787, code: `crew1.${Buffer.from(JSON.stringify({ name: HERE.name })).toString('base64url')}.k3y`, hosts: [{ address: HERE.address, via: 'Wi-Fi' }, { address: TAILNET, via: 'Tailscale' }] },
+  links: [linked(LINK.slug, LINK.name, true), ...(BIG ? [linked('laptop', 'Laptop', false)] : [])],
   phones: PHONES,
 }
 // A pairing code for a phone, with made-up keys (a new secret each time), as a QR code the way main.js draws it (qrSvg).
@@ -209,7 +248,7 @@ const COMPUTERS = {
 let codes = 0
 function phoneCode() {
   const bytes = (n, seed) => Buffer.from(Array.from({ length: n }, (_, i) => (i * 53 + seed) & 255)).toString('base64url')
-  const code = 'crewphone1.' + Buffer.from(JSON.stringify({ v: 1, id: bytes(16, 1), n: 'Studio Mac', k: bytes(32, 2), s: bytes(32, 3 + codes++), h: ['192.168.1.20', '100.101.102.103', 'studio-mac.tail1234.ts.net'], p: 7788 })).toString('base64url')
+  const code = 'crewphone1.' + Buffer.from(JSON.stringify({ v: 1, id: bytes(16, 1), n: HERE.name, k: bytes(32, 2), s: bytes(32, 3 + codes++), h: [HERE.address, TAILNET], p: 7788 })).toString('base64url')
   const qr = require('qrcode-generator')(0, 'M')
   qr.addData(code)
   qr.make()
@@ -231,86 +270,85 @@ function phoneCode() {
 // Folders each computer has, for moving an agent there (folderInfo / folders in main.js).
 // [path, label] as folders() in core/move.js labels them: the agent's own path there, who works where, home.
 const FOLDERS = {
-  '': [['/Users/you/code/app', 'same folder as now'], ['/Users/you/code/site', 'lena, tess'], ['/Users/you', 'home folder']],
-  'mac-mini': [['/Users/you/code/app', 'same folder as now'], ['/Users/you/builds', 'bo, fin'], ['/Users/you', 'home folder']],
-  air: [['/Users/you/code/app', 'same folder as now'], ['/Users/you', 'home folder']],
+  '': [[here('/Users/you/Projects/storefront'), 'same folder as now'], [here('/Users/you/Projects/docs-site'), 'June'], [HOME, 'home folder']],
+  [LINK.slug]: [[onLink('/Users/you/Projects/storefront'), 'same folder as now'], [onLink('/Users/you/Projects/deploy'), 'Rex, Noor'], [LINK.home, 'home folder']],
+  laptop: [['/Users/you/Projects/storefront', 'same folder as now'], ['/Users/you', 'home folder']],
 }
-// The task flow in the chat: added, triaged, started in a new conversation, done.
-FEED.push(
-  { id: 'b1', kind: 'task', type: 'bug', act: 'filed', from: 'you', ticket: 12, title: 'Jump does nothing after unpausing', ts: t(0.45) },
-  { id: 'b2', kind: 'task', type: 'bug', act: 'triaged', from: 'arie', ticket: 12, title: 'Jump does nothing after unpausing', text: 'david', ts: t(0.4) },
-  { id: 'b3', kind: 'event', fresh: true, from: 'joseph', text: 'started a new conversation for #7', ts: t(0.35) },
-  { id: 'b4', kind: 'msg', from: 'you', to: 'joseph', ticket: 7, type: 'bug', title: 'Coins counter resets after level 2', fresh: true, text: '[bug #7] Coins counter resets after level 2', ts: t(0.3) },
-  { id: 'b5', kind: 'task', type: 'bug', act: 'fixed', from: 'david', ticket: 5, title: 'Double jump fires twice on gamepad', text: 'Held buttons were read every frame. Debounced the jump input so a press fires once.', ts: t(0.2) },
-)
+const HOMES = { '': HOME, [LINK.slug]: LINK.home, laptop: '/Users/you' }
 
-// ?fixture=row: right of way (core/hub.js question). arie asked joseph something and waits on his answer, which goes
-// ahead of his queue; when joseph tried to ask arie back, Crew had him answer first. Earlier: david's question came
-// back answered, three hand-offs for david went in as one turn, a clone left a file to its agent, and a declined task
-// went straight to its next owner.
-if (new URLSearchParams(location.search).get('fixture') === 'row') {
+// ?fixture=row: right of way (core/hub.js question). June asked Ada something and waits on her answer, which goes
+// ahead of her queue; when Ada tried to ask June back, Crew had her answer first. Earlier: Milo's question came back
+// answered, three hand-offs for Milo went in as one turn, Iris left a file to Milo, who was editing it, and a
+// declined task went straight to its next owner.
+if (FIXTURE === 'row') {
   const agent = (n) => AGENTS.find((a) => a.name === n)
-  Object.assign(agent('arie'), { status: 'working', since: t(1.4), activity: 'Bash · crew ask joseph', waitingOn: [{ name: 'joseph', since: t(0.8), id: 'q1', text: 'Which port does the staging API listen on?' }] })
-  Object.assign(agent('joseph'), { owes: [{ name: 'arie', since: t(0.8), id: 'q1', waiting: true }] })
-  Object.assign(agent('david'), { status: 'working', since: t(4), activity: 'Edit src/screens/Settings.tsx' })
-  Object.assign(agent('gal'), { status: 'idle', since: t(20), activity: '' })
+  Object.assign(agent('June'), { status: 'working', since: t(1.4), activity: 'Bash · crew ask Ada', waitingOn: [{ name: 'Ada', since: t(0.8), id: 'q1', text: 'Which coupon codes can stack in 1.2?' }] })
+  Object.assign(agent('Ada'), { owes: [{ name: 'June', since: t(0.8), id: 'q1', waiting: true }] })
+  Object.assign(agent('Milo'), { status: 'working', since: t(4), activity: 'Edit src/pages/Settings.tsx' })
+  Object.assign(agent('Iris'), { status: 'idle', since: t(20), activity: '' })
+  Object.assign(agent(REX), { status: 'working', since: t(9), activity: 'Bash: npm run build' })
   FEED.length = 0
   FEED.push(
-    { id: 'h1', kind: 'msg', from: 'arie', to: 'david', text: 'Triaged #9 to you: the settings labels sit at the far edge of their rows in Arabic.', ts: t(9) },
-    { id: 'h2', kind: 'msg', from: 'scarlett@mac-mini', to: 'david', text: 'QA on #4715: the hold card sits 79pt too high on the iPhone Air.', ts: t(8.8) },
-    { id: 'h3', kind: 'msg', from: 'arie', to: 'david', text: 'Recorded both blockers on #2.', ts: t(8.6) },
-    { id: 'h4', kind: 'reply', from: 'david', to: 'you', re: 'h1', also: ['h2', 'h3'], text: 'Fixed the hold offset and both **#2** blockers in one pass (PR #4747). Starting on **#9** next.', ts: t(6.5) },
-    { id: 'q0', kind: 'msg', from: 'david', to: 'joseph', ask: true, text: 'Does /v2/swing still return frames as an array?', ts: t(5), answered: { by: 'joseph', at: t(4.2), reply: 'q0r' } },
-    { id: 'q0r', kind: 'reply', from: 'joseph', to: 'you', re: 'q0', text: 'Yes: `frames: Frame[]`, newest last. It pages past 500.', ts: t(4.2) },
-    { id: 'r1', kind: 'rule', rule: 'file', from: 'marc.2', to: 'marc', file: 'palette.md', ts: t(3) },
-    { id: 'r2', kind: 'rule', rule: 'decline', from: 'jeff', to: 'david', ticket: 9, title: 'Rename "Volumn" to "Volume" in settings', text: 'Settings strings are client code, not support', ts: t(2) },
-    { id: 'q1', kind: 'msg', from: 'arie', to: 'joseph', ask: true, queued: true, text: 'Which port does the staging API listen on?', ts: t(0.8) },
-    { id: 'r3', kind: 'rule', rule: 'loop', from: 'joseph', to: 'arie', line: ['arie', 'joseph'], ts: t(0.5) },
+    { id: 'h1', kind: 'msg', from: 'June', to: 'Milo', text: 'Triaged #9 to you: the checkout form says "Adress".', ts: t(9) },
+    { id: 'h2', kind: 'msg', from: REX, to: 'Milo', text: 'Build check on #11: the promo banner covers the menu below 380px.', ts: t(8.8) },
+    { id: 'h3', kind: 'msg', from: 'June', to: 'Milo', text: 'Noted both on #11.', ts: t(8.6) },
+    { id: 'h4', kind: 'reply', from: 'Milo', to: 'you', re: 'h1', also: ['h2', 'h3'], text: 'Fixed the banner and the typo in one pass. Starting on **#10** next.', ts: t(6.5) },
+    { id: 'q0', kind: 'msg', from: 'Milo', to: 'Ada', ask: true, text: 'Does /api/cart still return items as an array?', ts: t(5), answered: { by: 'Ada', at: t(4.2), reply: 'q0r' } },
+    { id: 'q0r', kind: 'reply', from: 'Ada', to: 'you', re: 'q0', text: 'Yes: `items: Item[]`, newest last. It pages past 100.', ts: t(4.2) },
+    { id: 'r1', kind: 'rule', rule: 'file', from: 'Iris', to: 'Milo', file: 'Settings.tsx', ts: t(3) },
+    { id: 'r2', kind: 'rule', rule: 'decline', from: 'Iris', to: 'Milo', ticket: 10, title: 'Save items for later', text: 'Saving items is page and API work, not design', ts: t(2) },
+    { id: 'q1', kind: 'msg', from: 'June', to: 'Ada', ask: true, queued: true, text: 'Which coupon codes can stack in 1.2?', ts: t(0.8) },
+    { id: 'r3', kind: 'rule', rule: 'loop', from: 'Ada', to: 'June', line: ['June', 'Ada'], ts: t(0.5) },
   )
 }
 
-// what you've read: david's replies, but not joseph's or arie's latest
-const READS = { since: 0, agents: { david: now - 18 * min } }
+// what you've read: Milo's and Theo's replies, but not Ada's or June's latest
+const READS = { since: 0, agents: { Milo: t(30), Theo: t(5) } }
 // The accounts' usage limits: Claude's as the agents' status lines report them (the 5-hour window getting full), and
 // Codex's from its session log, with the credits left on it.
 const USAGE = {
   // where each is heading at this pace: the 5-hour window runs out before it resets
   claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 64, resetsAt: now + 140 * min, pace: { projected: 128, runsOut: now + 66 * min } }, { id: 'seven_day', pct: 38, resetsAt: now + 3.2 * day, pace: { projected: 71, runsOut: null } }] },
-  codex: { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 5, resetsAt: now + 5.5 * day, pace: { projected: 23, runsOut: null } }], credits: { unlimited: false, balance: 62500 } },
+  codex: { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 5, resetsAt: now + 5.5 * day, pace: { projected: 23, runsOut: null } }], credits: { unlimited: false, balance: 12000 } },
 }
 // what the work on a task cost so far
 for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [5, { cost: 1.31, tokens: 0, added: 42, removed: 18 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }], [3, { cost: 0.86, tokens: 0, added: 21, removed: 4 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })
 // the crew's spend: today against what's usual by now, and the last week and month
-const SPEND = { today: 42.1, usual: 35.6, week: 310, weekBefore: 271, month: 1020 }
-const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'arie', autofix: false } }
+const SPEND = { today: 14.2, usual: 12.8, week: 96, weekBefore: 88, month: 340 }
+const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
 
-// ?fixture=workspaces: three projects besides the default. Golf app is on screen with four of the crew, Website runs
-// in the background with a reply you haven't read, Research is parked. As Crew.workspaces() reports them.
+// Workspaces, as Crew.workspaces() reports them. Storefront is the default one, renamed and given a quiet grey (so its
+// tile is an S); Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the crew, Storefront
+// in the background with two of its crew needing you and a reply you haven't read, and Research parked.
 const LOCAL = AGENTS.filter((a) => !a.home && !a.cloneOf)
 const faces = (names) => names.map((n) => AGENTS.find((a) => a.name === n)).map((a) => ({ name: a.name, avatar: a.avatar, status: a.status }))
 const WORKSPACES = [
-  { id: 'default', name: 'Home', color: null, icon: null, folder: null, parked: false, members: null, agents: 7, on: 6, working: 1, waiting: 1, unread: 0, faces: faces(['arie', 'jeff', 'ye', 'marc']), needs: faces(['ye']).map((f) => ({ ...f, activity: 'Bash: npx posthog query' })) },
-  { id: 'golf', name: 'Golf app', color: 'teal', icon: '⛳', folder: '/Users/you/code/golf', parked: false, members: [{ name: 'joseph', folder: '' }, { name: 'david', folder: '/Users/you/code/golf-ios' }, { name: 'gal', folder: '' }, { name: 'marc', folder: '' }], agents: 4, on: 4, working: 2, waiting: 2, unread: 0, faces: faces(['joseph', 'david', 'gal', 'marc']), needs: faces(['david', 'gal']) },
-  { id: 'site', name: 'Website', color: 'pink', icon: '🎨', folder: '/Users/you/code/site', parked: false, members: [{ name: 'gal', folder: '' }, { name: 'ye', folder: '' }], agents: 2, on: 2, working: 1, waiting: 0, unread: 1, faces: faces(['gal', 'ye']), needs: [] },
-  { id: 'research', name: 'Research', color: 'purple', icon: null, folder: '/Users/you/notes', parked: true, members: [{ name: 'arie', folder: '' }, { name: 'jeff', folder: '' }], agents: 2, on: 2, working: 0, waiting: 0, unread: 0, faces: faces(['arie', 'jeff']), needs: [] },
+  { id: 'default', name: 'Storefront', color: '#8e8e93', icon: null, folder: null, parked: false, members: null, agents: 7, on: 6, working: 2, waiting: 2, unread: 1, faces: faces(['Ada', 'Milo', 'Iris', 'Theo']), needs: [...faces(['Milo']).map((f) => ({ ...f, activity: 'Bash: npm run build' })), ...faces(['Iris'])] },
+  { id: 'docs', name: 'Docs site', color: 'sky', icon: null, folder: here('/Users/you/Projects/docs-site'), parked: false, members: [{ name: 'June', folder: '' }, { name: 'Iris', folder: '' }, { name: 'Milo', folder: here('/Users/you/Projects/docs-site/theme') }], agents: 3, on: 3, working: 1, waiting: 0, unread: 0, faces: faces(['June', 'Iris', 'Milo']), needs: [] },
+  { id: 'research', name: 'Research', color: 'purple', icon: null, folder: here('/Users/you/Notes/research'), parked: true, members: [{ name: 'June', folder: '' }, { name: 'Theo', folder: '' }], agents: 2, on: 2, working: 0, waiting: 0, unread: 0, faces: faces(['June', 'Theo']), needs: [] },
 ]
-if (new URLSearchParams(location.search).get('fixture') === 'workspaces') {
-  const every = AGENTS
-  const golf = new Set(['joseph', 'david', 'gal', 'marc', 'marc.2', 'marc.3'])
-  const show = (id) => {
-    for (const w of WORKSPACES) w.current = w.id === id
-    state.workspace = WORKSPACES.find((w) => w.current)
-    const w = state.workspace
-    state.parked = w.parked
-    state.agents = id === 'golf' ? every.filter((a) => golf.has(a.name)).map((a) => ({ ...a, cwd: a.name === 'david' ? '~/code/golf-ios' : '~/code/golf', shared: true }))
-      : id === 'default' ? every
-        : every.filter((a) => w.members?.some((m) => m.name === a.name)).map((a) => ({ ...a, shared: true, ...(w.parked && { status: 'parked' }) }))
-  }
-  state.workspaces = WORKSPACES
-  state.roster = LOCAL.map((a) => ({ name: a.name, area: a.area, avatar: a.avatar, cwd: `/Users/you/code/${a.name === 'ye' ? 'analytics' : a.name === 'marc' ? 'art' : 'app'}` }))
-  show('golf')
-  window.__crewShow = show
+// how the shared agents are doing in a workspace other than the default (each has its own session there)
+const AT = { docs: { June: { status: 'working', since: t(4), activity: 'Edit docs/checkout.md' }, Iris: { status: 'idle', since: t(25), activity: '' }, Milo: { status: 'idle', since: t(40), activity: '' } } }
+const EVERY = AGENTS
+const show = (id) => {
+  for (const w of WORKSPACES) w.current = w.id === id
+  state.workspace = WORKSPACES.find((w) => w.current)
+  const w = state.workspace
+  state.parked = w.parked
+  state.agents = id === 'default' ? EVERY
+    : EVERY.filter((a) => w.members?.some((m) => m.name === a.name)).map((a) => {
+      const folder = w.members.find((m) => m.name === a.name).folder || w.folder
+      return { ...a, shared: true, cwd: folder ? folder.replace(HOME, '~') : a.cwd, ...AT[id]?.[a.name], ...(w.parked && { status: 'parked' }) }
+    })
 }
+state.workspaces = WORKSPACES
+state.roster = LOCAL.map((a) => ({ name: a.name, area: a.area, avatar: a.avatar, cwd: here(`/Users/you/Projects/${a.name === 'June' ? 'docs-site' : 'storefront'}`) }))
+if (FIXTURE === 'workspaces') show('docs')
+else {
+  WORKSPACES.splice(2) // the default crew has Storefront and Docs site
+  show('default')
+}
+window.__crewShow = show
 // The workspace actions, enough for the shots: switch, open, park, make one.
 function workspaceAction(op, id, arg) {
   const w = WORKSPACES.find((x) => x.id === id)
@@ -326,29 +364,20 @@ function workspaceAction(op, id, arg) {
   return { id, state }
 }
 const emit = () => setTimeout(() => window.__crewEmit('state', state), 30)
-let nextTask = 14
-// ?platform=win32: the pages as Windows shows them (Ctrl for ⌘, "this PC", paths with drive letters, the titlebar with
-// room for the window buttons), rendered on a Mac. This computer's folders are Windows paths; a linked Mac's stay its
-// own. ?dev=1: as when Crew runs from source (npm run dev), with the developer's extras.
-const QUERY = new URLSearchParams(location.search)
-const PLATFORM = QUERY.get('platform') === 'win32' ? 'win32' : 'darwin'
-const HOME = PLATFORM === 'win32' ? 'C:\\Users\\you' : '/Users/you'
-if (PLATFORM === 'win32') {
-  const win = (p) => (p ? p.replace(/^\/Users\/you/, HOME).replace(/\//g, '\\') : p)
-  Object.assign(COMPUTERS.me, { name: 'Studio PC', slug: 'studio-pc' })
-  FOLDERS[''] = FOLDERS[''].map(([p, label]) => [win(p), label])
-  for (const w of WORKSPACES) {
-    w.folder = win(w.folder)
-    for (const m of w.members ?? []) m.folder = win(m.folder)
-  }
-  for (const a of state.roster ?? []) a.cwd = win(a.cwd)
-}
+let nextTask = Math.max(...TICKETS.map((x) => x.id)) + 1
+// The crew's names are capitalized (Ada), while the pages match a typed @name in lower case (@ada): find one either way.
+const named = (n) => state.agents.find((a) => a.name.toLowerCase() === String(n ?? '').replace(/^@/, '').toLowerCase())
+const MENTION = /(^|[^\w.@/'-])@([\w-]+(?:@[\w-]+)?)/g
 
 // Enough of the task actions for the recordings: add, start, accept.
 function taskAction(op, key, arg) {
   if (op === 'file') {
-    const text = String(arg.text ?? '').trim()
-    const owner = arg.owner ?? 'david'
+    let text = String(arg.text ?? '').trim()
+    let owner = arg.owner && (named(arg.owner)?.name ?? arg.owner)
+    // an @name the page didn't take as the owner: the hub would
+    const m = !owner && [...text.matchAll(MENTION)].find((x) => named(x[2]))
+    if (m) (owner = named(m[2]).name), (text = (text.slice(0, m.index) + m[1] + text.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim())
+    owner ??= 'Milo'
     const t = { ...TICKETS.find((x) => x.id === 9), id: nextTask, key: String(nextTask), kind: arg.kind ?? 'task', status: 'new', severity: 'normal', title: text, body: '', owner, triaged: true, seen: 1, images: arg.images ?? [], created: Date.now(), updated: Date.now(), log: [{ ts: Date.now(), by: 'you', text: 'added it' }] }
     TICKETS.push(t)
     FEED.push({ id: `nb${nextTask}`, kind: 'task', type: t.kind, act: 'filed', from: 'you', ticket: nextTask, title: text, owner, ts: Date.now() })
@@ -377,7 +406,7 @@ function taskAction(op, key, arg) {
     to('fixing', { fixer: t.owner })
     const a = AGENTS.find((x) => x.name === t.owner)
     if (a) Object.assign(a, { ticket: t.id, status: 'starting', since: Date.now(), convo: { since: Date.now(), tasks: 0, compactions: 0, context: { pct: 2, size: 200000, used: 4000 } } })
-    setTimeout(() => a && Object.assign(a, { status: 'working', since: Date.now(), activity: 'Read src/game/PauseMenu.ts' }) && emit(), 1400)
+    setTimeout(() => a && Object.assign(a, { status: 'working', since: Date.now(), activity: 'Read src/pages/Checkout.tsx' }) && emit(), 1400)
   }
   if (op === 'accept' || (op === 'move' && arg === 'done')) to('done')
   if (op === 'move' && arg === 'check') to('check', { fix: t.fix ?? 'Fixed by hand.' })
@@ -388,20 +417,19 @@ function taskAction(op, key, arg) {
 }
 
 // Enough of send for the recordings: a message for a busy agent that can clone itself starts a clone (core/hub.js).
-function sendAction(to, text) {
-  const name = to ?? String(text).match(/@([\w-]+)/)?.[1] ?? 'arie'
-  const a = state.agents.find((x) => x.name === name)
-  const family = state.agents.filter((x) => x === a || x.cloneOf === name)
+function sendAction(name, text) {
+  const a = named(name)
+  const family = state.agents.filter((x) => x === a || x.cloneOf === a.name)
   const free = family.find((x) => x.status === 'idle')
   let target = free ?? a
   let out = `sent to @${target.name}`
   if (!free && a.clones > family.length - 1) {
     let n = 2
-    while (state.agents.some((x) => x.name === `${name}.${n}`)) n++
+    while (state.agents.some((x) => x.name === `${a.name}.${n}`)) n++
     target = cloneOf(a, n, { status: 'starting', since: Date.now(), activity: '', convo: { since: Date.now(), tasks: 0, compactions: 0 } })
     state.agents.splice(state.agents.indexOf(family.at(-1)) + 1, 0, target)
-    out = `@${name} is busy, so a clone, @${target.name}, is starting up to take this`
-    setTimeout(() => (Object.assign(target, { status: 'working', since: Date.now(), activity: 'Read assets/brand/palette.md', convo: { ...target.convo, tasks: 1, context: { pct: 3, size: 258400, used: 8000 } } }), emit()), 1300)
+    out = `@${a.name} is busy, so a clone, @${target.name}, is starting up to take this`
+    setTimeout(() => (Object.assign(target, { status: 'working', since: Date.now(), activity: 'Read tests/cart.spec.ts', convo: { ...target.convo, tasks: 1, context: { pct: 3, size: 258400, used: 8000 } } }), emit()), 1300)
   }
   FEED.push({ id: `s${Date.now()}`, kind: 'msg', from: 'you', to: target.name, text, ts: Date.now() })
   emit()
@@ -412,7 +440,7 @@ const listeners = { state: [], focus: [], toggle: [], voice: [], place: [] }
 
 // Dictation without a microphone: a wobbling tone stands in for your voice (it only moves the meter), and a
 // scripted transcript arrives word by word. Nothing here ever opens a real microphone.
-const SPOKEN = 'Hey Joseph, can you look at why the build is failing on main? Then hand it to David.'.split(' ')
+const SPOKEN = 'Hey Ada, can you look at why the build is failing on main? Then hand it to Milo.'.split(' ')
 let dictation = null
 navigator.mediaDevices.getUserMedia = async () => {
   const ctx = new AudioContext()
@@ -433,7 +461,7 @@ navigator.mediaDevices.getUserMedia = async () => {
 }
 function voiceCall(action) {
   const emit = (e) => listeners.voice.forEach((fn) => fn({ id: 1, ...e }))
-  if (action === 'voiceLocales') return [{ id: 'en_US', label: 'English', installed: true }, { id: 'ru_RU', label: 'Русский', installed: true }]
+  if (action === 'voiceLocales') return [{ id: 'en_US', label: 'English', installed: true }, { id: 'de_DE', label: 'Deutsch', installed: true }]
   if (action === 'voiceStart') {
     let n = 0
     setTimeout(() => emit({ type: 'ready', locale: 'en_US' }), 150)
@@ -457,12 +485,14 @@ window.crew = {
   dev: QUERY.get('dev') === '1',
   call: async (action, ...args) => {
     if (action === 'state') return state
-    // sending from the chat: your message lands in the feed (Auto goes to joseph), threaded when it's a reply
+    // sending from the chat: your message lands in the feed, threaded when it's a reply. Like the hub, an @name in it
+    // is who it's for when no one's picked; Auto goes to Ada.
     if (action === 'send') {
-      const [to, text, , opts = {}] = args
+      const [picked, text, , opts = {}] = args
+      const to = picked || [...new Set([...String(text).matchAll(MENTION)].map((m) => named(m[2])?.name).filter(Boolean))].join(',')
       // a busy agent that can clone itself: a clone takes it (sendAction)
-      if (to && !String(to).includes(',') && !opts.re && state.agents.find((a) => a.name === to)?.clones) return sendAction(to, text)
-      const names = String(to || 'joseph').split(',').filter(Boolean)
+      if (to && !to.includes(',') && !opts.re && named(to)?.clones) return sendAction(to, text)
+      const names = String(to || 'Ada').split(',').filter(Boolean).map((n) => named(n)?.name ?? n)
       const group = names.length > 1 && { cc: names, sendId: `s${Date.now()}` }
       for (const n of names) state.feed.push({ id: `u${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text, ts: Date.now(), ...group, ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }) })
       emit()
@@ -500,7 +530,7 @@ window.crew = {
     if (action === 'phones') {
       const [op, id] = args
       if (op === 'code') {
-        // window.__crewPhoneError: the Mac can't listen for phones (a port that's taken)
+        // window.__crewPhoneError: this computer can't listen for phones (a port that's taken)
         const fail = window.__crewPhoneError
         return new Promise((resolve, reject) => setTimeout(() => (fail ? reject(new Error(fail)) : resolve(phoneCode())), window.__crewPhoneDelay ?? 0))
       }
@@ -512,10 +542,10 @@ window.crew = {
     // moving an agent to another computer: its folders there, then the move itself
     if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? []).map(([path, label]) => ({ path, label }))
     if (action === 'folderInfo') {
-      const full = String(args[1]).replace(/^~/, args[0] ? '/Users/you' : HOME)
+      const full = pathOn(HOMES[args[0] ?? ''] ?? '/Users/you')(String(args[1]).replace(/^~/, '/Users/you'))
       return { exists: (FOLDERS[args[0] ?? ''] ?? []).some(([p]) => p === full), path: full }
     }
-    if (action === 'pickFolder') return '~/code/site'
+    if (action === 'pickFolder') return '~/Projects/docs-site'
     if (action === 'moveAgent') {
       const [name, home] = args
       const a = state.agents.find((x) => x.name === name)

@@ -33,6 +33,7 @@ const files = (platform) => [
   platform === 'win32' ? '!bin/win32-!(${arch})/**' : '!bin/win32-*/**',
   '!bin/.gitattributes',
   'assets/*.png',
+  ...(platform === 'win32' ? ['assets/icon.ico'] : []), // the window and tray icon at run time, not only the installer's
   `!node_modules/node-pty/prebuilds/!(${platform}-\${arch})/**`,
   '!node_modules/node-pty/{src,deps,third_party,scripts,typings}/**',
   '!node_modules/node-pty/binding.gyp',

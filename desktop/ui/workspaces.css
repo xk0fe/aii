@@ -3,27 +3,25 @@
 /* ---- the switcher: the titlebar's left end, where the brand was ---- */
 .ws-switch {
   position: relative; display: inline-flex; align-items: center; gap: 7px; flex: none; max-width: 240px; height: 30px; padding: 0 7px 0 4px;
-  border: 0; border-radius: 10px; background: none; color: var(--fg); cursor: pointer; -webkit-app-region: no-drag;
-  transition: background .15s, transform .25s var(--bounce);
+  border: 0; border-radius: var(--r-card); background: none; color: var(--fg); cursor: pointer; -webkit-app-region: no-drag;
+  transition: background .15s;
 }
 .ws-switch:hover, .ws-switch[aria-expanded=true] { background: var(--btn); }
-.ws-switch:active { transform: scale(.96); }
-.ws-switch b { font-size: 14.5px; font-weight: 750; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ws-switch b { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ws-switch .ws-mark { display: grid; place-items: center; width: 27px; height: 22px; }
 .ws-switch .ws-mark svg { width: 27px; height: 18px; color: var(--fg); }
-.ws-switch .ws-chev { display: grid; place-items: center; width: 14px; color: var(--fg3); transition: color .15s, transform .3s var(--spring); }
+.ws-switch .ws-chev { display: grid; place-items: center; width: 14px; color: var(--fg2); transition: color .15s; }
 .ws-switch .ws-chev svg { width: 13px; height: 13px; }
 .ws-switch:hover .ws-chev, .ws-switch[aria-expanded=true] .ws-chev { color: var(--fg2); }
-.ws-switch .ws-tile { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .32), inset 0 0 0 .5px rgba(0, 0, 0, .1), 0 2px 6px -2px color-mix(in srgb, var(--w, #000) 60%, transparent); }
 /* another workspace needs you: a count (orange) or a dot for new replies (blue), on the tile's corner */
-.ws-alert { position: absolute; top: -2px; left: 17px; display: grid; place-items: center; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; font: 700 9.5px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: #fff; box-shadow: 0 0 0 2px var(--bg); animation: ws-alert-in .45s var(--spring); }
-.ws-alert.waiting { background: var(--waiting); color: #241500; }
+.ws-alert { position: absolute; top: -2px; left: 17px; display: grid; place-items: center; min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--r-control); font: 600 11px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: #fff; box-shadow: 0 0 0 2px var(--bg); animation: ws-alert-in .45s var(--spring); }
+.ws-alert.waiting { background: var(--needs); color: #241500; }
 .ws-alert.unread { min-width: 10px; width: 10px; height: 10px; padding: 0; top: 0; left: 20px; background: var(--accent); }
 @keyframes ws-alert-in { from { transform: scale(0); } }
 
 /* ---- the popover ---- */
 .ws-pop {
-  position: fixed; z-index: 220; width: 360px; padding: 6px; border-radius: 16px; background: var(--card); color: var(--fg);
+  position: fixed; z-index: 220; width: 360px; padding: 6px; border-radius: var(--r-window); background: var(--card); color: var(--fg);
   box-shadow: 0 0 0 1px var(--line-strong), 0 24px 56px -16px rgba(0, 0, 0, .38), 0 6px 14px -8px rgba(0, 0, 0, .18);
   transform-origin: 18px -6px; animation: ws-pop-in .26s var(--spring);
 }
@@ -31,30 +29,29 @@
 @keyframes ws-pop-in { from { opacity: 0; transform: translateY(-6px) scale(.94); } }
 @keyframes ws-pop-out { to { opacity: 0; transform: translateY(-4px) scale(.97); } }
 .ws-pop-head { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 10px 6px; }
-.ws-pop-head span { font-size: 11.5px; font-weight: 650; color: var(--fg2); }
-.ws-pop-head small { font-size: 11px; color: var(--fg3); }
+.ws-pop-head span { font-size: 12px; font-weight: 600; color: var(--fg2); }
+.ws-pop-head small { font-size: 11px; color: var(--fg2); }
 .ws-pop-lead { margin: 2px 10px 8px; color: var(--fg2); font-size: 12px; line-height: 1.45; }
 .ws-list { display: flex; flex-direction: column; gap: 2px; max-height: min(60vh, 520px); overflow-y: auto; }
 
 .ws-row {
-  position: relative; display: flex; align-items: center; gap: 11px; min-height: 52px; padding: 7px 8px 7px 9px; border-radius: 11px; cursor: default; outline: 0;
+  position: relative; display: flex; align-items: center; gap: 11px; min-height: 52px; padding: 7px 8px 7px 9px; border-radius: var(--r-card); cursor: default; outline: 0;
   transition: background .15s;
 }
 .ws-row:hover, .ws-row:focus-visible { background: var(--btn); }
 .ws-row:focus-visible { box-shadow: inset 0 0 0 1.5px var(--ring); }
 /* the one on screen: a pill of its color at the edge, like a tab that's in front */
-.ws-row.current { background: color-mix(in srgb, var(--w) 10%, transparent); }
+.ws-row.current { background: var(--selected); }
 .ws-row.current::before { content: ''; position: absolute; left: -3px; top: 50%; width: 4px; height: 22px; margin-top: -11px; border-radius: 0 3px 3px 0; background: var(--w); animation: ws-bar .4s var(--spring); }
 @keyframes ws-bar { from { height: 6px; margin-top: -3px; opacity: 0; } }
 .ws-row .ws-tile { transition: transform .35s var(--spring), filter .3s, opacity .3s; }
-.ws-row:hover .ws-tile { transform: scale(1.06) rotate(-3deg); }
 .ws-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .ws-name { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.ws-name b { font-size: 13.5px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-name b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-here { display: grid; place-items: center; color: var(--w); }
 .ws-here svg { width: 13px; height: 13px; }
-.ws-line { font-size: 11.5px; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ws-line.waiting { color: var(--waiting-ink); font-weight: 600; }
+.ws-line { font-size: 12px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-line.waiting { color: var(--needs-ink); font-weight: 600; }
 .ws-row.parked .ws-name b { color: var(--fg2); }
 .ws-end { position: relative; display: flex; align-items: center; gap: 2px; flex: none; }
 /* who's in it, until you point at it: then what you can do with it */
@@ -66,15 +63,15 @@
 .ws-row:hover .ws-faces, .ws-row:focus-visible .ws-faces { opacity: 0; transform: translateX(-4px); }
 .ws-row.parked .ws-acts { width: 0; overflow: hidden; }
 .ws-row.parked:hover .ws-acts, .ws-row.parked:focus-visible .ws-acts { width: auto; }
-.ws-end kbd { min-width: 26px; text-align: center; font: 600 10px var(--mono); color: var(--fg3); padding: 2px 4px; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--line-strong); margin-left: 3px; }
+.ws-end kbd { min-width: 26px; text-align: center; font: 600 11px var(--mono); color: var(--fg2); padding: 2px 4px; border-radius: var(--r-tag); box-shadow: inset 0 0 0 1px var(--line-strong); margin-left: 3px; }
 .ws-act { width: 26px; height: 26px; padding: 0; }
 .ws-act svg { width: 14px; height: 14px; }
-.ws-open { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px 0 7px; font-size: 12px; font-weight: 650; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.ws-open:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.ws-open { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px 0 7px; font-size: 12px; font-weight: 500; color: var(--fg); background: var(--fill); }
+.ws-open:hover { background: var(--fill-hover); }
 .ws-open svg { width: 11px; height: 11px; }
 
 .ws-cmds { display: flex; flex-direction: column; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
-.ws-cmd { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 13px; cursor: default; }
+.ws-cmd { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: var(--r-control); font-size: 13px; cursor: default; }
 .ws-cmd svg { width: 15px; height: 15px; color: var(--fg2); flex: none; }
 .ws-cmd:hover, .ws-cmd:focus-visible { background: var(--accent); color: #fff; outline: 0; }
 .ws-cmd:hover svg, .ws-cmd:focus-visible svg { color: #fff; }
@@ -82,36 +79,30 @@
 /* ---- the dock: every workspace along the sidebar's foot ---- */
 .ws-dock { flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .ws-dock::-webkit-scrollbar { display: none; }
-.ws-dock-item { position: relative; flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 11px; background: none; cursor: pointer; transition: background .15s, transform .3s var(--spring); }
+.ws-dock-item { position: relative; flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: var(--r-card); background: none; cursor: pointer; transition: background .15s; }
 .ws-dock-item:hover { background: var(--row-hover); }
-.ws-dock-item:active { transform: scale(.88); }
 .ws-dock-item:not(.current) .ws-tile:not(.parked) { opacity: .78; filter: saturate(.85); }
-.ws-dock-item:hover .ws-tile:not(.parked) { opacity: 1; filter: none; transform: translateY(-1px) scale(1.06); }
-.ws-dock-item.current { background: color-mix(in srgb, var(--w) 14%, transparent); }
-.ws-dock-item.current::after { content: ''; position: absolute; bottom: 1px; left: 50%; width: 12px; height: 3px; margin-left: -6px; border-radius: 2px; background: var(--w); animation: ws-dot .45s var(--spring); }
+.ws-dock-item:hover .ws-tile:not(.parked) { opacity: 1; filter: none; }
+.ws-dock-item.current { background: var(--row-on); }
+.ws-dock-item.current::after { content: ''; position: absolute; bottom: 1px; left: 50%; width: 12px; height: 3px; margin-left: -6px; border-radius: var(--r-tag); background: var(--w); animation: ws-dot .45s var(--spring); }
 @keyframes ws-dot { from { width: 3px; margin-left: -1.5px; } }
 .ws-dock-item .ws-alert { top: 2px; left: 22px; box-shadow: 0 0 0 2px var(--side); }
 .ws-dock-item .ws-alert.unread { top: 4px; left: 25px; }
-.ws-dock-add { flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin-left: 4px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--fg3); box-shadow: inset 0 0 0 1.5px var(--line-strong); cursor: pointer; transition: color .15s, box-shadow .15s, transform .3s var(--spring); }
+.ws-dock-add { flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin-left: 4px; padding: 0; border: 0; border-radius: var(--r-control); background: none; color: var(--fg2); box-shadow: inset 0 0 0 1.5px var(--line-strong); cursor: pointer; transition: color .15s, box-shadow .15s; }
 .ws-dock-add svg { width: 13px; height: 13px; }
-.ws-dock-add:hover { color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--fg3); transform: rotate(90deg); }
+.ws-dock-add:hover { color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--fg3); }
 
-/* ---- a tint of its color in the sidebar: where you are, at a glance ---- */
-body.ws-tint { --side: color-mix(in srgb, var(--ws) 7%, #f4f4f7); --row-hover: color-mix(in srgb, #000 5%, var(--side)); --row-on: color-mix(in srgb, var(--ws) 9%, color-mix(in srgb, #000 6%, var(--side))); }
-@media (prefers-color-scheme: dark) {
-  body.ws-tint { --side: color-mix(in srgb, var(--ws) 8%, #161719); --row-hover: color-mix(in srgb, #fff 6%, var(--side)); --row-on: color-mix(in srgb, var(--ws) 12%, color-mix(in srgb, #fff 8%, var(--side))); }
-}
-.side { transition: background-color .5s var(--out); }
+/* the sidebar stays neutral in every workspace: a workspace says where you are by its tile, not a tint of its colour */
 
 /* ---- the banner over a parked workspace ---- */
 .ws-banner {
   position: absolute; z-index: 5; top: 10px; left: 14px; right: 14px; display: flex; align-items: center; gap: 12px; padding: 9px 9px 9px 11px;
-  border-radius: 14px; background: color-mix(in srgb, var(--w, var(--fg3)) 9%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--w, var(--fg3)) 22%, var(--line)), var(--shadow-sm);
+  border-radius: var(--r-window); background: color-mix(in srgb, var(--w, var(--fg3)) 9%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--w, var(--fg3)) 22%, var(--line)), var(--shadow-sm);
   animation: ws-banner-in .45s var(--spring);
 }
 @keyframes ws-banner-in { from { opacity: 0; transform: translateY(-8px) scale(.98); } }
 .ws-banner > div { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.ws-banner > div b { font-size: 13px; font-weight: 700; }
+.ws-banner > div b { font-size: 13px; font-weight: 600; }
 .ws-banner > div span { font-size: 12px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-banner .btn { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .ws-banner .btn svg { width: 11px; height: 11px; }
@@ -120,66 +111,66 @@ body.ws-parked .center > .collection, body.ws-parked .center > .tasks-view, body
 /* ---- the sheet ---- */
 dialog.sheet.ws-sheet { width: 560px; padding: 0; overflow: hidden; }
 dialog.ws-sheet[open] { animation: ws-sheet-in .38s var(--sheet); }
-dialog.ws-sheet::backdrop { background: rgba(10, 10, 20, .28); backdrop-filter: blur(2px); animation: ws-fade .25s var(--out); }
+dialog.ws-sheet::backdrop { background: rgba(0, 0, 0, .28); animation: ws-fade .25s var(--out); }
 @keyframes ws-sheet-in { from { opacity: 0; transform: translateY(14px) scale(.97); } }
 @keyframes ws-fade { from { opacity: 0; } }
-.ws-hero { position: relative; display: flex; align-items: center; gap: 16px; padding: 22px 24px 18px; background: linear-gradient(180deg, color-mix(in srgb, var(--hero, var(--fg3)) 14%, var(--surface)), var(--surface)); }
+.ws-hero { position: relative; display: flex; align-items: center; gap: 16px; padding: 22px 24px 18px; background: var(--surface); }
 .ws-hero-tile { line-height: 0; }
-.ws-hero-tile .ws-tile { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), inset 0 0 0 .5px rgba(0, 0, 0, .1), 0 10px 24px -10px color-mix(in srgb, var(--w) 75%, transparent); }
+.ws-hero-tile .ws-tile { box-shadow: inset 0 -3px 0 var(--w); }
 .ws-hero-tile .ws-tile.plain { box-shadow: inset 0 0 0 1px var(--line-strong); }
 .ws-tile.cheer { animation: ws-cheer .5s var(--spring); }
-@keyframes ws-cheer { 30% { transform: scale(1.12) rotate(-6deg); } 60% { transform: scale(.96) rotate(3deg); } }
+@keyframes ws-cheer { 40% { transform: scale(1.06); } }
 .ws-hero-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.ws-title { font: 750 22px/1.15 var(--ui); letter-spacing: -.02em; border: 0; outline: 0; padding: 2px 6px; margin-left: -6px; border-radius: 8px; background: transparent; color: var(--fg); user-select: text; transition: background .15s; }
+.ws-title { font: 600 22px/1.15 var(--ui); border: 0; outline: 0; padding: 2px 6px; margin-left: -6px; border-radius: var(--r-control); background: transparent; color: var(--fg); user-select: text; transition: background .15s; }
 .ws-title:hover { background: var(--btn); }
 .ws-title:focus { background: var(--field); box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
-.ws-title::placeholder { color: var(--fg3); }
-.ws-hero-sub { display: flex; align-items: center; gap: 8px; min-height: 20px; font-size: 12.5px; color: var(--fg2); }
+.ws-title::placeholder { color: var(--fg2); }
+.ws-hero-sub { display: flex; align-items: center; gap: 8px; min-height: 20px; font-size: 13px; color: var(--fg2); }
 .ws-hero-sub .faces .av { animation: ws-face-in .4s var(--spring) backwards; }
 @keyframes ws-face-in { from { transform: scale(.4) translateY(6px); opacity: 0; } }
 .ws-x { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; padding: 0; }
 .ws-body { padding: 4px 24px 6px !important; margin: 0 !important; max-height: calc(100vh - 300px); }
 .ws-sec { padding: 12px 0; }
 .ws-sec + .ws-sec { border-top: 1px solid var(--line); }
-.ws-sec h4 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px; font-size: 12px; font-weight: 650; color: var(--fg2); }
-.ws-sec h4 small { font-weight: 500; color: var(--fg3); }
-.ws-note { margin: 9px 0 0; font-size: 12px; line-height: 1.45; color: var(--fg3); }
+.ws-sec h4 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--fg2); }
+.ws-sec h4 small { font-weight: 500; color: var(--fg2); }
+.ws-note { margin: 9px 0 0; font-size: 12px; line-height: 1.45; color: var(--fg2); }
 .ws-swatches, .ws-icons { display: flex; flex-wrap: wrap; gap: 7px; }
 .ws-icons { margin-top: 10px; gap: 2px; }
 .ws-sw { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; background: var(--w); box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .15); transition: transform .3s var(--spring), box-shadow .2s; }
-.ws-sw:hover { transform: scale(1.12); }
-.ws-sw.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--w); transform: scale(1.04); }
+.ws-sw:hover { box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .15), 0 0 0 2px var(--surface), 0 0 0 3px var(--line-strong); }
+.ws-sw.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--w); }
 .ws-sw.none { background: var(--btn); position: relative; --w: var(--fg3); }
-.ws-sw.none::after { content: ''; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 1.5px; margin-left: -.75px; border-radius: 1px; background: var(--fg3); transform: rotate(45deg); }
-.ws-ic { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 9px; cursor: pointer; background: none; font-size: 17px; line-height: 1; transition: background .15s, transform .3s var(--spring); }
-.ws-ic:hover { background: var(--btn); transform: scale(1.1); }
-.ws-ic.on { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
-.ws-ic.letter { font: 760 14px var(--rounded); color: var(--fg2); }
-.ws-sec .mv-field input { font-size: 12.5px; }
+.ws-sw.none::after { content: ''; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 1.5px; margin-left: -.75px; border-radius: var(--r-tag); background: var(--fg3); transform: rotate(45deg); }
+.ws-ic { width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--r-control); cursor: pointer; background: none; font-size: 17px; line-height: 1; transition: background .15s; }
+.ws-ic:hover { background: var(--btn); }
+.ws-ic.on { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.ws-ic.letter { font: 600 15px var(--rounded); color: var(--fg2); }
+.ws-sec .mv-field input { font-size: 13px; }
 
 .ws-crew { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 280px; overflow-y: auto; }
-.ws-agent { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 5px 8px; border-radius: 12px; transition: background .15s; }
+.ws-agent { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 5px 8px; border-radius: var(--r-card); transition: background .15s; }
 .ws-agent:hover { background: var(--btn); }
-.ws-agent.in { background: color-mix(in srgb, var(--c) 8%, transparent); }
+.ws-agent.in { background: var(--fill); }
 .ws-agent:not(.in) .ws-av, .ws-agent:not(.in) .who { opacity: .5; }
 .ws-av { line-height: 0; transition: opacity .2s; }
 .ws-agent .who { flex: 1; min-width: 0; display: flex; flex-direction: column; transition: opacity .2s; }
 .ws-agent .who b { font-size: 13px; }
-.ws-agent .who small { color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ws-own { display: inline-flex; align-items: center; gap: 5px; max-width: 190px; height: 24px; padding: 0 9px 0 7px; border: 0; border-radius: 999px; background: none; color: var(--fg3); font-size: 11.5px; font-weight: 560; cursor: pointer; opacity: 0; transition: opacity .15s, background .15s, color .15s; }
+.ws-agent .who small { color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-own { display: inline-flex; align-items: center; gap: 5px; max-width: 190px; height: 24px; padding: 0 9px 0 7px; border: 0; border-radius: var(--r-control); background: none; color: var(--fg2); font-size: 12px; font-weight: 500; cursor: pointer; opacity: 0; transition: opacity .15s, background .15s, color .15s; }
 .ws-own svg { width: 13px; height: 13px; flex: none; }
 .ws-own span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-own.set { opacity: 1; color: var(--fg2); background: var(--btn); font-family: var(--mono); font-size: 11px; }
 .ws-agent:hover .ws-own, .ws-own:focus-visible { opacity: 1; }
 .ws-own:hover { background: var(--btn-hover); color: var(--fg); }
-.ws-own-input { width: 190px; height: 26px; padding: 0 9px; border: 0; border-radius: 8px; outline: 0; font-size: 11.5px; background: var(--field); color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--accent); user-select: text; }
+.ws-own-input { width: 190px; height: 26px; padding: 0 9px; border: 0; border-radius: var(--r-control); outline: 0; font-size: 12px; background: var(--field); color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--accent); user-select: text; }
 
 .ws-run { display: flex; align-items: center; gap: 12px; cursor: pointer; }
 .ws-run b { display: block; font-size: 13px; }
-.ws-run small { display: block; font-size: 12px; color: var(--fg3); margin-top: 1px; }
-.ws-run-glyph { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; flex: none; color: var(--fg3); background: var(--btn); transition: background .3s, color .3s, transform .4s var(--spring); }
+.ws-run small { display: block; font-size: 12px; color: var(--fg2); margin-top: 1px; }
+.ws-run-glyph { width: 28px; height: 28px; border-radius: var(--r-control); display: grid; place-items: center; flex: none; color: var(--fg2); background: var(--btn); transition: background .3s, color .3s; }
 .ws-run-glyph svg { width: 12px; height: 12px; }
-.ws-run.on .ws-run-glyph { color: #fff; background: var(--working); transform: rotate(-6deg); }
+.ws-run.on .ws-run-glyph { color: var(--working-ink); background: var(--fill); }
 dialog.ws-sheet .err { padding: 0 24px; }
 dialog.ws-sheet .buttons { align-items: center; padding: 12px 24px 18px; border-top: 1px solid var(--line); }
 .ws-remove { display: inline-flex; align-items: center; gap: 6px; color: var(--danger); background: none; padding-left: 6px; }

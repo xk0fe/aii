@@ -24,7 +24,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     const alert = away.waiting ? `<i class="ws-alert waiting">${away.waiting > 9 ? '9+' : away.waiting}</i>` : away.unread ? '<i class="ws-alert unread"></i>' : ''
     morph(button, on
       ? `${wsTile(w, { size: 22 })}<b>${esc(w.name)}</b><span class="ws-chev">${ICONS.updown}</span>${alert}`
-      : `<span class="ws-mark">${markSVG('0 6 24 16')}</span><b>Crew</b><span class="ws-chev">${ICONS.updown}</span>${alert}`)
+      : `<span class="ws-mark">${markSVG('0 6 24 16')}</span><b>${esc(PRODUCT_NAME)}</b><span class="ws-chev">${ICONS.updown}</span>${alert}`)
     button.title = `${on ? `${w.name}: switch workspaces` : 'Workspaces: a crew, chat and tasks per project'} (${keys('⌃1–9')})${tip ? `\n\n${tip}` : ''}`
     // the workspace's color tints the sidebar, so you always know where you are
     const color = on ? wsColor(w) : null

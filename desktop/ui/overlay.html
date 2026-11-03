@@ -23,20 +23,19 @@
     }
 
     /* the panel grows out of the pill: from its right when it opens to the left, and so on */
-    .panel { --from: translate(14px, 0); display: none; width: 400px; height: 600px; border-radius: 20px; flex-direction: column; overflow: hidden; transform-origin: 100% 50%; }
+    .panel { --from: translate(14px, 0); display: none; width: 400px; height: 600px; border-radius: var(--r-window); flex-direction: column; overflow: hidden; transform-origin: 100% 50%; }
     [data-side=right] .panel { --from: translate(-14px, 0); transform-origin: 0 50%; }
     [data-side=above] .panel { --from: translate(0, 14px); transform-origin: 50% 100%; }
     [data-side=below] .panel { --from: translate(0, -14px); transform-origin: 50% 0; }
-    .open .panel { display: flex; animation: panel-in .38s var(--bounce); }
-    .open.moved .panel { animation: panel-moved .38s var(--bounce); } /* it switched sides */
-    @keyframes panel-in { from { opacity: 0; transform: var(--from) scale(.94); } }
+    .open .panel { display: flex; animation: panel-in .3s var(--out); }
+    .open.moved .panel { animation: panel-moved .3s var(--out); } /* it switched sides */
+    @keyframes panel-in { from { opacity: 0; transform: var(--from) scale(.97); } }
     @keyframes panel-moved { from { opacity: 0; transform: var(--from) scale(.97); } }
     .panel header { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 8px 0 14px; flex: none; cursor: grab; }
     .panel header .brand { display: flex; align-items: center; gap: 7px; }
-    .panel header .mark { width: 24px; height: 16px; color: var(--fg); }
-    .panel header b { font-size: 14px; font-weight: 700; letter-spacing: -.01em; }
+    .panel header b { font-size: 15px; font-weight: 600; }
     .panel header .sums { margin-left: 4px; }
-    .panel header .icon { width: 30px; height: 30px; padding: 0; }
+    .panel header .icon { width: 28px; height: 28px; padding: 0; }
     /* in a conversation with one agent, it takes the header's left side (same height, so nothing moves) */
     .panel header.in-convo { padding-left: 9px; }
     .panel header.in-convo .brand, .panel header.in-convo .sums, .panel header.in-convo > .grow { display: none; }
@@ -50,7 +49,7 @@
     /* at the top or bottom of the screen the pill lies flat, like the Dock */
     [data-side=above] .pill, [data-side=below] .pill { flex-direction: row; width: auto; height: 52px; padding: 0 10px 0 6px; }
     [data-side=above] .dots, [data-side=below] .dots { flex-direction: row; }
-    .home { width: 40px; height: 36px; border: 0; background: none; color: var(--fg); cursor: pointer; padding: 4px 3px; border-radius: 14px; transition: background .15s, transform .3s var(--bounce); }
+    .home { width: 40px; height: 36px; border: 0; background: none; color: var(--fg); cursor: pointer; padding: 4px 3px; border-radius: var(--r-card); transition: background .15s; }
     .home:hover { background: var(--btn); }
     .pill { position: relative; }
     .home-badge { position: absolute; top: 4px; right: 3px; pointer-events: none; }
@@ -59,7 +58,6 @@
     .dots .unread-badge { right: auto; bottom: auto; left: -5px; top: -3px; }
     .home + .dots:not(:empty) { padding-top: 7px; border-top: 1px solid var(--line); width: 32px; }
     [data-side=above] .home + .dots:not(:empty), [data-side=below] .home + .dots:not(:empty) { padding: 0 0 0 7px; border-top: 0; border-left: 1px solid var(--line); width: auto; height: 32px; }
-    .home:active { transform: scale(.9); }
     .home svg { width: 100%; height: 100%; display: block; overflow: visible; }
     /* the buddies are stacked <svg>s, one per span (markSVG split), so their hops run on the compositor */
     .home { container-type: size; }
@@ -72,9 +70,11 @@
     .busy .home .m2 { animation-delay: .28s; }
     /* 2.4 units of the mark's viewBox (24 × 16, fitted into the button): the hop it always had, in px */
     @keyframes buddy-hop { 0%, 55%, 100% { translate: 0 0; } 25% { translate: 0 calc(-2.4 * min(100cqw / 24, 100cqh / 16)); } }
-    /* someone needs you: a warm edge that breathes (their creature wiggles with a "!") */
-    .alert .pill { animation: pill-alert 2s ease-in-out infinite; }
-    @keyframes pill-alert { 50% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--waiting) 75%, transparent), 0 0 0 5px color-mix(in srgb, var(--waiting) 16%, transparent), 0 12px 32px -14px rgba(0, 0, 0, .38); } }
+    /* someone needs you: a warm edge that breathes (their creature wiggles). The edge is its own layer that only fades
+       in and out, so the compositor plays it. */
+    .pill::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--needs) 75%, transparent), 0 0 0 5px color-mix(in srgb, var(--needs) 16%, transparent); }
+    .alert .pill::after { animation: pill-alert 2s ease-in-out infinite; }
+    @keyframes pill-alert { 50% { opacity: 1; } }
     /* the crew lives in the pill: one little creature per agent, hopping while it works, magnified like the Dock */
     .dots { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     /* creatures magnify away from the screen edge */
@@ -85,7 +85,7 @@
     .dots .face:hover { transform: scale(1.32); z-index: 1; }
     .dots .face:hover + .face, .dots .face:has(+ .face:hover) { transform: scale(1.12); }
     .dots .face:active { transform: scale(1.05); }
-    .more-faces { width: 32px; height: 26px; margin-top: 2px; border: 0; border-radius: 999px; background: var(--btn); color: var(--fg2); font: 700 11px/1 var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; transition: background .15s, color .15s; }
+    .more-faces { width: 32px; height: 26px; margin-top: 2px; border: 0; border-radius: var(--r-control); background: var(--btn); color: var(--fg2); font: 500 11px/1 var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; transition: background .15s, color .15s; }
     .more-faces:hover { background: var(--btn-hover); color: var(--fg); }
     /* a clone pops out of its original (the creature before it), a little smaller, with its number */
     .dots .face { position: relative; }
@@ -100,7 +100,7 @@
   <div class="wrap">
     <section class="panel sheet">
       <header>
-        <div class="convo-head"></div><span class="brand"><span class="logo"></span><b>Crew</b></span><span class="sums"></span><span class="grow"></span>
+        <div class="convo-head"></div><span class="brand"></span><span class="sums"></span><span class="grow"></span>
         <button class="icon" data-act="dashboard" title="Open the dashboard" aria-label="Open the dashboard"></button>
         <button class="icon" data-act="close" title="Close (Esc)" aria-label="Close"></button>
       </header>
@@ -115,6 +115,7 @@
   <script src="avatar.js"></script>
   <script src="voice.js"></script>
   <script src="common.js"></script>
+  <script src="brand.js"></script>
   <script src="overlay.js"></script>
 </body>
 </html>

@@ -1,9 +1,10 @@
 // Floating pill on the screen edge; click it (or press the hotkey) for the chat panel.
-/* global crew, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS, wsTile, elsewhere, hasWorkspaces */
+/* global wordmarkHTML, PRODUCT_NAME, crew, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS, wsTile, elsewhere, hasWorkspaces */
 
 const $ = (s) => document.querySelector(s)
 $('.home').innerHTML = markSVG('0 6 24 16', { split: true }) // its buddies hop while anyone works
-$('.panel header .logo').outerHTML = markSVG('0 6 24 16')
+$('.home').title = PRODUCT_NAME
+// the panel's header: the wordmark, or the workspace it shows (drawn on each push)
 $('[data-act=dashboard]').innerHTML = ICONS.expand
 $('[data-act=close]').innerHTML = ICONS.close
 
@@ -117,7 +118,7 @@ live((next) => {
   // anyone waiting on you, in this workspace or another open one
   document.body.classList.toggle('alert', state.agents.some((a) => a.status === 'waiting') || elsewhere(state).waiting > 0)
   // with workspaces, the chat says whose it is
-  morph($('.panel header .brand'), hasWorkspaces(state) ? `${wsTile(state.workspace, { size: 20 })}<b>${esc(state.workspace.name)}</b>` : `${markSVG('0 6 24 16')}<b>Crew</b>`)
+  morph($('.panel header .brand'), hasWorkspaces(state) ? `${wsTile(state.workspace, { size: 20 })}<b>${esc(state.workspace.name)}</b>` : wordmarkHTML(20))
   // A big crew doesn't fit along a screen edge: the pill keeps the ones that need a look (waiting on you, new
   // replies, at work) in their usual order, and the rest become "+N", which opens the chat.
   const flat = ['above', 'below'].includes(document.body.dataset.side)

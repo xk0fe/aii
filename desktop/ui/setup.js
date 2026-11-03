@@ -3,7 +3,7 @@
 // to paste and Check again; once one is, the crew invites you to make its first agent. "Claude Code and Codex…" in the
 // ⋯ menu shows the same screen any time. Add provider… (here, and in the model picker) adds GLM or Ollama, which the
 // picker offers only once added (state.providers[id].added, core/providers.js).
-/* global crew, esc, morph, avatarHTML, oops, errorLine, ON_WINDOWS, roomSVG */
+/* global crew, esc, morph, avatarHTML, oops, errorLine, ON_WINDOWS, roomFeltHTML */
 
 let setupScreen = null // the dashboard's, once mounted: the model picker (ui/collection.js) opens Add provider… with it
 function openAddProvider() {
@@ -114,7 +114,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
     const off = (act) => act === 'check' && (checking || !status()?.checked)
     const btn = ([act, label], cls) => `<button type="button" class="btn su-btn ${cls}" data-act="${act}" ${off(act) ? 'disabled' : ''}>${esc(label)}</button>`
     morph(view, `<div class="su-col">
-      <div class="su-scene">${room(440, 176, 52)}<span class="su-spot" style="left:52px"></span><span class="su-spot" style="left:128px"></span><span class="su-spot" style="right:56px"></span>
+      <div class="su-scene">${typeof roomFeltHTML === 'function' ? roomFeltHTML(52) : ''}<span class="su-spot" style="left:52px"></span><span class="su-spot" style="left:128px"></span><span class="su-spot" style="right:56px"></span>
         <span class="su-who">${avatarHTML(creature, { size: 96, mood: 'starting', pose: 'pop' })}</span><span class="su-say">${esc(w.say)}</span></div>
       <h1 class="su-title">${esc(w.title)}</h1>
       <p class="su-lead">${esc(w.lead)}</p>
@@ -122,25 +122,6 @@ function mountSetup({ onAdd = () => {} } = {}) {
       <div class="su-acts">${btn(w.primary, 'su-primary')}${w.more.map((b) => btn(b, '')).join('')}</div>
       <p class="su-more">Want other models? <button type="button" class="su-link" data-act="providers">Add a provider…</button></p>
     </div>`)
-  }
-
-  // The Crew room's felt, from the v2 look when it's there (roomSVG), else the same drawn here.
-  function room(w, h, floor) {
-    if (typeof roomSVG === 'function') return roomSVG(w, h, floor)
-    const fy = h - floor
-    const seam = 'style="stroke:var(--su-thread)" stroke-width="1.5" stroke-dasharray="5 3.5" stroke-linecap="round"'
-    return `<svg class="su-room" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
-      <defs><filter id="su-felt" x="-2%" y="-2%" width="104%" height="104%" color-interpolation-filters="sRGB">
-        <feTurbulence type="fractalNoise" baseFrequency=".7" numOctaves="2" seed="3" result="n"/>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="3" xChannelSelector="R" yChannelSelector="G" result="edge"/>
-        <feTurbulence type="fractalNoise" baseFrequency="1.8" numOctaves="2" seed="9" result="g"/>
-        <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .32 0 0 0 -.13" result="dark"/>
-        <feColorMatrix in="g" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 .4 0 0 -.2" result="light"/>
-        <feComposite in="dark" in2="edge" operator="in" result="d2"/><feComposite in="light" in2="edge" operator="in" result="l2"/>
-        <feMerge><feMergeNode in="edge"/><feMergeNode in="d2"/><feMergeNode in="l2"/></feMerge></filter>
-        <clipPath id="su-room-clip"><rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14"/></clipPath></defs>
-      <g clip-path="url(#su-room-clip)" filter="url(#su-felt)"><rect width="${w}" height="${h}" style="fill:var(--su-wall)"/><rect y="${fy}" width="${w}" height="${floor}" style="fill:var(--su-floor)"/></g>
-      <path d="M10 ${fy}H${w - 10}" ${seam}/><rect x="6" y="6" width="${w - 12}" height="${h - 12}" rx="10" fill="none" ${seam}/></svg>`
   }
 
   async function check() {
