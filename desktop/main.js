@@ -103,8 +103,9 @@ async function start() {
   const bin = path.join(dir, 'bin').replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
   crew = new Crew({ bin, computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
   hub = crew.hub
-  setup.check().then(() => crew.changed()) // meanwhile, in the background
+  const checked = setup.check() // meanwhile, in the background
   await crew.start()
+  checked.then(() => crew.changed())
   remote = new Remote(crew)
   await remote.start()
   nativeTheme.themeSource = hub.config.theme // every window + the popover's material
