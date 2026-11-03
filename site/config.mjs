@@ -1,8 +1,8 @@
 // Everything about the website that changes: the product's name, who makes it, the contact address and where every
 // download goes. build.mjs reads this file; nothing else in site/ spells these out.
 
-// The name people see. A rename is this line (the wordmark is drawn from it, letter by letter).
-export const PRODUCT = 'Crew'
+// The name people see. A rename is this line (the wordmark is drawn from it, letter by letter, capitals and all).
+export const PRODUCT = 'CLIque'
 
 export const COMPANY = 'Green Grass Inc.'
 
@@ -13,7 +13,7 @@ export const CONTACT_EMAIL = 'CONTACT_EMAIL'
 // previews need it to find the preview picture. The release workflow fills it in from the SITE_URL variable.
 export const SITE_URL = process.env.SITE_URL || ''
 
-// A custom domain for GitHub Pages (crew.example.com), written to CNAME. Empty for <owner>.github.io/<repo>/.
+// A custom domain for GitHub Pages (clique.example.com), written to CNAME. Empty for <owner>.github.io/<repo>/.
 export const DOMAIN = process.env.SITE_DOMAIN || ''
 
 // Every download button. `href` is one of:
