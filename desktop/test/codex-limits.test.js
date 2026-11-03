@@ -31,8 +31,8 @@ beforeEach(() => {
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now })
   for (const f of ['usage.json', 'feed.jsonl', 'conversations.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [
-    { name: 'david', area: 'backend api, servers', provider: 'codex' },
-    { name: 'joseph', area: 'backend api, servers' },
+    { name: 'ada', area: 'backend api, servers', provider: 'codex' },
+    { name: 'june', area: 'backend api, servers' },
   ] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -86,15 +86,15 @@ test('the newest token count that has limits wins; garbage, other meters and win
 
 test("a Codex agent's step brings its account's limits in, kept per provider next to Claude's", () => {
   log(count({ primary: [92, 10080, 100] }))
-  step('david')
-  hub.onStatusLine('joseph', { context_window: { context_window_size: 200000, used_percentage: 10 }, rate_limits: { five_hour: { used_percentage: 40, resets_at: (now + 2 * HOUR) / 1000 } } })
+  step('ada')
+  hub.onStatusLine('june', { context_window: { context_window_size: 200000, used_percentage: 10 }, rate_limits: { five_hour: { used_percentage: 40, resets_at: (now + 2 * HOUR) / 1000 } } })
   const usage = hub.snapshot().usage
   assert.deepEqual({ ...usage.codex, windows: usage.codex.windows.map(({ pace, ...w }) => w) }, { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 92, resetsAt: now + 100 * HOUR }], credits: { unlimited: false, balance: 62500 } })
   assert.deepEqual(usage.claude.windows.map((w) => [w.id, w.pct]), [['five_hour', 40]])
   // Codex is the one near its limit: its agents lose ties, Claude's don't
   const agents = hub.snapshot().agents
-  assert.equal(agents.find((a) => a.name === 'david').nearLimit, true)
-  assert.equal(agents.find((a) => a.name === 'joseph').nearLimit, false)
+  assert.equal(agents.find((a) => a.name === 'ada').nearLimit, true)
+  assert.equal(agents.find((a) => a.name === 'june').nearLimit, false)
   hub.saveUsage(true)
   const saved = JSON.parse(fs.readFileSync(path.join(process.env.CREW_HOME, 'usage.json'), 'utf8'))
   assert.deepEqual(Object.keys(saved).sort(), ['claude', 'codex'])
@@ -102,7 +102,7 @@ test("a Codex agent's step brings its account's limits in, kept per provider nex
 
 test("heads-ups say it's Codex, and name a window Codex measures in hours", () => {
   log(count({ primary: [96, 10080, 100], secondary: [81, 120, 1] }))
-  step('david')
+  step('ada')
   const limits = () => hub.feed.filter((e) => e.kind === 'event' && !/^At this pace/.test(e.text))
   const said = limits().map((e) => e.text)
   assert.equal(said.length, 2)
@@ -110,15 +110,15 @@ test("heads-ups say it's Codex, and name a window Codex measures in hours", () =
   assert.match(said[1], /^Codex is at 81% of its 2-hour limit, resets at /)
   // the next step, same windows: nothing again
   mock.timers.tick(6000)
-  step('david')
+  step('ada')
   assert.equal(limits().length, 2)
 })
 
 test('a Codex-run provider without limits in its log (Ollama) has none', () => {
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'olly', area: 'docs', provider: 'local' }] }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'roy', area: 'docs', provider: 'local' }] }))
   hub.loadConfig()
-  hub.agents.get('olly').status = 'working'
+  hub.agents.get('roy').status = 'working'
   log(JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: { model_context_window: 32000, last_token_usage: { total_tokens: 900 } }, rate_limits: null } }))
-  step('olly')
+  step('roy')
   assert.deepEqual(hub.snapshot().usage, {})
 })

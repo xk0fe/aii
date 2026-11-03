@@ -93,7 +93,7 @@ const STOP_WORDS = new Set(
 // One workspace's crew (core/workspaces.js): its agents as they work there, its chat, notes and tasks. Crew runs one
 // per workspace, all on the one config.json (config) and local server (token).
 export class Hub extends EventEmitter {
-  agents = new Map() // name -> agent; clones too (gal.2), with cloneOf: 'gal'
+  agents = new Map() // name -> agent; clones too (iris.2), with cloneOf: 'iris'
   pinned = new WeakSet() // messages that only one particular clone (or the original) should take
   url = null
   parked = false // started, but its agents only run once it's opened (see start)
@@ -460,7 +460,7 @@ export class Hub extends EventEmitter {
   }
 
   // You've seen an agent's replies up to `ts` (the chat marks what's been on screen): { name: ts }.
-  // Names can be agents on other computers (gal@mac-mini): what you've read is this computer's to remember.
+  // Names can be agents on other computers (iris@workstation): what you've read is this computer's to remember.
   read(seen) {
     let moved = false
     for (const [name, ts] of Object.entries(seen ?? {})) {
@@ -583,7 +583,7 @@ export class Hub extends EventEmitter {
 
   // ---- clones: one agent on several tasks at once ---------------------------------------------------
   // An agent with `clones: n` doesn't make a message wait while it's busy. A clone takes it: the same agent (its
-  // settings, instructions, folder and look) in a terminal and conversation of its own, named gal.2, gal.3… up to
+  // settings, instructions, folder and look) in a terminal and conversation of its own, named iris.2, iris.3… up to
   // n of them. A clone with nothing left to do goes away after CLONE_LINGER, and its work counts as the agent's.
 
   clones() {
@@ -600,7 +600,7 @@ export class Hub extends EventEmitter {
   }
 
   // The agent a name belongs to: a clone's original, or the agent itself. A clone that went away still names its
-  // original (gal.2 -> gal), and so does one on another computer (gal.2@air -> gal@air).
+  // original (iris.2 -> iris), and so does one on another computer (iris.2@laptop -> iris@laptop).
   baseOf(name) {
     const a = this.agents.get(name)
     return a ? (a.cloneOf ?? a.name) : String(name).replace(/\.\d+(?=@|$)/, '')
@@ -1708,7 +1708,7 @@ export class Hub extends EventEmitter {
   // Who gets a message: the `to` field (a name, several names, or "any") plus every @name in the text.
   // Explicit recipients skip routing. All of them are checked before anything is posted, so one unknown,
   // turned-off or self recipient rejects the whole send rather than reaching half the crew.
-  // Names on another computer (gal@mac-mini) go to `relay`, which main.js wires to Crew Link; `mentions: false`
+  // Names on another computer (iris@workstation) go to `relay`, which main.js wires to Crew Link; `mentions: false`
   // means `to` is final (the message was already addressed on another computer).
   // `fresh`: deliver into a new conversation (started when it's this message's turn). `ticket`: the bug it's about.
   // `re`: the message you're replying to (a feed id here); the copy links to it, so the feed threads it. `quote`
@@ -2525,7 +2525,7 @@ export class Hub extends EventEmitter {
     }
     if (flags.priority !== undefined && !priorityOf(flags.priority)) throw new Error('--priority is one of: urgent, high, medium, low')
     if (flags.kind !== undefined && !KINDS.includes(flags.kind)) throw new Error(`--kind is one of: ${KINDS.join(', ')}`)
-    // 12 is a task here; 12@air one that lives on another computer (12@<this computer> is here too)
+    // 12 is a task here; 12@laptop one that lives on another computer (12@<this computer> is here too)
     const split = (r) => {
       const [id, host] = String(r ?? '').replace(/^#/, '').split('@')
       return { id, host: host && host !== this.self ? host : null }
@@ -2817,7 +2817,7 @@ export class Hub extends EventEmitter {
   }
 
   // An agent goes by another name now (it moved to another computer, or here): `from` and `to` as this computer
-  // writes them (gal, gal@air). Lines in the chat, the Tasks board and what you've read follow it.
+  // writes them (iris, iris@laptop). Lines in the chat, the Tasks board and what you've read follow it.
   // Returns whether the feed changed (the caller rewrites it).
   renameRefs(from, to) {
     if (!from || !to || from === to) return false
@@ -2978,7 +2978,7 @@ export class Hub extends EventEmitter {
         freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
         // in a workspace other than the default: one of your shared agents (in other workspaces too), or only this one's
         ...(this.ws !== DEFAULT && !a.cloneOf && { shared: Boolean(a.shared) }),
-        // a clone: whose, and its number (gal.2 is clone 2); it looks like its original
+        // a clone: whose, and its number (iris.2 is clone 2); it looks like its original
         clones: this.maxClones(a), ...(a.cloneOf && { cloneOf: a.cloneOf, clone: a.clone, avatar: { seed: a.avatar?.seed ?? a.cloneOf, ...a.avatar } }),
         // its sub-agents: the running ones, and ones that just finished
         subs: [...(a.subs?.values() ?? [])].filter((x) => !x.ended || Date.now() - x.ended < SUB_LINGER).map(({ id, type, description, started, ended, tools, activity }) => ({ id, type, description, started, ended, tools, activity })),
@@ -3273,11 +3273,11 @@ const intents = (s) => {
   )
 }
 
-// Who a message is addressed to: `to` (one name, "david,joseph", "david joseph", or "any"/empty) plus every
+// Who a message is addressed to: `to` (one name, "ada,june", "ada june", or "any"/empty) plus every
 // bare @name in the text, wherever it is. The text itself is left as written. Not addresses: @words glued to
-// something (someone@example.com, @types/node, @david's), code in backticks, and @any/@you/@crew.
+// something (someone@example.com, @types/node, @ada's), code in backticks, and @any/@you/@crew.
 // Names are case-insensitive and come back lowercase, without duplicates, in the order they appear.
-// An agent on another computer is name@computer: "@gal@mac-mini" in text, or "gal@mac-mini" in `to`.
+// An agent on another computer is name@computer: "@iris@workstation" in text, or "iris@workstation" in `to`.
 export function addressees(to, text) {
   const prose = String(text).replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ')
   const mentions = [...prose.matchAll(/(?<![\w.@/'-])@([\w-]+(?:@[\w-]+)?)(?![\w@/'-]|\.\w)/g)].map((m) => m[1])

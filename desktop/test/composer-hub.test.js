@@ -1,5 +1,5 @@
 // Composer -> hub contract: the composer's `to` and hint formatting, read out of ui/common.js, fed to the real
-// Hub with a fake runner in a throwaway CREW_HOME. Written by david; run with `npm test`.
+// Hub with a fake runner in a throwaway CREW_HOME. Written by ada; run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -18,7 +18,7 @@ const format = new Function('r', `return r${hint}`)
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-composer-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
-const CREW = ['joseph', 'david', 'gal', 'arie', 'jeff'].map((name) => ({ name, area: name })).concat({ name: 'ye', area: 'x', off: true })
+const CREW = ['june', 'ada', 'iris', 'abe', 'jay'].map((name) => ({ name, area: name })).concat({ name: 'uma', area: 'x', off: true })
 class FakeRunner extends EventEmitter { on_ = new Set(); running = (n) => this.on_.has(n); submit() {}; write() {}; stop() {}; start() {} }
 let hub
 beforeEach(() => {
@@ -33,41 +33,41 @@ const send = (target, text) => format(hub.send({ to: composerTo(target, text), t
 const queued = () => Object.fromEntries([...hub.agents.values()].filter((a) => a.inbox.length).map((a) => [a.name, a.inbox.length]))
 
 test('chip + leading @mention: both get it (was: chip dropped)', () => {
-  send('david', '@joseph fix the payload')
-  assert.deepEqual(queued(), { david: 1, joseph: 1 })
-  assert.equal(hub.agents.get('david').inbox[0].text, '@joseph fix the payload')
+  send('ada', '@june fix the payload')
+  assert.deepEqual(queued(), { ada: 1, june: 1 })
+  assert.equal(hub.agents.get('ada').inbox[0].text, '@june fix the payload')
 })
 test('chip + mentioning the chip agent again: delivered once', () => {
-  send('david', '@david @gal sync on the composer')
-  assert.deepEqual(queued(), { david: 1, gal: 1 })
+  send('ada', '@ada @iris sync on the composer')
+  assert.deepEqual(queued(), { ada: 1, iris: 1 })
 })
 test('chip + later mention: both, text kept whole', () => {
-  send('david', 'build it, check with @joseph')
-  assert.deepEqual(queued(), { david: 1, joseph: 1 })
-  assert.equal(hub.agents.get('joseph').inbox[0].text, 'build it, check with @joseph')
+  send('ada', 'build it, check with @june')
+  assert.deepEqual(queued(), { ada: 1, june: 1 })
+  assert.equal(hub.agents.get('june').inbox[0].text, 'build it, check with @june')
 })
-test('chip alone: only the chip', () => { send('gal', 'review frames'); assert.deepEqual(queued(), { gal: 1 }) })
-test('Auto + leading mention: only the mention', () => { send('auto', '@jeff hi'); assert.deepEqual(queued(), { jeff: 1 }) })
+test('chip alone: only the chip', () => { send('iris', 'review frames'); assert.deepEqual(queued(), { iris: 1 }) })
+test('Auto + leading mention: only the mention', () => { send('auto', '@jay hi'); assert.deepEqual(queued(), { jay: 1 }) })
 test('chip + unknown leading @name: nothing sent, error surfaces', () => {
-  assert.throws(() => send('david', '@nobody do x'), /no agent named "nobody"/)
+  assert.throws(() => send('ada', '@nobody do x'), /no agent named "nobody"/)
   assert.deepEqual(queued(), {})
 })
 test('chip + unknown @name later in the text: nothing sent', () => {
-  assert.throws(() => send('david', 'fix it, then tell @nobody'), /no agent named "nobody"/)
+  assert.throws(() => send('ada', 'fix it, then tell @nobody'), /no agent named "nobody"/)
   assert.deepEqual(queued(), {})
 })
 test('chip + off agent mentioned up front: nothing sent', () => {
-  assert.throws(() => send('david', '@ye pull numbers'), /turned off/)
+  assert.throws(() => send('ada', '@uma pull numbers'), /turned off/)
   assert.deepEqual(queued(), {})
 })
 test('hint for several recipients is one readable line', () => {
-  const h = send('david', '@joseph go')
+  const h = send('ada', '@june go')
   assert.doesNotMatch(h, /\n/)
-  assert.match(h, /@david.* · .*@joseph/)
+  assert.match(h, /@ada.* · .*@june/)
 })
 test('emails, package names, possessives and code never address anyone', () => {
-  send('david', "mail a@b.com, bump @types/node, @david's branch, run `@nobody`")
-  assert.deepEqual(queued(), { david: 1 })
+  send('ada', "mail a@b.com, bump @types/node, @ada's branch, run `@nobody`")
+  assert.deepEqual(queued(), { ada: 1 })
 })
 test('a rejected send keeps the draft and leaves the error up until the draft is edited', () => {
   const submit = src.slice(src.indexOf('const submit = async'), src.indexOf('chips.addEventListener'))

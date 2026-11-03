@@ -14,7 +14,7 @@ const { feedView } = ctx.__x
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-feed-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
-const CREW = ['joseph', 'david', 'gal', 'arie'].map((name) => ({ name, area: name }))
+const CREW = ['june', 'ada', 'iris', 'abe'].map((name) => ({ name, area: name }))
 class FakeRunner extends EventEmitter { on_ = new Set(); running = (n) => this.on_.has(n); submit() {}; write() {}; stop() {}; start() {} }
 let hub
 beforeEach(() => {
@@ -35,11 +35,11 @@ const render = (feed, { open = new Set(), limit = 200 } = {}) => {
 // Arrays built inside the vm context fail a strict deepEqual against this realm's, so copy them out.
 const host = (x) => JSON.parse(JSON.stringify(x))
 const bubbles = (html) => (html.match(/class="bubble/g) || []).length
-const reply = (re, id = 'r-' + re) => ({ id, kind: 'reply', from: 'joseph', text: 'done', re, ts: Date.now() })
+const reply = (re, id = 'r-' + re) => ({ id, kind: 'reply', from: 'june', text: 'done', re, ts: Date.now() })
 const image = (n) => hub.saveImage(`${n}.png`, 'image/png', new Uint8Array([n]))
 
 test('one send to three agents is one bubble, at its first copy, addressed to all three', () => {
-  hub.send({ to: 'david', text: '@joseph @gal ship the composer' })
+  hub.send({ to: 'ada', text: '@june @iris ship the composer' })
   const copies = msgs()
   assert.equal(copies.length, 3)
   const { shown, html } = render(hub.feed)
@@ -47,27 +47,27 @@ test('one send to three agents is one bubble, at its first copy, addressed to al
   assert.equal(shown[0].id, copies[0].id)
   assert.equal(bubbles(html), 1)
   assert.match(html, new RegExp(`id="m-${copies[0].id}"[^]*data-id="${copies[0].id}"`))
-  assert.match(html, /to <span[^>]*>@david<\/span> <span[^>]*>@joseph<\/span> <span[^>]*>@gal<\/span>/)
+  assert.match(html, /to <span[^>]*>@ada<\/span> <span[^>]*>@june<\/span> <span[^>]*>@iris<\/span>/)
   assert.match(html, /queued/)
 })
 
 test('a single-recipient send is untouched', () => {
-  hub.send({ to: 'gal', text: 'frames please' })
+  hub.send({ to: 'iris', text: 'frames please' })
   const { shown, html } = render(hub.feed)
   assert.equal(shown[0], hub.feed[0])
-  assert.match(html, /to <span[^>]*>@gal<\/span><span class="tag">/)
+  assert.match(html, /to <span[^>]*>@iris<\/span><span class="tag">/)
 })
 
 test('a repeat of the same text to the same people is a second bubble', () => {
-  hub.send({ to: 'david', text: '@joseph ping' })
-  hub.send({ to: 'david', text: '@joseph ping' })
+  hub.send({ to: 'ada', text: '@june ping' })
+  hub.send({ to: 'ada', text: '@june ping' })
   assert.equal(bubbles(render(hub.feed).html), 2)
 })
 
 test('sends that differ only in attachments stay separate, and each keeps its own images', () => {
   const [one, two] = [image(1), image(2)]
-  hub.send({ to: 'david', text: '@joseph look', images: [one] })
-  hub.send({ to: 'david', text: '@joseph look', images: [two] })
+  hub.send({ to: 'ada', text: '@june look', images: [one] })
+  hub.send({ to: 'ada', text: '@june look', images: [two] })
   const [, a2, b1] = msgs()
   const { shown, html } = render(hub.feed.slice(1)) // starting mid-send is where text+time matching folded them together
   assert.deepEqual(host(shown.map((e) => e.id)), [a2.id, b1.id])
@@ -76,27 +76,27 @@ test('sends that differ only in attachments stay separate, and each keeps its ow
 })
 
 test('a feed that starts mid-send still shows it once, and never folds it into the next identical send', () => {
-  hub.send({ to: 'david', text: '@joseph @gal same' })
-  hub.send({ to: 'david', text: '@joseph @gal same' })
+  hub.send({ to: 'ada', text: '@june @iris same' })
+  hub.send({ to: 'ada', text: '@june @iris same' })
   const [a1, a2, a3, b1] = msgs()
   const feed = [...hub.feed.slice(1), reply(a3.id), reply(b1.id)] // retention cut off a1
   const { shown, html } = render(feed)
   assert.deepEqual(host(shown.filter((e) => e.kind === 'msg').map((e) => e.id)), [a2.id, b1.id])
-  assert.match(html, /to <span[^>]*>@david<\/span> <span[^>]*>@joseph<\/span> <span[^>]*>@gal<\/span>/)
+  assert.match(html, /to <span[^>]*>@ada<\/span> <span[^>]*>@june<\/span> <span[^>]*>@iris<\/span>/)
   assert.match(html, new RegExp(`class="quote" data-jump="${a2.id}"[^]*class="quote" data-jump="${b1.id}"`))
   assert.match(html, new RegExp(`id="m-${a2.id}"[^]*data-jump="r-${a3.id}"[^]*id="m-${b1.id}"[^]*data-jump="r-${b1.id}"`))
 })
 
 test('copies that are not next to each other still merge by sendId', () => {
-  hub.send({ to: 'david', text: '@joseph @gal split' })
+  hub.send({ to: 'ada', text: '@june @iris split' })
   const [a1, a2, a3] = msgs()
-  const between = { id: 'ev', kind: 'event', from: 'gal', text: 'is free', ts: Date.now() }
+  const between = { id: 'ev', kind: 'event', from: 'iris', text: 'is free', ts: Date.now() }
   const { shown } = render([a1, between, a2, a3])
   assert.deepEqual(host(shown.map((e) => e.id)), [a1.id, 'ev'])
 })
 
 test('reply jumps work both ways through the one shown bubble', () => {
-  hub.send({ to: 'david', text: '@joseph sync' })
+  hub.send({ to: 'ada', text: '@june sync' })
   const [lead, copy] = msgs()
   const { html } = render([...hub.feed, reply(copy.id, 'r1')])
   assert.match(html, new RegExp(`id="m-${lead.id}"[^]*class="replied" data-jump="r1"`))
@@ -105,19 +105,19 @@ test('reply jumps work both ways through the one shown bubble', () => {
 })
 
 test('Show more state follows the shown bubble', () => {
-  hub.send({ to: 'david', text: '@joseph long one' })
+  hub.send({ to: 'ada', text: '@june long one' })
   const [lead] = msgs()
   assert.match(render(hub.feed, { open: new Set([lead.id]) }).html, new RegExp(`class="bubble open" data-id="${lead.id}"`))
 })
 
 test('the feed limit counts merged bubbles, not copies', () => {
-  hub.send({ to: 'gal', text: 'first' })
-  hub.send({ to: 'david', text: '@joseph @gal @arie last' })
-  assert.deepEqual(host(render(hub.feed, { limit: 2 }).shown.map((e) => e.text)), ['first', '@joseph @gal @arie last'])
+  hub.send({ to: 'iris', text: 'first' })
+  hub.send({ to: 'ada', text: '@june @iris @abe last' })
+  assert.deepEqual(host(render(hub.feed, { limit: 2 }).shown.map((e) => e.text)), ['first', '@june @iris @abe last'])
 })
 
 test('agent hand-offs to several teammates stay separate, each with its own approve', () => {
-  hub.send({ from: 'arie', to: 'david,joseph', text: 'playtest bugs' })
+  hub.send({ from: 'abe', to: 'ada,june', text: 'playtest bugs' })
   const { shown, html } = render(hub.feed)
   assert.equal(shown.length, 2)
   assert.equal((html.match(/data-act="approve"/g) || []).length, 2)
@@ -125,6 +125,6 @@ test('agent hand-offs to several teammates stay separate, each with its own appr
 
 test('older entries with cc but no sendId are never merged', () => {
   const t = Date.now()
-  const legacy = ['david', 'joseph'].map((to, i) => ({ id: 'l' + i, kind: 'msg', from: 'you', to, cc: ['david', 'joseph'], text: 'x', ts: t }))
+  const legacy = ['ada', 'june'].map((to, i) => ({ id: 'l' + i, kind: 'msg', from: 'you', to, cc: ['ada', 'june'], text: 'x', ts: t }))
   assert.equal(render(legacy).shown.length, 2)
 })

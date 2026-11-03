@@ -54,7 +54,7 @@ class FakeRunner extends EventEmitter {
 let hub, notices
 beforeEach(() => {
   for (const f of ['feed.jsonl', 'usage.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'levi' }] }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'noor' }] }))
   hub = new Hub(new FakeRunner(), { bin: '/nonexistent' })
   notices = []
   hub.on('notice', (n) => notices.push(n))

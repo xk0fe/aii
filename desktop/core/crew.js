@@ -301,8 +301,9 @@ export class Crew extends EventEmitter {
   }
 
   // ---- Crew Link and workspaces ------------------------------------------------------------------
-  // A workspace is the same project on every computer that has one with its id: "golf" here and "golf" on the Mac mini
-  // are one crew, each computer's agents working in its own checkout. The default workspace is the default everywhere.
+  // A workspace is the same project on every computer that has one with its id: "storefront" here and "storefront" on
+  // the Workstation are one crew, each computer's agents working in its own checkout. The default workspace is the
+  // default everywhere.
   // A linked computer gets the default's state, terminals and alerts as always, and those of every other workspace
   // ('space' messages, workspace/name for terminals and alerts) once it has said it knows about workspaces (aware, see
   // attach). Calls for a workspace other than the default go through 'in'.
@@ -579,7 +580,7 @@ export class Crew extends EventEmitter {
     return `${await this.linkCall(l, 'addAgent', [{ ...fields, images: await this.toHome(fields.images, l) }], here.ws)}@${l.slug}`
   }
 
-  // A Tasks board action. A task lives on the computer it was added on: 12@air is #12 on Air.
+  // A Tasks board action. A task lives on the computer it was added on: 12@laptop is #12 on Laptop.
   async ticket(op, key, arg, here = this.here) {
     if (op === 'file') return here.fileTask(arg)
     if (op === 'bulk') return this.bulkTickets(arg, here)
