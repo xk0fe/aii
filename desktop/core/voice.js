@@ -24,7 +24,7 @@ export class Voice extends EventEmitter {
 
   // root: Crew's folder. binary: the helper that came with Crew, when it did (args: what goes before the locale,
   // for a helper that's a script). mayAskPermission: running from an app bundle that explains speech recognition in
-  // its Info.plist (Crew.app); only macOS before 26 asks for that.
+  // its Info.plist (CLIque.app); only macOS before 26 asks for that.
   constructor({ root, binary, args = [], mayAskPermission = false }) {
     super()
     this.source = path.join(root, 'native', 'crew-voice.swift')

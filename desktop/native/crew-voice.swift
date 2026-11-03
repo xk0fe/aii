@@ -14,7 +14,7 @@
 // macOS 26+ uses SpeechAnalyzer's DictationTranscriber (punctuated, on-device). Older macOS falls back to
 // SFSpeechRecognizer, on-device only (languages that would need Apple's servers are refused). It needs the app's
 // speech-recognition permission: pass --may-ask-permission only from an app bundle whose Info.plist explains it
-// (Crew.app), or macOS stops the process.
+// (CLIque.app), or macOS stops the process.
 //
 // --locale=<id> picks the language (default: the system's).
 //

@@ -442,7 +442,7 @@ function openDashboard(focus = '') {
 // tall, so the line under the titlebar shows under them too.
 const captionColors = () => ({ height: 45, ...(nativeTheme.shouldUseDarkColors ? { color: '#161719', symbolColor: '#f2f2f4' } : { color: '#f4f4f7', symbolColor: '#1d1d1f' }) })
 
-// `npm run dev` runs Electron's generic app, so give the Dock our icon each time it appears (Crew.app has it built in).
+// `npm run dev` runs Electron's generic app, so give the Dock our icon each time it appears (CLIque.app has it built in).
 function showDock() {
   Promise.resolve(app.dock?.show()).then(() => app.isPackaged || app.dock?.setIcon(path.join(dir, 'assets', 'icon.png')))
 }
@@ -705,7 +705,7 @@ function wire() {
 // Voice input (core/voice.js): the chat's mic button, plus a hotkey that opens the chat and starts listening.
 // Dictation runs on this computer: it only fills in your message, wherever the agent you send it to lives.
 function wireVoice() {
-  // Older macOS asks for speech-recognition permission, which needs the app's Info.plist to say why (Crew.app does).
+  // Older macOS asks for speech-recognition permission, which needs the app's Info.plist to say why (CLIque.app does).
   const plist = path.join(process.resourcesPath, '..', 'Info.plist')
   const mayAskPermission = process.platform === 'darwin' && fs.existsSync(plist) && fs.readFileSync(plist, 'utf8').includes('NSSpeechRecognitionUsageDescription')
   // An installed Crew carries the helper in Resources/voice; from source (npm start, npm run dev) it's built here.
