@@ -1,5 +1,6 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
-// agent) and what's open: #crew, one agent's conversation with its terminal docked beside it, Agents, Tasks or Terminals.
+// agent) and what's open: a channel (#general or one you made), one agent's conversation with its terminal docked beside it,
+// Agents, Tasks or Terminals.
 /* global pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack */
 
 const $ = (s) => document.querySelector(s)
@@ -11,7 +12,7 @@ const THEME = {
 
 const terms = new Map() // name -> { tile, head, term, fit, ready }
 let booted = false // the composer says who it's aimed at as it mounts, before what that opens exists
-// The chat: #crew (everyone's messages), or your conversation with one agent. What it's aimed at is the composer's
+// The chat: a channel's messages, or your conversation with one agent (in every channel). What it's aimed at is the composer's
 // target: an agent's name is that agent's conversation (see isConvo). Questions are cards in the conversation,
 // answered where they are (inline), not in a queue above it.
 const feed = mountFeed($('.feed'), {
@@ -20,6 +21,7 @@ const feed = mountFeed($('.feed'), {
   onAgent: (name) => select(name),
   onConvo: (name) => openDM(name),
   onLeave: () => composer.setTarget('auto'),
+  onChannel: (id) => setChannel(id, { go: false }),
   onTicket: (key) => openTask(key),
   onReply: (e) => composer.replyTo(e),
   onFound: () => closeSearch({ keep: true }),
@@ -37,7 +39,7 @@ const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-ban
 // first run: Claude Code and Codex, what to install or sign in to, then the first agent (ui/setup.js)
 const setup = mountSetup({ onAdd: () => addAgent() })
 
-// Where you are: 'chat' (#crew), 'dm' (the conversation the composer is aimed at), 'crew' (Agents, the cards),
+// Where you are: 'chat' (the channel open, see setChannel), 'dm' (the conversation the composer is aimed at), 'crew' (Agents, the cards),
 // 'tasks' or 'terminals'. The terminals are laid out as a grid or one big one.
 const PLACES = ['chat', 'crew', 'tasks', 'terminals']
 let place = store.get('crew.place') === 'dm' || PLACES.includes(store.get('crew.place')) ? store.get('crew.place') : 'chat'
@@ -57,7 +59,7 @@ const folds = new Set((() => {
   }
 })())
 let find = ''
-// The conversation the composer was aimed at last time is the one that opens (in #crew), and Agents, Tasks or
+// The conversation the composer was aimed at last time is the one that opens (in the chat), and Agents, Tasks or
 // Terminals open on everyone's.
 if (isConvo(composer.target()) && place === 'chat') place = 'dm'
 else if (isConvo(composer.target()) && place !== 'dm') composer.setTarget('auto')
@@ -81,6 +83,7 @@ showHead()
 $('.find-icon').outerHTML = ICONS.search
 $('[data-act=find]').innerHTML = ICONS.search
 $('.side-ws [data-act=add]').innerHTML = ICONS.plus
+$('.chan-sec [data-act=new-channel]').innerHTML = ICONS.plus
 $('.side-more').innerHTML = ICONS.more
 $('#link .h-icon').outerHTML = ICONS.computers
 $('#link [data-link-add]').innerHTML = `${ICONS.link}Link a computer…`
@@ -130,6 +133,7 @@ function showPlace(next) {
   if (!terms.has(selected)) selected = terms.keys().next().value ?? null
   highlight(dock ? dockName() : selected)
   drawRoster()
+  drawChannels()
   drawHead()
   drawDock()
   drawShow()
@@ -141,9 +145,9 @@ function showPlace(next) {
   lastShape = shape
 }
 let lastShape = ''
-// A place from the sidebar (or ⌘1–4): the composer goes back to everyone, which only #crew shows.
+// A place from the sidebar (or ⌘1–4): the composer goes back to everyone, which only a channel shows.
 function goPlace(next) {
-  if (isConvo(composer.target())) composer.setTarget('auto') // targetChanged: back to #crew's messages
+  if (isConvo(composer.target())) composer.setTarget('auto') // targetChanged: back to the channel's messages
   showPlace(next)
   if (next === 'chat') composer.focus()
 }
@@ -187,7 +191,7 @@ function openDM(name, { terminal = false } = {}) {
   }
 }
 
-// ---- the header: #crew, or who you're talking to ---------------------------------------------------------------
+// ---- the header: the channel, or who you're talking to -----------------------------------------------------------
 
 const chatHeadEl = $('.page-head[data-for=chat]')
 function drawHead() {
@@ -197,16 +201,24 @@ function drawHead() {
   morph(chatHeadEl.querySelector('.ph-title'), title)
   morph(chatHeadEl.querySelector('.ph-acts'), acts)
 }
-// #crew: who it reaches, what's waiting on you (a click goes to the oldest), and who's in it (a click opens Agents).
+// A channel: its name and its brief's first line (#general without one: who it reaches and where they work), what's
+// waiting on you anywhere (a click goes to the oldest), who's in it (a click: who works here, or the channel's members),
+// and its menu.
 function chatHead() {
   const needs = needsYou(state)
-  const members = state.agents.filter((a) => !a.cloneOf)
+  const c = openChannel()
+  const everyone = state.agents.filter((a) => !a.cloneOf)
+  const members = c.members ? everyone.filter((a) => c.members.includes(a.name)) : everyone
   const faces = [...members.filter((a) => a.on), ...members.filter((a) => !a.on)]
   const who = hasWorkspaces(state) ? `Everyone in ${state.workspace.name}` : 'Your whole crew'
   const folder = state.workspace?.folder
-  return [headTitle({ glyph: '#', title: 'crew', sub: `${esc(who)} · ${folder ? esc(tildePath(folder)) : 'Auto picks who answers'}`, tip: folder ? `Its agents work in ${folder}, unless one has a folder of its own here` : 'Each agent works in its own folder' }),
+  const brief = c.brief.split('\n').find((l) => l.trim())?.trim()
+  const sub = brief ? esc(brief) : c.id === 'general' ? `${esc(who)} · ${folder ? esc(tildePath(folder)) : 'Auto picks who answers'}` : c.members ? esc(nameList(members.map((a) => a.seed ?? a.name))) : esc(who)
+  const tip = c.brief || (folder ? `Its agents work in ${folder}, unless one has a folder of its own here` : 'Each agent works in its own folder')
+  return [headTitle({ glyph: '#', title: esc(c.name), sub, tip }),
     `${needs.length ? `<button class="mh-needs" data-head="needs" title="${esc(`${needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick for the oldest`)}">${needs.length} waiting on you${DOWN}</button>` : ''}
-      ${members.length ? `<button class="mh-faces" data-head="members" aria-haspopup="dialog" title="${esc(`Who works here: ${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 24, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}`]
+      ${members.length ? `<button class="mh-faces" data-head="members" aria-haspopup="dialog" title="${esc(c.members ? `In #${c.name}: ${plural(members.length, 'agent')}. Click to change` : `Who works here: ${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 24, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}
+      <button class="icon" data-head="channel" title="Channel: its brief, name and members" aria-label="Channel menu" aria-haspopup="menu">${ICONS.more}</button>`]
 }
 // An agent: its creature and name, what it is and its brain in one line (with its clones or helpers), then its
 // switches (YOLO, Fast, on/off), its terminal, its profile (the sheet) and everything else (⋯).
@@ -230,7 +242,8 @@ chatHeadEl.addEventListener('click', (e) => {
   const a = dmAgent()
   const act = b.dataset.head
   if (act === 'needs') return answerOldest()
-  if (act === 'members') return openMembers(b)
+  if (act === 'members') return place === 'chat' && openChannel().members ? channelSheet(openChannel().id) : openMembers(b)
+  if (act === 'channel') return channelMenu(openChannel().id, b)
   if (!a) return
   if (act === 'terminal') {
     store.set('crew.dock', docked() ? '0' : '1')
@@ -240,7 +253,213 @@ chatHeadEl.addEventListener('click', (e) => {
   if (act === 'menu') agentMenu(a.name, b)
 })
 
-// ---- who works here: the workspace's agents, from #crew's faces, the workspace's menu or its welcome -----------------
+// ---- channels: #general and the ones you make (core/workspaces.js) ----------------------------------------------
+// The chat shows one channel at a time. Each workspace remembers the one you had open. A channel's brief is what its
+// agents are told to do there, once per conversation (core/hub.js briefed): its sheet says so as you write it.
+
+let chan = 'general' // the channel open in the chat
+const channelsNow = () => state.channels ?? [{ id: 'general', name: 'general', brief: '' }]
+const openChannel = () => channelsNow().find((c) => c.id === chan) ?? channelsNow()[0]
+const chanKey = () => `crew.channel.${state.workspace?.id ?? 'default'}`
+// The workspace's channel, as it was left (one that's gone: #general), told to the chat and the composer.
+function syncChannel() {
+  const kept = store.get(chanKey())
+  const next = channelsNow().some((c) => c.id === kept) ? kept : 'general'
+  if (next !== chan && booted) closeSearch() // the search was the last channel's
+  chan = next
+  feed.setChannel(chan)
+  composer.setChannel({ ...openChannel(), ws: state.workspace?.id ?? 'default' }) // each workspace's channels keep their own drafts
+}
+// Open a channel. go: as a place from the sidebar (the composer back to everyone's); otherwise only the chat changes,
+// for a jump into another channel's message.
+function setChannel(id, { go = true } = {}) {
+  store.set(chanKey(), channelsNow().some((c) => c.id === id) ? id : 'general')
+  syncChannel()
+  if (go) return goPlace('chat')
+  drawChannels()
+  drawHead()
+}
+
+// Each channel's row: bold with a count of replies you haven't read there, berry when an agent there needs you.
+function drawChannels() {
+  const list = channelsNow()
+  const asks = needsYou(state).filter((n) => n.ask)
+  morph($('.channels'), list.map((c) => {
+    const unread = state.feed.filter((e) => isUnread(e, state.reads) && channelOf(e, list) === c.id).length
+    const needs = asks.filter((n) => channelOf(n.ask, list) === c.id).length
+    const on = place === 'chat' && c.id === chan
+    const tip = [`#${c.name}`, c.brief && (c.brief.length > 240 ? `${c.brief.slice(0, 240)}…` : c.brief), needs && `${plural(needs, 'question')} for you`, unread && plural(unread, 'new reply', 'new replies')].filter(Boolean).join('\n')
+    return `<button class="nv ch${unread || needs ? ' fresh' : ''}" data-channel="${esc(c.id)}" role="listitem"${on ? ' aria-current="page"' : ''} title="${esc(tip)}"><span class="hash" aria-hidden="true">#</span><span class="ch-name">${esc(c.name)}</span><i class="nv-n">${needs ? `<span class="need-badge">${needs}</span>` : unread ? (unread > 9 ? '9+' : unread) : ''}</i></button>`
+  }))
+}
+$('.channels').addEventListener('click', (e) => {
+  const row = e.target.closest('[data-channel]')
+  if (row) setChannel(row.dataset.channel)
+})
+$('.channels').addEventListener('contextmenu', (e) => {
+  const row = e.target.closest('[data-channel]')
+  if (!row) return
+  e.preventDefault()
+  channelMenu(row.dataset.channel, { x: e.clientX, y: e.clientY })
+})
+$('.chan-sec [data-act=new-channel]').addEventListener('click', () => channelSheet(null))
+
+function channelMenu(id, at) {
+  const c = channelsNow().find((x) => x.id === id)
+  if (!c) return
+  popMenu(at, [
+    { head: `#${c.name}` },
+    { label: c.id === 'general' ? (c.brief ? 'Edit its brief…' : 'Give it a brief…') : 'Edit channel…', icon: ICONS.edit, act: 'edit' },
+    ...(c.id === 'general' ? [] : ['-', { label: `Delete #${c.name}…`, icon: ICONS.trash, act: 'remove', danger: true }]),
+  ], (act) => {
+    if (act === 'edit') channelSheet(id)
+    if (act === 'remove') removeChannel(c)
+  })
+}
+
+async function removeChannel(c, ws = state.workspace?.id ?? 'default') {
+  if (!confirm(`Delete #${c.name}? Its messages stay, in #general. Agents stop getting its brief.`)) return
+  try {
+    const { state: next } = await crew.call('channel', 'remove', c.id, null, ws)
+    ;(push ??= await ready)(next)
+    if (chan === c.id) setChannel('general')
+  } catch (err) {
+    oops(`Couldn't delete #${c.name}`, err)
+  }
+}
+
+// The sheet: a new channel, or one's name, brief and members (#general: only its brief). The name is typed the way it
+// will show (lowercase, hyphens); the brief's size says what it costs, since every agent here reads it once per
+// conversation.
+const channelDialog = $('#channel')
+channelDialog.innerHTML = `
+  <header class="ws-hero">
+    <span class="ch-hero-glyph" aria-hidden="true">#</span>
+    <div class="ws-hero-main">
+      <input class="ws-title" data-ch-name placeholder="new-channel" spellcheck="false" maxlength="40" autocomplete="off" aria-label="Channel name">
+      <span class="ws-hero-sub" data-ch-sub></span>
+    </div>
+    <button type="button" class="icon sheet-x" data-close aria-label="Close">${ICONS.close}</button>
+  </header>
+  <div class="sheet-body ws-body">
+    <section class="ws-sec">
+      <h4 class="section-label">Brief<small data-ch-cost></small></h4>
+      <textarea class="field ch-brief-field" data-ch-brief rows="5" spellcheck="true" placeholder="What agents should do here, e.g. Review only: don't change files. List findings, most severe first, each tagged [high], [med] or [low]."></textarea>
+      <p class="ws-note">Each agent reads it with its first message in this channel, and again whenever you change it. Hand-offs and questions that start here stay here, so the agents they reach read it too.</p>
+    </section>
+    <section class="ws-sec" data-ch-sec="members">
+      <h4 class="section-label"><span>Who's in it</span><small class="ws-count" data-ch-count></small></h4>
+      <div class="seg fill ch-who-seg" role="radiogroup" aria-label="Who's in it"><button type="button" data-ch-all="1" role="radio">Everyone here</button><button type="button" data-ch-all="0" role="radio">Only some agents</button></div>
+      <ul class="ws-crew ch-crew"></ul>
+      <p class="ws-note" data-ch-note></p>
+    </section>
+  </div>
+  <p class="err" data-ch-err></p>
+  <div class="sheet-foot">
+    <button type="button" class="btn danger" data-ch-remove>${ICONS.trash}<span>Delete channel…</span></button>
+    <span class="grow"></span>
+    <button type="button" class="btn" data-close>Cancel</button>
+    <button type="button" class="btn primary" data-ch-save></button>
+  </div>`
+const $c = (sel) => channelDialog.querySelector(sel)
+let chDraft = null // { id, name, brief, everyone, members: Set }
+const tokensIn = (text) => Math.ceil(String(text).trim().length / 4) // about: a token is ~4 characters of English
+
+function channelSheet(id) {
+  const c = id ? channelsNow().find((x) => x.id === id) : null
+  if (id && !c) return
+  const agents = state.agents.filter((a) => !a.cloneOf)
+  // ws: the workspace it's for, whichever is on screen by the time it's saved. Only some: you pick them.
+  chDraft = { ws: state.workspace?.id ?? 'default', id: c?.id ?? null, name: c?.name ?? '', brief: c?.brief ?? '', everyone: !c?.members, members: new Set(c?.members ?? []) }
+  const general = c?.id === 'general'
+  $c('[data-ch-name]').value = chDraft.name
+  $c('[data-ch-name]').disabled = general
+  $c('[data-ch-brief]').value = chDraft.brief
+  $c('[data-ch-sec=members]').classList.toggle('hidden', general || !agents.length)
+  $c('[data-ch-remove]').classList.toggle('hidden', !c || general)
+  $c('[data-ch-save]').textContent = c ? 'Save' : 'Create channel'
+  $c('[data-ch-err]').textContent = ''
+  drawChannelSheet()
+  channelDialog.showModal()
+  setTimeout(() => $c(general ? '[data-ch-brief]' : '[data-ch-name]').focus(), 60)
+}
+
+// list: the agents too (typing the name or the brief leaves them be)
+function drawChannelSheet({ list = true } = {}) {
+  const d = chDraft
+  const agents = state.agents.filter((a) => !a.cloneOf)
+  const name = channelName(d.name)
+  const general = d.id === 'general'
+  const tokens = tokensIn(d.brief)
+  $c('[data-ch-cost]').textContent = tokens ? `about ${plural(tokens, 'token')}, once per conversation` : ''
+  const members = d.everyone ? agents : agents.filter((a) => d.members.has(a.name))
+  $c('[data-ch-sub]').innerHTML = general
+    ? `${faceStack(agents, 6)}<span>Everyone in ${esc(state.workspace?.name ?? 'your crew')}. Messages from a phone or the floating chat land here.</span>`
+    : name && name !== d.name.trim() ? `<span>It will be #${esc(name)}</span>`
+    : members.length ? `${faceStack(members, 6)}<span>${d.everyone ? `Everyone in ${esc(state.workspace?.name ?? 'your crew')}` : plural(members.length, 'agent')}</span>` : '<span>Nobody in it yet</span>'
+  segmented($c('.ch-who-seg'), (b) => (b.dataset.chAll === '1') === d.everyone)
+  $c('[data-ch-count]').textContent = d.everyone ? '' : `${members.length} of ${agents.length}`
+  $c('.ch-crew').classList.toggle('hidden', d.everyone)
+  $c('[data-ch-note]').textContent = d.everyone
+    ? 'Auto picks from everyone in the workspace, as in #general.'
+    : 'Auto picks only from these agents. An @mention still reaches anyone.'
+  if (list) {
+    $c('.ch-crew').innerHTML = agents.map((a) => {
+      const on = d.members.has(a.name)
+      return `<li class="ws-agent ${on ? 'in' : ''}" style="--c:${agentColor(a)}"><span class="ws-av">${avatarHTML(a, { size: 30, mood: on ? undefined : 'still' })}</span>
+        <span class="who"><b>${esc(displayName(a))}</b><small>${esc(a.area || 'no area')}</small></span>
+        <input type="checkbox" class="switch sm" data-ch-member="${esc(a.name)}" ${on ? 'checked' : ''} aria-label="${esc(displayName(a))} is in it"></li>`
+    }).join('')
+  }
+  $c('[data-ch-save]').disabled = !general && !name
+}
+// as the hub names it (core/workspaces.js channelName)
+const channelName = (raw) => String(raw ?? '').toLowerCase().normalize('NFKD').replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+
+channelDialog.addEventListener('input', (e) => {
+  if (e.target.matches('[data-ch-name]')) (chDraft.name = e.target.value), drawChannelSheet({ list: false })
+  if (e.target.matches('[data-ch-brief]')) (chDraft.brief = e.target.value), drawChannelSheet({ list: false })
+})
+channelDialog.addEventListener('change', (e) => {
+  const m = e.target.closest('[data-ch-member]')
+  if (!m) return
+  chDraft.members[m.checked ? 'add' : 'delete'](m.dataset.chMember)
+  m.closest('.ws-agent').classList.toggle('in', m.checked)
+  drawChannelSheet({ list: false })
+})
+channelDialog.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.matches('[data-ch-name]')) (e.preventDefault(), saveChannel())
+})
+channelDialog.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]') || e.target === channelDialog) return channelDialog.close()
+  const all = e.target.closest('[data-ch-all]')
+  if (all) {
+    chDraft.everyone = all.dataset.chAll === '1'
+    return drawChannelSheet({ list: false })
+  }
+  if (e.target.closest('[data-ch-remove]')) {
+    const c = channelsNow().find((x) => x.id === chDraft.id)
+    channelDialog.close()
+    return c && removeChannel(c, chDraft.ws)
+  }
+  if (e.target.closest('[data-ch-save]')) saveChannel()
+})
+
+async function saveChannel() {
+  const d = chDraft
+  const patch = { brief: d.brief.trim(), ...(d.id !== 'general' && { name: d.name, members: d.everyone ? [] : [...d.members] }) }
+  if (d.id !== 'general' && !d.everyone && !d.members.size) return void ($c('[data-ch-err]').textContent = 'Pick at least one agent, or let everyone in')
+  try {
+    const { id, state: next } = await crew.call('channel', d.id ? 'edit' : 'create', d.id, patch, d.ws)
+    channelDialog.close()
+    ;(push ??= await ready)(next)
+    if (!d.id) setChannel(id) // a new one opens; an edited one stays where you are
+  } catch (err) {
+    $c('[data-ch-err]').textContent = errorLine(err)
+  }
+}
+
+// ---- who works here: the workspace's agents, from #general's faces, the workspace's menu or its welcome -----------------
 // Its agents (one shared with your other workspaces can be taken out of this one), the rest of your crew (bring one
 // in: it starts here in a conversation of its own), and a new agent. The default workspace has everyone.
 const membersPop = $('.members-pop')
@@ -300,18 +519,16 @@ membersPop.addEventListener('click', async (e) => {
   if (row) (membersPop.hidePopover(), openDM(row.dataset.agent), composer.focus())
 })
 
-// ---- an empty #crew: its first steps, like Discord's welcome to a new server ------------------------------------
+// ---- an empty #general: its first steps, like Discord's welcome to a new server ------------------------------------
 // Who works here, its folder (a workspace of your own), and the first message; each a click away, ticked once done.
-// "Ada", "Ada and Iris", "Ada, Iris and June", "Ada, Iris and 3 others"
-const nameList = (list) => (list.length > 3 ? `${list.slice(0, 2).join(', ')} and ${list.length - 2} others` : list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0] ?? '')
 function welcomeHTML() {
   if (!state.agents.length && !hasWorkspaces(state)) return '' // the very first run: setup and Agents say what to do
   const w = state.workspace ?? { id: 'default', name: 'Home' }
   const named = w.id !== 'default'
   const here = state.agents.filter((a) => !a.cloneOf)
   const step = (done, act, title, sub) => `<button class="wl-step ${done ? 'done' : ''}" data-welcome="${act}"><i class="pick ${done ? 'on' : ''}">${ICONS.check}</i><span><b>${esc(title)}</b><small>${esc(sub)}</small></span><i class="wl-go">${ICONS.chevron}</i></button>`
-  return `<div class="welcome empty-state">${wsTile(w, { size: 64 })}<h2 class="display">${hasWorkspaces(state) ? `Welcome to ${esc(w.name)}` : 'Welcome to #crew'}</h2>
-    <p class="lead">Everyone here sees what's said in #crew. Ask for something and Auto picks who answers, or @name someone.</p>
+  return `<div class="welcome empty-state">${wsTile(w, { size: 64 })}<h2 class="display">${hasWorkspaces(state) ? `Welcome to ${esc(w.name)}` : 'Welcome to #general'}</h2>
+    <p class="lead">Everyone here sees what's said in #general. Ask for something and Auto picks who answers, or @name someone. Make a channel (+ by Channels) for work with rules of its own.</p>
     <div class="wl-steps">
       ${step(here.length > 0, 'members', here.length ? `${plural(here.length, 'agent')} work${here.length > 1 ? '' : 's'} here` : 'Choose who works here', named ? 'Agents from your crew, or new ones just for this workspace' : 'Everyone in your crew, each in its own folder')}
       ${named ? step(Boolean(w.folder), 'settings', w.folder ? `They work in ${tildePath(w.folder)}` : 'Pick its folder', 'Where its agents work, unless one has a folder of its own') : ''}
@@ -325,22 +542,23 @@ $('.feed').addEventListener('click', (e) => {
   if (act === 'message') composer.focus()
 })
 
-// What's waiting on you, oldest first: a question goes to its card in #crew, an agent asking in its terminal to that.
+// What's waiting on you, oldest first: a question goes to its card in its channel, an agent asking in its terminal to
+// that.
 function answerOldest() {
   const n = needsYou(state)[0]
   if (!n) return
   if (!n.ask) return select(n.agent.name)
-  if (place !== 'chat') goPlace('chat')
+  if (place !== 'chat' || channelOf(n.ask, channelsNow()) !== chan) setChannel(channelOf(n.ask, channelsNow()))
   requestAnimationFrame(() => feed.jump(n.ask.id))
 }
 
-// ---- searching the messages: #crew's, or the conversation's ------------------------------------------------------
+// ---- searching the messages: the channel's, or the conversation's ------------------------------------------------------
 
 // The magnifier opens a field; what you type narrows the chat to the messages with every word (marked), with how many
 // in the field. A click on one shows it where it was. Esc, or leaving, ends it.
 const msearch = mountSearch($('.chat-search'), {
   label: 'Search messages',
-  placeholder: () => (place === 'dm' && dmAgent() ? `Search with ${dmAgent().seed ?? dmAgent().name}` : 'Search #crew'),
+  placeholder: () => (place === 'dm' && dmAgent() ? `Search with ${dmAgent().seed ?? dmAgent().name}` : `Search #${openChannel().name}`),
   delay: 120,
   onSearch: (q) => {
     const n = feed.search(q)
@@ -729,7 +947,7 @@ $('[data-show]').addEventListener('click', (e) => {
   drawShow()
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 })
-// ⌘1 #crew, ⌘2 Agents, ⌘3 Tasks, ⌘4 Terminals; ⌘F searches the messages in #crew and a conversation (elsewhere it
+// ⌘1 the channel, ⌘2 Agents, ⌘3 Tasks, ⌘4 Terminals; ⌘F searches the messages in a channel and a conversation (elsewhere it
 // finds an agent), ⌘K finds an agent, ⌘N makes one (Ctrl on Windows, where Ctrl+F and Ctrl+N typed in a terminal are
 // the agent's: windowsTerminalKey)
 const KEYS = { 1: 'chat', 2: 'crew', 3: 'tasks', 4: 'terminals' }
@@ -824,6 +1042,7 @@ function workspaceChanged(next) {
   terms.clear()
   selected = null
   composer.stopReply() // the message it answered is in the other workspace's chat
+  if (channelDialog.open) channelDialog.close() // a channel's sheet was the last workspace's
   openMenu?.close() // a menu or the list of who works here was about the last one
   if (membersPop.matches(':popover-open')) membersPop.hidePopover()
   composer.setTarget('auto')
@@ -918,7 +1137,7 @@ function toggleFold(key) {
 // Find (⌘F, or the search button by Direct): the label becomes a field that narrows the list; ↑↓ move through the
 // matches, Enter opens the one marked (the first, until you move), Esc puts it away.
 const findBox = $('[data-find]')
-const sec = $('.side-sec')
+const sec = $('.dm-sec')
 function startFind() {
   sec.classList.add('finding')
   findBox.focus()
@@ -1171,6 +1390,7 @@ crew.onFocus(handleFocus)
 const ready = live((next) => {
   workspaceChanged(next)
   state = next
+  syncChannel()
   workspaces.render(state)
   drawComputers(state)
   drawFoot(state)

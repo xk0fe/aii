@@ -660,9 +660,15 @@ function rosterParts(state, { folds = new Set(), selected, filter = '', drag = f
 }
 
 // ---- unread: agents' replies you haven't seen yet ------------------------------------------------------
-// state.reads (core/hub.js read): up to when you've read each agent; `since` keeps history from before the first
-// run from counting as new. Only replies count: questions, hand-offs and notes have their own ways to get your eye.
-const isUnread = (e, reads) => e.kind === 'reply' && e.from !== 'you' && Boolean(reads) && e.ts > Math.max(reads.since ?? 0, reads.agents?.[e.from] ?? 0)
+// state.reads (core/hub.js read): up to when you've read each agent, in #general and in each other channel; `since`
+// keeps history from before the first run from counting as new. Only replies count: questions, hand-offs and notes
+// have their own ways to get your eye.
+const readsIn = (e, reads) => (e.channel && e.channel !== 'general' ? reads.channels?.[e.channel] : reads.agents)
+const isUnread = (e, reads) => e.kind === 'reply' && e.from !== 'you' && Boolean(reads) && e.ts > Math.max(reads.since ?? 0, readsIn(e, reads)?.[e.from] ?? 0)
+
+// ---- channels: #general and the ones you made (core/workspaces.js) ----------------------------------------------
+// Which channel a message is shown in: its own, or #general's (none, or one that's been removed).
+const channelOf = (e, channels) => (e.channel && channels?.some((c) => c.id === e.channel) ? e.channel : 'general')
 const unreadBadge = (n) => (n ? `<span class="unread-badge" title="${plural(n, 'new reply', 'new replies')}">${n > 9 ? '9+' : n}</span>` : '')
 
 // "2 working · 1 needs you" as little pills, for the headers of every view.
@@ -755,7 +761,7 @@ function segmented(el, isOn, { none = false } = {}) {
   if (!el.classList.contains('ready')) requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('ready')))
 }
 
-// ---- a place's header (common.css .page-head): #crew, a conversation, Agents, Tasks and Terminals all use it ----
+// ---- a place's header (common.css .page-head): a channel, a conversation, Agents, Tasks and Terminals all use it ----
 // headTitle is its left end: the place's glyph, its name (and marks after it), one line about it.
 function headTitle({ glyph = '', title = '', after = '', sub = '', tip = '' }) {
   return `${glyph ? `<span class="ph-glyph" aria-hidden="true">${glyph}</span>` : ''}<h1 class="ph-name">${title}</h1>${after}<span class="ph-sub"${tip ? ` title="${esc(tip)}"` : ''}>${sub}</span>`
@@ -1100,7 +1106,7 @@ function mountConvoHead(el, { onBack, onTerminal }) {
 // queued: open questions live in the chat's Needs you queue (mountFeed), so the feed only points at them.
 // face: the creatures' size beside their messages. rows: everyone down the left like a group chat, you included (the
 // dashboard); otherwise yours sit on the right (the floating chat).
-const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider, only, here, queued = false, face = 28, rows = false } = {}) => {
+const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider, only, here, queued = false, face = 28, rows = false, channels = [], channel = null } = {}) => {
   const merged = mergeSends(feed)
   const visible = merged.shown.filter((e) => !e.answers)
   const shown = only ? visible.filter(only) : visible
@@ -1108,7 +1114,7 @@ const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divide
   // the last `limit` entries, plus questions still waiting for you from before them
   const items = [...shown.slice(0, -limit).filter((e) => e.kind === 'ask' && !e.answer), ...shown.slice(-limit)]
   const waiting = new Set(agents.flatMap((a) => (a.waitingOn ?? []).map((w) => w.id)).filter(Boolean))
-  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, backTo: {}, waiting, open, drafts, reads, here, queued, face, rows }
+  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, backTo: {}, waiting, open, drafts, reads, here, queued, face, rows, channels, channel }
   for (const e of feed) {
     if (e.answers) {
       if (e.reply) ctx.backTo[e.reply] = { to: e.to, queued: e.queued }
@@ -1120,6 +1126,16 @@ const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divide
   const line = '<div class="new-line" aria-label="New replies"><span>New</span></div>'
   return { items, html: () => items.map((e, i) => (e.id === divider ? line : '') + feedItem(e, items[i - 1], ctx)).join('') }
 }
+
+// An empty channel: what it's for, and who its agents are. Its brief is what they're told with their first message here.
+function channelIntro(c, agents) {
+  const who = c.members ? agents.filter((a) => !a.cloneOf && c.members.includes(a.name)) : agents.filter((a) => !a.cloneOf)
+  return `<div class="empty empty-state small ch-intro"><span class="ch-intro-mark" aria-hidden="true">#</span><b>This is the start of #${esc(c.name)}</b>
+    ${c.brief ? `<p class="ch-brief">${esc(c.brief)}</p><span>Each agent reads this brief with its first message here, and again if you change it.</span>` : '<span>Give it a brief (⋯ › Edit channel) to tell its agents how to work here.</span>'}
+    ${who.length ? `<span class="ch-who">${faceStack(who, 5)}${c.members ? esc(nameList(who.map((a) => a.seed ?? a.name))) : 'Everyone in this workspace'}</span>` : ''}</div>`
+}
+// "Ada", "Ada and Iris", "Ada, Iris and June", "Ada, Iris and 3 others"
+const nameList = (list) => (list.length > 3 ? `${list.slice(0, 2).join(', ')} and ${list.length - 2} others` : list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0] ?? '')
 
 // ---- tasks (ui/tasks.js) in the chat -------------------------------------------------------------------
 
@@ -1183,7 +1199,10 @@ function feedItem(e, prev, ctx) {
   const name = (n) => (n === 'you' ? 'You' : `<span class="who${here(n)}" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">${label(n)}</span>`)
   const time = new Date(e.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const repeat = prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && !prev.auto === !e.auto && e.ts - prev.ts < 120000 && !e.re
-  const tags = (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
+  // a message from a channel, shown somewhere that isn't that channel (an agent's conversation, the floating chat)
+  const from = channelOf(e, ctx.channels)
+  const where = from !== 'general' && from !== ctx.channel ? `<span class="tag ch" title="${esc(`Said in #${ctx.channels.find((c) => c.id === from).name}`)}">#${esc(ctx.channels.find((c) => c.id === from).name)}</span>` : ''
+  const tags = where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
   const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
   // A reply quotes the message it answers, with a bar in the quoted sender's color; click to jump back to it.
@@ -1209,7 +1228,7 @@ function feedItem(e, prev, ctx) {
   // hover a message for its tools: Reply (the chat's message box then answers it)
   const tools = `<div class="msg-tools"><button class="msg-tool" data-reply="${e.id}" title="Reply to this message">${ICONS.reply}<span>Reply</span></button></div>`
   const fresh = isUnread(e, ctx.reads)
-  const seen = e.kind === 'reply' ? ` data-from="${esc(e.from)}" data-ts="${e.ts}"` : ''
+  const seen = e.kind === 'reply' ? ` data-from="${esc(e.from)}" data-ts="${e.ts}"${e.channel ? ` data-channel="${esc(e.channel)}"` : ''}` : ''
   // Agents talk with their little face next to the bubble, like a group chat.
   const said = (cls, capHTML, rest = '', body = bubble, withTools = true) =>
     `<div class="item said ${cls}${cont}${fresh ? ' unread' : ''}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"${seen}><span class="face${here(e.from)}" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: ctx.face, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div>${withTools ? tools : ''}</div>`
@@ -1524,7 +1543,8 @@ function markWords(root, words) {
 // messages (the dashboard; the floating chat keeps the queue). face: the creatures' size beside their messages.
 // onFound: a search result was clicked, so the search is over and the chat shows that message where it was.
 // welcome(): what everyone's chat shows while it has no messages at all (the dashboard's first steps), or nothing.
-function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), onFound, welcome, limit = 200, inline = false, face = 28 } = {}) {
+// onChannel(id): a jump to a message in another channel (the dashboard opens that channel).
+function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), onFound, welcome, limit = 200, inline = false, face = 28 } = {}) {
   const open = new Set()
   const seen = new Set()
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
@@ -1546,6 +1566,10 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   let convo = null // ...and its family: the agent, for a clone
   let aim = null // the message to show once a conversation opens (the one you pressed Reply on)
   let words = [] // a search: only the messages with every one of these words, the words marked
+  let channel = null // the channel shown (its id), outside a conversation; null: every channel at once (the floating chat)
+  let channels = [] // the workspace's channels: { id, name, brief, members }
+  // what's shown: the conversation's messages in every channel, or else the channel's
+  const inView = (e) => (convo ? inConvo(e, convo) : !channel || channelOf(e, channels) === channel)
   const atEnd = () => el.scrollHeight - el.scrollTop - el.clientHeight < 60
   const pin = (smooth = false) => {
     const top = el.scrollHeight - el.clientHeight
@@ -1648,9 +1672,12 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   }
   const jump = (id) => {
     let target = el.querySelector(`#m-${CSS.escape(id)}`)
-    // a quote, a "replied" link or an Answer pointing outside this conversation: everyone's chat, if it shows it
-    if (!target && convo && onLeave && inEveryones(id)) {
-      onLeave()
+    // a quote, a "replied" link or an Answer pointing outside this conversation, or into another channel: the channel
+    // it was said in, if that shows it
+    const home = !target && (!convo || onLeave) && homeOf(id)
+    if (home) {
+      if (convo) onLeave()
+      if (channel && home !== channel) onChannel?.(home)
       target = el.querySelector(`#m-${CSS.escape(id)}`)
     }
     if (!target) return
@@ -1848,12 +1875,13 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     pin()
   }).observe(el)
   // ---- unread: a reply counts as read once it has been on screen for a moment while this window has focus ----
-  const onScreen = new Map() // element id -> { from, ts } of unread replies at least 60% visible
+  const onScreen = new Map() // element id -> { from, ts, channel } of unread replies at least 60% visible
   let readTimer = null
   const markSeen = () => {
     if (!onScreen.size || !document.hasFocus() || document.hidden || !el.offsetParent) return
     const seenUpTo = {}
-    for (const v of onScreen.values()) seenUpTo[v.from] = Math.max(seenUpTo[v.from] ?? 0, v.ts)
+    // each reply is read in its own channel: 'ada#review', 'ada#general'
+    for (const v of onScreen.values()) seenUpTo[`${v.from}#${v.channel || 'general'}`] = Math.max(seenUpTo[`${v.from}#${v.channel || 'general'}`] ?? 0, v.ts)
     crew.call('read', seenUpTo, last?.workspace).catch(() => {})
   }
   const soon = () => {
@@ -1862,7 +1890,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   }
   const watch = new IntersectionObserver((entries) => {
     for (const x of entries) {
-      if (x.isIntersecting) onScreen.set(x.target.id, { from: x.target.dataset.from, ts: Number(x.target.dataset.ts) })
+      if (x.isIntersecting) onScreen.set(x.target.id, { from: x.target.dataset.from, ts: Number(x.target.dataset.ts), channel: x.target.dataset.channel })
       else onScreen.delete(x.target.id)
     }
     soon()
@@ -1877,6 +1905,8 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   const emptyHTML = (agents) => {
     const a = convo && (agents.find((x) => x.name === talkingTo) ?? agents.find((x) => x.name === convo))
     if (words.length) return `<div class="empty empty-state small">${ICONS.search}<b>Nothing matches</b><span>No message${a ? ` with ${esc(displayName(a))}` : ''} has ${words.length > 1 ? 'all of those words' : 'that word'}.</span></div>`
+    const c = !a && channel && channel !== 'general' && channels.find((x) => x.id === channel)
+    if (c) return channelIntro(c, agents)
     if (!a && welcome?.()) return welcome()
     if (!a) return `<div class="empty empty-state small">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
     const n = esc(plainName(a))
@@ -1900,17 +1930,19 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     el.scrollTop += top - over() - (id ? Math.max(40, (room - it.offsetHeight) / 2) : 40)
     settle()
   }
-  // whether everyone's chat shows this message (it keeps the last `limit`), so a link out of a conversation lands
-  const inEveryones = (id) => {
-    if (!last) return false
-    const { as } = mergeSends(last.feed)
-    const lead = as[id]?.id
-    return Boolean(lead) && feedView(last.feed, last.agents, open, limit).items.some((e) => e.id === lead)
+  // the channel whose chat shows this message (each keeps its last `limit`), so a link out of a conversation or across
+  // channels lands; null when none does
+  const homeOf = (id) => {
+    if (!last) return null
+    const lead = mergeSends(last.feed).as[id]
+    if (!lead) return null
+    const home = channelOf(lead, channels)
+    const there = feedView(last.feed, last.agents, open, limit, drafts, { only: channel ? (e) => channelOf(e, channels) === home : null }).items.some((e) => e.id === lead.id)
+    return there ? home : null
   }
   const only = () => {
-    const mine = convo && ((e) => inConvo(e, convo))
-    if (!words.length) return mine
-    return (e) => (!mine || mine(e)) && words.every((w) => searchText(e).includes(w))
+    if (!words.length) return inView
+    return (e) => inView(e) && words.every((w) => searchText(e).includes(w))
   }
 
   // Needs you, redrawn only when who's waiting (or which question is open) changes, keeping what you're typing
@@ -1960,6 +1992,27 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       return words.length ? shown.size : 0
     },
     searching: () => words.length > 0,
+    // Show this channel's messages (outside a conversation). Like opening another chat: no "came in below" count,
+    // nothing popping in as new, at its first unread reply or its end.
+    setChannel(id) {
+      if (id === channel) return
+      channel = id
+      words = []
+      key = ''
+      divider = null
+      clearTimeout(dividerTimer)
+      dividerTimer = null
+      pinned = true
+      missed = 0
+      jumpTo = null
+      typingAll = false
+      first = true
+      revealing = null
+      if (!last || convo) return
+      api.render(last)
+      reveal(null)
+    },
+    channel: () => channel,
     setConvo(target) {
       const next = isConvo(target) ? target : null
       if (next === talkingTo) return
@@ -1987,26 +2040,29 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       requestAnimationFrame(() => talkingTo === next && !jumpTo && reveal(id))
       if (!matchMedia('(prefers-reduced-motion: reduce)').matches) el.animate([{ opacity: 0, transform: `translateX(${convo ? 14 : -14}px)` }, { opacity: 1, transform: 'none' }], { duration: DUR.move, easing: EASE.out })
     },
-    render({ feed, agents, reads, workspace: w }) {
-      const workspace = w?.id
+    render({ feed, agents, reads, workspace: w, channels: chans }) {
+      const workspace = typeof w === 'string' ? w : w?.id // a redraw of the last state passes its id
       // another workspace's chat: what was on screen of the last one was read there, or not at all
       if (last && last.workspace !== workspace) (onScreen.clear(), clearTimeout(readTimer))
-      const unread = feed.filter((e) => isUnread(e, reads) && (!convo || inConvo(e, convo)))
+      channels = chans ?? []
+      const unread = feed.filter((e) => isUnread(e, reads) && inView(e))
       if (unread.length) {
         clearTimeout(dividerTimer)
         dividerTimer = null
         if (!divider || !feed.some((e) => e.id === divider)) divider = unread[0].id
       } else if (divider && !dividerTimer) dividerTimer = setTimeout(() => ((divider = null), (key = ''), api.render(last)), 4000)
-      last = { feed, agents, reads, workspace }
-      const view = feedView(feed, agents, open, limit, drafts, { reads, divider: words.length ? null : divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline })
+      last = { feed, agents, reads, workspace, channels: chans }
+      const view = feedView(feed, agents, open, limit, drafts, { reads, divider: words.length ? null : divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline, channels, channel: convo ? null : channel })
       shown = new Map(view.items.map((e) => [e.id, e]))
-      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ')
+      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief]))
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
       // searching, who's at work right now isn't part of the results
-      const busy = words.length ? [] : typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll, crew: agents, queue: !inline, cards: inline })
+      // in a channel, the agents at work on something said there
+      const atWork = convo ? agents.filter((a) => familyOf(a.name) === convo) : channel ? agents.filter((a) => (channels.some((c) => c.id === a.channel) ? a.channel : 'general') === channel) : agents
+      const busy = words.length ? [] : typingParts(atWork, asks, { all: typingAll, crew: agents, queue: !inline, cards: inline })
       let added = false
-      if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}:${!convo && !words.length ? welcome?.() ?? '' : ''}` // the empty-feed hint shows only when nobody's busy
+      if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}:${!convo && !words.length && (!channel || channel === 'general') ? welcome?.() ?? '' : ''}` // the empty-feed hint shows only when nobody's busy
       if (next !== key) {
         key = next
         // a re-render mustn't take away what you're typing into a question card
@@ -2370,6 +2426,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
   let fresh = store.get('crew.fresh') === '1'
   let agents = []
   let feed = []
+  let channel = null // the channel it says things in: { id, name, members, ws } (the dashboard's); null: #general, as before
   // Replying: to a message in the feed (its Reply button), and then staying in that thread, each message answering
   // the newest one in it. A message sent into a new conversation starts a thread too, so what you send next goes
   // on in that conversation. Esc, ×, or picking someone on the To line leaves it.
@@ -2461,7 +2518,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     const a = isConvo(target) && agents.find((x) => x.name === target)
     const face = a ? avatarHTML(a, { size: 18, mood: 'still' }) : `<span class="to-icon">${ICONS[target === 'task' ? 'task' : 'sparkles']}</span>`
     const label = a ? nameHTML(a) : target === 'task' ? 'Tasks' : isConvo(target) ? esc(nameOf(target)) : 'Auto'
-    const sub = a ? statusText(a) : target === 'task' ? 'adds it to the Tasks board, @name assigns it' : 'picks by area, prefers whoever is free'
+    const sub = a ? statusText(a) : target === 'task' ? 'adds it to the Tasks board, @name assigns it' : channel?.members ? `picks from #${channel.name}'s ${plural(channel.members.length, 'member')} by area` : 'picks by area, prefers whoever is free'
     return `<button class="to-pick ${target === 'task' ? 'task' : ''}" data-pick-to aria-haspopup="menu" data-tip="${esc(a ? displayName(a) : target === 'task' ? 'Task' : 'Auto')}" data-sub="${esc(sub)}"${a ? ` style="--c:${agentColor(a)}"` : ''}><span class="to-label">To</span>${face}<b>${label}</b>${ICONS.chevron}</button>`
   }
   const pickTo = (at) => {
@@ -2508,7 +2565,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     ta.placeholder = task ? (isConvo(target) ? `Add a task for ${short(familyOf(target))}… @name gives it to someone else` : 'Add a task… @name assigns it')
       : off ? `${who} is off. Turn it on to message it`
       : reply ? `Reply to ${isConvo(target) ? who : listed(reply.to)}…`
-      : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : 'Message the crew, Auto picks who…')
+      : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : channel ? `Message #${channel.name}, Auto picks who…` : 'Message the crew, Auto picks who…')
       : fresh ? `New conversation with ${who}…` : `Message ${who}…`
     if (target !== told) onTarget?.((told = target))
   }
@@ -2541,15 +2598,17 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
   // Each conversation keeps its own draft: what you typed, its images, and what you were replying to. Going to
   // another one puts yours aside and brings back the one you left there. (Auto and Task are both everyone's.)
   // carry: you pressed Reply on its message, so what you're typing comes along, unless it has a draft of its own.
-  const drafts = new Map() // 'all' or an agent's name -> { text, images, reply, follow }
-  const draftKey = (t) => (isConvo(t) ? t : 'all')
-  const swapDraft = (next, carry) => {
+  // Each channel keeps its own too, in its workspace.
+  const drafts = new Map() // 'all', 'workspace#channel' or an agent's name -> { text, images, reply, follow }
+  const draftKey = (t) => (isConvo(t) ? t : channel ? `${channel.ws ?? ''}#${channel.id}` : 'all')
+  const swapDraft = (next, carry) => swapKeys(draftKey(target), draftKey(next), carry)
+  const swapKeys = (mineKey, nextKey, carry) => {
     if (voice?.busy()) return // dictating: the words keep coming into the box
     const mine = { text: ta.value, images: attach.get(), reply, follow }
-    const there = drafts.get(draftKey(next))
-    drafts.delete(draftKey(next))
+    const there = drafts.get(nextKey)
+    drafts.delete(nextKey)
     if (carry && !there) return void ((reply = null), (follow = null))
-    if (mine.text.trim() || mine.images.length || mine.reply) drafts.set(draftKey(target), mine)
+    if (mine.text.trim() || mine.images.length || mine.reply) drafts.set(mineKey, mine)
     ta.value = there?.text ?? ''
     attach.set(there?.images ?? [])
     reply = there?.reply ?? null
@@ -2584,7 +2643,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
         say((await crew.call('task', 'file', null, { text: what, images, kind, ...(forWhom && { owner: forWhom }) })).trim())
       }
       else {
-        say((await crew.call('send', reply && !talking ? reply.to.join(',') : to, text, images, { fresh, ...(reply && { re: reply.id }) })).trim().split('\n').join(' · '))
+        say((await crew.call('send', reply && !talking ? reply.to.join(',') : to, text, images, { fresh, ...(reply && { re: reply.id }), ...(!talking && channel && { channel: channel.id }) })).trim().split('\n').join(' · '))
         // New conversation is for one message: what you send next goes on in that conversation, as a reply. In an
         // agent's conversation it does anyway, so the quote just goes.
         if (draftKey(target) !== sentFrom) drafts.delete(sentFrom)
@@ -2681,6 +2740,13 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     },
     setTarget,
     target: () => target,
+    // The channel it says things in. What you were writing in the last one stays there for when you're back.
+    setChannel(c) {
+      const before = draftKey(target)
+      channel = c
+      if (draftKey(target) !== before) swapKeys(before, draftKey(target))
+      draw()
+    },
     // an agent renamed: the draft you put aside for it goes with it
     moveDraft(from, to) {
       if (!drafts.has(from) || drafts.has(to)) return

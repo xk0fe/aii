@@ -151,14 +151,36 @@ const SHOTS = {
     await save(win, `pill-${theme}`)
     win.destroy()
   },
-  // #crew: everyone's messages, questions answered where they were asked
+  // #general: everyone's messages, questions answered where they were asked
   async channel(theme) {
     const win = await dashboard(theme, 'chat')
     await sleep(1200)
     await save(win, `channel-${theme}`)
     win.destroy()
   },
-  // Searching #crew: only the messages with every word, the words marked, how many in the field
+  // Channels: the sidebar's list (unread counts), #review open with its brief in the header, an agent's conversation
+  // tagging what came from a channel, the sheet that makes one, and a new channel before anyone has said anything
+  async channels(theme) {
+    const win = await dashboard(theme, 'chat')
+    await sleep(800)
+    await js(win, "setChannel('review')")
+    await sleep(1000)
+    await save(win, `channels-${theme}`)
+    await js(win, "setChannel('launch')")
+    await sleep(900)
+    await save(win, `channels-launch-${theme}`)
+    await js(win, "openDM('Milo')")
+    await sleep(900)
+    await save(win, `channels-dm-${theme}`)
+    await js(win, "goPlace('chat'); channelSheet(null); const d = document.querySelector('#channel'); d.querySelector('[data-ch-name]').value = 'Design QA'; d.querySelector('[data-ch-name]').dispatchEvent(new Event('input', { bubbles: true })); d.querySelector('[data-ch-brief]').value = 'Check new screens against the design system: spacing, type scale and dark mode. Post before/after screenshots. Never change the tokens.'; d.querySelector('[data-ch-brief]').dispatchEvent(new Event('input', { bubbles: true })); d.querySelector('[data-ch-all=\"0\"]').click(); for (const n of ['Iris', 'Milo', 'Theo']) d.querySelector(`[data-ch-member=\"${n}\"]`).click()")
+    await sleep(700)
+    await save(win, `channels-sheet-${theme}`)
+    await js(win, "document.querySelector('#channel [data-ch-save]').click()")
+    await sleep(900)
+    await save(win, `channels-new-${theme}`)
+    win.destroy()
+  },
+  // Searching a channel: only the messages with every word, the words marked, how many in the field
   async chatSearch(theme) {
     const win = await dashboard(theme, 'chat')
     await sleep(900)
@@ -1119,7 +1141,7 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // The group chat: answer a question where it was asked in #crew, then open an agent's conversation, its terminal
+  // The group chat: answer a question where it was asked in #general, then open an agent's conversation, its terminal
   // docked beside it.
   async groupChatGif() {
     const win = await dashboard('light', 'chat')
@@ -1141,6 +1163,48 @@ const SHOTS = {
         await tap(win, at)
         await sleep(1500)
         await glide(win, at, { x: at.x + 500, y: at.y - 120 }, 500)
+      },
+    })
+    win.destroy()
+  },
+  // Channels: #review and its brief, #checkout-launch and its members, then a new channel made from the sidebar's +
+  async channelsGif() {
+    const win = await dashboard('light', 'chat')
+    await sleep(1400)
+    const type = async (text) => {
+      for (const ch of text) {
+        win.webContents.insertText(ch)
+        await sleep(ch === ' ' ? 70 : 35)
+      }
+    }
+    await record(win, 'channels', {
+      ms: 16000, width: 1000,
+      during: async () => {
+        let at = { x: 900, y: 500 }
+        at = await glide(win, at, await center(win, '.channels [data-channel="review"]'), 800)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1700)
+        at = await glide(win, at, await center(win, '.channels [data-channel="launch"]'), 500)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1700)
+        at = await glide(win, at, await center(win, '.chan-sec [data-act=new-channel]'), 600)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(700)
+        await type('Design QA')
+        await sleep(300)
+        at = await glide(win, at, await center(win, '#channel [data-ch-brief]'), 500)
+        await tap(win, at)
+        await sleep(200)
+        await type('Check new screens against the design system: spacing, type and dark mode. Post before/after screenshots.')
+        await sleep(600)
+        at = await glide(win, at, await center(win, '#channel [data-ch-save]'), 600)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1800)
+        await glide(win, at, { x: at.x + 200, y: at.y + 120 }, 400)
       },
     })
     win.destroy()
@@ -1346,7 +1410,7 @@ const SHOTS = {
     await save(win, `ws-home-settings-${theme}`)
     await js(win, "document.querySelector('#ws').close()")
     await sleep(300)
-    // who works here, from #crew's faces
+    // who works here, from #general's faces
     await js(win, click('.mh-faces'))
     await sleep(500)
     await save(win, `ws-members-${theme}`)
@@ -1357,7 +1421,7 @@ const SHOTS = {
     await save(win, `ws-rail-menu-${theme}`)
     await js(win, "openMenu?.close()")
     await sleep(300)
-    // a new workspace's empty #crew: its first steps
+    // a new workspace's empty #general: its first steps
     await js(win, "await crew.call('workspace', 'create', null, { name: 'Checkout', icon: '🛒', color: 'teal', members: ['Ada', 'Iris'] }); const s = window.__crewState; s.feed = []; s.agents = s.agents.map((a) => ({ ...a, status: 'idle', activity: '', subs: [], unread: 0 })); window.__crewEmit('state', s)")
     await sleep(900)
     await save(win, `ws-welcome-${theme}`)
@@ -1386,10 +1450,10 @@ const SHOTS = {
 
 async function dashboard(theme, view, { width = 1440, height = 880, fixture, reset = [] } = {}) {
   const win = await open('dashboard.html', { theme, width, height, fixture })
-  // the places: chat (#crew), crew (Agents), tasks, terminals; grid and focus are Terminals laid out that way
+  // the places: chat (a channel), crew (Agents), tasks, terminals; grid and focus are Terminals laid out that way
   const place = { grid: 'terminals', focus: 'terminals' }[view] ?? view
   const layout = view === 'focus' ? 'focus' : view === 'grid' ? 'grid' : null
-  await js(win, `localStorage.setItem('crew.place', '${place}'); ${layout ? `localStorage.setItem('crew.layout', '${layout}');` : ''} localStorage.setItem('crew.target', 'auto'); localStorage.removeItem('crew.edTab'); ${reset.map((k) => `localStorage.removeItem('${k}');`).join(' ')}`)
+  await js(win, `localStorage.setItem('crew.place', '${place}'); ${layout ? `localStorage.setItem('crew.layout', '${layout}');` : ''} localStorage.setItem('crew.target', 'auto'); localStorage.removeItem('crew.edTab'); for (const k of Object.keys(localStorage)) if (k.startsWith('crew.channel.')) localStorage.removeItem(k); ${reset.map((k) => `localStorage.removeItem('${k}');`).join(' ')}`)
   win.webContents.reload()
   await new Promise((r) => win.webContents.once('did-finish-load', r))
   await sleep(500)

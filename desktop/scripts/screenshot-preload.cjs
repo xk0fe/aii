@@ -191,6 +191,21 @@ const FEED = [
   { id: 'f7', kind: 'ask', from: 'Milo', to: 'you', cli: 'claude', re: 'f2', ts: t(2), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm run build', detail: 'Build the app to check the settings page', alert: 'wants to run a command',
     always: [{ i: 0, label: 'Always allow Bash(npm run build:*)' }, { i: 1, label: 'Allow all edits this session' }] } },
 ]
+// Channels: #review, whose brief keeps its agents reviewing, and #checkout-launch for three of the crew. Milo's review
+// in #review is unread; Theo answered in #checkout-launch and Ada handed on what came of it, which stays there.
+const CHANNELS = [
+  { id: 'general', name: 'general', brief: '' },
+  { id: 'review', name: 'review', brief: "Review only: don't change files, even to fix what you find. Reply with a numbered list of findings, most severe first, each tagged [high], [med] or [low]." },
+  { id: 'launch', name: 'checkout-launch', brief: 'Checkout v2 ships Friday from release/2.0. Only fixes for crashes and the launch checklist. Ask before touching payments.', members: ['Ada', 'Milo', 'Theo'] },
+]
+FEED.push(
+  { id: 'v1', kind: 'msg', from: 'you', to: 'Milo', channel: 'review', text: 'Look over the coupon changes in #7 before they go in.', ts: t(11) },
+  { id: 'v2', kind: 'reply', from: 'Milo', to: 'you', re: 'v1', channel: 'review', text: '1. **[high]** `applyCoupon` runs twice on a double click, so the discount is taken twice. Guard it with the pending flag.\n2. **[med]** Expired codes fail without a message: the field just clears.\n3. **[low]** `couponCode` and `promo` name the same thing in two files.', ts: t(9) },
+  { id: 'l1', kind: 'msg', from: 'you', to: 'Theo', channel: 'launch', auto: true, text: 'Does checkout still pass on Safari with the new payment sheet?', ts: t(8) },
+  { id: 'l2', kind: 'reply', from: 'Theo', to: 'you', re: 'l1', channel: 'launch', text: 'Yes: 48 of 48 pass on Safari 18. The payment sheet test needed a longer wait for the frame.', ts: t(7) },
+  { id: 'l3', kind: 'handoff', from: 'Ada', to: 'Milo', re: 'l1', channel: 'launch', text: 'The launch checklist says the receipt email needs the new logo. Yours, before Friday.', ts: t(4.5) },
+)
+FEED.sort((a, b) => a.ts - b.ts)
 // Theo's clones each got a message of their own
 if (FIXTURE === 'clones') {
   FEED.splice(FEED.findIndex((e) => e.id === 'f11'), 0,
@@ -303,7 +318,7 @@ if (FIXTURE === 'row') {
 }
 
 // what you've read: Milo's and Theo's replies, but not Ada's or June's latest
-const READS = { since: 0, agents: { Milo: t(30), Theo: t(5) } }
+const READS = { since: 0, agents: { Milo: t(30), Theo: t(5) }, channels: { launch: { Theo: t(6) } } }
 // The accounts' usage limits: Claude's as the agents' status lines report them (the 5-hour window getting full), and
 // Codex's from its session log, with the credits left on it.
 const USAGE = {
@@ -315,7 +330,7 @@ const USAGE = {
 for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [5, { cost: 1.31, tokens: 0, added: 42, removed: 18 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }], [3, { cost: 0.86, tokens: 0, added: 21, removed: 4 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })
 // the crew's spend: today against what's usual by now, and the last week and month
 const SPEND = { today: 14.2, usual: 12.8, week: 96, weekBefore: 88, month: 340 }
-const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
+const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
 
 // Workspaces, as Crew.workspaces() reports them. Storefront is the default one, renamed and given a quiet grey (so its
 // tile is an S); Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the crew, Storefront
@@ -350,6 +365,21 @@ else {
 }
 window.__crewShow = show
 // The workspace actions, enough for the shots: switch, open, park, make one.
+// The channels' sheet and menu, as Crew.channelAction does them.
+function channelAction(op, id, arg = {}) {
+  const slug = (n) => String(n ?? '').toLowerCase().replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+  if (op === 'create') {
+    if (!slug(arg.name)) throw new Error('give the channel a name')
+    if (CHANNELS.some((c) => c.name === slug(arg.name))) throw new Error(`there's a #${slug(arg.name)} already`)
+    id = slug(arg.name)
+    CHANNELS.push({ id, name: id, brief: arg.brief ?? '', ...(arg.members?.length && { members: arg.members }) })
+  }
+  const c = CHANNELS.find((x) => x.id === id)
+  if (op === 'edit' && c) Object.assign(c, { brief: arg.brief ?? c.brief, ...(id !== 'general' && 'name' in arg && { name: slug(arg.name) || c.name }), ...(id !== 'general' && 'members' in arg && { members: arg.members?.length ? arg.members : undefined }) })
+  if (op === 'remove') CHANNELS.splice(CHANNELS.indexOf(c), 1)
+  return { id, state }
+}
+
 function workspaceAction(op, id, arg) {
   const w = WORKSPACES.find((x) => x.id === id)
   if (op === 'switch') window.__crewShow(id)
@@ -510,12 +540,18 @@ window.crew = {
       if (to && !to.includes(',') && !opts.re && named(to)?.clones) return sendAction(to, text)
       const names = String(to || 'Ada').split(',').filter(Boolean).map((n) => named(n)?.name ?? n)
       const group = names.length > 1 && { cc: names, sendId: `s${Date.now()}` }
-      for (const n of names) state.feed.push({ id: `u${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text, ts: Date.now(), ...group, ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }) })
+      const channel = opts.channel && opts.channel !== 'general' ? opts.channel : opts.re ? state.feed.find((e) => e.id === opts.re)?.channel : undefined
+      for (const n of names) state.feed.push({ id: `u${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text, ts: Date.now(), ...group, ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }), ...(channel && { channel }) })
       emit()
       return `sent to ${names.map((n) => `@${n}`).join(' ')}\n`
     }
     if (action === 'read') {
-      for (const [n, ts] of Object.entries(args[0] ?? {})) READS.agents[n] = Math.max(READS.agents[n] ?? 0, ts)
+      // like the hub: 'Ada#review' is Ada's replies in #review, 'Ada#general' (or plain 'Ada') #general's
+      for (const [key, ts] of Object.entries(args[0] ?? {})) {
+        const [n, ch] = key.split('#')
+        const book = ch && ch !== 'general' ? ((READS.channels ??= {})[ch] ??= {}) : READS.agents
+        book[n] = Math.max(book[n] ?? 0, ts)
+      }
       emit()
       return undefined
     }
@@ -555,6 +591,7 @@ window.crew = {
       emit()
     }
     if (action === 'workspace') return workspaceAction(...args)
+    if (action === 'channel') return channelAction(...args)
     // moving an agent to another computer: its folders there, then the move itself
     if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? []).map(([path, label]) => ({ path, label }))
     if (action === 'folderInfo') {
