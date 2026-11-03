@@ -1,0 +1,35 @@
+// Small choices the phone remembers between launches: for now, whether the Crew room is folded away. Kept beside the
+// pairings (expo-secure-store is the one store the app has); read once at launch, written when changed.
+import * as SecureStore from 'expo-secure-store'
+import { useSyncExternalStore } from 'react'
+
+export type Prefs = { roomFolded: boolean }
+
+const KEY = 'crew.prefs'
+const OPTS: SecureStore.SecureStoreOptions = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK }
+let prefs: Prefs = { roomFolded: false }
+let changed = false // a choice made before the saved ones were read wins
+const listeners = new Set<() => void>()
+const emit = () => listeners.forEach((fn) => fn())
+
+void SecureStore.getItemAsync(KEY, OPTS)
+  .then((text) => {
+    const saved = text ? (JSON.parse(text) as Partial<Prefs>) : {}
+    if (changed) return
+    prefs = { ...prefs, roomFolded: saved.roomFolded === true }
+    emit()
+  })
+  .catch(() => {}) // unreadable: the defaults
+
+export function setPref<K extends keyof Prefs>(key: K, value: Prefs[K]) {
+  changed = true
+  prefs = { ...prefs, [key]: value }
+  emit()
+  void SecureStore.setItemAsync(KEY, JSON.stringify(prefs), OPTS).catch(() => {})
+}
+
+const subscribe = (fn: () => void) => {
+  listeners.add(fn)
+  return () => listeners.delete(fn)
+}
+export const usePrefs = () => useSyncExternalStore(subscribe, () => prefs)
