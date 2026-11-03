@@ -73,8 +73,8 @@ These are the same shapes as Crew Link's (`desktop/core/link.js`).
 - **What the Mac pushes:**
   - `{ "t": "state", "ws": id, "v": 1, "state": {...} }`: the whole state of the workspace the phone watches. The Mac pushes one when the workspace the phone watched is removed: it watches Home (`"default"`) from then on.
   - `{ "t": "patch", "ws": id, "v": 2, "patch": {...} }`: what changed since `v - 1` (see Sync). A phone that misses one calls `watch` again. `v` counts up for as long as the connection lasts, across `watch` calls: a `watch` reply carries the next one.
-  - `{ "t": "pty", "ws": id, "name": "gal", "data": "..." }`: terminal output, only for a terminal the phone asked for.
-  - `{ "t": "alert", "ws": id, "name": "gal", "text": "wants to run a command: npm test" }`: an agent needs you.
+  - `{ "t": "pty", "ws": id, "name": "ada", "data": "..." }`: terminal output, only for a terminal the phone asked for.
+  - `{ "t": "alert", "ws": id, "name": "ada", "text": "wants to run a command: npm test" }`: an agent needs you.
   - `{ "t": "notice", "ws": id, "title": "...", "body": "...", "focus": "..." }`: something worth a line (a task in Review, a limit). One about your accounts' limits has no `ws`: they're no workspace's.
 - **Bytes:** byte values (images) travel as `{ "$bytes": "<base64>" }`, as on Crew Link.
 

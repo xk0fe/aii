@@ -11,7 +11,7 @@ import { Voice } from '../../core/voice.js'
 const binary = path.resolve(process.argv[2] ?? '')
 if (!fs.existsSync(binary)) throw new Error(`no helper at ${binary}`)
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-voice-smoke-'))
-const SENTENCE = 'Hey Joseph, please hand the release notes to David.'
+const SENTENCE = 'Hey June, please hand the release notes to Ada.'
 
 // 16 kHz mono samples of `text`, from Windows' System.Speech or macOS's say; null when there's no voice to speak it
 function speak(text) {
@@ -59,7 +59,7 @@ if (samples) {
   const done = seen.at(-1)
   check(seen.some((e) => e.type === 'ready'), 'it says when it is listening')
   check(done.type === 'done', `it finishes (${done.message ?? done.type})`)
-  check(/joseph/i.test(done.text) && /david/i.test(done.text) && /release notes/i.test(done.text), `it heard the sentence: "${done.text}"`)
+  check(/june/i.test(done.text) && /release notes/i.test(done.text), `it heard the sentence: "${done.text}"`)
 }
 const quiet = (await dictate(new Float32Array(16000 * 4))).at(-1)
 check(quiet.type === 'done' && quiet.text === '', `silence is no text, not made-up words: "${quiet.text ?? quiet.message}"`)

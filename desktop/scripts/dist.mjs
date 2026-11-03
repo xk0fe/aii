@@ -5,7 +5,11 @@
 //   npm run dist -- --win         Windows only: one installer per arch (a Mac can make these too)
 //   --arch=arm64                  just these arches
 // The dictation helper is built first (scripts/build-voice.mjs).
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { build, Platform, Arch } from 'electron-builder'
+import yaml from 'js-yaml' // electron-builder's own
 import config from '../electron-builder.config.mjs'
 import { buildMac, buildWin } from './build-voice.mjs'
 
@@ -28,7 +32,16 @@ for (const os of platforms) {
   } else {
     const arches = pick(['x64', 'arm64'])
     await buildWin(arches)
-    // one run per arch: a single run would bundle every arch into one, twice-as-big installer
-    for (const arch of arches) await build({ config, publish: 'never', targets: Platform.WINDOWS.createTarget(['nsis'], Arch[arch]) })
+    // one run per arch: a single run would bundle every arch into one, twice-as-big installer. Each run writes the
+    // update info (latest.yml, when there's a RELEASE_REPO) afresh, so it would list only the last arch's installer:
+    // the runs' lists are joined into one, as a single run writes it (the first arch's installer as its path).
+    const updateInfo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', config.directories.output, 'latest.yml')
+    const infos = []
+    for (const arch of arches) {
+      fs.rmSync(updateInfo, { force: true })
+      await build({ config, publish: 'never', targets: Platform.WINDOWS.createTarget(['nsis'], Arch[arch]) })
+      if (fs.existsSync(updateInfo)) infos.push(yaml.load(fs.readFileSync(updateInfo, 'utf8')))
+    }
+    if (infos.length > 1) fs.writeFileSync(updateInfo, yaml.dump({ ...infos[0], files: infos.flatMap((i) => i.files) }, { lineWidth: -1 }))
   }
 }

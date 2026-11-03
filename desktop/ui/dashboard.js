@@ -27,6 +27,8 @@ const collection = mountCollection($('.collection'), {
 })
 const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next) })
+// first run: Claude Code and Codex, what to install or sign in to, then the first agent (ui/setup.js)
+const setup = mountSetup({ onAdd: () => addAgent() })
 // Views: Crew, Tasks and Terminals, the terminals laid out as a grid or one big one. Older saves said grid,
 // focus or bugs.
 const saved = store.get('crew.view')
@@ -105,6 +107,7 @@ $('.tb-more').addEventListener('click', (e) => {
     { label: panelShown('chat') ? 'Hide the chat' : 'Show the chat', icon: ICONS.chatPanel, act: 'chat', hint: keys('⌥⌘C') },
     '-',
     { label: 'Computers…', icon: ICONS.computers, act: 'computers' },
+    { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
     '-',
     { head: 'Theme' },
     ...THEME_CHOICES.map(([id, label, icon, note]) => ({ label, icon: ICONS[icon], act: `theme:${id}`, hint: theme === id ? '✓' : note })),
@@ -116,6 +119,7 @@ $('.tb-more').addEventListener('click', (e) => {
     }
     if (act === 'side' || act === 'chat') setPanel(act, !panelShown(act))
     if (act === 'computers') openComputers()
+    if (act === 'setup') setup.open()
     if (act.startsWith('theme:')) crew.call('theme', act.slice(6))
     if (act === 'config') crew.call('config')
   })
@@ -862,6 +866,7 @@ const ready = live((next) => {
   composer.render(state)
   collection.render(state)
   tasks.render(state)
+  setup.render(state)
   const badge = tasks.badge(state)
   const el = $('.seg-badge')
   el.textContent = badge.review || badge.open || ''
