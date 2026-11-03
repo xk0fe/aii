@@ -96,12 +96,22 @@ async function hook([kind, seconds]) {
   const event = input.replace(/\n+$/, '')
   if (ok(await call(url, route, { body: event, seconds: 2 }))) return
   // Crew is closed: one line per event in the workspace's spool, replayed when it's back (Hub.replaySpool). Past
-  // SPOOL_MAX it becomes <agent>.jsonl.1, the one before going, and a new one starts, as the sh hooks do.
+  // SPOOL_MAX it becomes <agent>.jsonl.1, the one before going, and a new one starts, as the sh hooks do (and as they
+  // do, by way of a name of its own, in case another hook has just started the new one).
   try {
     const spool = path.join(home, ...(env.CREW_WORKSPACE ? ['workspaces', env.CREW_WORKSPACE] : []), 'spool')
     const file = path.join(spool, `${agent}.jsonl`)
     fs.mkdirSync(spool, { recursive: true })
-    if ((fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0) > SPOOL_MAX) fs.renameSync(file, `${file}.1`)
+    if ((fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0) > SPOOL_MAX) {
+      const mine = `${file}.${process.pid}`
+      try {
+        fs.renameSync(file, mine)
+        if (fs.statSync(mine).size > SPOOL_MAX) fs.renameSync(mine, `${file}.1`)
+      } catch {}
+      try {
+        if (fs.existsSync(mine)) fs.appendFileSync(file, fs.readFileSync(mine)), fs.rmSync(mine, { force: true })
+      } catch {}
+    }
     fs.appendFileSync(file, `${event.replace(/\r?\n/g, ' ')}\n`)
   } catch {}
 }

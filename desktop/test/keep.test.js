@@ -82,6 +82,19 @@ test("feed.jsonl is written anew once it holds twice what's kept, and an open ca
   assert.ok(hub.feed.includes(queued), 'the message is still queued')
 })
 
+test('a chat with more lines in use than it keeps is written anew now and then, not at every line, and whole', async () => {
+  let rewrites = 0
+  const rewrite = hub.rewriteFeed.bind(hub)
+  hub.rewriteFeed = (keep) => (rewrites++, rewrite(keep))
+  for (let i = 0; i < 2 * FEED_KEEP + 100; i++) hub.send({ to: 'milo', text: `queued ${i}` }) // all still waiting for milo
+  for (let i = 0; i < FEED_KEEP; i++) hub.post({ kind: 'event', from: 'crew', text: `line ${i}` })
+  assert.equal(hub.feed.filter((e) => e.queued).length, 2 * FEED_KEEP + 100)
+  assert.ok(rewrites <= 4, `written anew ${rewrites} times`)
+  await hub.saving
+  assert.equal(fileLines().filter((e) => e.queued).length, 2 * FEED_KEEP + 100)
+  assert.deepEqual(fs.readdirSync(HOME).filter((f) => f.startsWith('feed.jsonl')), ['feed.jsonl'], 'nothing left beside it')
+})
+
 test("the chat keeps no more than its size: long lines push older ones out sooner", async () => {
   const long = 'x'.repeat(100 * 1024)
   for (let i = 0; i < 60; i++) hub.post({ kind: 'msg', from: 'you', to: 'ada', text: `${i} ${long}` })
@@ -170,6 +183,19 @@ async function spoolFills(hookRun) {
   fs.writeFileSync(spool, 'y'.repeat(SPOOL_MAX + 10) + '\n')
   await hookRun(dir, event('and again'))
   assert.match(fs.readFileSync(`${spool}.1`, 'utf8'), /^y+\n$/, 'the one before that goes')
+  // a burst of hooks at once (a turn's tool calls), right as the spool fills: one of them moves the full one aside,
+  // and no event is lost, nor the full spool
+  fs.writeFileSync(spool, 'z'.repeat(SPOOL_MAX + 10) + '\n')
+  const burst = Array.from({ length: 8 }, (_, i) => `burst ${i}`)
+  await Promise.all(burst.map((text) => hookRun(dir, event(text))))
+  const old = fs.readFileSync(`${spool}.1`, 'utf8')
+  const now = fs.readFileSync(spool, 'utf8')
+  // (on Windows a rename can be turned down while another hook has the file open: the full spool then stays where it
+  // is, whole, for the next hook to move aside)
+  const full = 'z'.repeat(SPOOL_MAX + 10)
+  assert.ok(old.startsWith(full) || (WIN && now.includes(full)), 'the full spool is the one kept beside it')
+  for (const text of burst) assert.ok(now.includes(`"${text}"`) || old.includes(`"${text}"`), text)
+  assert.deepEqual(fs.readdirSync(path.dirname(spool)).sort(), ['ada.jsonl', 'ada.jsonl.1'], 'nothing left aside')
 }
 
 test("crew-hook (Windows' hooks) starts the spool afresh past its size, keeping the one before", () =>
@@ -181,15 +207,16 @@ test('the sh hooks (macOS) start the spool afresh past its size, as crew-hook do
   return spoolFills((dir, input) => run('/bin/sh', ['-c', hook], { env: { PATH: '/usr/bin:/bin', HOME: dir, CREW_HOME: dir, CREW_AGENT: 'ada', CREW_WORKSPACE: '' }, input }))
 })
 
-test("Crew back replays an agent's full spool before its newer one, and removes both", () => {
+test("Crew back replays an agent's full spool before its newer one, and one a hook was moving aside, and removes them", () => {
   fs.mkdirSync(at('spool'), { recursive: true })
   fs.writeFileSync(at('spool/ada.jsonl'), event('second'))
   fs.writeFileSync(at('spool/ada.jsonl.1'), event('first'))
+  fs.writeFileSync(at('spool/ada.jsonl.4242'), event('moving aside')) // its hook was cut short
   fs.writeFileSync(at('spool/milo.jsonl'), event('milo'))
   const heard = []
   hub.onHook = (name, e) => heard.push(`${name}: ${e.last_assistant_message}`)
   hub.replaySpool()
-  assert.deepEqual(heard.filter((h) => h.startsWith('ada')), ['ada: first', 'ada: second'])
+  assert.deepEqual(heard.filter((h) => h.startsWith('ada')), ['ada: first', 'ada: moving aside', 'ada: second'])
   assert.ok(heard.includes('milo: milo'))
   assert.deepEqual(fs.readdirSync(at('spool')), [])
 })

@@ -17,8 +17,12 @@ const HUB = (route) => `"$(cat "$CREW_HOME/url" 2>/dev/null)/${route}/$CREW_AGEN
 const SPOOL = '$CREW_HOME${CREW_WORKSPACE:+/workspaces/$CREW_WORKSPACE}/spool'
 // Every hook forwards its JSON payload to the crew hub, which turns it into status + feed entries. With Crew closed it
 // goes to the spool, one line each, and Crew replays it when it's back (Hub.replaySpool). A spool past SPOOL_MAX
-// (core/keep.js) becomes <agent>.jsonl.1, the one before going, and a new one starts: the newest events are kept.
-const HOOK = `p=$(cat); printf '%s' "$p" | curl -sf -m 2 -X POST ${TOKEN} --data-binary @- ${HUB('hook')} >/dev/null 2>&1 || { f="${SPOOL}/$CREW_AGENT.jsonl"; mkdir -p "${SPOOL}" && { [ -z "$(find "$f" -size +${SPOOL_MAX / 1024}k 2>/dev/null)" ] || mv -f "$f" "$f.1"; } && printf '%s\\n' "$(printf '%s' "$p" | tr '\\n' ' ')" >> "$f"; } 2>/dev/null || true`
+// (core/keep.js) becomes <agent>.jsonl.1, the one before going, and a new one starts: the newest events are kept. It's
+// moved aside under the hook's own name first (one hook alone can take it), and only then over .1 if it's the full one:
+// another hook may have just started a new spool, which then goes back where it was. Whatever happens, the event lands.
+const SPOOL_K = `${SPOOL_MAX / 1024}k`
+const ROTATE = `{ [ -z "$(find "$f" -size +${SPOOL_K})" ] || ! mv "$f" "$f.$$" || { [ -n "$(find "$f.$$" -size +${SPOOL_K})" ] && mv -f "$f.$$" "$f.1"; } || { cat "$f.$$" >> "$f"; rm -f "$f.$$"; }; }`
+const HOOK = `p=$(cat); printf '%s' "$p" | curl -sf -m 2 -X POST ${TOKEN} --data-binary @- ${HUB('hook')} >/dev/null 2>&1 || { f="${SPOOL}/$CREW_AGENT.jsonl"; mkdir -p "${SPOOL}" && { ${ROTATE}; printf '%s\\n' "$(printf '%s' "$p" | tr '\\n' ' ')" >> "$f"; }; } 2>/dev/null || true`
 // Permission prompts, questions and plan approvals: the hook waits for your answer in the chat and prints it as
 // its decision. No answer (Crew gone, an error, handed to the terminal, time's up) prints nothing, and the agent
 // asks as usual. curl gives up 10 s before the agent would kill the hook, so the hook always ends cleanly.

@@ -264,19 +264,21 @@ export class Crew extends EventEmitter {
   // over ATTACHMENT_DAYS ago, and linked computers' images fetched over CACHE_DAYS ago (fetched again when they're
   // shown). -> { attachments, cache }: how many went.
   sweepImages(now = Date.now()) {
+    const key = (p) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p))
     const used = new Set()
     const add = (images) => {
-      for (const p of [].concat(images ?? [])) if (typeof p === 'string') used.add(path.resolve(p))
+      for (const p of [].concat(images ?? [])) if (typeof p === 'string') used.add(key(p))
     }
     for (const hub of this.hubs.values()) {
       for (const e of hub.feed) add(e.images)
       for (const t of hub.tickets.all) add(t.images)
       for (const a of hub.agents.values()) {
         add(a.images)
-        for (const m of a.inbox ?? []) add(m.images)
+        for (const m of [...(a.inbox ?? []), ...(a.serving ?? []), ...(a.expect?.msgs ?? []), ...(a.steering?.msgs ?? [])]) add(m?.images)
       }
+      for (const c of hub.calls.values()) add(c.msg?.images)
     }
-    const attachments = sweepFiles(ATTACHMENTS, { days: ATTACHMENT_DAYS, inUse: (f) => used.has(path.resolve(f)), now })
+    const attachments = sweepFiles(ATTACHMENTS, { days: ATTACHMENT_DAYS, inUse: (f) => used.has(key(f)), now })
     let cache = 0
     let computers = []
     try {

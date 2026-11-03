@@ -15,7 +15,7 @@ import { callResult } from './transcript.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
 import { DEFAULT, dirOf, space, forget, renameShared, sharedNames } from './workspaces.js'
-import { keepFeed, keepLines, lineSize, FEED_KEEP, FEED_BYTES, BOARD_KEEP, BOARD_MAX } from './keep.js'
+import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
 export const CONFIG = path.join(HOME, 'config.json')
@@ -111,12 +111,12 @@ export class Hub extends EventEmitter {
     this.token = token ?? randomBytes(16).toString('hex')
     this.sessions = readJSON(this.at('sessions.json')) ?? {}
     this.stats = readJSON(this.at('stats.json')) ?? {}
-    // The chat (core/keep.js says how much of it is kept). feedFile: how much feed.jsonl holds, amendments included
-    // (see save); sizes: each line's length there, worked out once.
+    // The chat (core/keep.js says how much of it is kept). feedFile: how much feed.jsonl holds, amendments included,
+    // and when it's written anew (see save); sizes: each line's length there, worked out once.
     const { feed, lines, bytes } = loadFeed(this.at('feed.jsonl'), runtimeIds(readJSON(this.at(RUNTIME))))
     this.feed = feed
-    this.feedFile = { lines, bytes }
     this.sizes = new WeakMap()
+    this.feedFile = { lines, bytes, at: rewriteAt(feed.length, feed.reduce((n, e) => n + this.sizeOf(e), 0)) }
     this.asks = new Map() // feed id of an open question -> { resolve, name, cli, input }
     // Right of way (see question): what each `crew ask` is still owed, and which agent edits which file.
     this.calls = new Map() // id (the question's feed id) -> { id, msg, from, to, parent, at, hold, remote }
@@ -2742,7 +2742,9 @@ export class Hub extends EventEmitter {
     const file = this.at('board.md')
     fs.appendFileSync(file, `- **${from}** (${when}): ${text.replace(/\s*\n\s*/g, ' ')}\n`)
     // the last BOARD_KEEP notes are what `crew board` shows: past BOARD_MAX, only they're kept (core/keep.js)
-    if (fs.statSync(file).size > BOARD_MAX) fs.writeFileSync(file, keepLines(fs.readFileSync(file, 'utf8')))
+    try {
+      if (fs.statSync(file).size > BOARD_MAX) replaceFile(file, keepLines(fs.readFileSync(file, 'utf8')))
+    } catch {} // the note is in: it's kept whole next time
     this.post({ kind: 'note', from, text })
     return 'shared with the crew\n'
   }
@@ -2831,13 +2833,13 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
-  // Appended, one line after another, until feed.jsonl holds twice what's kept: then it's written anew with what's kept
-  // (the line included), so it never grows past about that.
+  // Appended, one line after another, until feed.jsonl holds about twice what's kept (rewriteAt): then it's written
+  // anew with what's kept (the line included), so it never grows past about that.
   save(line) {
     const text = JSON.stringify(line) + '\n'
     this.feedFile.lines++
     this.feedFile.bytes += Buffer.byteLength(text)
-    if (this.feedFile.lines > 2 * FEED_KEEP || this.feedFile.bytes > 2 * FEED_BYTES) return this.rewriteFeed()
+    if (this.feedFile.lines > this.feedFile.at.lines || this.feedFile.bytes > this.feedFile.at.bytes) return this.rewriteFeed()
     this.saving = this.saving.then(() => fs.promises.appendFile(this.at('feed.jsonl'), text)).catch(() => {})
   }
 
@@ -2849,8 +2851,9 @@ export class Hub extends EventEmitter {
   rewriteFeed(keep) {
     this.trimFeed(keep)
     const text = this.feed.map((e) => JSON.stringify(e) + '\n').join('')
-    this.feedFile = { lines: this.feed.length, bytes: Buffer.byteLength(text) }
-    this.saving = this.saving.then(() => fs.promises.writeFile(this.at('feed.jsonl'), text)).catch(() => {})
+    const bytes = Buffer.byteLength(text)
+    this.feedFile = { lines: this.feed.length, bytes, at: rewriteAt(this.feed.length, bytes) }
+    this.saving = this.saving.then(() => replaceFileAsync(this.at('feed.jsonl'), text)).catch(() => {})
   }
 
   // Lines from another computer, for an agent that moved here: merged in by time. `keep`: the ids of the ones it still
@@ -2976,14 +2979,15 @@ export class Hub extends EventEmitter {
   }
 
   // What agents' hooks couldn't tell Crew while it was closed, in the order it happened: an agent's <name>.jsonl.1
-  // (what came before its spool filled up: SPOOL_MAX, core/keep.js) before its <name>.jsonl.
+  // (what came before its spool filled up: SPOOL_MAX, core/keep.js), then one a hook was moving there when it was cut
+  // short (<name>.jsonl.<its pid>), then its <name>.jsonl.
   replaySpool() {
     let files = []
     try {
       files = fs.readdirSync(this.at(SPOOL))
     } catch {}
-    const nameOf = (f) => f.replace(/\.jsonl(\.1)?$/, '')
-    const order = (f) => `${nameOf(f)}\0${f.endsWith('.1') ? 0 : 1}`
+    const nameOf = (f) => f.replace(/\.jsonl(\.\d+)?$/, '')
+    const order = (f) => `${nameOf(f)}\0${f.endsWith('.jsonl.1') ? 0 : f.endsWith('.jsonl') ? 2 : 1}`
     files.sort((x, y) => (order(x) < order(y) ? -1 : 1))
     for (const f of files) {
       const file = this.at(SPOOL, f)
@@ -3215,10 +3219,11 @@ function loadFeed(file, keep = new Set()) {
   for (const e of all) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true }
   const feed = keepFeed(all, { needed: (e) => keep.has(e.id) })
   const bytes = Buffer.byteLength(text)
-  if (lines.length <= 2 * FEED_KEEP && bytes <= 2 * FEED_BYTES) return { feed, lines: lines.length, bytes }
+  const at = rewriteAt(feed.length, feed.reduce((n, e) => n + lineSize(e), 0))
+  if (lines.length <= at.lines && bytes <= at.bytes) return { feed, lines: lines.length, bytes }
   const kept = feed.map((e) => JSON.stringify(e) + '\n').join('')
   try {
-    fs.writeFileSync(file, kept)
+    replaceFile(file, kept)
   } catch {
     return { feed, lines: lines.length, bytes }
   }

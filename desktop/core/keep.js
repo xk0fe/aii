@@ -1,11 +1,13 @@
 // How much Crew keeps of the files in CREW_HOME that would otherwise only ever grow. No Electron in here.
 //
 //   feed.jsonl, per workspace     the chat: its last FEED_KEEP lines, no more than FEED_BYTES of them, and every line
-//                                 still in use (see keepFeed). Written anew once it holds twice that (Hub.save).
+//                                 still in use (see keepFeed). Written anew, whole (replaceFile), once it holds about
+//                                 twice that (rewriteAt, Hub.save).
 //   board.md, per workspace       the shared notes (crew note): the last BOARD_KEEP, written anew past BOARD_MAX.
 //   spool/<agent>.jsonl           hook events while Crew is closed: past SPOOL_MAX it becomes <agent>.jsonl.1 (the one
-//                                 before it goes) and a new one starts, so the newest events are the ones kept
-//                                 (core/adapters.js, bin/crew.mjs). Replayed and removed when Crew is back.
+//                                 before it goes) and a new one starts, so the newest events are the ones kept; hooks
+//                                 firing at once lose nothing (core/adapters.js, bin/crew.mjs). Replayed and removed
+//                                 when Crew is back.
 //   attachments/                  images you attach: one that no workspace's chat, task or agent refers to any more
 //                                 goes ATTACHMENT_DAYS after it was saved (Crew.sweepImages, a minute after the start).
 //   link/cache/<computer>/        linked computers' images: CACHE_DAYS after they were fetched (fetched again when
@@ -35,6 +37,34 @@ export const CACHE_DAYS = 30
 
 // A feed line's length in feed.jsonl.
 export const lineSize = (e) => Buffer.byteLength(JSON.stringify(e)) + 1
+
+// When feed.jsonl, just written with `lines` lines and `bytes` bytes, is next written anew: once appends and amendments
+// have doubled what's kept, or, when more than that is still in use, added as much again.
+export const rewriteAt = (lines, bytes) => ({ lines: Math.max(2 * FEED_KEEP, lines + FEED_KEEP), bytes: Math.max(2 * FEED_BYTES, bytes + FEED_BYTES) })
+
+// A file written anew all at once: beside it first, then moved over it, so a quit or a crash halfway leaves the one
+// before whole. (Node's rename replaces a file on Windows too.)
+export function replaceFile(file, text) {
+  const tmp = `${file}.${process.pid}.tmp`
+  try {
+    fs.writeFileSync(tmp, text)
+    fs.renameSync(tmp, file)
+  } catch (e) {
+    fs.rmSync(tmp, { force: true })
+    throw e
+  }
+}
+
+export async function replaceFileAsync(file, text) {
+  const tmp = `${file}.${process.pid}.tmp`
+  try {
+    await fs.promises.writeFile(tmp, text)
+    await fs.promises.rename(tmp, file)
+  } catch (e) {
+    await fs.promises.rm(tmp, { force: true })
+    throw e
+  }
+}
 
 // What's kept of a feed (oldest first): the newest lines, up to `keep` of them and `bytes` in all, with no gaps (once
 // one is left out, so is everything older, except what's needed), and every older line `needed` says is still in use.
