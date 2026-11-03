@@ -14,6 +14,11 @@ app.setPath('userData', path.join(tmp, 'userdata'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // --win: every view as Windows shows it (screenshot-preload.cjs ?platform=win32)
 const WIN = process.argv.includes('--win')
+// The computer linked to this one, where the demo crew's Rex and Noor run (screenshot-preload.cjs): the Windows PC
+// Workstation, or with --win (when this one is Workstation) the Mac Studio.
+const LINK = WIN ? { slug: 'studio', name: 'Studio' } : { slug: 'workstation', name: 'Workstation' }
+const REX = `Rex@${LINK.slug}`
+const NOOR = `Noor@${LINK.slug}`
 // What's behind the transparent windows: the popover's material, or a soft desktop for the floating pill.
 const BACKDROP = {
   popover: { light: '#ececef', dark: '#2b2b2f' },
@@ -51,7 +56,18 @@ async function fitToContent(win) {
   await sleep(150)
 }
 
+// A still picture: the creatures at rest (eyes open, nobody mid-hop), what was sliding in already in place.
+const FREEZE = `for (const a of document.getAnimations()) {
+  try {
+    const t = a.effect?.getTiming?.()
+    if (t && t.iterations !== Infinity) { a.finish(); continue }
+    a.pause()
+    a.currentTime = { 'av-wiggle': 70, 'av-wiggle-soft': 400, 'av-z': 1100 }[a.animationName] ?? 0
+  } catch {}
+}`
 async function save(win, name) {
+  await js(win, FREEZE)
+  await sleep(60)
   const img = await win.webContents.capturePage()
   fs.writeFileSync(path.join(out, `${name}.png`), img.toPNG())
   console.log('saved', `${name}.png`)
@@ -155,7 +171,7 @@ const SHOTS = {
     const win = await dashboard(theme, 'crew')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
-    await js(win, click('.pcard[data-name=gal]'))
+    await js(win, click('.pcard[data-name="Iris"]'))
     await sleep(1200)
     await save(win, `detail-${theme}`)
     for (const tab of ['instructions', 'look', 'stats']) {
@@ -179,12 +195,12 @@ const SHOTS = {
   async move(theme) {
     const win = await dashboard(theme, 'crew', { fixture: 'big' })
     await sleep(900)
-    await js(win, "moveSheet('gal', 'mac-mini')")
+    await js(win, `moveSheet('Iris', '${LINK.slug}')`)
     await sleep(900)
     await save(win, `move-${theme}`)
     win.destroy()
   },
-  // Computers: this one shared, the Mac mini linked, the Air asleep.
+  // Computers: this one shared, Workstation linked, the Laptop asleep.
   async computers(theme) {
     const win = await dashboard(theme, 'crew', { fixture: 'big' })
     await sleep(900)
@@ -203,7 +219,7 @@ const SHOTS = {
     await js(win, click('[data-phone-add]'))
     await sleep(900)
     await save(win, `phones-${theme}`)
-    await js(win, "const s = window.__crewState; s.computers.phones.devices.push({ id: 'p3', name: 'iPad mini', platform: 'ios', app: '0.1.0', paired: Date.now(), seen: Date.now(), online: true }); window.__crewEmit('state', s)")
+    await js(win, "const s = window.__crewState; s.computers.phones.devices.push({ id: 'p3', name: 'iPad', platform: 'ios', app: '0.1.0', paired: Date.now(), seen: Date.now(), online: true }); window.__crewEmit('state', s)")
     await sleep(900)
     await save(win, `phones-paired-${theme}`)
     await sleep(1700)
@@ -226,7 +242,7 @@ const SHOTS = {
         await tap(win, at)
         await glide(win, at, { x: at.x + 60, y: at.y + 120 }, 600)
         await sleep(4300)
-        await js(win, "const s = window.__crewState; s.computers.phones.devices.push({ id: 'p3', name: \"Sasha's iPad\", platform: 'ios', app: '0.1.0', paired: Date.now(), seen: Date.now(), online: true }); s.computers.phones.pairing = null; window.__crewEmit('state', s)")
+        await js(win, "const s = window.__crewState; s.computers.phones.devices.push({ id: 'p3', name: 'iPad', platform: 'ios', app: '0.1.0', paired: Date.now(), seen: Date.now(), online: true }); s.computers.phones.pairing = null; window.__crewEmit('state', s)")
         await sleep(3000)
       },
     })
@@ -236,7 +252,7 @@ const SHOTS = {
   async menu(theme) {
     const win = await dashboard(theme, 'grid', { fixture: 'big' })
     await sleep(1200)
-    const at = await center(win, '.roster .crow[data-agent=marc]')
+    const at = await center(win, '.roster .crow[data-agent="Theo"]')
     win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(at.x), y: Math.round(at.y) })
     await sleep(200)
     win.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(at.x), y: Math.round(at.y), button: 'right', clickCount: 1 })
@@ -249,7 +265,7 @@ const SHOTS = {
     const win = await dashboard(theme, 'crew')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
-    await js(win, `${click('.col-head [data-act=more]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.menu [data-menu-act=select]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.pcard[data-name=joseph]')}; ${click('.pcard[data-name=marc]')}`)
+    await js(win, `${click('.col-head [data-act=more]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.menu [data-menu-act=select]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.pcard[data-name="Ada"]')}; ${click('.pcard[data-name="Theo"]')}`)
     await sleep(900)
     await save(win, `select-${theme}`)
     win.destroy()
@@ -317,7 +333,7 @@ const SHOTS = {
     const win = await dashboard(theme, 'crew')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
-    await js(win, click('.pcard[data-name=gal]'))
+    await js(win, click('.pcard[data-name="Milo"]'))
     await sleep(1200)
     await js(win, click('.ed-tabs [data-tab=stats]'))
     await sleep(600)
@@ -332,14 +348,13 @@ const SHOTS = {
     await sleep(400)
     await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
     await sleep(600)
-    await js(win, `${click('.chip.task-chip')}; const ta = document.querySelector('.composer textarea'); ta.value = 'Shop button is hidden behind the coins counter on iPhone SE @gal'; ta.dispatchEvent(new Event('input'))`)
+    await js(win, `${click('.chip.task-chip')}; const ta = document.querySelector('.composer textarea'); ta.value = 'Promo banner hides the cart button on small phones @Milo'; ta.dispatchEvent(new Event('input'))`)
     await sleep(500)
     await fitToContent(win)
     await save(win, `chat-task-${theme}`)
     win.destroy()
   },
-  // Add a task, start it in a new conversation, then accept another one: the board's whole loop.
-  // Switching workspaces: the switcher, Home, then back to Golf app from the sidebar's dock. The crew slides over.
+  // Switching workspaces: the switcher, Storefront, then back to Docs site from the sidebar's dock. The crew slides over.
   async workspacesGif() {
     const win = await dashboard('light', 'crew', { fixture: 'workspaces', width: 1280, height: 800 })
     await sleep(1200)
@@ -354,7 +369,7 @@ const SHOTS = {
         await sleep(350)
         await tap(win, at)
         await sleep(1500)
-        at = await glide(win, at, await center(win, '.ws-dock [data-ws=golf]'), 800)
+        at = await glide(win, at, await center(win, '.ws-dock [data-ws=docs]'), 800)
         await sleep(300)
         await tap(win, at)
         await sleep(1400)
@@ -363,6 +378,7 @@ const SHOTS = {
     })
     win.destroy()
   },
+  // Add a task, start it in a new conversation, then accept another one: the board's whole loop.
   async tasksGif() {
     const win = await dashboard('light', 'tasks')
     await js(win, "localStorage.setItem('crew.tasks.view', 'board'); localStorage.setItem('crew.tasks.done', '0')")
@@ -381,7 +397,7 @@ const SHOTS = {
         at = await glide(win, at, await center(win, '.tk-add textarea'), 400)
         await tap(win, at)
         await sleep(300)
-        const text = 'Coins vanish when you collect two at once @david ' // the space closes the @ picker, so Enter adds the task
+        const text = 'Coupon field clears when you go back @Milo ' // the space closes the @ picker, so Enter adds the task
         for (let i = 1; i <= text.length; i++) {
           await js(win, `const ta = document.querySelector('.tk-add textarea'); ta.value = ${JSON.stringify(text)}.slice(0, ${i}); ta.dispatchEvent(new Event('input'))`)
           await sleep(26)
@@ -389,8 +405,15 @@ const SHOTS = {
         await sleep(450)
         win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
         win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
-        await sleep(1300)
-        at = await glide(win, at, await center(win, '.tc[data-name="14"] [data-act=start]'), 700)
+        await sleep(900)
+        // Escape closes the add box first: a click outside it would close it mid-click, and the cards would move up
+        // from under the pointer
+        win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+        win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+        await sleep(500)
+        // the task just added: the newest on the board
+        const added = await js(win, 'return Math.max(...window.__crewState.tasks.tickets.map((t) => t.id))')
+        at = await glide(win, at, await center(win, `.tc[data-name="${added}"] [data-act=start]`), 700)
         await sleep(200)
         await tap(win, at)
         await sleep(2700)
@@ -407,13 +430,13 @@ const SHOTS = {
   async freshGif() {
     const win = await dashboard('light', 'grid')
     await sleep(1500)
-    const tile = await js(win, "const r = document.querySelector('.tile[data-name=david]').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
+    const tile = await js(win, "const r = document.querySelector('.tile[data-name=\"June\"]').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
     await record(win, 'fresh-start', {
       clip: { x: tile.x, y: tile.y, width: tile.width, height: 46 }, ms: 4200, width: 900,
       during: async () => {
         let at = { x: tile.x + tile.width - 300, y: tile.y + 23 }
         await sleep(500)
-        at = await glide(win, at, await center(win, '.tile[data-name=david] [data-act=fresh]'), 700)
+        at = await glide(win, at, await center(win, '.tile[data-name="June"] [data-act=fresh]'), 700)
         await sleep(600)
         await tap(win, at)
         await sleep(2000)
@@ -433,7 +456,7 @@ const SHOTS = {
     await save(win, `chat-thread-${theme}`)
     win.destroy()
   },
-  // Right of way: arie waits on joseph's answer, joseph answers first instead of asking back, and earlier answers,
+  // Right of way: June waits on Ada's answer, Ada answers first instead of asking back, and earlier answers,
   // hand-offs taken together, a file left to its editor and a declined task (?fixture=row).
   async rightOfWay(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop', fixture: 'row' })
@@ -444,8 +467,8 @@ const SHOTS = {
     await save(win, `right-of-way-${theme}`)
     win.destroy()
   },
-  // arie asks joseph something while joseph is busy: it waits on joseph, joseph answers mid-task and carries on, and
-  // arie goes on with the answer.
+  // June asks Ada something while Ada is busy: it waits on Ada, Ada answers mid-task and carries on, and June goes on
+  // with the answer.
   async rightOfWayGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop', fixture: 'row' })
     await sleep(400)
@@ -459,15 +482,15 @@ const SHOTS = {
       clip: panel, ms: 9500, width: 760,
       during: async () => {
         // before: both at work, nobody waiting
-        await step("s.feed.splice(s.feed.findIndex((e) => e.id === 'q1')); Object.assign(a('arie'), { waitingOn: [], activity: 'Read · RELEASE.md', since: Date.now() - 60000 }); a('joseph').owes = []")
+        await step("s.feed.splice(s.feed.findIndex((e) => e.id === 'q1')); Object.assign(a('June'), { waitingOn: [], activity: 'Read · docs/release-1.2.md', since: Date.now() - 60000 }); a('Ada').owes = []")
         await sleep(1200)
-        await step("s.feed.push({ id: 'g1', kind: 'msg', from: 'arie', to: 'joseph', ask: true, text: 'Which port does the staging API listen on?', ts: Date.now() }); a('arie').waitingOn = [{ name: 'joseph', since: Date.now(), id: 'g1', text: 'Which port does the staging API listen on?' }]; a('joseph').owes = [{ name: 'arie', since: Date.now(), id: 'g1', waiting: true }]")
+        await step("s.feed.push({ id: 'g1', kind: 'msg', from: 'June', to: 'Ada', ask: true, text: 'Which coupon codes can stack in 1.2?', ts: Date.now() }); a('June').waitingOn = [{ name: 'Ada', since: Date.now(), id: 'g1', text: 'Which coupon codes can stack in 1.2?' }]; a('Ada').owes = [{ name: 'June', since: Date.now(), id: 'g1', waiting: true }]")
         await sleep(1400)
-        await step("a('joseph').activity = 'Bash · crew answer'")
+        await step("a('Ada').activity = 'Bash · crew answer'")
         await sleep(900)
-        await step("const q = s.feed.find((e) => e.id === 'g1'); s.feed.push({ id: 'g2', kind: 'reply', from: 'joseph', re: 'g1', text: '4000. Staging and local use the same port.', ts: Date.now() }); q.answered = { by: 'joseph', at: Date.now(), reply: 'g2' }; a('arie').waitingOn = []; a('arie').activity = 'Edit · deploy/staging.env'; a('joseph').owes = []; a('joseph').activity = 'Edit · core/hub.js'")
+        await step("const q = s.feed.find((e) => e.id === 'g1'); s.feed.push({ id: 'g2', kind: 'reply', from: 'Ada', re: 'g1', text: 'One code per order, plus free shipping on top.', ts: Date.now() }); q.answered = { by: 'Ada', at: Date.now(), reply: 'g2' }; a('June').waitingOn = []; a('June').activity = 'Edit · docs/release-1.2.md'; a('Ada').owes = []; a('Ada').activity = 'Edit · api/orders.ts'")
         await sleep(1600)
-        await step("a('arie').activity = 'Bash · curl localhost:4000/health'")
+        await step("a('June').activity = 'Bash · npm run docs:check'")
         await sleep(1800)
       },
     })
@@ -487,15 +510,15 @@ const SHOTS = {
     await js(win, `
       const s = window.__crewState
       const by = (n) => s.agents.find((a) => a.name === n)
-      by('jeff').status = 'stopped'
+      by('Theo').status = 'stopped'
       window.__crewBufferDelay = 600000
-      by('arie').convo = { ...by('arie').convo, since: Date.now() }
+      by('June').convo = { ...by('June').convo, since: Date.now() }
       window.__crewEmit('state', s)`)
     await sleep(900)
     await js(win, "document.querySelector('.terms').scrollTop = 99999")
     await sleep(500)
     await save(win, `ribbons-${theme}`)
-    await js(win, "const s = window.__crewState; s.agents.find((a) => a.name === 'scarlett@mac-mini').status = 'away'; window.__crewEmit('state', s)")
+    await js(win, `const s = window.__crewState; s.agents.find((a) => a.name === '${REX}').status = 'away'; window.__crewEmit('state', s)`)
     await sleep(700)
     await save(win, `ribbons-offline-${theme}`)
     win.destroy()
@@ -504,12 +527,12 @@ const SHOTS = {
   async ribbonGif() {
     const win = await dashboard('dark', 'grid', { width: 1920, height: 1080 })
     await sleep(1500)
-    const tile = await js(win, "const r = document.querySelector('.tile[data-name=arie]').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
+    const tile = await js(win, "const r = document.querySelector('.tile[data-name=\"June\"]').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
     await record(win, 'ribbon-replay', {
       clip: tile, ms: 4200, width: 900,
       during: async () => {
         await sleep(600)
-        await js(win, "window.__crewBufferDelay = 1800; const s = window.__crewState; const a = s.agents.find((x) => x.name === 'arie'); a.convo = { ...a.convo, since: Date.now() }; window.__crewEmit('state', s)")
+        await js(win, "window.__crewBufferDelay = 1800; const s = window.__crewState; const a = s.agents.find((x) => x.name === 'June'); a.convo = { ...a.convo, since: Date.now() }; window.__crewEmit('state', s)")
         await sleep(3000)
       },
     })
@@ -531,7 +554,7 @@ const SHOTS = {
         at = await glide(win, at, await center(win, '[data-pick-to]'), 500)
         await tap(win, at)
         await sleep(500)
-        at = await glide(win, at, await center(win, '.menu [data-menu-act=marc]'), 500)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act="Theo"]'), 500)
         await sleep(200)
         await tap(win, at)
         await sleep(900)
@@ -557,7 +580,7 @@ const SHOTS = {
     await save(win, `chat-below-${theme}`)
     win.destroy()
   },
-  // marc splits its work: two sub-agents start, step through their tools, and finish.
+  // Ada splits her work: two sub-agents start, step through their tools, and finish.
   async subsGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
@@ -566,16 +589,16 @@ const SHOTS = {
     await fitToContent(win)
     await sleep(300)
     const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + 40), width: Math.round(r.width) + 80, height: Math.round(r.height - 200) }")
-    const step = (code) => js(win, `const s = window.__crewState; const m = s.agents.find((a) => a.name === 'marc'); ${code}; window.__crewEmit('state', s)`)
+    const step = (code) => js(win, `const s = window.__crewState; const m = s.agents.find((a) => a.name === 'Ada'); ${code}; window.__crewEmit('state', s)`)
     await record(win, 'subagents', {
       clip: panel, ms: 9000, width: 760,
       during: async () => {
         await step("s.agents.forEach((a) => (a.subs = [])); m.subs = []")
         await sleep(800)
-        await step("m.subs.push({ id: 'm1', type: 'Explore', description: 'Collect the brand palette', started: Date.now(), ended: null, tools: 0, activity: '' })")
+        await step("m.subs.push({ id: 'm1', type: 'Explore', description: 'Find every place coupons are applied', started: Date.now(), ended: null, tools: 0, activity: '' })")
         await sleep(500)
-        await step("m.subs.push({ id: 'm2', type: 'general-purpose', description: 'Sketch three hero layouts', started: Date.now(), ended: null, tools: 0, activity: '' })")
-        const acts = [['m1', 'Glob · **/*.css'], ['m2', 'Read · onboarding.md'], ['m1', 'Grep · --brand-'], ['m2', 'image_gen · layout A'], ['m1', 'Read · tokens.css'], ['m2', 'image_gen · layout B']]
+        await step("m.subs.push({ id: 'm2', type: 'general-purpose', description: 'Write tests for coupon codes', started: Date.now(), ended: null, tools: 0, activity: '' })")
+        const acts = [['m1', 'Grep · applyCoupon'], ['m2', 'Read · api/orders.test.ts'], ['m1', 'Read · api/cart.ts'], ['m2', 'Edit · api/orders.test.ts'], ['m1', 'Glob · api/**/*.ts'], ['m2', 'Bash · npm test']]
         for (const [id, act] of acts) {
           await sleep(650)
           await step(`const x = m.subs.find((y) => y.id === '${id}'); x.tools += 1; x.activity = ${JSON.stringify(act)}`)
@@ -658,11 +681,11 @@ const SHOTS = {
         await sleep(250)
         await tap(win, at)
         await sleep(700)
-        await typeOut('Ship it, and add a test for hub.reply')
+        await typeOut('Ship it, and add a test with three items')
         await sleep(300)
         await key('Return')
         await sleep(1300)
-        await js(win, "const s = window.__crewState; const mine = s.feed.findLast((e) => e.from === 'you'); s.feed.push({ id: 'r-ship', kind: 'reply', from: 'joseph', to: 'you', re: mine.id, text: 'Shipped, and hub.reply has a test now: 43 passing.', ts: Date.now() }); window.__crewEmit('state', s)")
+        await js(win, "const s = window.__crewState; const mine = s.feed.findLast((e) => e.from === 'you'); s.feed.push({ id: 'r-ship', kind: 'reply', from: 'Ada', to: 'you', re: mine.id, text: 'Shipped, with a test for three items: 43 passing.', ts: Date.now() }); window.__crewEmit('state', s)")
         await sleep(2200)
         await key('Escape')
         await sleep(1200)
@@ -670,7 +693,7 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // New conversation is for one message, in marc's conversation: what you send next goes on in the new one.
+  // New conversation is for one message, in Iris's conversation: what you send next goes on in the new one.
   async threadGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
@@ -695,18 +718,18 @@ const SHOTS = {
         at = await glide(win, at, await center(win, '[data-pick-to]'), 600)
         await tap(win, at)
         await sleep(400)
-        at = await glide(win, at, await center(win, '.menu [data-menu-act=marc]'), 400)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act="Iris"]'), 400)
         await tap(win, at)
         await sleep(400)
         at = await glide(win, at, await center(win, '.fresh-toggle'), 500)
         await tap(win, at)
         await sleep(600)
         await js(win, "document.querySelector('.composer textarea').focus()")
-        await typeOut('Draft three onboarding illustrations')
+        await typeOut('Sketch three layouts for the empty cart')
         await sleep(300)
         await enter()
         await sleep(1600)
-        await typeOut('Keep them pastel, like our creatures')
+        await typeOut('Keep them simple, like the rest of the shop')
         await sleep(300)
         await enter()
         await sleep(2200)
@@ -724,7 +747,7 @@ const SHOTS = {
     await js(win, "document.querySelector('.feed').scrollTop = 0")
     await sleep(400)
     for (let i = 0; i < 3; i++) {
-      await js(win, `const s = window.__crewState; s.feed.push({ id: 'late${i}', kind: 'reply', from: 'joseph', to: 'you', text: 'Reply ${i + 1} while you read', ts: Date.now() }); window.__crewEmit('state', s)`)
+      await js(win, `const s = window.__crewState; s.feed.push({ id: 'late${i}', kind: 'reply', from: 'Ada', to: 'you', text: 'Reply ${i + 1} while you read', ts: Date.now() }); window.__crewEmit('state', s)`)
       await sleep(250)
     }
     await sleep(600)
@@ -737,8 +760,8 @@ const SHOTS = {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
     await js(win, `const s = window.__crewState; const t0 = Date.now() - 3 * 3600000
-      const said = ['Checked the save file migration.', 'Tests are green on CI.', 'Left a note on the pause menu task.', 'Bumped the coin sound volume a little.']
-      s.feed.unshift(...Array.from({ length: 90 }, (_, i) => ({ id: 'old' + i, kind: 'reply', from: ['joseph', 'david', 'gal', 'marc'][i % 4], to: 'you', text: said[i % 4], ts: t0 + i * 60000 })))
+      const said = ['Checked the orders table migration.', 'Tests are green on CI.', 'Left a note on the empty cart task.', 'Nudged the product grid spacing a little.']
+      s.feed.unshift(...Array.from({ length: 90 }, (_, i) => ({ id: 'old' + i, kind: 'reply', from: ['Ada', 'Milo', 'Iris', 'Theo'][i % 4], to: 'you', text: said[i % 4], ts: t0 + i * 60000 })))
       window.__crewEmit('state', s); window.__crewEmit('toggle', { open: true, focus: false })`)
     await sleep(900)
     await fitToContent(win)
@@ -751,11 +774,11 @@ const SHOTS = {
       during: async () => {
         let at = { x: panel.x + 200, y: panel.y + 220 }
         await sleep(900)
-        await say(0, 'joseph', 'Pushed the fix for the reply threading.')
+        await say(0, 'Ada', 'Pushed the fix for the coupon codes.')
         await sleep(1100)
-        await say(1, 'david', 'Reviewed it, two small notes in the PR.')
+        await say(1, 'Milo', 'Reviewed it, two small notes on the change.')
         await sleep(1100)
-        await say(2, 'marc', 'Hero illustration is ready in assets/hero.png')
+        await say(2, 'Theo', 'Checkout tests pass on Firefox too.')
         await sleep(1300)
         // (an older build has no pill: then the recording just ends here)
         if (await js(win, "return !!document.querySelector('.feed-latest button')")) {
@@ -790,14 +813,14 @@ const SHOTS = {
     await sleep(700)
     await fitToContent(win)
     const type = (text) => js(win, `const ta = document.querySelector('.composer textarea'); ta.focus(); ta.value = ${JSON.stringify(text)}; ta.setSelectionRange(ta.value.length, ta.value.length); ta.dispatchEvent(new Event('input', { bubbles: true }))`)
-    await type('Can you two check the payload? @')
+    await type('Can you two check the coupon totals? @')
     await sleep(500)
     await save(win, `mention-${theme}`)
-    await type('Can you two check the payload? @ar')
+    await type('Can you two check the coupon totals? @ju')
     await sleep(400)
     await save(win, `mention-filter-${theme}`)
     // picked: mentions take their agent's color; one that's off, or that nobody has, is underlined
-    await type('Pair on the payload @david @marc, loop in @ye and @nobody ')
+    await type(`Pair on the coupon totals @Ada @Milo, loop in @${NOOR} and @nobody `)
     await sleep(400)
     await save(win, `mention-ink-${theme}`)
     win.destroy()
@@ -826,10 +849,10 @@ const SHOTS = {
       during: async () => {
         await js(win, "document.querySelector('.composer textarea').focus()")
         await sleep(300)
-        await typeOut('Pair on the payload ')
+        await typeOut('Pair on the coupon totals ')
         await typeOut('@')
         await sleep(700)
-        await typeOut('da')
+        await typeOut('mi')
         await sleep(600)
         await key('Return')
         await sleep(300)
@@ -853,7 +876,7 @@ const SHOTS = {
     await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
-    await js(win, click('.item.said .face[data-agent=joseph]'))
+    await js(win, click('.item.said .face[data-agent="Ada"]'))
     await sleep(900)
     await save(win, `convo-${theme}`)
     win.destroy()
@@ -862,14 +885,14 @@ const SHOTS = {
   async convoDash(theme) {
     const win = await dashboard(theme, 'crew')
     await sleep(700)
-    await js(win, click('.chat .item.said .face[data-agent=joseph]'))
+    await js(win, click('.chat .item.said .face[data-agent="Ada"]'))
     await sleep(900)
     const box = await js(win, "const r = document.querySelector('.chat').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(r.width), height: Math.round(r.bottom) }")
     fs.writeFileSync(path.join(out, `convo-dash-${theme}.png`), (await win.webContents.capturePage(box)).toPNG())
     console.log('saved', `convo-dash-${theme}.png`)
     win.destroy()
   },
-  // Into joseph's conversation from his face, a message (with @david brought in), and back to everyone.
+  // Into Ada's conversation from her face, a message (with @Milo brought in), and back to everyone.
   async convoGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
@@ -903,13 +926,13 @@ const SHOTS = {
         await typeOut('Run the suite once more and post the numbers for ')
         await typeOut('@')
         await sleep(500)
-        await typeOut('da')
+        await typeOut('mi')
         await sleep(500)
         await key('Return')
         await sleep(400)
         await key('Return')
         await sleep(1400)
-        await js(win, "const s = window.__crewState; const mine = s.feed.findLast((e) => e.from === 'you'); s.feed.push({ id: 'cv-r', kind: 'reply', from: 'joseph', to: 'you', re: mine.id, text: 'Re-ran it: **43 passing**. Sent @david the numbers.', ts: Date.now() }); window.__crewEmit('state', s)")
+        await js(win, "const s = window.__crewState; const mine = s.feed.findLast((e) => e.from === 'you'); s.feed.push({ id: 'cv-r', kind: 'reply', from: 'Ada', to: 'you', re: mine.id, text: 'Re-ran it: **43 passing**. Sent @Milo the numbers.', ts: Date.now() }); window.__crewEmit('state', s)")
         await sleep(1800)
         at = await glide(win, at, await center(win, '.ch-back'), 800)
         await sleep(300)
@@ -925,17 +948,17 @@ const SHOTS = {
     await sleep(1000)
     await js(win, click('[data-new-task]'))
     await sleep(400)
-    await js(win, "const ta = document.querySelector('[data-add]'); ta.focus(); ta.value = 'Pause menu flickers on resume @g'; ta.setSelectionRange(ta.value.length, ta.value.length); ta.dispatchEvent(new Event('input', { bubbles: true }))")
+    await js(win, "const ta = document.querySelector('[data-add]'); ta.focus(); ta.value = 'Cart badge flickers after checkout @m'; ta.setSelectionRange(ta.value.length, ta.value.length); ta.dispatchEvent(new Event('input', { bubbles: true }))")
     await sleep(500)
     await save(win, `task-mention-${theme}`)
     win.destroy()
   },
-  // An agent's own context limit: joseph's 1M window held to 250k.
+  // An agent's own context limit: Ada's 1M window held to 250k.
   async limit(theme) {
     const win = await dashboard(theme, 'crew')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
-    await js(win, click('.pcard[data-name=joseph]'))
+    await js(win, click('.pcard[data-name="Ada"]'))
     await sleep(1200)
     await js(win, click('.ed [data-act=advanced]'))
     await sleep(700)
@@ -945,12 +968,12 @@ const SHOTS = {
     console.log('saved', `limit-${theme}.png`)
     win.destroy()
   },
-  // Setting one: gal is already past 150k, so the note says what happens on Save; then "Just tell me".
+  // Setting one: Milo is already past 150k, so the note says what happens on Save; then "Just tell me".
   async limitGif() {
     const win = await dashboard('light', 'crew')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
-    await js(win, click('.pcard[data-name=gal]'))
+    await js(win, click('.pcard[data-name="Milo"]'))
     await sleep(1200)
     await js(win, click('.ed [data-act=advanced]'))
     await sleep(700)
@@ -976,22 +999,22 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // Clones: marc is busy, so its clones took the two tasks that would have waited in its queue. The sidebar lists
-  // them under marc, and each has a terminal of its own right after marc's.
+  // Clones: Theo is busy, so its clones took the two tasks that would have waited in its queue (?fixture=clones). The
+  // sidebar lists them under Theo, and each has a terminal of its own right after Theo's.
   async clones(theme) {
-    const win = await dashboard(theme, 'grid')
+    const win = await dashboard(theme, 'grid', { fixture: 'clones' })
     await sleep(1500)
-    await js(win, "document.querySelector('.tile[data-name=marc]').scrollIntoView({ block: 'start' }); document.querySelector('.roster .crow[data-agent=marc] .crow-clones')?.click()")
+    await js(win, "document.querySelector('.tile[data-name=\"Theo\"]').scrollIntoView({ block: 'start' }); document.querySelector('.roster .crow[data-agent=\"Theo\"] .crow-clones')?.click()")
     await sleep(600)
     await save(win, `clones-${theme}`)
     win.destroy()
   },
   // The Clones setting on an agent's card, with the clones at work right now.
   async clonesEditor(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'crew', { fixture: 'clones' })
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
-    await js(win, click('.pcard[data-name=marc]'))
+    await js(win, click('.pcard[data-name="Theo"]'))
     await sleep(1200)
     await js(win, click('.ed [data-act=advanced]'))
     await sleep(700)
@@ -1000,11 +1023,11 @@ const SHOTS = {
     await save(win, `clones-editor-${theme}`)
     win.destroy()
   },
-  // Two messages for a busy marc: each one pops a clone out of it in the pill, and the chat says who took it.
+  // Two messages for a busy Theo: each one pops a clone out of it in the pill, and the chat says who took it.
   async clonesGif() {
     const win = await open('overlay.html', { theme: 'light', width: 560, height: 760, backdrop: 'desktop' })
     await sleep(400)
-    // start from marc alone, busy
+    // start from Theo alone, busy
     await js(win, "const s = window.__crewState; s.agents = s.agents.filter((a) => !a.cloneOf); window.__crewEmit('state', s); window.__crewEmit('toggle', { open: true, focus: false })")
     await sleep(900)
     await fitToContent(win)
@@ -1021,9 +1044,9 @@ const SHOTS = {
           await js(win, "document.querySelector('.composer .send').click()")
         }
         await sleep(500)
-        await say('@marc an illustration for the empty Tasks board too')
+        await say('@Theo run the cart tests on Firefox too')
         await sleep(2600)
-        await say('@marc and a pastel palette sheet for the brand guide')
+        await say('@Theo and the coupon tests on a slow network')
         await sleep(3000)
       },
     })
@@ -1077,9 +1100,9 @@ const SHOTS = {
       during: async () => {
         let at = { x: 400, y: 300 }
         await sleep(300)
-        at = await glide(win, at, await center(win, '.crow[data-agent=lena] .crow-main'), 700)
+        at = await glide(win, at, await center(win, '.crow[data-agent="Lena"] .crow-main'), 700)
         await sleep(500)
-        at = await glide(win, at, await center(win, '.crow[data-agent=lena] .mode.yolo'), 400)
+        at = await glide(win, at, await center(win, '.crow[data-agent="Lena"] .mode.yolo'), 400)
         await sleep(250)
         await tap(win, at)
         await sleep(800)
@@ -1087,9 +1110,9 @@ const SHOTS = {
         await sleep(250)
         await tap(win, at)
         await sleep(700)
-        at = await glide(win, at, await center(win, '.crow[data-agent=pia] .crow-main'), 500)
+        at = await glide(win, at, await center(win, '.crow[data-agent="Pia"] .crow-main'), 500)
         await sleep(300)
-        at = await glide(win, at, await center(win, '[data-power=pia]'), 400)
+        at = await glide(win, at, await center(win, '[data-power="Pia"]'), 400)
         await sleep(250)
         await tap(win, at)
         await sleep(1000)
@@ -1104,7 +1127,7 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // Moving an agent from any computer: right-click it, Move to Mac mini, check the folder there, Move.
+  // Moving an agent from any computer: right-click it, Move to Workstation, check the folder there, Move.
   async moveGif() {
     const win = await dashboard('light', 'crew', { reset: ['crew.folds'] })
     await sleep(1200)
@@ -1112,17 +1135,18 @@ const SHOTS = {
       ms: 9800, width: 1000,
       during: async () => {
         let at = { x: 700, y: 400 }
-        at = await glide(win, at, await center(win, '.crow[data-agent=arie] .crow-main'), 800)
+        at = await glide(win, at, await center(win, '.crow[data-agent="June"] .crow-main'), 800)
         await sleep(400)
         win.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(at.x), y: Math.round(at.y), button: 'right', clickCount: 1 })
         win.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(at.x), y: Math.round(at.y), button: 'right', clickCount: 1 })
         await sleep(900)
-        const item = await js(win, "const b = [...document.querySelectorAll('.menu button')].find((x) => x.textContent.includes('Mac mini')); const r = b.getBoundingClientRect(); return { x: r.x + 60, y: r.y + r.height / 2 }")
+        const item = await js(win, `const b = [...document.querySelectorAll('.menu button')].find((x) => x.textContent.includes('${LINK.name}')); const r = b.getBoundingClientRect(); return { x: r.x + 60, y: r.y + r.height / 2 }`)
         at = await glide(win, at, item, 600)
         await sleep(300)
         await tap(win, at)
         await sleep(1600)
-        at = await glide(win, at, await center(win, '[data-mv-sug="/Users/you/builds"]'), 700)
+        // the deploy folder there (a path in that computer's own form, so matched by its end)
+        at = await glide(win, at, await center(win, '[data-mv-sug$="deploy"]'), 700)
         await sleep(300)
         await tap(win, at)
         await sleep(900)
@@ -1144,7 +1168,7 @@ const SHOTS = {
       ms: 8600, width: 1000,
       during: async () => {
         let at = { x: 900, y: 500 }
-        at = await glide(win, at, await center(win, '.pcard[data-name=marc]'), 600)
+        at = await glide(win, at, await center(win, '.pcard[data-name="Theo"]'), 600)
         await sleep(200)
         await tap(win, at)
         await sleep(1300)
@@ -1163,31 +1187,56 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // Cards: the holo tilt, the foil sheen and the creature's eyes following the pointer.
-  async hoverGif() {
-    const win = await dashboard('light', 'crew')
-    await js(win, click('[data-mode=cards]'))
-    await sleep(1200)
-    const grid = await js(win, "const r = document.querySelector('.col-grid').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y) - 4, width: Math.round(r.width), height: 520 }")
-    await record(win, 'card-hover', {
-      clip: grid, ms: 6600, width: 820,
+  // The Crew room: you answer Milo, Theo finishes, Iris gets her answer and Rex is up, and the room acts it out
+  // while its line keeps up ("2 of your crew need you", "Iris needs you", "Everyone's busy").
+  async roomGif() {
+    const win = await dashboard('light', 'crew', { reset: ['crew.room'] })
+    await sleep(1400)
+    const box = await js(win, "const h = document.querySelector('.col-head').getBoundingClientRect(); const n = document.querySelector('.room-names').getBoundingClientRect(); return { x: Math.round(h.x), y: Math.round(h.y), width: Math.round(h.width), height: Math.round(n.bottom - h.y + 14) }")
+    const step = (code) => js(win, `const s = window.__crewState; const a = (n) => s.agents.find((x) => x.name.toLowerCase() === n.toLowerCase() || (x.seed ?? '').toLowerCase() === n.toLowerCase()); ${code}; window.__crewEmit('state', s)`)
+    await record(win, 'crew-room', {
+      clip: box, ms: 9000, width: 1000,
       during: async () => {
-        const j = await center(win, '.pcard[data-name=joseph]')
-        const g = await center(win, '.pcard[data-name=gal]')
-        let at = { x: j.x - j.w, y: j.y }
-        at = await glide(win, at, { x: j.x - j.w * 0.4, y: j.y - j.h * 0.35 }, 500)
-        at = await glide(win, at, { x: j.x + j.w * 0.4, y: j.y - j.h * 0.3 }, 900)
-        at = await glide(win, at, { x: j.x + j.w * 0.35, y: j.y + j.h * 0.38 }, 700)
-        at = await glide(win, at, { x: j.x - j.w * 0.4, y: j.y + j.h * 0.35 }, 900)
-        at = await glide(win, at, { x: g.x + g.w * 0.3, y: g.y - g.h * 0.2 }, 800)
-        at = await glide(win, at, { x: g.x - g.w * 0.35, y: g.y + g.h * 0.3 }, 800)
-        await glide(win, at, { x: g.x + g.w * 2, y: g.y + g.h }, 300)
-        // joseph finishes a task, and that task is the one that levels it up: confetti
-        await js(win, "const j = window.__crewState.agents[0]; Object.assign(j, { status: 'idle', activity: '' }); j.stats.turns += 1; window.__crewEmit('state', window.__crewState)")
-        await sleep(1200)
+        await sleep(1300)
+        // Allow for Milo: he's back at his laptop
+        await step("const e = s.feed.find((x) => x.kind === 'ask' && !x.answer && x.from === 'Milo'); if (e) e.answer = { by: 'you', allow: true }; Object.assign(a('Milo'), { status: 'working', since: Date.now(), activity: 'Bash · npm run build' })")
+        await sleep(1700)
+        // Theo's tests pass: a mug
+        await step("Object.assign(a('Theo'), { status: 'idle', since: Date.now(), activity: '' })")
+        await sleep(1500)
+        // Iris gets her answer, and Rex is up
+        await step("const e = s.feed.find((x) => x.kind === 'ask' && !x.answer && x.from === 'Iris'); if (e) e.answer = { by: 'you', answers: { [e.ask.questions[0].question]: e.ask.questions[0].options[0].label } }; Object.assign(a('Iris'), { status: 'working', since: Date.now(), activity: 'Edit · cart/EmptyCart.tsx' }); Object.assign(a('Rex'), { status: 'working', since: Date.now(), activity: 'Bash · npm run deploy' })")
+        await sleep(1500)
+        // and the rest pick something up
+        await step("Object.assign(a('Theo'), { status: 'working', since: Date.now(), activity: 'Bash · npm test -- coupons' }); Object.assign(a('June'), { status: 'working', since: Date.now(), activity: 'Write · RELEASE.md' })")
+        await sleep(2600)
       },
     })
     win.destroy()
+  },
+  // The room alone, still, light and dark (for the README and the PR).
+  async room(theme) {
+    const win = await dashboard(theme, 'crew', { reset: ['crew.room'] })
+    await sleep(1400)
+    await js(win, "for (const a of document.getAnimations()) { try { const t = a.effect?.getTiming?.(); if (t && t.iterations !== Infinity) a.finish(); else { a.pause(); a.currentTime = a.animationName === 'av-wiggle-soft' ? 400 : 0 } } catch {} }")
+    await sleep(200)
+    const box = await js(win, "const h = document.querySelector('.col-head').getBoundingClientRect(); const n = document.querySelector('.room-names').getBoundingClientRect(); return { x: Math.round(h.x), y: Math.round(h.y), width: Math.round(h.width), height: Math.round(n.bottom - h.y + 14) }")
+    fs.writeFileSync(path.join(out, `room-${theme}.png`), (await win.webContents.capturePage(box)).toPNG())
+    console.log('saved', `room-${theme}.png`)
+    win.destroy()
+  },
+  // Nobody yet, and no tasks yet: the empty Crew view and the empty board.
+  async empty(theme) {
+    for (const [name, view, code] of [['empty-crew', 'crew', 's.agents = []; s.feed = []'], ['empty-tasks', 'tasks', 's.tasks = { ...s.tasks, tickets: [] }']]) {
+      const win = await dashboard(theme, view)
+      await sleep(700)
+      await js(win, `const s = window.__crewState; ${code}; window.__crewEmit('state', s)`)
+      await sleep(1300)
+      await js(win, "for (const a of document.getAnimations()) { try { const t = a.effect?.getTiming?.(); if (t && t.iterations !== Infinity) a.finish(); else { a.pause(); a.currentTime = 0 } } catch {} }")
+      await sleep(200)
+      await save(win, `${name}-${theme}`)
+      win.destroy()
+    }
   },
   // A crew of 24 on three computers: every view has to hold up with many agents.
   async big(theme) {
@@ -1219,7 +1268,7 @@ const SHOTS = {
       ms: 6200, width: 900,
       during: async () => {
         await sleep(400)
-        await js(win, click('.pcard[data-name=gal]'))
+        await js(win, click('.pcard[data-name="Iris"]'))
         await sleep(1500)
         await js(win, click('.ed-tabs [data-tab=look]'))
         await sleep(900)
@@ -1233,7 +1282,7 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // Workspaces: the switcher open over Golf app, the sheet that makes one, one's settings, and a parked one.
+  // Workspaces: the switcher open over Docs site, the sheet that makes one, one's settings, and a parked one.
   async workspaces(theme) {
     const win = await dashboard(theme, 'crew', { fixture: 'workspaces' })
     await sleep(900)
@@ -1245,7 +1294,7 @@ const SHOTS = {
     await sleep(600)
     await js(win, `const i = document.querySelector('[data-ws-name]'); i.value = 'Checkout'; i.dispatchEvent(new Event('input', { bubbles: true }))`)
     await js(win, click('[data-ws-icon="🛒"]'))
-    for (const n of ['joseph', 'gal']) await js(win, `document.querySelector('[data-ws-member="${n}"]').click()`)
+    for (const n of ['Ada', 'Iris']) await js(win, `document.querySelector('[data-ws-member="${n}"]').click()`)
     await sleep(700)
     await save(win, `ws-new-${theme}`)
     await js(win, "document.querySelector('#ws').close()")

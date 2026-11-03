@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/cover.webp" alt="Crew: AI coding agents that work as a team, right on your Mac">
+  <img src="docs/images/cover.webp" alt="Crew: your AI agents, working as a crew. Seven felt creatures in their room: two at laptops, one holding up an OK? sign, one asking a question, one with a mug, one popping up, one asleep">
 </p>
 
 Crew is a Mac app for running a team of AI coding agents. Each agent gets a name, a job, its own instructions and a small felt creature for a face. You talk to all of them in one chat. They hand work to each other, and when one of them needs a decision, it asks you.
@@ -8,7 +8,7 @@ It runs Claude Code and Codex. GLM and local models (through Ollama) work too, a
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/crew-dark.webp">
-  <img src="docs/images/crew-light.webp" alt="The dashboard: the crew on the left, their cards in the middle, the chat on the right">
+  <img src="docs/images/crew-light.webp" alt="The dashboard: the crew on the left, the Crew room and the agents' cards in the middle, the chat with what needs you on the right">
 </picture>
 
 ## Get started
@@ -26,9 +26,11 @@ Quitting Crew doesn't stop your agents: they keep working, and the next time you
 
 ## Meet your crew
 
-Agents show up as cards. A card shows what the agent does, which model it runs on, what it's busy with and how full its conversation is. Point at a card and it tilts like a holo trading card.
+The Crew view opens on the crew's room. Each creature acts out what it's doing: it types at a little felt laptop while it works, holds a mug while it's free, holds up an "OK?" sign when it wants your permission, and asks with a speech bubble when it has a question. One line on top says how things are, like "2 of your crew need you" or "Everyone's busy". Click a creature to find its card, or fold the room away if you'd rather see only the cards.
 
-<p align="center"><img src="docs/images/card-hover.webp" alt="Cards tilt toward the pointer and the creatures look at it" width="820"></p>
+<p align="center"><img src="docs/images/crew-room.webp" alt="The Crew room: Milo gets his OK and goes back to his laptop, Theo finishes and picks up a mug, Iris gets her answer, and the line on top goes from 2 of your crew need you to Everyone's busy" width="1000"></p>
+
+Under the room, each agent has a card: what it does, which model it runs on, what it's busy with, and how full its conversation is when that matters.
 
 Click a card to open it. This is where you set the agent's job, model and folder, and write its instructions (or let it draft them for itself). You can also dress it up.
 
@@ -44,7 +46,7 @@ Click an agent's face and the chat turns into your conversation with it. You see
 
 If an agent is busy, your message waits and goes in the moment it's done.
 
-When an agent wants permission or has a question, it shows up as a card in the chat. You answer there, no terminal needed.
+When an agent wants permission or has a question, it asks you at the top of the chat, in its own words ("Can I run `npm run build`?"). You answer there, no terminal needed.
 
 You can also hold the mic and talk. Dictation runs on your Mac, so your voice never leaves it.
 
@@ -87,18 +89,18 @@ Give an agent clones and it stops making you wait. While it's busy, a copy of it
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/chat-dark.webp">
-    <img src="docs/images/chat-light.webp" alt="The floating chat next to the pill of creatures" width="460">
+    <img src="docs/images/chat-light.webp" alt="The floating chat, with Iris's question on top, next to the pill of creatures" width="460">
   </picture>
   &nbsp;
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/tray-dark.webp">
-    <img src="docs/images/tray-light.webp" alt="The crew in the menu bar" width="300">
+    <img src="docs/images/tray-light.webp" alt="The crew in the menu bar: a little felt strip with everyone, who needs you, and who's at work" width="300">
   </picture>
 </p>
 
 A little pill sits on the edge of your screen with the crew inside. They hop while they work. Click it, or press `⌥⇧Space`, and the chat opens. Drag the pill anywhere; near the top or bottom of the screen it lies flat, like the Dock.
 
-The menu bar has the crew too. Hover an agent to switch it on or off, or to let it skip permission prompts (YOLO).
+The menu bar has the crew too, standing in a little felt strip. Hover an agent to switch it on or off, or to let it skip permission prompts (YOLO).
 
 ## A crew per project
 
@@ -109,13 +111,13 @@ The menu bar has the crew too. Hover an agent to switch it on or off, or to let 
 
 Give each project a workspace: a folder, the agents who work on it, and its own chat, notes and tasks. Your agents are the same everywhere, so pick who works where and they start in that project's folder. Every workspace runs at once; switch with the switcher, the dock at the foot of the sidebar or `⌃1`–`⌃9`, and an orange count says when another one needs you. Park a project you're not on: its agents stop, and pick up where they left off when you open it again.
 
-<p align="center"><img src="docs/images/workspaces-switch.webp" alt="Switching from Golf app to Home and back: the crew slides over" width="1000"></p>
+<p align="center"><img src="docs/images/workspaces-switch.webp" alt="Switching from Docs site to Storefront and back: the crew slides over" width="1000"></p>
 
 ## All your Macs, one crew
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/computers-dark.webp">
-  <img src="docs/images/computers-light.webp" alt="Linking computers with a pairing code">
+  <img src="docs/images/computers-light.webp" alt="Computers: Studio shares its crew, Workstation is linked, and an iPhone and a Pixel are paired">
 </picture>
 
 Link your Macs with a pairing code and each one sees the whole crew. Chat with any agent and watch its terminal from either side. You can move an agent to another Mac, and its conversation goes with it. Workspaces work across Macs too: give a project's workspace the same name on each one, and it's one crew.
@@ -129,9 +131,9 @@ Export one agent or a few as a `.crew` file and send it to someone. They get the
 Agents pass work around with a small `crew` command:
 
 ```sh
-crew ask joseph "which port is staging on?"  # ask a teammate and wait for the answer
+crew ask ada "which port is staging on?"     # ask a teammate and wait for the answer
 crew answer "4000"                           # answer one, even in the middle of a task
-crew send david "fix the payload"            # hand work to a teammate for good
+crew send milo "fix the coupon field"        # hand work to a teammate for good
 crew note "API runs on port 4000"            # tell the whole crew something
 crew who                                     # see who's around
 crew task list                               # pick up work from the Tasks board
@@ -141,7 +143,7 @@ A question reaches a teammate even when it's busy with something else. It shows 
 
 Crew also decides who goes first when agents need each other, so they never end up waiting in circles. An agent that's being waited on can't wait on its waiter, work can't be handed back to an agent that's waiting for your answer, and two agents never edit the same file at once. When Crew steps in, the chat says so in one quiet line.
 
-<p align="center"><img src="docs/images/right-of-way.webp" alt="arie asks joseph while joseph is busy: arie waits on it, joseph answers mid-task in two seconds and carries on" width="560"></p>
+<p align="center"><img src="docs/images/right-of-way.webp" alt="June asks Ada while Ada is busy: June waits on her, Ada answers mid-task in two seconds and carries on" width="560"></p>
 
 Hand-offs show up in the chat with the sender's face next to them. Turn Autopilot off if you'd rather approve each one.
 
