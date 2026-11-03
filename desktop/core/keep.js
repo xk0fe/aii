@@ -10,8 +10,10 @@
 //                                 goes ATTACHMENT_DAYS after it was saved (Crew.sweepImages, a minute after the start).
 //   link/cache/<computer>/        linked computers' images: CACHE_DAYS after they were fetched (fetched again when
 //                                 they're shown).
-//   run/ptyhost.log, logs/crew.log  1 MB, then it starts afresh with the one before kept beside it (core/ptyclient.js,
-//                                 main.js).
+//   run/ptyhost.log               the terminal host's log: a host writes at most 1 MB of it, Crew's own lines stop at
+//                                 2 MB (note), and past 1 MB it starts afresh when a host starts, the one before kept as
+//                                 ptyhost.log.1 (core/ptyclient.js, core/ptyhost.js).
+//   logs/crew.log                 past 1 MB it starts afresh, the one before kept as crew.old.log (main.js).
 // Bounded already: tickets.json (200 done tasks, 60 log lines each: core/tickets.js), stats.json and spend.json (60
 // days: Hub.saveStats, Hub.saveSpend), run/groups/* (one small file per CLI launch, gone when it ends), moving/ (a day).
 import fs from 'node:fs'
