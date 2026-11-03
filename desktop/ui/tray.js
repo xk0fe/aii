@@ -90,7 +90,9 @@
   // ---- what an agent is doing, in plain words (activityWords is in common.js) ------------------------------------
 
   const sentence = (s) => String(s).replace(/^./, (c) => c.toUpperCase())
-  const theOf = (name) => (/'s\b/i.test(name) ? name : `the ${name}`)
+  // "on the Mac mini", "on the MacBook Pro", but "on Studio" and "on Ann's MacBook": only a computer named after its
+  // kind of computer takes "the"
+  const theOf = (name) => (/^(mac|macbook|imac|laptop|surface)\b/i.test(name) && !/'s\b/i.test(name) ? `the ${name}` : name)
   const where = (a) => (a.home ? ` on ${theOf(a.homeName ?? a.home)}` : '')
   const nameOf = (a) => (a.cloneOf ? displayName(a) : a.seed ?? a.name)
   function doing(a) {
