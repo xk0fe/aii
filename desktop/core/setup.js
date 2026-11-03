@@ -4,10 +4,11 @@
 //
 // Asked in the background when Crew starts, kept, and asked again when you press Check again: nothing waits for it.
 // Nothing here signs in or writes Claude Code's or Codex's files:
-// - Claude Code: signed in when its config says so (an account, or a key, in .claude.json, or a credentials file
-//   beside it), or your environment holds a key. When the config is there but says neither, `claude auth status`
-//   (2.1.41 and later) is asked: with no sign-in it has no token to refresh, and with its config there it has none to
-//   create. No config at all means Claude Code has never started here: not signed in, and nothing is run.
+// - Claude Code: signed in when its config says so (an account, or a key, in .claude.json or .config.json, or a
+//   credentials file beside it), or your environment or its settings hold a key. When the config is there but says
+//   neither, `claude auth status` (2.1.41 and later) is asked, without its telemetry: with no sign-in it has no token to
+//   refresh, and with its config there it has none to create. No config and no folder of its own means Claude Code has
+//   never started here: not signed in, and nothing is run. A key helper of yours isn't run: it counts as signed in.
 // - Codex: signed in when auth.json is in its home folder (where it keeps a sign-in unless config.toml says to use the
 //   system's keychain: then it can't be told without asking Codex, and it counts as signed in). Codex sets up helper
 //   files in its home each time it starts, even to say its version, so it says it with a throwaway home instead.
@@ -24,7 +25,7 @@ import { markOffered } from './providers.js'
 // (core/adapters.js claudeHook, bin/crew.mjs).
 export const CLAUDE_ON_WINDOWS = '2.1.139'
 const AUTH_STATUS = '2.1.41' // the first Claude Code with `claude auth status`; before it, those words were a prompt
-const TIMEOUT = 8000
+const TIMEOUT = 15000 // a program Windows is scanning for the first time can take its time
 
 // The vendors' own instructions: their installers, which keep the CLIs up to date, rather than npm.
 // code.claude.com/docs/en/setup, github.com/openai/codex (README), git-scm.com/install/windows
@@ -54,6 +55,13 @@ const disk = {
   isFile: (file) => {
     try {
       return fs.statSync(file).isFile()
+    } catch {
+      return false
+    }
+  },
+  isDir: (file) => {
+    try {
+      return fs.statSync(file).isDirectory()
     } catch {
       return false
     }
@@ -128,17 +136,26 @@ async function asked(id, cmd, args, { env, run, timeout }) {
 async function claudeSignedIn(cmd, version, { env, home, files, run, timeout, paths }) {
   if (CLAUDE_KEYS.some((k) => env[k])) return true
   const dir = env.CLAUDE_CONFIG_DIR || paths.join(home, '.claude')
-  const file = env.CLAUDE_CONFIG_DIR ? paths.join(dir, '.claude.json') : paths.join(home, '.claude.json')
-  if (!files.isFile(file)) return false
-  let config
-  try {
-    config = JSON.parse(files.read(file))
-  } catch {
-    return null
+  const json = (file) => {
+    try {
+      return JSON.parse(files.read(file))
+    } catch {
+      return undefined
+    }
   }
+  // its config, where Claude Code reads it: .config.json in its folder when that has something in it, else .claude.json
+  const file = [paths.join(dir, '.config.json'), env.CLAUDE_CONFIG_DIR ? paths.join(dir, '.claude.json') : paths.join(home, '.claude.json')]
+    .find((f) => files.isFile(f) && String(files.read(f)).trim())
+  // none: never started here (not signed in), unless its folder is there all the same (another Claude app's): can't tell
+  if (!file) return files.isDir(dir) ? null : false
+  const config = json(file)
+  if (config === undefined) return null
   if (config?.oauthAccount || config?.primaryApiKey || files.isFile(paths.join(dir, '.credentials.json'))) return true
-  if (!atLeast(version, AUTH_STATUS)) return null
-  const out = await run(cmd.file, [...cmd.args, 'auth', 'status'], { env, timeout })
+  // settings of yours that sign it in: a key or a cloud provider in their env, or a key helper (which asking could run)
+  const settings = json(paths.join(dir, 'settings.json'))
+  if (CLAUDE_KEYS.some((k) => settings?.env?.[k])) return true
+  if (settings?.apiKeyHelper || !atLeast(version, AUTH_STATUS)) return null
+  const out = await run(cmd.file, [...cmd.args, 'auth', 'status'], { env: { ...env, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' }, timeout })
   try {
     const status = JSON.parse(out.stdout)
     if (typeof status?.loggedIn === 'boolean') return status.loggedIn

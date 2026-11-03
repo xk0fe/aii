@@ -32,7 +32,7 @@ function fakeCli(bin, name, { version = name === 'codex' ? 'codex-cli 0.162.1' :
   const js = path.join(bin, `${name}-fake.cjs`)
   fs.writeFileSync(js, `const fs = require('fs'), path = require('path')
 const args = process.argv.slice(2)
-fs.appendFileSync(path.join(__dirname, 'calls.log'), JSON.stringify({ name: ${JSON.stringify(name)}, args, codexHome: process.env.CODEX_HOME ?? null, homeThere: process.env.CODEX_HOME ? fs.existsSync(process.env.CODEX_HOME) : null }) + '\\n')
+fs.appendFileSync(path.join(__dirname, 'calls.log'), JSON.stringify({ name: ${JSON.stringify(name)}, args, codexHome: process.env.CODEX_HOME ?? null, quiet: process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC ?? null, homeThere: process.env.CODEX_HOME ? fs.existsSync(process.env.CODEX_HOME) : null }) + '\\n')
 if (args[0] === '--version') { console.log(${JSON.stringify(version)}); process.exit(${versionExit}) }
 if (args[0] === 'auth' && args[1] === 'status') {
   const loggedIn = fs.existsSync(path.join(__dirname, ${JSON.stringify(`${name}-signed-in`)}))
@@ -107,6 +107,28 @@ test('its config there but no account in it: `claude auth status` says, signed i
   assert.deepEqual(calls(p.calls).at(-1).args, ['auth', 'status'])
   fs.writeFileSync(path.join(p.bin, 'claude-signed-in'), '')
   assert.deepEqual([row(await look(p), 'claude').state, row(await look(p), 'claude').signedIn], ['ready', true])
+})
+
+test('Claude Code’s config where it also keeps it (.config.json in its folder), its folder alone, and settings of yours', async () => {
+  const p = place()
+  fakeCli(p.bin, 'claude')
+  const dir = path.join(p.home, '.claude')
+  fs.mkdirSync(dir)
+  assert.deepEqual([row(await look(p), 'claude').state, row(await look(p), 'claude').signedIn], ['ready', null], 'its folder without a config (another Claude app’s): can’t tell, so not stopped')
+  fs.writeFileSync(path.join(dir, '.config.json'), JSON.stringify({ oauthAccount: { emailAddress: 'ada@example.com' } }))
+  assert.deepEqual([row(await look(p), 'claude').state, row(await look(p), 'claude').signedIn], ['ready', true], 'an account in .config.json')
+  fs.writeFileSync(path.join(dir, '.config.json'), '')
+  fs.writeFileSync(path.join(p.home, '.claude.json'), '{}')
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ apiKeyHelper: '~/bin/get-key.sh' }))
+  assert.deepEqual([row(await look(p), 'claude').state, row(await look(p), 'claude').signedIn], ['ready', null], 'a key helper: not run to find out')
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ env: { CLAUDE_CODE_USE_BEDROCK: '1' } }))
+  assert.deepEqual([row(await look(p), 'claude').state, row(await look(p), 'claude').signedIn], ['ready', true], 'a cloud provider in its settings')
+  assert.ok(!calls(p.calls).some((c) => c.args[0] === 'auth'), 'claude auth status was never needed')
+  fs.writeFileSync(path.join(dir, 'settings.json'), '{}')
+  await look(p)
+  const asked = calls(p.calls).filter((c) => c.args[0] === 'auth')
+  assert.equal(asked.length, 1)
+  assert.equal(asked[0].quiet, '1', 'asked without its telemetry')
 })
 
 test('CLAUDE_CONFIG_DIR: its config and credentials are looked for there', async () => {

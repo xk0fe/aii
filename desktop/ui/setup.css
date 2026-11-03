@@ -54,6 +54,7 @@
 .su-acts { display: flex; gap: 8px; margin-top: 24px; }
 .btn.su-btn { height: 32px; padding: 0 16px; border-radius: 6px; }
 .btn.su-btn:disabled { opacity: .6; cursor: default; }
+.btn.su-btn[data-act=check] { min-width: 120px; } /* Checking… fits in place of Check again */
 .btn.su-primary { min-width: 120px; background: var(--brand, #CC2277); color: var(--on-brand, #FFFFFF); }
 .btn.su-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--brand, #CC2277) 88%, #000); }
 .su-more { margin: 16px 0 0; color: var(--fg2); font-size: 13px; line-height: 18px; }

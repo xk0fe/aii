@@ -72,8 +72,9 @@ function mountSetup({ onAdd = () => {} } = {}) {
 
   // What the screen says: nothing ready yet, ready with no agents (make the first), or ready (opened from the menu).
   function words() {
-    const none = !state.agents?.length
-    if (!status()?.checked) return { say: 'One moment…', title: 'Looking for Claude Code and Codex', lead: '', primary: ['check', 'Checking…'], secondary: ['close', 'Close'] }
+    // no agents anywhere: none here, none of yours (the roster), none in another workspace
+    const none = !state.agents?.length && !state.roster?.length && !state.workspaces?.some((w) => w.agents > 0)
+    if (!status()?.checked) return { say: 'One moment…', title: 'Looking for Claude Code and Codex', lead: '', primary: ['check', 'Checking…'], more: [['close', 'Close']] }
     if (!status().ready) {
       const signIn = status().clis.some((c) => c.state === 'signin')
       return {
@@ -81,7 +82,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
         title: 'Let’s get your crew ready',
         lead: 'Your crew works through Claude Code or Codex, with your own account. Set up either one, then check again.',
         primary: ['check', checking ? 'Checking…' : 'Check again'],
-        secondary: ['close', 'Not now'],
+        more: [['close', 'Not now']],
       }
     }
     if (none) {
@@ -90,7 +91,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
         title: 'Let’s build your crew',
         lead: 'Each agent is a teammate with a job, a model and a creature of its own. Start with one; you can add more any time.',
         primary: ['add', 'Add your first agent'],
-        secondary: ['check', checking ? 'Checking…' : 'Check again'],
+        more: [['check', checking ? 'Checking…' : 'Check again'], ['close', 'Not now']],
       }
     }
     return {
@@ -98,7 +99,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
       title: 'Claude Code and Codex',
       lead: 'What your crew runs on, on this computer.',
       primary: ['close', 'Done'],
-      secondary: ['check', checking ? 'Checking…' : 'Check again'],
+      more: [['check', checking ? 'Checking…' : 'Check again']],
     }
   }
 
@@ -118,7 +119,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
       <h1 class="su-title">${esc(w.title)}</h1>
       <p class="su-lead">${esc(w.lead)}</p>
       <div class="su-list">${s.clis.map(cliRow).join('')}${s.git ? gitRow(s.git) : ''}</div>
-      <div class="su-acts">${btn(w.primary, 'su-primary')}${btn(w.secondary, '')}</div>
+      <div class="su-acts">${btn(w.primary, 'su-primary')}${w.more.map((b) => btn(b, '')).join('')}</div>
       <p class="su-more">Want other models? <button type="button" class="su-link" data-act="providers">Add a provider…</button></p>
     </div>`)
   }
@@ -191,7 +192,9 @@ function mountSetup({ onAdd = () => {} } = {}) {
     }
   })
   addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !view.hidden && !sheet.open && !document.querySelector('dialog[open]')) close()
+    // not one another layer took (the agent's sheet over this screen, a menu, a dialog)
+    if (e.key !== 'Escape' || e.defaultPrevented || view.hidden || document.querySelector('dialog[open], .ed-layer.open, .menu')) return
+    close()
   })
 
   // ---- Add provider… ---------------------------------------------------------------------------------------------
@@ -221,9 +224,10 @@ function mountSetup({ onAdd = () => {} } = {}) {
     morph(sheet, `<h3>Add a provider</h3>
       <p class="lead">Claude Code and Codex are always in the model menu. These add other models, run through them.</p>
       <div class="sheet-body su-plist">${PROVIDERS.map((p) => {
-        const added = providers[p.id]?.added
+        const { added, optional } = providers[p.id] ?? {}
+        // one of your own in config.json's providers stays: only what Add put there can be removed
         const act = added
-          ? `<span class="su-added">Added</span><button type="button" class="btn su-btn" data-remove="${p.id}">Remove</button>`
+          ? `<span class="su-added">Added</span>${optional ? `<button type="button" class="btn su-btn" data-remove="${p.id}">Remove</button>` : ''}`
           : `<button type="button" class="btn su-btn" data-add="${p.id}">Add ${esc(p.name)}</button>`
         return `<div class="su-prow" data-provider="${p.id}">
           <div class="su-top"><span class="su-name">${esc(p.name)}</span><span class="su-pact">${act}</span></div>
@@ -271,8 +275,10 @@ function mountSetup({ onAdd = () => {} } = {}) {
       state = next
       if (stuck() && !dismissed && !shown) {
         shown = true
+        const appears = view.hidden // (not already open from the ⋯ menu, where focus is wherever you left it)
         draw()
-        return void view.querySelector('.su-primary')?.focus({ preventScroll: true })
+        if (appears) view.querySelector('.su-primary')?.focus({ preventScroll: true })
+        return
       }
       draw()
       drawSheet()

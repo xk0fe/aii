@@ -128,7 +128,11 @@ async function start() {
   }
   started = true
   openPackFile() // Crew was opened by double-clicking a .crew file
-  keepProvidersInUse(crew.config)
+  try {
+    keepProvidersInUse(crew.config)
+  } catch (e) {
+    logLine('config', `couldn't note the providers in use: ${e.message}`) // the picker counts them anyway
+  }
   // A first run: no agents yet, so Crew opens on its dashboard, which says what to set up or invites the first agent
   if (!hasAgents(crew.config.data)) openDashboard()
 }
