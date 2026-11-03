@@ -127,7 +127,7 @@ function trim(proc) {
 }
 
 // One workspace's terminals, in the runner all workspaces share (core/workspaces.js). The runner knows them by the
-// workspace and the agent's name (golf/joseph); the default workspace's by the agent's name alone, as before there were
+// workspace and the agent's name (storefront/june); the default workspace's by the agent's name alone, as before there were
 // workspaces, so terminals that outlived an older Crew are still found.
 export class Scoped extends EventEmitter {
   constructor(runner, workspace, isDefault) {

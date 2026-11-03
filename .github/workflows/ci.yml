@@ -110,6 +110,9 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           RELEASE_REPO: ${{ vars.RELEASE_REPO }}
+          # electron-builder skips signing on pull requests, which leaves a bundle whose signature no longer matches
+          # its files; sign there too so a PR builds the same app as main (ad hoc unless the certificate is set)
+          CSC_FOR_PULL_REQUEST: 'true'
       - name: check the app
         working-directory: desktop/release
         run: |
