@@ -1,8 +1,9 @@
 // Floating pill on the screen edge; click it (or press the hotkey) for the chat panel.
-/* global wordmarkHTML, crew, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS, wsTile, elsewhere, hasWorkspaces */
+/* global wordmarkHTML, PRODUCT_NAME, crew, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS, wsTile, elsewhere, hasWorkspaces */
 
 const $ = (s) => document.querySelector(s)
 $('.home').innerHTML = markSVG('0 6 24 16', { split: true }) // its buddies hop while anyone works
+$('.home').title = PRODUCT_NAME
 // the panel's header: the wordmark, or the workspace it shows (drawn on each push)
 $('[data-act=dashboard]').innerHTML = ICONS.expand
 $('[data-act=close]').innerHTML = ICONS.close

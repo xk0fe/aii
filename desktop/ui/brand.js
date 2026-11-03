@@ -1,7 +1,7 @@
 // Crew's brand layer: the name the app shows, its felt, and the Crew room. Felt is the creatures' material, and the
 // brand surfaces are made of it too: the room at the top of the Crew view, each creature's patch on its card, empty
 // states and the wordmark. Never on controls, and text never sits on it. One felt surface per region.
-/* global avatarHTML, poseOf, agentColor, esc */
+/* global avatarHTML, poseOf, statusWord, esc */
 
 // The product's name wherever it's shown (the wordmark, window titles). A rename is this one line; the `crew` command,
 // the ~/.crew folder, environment variables and app IDs keep theirs.
@@ -134,12 +134,13 @@ function roomCast(agents, width) {
 function roomHTML(agents, { width = 728, asks = new Map(), picked = null } = {}) {
   const { cast, more, size } = roomCast(agents, width)
   const nameOf = (a) => a.seed ?? a.name
-  const slot = (a) => `<button class="room-who${a.name === picked ? ' on' : ''}" data-room="${esc(a.name)}" style="--slot:${size}px" title="${esc(nameOf(a))}">${avatarHTML(a, { size, pose: poseOf(a, { ask: asks.get(a.name) }) })}</button>`
+  const said = (a) => `${nameOf(a)}: ${statusWord(a, asks.get(a.name))}`
+  const slot = (a) => `<button class="room-who${a.name === picked ? ' on' : ''}" data-room="${esc(a.name)}" style="--slot:${size}px" aria-label="${esc(said(a))}">${avatarHTML(a, { size, pose: poseOf(a, { ask: asks.get(a.name) }) })}</button>`
   const dot = (a) => (a.on && (a.status === 'working' || a.status === 'waiting') ? `<i class="dot ${a.status === 'waiting' ? 'needs' : a.waitingOn?.length ? 'idle' : 'working'}"></i>` : '')
   const name = (a) => `<button class="room-name${a.name === picked ? ' on' : ''}" data-room="${esc(a.name)}" style="--slot:${size}px" tabindex="-1">${dot(a)}<span>${esc(nameOf(a))}</span></button>`
   const extra = more ? `<span class="room-more" style="--slot:${size}px"></span>` : ''
   return `<div class="room">${roomFeltHTML(44)}<div class="room-crew">${cast.map(slot).join('')}${extra}</div></div>
-    <div class="room-names">${cast.map(name).join('')}${more ? `<span class="room-name more" style="--slot:${size}px">${more} more</span>` : ''}</div>`
+    <div class="room-names">${cast.map(name).join('')}${more ? `<span class="room-name room-extra" style="--slot:${size}px">${more} more</span>` : ''}</div>`
 }
 
 // The mini crew strip, for the menu bar's popover: the room in small, the crew on its floor (plain creatures at this

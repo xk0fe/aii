@@ -46,7 +46,7 @@
 .room-name .dot { width: 7px; height: 7px; }
 .room-name.on { color: var(--fg); }
 .room-name.on span { text-decoration: underline; text-decoration-color: var(--fg3); text-underline-offset: 4px; }
-.room-name.more { cursor: default; font-family: var(--ui); font-size: 12px; }
+.room-name.room-extra { cursor: default; font-family: var(--ui); font-size: 12px; }
 
 .col-grid { padding: 8px 24px 130px; display: flex; flex-direction: column; gap: 24px; }
 .col-group h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; height: 26px; padding-top: 6px; font-size: 13px; font-weight: 600; }

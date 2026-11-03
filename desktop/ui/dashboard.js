@@ -229,11 +229,11 @@ function resize(name) {
 // being redrawn, or frozen (its computer is unreachable, or the process exited); its tooltip says it in full.
 // [badge, line, explanation] for each.
 const RIBBON = {
-  live: (a, n) => ['Live', `Crew's view of ${n}'s terminal · earlier output replayed`,
-    `This isn't a terminal app. Crew runs ${n}'s CLI in a pseudo-terminal and draws its output here; what you type goes straight to ${n}. Output from before this view opened (up to 256 KB) is replayed, so older lines can look off until ${n} redraws.`],
+  live: (a, n) => ['Live', `${PRODUCT_NAME}'s view of ${n}'s terminal · earlier output replayed`,
+    `This isn't a terminal app. ${PRODUCT_NAME} runs ${n}'s CLI in a pseudo-terminal and draws its output here; what you type goes straight to ${n}. Output from before this view opened (up to 256 KB) is replayed, so older lines can look off until ${n} redraws.`],
   mirror: (a, n) => ['Mirror', `Streamed from ${a.homeName} · earlier output replayed`,
     `${n} runs on ${a.homeName}. Its terminal output streams here over Crew Link and what you type goes back to it. Output from before this view opened is replayed, so older lines can look off until it redraws.`],
-  replay: (a, n) => ['Replay', `Redrawing ${n}'s recent output…`, 'Crew is replaying what the agent printed before this view opened. Live output follows.'],
+  replay: (a, n) => ['Replay', `Redrawing ${n}'s recent output…`, `${PRODUCT_NAME} is replaying what the agent printed before this view opened. Live output follows.`],
   offline: (a) => ['Offline', `${a.homeName ?? 'Its computer'} is unreachable · showing the last output`,
     `Not live: ${a.homeName ?? 'the computer it runs on'} can't be reached, so this is the last output it sent. It reconnects on its own.`],
   ended: (a, n) => ['Ended', 'The process exited · showing its last output', `Not live: ${n}'s CLI exited. Restart it from the header to pick its session back up.`],
@@ -260,7 +260,7 @@ crew.onPty((name, data) => {
 })
 
 // The brain in one word: its model when it has one (opus, sonnet), its provider otherwise (Codex).
-const modelWord = (a) => a.model || (state.providers?.[a.provider]?.label ?? a.provider ?? '')
+const modelWord = (a) => (a.model ? modelName(a.model) : (state.providers?.[a.provider]?.label ?? a.provider ?? ''))
 // Its name, a clone with its number, and an agent on another computer with that computer: "Rex · Workstation".
 const tileName = (a) => `${esc(a.cloneOf ? a.cloneOf.split('@')[0] : a.home ? a.seed ?? a.name : a.name)}${cloneTag(a)}${a.home ? `<span class="t-home"> · ${esc(a.homeName ?? a.home)}</span>` : ''}`
 
@@ -284,7 +284,7 @@ function tileHead(t) {
   const stateTip = [a.activity, a.queue ? `${a.queue} queued` : '', a.freshPending ? 'New conversation when it finishes this task' : '', busyNow ? 'Stuck? Click to mark it free' : ''].filter(Boolean).join('\n')
   const badgeTip = [line, tip, [brainShort(a, state.providers), size].filter(Boolean).join(' · ')].filter(Boolean).join('\n\n')
   return `<span class="tile-av">${avatarHTML(a, { size: 24 })}</span><b class="t-name">${tileName(a)}</b>${modeMarks(a)}
-    <span class="t-mid"><span class="t-state ${statusClass(a)}" ${busyNow ? 'data-act="markIdle"' : ''} title="${esc(stateTip)}">${esc(statusText(a))}</span><span class="t-model" title="${esc(brainLabel(a, state.providers))}">${esc(modelWord(a))}</span></span>
+    <span class="t-mid"><span class="t-state ${statusClass(a)}" ${busyNow ? 'data-act="markIdle"' : ''} title="${esc(stateTip)}">${esc(upFirst(statusText(a)))}</span><span class="t-model" title="${esc(brainLabel(a, state.providers))}">${esc(modelWord(a))}</span></span>
     ${ctxLevel(a.convo?.context?.pct ?? 0) === 'hot' ? contextRing(a) : ''}${tileHelpers(a)}
     <span class="t-badge" data-mode="${mode}" title="${esc(badgeTip)}">${badge}</span>
     ${a.status === 'waiting' ? `<button class="t-answer" data-act="answer" title="${esc(needsYou(state).find((x) => x.agent.name === a.name)?.ask ? 'Answer it in the chat' : 'It asks in its terminal: answer there')}">Answer</button>` : ''}`
@@ -938,7 +938,7 @@ function computersHTML({ me, links, phones }) {
 // on screen (it's in Crew's settings file), so it says what you can do instead.
 const sharingError = (error) => (/port \d+ is in use/.test(error)
   ? "Another app is using the port Crew Link listens on, so this computer can't share right now. Quit that app and turn sharing off and on again."
-  : errorReason(error) || "Crew couldn't start sharing this computer. Turn it off and on again.")
+  : errorReason(error) || `${PRODUCT_NAME} couldn't start sharing this computer. Turn it off and on again.`)
 // How others reach this computer, in words: "Reachable over your local network and Tailscale."
 function reachText(hosts = []) {
   const ways = [...new Set(hosts.map((h) => (/tailscale/i.test(h.via) ? 'Tailscale' : 'your local network')))]
@@ -998,7 +998,7 @@ let pairTick = null
 
 function phonesHTML(p) {
   return `<section class="lk-list phones">
-    <div class="ph-head"><div class="grow"><p style="margin:0">The chat and the questions agents wait on you for, in the Crew app on your phone, over the same Wi-Fi or Tailscale.</p></div>
+    <div class="ph-head"><div class="grow"><p style="margin:0">The chat and the questions agents wait on you for, in the ${PRODUCT_NAME} app on your phone, over the same Wi-Fi or Tailscale.</p></div>
       <button class="btn" data-phone-add>Add a phone</button></div>
     ${p.devices.length ? `<ul class="ph-list">${p.devices.map(phoneHTML).join('')}</ul>` : ''}
     <p class="err">${esc(phoneErr || p.error || p.warning || '')}</p>
@@ -1010,7 +1010,7 @@ function phoneHTML(d) {
   const seen = d.online ? 'Connected' : phoneDay(d.seen) === 'today' ? `Seen at ${new Date(d.seen).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : `Seen ${phoneDay(d.seen)}`
   return `<li class="${d.id === phoneFresh ? 'fresh' : ''}" data-phone="${esc(d.id)}">
     <span class="ph-icon">${ICONS.phone}</span>
-    <span class="who"><b>${esc(d.name)}</b><small>${kind}${d.app ? ` · Crew ${esc(d.app)}` : ''} · paired ${phoneDay(d.paired)}</small></span>
+    <span class="who"><b>${esc(d.name)}</b><small>${kind}${d.app ? ` · ${PRODUCT_NAME} ${esc(d.app)}` : ''} · paired ${phoneDay(d.paired)}</small></span>
     <span class="ph-seen"><span class="dot ${d.online ? 'live' : 'off'}"></span>${seen}</span>
     <button class="btn small" data-phone-remove="${esc(d.id)}">Remove</button>
   </li>`
@@ -1044,13 +1044,13 @@ function qrFit(qr) {
 function pairHTML(v) {
   const { card, size } = qrFit(v.qr)
   const look = v.phone ? 'paired' : v.err ? 'off' : v.qr ? '' : 'wait'
-  const line = v.phone ? `<b>${esc(v.phone.name)}</b> is paired` : v.err ? esc(v.err.charAt(0).toUpperCase() + v.err.slice(1)) : 'Scan this with Crew on your phone'
+  const line = v.phone ? `<b>${esc(v.phone.name)}</b> is paired` : v.err ? esc(v.err.charAt(0).toUpperCase() + v.err.slice(1)) : `Scan this with ${PRODUCT_NAME} on your phone`
   return `<h3><span class="h-icon">${ICONS.phone}</span>Add a phone</h3>
     <div class="pv-card ${look}" style="--card: ${card}px; --qr: ${size}px">${v.err && !v.phone ? `<span class="pv-off">${ICONS.phone}</span>` : v.qr ?? ''}${v.phone ? `<span class="pv-done">${ICONS.check}</span>` : ''}</div>
     <p class="pv-line ${v.err && !v.phone ? 'failed' : ''}" aria-live="polite">${line}</p>
     <div class="buttons">
       ${v.err && !v.phone ? `<button class="btn pv-act" data-pair-retry ${v.making ? 'disabled' : ''}>${ICONS.restart}${v.making ? 'Trying…' : 'Try again'}</button>`
-        : `<button class="btn pv-act" data-pair-copy ${v.code && !v.phone ? '' : 'disabled'} ${v.phone ? 'hidden' : ''} title="To paste it in Crew on your phone instead">${v.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy code`}</button>`}
+        : `<button class="btn pv-act" data-pair-copy ${v.code && !v.phone ? '' : 'disabled'} ${v.phone ? 'hidden' : ''} title="To paste it in ${PRODUCT_NAME} on your phone instead">${v.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy code`}</button>`}
       <span class="grow"></span><button class="btn pv-close" data-pair-close>${v.phone ? 'Done' : 'Cancel'}</button>
     </div>`
 }
@@ -1106,7 +1106,7 @@ async function makeCode(view) {
       crew.call('phones', 'cancel').catch(() => {}) // the view closed, or a phone paired, while this one was being made
     }
   } catch (x) {
-    if (phonePair === view) Object.assign(view, { code: null, qr: null, err: errorLine(x, "Crew couldn't make a code for your phone. Try again."), renewAt: Infinity })
+    if (phonePair === view) Object.assign(view, { code: null, qr: null, err: errorLine(x, `${PRODUCT_NAME} couldn't make a code for your phone. Try again.`), renewAt: Infinity })
   } finally {
     view.making = null
     drawComputers(state)
@@ -1379,7 +1379,7 @@ moveDialog.addEventListener('click', async (e) => {
     const who = state.agents.find((a) => a.name === m.name)?.seed ?? m.name.split('@')[0]
     if (moving === m) moveDialog.close()
     toast(res?.conversation === 'fresh'
-      ? `${who} moved to ${to}. Its conversation couldn't come along (${res.older ? `${to} runs an older Crew` : res.reason ?? 'not found'}), so it starts a new one there.`
+      ? `${who} moved to ${to}. Its conversation couldn't come along (${res.older ? `${to} runs an older ${PRODUCT_NAME}` : res.reason ?? 'not found'}), so it starts a new one there.`
       : `${who} moved to ${to}, conversation and all.`, res?.conversation === 'fresh')
   } catch (x) {
     if (moving !== m) return oops(`Couldn't move ${m.name.split('@')[0]}`, x)
@@ -1406,7 +1406,7 @@ async function importPack(dropped) {
     drawImport()
     importDialog.showModal()
   } catch (x) {
-    oops(`Couldn't open ${dropped?.name ?? 'that file'}`, x, 'Pick a .crew file someone exported from Crew.')
+    oops(`Couldn't open ${dropped?.name ?? 'that file'}`, x, `Pick a .crew file someone exported from ${PRODUCT_NAME}.`)
   }
 }
 

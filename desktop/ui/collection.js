@@ -162,13 +162,13 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
     const what = doingOf(a)
     const clones = a.on ? clonesOf(state.agents, a).length : 0
     const subs = runningSubs(a)
-    const line = atWork(a) && a.status !== 'waiting' && a.activity ? activityWords(a.activity) : statusText(a)
     const ask = asksByName.get(a.name)
+    const line = atWork(a) && a.status !== 'waiting' && a.activity ? activityWords(a.activity) : statusWord(a, ask)
     const cls = !a.on ? 'off' : a.status === 'waiting' ? 'needs' : a.status === 'working' && !a.waitingOn?.length ? 'working' : a.status === 'starting' ? 'starting' : 'idle'
     const said = a.status === 'waiting' && a.on ? statusWord(a, ask) : line
     return `<button class="pcard mini ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''} ${a.name === roomPick ? 'sel' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, brainWords(a, state.providers), what?.tip].filter(Boolean).join('\n'))}">
       <span class="pc-name"><b>${esc(a.seed ?? a.name)}</b>${a.yolo ? '<i class="tag">YOLO</i>' : ''}</span>
-      <span class="pc-line ${cls === 'needs' ? 'needs-text' : ''}"><i class="dot ${cls}"></i><span>${esc(a.on && a.status === 'idle' ? 'Idle' : said)}</span></span>
+      <span class="pc-line ${cls === 'needs' ? 'needs-text' : ''}"><i class="dot ${cls}"></i><span>${esc(said)}</span></span>
       <span class="pc-tags">${esc(brainWords(a, state.providers, { short: true }))}${subs.length ? ` · ${helpersText(a)}` : ''}${clones ? ` · ${plural(clones, 'clone')}` : ''}</span>
       <span class="pc-av">${avatarHTML(a, { size: 56 })}</span>
       <span class="pc-check">${ICONS.check}</span>

@@ -281,8 +281,8 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 
 .crow {
   --c: #888; --bgc: var(--side);
-  position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; column-gap: 12px;
-  height: 48px; padding: 0 8px; border-radius: var(--r-card); background: var(--bgc); cursor: pointer;
+  position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; column-gap: 0;
+  height: 48px; padding: 0 6px 0 8px; border-radius: var(--r-card); background: var(--bgc); cursor: pointer;
   transition: background .15s;
 }
 .crow:hover { --bgc: var(--row-hover); }
@@ -292,7 +292,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 /* the status dot rides on the creature's shoulder, ringed by the row */
 .crow-av > .dot { position: absolute; right: -1px; top: 3px; box-shadow: 0 0 0 2px var(--bgc); }
 .crow-av .unread-badge { right: -5px; bottom: -3px; --orbit-ring: var(--bgc); }
-.crow-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.crow-main { min-width: 0; margin-left: 10px; display: flex; flex-direction: column; gap: 1px; }
 .crow-top { display: flex; align-items: center; gap: 6px; min-width: 0; height: 18px; }
 .crow-top b { flex: 0 1 auto; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 3em; }
 .crow-brain { flex: 0 100 auto; min-width: 0; margin-left: auto; padding-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg2); }
@@ -311,7 +311,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .crow-clones { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 17px; margin-right: 6px; padding: 0 6px 0 2px; border: 0; border-radius: 9px; background: var(--fill); color: var(--fg2); font: 600 11px/1 var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; transition: background .15s; }
 .crow-clones:hover, .crow-clones.open { background: var(--fill-hover); color: var(--fg); }
 .crow-clones .av + .av { margin-left: -7px; }
-.crow-end { display: flex; align-items: center; gap: 6px; }
+.crow-end { display: flex; align-items: center; gap: 6px; margin-left: 6px; }
 .crow-end:empty { display: none; }
 .crow-queue { font: 600 11px/16px var(--ui); font-style: normal; min-width: 18px; padding: 0 5px; text-align: center; border-radius: 9px; background: var(--fill); color: var(--fg2); font-variant-numeric: tabular-nums; }
 .crow-later { display: grid; color: var(--fg2); }
