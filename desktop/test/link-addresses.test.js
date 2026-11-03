@@ -115,13 +115,13 @@ test('Windows Firewall: a public network says how to make it private, a blocked 
   assert.equal(reachWarning([WIFI, TS], { nets, walls, rules: [installer] }),
     "Windows treats Wi-Fi as a public network, where its firewall keeps your other computers and phones out. If it's your own network, make it private: Settings > Network & internet > Wi-Fi > your network > Network profile type > Private network.")
   assert.equal(reachWarning([TS], { nets, walls, rules: [installer, { action: 'Block', profile: 'Private' }] }),
-    "Windows Firewall blocks Crew on Tailscale, so your other computers and phones can't reach this one there. To let them in, open Windows Security > Firewall & network protection > Allow an app through firewall > Change settings, and tick Private next to Crew.")
-  assert.match(reachWarning([WIFI, TS], { nets, walls, rules: [installer, { action: 'Block', profile: 'Private' }] }), /blocks Crew on Wi-Fi and Tailscale.*tick Public and Private next to Crew/, 'making Wi-Fi private would not do')
-  assert.match(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Private' }], walls, rules: [{ action: 'Block', profile: 'Any' }] }), /^Windows Firewall blocks Crew on Wi-Fi/)
+    "Windows Firewall blocks CLIque on Tailscale, so your other computers and phones can't reach this one there. To let them in, open Windows Security > Firewall & network protection > Allow an app through firewall > Change settings, and tick Private next to CLIque.")
+  assert.match(reachWarning([WIFI, TS], { nets, walls, rules: [installer, { action: 'Block', profile: 'Private' }] }), /blocks CLIque on Wi-Fi and Tailscale.*tick Public and Private next to CLIque/, 'making Wi-Fi private would not do')
+  assert.match(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Private' }], walls, rules: [{ action: 'Block', profile: 'Any' }] }), /^Windows Firewall blocks CLIque on Wi-Fi/)
   // what Windows' own prompt leaves when only Private was ticked: on a public network, making it private is enough
   const prompted = [{ action: 'Allow', profile: 'Private' }, { action: 'Block', profile: 'Public' }]
   assert.match(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Public' }], walls, rules: prompted }), /^Windows treats Wi-Fi as a public network/)
-  assert.match(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Public' }], walls, rules: [{ action: 'Block', profile: 'Any' }] }), /^Windows Firewall blocks Crew on Wi-Fi.*tick Public next to Crew\.$/, 'a private one would be blocked too')
+  assert.match(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Public' }], walls, rules: [{ action: 'Block', profile: 'Any' }] }), /^Windows Firewall blocks CLIque on Wi-Fi.*tick Public next to CLIque\.$/, 'a private one would be blocked too')
   assert.equal(reachWarning([WIFI], { nets: [null, { alias: 'Wi-Fi', category: 'Private' }], walls: null, rules: [installer] }), null, 'odd answers are no answer')
 })
 

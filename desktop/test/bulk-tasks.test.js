@@ -159,7 +159,7 @@ test('a bulk action goes to each computer with its own tasks; an older Crew gets
   })
   crew.links.set('gone', { slug: 'gone', name: 'Gone', peer: null })
   const out = await crew.ticket('bulk', null, { op: 'close', keys: [`${here}@studio`, '7@laptop', '8@laptop', '3@old', '4@old', '5@gone'] })
-  assert.equal(out, "closed 1 task\non Laptop: closed 2 tasks\non Old Mac: 2 of 2 done one at a time (it runs an older Crew)\n1 on Gone left as they were: it's unreachable right now\n")
+  assert.equal(out, "closed 1 task\non Laptop: closed 2 tasks\non Old Mac: 2 of 2 done one at a time (it runs an older CLIque)\n1 on Gone left as they were: it's unreachable right now\n")
   assert.equal(crew.hub.tickets.all.find((t) => t.id === here).status, 'done')
   assert.deepEqual(calls, [
     ['bulk', ['close', ['7', '8'], undefined]],

@@ -130,7 +130,7 @@ export class HostRunner extends EventEmitter {
           reject(e)
         }
       }
-      const onClose = () => reject(new Error('the terminal host turned Crew away'))
+      const onClose = () => reject(new Error('the terminal host turned CLIque away'))
       sock.setEncoding('utf8')
       sock.on('data', onData)
       sock.on('close', onClose)

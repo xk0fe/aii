@@ -413,7 +413,7 @@ test('a phone watches a workspace of its own: state without secrets, patches, al
   const file = await phone.call('saveImage', 'photo.png', 'image/png', png)
   assert.ok(file.startsWith(ATTACHMENTS + path.sep))
   assert.deepEqual(await phone.call('image', file), png)
-  for (const bad of [CONFIG, path.join(ATTACHMENTS, '..', 'config.json'), `${ATTACHMENTS}/../link/phones.json`]) await assert.rejects(phone.call('image', bad), /isn't an image from Crew/)
+  for (const bad of [CONFIG, path.join(ATTACHMENTS, '..', 'config.json'), `${ATTACHMENTS}/../link/phones.json`]) await assert.rejects(phone.call('image', bad), /isn't an image from CLIque/)
 
   // what a phone can't do
   for (const name of ['removeAgent', 'workspace', 'in', 'exportAgents', 'link', 'toString', '__proto__']) await assert.rejects(phone.call(name, DEFAULT, 'june'), { message: `"${name}" isn't available on a phone` })

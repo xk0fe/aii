@@ -66,7 +66,7 @@ test('an agent that stops on its task gets one reminder, then you hear about it'
   hub.checkStalls(later(5))
   assert.equal(events(/reminded/).length, 0, 'five minutes idle is nothing yet')
   hub.checkStalls(later(11))
-  assert.equal(events(/stopped on #1 11 min ago without finishing it, so Crew reminded it/).length, 1)
+  assert.equal(events(/stopped on #1 11 min ago without finishing it, so CLIque reminded it/).length, 1)
   assert.match(lastTyped('ada'), /\[crew\] Task #1 "Round complete card with Buddy" is still in progress[\s\S]*crew task done 1 [\s\S]*crew task note 1/)
   assert.equal(ada.status, 'working')
   hub.checkStalls(later(30))
@@ -97,7 +97,7 @@ test('a note after the reminder counts as progress: the next stall starts with a
   hub.checkStalls(later(11))
   assert.equal(notices.length, 0)
   hub.checkStalls(later(25))
-  assert.equal(events(/so Crew reminded it/).length, 2)
+  assert.equal(events(/so CLIque reminded it/).length, 2)
 })
 
 test('its last reply asked you something: you hear about it, it is not nudged to carry on', async () => {

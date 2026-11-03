@@ -23,7 +23,7 @@ export class Config extends EventEmitter {
     try {
       raw = JSON.parse(fs.readFileSync(this.file, 'utf8'))
     } catch (e) {
-      if (e.code !== 'ENOENT') return void this.emit('problem', `Crew couldn't read its settings (${this.file}: ${e.message}), so it carries on with the ones it had`)
+      if (e.code !== 'ENOENT') return void this.emit('problem', `CLIque couldn't read its settings (${this.file}: ${e.message}), so it carries on with the ones it had`)
       raw = {}
       fs.writeFileSync(this.file, JSON.stringify(this.defaults, null, 2) + '\n')
     }

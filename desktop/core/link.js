@@ -202,7 +202,7 @@ export function reachWarning(hosts, { nets = [], walls = [], rules = [] } = {}) 
     else blocked.set(h.via, profile)
   }
   const and = (names) => [...new Set(names)].join(' and ')
-  if (blocked.size) return `Windows Firewall blocks Crew on ${and(blocked.keys())}, so your other computers and phones can't reach this one there. To let them in, open Windows Security > Firewall & network protection > Allow an app through firewall > Change settings, and tick ${and(blocked.values())} next to Crew.`
+  if (blocked.size) return `Windows Firewall blocks CLIque on ${and(blocked.keys())}, so your other computers and phones can't reach this one there. To let them in, open Windows Security > Firewall & network protection > Allow an app through firewall > Change settings, and tick ${and(blocked.values())} next to CLIque.`
   if (exposed.size) {
     const where = [...exposed].map((v) => (v === 'Wi-Fi' ? 'Wi-Fi > your network' : v)).join(' or ')
     return `Windows treats ${and(exposed)} as a public network, where its firewall keeps your other computers and phones out. If it's your own network, make it private: Settings > Network & internet > ${where} > Network profile type > Private network.`
@@ -242,7 +242,7 @@ export const makeCode = ({ name, port, key, fingerprint, hosts }) =>
 
 export function readCode(code) {
   const m = String(code ?? '').trim().match(/^crew1\.([\w-]+)$/)
-  if (!m) throw new Error("that's not a Crew pairing code")
+  if (!m) throw new Error("that's not a CLIque pairing code")
   const c = JSON.parse(Buffer.from(m[1], 'base64url').toString())
   return { name: c.n, port: c.p, key: c.k, fingerprint: c.f, hosts: c.h }
 }
@@ -252,7 +252,7 @@ const pack = (v) => JSON.stringify(v, (_, x) => (x instanceof Uint8Array ? { $by
 const unpack = (s) => JSON.parse(s, (_, x) => (x && typeof x === 'object' && typeof x.$bytes === 'string' ? new Uint8Array(Buffer.from(x.$bytes, 'base64')) : x))
 
 const closedWhy = (code, host) =>
-  new Error(code === 4003 ? 'the pairing code was reset on the other computer, get a new one' : code === 4004 ? 'the other computer runs a different Crew version, update both' : `${host}: closed`)
+  new Error(code === 4003 ? 'the pairing code was reset on the other computer, get a new one' : code === 4004 ? 'the other computer runs a different CLIque version, update both' : `${host}: closed`)
 
 // ---- a peer: one live connection, the same on both ends --------------------------------------------
 

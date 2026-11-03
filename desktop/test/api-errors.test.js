@@ -53,7 +53,7 @@ test('a dropped connection: Crew types "continue", and the turn goes on answerin
   const tasks = hub.stats.noor.tasks
   fail('server_error')
   assert.equal(noor.status, 'working')
-  assert.match(events().at(-1), /lost its turn to an API error \(server_error\), so Crew types "continue" for it in 20s/)
+  assert.match(events().at(-1), /lost its turn to an API error \(server_error\), so CLIque types "continue" for it in 20s/)
   mock.timers.tick(19000)
   assert.notEqual(runner.submitted.at(-1), 'continue')
   mock.timers.tick(1000)

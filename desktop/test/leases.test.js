@@ -171,7 +171,7 @@ test('a CLI that ends: what its commands left in their groups is stopped, with o
   hub.runs.set('0000beef', { name: 'noor', file: groupsFile('noor.0000beef'), at: 0 })
   await hub.sweep('0000beef')
   assert.ok(await gone(orphan), 'what it left behind is stopped')
-  assert.match(hub.feed.findLast((e) => e.kind === 'event').text, /^left a process running \(node\), so Crew stopped it$/)
+  assert.match(hub.feed.findLast((e) => e.kind === 'event').text, /^left a process running \(node\), so CLIque stopped it$/)
   assert.equal(hub.feed.findLast((e) => e.kind === 'event').from, 'noor')
   assert.ok(!fs.existsSync(groupsFile('noor.0000beef')))
 })

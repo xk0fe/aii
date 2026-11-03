@@ -208,10 +208,10 @@ export class Crew extends EventEmitter {
         // no terminal host: the agents run in here, as before, and stop when Crew quits
         this.runner = new Runner()
         for (const hub of this.hubs.values()) hub.useRunner(new Scoped(this.runner, hub.ws, hub.ws === DEFAULT))
-        this.hub.post({ kind: 'event', from: 'crew', text: `${e.message}, so agents stop when Crew quits this time` })
+        this.hub.post({ kind: 'event', from: 'crew', text: `${e.message}, so agents stop when CLIque quits this time` })
       }
     }
-    if (this.runner.replaced) this.hub.post({ kind: 'event', from: 'crew', text: 'the terminal host was from another Crew version, so its agents started again, resuming their conversations' })
+    if (this.runner.replaced) this.hub.post({ kind: 'event', from: 'crew', text: 'the terminal host was from another CLIque version, so its agents started again, resuming their conversations' })
     this.url = `http://127.0.0.1:${server.address().port}`
     for (const hub of this.hubs.values()) this.startWorkspace(hub, survivors)
     // terminals still running for a workspace that's gone from config.json: nothing would ever hear from them again
@@ -370,7 +370,7 @@ export class Crew extends EventEmitter {
     try {
       return await l.peer.call('in', [ws, fn, args])
     } catch (e) {
-      if (/isn't available over Crew Link/.test(e.message) && /"in"/.test(e.message)) throw new Error(`${l.name} runs an older Crew, without workspaces: update it to work with its agents here`)
+      if (/isn't available over Crew Link/.test(e.message) && /"in"/.test(e.message)) throw new Error(`${l.name} runs an older CLIque, without workspaces: update it to work with its agents here`)
       throw e
     }
   }
@@ -668,7 +668,7 @@ export class Crew extends EventEmitter {
         n++
       } catch {}
     }
-    return `on ${l.name}: ${n} of ${ids.length} done one at a time (it runs an older Crew)\n`
+    return `on ${l.name}: ${n} of ${ids.length} done one at a time (it runs an older CLIque)\n`
   }
 
   // Names as another computer sees them: its agents bare, ours as name@this-computer.
@@ -876,7 +876,7 @@ export class Crew extends EventEmitter {
     const [moved] = home ? await this.link(home).peer.call('importAgents', [pack, pick]) : unpackAgents(this.hub, pack, pick)
     await (src.l ? src.l.peer.call('removeAgent', [src.base]) : this.hub.removeAgent(src.base))
     this.tellMoved({ ...move, name: moved }, [])
-    return { name: home ? `${moved}@${home}` : moved, conversation: 'fresh', reason: `${who} runs an older Crew`, older: true }
+    return { name: home ? `${moved}@${home}` : moved, conversation: 'fresh', reason: `${who} runs an older CLIque`, older: true }
   }
 
   // Every computer within reach (this one too) but `skip` writes the agent by its new name from now on, in the

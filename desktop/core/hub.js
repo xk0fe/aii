@@ -454,7 +454,7 @@ export class Hub extends EventEmitter {
   // A first draft of an agent's instructions, written by its own brain from its name and area.
   draftPrompt(agent) {
     const provider = this.providers[agent.provider ?? 'claude']
-    if (!provider) throw new Error(`Crew doesn't know how to run "${agent.provider}": pick Claude Code or Codex`)
+    if (!provider) throw new Error(`CLIque doesn't know how to run "${agent.provider}": pick Claude Code or Codex`)
     if (provider.missing.length) throw new Error(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const teammates = [...this.agents.values()].filter((a) => a.name !== agent.name && !a.cloneOf).map((a) => `${a.name} (${a.area || 'general'})`).join(', ')
     return generatePrompt(agent, provider, teammates)
@@ -519,7 +519,7 @@ export class Hub extends EventEmitter {
       this.setStatus(a, 'stopped')
       this.post({ kind: 'event', from: a.name, text })
     }
-    if (!adapter) return fail(`can't start: it's set to run "${a.provider}", which Crew doesn't know how to run. Pick Claude Code or Codex for it in its settings`)
+    if (!adapter) return fail(`can't start: it's set to run "${a.provider}", which CLIque doesn't know how to run. Pick Claude Code or Codex for it in its settings`)
     if (provider.missing.length) return fail(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const resume = this.sessions[a.name]
     const session = randomUUID()
@@ -1073,7 +1073,7 @@ export class Hub extends EventEmitter {
     this.tickets.save()
     if (cost >= 0.005 || tokens) {
       const what = [cost >= 0.005 && `$${cost < 10 ? cost.toFixed(2) : Math.round(cost).toLocaleString('en-US')} at API prices`, tokens && `${tokenCount(tokens)} Codex tokens`].filter(Boolean).join(' and ')
-      this.post({ kind: 'event', from: 'crew', text: `added up what the crew's work cost before Crew counted it: ${what} over the last ${LOOK_BACK_DAYS} days` })
+      this.post({ kind: 'event', from: 'crew', text: `added up what the crew's work cost before CLIque counted it: ${what} over the last ${LOOK_BACK_DAYS} days` })
     }
     this.changed()
     return { cost, tokens }
@@ -1160,7 +1160,7 @@ export class Hub extends EventEmitter {
     // the agent left, so it goes without a word
     const said = left.filter((p) => !/^(conhost|OpenConsole)$/i.test(p.name))
     const n = said.length
-    if (!run.quiet && n) this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(said)}), so Crew stopped ${n === 1 ? 'it' : 'them'}` })
+    if (!run.quiet && n) this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(said)}), so CLIque stopped ${n === 1 ? 'it' : 'them'}` })
   }
 
   // Launches that ended while Crew wasn't there to see it (it quit, or crashed): swept now.
@@ -1346,7 +1346,7 @@ export class Hub extends EventEmitter {
     a.retrying = true
     clearTimeout(a.retryTimer)
     a.retryTimer = setTimeout(() => this.resumeTurn(a), ms)
-    this.post({ kind: 'event', from: a.name, text: `lost its turn to an API error (${error}), so Crew types "continue" for it in ${ms < 60000 ? `${ms / 1000}s` : `${ms / 60000} min`}` })
+    this.post({ kind: 'event', from: a.name, text: `lost its turn to an API error (${error}), so CLIque types "continue" for it in ${ms < 60000 ? `${ms / 1000}s` : `${ms / 60000} min`}` })
     this.changed()
   }
 
@@ -1736,7 +1736,7 @@ export class Hub extends EventEmitter {
     const all = addressees(to, mentions ? text : '').map((n) => (n.includes('@') ? n : (local(n) ?? this.elsewhere?.(n) ?? n)))
     const away = all.filter((n) => n.includes('@'))
     const names = all.filter((n) => !n.includes('@'))
-    if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and Crew Link isn't on`)
+    if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and CLIque Link isn't on`)
     const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }) }
     if (away.length && !names.length) return this.relay(from, away, text, images, extra)
     const targets = names.length ? this.recipients(names, from) : [this.route(text, from)]
@@ -1880,7 +1880,7 @@ export class Hub extends EventEmitter {
   // A question for an agent on a linked computer: asked there (where it's queued and answered by the same rules), and
   // waited on here. Its answer comes back through send({ answers }).
   async questionElsewhere({ from, name, text, images, closed, hold }) {
-    if (!this.relay) throw new Error(`@${name} is on another computer, and Crew Link isn't on`)
+    if (!this.relay) throw new Error(`@${name} is on another computer, and CLIque Link isn't on`)
     // from your own terminal there's no one there to send the answer back to: it shows in the chat
     if (from === 'you') return `${await this.relay(from, [name], text, images, {})}(its answer will show in the chat)\n`
     const call = this.open({ id: randomUUID().slice(0, 8), to: name, from, text, parent: this.workingOn(this.agents.get(from)) })
@@ -1894,7 +1894,7 @@ export class Hub extends EventEmitter {
     if (!/^asked /.test(out)) {
       // a computer on an older Crew took it as a hand-off: no answer will come back by itself
       this.calls.delete(call.id)
-      return `${out}(its computer runs an older Crew, so this went as a hand-off: the answer won't come back by itself)\n`
+      return `${out}(its computer runs an older CLIque, so this went as a hand-off: the answer won't come back by itself)\n`
     }
     if (this.agents.has(from)) this.record(from, { handoffs: 1 })
     return this.hold([call], hold, closed)
@@ -2484,7 +2484,7 @@ export class Hub extends EventEmitter {
 
   remind(t, w, mins) {
     this.stalls.set(t.id, { at: Date.now() })
-    this.post({ kind: 'event', from: w.name, text: `stopped on #${t.id} ${mins} min ago without finishing it, so Crew reminded it` })
+    this.post({ kind: 'event', from: w.name, text: `stopped on #${t.id} ${mins} min ago without finishing it, so CLIque reminded it` })
     const handed = this.feed.findLast((e) => e.kind === 'msg' && e.ticket === t.id) // its reply threads to the task
     const text = `[crew] Task #${t.id} "${t.title}" is still in progress, and your turn ended ${mins} min ago without finishing it. If it's done, run: crew task done ${t.id} "what you did, how you checked". If something is in the way (an answer, a decision, access), say what with crew task note ${t.id} "…" and stop. Otherwise carry on with it now.`
     this.queue(w, crewPrompt(w, text, handed?.id))
@@ -2542,7 +2542,7 @@ export class Hub extends EventEmitter {
     if (original && original.host !== host) throw new Error('both tasks must be on the same computer')
     if (host) {
       // the same command on the computer the task lives on, with the numbers as it knows them
-      if (!this.relayTask) throw new Error(`#${words[0]} is on another computer, and Crew Link isn't on`)
+      if (!this.relayTask) throw new Error(`#${words[0]} is on another computer, and CLIque Link isn't on`)
       const there = rest.map((w) => (w === words[0] ? ref : original && w === words[1] ? original.id : w))
       return this.relayTask(host, from, [op, ...there])
     }
@@ -2974,7 +2974,7 @@ export class Hub extends EventEmitter {
     for (const c of saved.calls ?? []) this.calls.set(c.id, { ...c, msg: c.msg ? this.feed.find((e) => e.id === c.msg) : undefined, hold: null })
     for (const [file, l] of saved.leases ?? []) if (adopted.has(l.name)) this.leases.set(file, { ...l, ws: this.ws })
     for (const [k, h] of saved.held ?? []) if (h.name === 'you' || adopted.has(h.name)) this.held.set(k, { ...h, ws: this.ws })
-    if (adopted.size) this.post({ kind: 'event', from: 'crew', text: `picked up ${[...adopted].map((n) => `@${n}`).join(' ')} where ${adopted.size === 1 ? 'it was' : 'they were'}: ${adopted.size === 1 ? 'it' : 'they'} kept working while Crew was closed` })
+    if (adopted.size) this.post({ kind: 'event', from: 'crew', text: `picked up ${[...adopted].map((n) => `@${n}`).join(' ')} where ${adopted.size === 1 ? 'it was' : 'they were'}: ${adopted.size === 1 ? 'it' : 'they'} kept working while CLIque was closed` })
     return adopted
   }
 
