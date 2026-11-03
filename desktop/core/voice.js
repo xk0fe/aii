@@ -41,7 +41,7 @@ export class Voice extends EventEmitter {
   // on a Mac does: an installed Crew has it, and on Windows scripts/build-voice.mjs makes it.
   ensureBinary() {
     if (this.built()) return Promise.resolve(this.binary)
-    if (this.shipped) return Promise.reject(new Error('Voice input is missing from this copy of Crew. Installing Crew again brings it back.'))
+    if (this.shipped) return Promise.reject(new Error('Voice input is missing from this copy of CLIque. Installing CLIque again brings it back.'))
     if (!this.compiles) return Promise.reject(new Error('Voice input needs its helper here: run npm run voice -- win in desktop/ (with the .NET 8 SDK), then try again.'))
     this.building ??= new Promise((resolve, reject) => {
       fs.mkdirSync(path.dirname(this.binary), { recursive: true })
