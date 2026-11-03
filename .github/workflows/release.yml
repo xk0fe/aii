@@ -1,0 +1,338 @@
+# Release: builds what people install, puts it in a draft release on the public repo, and deploys the website there.
+#
+# A v* tag (matching desktop/package.json's version) does both. By hand (Actions › Release › Run workflow, or
+# gh workflow run release.yml --ref <branch or tag> -f apps=true -f site=false) it does either: the apps (Crew.app for
+# Apple Silicon and Intel as DMG + zip, the Windows installers for x64 and arm64) and/or the site (site/, built by
+# site/build.mjs). The builds use desktop/scripts/dist.mjs, as CI's do; site/README.md has the one-time setup.
+#
+# Repository variables (Settings › Secrets and variables › Actions › Variables):
+#   RELEASE_REPO     owner/name of the public repo for releases and the website. Unset: the apps are only kept as
+#                    this run's artifacts and the site isn't deployed.
+#   SITE_URL         the site's address with a trailing slash, if not https://<owner>.github.io/<name>/ (link previews)
+#   SITE_DOMAIN      a custom domain for the site (written to CNAME), if any
+#   AZURE_SIGN_ENDPOINT, AZURE_SIGN_ACCOUNT, AZURE_SIGN_PROFILE   Azure Trusted Signing for Windows, if used
+# Secrets (same place, Secrets):
+#   RELEASE_TOKEN    a fine-grained token for RELEASE_REPO only, with Contents: read and write (releases + the site)
+#   MAC_CERTIFICATE, MAC_CERTIFICATE_PASSWORD        Developer ID Application certificate + key, .p12 as base64
+#   APPLE_API_KEY_P8, APPLE_API_KEY_ID, APPLE_API_ISSUER   App Store Connect API key, for notarization (.p8 contents)
+#   WIN_CERTIFICATE, WIN_CERTIFICATE_PASSWORD        Authenticode .pfx as base64, if Windows is signed with one
+#   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET   the Azure Trusted Signing account, if used
+# Without the Apple secrets the Mac app is signed ad hoc (Gatekeeper blocks it on other Macs until people choose Open
+# Anyway); without a Windows certificate the installer is unsigned (SmartScreen warns). The run says so up front.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: Build the Mac and Windows apps and put them in a draft release
+        type: boolean
+        default: true
+      site:
+        description: Deploy the website (download links follow the newest published release)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_REPO: ${{ vars.RELEASE_REPO }}
+
+jobs:
+  # What this run will make and how it's signed, before an hour of building
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      product: ${{ steps.version.outputs.product }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: desktop/package.json
+          sparse-checkout-cone-mode: false
+      - id: version
+        name: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version=$(node -p "require('./desktop/package.json').version")
+          product=$(node -p "require('./desktop/package.json').productName")
+          if [ "$REF_TYPE" = tag ]; then
+            tag=$REF_NAME
+            if [ "$tag" != "v$version" ]; then
+              echo "::error::the tag is $tag but desktop/package.json says $version: the apps would be named $version. Bump the version, or tag v$version."
+              exit 1
+            fi
+          else
+            tag=v$version
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "product=$product" >> "$GITHUB_OUTPUT"
+          echo "### $product $tag" >> "$GITHUB_STEP_SUMMARY"
+      - name: signing
+        if: github.event_name == 'push' || inputs.apps
+        env:
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE != '' }}
+          NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER != '' }}
+          WIN_CERTIFICATE: ${{ secrets.WIN_CERTIFICATE != '' }}
+          AZURE: ${{ secrets.AZURE_CLIENT_SECRET != '' && vars.AZURE_SIGN_ENDPOINT != '' && vars.AZURE_SIGN_ACCOUNT != '' && vars.AZURE_SIGN_PROFILE != '' }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          say() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          if [ "$MAC_CERTIFICATE" = true ] && [ "$NOTARY_KEY" = true ]; then
+            say "- Mac: signed with the Developer ID certificate and notarized"
+          elif [ "$MAC_CERTIFICATE" = true ]; then
+            echo "::warning title=Mac app not notarized::MAC_CERTIFICATE is set but APPLE_API_KEY_P8, APPLE_API_KEY_ID and APPLE_API_ISSUER aren't: Crew.app is signed but not notarized, and Gatekeeper blocks it on other Macs."
+            say "- Mac: signed, **not notarized** (no App Store Connect API key)"
+          else
+            echo "::warning title=Mac app unsigned::No MAC_CERTIFICATE: Crew.app is signed ad hoc and not notarized. On other Macs it opens only after System Settings › Privacy & Security › Open Anyway. Add the Apple secrets (site/README.md) before a public release."
+            say "- Mac: **ad hoc** (no Developer ID certificate): Gatekeeper blocks it until people choose Open Anyway"
+          fi
+          if [ "$WIN_CERTIFICATE" = true ] || [ "$AZURE" = true ]; then
+            say "- Windows: signed ($([ "$AZURE" = true ] && echo 'Azure Trusted Signing' || echo 'Authenticode certificate'))"
+          else
+            echo "::warning title=Windows installer unsigned::No Windows signing: the installers work, but SmartScreen shows \"Windows protected your PC\" (Unknown publisher) until people choose More info › Run anyway."
+            say "- Windows: **unsigned**: SmartScreen says \"Windows protected your PC\" until people choose More info › Run anyway"
+          fi
+          if [ -z "$RELEASE_REPO" ]; then
+            echo "::notice title=No public repo::The repository variable RELEASE_REPO isn't set: the apps are kept as this run's artifacts only, and the site isn't deployed."
+            say "- Release: none (RELEASE_REPO isn't set): the apps are this run's artifacts"
+          elif [ "$RELEASE_TOKEN" != true ]; then
+            echo "::error title=No token::RELEASE_REPO is $RELEASE_REPO but the secret RELEASE_TOKEN isn't set: nothing can be put there."
+            exit 1
+          else
+            say "- Release: a draft on $RELEASE_REPO"
+          fi
+
+  build-mac:
+    needs: plan
+    if: github.event_name == 'push' || inputs.apps
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      HAS_NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      # the dictation helper uses macOS 26's SpeechAnalyzer: it needs the macOS 26 SDK (and still runs on macOS 13+)
+      - name: Xcode with the macOS 26 SDK
+        run: |
+          sdk=$(xcrun --sdk macosx --show-sdk-version)
+          if [ "${sdk%%.*}" -lt 26 ]; then
+            xcode=$(printf '%s\n' /Applications/Xcode_26*.app | sort -V | tail -1)
+            [ -d "$xcode" ] || { echo "::error::this runner has no Xcode 26 (SDK $sdk)"; ls -d /Applications/Xcode*; exit 1; }
+            sudo xcode-select -s "$xcode"
+          fi
+          xcrun --sdk macosx --show-sdk-version
+      - name: install
+        working-directory: desktop
+        run: npm ci
+      - name: notarization key
+        if: env.HAS_NOTARY_KEY == 'true'
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+      - name: build
+        working-directory: desktop
+        run: npm run dist:mac
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      # every app opens as signed; a notarized one also passes Gatekeeper as a download would meet it
+      - name: check the apps
+        working-directory: desktop/release
+        run: |
+          for app in mac*/Crew.app; do
+            codesign --verify --deep --strict "$app"
+            codesign -dv "$app" 2>&1 | grep -E 'Identifier|Authority|TeamIdentifier|flags'
+            test -x "$app/Contents/Resources/voice/crew-voice"
+            if xcrun stapler validate "$app" >/dev/null 2>&1; then
+              spctl --assess --type execute -vv "$app"
+            else
+              echo "::warning title=Not notarized::$app has no notarization ticket"
+            fi
+          done
+          for dmg in ./*.dmg; do hdiutil verify -quiet "$dmg" && echo "$dmg verifies"; done
+          ls -l ./*.dmg ./*.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-mac
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.blockmap
+            desktop/release/latest*.yml
+          if-no-files-found: error
+
+  build-win:
+    needs: plan
+    if: github.event_name == 'push' || inputs.apps
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      # the speech model the dictation helper ships with, downloaded once (scripts/build-voice.mjs checks its hash)
+      - uses: actions/cache@v4
+        with:
+          path: desktop/dist/voice/cache
+          key: voice-model-${{ hashFiles('desktop/scripts/build-voice.mjs') }}
+      - name: install
+        working-directory: desktop
+        run: npm ci
+      - name: build
+        working-directory: desktop
+        run: npm run dist:win
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CERTIFICATE }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERTIFICATE_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGN_ENDPOINT: ${{ vars.AZURE_SIGN_ENDPOINT }}
+          AZURE_SIGN_ACCOUNT: ${{ vars.AZURE_SIGN_ACCOUNT }}
+          AZURE_SIGN_PROFILE: ${{ vars.AZURE_SIGN_PROFILE }}
+      # Signed or not, each installer is a real one: a Windows program carrying its own arch's app, and the x64 one
+      # installs for this user, opens nothing it shouldn't, and uninstalls (CI does the full run of the installed app)
+      - name: check the installers
+        shell: pwsh
+        working-directory: desktop/release
+        run: |
+          foreach ($arch in 'x64', 'arm64') {
+            $exe = Get-ChildItem "Crew-Setup-*-$arch.exe" | Select-Object -First 1
+            if (-not $exe) { throw "no installer for $arch" }
+            $head = [IO.File]::ReadAllBytes($exe.FullName)[0..1]
+            if ([Text.Encoding]::ASCII.GetString($head) -ne 'MZ') { throw "$($exe.Name) is not a Windows program" }
+            $inside = 7z l $exe.FullName
+            if (-not ($inside | Select-String "app-$($arch -replace 'x64', '64').7z")) { $inside; throw "$($exe.Name) doesn't carry the $arch app" }
+            $sig = Get-AuthenticodeSignature $exe.FullName
+            if ($sig.Status -eq 'Valid') { Write-Output "$($exe.Name): signed by $($sig.SignerCertificate.Subject)" }
+            else { Write-Output "::warning title=Unsigned installer::$($exe.Name) is not signed ($($sig.Status)): SmartScreen will warn" }
+            Write-Output ("{0}: {1:N0} MB" -f $exe.Name, ($exe.Length / 1MB))
+          }
+          $setup = Get-ChildItem Crew-Setup-*-x64.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList '/S' -Wait
+          $dir = "$env:LOCALAPPDATA\Programs\Crew"
+          foreach ($f in 'Crew.exe', 'resources\app.asar', 'resources\voice\crew-voice.exe', 'Uninstall Crew.exe') {
+            if (-not (Test-Path "$dir\$f")) { throw "the installed Crew has no $f" }
+          }
+          Start-Process "$dir\Uninstall Crew.exe" -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 60 -and (Test-Path "$dir\Crew.exe"); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path "$dir\Crew.exe") { throw 'uninstalling left Crew.exe behind' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            desktop/release/*.exe
+            desktop/release/*.blockmap
+            desktop/release/latest*.yml
+          if-no-files-found: error
+
+  # A draft on the public repo with everything built. A draft is only seen by the repo's owners until it's published,
+  # and publishing it (on GitHub) makes the tag there. Running again for the same version replaces the draft's files.
+  release:
+    needs: [plan, build-mac, build-win]
+    if: vars.RELEASE_REPO != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: out
+          merge-multiple: true
+      - name: draft release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          PRODUCT: ${{ needs.plan.outputs.product }}
+        run: |
+          ls -l out
+          state=$(gh release view "$TAG" --repo "$RELEASE_REPO" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [ "$state" = false ]; then
+            echo "::error::$RELEASE_REPO already has a published $TAG: bump the version in desktop/package.json for a new release."
+            exit 1
+          elif [ "$state" = true ]; then
+            gh release upload "$TAG" out/* --repo "$RELEASE_REPO" --clobber
+            echo "Updated the draft $TAG on $RELEASE_REPO" >> "$GITHUB_STEP_SUMMARY"
+          else
+            file() { find out -name "$1" -exec basename {} \; ; }
+            notes="$PRODUCT ${TAG#v} for macOS and Windows.
+
+          - Mac with Apple silicon (M1 and newer): \`$(file '*-mac-arm64.dmg')\`
+          - Mac with an Intel chip: \`$(file '*-mac-x64.dmg')\`
+          - Windows (most PCs): \`$(file '*-Setup-*-x64.exe')\`
+          - Windows on Arm: \`$(file '*-Setup-*-arm64.exe')\`"
+            gh release create "$TAG" out/* --repo "$RELEASE_REPO" --draft --title "$PRODUCT ${TAG#v}" --notes "$notes"
+            echo "Created the draft $TAG on $RELEASE_REPO: check it and publish it, then run this workflow with only the site to point the downloads at it" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          gh release view "$TAG" --repo "$RELEASE_REPO" --json assets --jq '.assets[].name'
+
+  # The website, on the public repo's GitHub Pages: built from site/ and pushed as the only commit of its gh-pages
+  # branch. Its download buttons go to the newest *published* release, so a draft never shows there.
+  site:
+    needs: plan
+    if: vars.RELEASE_REPO != '' && (github.event_name == 'push' || inputs.site)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: site
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: newest published release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          gh api "repos/$RELEASE_REPO/releases/latest" > latest.json 2>/dev/null || echo '{}' > latest.json
+          node -p "'newest published release: ' + (require('./latest.json').tag_name ?? 'none yet')"
+      - name: build
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+          SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}
+        run: |
+          if [ -z "$SITE_URL" ]; then
+            lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+            owner=$(lower "${RELEASE_REPO%%/*}"); name=${RELEASE_REPO#*/}
+            if [ -n "$SITE_DOMAIN" ]; then SITE_URL="https://$SITE_DOMAIN/"
+            elif [ "$(lower "$name")" = "$owner.github.io" ]; then SITE_URL="https://$owner.github.io/"
+            else SITE_URL="https://$owner.github.io/$name/"; fi
+          fi
+          export SITE_URL
+          node site/build.mjs --release latest.json --out _site
+          echo "Site: $SITE_URL" >> "$GITHUB_STEP_SUMMARY"
+      - name: deploy
+        env:
+          TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          SHA: ${{ github.sha }}
+        working-directory: _site
+        run: |
+          git init -q -b gh-pages
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -q -m "The website, from ${SHA::12}"
+          git push -q --force "https://x-access-token:$TOKEN@github.com/$RELEASE_REPO.git" gh-pages
