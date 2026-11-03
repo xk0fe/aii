@@ -32,6 +32,7 @@
 /* ---- the menus (common.css .menu): a task's status, priority, kind and owner, the ⋯s, the bulk bar's, and the filter
    popover (kind and owner, one pick each: .menu-head over each group, the count as the row's hint) ---- */
 .tk-fpop { width: 250px; max-height: calc(100vh - 80px); overflow-y: auto; }
+.menu.tk-fpop { z-index: 40; } /* it stays open while you work the board: under the agent's sheet, like the composer's popover */
 .tk-pop small, .tk-fpop small { font-variant-numeric: tabular-nums; }
 /* where something is picked, every row keeps room for the check, so the hints and counts line up */
 :is(.tk-pop, .tk-fpop) button:not(.on) > .check { visibility: hidden; }
@@ -72,7 +73,8 @@
 .tk-add .attach .ti { width: 15px; height: 15px; }
 .lane-compose { flex: none; padding: 2px 10px 8px 9px; }
 .lane-compose:empty { display: none; }
-.tk-add-pop { position: fixed; z-index: 60; width: 420px; max-width: calc(100vw - 32px); }
+/* under the agent's sheet (.ed-layer, 50), which can open over Tasks */
+.tk-add-pop { position: fixed; z-index: 40; width: 420px; max-width: calc(100vw - 32px); }
 .tk-add-pop .tk-add { box-shadow: var(--focus-ring), var(--shadow-float); }
 
 /* ---- the body: board, list, or a friendly empty state ---- */

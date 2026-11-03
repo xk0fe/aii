@@ -780,7 +780,11 @@ function mountSearch(box, { label, placeholder = label, delay = 0, onSearch, onO
     clearTimeout(timer)
     const q = input.value.trim() ? input.value : ''
     const n = onSearch(q)
-    const said = !q ? '' : typeof n === 'number' ? (n ? String(n) : 'none') : (n ?? '')
+    setCount(q ? n : '')
+  }
+  // how many match, in the field: a number, or words
+  function setCount(n) {
+    const said = typeof n === 'number' ? (n ? String(n) : 'none') : (n ?? '')
     if (count.textContent !== said) count.textContent = said
   }
   function open() {
@@ -819,7 +823,7 @@ function mountSearch(box, { label, placeholder = label, delay = 0, onSearch, onO
     if (e.key === 'Enter') run()
   })
   input.addEventListener('blur', () => !input.value && setTimeout(() => document.activeElement !== input && !input.value && close(), 150))
-  return { open, close, isOpen, input, get value() { return input.value } }
+  return { open, close, isOpen, setCount, input, get value() { return input.value } }
 }
 
 // ---- motion: one vocabulary for the whole app, the same as common.css's --out, --in, --move and --t-* ----

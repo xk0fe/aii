@@ -72,6 +72,11 @@ $('.heads').insertAdjacentHTML('beforeend', pageHead({
   tools: `<div class="seg tv-show" data-show><button data-show="all" title="Every terminal">All <i class="n"></i></button><button data-show="busy" title="The ones working, starting or waiting on you">Busy <i class="n"></i></button><button data-show="needs" title="The ones waiting on you">Needs you <i class="n"></i></button></div>
     <div class="seg icons tv-layout" data-layout><button data-layout="grid" title="Every terminal side by side" aria-label="Grid">${ICONS.grid}</button><button data-layout="focus" title="One terminal, big" aria-label="Focus">${ICONS.focus}</button></div>`,
 }))
+// Only the open place's header shows, from the first paint (the state that draws the rest comes a moment later).
+function showHead() {
+  for (const h of document.querySelectorAll('.heads > .page-head')) h.classList.toggle('hidden', h.dataset.for !== (place === 'dm' ? 'chat' : place))
+}
+showHead()
 $('.find-icon').outerHTML = ICONS.search
 $('[data-act=find]').innerHTML = ICONS.search
 $('.side-ws [data-act=add]').innerHTML = ICONS.plus
@@ -118,7 +123,7 @@ function showPlace(next) {
   $('.stage').classList.toggle('docked', dock)
   $('.terms').classList.toggle('focus', dock || layout === 'focus')
   for (const b of document.querySelectorAll('.nv')) b.dataset.place === place ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')
-  for (const h of document.querySelectorAll('.heads > .page-head')) h.classList.toggle('hidden', h.dataset.for !== (place === 'dm' ? 'chat' : place))
+  showHead()
   segmented($('[data-layout]'), (b) => b.dataset.layout === layout)
   $('[data-show]').classList.toggle('idle', layout === 'focus') // stays in place, so nothing moves
   if (!terms.has(selected)) selected = terms.keys().next().value ?? null

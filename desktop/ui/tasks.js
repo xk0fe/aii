@@ -1158,11 +1158,13 @@ function mountTasks(root, { headIn = root, onTerminal }) {
         draw()
         if (selected) drawPanel()
         syncAdd()
+        if (filter.q) search.setCount(Object.values(grouped()).flat().length) // a push can add or take away matches
       } else stale = true
     },
     setVisible(on) {
       shown = on
       floats.classList.toggle('hidden', !on) // its popovers go with it (they're on the page's top layer)
+      if (!on) (closeFilters(), closePop()) // and its menus close, so nothing open is left behind for Esc to find
       if (!on || !stale || !state) return
       stale = false
       first = true

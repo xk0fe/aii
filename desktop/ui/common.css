@@ -262,13 +262,14 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
   padding: 0 calc(16px + var(--caption-w, 0px)) 0 calc(var(--gx, 24px) + var(--lights-w, 0px));
   border-bottom: 1px solid var(--line); background: var(--surface); container-type: inline-size; -webkit-app-region: drag;
 }
-.page-head :is(button, input, label, select, a, [role=button], .seg) { -webkit-app-region: no-drag; }
-.ph-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.page-head :is(button, input, label, select, a, [role=button], .seg, .ph-glyph .av) { -webkit-app-region: no-drag; }
+.ph-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; overflow: hidden; }
 /* what the place is, in the sidebar's own glyph (# for the channel, a creature for a conversation) */
 .ph-glyph { flex: none; display: grid; place-items: center; min-width: 20px; height: 28px; color: var(--fg3); font: 600 20px/1 var(--font-brand); }
 .ph-glyph svg { width: 18px; height: 18px; }
 .ph-glyph .av { cursor: pointer; }
-.ph-name { flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 18px/24px var(--font-brand); color: var(--fg); }
+/* the name keeps its width: the line beside it gives way first */
+.ph-name { flex: none; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 18px/24px var(--font-brand); color: var(--fg); }
 .ph-name .at { font-family: var(--ui); }
 .ph-title > .tag { flex: none; }
 .ph-sub { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--fg2); }
