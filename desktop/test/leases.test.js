@@ -30,7 +30,7 @@ class FakeRunner extends EventEmitter {
 let hub, runner
 beforeEach(() => {
   for (const f of ['feed.jsonl', 'sessions.json', 'conversations.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'scarlett', area: 'QA' }, { name: 'levi', area: 'mobile app' }, { name: 'gal', area: 'design' }] }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'theo', area: 'QA' }, { name: 'noor', area: 'mobile app' }, { name: 'iris', area: 'design' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: BIN })
   for (const a of hub.agents.values()) (runner.live.add(a.name), (a.status = 'working'))
@@ -46,53 +46,53 @@ const claim = (from, words, hold = 100000) => hub.claim({ from, words, hold })
 const stop = (name, extra = {}) => hub.onHook(name, { hook_event_name: 'Stop', last_assistant_message: 'done', ...extra })
 
 test('one agent on the simulator at a time: the next one waits, and gets it when the first is done', async () => {
-  assert.match(await claim('scarlett', ['simulator', 'QA pass for #4754']), /^Yours now: simulator, until your turn ends with nothing left running/)
-  assert.deepEqual(hub.snapshot().agents.find((a) => a.name === 'scarlett').holds, ['simulator'])
-  assert.match(hub.who(), /scarlett +working, has simulator/)
-  assert.match(hub.leasesText(), /simulator +@scarlett +1 min +QA pass for #4754/)
+  assert.match(await claim('theo', ['simulator', 'QA pass for #4754']), /^Yours now: simulator, until your turn ends with nothing left running/)
+  assert.deepEqual(hub.snapshot().agents.find((a) => a.name === 'theo').holds, ['simulator'])
+  assert.match(hub.who(), /theo +working, has simulator/)
+  assert.match(hub.leasesText(), /simulator +@theo +1 min +QA pass for #4754/)
   // the same thing, however it's written; asking again is fine
-  assert.match(await claim('scarlett', ['Simulator']), /^Still yours: simulator/)
-  const waiting = claim('levi', ['SIMULATOR'])
+  assert.match(await claim('theo', ['Simulator']), /^Still yours: simulator/)
+  const waiting = claim('noor', ['SIMULATOR'])
   await new Promise((r) => setImmediate(r))
   const rules = hub.feed.filter((e) => e.kind === 'rule' && e.rule === 'lease')
   assert.equal(rules.length, 1, 'one quiet line in the chat')
-  assert.deepEqual([rules[0].from, rules[0].to, rules[0].thing], ['levi', 'scarlett', 'simulator'])
-  stop('scarlett') // her turn ends with nothing left running: it's levi's now
+  assert.deepEqual([rules[0].from, rules[0].to, rules[0].thing], ['noor', 'theo', 'simulator'])
+  stop('theo') // her turn ends with nothing left running: it's noor's now
   assert.match(await waiting, /^Yours now: SIMULATOR/)
-  assert.deepEqual(hub.holdsOf('levi'), ['SIMULATOR'])
-  assert.deepEqual(hub.holdsOf('scarlett'), [])
+  assert.deepEqual(hub.holdsOf('noor'), ['SIMULATOR'])
+  assert.deepEqual(hub.holdsOf('theo'), [])
 })
 
 test('taken past the wait: it says who has it and what for, and not to touch it', async () => {
-  await claim('scarlett', ['simulator', 'QA pass'])
-  assert.match(await claim('levi', ['simulator'], 30), /^simulator is still @scarlett's \(1 min: QA pass\)\. Don't use it meanwhile[\s\S]*crew ask scarlett/)
+  await claim('theo', ['simulator', 'QA pass'])
+  assert.match(await claim('noor', ['simulator'], 30), /^simulator is still @theo's \(1 min: QA pass\)\. Don't use it meanwhile[\s\S]*crew ask theo/)
 })
 
 test('something left running in the background keeps the lease; crew release gives it back', async () => {
-  await claim('scarlett', ['metro:8081', 'dev server for QA'])
-  stop('scarlett', { background_tasks: [{ id: 'b1', type: 'bash', status: 'running' }] })
-  assert.match(await claim('levi', ['metro:8081'], 30), /still @scarlett's/)
-  assert.equal(hub.give({ from: 'levi', words: ['metro:8081'] }), "metro:8081 isn't yours\n")
-  const waiting = claim('levi', ['metro:8081'])
-  assert.equal(hub.give({ from: 'scarlett', words: [] }), 'released metro:8081\n')
+  await claim('theo', ['metro:8081', 'dev server for QA'])
+  stop('theo', { background_tasks: [{ id: 'b1', type: 'bash', status: 'running' }] })
+  assert.match(await claim('noor', ['metro:8081'], 30), /still @theo's/)
+  assert.equal(hub.give({ from: 'noor', words: ['metro:8081'] }), "metro:8081 isn't yours\n")
+  const waiting = claim('noor', ['metro:8081'])
+  assert.equal(hub.give({ from: 'theo', words: [] }), 'released metro:8081\n')
   assert.match(await waiting, /^Yours now: metro:8081/)
 })
 
 test('the holder waiting on you: you may use it for its question', async () => {
-  await claim('scarlett', ['simulator'])
-  hub.open({ id: 'q1', from: 'scarlett', to: 'gal', text: 'does the card look right?', hold: {} }) // her crew ask, holding on
-  assert.match(await claim('gal', ['simulator']), /@scarlett has simulator, but it's waiting on you/)
+  await claim('theo', ['simulator'])
+  hub.open({ id: 'q1', from: 'theo', to: 'iris', text: 'does the card look right?', hold: {} }) // her crew ask, holding on
+  assert.match(await claim('iris', ['simulator']), /@theo has simulator, but it's waiting on you/)
 })
 
 test('yours from your terminal until you let go; an agent that stops lets go of everything', async () => {
   await claim('you', ['android device'])
-  stop('scarlett')
-  assert.match(await claim('scarlett', ['android device'], 30), /still the user's/)
-  await claim('levi', ['simulator'])
-  hub.setStatus(hub.agents.get('levi'), 'stopped')
-  assert.deepEqual(hub.holdsOf('levi'), [])
+  stop('theo')
+  assert.match(await claim('theo', ['android device'], 30), /still the user's/)
+  await claim('noor', ['simulator'])
+  hub.setStatus(hub.agents.get('noor'), 'stopped')
+  assert.deepEqual(hub.holdsOf('noor'), [])
   assert.match(hub.give({ from: 'you', words: ['Android  device'] }), /released android device/)
-  await assert.rejects(hub.claim({ from: 'levi', words: [] }), /usage: crew lease/)
+  await assert.rejects(hub.claim({ from: 'noor', words: [] }), /usage: crew lease/)
 })
 
 // ---- one file, however it's written ----------------------------------------------------------------------
@@ -101,10 +101,10 @@ const edit = (name, file_path) => hub.lease(name, { hook_event_name: 'PreToolUse
 
 test('a file an agent names another way is still the one leased', () => {
   const dir = path.join(os.tmpdir(), 'crew-leases-app')
-  assert.equal(edit('scarlett', path.join(dir, 'src', 'Board.tsx')), '')
+  assert.equal(edit('theo', path.join(dir, 'src', 'Board.tsx')), '')
   const other = path.join(dir, 'src', '..', 'src', '.', 'Board.tsx')
-  assert.match(JSON.parse(edit('levi', other)).hookSpecificOutput.permissionDecisionReason, /^Board\.tsx is being edited by @scarlett/)
-  if (process.platform === 'win32') assert.ok(edit('levi', path.join(dir, 'SRC', 'board.TSX')), 'on Windows, in any case')
+  assert.match(JSON.parse(edit('noor', other)).hookSpecificOutput.permissionDecisionReason, /^Board\.tsx is being edited by @theo/)
+  if (process.platform === 'win32') assert.ok(edit('noor', path.join(dir, 'SRC', 'board.TSX')), 'on Windows, in any case')
 })
 
 test('on Windows: C:\\, C:/ and Git Bash\'s /c/ are one drive, and the case of a name is no other file', () => {
@@ -167,17 +167,17 @@ test('a CLI that ends: what its commands left in their groups is stopped, with o
   const { leader, out } = await leaveOne()
   const orphan = Number(out)
   assert.ok(alive(orphan))
-  fs.writeFileSync(groupsFile('levi.0000beef'), `${leader} ${now()}\n`)
-  hub.runs.set('0000beef', { name: 'levi', file: groupsFile('levi.0000beef'), at: 0 })
+  fs.writeFileSync(groupsFile('noor.0000beef'), `${leader} ${now()}\n`)
+  hub.runs.set('0000beef', { name: 'noor', file: groupsFile('noor.0000beef'), at: 0 })
   await hub.sweep('0000beef')
   assert.ok(await gone(orphan), 'what it left behind is stopped')
   assert.match(hub.feed.findLast((e) => e.kind === 'event').text, /^left a process running \(node\), so Crew stopped it$/)
-  assert.equal(hub.feed.findLast((e) => e.kind === 'event').from, 'levi')
-  assert.ok(!fs.existsSync(groupsFile('levi.0000beef')))
+  assert.equal(hub.feed.findLast((e) => e.kind === 'event').from, 'noor')
+  assert.ok(!fs.existsSync(groupsFile('noor.0000beef')))
 })
 
 test('bin/crew-sh writes down each command\'s group and runs it as the shell would; Crew sweeps it later', { skip: !SH && 'no Git Bash here' }, async () => {
-  const file = groupsFile('scarlett.0000cafe')
+  const file = groupsFile('theo.0000cafe')
   // Git Bash numbers its processes its own way: the sleep's Windows id is what Crew can stop
   const pid = WIN ? 'read -r w < /proc/$!/winpid; echo $w' : 'echo $!'
   const { leader, out } = await detached([SH, path.join(BIN, 'crew-sh'), `echo "$((40 + 2))"; sleep 300 >/dev/null 2>&1 & ${pid}`], { CREW_GROUPS: file, SHELL: '/bin/sh' })
@@ -202,8 +202,8 @@ test('a group number the system handed out again is left alone', async () => {
   const { out } = await leaveOne()
   const pid = Number(out)
   // written down long before this process existed: someone else's by now
-  fs.writeFileSync(groupsFile('gal.0000f00d'), `${pid} ${now() - 86400}\n`)
-  hub.runs.set('0000f00d', { name: 'gal', file: groupsFile('gal.0000f00d'), at: 0 })
+  fs.writeFileSync(groupsFile('iris.0000f00d'), `${pid} ${now() - 86400}\n`)
+  hub.runs.set('0000f00d', { name: 'iris', file: groupsFile('iris.0000f00d'), at: 0 })
   await hub.sweep('0000f00d')
   assert.ok(alive(pid))
   process.kill(pid, 'SIGKILL')

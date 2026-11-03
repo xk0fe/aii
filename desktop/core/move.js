@@ -386,7 +386,8 @@ export function moveIn(hub, token, out, { name, folder, on, from, shared, join }
       images.set(f.image, file)
     })
     const how = { names, tasks, lines, images, moving: new Set(out.feed.map((e) => e.id)) }
-    hub.adoptFeed(out.feed.map((e) => carried(e, how)))
+    // what it was answering stays in the chat however old, so its reply has its question to point at
+    hub.adoptFeed(out.feed.map((e) => carried(e, how)), out.current?.id ? [out.current.id] : [])
     const byId = new Map(hub.feed.map((e) => [e.id, e]))
     a.inbox = out.inbox.map((m) => Object.assign(byId.get(m.id) ?? carried(m, how), { queued: true }))
     const there = from.name

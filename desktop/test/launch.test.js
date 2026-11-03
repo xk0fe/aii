@@ -174,7 +174,7 @@ test('macOS: a command is still the first runnable file on PATH, and one that is
 const BIN = 'C:\\Program Files\\Crew\\resources\\app.asar.unpacked\\desktop\\bin'
 const HOOK_EXE = `${BIN}\\win32-${process.arch === 'arm64' ? 'arm64' : 'x64'}\\crew-hook.exe`
 const agent = {
-  name: 'gal.2', cloneOf: 'gal', area: 'the API: routes, "auth" & rate limits | 100% covered', model: 'opus', effort: 'high',
+  name: 'iris.2', cloneOf: 'iris', area: 'the API: routes, "auth" & rate limits | 100% covered', model: 'opus', effort: 'high',
   prompt: `Keep PRs small.\nRun "npm test" before you push & never force-push.\n${'Write tests first; keep the API stable. '.repeat(40)}`,
   images: ['C:\\Users\\Ann Lee\\Pictures\\api flow.png'],
 }

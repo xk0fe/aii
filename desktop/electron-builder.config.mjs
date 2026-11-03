@@ -57,8 +57,13 @@ export default {
   // node-pty ships N-API prebuilds for every platform Crew does: nothing to compile.
   npmRebuild: false,
   nodeGypRebuild: false,
-  // Dictation's helper, built beforehand by scripts/build-voice.mjs: Resources/voice/crew-voice(.exe)
-  extraResources: [{ from: 'dist/voice/${os}-${arch}', to: 'voice' }],
+  // Dictation's helper, built beforehand by scripts/build-voice.mjs: Resources/voice/crew-voice(.exe). Then Crew's
+  // license, and the licenses of the open source software in it (scripts/notices.mjs), beside Electron's own.
+  extraResources: [
+    { from: 'dist/voice/${os}-${arch}', to: 'voice' },
+    { from: '../LICENSE', to: 'LICENSE.txt' },
+    { from: 'THIRD_PARTY_NOTICES.txt', to: 'THIRD_PARTY_NOTICES.txt' },
+  ],
   afterPack,
 
   // .crew agent packs open in Crew (Finder and Mail on macOS, Explorer on Windows)

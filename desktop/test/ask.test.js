@@ -47,7 +47,7 @@ const CODEX = { hook_event_name: 'PermissionRequest', permission_mode: 'default'
 
 let hub, runner, alerts
 beforeEach(() => {
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'joseph', area: 'backend' }, { name: 'marc', area: 'art', provider: 'codex' }] }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'june', area: 'backend' }, { name: 'rex', area: 'art', provider: 'codex' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
   for (const a of hub.agents.values()) a.status = 'working'
@@ -64,33 +64,33 @@ const open = () => hub.feed.findLast((e) => e.kind === 'ask' && !e.answer)
 const decision = (out) => JSON.parse(out).hookSpecificOutput.decision
 
 test('a permission prompt becomes a card, an alert and "needs you"; Allow sends allow back', async () => {
-  const waiting = hub.ask('joseph', BASH)
+  const waiting = hub.ask('june', BASH)
   const e = card()
-  assert.equal(e.from, 'joseph')
+  assert.equal(e.from, 'june')
   assert.equal(e.cli, 'claude')
   assert.deepEqual({ type: e.ask.type, title: e.ask.title, code: e.ask.code, detail: e.ask.detail }, { type: 'permission', title: 'Run a command', code: 'rm -rf dist && npm run build', detail: 'Clean and rebuild' })
   assert.deepEqual(e.ask.always.map((s) => s.label), ['Always allow in app this session', 'Always allow Bash(npm run build:*)', 'Allow all edits this session'])
-  assert.deepEqual(alerts, ['joseph: wants to run a command: rm -rf dist && npm run build'])
-  assert.equal(hub.agents.get('joseph').status, 'waiting')
+  assert.deepEqual(alerts, ['june: wants to run a command: rm -rf dist && npm run build'])
+  assert.equal(hub.agents.get('june').status, 'waiting')
   hub.answer(e.id, { allow: true })
   const out = await waiting
   assert.deepEqual(JSON.parse(out), { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } })
   assert.equal(e.answer.by, 'you')
   assert.equal(e.answer.allow, true)
-  assert.equal(hub.agents.get('joseph').status, 'working')
+  assert.equal(hub.agents.get('june').status, 'working')
 })
 
 test("Claude Code's PowerShell tool on Windows asks in the same plain words as Bash", async () => {
-  const waiting = hub.ask('joseph', { ...BASH, tool_name: 'PowerShell', tool_input: { command: 'Remove-Item dist -Recurse; npm run build', description: 'Clean and rebuild' }, permission_suggestions: [] })
+  const waiting = hub.ask('june', { ...BASH, tool_name: 'PowerShell', tool_input: { command: 'Remove-Item dist -Recurse; npm run build', description: 'Clean and rebuild' }, permission_suggestions: [] })
   const e = card()
   assert.deepEqual({ title: e.ask.title, code: e.ask.code, detail: e.ask.detail }, { title: 'Run a command', code: 'Remove-Item dist -Recurse; npm run build', detail: 'Clean and rebuild' })
-  assert.deepEqual(alerts, ['joseph: wants to run a command: Remove-Item dist -Recurse; npm run build'])
+  assert.deepEqual(alerts, ['june: wants to run a command: Remove-Item dist -Recurse; npm run build'])
   hub.answer(e.id, { allow: true })
   assert.equal(decision(await waiting).behavior, 'allow')
 })
 
 test('"always allow" passes Claude\'s own suggestion back as the permission update', async () => {
-  const waiting = hub.ask('joseph', BASH)
+  const waiting = hub.ask('june', BASH)
   hub.answer(card().id, { allow: true, always: 1 })
   const d = decision(await waiting)
   assert.deepEqual(d.updatedPermissions, [BASH.permission_suggestions[1]])
@@ -98,16 +98,16 @@ test('"always allow" passes Claude\'s own suggestion back as the permission upda
 })
 
 test('deny, with or without a note, tells the agent why', async () => {
-  let waiting = hub.ask('joseph', BASH)
+  let waiting = hub.ask('june', BASH)
   hub.answer(card().id, { allow: false, note: 'use npm ci instead' })
   assert.deepEqual(decision(await waiting), { behavior: 'deny', message: 'The user said no: use npm ci instead' })
-  waiting = hub.ask('joseph', BASH)
+  waiting = hub.ask('june', BASH)
   hub.answer(card().id, { allow: false })
   assert.deepEqual(decision(await waiting), { behavior: 'deny', message: 'The user said no.' })
 })
 
 test('AskUserQuestion: picked options (several for multi-select, or your own words) become its answers', async () => {
-  const waiting = hub.ask('joseph', QUESTION)
+  const waiting = hub.ask('june', QUESTION)
   const e = card()
   assert.equal(e.ask.type, 'question')
   assert.deepEqual(e.ask.questions.map((q) => [q.question, q.multiSelect, q.options.length]), [['Which color do you prefer?', false, 2], ['Which platforms?', true, 3]])
@@ -120,18 +120,18 @@ test('AskUserQuestion: picked options (several for multi-select, or your own wor
 })
 
 test('a plan: approving hands the plan back approved; "keep planning" sends your feedback', async () => {
-  let waiting = hub.ask('joseph', PLAN)
+  let waiting = hub.ask('june', PLAN)
   assert.equal(card().ask.type, 'plan')
   assert.match(card().ask.plan, /Add plan\.txt/)
   hub.answer(card().id, { allow: true })
   assert.deepEqual(decision(await waiting), { behavior: 'allow', updatedInput: PLAN.tool_input })
-  waiting = hub.ask('joseph', PLAN)
+  waiting = hub.ask('june', PLAN)
   hub.answer(card().id, { allow: false, note: 'split it into two steps' })
   assert.deepEqual(decision(await waiting), { behavior: 'deny', message: 'The user wants you to keep planning: split it into two steps' })
 })
 
 test('Codex gets a plain allow/deny (anything else makes it fail closed), and no "always" choices', async () => {
-  const waiting = hub.ask('marc', { ...CODEX, permission_suggestions: BASH.permission_suggestions })
+  const waiting = hub.ask('rex', { ...CODEX, permission_suggestions: BASH.permission_suggestions })
   const e = card()
   assert.equal(e.cli, 'codex')
   assert.deepEqual(e.ask.always, [])
@@ -140,35 +140,35 @@ test('Codex gets a plain allow/deny (anything else makes it fail closed), and no
 })
 
 test('handing a question to the terminal: no decision, and the agent still needs you', async () => {
-  const waiting = hub.ask('marc', CODEX)
+  const waiting = hub.ask('rex', CODEX)
   hub.answer(card().id, { terminal: true })
   assert.equal(await waiting, '')
   assert.equal(card().answer.by, 'terminal')
-  assert.equal(hub.agents.get('marc').status, 'waiting')
+  assert.equal(hub.agents.get('rex').status, 'waiting')
 })
 
 test('typing in a Codex terminal hands its open question over (Codex shows nothing while its hook waits)', async () => {
-  const waiting = hub.ask('marc', CODEX)
-  hub.input('marc', 'y')
+  const waiting = hub.ask('rex', CODEX)
+  hub.input('rex', 'y')
   assert.equal(await waiting, '')
   assert.equal(card().answer.handedOver, true)
-  assert.deepEqual(runner.written.at(-1), { name: 'marc', data: 'y' })
+  assert.deepEqual(runner.written.at(-1), { name: 'rex', data: 'y' })
 })
 
 test("answered in the terminal (the hook was cancelled): the card says so and the agent's back to work", async () => {
   const closed = new AbortController()
-  const waiting = hub.ask('joseph', BASH, closed.signal)
+  const waiting = hub.ask('june', BASH, closed.signal)
   closed.abort()
   assert.equal(await waiting, '')
   assert.equal(card().answer.by, 'terminal')
-  assert.equal(hub.agents.get('joseph').status, 'working')
+  assert.equal(hub.agents.get('june').status, 'working')
   assert.throws(() => hub.answer(card().id, { allow: true }), /already been answered/)
 })
 
 test('one alert per question: Claude\'s own "needs permission" notification is dropped while the card is up', async () => {
-  const waiting = hub.ask('joseph', BASH)
+  const waiting = hub.ask('june', BASH)
   const before = hub.feed.length
-  hub.onHook('joseph', { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
+  hub.onHook('june', { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
   assert.equal(hub.feed.length, before)
   assert.equal(alerts.length, 1)
   hub.answer(card().id, { allow: true })
@@ -176,11 +176,11 @@ test('one alert per question: Claude\'s own "needs permission" notification is d
 })
 
 test('answers survive a restart; a question nobody answered is marked as no longer waiting', async () => {
-  const waiting = hub.ask('joseph', BASH)
+  const waiting = hub.ask('june', BASH)
   const answered = card().id
   hub.answer(answered, { allow: false, note: 'not now' })
   await waiting
-  hub.ask('joseph', QUESTION) // left open when the app quits
+  hub.ask('june', QUESTION) // left open when the app quits
   const left = card().id
   await hub.saving // feed.jsonl is appended in the background
   const again = new Hub(new FakeRunner(), { bin: '/nonexistent' })
@@ -194,7 +194,7 @@ test('the /ask route holds the hook open until you answer, and notices when the 
   const server = await serve(hub)
   const { port } = server.address()
   const post = (body) => {
-    const req = http.request({ port, method: 'POST', path: '/ask/joseph', headers: { 'x-crew': hub.token } })
+    const req = http.request({ port, method: 'POST', path: '/ask/june', headers: { 'x-crew': hub.token } })
     const res = new Promise((resolve) => req.on('response', (r) => { let b = ''; r.on('data', (c) => (b += c)); r.on('end', () => resolve(b)) }))
     req.on('error', () => {})
     req.end(JSON.stringify(body))
@@ -220,16 +220,16 @@ test('the /ask route holds the hook open until you answer, and notices when the 
 // ---- found in review ----
 
 test('a Codex terminal reporting focus or the cursor is not typing: the question stays in the chat', { timeout: 5000 }, async () => {
-  const waiting = hub.ask('marc', CODEX)
-  for (const report of ['\x1b[I', '\x1b[O', '\x1b[24;80R', '\x1b[?1;2c', '\x1b[<0;10;5M', '\x1b]11;rgb:0f0f/1010/1212\x07']) hub.input('marc', report)
+  const waiting = hub.ask('rex', CODEX)
+  for (const report of ['\x1b[I', '\x1b[O', '\x1b[24;80R', '\x1b[?1;2c', '\x1b[<0;10;5M', '\x1b]11;rgb:0f0f/1010/1212\x07']) hub.input('rex', report)
   assert.equal(card().answer, undefined, 'clicking the notification focuses the terminal; that must not hand it over')
-  hub.input('marc', '\r') // a real key does
+  hub.input('rex', '\r') // a real key does
   assert.equal(await waiting, '')
   assert.equal(card().answer.handedOver, true)
 })
 
 test("a payload with nulls still makes a card (it mustn't turn into an error the agent reads as a decision)", { timeout: 5000 }, async () => {
-  const waiting = hub.ask('joseph', { hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: null, permission_suggestions: null })
+  const waiting = hub.ask('june', { hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: null, permission_suggestions: null })
   assert.equal(card().ask.title, 'Run a command')
   assert.deepEqual(card().ask.always, [])
   hub.answer(card().id, { allow: true })
@@ -238,38 +238,38 @@ test("a payload with nulls still makes a card (it mustn't turn into an error the
 
 test("a Codex hook that goes away has handed over to its terminal: the agent still needs you there", { timeout: 5000 }, async () => {
   const closed = new AbortController()
-  const waiting = hub.ask('marc', CODEX, closed.signal)
+  const waiting = hub.ask('rex', CODEX, closed.signal)
   closed.abort()
   assert.equal(await waiting, '')
   assert.deepEqual([card().answer.by, card().answer.handedOver], ['terminal', true])
-  assert.equal(hub.agents.get('marc').status, 'waiting')
+  assert.equal(hub.agents.get('rex').status, 'waiting')
 })
 
 test('an agent that exits, restarts or is removed takes its open questions with it', { timeout: 5000 }, async () => {
-  let waiting = hub.ask('joseph', BASH)
-  runner.emit('exit', 'joseph', 0, 60000)
+  let waiting = hub.ask('june', BASH)
+  runner.emit('exit', 'june', 0, 60000)
   assert.equal(await waiting, '')
   assert.deepEqual(card().answer.stale, true)
-  assert.equal(hub.asking('joseph'), false)
-  waiting = hub.ask('marc', CODEX)
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'joseph', area: 'backend' }] })) // marc removed
+  assert.equal(hub.asking('june'), false)
+  waiting = hub.ask('rex', CODEX)
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'june', area: 'backend' }] })) // rex removed
   hub.loadConfig()
   assert.equal(await waiting, '')
-  assert.equal(hub.asking('marc'), false)
+  assert.equal(hub.asking('rex'), false)
   assert.throws(() => hub.answer(card().id, { allow: true }), /already been answered/)
 })
 
 test("Claude's permission notification is dropped even when it beats the card", { timeout: 5000 }, async () => {
   const before = hub.feed.length
-  hub.onHook('joseph', { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
+  hub.onHook('june', { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
   assert.equal(hub.feed.length, before)
   assert.equal(alerts.length, 0)
-  hub.onHook('joseph', { hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'Claude is waiting for your input' })
+  hub.onHook('june', { hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'Claude is waiting for your input' })
   assert.equal(alerts.length, 1, 'other notifications still need you')
 })
 
 test('a question waiting for hours stays answerable after 200 newer entries', { timeout: 5000 }, async () => {
-  const waiting = hub.ask('joseph', BASH)
+  const waiting = hub.ask('june', BASH)
   const id = card().id
   for (let i = 0; i < 320; i++) hub.post({ kind: 'event', from: 'crew', text: `busy ${i}` })
   assert.ok(hub.snapshot().feed.some((e) => e.id === id), 'still on screen')
@@ -280,7 +280,7 @@ test('a question waiting for hours stays answerable after 200 newer entries', { 
 test('the hook prints nothing on an HTTP error and always ends before the agent would kill it', { timeout: 5000 }, async () => {
   const { adapters, ASK_WAIT } = await import('../core/adapters.js')
   const settingsOf = (platform) => {
-    const claude = adapters.claude({ name: 'joseph' }, { session: 'x', attachments: '/tmp', platform, bin: platform === 'win32' ? 'C:\\Crew\\bin' : '/crew/bin' })
+    const claude = adapters.claude({ name: 'june' }, { session: 'x', attachments: '/tmp', platform, bin: platform === 'win32' ? 'C:\\Crew\\bin' : '/crew/bin' })
     return JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
   }
   const settings = settingsOf('darwin')
@@ -291,13 +291,13 @@ test('the hook prints nothing on an HTTP error and always ends before the agent 
   // is free before a file tool writes it (core/hub.js lease), never waiting on you
   assert.deepEqual(settings.hooks.PreToolUse.map((h) => h.matcher), ['Agent|Task', 'Edit|Write|MultiEdit|NotebookEdit'])
   assert.doesNotMatch(JSON.stringify(settings.hooks.PreToolUse), /\/ask\//)
-  const codex = adapters.codex({ name: 'marc' }, { platform: 'darwin' }).args.find((a) => a.startsWith('hooks.PermissionRequest='))
+  const codex = adapters.codex({ name: 'rex' }, { platform: 'darwin' }).args.find((a) => a.startsWith('hooks.PermissionRequest='))
   assert.match(codex, /curl -sf -m 1790 /)
   assert.match(codex, /timeout=1800/)
   // Windows: crew-hook.exe gives up as curl does, 10 s before each CLI would kill it
   const win = settingsOf('win32').hooks.PermissionRequest[0].hooks[0]
   assert.deepEqual([win.args, win.timeout], [['ask', '86390'], ASK_WAIT.claude])
-  const winCodex = adapters.codex({ name: 'marc' }, { platform: 'win32' }).args.find((a) => a.startsWith('hooks.PermissionRequest='))
+  const winCodex = adapters.codex({ name: 'rex' }, { platform: 'win32' }).args.find((a) => a.startsWith('hooks.PermissionRequest='))
   assert.match(winCodex, /crew-hook ask 1790/)
   assert.match(winCodex, /timeout=1800/)
 })
