@@ -68,6 +68,27 @@ jobs:
           path: desktop/test-results.xml
           if-no-files-found: ignore
 
+  # the phone app: its types and tests
+  test-mobile:
+    if: ${{ !inputs.tests }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: install
+        working-directory: mobile
+        run: npm ci
+      - name: types
+        working-directory: mobile
+        run: npm run typecheck
+      - name: tests
+        working-directory: mobile
+        run: npx jest --ci
+
   build-mac:
     if: ${{ !inputs.tests }}
     runs-on: macos-latest
