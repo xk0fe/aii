@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/images/cover.webp" alt="Crew: your AI agents, working as a crew. Seven felt creatures in their room: two at laptops, one holding up an OK? sign, one asking a question, one with a mug, one popping up, one asleep">
+  <img src="docs/images/cover.webp" alt="CLIque: your AI agents, working as a crew. Seven felt creatures in their room: two at laptops, one holding up an OK? sign, one asking a question, one with a mug, one popping up, one asleep">
 </p>
 
-Crew is an app for your Mac or Windows PC that runs a team of AI coding agents. Each agent gets a name, a job, its own instructions and a small felt creature for a face. You talk to all of them in one chat. They hand work to each other, and when one of them needs a decision, it asks you.
+CLIque is an app for your Mac or Windows PC that runs a team of AI coding agents. Each agent gets a name, a job, its own instructions and a small felt creature for a face. You talk to all of them in one chat. They hand work to each other, and when one of them needs a decision, it asks you.
 
 It runs Claude Code and Codex. GLM and local models (through Ollama) work too, and you can add other providers.
 
@@ -13,14 +13,14 @@ It runs Claude Code and Codex. GLM and local models (through Ollama) work too, a
 
 ## Get started
 
-You need a Mac (Apple silicon or Intel) or a Windows PC (Windows 10 or 11, x64 or Arm), and Claude Code or Codex installed and signed in with your own account. Crew runs them for you; it doesn't need an account of its own.
+You need a Mac (Apple silicon or Intel) or a Windows PC (Windows 10 or 11, x64 or Arm), and Claude Code or Codex installed and signed in with your own account. CLIque runs them for you; it doesn't need an account of its own.
 
-- **On a Mac:** open the DMG and drag Crew into Applications.
-- **On Windows:** run the installer. It installs Crew for you alone, with shortcuts on the desktop and in the Start menu. Git for Windows is recommended: Claude Code runs its commands in Git Bash when it's there, and in PowerShell when it isn't.
+- **On a Mac:** open the DMG and drag CLIque into Applications.
+- **On Windows:** run the installer. It installs CLIque for you alone, with shortcuts on the desktop and in the Start menu. Git for Windows is recommended: Claude Code runs its commands in Git Bash when it's there, and in PowerShell when it isn't.
 
-The first time you open Crew, it looks for Claude Code and Codex. If neither is ready yet, it shows what to install or sign in to, with the command to paste, and looks again when you press **Check again**. Once one is ready, it asks you to add your first agent. On Windows the same screen says whether Git for Windows is there, with a button to download it.
+The first time you open CLIque, it looks for Claude Code and Codex. If neither is ready yet, it shows what to install or sign in to, with the command to paste, and looks again when you press **Check again**. Once one is ready, it asks you to add your first agent. On Windows the same screen says whether Git for Windows is there, with a button to download it.
 
-Quitting Crew doesn't stop your agents: they keep working, and the next time you open Crew they're right where they were.
+Quitting CLIque doesn't stop your agents: they keep working, and the next time you open CLIque they're right where they were.
 
 To run it from this folder instead, you also need Node.js:
 
@@ -29,7 +29,7 @@ npm install
 npm start
 ```
 
-On a Mac, the first `npm start` builds `Crew.app` and opens it; after that it opens right away. Drag `desktop/dist/Crew.app` to your Dock to keep it handy. On Windows, `npm start` runs Crew from the folder. `npm run dist` makes the installers.
+On a Mac, the first `npm start` builds `CLIque.app` and opens it; after that it opens right away. Drag `desktop/dist/CLIque.app` to your Dock to keep it handy. On Windows, `npm start` runs CLIque from the folder. `npm run dist` makes the installers.
 
 ## Meet your crew
 
@@ -47,7 +47,7 @@ Click a card to open it. This is where you set the agent's job, model and folder
 
 <img src="docs/images/mentions.webp" alt="Typing @ opens the crew; arrow keys and Enter pick an agent" width="400" align="right">
 
-Write a message and Crew gives it to the agent whose job fits and who's free. Or type `@` and pick who it's for. Mention a few agents and each one gets its own copy.
+Write a message and CLIque gives it to the agent whose job fits and who's free. Or type `@` and pick who it's for. Mention a few agents and each one gets its own copy.
 
 Click an agent's face and the chat turns into your conversation with it. You see just what the two of you said, and everything you send goes to that agent. **All**, or clicking the agent again, takes you back to everyone.
 
@@ -107,7 +107,7 @@ Give an agent clones and it stops making you wait. While it's busy, a copy of it
 
 A little pill sits on the edge of your screen with the crew inside. They hop while they work. Click it, or press `⌥⇧Space` (Alt+Shift+Space on Windows), and the chat opens. Drag the pill anywhere; near the top or bottom of the screen it lies flat, like the Dock.
 
-The menu bar (on Windows, Crew's icon in the taskbar) has the crew too, standing in a little felt strip. Hover an agent to switch it on or off, or to let it skip permission prompts (YOLO).
+The menu bar (on Windows, CLIque's icon in the taskbar) has the crew too, standing in a little felt strip. Hover an agent to switch it on or off, or to let it skip permission prompts (YOLO).
 
 ## A crew per project
 
@@ -148,7 +148,7 @@ crew task list                               # pick up work from the Tasks board
 
 A question reaches a teammate even when it's busy with something else. It shows up at the teammate's next step, the teammate answers and carries on, and the asker has the answer within seconds instead of waiting for the teammate to finish.
 
-Crew also decides who goes first when agents need each other, so they never end up waiting in circles. An agent that's being waited on can't wait on its waiter, work can't be handed back to an agent that's waiting for your answer, and two agents never edit the same file at once. When Crew steps in, the chat says so in one quiet line.
+CLIque also decides who goes first when agents need each other, so they never end up waiting in circles. An agent that's being waited on can't wait on its waiter, work can't be handed back to an agent that's waiting for your answer, and two agents never edit the same file at once. When CLIque steps in, the chat says so in one quiet line.
 
 <p align="center"><img src="docs/images/right-of-way.webp" alt="June asks Ada while Ada is busy: June waits on her, Ada answers mid-task in two seconds and carries on" width="560"></p>
 
@@ -156,6 +156,6 @@ Hand-offs show up in the chat with the sender's face next to them. Turn Autopilo
 
 ## More
 
-- [The full guide](docs/guide.md) covers every setting, the files Crew keeps in `~/.crew`, and how it works inside.
+- [The full guide](docs/guide.md) covers every setting, the files CLIque keeps in `~/.crew`, and how it works inside.
 - `npm run shots` renders every screen with a made-up crew. That's where these pictures come from.
 - The desktop app's code is in `desktop/`, the phone app's in `mobile/`, and the protocol they share in `shared/`. Run everything from the top folder: `npm start`, `npm test` and `npm run shots` reach into `desktop/`.

@@ -104,7 +104,7 @@ function npmSections() {
     }
     if (!texts.length) throw new Error(`${p.name} ${p.version} has no license file: say where its license is in NO_FILE`)
     const about = {
-      electron: "Electron includes Chromium and the open source projects Chromium is built from. Their licenses ship with Crew as LICENSES.chromium.html, in Crew.app/Contents/Resources on macOS and next to Crew.exe on Windows.",
+      electron: "Electron includes Chromium and the open source projects Chromium is built from. Their licenses ship with CLIque as LICENSES.chromium.html, in CLIque.app/Contents/Resources on macOS and next to CLIque.exe on Windows.",
       'node-pty': 'Its Windows terminals also use winpty and ConPTY, listed under "Windows only".',
     }[p.name]
     return section({ title: `${p.name} ${p.version}`, url: p.url, license: p.license, about, texts })
@@ -158,7 +158,7 @@ function shimSections() {
   const zigLicense = [path.join(path.dirname(field('zig_exe')), 'LICENSE'), path.join(lib, '..', 'LICENSE'), path.join(lib, '..', '..', 'LICENSE')].find((f) => fs.existsSync(f))
   const mingw = path.join(lib, 'libc', 'mingw', 'COPYING')
   if (!zigLicense || !fs.existsSync(mingw)) throw new Error(`Zig's license or MinGW-w64's isn't where it was (${lib})`)
-  const about = "Crew's crew.exe, crew-status.exe and crew-hook.exe for Windows are built with Zig, and contain parts of it."
+  const about = "CLIque's crew.exe, crew-status.exe and crew-hook.exe for Windows are built with Zig, and contain parts of it."
   return [
     section({ title: `Zig ${version} (compiler-rt)`, url: 'https://ziglang.org', license: 'MIT', about, texts: [read(zigLicense)] }),
     section({ title: 'MinGW-w64 runtime', url: 'https://www.mingw-w64.org', license: 'ZPL-2.1', about: 'Startup code in the same Windows tools, from the MinGW-w64 runtime that comes with Zig.', texts: [read(mingw)] }),
@@ -177,9 +177,9 @@ function fontSections() {
 export function notices() {
   const rule = `\n\n${'-'.repeat(100)}\n\n`
   const head = [
-    'Third-party software in Crew',
+    'Third-party software in CLIque',
     '',
-    'Crew is made by Green Grass Inc. and is not open source (see LICENSE). It includes the open source software below,',
+    'CLIque is made by Green Grass Inc. and is not open source (see LICENSE). It includes the open source software below,',
     'each under its own license. Their copyright notices and license terms follow, as they came with each one.',
   ].join('\n')
   const fontPart = fontSections()
