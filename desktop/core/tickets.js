@@ -216,6 +216,46 @@ export const triagePrompt = (t, ref) =>
     'Keep it short. Urgent means it blocks the user right now.',
   ].join('\n')
 
+// Quick triage (core/savers.js quickTriage): the same job in one short call with no tools, so everything it needs is
+// written in, and the answer is one JSON object (readTriage). `open`: the other open tasks; `crew`: who can own it.
+export function quickTriagePrompt(t, open, crew) {
+  const bug = t.kind === 'bug'
+  return [
+    `You triage tasks for a crew of AI coding agents. Answer with one JSON object and nothing else.`,
+    '',
+    `The ${bug ? 'bug report' : 'task'} the user just added (#${t.id}):`,
+    t.report || [t.title, t.body].filter(Boolean).join('\n\n'),
+    t.images.length ? `(with ${t.images.length === 1 ? 'a screenshot' : `${t.images.length} screenshots`})` : '',
+    '',
+    'Open tasks:',
+    open.length ? open.map(ticketLine).join('\n') : '(none)',
+    '',
+    'Agents who can own it (name, status, area):',
+    crew.length ? crew.map((a) => `${a.name}  ${a.status}  ${a.area || 'general'}`).join('\n') : '(none)',
+    '',
+    'If it is the same as one of the open tasks: {"dup": <that task\'s number>}',
+    `Otherwise: {"owner": "<the agent whose area it is, or null>", "priority": "urgent|high|medium|low", "kind": "bug|feature|task", "title": "<short title>", "details": "<${bug ? 'steps to reproduce, expected, actual' : 'what is wanted, how to tell it is done'}, where to look>"}`,
+    'Keep every concrete detail the user wrote: file paths, commands, steps, numbers, devices. Urgent means it blocks the user right now.',
+  ].join('\n').replace(/\n{3,}/g, '\n\n')
+}
+
+// What quick triage answered: { dup } or { owner, priority, kind, title, details }, or null when it isn't one of those.
+export function readTriage(text) {
+  let d
+  try {
+    d = JSON.parse(String(text ?? '').match(/\{[\s\S]*\}/)?.[0] ?? '')
+  } catch {
+    return null
+  }
+  if (!d || typeof d !== 'object') return null
+  const dup = Number(String(d.dup ?? '').replace(/^#/, ''))
+  if (Number.isInteger(dup) && dup > 0) return { dup }
+  const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '')
+  const owner = str(d.owner, 60).replace(/^@/, '')
+  const out = { owner: owner && owner !== 'null' ? owner : null, priority: String(d.priority ?? '').toLowerCase(), kind: String(d.kind ?? '').toLowerCase(), title: str(d.title, 120), details: str(d.details, 4000) }
+  return priorityOf(out.priority) && KINDS.includes(out.kind) && out.title ? out : null
+}
+
 export const TASK_HELP = `crew task list                    open tasks
 crew task show <n>                one task in full: details, screenshots, notes
 crew task done <n> "..."          you did it: what you did (or what was wrong), how you checked

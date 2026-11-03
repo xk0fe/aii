@@ -243,6 +243,19 @@ On a subscription none of this is billed: it's a measure of how much each agent 
 
 - **The month before.** The first time CLIque counts, it looks back through the agents' own logs for the last 30 days, so the numbers don't start at zero: Claude Code's transcripts priced at list prices, and Codex's session logs for tokens. A conversation that opened with a task's brief counts toward that task. It reads only the crew's own sessions, in the background, and says what it found in one line in the chat.
 
+### Token savers
+
+A crew spends tokens a single agent doesn't: agents sit idle for hours and then wake up, read the shared notes, and hand work back and forth. **Token savers** (in the sidebar's **…** menu) are six changes that cut that, each with its own switch. They're all on to begin with.
+
+- **Start fresh after a long break.** Claude Code keeps a conversation cached for an hour (5 minutes on an API key). After that, picking a big conversation back up rewrites all of it into the cache, at twice the price of reading it. So when a teammate's hand-off, or a message Auto picked the agent for, arrives after an hour or more away and doesn't follow on from that conversation, the agent starts a new one. On top of the message it gets a short note: the task it was on and the last thing it said. It starts fresh only when the rewrite would cost more than a new conversation finding its way around (about 120k tokens), so for a conversation over 60k on a subscription, 96k on an API key, and 120k for Codex. What you send an agent yourself (in its chat, or by name) always goes to its conversation, as do replies to what it said, answers to its questions, teammates' questions and a task sent back to it.
+- **Show only the notes an agent hasn't read.** `crew board` shows the notes added since that conversation last looked (the newest 20 the first time), and says how many older ones there are. `crew board --all` shows them all, and `crew board <words>` searches them. A note from an agent is kept under 800 characters: one decision, interface or gotcha. You always see the whole board.
+- **One quick check before building.** Before they build something, agents run `crew busy` (what each teammate is on, the files it's editing, what it has leased) instead of reading the board and listing PRs and branches. An agent alone in its workspace, with no clones, skips the check. The check is part of an agent's instructions, so switching this on or off starts the agents again once they're free. A teammate joining a lone agent changes its check at its next launch, since starting it again would re-read its whole conversation.
+- **Quick triage.** With a triage agent, a new task is triaged in one short call to a small model (Claude's haiku, or Codex at low effort), with the open tasks and the crew written in, rather than as a turn in the triage agent's own long conversation. Its cost counts as the triage agent's. A task with a screenshot goes to the triage agent, since the quick call reads text only. If the call fails, or what it decides doesn't hold up, the triage agent triages the task as before, and if it can't, the agent whose area it is gets it.
+- **Auto picks the cheaper agent on a tie.** When two agents fit a message equally well (same area, both free), Auto gives it to the one whose conversation is still cached, or is smaller.
+- **No reports back.** A hand-off tells the agent it's theirs now, with nothing to report back. With this on, an agent can't `crew send` to the teammate whose hand-off it's working on: its final message shows in the chat anyway. Only a teammate named as the recipient counts (not one @mentioned in the text), and a hand-off that asked something still gets its answer back. New work for that teammate goes with `crew send <name> --new "…"`, and `crew ask` always goes through.
+
+Each saver counts what it does. With it on, that's what it saved: cold conversations it didn't re-read, notes it left out, triage calls and what they cost. With it off, it's what the saver would have done. Every turn's spend is also filed under the savers that were on at the time, so the sheet shows cost per turn with them on and off once there's both to compare. `node scripts/savers.mjs` prints the same in a terminal (add `--days 7` or `--json`). For a benchmark run, `CREW_SAVERS` decides which are on whatever the switches say: `off`, `on`, or a list of names (`coldStart,boardNew`). In `config.json` the ones you turned off are `"savers": { "coldStart": false }`, or `"savers": false` for all of them.
+
 ## Workspaces: a crew per project
 
 A workspace is a project: a folder, the agents who work on it, and its own chat, notes, tasks and conversations. Without any, CLIque is one workspace, **Home**, where every agent works in its own folder. Home has no folder of its own: its settings list every agent with its folder, to change any of them there (or in the agent's sheet).
@@ -307,6 +320,7 @@ Everything CLIque keeps is in the `.crew` folder in your home folder (`~/.crew` 
 - `board.md`: the shared notes (`crew note`); the last 200 are kept.
 - `reads.json`: up to when you've read each agent's replies (the unread counts).
 - `usage.json`: each provider's usage limits as last reported, and which heads-ups you've had.
+- `savers.json`: what each [token saver](#token-savers) counted, day by day for the last 90 days, and the crew's spend under each mix of savers that was on.
 - `spend.json`: the last running totals each agent's CLI reported (so nothing is counted twice) and the crew's spend per hour of each day, for the last 60 days.
 - `attachments/`: images you've attached to messages, tasks and instructions. One that no chat, task or agent refers to any more is removed 60 days after you added it.
 - `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, copies of images from agents on other computers (fetched again when needed, kept 30 days), and `phones.json`: the phones paired with this computer and the keys for them.
@@ -314,7 +328,7 @@ Everything CLIque keeps is in the `.crew` folder in your home folder (`~/.crew` 
 - `runtime.json`: what CLIque knows about each agent at work (what it's answering, its queue, its clones, questions between agents), so it can pick them up after a restart.
 - `spool/`: what agents reported while CLIque was closed, replayed when it's back (up to the last 8 MB per agent).
 - `logs/crew.log`: what went wrong that nobody saw, kept under 1 MB (the one before is `crew.old.log`).
-- `workspaces/<id>/`: a workspace's own copies of the files about a project (`feed.jsonl`, `board.md`, `tickets.json`, `sessions.json`, `conversations.json`, `reads.json`, `stats.json`, `spend.json`, `runtime.json`, `spool/` and `run/`). Home's are the ones above, in `.crew` itself.
+- `workspaces/<id>/`: a workspace's own copies of the files about a project (`feed.jsonl`, `board.md`, `tickets.json`, `sessions.json`, `conversations.json`, `reads.json`, `stats.json`, `spend.json`, `savers.json`, `runtime.json`, `spool/` and `run/`). Home's are the ones above, in `.crew` itself.
 
 ```json
 {

@@ -618,6 +618,7 @@ $('.side-more').addEventListener('click', (e) => {
   const away = c.links.filter((l) => !l.online).length
   popMenu(e.currentTarget, [
     { label: 'Autopilot', icon: ICONS.plane, act: 'autopilot', hint: state.autopilot ? 'On: hand-offs go through' : 'Off: hand-offs wait for you' },
+    { label: 'Token savers…', icon: ICONS.chart, act: 'savers', hint: saversHint() },
     '-',
     { label: 'Computers…', icon: ICONS.computers, act: 'computers', hint: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : '' },
     { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
@@ -627,11 +628,87 @@ $('.side-more').addEventListener('click', (e) => {
     ...(crew.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
   ], (act) => {
     if (act === 'autopilot') crew.call('autopilot', !state.autopilot).catch((err) => oops("Couldn't change Autopilot", err))
+    if (act === 'savers') openSavers()
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
     if (act.startsWith('theme:')) crew.call('theme', act.slice(6))
     if (act === 'config') crew.call('config')
   })
+})
+
+// ---- token savers (core/savers.js): one switch each, and what each has counted ----
+
+const saversDialog = $('#savers')
+saversDialog.querySelector('.h-icon').innerHTML = ICONS.chart
+const saversOn = () => (state.savers?.list ?? []).filter((s) => state.savers.on[s.id]).length
+const saversHint = () => (state.savers ? `${saversOn()} of ${state.savers.list.length} on` : '')
+const times = (n) => (n === 1 ? 'once' : `${n.toLocaleString('en-US')} times`)
+const tok = (n) => `${tokenCount(Math.round(n ?? 0))} tokens`
+// What a saver counted: with it on, what it did; with it off, what it would have done. Both when it's been both.
+const SAVER_COUNTS = {
+  coldStart: [(c) => `Started fresh ${times(c.n)} instead of re-reading ${tok(c.tokens)}`, (c) => `${plural(c.n, 'cold conversation')} picked back up, re-reading ${tok(c.tokens)}`],
+  boardNew: [(c) => `Left ${tok(c.tokens)} of notes already read out of ${plural(c.n, 'board read')}`, (c) => `${plural(c.n, 'board read')} could have left out ${tok(c.tokens)}`],
+  busyCheck: [(c) => `crew busy was run ${times(c.n)}`, (c) => `crew busy was run ${times(c.n)}`],
+  quickTriage: [
+    (c) => `${plural(c.n, 'task')} triaged${c.cost ? `, ${money(c.cost / c.n)} each` : c.tokens ? `, ${tok(c.tokens / c.n)} each` : ''}${c.failed ? ` (${c.failed} by the triage agent after all)` : ''}`,
+    (c) => `${plural(c.n || 0, 'triage turn')}${c.cost && c.n ? `, ${money(c.cost / c.n)} each` : c.tokens && c.n ? `, ${tok(c.tokens / c.n)} each` : ''}`,
+  ],
+  warmRoute: [(c) => `Picked the cheaper agent ${times(c.n)}, about ${tok(c.tokens)} less to wake`, (c) => `Could have picked a cheaper agent ${times(c.n)} (about ${tok(c.tokens)})`],
+  noReportBack: [(c) => `Stopped ${plural(c.n, 'report')} back`, (c) => `${plural(c.n, 'report')} back went out`],
+}
+function saverCount(id) {
+  const s = state.savers.all.savers[id]
+  const [onText, offText] = SAVER_COUNTS[id] ?? []
+  const lines = [s?.on?.n && `<span class="sv-count">${esc(onText(s.on))}</span>`, s?.off?.n && `<span class="sv-count off">With it off: ${esc(offText(s.off))}</span>`].filter(Boolean)
+  return lines.join('') || '<span class="sv-count none">Nothing to count yet</span>'
+}
+// Cost per turn under each mix of savers that was on, once there's more than one to compare.
+const MODE_NAMES = (mode, all) => (mode === 'none' ? 'All off' : mode.split('+').length === all ? 'All on' : `${mode.split('+').length} of ${all} on`)
+function drawSaverModes() {
+  const all = state.savers.list.length
+  const rows = Object.entries(state.savers.all.modes).filter(([, m]) => m.turns >= 1 && (m.cost >= 0.005 || m.tokens))
+  if (rows.length < 2) return ''
+  return `<h4 class="section-label">Cost per turn, by which savers were on</h4><div class="group-list">${rows
+    .sort(([, x], [, y]) => y.turns - x.turns)
+    .map(([mode, m]) => `<div class="sv-mode" title="${esc(mode)}"><span>${esc(MODE_NAMES(mode, all))}</span><b>${m.cost >= 0.005 ? money(m.cost / m.turns) : tok(m.tokens / m.turns)}</b><small>${plural(m.turns, 'turn')}${m.tools ? ` · ${(m.tools / m.turns).toFixed(1)} tool calls each` : ''}</small></div>`)
+    .join('')}</div><p class="sv-note">${esc(SPEND_NOTE)} Different weeks bring different work, so compare over a while.</p>`
+}
+// Drawn again only when what it shows changed (counts move with every turn while agents work), and patched in place,
+// so a switch keeps its focus and a click isn't lost to a row being replaced under it.
+let saversKey = ''
+function drawSavers(force = false) {
+  if (!state.savers) return
+  const key = JSON.stringify(state.savers)
+  if (!force && key === saversKey) return
+  saversKey = key
+  const { list, on, forced } = state.savers
+  morph(saversDialog.querySelector('.sv-list'), list.map((s) => `
+    <label class="sv" data-saver="${esc(s.id)}">
+      <b>${esc(s.label)}</b>
+      <span class="sv-about">${esc(s.about)}</span>
+      ${saverCount(s.id)}
+      <input type="checkbox" class="switch" data-sv="${esc(s.id)}" ${on[s.id] ? 'checked' : ''} ${forced ? 'disabled' : ''} aria-label="${esc(s.label)}">
+    </label>`).join(''))
+  morph(saversDialog.querySelector('.sv-modes'), drawSaverModes())
+  for (const sw of saversDialog.querySelectorAll('[data-sv]')) sw.checked = Boolean(on[sw.dataset.sv]) // a property morph leaves be
+  saversDialog.querySelector('.sv-forced').textContent = forced ? 'CREW_SAVERS is set, so it decides which are on.' : ''
+}
+function openSavers() {
+  saversDialog.querySelector('[data-sv-err]').textContent = ''
+  drawSavers(true)
+  saversDialog.showModal()
+}
+saversDialog.addEventListener('change', (e) => {
+  const sw = e.target.closest('[data-sv]')
+  if (!sw) return
+  saversDialog.querySelector('[data-sv-err]').textContent = ''
+  crew.call('savers', { [sw.dataset.sv]: sw.checked }).catch((x) => {
+    sw.checked = !sw.checked
+    saversDialog.querySelector('[data-sv-err]').textContent = errorLine(x)
+  })
+})
+saversDialog.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]') || e.target === saversDialog) saversDialog.close()
 })
 
 // ---- terminals -------------------------------------------------------------
@@ -1410,6 +1487,7 @@ const ready = live((next) => {
   syncChannel()
   workspaces.render(state)
   drawComputers(state)
+  if (saversDialog.open) drawSavers()
   drawFoot(state)
   // Terminals only for agents that are on (and not parked); the sidebar lists everyone so off agents are one click from
   // coming back.

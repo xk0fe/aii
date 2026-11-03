@@ -258,6 +258,25 @@ const SHOTS = {
     await save(win, `computers-${theme}`)
     win.destroy()
   },
+  // Token savers: a switch each, what each counted, and cost per turn with them on and off. Then a switch flipped, as you
+  // would: the sheet redraws from the state that comes back.
+  async savers(theme) {
+    const win = await dashboard(theme, 'crew', { fixture: 'big' })
+    await sleep(900)
+    await js(win, 'openSavers()')
+    await sleep(800)
+    await save(win, `savers-${theme}`)
+    await js(win, "document.querySelector('#savers .sheet-body').scrollTop = 1e5")
+    await sleep(300)
+    await save(win, `savers-end-${theme}`)
+    const flipped = await js(win, `
+      const sw = document.querySelector('#savers [data-sv="noReportBack"]')
+      sw.click()
+      await new Promise((r) => setTimeout(r, 300))
+      return [window.__crewState.savers.on.noReportBack, document.querySelector('#savers [data-sv="noReportBack"]').checked, document.querySelectorAll('#savers .sv').length]`)
+    if (String(flipped) !== 'true,true,6') throw new Error(`savers: flipping a switch gave ${flipped}`)
+    win.destroy()
+  },
   // Add a phone: the pairing view with its code to scan, the phone that paired with it, then the list with that phone
   // highlighted (two paired before it, one connected).
   async phones(theme) {

@@ -14,11 +14,12 @@ cmd=$1
 [ $# -gt 0 ] && shift
 case "$cmd" in
   who) call "$URL/who" ;;
-  board) call "$URL/board" ;;
+  board) printf '%s\0' "$@" | call --data-binary @- "$URL/board?from=$FROM" ;;
+  busy) call "$URL/busy?from=$FROM" ;;
   send)
     to=$1
     [ $# -gt 0 ] && shift
-    [ -n "$to" ] && [ $# -gt 0 ] || { echo 'usage: crew send <name|any> "task"' >&2; exit 2; }
+    [ -n "$to" ] && [ $# -gt 0 ] || { echo 'usage: crew send <name|any> [--new] "task"' >&2; exit 2; }
     printf '%s' "$*" | call --data-binary @- "$URL/send?from=$FROM&to=$to" ;;
   ask)
     # held open until the answer comes; Crew lets go after 100s with where things stand
@@ -52,11 +53,12 @@ crew ask <name|any> "..."   ask an agent and wait for its answer (its final mess
 crew wait                   keep waiting for the answers to what you asked
 crew answer ["@name"] "..." answer a question you were asked, right away, and carry on
 crew send <name|any> "..."  hand a task to an agent for good (queued until it is free)
+crew busy                   what each teammate is working on right now
 crew lease <thing> ["..."]  take something only one agent can use at a time (a simulator, a port), waiting if it's taken
 crew release [thing]        give it back (everything you hold, without a name)
 crew leases                 who has what
 crew note "..."             share context with the whole crew
-crew board                  read the shared notes
+crew board [words]          the shared notes you haven't read (--all for every one, or words to search)
 crew task                   the Tasks board: list, show, done, note, add (crew task help)
 EOF
     ;;

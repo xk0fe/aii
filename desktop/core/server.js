@@ -9,7 +9,11 @@ export function serve(to) {
   const hubFor = to.hubFor ? (id) => to.hubFor(id) : (id) => (id === DEFAULT ? to : null)
   const routes = (hub) => ({
     hook: (q, body, name) => hub.onHook(name, JSON.parse(body || '{}')),
-    send: (q, body) => hub.send({ from: q.from || 'you', to: q.to, text: body }),
+    // `crew send <name> --new "…"`: new work for the teammate whose hand-off the sender is on (see Hub.send)
+    send: (q, body) => {
+      const fresh = /^--new(?:\s+|$)/.exec(body)
+      return hub.send({ from: q.from || 'you', to: q.to, text: fresh ? body.slice(fresh[0].length) : body, ...(fresh && { newWork: true }) })
+    },
     // `crew ask` and `crew wait`: held open until the answer comes (or ASK_HOLD), the answer is the reply
     question: (q, body, name, closed) => hub.question({ from: q.from || 'you', to: q.to, text: body, closed }),
     wait: (q, body, name, closed) => hub.wait({ from: q.from || 'you', closed }),
@@ -22,7 +26,9 @@ export function serve(to) {
     leases: () => hub.leasesText(),
     note: (q, body) => hub.note(q.from || 'you', body),
     who: () => hub.who(),
-    board: () => hub.board(),
+    // `crew board [words]`: the words NUL-separated (none from a `crew` older than that: everything, as it was)
+    board: (q, body) => hub.board(q.from || 'you', body.split('\0').slice(0, -1)),
+    busy: (q) => hub.busy(q.from || 'you'),
     // An agent's PermissionRequest hook, held open until you answer in the chat; the reply is its decision
     // (empty: no decision, the agent asks in its terminal). `closed` fires if the hook gives up first.
     ask: (q, body, name, closed) => hub.ask(name, JSON.parse(body || '{}'), closed),

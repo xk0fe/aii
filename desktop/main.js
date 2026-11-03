@@ -489,6 +489,8 @@ const actions = {
   // Answer an agent's question (a permission prompt, AskUserQuestion, a plan) from the chat; see hub.ask.
   answer: (id, reply) => crew.feedAction(id, 'answer', [reply]),
   autopilot: (on) => crew.here.setAutopilot(on),
+  // The token savers (core/savers.js): savers({ coldStart: false }) turns one off.
+  savers: (patch) => crew.setSavers(patch),
   // You've seen agents' replies up to then: { name: ts }. Unread badges count what's newer.
   read: (seen, ws) => (crew.hubs.get(ws) ?? crew.here).read(seen),
   update: (names, patch) => crew.update(names, patch),

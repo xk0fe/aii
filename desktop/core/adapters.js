@@ -59,7 +59,19 @@ function userStatusLine() {
   }
 }
 
-const prompt = (a) => `You are "${a.cloneOf ?? a.name}", one of several AI agents working side by side in terminals as a crew, coordinated by the user.${
+// checks: what to check before building something (Hub.checksFor): 'full' (the board, PRs and branches), 'busy' (crew busy),
+// or 'none' (it works alone).
+const BUILD_CHECK = {
+  full: `- Before you build something, check that nobody is building it already: crew board, open PRs, and branches or
+  worktrees named for it. If someone is (a teammate, a clone, another session), don't start a second build: crew ask
+  them, or ask the user which one goes ahead.
+`,
+  busy: `- Before you build something, run crew busy to see what your teammates are on. If one of them (or a clone) is
+  building it already, don't start a second build: crew ask them, or ask the user which one goes ahead.
+`,
+  none: '',
+}
+const prompt = (a, checks = 'full') => `You are "${a.cloneOf ?? a.name}", one of several AI agents working side by side in terminals as a crew, coordinated by the user.${
   a.cloneOf ? `\nThis copy of ${a.cloneOf} is its clone "${a.name}": ${a.cloneOf} was busy, so Crew started you to take on another task at the same time. Teammates reach you as ${a.name}, and your own work counts as ${a.cloneOf}'s. Other copies of ${a.cloneOf} may be working in the same folder right now: stick to your task, and leave changes you didn't make alone.` : ''
 }
 Your area: ${a.area || 'general'}.
@@ -77,7 +89,8 @@ Crew commands (run them in the shell):
                             minutes) and then says who has it
   crew release [thing]      give it back when you're done (it also goes back when your turn ends with nothing running)
   crew note "<fact>"        share context with everyone: decisions, interfaces, gotchas
-  crew board                read the shared notes
+  crew busy                 what each teammate is working on right now
+  crew board [words]        read the shared notes, or search them
   crew task                 the Tasks board: list, show, done, note, add, decline (crew task help)
 Crew keeps the crew from stalling. Its rules:
 - Need it back? crew ask. Never poll, sleep or loop waiting for a teammate, and never ask the same thing twice.
@@ -90,10 +103,7 @@ Crew keeps the crew from stalling. Its rules:
   server or closing their simulator. Stop the servers and simulators you started once you're done with them.
 - crew send is for work you hand off. News goes in crew note: a busy teammate starts a clone for anything you send.
 One builder per piece of work:
-- Before you build something, check that nobody is building it already: crew board, open PRs, and branches or
-  worktrees named for it. If someone is (a teammate, a clone, another session), don't start a second build: crew ask
-  them, or ask the user which one goes ahead.
-- Work in your folder, on the branch checked out there, unless the user or your task asks for a branch. Never write
+${BUILD_CHECK[checks] ?? BUILD_CHECK.full}- Work in your folder, on the branch checked out there, unless the user or your task asks for a branch. Never write
   in a worktree or branch someone else made, unless its owner handed it to you.
 - Teammates and clones may be working in your folder right now: never switch its branch (git switch, git checkout
   <branch>) or stash their changes. A task that needs a branch of its own gets a worktree for it.
@@ -106,7 +116,7 @@ const toml = (s) => JSON.stringify(s)
 
 // platform and bin (where Crew's bin/ is) say how the hooks reach Crew: see claudeHook.
 export const adapters = {
-  claude(a, { resume, session, attachments, platform = process.platform, bin }) {
+  claude(a, { resume, session, attachments, platform = process.platform, bin, checks }) {
     const where = { platform, bin }
     const on = (matcher) => [{ ...(matcher && { matcher }), hooks: [claudeHook('hook', 0, where)] }]
     const settings = {
@@ -140,7 +150,7 @@ export const adapters = {
         ...(a.yolo ? ['--dangerously-skip-permissions'] : []),
         '--settings', JSON.stringify(settings),
         '--add-dir', attachments, // attached images open without a permission prompt
-        '--append-system-prompt', prompt(a),
+        '--append-system-prompt', prompt(a, checks),
         // Render the prompt fresh on every request, so edited instructions apply to a resumed conversation too.
         '--system-prompt-snapshot', 'off',
         ...(resume ? ['--resume', resume] : ['--session-id', session]),
@@ -148,7 +158,7 @@ export const adapters = {
     }
   },
 
-  codex(a, { resume, platform = process.platform }) {
+  codex(a, { resume, platform = process.platform, checks }) {
     const where = { platform }
     const events = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'Interrupt']
     const ask = `[{hooks=[{type="command",command=${toml(codexHook('ask', CODEX_WAIT, where))},timeout=${CODEX_WAIT},statusMessage="Waiting for your answer in CLIque's chat"}]}]`
@@ -165,7 +175,7 @@ export const adapters = {
         ...(a.tier ? ['-c', `service_tier=${toml(a.tier)}`] : []), // "fast" = fast mode
         // `crew` talks to the hub over localhost: workspace-write (untrusted folders default to read-only) with network on.
         ...(a.yolo ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true']),
-        '-c', `developer_instructions=${toml(prompt(a))}`,
+        '-c', `developer_instructions=${toml(prompt(a, checks))}`,
         '-c', 'check_for_update_on_startup=false',
         ...events.flatMap((e) => ['-c', `hooks.${e}=[{hooks=[{type="command",command=${toml(codexHook('hook', 0, where))}}]}]`]),
         '-c', `hooks.PermissionRequest=${ask}`,
