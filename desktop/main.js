@@ -26,6 +26,8 @@ const dir = path.dirname(fileURLToPath(import.meta.url))
 const TRAY_WIDTH = 340
 const MAC = process.platform === 'darwin'
 const WINDOWS = process.platform === 'win32'
+// Windows' own cut of the app icon (no Mac tile shadow), every size it asks for from 16 to 256px
+const WIN_ICON = path.join(dir, 'assets', 'icon.ico')
 const LOG = path.join(HOME, 'logs', 'crew.log') // ~/.crew/logs/crew.log (logLine)
 const LOG_MAX = 1024 * 1024
 
@@ -283,9 +285,10 @@ function keepOpen(win) {
 
 // The menu bar icon (a Mac) or the notification area's (Windows). On a Mac it's a template image the menu bar tints, with
 // "2/5" beside it as its title. Windows has no title there: the icon is drawn by the popover's page with the count on it
-// (drawTrayIcon), so it starts as the app icon until that page has loaded.
+// (drawTrayIcon), so it starts as the app icon until that page has loaded: on Windows the .ico, left unresized so Windows
+// takes its frame for the screen's scale (16px at 100%, up to 32px at 200%).
 function createTray() {
-  tray = new Tray(MAC ? nativeImage.createFromPath(path.join(dir, 'assets', 'trayTemplate.png')) : nativeImage.createFromPath(path.join(dir, 'assets', 'icon.png')).resize({ width: 32, height: 32 }))
+  tray = new Tray(MAC ? nativeImage.createFromPath(path.join(dir, 'assets', 'trayTemplate.png')) : WINDOWS ? nativeImage.createFromPath(WIN_ICON) : nativeImage.createFromPath(path.join(dir, 'assets', 'icon.png')).resize({ width: 32, height: 32 }))
   tray.setToolTip('Crew')
   trayWin = page('tray.html', {
     width: TRAY_WIDTH, height: 320, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false,
@@ -407,7 +410,7 @@ function openDashboard(focus = '') {
     width: Math.min(1500, wa.width), height: Math.min(940, wa.height), minWidth: 980, minHeight: 560,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#161719' : '#f3f3f6', title: 'Crew',
     // a Mac's traffic lights sit in the page's titlebar; Windows draws its window buttons over the titlebar's right end
-    ...(MAC ? { titleBarStyle: 'hiddenInset' } : { titleBarStyle: 'hidden', titleBarOverlay: captionColors(), icon: path.join(dir, 'assets', 'icon.png') }),
+    ...(MAC ? { titleBarStyle: 'hiddenInset' } : { titleBarStyle: 'hidden', titleBarOverlay: captionColors(), icon: WINDOWS ? WIN_ICON : path.join(dir, 'assets', 'icon.png') }),
   }, { focus })
   dash.once('ready-to-show', () => (dash.show(), showNeedsBadge()))
   dash.on('show', () => overlay.hide())
