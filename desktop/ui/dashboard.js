@@ -23,6 +23,7 @@ const feed = mountFeed($('.feed'), {
   onTicket: (key) => openTask(key),
   onReply: (e) => composer.replyTo(e),
   onFound: () => closeSearch({ keep: true }),
+  welcome: () => welcomeHTML(),
 })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to), onDictate: () => place === 'chat' || place === 'dm' || goPlace('chat') })
 const collection = mountCollection($('.collection'), {
@@ -31,7 +32,7 @@ const collection = mountCollection($('.collection'), {
   onRenamed: (from, to) => renamed(from, to),
 })
 const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
-const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next) })
+const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next), onMembers: (at) => openMembers(at) })
 // first run: Claude Code and Codex, what to install or sign in to, then the first agent (ui/setup.js)
 const setup = mountSetup({ onAdd: () => addAgent() })
 
@@ -191,10 +192,11 @@ function chatHead() {
   const members = state.agents.filter((a) => !a.cloneOf)
   const faces = [...members.filter((a) => a.on), ...members.filter((a) => !a.on)]
   const who = hasWorkspaces(state) ? `Everyone in ${state.workspace.name}` : 'Your whole crew'
-  return `<h1 class="mh-title"><span class="hash" aria-hidden="true">#</span>crew</h1><span class="mh-sub">${esc(who)} · Auto picks who answers</span>
+  const folder = state.workspace?.folder
+  return `<h1 class="mh-title"><span class="hash" aria-hidden="true">#</span>crew</h1><span class="mh-sub" title="${esc(folder ? `Its agents work in ${folder}, unless one has a folder of its own here` : 'Each agent works in its own folder')}">${esc(who)} · ${folder ? esc(tildePath(folder)) : 'Auto picks who answers'}</span>
     <span class="mh-acts">
       ${needs.length ? `<button class="mh-needs" data-head="needs" title="${esc(`${needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick for the oldest`)}">${needs.length} waiting on you${DOWN}</button>` : ''}
-      ${members.length ? `<button class="mh-faces" data-place="crew" title="${esc(`${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on: open Agents`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 26, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}
+      ${members.length ? `<button class="mh-faces" data-head="members" aria-haspopup="dialog" title="${esc(`Who works here: ${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 26, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}
     </span>`
 }
 // An agent: its creature and name, what it is and its brain in one line (with its clones or helpers), then its
@@ -221,6 +223,7 @@ $('.mainhead').addEventListener('click', (e) => {
   const a = dmAgent()
   const act = b.dataset.head
   if (act === 'needs') return answerOldest()
+  if (act === 'members') return openMembers(b)
   if (!a) return
   if (act === 'terminal') {
     store.set('crew.dock', docked() ? '0' : '1')
@@ -228,6 +231,82 @@ $('.mainhead').addEventListener('click', (e) => {
   }
   if (act === 'profile') edit(a.name)
   if (act === 'menu') agentMenu(a.name, b)
+})
+
+// ---- who works here: the workspace's agents, from #crew's faces, the workspace's menu or its welcome -----------------
+// Its agents (one shared with your other workspaces can be taken out of this one), the rest of your crew (bring one
+// in: it starts here in a conversation of its own), and a new agent. The default workspace has everyone.
+const membersPop = $('.members-pop')
+let membersAt = null
+function openMembers(at) {
+  membersAt = at
+  drawMembers()
+  if (!membersPop.matches(':popover-open')) membersPop.showPopover()
+  const r = (at?.isConnected ? at : $('.mainhead')).getBoundingClientRect()
+  const w = membersPop.offsetWidth
+  membersPop.style.left = `${Math.round(Math.max(8, Math.min(innerWidth - w - 8, r.right - w)))}px`
+  membersPop.style.top = `${Math.round(Math.min(r.bottom + 6, innerHeight - membersPop.offsetHeight - 8))}px`
+  if (r.left < 200) membersPop.style.left = `${Math.round(Math.max(8, r.left))}px` // from the sidebar or the rail: under it, to the right
+}
+function drawMembers() {
+  const w = state.workspace ?? { id: 'default', name: 'Home' }
+  const named = w.id !== 'default'
+  const here = state.agents.filter((a) => !a.cloneOf)
+  const others = named ? (state.roster ?? []).filter((r) => !here.some((a) => a.name === r.name)) : []
+  const row = (a, end) => `<div class="mp-row" data-agent="${esc(a.name)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span class="mp-who"><b>${esc(a.seed ?? a.name)}</b><small>${esc(a.area || (a.status ? upFirst(statusText(a)) : ''))}</small></span>${end}</div>`
+  const take = (a) => (named && a.shared ? `<button class="btn plain mp-take" data-mp-take="${esc(a.name)}" title="${esc(`Take ${a.name} out of ${w.name}: it stays in your crew and your other workspaces`)}">Take out</button>` : named ? '<span class="mp-only" title="Made for this workspace: it works only here">only here</span>' : '')
+  morph(membersPop, `<header class="mp-head"><b>Who works here</b><span>${here.length}</span></header>
+    <p class="mp-lead">${named ? `${esc(w.name)}'s agents${w.folder ? `, in ${esc(tildePath(w.folder))}` : ''}. One from your crew works here in a conversation of its own.` : 'Everyone in your crew works here, each in its own folder.'}</p>
+    <div class="mp-body">
+      ${here.length ? here.map((a) => row(a, take(a))).join('') : `<p class="mp-lead">Nobody yet.</p>`}
+      ${others.length ? `<div class="mp-sec">From your crew</div>${others.map((r) => row({ ...r, status: '' }, `<button class="btn mp-add" data-mp-add="${esc(r.name)}">Add</button>`)).join('')}` : ''}
+    </div>
+    <footer class="mp-foot"><button class="btn" data-mp-new>${ICONS.plus}<span>New agent${named ? ` for ${esc(w.name)}` : ''}</span></button><span class="grow"></span><button class="btn plain" data-mp-agents>All agents</button></footer>`)
+}
+membersPop.addEventListener('click', async (e) => {
+  const w = state.workspace
+  const add = e.target.closest('[data-mp-add]')?.dataset.mpAdd
+  const out = e.target.closest('[data-mp-take]')?.dataset.mpTake
+  try {
+    if (add) {
+      await crew.call('workspace', 'members', w.id, { add: [add] })
+      toast(`${add} joins ${w.name}${w.folder ? `, working in ${shortPath(w.folder)}` : ''}`)
+    }
+    if (out) {
+      const a = state.agents.find((x) => x.name === out)
+      if (busy(a) ? !confirm(`${out} is in the middle of something in ${w.name}. Take it out anyway? It stops working here, and starts a fresh conversation if it comes back.`) : !confirm(`Take ${out} out of ${w.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your crew and your other workspaces.`)) return
+      await crew.call('workspace', 'members', w.id, { remove: [out] })
+    }
+  } catch (err) {
+    oops(add ? `Couldn't add ${add} to ${w.name}` : `Couldn't take ${out} out of ${w.name}`, err)
+  }
+  if (e.target.closest('[data-mp-new]')) (membersPop.hidePopover(), addAgent())
+  if (e.target.closest('[data-mp-agents]')) (membersPop.hidePopover(), goPlace('crew'))
+  const row = !add && !out && e.target.closest('.mp-row:not(:has([data-mp-add]))')
+  if (row) (membersPop.hidePopover(), openDM(row.dataset.agent), composer.focus())
+})
+
+// ---- an empty #crew: its first steps, like Discord's welcome to a new server ------------------------------------
+// Who works here, its folder (a workspace of your own), and the first message; each a click away, ticked once done.
+function welcomeHTML() {
+  if (!state.agents.length && !hasWorkspaces(state)) return '' // the very first run: setup and Agents say what to do
+  const w = state.workspace ?? { id: 'default', name: 'Home' }
+  const named = w.id !== 'default'
+  const here = state.agents.filter((a) => !a.cloneOf)
+  const step = (done, act, title, sub) => `<button class="wl-step ${done ? 'done' : ''}" data-welcome="${act}"><i class="wl-mark">${done ? ICONS.check : ''}</i><span><b>${esc(title)}</b><small>${esc(sub)}</small></span><i class="wl-go">${ICONS.chevron}</i></button>`
+  return `<div class="welcome">${wsTile(w, { size: 64 })}<h2>${hasWorkspaces(state) ? `Welcome to ${esc(w.name)}` : 'Welcome to #crew'}</h2>
+    <p>Everyone here sees what's said in #crew. Ask for something and Auto picks who answers, or @name someone.</p>
+    <div class="wl-steps">
+      ${step(here.length > 0, 'members', here.length ? `${plural(here.length, 'agent')} work${here.length > 1 ? '' : 's'} here` : 'Choose who works here', named ? 'Agents from your crew, or new ones just for this workspace' : 'Everyone in your crew, each in its own folder')}
+      ${named ? step(Boolean(w.folder), 'settings', w.folder ? `They work in ${tildePath(w.folder)}` : 'Pick its folder', 'Where its agents work, unless one has a folder of its own') : ''}
+      ${step(false, 'message', 'Send the first message', here.length ? `${here.slice(0, 3).map((a) => a.seed ?? a.name).join(', ')}${here.length > 3 ? ' and the others' : ''} will see it` : 'Once someone works here')}
+    </div></div>`
+}
+$('.feed').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-welcome]')?.dataset.welcome
+  if (act === 'members') openMembers(e.target.closest('[data-welcome]'))
+  if (act === 'settings') workspaces.settings()
+  if (act === 'message') composer.focus()
 })
 
 // What's waiting on you, oldest first: a question goes to its card in #crew, an agent asking in its terminal to that.
@@ -1123,6 +1202,7 @@ const ready = live((next) => {
   tasks.render(state)
   setup.render(state)
   drawNav()
+  if (membersPop.matches(':popover-open')) drawMembers()
   celebrate($('.roster'), state.agents) // after the rows, so a visible one gets the confetti
 })
 
