@@ -20,7 +20,8 @@ const heard = (e) => [e.final, e.volatile].filter(Boolean).join(e.final && e.vol
 
 const FINISH_WITHIN = 20000 // a helper that hasn't finished by then never will: keep what it heard and let go
 
-function mountVoice({ composer, textarea: ta, button, changed, submit }) {
+// reveal: called before the hotkey starts dictating, so the message box it fills is on screen.
+function mountVoice({ composer, textarea: ta, button, changed, submit, reveal }) {
   // The status line sits where the recipient chips are (they keep their space), so nothing moves when you start.
   const bar = document.createElement('div')
   bar.className = 'voice-hint hidden'
@@ -189,7 +190,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit }) {
 
   crew.onVoice(handle)
   function handle(e) {
-    if (e.type === 'toggle') return state === 'idle' ? start() : stop()
+    if (e.type === 'toggle') return state === 'idle' ? (reveal?.(), start()) : stop()
     if (state === 'starting' && id === null && e.id) return void early.push(e)
     if (e.id !== id) return
     if (e.type === 'building') set(state, '<span class="spin"></span>Setting up voice input (first time only)…')

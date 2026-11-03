@@ -1,7 +1,7 @@
 /* Shared look for all views. Light by default, dark when the system is dark or Crew's theme says so
    (main.js sets nativeTheme.themeSource, which drives prefers-color-scheme in every window).
-   Calm by rule: neutral greys for everything, one accent (blue) for selection and links, Berry for primary buttons and
-   brand moments, and status colour only where status is the message (green working, amber needs you, red error).
+   Calm by rule: ink and neutral greys for everything (selection, switches, links, primary buttons), and one colour,
+   Berry, which means "needs you": a question, an OK, a review, the badge that counts them. Red is only for errors.
    The character lives in the creatures, their felt and the brand face (Fredoka, bundled in ui/fonts under the OFL). */
 @font-face { font-family: "Fredoka"; src: url("fonts/Fredoka.woff2") format("woff2"); font-weight: 300 700; font-display: block; }
 :root {
@@ -36,16 +36,16 @@
   --field: var(--surface);
   --tip: #1C1C1C;
   --tip-fg: #FFFFFF;
-  --accent: #0A6CFF;
+  --accent: #1C1C1C;         /* ink: selection, switches, focus, links (underlined), primary buttons */
   --on-accent: #FFFFFF;
   --link: var(--accent);
   --code-bg: var(--fill);
   /* status: dots and the few words that are the message */
-  --working: #1F9D55;
-  --working-ink: #1A7F45;
-  --needs: #D97706;
-  --needs-ink: #B45309;      /* amber text: #D97706 is 3.2:1 on white, this is 5.0:1 */
-  --needs-tint: rgba(217, 119, 6, .10);
+  --working: #5E5E5E;        /* at work is the normal state: it gets words, not a colour */
+  --working-ink: #4A4A4A;
+  --needs: #CC2277;          /* Berry: needs you. White on it 5.17:1 */
+  --needs-ink: #A3155D;      /* berry text: 7.0:1 on white */
+  --needs-tint: rgba(204, 34, 119, .09);
   --waiting: var(--needs);
   --waiting-ink: var(--needs-ink);
   --danger: #D92D20;
@@ -136,12 +136,13 @@ html[data-os=win] {
     --float: #262626;
     --tip: #EDEDED;
     --tip-fg: #1C1C1C;
-    --accent: #3B8CFF;
-    --working: #3DD68C;
-    --working-ink: #3DD68C;
-    --needs: #F5A524;
-    --needs-ink: #F5A524;
-    --needs-tint: rgba(245, 165, 36, .12);
+    --accent: #EDEDED;
+    --on-accent: #161616;
+    --working: #A8A8A8;
+    --working-ink: #BDBDBD;
+    --needs: #D9327F;          /* white on it 4.6:1 */
+    --needs-ink: #FF7AC0;      /* 7.6:1 on bg */
+    --needs-tint: rgba(255, 122, 192, .13);
     --danger: #F97066;
     --brand-ink: #FF7AC0;      /* brand text on dark: 7.58:1 on bg; buttons stay #CC2277 */
     --room-wall: #2A2326;
@@ -184,7 +185,8 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 ::-webkit-scrollbar-thumb:hover { background-color: var(--fg3); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-/* ---- buttons: 28px, radius 6, a quiet fill. Primary is Berry, once per decision. ---- */
+/* ---- buttons: 28px, radius 6, a quiet fill. Primary is ink, once per decision; Berry only when the decision answers
+   something that needs you (Allow, Send answer, Accept a review, Send a held hand-off). ---- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 0 12px;
   border: 0; border-radius: var(--r-control); background: var(--fill); color: var(--fg); font-weight: 500; cursor: pointer; white-space: nowrap;
@@ -192,8 +194,10 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 }
 .btn:hover { background: var(--fill-hover); }
 .btn svg { width: 15px; height: 15px; flex: none; color: var(--fg2); }
-.btn.primary, .btn.brand-btn { background: var(--brand); color: var(--on-brand); }
-.btn.primary:hover:not(:disabled), .btn.brand-btn:hover:not(:disabled) { background: var(--brand-hover); }
+.btn.primary { background: var(--accent); color: var(--on-accent); }
+.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 84%, var(--bg)); }
+.btn.brand-btn, .btn.primary.good, .ask-card .btn.primary, .item .actions .btn.primary { background: var(--needs); color: #fff; }
+.btn.brand-btn:hover:not(:disabled), .btn.primary.good:hover:not(:disabled), .ask-card .btn.primary:hover:not(:disabled), .item .actions .btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--needs) 88%, #000); }
 .btn.primary svg, .btn.brand-btn svg { color: inherit; }
 .btn.plain { background: transparent; color: var(--fg2); }
 .btn.plain:hover { background: var(--fill); color: var(--fg); }
@@ -227,8 +231,9 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 
 /* switches: full round (one of the three things allowed to be), the accent when on */
 .switch { appearance: none; width: 36px; height: 20px; border-radius: 10px; background: var(--fill-hover); position: relative; cursor: pointer; flex: none; transition: background .2s; margin: 0; }
-.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff; box-shadow: 0 0 0 .5px rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .12); transition: transform var(--t-move) var(--out); }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff; box-shadow: 0 0 0 .5px rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .12); transition: transform var(--t-move) var(--out), background var(--t-quick); }
 .switch:checked { background: var(--accent); }
+.switch:checked::after { background: var(--on-accent); }
 .switch:checked::after { transform: translateX(16px); }
 .switch.sm { width: 32px; height: 18px; border-radius: 9px; }
 .switch.sm::after { width: 14px; height: 14px; border-radius: 7px; }
@@ -242,13 +247,13 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .dot.blocked { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg3); }
 .dot.stopped, .dot.error { background: var(--danger); }
 .dot.off { background: var(--fill-hover); }
-.dot.away { background: transparent; box-shadow: inset 0 0 0 1.5px var(--needs); }
+.dot.away { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg3); }
 .needs-text { color: var(--needs-ink); font-weight: 500; }
 /* an agent on another computer: Rex@workstation */
 .at { font-weight: 500; opacity: .55; font-size: .86em; letter-spacing: 0; margin-left: 1px; }
 @keyframes pulse { 50% { opacity: .35; } }
 
-/* status words, used beside names everywhere: amber text only for what needs you */
+/* status words, used beside names everywhere: berry text only for what needs you */
 .state { font-size: 12px; font-weight: 500; color: var(--fg2); white-space: nowrap; }
 .state.waiting { color: var(--needs-ink); }
 .state.stopped { color: var(--danger); }
@@ -396,8 +401,8 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .menu button svg, .menu button > i { width: 16px; height: 16px; flex: none; color: var(--fg2); }
 .menu button span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .menu button small { color: var(--fg2); font-size: 12px; }
-.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--accent); color: #fff; outline: 0; }
-.menu button:hover:not(:disabled) svg, .menu button:hover:not(:disabled) small, .menu button:focus-visible svg { color: #fff; }
+.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--accent); color: var(--on-accent); outline: 0; }
+.menu button:hover:not(:disabled) svg, .menu button:hover:not(:disabled) small, .menu button:focus-visible svg { color: var(--on-accent); }
 .menu button.danger { color: var(--danger); }
 .menu button.danger svg { color: var(--danger); }
 .menu button.danger:hover { background: var(--danger); color: #fff; }
@@ -474,7 +479,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .ch-back { position: relative; flex: none; display: inline-flex; align-items: center; gap: 1px; height: 28px; padding: 0 9px 0 4px; border: 0; border-radius: var(--r-control); background: var(--fill); color: var(--fg2); font: 500 13px/1 var(--ui); cursor: pointer; transition: background .15s, color .15s; }
 .ch-back:hover { background: var(--btn-hover); color: var(--fg); }
 .ch-back svg { width: 15px; height: 15px; }
-.ch-count { margin-left: 5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 600 10px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: #fff; background: var(--accent); }
+.ch-count { margin-left: 5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 600 10px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: var(--on-accent); background: var(--accent); }
 .ch-back.alert::after { content: ''; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--needs); box-shadow: 0 0 0 2px var(--panel); }
 .ch-face { position: relative; flex: none; margin-left: 2px; line-height: 0; --orbit-ring: var(--panel); --dot: 6px; }
 .ch-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -799,7 +804,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .rt-close { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; background: none; color: var(--fg3); cursor: pointer; transition: background .15s, color .15s; }
 .rt-close:hover { background: var(--btn-hover); color: var(--fg); }
 .rt-close svg { width: 13px; height: 13px; stroke-width: 2.2; }
-.unread-badge { position: absolute; right: -3px; bottom: -2px; z-index: 2; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 600 10px/1 var(--ui); font-variant-numeric: tabular-nums; color: #fff; background: var(--accent); box-shadow: 0 0 0 2px var(--orbit-ring, var(--surface)); pointer-events: none; }
+.unread-badge { position: absolute; right: -3px; bottom: -2px; z-index: 2; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 600 10px/1 var(--ui); font-variant-numeric: tabular-nums; color: var(--on-accent); background: var(--accent); box-shadow: 0 0 0 2px var(--orbit-ring, var(--surface)); pointer-events: none; }
 @keyframes badge-in { from { transform: scale(0); } }
 .chip { position: relative; }
 .chip .unread-badge { right: -2px; bottom: -1px; min-width: 14px; height: 14px; padding: 0 3px; font-size: 9px; --orbit-ring: var(--panel); }

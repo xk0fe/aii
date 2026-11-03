@@ -1023,7 +1023,9 @@ function mountConvoHead(el, { onBack, onTerminal }) {
 // shown twice, the reply says where it went instead (backTo). A reply that answered several hand-offs at once (they
 // came in together) threads to each of them.
 // queued: open questions live in the chat's Needs you queue (mountFeed), so the feed only points at them.
-const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider, only, here, queued = false } = {}) => {
+// face: the creatures' size beside their messages. rows: everyone down the left like a group chat, you included (the
+// dashboard); otherwise yours sit on the right (the floating chat).
+const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider, only, here, queued = false, face = 28, rows = false } = {}) => {
   const merged = mergeSends(feed)
   const visible = merged.shown.filter((e) => !e.answers)
   const shown = only ? visible.filter(only) : visible
@@ -1031,7 +1033,7 @@ const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divide
   // the last `limit` entries, plus questions still waiting for you from before them
   const items = [...shown.slice(0, -limit).filter((e) => e.kind === 'ask' && !e.answer), ...shown.slice(-limit)]
   const waiting = new Set(agents.flatMap((a) => (a.waitingOn ?? []).map((w) => w.id)).filter(Boolean))
-  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, backTo: {}, waiting, open, drafts, reads, here, queued }
+  const ctx = { byName: Object.fromEntries(agents.map((a) => [a.name, a])), byId: as, repliesTo: {}, backTo: {}, waiting, open, drafts, reads, here, queued, face, rows }
   for (const e of feed) {
     if (e.answers) {
       if (e.reply) ctx.backTo[e.reply] = { to: e.to, queued: e.queued }
@@ -1088,6 +1090,7 @@ function taskEvent(e, who) {
   </div>`
 }
 
+const YOU_FACE = '<span class="you-av" aria-hidden="true">You</span>'
 function feedItem(e, prev, ctx) {
   const { byName, byId, repliesTo, open } = ctx
   const agent = (n) => byName[n] ?? cloneGhost(n, byName) ?? { name: n }
@@ -1134,7 +1137,11 @@ function feedItem(e, prev, ctx) {
   const seen = e.kind === 'reply' ? ` data-from="${esc(e.from)}" data-ts="${e.ts}"` : ''
   // Agents talk with their little face next to the bubble, like a group chat.
   const said = (cls, capHTML, rest = '', body = bubble, withTools = true) =>
-    `<div class="item said ${cls}${cont}${fresh ? ' unread' : ''}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"${seen}><span class="face${here(e.from)}" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: 28, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div>${withTools ? tools : ''}</div>`
+    `<div class="item said ${cls}${cont}${fresh ? ' unread' : ''}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"${seen}><span class="face${here(e.from)}" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: ctx.face, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div>${withTools ? tools : ''}</div>`
+
+  const toWhom = (names) => (ctx.here && names.every((n) => familyOf(n) === familyOf(ctx.here)) ? '' : `<span class="to">to ${names.map(who).join(' ')}</span>`)
+  const mine = (cls, body) => `<div class="item said mine ${cls}${cont}" id="m-${e.id}" title="${time}"><span class="face">${cont ? '' : YOU_FACE}</span><div class="stack">${cap(`<span class="you">You</span>${toWhom(e.cc ?? [e.to])}`)}${body}${replied}</div>${withTools(cls)}</div>`
+  const withTools = (cls) => (cls.includes('ticket') ? '' : tools)
 
   if (e.kind === 'task' || e.kind === 'bug') return taskEvent(e, who)
   // a new conversation starts: a line across the feed, so what came before is visibly "before"
@@ -1144,6 +1151,7 @@ function feedItem(e, prev, ctx) {
   if (e.ticket !== undefined && e.from === 'you') {
     const key = String(e.ticket)
     const why = e.triage ? '<span class="tag">to triage</span>' : e.fresh ? '<span class="tag fresh">new conversation</span>' : ''
+    if (ctx.rows) return mine('ticket-msg', `${why ? `<div class="ticket-why">${why}</div>` : ''}<button class="bubble ticket-bubble" data-ticket="${esc(key)}" data-id="${e.id}"><span class="tb-icon">${ICONS[e.type ?? 'bug'] ?? ICONS.task}</span><b>#${esc(key.split('@')[0])}</b> ${esc(e.title ?? '')}</button>`)
     return `<div class="item me ticket-msg" id="m-${e.id}" title="${time}"><div class="cap">to ${who(e.to)}${why}${tags}<span class="time">${time}</span></div>
       <button class="bubble ticket-bubble" data-ticket="${esc(key)}" data-id="${e.id}"><span class="tb-icon">${ICONS[e.type ?? 'bug'] ?? ICONS.task}</span><b>#${esc(key.split('@')[0])}</b> ${esc(e.title ?? '')}</button>${replied}</div>`
   }
@@ -1160,6 +1168,7 @@ function feedItem(e, prev, ctx) {
     if (!e.answer && ctx.queued) return said('ask open pointer', `${name(e.from)} <span>${verb}</span>`, '', `${quote}<button class="ask-pointer" data-needs="${esc(e.id)}" title="Answer it in Needs you, at the top of the chat"><span>${esc(needText({ agent: agent(e.from), ask: e }))}</span><b>${ICONS.up}Answer</b></button>`, false)
     return said(`ask ${e.answer ? 'answered' : 'open'}`, `${name(e.from)} <span>${verb}</span>`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`, false)
   }
+  if (e.from === 'you' && ctx.rows) return mine('', bubble)
   if (e.from === 'you') return `<div class="item me${cont}" id="m-${e.id}" title="${time}">${cap(`to ${(e.cc ?? [e.to]).map(who).join(' ')}`)}${bubble}${replied}${tools}</div>`
   const actions = e.held
     ? `<div class="actions"><button class="btn primary" data-act="approve" data-id="${e.id}">Send it</button><button class="btn" data-act="drop" data-id="${e.id}">Drop</button></div>`
@@ -1317,9 +1326,12 @@ function typingHTML(agents, asks, opts) {
 // crew: everyone, to draw the teammates a line mentions (the one an agent is waiting on, the ones waiting on it).
 // queue: the chat has a Needs you queue, so agents waiting on you are there instead, and with a busy crew only the
 // first few at work show (the roster has everyone).
-function typingParts(agents, asks = new Map(), { all = false, crew = agents, queue = false } = {}) {
+// cards: questions are cards in the conversation, answered there (the dashboard), so an agent waiting on one of them
+// has no line of its own; one asking in its terminal still has.
+function typingParts(agents, asks = new Map(), { all = false, crew = agents, queue = false, cards = false } = {}) {
   const active = agents.filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || a.subs?.length || (a.cloneOf && a.status === 'starting'))) // a new clone shows up right away
     .filter((a) => !queue || a.status !== 'waiting')
+    .filter((a) => !cards || a.status !== 'waiting' || !asks.get(a.name))
   const ordered = [...active.filter((a) => a.status === 'waiting'), ...active.filter((a) => blockedOn(a)), ...active.filter((a) => a.status !== 'waiting' && !blockedOn(a))]
   const many = ordered.length > TYPING_ROWS + 1
   const shown = many && !all ? ordered.slice(0, TYPING_ROWS) : ordered
@@ -1398,7 +1410,9 @@ function subsUsed(e, open) {
 // onAgent: an agent's line under the feed (who's at work) was clicked, for its terminal. onConvo: an agent's face
 // or name in a message was, for your conversation with it. onLeave: a jump goes to a message outside the
 // conversation on screen, or the agent you're talking to was clicked again, so the chat goes back to everyone's.
-function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), limit = 200 } = {}) {
+// inline: questions are cards where they were asked, answered there, rather than in a Needs you queue pinned above the
+// messages (the dashboard; the floating chat keeps the queue). face: the creatures' size beside their messages.
+function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), limit = 200, inline = false, face = 28 } = {}) {
   const open = new Set()
   const seen = new Set()
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
@@ -1453,6 +1467,14 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   const entry = (id) => shown.get(id) ?? queued.get(id)
   // the title bar's "need you", a terminal's Answer, or a question's line in the feed: open it in the queue
   const showNeeds = (id) => {
+    if (inline) {
+      // the card itself: the one asked for, else the oldest open one in what's shown
+      const card = id ?? [...shown.values()].find((e) => e.kind === 'ask' && !e.answer)?.id
+      if (!card || !shown.has(card)) return
+      jump(card)
+      el.querySelector(`[data-ask="${CSS.escape(card)}"] :is(button, input):not(:disabled)`)?.focus({ preventScroll: true })
+      return
+    }
     if (id && queued.has(id)) expanded = id
     if (last) api.render(last)
     if (queue.classList.contains('hidden')) return
@@ -1463,7 +1485,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   document.addEventListener('crew:needs', (ev) => {
     if (!el.isConnected) return
     const name = ev.detail?.name
-    showNeeds(name ? [...queued.values()].find((e) => e.from === name)?.id : null)
+    showNeeds(name ? [...(inline ? shown : queued).values()].find((e) => e.kind === 'ask' && !e.answer && e.from === name)?.id : null)
   })
   const count = latest.querySelector('span')
   // runs on every scroll event, so it only touches the DOM when something changed
@@ -1833,12 +1855,12 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
         if (!divider || !feed.some((e) => e.id === divider)) divider = unread[0].id
       } else if (divider && !dividerTimer) dividerTimer = setTimeout(() => ((divider = null), (key = ''), api.render(last)), 4000)
       last = { feed, agents, reads, workspace }
-      const view = feedView(feed, agents, open, limit, drafts, { reads, divider, only: only(), here: talkingTo, queued: true })
+      const view = feedView(feed, agents, open, limit, drafts, { reads, divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline })
       shown = new Map(view.items.map((e) => [e.id, e]))
       let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
-      const busy = typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll, crew: agents, queue: true })
+      const busy = typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll, crew: agents, queue: !inline, cards: inline })
       let added = false
       if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}` // the empty-feed hint shows only when nobody's busy
       if (next !== key) {
@@ -1871,7 +1893,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
         } else if (reading) keepReading(reading)
       }
       morph(typing, busy)
-      drawQueue(feed, agents)
+      if (!inline) drawQueue(feed, agents)
       pin(added)
       drawLatest()
       first = false
@@ -2171,7 +2193,8 @@ function mountInk(field, { agents, strict = () => true }) {
 }
 
 // onTarget(target): who it's aimed at changed (an agent's name opens your conversation with it; see isConvo).
-function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
+// onDictate: the dictation hotkey is about to start, so the box should be on screen.
+function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) {
   el.classList.add('composer')
   // Who it goes to is one picker in the box's bar (To: Auto, Task, or an agent), beside the Task switch.
   el.innerHTML = `<div class="input">
@@ -2320,7 +2343,11 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
       const same = agents.filter((a) => !a.cloneOf && a.name.split('@')[0] === base)
       return same.length === 1 ? same[0].name : null
     }
-    if (isConvo(target) && agents.length && !known(target)) target = known(familyOf(target)) ? familyOf(target) : (moved(target) ?? 'auto')
+    if (isConvo(target) && agents.length && !known(target)) {
+      const next = known(familyOf(target)) ? familyOf(target) : (moved(target) ?? 'auto')
+      if (draftKey(next) !== draftKey(target)) swapDraft(next) // renamed or removed: what you were writing to it stays its
+      target = next
+    }
     const off = isConvo(target) && agents.find((a) => a.name === target)?.on === false
     const task = Boolean(kindIn(ta.value))
     const changed = morph(chips, [
@@ -2495,7 +2522,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
   })
   send.addEventListener('click', submit)
   // Dictation (ui/voice.js): the mic button fills in the message as you talk.
-  const voice = typeof mountVoice === 'function' && crew.onVoice ? mountVoice({ composer: el, textarea: ta, button: el.querySelector('.mic'), changed: autosize, submit }) : null
+  const voice = typeof mountVoice === 'function' && crew.onVoice ? mountVoice({ composer: el, textarea: ta, button: el.querySelector('.mic'), changed: autosize, submit, reveal: onDictate }) : null
   if (!voice) el.querySelector('.mic').remove()
   draw()
 
@@ -2509,6 +2536,12 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
     },
     setTarget,
     target: () => target,
+    // an agent renamed: the draft you put aside for it goes with it
+    moveDraft(from, to) {
+      if (!drafts.has(from) || drafts.has(to)) return
+      drafts.set(to, drafts.get(from))
+      drafts.delete(from)
+    },
     replyTo,
     stopReply,
     focus: () => ta.focus(),

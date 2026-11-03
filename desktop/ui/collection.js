@@ -3,7 +3,7 @@
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, a few facts), everything you can set on the right, in four
 // tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
-/* global powerSwitch, crewHeadline, crewSentence, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
+/* global powerSwitch, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -28,7 +28,7 @@ const TABS = [
 // at work: what it's doing says more than its status. Waiting on a teammate, the status says it (who it waits on).
 const atWork = (a) => (a?.status === 'working' && !a.waitingOn?.length) || a?.status === 'waiting'
 
-function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
+function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace, onRenamed }) {
   root.innerHTML = `
     <section class="col-list">
       <header class="col-head">
@@ -201,13 +201,14 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
     drawBulkCount()
   }
 
-  // The header: one line saying how the crew is (in the brand face), the sentence under it, and how many are on.
+  // The header: Agents (in the brand face), the sentence under it, and how many are on.
   function drawHead(needs) {
     const crewNow = roster()
     const parked = state.parked && crewNow.length
     const ws = hasWorkspaces(state) ? state.workspace : null
-    const headline = parked ? `${ws?.name ?? 'This workspace'} is parked` : crewHeadline(crewNow, needs)
-    const sentence = parked ? 'Its agents are stopped until you open it again. Each picks up its conversation.' : crewSentence(crewNow, needs)
+    // what needs you is in #crew and beside each name in the sidebar: here it's the crew itself
+    const headline = parked ? `${ws?.name ?? 'This workspace'} is parked` : 'Agents'
+    const sentence = parked ? 'Its agents are stopped until you open it again. Each picks up its conversation.' : crewNow.length ? `Everyone${ws ? ` in ${ws.name}` : ''}. Turn them on and off here, and open one to change it.` : ''
     const h2 = $('.col-head h2')
     if (h2.textContent !== headline) h2.textContent = headline
     h2.title = headline
@@ -1102,6 +1103,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
         if (JSON.stringify(draft.avatar) !== JSON.stringify(original.avatar)) patch.avatar = draft.avatar
         if (Object.keys(patch).length) await crew.call('update', editing, patch)
         reopen = 'name' in patch ? qualified(slug(draft.name), draft.home) : editing
+        if ('name' in patch) onRenamed?.(editing, reopen)
       }
     } catch (err) {
       msg.textContent = errorLine(err)

@@ -13,9 +13,9 @@
 .ws-switch .ws-chev { display: grid; place-items: center; width: 14px; color: var(--fg2); transition: color .15s; }
 .ws-switch .ws-chev svg { width: 13px; height: 13px; }
 .ws-switch:hover .ws-chev, .ws-switch[aria-expanded=true] .ws-chev { color: var(--fg2); }
-/* another workspace needs you: a count (orange) or a dot for new replies (blue), on the tile's corner */
+/* another workspace needs you: a count (berry) or a dot for new replies (ink), on the tile's corner */
 .ws-alert { position: absolute; top: -2px; left: 17px; display: grid; place-items: center; min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--r-control); font: 600 11px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: #fff; box-shadow: 0 0 0 2px var(--bg); animation: ws-alert-in var(--t-move) var(--out); }
-.ws-alert.waiting { background: var(--needs); color: #241500; }
+.ws-alert.waiting { background: var(--needs); color: #fff; }
 .ws-alert.unread { min-width: 10px; width: 10px; height: 10px; padding: 0; top: 0; left: 20px; background: var(--accent); }
 @keyframes ws-alert-in { from { transform: scale(0); } }
 
@@ -73,8 +73,8 @@
 .ws-cmds { display: flex; flex-direction: column; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
 .ws-cmd { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: var(--r-control); font-size: 13px; cursor: default; }
 .ws-cmd svg { width: 15px; height: 15px; color: var(--fg2); flex: none; }
-.ws-cmd:hover, .ws-cmd:focus-visible { background: var(--accent); color: #fff; outline: 0; }
-.ws-cmd:hover svg, .ws-cmd:focus-visible svg { color: #fff; }
+.ws-cmd:hover, .ws-cmd:focus-visible { background: var(--accent); color: var(--on-accent); outline: 0; }
+.ws-cmd:hover svg, .ws-cmd:focus-visible svg { color: var(--on-accent); }
 
 /* ---- the dock: every workspace along the sidebar's foot ---- */
 .ws-dock { flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }

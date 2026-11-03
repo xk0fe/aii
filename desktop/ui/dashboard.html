@@ -11,82 +11,109 @@
   <link rel="stylesheet" href="workspaces.css">
   <link rel="stylesheet" href="setup.css">
   <style>
-    html, body { height: 100%; background: var(--bg); overflow: hidden; }
-    /* Three columns in the titlebar: the workspace on the left, the views centered, what needs you and ⋯ on the right
-       (86px on the left for a Mac's traffic lights).
-       Grid columns (not flex), so the right end coming and going never pushes the views off center. */
-    .titlebar { height: 46px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 0 12px 0 88px; border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
-    /* Windows draws its window buttons over the titlebar's right end (main.js titleBarOverlay, 45px tall, so the line
-       under the titlebar runs under them too): nothing goes beneath them, and there are no traffic lights to make room
-       for on the left. The width they take comes from the page (titlebar-area), 138px if it can't say. */
-    html[data-os=win] .titlebar { padding: 0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 8px) 0 12px; }
-    .tb-left, .tb-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
-    .app-mark { flex: none; display: grid; width: 24px; height: 18px; margin: 0 2px 0 4px; color: var(--fg); }
-    .app-mark svg { width: 24px; height: 18px; }
-    .tb-right { justify-content: flex-end; gap: 6px; }
-    .titlebar button, .seg { -webkit-app-region: no-drag; }
-    .titlebar .icon { width: 28px; height: 28px; padding: 0; flex: none; }
-    .seg.views button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 16px; }
-    .seg.views button svg { width: 16px; height: 16px; flex: none; }
-    /* the one loud thing up here: who needs you, their faces (they wiggle) and how many. Hidden while nobody does. */
-    .tb-needs { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px 0 6px; border: 0; border-radius: var(--r-control); font: inherit; font-weight: 500; white-space: nowrap; color: var(--needs-ink); background: var(--needs-tint); cursor: pointer; transition: background .15s; }
-    .tb-needs:not(.hidden) { animation: tb-needs-in var(--t-move) var(--out); }
-    .tb-needs:hover { background: color-mix(in srgb, var(--needs) 18%, transparent); }
-    .tb-faces { display: inline-flex; align-items: center; }
-    .tb-faces .av + .av { margin-left: -6px; }
-    @keyframes tb-needs-in { from { opacity: 0; } }
-    /* new replies you haven't read: a small blue dot on ⋯ (its menu jumps to the first) */
-    .tb-more { position: relative; }
-    .tb-more.has-new::after { content: ''; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-
-    /* One row, exactly the window's height. Left auto, the grid measures each column's natural height on every layout,
-       and for the chat that means laying out its whole history again for each keystroke or status tick. */
-    main { --side-w: 264px; --chat-w: 384px; position: relative; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--chat-w); grid-template-rows: minmax(0, 1fr); height: calc(100vh - 46px); }
-    main > .side { grid-area: 1 / 1; } main > .center { grid-area: 1 / 2; } main > .chat { grid-area: 1 / 3; }
-    /* either side can be put away for more room in the middle (the ⋯ menu, ⌘⌥S and ⌘⌥C). The columns change in one
-       step (dashboard.js setPanel): the panel slides out over the middle, pinned where it was (.leaving), or slides in,
-       while what's in the middle glides to its new place. */
-    @media (max-width: 1240px) { main { --side-w: 232px; --chat-w: 336px; } .seg.views button { padding: 4px 11px; } }
-    @media (max-width: 1060px) { .seg.views button span { display: none; } }
+    html, body { height: 100%; background: var(--surface); overflow: hidden; }
+    /* Two columns, like a group chat: the sidebar (the workspace, its places, and a direct conversation with each agent)
+       and what's open in it (#crew, an agent's conversation with its terminal docked beside it, Agents, Tasks or
+       Terminals). No titlebar: the sidebar's top and each view's header are where the window is dragged. */
+    main { --side-w: 260px; position: relative; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; }
+    main > .side { grid-area: 1 / 1; } main > .center { grid-area: 1 / 2; }
+    @media (max-width: 1160px) { main { --side-w: 232px; } }
+    /* the sidebar can be put away for more room (⌥⌘S): it slides out over the middle, pinned where it was (.leaving) */
     body.no-side main { --side-w: 0px; }
-    body.no-chat main { --chat-w: 0px; }
-    body.no-side .side, body.no-chat .chat { visibility: hidden; overflow: hidden; }
-    body.no-side .side.leaving, body.no-chat .chat.leaving { position: absolute; top: 0; bottom: 0; z-index: 3; visibility: visible; pointer-events: none; }
-    body.no-side .side.leaving { left: 0; } body.no-chat .chat.leaving { right: 0; }
-    .side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--side); }
-    .side-top { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px; }
-    .find { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: var(--r-control); background: var(--fill); color: var(--fg3); cursor: text; transition: box-shadow .15s, background .15s; }
-    .find:focus-within { background: var(--field); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
-    .find svg { width: 16px; height: 16px; flex: none; color: var(--fg2); }
+    body.no-side .side { visibility: hidden; overflow: hidden; }
+    body.no-side .side.leaving { position: absolute; top: 0; bottom: 0; left: 0; z-index: 3; visibility: visible; pointer-events: none; }
+
+    /* ---- the sidebar: dark in either theme, so the creatures sit on it like stickers ---- */
+    :root { --side-bg: #1B1A1F; }
+    @media (prefers-color-scheme: dark) { :root { --side-bg: #121115; } }
+    .side {
+      --fg: #EEECF1; --fg2: #B5B1BB; --fg3: #8C8893; --line: rgba(255, 255, 255, .08); --line-strong: rgba(255, 255, 255, .16);
+      --fill: rgba(255, 255, 255, .07); --fill-hover: rgba(255, 255, 255, .12); --btn: var(--fill); --btn-hover: var(--fill-hover); --field: rgba(255, 255, 255, .08);
+      --row-hover: rgba(255, 255, 255, .06); --row-on: rgba(255, 255, 255, .12); --ring: rgba(255, 255, 255, .55); --accent: #EEECF1; --on-accent: #1B1A1F;
+      display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--side-bg); color: var(--fg); color-scheme: dark;
+    }
+    /* a Mac's traffic lights sit in the top band; on Windows the app's mark does */
+    .side-top { flex: none; height: 40px; display: flex; align-items: center; padding: 0 14px; -webkit-app-region: drag; }
+    html[data-os=win] .side-top { height: 34px; }
+    .app-mark { flex: none; display: grid; width: 24px; height: 18px; color: var(--fg); }
+    .app-mark svg { width: 24px; height: 18px; }
+    .side-ws { flex: none; display: flex; align-items: center; gap: 6px; padding: 0 10px 12px 8px; -webkit-app-region: drag; }
+    .side-ws .ws-switch { flex: 1; min-width: 0; max-width: none; height: 34px; justify-content: flex-start; -webkit-app-region: no-drag; }
+    .side .ws-alert { box-shadow: 0 0 0 2px var(--side-bg); }
+    .side .ws-dock { display: none !important; } /* the switcher above lists the workspaces: one place for them */
+    .side-ws .ws-switch b { font-size: 15px; font-weight: 700; color: var(--fg); }
+    .side-ws .icon { flex: none; width: 30px; height: 30px; padding: 0; border-radius: 8px; background: var(--fill); color: var(--fg); -webkit-app-region: no-drag; }
+    .side-ws .icon:hover { background: var(--fill-hover); }
+    .side-ws .icon svg { width: 15px; height: 15px; }
+    /* the places: #crew, Agents, Tasks, Terminals */
+    .side-nav { flex: none; display: flex; flex-direction: column; gap: 1px; padding: 0 8px; }
+    .nv { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--fg2); font-size: 13.5px; text-align: left; cursor: pointer; transition: background var(--t-quick), color var(--t-quick); }
+    .nv:hover { background: var(--row-hover); color: var(--fg); }
+    .nv[aria-current=page] { background: var(--row-on); color: #fff; font-weight: 600; }
+    .nv svg { width: 16px; height: 16px; flex: none; color: var(--fg3); }
+    .nv[aria-current=page] svg, .nv[aria-current=page] .hash { color: #fff; }
+    .nv .hash { width: 16px; flex: none; text-align: center; font-size: 15px; font-weight: 700; color: var(--fg3); }
+    .nv-n { margin-left: auto; font-style: normal; font-size: 12px; font-weight: 500; color: var(--fg3); font-variant-numeric: tabular-nums; }
+    .nv-n:empty { display: none; }
+    /* the one colour: what needs you, counted */
+    .need-badge { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: inline-grid; place-items: center; background: var(--needs); color: #fff; font: 700 11px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; }
+    /* Direct: one conversation per agent. Its label turns into a search field (⌘F). */
+    .side-sec { flex: none; display: flex; align-items: center; gap: 4px; height: 30px; margin: 16px 8px 2px; padding: 0 2px 0 10px; }
+    .side-sec .sec-label { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--fg3); }
+    .side-sec .icon { width: 26px; height: 26px; padding: 0; border-radius: 7px; color: var(--fg3); }
+    .side-sec .icon:hover { color: var(--fg); background: var(--fill); }
+    .side-sec .icon svg { width: 14px; height: 14px; }
+    .find { flex: 1; min-width: 0; display: none; align-items: center; gap: 8px; height: 28px; margin-left: -6px; padding: 0 8px; border-radius: 7px; background: var(--field); color: var(--fg3); box-shadow: inset 0 0 0 1px var(--line-strong); }
+    .find svg { width: 14px; height: 14px; flex: none; }
     .find input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 13px; color: var(--fg); user-select: text; }
-    .find input::placeholder { color: var(--fg2); }
+    .find input::placeholder { color: var(--fg3); }
     .find input::-webkit-search-cancel-button { display: none; }
-    .find kbd { font: 500 11px var(--ui); color: var(--fg2); letter-spacing: .02em; }
-    .find:focus-within kbd { display: none; }
-    .side-top .icon { width: 28px; height: 28px; padding: 0; flex: none; border-radius: var(--r-control); background: var(--fill); color: var(--fg2); }
-    .side-top .icon:hover { background: var(--fill-hover); color: var(--fg); }
-    .side-top .icon svg { width: 16px; height: 16px; }
-    .side .roster { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 4px 10px 8px; scrollbar-gutter: stable; }
-    /* The footer: Autopilot one click away, then this Mac's computers and the account's usage as two quiet chips.
-       A fixed height, so nothing above it moves when a chip changes. */
-    .side-foot { flex: none; display: flex; flex-direction: column; gap: 4px; height: 86px; padding: 8px 12px 12px; border-top: 1px solid var(--line); container-type: inline-size; }
-    .side .autopilot { flex: none; display: flex; gap: 8px; align-items: center; height: 32px; margin: 0; padding: 0 4px; border-radius: var(--r-control); cursor: pointer; transition: background .18s; }
-    .side .autopilot:hover { background: var(--row-hover); }
-    .side .autopilot .glyph { width: 16px; height: 16px; display: grid; place-items: center; flex: none; color: var(--fg2); }
-    .side .autopilot .glyph svg { width: 16px; height: 16px; }
-    .side .autopilot b { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; }
-    .foot-chips { flex: none; display: flex; justify-content: space-between; gap: 8px; height: 28px; }
-    .foot-chip { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px; border: 0; border-radius: var(--r-control); background: transparent; color: var(--fg2); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; transition: background .15s, color .15s; }
-    .foot-chip:hover { background: var(--fill); color: var(--fg); }
-    .foot-chip svg { width: 16px; height: 16px; flex: none; }
-    .foot-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .foot-chip .pc-off { width: 7px; height: 7px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1.5px var(--needs); }
-    .use-gauge { flex: none; width: 24px; height: 4px; border-radius: 2px; background: var(--fill-hover); overflow: hidden; }
-    .use-gauge i { display: block; height: 100%; border-radius: 2px; background: var(--fg2); }
-    .use-chip.warm { color: var(--needs-ink); }
-    .use-chip.warm .use-gauge i { background: var(--needs); }
-    @container (max-width: 236px) { .foot-chip.link-chip svg, .use-gauge { display: none; } } /* the narrow sidebar keeps the words */
-    /* the usage chip's popover: each account's limits on a line */
+    .side-sec.finding .find { display: flex; }
+    .side-sec.finding > :not(.find) { display: none; }
+    .side .roster { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 12px; scrollbar-gutter: stable; }
+    /* a computer's agents, once there's more than one computer: its name, folded on a click */
+    .cg-label { display: flex; align-items: center; gap: 6px; height: 26px; margin-top: 6px; padding: 0 10px; border-radius: 7px; font-size: 11.5px; font-weight: 600; color: var(--fg3); cursor: pointer; }
+    .cg-label:hover { color: var(--fg2); }
+    .cg-label .chev { display: grid; width: 10px; height: 10px; transition: transform var(--t-move) var(--out); }
+    .cg-label .chev svg { width: 10px; height: 10px; }
+    .cgroup:not(.folded) .cg-label .chev { transform: rotate(90deg); }
+    .cg-label .cg-tag { font-weight: 500; }
+    .cgroup.drop-ok { border-radius: 9px; box-shadow: inset 0 0 0 1.5px var(--line-strong); }
+    .cgroup.over { background: var(--row-hover); box-shadow: inset 0 0 0 1.5px var(--fg2); }
+    /* An agent: its creature, its name (and YOLO, its clones), then what needs you (berry), new replies (a quiet count)
+       or how it is, in a word. Off: in black and white, dimmed. */
+    .dm { position: relative; display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 8px 0 6px; border-radius: 8px; color: var(--fg2); font-size: 13.5px; cursor: pointer; transition: background var(--t-quick); }
+    .dm:hover { background: var(--row-hover); }
+    .dm.on { background: var(--row-on); color: #fff; }
+    .dm.cursor { box-shadow: inset 0 0 0 1.5px var(--fg3); }
+    .dm.dragging { opacity: .5; }
+    .dm-av { flex: none; width: 26px; height: 26px; display: grid; place-items: center; line-height: 0; }
+    .dm-name { min-width: 0; display: flex; align-items: center; gap: 6px; }
+    .dm-name b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+    .dm.needs .dm-name b, .dm.fresh .dm-name b, .dm.on .dm-name b { color: #fff; font-weight: 600; }
+    .dm .mark-yolo { flex: none; height: 15px; padding: 0 3px; border-radius: var(--r-tag); box-shadow: inset 0 0 0 1px var(--line-strong); font: 600 9.5px/15px var(--ui); font-style: normal; letter-spacing: .02em; color: var(--fg2); }
+    .dm-clones { flex: none; font-size: 11.5px; font-weight: 500; color: var(--fg3); font-variant-numeric: tabular-nums; }
+    .dm-end { margin-left: auto; flex: none; display: flex; align-items: center; gap: 6px; padding-left: 6px; }
+    .dm-word { font-size: 12px; color: var(--fg3); white-space: nowrap; }
+    .dm.on .dm-word { color: var(--fg2); }
+    .dm-new { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: grid; place-items: center; background: rgba(255, 255, 255, .16); color: #fff; font: 600 11px/1 var(--ui); font-variant-numeric: tabular-nums; }
+    .dm.off { color: var(--fg3); }
+    .dm.off .dm-av { opacity: .75; }
+    .roster-none { padding: 8px 10px; font-size: 13px; color: var(--fg3); }
+    /* the footer: the account's usage, and ⋯ for everything else (Autopilot, Computers, theme) */
+    .side-foot { flex: none; display: flex; align-items: center; gap: 4px; height: 52px; padding: 0 8px; border-top: 1px solid var(--line); }
+    .use-line { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--fg2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; transition: background var(--t-quick); }
+    .use-line:hover { background: var(--row-hover); color: var(--fg); }
+    .use-line.none { visibility: hidden; }
+    .use-bar { flex: 1; min-width: 24px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .12); overflow: hidden; }
+    .use-bar i { display: block; height: 100%; border-radius: 2px; background: var(--fg); }
+    .use-line.warm { color: #FF8CC6; }
+    .use-line.warm .use-bar i { background: var(--needs); }
+    .side-more { position: relative; flex: none; width: 32px; height: 32px; padding: 0; border-radius: 8px; color: var(--fg2); }
+    .side-more:hover { color: var(--fg); background: var(--row-hover); }
+    .side-more svg { width: 17px; height: 17px; }
+    .side-more.warn::after { content: ''; position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--fg); }
+    /* the usage line's popover: each account's limits on a line */
     .use-pop { inset: auto; margin: 0; min-width: 220px; max-width: 320px; padding: 8px 10px; border: 0; border-radius: var(--r-card); background: var(--float); color: var(--fg); font-size: 13px; box-shadow: var(--shadow-float); }
     .use-pop:popover-open { display: flex; flex-direction: column; gap: 6px; }
     .use-pop .up-row { display: flex; flex-direction: column; gap: 2px; padding: 3px 2px; }
@@ -97,13 +124,55 @@
     .use-pop small { color: var(--fg2); font-size: 12px; }
     .use-pop small.warn { color: var(--needs-ink); font-weight: 500; }
 
-    .center { position: relative; min-width: 0; min-height: 0; }
-    .collection { position: absolute; inset: 0; }
+    /* ---- what's open: a header (for #crew and a conversation) over the view ---- */
+    .center { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
+    /* Windows draws its window buttons over the top right (main.js titleBarOverlay, 45px tall): nothing goes beneath
+       them. The width they take comes from the page (titlebar-area), 138px if it can't say. */
+    .center { --caption-w: 0px; }
+    html[data-os=win] .center { --caption-w: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))); }
+    /* with the sidebar put away, a Mac's traffic lights sit over the header's left end */
+    html:not([data-os=win]) body.no-side .center { --lights-w: 76px; }
+    .mainhead { flex: none; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 calc(14px + var(--caption-w)) 0 calc(24px + var(--lights-w, 0px)); border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
+    .mainhead:empty { display: none; }
+    .mainhead :is(button, input, label, a) { -webkit-app-region: no-drag; }
+    .tk-head, .col-head, .tv-head { -webkit-app-region: drag; }
+    :is(.tk-head, .col-head, .tv-head) :is(button, input, label, select, .seg, a, [role=button]) { -webkit-app-region: no-drag; }
+    html[data-os=win] :is(.tk-head, .col-head) { padding-right: calc(24px + var(--caption-w)); }
+    html[data-os=win] .tv-head { padding-right: calc(14px + var(--caption-w)); }
+    body.no-side :is(.tk-head, .col-head, .tv-head) { padding-left: calc(24px + var(--lights-w, 0px)); }
+    .mh-title { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 16px; font-weight: 700; white-space: nowrap; }
+    .mh-title .hash { color: var(--fg3); font-weight: 600; }
+    .mh-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--fg2); }
+    .mh-face { flex: none; position: relative; line-height: 0; }
+    .mh-name { flex: none; margin: 0; font: 600 18px/22px var(--font-brand); white-space: nowrap; }
+    .mh-name .at { font-family: var(--ui); }
+    .mainhead .mark-yolo { flex: none; height: 16px; padding: 0 4px; border-radius: var(--r-tag); box-shadow: inset 0 0 0 1px var(--line-strong); font: 600 10px/16px var(--ui); font-style: normal; color: var(--fg2); }
+    .mh-acts { margin-left: auto; flex: none; display: flex; align-items: center; gap: 6px; }
+    .mh-power { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: var(--r-control); font-size: 13px; color: var(--fg2); cursor: pointer; }
+    .mh-power:hover { background: var(--fill); }
+    .mainhead .btn { height: 30px; }
+    .mainhead .btn[aria-pressed=true] { background: var(--fill-hover); }
+    .mainhead .icon { width: 30px; height: 30px; padding: 0; }
+    .mainhead .mode { height: 22px; }
+    /* #crew: what's waiting on you (a berry pill that jumps to the oldest), and who's in it */
+    .mh-needs { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--needs-tint); color: var(--needs-ink); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background var(--t-quick); animation: mh-in var(--t-move) var(--out); }
+    .mh-needs:hover { background: color-mix(in srgb, var(--needs) 16%, transparent); }
+    .mh-needs svg { width: 12px; height: 12px; }
+    @keyframes mh-in { from { opacity: 0; } }
+    .mh-faces { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px 0 4px; border: 0; border-radius: 9px; background: none; color: var(--fg2); font: inherit; font-size: 13px; cursor: pointer; }
+    .mh-faces:hover { background: var(--fill); color: var(--fg); }
+    .mh-faces .av + .av { margin-left: -8px; }
+
+    .stage { position: relative; flex: 1; min-height: 0; }
+    .center > .ws-banner { position: relative; inset: auto; flex: none; margin: 10px 14px 2px; } /* above what's open, never over it */
+    .stage > * { position: absolute; inset: 0; }
+    .collection, .tasks-view { overflow: hidden; }
     /* Grid: tiles stay tall enough to read (a dozen lines or so) and the grid scrolls, rather than squeezing
        every terminal down to three lines. Two columns once there's room for two full-width terminals. */
     .terms-view { position: absolute; inset: 0; display: flex; flex-direction: column; }
     /* which terminals (with counts) on the left, Grid or Focus on the right */
-    .tv-head { flex: none; display: flex; align-items: center; gap: 8px; height: 50px; padding: 0 14px; }
+    .tv-head { flex: none; display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 14px 0 24px; }
+    .tv-title { margin: 0 8px 0 0; font: 600 20px/24px var(--font-brand); }
     .tv-show button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 4px 12px; }
     .tv-show button i { font-style: normal; font-weight: 500; color: var(--fg2); font-variant-numeric: tabular-nums; }
     .tv-show button[data-show=needs] i.some { color: var(--needs-ink); }
@@ -119,10 +188,10 @@
     .terms-view:not(.hidden) .tile { animation: tile-in var(--t-move) var(--out) backwards; animation-delay: calc(min(sibling-index(), 10) * 20ms); }
     @keyframes tile-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
     /* terminals stay dark in light mode, so their headers carry dark tokens */
-    .tile { --c: #888; --fg: #EDEDED; --fg2: #A0A0A0; --fg3: #6E6E6E; --line: rgba(255, 255, 255, 0.08); --line-strong: rgba(255, 255, 255, 0.14); --fill: rgba(255, 255, 255, 0.06); --fill-hover: rgba(255, 255, 255, 0.10); --btn: rgba(255, 255, 255, 0.06); --btn-hover: rgba(255, 255, 255, 0.10); --working-ink: #3DD68C; --needs: #F5A524; --needs-ink: #F5A524; --waiting-ink: #F5A524; --starting: #A0A0A0; --yolo-ink: #A0A0A0; --fast-ink: #A0A0A0; color: var(--fg); }
+    .tile { --c: #888; --fg: #EDEDED; --fg2: #A0A0A0; --fg3: #6E6E6E; --line: rgba(255, 255, 255, 0.08); --line-strong: rgba(255, 255, 255, 0.14); --fill: rgba(255, 255, 255, 0.06); --fill-hover: rgba(255, 255, 255, 0.10); --btn: rgba(255, 255, 255, 0.06); --btn-hover: rgba(255, 255, 255, 0.10); --working-ink: #BDBDBD; --needs: #E0458F; --needs-ink: #FF7AC0; --waiting-ink: #FF7AC0; --starting: #A0A0A0; --yolo-ink: #A0A0A0; --fast-ink: #A0A0A0; color: var(--fg); }
     .tile { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: #111; border-radius: var(--r-card); overflow: hidden; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06); transition: box-shadow .25s; }
     @media (prefers-color-scheme: light) { .tile { box-shadow: 0 0 0 1px rgba(0, 0, 0, .14); } }
-    .tile.on { box-shadow: 0 0 0 1.5px var(--accent); }
+    .tile.on { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
     /* a terminal that's waiting on you says so with its outline (and its Answer button) */
     .tile.needs, .tile.needs.on { box-shadow: 0 0 0 2px var(--needs); }
     /* One header row: who, how it is, its model; then its helpers and what this view is (LIVE, MIRROR…). A narrow tile
@@ -163,7 +232,7 @@
     .tile-acts .icon { width: 28px; height: 28px; padding: 0; color: rgba(255, 255, 255, .6); }
     .tile-acts .icon:hover { color: #fff; background: rgba(255, 255, 255, .1); }
     .tile-acts .icon svg { width: 14px; height: 14px; }
-    .tile-acts [data-act=fresh][aria-pressed=true] { color: #fff; background: rgba(59, 140, 255, .3); }
+    .tile-acts [data-act=fresh][aria-pressed=true] { color: #fff; background: rgba(255, 255, 255, .2); }
     /* frozen output looks frozen */
     .tile[data-mode=offline] .term, .tile[data-mode=ended] .term { opacity: .5; filter: grayscale(.7); transition: opacity .3s; }
     .term { flex: 1; min-height: 0; padding: 6px 0 2px 10px; }
@@ -305,12 +374,6 @@
     .imp .imp-folder { flex: 1; }
     .imp .imp-note { grid-column: 3; color: var(--fg2); font-size: 12px; }
 
-    /* the Tasks tab counts what's waiting, in its corner: out of the layout, so the label stays centered */
-    .seg.views button { position: relative; }
-    .seg.views button[data-view=tasks] { padding-right: 24px; } /* room for the count in its corner */
-    .seg-badge { position: absolute; top: 50%; right: 6px; margin-top: -8px; display: grid; place-items: center; min-width: 14px; height: 16px; font: 500 13px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: var(--fg2); pointer-events: none; transition: opacity .2s; }
-    .seg-badge:empty { opacity: 0; }
-    .seg-badge.review { color: var(--needs-ink); }
     .tile-head .ctx { --ctx-calm: rgba(255, 255, 255, .5); --track: rgba(255, 255, 255, .14); }
     .tile-head .ctx.calm b { color: rgba(255, 255, 255, .45); }
 
@@ -349,59 +412,113 @@
     .mv-carry .no svg { color: var(--fg3); }
     .mv-busy { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--r-control); font-size: 13px; line-height: 1.45; color: var(--fg); background: var(--needs-tint); }
 
-    .chat { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
-    .chat .feed { flex: 1; }
-    /* your conversation with one agent: its header over the feed */
-    .chat .convo-head { flex: none; height: 52px; padding: 0 12px 0 12px; border-bottom: 1px solid var(--line); }
-    /* the chat's column: its Needs you queue and messages on the panel, the message box at its foot */
-    .chat .feed { padding: 16px 16px 14px; }
-    .chat .composer { padding: 8px 16px 16px; }
+    /* ---- the chat: #crew (everyone), or your conversation with one agent ----
+       Messages in one column (880px at most) down the left, like a group chat: each sender's creature beside what it
+       said, you included. What needs you is a card in the conversation, answered where it is. */
+    .chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--surface); }
+    .chat { --col-pad: max(28px, calc(100% - 908px)); }
+    .chat .feed { flex: 1; gap: 14px; padding: 20px var(--col-pad) 12px 28px; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12px); }
+    .chat .composer { padding: 6px var(--col-pad) 18px 28px; }
+    .chat .needs-queue { display: none !important; }
+    .chat .item.said { gap: 12px; }
+    .chat .item.said .face { width: 36px; }
+    .chat .item .cap { margin-bottom: 1px; font-size: 12px; }
+    .chat .item .cap .who, .chat .item .cap .you { font-size: 14px; font-weight: 700; color: var(--fg); }
+    .chat .item .cap .to { color: var(--fg3); }
+    .chat .bubble { font-size: 14px; line-height: 1.5; }
+    .chat .item.mine .stack > .bubble { background: none; padding: 0; border-radius: 0; }
+    .chat .item.cont { margin-top: -10px; }
+    .you-av { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--fg); color: var(--surface); font: 600 11px/1 var(--ui); letter-spacing: .01em; }
+    .chat .event, .chat .rule-ev { align-self: flex-start; margin-left: 48px; text-align: left; }
+    .chat .fresh-ev, .chat .task-ev { margin-left: 48px; }
+    .chat .ask-card { width: min(640px, 100%); margin-top: 6px; padding: 14px 16px; border-radius: 14px; }
+    .chat .item.ask.open .ask-card { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--needs) 62%, transparent); }
+    .chat .item.ask.open .ask-title svg { color: var(--needs-ink); }
+    .chat .typing-row { margin-left: 48px; }
+    /* a question's options: one line each, its words after its label, so a card stays a glance tall */
+    .chat .ask-options { gap: 4px; }
+    .chat .ask-option { flex-direction: row; align-items: baseline; gap: 10px; padding: 7px 34px 7px 12px; }
+    .chat .ask-option b { flex: none; }
+    .chat .ask-option span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat .ask-other { margin-top: 6px; }
+    .chat .ask-question { margin: 4px 0 10px; font-size: 14px; }
+    .chat .convo-empty b { font-family: var(--font-brand); font-size: 18px; }
+
+    /* ---- an agent's terminal, docked beside your conversation with it ----
+       The same terminal as in Terminals (one per agent, moved by CSS, never re-created): tabs for it and its clones,
+       what kind of view it is (Live, Mirror…), and a way to put it away. */
+    .stage { --dock-w: clamp(340px, 46%, 660px); }
+    .stage.docked .chat { right: var(--dock-w); }
+    .terms-view.docked { left: auto; width: var(--dock-w); padding: 10px 10px 10px 0; }
+    .terms-view.docked .tv-head { display: none; }
+    .dock-bar { display: none; }
+    .terms-view.docked .dock-bar { flex: none; display: flex; align-items: center; gap: 4px; height: 42px; padding: 0 6px 0 8px; border-radius: var(--r-window) var(--r-window) 0 0; background: #1a1a1a; color: #EDEDED; box-shadow: 0 0 0 1px rgba(0, 0, 0, .06); }
+    .dock-tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .dock-tab { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 6px; border: 0; border-radius: 7px; background: none; color: #A0A0A0; font: 500 12.5px/1 var(--ui); cursor: pointer; transition: background var(--t-quick), color var(--t-quick); }
+    .dock-tab:hover { color: #EDEDED; background: rgba(255, 255, 255, .06); }
+    .dock-tab[aria-selected=true] { color: #fff; background: rgba(255, 255, 255, .11); }
+    .dock-tab .need-badge { min-width: 16px; height: 16px; font-size: 10px; }
+    .dock-bar .t-badge { margin: 0 4px; }
+    .dock-bar .icon { width: 28px; height: 28px; padding: 0; color: rgba(255, 255, 255, .6); }
+    .dock-bar .icon:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+    .dock-bar .icon svg { width: 14px; height: 14px; }
+    .terms-view.docked .terms { padding: 0; overflow: hidden; }
+    .terms-view.docked .tile { border-radius: 0 0 var(--r-window) var(--r-window); box-shadow: 0 0 0 1px rgba(0, 0, 0, .06); animation: none; }
+    .terms-view.docked .tile-head { display: none; }
+    .terms-view.docked .tile-acts { top: 8px; }
+    .terms-view.docked .tile.on:not(:hover) .tile-acts:not(:focus-within) { opacity: 0; pointer-events: none; } /* over the output: only while the pointer's there */
+    .terms-view.docked .term { padding-top: 10px; }
   </style>
 </head>
 <body>
-  <header class="titlebar">
-    <div class="tb-left"><button class="ws-switch" aria-haspopup="menu" aria-expanded="false"></button></div>
-    <div class="seg views"><button data-view="crew" title="The crew: cards to open and edit each agent"></button><button data-view="tasks" title="Tasks: to do, in progress, review, done"></button><button data-view="terminals" title="Every agent's terminal"></button></div>
-    <div class="tb-right">
-      <button class="tb-needs hidden" data-act="needs"></button>
-      <button class="icon tb-more" data-act="more" title="More: show or hide the panels, Computers, theme" aria-label="More" aria-haspopup="menu"></button>
-    </div>
-  </header>
   <main>
-    <nav class="side">
-      <div class="side-top">
-        <label class="find" title="Find an agent (⌘F)"><span class="find-icon"></span><input type="search" data-find spellcheck="false" autocomplete="off"><kbd>⌘F</kbd></label>
+    <nav class="side" aria-label="Places and agents">
+      <div class="side-top"></div>
+      <div class="side-ws">
+        <button class="ws-switch" aria-haspopup="menu" aria-expanded="false"></button>
         <button class="icon" data-act="add" title="New agent (⌘N)" aria-label="New agent"></button>
+      </div>
+      <div class="side-nav">
+        <button class="nv" data-place="chat" title="Everyone's messages: Auto picks who answers (⌘1)"><span class="hash" aria-hidden="true">#</span><span>crew</span><i class="nv-n"></i></button>
+        <button class="nv" data-place="crew" title="Every agent as a card: turn them on and off, edit, compare (⌘2)"><span class="nv-icon"></span><span>Agents</span><i class="nv-n"></i></button>
+        <button class="nv" data-place="tasks" title="Tasks: to do, in progress, review, done (⌘3)"><span class="nv-icon"></span><span>Tasks</span><i class="nv-n"></i></button>
+        <button class="nv" data-place="terminals" title="Every agent's terminal (⌘4)"><span class="nv-icon"></span><span>Terminals</span><i class="nv-n"></i></button>
+      </div>
+      <div class="side-sec">
+        <span class="sec-label">Direct</span>
+        <button class="icon" data-act="find" title="Find an agent (⌘F)" aria-label="Find an agent"></button>
+        <label class="find"><span class="find-icon"></span><input type="search" data-find spellcheck="false" autocomplete="off" aria-label="Find an agent"></label>
       </div>
       <div class="roster"></div>
       <div class="ws-dock hidden" role="tablist" aria-label="Workspaces"></div>
       <footer class="side-foot">
-        <label class="autopilot"><span class="glyph"></span><b>Autopilot</b><input type="checkbox" class="switch sm"></label>
-        <div class="foot-chips">
-          <button class="foot-chip link-chip" data-act="link"></button>
-          <button class="foot-chip use-chip hidden" data-act="usage" popovertarget="use-pop"></button>
-        </div>
+        <button class="use-line none" data-act="usage" popovertarget="use-pop"></button>
+        <button class="icon side-more" data-act="more" title="Autopilot, Computers, Claude Code and Codex, theme" aria-label="More" aria-haspopup="menu"></button>
       </footer>
     </nav>
     <section class="center">
+      <header class="mainhead"></header>
       <div class="ws-banner hidden"></div>
-      <div class="terms-view hidden">
-        <header class="tv-head">
-          <div class="seg tv-show" data-show><button data-show="all" title="Every terminal">All <i></i></button><button data-show="busy" title="The ones working, starting or waiting on you">Busy <i></i></button><button data-show="needs" title="The ones waiting on you">Needs you <i></i></button></div>
-          <span class="grow"></span>
-          <div class="seg tv-layout" data-layout><button data-layout="grid" title="Every terminal side by side (⌘3)" aria-label="Grid"></button><button data-layout="focus" title="One terminal, big (⌘4)" aria-label="Focus"></button></div>
-        </header>
-        <div class="terms"></div>
+      <div class="stage">
+        <aside class="chat" aria-label="Messages">
+          <div class="feed"></div>
+          <div class="compose"></div>
+        </aside>
+        <div class="terms-view hidden">
+          <div class="dock-bar"></div>
+          <header class="tv-head">
+            <h2 class="tv-title">Terminals</h2>
+            <div class="seg tv-show" data-show><button data-show="all" title="Every terminal">All <i></i></button><button data-show="busy" title="The ones working, starting or waiting on you">Busy <i></i></button><button data-show="needs" title="The ones waiting on you">Needs you <i></i></button></div>
+            <span class="grow"></span>
+            <div class="seg tv-layout" data-layout><button data-layout="grid" title="Every terminal side by side" aria-label="Grid"></button><button data-layout="focus" title="One terminal, big" aria-label="Focus"></button></div>
+          </header>
+          <div class="terms"></div>
+        </div>
+        <div class="collection hidden"></div>
+        <div class="tasks-view hidden"></div>
+        <div class="blank hidden"><span class="blank-mark"></span><b class="display">No agents yet</b><span>Give each one a name, an area of work and a model.</span><div><button class="btn primary lg" data-act="add">Add your first agent</button></div></div>
       </div>
-      <div class="collection hidden"></div>
-      <div class="tasks-view hidden"></div>
-      <div class="blank hidden"><span class="blank-mark"></span><b class="display">No agents yet</b><span>Give each one a name, an area of work and a model.</span><div><button class="btn primary lg" data-act="add">Add your first agent</button></div></div>
     </section>
-    <aside class="chat">
-      <div class="convo-head"></div>
-      <div class="feed"></div>
-      <div class="compose"></div>
-    </aside>
   </main>
 
 

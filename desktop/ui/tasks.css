@@ -234,7 +234,7 @@
 .picking .tc-top > .ki { visibility: hidden; }
 .tc.picked.picked { box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm); }
 .tc-check:hover, .tr-check:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
-.tc.picked .tc-check, .tr.picked .tr-check { background: var(--accent); box-shadow: none; color: #fff; }
+.tc.picked .tc-check, .tr.picked .tr-check { background: var(--accent); box-shadow: none; color: var(--on-accent); }
 .tr-check { justify-self: center; }
 .tr.picked { background: color-mix(in srgb, var(--accent) 11%, transparent); }
 .tr.picked:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }

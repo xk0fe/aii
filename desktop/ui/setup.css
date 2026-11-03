@@ -1,10 +1,12 @@
 /* The first-run screen and Add provider… (ui/setup.js). The brand is the v2 look's (common.css): Berry buttons, the
    brand face, and the Crew room's felt (roomFeltHTML in brand.js). One felt surface (the room); text never on it. */
 
-/* over the dashboard below its titlebar (ui/setup.js sets top), scrolling when the window is short; top-aligned, so
-   the room stays put when what's below it changes */
-.setup-view { position: fixed; top: 46px; right: 0; bottom: 0; left: 0; z-index: 40; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 40px 24px; background: var(--bg); }
+/* over the whole dashboard, scrolling when the window is short; top-aligned, so the room stays put when what's below it
+   changes. Its top band is where the window is dragged (and a Mac's traffic lights sit). */
+.setup-view { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 40; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 40px 24px; background: var(--bg); }
 .setup-view[hidden] { display: none; }
+.setup-view::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 40px; -webkit-app-region: drag; }
+.setup-view button, .setup-view input, .setup-view a { -webkit-app-region: no-drag; }
 .su-col { width: 100%; max-width: 560px; margin: 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .su-col > * { flex: none; } /* taller than the window: it scrolls, nothing in it squeezes */
 

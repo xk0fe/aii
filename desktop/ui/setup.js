@@ -107,7 +107,6 @@ function mountSetup({ onAdd = () => {} } = {}) {
     const open = manual || (shown && !dismissed)
     view.hidden = !open
     if (!open) return
-    view.style.top = `${Math.round(document.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? 46)}px`
     const w = words()
     const s = status()?.checked ? status() : { clis: [], git: null }
     const creature = { name: 'New', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, status: 'starting' }

@@ -82,48 +82,6 @@ function redrawWordmarks() {
   for (const el of document.querySelectorAll('.wordmark.stale')) el.outerHTML = wordmarkHTML(Number(el.dataset.size), { stitch: el.dataset.stitch === '1' })
 }
 
-// ---- the Crew view's header ----
-
-// The one line the header says, in plain words: who needs you comes first, then how busy everyone is.
-const crewKey = (a) => a.cloneOf ?? a.name
-function crewHeadline(agents, needs) {
-  const asking = [...new Map(needs.map((n) => [crewKey(n.agent), n.agent])).values()]
-  if (asking.length === 1) return `${plainName(asking[0])} needs you`
-  if (asking.length) return `${asking.length} of your crew need you`
-  const on = agents.filter((a) => a.on && a.status !== 'parked')
-  const busy = on.filter((a) => a.status === 'working' && !a.waitingOn?.length)
-  if (!on.length) return agents.length ? 'Everyone’s off' : 'No crew yet'
-  if (busy.length && busy.length === on.length) return on.length === 1 ? `${plainName(busy[0])} is busy` : 'Everyone’s busy'
-  if (busy.length) return `${busy.length} at work`
-  return 'All quiet'
-}
-
-// "Ada and Theo", "Ada, Theo and June", "Ada, Theo and 3 others"
-function namesList(names, max = 3) {
-  if (names.length <= max) return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0] ?? ''
-  return `${names.slice(0, max - 1).join(', ')} and ${names.length - max + 1} others`
-}
-
-// The sentence under the headline: what each one asking you wants, then who's at work.
-function crewSentence(agents, needs) {
-  const nameOf = plainName
-  const seen = new Set()
-  const wants = []
-  for (const n of needs) {
-    if (seen.has(crewKey(n.agent))) continue
-    seen.add(crewKey(n.agent))
-    const q = n.ask?.ask
-    wants.push(`${nameOf(n.agent)} ${!q ? 'is waiting in its terminal' : q.type === 'question' ? 'has a question' : q.type === 'plan' ? 'has a plan for you' : q.code ? 'wants to run a command' : 'wants your OK'}`)
-  }
-  const ask = wants.length > 2 ? `${wants[0]}, ${wants[1]} and ${wants.length - 2} more need you.` : wants.length ? `${wants.join(' and ')}.` : ''
-  const busy = agents.filter((a) => a.on && a.status === 'working' && !a.waitingOn?.length && !seen.has(a.name)).map(nameOf)
-  const work = busy.length ? `${namesList(busy)} ${busy.length === 1 ? 'is' : 'are'} working.` : ''
-  if (ask || work) return [ask, work].filter(Boolean).join(' ')
-  const on = agents.filter((a) => a.on && a.status !== 'parked')
-  if (!on.length) return agents.length ? 'Turn someone on in the sidebar and they pick up where they left off.' : ''
-  return 'Nobody’s working right now. Send a message or add a task, and whoever’s free picks it up.'
-}
-
 // Who matters most right now, for a strip too small for everyone: needing you, then working, starting, free, off.
 const ROOM_RANK = { waiting: 0, working: 1, starting: 2, idle: 3 }
 
