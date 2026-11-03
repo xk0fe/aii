@@ -236,7 +236,7 @@ const RIBBON = {
   live: (a, n) => ['Live', `${PRODUCT_NAME}'s view of ${n}'s terminal · earlier output replayed`,
     `This isn't a terminal app. ${PRODUCT_NAME} runs ${n}'s CLI in a pseudo-terminal and draws its output here; what you type goes straight to ${n}. Output from before this view opened (up to 256 KB) is replayed, so older lines can look off until ${n} redraws.`],
   mirror: (a, n) => ['Mirror', `Streamed from ${a.homeName} · earlier output replayed`,
-    `${n} runs on ${a.homeName}. Its terminal output streams here over Crew Link and what you type goes back to it. Output from before this view opened is replayed, so older lines can look off until it redraws.`],
+    `${n} runs on ${a.homeName}. Its terminal output streams here over ${PRODUCT_NAME} Link and what you type goes back to it. Output from before this view opened is replayed, so older lines can look off until it redraws.`],
   replay: (a, n) => ['Replay', `Redrawing ${n}'s recent output…`, `${PRODUCT_NAME} is replaying what the agent printed before this view opened. Live output follows.`],
   offline: (a) => ['Offline', `${a.homeName ?? 'Its computer'} is unreachable · showing the last output`,
     `Not live: ${a.homeName ?? 'the computer it runs on'} can't be reached, so this is the last output it sent. It reconnects on its own.`],
@@ -942,7 +942,7 @@ function computersHTML({ me, links, phones }) {
 // Why this computer can't share, in words. A port another app has is the usual one, and there's no setting for the port
 // on screen (it's in Crew's settings file), so it says what you can do instead.
 const sharingError = (error) => (/port \d+ is in use/.test(error)
-  ? "Another app is using the port Crew Link listens on, so this computer can't share right now. Quit that app and turn sharing off and on again."
+  ? `Another app is using the port ${PRODUCT_NAME} Link listens on, so this computer can't share right now. Quit that app and turn sharing off and on again.`
   : errorReason(error) || `${PRODUCT_NAME} couldn't start sharing this computer. Turn it off and on again.`)
 // How others reach this computer, in words: "Reachable over your local network and Tailscale."
 function reachText(hosts = []) {
@@ -950,7 +950,7 @@ function reachText(hosts = []) {
   return ways.length ? `Reachable over ${ways.join(' and ')}.` : 'Not reachable over a network right now: check this computer is on Wi-Fi or Ethernet.'
 }
 // For Copy connection details: what someone helping you would ask for.
-const connectionDetails = (me) => [`${me.name} (${me.slug}), Crew Link port ${me.port}`, ...(me.hosts ?? []).map((h) => `${h.address} (${h.via})`)].join('\n')
+const connectionDetails = (me) => [`${me.name} (${me.slug}), ${PRODUCT_NAME} Link port ${me.port}`, ...(me.hosts ?? []).map((h) => `${h.address} (${h.via})`)].join('\n')
 
 // How a linked computer is: "Online · local network · 7 agents", or "Offline · 3 agents" (why, on hover).
 function linkStatus(l) {

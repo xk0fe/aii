@@ -3,9 +3,10 @@
 // states and the wordmark. Never on controls, and text never sits on it. One felt surface per region.
 /* global avatarHTML, poseOf, statusWord, plainName, esc */
 
-// The product's name wherever it's shown (the wordmark, window titles). A rename is this one line; the `crew` command,
-// the ~/.crew folder, environment variables and app IDs keep theirs.
-const PRODUCT_NAME = 'Crew'
+// The product's name wherever it's shown (the wordmark, window titles). A rename is this line and PRODUCT_NAME in
+// core/appid.js (the app, its menus and installers); the `crew` command, the ~/.crew folder, environment variables and
+// app IDs keep theirs.
+const PRODUCT_NAME = 'CLIque'
 document.title = PRODUCT_NAME
 
 // The felt of brand surfaces: the creatures' av-fuzz idea (a fuzzy edge and fibre grain), tuned for flat areas
@@ -47,14 +48,15 @@ function roomFeltHTML(floor = 44) {
     <span class="rf-stitch" aria-hidden="true"><svg width="100%" height="100%"><rect width="100%" height="100%" rx="10" fill="none" ${thread}/></svg></span>`
 }
 
-// The wordmark: the product's name in the brand face, each letter in a creature's colour, felt edges, sewn on with
-// one stitch (dropped below 40px, where it would only blur). Drawn as SVG text so the felt and the stitch follow
-// the letters; spaced by the face's own advances once it's loaded (wordmarks drawn before that are redrawn).
+// The wordmark: the product's name in the brand face, as it's written (the capitals are the CLI in CLIque), each
+// letter in a creature's colour, felt edges, sewn on with one stitch (dropped below 40px, where it would only blur).
+// Drawn as SVG text so the felt and the stitch follow the letters; spaced by the face's own advances once it's loaded
+// (wordmarks drawn before that are redrawn).
 const WORDMARK_INKS = ['#ff45a8', '#3db8ff', '#ffc61f', '#2fd3a6', '#72d63a', '#ff8a1f', '#8b5cf6']
 let wordmarkCtx = null
 function wordmarkHTML(size = 24, { stitch = size >= 40 } = {}) {
   ensureFeltDefs()
-  const letters = [...PRODUCT_NAME.toLowerCase()]
+  const letters = [...PRODUCT_NAME]
   wordmarkCtx ??= document.createElement('canvas').getContext('2d')
   wordmarkCtx.font = `700 ${size}px Fredoka`
   const ready = document.fonts?.check?.(`700 ${size}px Fredoka`) ?? true

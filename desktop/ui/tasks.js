@@ -2,7 +2,7 @@
 // Add one with New task or a column's + (or from the chat). Starting one hands it to its owner in a fresh
 // conversation, so tasks don't pile into one long context; you review what comes back. Board or list, filtered by
 // kind, owner or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via crew.call('task').
-/* global ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine */
+/* global PRODUCT_NAME, ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine */
 
 const STATUS = [
   { id: 'new', label: 'To do' },
@@ -119,7 +119,7 @@ function mountTasks(root, { onTerminal }) {
   // Who is on a task right now: its owner, or the clone of it that took the task.
   const worker = (t) => (t.fixer ? (state.agents.find((a) => (a.name === t.fixer || a.cloneOf === t.fixer) && String(a.ticket) === t.key) ?? agent(t.fixer)) : null)
   const ticket = (key) => tickets.find((t) => t.key === key)
-  const who = (n) => (n === 'you' ? 'You' : n === 'crew' ? 'Crew' : `@${esc(n)}`)
+  const who = (n) => (n === 'you' ? 'You' : n === 'crew' ? PRODUCT_NAME : `@${esc(n)}`)
   const call = async (...args) => {
     try {
       return await crew.call('task', ...args)
