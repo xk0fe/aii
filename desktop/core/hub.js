@@ -14,7 +14,7 @@ import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCo
 import { callResult } from './transcript.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
-import { DEFAULT, dirOf, space, forget, renameShared, sharedNames } from './workspaces.js'
+import { DEFAULT, GENERAL, dirOf, space, forget, renameShared, sharedNames } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
@@ -334,13 +334,12 @@ export class Hub extends EventEmitter {
   summary() {
     const agents = this.ordered().filter((a) => !a.cloneOf)
     const live = agents.filter((a) => !a.off && (!this.parked || this.runner.running(a.name)))
-    const read = (from) => Math.max(this.reads.since ?? 0, this.reads.agents?.[from] ?? 0)
     return {
       agents: agents.length,
       on: agents.filter((a) => !a.off).length,
       working: live.filter((a) => [a, ...this.clonesOf(a)].some((x) => x.status === 'working')).length,
       waiting: live.flatMap((a) => [a, ...this.clonesOf(a)]).filter((x) => x.status === 'waiting').length,
-      unread: this.feed.slice(-200).filter((e) => e.kind === 'reply' && e.from !== 'you' && e.ts > read(e.from)).length,
+      unread: this.feed.slice(-200).filter((e) => e.kind === 'reply' && e.from !== 'you' && e.ts > this.readTo(e)).length,
       faces: agents.filter((a) => !a.off).slice(0, 4).map((a) => ({ name: a.name, avatar: a.avatar, status: this.parked ? 'parked' : a.status })),
       // who's waiting on you there, so another workspace can say so
       needs: live.flatMap((a) => [a, ...this.clonesOf(a)]).filter((x) => x.status === 'waiting').slice(0, 4).map((x) => ({ name: x.name, avatar: x.avatar ?? (x.cloneOf && this.agents.get(x.cloneOf)?.avatar), activity: x.activity })),
@@ -420,6 +419,7 @@ export class Hub extends EventEmitter {
     if (shared) renameShared(this.config, from, to)
     else {
       this.space.def(from).name = to
+      this.space.renamed(from, to)
       if (this.space.triage === from) this.space.triage = to
     }
     for (const h of shared ? [this, ...this.others()] : [this]) h.renameAgent(from, to)
@@ -464,18 +464,36 @@ export class Hub extends EventEmitter {
     return this.providers[a.provider ?? a.cli ?? 'claude']
   }
 
-  // You've seen an agent's replies up to `ts` (the chat marks what's been on screen): { name: ts }.
-  // Names can be agents on other computers (iris@workstation): what you've read is this computer's to remember.
+  // You've seen an agent's replies up to `ts` (the chat marks what's been on screen): { name: ts }, or { 'name#channel':
+  // ts } for its replies in one channel (#general's are the plain name's). A plain name from a chat that shows every
+  // channel at once (a phone) is read in all of them. Names can be agents on other computers (iris@workstation): what
+  // you've read is this computer's to remember.
   read(seen) {
     let moved = false
-    for (const [name, ts] of Object.entries(seen ?? {})) {
-      if (!(Number(ts) > (this.reads.agents[name] ?? 0))) continue
-      this.reads.agents[name] = Number(ts)
+    const raise = (book, name, ts) => {
+      if (!(ts > (book[name] ?? 0))) return
+      book[name] = ts
       moved = true
+    }
+    for (const [key, at] of Object.entries(seen ?? {})) {
+      const ts = Number(at)
+      const [name, channel] = key.split('#')
+      if (!name) continue
+      if (channel && channel !== GENERAL) raise((this.reads.channels ??= {})[channel] ??= {}, name, ts)
+      else raise(this.reads.agents, name, ts)
+      if (channel !== undefined) continue
+      const everywhere = new Set([...Object.keys(this.reads.channels ?? {}), ...this.feed.map((e) => e.channel).filter(Boolean)])
+      for (const ch of everywhere) raise((this.reads.channels ??= {})[ch] ??= {}, name, ts)
     }
     if (!moved) return
     this.saveReads()
     this.changed()
+  }
+
+  // Up to when you've read an agent's replies where this one is: its channel's, or #general's.
+  readTo(e) {
+    const book = e.channel && e.channel !== GENERAL ? this.reads.channels?.[e.channel] : this.reads.agents
+    return Math.max(this.reads.since ?? 0, book?.[e.from] ?? 0)
   }
 
   saveReads() {
@@ -818,6 +836,8 @@ export class Hub extends EventEmitter {
   setContext(a, context) {
     const c = this.convoOf(a)
     if (JSON.stringify(c.context) === JSON.stringify(context)) return
+    // much smaller than it was: the CLI compacted it (Codex says so nowhere else), and the briefs went with the rest
+    if (c.briefs && c.context?.used > 0 && context?.used < c.context.used / 2) delete c.briefs
     c.context = context
     this.saveConvos()
     this.checkLimit(a)
@@ -1205,6 +1225,7 @@ export class Hub extends EventEmitter {
         if (e.source === 'compact') {
           // The CLI summarized the conversation to make room: older details are now fuzzy.
           this.convoOf(a).compactions += 1
+          delete this.convoOf(a).briefs // summarized with the rest: each channel's brief comes again with its next message
           this.saveConvos()
           this.post({ kind: 'event', from: name, text: 'ran out of room and compacted its conversation (older details are summarized now)' })
           return
@@ -1612,8 +1633,21 @@ export class Hub extends EventEmitter {
     if (!a.steering) return
     const { msgs } = a.steering
     a.steering = null
+    this.unbrief(a, msgs)
     for (const m of [...msgs].sort((x, y) => rank(y) - rank(x))) (a.inbox.unshift(m), (m.queued = true))
     this.pump(a)
+  }
+
+  // Messages that went back to the queue: the briefs they carried weren't given after all.
+  unbrief(a, msgs) {
+    const briefs = this.convos[a.name]?.briefs
+    for (const m of msgs) {
+      const was = briefs && BRIEFED.get(m)
+      if (!was) continue
+      if (was.had === undefined) delete briefs[was.id]
+      else briefs[was.id] = was.had
+      BRIEFED.delete(m)
+    }
   }
 
   // ---- work experience: what each agent actually did, kept across restarts -----
@@ -1720,7 +1754,7 @@ export class Hub extends EventEmitter {
   // ({ from, text }): the same for a message that lives on another computer, which can only be quoted.
   // From a linked computer, `ask` is a question asked there (its id there: the answer goes back with it), and
   // `answers` the answer to one asked here.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false }) {
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief }) {
     text = String(text ?? '').trim()
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -1738,8 +1772,16 @@ export class Hub extends EventEmitter {
     const names = all.filter((n) => !n.includes('@'))
     if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and CLIque Link isn't on`)
     const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }) }
-    if (away.length && !names.length) return this.relay(from, away, text, images, extra)
-    const targets = names.length ? this.recipients(names, from) : [this.route(text, from)]
+    // the channel it's said in: the one you said it in, or the one an agent's working in. One from another computer that
+    // this workspace doesn't have keeps its name and brief, so its agents get the brief all the same.
+    const remote = channelName && channel !== GENERAL && /^[a-z0-9][a-z0-9-]{0,39}$/.test(String(channel))
+    const ch = remote ? channel : this.channelFor(from, channel)
+    const carried = remote && { channelName: String(channelName).slice(0, 40), ...(brief && { brief: String(brief).slice(0, 4000) }) }
+    // to agents on other computers: with the channel's name and brief, for their hubs to give it
+    const there = ch && (carried || (this.channel(ch) && { channelName: this.channel(ch).name, ...(this.channel(ch).brief && { brief: this.channel(ch).brief }) }))
+    const awayExtra = there ? { ...extra, channel: ch, ...there } : extra
+    if (away.length && !names.length) return this.relay(from, away, text, images, awayExtra)
+    const targets = names.length ? this.recipients(names, from) : [this.route(text, from, ch)]
     if (!targets[0]) throw new Error('no agents to send to')
     // nobody named: the crew picked who takes it (here, or in Crew.send for you), and the chat says so rather than that
     // you chose them
@@ -1755,7 +1797,7 @@ export class Hub extends EventEmitter {
 
     const held = from !== 'you' && !this.space.autopilot
     if (ask) {
-      const msg = this.post({ kind: 'msg', from, to: targets[0].name, text, ask: true, ...(images.length && { images }), queued: !held, held })
+      const msg = this.post({ kind: 'msg', from, to: targets[0].name, text, ask: true, ...(images.length && { images }), ...(ch && { channel: ch }), ...carried, queued: !held, held })
       this.open({ id: msg.id, msg, from, text, back: ask })
       if (!held) this.enqueue(targets[0], msg)
       return `asked @${targets[0].name}\n`
@@ -1769,11 +1811,11 @@ export class Hub extends EventEmitter {
     const said = quoted ? { from: quoted.from, text: quoted.ticket !== undefined ? `#${quoted.ticket} ${quoted.title ?? ''}` : quoted.text } : quote
     const msgs = targets.map((a) => {
       const replying = said && this.replyTag(a, said, quoted)
-      return this.post({ kind: 'msg', from, to: a.name, text, ...group, ...routed, ...extra, ...(images.length && { images }), ...(re && { re }), ...(replying && { replying }), queued: !held, held })
+      return this.post({ kind: 'msg', from, to: a.name, text, ...group, ...routed, ...extra, ...(images.length && { images }), ...(re && { re }), ...(ch && { channel: ch }), ...carried, ...(replying && { replying }), queued: !held, held })
     })
     if (held) return `waiting for the user to approve this hand-off to ${targets.map((a) => `@${a.name}`).join(' ')}\n`
     const here = targets.map((a, i) => this.enqueue(a, msgs[i])).join('')
-    return away.length ? this.relay(from, away, text, images, extra).then((there) => here + there) : here
+    return away.length ? this.relay(from, away, text, images, awayExtra).then((there) => here + there) : here
   }
 
   // What the agent is told about the message you're replying to, so it knows which one: "replying to your message
@@ -1863,7 +1905,7 @@ export class Hub extends EventEmitter {
     const named = addressees(to, '')
     if (named.length > 1) throw new Error('ask one teammate at a time: crew ask <name> "…"')
     const local = (n) => [n, this.baseOf(n)].find((x) => this.agents.has(x))
-    const name = named.length ? (named[0].includes('@') ? named[0] : (local(named[0]) ?? this.elsewhere?.(named[0]) ?? named[0])) : this.route(text, from)?.name
+    const name = named.length ? (named[0].includes('@') ? named[0] : (local(named[0]) ?? this.elsewhere?.(named[0]) ?? named[0])) : this.route(text, from, this.channelFor(from))?.name
     if (!name) throw new Error('no agents to ask')
     const asker = this.agents.get(from)
     this.mayWait(from, name)
@@ -2249,8 +2291,9 @@ export class Hub extends EventEmitter {
   // Best agent for an un-addressed task: area match first, then whoever is free, then the shortest queue.
   // An area matches on shared words and on shared intents (see INTENTS), so "keep the crew in working order"
   // finds the organiser even though none of its words are in "admin work, assistant, organiser".
-  route(text, from) {
-    const ready = [...this.agents.values()].filter((a) => !a.cloneOf && a.name !== this.baseOf(from) && this.runner.running(a.name))
+  route(text, from, channel) {
+    const members = this.channel(channel)?.members
+    const ready = [...this.agents.values()].filter((a) => !a.cloneOf && a.name !== this.baseOf(from) && this.runner.running(a.name) && (!members || members.includes(a.name)))
     const best = bestFor(text, ready.map((a) => this.lineup(a)))
     return best && this.agents.get(best.name)
   }
@@ -2308,7 +2351,9 @@ export class Hub extends EventEmitter {
   nextUp(a) {
     const kind = (m) => (m.answers ? 'answer' : !m.ask && !m.fresh && m.ticket === undefined && m.from !== 'you' && !m.crew ? 'handoff' : null)
     const k = kind(a.inbox[0])
-    const msgs = k ? a.inbox.filter((m) => kind(m) === k) : [a.inbox[0]]
+    // ...and only from one channel at a time: what comes of them goes back to the channel each was said in
+    const where = a.inbox[0].channel
+    const msgs = k ? a.inbox.filter((m) => kind(m) === k && (k === 'answer' || m.channel === where)) : [a.inbox[0]]
     for (const m of msgs) a.inbox.splice(a.inbox.indexOf(m), 1)
     return msgs
   }
@@ -2318,6 +2363,48 @@ export class Hub extends EventEmitter {
   // busy: typed into the turn it's in (steer), so it answers right away and carries on.
   framed(a, m, { busy = false } = {}) {
     if (m.answers) return `[answer from @${m.from} to your question${m.question ? ` "${m.question}"` : ''}] ${m.text}`
+    const where = this.briefed(a, m)
+    return where ? `${where} ${this.tagged(a, m, busy)}` : this.tagged(a, m, busy)
+  }
+
+  // The channel a message is in, as the agent reads it: the channel's brief the first time this conversation gets a
+  // message from there (and again once it's changed), after that just its name. #general without a brief: nothing, as
+  // before there were channels. Called as the message goes in, so the conversation counts the brief as given.
+  briefed(a, m) {
+    // one said on another computer comes with its name and brief (Crew.send); one of this workspace's, as it is now
+    const c = (m.channelName && { id: m.channel, name: m.channelName, brief: m.brief ?? '' }) || (this.channel(m.channel) ?? this.channel(GENERAL))
+    const convo = this.convoOf(a)
+    const had = convo.briefs?.[c.id]
+    const now = c.brief ? briefHash(c.brief) : undefined
+    if (had === now) return c.id === GENERAL && !c.brief ? '' : `[in #${c.name}]`
+    convo.briefs = { ...convo.briefs }
+    if (now) convo.briefs[c.id] = now
+    else delete convo.briefs[c.id]
+    BRIEFED.set(m, { id: c.id, had }) // taken back if the message doesn't go in after all (unsteer)
+    this.saveConvos()
+    if (!now) return `[in #${c.name}. #${c.name} has no brief any more: what it said before doesn't apply]`
+    return had
+      ? `[in #${c.name}. #${c.name}'s brief changed, for every message in #${c.name} from now on: ${c.brief}]`
+      : `[in #${c.name}. Channel brief, for every message in #${c.name}: ${c.brief}]`
+  }
+
+  // ---- channels: #general and the ones you made (core/workspaces.js) ----
+
+  channel(id) {
+    return id ? this.space.channels.find((c) => c.id === id) : undefined
+  }
+
+  // The channel a message from `from` goes in: the one it was given (#general is no channel at all, as before), else
+  // the one the agent is working in right now.
+  channelFor(from, given) {
+    if (given !== undefined) return given !== GENERAL && this.channel(given) ? given : undefined
+    const current = this.agents.get(from)?.current
+    const channel = current && this.feed.findLast((e) => e.id === current)?.channel
+    return channel && this.channel(channel) ? channel : undefined
+  }
+
+  // A message's own bracket: what it is and who it's from.
+  tagged(a, m, busy) {
     if (m.ask && busy) return `[question from @${m.from}, who is waiting on your answer. Answer it now with crew answer "…", then carry on with what you were doing] ${m.text}`
     if (m.ask) return `[question from @${m.from}, who is waiting on your answer: your final message is the answer, and goes back to @${m.from} by itself] ${m.text}`
     const others = (m.cc ?? []).filter((n) => this.baseOf(n) !== this.baseOf(a.name))
@@ -2748,7 +2835,8 @@ export class Hub extends EventEmitter {
     try {
       if (fs.statSync(file).size > BOARD_MAX) replaceFile(file, keepLines(fs.readFileSync(file, 'utf8')))
     } catch {} // the note is in: it's kept whole next time
-    this.post({ kind: 'note', from, text })
+    const channel = this.channelFor(from)
+    this.post({ kind: 'note', from, text, ...(channel && { channel }) })
     return 'shared with the crew\n'
   }
 
@@ -2791,6 +2879,11 @@ export class Hub extends EventEmitter {
   // ---- feed + snapshots --------------------------------------------------
 
   post(entry) {
+    // What follows from a message is in its channel: an agent's reply to it, its question about it, a hand-off it led to.
+    if (!('channel' in entry) && entry.re) {
+      const channel = this.feed.findLast((x) => x.id === entry.re)?.channel
+      if (channel) entry = { ...entry, channel }
+    }
     const e = { id: randomUUID().slice(0, 8), ts: Date.now(), ...entry }
     this.feed.push(e)
     this.trimFeed()
@@ -2886,9 +2979,10 @@ export class Hub extends EventEmitter {
       for (const l of t.log ?? []) if (l.by === from) (l.by = to), (board = true)
     }
     if (board) this.tickets.save()
-    if (this.reads.agents[from] !== undefined) {
-      this.reads.agents[to] = Math.max(this.reads.agents[to] ?? 0, this.reads.agents[from])
-      delete this.reads.agents[from]
+    for (const book of [this.reads.agents, ...Object.values(this.reads.channels ?? {})]) {
+      if (book[from] === undefined) continue
+      book[to] = Math.max(book[to] ?? 0, book[from])
+      delete book[from]
       this.saveReads()
     }
     this.changed()
@@ -3044,8 +3138,11 @@ export class Hub extends EventEmitter {
         waitingOn: this.waitingOn(a), owes: this.owes(a),
         // what it has leased (crew lease): the simulator, a port
         holds: this.holdsOf(a.name),
+        // the channel of what it's working on (none: #general's), so a channel shows who's at work there
+        channel: (a.status === 'working' || a.status === 'waiting') ? this.channelFor(a.name) : undefined,
       })),
       feed: withOpenAsks(this.feed.slice(-200), this.asks),
+      channels: this.space.channels,
       reads: this.reads,
       spend: this.spendNow(),
       // each provider's usage limits that haven't reset yet: { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
@@ -3073,7 +3170,20 @@ function clean(patch) {
 
 // Does the prompt an agent reports match what we typed into it? (Whitespace can differ.)
 const squash = (s) => String(s ?? '').replace(/\s+/g, ' ').trim()
-const samePrompt = (reported, sent) => reported === undefined || squash(reported).includes(squash(sent).slice(0, 60))
+// Which channel's brief a message carried in (see Hub.briefed), so it can be taken back if it never went in.
+const BRIEFED = new WeakMap()
+// Which version of a channel's brief an agent was given (FNV-1a): a changed brief is given again.
+const briefHash = (text) => {
+  let h = 0x811c9dc5
+  for (const ch of String(text)) h = Math.imul(h ^ ch.codePointAt(0), 0x01000193) >>> 0
+  return h.toString(36)
+}
+// Its start and its end: a channel's brief, or a teammate's hand-off tag, starts many messages the same way.
+const samePrompt = (reported, sent) => {
+  if (reported === undefined) return true
+  const [r, s] = [squash(reported), squash(sent)]
+  return r.includes(s.slice(0, 60)) && r.includes(s.slice(-60))
+}
 // What Claude Code submits by itself when a command or sub-agent the agent ran in the background finishes.
 const isNotice = (prompt) => /^\s*<task-notification>/.test(String(prompt ?? ''))
 

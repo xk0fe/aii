@@ -252,7 +252,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .seg .n { font-style: normal; font-weight: 500; color: var(--fg2); font-variant-numeric: tabular-nums; }
 .seg .n.needs { color: var(--needs-ink); }
 
-/* ---- a place's header: #crew, a conversation, Agents, Tasks and Terminals all open under the same one row ----
+/* ---- a place's header: a channel, a conversation, Agents, Tasks and Terminals all open under the same one row ----
    [glyph] Title  its line ...................... [search] [what needs you] [filters] [view] [the one action] [⋯]
    56px over a hairline, the title in the brand face, every tool 28px and in that order, so going from place to place
    changes words, never where things are. The window is dragged by it (on Windows its buttons sit over the right end,
@@ -288,7 +288,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 }
 @container (max-width: 560px) { .ph-sub { display: none; } }
 
-/* ---- a place's search (#crew, a conversation, Tasks): a magnifier that opens into a field where it stands, with
+/* ---- a place's search (a channel, a conversation, Tasks): a magnifier that opens into a field where it stands, with
    how many match and × to clear it; Esc, or leaving it empty, closes it (mountSearch in common.js) ---- */
 .hsearch { flex: none; display: flex; align-items: center; }
 .hs-field { display: none; align-items: center; gap: 7px; width: 240px; height: 28px; padding: 0 3px 0 9px; color: var(--fg3); cursor: text; animation: hs-in var(--t-pop) var(--out); }
@@ -526,6 +526,14 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 .empty-state.small > svg { width: 28px; height: 28px; margin-bottom: 4px; color: var(--fg3); }
 .empty-state.small > b { font-size: 15px; font-weight: 600; color: var(--fg); }
 .empty-state.small > .acts { margin-top: 8px; }
+/* an empty channel: its name, its brief as the agents will read it, and who's in it */
+.feed .empty.ch-intro { gap: 8px; max-width: 480px; }
+.ch-intro > span { max-width: 340px; }
+.ch-intro-mark { width: 52px; height: 52px; margin-bottom: 4px; display: grid; place-items: center; border-radius: 16px; background: var(--fill); color: var(--fg2); font: 600 28px/1 var(--font-brand); }
+.ch-intro .ch-brief { width: min(460px, 100%); margin: 2px 0; padding: 10px 14px; border-radius: var(--r-card); background: var(--fill); color: var(--fg); text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ch-intro .ch-who { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; }
+/* a message from a channel, shown outside it (an agent's conversation, the floating chat) */
+.tag.ch { color: var(--fg2); font-weight: 600; }
 
 /* picking several (Agents' Select, Tasks' ⌘-click): one round check, ink once picked */
 .pick { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg3) 80%, transparent); color: transparent; transition: background var(--t-quick), box-shadow var(--t-quick), color var(--t-quick); }

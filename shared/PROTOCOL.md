@@ -88,7 +88,7 @@ A phone watches **one workspace at a time, its own choice**: never the one on th
 | `send` | `ws, to, text, images?, opts?` | A message, as from the Mac's chat. `to` is `''` (CLIque picks), a name, or names with commas. `opts`: `{ fresh?, re? }`. Replies with what CLIque says, like `"sent to @kim\n"`. |
 | `answer` | `ws, id, reply` | Answer a question card. `reply` is what `Hub.answer` takes: `{ allow, always?, note? }`, `{ answers }` or `{ terminal: true }`. |
 | `approve`, `drop` | `ws, id` | A hand-off waiting for your approval (Autopilot off). |
-| `read` | `ws, seen` | `{ name: ts }`: replies seen up to then, so unread counts agree with the Mac. |
+| `read` | `ws, seen` | `{ name: ts }`: replies seen up to then, in every channel, so unread counts agree with the Mac. `{ 'name#channel': ts }` reads one channel's (`#general` for messages with no `channel`). |
 | `task` | `ws, op, key, arg?` | The Tasks board. `op` is one of `file`, `dispatch`, `accept`, `sendBack`, `note`, `move`. |
 | `power` | `ws, name, on` | Turn an agent on or off. |
 | `set` | `ws, name, { yolo?, fast? }` | YOLO and Fast. |
@@ -109,6 +109,7 @@ It's `Crew.snapshot(hub)` for the watched workspace, minus what a phone mustn't 
 - **`providers`:** `{ id: { label } }`.
 - **`roster` and `theme`:** dropped.
 - **Everything else as is:** `feed`, `reads`, `usage`, `spend`, `tasks`, `workspaces`, `workspace`, `parked`, `autopilot`.
+- **Channels:** a feed entry said in a channel other than #general carries `channel` (its id), and `reads.channels` is `{ channel: { name: ts } }`, read marks per channel (`reads.agents` is #general's). The channel list itself isn't sent yet: a phone shows every channel in one chat, and what it sends goes to #general.
 
 ## Sync
 

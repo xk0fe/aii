@@ -92,6 +92,14 @@ dialog.sheet.ws-sheet { width: 560px; }
 .ws-own-input { width: 190px; height: 24px; padding: 0 9px; font-size: 12px; }
 
 
+/* ---- a channel's sheet (dashboard.js channelSheet): the same hero, with # for its tile; its brief, and who's in it ---- */
+.ch-hero-glyph { width: 58px; height: 58px; flex: none; display: grid; place-items: center; border-radius: 18px; background: var(--fill); color: var(--fg2); font: 600 32px/1 var(--font-brand); }
+.ch-sheet .ws-title:disabled { background: transparent; color: var(--fg); opacity: 1; }
+.ch-brief-field { width: 100%; min-height: 104px; max-height: 260px; padding: 10px 12px; resize: vertical; font: 13px/1.5 var(--ui); }
+.ch-brief-field::placeholder { color: var(--fg3); }
+.ch-who-seg { margin-bottom: 10px; }
+.ch-crew.hidden { display: none; }
+
 /* ---- switching: the sidebar and what's open slide the way the rail goes (up to one above, down to one below); the
    rail stays where it is ---- */
 /* named only while switching: the cards' own transitions (card to sheet) mustn't slide the whole crew */

@@ -474,6 +474,9 @@ const actions = {
   // The switcher and the workspace sheet: workspace('switch', 'storefront'), workspace('create', null, { name, … }), and
   // edit, open, park, remove, members (see Crew.workspaceAction). -> { id, state }
   workspace: (op, id, arg) => crew.workspaceAction(op, id, arg),
+  // The workspace's channels: channel('create', null, { name, brief, members }), channel('edit', id, patch),
+  // channel('remove', id) (see Crew.channelAction). -> { id, state }
+  channel: (op, id, arg, ws) => crew.channelAction(op, id, arg, ws),
   send: (to, text, images, opts) => crew.send(to, text, images, opts),
   // A new conversation for an agent (after its current task, if it's busy).
   freshStart: (name) => crew.at(name, 'freshStart'),

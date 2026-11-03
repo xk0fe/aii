@@ -16,6 +16,10 @@
 //   }]
 // The default one's look and switch are top-level too ("name", "color", "icon", "parked"), and "current" is the
 // workspace on screen.
+// Channels: each workspace's chat is #general plus the channels you make, in "channels" (the default's top-level):
+//   "channels": [{ "id": "review", "name": "review", "brief": "Review only…", "members": ["ada", "milo"] }]
+// A channel's brief is what its agents are told to do there (core/hub.js framed). Without "members" everyone in the
+// workspace is in it. #general is always there: an entry with id "general" only gives it a brief.
 // Where an agent works in a workspace: its own folder there (a member's "folder", an own agent's "cwd"), else the
 // workspace's, else (a shared agent) the folder it has of its own, else home. Whether it's on ("off") is per workspace
 // too. Who it is (its job, instructions, model, look) is the same wherever it works.
@@ -103,13 +107,20 @@ export function space(config, id) {
       own.members = { ...memberMap(own), [name]: fields }
     },
     leave(name) {
-      if (members) delete memberMap(own)[name]
+      if (!members) return
+      delete memberMap(own)[name]
+      renameInChannels(own, name, null)
     },
     // one of its own agents goes; a shared one only leaves (see forget for taking it off the roster)
     remove(name) {
       if (isMember(name)) delete members[name]
       else if (members) own.agents = named(own.agents).filter((a) => a.name !== name)
-      else forget(config, name)
+      else return forget(config, name)
+      renameInChannels(own, name, null)
+    },
+    // one of its own agents renamed: its channels know it by the new name (a shared one's: renameShared)
+    renamed(from, to) {
+      renameInChannels(own, from, to)
     },
     get autopilot() {
       return own.autopilot ?? config.autopilot ?? true
@@ -128,6 +139,10 @@ export function space(config, id) {
     },
     set autofix(on) {
       own.autofix = Boolean(on) || undefined
+    },
+    // #general first, then the channels you made, in the order you made them
+    get channels() {
+      return channelsIn(own)
     },
     // parked: its agents don't run (their conversations wait for it to open again)
     get parked() {
@@ -188,6 +203,7 @@ export function dropWorkspace(config, id) {
 export function forget(config, name) {
   config.agents = named(config.agents).filter((a) => a.name !== name)
   for (const w of workspacesIn(config)) delete memberMap(w)[name]
+  for (const own of [config, ...workspacesIn(config)]) renameInChannels(own, name, null)
 }
 
 // A shared agent's new name, everywhere config.json mentions it: the roster, each workspace it's in, triage.
@@ -195,7 +211,9 @@ export function renameShared(config, from, to) {
   const def = named(config.agents).find((a) => a.name === from)
   if (def) def.name = to
   if (config.triage === from) config.triage = to
+  renameInChannels(config, from, to)
   for (const w of workspacesIn(config)) {
+    renameInChannels(w, from, to)
     const m = memberMap(w)
     if (!Object.hasOwn(m, from)) continue
     w.members = Object.fromEntries(Object.entries(m).map(([k, v]) => [k === from ? to : k, v])) // in the same place
@@ -209,3 +227,96 @@ export function sharedNames(config, name) {
   for (const w of workspacesIn(config)) if (Object.hasOwn(memberMap(w), name)) for (const a of named(w.agents)) out.add(a.name)
   return out
 }
+
+// ---- channels -------------------------------------------------------------------------------------------------
+
+export const GENERAL = 'general'
+export const BRIEF_MAX = 4000
+// What a channel can be called: what Slack allows, lowercase words joined by hyphens. "iOS Release" -> ios-release.
+export const channelName = (raw) =>
+  String(raw ?? '').toLowerCase().normalize('NFKD').replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+const listOf = (own) => (Array.isArray(own.channels) ? own.channels.filter((c) => c && typeof c === 'object' && ID.test(c.id)) : [])
+const cleanBrief = (b) => String(b ?? '').trim().slice(0, BRIEF_MAX)
+const cleanMembers = (m) => (Array.isArray(m) ? [...new Set(m.filter((n) => typeof n === 'string' && n))] : undefined)
+
+// A workspace's channels as config.json has them (own: the workspace's entry, or the config itself for the default),
+// #general first. -> [{ id, name, brief, members? }], each id once.
+export function channelsIn(own) {
+  const seen = new Set([GENERAL])
+  const general = listOf(own).find((c) => c.id === GENERAL)
+  const rest = listOf(own).filter((c) => !seen.has(c.id) && seen.add(c.id))
+  const one = (c) => ({ id: c.id, name: channelName(c.name) || c.id, brief: cleanBrief(c.brief), ...(cleanMembers(c.members) && { members: cleanMembers(c.members) }) })
+  return [{ id: GENERAL, name: GENERAL, brief: cleanBrief(general?.brief) }, ...rest.map(one)]
+}
+
+const ownOf = (config, ws) => {
+  const own = ws === DEFAULT ? config : workspacesIn(config).find((w) => w.id === ws)
+  if (!own) throw new Error('no such workspace')
+  return own
+}
+
+// A new channel in a workspace: its name (made channel-like), its brief, and who's in it (none given: everyone).
+// -> its id, which stays when it's renamed (the chat's messages point at it).
+export function addChannel(config, ws, { name, brief, members } = {}) {
+  const own = ownOf(config, ws)
+  const n = channelName(name)
+  if (!n) throw new Error('give the channel a name')
+  const list = channelsIn(own)
+  if (list.some((c) => c.name === n)) throw new Error(`there's a #${n} already`)
+  // never an id a channel had before: its messages are still in the chat, shown in #general, and must stay there
+  const taken = new Set([...list.map((c) => c.id), ...retired(own)])
+  let id = n
+  for (let i = 2; taken.has(id); i++) id = `${n.slice(0, 39 - String(i).length).replace(/-+$/, '')}-${i}`
+  const c = { id, name: n, ...(cleanBrief(brief) && { brief: cleanBrief(brief) }), ...(cleanMembers(members)?.length && { members: cleanMembers(members) }) }
+  own.channels = [...listOf(own), c]
+  return id
+}
+
+// A channel's name, brief or members. #general keeps its name and has everyone; only its brief changes.
+// members: [] or null is everyone again.
+export function editChannel(config, ws, id, patch = {}) {
+  const own = ownOf(config, ws)
+  if (!channelsIn(own).some((c) => c.id === id)) throw new Error('no such channel')
+  let c = listOf(own).find((x) => x.id === id)
+  if (!c) own.channels = [...listOf(own), (c = { id })] // #general, given a brief for the first time
+  if ('name' in patch && id !== GENERAL) {
+    const n = channelName(patch.name)
+    if (!n) throw new Error('give the channel a name')
+    if (channelsIn(own).some((x) => x.name === n && x.id !== id)) throw new Error(`there's a #${n} already`)
+    c.name = n
+  }
+  if ('brief' in patch) {
+    if (cleanBrief(patch.brief)) c.brief = cleanBrief(patch.brief)
+    else delete c.brief
+  }
+  if ('members' in patch && id !== GENERAL) {
+    const m = cleanMembers(patch.members)
+    if (m?.length) c.members = m
+    else delete c.members
+  }
+  if (id === GENERAL && !c.brief) own.channels = listOf(own).filter((x) => x.id !== GENERAL)
+  if (Array.isArray(own.channels) && !own.channels.length) delete own.channels
+}
+
+// A channel out of a workspace (never #general). Its messages stay in the chat, shown in #general.
+export function dropChannel(config, ws, id) {
+  if (id === GENERAL) throw new Error("#general can't be removed")
+  const own = ownOf(config, ws)
+  if (!listOf(own).some((c) => c.id === id)) throw new Error('no such channel')
+  own.channels = listOf(own).filter((c) => c.id !== id)
+  if (!own.channels.length) delete own.channels
+  own.channelsGone = [...new Set([...retired(own), id])]
+}
+
+// Ids of channels that were removed: "channelsGone" in config.json, so a new channel never takes one.
+const retired = (own) => (Array.isArray(own.channelsGone) ? own.channelsGone.filter((x) => typeof x === 'string') : [])
+
+// An agent renamed (to) or gone (null), in a workspace's channel members.
+function renameInChannels(own, from, to) {
+  for (const c of listOf(own)) {
+    if (!Array.isArray(c.members) || !c.members.includes(from)) continue
+    c.members = to ? c.members.map((n) => (n === from ? to : n)) : c.members.filter((n) => n !== from)
+    if (!c.members.length) delete c.members
+  }
+}
+export { renameInChannels }

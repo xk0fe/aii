@@ -68,7 +68,9 @@ const reader = (() => {
     const snap = client.getSnapshot()
     for (const [ws, marks] of batch) {
       const reads = ws === snap.shown ? snap.state?.reads : undefined
-      const fresh = Object.fromEntries(Object.entries(marks).filter(([n, ts]) => ts > Math.max(reads?.since ?? 0, reads?.agents?.[n] ?? 0)))
+      // a plain name reads every channel: sent while any channel's mark for it is behind
+      const behind = (n: string) => Math.min(reads?.agents?.[n] ?? 0, ...Object.values(reads?.channels ?? {}).map((book) => book[n] ?? 0))
+      const fresh = Object.fromEntries(Object.entries(marks).filter(([n, ts]) => ts > Math.max(reads?.since ?? 0, behind(n))))
       if (Object.keys(fresh).length) void client.read(fresh, ws).catch(() => {})
     }
   }

@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, bestFor, openConfig } from './hub.js'
 import { Runner, Scoped } from './runner.js'
-import { DEFAULT, workspacesIn, space, addWorkspace, setLook, dropWorkspace } from './workspaces.js'
+import { DEFAULT, workspacesIn, space, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
 import { LinkHost, LinkClient, identity, addresses, firewallWarning, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
@@ -202,6 +202,25 @@ export class Crew extends EventEmitter {
     if (op === 'park') this.hubs.get(id)?.park()
     // out right away rather than after the usual pause, so what follows it (a notification's click focusing an agent
     // there) lands in the workspace now on screen
+    const state = this.snapshot()
+    clearTimeout(this.changeTimer)
+    this.emit('state', state)
+    return { id, state }
+  }
+
+  // The channels of the workspace on screen: channel('create', null, { name, brief, members }), channel('edit', id,
+  // { name, brief, members }), channel('remove', id). -> { id, state }
+  // ws: the workspace it's for (the sheet's, which may not be on screen any more); the one on screen if not given.
+  channelAction(op, id, arg, ws = this.current) {
+    if (ws !== DEFAULT && !workspacesIn(this.config.data).some((w) => w.id === ws)) throw new Error('no such workspace')
+    const ops = {
+      create: () => (id = addChannel(this.config.data, ws, arg ?? {})),
+      edit: () => editChannel(this.config.data, ws, id, arg ?? {}),
+      remove: () => dropChannel(this.config.data, ws, id),
+    }
+    if (!Object.hasOwn(ops, op)) throw new Error(`unknown channel action "${op}"`)
+    ops[op]()
+    this.config.save()
     const state = this.snapshot()
     clearTimeout(this.changeTimer)
     this.emit('state', state)
@@ -561,7 +580,8 @@ export class Crew extends EventEmitter {
   // opts.fresh: deliver into a new conversation. opts.re: the message you're replying to (an id from the feed
   // shown here: on this computer, or id@computer). Each computer links what it has and quotes the rest.
   // here: the workspace it was sent in, whatever's on screen by the time it goes.
-  async send(to, text, images = [], { fresh = false, re } = {}, here = this.here) {
+  // opts.channel: the channel it's said in (its id); Auto picks from that channel's members.
+  async send(to, text, images = [], { fresh = false, re, channel } = {}, here = this.here) {
     // asleep (put to sleep while on screen, or watched from a phone): what you send wakes it, and its agents pick up
     // their conversations; the message waits for them to start
     if (here.space?.parked) this.workspaceAction('open', here.ws)
@@ -573,18 +593,22 @@ export class Crew extends EventEmitter {
     const auto = !names.length && { auto: true } // nobody named: Auto picks, and the chat says Auto picked them
     if (!names.length) {
       // agents, not their clones; one here that can clone itself counts as free
-      const ready = this.snapshot(here).agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status))
+      const members = here.channel(channel)?.members
+      const ready = this.snapshot(here).agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status) && (!members || members.includes(a.name)))
       const best = bestFor(text, ready.map((a) => (a.home ? a : { ...a, ...here.lineup(here.agents.get(a.name)) })))
-      if (!best) throw new Error('no agents to send to')
+      if (!best) throw new Error(members ? `nobody in #${here.channel(channel).name} is on to take it: turn one on, or @name someone` : 'no agents to send to')
       names = [best.name]
     }
+    // to another computer: the channel with its name and brief, which its hub gives its agents (its own channels differ)
+    const c = channel !== undefined && channel !== 'general' ? here.channel(channel) : null
+    const away = c ? { channel: c.id, channelName: c.name, ...(c.brief && { brief: c.brief }) } : {}
     const out = []
     for (const [home, bases] of this.group(names)) {
       const reply = quoted ? { re: idThere(home)(re), quote: { ...quote, from: unq(home)(quote.from) } } : {}
-      if (!home) out.push(await here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...auto, ...reply }))
+      if (!home) out.push(await here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...auto, ...reply, ...(channel !== undefined && { channel }) }))
       else {
         const l = this.link(home)
-        out.push(await this.linkCall(l, 'deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...auto, ...reply }], here.ws))
+        out.push(await this.linkCall(l, 'deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...auto, ...reply, ...away }], here.ws))
       }
     }
     return out.join('')

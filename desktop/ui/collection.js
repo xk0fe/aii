@@ -196,7 +196,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     drawBulkCount()
   }
 
-  // The header: Agents, who they are and how many are on (what needs you is in #crew and beside each name in the
+  // The header: Agents, who they are and how many are on (what needs you is in the chat and beside each name in the
   // sidebar: here it's the crew itself).
   function drawHead() {
     const crewNow = roster()
