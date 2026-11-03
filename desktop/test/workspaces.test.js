@@ -490,6 +490,27 @@ test('a workspace made in the app: its look, folder and crew, then on screen; re
   }
 })
 
+test('a workspace asleep wakes when you go to it, and when you send it a message: no Open to press', async () => {
+  const c = await crewApp({ agents: roster(), workspaces: [{ ...storefront(), parked: true }] })
+  try {
+    c.workspaceAction('switch', 'storefront')
+    assert.equal(saved().workspaces[0].parked, undefined, 'going there woke it (and left nothing behind in config.json)')
+    c.workspaceAction('park', 'storefront')
+    assert.equal(saved().workspaces[0].parked, true, 'put to sleep while on screen')
+    c.workspaceAction('switch', DEFAULT)
+    assert.equal(saved().workspaces[0].parked, true, 'going elsewhere leaves it asleep')
+    c.workspaceAction('switch', 'storefront')
+    c.workspaceAction('park', 'storefront')
+    Object.assign(c.runner, { running: () => true, submit() {}, write() {}, start() {} })
+    for (const a of c.here.agents.values()) a.status = 'working' // busy: the message queues
+    await c.send('june', 'pick the cart back up')
+    assert.equal(saved().workspaces[0].parked, undefined, 'sending woke it')
+    assert.equal(c.here.feed.findLast((e) => e.kind === 'msg').to, 'june')
+  } finally {
+    quit(c)
+  }
+})
+
 test('the order workspaces are listed in: changed from the app, the default first, the ones not named after the rest', async () => {
   const c = await crewApp({ agents: roster(), workspaces: [storefront()] })
   try {
@@ -561,7 +582,7 @@ test('parking a workspace stops its agents and keeps their conversations; openin
   assert.equal(saved().workspaces[0].parked, true)
   assert.ok(!runner.running('storefront/june') && !runner.running('storefront/milo'), 'its agents stop')
   assert.equal(ws.sessions.june, 'sess-storefront', 'their conversations wait')
-  assert.match(ws.feed.at(-1).text, /^parked: @june, @milo stopped/, 'one line in its chat, not one per agent')
+  assert.match(ws.feed.at(-1).text, /^went to sleep: @june, @milo stopped/, 'one line in its chat, not one per agent')
   const shown = ws.snapshot()
   assert.equal(shown.parked, true)
   assert.deepEqual(shown.agents.map((a) => [a.name, a.status]), [['june', 'parked'], ['ada', 'off'], ['milo', 'parked']])
@@ -574,7 +595,7 @@ test('parking a workspace stops its agents and keeps their conversations; openin
   assert.equal(ws.parked, false)
   assert.ok(runner.running('storefront/june') && runner.running('storefront/milo'))
   assert.ok(runner.live.get('storefront/june').args.includes('sess-storefront'), 'resumes its conversation')
-  assert.match(ws.feed.at(-1).text, /^opened: @june, @milo pick up where they left off/)
+  assert.match(ws.feed.at(-1).text, /^woke up: @june, @milo pick up where they left off/)
   assert.ok(!runner.running('storefront/ada'), 'one that was off stays off')
 })
 
@@ -595,7 +616,7 @@ test("a parked workspace's agents don't start behind its back: restart refuses, 
   crew({ autopilot: true, agents: roster(), workspaces: [{ ...storefront(), parked: true }] })
   ws.start('http://127.0.0.1:1')
   ws.saveSession('june', 'sess-storefront')
-  assert.throws(() => ws.restart('june'), /parked: open it/)
+  assert.throws(() => ws.restart('june'), /asleep: send a message there to wake it/)
   ws.freshStart('june')
   assert.equal(runner.running('storefront/june'), false)
   assert.equal(ws.sessions.june, undefined, 'it starts fresh when the workspace opens')

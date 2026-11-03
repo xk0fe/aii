@@ -161,9 +161,11 @@ export class Crew extends EventEmitter {
     if (op !== 'create' && op !== 'order' && !has(id)) throw new Error('no such workspace')
     const where = () => space(data, id)
     const ops = {
+      // going to a workspace that's asleep wakes it
       switch: () => {
         if (id === DEFAULT) delete data.current
         else data.current = id
+        where().parked = false
       },
       create: () => {
         id = addWorkspace(data, arg ?? {}) // members with folders of their own start there, the first time
@@ -560,6 +562,9 @@ export class Crew extends EventEmitter {
   // shown here: on this computer, or id@computer). Each computer links what it has and quotes the rest.
   // here: the workspace it was sent in, whatever's on screen by the time it goes.
   async send(to, text, images = [], { fresh = false, re } = {}, here = this.here) {
+    // asleep (put to sleep while on screen, or watched from a phone): what you send wakes it, and its agents pick up
+    // their conversations; the message waits for them to start
+    if (here.space?.parked) this.workspaceAction('open', here.ws)
     const quoted = re ? this.snapshot(here).feed.find((e) => e.id === re) : undefined
     const quote = quoted && { from: quoted.from, text: quoted.ticket !== undefined ? `#${String(quoted.ticket).split('@')[0]} ${quoted.title ?? ''}` : quoted.text }
     const idThere = (slug) => (id) => (slug ? (id?.endsWith(`@${slug}`) ? id.slice(0, -slug.length - 1) : undefined) : id && !id.includes('@') ? id : undefined)

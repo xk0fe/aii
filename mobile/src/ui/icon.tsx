@@ -41,7 +41,7 @@ const ICONS = {
   bell: ['bell.badge', 'notifications'],
   settings: ['gearshape', 'settings'],
   message: ['square.and.pencil', 'edit_note'],
-  parked: ['pause.circle', 'pause'],
+  parked: ['moon.zzz', 'bedtime'],
 } as const
 
 export type IconName = keyof typeof ICONS

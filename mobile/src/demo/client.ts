@@ -122,7 +122,7 @@ export class DemoClient implements CrewLink {
   async send(to: string, text: string, opts: { fresh?: boolean; re?: string } = {}) {
     const id = this.ws
     const sp = this.space(id)
-    if (sp.parked) throw new Error(`${sp.name} is parked: open it on your computer first`)
+    if (sp.parked) sp.parked = false // what you send wakes it, as on the computer
     const agents = sp.state.agents.filter((a) => !a.cloneOf)
     const mentioned = [...String(text).matchAll(/(?<![\w@])@([\w-]+(?:@[\w-]+)?)/g)].map((m) => m[1].toLowerCase())
     // names are written as given (Ada), mentions however they're typed (@ada)
