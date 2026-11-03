@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { Hub, HOME, ATTACHMENTS, addressees, bestFor, openConfig } from './hub.js'
+import { Hub, HOME, ATTACHMENTS, addressees, openConfig } from './hub.js'
 import { Runner, Scoped } from './runner.js'
 import { DEFAULT, workspacesIn, space, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
 import { HostRunner } from './ptyclient.js'
@@ -15,6 +15,7 @@ import { packAgents, unpackAgents } from './pack.js'
 import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, folderInfo, folders } from './move.js'
 import { Phones } from './phones.js'
 import { sweepFiles, ATTACHMENT_DAYS, CACHE_DAYS } from './keep.js'
+import { SAVERS, SAVER_IDS, saversFrom, report } from './savers.js'
 
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
@@ -474,10 +475,32 @@ export class Crew extends EventEmitter {
     return {
       ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.cloneOf ?? a.name)), feed: [...open, ...recent], computers: this.computers(),
       tasks: { ...s.tasks, tickets }, workspace: workspaces.find((w) => w.id === here.ws), workspaces,
+      savers: this.saversState(),
       // your shared agents, to pick who works in a workspace, each with the folder of its own (where it works in the
       // default workspace)
       roster: (this.config.data.agents ?? []).filter((a) => a?.name).map((a) => ({ name: a.name, area: a.area, avatar: a.avatar, cwd: a.cwd })),
     }
+  }
+
+  // The token savers for the sheet: which are on (CREW_SAVERS, when it's set, decides and the switches can't), what each
+  // is for, and what each has counted in every workspace: in all, and over the last 7 days.
+  saversState() {
+    const ledgers = [...this.hubs.values()].map((h) => h.ledger)
+    return {
+      on: this.here.savers, forced: Boolean(String(process.env.CREW_SAVERS ?? '').trim()),
+      list: SAVERS.map(({ id, label, about }) => ({ id, label, about })),
+      all: report(ledgers), week: report(ledgers, { days: 7 }),
+    }
+  }
+
+  // Savers on and off: { coldStart: false, … }. config.json keeps only the ones that are off.
+  setSavers(patch) {
+    const now = { ...saversFrom(this.config.data, {}), ...patch }
+    const off = SAVER_IDS.filter((id) => now[id] === false)
+    if (off.length) this.config.data.savers = Object.fromEntries(off.map((id) => [id, false]))
+    else delete this.config.data.savers
+    this.config.save()
+    return this.saversState()
   }
 
   // A linked computer's agent, as this computer writes it.
@@ -595,7 +618,7 @@ export class Crew extends EventEmitter {
       // agents, not their clones; one here that can clone itself counts as free
       const members = here.channel(channel)?.members
       const ready = this.snapshot(here).agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status) && (!members || members.includes(a.name)))
-      const best = bestFor(text, ready.map((a) => (a.home ? a : { ...a, ...here.lineup(here.agents.get(a.name)) })))
+      const best = here.pick(text, ready.map((a) => (a.home ? a : { ...a, ...here.lineup(here.agents.get(a.name)), ...here.warmth(here.agents.get(a.name)) })))
       if (!best) throw new Error(members ? `nobody in #${here.channel(channel).name} is on to take it: turn one on, or @name someone` : 'no agents to send to')
       names = [best.name]
     }

@@ -8,6 +8,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+// The token savers (core/savers.js) are off unless a test turns them on (savers.test.js): the suite pins down how the
+// crew works without them, and quick triage would otherwise call the real Claude Code.
+process.env.CREW_SAVERS ??= 'off'
+
 if (process.platform === 'win32') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-clis-'))
   for (const name of ['claude.exe', 'codex.exe']) fs.writeFileSync(path.join(dir, name), '')

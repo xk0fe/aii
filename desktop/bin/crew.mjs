@@ -172,11 +172,12 @@ crew ask <name|any> "..."   ask an agent and wait for its answer (its final mess
 crew wait                   keep waiting for the answers to what you asked
 crew answer ["@name"] "..." answer a question you were asked, right away, and carry on
 crew send <name|any> "..."  hand a task to an agent for good (queued until it is free)
+crew busy                   what each teammate is working on right now
 crew lease <thing> ["..."]  take something only one agent can use at a time (a simulator, a port), waiting if it's taken
 crew release [thing]        give it back (everything you hold, without a name)
 crew leases                 who has what
 crew note "..."             share context with the whole crew
-crew board                  read the shared notes
+crew board [words]          the shared notes you haven't read (--all for every one, or words to search)
 crew task                   the Tasks board: list, show, done, note, add (crew task help)
 `
 
@@ -201,12 +202,15 @@ async function cli([cmd, ...args]) {
   }
   switch (cmd) {
     case 'who':
-    case 'board':
     case 'leases':
       return send(`/${cmd}`)
+    case 'busy':
+      return send(`/busy?from=${from}`)
+    case 'board':
+      return send(`/board?from=${from}`, { body: words(args) })
     case 'send': {
       const [to, ...task] = args
-      if (!to || !task.length) return stop('usage: crew send <name|any> "task"', 2)
+      if (!to || !task.length) return stop('usage: crew send <name|any> [--new] "task"', 2)
       return send(`/send?from=${from}&to=${q(to)}`, { body: task.join(' ') })
     }
     case 'ask': {

@@ -330,7 +330,27 @@ const USAGE = {
 for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [5, { cost: 1.31, tokens: 0, added: 42, removed: 18 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }], [3, { cost: 0.86, tokens: 0, added: 21, removed: 4 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })
 // the crew's spend: today against what's usual by now, and the last week and month
 const SPEND = { today: 14.2, usual: 12.8, week: 96, weekBefore: 88, month: 340 }
-const state = { reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
+// The token savers (core/savers.js, which is ESM: required as one), all on but No reports back, and what they counted
+// over a couple of weeks, some of it with them all off first
+const { SAVERS } = require('../core/savers.js')
+const SAVER_STATE = {
+  on: Object.fromEntries(SAVERS.map((s) => [s.id, s.id !== 'noReportBack'])), forced: false,
+  list: SAVERS.map(({ id, label, about }) => ({ id, label, about })),
+  all: {
+    since: now - 16 * day,
+    savers: {
+      coldStart: { on: { n: 7, tokens: 2140000 }, off: { n: 3, tokens: 1020000 } },
+      boardNew: { on: { n: 41, tokens: 388000 }, off: {} },
+      busyCheck: { on: { n: 29 }, off: {} },
+      quickTriage: { on: { n: 12, cost: 0.06, failed: 1 }, off: { n: 4, cost: 1.24 } },
+      warmRoute: { on: { n: 9, tokens: 610000 }, off: {} },
+      noReportBack: { on: {}, off: { n: 14, tokens: 950000 } },
+    },
+    modes: { 'coldStart+boardNew+busyCheck+quickTriage+warmRoute': { turns: 612, cost: 61.4, tools: 4100 }, none: { turns: 188, cost: 27.3, tools: 1560 } },
+  },
+}
+SAVER_STATE.week = SAVER_STATE.all
+const state = { savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
 
 // Workspaces, as Crew.workspaces() reports them. Storefront is the default one, renamed and given a quiet grey (so its
 // tile is an S); Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the crew, Storefront
@@ -531,6 +551,11 @@ window.crew = {
   dev: QUERY.get('dev') === '1',
   call: async (action, ...args) => {
     if (action === 'state') return state
+    if (action === 'savers') {
+      Object.assign(state.savers.on, args[0])
+      emit()
+      return state.savers
+    }
     // sending from the chat: your message lands in the feed, threaded when it's a reply. Like the hub, an @name in it
     // is who it's for when no one's picked; Auto goes to Ada.
     if (action === 'send') {

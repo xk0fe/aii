@@ -46,3 +46,33 @@ export async function generatePrompt(agent, provider, teammates) {
   }
   return tidy(await run('claude', ['-p', prompt, '--tools', '', '--no-session-persistence', ...(agent.model ? ['--model', agent.model] : [])], { cwd, env }))
 }
+
+// One short headless call for a small job Crew does itself (quick triage, core/savers.js): no tools, no MCP servers,
+// nothing kept, in an empty folder so no project's instructions come along. Claude on its small model (haiku, or what
+// the provider maps it to); Codex on the model given, or its own, at low effort.
+// -> { text, cost (USD at API prices, Claude), tokens (all the call read and wrote) }
+export async function quickAsk(provider, { prompt, model, timeout = 90000 }) {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-quick-'))
+  const env = cleanEnv({ ...process.env, ...expandEnv(provider.env) })
+  try {
+    if (provider.cli === 'codex') {
+      const out = path.join(cwd, 'answer.txt')
+      const log = await run('codex', ['exec', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only', '--json', '-o', out,
+        ...(model ? ['-m', model] : []), '-c', 'model_reasoning_effort="low"', ...(provider.args ?? []), prompt], { cwd, env, timeout })
+      let tokens = 0
+      for (const line of log.split('\n')) {
+        try {
+          const u = JSON.parse(line).usage
+          if (u) tokens += (u.input_tokens ?? 0) + (u.output_tokens ?? 0)
+        } catch {}
+      }
+      return { text: fs.readFileSync(out, 'utf8'), cost: 0, tokens }
+    }
+    const r = JSON.parse(await run('claude', ['-p', prompt, '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--model', model || 'haiku'], { cwd, env, timeout }))
+    if (r.is_error) throw new Error(String(r.result || 'the call failed'))
+    const u = r.usage ?? {}
+    return { text: String(r.result ?? ''), cost: Number(r.total_cost_usd) || 0, tokens: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.output_tokens ?? 0) }
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true })
+  }
+}

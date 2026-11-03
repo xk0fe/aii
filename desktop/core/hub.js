@@ -7,15 +7,16 @@ import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { adapters, ASK_WAIT } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
-import { generatePrompt } from './promptgen.js'
+import { generatePrompt, quickAsk } from './promptgen.js'
 import { resolveCommand, withTools } from './launch.js'
-import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
+import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, quickTriagePrompt, readTriage, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
 import { DEFAULT, GENERAL, dirOf, space, forget, renameShared, sharedNames } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
+import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
 export const CONFIG = path.join(HOME, 'config.json')
@@ -85,6 +86,10 @@ const WRAP_UP = "[crew] Your conversation passed its context limit, so a new one
 // never) with no word on the task. Three times as long when it left something running in the background, which calls
 // it back when it's done. Looked at once a minute.
 const STALL_MINUTES = 10
+// boardNew: a conversation's first `crew board` shows this many of the newest notes, and a note is kept to this many
+// characters (one decision, interface or gotcha).
+const BOARD_FIRST = 20
+const NOTE_MAX = 800
 const STALL_CHECK = 60000
 const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
@@ -143,6 +148,9 @@ export class Hub extends EventEmitter {
     // What this workspace's work has cost: the last running totals of each CLI process and of each session (so nothing
     // is counted twice), and its spend per hour of each day (for "usual by now"). See countSpend.
     this.spend = { runs: {}, sessions: {}, hours: {}, ...readJSON(this.at('spend.json')) }
+    // What the token savers did, and spend under each mix of them that was on (core/savers.js).
+    this.ledger = new Ledger(this.at('savers.json'))
+    this.fellBack = new Set() // tasks quick triage handed to the triage agent after all
     this.useRunner(runner)
     this.cfg = config ?? new Config(CONFIG, DEFAULTS)
     this.onConfig = () => this.apply()
@@ -164,6 +172,7 @@ export class Hub extends EventEmitter {
     if (this.ticketsTimer) this.tickets.save()
     this.saveConvos(true)
     this.saveSpend(true)
+    this.ledger.save(true)
     // its agents were just stopped (apply), but their CLIs end after this hub stops listening: what they left running
     // is swept once they've had a moment to go
     const runs = [...this.runs.keys()]
@@ -180,6 +189,11 @@ export class Hub extends EventEmitter {
   // config.json as it is (core/config.js). What's this workspace's in it is this.space.
   get config() {
     return this.cfg.data
+  }
+
+  // Which token savers are on (core/savers.js): config.json's `savers`, or CREW_SAVERS for a benchmark run.
+  get savers() {
+    return saversFrom(this.config)
   }
 
   // The terminals: in this process (core/runner.js), or in the terminal host, where they outlive Crew (core/ptyclient.js).
@@ -442,7 +456,7 @@ export class Hub extends EventEmitter {
   }
 
   launchKey(a) {
-    return a && JSON.stringify([this.providerOf(a)?.id, a.model, a.effort, a.tier, a.cwd, a.args, a.yolo, a.area, a.prompt, a.images])
+    return a && JSON.stringify([this.providerOf(a)?.id, a.model, a.effort, a.tier, a.cwd, a.args, a.yolo, a.area, a.prompt, a.images, this.checksFor(a)])
   }
 
   relaunchWhenFree(a) {
@@ -541,7 +555,7 @@ export class Hub extends EventEmitter {
     if (provider.missing.length) return fail(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
     const resume = this.sessions[a.name]
     const session = randomUUID()
-    const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session, attachments: ATTACHMENTS, bin: this.bin })
+    const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session, attachments: ATTACHMENTS, bin: this.bin, checks: this.checksFor(a) })
     a.sessionId = resume ?? session // the conversation this process runs (see onStatusLine)
     Object.assign(a, { readyAfter, trust, trustAsk: false, boot: '' }) // see onOutput
     a.resumed = Boolean(resume)
@@ -809,6 +823,119 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
+  // ---- token savers: what the crew does to keep its agents from spending tokens they don't need to (core/savers.js) ----
+
+  // How long this agent's cache lasts after its last request: Claude Code's is an hour on a subscription and 5 minutes on
+  // an API key, which its transcript says (the kind of its last cache write). Codex doesn't say: an hour, as it held in
+  // real sessions.
+  cacheTTL(a) {
+    if (this.providerOf(a)?.cli !== 'claude' || !a.transcript?.path) return HOUR
+    const tail = tailOf(a.transcript.path)
+    const last = (key) => Number([...tail.matchAll(new RegExp(`"${key}":(\\d+)`, 'g'))].at(-1)?.[1] ?? 0)
+    return last('ephemeral_5m_input_tokens') > 0 && !last('ephemeral_1h_input_tokens') ? 5 * 60000 : HOUR
+  }
+
+  // How cheap an agent is to wake: how big its conversation is, whether its cache is still there, and what its next
+  // request costs to read (or, cold, to write) all of it, in input tokens.
+  // One with no conversation yet has the whole project to find its way around, as a new conversation does (RESTART).
+  warmth(a) {
+    const c = this.convos[a.name]
+    const used = c?.context?.used ?? 0
+    if (!used || !this.sessions[a.name]) return { used: 0, warm: false, wake: RESTART }
+    const last = c?.lastAt ?? mtimeOf(a.transcript?.path)
+    const ttl = this.cacheTTL(a)
+    const warm = Boolean(last) && Date.now() - last < ttl
+    return { used, warm, wake: Math.round(used * (warm ? 0.1 : writePrice({ cli: this.providerOf(a)?.cli, ttl }))) }
+  }
+
+  // coldStart: a message that would wake a conversation whose cache has gone cold. { used, idle, recache } when picking
+  // it back up (rewriting all of its cache) costs more than starting fresh (RESTART), after an hour or more away; null
+  // otherwise. Never for a message that follows on from that conversation: an answer to its question, a teammate's
+  // question, the task it was on sent back, a reply to something it said in it. Nor for Crew's own prompts, a clone (it
+  // goes away when it's done), or an agent with something still running in the background or a question out.
+  coldFor(a, m) {
+    if (a.cloneOf || !this.sessions[a.name] || m.crew || m.fresh || m.answers || m.ask || a.background || a.freshPending) return null
+    const c = this.convos[a.name]
+    const used = c?.context?.used
+    const last = c?.lastAt ?? mtimeOf(a.transcript?.path)
+    if (!(used > 0) || !last) return null
+    const ttl = this.cacheTTL(a)
+    const idle = Date.now() - last
+    const recache = Math.round(used * writePrice({ cli: this.providerOf(a)?.cli, ttl }))
+    if (idle < Math.max(ttl, HOUR) || recache < RESTART) return null
+    if (m.ticket !== undefined && m.ticket === c.ticket) return null
+    const re = m.re && this.feed.findLast((e) => e.id === m.re)
+    if (re && re.ts >= (c.since ?? 0) && (re.from === a.name || re.to === a.name)) return null
+    if ([...this.calls.values()].some((call) => call.from === a.name)) return null
+    return { used, idle, recache }
+  }
+
+  // A new conversation instead of a cold one, and on top of the message, a note of where the last one stood, from what
+  // Crew already has: the task it was on and the last thing it said. Nothing for the agent to write first.
+  coldStart(a, { used, idle, recache }) {
+    const c = this.convos[a.name]
+    const t = typeof c.ticket === 'number' && this.tickets.all.find((x) => x.id === c.ticket)
+    const said = this.feed.findLast((e) => e.kind === 'reply' && e.from === a.name && e.ts >= (c.since ?? 0) && !e.empty)
+    this.ledger.add('coldStart', true, { n: 1, tokens: recache })
+    a.freshFor = a.inbox[0].id
+    this.startFresh(a, `: the last one had sat idle ${spanOf(idle)}, and picking it back up would have re-read its ${tokenCount(used)} tokens`)
+    this.convoOf(a).note = [
+      `[crew] This is a new conversation. Your last one sat idle ${spanOf(idle)}, so CLIque started fresh rather than have you re-read all of it.`,
+      t && `You were on #${t.id} "${t.title}".`,
+      said && `The last thing you said in it: "${gist(said.text, 400)}"`,
+    ].filter(Boolean).join(' ')
+    this.saveConvos()
+  }
+
+  // What the agent is told to check before it builds something (adapters.js): the board, PRs and branches, as before;
+  // with busyCheck on, crew busy, or nothing at all when it works alone (no teammate in this workspace, no clones of its
+  // own, no linked computer's). Decided at launch: it's in the system prompt, and a new one rewrites the whole cache.
+  checksFor(a) {
+    if (!this.savers.busyCheck) return 'full'
+    const base = (a.cloneOf && this.agents.get(a.cloneOf)) || a
+    const alone = !a.cloneOf && !this.maxClones(base) && ![...this.agents.values()].some((x) => !x.cloneOf && x.name !== base.name) && !(this.directory?.() ?? []).length
+    return alone ? 'none' : 'busy'
+  }
+
+  // Auto's pick among `lineups` (lineup(), with warmth() for agents here). With warmRoute on, a tie on area, limits, being
+  // free and queue goes to the agent that's cheaper to wake. Either way the ledger hears when that changes the pick.
+  pick(text, lineups) {
+    const on = this.savers.warmRoute
+    const plain = bestFor(text, lineups)
+    const warm = bestFor(text, lineups, { warm: true })
+    if (plain && warm && plain.name !== warm.name) this.ledger.add('warmRoute', on, { n: 1, tokens: Math.max(0, (plain.wake ?? 0) - (warm.wake ?? 0)) })
+    return on ? warm : plain
+  }
+
+  // quickTriage: a new task triaged in one short call to the triage agent's provider, on its small model, with the open
+  // tasks and the crew written into the prompt (tickets.js), instead of a turn in the triage agent's own long
+  // conversation. What it decides goes through `crew task triage` or `crew task dup`, as the agent's would. If the call
+  // fails or what it says doesn't hold (an owner who's off, a task that isn't there), the triage agent gets it as before.
+  async quickTriage(t, name) {
+    const a = this.agents.get(name)
+    let r = null
+    try {
+      r = await this.oneShot(this.providerOf(a), { prompt: quickTriagePrompt(t, this.tickets.open().filter((x) => x.id !== t.id), this.teammates()) })
+      if (r.cost || r.tokens) this.addSpend(a, { cost: r.cost, ...(this.providerOf(a)?.cli === 'codex' && { tokens: r.tokens }) })
+      if (t.triaged || t.status !== 'new') return // you got to it first
+      const d = readTriage(r.text)
+      if (!d) throw new Error("its answer wasn't a triage")
+      if (d.dup) this.taskCommand(name, ['dup', String(t.id), String(d.dup)])
+      else this.taskCommand(name, ['triage', String(t.id), ...(d.owner ? ['--owner', d.owner] : []), '--priority', d.priority, '--kind', d.kind, '--title', d.title, '--details', d.details])
+      this.ledger.add('quickTriage', true, { n: 1, cost: r.cost, tokens: r.tokens })
+    } catch (e) {
+      this.ledger.add('quickTriage', true, { n: 1, failed: 1, cost: r?.cost, tokens: r?.tokens })
+      if (t.triaged || t.status !== 'new' || !this.triager()) return
+      this.fellBack.add(t.id) // its turn is the saver's to count
+      this.send({ from: 'you', to: name, text: triagePrompt(t, t.id), images: t.images, mentions: false, ticket: t.id, title: t.title, type: t.kind, triage: true })
+    }
+  }
+
+  // One short call to a provider (core/promptgen.js). Tests put a stand-in here.
+  oneShot(provider, opts) {
+    return quickAsk(provider, opts)
+  }
+
   // Every way a new conversation starts (fresh start, no session to resume, /clear) comes through here,
   // so what the old one was about (a bug it was fixing) never carries over.
   newConvo(a) {
@@ -1016,6 +1143,9 @@ export class Hub extends EventEmitter {
   addSpend(a, { cost = 0, added = 0, removed = 0, apiMs = 0, tokens = 0 }) {
     const counts = Object.fromEntries(Object.entries({ cost, linesAdded: added, linesRemoved: removed, apiMs, tokens }).filter(([, v]) => v > 0))
     this.record(a.name, counts)
+    // a triage turn in the triage agent's conversation: what quick triage would save (or, after it fell back, spent)
+    const triage = (a.serving ?? []).find((m) => m.triage)
+    if (triage) this.ledger.add('quickTriage', this.fellBack.has(triage.ticket), { cost, tokens })
     if (cost) (this.spend.hours[localDay()] ??= Array(24).fill(0))[new Date().getHours()] += cost
     // the task its conversation is about (one that lives on this computer)
     const id = this.convos[a.name]?.ticket
@@ -1216,6 +1346,8 @@ export class Hub extends EventEmitter {
     if (!a) return
     a.hookAt = Date.now()
     this.noteGroups(a)
+    // when its conversation last went to the API (its cache lasts from then: see coldFor). A sub-agent's steps don't count.
+    if (!e.agent_id && ['UserPromptSubmit', 'PostToolUse', 'Stop', 'StopFailure'].includes(e.hook_event_name)) (this.convoOf(a).lastAt = a.hookAt), this.saveConvos()
     if (e.hook_event_name === 'SessionStart' || e.hook_event_name === 'UserPromptSubmit') Object.assign(a, { trust: null, boot: '' }) // past any trust question
     // where its CLI keeps this conversation, so a move to another computer can take it along (core/move.js)
     if (e.transcript_path && e.session_id && !e.agent_id) a.transcript = { id: e.session_id, path: String(e.transcript_path) }
@@ -1663,6 +1795,9 @@ export class Hub extends EventEmitter {
     s.last = Date.now()
     clearTimeout(this.statsTimer)
     this.statsTimer = setTimeout(() => this.saveStats(), 2000)
+    // the same work, filed under the savers that are on, for comparing cost per turn with them on and off
+    const { cost, tokens, turns, tasks, tools } = counts
+    if (cost || tokens || turns || tasks || tools) this.ledger.spend(modeOf(this.savers), { cost, tokens, turns, tasks, tools })
   }
 
   saveStats() {
@@ -1754,7 +1889,7 @@ export class Hub extends EventEmitter {
   // ({ from, text }): the same for a message that lives on another computer, which can only be quoted.
   // From a linked computer, `ask` is a question asked there (its id there: the answer goes back with it), and
   // `answers` the answer to one asked here.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief }) {
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false }) {
     text = String(text ?? '').trim()
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -1801,6 +1936,15 @@ export class Hub extends EventEmitter {
       this.open({ id: msg.id, msg, from, text, back: ask })
       if (!held) this.enqueue(targets[0], msg)
       return `asked @${targets[0].name}\n`
+    }
+    // noReportBack: a report to the teammate whose hand-off this agent is on. That teammate needs nothing back, and the
+    // agent's final message shows in the chat by itself. New work for it goes with `crew send <name> --new`.
+    const sender = !newWork && this.agents.get(from)
+    const handers = new Set((sender?.serving ?? []).filter((m) => m.from !== 'you' && !m.ask && !m.answers && !m.crew).map((m) => this.baseOf(m.from)))
+    const back = targets.find((t) => handers.has(this.baseOf(t.name)))
+    if (back) {
+      this.ledger.add('noReportBack', this.savers.noReportBack, { n: 1, tokens: this.warmth(back).wake })
+      if (this.savers.noReportBack) throw new Error(`not sent: @${back.name} handed you this and needs nothing back. Your final message shows in the chat by itself. If this is new work for @${back.name}, send it with: crew send ${back.name} --new "…"${targets.length > 1 ? ' (nothing was sent)' : ''}`)
     }
     const quoted = replyTo ? this.feed.find((e) => e.id === replyTo) : undefined
     const re = quoted?.id ?? this.agents.get(from)?.current // a hand-off points at the request that led to it
@@ -2294,7 +2438,7 @@ export class Hub extends EventEmitter {
   route(text, from, channel) {
     const members = this.channel(channel)?.members
     const ready = [...this.agents.values()].filter((a) => !a.cloneOf && a.name !== this.baseOf(from) && this.runner.running(a.name) && (!members || members.includes(a.name)))
-    const best = bestFor(text, ready.map((a) => this.lineup(a)))
+    const best = this.pick(text, ready.map((a) => ({ ...this.lineup(a), ...this.warmth(a) })))
     return best && this.agents.get(best.name)
   }
 
@@ -2317,6 +2461,10 @@ export class Hub extends EventEmitter {
       a.freshFor = a.inbox[0].id
       return this.startFresh(a, a.inbox[0].ticket !== undefined ? ` for #${a.inbox[0].ticket}` : ' for its next task')
     }
+    // A conversation whose cache has gone cold, and a message that doesn't follow on from it (coldStart)
+    const cold = this.coldFor(a, a.inbox[0])
+    if (cold && this.savers.coldStart) return this.coldStart(a, cold)
+    if (cold && a.coldSeen !== a.inbox[0].id) (a.coldSeen = a.inbox[0].id), this.ledger.add('coldStart', false, { n: 1, tokens: cold.recache })
     // Still drawing: starting up, or finishing a turn under a hook's spinner. Text typed now can be dropped, or read
     // together with its Enter, which the CLI then takes as part of the text.
     if (a.settleFor !== a.inbox[0].id) Object.assign(a, { settleFor: a.inbox[0].id, settleFrom: Date.now() })
@@ -2452,8 +2600,11 @@ export class Hub extends EventEmitter {
       if (owner) this.tickets.edit(t.id, { owner: owner.name }, 'crew')
     }
     this.postTask(t, by, 'filed')
-    if (triage) this.send({ from: 'you', to: triage, text: triagePrompt(t, t.id), images: t.images, mentions: false, ticket: t.id, title: t.title, type: t.kind, triage: true })
-    else if (this.space.autofix && t.owner) this.autoDispatch(t)
+    if (triage && this.savers.quickTriage) this.quickTriage(t, triage)
+    else if (triage) {
+      this.ledger.add('quickTriage', false, { n: 1 })
+      this.send({ from: 'you', to: triage, text: triagePrompt(t, t.id), images: t.images, mentions: false, ticket: t.id, title: t.title, type: t.kind, triage: true })
+    } else if (this.space.autofix && t.owner) this.autoDispatch(t)
     return `added #${t.id}${triage ? `, @${triage} is triaging it` : t.owner ? ` for @${t.owner}` : ''}\n`
   }
 
@@ -2828,6 +2979,8 @@ export class Hub extends EventEmitter {
   note(from, text) {
     text = String(text ?? '').trim()
     if (!text) throw new Error('nothing to note')
+    // every agent reads every note once per conversation (boardNew): one decision, interface or gotcha each
+    if (this.savers.boardNew && this.agents.has(from) && text.length > NOTE_MAX) throw new Error(`not shared: a note is one decision, interface or gotcha, and this one is ${text.length.toLocaleString('en-US')} characters (keep it under ${NOTE_MAX}). Put the details in a file in the repo, and note where it is.`)
     const when = new Date().toISOString().slice(0, 16).replace('T', ' ')
     const file = this.at('board.md')
     fs.appendFileSync(file, `- **${from}** (${when}): ${text.replace(/\s*\n\s*/g, ' ')}\n`)
@@ -2840,12 +2993,68 @@ export class Hub extends EventEmitter {
     return 'shared with the crew\n'
   }
 
-  board() {
+  // `crew board`: the shared notes. Words search them, --all shows every one. Otherwise, with boardNew on, an agent sees
+  // only the notes added since its conversation last looked (its first look: the last BOARD_FIRST), and how many older
+  // ones there are; off, the last BOARD_KEEP as before. You, in a terminal, always see them all. Where each conversation
+  // has read up to is kept either way, so the ledger can say what showing only the new ones leaves out.
+  board(from = 'you', words = []) {
+    let text = ''
     try {
-      return fs.readFileSync(this.at('board.md'), 'utf8').split('\n').slice(-BOARD_KEEP).join('\n')
-    } catch {
-      return '(no shared notes yet)\n'
+      text = fs.readFileSync(this.at('board.md'), 'utf8')
+    } catch {}
+    const notes = text.split('\n').filter(Boolean).slice(-BOARD_KEEP)
+    if (!notes.length) return '(no shared notes yet)\n'
+    const full = `${notes.join('\n')}\n`
+    words = words.map((w) => String(w).trim()).filter(Boolean)
+    const a = this.agents.get(from)
+    if (!a || words.includes('--all')) return full
+    if (words.length) {
+      const want = words.map((w) => w.toLowerCase())
+      const hits = notes.filter((n) => want.every((w) => n.toLowerCase().includes(w)))
+      if (!hits.length) return `(no note mentions ${words.map((w) => `"${w}"`).join(' and ')})\n`
+      const shown = hits.slice(-BOARD_FIRST)
+      return `${shown.join('\n')}\n(${shown.length < hits.length ? `the last ${shown.length} of ${hits.length} notes` : hits.length === 1 ? '1 note' : `${hits.length} notes`} mentioning ${words.join(' ')})\n`
     }
+    const c = this.convoOf(a)
+    const at = c.boardSeen ? notes.findLastIndex((n) => briefHash(n) === c.boardSeen) : -1
+    const fresh = at >= 0 ? notes.slice(at + 1) : notes.slice(-BOARD_FIRST)
+    const older = notes.length - fresh.length
+    const more = older ? `${older} older: crew board --all, or crew board <words> to search` : ''
+    const short = at < 0 ? `${fresh.join('\n')}\n${more ? `(the last ${fresh.length} notes; ${more})\n` : ''}`
+      : fresh.length ? `${fresh.join('\n')}\n(${fresh.length} new since you last looked${more ? `; ${more}` : ''})\n`
+      : `(nothing new on the board since you last looked${more ? `; ${more}` : ''})\n`
+    c.boardSeen = briefHash(notes.at(-1))
+    this.saveConvos()
+    const on = this.savers.boardNew
+    this.ledger.add('boardNew', on, { n: 1, tokens: Math.max(0, Math.ceil(full.length / 4) - Math.ceil(short.length / 4)) })
+    return on ? short : full
+  }
+
+  // `crew busy`: what each teammate is on right now, one line each, so an agent can tell whether someone is already
+  // building what it's about to build: its message or task, the files it's editing, what it has leased.
+  busy(from = 'you') {
+    this.ledger.add('busyCheck', this.savers.busyCheck, { n: 1 })
+    const editing = new Map()
+    for (const [file, l] of this.leases) if (l.ws === this.ws) editing.set(l.name, [...(editing.get(l.name) ?? []), path.basename(file)])
+    const rows = this.ordered().filter((a) => a.name !== from && !a.off).map((a) => {
+      const files = editing.get(a.name) ?? []
+      const holds = this.holdsOf(a.name)
+      const extra = [files.length && `editing ${files.slice(0, 3).join(', ')}${files.length > 3 ? ` and ${files.length - 3} more` : ''}`, holds.length && `has ${holds.join(', ')}`, a.cloneOf && `a clone of ${a.cloneOf}`].filter(Boolean)
+      return `${a.name.padEnd(16)} ${this.onNow(a)}${extra.length ? ` · ${extra.join(' · ')}` : ''}`
+    })
+    for (const a of this.directory?.() ?? []) if (a.on) rows.push(`${a.name.padEnd(16)} ${a.status === 'idle' ? 'free' : a.status}${a.ticket ? ` · on #${a.ticket}` : ''}`)
+    return rows.length ? `${rows.join('\n')}\n` : '(nobody else in the crew right now)\n'
+  }
+
+  // What an agent is on, in a few words: its task, or the message it's answering.
+  onNow(a) {
+    if (a.status === 'starting') return 'starting up'
+    if (a.status !== 'working' && a.status !== 'waiting') return a.inbox.length ? `free, ${a.inbox.length} queued` : 'free'
+    const t = this.convos[a.name]?.ticket
+    const task = typeof t === 'number' && this.tickets.all.find((x) => x.id === t)
+    const msg = !task && a.current && this.feed.findLast((e) => e.id === a.current)
+    const what = task ? `#${task.id} "${gist(task.title, 70)}"` : msg ? `"${gist(msg.text, 70)}"` : 'something you typed in its terminal'
+    return `${a.status === 'waiting' ? 'waiting for the user, on' : 'working on'} ${what}`
   }
 
   // Who `crew ask` of `a`'s is holding on for right now. [{ name, since, id, text }]
@@ -3264,6 +3473,35 @@ const gist = (text, max = 100) => {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
 }
 
+// The end of a file (an agent's transcript), or '' when it can't be read.
+function tailOf(file, bytes = 64 * 1024) {
+  let fd
+  try {
+    fd = fs.openSync(file, 'r')
+    const size = fs.fstatSync(fd).size
+    const buf = Buffer.alloc(Math.min(bytes, size))
+    fs.readSync(fd, buf, 0, buf.length, size - buf.length)
+    return buf.toString('utf8')
+  } catch {
+    return ''
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+}
+// When a file last changed (an agent's transcript: its last request), or 0.
+const mtimeOf = (file) => {
+  try {
+    return file ? fs.statSync(file).mtimeMs : 0
+  } catch {
+    return 0
+  }
+}
+// "26 days", "15 hours", "2 hours", "50 minutes"
+const spanOf = (ms) => {
+  const [n, unit] = ms >= 2 * 864e5 ? [Math.round(ms / 864e5), 'day'] : ms >= 2 * 36e5 ? [Math.round(ms / 36e5), 'hour'] : ms >= 36e5 ? [1, 'hour'] : [Math.max(1, Math.round(ms / 60000)), 'minute']
+  return `${n} ${unit}${n === 1 ? '' : 's'}`
+}
+
 // The files a tool call is about to write: Claude Code's file tools name one, and Codex's apply_patch lists them in the
 // patch (in whichever field its input carries it). -> Map of lease key (see fileKey) -> the file's absolute path
 function editedFiles({ tool_name: tool = '', tool_input: input } = {}, cwd) {
@@ -3479,11 +3717,13 @@ export function addressees(to, text) {
 // then whoever is free, then the shortest queue. A limit never sends work outside an agent's area: it only decides
 // between equally good matches.
 // agents: [{ name, area, status, queue, nearLimit }], already narrowed to the ones that can take work.
-export function bestFor(text, agents) {
+// warm (warmRoute): a tie that's left goes to the one cheaper to wake (Hub.warmth's `wake`), when both say.
+export function bestFor(text, agents, { warm = false } = {}) {
   const score = areaScore(text)
   const free = (a) => Number(a.status === 'idle' && !a.queue)
   const near = (a) => Number(Boolean(a.nearLimit))
-  return [...agents].sort((x, y) => score(y) - score(x) || near(x) - near(y) || free(y) - free(x) || x.queue - y.queue)[0]
+  const cheap = (x, y) => (warm && x.wake !== undefined && y.wake !== undefined ? x.wake - y.wake : 0)
+  return [...agents].sort((x, y) => score(y) - score(x) || near(x) - near(y) || free(y) - free(x) || x.queue - y.queue || cheap(x, y))[0]
 }
 
 // How well each agent's name and area match a piece of text: shared words, plus shared intents counted double.
