@@ -14,10 +14,13 @@ import { LinkHost, LinkClient, identity, addresses, firewallWarning, makeCode, r
 import { packAgents, unpackAgents } from './pack.js'
 import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, folderInfo, folders } from './move.js'
 import { Phones } from './phones.js'
+import { sweepFiles, ATTACHMENT_DAYS, CACHE_DAYS } from './keep.js'
 
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
 const SETTINGS = path.join(LINK_DIR, 'link.json')
+// Images nothing needs any more go this long after Crew starts (sweepImages), once its workspaces have read their chats.
+const SWEEP_AFTER = 60000
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const readJSON = (file) => {
   try {
@@ -253,6 +256,34 @@ export class Crew extends EventEmitter {
     })
     if (this.settings.share) await this.share(true).catch(() => {})
     for (const code of this.settings.peers ?? []) this.connect(code, { save: false }).catch(() => {})
+    this.sweepTimer = setTimeout(() => this.sweepImages(), SWEEP_AFTER)
+    this.sweepTimer.unref?.()
+  }
+
+  // Images nothing needs any more (core/keep.js): attachments that no workspace's chat, task or agent refers to, saved
+  // over ATTACHMENT_DAYS ago, and linked computers' images fetched over CACHE_DAYS ago (fetched again when they're
+  // shown). -> { attachments, cache }: how many went.
+  sweepImages(now = Date.now()) {
+    const used = new Set()
+    const add = (images) => {
+      for (const p of [].concat(images ?? [])) if (typeof p === 'string') used.add(path.resolve(p))
+    }
+    for (const hub of this.hubs.values()) {
+      for (const e of hub.feed) add(e.images)
+      for (const t of hub.tickets.all) add(t.images)
+      for (const a of hub.agents.values()) {
+        add(a.images)
+        for (const m of a.inbox ?? []) add(m.images)
+      }
+    }
+    const attachments = sweepFiles(ATTACHMENTS, { days: ATTACHMENT_DAYS, inUse: (f) => used.has(path.resolve(f)), now })
+    let cache = 0
+    let computers = []
+    try {
+      computers = fs.readdirSync(CACHE, { withFileTypes: true }).filter((d) => d.isDirectory())
+    } catch {}
+    for (const d of computers) cache += sweepFiles(path.join(CACHE, d.name), { days: CACHE_DAYS, now })
+    return { attachments, cache }
   }
 
   // Quitting, agents and all ("Stop agents and quit"), or with agents kept running in the terminal host (detach): the
@@ -271,6 +302,7 @@ export class Crew extends EventEmitter {
   }
 
   close() {
+    clearTimeout(this.sweepTimer)
     for (const l of this.links.values()) {
       l.client?.close()
       l.peer?.close()

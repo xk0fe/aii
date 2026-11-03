@@ -15,6 +15,7 @@ import { callResult } from './transcript.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
 import { DEFAULT, dirOf, space, forget, renameShared, sharedNames } from './workspaces.js'
+import { keepFeed, keepLines, lineSize, FEED_KEEP, FEED_BYTES, BOARD_KEEP, BOARD_MAX } from './keep.js'
 
 export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
 export const CONFIG = path.join(HOME, 'config.json')
@@ -46,7 +47,6 @@ const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'eff
 const RESERVED = new Set(['you', 'any', 'crew'])
 const SUB_TOOLS = new Set(['Agent', 'Task']) // Claude Code's sub-agent tool ("Task" in older versions)
 const SUB_LINGER = 6000 // a finished sub-agent stays in the live view this long
-const FEED_KEEP = 300
 // A clone with nothing to do waits this long before it goes away, in case a teammate's answer is on its way.
 const CLONE_LINGER = 5 * 60000
 export const MAX_CLONES = 5
@@ -111,7 +111,12 @@ export class Hub extends EventEmitter {
     this.token = token ?? randomBytes(16).toString('hex')
     this.sessions = readJSON(this.at('sessions.json')) ?? {}
     this.stats = readJSON(this.at('stats.json')) ?? {}
-    this.feed = loadFeed(this.at('feed.jsonl'))
+    // The chat (core/keep.js says how much of it is kept). feedFile: how much feed.jsonl holds, amendments included
+    // (see save); sizes: each line's length there, worked out once.
+    const { feed, lines, bytes } = loadFeed(this.at('feed.jsonl'), runtimeIds(readJSON(this.at(RUNTIME))))
+    this.feed = feed
+    this.feedFile = { lines, bytes }
+    this.sizes = new WeakMap()
     this.asks = new Map() // feed id of an open question -> { resolve, name, cli, input }
     // Right of way (see question): what each `crew ask` is still owed, and which agent edits which file.
     this.calls = new Map() // id (the question's feed id) -> { id, msg, from, to, parent, at, hold, remote }
@@ -2734,14 +2739,17 @@ export class Hub extends EventEmitter {
     text = String(text ?? '').trim()
     if (!text) throw new Error('nothing to note')
     const when = new Date().toISOString().slice(0, 16).replace('T', ' ')
-    fs.appendFileSync(this.at('board.md'), `- **${from}** (${when}): ${text.replace(/\s*\n\s*/g, ' ')}\n`)
+    const file = this.at('board.md')
+    fs.appendFileSync(file, `- **${from}** (${when}): ${text.replace(/\s*\n\s*/g, ' ')}\n`)
+    // the last BOARD_KEEP notes are what `crew board` shows: past BOARD_MAX, only they're kept (core/keep.js)
+    if (fs.statSync(file).size > BOARD_MAX) fs.writeFileSync(file, keepLines(fs.readFileSync(file, 'utf8')))
     this.post({ kind: 'note', from, text })
     return 'shared with the crew\n'
   }
 
   board() {
     try {
-      return fs.readFileSync(this.at('board.md'), 'utf8').split('\n').slice(-200).join('\n')
+      return fs.readFileSync(this.at('board.md'), 'utf8').split('\n').slice(-BOARD_KEEP).join('\n')
     } catch {
       return '(no shared notes yet)\n'
     }
@@ -2780,39 +2788,78 @@ export class Hub extends EventEmitter {
   post(entry) {
     const e = { id: randomUUID().slice(0, 8), ts: Date.now(), ...entry }
     this.feed.push(e)
-    if (this.feed.length > FEED_KEEP) this.feed.splice(0, this.feed.length - FEED_KEEP)
+    this.trimFeed()
     this.save(e)
     this.changed()
     return e
   }
 
+  // The chat's history down to what's kept of it (core/keep.js): the newest lines, and every older one still in use
+  // (neededLines), plus `keep` (ids). Lines that go stay in feed.jsonl until it's next written anew.
+  trimFeed(keep) {
+    let needed
+    const kept = keepFeed(this.feed, { size: (e) => this.sizeOf(e), needed: (e) => (needed ??= this.neededLines(keep))(e) })
+    if (kept.length < this.feed.length) this.feed = kept
+  }
+
+  sizeOf(e) {
+    let n = this.sizes.get(e)
+    if (n === undefined) this.sizes.set(e, (n = lineSize(e)))
+    return n
+  }
+
+  // The lines the chat can't let go of yet, however old: a question waiting for your answer, a message still queued
+  // or held for its agent, one an agent is answering, what a teammate's `crew ask` is about, and an agent's lines on
+  // their way to another computer (core/move.js). -> (entry) => whether it's needed
+  neededLines(keep = []) {
+    const ids = new Set(keep)
+    for (const a of this.agents.values()) {
+      if (a.current) ids.add(a.current)
+      for (const m of [...(a.inbox ?? []), ...(a.serving ?? []), ...(a.expect?.msgs ?? []), ...(a.steering?.msgs ?? [])]) if (m?.id) ids.add(m.id)
+    }
+    for (const c of this.calls.values()) if (c.msg?.id) ids.add(c.msg.id)
+    for (const id of this.asks.keys()) ids.add(id)
+    for (const m of this.moves?.values() ?? []) for (const id of m.ids) ids.add(id)
+    return (e) => ids.has(e.id) || (e.kind === 'ask' && !e.answer) || Boolean(e.queued || e.held)
+  }
+
   // A later change to a feed entry (a question's answer), saved after it so it survives a restart.
   amend(e, patch) {
     Object.assign(e, patch)
+    this.sizes.delete(e)
     this.save({ amend: e.id, ...patch })
     this.changed()
   }
 
+  // Appended, one line after another, until feed.jsonl holds twice what's kept: then it's written anew with what's kept
+  // (the line included), so it never grows past about that.
   save(line) {
-    this.saving = this.saving.then(() => fs.promises.appendFile(this.at('feed.jsonl'), JSON.stringify(line) + '\n')).catch(() => {})
+    const text = JSON.stringify(line) + '\n'
+    this.feedFile.lines++
+    this.feedFile.bytes += Buffer.byteLength(text)
+    if (this.feedFile.lines > 2 * FEED_KEEP || this.feedFile.bytes > 2 * FEED_BYTES) return this.rewriteFeed()
+    this.saving = this.saving.then(() => fs.promises.appendFile(this.at('feed.jsonl'), text)).catch(() => {})
   }
 
   // ---- an agent moving between computers (core/move.js) ---------------------------------------------
 
-  // feed.jsonl, written anew: it only ever grows, but lines leave with an agent that moves away and arrive (older
-  // than what's here) with one that moves in. The lines are taken now, so one posted meanwhile lands after them.
-  rewriteFeed() {
+  // feed.jsonl, written anew with what's kept of the chat: when it holds twice that (save), and when lines leave with an
+  // agent that moves away or arrive (older than what's here) with one that moves in. The lines are taken now, so one
+  // posted meanwhile lands after them. `keep`: ids to keep however old (see trimFeed).
+  rewriteFeed(keep) {
+    this.trimFeed(keep)
     const text = this.feed.map((e) => JSON.stringify(e) + '\n').join('')
+    this.feedFile = { lines: this.feed.length, bytes: Buffer.byteLength(text) }
     this.saving = this.saving.then(() => fs.promises.writeFile(this.at('feed.jsonl'), text)).catch(() => {})
   }
 
-  // Lines from another computer, for an agent that moved here: merged in by time.
-  adoptFeed(entries) {
+  // Lines from another computer, for an agent that moved here: merged in by time. `keep`: the ids of the ones it still
+  // needs (what it was answering), kept however old they are.
+  adoptFeed(entries, keep = []) {
     const have = new Set(this.feed.map((e) => e.id))
     this.feed.push(...entries.filter((e) => !have.has(e.id)))
     this.feed.sort((x, y) => x.ts - y.ts)
-    if (this.feed.length > FEED_KEEP) this.feed.splice(0, this.feed.length - FEED_KEEP)
-    this.rewriteFeed()
+    this.rewriteFeed(keep)
     this.changed()
   }
 
@@ -2928,12 +2975,15 @@ export class Hub extends EventEmitter {
     return adopted
   }
 
-  // What agents' hooks couldn't tell Crew while it was closed, in the order it happened.
+  // What agents' hooks couldn't tell Crew while it was closed, in the order it happened: an agent's <name>.jsonl.1
+  // (what came before its spool filled up: SPOOL_MAX, core/keep.js) before its <name>.jsonl.
   replaySpool() {
     let files = []
     try {
       files = fs.readdirSync(this.at(SPOOL))
     } catch {}
+    const nameOf = (f) => f.replace(/\.jsonl(\.1)?$/, '')
+    files = files.filter((f) => /\.jsonl(\.1)?$/.test(f)).sort((x, y) => (nameOf(x) === nameOf(y) ? (x.endsWith('.1') ? -1 : 1) : 0))
     for (const f of files) {
       const file = this.at(SPOOL, f)
       let text = ''
@@ -2943,7 +2993,7 @@ export class Hub extends EventEmitter {
       } catch {
         continue
       }
-      const name = f.replace(/\.jsonl$/, '')
+      const name = nameOf(f)
       if (!this.agents.has(name)) continue
       for (const line of text.split('\n')) {
         let e
@@ -3131,18 +3181,18 @@ function readJSON(file) {
   }
 }
 
-function loadFeed(file) {
-  let lines
+// The chat as feed.jsonl has it, down to what's kept of it (core/keep.js): `keep` holds the ids of lines the agents at
+// work still point at (runtimeIds). A file that holds more than twice that is written anew. -> { feed, lines, bytes }:
+// the lines, and how much the file holds now.
+function loadFeed(file, keep = new Set()) {
+  let text
   try {
-    lines = fs.readFileSync(file, 'utf8').trim().split('\n')
+    text = fs.readFileSync(file, 'utf8')
   } catch {
-    return []
+    return { feed: [], lines: 0, bytes: 0 }
   }
-  if (lines.length > FEED_KEEP * 2) {
-    lines = lines.slice(-FEED_KEEP)
-    fs.writeFileSync(file, lines.join('\n') + '\n')
-  }
-  const feed = []
+  const lines = text.split('\n').filter((l) => l.trim())
+  const all = []
   const byId = new Map()
   for (const line of lines) {
     let e
@@ -3157,12 +3207,33 @@ function loadFeed(file) {
       continue
     }
     const entry = { ...e, queued: false, held: false }
-    feed.push(entry)
+    all.push(entry)
     byId.set(entry.id, entry)
   }
   // An unanswered question's hook ended with the last run: the agent isn't waiting on it any more.
-  for (const e of feed) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true }
-  return feed.slice(-FEED_KEEP) // amendments don't count against the history kept
+  for (const e of all) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true }
+  const feed = keepFeed(all, { needed: (e) => keep.has(e.id) })
+  const bytes = Buffer.byteLength(text)
+  if (lines.length <= 2 * FEED_KEEP && bytes <= 2 * FEED_BYTES) return { feed, lines: lines.length, bytes }
+  const kept = feed.map((e) => JSON.stringify(e) + '\n').join('')
+  try {
+    fs.writeFileSync(file, kept)
+  } catch {
+    return { feed, lines: lines.length, bytes }
+  }
+  return { feed, lines: feed.length, bytes: Buffer.byteLength(kept) }
+}
+
+// The ids of the feed lines that what Crew saved about its agents at work (runtime.json, see saveRuntime) points at:
+// what each is answering, its queue, what a teammate's question is about.
+function runtimeIds(saved) {
+  const ids = new Set()
+  for (const s of Object.values(saved?.agents ?? {})) {
+    if (s?.current) ids.add(s.current)
+    for (const m of [...(s?.inbox ?? []), ...(s?.serving ?? []), ...(s?.expect?.msgs ?? []), ...(s?.steering?.msgs ?? [])]) if (m?.id) ids.add(m.id)
+  }
+  for (const c of saved?.calls ?? []) if (c?.msg) ids.add(c.msg)
+  return ids
 }
 
 // ---- questions: what the agent wants, as a card; your answer, as its hook's decision ----------------

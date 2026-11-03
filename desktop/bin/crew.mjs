@@ -33,6 +33,8 @@ const crewFile = (name) => {
   }
 }
 const agent = env.CREW_AGENT ?? ''
+// An agent's spool holds this much before it starts afresh (core/keep.js, which this can't import: it runs on its own).
+const SPOOL_MAX = 4 * 1024 * 1024
 
 // One request to Crew, given up `seconds` after it began (curl -m). -> { status, body (a Buffer) }, or null when Crew
 // isn't there or took too long.
@@ -93,11 +95,14 @@ async function hook([kind, seconds]) {
   }
   const event = input.replace(/\n+$/, '')
   if (ok(await call(url, route, { body: event, seconds: 2 }))) return
-  // Crew is closed: one line per event in the workspace's spool, replayed when it's back (Hub.replaySpool)
+  // Crew is closed: one line per event in the workspace's spool, replayed when it's back (Hub.replaySpool). Past
+  // SPOOL_MAX it becomes <agent>.jsonl.1, the one before going, and a new one starts, as the sh hooks do.
   try {
     const spool = path.join(home, ...(env.CREW_WORKSPACE ? ['workspaces', env.CREW_WORKSPACE] : []), 'spool')
+    const file = path.join(spool, `${agent}.jsonl`)
     fs.mkdirSync(spool, { recursive: true })
-    fs.appendFileSync(path.join(spool, `${agent}.jsonl`), `${event.replace(/\r?\n/g, ' ')}\n`)
+    if ((fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0) > SPOOL_MAX) fs.renameSync(file, `${file}.1`)
+    fs.appendFileSync(file, `${event.replace(/\r?\n/g, ' ')}\n`)
   } catch {}
 }
 
