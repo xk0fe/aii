@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="7 19 85 84" width="170" height="168">
+<!-- Ada, laptop: drawn by the app's avatar code (site/tools/creatures.mjs) -->
+<defs>
+      <filter id="av-fuzz" x="-12%" y="-12%" width="124%" height="124%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4" result="n"></feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="4.2" xChannelSelector="R" yChannelSelector="G" result="fuzz"></feDisplacementMap>
+        <feTurbulence type="fractalNoise" baseFrequency="2.1" numOctaves="2" seed="11" result="g"></feTurbulence>
+        <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .9 0 0 0 -.38" result="grain"></feColorMatrix>
+        <feComposite in="grain" in2="fuzz" operator="in" result="felt"></feComposite>
+        <feComposite in="felt" in2="fuzz" operator="over"></feComposite>
+      </filter>
+      <radialGradient id="av-hi" cx=".32" cy=".2" r=".72"><stop offset="0" stop-color="#fff" stop-opacity=".62"></stop><stop offset=".45" stop-color="#fff" stop-opacity=".14"></stop><stop offset="1" stop-color="#fff" stop-opacity="0"></stop></radialGradient>
+      <radialGradient id="av-lo" cx=".55" cy="1.08" r=".8"><stop offset=".15" stop-color="#000" stop-opacity=".34"></stop><stop offset="1" stop-color="#000" stop-opacity="0"></stop></radialGradient>
+    <!-- own --><!-- /own --></defs>
+<!-- body --><g transform="matrix(0.84 0 0 0.84 8 0.32)">
+        <ellipse cx="50" cy="97.5" rx="33" ry="3.2" fill="#000" opacity=".22"></ellipse>
+        <g filter="url(#av-fuzz)">
+          <g fill="#2fd3a6"><path d="M21 96C10 96 4 88 8 79C1 71 5 57 17 54C16 41 29 32 42 37C48 26 64 25 71 35C85 33 95 45 90 57C98 63 98 77 90 83C93 91 88 96 80 96Z"></path></g><g fill="url(#av-hi)"><path d="M21 96C10 96 4 88 8 79C1 71 5 57 17 54C16 41 29 32 42 37C48 26 64 25 71 35C85 33 95 45 90 57C98 63 98 77 90 83C93 91 88 96 80 96Z"></path></g><g fill="url(#av-lo)"><path d="M21 96C10 96 4 88 8 79C1 71 5 57 17 54C16 41 29 32 42 37C48 26 64 25 71 35C85 33 95 45 90 57C98 63 98 77 90 83C93 91 88 96 80 96Z"></path></g>
+          
+        </g>
+      <g><ellipse cx="40" cy="67" rx="3.8" ry="5" fill="#17161a"></ellipse><circle cx="38.8" cy="65.1" r="1.35" fill="#fff"></circle><ellipse cx="60" cy="67" rx="3.8" ry="5" fill="#17161a"></ellipse><circle cx="58.8" cy="65.1" r="1.35" fill="#fff"></circle></g><g><circle cx="40" cy="67" r="8.6" fill="#fff" fill-opacity=".18" stroke="#17161a" stroke-width="2.3"></circle><circle cx="60" cy="67" r="8.6" fill="#fff" fill-opacity=".18" stroke="#17161a" stroke-width="2.3"></circle><path d="M48.6 66Q50 63 51.4 66" fill="none" stroke="#17161a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></g></g><ellipse cx="50" cy="96.8" rx="35" ry="2.8" fill="#000" opacity=".2"></ellipse><g filter="url(#av-fuzz)"><g fill="#dfe2e8"><path d="M27 73Q27 70 30 70H70Q73 70 73 73L75 92H25Z"></path></g><g fill="url(#av-hi)"><path d="M27 73Q27 70 30 70H70Q73 70 73 73L75 92H25Z"></path></g><g fill="url(#av-lo)"><path d="M27 73Q27 70 30 70H70Q73 70 73 73L75 92H25Z"></path></g></g><g filter="url(#av-fuzz)"><g fill="#a3a9b4"><rect x="18" y="90.5" width="64" height="5.5" rx="2.75"></rect></g><g fill="url(#av-hi)"><rect x="18" y="90.5" width="64" height="5.5" rx="2.75"></rect></g><g fill="url(#av-lo)"><rect x="18" y="90.5" width="64" height="5.5" rx="2.75"></rect></g></g><path d="M45.5 84.5Q45.5 79.5 50 79.5Q54.5 79.5 54.5 84.5Z" fill="#fff" opacity=".6"></path><g filter="url(#av-fuzz)"><g fill="#2fd3a6"><ellipse cx="37" cy="70.6" rx="5" ry="3.8"></ellipse></g><g fill="url(#av-hi)"><ellipse cx="37" cy="70.6" rx="5" ry="3.8"></ellipse></g><g fill="url(#av-lo)"><ellipse cx="37" cy="70.6" rx="5" ry="3.8"></ellipse></g></g><g filter="url(#av-fuzz)"><g fill="#2fd3a6"><ellipse cx="63" cy="70.6" rx="5" ry="3.8"></ellipse></g><g fill="url(#av-hi)"><ellipse cx="63" cy="70.6" rx="5" ry="3.8"></ellipse></g><g fill="url(#av-lo)"><ellipse cx="63" cy="70.6" rx="5" ry="3.8"></ellipse></g></g><!-- /body -->
+</svg>
