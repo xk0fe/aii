@@ -440,7 +440,8 @@ function openDashboard(focus = '') {
 
 // Windows' window buttons over the dashboard's titlebar, in the titlebar's colors (--bg and --fg in ui/common.css); 45px
 // tall, so the line under the titlebar shows under them too.
-const captionColors = () => ({ height: 45, ...(nativeTheme.shouldUseDarkColors ? { color: '#161719', symbolColor: '#f2f2f4' } : { color: '#f4f4f7', symbolColor: '#1d1d1f' }) })
+// the window buttons sit over the top of what's open, on its surface (ui/common.css --surface)
+const captionColors = () => ({ height: 45, ...(nativeTheme.shouldUseDarkColors ? { color: '#1E1E1E', symbolColor: '#f2f2f4' } : { color: '#FFFFFF', symbolColor: '#1d1d1f' }) })
 
 // `npm run dev` runs Electron's generic app, so give the Dock our icon each time it appears (CLIque.app has it built in).
 function showDock() {

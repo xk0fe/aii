@@ -1,5 +1,6 @@
-// Full-screen view: the crew on the left, Crew / Tasks / Terminals in the middle, the chat on the right.
-/* global glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, rosterParts, mountConvoHead, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, statusText, brainShort, brainLabel, crewGroups, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, paceWarning, usageTip, usageLine, resetsText */
+// Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
+// agent) and what's open: #crew, one agent's conversation with its terminal docked beside it, Agents, Tasks or Terminals.
+/* global glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -9,16 +10,20 @@ const THEME = {
 }
 
 const terms = new Map() // name -> { tile, head, term, fit, ready }
-// The chat: everyone's messages, or your conversation with one agent (its header on top, back to everyone).
-const head = mountConvoHead($('.chat .convo-head'), { onBack: () => (composer.setTarget('auto'), composer.focus()), onTerminal: (name) => select(name) })
+let booted = false // the composer says who it's aimed at as it mounts, before what that opens exists
+// The chat: #crew (everyone's messages), or your conversation with one agent. What it's aimed at is the composer's
+// target: an agent's name is that agent's conversation (see isConvo). Questions are cards in the conversation,
+// answered where they are (inline), not in a queue above it.
 const feed = mountFeed($('.feed'), {
+  inline: true,
+  face: 36,
   onAgent: (name) => select(name),
-  onConvo: (name) => (composer.setTarget(name), composer.focus()),
+  onConvo: (name) => openDM(name),
   onLeave: () => composer.setTarget('auto'),
   onTicket: (key) => openTask(key),
   onReply: (e) => composer.replyTo(e),
 })
-const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to)) })
+const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to) })
 const collection = mountCollection($('.collection'), {
   onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home),
   onWorkspace: () => workspaces.settings(),
@@ -27,15 +32,17 @@ const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) 
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next) })
 // first run: Claude Code and Codex, what to install or sign in to, then the first agent (ui/setup.js)
 const setup = mountSetup({ onAdd: () => addAgent() })
-// Views: Crew, Tasks and Terminals, the terminals laid out as a grid or one big one. Older saves said grid,
-// focus or bugs.
-const saved = store.get('crew.view')
-let view = saved === 'bugs' ? 'tasks' : saved === 'grid' || saved === 'focus' ? 'terminals' : ['crew', 'tasks', 'terminals'].includes(saved) ? saved : 'crew'
-let layout = saved === 'focus' || (saved !== 'grid' && store.get('crew.layout') === 'focus') ? 'focus' : 'grid'
+
+// Where you are: 'chat' (#crew), 'dm' (the conversation the composer is aimed at), 'crew' (Agents, the cards),
+// 'tasks' or 'terminals'. The terminals are laid out as a grid or one big one.
+const PLACES = ['chat', 'crew', 'tasks', 'terminals']
+let place = store.get('crew.place') === 'dm' || PLACES.includes(store.get('crew.place')) ? store.get('crew.place') : 'chat'
+let layout = store.get('crew.layout') === 'focus' ? 'focus' : 'grid'
 let show = ['busy', 'needs'].includes(store.get('crew.show')) ? store.get('crew.show') : 'all' // the grid: every terminal, the busy ones, or the ones waiting on you
-let selected = null
-let state = { agents: [], providers: {} }
-// the roster's folds: computers you folded away, and the "off" lines you opened
+let selected = null // the terminal picked in Terminals
+let dockPick = null // the terminal picked in a conversation's dock: the agent's own, or one of its clones'
+let state = { agents: [], providers: {}, feed: [] }
+// the roster's folds: computers you folded away
 const folds = new Set((() => {
   try {
     return JSON.parse(store.get('crew.folds') || '[]')
@@ -44,98 +51,220 @@ const folds = new Set((() => {
   }
 })())
 let find = ''
+// The conversation the composer was aimed at last time is the one that opens (in #crew), and Agents, Tasks or
+// Terminals open on everyone's.
+if (isConvo(composer.target()) && place === 'chat') place = 'dm'
+else if (isConvo(composer.target()) && place !== 'dm') composer.setTarget('auto')
 
 $('.blank .blank-mark').outerHTML = ICONS.mark
-// Windows has no traffic lights at the titlebar's left: the app's mark sits there, before the workspace
-if (ON_WINDOWS) $('.tb-left').insertAdjacentHTML('afterbegin', `<span class="app-mark" aria-hidden="true">${markSVG('0 4 24 18')}</span>`)
-const VIEW_LABEL = { crew: [markSVG('0 4 24 18'), 'Crew'], tasks: [ICONS.task, 'Tasks'], terminals: [ICONS.terminal, 'Terminals'] }
-for (const b of document.querySelectorAll('.seg.views button')) b.innerHTML = `${VIEW_LABEL[b.dataset.view][0]}<span>${VIEW_LABEL[b.dataset.view][1]}</span>${b.dataset.view === 'tasks' ? '<i class="seg-badge"></i>' : ''}`
+// Windows has no traffic lights: the app's mark sits at the sidebar's top instead
+if (ON_WINDOWS) $('.side-top').innerHTML = `<span class="app-mark" aria-hidden="true">${markSVG('0 4 24 18')}</span>`
+const NAV_ICON = { crew: markSVG('0 4 24 18'), tasks: ICONS.task, terminals: ICONS.terminal }
+for (const b of document.querySelectorAll('.nv .nv-icon')) b.outerHTML = NAV_ICON[b.closest('.nv').dataset.place]
 $('[data-layout=grid]').innerHTML = ICONS.grid
 $('[data-layout=focus]').innerHTML = ICONS.focus
 $('.find-icon').outerHTML = ICONS.search
-$('.side-top [data-act=add]').innerHTML = ICONS.plus
-$('.side .autopilot .glyph').innerHTML = ICONS.plane
-$('.tb-more').innerHTML = ICONS.more
+$('[data-act=find]').innerHTML = ICONS.search
+$('.side-ws [data-act=add]').innerHTML = ICONS.plus
+$('.side-more').innerHTML = ICONS.more
 $('#link .h-icon').innerHTML = ICONS.computers
 $('#link [data-link-add]').innerHTML = `${ICONS.link}Link a computer…`
 $('#import .h-icon').innerHTML = ICONS.import
+const DOWN = svg('<path d="M12 5v14M5 12l7 7 7-7"/>', 'stroke-width="2.4"')
 // the page's own hints in this computer's keys (⌘F is Ctrl+F on Windows)
 for (const el of document.querySelectorAll('[title]')) el.title = keysIn(el.title)
-$('.find kbd').textContent = keys('⌘F')
 
-// The sidebar and the chat can each be put away for more room in the middle (the ⋯ menu, ⌘⌥S, ⌘⌥C); remembered
-// across launches.
-// Putting a side away, or bringing it back. The grid's columns change in one step, so the middle is laid out once at
-// its new width (never squeezed through every width in between, cards hopping between column counts on the way):
-// the panel slides out over it, or in, and what's in the middle glides to its new place (glide() in common.js).
-const GLIDING = '.col-head > *, .col-group > h3, .pcard, .col-stats, .tk-head > *, .lane, .tl-group, .tv-head > *, .tile'
-let panelsDrawn = false
-function setPanel(which, on) {
-  store.set(`crew.panel.${which}`, on ? '1' : '0')
-  if (panelsDrawn && panelShown(which) === on) return
-  const panel = $(which === 'side' ? '.side' : '.chat')
-  const away = `translateX(${which === 'side' ? -16 : 16}px)`
-  const animate = panelsDrawn && !reduceMotion()
-  panel.getAnimations().forEach((a) => a.cancel()) // turned around mid-slide
-  panel.classList.remove('leaving')
-  panel.style.width = ''
-  if (animate && !on) {
-    panel.style.width = `${panel.getBoundingClientRect().width}px`
-    panel.classList.add('leaving')
-    const out = panel.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: away }], { duration: DUR.move - 60, easing: EASE.in, fill: 'forwards' })
-    out.finished.then(() => (panel.classList.remove('leaving'), (panel.style.width = ''), out.cancel()), () => {})
+// ---- what's open ----------------------------------------------------------------------------------------------
+
+// The agent whose conversation is open (an agent, for a clone's), and its terminal in the dock: the one picked there,
+// else the one the conversation is with, else its first clone's. Off agents have no terminal: no dock.
+const dmAgent = () => (isConvo(composer.target()) ? state.agents.find((a) => a.name === composer.target()) ?? state.agents.find((a) => a.name === familyOf(composer.target())) : null)
+const family = (name) => [...terms.keys()].filter((n) => familyOf(n) === familyOf(name))
+function dockName() {
+  if (place !== 'dm') return null
+  const fam = family(composer.target())
+  return [dockPick, composer.target(), familyOf(composer.target())].find((n) => n && fam.includes(n)) ?? fam[0] ?? null
+}
+const dockOn = () => store.get('crew.dock') !== '0'
+const docked = () => place === 'dm' && dockOn() && Boolean(dockName())
+
+// Open a place, or the conversation the composer's aimed at ('dm'). Views that are hidden skip their redraws: the one
+// coming into view catches up first, still hidden.
+function showPlace(next) {
+  if (next === 'dm' && !isConvo(composer.target())) next = 'chat'
+  const moved = next !== place
+  place = next
+  store.set('crew.place', next)
+  const dock = docked()
+  collection.setVisible(place === 'crew')
+  tasks.setVisible(place === 'tasks')
+  $('.chat').classList.toggle('hidden', place !== 'chat' && place !== 'dm')
+  $('.collection').classList.toggle('hidden', place !== 'crew')
+  $('.tasks-view').classList.toggle('hidden', place !== 'tasks')
+  $('.terms-view').classList.toggle('hidden', place !== 'terminals' && !dock)
+  $('.terms-view').classList.toggle('docked', dock)
+  $('.stage').classList.toggle('docked', dock)
+  $('.terms').classList.toggle('focus', dock || layout === 'focus')
+  for (const b of document.querySelectorAll('.nv')) b.dataset.place === place ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')
+  segmented($('[data-layout]'), (b) => b.dataset.layout === layout)
+  $('[data-show]').classList.toggle('idle', layout === 'focus') // stays in place, so nothing moves
+  if (!terms.has(selected)) selected = terms.keys().next().value ?? null
+  highlight(dock ? dockName() : selected)
+  drawRoster()
+  drawHead()
+  drawDock()
+  drawShow()
+  drawBlank()
+  if (moved && (place === 'chat' || place === 'dm')) requestAnimationFrame(() => feed.reveal())
+  // the terminals fit their new boxes when those changed (a place, the dock, the layout), not on every state push
+  const shape = `${place}|${dock}|${dockName()}|${layout}|${terms.size}`
+  if (shape !== lastShape) requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
+  lastShape = shape
+}
+let lastShape = ''
+// A place from the sidebar (or ⌘1–4): the composer goes back to everyone, which only #crew shows.
+function goPlace(next) {
+  if (isConvo(composer.target())) composer.setTarget('auto') // targetChanged: back to #crew's messages
+  showPlace(next)
+  if (next === 'chat') composer.focus()
+}
+// The composer's target changed (an agent in the sidebar, a face in a message, the To picker, Reply): its
+// conversation, or everyone's.
+function targetChanged(to) {
+  feed.setConvo(to)
+  if (!booted) return
+  dockPick = null
+  if (isConvo(to)) showPlace('dm')
+  else if (place === 'dm') showPlace('chat')
+  else drawHead()
+}
+// Your conversation with an agent. terminal: with its terminal docked beside it (and that one picked, for a clone).
+function openDM(name, { terminal = false } = {}) {
+  if (terminal) store.set('crew.dock', '1')
+  if (composer.target() !== name) composer.setTarget(name)
+  else showPlace('dm')
+  if (terminal && terms.has(name)) {
+    dockPick = name
+    showPlace('dm')
   }
-  glide(animate ? () => $('.center').querySelectorAll(GLIDING) : [], () => document.body.classList.toggle(`no-${which}`, !on))
-  if (animate && on) panel.animate([{ offset: 0, opacity: 0, transform: away }], { duration: DUR.move, easing: EASE.out })
-  requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 }
-const panelShown = (which) => !document.body.classList.contains(`no-${which}`)
-for (const which of ['side', 'chat']) setPanel(which, store.get(`crew.panel.${which}`) !== '0')
-panelsDrawn = true
 
-// ---- the titlebar's right end: who needs you, and ⋯ for the rest ------------------------------------------
+// ---- the header: #crew, or who you're talking to ---------------------------------------------------------------
 
-// Their faces and how many. A click brings the chat's queue into view (the chat listens for crew:needs).
-function drawNeedsButton() {
-  const list = needsYou(state)
-  const btn = $('.tb-needs')
-  // replies you haven't read: a dot on ⋯, whose menu jumps to the first one
-  $('.tb-more').classList.toggle('has-new', state.feed.some((x) => isUnread(x, state.reads)))
-  btn.classList.toggle('hidden', !list.length)
-  if (!list.length) return
-  const n = list.length
-  const faces = [...new Map(list.map((x) => [x.agent.name, x.agent])).values()] // an agent with two questions is one face
-  btn.title = `${list.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick to answer, oldest first`
-  morph(btn, `<span class="tb-faces">${faces.slice(0, 3).map((a) => avatarHTML(a, { size: 20 })).join('')}</span>${n} need${n === 1 ? 's' : ''} you`)
+function drawHead() {
+  const h = $('.mainhead')
+  if (place === 'chat') return morph(h, chatHead())
+  if (place === 'dm' && dmAgent()) return morph(h, dmHead(dmAgent()))
+  morph(h, '')
 }
-function showNeeds(name) {
-  if (!panelShown('chat')) setPanel('chat', true)
-  document.dispatchEvent(new CustomEvent('crew:needs', name ? { detail: { name } } : undefined))
+// #crew: who it reaches, what's waiting on you (a click goes to the oldest), and who's in it (a click opens Agents).
+function chatHead() {
+  const needs = needsYou(state)
+  const members = state.agents.filter((a) => !a.cloneOf)
+  const faces = [...members.filter((a) => a.on), ...members.filter((a) => !a.on)]
+  const who = hasWorkspaces(state) ? `Everyone in ${state.workspace.name}` : 'Your whole crew'
+  return `<h1 class="mh-title"><span class="hash" aria-hidden="true">#</span>crew</h1><span class="mh-sub">${esc(who)} · Auto picks who answers</span>
+    <span class="mh-acts">
+      ${needs.length ? `<button class="mh-needs" data-head="needs" title="${esc(`${needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick for the oldest`)}">${needs.length} waiting on you${DOWN}</button>` : ''}
+      ${members.length ? `<button class="mh-faces" data-place="crew" title="${esc(`${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on: open Agents`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 26, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}
+    </span>`
 }
-$('.tb-needs').addEventListener('click', () => showNeeds())
+// An agent: its creature and name, what it is and its brain in one line (with its clones or helpers), then its
+// switches (YOLO, Fast, on/off), its terminal, its profile (the sheet) and everything else (⋯).
+function dmHead(a) {
+  const clones = clonesOf(state.agents, a).filter((c) => c.on)
+  const helpers = runningSubs(a).length
+  const meta = [a.area, brainWords(a, state.providers, { short: true }), clones.length ? plural(clones.length, 'clone') : helpers ? plural(helpers, 'helper') : ''].filter(Boolean)
+  const canDock = family(a.name).length > 0
+  return `<span class="mh-face">${avatarHTML(a, { size: 30 })}</span><h1 class="mh-name">${nameHTML({ ...a, cloneOf: null })}</h1>
+    <span class="mh-sub" title="${esc([statusText(a), brainLabel(a, state.providers)].join('\n'))}">${esc(meta.join(' · '))}</span>
+    <span class="mh-acts">
+      ${modeChips(a)}
+      <label class="mh-power" title="${esc(a.on ? 'On: turn it off (it stays off after restarts)' : 'Off: turn it on (it picks up its session)')}">${powerSwitch(a)}<span>${a.on ? 'On' : 'Off'}</span></label>
+      <button class="btn" data-head="terminal" aria-pressed="${docked()}" ${canDock ? '' : 'disabled'} title="${canDock ? (docked() ? 'Put its terminal away' : 'Show its terminal beside the conversation') : `${esc(a.seed ?? a.name)} is off: no terminal`}">${ICONS.terminal}<span>Terminal</span></button>
+      <button class="btn" data-head="profile" title="Its brain, folder, rules, instructions and look">Profile</button>
+      <button class="icon" data-head="menu" title="More" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>
+    </span>`
+}
+$('.mainhead').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-head], [data-place]')
+  if (!b) return
+  if (b.dataset.place) return goPlace(b.dataset.place)
+  const a = dmAgent()
+  const act = b.dataset.head
+  if (act === 'needs') return answerOldest()
+  if (!a) return
+  if (act === 'terminal') {
+    store.set('crew.dock', docked() ? '0' : '1')
+    showPlace('dm')
+  }
+  if (act === 'profile') edit(a.name)
+  if (act === 'menu') agentMenu(a.name, b)
+})
 
-// Everything the titlebar used to carry: the panels, Computers and the theme (and, running from source, config.json).
+// What's waiting on you, oldest first: a question goes to its card in #crew, an agent asking in its terminal to that.
+function answerOldest() {
+  const n = needsYou(state)[0]
+  if (!n) return
+  if (!n.ask) return select(n.agent.name)
+  if (place !== 'chat') goPlace('chat')
+  requestAnimationFrame(() => feed.jump(n.ask.id))
+}
+
+// ---- the dock: the conversation's agent's terminal, with a tab for each of its clones -----------------------------
+
+function drawDock() {
+  const bar = $('.dock-bar')
+  const name = docked() && dockName()
+  const t = name && terms.get(name)
+  if (!t?.agent) return morph(bar, '')
+  const waiting = new Set(needsYou(state).map((x) => x.agent.name))
+  const fam = family(name).map((n) => terms.get(n).agent).filter(Boolean)
+  const mode = tileMode(t)
+  const [badge, line, tip] = RIBBON[mode](t.agent, displayName(t.agent))
+  morph(bar, `<div class="dock-tabs" role="tablist" aria-label="${esc(`${displayName(fam[0] ?? t.agent)}'s terminals`)}">${fam.map((a) => `<button class="dock-tab" role="tab" data-dock="${esc(a.name)}" aria-selected="${a.name === name}" title="${esc(`${displayName(a)}: ${statusText(a)}`)}">${avatarHTML(a, { size: 18, mood: 'still' })}<span>${esc(a.cloneOf ? `Clone ${a.clone}` : a.seed ?? a.name)}</span>${waiting.has(a.name) ? '<i class="need-badge" aria-label="needs you">!</i>' : ''}</button>`).join('')}</div>
+    <span class="grow"></span><span class="t-badge" data-mode="${mode}" title="${esc([line, tip, brainShort(t.agent, state.providers)].filter(Boolean).join('\n\n'))}">${badge}</span>
+    <button class="icon" data-dock-act="expand" title="Open it in Terminals">${ICONS.expand}</button>
+    <button class="icon" data-dock-act="close" title="Put the terminal away">${ICONS.close}</button>`)
+}
+$('.dock-bar').addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-dock]')
+  if (tab) {
+    dockPick = tab.dataset.dock
+    showPlace('dm')
+    return terms.get(dockPick)?.term.focus()
+  }
+  const act = e.target.closest('[data-dock-act]')?.dataset.dockAct
+  if (act === 'close') {
+    store.set('crew.dock', '0')
+    showPlace('dm')
+  }
+  if (act === 'expand') {
+    selected = dockName()
+    layout = 'focus'
+    store.set('crew.layout', layout)
+    goPlace('terminals')
+  }
+})
+
+// Everything the titlebar used to carry, at the sidebar's foot: Autopilot, Computers, the CLIs and the theme (and,
+// running from source, config.json).
 const THEME_CHOICES = [['system', 'Auto', 'auto', `follows ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light', 'sun', ''], ['dark', 'Dark', 'moon', '']]
-$('.tb-more').addEventListener('click', (e) => {
+$('.side-more').addEventListener('click', (e) => {
   const theme = state.theme ?? 'system'
-  const unread = state.feed.filter((x) => isUnread(x, state.reads))
+  const c = state.computers ?? { me: {}, links: [] }
+  const away = c.links.filter((l) => !l.online).length
   popMenu(e.currentTarget, [
-    ...(unread.length ? [{ label: `Jump to ${unread.length} new ${unread.length === 1 ? 'reply' : 'replies'}`, icon: ICONS.reply, act: 'unread' }, '-'] : []),
-    { label: panelShown('side') ? 'Hide the crew' : 'Show the crew', icon: ICONS.sidebar, act: 'side', hint: keys('⌥⌘S') },
-    { label: panelShown('chat') ? 'Hide the chat' : 'Show the chat', icon: ICONS.chatPanel, act: 'chat', hint: keys('⌥⌘C') },
+    { label: 'Autopilot', icon: ICONS.plane, act: 'autopilot', hint: state.autopilot ? 'On: hand-offs go through' : 'Off: hand-offs wait for you' },
     '-',
-    { label: 'Computers…', icon: ICONS.computers, act: 'computers' },
+    { label: 'Computers…', icon: ICONS.computers, act: 'computers', hint: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : '' },
     { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
     '-',
     { head: 'Theme' },
     ...THEME_CHOICES.map(([id, label, icon, note]) => ({ label, icon: ICONS[icon], act: `theme:${id}`, hint: theme === id ? '✓' : note })),
     ...(crew.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
   ], (act) => {
-    if (act === 'unread') {
-      setPanel('chat', true)
-      if (unread[0]) feed.jump(unread[0].id)
-    }
-    if (act === 'side' || act === 'chat') setPanel(act, !panelShown(act))
+    if (act === 'autopilot') crew.call('autopilot', !state.autopilot).catch((err) => oops("Couldn't change Autopilot", err))
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
     if (act.startsWith('theme:')) crew.call('theme', act.slice(6))
@@ -321,11 +450,13 @@ const tileActs = (a) => `
     ? `<button class="icon" data-act="dismiss" title="Send this clone away: its terminal closes, and anything queued for it goes back to ${esc(a.cloneOf)}">${ICONS.close}</button>`
     : `<button class="icon" data-act="off" title="Turn off (stays off after restarts)">${ICONS.power}</button>`}`
 
-// Answer: its question in the chat's queue when it asked there, otherwise its terminal, where it's asking.
+// Answer: its question's card in your conversation with it when it asked there, otherwise its terminal, where it's
+// asking.
 function answerTile(name) {
-  if (needsYou(state).find((x) => x.agent.name === name)?.ask) return showNeeds(name)
-  highlight(name)
-  terms.get(name)?.term.focus()
+  const ask = needsYou(state).find((x) => x.agent.name === name)?.ask
+  if (!ask) return select(name)
+  openDM(familyOf(name), { terminal: true })
+  requestAnimationFrame(() => feed.jump(ask.id))
 }
 
 $('.terms').addEventListener('click', (e) => {
@@ -346,109 +477,75 @@ $('.terms').addEventListener('click', (e) => {
   }
   else if (act === 'markIdle') crew.call('markIdle', name)
   else if (act === 'edit') edit(name)
-  else if (!act) highlight(name)
+  else if (!act && place === 'terminals') highlight((selected = name))
 })
 $('.terms').addEventListener('dblclick', (e) => {
   const head = e.target.closest('.tile-head')
-  if (head && !e.target.closest('button')) {
-    highlight(head.parentElement.dataset.name)
+  if (head && !e.target.closest('button') && place === 'terminals') {
+    selected = head.parentElement.dataset.name
     setLayout(layout === 'focus' ? 'grid' : 'focus')
   }
 })
 
 // ---- selection + views -----------------------------------------------------
 
+// Which terminal is the one on: the dock's in a conversation, the one picked in Terminals.
 function highlight(name) {
-  selected = name
   for (const [n, t] of terms) t.tile.classList.toggle('on', n === name)
-  for (const el of $('.roster').querySelectorAll('.crow, .clone-line')) el.classList.toggle('on', el.dataset.agent === name)
-  freshen() // in Focus, the one picked is the one on screen
+  freshen() // in Focus and in the dock, the one picked is the one on screen
 }
 
-// A terminal's header and actions are drawn while it's on screen: in the Terminals view, not filtered out of the grid,
-// and in Focus only the one picked. The rest catch up as they come into view, so a state push doesn't redraw
-// twenty headers nobody can see.
-const tileShown = (t) => view === 'terminals' && !t.tile.classList.contains('filtered') && (layout === 'grid' || t.tile.classList.contains('on'))
+// A terminal's header and actions are drawn while it's on screen: in Terminals, not filtered out of the grid, and in
+// Focus only the one picked; in a conversation's dock, the one docked. The rest catch up as they come into view, so a
+// state push doesn't redraw twenty headers nobody can see.
+const tileShown = (t) => (place === 'terminals' && !t.tile.classList.contains('filtered') && (layout === 'grid' || t.tile.classList.contains('on'))) || (docked() && t.tile.classList.contains('on'))
 function freshen() {
   for (const t of terms.values()) if (t.stale && t.agent && tileShown(t)) drawTile(t)
 }
 
-// Show an agent's terminal, with your conversation with it in the chat. Agents that are off have no terminal:
-// open their card.
+// Show an agent's terminal: your conversation with it, its terminal docked beside it. One that's off has no terminal:
+// its conversation, with its switch in the header.
 function select(name) {
-  if (!terms.has(name) && !state.agents.some((a) => a.name === name)) name = name.replace(/\.\d+(?=@|$)/, '') // a clone that has gone: its original
-  if (!terms.has(name)) return edit(name)
-  highlight(name)
-  composer.setTarget(name)
-  layout = 'focus'
-  store.set('crew.layout', layout)
-  setView('terminals')
-  terms.get(name).term.focus()
+  if (!terms.has(name) && !state.agents.some((a) => a.name === name)) name = familyOf(name) // a clone that has gone: its original
+  openDM(name, { terminal: terms.has(name) })
+  terms.get(dockName())?.term.focus()
 }
 
-// A click in the sidebar: the agent whose terminal and conversation are already up, clicked again, lets go of it.
-// The chat goes back to everyone's and Focus to the grid. The second click of a double-click doesn't count.
-function pick(name, e) {
-  if (e.detail > 1) return
-  if (view !== 'terminals' || selected !== name || composer.target() !== name) return select(name)
-  composer.setTarget('auto')
-  if (layout === 'focus') setLayout('grid')
-}
-
+// Its profile: the agent's sheet, over whatever is open (a clone is edited through its original).
 function edit(name) {
-  if (view !== 'crew') setView('crew')
-  collection.open(state.agents.find((a) => a.name === name)?.cloneOf ?? name) // a clone is edited through its original
+  collection.open(state.agents.find((a) => a.name === name)?.cloneOf ?? name)
 }
 
-// grid and focus are still accepted, for ⌘3 / ⌘4 and older callers
-function setView(next) {
-  if (next === 'grid' || next === 'focus') {
-    layout = next
-    store.set('crew.layout', layout)
-    next = 'terminals'
-  }
-  view = next
-  store.set('crew.view', next)
-  if (!terms.has(selected)) highlight(terms.keys().next().value)
-  // views that are hidden skip their redraws: the one coming into view catches up first, still hidden
-  collection.setVisible(view === 'crew')
-  tasks.setVisible(view === 'tasks')
-  $('.collection').classList.toggle('hidden', view !== 'crew')
-  $('.tasks-view').classList.toggle('hidden', view !== 'tasks')
-  $('.terms-view').classList.toggle('hidden', view !== 'terminals')
-  $('.terms').classList.toggle('focus', layout === 'focus')
-  segmented($('.seg.views'), (b) => b.dataset.view === view)
-  segmented($('[data-layout]'), (b) => b.dataset.layout === layout)
-  $('[data-show]').classList.toggle('idle', layout === 'focus') // stays in place, so nothing moves
-  drawShow()
-  drawBlank()
-  requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
+function setLayout(next) {
+  layout = next
+  store.set('crew.layout', layout)
+  showPlace('terminals')
 }
-const setLayout = (next) => setView(next)
 
 function drawBlank() {
   const on = state.agents.filter((a) => a.on && a.status !== 'parked').length
-  $('.blank').classList.toggle('hidden', view !== 'terminals' || on > 0)
+  $('.blank').classList.toggle('hidden', place !== 'terminals' || on > 0)
   const parked = state.parked && state.agents.some((a) => a.on)
   $('.blank b').textContent = parked ? `${state.workspace.name} is parked` : state.agents.length ? 'All agents are off' : 'No agents yet'
-  $('.blank span').textContent = parked ? 'Open it to start its agents: each picks up its conversation.' : state.agents.length ? 'Turn one on in the sidebar: it picks up its last session.' : 'Make your first one in the Crew view.'
+  $('.blank span').textContent = parked ? 'Open it to start its agents: each picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
 }
 
 // The grid shows every terminal, the busy ones (working, starting or waiting on you), or the ones waiting on you; each
-// with how many there are.
+// with how many there are. The dock shows its own, whatever the grid's filter.
 const busy = (a) => a && (a.status === 'working' || a.status === 'waiting' || a.status === 'starting')
 const SHOW_NONE = { busy: 'Nobody is busy right now', needs: 'Nobody needs you right now' }
 function drawShow() {
   segmented($('[data-show]'), (b) => b.dataset.show === show)
   const waiting = new Set(needsYou(state).map((x) => x.agent.name))
   const count = { all: terms.size, busy: 0, needs: 0 }
+  const grid = place === 'terminals' && layout === 'grid'
   let shown = 0
   for (const [name, t] of terms) {
     const isBusy = busy(t.agent)
     const needs = waiting.has(name)
     count.busy += isBusy ? 1 : 0
     count.needs += needs ? 1 : 0
-    const hide = layout === 'grid' && (show === 'busy' ? !isBusy : show === 'needs' ? !needs : false) // focus shows the one you picked
+    const hide = grid && (show === 'busy' ? !isBusy : show === 'needs' ? !needs : false) // focus shows the one you picked
     t.tile.classList.toggle('filtered', hide)
     if (!hide) shown++
   }
@@ -459,15 +556,15 @@ function drawShow() {
   }
   freshen()
   const none = $('.terms .terms-none')
-  if (SHOW_NONE[show] && !shown && terms.size) {
+  if (grid && SHOW_NONE[show] && !shown && terms.size) {
     if (!none) $('.terms').insertAdjacentHTML('beforeend', `<p class="terms-none">${SHOW_NONE[show]}</p>`)
     else if (none.textContent !== SHOW_NONE[show]) none.textContent = SHOW_NONE[show]
   } else none?.remove()
 }
 
-$('.seg.views').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-view]')
-  if (b) setView(b.dataset.view)
+$('.side-nav').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-place]')
+  if (b) goPlace(b.dataset.place)
 })
 $('[data-layout]').addEventListener('click', (e) => {
   const b = e.target.closest('[data-layout]')
@@ -483,17 +580,14 @@ $('[data-show]').addEventListener('click', (e) => {
   drawShow()
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 })
-// ⌘1 Crew, ⌘2 Tasks, ⌘3 the terminals side by side, ⌘4 one big; ⌘F finds an agent, ⌘N makes one (Ctrl on Windows,
-// where Ctrl+F and Ctrl+N typed in a terminal are the agent's: windowsTerminalKey)
-const KEYS = { 1: 'crew', 2: 'tasks', 3: 'grid', 4: 'focus' }
-document.querySelectorAll('.seg.views button').forEach((b, i) => (b.title += ` (${keys(`⌘${i + 1}`)})`))
+// ⌘1 #crew, ⌘2 Agents, ⌘3 Tasks, ⌘4 Terminals; ⌘F finds an agent, ⌘N makes one (Ctrl on Windows, where Ctrl+F and
+// Ctrl+N typed in a terminal are the agent's: windowsTerminalKey)
+const KEYS = { 1: 'chat', 2: 'crew', 3: 'tasks', 4: 'terminals' }
 document.addEventListener('keydown', (e) => {
   if (!commandKey(e)) return
   if (document.querySelector('.ed-layer.open, dialog[open]')) return // the agent's sheet or a dialog is in front
-  if (KEYS[e.key] && !e.altKey) return void (e.preventDefault(), setView(KEYS[e.key]))
-  if (e.code === 'KeyS' && e.altKey) return void (e.preventDefault(), setPanel('side', document.body.classList.contains('no-side')))
-  if (e.code === 'KeyC' && e.altKey) return void (e.preventDefault(), setPanel('chat', document.body.classList.contains('no-chat')))
-  if (e.key === 'f' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), setPanel('side', true), $('[data-find]').focus(), $('[data-find]').select())
+  if (KEYS[e.key] && !e.altKey && !e.shiftKey) return void (e.preventDefault(), goPlace(KEYS[e.key]))
+  if (e.key === 'f' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), startFind())
   if (e.key === 'n' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), addAgent())
 })
 
@@ -583,18 +677,78 @@ function workspaceChanged(next) {
   tasks.close()
 }
 
-// ---- the roster: every agent, by computer ------------------------------------
+// ---- the sidebar's agents: a conversation with each, by computer ---------------------------------------------------
+
+// How it is, in a word, for the end of its line: what it's doing while it works ("editing", "testing"), otherwise
+// "free", "starting", "off".
+const DOING = [[/^(Planning|Writing up a plan)/, 'planning'], [/^Editing\b/, 'editing'], [/^Writing\b/, 'writing'], [/^Reading\b/, 'reading'], [/^Searching\b/, 'searching'], [/^Running the tests/, 'testing'], [/^Running\b/, 'running'], [/^Asking\b/, 'asking'], [/^Handing work/, 'handing off'], [/^Starting a sub-agent/, 'delegating'], [/^Drawing\b/, 'drawing']]
+function doingWord(a) {
+  if (!a.on) return a.status === 'parked' ? 'parked' : 'off'
+  if (blockedOn(a)) return 'waiting'
+  switch (a.status) {
+    case 'working': {
+      const what = a.activity ? activityWords(a.activity) : ''
+      return DOING.find(([re]) => re.test(what))?.[1] ?? 'working'
+    }
+    case 'waiting': return 'needs you'
+    case 'idle': return runningSubs(a).length ? 'helpers at work' : 'free'
+    case 'starting': return 'starting'
+    case 'away': return 'offline'
+    case 'parked': return 'parked'
+    default: return 'stopped'
+  }
+}
+
+// One line: its creature, its name (YOLO, how many clones), then what needs you from it and its clones (berry), new
+// replies (a quiet count), or how it is.
+function dmRow(a, { selected = false, clones = [], needs = 0, drag = false }) {
+  const unread = [a, ...clones].reduce((n, x) => n + (x.unread ?? 0), 0)
+  const tip = [`${a.seed ?? a.name}${a.area ? ` · ${a.area}` : ''}`, upFirst(statusText(a)), brainLabel(a, state.providers), clones.length ? `${plural(clones.length, 'clone')} at work` : '', a.queue ? `${a.queue} queued` : ''].filter(Boolean).join('\n')
+  const end = needs ? `<i class="need-badge" title="${esc(`${needs} waiting on you`)}">${needs}</i>`
+    : unread ? `<i class="dm-new" title="${esc(plural(unread, 'new reply', 'new replies'))}">${unread > 9 ? '9+' : unread}</i>`
+    : `<span class="dm-word">${esc(doingWord(a))}</span>`
+  return `<div class="dm ${a.on ? a.status : 'off'}${selected ? ' on' : ''}${needs ? ' needs' : ''}${unread ? ' fresh' : ''}" data-agent="${esc(a.name)}" role="button" tabindex="0" ${drag ? 'draggable="true"' : ''} title="${esc(tip)}" style="--c:${agentColor(a)}">
+    <span class="dm-av">${avatarHTML(a, { size: 26 })}</span>
+    <span class="dm-name"><b>${esc(a.seed ?? a.name)}</b>${a.yolo ? '<i class="mark-yolo" title="YOLO: skips every permission prompt">YOLO</i>' : ''}${clones.length ? `<span class="dm-clones">+${clones.length}</span>` : ''}</span>
+    <span class="dm-end">${end}</span>
+  </div>`
+}
+
+// Agents grouped by the computer they run on once there's more than one (fold one away with a click on its name), each
+// group in your own order with the ones that are off at its end. In parts for morph(): a section per computer.
+function dmParts(state, { folds = new Set(), selected, filter = '', drag = false } = {}) {
+  const q = filter.trim().toLowerCase()
+  const match = (a) => !q || `${a.seed ?? a.name} ${a.area ?? ''}`.toLowerCase().includes(q)
+  const groups = crewGroups(state)
+  const headed = grouped(groups)
+  const needs = new Map()
+  for (const n of needsYou(state)) needs.set(familyOf(n.agent.name), (needs.get(familyOf(n.agent.name)) ?? 0) + 1)
+  const parts = groups.map((g) => {
+    const agents = g.agents.filter(match)
+    if ((q || !headed) && !agents.length) return null
+    const folded = headed && !q && folds.has(`group:${g.key}`)
+    const waiting = agents.reduce((n, a) => n + (needs.get(a.name) ?? 0), 0)
+    const head = headed
+      ? `<div class="cg-label" data-fold="group:${esc(g.key)}" title="${esc(g.here ? `${g.name}: ${THIS_COMPUTER}` : `${g.name}: ${g.online ? 'linked' : 'unreachable, it reconnects on its own'}`)}"><span class="chev">${ICONS.chevron}</span><span>${esc(g.name)}</span>${g.online ? '' : '<span class="cg-tag">· offline</span>'}${folded && waiting ? `<span class="grow"></span><i class="need-badge">${waiting}</i>` : ''}</div>`
+      : ''
+    const rows = [...agents.filter((a) => a.on), ...agents.filter((a) => !a.on)].map((a) => dmRow(a, { selected: a.name === selected, clones: g.clones.filter((c) => c.cloneOf === a.name && c.on), needs: needs.get(a.name) ?? 0, drag: drag && headed }))
+    const empty = !agents.length ? [`<div class="roster-none">${g.online ? 'No agents here yet' : 'No agents'}</div>`] : []
+    return { start: `<section class="cgroup ${folded ? 'folded' : ''} ${g.online ? '' : 'away'}" data-home="${esc(g.key)}">${head}<div class="cgroup-body">`, end: '</div></section>', slot: '.cgroup-body', parts: folded ? [] : [...rows, ...empty] }
+  }).filter(Boolean)
+  return parts.length ? parts : [`<div class="roster-none">${q ? `No one matches “${esc(filter.trim())}”` : 'No agents yet'}</div>`]
+}
 
 // Not while you're dragging a row: a redraw would drop the drop targets (and could replace the row you hold).
 let rosterStale = false
 function drawRoster() {
   if (dragging) return void (rosterStale = true)
   rosterStale = false
-  morph($('.roster'), rosterParts(state, { folds, selected, filter: find, drag: true }))
+  const open = place === 'dm' ? dmAgent()?.name : null
+  morph($('.roster'), dmParts(state, { folds, selected: open, filter: find, drag: true }))
   const count = state.agents.filter((a) => !a.cloneOf).length
-  $('[data-find]').placeholder = count > 1 ? `Search ${count} agents` : 'Search'
-  if (dragging) document.querySelector(`.roster .crow[data-agent="${CSS.escape(dragging.name)}"]`)?.classList.add('dragging')
-  if (cursor) document.querySelector(`.roster .crow[data-agent="${CSS.escape(cursor)}"]`)?.classList.add('cursor')
+  $('[data-find]').placeholder = count > 1 ? `Find among ${count} agents` : 'Find an agent'
+  if (dragging) document.querySelector(`.roster .dm[data-agent="${CSS.escape(dragging.name)}"]`)?.classList.add('dragging')
+  if (cursor) document.querySelector(`.roster .dm[data-agent="${CSS.escape(cursor)}"]`)?.classList.add('cursor')
 }
 let cursor = null // the search's marked match, kept across redraws
 
@@ -602,27 +756,41 @@ function toggleFold(key) {
   folds.has(key) ? folds.delete(key) : folds.add(key)
   store.set('crew.folds', JSON.stringify([...folds]))
   // the rows under it glide up or down to make room, and what it opens fades in (never a height animated)
-  glide(() => $('.roster').querySelectorAll('.cgroup-head, .cgroup-body > *'), () => drawRoster(), { appear: true })
+  glide(() => $('.roster').querySelectorAll('.cg-label, .cgroup-body > *'), () => drawRoster(), { appear: true })
 }
 
+// Find (⌘F, or the search button by Direct): the label becomes a field that narrows the list; ↑↓ move through the
+// matches, Enter opens the one marked (the first, until you move), Esc puts it away.
 const findBox = $('[data-find]')
+const sec = $('.side-sec')
+function startFind() {
+  sec.classList.add('finding')
+  findBox.focus()
+  findBox.select()
+}
+function stopFind() {
+  findBox.value = find = ''
+  cursor = null
+  sec.classList.remove('finding')
+  drawRoster()
+}
+$('[data-act=find]').addEventListener('click', startFind)
 findBox.addEventListener('input', () => {
   find = findBox.value
   cursor = null
   drawRoster()
 })
-// ↑↓ move through the matches, Enter opens the one marked (the first, until you move)
 findBox.addEventListener('blur', () => {
   cursor = null
-  document.querySelector('.roster .crow.cursor')?.classList.remove('cursor')
+  document.querySelector('.roster .dm.cursor')?.classList.remove('cursor')
+  if (!findBox.value) stopFind()
 })
 findBox.addEventListener('keydown', (e) => {
-  const rows = [...document.querySelectorAll('.roster .crow')]
+  const rows = [...document.querySelectorAll('.roster .dm')]
   const at = rows.findIndex((r) => r.classList.contains('cursor'))
   if (e.key === 'Escape') {
-    findBox.value = find = ''
-    cursor = null
-    drawRoster()
+    e.preventDefault()
+    stopFind()
     findBox.blur()
   }
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -635,23 +803,32 @@ findBox.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const row = rows[Math.max(0, at)]
     if (!row) return
+    stopFind()
     findBox.blur()
-    ;(view === 'crew' ? edit : select)(row.dataset.agent)
+    openDM(row.dataset.agent)
+    composer.focus()
   }
 })
 
+// A click opens your conversation with it; a double-click, with its terminal beside it.
 $('.roster').addEventListener('click', (e) => {
-  if (e.target.closest('.mode, .switch')) return
   const fold = e.target.closest('[data-fold]')
   if (fold) return toggleFold(fold.dataset.fold)
-  const clone = e.target.closest('[data-clone]')
-  if (clone) return pick(clone.dataset.clone, e)
-  const row = e.target.closest('.crow')
-  if (row) view === 'crew' ? edit(row.dataset.agent) : pick(row.dataset.agent, e)
+  const row = e.target.closest('.dm')
+  if (!row || e.detail > 1) return
+  openDM(row.dataset.agent)
+  composer.focus()
 })
 $('.roster').addEventListener('dblclick', (e) => {
-  const row = e.target.closest('.crow')
-  if (row && !e.target.closest('.mode, .switch') && terms.has(row.dataset.agent)) select(row.dataset.agent)
+  const row = e.target.closest('.dm')
+  if (row && terms.has(row.dataset.agent)) select(row.dataset.agent)
+})
+$('.roster').addEventListener('keydown', (e) => {
+  const row = e.target.closest('.dm')
+  if (!row || (e.key !== 'Enter' && e.key !== ' ')) return
+  e.preventDefault()
+  openDM(row.dataset.agent)
+  composer.focus()
 })
 
 // Right-click an agent (in the roster, a card, a terminal) for everything you can do with it, moving it to
@@ -669,7 +846,7 @@ function agentMenu(name, at) {
       '-',
       { label: 'Send it away', icon: ICONS.close, act: 'dismiss', danger: true },
     ], (act) => {
-      if (act === 'message') (setPanel('chat', true), composer.setTarget(name), composer.focus())
+      if (act === 'message') (openDM(name), composer.focus())
       if (act === 'terminal') select(name)
       if (act === 'edit') edit(name)
       if (act === 'dismiss' && (!busy(a) || confirm(`${displayName(a)} is in the middle of something. Send it away anyway?`))) crew.call('dismiss', name).catch((err) => oops(`Couldn't send ${displayName(a)} away`, err))
@@ -698,8 +875,7 @@ function agentMenu(name, at) {
     const doing = { fresh: `Couldn't start a new conversation for ${who}`, power: `Couldn't turn ${who} ${a.on ? 'off' : 'on'}`, remove: `Couldn't remove ${who}` }[act] ?? (act.startsWith('join:') ? `Couldn't add ${who} to that workspace` : `Couldn't do that for ${who}`)
     try {
       if (act === 'message') {
-        setPanel('chat', true)
-        composer.setTarget(name)
+        openDM(name)
         composer.focus()
       }
       if (act === 'terminal') select(name)
@@ -725,17 +901,17 @@ function agentMenu(name, at) {
   })
 }
 document.addEventListener('contextmenu', (e) => {
-  const el = e.target.closest('.roster .crow, .roster .clone-line, .pcard[data-name], .tile-head')
+  const el = e.target.closest('.roster .dm, .pcard[data-name], .tile-head, .dock-tab, .mainhead .mh-face, .mainhead .mh-name')
   if (!el) return
   e.preventDefault()
-  agentMenu(el.dataset.agent ?? el.dataset.name ?? el.closest('.tile').dataset.name, { x: e.clientX, y: e.clientY })
+  agentMenu(el.dataset.agent ?? el.dataset.name ?? el.dataset.dock ?? el.closest('.tile')?.dataset.name ?? dmAgent()?.name, { x: e.clientX, y: e.clientY })
 })
 
 // Drag an agent onto another computer to move it there (the move sheet asks where its folder is).
 let dragging = null
 const roster = $('.roster')
 roster.addEventListener('dragstart', (e) => {
-  const row = e.target.closest('.crow')
+  const row = e.target.closest('.dm')
   dragging = row && state.agents.find((a) => a.name === row.dataset.agent)
   if (!dragging) return
   e.dataTransfer.effectAllowed = 'move'
@@ -774,29 +950,20 @@ const endDrag = () => {
 document.addEventListener('dragend', endDrag)
 document.addEventListener('drop', endDrag)
 
-$('.autopilot .switch').addEventListener('change', (e) => crew.call('autopilot', e.target.checked))
 for (const b of document.querySelectorAll('[data-act=add]')) b.addEventListener('click', addAgent)
 
-// ---- the sidebar's footer: Autopilot, then the computers and the account's usage as two quiet chips --------------
+// ---- the sidebar's foot: the account's usage (click for every limit), and ⋯ ---------------------------------------
 
+// The account closest to its limit, its fullest window as a bar. Berry only when it will run out before it resets, at
+// this pace. A dot on ⋯ when a linked computer can't be reached (Computers says which).
 function drawFoot(state) {
-  const pilot = $('.side .autopilot')
-  pilot.querySelector('.switch').checked = state.autopilot
-  pilot.title = `${state.autopilot ? 'Hand-offs go through' : 'Hand-offs wait for you'}\nOn: agents hand work to each other without asking. Off: each hand-off waits in the chat for your Send it.`
-  // Computers: how many, or This Mac (This PC); a hollow dot when a linked one can't be reached
   const c = state.computers ?? { me: {}, links: [] }
   const away = c.links.filter((l) => !l.online)
-  const chip = $('.link-chip')
-  const label = `${ICONS.computers}<span>${c.links.length ? `${c.links.length + 1} computers` : upFirst(THIS_COMPUTER)}</span>${away.length ? '<i class="pc-off"></i>' : ''}`
-  if (chip.label !== label) chip.innerHTML = chip.label = label // asked on every push, replaced only when it changes
-  chip.title = c.links.length
-    ? `Computers: ${THIS_COMPUTER} and ${c.links.map((l) => `${l.name} (${l.online ? 'online' : 'offline'})`).join(', ')}`
-    : `Computers: link your other computers into one crew${c.me.sharing ? `. ${upFirst(THIS_COMPUTER)} lets others link to it` : ''}`
-  // Usage: the account closest to its limit, its fullest window as a little gauge. Amber only when it will run out
-  // before it resets, at this pace.
+  $('.side-more').classList.toggle('warn', away.length > 0)
+  $('.side-more').title = `Autopilot, Computers, Claude Code and Codex, theme${away.length ? `\n${away.map((l) => l.name).join(', ')} can't be reached` : ''}`
   const accounts = Object.values(state.usage ?? {}).filter((u) => u.windows?.length)
-  const use = $('.use-chip')
-  use.classList.toggle('hidden', !accounts.length)
+  const use = $('.use-line')
+  use.classList.toggle('none', !accounts.length)
   if (!accounts.length) return
   const fullest = (u) => Math.max(...u.windows.map((w) => w.pct))
   const top = accounts.find((u) => paceWarning(u)) ?? [...accounts].sort((x, y) => fullest(y) - fullest(x))[0]
@@ -804,11 +971,11 @@ function drawFoot(state) {
   const warn = paceWarning(top)
   use.classList.toggle('warm', Boolean(warn))
   use.title = `${accounts.map(usageTip).join('\n\n')}${warn ? `\n\n${top.label}: ${warn}` : ''}`
-  morph(use, `<i class="use-gauge"><i style="width:${Math.min(100, Math.max(pct, 3))}%"></i></i><span>${esc(top.label)} ${pct}%</span>`)
+  morph(use, `<span>${esc(top.label)}</span><i class="use-bar"><i style="width:${Math.min(100, Math.max(pct, 3))}%"></i></i><span>${pct}%</span>`)
   if (usePop.matches(':popover-open')) drawUsePop()
 }
 
-// A click on the usage chip: every account's limits, one line each, and when one runs out at this pace.
+// A click on the usage line: every account's limits, one line each, and when one runs out at this pace.
 const usePop = $('.use-pop')
 function drawUsePop() {
   morph(usePop, Object.entries(state.usage ?? {}).filter(([, u]) => u.windows?.length).map(([provider, u]) => {
@@ -816,17 +983,16 @@ function drawUsePop() {
     return `<div class="up-row">${usageLine({ provider }, state)}<small class="${warn ? 'warn' : ''}">${esc(warn || u.windows.map((w) => `${w.pct}% ${resetsText(w.resetsAt)}`).join(' · '))}</small></div>`
   }).join(''))
 }
-// The chip is its invoker (popovertarget), so a second click closes it and a click anywhere else does too.
+// The line is its invoker (popovertarget), so a second click closes it and a click anywhere else does too.
 usePop.addEventListener('beforetoggle', (e) => {
   if (e.newState !== 'open') return
   drawUsePop()
-  const r = $('.use-chip').getBoundingClientRect()
+  const r = $('.use-line').getBoundingClientRect()
   usePop.style.left = `${Math.round(r.left)}px`
   usePop.style.bottom = `${Math.round(innerHeight - r.top + 6)}px`
 })
 
 function addAgent() {
-  if (view !== 'crew') setView('crew')
   collection.create()
 }
 
@@ -839,7 +1005,7 @@ function handleFocus(arg) {
 }
 
 function openTask(key) {
-  setView('tasks')
+  goPlace('tasks')
   tasks.open(key)
 }
 crew.onFocus(handleFocus)
@@ -874,25 +1040,25 @@ const ready = live((next) => {
     t.agent = a
     t.stale = true // drawn by freshen() below, if it's on screen
   })
-  if (!terms.has(selected) && !(view === 'crew' && state.agents.some((a) => a.name === selected))) selected = on[0]?.name
-  drawRoster()
-  drawNeedsButton()
-  highlight(selected)
-  drawShow() // and the terminals now on screen catch up (freshen)
-  drawBlank()
-  head.render(state)
+  if (!terms.has(selected)) selected = on[0]?.name ?? null
   feed.render(state)
-  composer.render(state)
+  composer.render(state) // first: it may move the conversation (a clone gone, an agent moved), which redraws the place
+  showPlace(place) // the dock (a terminal that came or went), the header, the sidebar, the filters' counts
   collection.render(state)
   tasks.render(state)
   setup.render(state)
-  const badge = tasks.badge(state)
-  const el = $('.seg-badge')
-  el.textContent = badge.review || badge.open || ''
-  el.classList.toggle('review', badge.review > 0)
-  el.title = badge.review ? `${badge.review} waiting for your review` : badge.open ? `${badge.open} open` : ''
+  drawNav()
   celebrate($('.roster'), state.agents) // after the rows, so a visible one gets the confetti
 })
+
+// The places' counts: Tasks waiting for your review (berry), or else how many are open.
+function drawNav() {
+  const badge = tasks.badge(state)
+  const el = $('.nv[data-place=tasks] .nv-n')
+  const html = badge.review ? `<span class="need-badge">${badge.review}</span>` : badge.open ? String(badge.open) : ''
+  morph(el, html)
+  el.title = badge.review ? `${badge.review} waiting for your review` : badge.open ? `${badge.open} open` : ''
+}
 
 // ---- Computers (Crew Link) -------------------------------------------------------
 
@@ -1190,7 +1356,6 @@ function openComputers() {
   linkDialog.showModal()
 }
 
-$('.link-chip').addEventListener('click', openComputers)
 linkDialog.addEventListener('click', async (e) => {
   const t = e.target
   if (t.closest('[data-close]') || t === linkDialog) return linkDialog.close()
@@ -1482,7 +1647,7 @@ importDialog.addEventListener('click', async (e) => {
   try {
     const added = await crew.call('importAgents', pending.pack, choices)
     importDialog.close()
-    setView('crew')
+    goPlace('crew')
     if (added.length === 1) collection.open(added[0])
   } catch (x) {
     importDialog.querySelector('[data-import-err]').textContent = errorLine(x)
@@ -1500,7 +1665,8 @@ document.addEventListener('drop', async (e) => {
   importPack({ name: file.name, text: await file.text() })
 }, true)
 
+booted = true
 ready.then(() => {
-  setView(state.agents.length ? view : 'crew')
+  showPlace(state.agents.length ? place : 'crew')
   handleFocus(new URLSearchParams(location.search).get('focus'))
 })

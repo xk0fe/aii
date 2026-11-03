@@ -151,6 +151,24 @@ const SHOTS = {
     await save(win, `pill-${theme}`)
     win.destroy()
   },
+  // #crew: everyone's messages, questions answered where they were asked
+  async channel(theme) {
+    const win = await dashboard(theme, 'chat')
+    await sleep(1200)
+    await save(win, `channel-${theme}`)
+    win.destroy()
+  },
+  // A conversation with one agent, its terminal docked beside it (and its clones' as tabs)
+  async direct(theme) {
+    const win = await dashboard(theme, 'chat')
+    await js(win, "openDM('Theo', { terminal: true })")
+    await sleep(1200)
+    await save(win, `direct-${theme}`)
+    await js(win, "openDM('Iris', { terminal: true })")
+    await sleep(1000)
+    await save(win, `direct-ask-${theme}`)
+    win.destroy()
+  },
   async cards(theme) {
     const win = await dashboard(theme, 'crew')
     await js(win, click('[data-mode=cards]'))
@@ -204,7 +222,7 @@ const SHOTS = {
   async computers(theme) {
     const win = await dashboard(theme, 'crew', { fixture: 'big' })
     await sleep(900)
-    await js(win, click('.link-chip'))
+    await js(win, 'openComputers()')
     await sleep(800)
     await save(win, `computers-${theme}`)
     win.destroy()
@@ -214,7 +232,7 @@ const SHOTS = {
   async phones(theme) {
     const win = await dashboard(theme, 'crew')
     await sleep(900)
-    await js(win, click('.link-chip'))
+    await js(win, 'openComputers()')
     await sleep(500)
     await js(win, click('[data-phone-add]'))
     await sleep(900)
@@ -230,7 +248,7 @@ const SHOTS = {
   // then a phone pairs and the list shows it highlighted.
   async pairGif() {
     const win = await dashboard('light', 'crew')
-    await js(win, click('.link-chip'))
+    await js(win, 'openComputers()')
     await sleep(900)
     await js(win, 'window.__crewPhoneTTL = 4000')
     await record(win, 'pair', {
@@ -252,7 +270,7 @@ const SHOTS = {
   async menu(theme) {
     const win = await dashboard(theme, 'grid', { fixture: 'big' })
     await sleep(1200)
-    const at = await center(win, '.roster .crow[data-agent="Theo"]')
+    const at = await center(win, '.roster .dm[data-agent="Theo"]')
     win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(at.x), y: Math.round(at.y) })
     await sleep(200)
     win.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(at.x), y: Math.round(at.y), button: 'right', clickCount: 1 })
@@ -369,7 +387,10 @@ const SHOTS = {
         await sleep(350)
         await tap(win, at)
         await sleep(1500)
-        at = await glide(win, at, await center(win, '.ws-dock [data-ws=docs]'), 800)
+        at = await glide(win, at, await center(win, '.ws-switch'), 650)
+        await tap(win, at)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '.ws-row[data-ws=docs]'), 600)
         await sleep(300)
         await tap(win, at)
         await sleep(1400)
@@ -1004,7 +1025,7 @@ const SHOTS = {
   async clones(theme) {
     const win = await dashboard(theme, 'grid', { fixture: 'clones' })
     await sleep(1500)
-    await js(win, "document.querySelector('.tile[data-name=\"Theo\"]').scrollIntoView({ block: 'start' }); document.querySelector('.roster .crow[data-agent=\"Theo\"] .crow-clones')?.click()")
+    await js(win, "openDM('Theo', { terminal: true })")
     await sleep(600)
     await save(win, `clones-${theme}`)
     win.destroy()
@@ -1090,33 +1111,25 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // Sidebar: hovering a row shows its switches; flip YOLO, open the off line and wake an agent, fold a computer.
+  // Sidebar: a click opens your conversation with an agent; a computer's name folds its agents away.
   async sidebarGif() {
-    const win = await dashboard('light', 'grid', { fixture: 'big', reset: ['crew.folds'] })
+    const win = await dashboard('light', 'chat', { fixture: 'big', reset: ['crew.folds'] })
     await sleep(1200)
     const side = await js(win, "const r = document.querySelector('.side').getBoundingClientRect(); return { x: 0, y: Math.round(r.y), width: Math.round(r.width), height: Math.min(760, Math.round(r.height)) }")
     await record(win, 'sidebar', {
-      clip: side, ms: 9000, width: 360,
+      clip: side, ms: 7000, width: 360,
       during: async () => {
         let at = { x: 400, y: 300 }
         await sleep(300)
-        at = await glide(win, at, await center(win, '.crow[data-agent="Lena"] .crow-main'), 700)
-        await sleep(500)
-        at = await glide(win, at, await center(win, '.crow[data-agent="Lena"] .mode.yolo'), 400)
-        await sleep(250)
-        await tap(win, at)
-        await sleep(800)
-        at = await glide(win, at, await center(win, '[data-fold="off:"]'), 600)
-        await sleep(250)
-        await tap(win, at)
-        await sleep(700)
-        at = await glide(win, at, await center(win, '.crow[data-agent="Pia"] .crow-main'), 500)
+        at = await glide(win, at, await center(win, '.dm[data-agent="Lena"]'), 700)
         await sleep(300)
-        at = await glide(win, at, await center(win, '[data-power="Pia"]'), 400)
-        await sleep(250)
         await tap(win, at)
-        await sleep(1000)
-        at = await glide(win, at, await center(win, '.cgroup-head[data-fold="group:"] b'), 700)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '.dm[data-agent="Pia"]'), 500)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '.cg-label[data-fold="group:"]'), 700)
         await sleep(250)
         await tap(win, at)
         await sleep(1200)
@@ -1135,7 +1148,7 @@ const SHOTS = {
       ms: 9800, width: 1000,
       during: async () => {
         let at = { x: 700, y: 400 }
-        at = await glide(win, at, await center(win, '.crow[data-agent="June"] .crow-main'), 800)
+        at = await glide(win, at, await center(win, '.dm[data-agent="June"]'), 800)
         await sleep(400)
         win.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(at.x), y: Math.round(at.y), button: 'right', clickCount: 1 })
         win.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(at.x), y: Math.round(at.y), button: 'right', clickCount: 1 })
@@ -1326,7 +1339,10 @@ const SHOTS = {
 
 async function dashboard(theme, view, { width = 1440, height = 880, fixture, reset = [] } = {}) {
   const win = await open('dashboard.html', { theme, width, height, fixture })
-  await js(win, `localStorage.setItem('crew.view', '${view}'); localStorage.removeItem('crew.edTab'); ${reset.map((k) => `localStorage.removeItem('${k}');`).join(' ')}`)
+  // the places: chat (#crew), crew (Agents), tasks, terminals; grid and focus are Terminals laid out that way
+  const place = { grid: 'terminals', focus: 'terminals' }[view] ?? view
+  const layout = view === 'focus' ? 'focus' : view === 'grid' ? 'grid' : null
+  await js(win, `localStorage.setItem('crew.place', '${place}'); ${layout ? `localStorage.setItem('crew.layout', '${layout}');` : ''} localStorage.setItem('crew.target', 'auto'); localStorage.removeItem('crew.edTab'); ${reset.map((k) => `localStorage.removeItem('${k}');`).join(' ')}`)
   win.webContents.reload()
   await new Promise((r) => win.webContents.once('did-finish-load', r))
   await sleep(500)
