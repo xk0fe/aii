@@ -297,7 +297,7 @@ function statusText(a) {
     case 'idle': return 'idle'
     case 'starting': return Date.now() - a.since > 15000 ? 'starting… check its terminal' : 'starting…'
     case 'off': return 'off'
-    case 'parked': return 'parked'
+    case 'parked': return 'asleep'
     case 'away': return 'unreachable'
     default: return 'exited'
   }
@@ -314,7 +314,7 @@ function statusWord(a, ask) {
     case 'waiting': return ask === 'question' ? 'Has a question' : ask === 'plan' ? 'Has a plan for you' : ask ? 'Needs your OK' : 'Needs you'
     case 'idle': return 'Idle'
     case 'starting': return 'Starting…'
-    case 'parked': return 'Parked'
+    case 'parked': return 'Asleep'
     case 'away': return 'Unreachable'
     case 'off': return 'Off'
     default: return 'Stopped'
@@ -675,7 +675,7 @@ function crewSummary(state, { unread = false } = {}) {
   const waiting = on.filter((a) => a.status === 'waiting').length
   const pill = (cls, text, dot = cls, tip = '') => `<span class="sum ${cls}" data-sum="${cls}"${tip ? ` title="${tip}"` : ''}>${dot ? `<i class="dot ${dot}"></i>` : ''}${text}</span>`
   if (!state.agents.length) return ''
-  if (state.parked) return pill('', 'parked', 'parked', 'Its agents are stopped until you open this workspace')
+  if (state.parked) return pill('', 'asleep', 'parked', 'Its agents are stopped until you send a message here')
   if (!on.length) return pill('', 'all off', 'off')
   const fresh = unread ? state.agents.reduce((n, a) => n + (a.unread ?? 0), 0) : 0
   return (working ? pill('working', `${working} working`) : '') + (blocked ? pill('blocked', `${blocked} waiting`, 'blocked', `${plural(blocked, 'agent')} waiting on a teammate's answer`) : '') + (waiting ? pill('waiting', `${waiting} need${waiting > 1 ? '' : 's'} you`) : '') + (working || waiting || blocked ? '' : pill('idle', agents > 1 ? `all ${agents} free` : 'free')) + (fresh ? pill('unread', `${fresh} new`) : '')
@@ -730,9 +730,9 @@ function elsewhere(state) {
   const others = (state.workspaces ?? []).filter((w) => !w.current && !w.parked)
   return { waiting: others.reduce((n, w) => n + w.waiting, 0), unread: others.reduce((n, w) => n + w.unread, 0), who: others.filter((w) => w.waiting || w.unread) }
 }
-// "2 need you · 1 working", or "Parked", for a workspace's line in the switcher.
+// "2 need you · 1 working", or "Asleep", for a workspace's line in the switcher.
 function wsStatus(w) {
-  if (w.parked) return 'Parked'
+  if (w.parked) return 'Asleep'
   const bits = [w.waiting && `${w.waiting} need${w.waiting > 1 ? '' : 's'} you`, w.working && `${w.working} working`, w.unread && plural(w.unread, 'new reply', 'new replies')].filter(Boolean)
   return bits.length ? bits.join(' · ') : !w.agents ? 'No agents yet' : w.on ? `${w.on > 1 ? `all ${w.on}` : w.on} free` : 'All off'
 }

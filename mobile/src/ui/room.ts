@@ -35,7 +35,7 @@ export const andList = (xs: string[]) => (xs.length < 2 ? (xs[0] ?? '') : `${xs.
 // Iris has a question." Then "Everyone's busy", "2 at work", "All quiet".
 export function headline(agents: Agent[], open: FeedEntry[], parked = false, everyone: Agent[] = agents): { title: string; line: string } {
   if (!agents.length) return { title: 'No one here yet', line: `Add agents to this workspace in ${APP_NAME} on your computer.` }
-  if (parked) return { title: 'Parked', line: `This workspace is resting. Open it in ${APP_NAME} on your computer to wake the crew.` }
+  if (parked) return { title: 'Asleep', line: 'This workspace is asleep. Send a message and its crew wakes up.' }
   const needs = needsOf(agents, open, everyone)
   const byFrom = (a: Agent) => open.find((e) => family(e.from) === a.name)
   if (needs.length) {

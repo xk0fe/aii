@@ -171,14 +171,14 @@
     const off = rest.filter((a) => !a.on)
     const computers = [...new Set(away.map((a) => a.homeName ?? a.home))].map(theOf)
     const offline = computers.length ? `${together(computers, 'is', 'are')} offline` : ''
-    if (rest.length > 3) return [free.length && `${free.length} idle`, stopped.length && `${stopped.length} stopped`, parked.length && `${parked.length} parked`, off.length && `${off.length} off`, offline].filter(Boolean).join(' · ')
+    if (rest.length > 3) return [free.length && `${free.length} idle`, stopped.length && `${stopped.length} stopped`, parked.length && `${parked.length} asleep`, off.length && `${off.length} off`, offline].filter(Boolean).join(' · ')
     const names = (list) => list.map(nameOf)
     const helped = free.filter((a) => runningSubs(a).length)
     return [
       ...helped.map((a) => `${nameOf(a)} is idle, with ${plural(runningSubs(a).length, 'helper')} at work`),
       together(names(free.filter((a) => !helped.includes(a))), 'is idle', 'are idle'),
       together(names(stopped), 'has stopped', 'have stopped'),
-      together(names(parked), 'is parked', 'are parked'),
+      together(names(parked), 'is asleep', 'are asleep'),
       together(names(off), 'is off', 'are off'),
       offline,
     ].filter(Boolean).join(' · ')
