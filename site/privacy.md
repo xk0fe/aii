@@ -35,7 +35,7 @@ The website and the Mac and Windows downloads are hosted by GitHub (GitHub Pages
 
 ## What the apps ask your permission for
 
-- **Microphone** (Mac): only while you dictate a message. Before macOS 26, also speech recognition.
+- **Microphone** (Mac and Windows): only while you dictate a message. On a Mac before macOS 26, also speech recognition.
 - **Your folders** (Mac): when an agent works in a folder such as Documents or Desktop, macOS asks you to let Crew in.
 - **Local network** (Mac and iPhone), and the **firewall** (Windows): to reach your other computers and your phone.
 - **Camera** (phone): only to scan the pairing code your computer shows. The picture isn't kept or sent.
