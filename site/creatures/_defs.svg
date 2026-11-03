@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0">
+<!-- what every creature refers to (the felt, its light and shade): build.mjs puts it in the page once -->
+<defs>
+      <filter id="av-fuzz" x="-12%" y="-12%" width="124%" height="124%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4" result="n"></feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="4.2" xChannelSelector="R" yChannelSelector="G" result="fuzz"></feDisplacementMap>
+        <feTurbulence type="fractalNoise" baseFrequency="2.1" numOctaves="2" seed="11" result="g"></feTurbulence>
+        <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .9 0 0 0 -.38" result="grain"></feColorMatrix>
+        <feComposite in="grain" in2="fuzz" operator="in" result="felt"></feComposite>
+        <feComposite in="felt" in2="fuzz" operator="over"></feComposite>
+      </filter>
+      <radialGradient id="av-hi" cx=".32" cy=".2" r=".72"><stop offset="0" stop-color="#fff" stop-opacity=".62"></stop><stop offset=".45" stop-color="#fff" stop-opacity=".14"></stop><stop offset="1" stop-color="#fff" stop-opacity="0"></stop></radialGradient>
+      <radialGradient id="av-lo" cx=".55" cy="1.08" r=".8"><stop offset=".15" stop-color="#000" stop-opacity=".34"></stop><stop offset="1" stop-color="#000" stop-opacity="0"></stop></radialGradient>
+    </defs>
+</svg>
