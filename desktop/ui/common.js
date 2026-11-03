@@ -1410,9 +1410,43 @@ function subsUsed(e, open) {
 // onAgent: an agent's line under the feed (who's at work) was clicked, for its terminal. onConvo: an agent's face
 // or name in a message was, for your conversation with it. onLeave: a jump goes to a message outside the
 // conversation on screen, or the agent you're talking to was clicked again, so the chat goes back to everyone's.
+// ---- searching the chat ----
+// What a feed entry says, for a search: its words, its task's title, a question's options, a command it asked to run,
+// and who sent it and to whom.
+function searchText(e) {
+  const q = e.ask ?? {}
+  return [e.text, e.title, e.from, e.to, ...(e.cc ?? []), q.title, q.code, q.detail, q.plan, ...(q.questions ?? []).flatMap((x) => [x.question, x.header, ...(x.options ?? []).flatMap((o) => [o.label, o.description])])]
+    .filter(Boolean).join(' ').toLowerCase()
+}
+// Every word typed, wherever it is in the entry, in any order.
+const searchWords = (query) => String(query ?? '').toLowerCase().split(/\s+/).filter(Boolean)
+// Wraps each word found in what's on screen in <mark>: in a message's text, a task's line, a question and its options.
+function markWords(root, words) {
+  if (!words.length) return
+  const source = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  const has = new RegExp(source, 'i') // without g: test() keeps no place between nodes
+  const re = new RegExp(source, 'gi')
+  for (const box of root.querySelectorAll('.bubble, .task-ev-line, .task-ev-text, .ask-question, .ask-option, .ask-title, .ask-code, .ticket-bubble, .event')) {
+    const walk = document.createTreeWalker(box, NodeFilter.SHOW_TEXT)
+    const texts = []
+    while (walk.nextNode()) if (has.test(walk.currentNode.nodeValue)) texts.push(walk.currentNode)
+    for (const t of texts) {
+      const frag = document.createDocumentFragment()
+      let at = 0
+      for (const m of t.nodeValue.matchAll(re)) {
+        frag.append(t.nodeValue.slice(at, m.index), Object.assign(document.createElement('mark'), { textContent: m[0] }))
+        at = m.index + m[0].length
+      }
+      frag.append(t.nodeValue.slice(at))
+      t.replaceWith(frag)
+    }
+  }
+}
+
 // inline: questions are cards where they were asked, answered there, rather than in a Needs you queue pinned above the
 // messages (the dashboard; the floating chat keeps the queue). face: the creatures' size beside their messages.
-function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), limit = 200, inline = false, face = 28 } = {}) {
+// onFound: a search result was clicked, so the search is over and the chat shows that message where it was.
+function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), onFound, limit = 200, inline = false, face = 28 } = {}) {
   const open = new Set()
   const seen = new Set()
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
@@ -1433,6 +1467,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   let talkingTo = null // the agent whose conversation this is (the composer's target), or null for everyone's
   let convo = null // ...and its family: the agent, for a clone
   let aim = null // the message to show once a conversation opens (the one you pressed Reply on)
+  let words = [] // a search: only the messages with every one of these words, the words marked
   const atEnd = () => el.scrollHeight - el.scrollTop - el.clientHeight < 60
   const pin = (smooth = false) => {
     const top = el.scrollHeight - el.clientHeight
@@ -1554,6 +1589,13 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     if (d) open[d.open ? 'add' : 'delete'](`subs:${d.dataset.subs}`)
   }, true)
   el.addEventListener('click', (ev) => {
+    // searching, a click on a result (not on its buttons, links or names) shows it where it was in the chat
+    const hit = words.length && !ev.target.closest('button, a, input, textarea, summary, [data-agent], [data-ticket], .ask-card') && ev.target.closest('[id^="m-"]')
+    if (hit) {
+      api.search('')
+      onFound?.()
+      return jump(hit.id.slice(2))
+    }
     const link = ev.target.closest('a[href]')
     if (link) {
       ev.preventDefault()
@@ -1756,6 +1798,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
 
   const emptyHTML = (agents) => {
     const a = convo && (agents.find((x) => x.name === talkingTo) ?? agents.find((x) => x.name === convo))
+    if (words.length) return `<div class="empty">${ICONS.search}<b>Nothing matches</b><span>No message${a ? ` with ${esc(displayName(a))}` : ''} has ${words.length > 1 ? 'all of those words' : 'that word'}.</span></div>`
     if (!a) return `<div class="empty">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
     const n = esc(plainName(a))
     return `<div class="empty convo-empty">${avatarHTML(a, { size: 56 })}<b>You and ${esc(displayName(a))}</b><span>What you send here goes to ${n}${a.on ? '' : ` once it's back on`}. @mention someone to bring them in too.</span></div>`
@@ -1785,7 +1828,11 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     const lead = as[id]?.id
     return Boolean(lead) && feedView(last.feed, last.agents, open, limit).items.some((e) => e.id === lead)
   }
-  const only = () => convo && ((e) => inConvo(e, convo))
+  const only = () => {
+    const mine = convo && ((e) => inConvo(e, convo))
+    if (!words.length) return mine
+    return (e) => (!mine || mine(e)) && words.every((w) => searchText(e).includes(w))
+  }
 
   // Needs you, redrawn only when who's waiting (or which question is open) changes, keeping what you're typing
   // into its card.
@@ -1818,10 +1865,27 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     // Show the conversation with this agent (null or 'auto': everyone's). The feed slides over, from the right
     // into a conversation and from the left back out of one, and starts fresh: no "came in below" count, nothing
     // popping in as new.
+    // Search what's shown (everyone's chat, or this conversation): only the messages with every word, newest at the
+    // bottom, the words marked. '' ends it. -> how many match.
+    search(query) {
+      const next = searchWords(query)
+      if (next.join(' ') === words.join(' ')) return shown.size
+      words = next
+      key = ''
+      pinned = true
+      missed = 0
+      jumpTo = null
+      first = true // nothing pops in as new: it's the same chat, narrowed
+      if (last) api.render(last)
+      pin()
+      return words.length ? shown.size : 0
+    },
+    searching: () => words.length > 0,
     setConvo(target) {
       const next = isConvo(target) ? target : null
       if (next === talkingTo) return
       const was = convo
+      words = [] // another conversation: the search was this one's
       talkingTo = next
       convo = next && familyOf(next)
       key = ''
@@ -1855,12 +1919,13 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
         if (!divider || !feed.some((e) => e.id === divider)) divider = unread[0].id
       } else if (divider && !dividerTimer) dividerTimer = setTimeout(() => ((divider = null), (key = ''), api.render(last)), 4000)
       last = { feed, agents, reads, workspace }
-      const view = feedView(feed, agents, open, limit, drafts, { reads, divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline })
+      const view = feedView(feed, agents, open, limit, drafts, { reads, divider: words.length ? null : divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline })
       shown = new Map(view.items.map((e) => [e.id, e]))
-      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider
+      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ')
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
-      const busy = typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll, crew: agents, queue: !inline, cards: inline })
+      // searching, who's at work right now isn't part of the results
+      const busy = words.length ? [] : typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll, crew: agents, queue: !inline, cards: inline })
       let added = false
       if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}` // the empty-feed hint shows only when nobody's busy
       if (next !== key) {
@@ -1871,6 +1936,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
         const reading = pinned || first || jumpTo ? null : readingAt()
         const aimedAt = jumpTo && placeOf(jumpTo)
         list.innerHTML = view.items.length || busy.length ? view.html() : emptyHTML(agents)
+        markWords(list, words)
         // New messages pop in; the ones already on screen stay put.
         for (const e of view.items) {
           if (seen.has(e.id)) continue
