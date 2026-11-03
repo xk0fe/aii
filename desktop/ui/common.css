@@ -231,15 +231,19 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 
 /* Segmented control: equal-width segments on a quiet track, the picked one lifted by a hairline; the thumb slides
    between them, so switching never moves anything (segmented() in common.js sets --n and --i). */
-.seg { position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; border-radius: var(--r-control); background: var(--fill); isolation: isolate; flex: none; }
+.seg { position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: stretch; height: 28px; padding: 2px; border-radius: var(--r-control); background: var(--fill); isolation: isolate; flex: none; }
 .seg::before {
   content: ''; position: absolute; z-index: -1; top: 2px; bottom: 2px; left: 2px; width: calc((100% - 4px) / var(--n, 2));
   border-radius: var(--r-tag); background: var(--seg-on); box-shadow: var(--shadow-sm); transform: translateX(calc(var(--i, 0) * 100%));
 }
 .seg.ready::before { transition: transform var(--t-move) var(--move); }
-.seg button { border: 0; background: none; padding: 4px 12px; border-radius: var(--r-tag); cursor: pointer; color: var(--fg2); font-weight: 500; white-space: nowrap; transition: color .2s; }
+.seg button { min-width: 0; border: 0; background: none; padding: 0 12px; border-radius: var(--r-tag); cursor: pointer; color: var(--fg2); font-weight: 500; white-space: nowrap; transition: color .2s; }
 .seg button:hover { color: var(--fg); }
 .seg button.on { color: var(--fg); }
+.seg button:disabled { opacity: .4; cursor: default; }
+/* .fill: as wide as its row, the segments sharing it; .none: nothing picked (segmented(…, { none: true })) */
+.seg.fill { display: grid; width: 100%; grid-auto-columns: minmax(0, 1fr); }
+.seg.none::before { opacity: 0; }
 /* the same control with icons for words (Cards · Compact · Stats, Board · List, Grid · Focus) */
 .seg.icons button { display: grid; place-items: center; padding: 0 8px; }
 .seg.icons button svg, .seg.icons button .ti { width: 16px; height: 16px; }
@@ -275,8 +279,6 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .ph-tools .btn { height: 28px; }
 .ph-tools .btn[aria-pressed=true], .ph-tools .btn.on { background: var(--fill-hover); }
 .ph-tools .icon { width: 28px; height: 28px; padding: 0; }
-.ph-tools .seg { height: 28px; align-items: stretch; }
-.ph-tools .seg button { padding-top: 0; padding-bottom: 0; }
 /* a narrow middle (a small window): buttons keep their icons and let their words go, then the line goes */
 @container (max-width: 780px) {
   .ph-tools .btn:has(> svg) > span { display: none; }
@@ -288,8 +290,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 /* ---- a place's search (#crew, a conversation, Tasks): a magnifier that opens into a field where it stands, with
    how many match and × to clear it; Esc, or leaving it empty, closes it (mountSearch in common.js) ---- */
 .hsearch { flex: none; display: flex; align-items: center; }
-.hs-field { display: none; align-items: center; gap: 7px; width: 240px; height: 28px; padding: 0 3px 0 9px; border-radius: var(--r-control); background: var(--field); color: var(--fg3); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: text; animation: hs-in var(--t-pop) var(--out); }
-.hs-field:focus-within { box-shadow: var(--focus-ring); }
+.hs-field { display: none; align-items: center; gap: 7px; width: 240px; height: 28px; padding: 0 3px 0 9px; color: var(--fg3); cursor: text; animation: hs-in var(--t-pop) var(--out); }
 .hs-field > svg { width: 15px; height: 15px; flex: none; }
 .hs-field input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; padding: 0; background: none; font-size: 13px; color: var(--fg); user-select: text; }
 .hs-field input::placeholder { color: var(--fg3); }
@@ -461,6 +462,8 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 /* a note at the bottom of the window (notify() in common.js); one about an error has Copy details */
 .toast { position: fixed; left: 50%; bottom: 22px; z-index: 300; display: flex; align-items: center; gap: 12px; width: max-content; max-width: min(560px, calc(100vw - 24px)); padding: 10px 16px; border-radius: var(--r-card); background: var(--tip); color: var(--tip-fg); font-size: 13px; font-weight: 500; line-height: 1.4; box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity var(--t-pop), transform var(--t-move) var(--out); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* over a bulk bar (tasks picked), it steps up above it */
+body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 .toast.show.has-detail button { pointer-events: auto; } /* only Copy details takes clicks: the note never covers what's under it */
 .toast.warn { background: var(--needs); color: #241500; }
 .toast button { all: unset; flex: none; padding: 3px 9px; border-radius: var(--r-control); font-size: 12px; font-weight: 500; white-space: nowrap; background: color-mix(in srgb, currentColor 14%, transparent); cursor: pointer; }
@@ -472,7 +475,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .menu.leaving { pointer-events: none; }
 .menu button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 10px 0 8px; border-radius: var(--r-control); font-size: 13px; cursor: default; white-space: nowrap; }
 .menu button svg, .menu button > i { width: 16px; height: 16px; flex: none; color: var(--fg2); }
-.menu button span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.menu button > span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .menu button small { color: var(--fg2); font-size: 12px; }
 .menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--accent); color: var(--on-accent); outline: 0; }
 .menu button:hover:not(:disabled) svg, .menu button:hover:not(:disabled) small, .menu button:focus-visible svg { color: var(--on-accent); }
@@ -484,6 +487,9 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .menu-head { padding: 6px 8px 3px; font-size: 12px; font-weight: 600; color: var(--fg2); }
 /* a menu item that's the current pick: a check at its end */
 .menu button .check { display: grid; margin-left: auto; padding-left: 8px; color: var(--fg2); }
+.menu button:not(.on) > .check { visibility: hidden; } /* every row keeps the check's room, so hints line up */
+/* a glyph cut out in the surface colour (a status ring's tick) stays cut out on the ink of a hovered row */
+.menu button:is(:hover, :focus-visible):not(:disabled) .ti { --surface: var(--accent); }
 .menu button .check svg { width: 14px; height: 14px; }
 .menu button:hover:not(:disabled) .check, .menu button:focus-visible .check { color: var(--on-accent); }
 .menu button.on > span { font-weight: 600; }
@@ -497,14 +503,21 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .section-label small { font-size: 12px; font-weight: 400; color: var(--fg2); }
 .section-label .link { padding: 0; font-size: 12px; color: var(--link); }
 
+/* a text field: the field's fill, a hairline edge, and the one focus while you type. On an input, or on a box that
+   holds one (a search, a folder with its Choose…) */
+.field { border: 0; border-radius: var(--r-control); outline: 0; background: var(--field); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line-strong); user-select: text; transition: box-shadow var(--t-quick); }
+.field:is(:focus, :focus-within) { box-shadow: var(--focus-ring); }
+.field.mono, .field .mono { font-family: var(--mono); }
+
+/* a quiet card: a box of facts or a live line inside a sheet or panel (a conversation's gauge, who's on a task) */
+.well, .group-list { border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
 /* a grouped list, like System Settings: rows on one quiet card, a hairline between them (the rows lay themselves out) */
-.group-list { border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
 .group-list > * + * { box-shadow: inset 0 1px 0 var(--line); }
 
 /* nothing here yet: art (a room, the mark), a headline in the brand face, one plain line, what to do. .small: a line
    where a list would be (no results, nobody busy) */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 48px 40px; color: var(--fg2); }
-.empty-state > h1, .empty-state > h2 { margin: 24px 0 0; color: var(--fg); }
+.empty-state > h1, .empty-state > h2 { margin: 24px 0 0; color: var(--fg); text-wrap: balance; }
 .empty-state > :is(h1, h2):first-child { margin-top: 0; }
 .empty-state > .lead { max-width: 440px; margin: 8px 0 0; font-size: 15px; line-height: 22px; text-wrap: pretty; }
 .empty-state > .acts { display: flex; gap: 8px; margin-top: 24px; }
@@ -566,9 +579,8 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 10px), transparent);
 }
 .feed-list { display: contents; }
-.feed .empty { margin: auto; padding: 24px; max-width: 250px; display: grid; justify-items: center; gap: 6px; text-align: center; color: var(--fg3); font-size: 12.5px; line-height: 1.45; }
-.feed .empty .mark { width: 56px; height: 37px; color: var(--fg3); opacity: .45; margin-bottom: 6px; }
-.feed .empty b { color: var(--fg); font-size: 15px; font-weight: 600; }
+.feed .empty { margin: auto; max-width: 280px; } /* .empty-state.small, in the middle of the chat */
+.feed .empty > .mark { width: 56px; height: 37px; opacity: .45; }
 .item { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; }
 .item.me { align-self: flex-end; align-items: flex-end; max-width: 86%; }
 .item.cont { margin-top: -10px; }

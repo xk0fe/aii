@@ -738,15 +738,19 @@ function wsStatus(w) {
 }
 
 // Segmented control: marks the segment that isOn() picks and slides the thumb to it (see .seg in common.css).
-function segmented(el, isOn) {
-  const buttons = [...el.querySelectorAll('button')]
-  const i = Math.max(0, buttons.findIndex(isOn))
-  buttons.forEach((b, j) => {
-    b.classList.toggle('on', j === i)
-    b.setAttribute('aria-pressed', String(j === i))
+// Every child is a segment (a typed value can be one: the sheet's custom context limit). none: nothing may be picked
+// (an effort left to the model), and the thumb goes away; otherwise the first is, when isOn() picks none.
+function segmented(el, isOn, { none = false } = {}) {
+  const segs = [...el.children]
+  const found = segs.findIndex(isOn)
+  const i = found < 0 && !none ? 0 : found
+  segs.forEach((s, j) => {
+    s.classList.toggle('on', j === i)
+    if (s.matches('button')) s.setAttribute('aria-pressed', String(j === i))
   })
-  el.style.setProperty('--n', buttons.length)
-  el.style.setProperty('--i', i)
+  el.classList.toggle('none', i < 0)
+  el.style.setProperty('--n', segs.length)
+  if (i >= 0) el.style.setProperty('--i', i)
   // no slide on first paint, only when you switch
   if (!el.classList.contains('ready')) requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('ready')))
 }
@@ -767,7 +771,7 @@ function pageHead({ id, tools = '', ...title }) {
 function mountSearch(box, { label, placeholder = label, delay = 0, onSearch, onOpen, onClose }) {
   box.classList.add('hsearch')
   box.setAttribute('role', 'search')
-  box.innerHTML = `<button class="icon hs-open" title="${esc(keysIn(`${label} (⌘F)`))}" aria-label="${esc(label)}">${ICONS.search}</button><label class="hs-field">${ICONS.search}<input type="search" spellcheck="false" autocomplete="off" aria-label="${esc(label)}"><span class="hs-count" aria-live="polite"></span><button class="icon hs-clear" title="Clear" aria-label="Clear the search">${ICONS.close}</button></label>`
+  box.innerHTML = `<button class="icon hs-open" title="${esc(keysIn(`${label} (⌘F)`))}" aria-label="${esc(label)}">${ICONS.search}</button><label class="hs-field field">${ICONS.search}<input type="search" spellcheck="false" autocomplete="off" aria-label="${esc(label)}"><span class="hs-count" aria-live="polite"></span><button class="icon hs-clear" title="Clear" aria-label="Clear the search">${ICONS.close}</button></label>`
   const input = box.querySelector('input')
   const count = box.querySelector('.hs-count')
   let timer = null
@@ -1865,10 +1869,10 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
 
   const emptyHTML = (agents) => {
     const a = convo && (agents.find((x) => x.name === talkingTo) ?? agents.find((x) => x.name === convo))
-    if (words.length) return `<div class="empty">${ICONS.search}<b>Nothing matches</b><span>No message${a ? ` with ${esc(displayName(a))}` : ''} has ${words.length > 1 ? 'all of those words' : 'that word'}.</span></div>`
-    if (!a) return `<div class="empty">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
+    if (words.length) return `<div class="empty empty-state small">${ICONS.search}<b>Nothing matches</b><span>No message${a ? ` with ${esc(displayName(a))}` : ''} has ${words.length > 1 ? 'all of those words' : 'that word'}.</span></div>`
+    if (!a) return `<div class="empty empty-state small">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
     const n = esc(plainName(a))
-    return `<div class="empty convo-empty">${avatarHTML(a, { size: 56 })}<b>You and ${esc(displayName(a))}</b><span>What you send here goes to ${n}${a.on ? '' : ` once it's back on`}. @mention someone to bring them in too.</span></div>`
+    return `<div class="empty empty-state small convo-empty">${avatarHTML(a, { size: 56 })}<b>You and ${esc(displayName(a))}</b><span>What you send here goes to ${n}${a.on ? '' : ` once it's back on`}. @mention someone to bring them in too.</span></div>`
   }
   // Where a conversation opens: at the message you pressed Reply on, else at its first reply you haven't read,
   // else at the end. A chat that's hidden (the floating panel closed, the dashboard's put away) can't scroll, so it
@@ -2798,7 +2802,7 @@ function popMenu(at, items, onPick) {
   el.className = 'menu'
   el.setAttribute('role', 'menu')
   el.innerHTML = items.map((it) => (it === '-' ? '<hr>' : it.head ? `<div class="menu-head">${esc(it.head)}</div>`
-    : `<button role="menuitem" class="${it.danger ? 'danger' : ''}" data-menu-act="${esc(it.act)}" ${it.disabled ? 'disabled' : ''}>${it.icon ?? '<i></i>'}<span>${esc(it.label)}</span>${it.hint ? `<small>${esc(it.hint)}</small>` : ''}</button>`)).join('')
+    : `<button role="menuitem" class="${[it.danger && 'danger', it.on && 'on'].filter(Boolean).join(' ')}" data-menu-act="${esc(it.act)}" ${it.disabled ? 'disabled' : ''}>${it.icon ?? '<i></i>'}<span>${esc(it.label)}</span>${it.hint ? `<small>${esc(it.hint)}</small>` : ''}${it.on ? `<i class="check">${ICONS.check}</i>` : ''}</button>`)).join('')
   // inside a modal dialog it has to be in the dialog too, or the dialog's top layer would cover it
   ;((at instanceof Element && at.closest('dialog[open]')) || document.body).append(el)
   const r = at instanceof Element ? at.getBoundingClientRect() : { left: at.x, right: at.x, top: at.y, bottom: at.y }

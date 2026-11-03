@@ -15,10 +15,9 @@
 /* a task's kind: its icon in the text colour (bug, feature, task read by their shape, not a hue) */
 .ki-bug, .ki-feature, .ki-task { color: var(--fg2); background: var(--fill); }
 /* on cards, rows, the composer and the filter: just the glyph, no tile behind it */
-.tc-top .ki, .tr > .ki, .tk-kind .ki, .tk-fpop .ki { width: 16px; height: 16px; background: none; }
-.tc-top .ki svg, .tr > .ki svg, .tk-fpop .ki svg { width: 14px; height: 14px; }
+.tc-top .ki, .tr > .ki, .tk-kind .ki, .tk-pop .ki, .tk-fpop .ki { width: 16px; height: 16px; background: none; }
+.tc-top .ki svg, .tr > .ki svg, .tk-pop .ki svg, .tk-fpop .ki svg { width: 14px; height: 14px; }
 .tk-nobody { width: 20px; height: 20px; border-radius: 50%; border: 1.5px dashed var(--fg3); display: inline-grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 600; color: var(--fg2); flex: none; box-sizing: border-box; }
-.tk-nobody.sm { width: 18px; height: 18px; font-size: 11px; }
 
 /* the filters that are on, as one chip beside Filter: what they are, and × to clear them */
 .tk-active { display: contents; }
@@ -30,28 +29,31 @@
 .tk-on-x svg { width: 12px; height: 12px; }
 .tk-on-chip button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: var(--r-control); }
 
-/* ---- the filter popover: kind and owner, one pick each ---- */
-.tk-fpop { position: fixed; z-index: 60; width: 250px; max-height: calc(100vh - 80px); overflow-y: auto; padding: 4px; border-radius: var(--r-card); background: var(--float); box-shadow: var(--shadow-float); animation: pop-in var(--t-pop) var(--out); }
-.tk-fp-sec + .tk-fp-sec { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
-.tk-fp-sec h6 { margin: 6px 8px 4px; font-size: 12px; font-weight: 600; color: var(--fg2); }
-.tk-fp-item { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 8px; border-radius: var(--r-control); font-size: 13px; cursor: pointer; }
-.tk-fp-item:hover, .tk-fp-item:focus-visible { background: var(--btn); }
-.tk-fp-item .av { flex: none; }
-.tk-fp-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-.tk-fp-n { font-style: normal; font-size: 12px; color: var(--fg2); font-variant-numeric: tabular-nums; }
-.tk-fp-check { display: grid; width: 14px; color: var(--accent); opacity: 0; }
-.tk-fp-check svg { width: 14px; height: 14px; }
-.tk-fp-item.on .tk-fp-check { opacity: 1; }
-.tk-fp-item.on .tk-fp-label { font-weight: 600; }
-.tk-fp-foot { margin-top: 4px; padding: 4px 2px 0; border-top: 1px solid var(--line); }
-.tk-fp-clear { all: unset; box-sizing: border-box; width: 100%; height: 30px; padding: 0 8px; border-radius: var(--r-control); font-size: 13px; font-weight: 600; color: var(--link); cursor: pointer; }
-.tk-fp-clear:hover { background: var(--btn); }
-.tk-fp-clear:disabled { color: var(--fg2); cursor: default; background: none; }
+/* ---- the menus (common.css .menu): a task's status, priority, kind and owner, the ⋯s, the bulk bar's, and the filter
+   popover (kind and owner, one pick each: .menu-head over each group, the count as the row's hint) ---- */
+.tk-fpop { width: 250px; max-height: calc(100vh - 80px); overflow-y: auto; }
+.tk-pop small, .tk-fpop small { font-variant-numeric: tabular-nums; }
+/* where something is picked, every row keeps room for the check, so the hints and counts line up */
+:is(.tk-pop, .tk-fpop) button:not(.on) > .check { visibility: hidden; }
+/* nobody, at a menu's icon size; and the glyphs' cut-outs (a status's tick, Urgent's !) in the lit row's ink */
+:is(.tk-pop, .tk-fpop) .tk-nobody { width: 16px; height: 16px; border-width: 1.2px; font-size: 9px; }
+:is(.tk-pop, .tk-fpop) button:is(:hover, :focus-visible):not(:disabled) .tk-nobody { color: var(--on-accent); border-color: color-mix(in srgb, var(--on-accent) 65%, transparent); }
+:is(.tk-pop, .tk-fpop) button:is(:hover, :focus-visible):not(:disabled) .ti { --surface: var(--accent); }
+/* the workflow: two settings in the same box (a form: its rows don't light up) */
+.tk-flow { width: 360px; }
+.tk-flow-pop { display: flex; flex-direction: column; }
+.tk-flow-row { display: flex; align-items: center; gap: 12px; padding: 9px 8px; border-radius: var(--r-control); cursor: pointer; }
+.tk-flow-row + .tk-flow-row { border-top: 1px solid var(--line); }
+.tk-flow-row span { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.tk-flow-row b { font-size: 13px; }
+.tk-flow-row small { color: var(--fg2); font-size: 12px; line-height: 1.4; }
+.tk-flow-row select { border: 0; border-radius: var(--r-control); background: var(--btn); padding: 5px 8px; font-weight: 600; max-width: 130px; outline: 0; cursor: pointer; }
+.tk-flow-row select:focus-visible { box-shadow: var(--focus-ring); }
 
 /* ---- adding a task: one composer, at the top of a column (or in a popover over the list) ---- */
 .tk-add {
   --k: var(--fg2); position: relative; display: flex; flex-direction: column; gap: 8px; padding: 11px 10px 8px 13px; border-radius: var(--r-card);
-  background: var(--card); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent), 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); container-type: inline-size;
+  background: var(--card); box-shadow: var(--focus-ring); container-type: inline-size; /* open, it's the field you're typing in */
 }
 
 .tk-add.dropping { box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm); }
@@ -60,21 +62,18 @@
 .tk-add-shots { margin: 0; }
 .tk-add-shots .thumb { width: 48px; height: 48px; }
 .tk-add-foot { display: flex; align-items: center; gap: 4px; height: 28px; margin-left: -4px; }
-.tk-kind { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px 0 5px; border: 0; border-radius: var(--r-control); background: var(--fill); color: var(--fg); font-weight: 600; font-size: 12px; cursor: pointer; flex: none; transition: background .15s; }
-.tk-kind:hover { background: var(--fill-hover); }
-.tk-kind > .ti { width: 12px; height: 12px; color: var(--fg2); }
+/* the kind: a small menu button (common.css .btn.sm.has-menu), its glyph where the padding would be */
+.btn.sm.tk-kind { padding-left: 4px; }
 .tk-to { display: flex; min-width: 0; }
 .tk-to-chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 4px; border-radius: var(--r-control); background: var(--btn); color: var(--fg2); font-size: 12px; font-weight: 600; white-space: nowrap; animation: chip-on var(--t-pop) var(--out); }
 /* a slim column has room for the face, not the name (the @name is in the title, in its colour) */
 @container (max-width: 300px) { .tk-to-name { display: none; } .tk-to-chip { padding-right: 4px; } }
-.tk-add .attach { width: 26px; height: 26px; padding: 0; flex: none; }
+.tk-add .attach { width: 24px; height: 24px; padding: 0; flex: none; }
 .tk-add .attach .ti { width: 15px; height: 15px; }
-.tk-add-go { height: 26px; padding: 0 11px; border-radius: var(--r-control); font-size: 12px; }
-.tk-add-go:disabled { opacity: .45; cursor: default; }
 .lane-compose { flex: none; padding: 2px 10px 8px 9px; }
 .lane-compose:empty { display: none; }
 .tk-add-pop { position: fixed; z-index: 60; width: 420px; max-width: calc(100vw - 32px); }
-.tk-add-pop .tk-add { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent), var(--shadow-float); }
+.tk-add-pop .tk-add { box-shadow: var(--focus-ring), var(--shadow-float); }
 
 /* ---- the body: board, list, or a friendly empty state ---- */
 .tk-body { position: relative; flex: 1; min-height: 0; }
@@ -83,13 +82,10 @@
 .tk-empty { display: none; }
 .tk-body.empty .tk-empty { display: grid; position: absolute; inset: 0; place-items: center; pointer-events: none; z-index: 1; }
 .tk-body.empty .tk-board .lane-list, .tk-body.empty .tk-list { opacity: 0; }
-/* nothing yet: the crew waits with their mugs in a little felt room, and says so */
-.tk-hello { display: flex; flex-direction: column; align-items: center; text-align: center; color: var(--fg2); pointer-events: auto; padding: 24px 32px; }
-.tk-hello h1 { margin: 24px 0 0; color: var(--fg); }
-.tk-hello p { margin: 8px 0 0; max-width: 440px; font-size: 15px; line-height: 22px; }
-.tk-hello > div { margin-top: 24px; }
-.tk-hello b { font-size: 15px; color: var(--fg); font-weight: 600; }
-.tk-hello.small { gap: 12px; padding: 30px; border-radius: var(--r-window); background: var(--bg); }
+/* nothing yet: the crew waits with their mugs in a little felt room, and says so (common.css .empty-state); none that
+   match: a small one, on the page's own ground over the empty columns */
+.tk-empty > .empty-state { pointer-events: auto; }
+.tk-empty > .empty-state.small { min-width: 300px; border-radius: var(--r-window); background: var(--bg); }
 
 /* board */
 .tk-board { display: grid; grid-template-columns: repeat(4, minmax(186px, 1fr)); gap: 12px; padding: 20px var(--gx, 24px); overflow-x: auto; transition: grid-template-columns var(--t-move) var(--move); }
@@ -127,7 +123,8 @@
 .tc-top { display: flex; align-items: center; gap: 6px; height: 18px; min-width: 0; }
 .tk-id { font: 500 12px var(--ui); color: var(--fg2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tk-home { font-size: 12px; font-weight: 500; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.tk-urgent { margin-left: auto; flex: none; display: inline-flex; align-items: center; height: 16px; padding: 0 4px; border-radius: var(--r-tag); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); font-size: 11px; font-weight: 500; white-space: nowrap; }
+/* Urgent: the app's tag (common.css .tag), in red */
+.tk-urgent { margin-left: auto; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
 .tc-title { font-size: 13px; line-height: 18px; font-weight: 500; overflow-wrap: anywhere; }
 .tk-shots { display: flex; gap: 5px; }
 .tk-shots img { width: 48px; height: 34px; border-radius: var(--r-control); object-fit: cover; background: var(--btn); }
@@ -145,20 +142,11 @@
 .tk-state.working { color: var(--fg2); font-weight: 500; font-variant-numeric: tabular-nums; }
 .tk-state.waiting { color: var(--needs-ink); font-weight: 500; }
 .tk-age { font-size: 12px; color: var(--fg2); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.tk-btn { all: unset; box-sizing: border-box; flex: none; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 24px; padding: 0 9px; border-radius: var(--r-control); background: var(--btn); color: var(--fg); font-size: 12px; font-weight: 500; cursor: pointer; transition: background .15s, color .15s; }
-.tk-btn:hover { background: var(--btn-hover); color: var(--fg); }
-.tk-btn svg { width: 13px; height: 13px; }
-.tk-btn.go { color: var(--fg); background: var(--fill); }
-.tk-btn.go:hover { background: var(--fill-hover); }
-.tk-btn.good { color: var(--on-brand); background: var(--brand); }
-.tk-btn.good:hover { background: var(--brand-hover); color: var(--on-brand); }
-/* Start: on the card you point at or have open, in room that's always kept for it */
-.tk-start { height: 26px; padding: 0 11px; border-radius: var(--r-control); font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .15s, background .15s; }
+/* Start (common.css .btn.sm): on the card you point at or have open, in room that's always kept for it */
+.tk-start { opacity: 0; pointer-events: none; }
 .tc:hover .tk-start, .tc.sel .tk-start, .tc:focus-within .tk-start, .tr:hover .tk-start, .tr.sel .tk-start, .tr:focus-within .tk-start { opacity: 1; pointer-events: auto; }
-/* review: the board's only coloured buttons */
+/* review: Send back and Accept (Berry: it answers something that needs you), the board's only coloured button */
 .tk-verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.tk-verdict .tk-btn { height: 30px; border-radius: var(--r-control); font-size: 13px; }
-.tk-verdict .tk-btn:not(.good) { color: var(--fg); }
 
 /* list */
 .tk-list { overflow-y: auto; padding: 20px var(--gx, 24px) 24px; scrollbar-gutter: stable; }
@@ -179,9 +167,7 @@
 .tr-pics { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--fg2); }
 .tr-pics .ti { width: 13px; height: 13px; }
 .tr-right { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
-.tk-btn.only { width: 24px; padding: 0; }
-.tk-btn.only .ti { width: 14px; height: 14px; }
-.tr .tk-start { height: 24px; padding: 0 10px; }
+.tr-right .btn.square .ti { width: 14px; height: 14px; }
 .tr .tk-owner, .tr .tk-assign { justify-self: start; max-width: 104px; }
 .tr .tk-age { text-align: right; }
 
@@ -190,15 +176,14 @@
 @container (max-width: 520px) { .tk-on-chip { display: none; } }
 
 /* ---- picking several (⌘-click, Shift-click, a lane's select-all) and the bar that acts on them all ---- */
-.tc-check, .tr-check { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-style: normal; color: transparent; background: var(--surface); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg3) 80%, transparent); cursor: pointer; transition: transform var(--t-quick) var(--out), background .15s, box-shadow .15s, color .15s; }
-.tc-check svg, .tr-check svg { width: 11px; height: 11px; stroke-width: 3.2; }
-/* on a card it takes the kind's place, top left, while some are picked */
-.tc-check { position: absolute; left: 13px; top: 12px; z-index: 1; transform: scale(0); }
+/* the app's pick check (common.css .pick): on a card it takes the kind's place, top left, while some are picked; in a
+   row it leads instead of the kind */
+.tc-check, .tr-check { cursor: pointer; }
+.tc-check { position: absolute; left: 12px; top: 11px; z-index: 1; transform: scale(0); transition: transform var(--t-quick) var(--out), background var(--t-quick), box-shadow var(--t-quick), color var(--t-quick); }
 .picking .tc-check { transform: none; }
 .picking .tc-top > .ki { visibility: hidden; }
 .tc.picked.picked { box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm); }
-.tc-check:hover, .tr-check:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
-.tc.picked .tc-check, .tr.picked .tr-check { background: var(--accent); box-shadow: none; color: var(--on-accent); }
+.tc:not(.picked) .tc-check:hover, .tr:not(.picked) .tr-check:hover { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .tr-check { justify-self: center; }
 .tr.picked { background: color-mix(in srgb, var(--accent) 11%, transparent); }
 .tr.picked:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
@@ -208,46 +193,12 @@
 .lane:hover .lane-pick, .tl-group:hover .lane-pick, .picking .lane-pick, .lane-pick:focus-visible { opacity: 1; }
 .lane-pick.on { color: var(--accent); }
 .lane-act { align-items: center; gap: 2px; }
-.tk-bulk {
-  position: absolute; left: 50%; bottom: 20px; z-index: 7; display: none; align-items: center; gap: 5px; max-width: calc(100% - 48px);
-  padding: 6px 6px 6px 16px; border-radius: var(--r-card); background: var(--float); box-shadow: var(--shadow-float); transform: translateX(-50%); white-space: nowrap;
-}
-.picking .tk-bulk { display: flex; animation: tk-bulk-in var(--t-move) var(--out); }
-@keyframes tk-bulk-in { from { opacity: 0; transform: translate(-50%, 26px) scale(.96); } }
+/* the app's bulk bar (common.css .bulk-bar), while some are picked; it keeps clear of an open task */
+.tasks-view:not(.picking) .tk-bulk { display: none; }
 .panel-open .tk-bulk { left: calc(50% - 235px); }
-.tk-bulk-count { margin-right: 8px; font-size: 13px; font-weight: 600; color: var(--fg2); }
-.tk-bulk-count b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
-.tk-bulk .tk-btn { height: 28px; padding: 0 11px; font-size: 12px; }
-.tk-bulk .tk-btn > .ti:last-child { width: 12px; height: 12px; margin-right: -3px; color: var(--fg2); }
-.tk-btn.danger { color: var(--danger); }
-.tk-btn.danger:hover { background: color-mix(in srgb, var(--danger) 13%, transparent); color: var(--danger); }
-.tk-bulk-x { padding: 6px; margin-left: 2px; color: var(--fg2); }
-.tk-bulk-x svg { width: 13px; height: 13px; }
-/* the toast steps up above the bar, and the lanes and list scroll clear of it */
-.picking .tk-toast { bottom: 76px; }
+/* the lanes and list scroll clear of it */
 .picking .lane-list { padding-bottom: 66px; }
 .picking .tk-list { padding-bottom: 76px; }
-
-/* ---- pop-up menus ---- */
-.tk-pop { position: fixed; z-index: 50; min-width: 190px; max-width: 340px; padding: 4px; border-radius: var(--r-card); background: var(--float); box-shadow: var(--shadow-float); animation: pop-in var(--t-pop) var(--out); }
-@keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
-.tk-pop-item { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 5px 9px; border-radius: var(--r-control); font-size: 13px; cursor: pointer; }
-.tk-pop-item:hover, .tk-pop-item:focus { background: var(--btn); }
-.tk-pop-label { white-space: nowrap; font-weight: 500; }
-.tk-pop-item small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); font-size: 12px; }
-.tk-pop-check { margin-left: auto; color: var(--accent); line-height: 0; }
-.tk-pop-check svg { width: 14px; height: 14px; }
-.tk-pop-ico { display: grid; color: var(--fg2); line-height: 0; }
-.tk-pop-ico svg { width: 15px; height: 15px; }
-.danger-ico { color: var(--danger); line-height: 0; }
-.danger-ico svg { width: 15px; height: 15px; }
-.tk-flow-pop { display: flex; flex-direction: column; gap: 4px; padding: 4px; }
-.tk-flow-row { display: flex; align-items: center; gap: 12px; padding: 9px 8px; border-radius: var(--r-control); cursor: pointer; }
-.tk-flow-row + .tk-flow-row { border-top: 1px solid var(--line); }
-.tk-flow-row span { flex: 1; display: flex; flex-direction: column; gap: 3px; }
-.tk-flow-row b { font-size: 13px; }
-.tk-flow-row small { color: var(--fg2); font-size: 12px; line-height: 1.4; }
-.tk-flow-row select { border: 0; border-radius: var(--r-control); background: var(--btn); padding: 5px 8px; font-weight: 600; max-width: 130px; outline: 0; cursor: pointer; }
 
 /* ---- one task, open ---- */
 .tp {
@@ -256,15 +207,16 @@
   transition: transform .45s var(--sheet), visibility 0s .45s;
 }
 .tp.open { transform: none; visibility: visible; transition: transform var(--t-move) var(--move), visibility 0s; }
-.tp-head { display: flex; align-items: center; gap: 8px; padding: 14px 12px 4px 18px; flex: none; }
+/* its head: kind, number, status, level with × (common.css .sheet-x, top right like every sheet's) */
+.tp-head { display: flex; align-items: center; gap: 8px; height: 28px; margin-top: 12px; padding: 0 52px 0 24px; flex: none; }
 .tp-head .tk-id { font-size: 13px; }
 .tp-status { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px 0 6px; border-radius: var(--r-control); font-size: 12px; font-weight: 500; background: var(--btn); color: var(--fg2); }
 .tp-status .ti { width: 13px; height: 13px; }
-.tp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 18px 18px; display: flex; flex-direction: column; gap: 14px; }
+.tp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 24px 20px; display: flex; flex-direction: column; gap: 14px; }
 .tp-body > * { flex: none; }
 .tp-title { border: 0; outline: 0; resize: none; background: transparent; padding: 4px 8px; margin: 0 -8px; border-radius: var(--r-control); font-size: 20px; line-height: 24px; font-weight: 600; overflow: hidden; user-select: text; transition: background .15s, box-shadow .15s; }
 .tp-title:hover { background: var(--btn); }
-.tp-title:focus { background: var(--btn); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 50%, transparent); }
+.tp-title:focus { background: var(--field); box-shadow: var(--focus-ring); }
 .tp-props { display: grid; gap: 2px; }
 .tp-prop { display: grid; grid-template-columns: 78px minmax(0, 1fr); align-items: center; min-height: 32px; }
 .tp-key { font-size: 12px; color: var(--fg2); font-weight: 500; }
@@ -277,32 +229,28 @@
 .tp-val .muted { color: var(--fg2); }
 .tp-val .av { margin: -2px 0; }
 /* who's on it, live */
-.tp-live { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+.tp-live { display: flex; align-items: center; gap: 12px; padding: 12px; }
 .tp-live-av { line-height: 0; cursor: pointer; }
 .tp-live-what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .tp-live-what b { font-size: 13px; }
 .tp-live-what span { font: 12px/1.35 var(--ui); color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tp-live.waiting .tp-live-what span { color: var(--needs-ink); font-family: var(--ui); font-weight: 600; }
 /* what came back, to review */
-.tp-review { padding: 12px; border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+.tp-review { padding: 12px; }
 .tp-review.open { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--needs) 45%, transparent); }
 .tp-review-head { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg2); }
 .tp-review-head b { color: var(--fg); }
-.tp-badge { margin-left: auto; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--needs-tint); color: var(--needs-ink); font-size: 11px; font-weight: 600; }
+.tp-badge { margin-left: auto; }
 .tp-review-text.bubble { background: transparent; padding: 0 2px; margin-top: 8px; max-height: none; overflow: visible; font-size: 13px; user-select: text; }
 .tp-review-acts { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
-.tp-review-acts .btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; }
-.tp-review-acts .btn svg { width: 15px; height: 15px; }
 .tp-review-acts .btn[aria-pressed=true] { background: var(--needs-tint); color: var(--needs-ink); }
 .tp-sendback { display: flex; gap: 8px; align-items: flex-end; max-height: 0; overflow: hidden; transition: max-height var(--t-move) var(--move), margin var(--t-move) var(--move); }
 .tp-sendback.open { max-height: 140px; margin-top: 10px; }
-.tp-sendback textarea, .tp-note textarea { flex: 1; border: 0; outline: 0; resize: none; border-radius: var(--r-card); background: var(--btn); padding: 7px 10px; font-size: 13px; line-height: 1.4; user-select: text; min-width: 0; }
+.tp-sendback textarea, .tp-note textarea { flex: 1; border: 0; outline: 0; resize: none; border-radius: var(--r-card); background: var(--btn); padding: 7px 10px; font-size: 13px; line-height: 1.4; user-select: text; min-width: 0; transition: box-shadow .15s; }
 .tp-sendback textarea { background: var(--surface); }
+.tp-sendback textarea:focus, .tp-note textarea:focus { box-shadow: var(--focus-ring); }
 
-.btn.primary:disabled { opacity: .45; cursor: default; }
-/* sections */
-.tp-sec h5 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--fg2); }
-.tp-sec h5 .link { font-size: 12px; padding: 0; color: var(--link); }
+/* sections: under the app's section labels (common.css .section-label) */
 .tp-desc { padding: 8px 10px; margin: 0 -10px; border-radius: var(--r-card); font-size: 13px; line-height: 1.5; cursor: text; user-select: text; transition: background .15s; }
 .tp-desc:hover { background: var(--btn); }
 .tp-desc > * { margin: 0; }
@@ -312,7 +260,8 @@
 .tp-desc pre { padding: 8px 10px; border-radius: var(--r-card); background: var(--code-bg); white-space: pre-wrap; }
 .tp-desc a { color: var(--link); }
 .tp-none { margin: 0; color: var(--fg2); font-size: 13px; }
-.tp-details { border: 0; outline: 0; resize: none; width: 100%; border-radius: var(--r-card); background: var(--btn); padding: 9px 11px; font-size: 13px; line-height: 1.5; min-height: 110px; user-select: text; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 50%, transparent); }
+.tp-details { border: 0; outline: 0; resize: none; width: 100%; border-radius: var(--r-card); background: var(--field); padding: 9px 11px; font-size: 13px; line-height: 1.5; min-height: 110px; user-select: text; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.tp-details:focus { box-shadow: var(--focus-ring); }
 .tp-orig { margin: 0; padding: 9px 12px; border-radius: var(--r-card); background: var(--btn); color: var(--fg2); font-size: 13px; line-height: 1.45; white-space: pre-wrap; user-select: text; }
 .tp-shots { margin: 0; }
 .tp-shots:empty { display: none; }
@@ -327,11 +276,6 @@
 .tp-log time { margin-left: 6px; font-size: 11px; color: var(--fg2); white-space: nowrap; }
 .lg-note { margin-top: 4px; padding: 7px 10px; border-radius: var(--r-card); border-top-left-radius: 4px; background: var(--btn); color: var(--fg); user-select: text; }
 .lg-note > * { margin: 0; }
-.tp-foot { display: flex; align-items: center; gap: 8px; padding: 12px 14px 14px 12px; border-top: 1px solid var(--line); flex: none; }
-.tp-foot .btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; }
-.tp-foot .btn svg { width: 15px; height: 15px; }
-
-/* ---- a word from the board ---- */
-.tk-toast { position: absolute; left: 50%; bottom: 22px; z-index: 8; transform: translate(-50%, 8px); opacity: 0; pointer-events: none; padding: 9px 16px; border-radius: var(--r-card); background: var(--tip); color: var(--tip-fg); font-size: 13px; font-weight: 500; box-shadow: var(--shadow-float); transition: opacity var(--t-move), transform var(--t-move) var(--out); }
-.tk-toast.show { opacity: 1; transform: translate(-50%, 0); }
-.tk-toast.error { background: var(--danger); color: #fff; }
+/* its footer (common.css .sheet-foot), rounded with the panel; ⋯'s glyph lines up with the text above it */
+.tp-foot { border-radius: 0 0 var(--r-window) var(--r-window); }
+.tp-foot > .icon:first-child { margin-left: -5px; }

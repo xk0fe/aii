@@ -152,7 +152,7 @@
     .chat mark { background: color-mix(in srgb, var(--accent) 14%, transparent); color: inherit; border-radius: 3px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent); }
     .chat .feed.searching .item, .chat .feed.searching .task-ev, .chat .feed.searching .event { cursor: pointer; }
     .chat .feed.searching .item:hover { background: var(--fill); border-radius: var(--r-card); box-shadow: 0 0 0 6px var(--fill); }
-    .chat .feed .empty svg { width: 28px; height: 28px; color: var(--fg3); }
+    .chat .feed .empty > svg { width: 28px; height: 28px; opacity: 1; }
 
     .stage { position: relative; flex: 1; min-height: 0; }
     .center > .ws-banner { position: relative; inset: auto; flex: none; margin: 10px 14px 2px; } /* above what's open, never over it */
@@ -164,11 +164,13 @@
     /* in Focus the filter waits for the grid; a click on it goes back there */
     .tv-show.idle { opacity: .55; }
     .tv-show.idle:hover { opacity: 1; }
+    .tv-show [data-show=needs] .n.some { color: var(--needs-ink); }
     .terms { position: relative; flex: 1; min-height: 0; padding: 20px var(--gx, 24px) var(--gx, 24px); display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); grid-auto-rows: minmax(250px, 1fr); overflow-y: auto; }
     .terms.focus { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); overflow: hidden; }
     .terms.focus .tile:not(.on) { display: none; }
     .terms .tile.filtered { display: none; }
-    .terms-none { grid-column: 1 / -1; align-self: center; justify-self: center; color: var(--fg2); font-size: 13px; }
+    /* nobody busy, nobody waiting: a line where the terminals would be (common.css .empty-state.small) */
+    .terms-none { grid-column: 1 / -1; align-self: center; justify-self: center; }
     .terms-view:not(.hidden) .tile { animation: tile-in var(--t-move) var(--out) backwards; animation-delay: calc(min(sibling-index(), 10) * 20ms); }
     @keyframes tile-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
     /* terminals stay dark in light mode, so their headers carry dark tokens */
@@ -220,38 +222,36 @@
     /* frozen output looks frozen */
     .tile[data-mode=offline] .term, .tile[data-mode=ended] .term { opacity: .5; filter: grayscale(.7); transition: opacity .3s; }
     .term { flex: 1; min-height: 0; padding: 6px 0 2px 10px; }
-    .blank { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; text-align: center; gap: 8px; color: var(--fg2); font-size: 15px; }
-    .blank > svg.mark { width: 84px; height: 56px; margin-bottom: 8px; color: var(--fg3); }
-    .blank b { color: var(--fg); }
-    .blank div { margin-top: 16px; }
+    /* no agents, all off, or a parked workspace: over the terminals (common.css .empty-state, the mark as its art) */
+    .blank > svg.mark { width: 84px; height: 56px; color: var(--fg3); }
 
-    dialog.sheet { width: 600px; max-height: calc(100vh - 80px); border: 0; border-radius: var(--r-window); padding: 20px 24px 16px; background: var(--surface); color: var(--fg); box-shadow: var(--shadow-float); }
+    /* ---- sheets: Computers, Move, Import, a workspace's (workspaces.css) and Add a provider (setup.css) are one family:
+       the title in the brand face (common.css .sheet-title) over one grey line, what's in it, and its buttons along a
+       footer as wide as the sheet (.sheet-foot), the one that does it at the right end. × (.sheet-x) where it has one. */
+    dialog.sheet { width: 600px; max-height: calc(100vh - 80px); border: 0; border-radius: var(--r-window); padding: 20px 24px 0; background: var(--surface); color: var(--fg); box-shadow: var(--shadow-float); }
     dialog.sheet[open] { display: flex; flex-direction: column; }
     dialog.sheet .sheet-body { overflow-y: auto; min-height: 0; margin: 0 -6px; padding: 0 6px; }
-    dialog.sheet h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: 20px; line-height: 24px; font-weight: 600; }
-    dialog.sheet h3 .h-icon { width: 20px; height: 20px; display: grid; place-items: center; color: var(--fg2); }
-    dialog.sheet h3 svg { width: 20px; height: 20px; }
-    dialog.sheet .lead { margin: 0 0 16px; color: var(--fg2); line-height: 1.45; }
-    dialog.sheet .buttons { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
-    /* Computers: grouped rows (This Mac, Linked, Phones), each a line of plain words with its control on the right.
-       Details fold away: the addresses behind one row, each linked computer's agents behind its chevron. */
+    dialog.sheet .lead { margin: 4px 0 16px; font-size: 13px; line-height: 1.45; color: var(--fg2); }
+    dialog.sheet .sheet-foot { margin: 16px -24px 0; }
+    dialog.sheet .err { min-height: 0; margin: 4px 0 0; font-size: 13px; color: var(--danger); }
+    /* fields in a sheet are common.css .field; the agent's name in Computers turns into one while you edit it */
+    .me-name:focus { box-shadow: var(--focus-ring); }
+    /* Computers: grouped rows (This Mac, Linked, Phones: common.css .section-label over a .group-list), each a line of
+       plain words with its control on the right. Details fold away: the addresses behind one row, each linked
+       computer's agents behind its chevron. */
     #link { margin: 40px auto auto; } /* top-anchored: unfolding a row grows the sheet downwards, so the row stays under the hand */
-    #link .lead { margin-bottom: 10px; }
-    .lk-label { padding: 12px 2px 6px; font-size: 12px; font-weight: 500; color: var(--fg2); }
-    .lk-label:first-child { padding-top: 0; }
-    .lk-list { border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+    #link .lead { margin-bottom: 12px; }
+    .link-body .section-label:not(:first-child) { margin-top: 16px; }
+    .link-body .err:empty { display: none; }
     .lk-li { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 52px; padding: 8px 14px 8px 16px; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
-    .lk-list > * + * { box-shadow: inset 0 1px 0 var(--line); }
     .lk-k { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: 13px; font-weight: 500; }
     .lk-k small { font-size: 12px; font-weight: 400; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .lk-k small .lk-dot { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; vertical-align: 0; background: var(--working); }
-    .lk-k small .lk-dot.off { background: none; box-shadow: inset 0 0 0 1.5px var(--fg3); }
+    .lk-k small .dot { width: 7px; height: 7px; margin-right: 5px; vertical-align: 0; }
     .lk-ic { flex: none; width: 32px; height: 32px; border-radius: var(--r-control); display: grid; place-items: center; background: var(--fill); color: var(--fg2); }
     .lk-ic svg { width: 18px; height: 18px; }
     .lk-sw { cursor: pointer; }
-    .lk-note { flex: 1; min-width: 0; font-size: 13px; color: var(--fg2); }
-    .lk-copy { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 150px; height: 28px; } /* Copied fits in place of Copy link code, without a nudge */
-    .lk-copy svg { width: 15px; height: 15px; }
+    .lk-note { flex: 1; min-width: 0; margin: 0; font-size: 13px; line-height: 1.45; color: var(--fg2); }
+    .lk-copy { min-width: 150px; } /* Copied fits in place of Copy link code, without a nudge */
     .lk-chev { flex: none; width: 14px; height: 14px; color: var(--fg3); transition: transform var(--t-move) var(--out); }
     .lk-chev svg { display: block; width: 14px; height: 14px; }
     [aria-expanded=true] > .lk-chev { transform: rotate(90deg); }
@@ -259,60 +259,35 @@
     button.lk-li:hover { background: color-mix(in srgb, var(--fg) 3%, transparent); }
     .lk-more { min-height: 44px; font-size: 13px; color: var(--fg2); }
     .lk-more > span:first-child { flex: 1; }
-    .lk-faces { flex: none; display: inline-flex; align-items: center; }
-    .lk-faces .av + .av { margin-left: -7px; }
-    .lk-faces i { margin-left: 4px; font: 500 11px var(--ui); font-style: normal; color: var(--fg2); }
-    .lk-pc.fresh { border-radius: var(--r-card); box-shadow: 0 0 0 2px var(--accent); }
+    /* a computer or a phone that just joined */
+    .lk-pc.fresh, .lk-phone.fresh { border-radius: var(--r-card); box-shadow: 0 0 0 2px var(--accent); }
     .lk-body { padding: 0 14px 12px 16px; }
     .lk-body > p { margin: 0 0 8px; font-size: 13px; color: var(--fg2); line-height: 1.45; }
     .lk-details { display: block; padding: 10px 14px 12px 16px; font-size: 13px; color: var(--fg2); }
     .lk-details p { margin: 0 0 8px; line-height: 1.45; }
-    .lk-details code { display: block; font: 11px var(--mono); padding: 7px 9px; border-radius: var(--r-control); background: var(--btn); color: var(--fg); overflow-wrap: anywhere; user-select: all; max-height: 60px; overflow: auto; }
     .lk-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; font-size: 13px; color: var(--fg2); }
     .lk-btns { flex: none; display: flex; gap: 6px; }
     .lk-empty { font-size: 13px; color: var(--fg2); min-height: 48px; }
     .lk-form { display: block; padding: 12px 14px 12px 16px; }
     .lk-form p { margin: 0; font-size: 13px; color: var(--fg2); line-height: 1.45; }
-    #link .buttons { justify-content: flex-start; align-items: center; padding-top: 14px; }
-    #link .buttons .btn { display: inline-flex; align-items: center; gap: 7px; height: 28px; }
-    #link .buttons .btn svg { width: 15px; height: 15px; }
-    #link [data-link-add][aria-pressed=true] { background: var(--btn-hover); }
-    .addr { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-    .addr span { font-size: 12px; padding: 2px 6px; border-radius: var(--r-tag); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--fg2); }
-    .addr b { color: var(--fg); font-weight: 500; }
+    #link [data-link-add][aria-pressed=true] { background: var(--fill-hover); }
     .code-in { display: flex; gap: 8px; align-items: stretch; margin-top: 10px; }
-    .code-in textarea { flex: 1; resize: none; border: 1px solid var(--line-strong); border-radius: var(--r-card); background: var(--field); padding: 8px 10px; font: 11.5px var(--mono); outline: 0; user-select: text; }
-    .code-in textarea:focus { border-color: var(--accent); }
-    .me-name { font: inherit; font-weight: 500; font-size: 13px; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; padding: 1px 6px; margin: -2px 0 -1px -7px; width: 230px; max-width: 100%; outline: 0; color: var(--fg); }
-    .me-name:hover { background: var(--btn); }
-    .me-name:focus { border-color: var(--accent); background: var(--field); }
+    .code-in textarea { flex: 1; resize: none; border-radius: var(--r-card); padding: 8px 10px; font: 11.5px var(--mono); user-select: text; }
+    /* this computer's name, renamed where it is: a field only while you point at it or type in it */
+    .me-name { width: 230px; max-width: 100%; margin: -2px 0 -1px -7px; padding: 2px 7px; border: 0; border-radius: var(--r-control); outline: 0; background: transparent; color: var(--fg); font: inherit; font-size: 13px; font-weight: 500; transition: background var(--t-quick), box-shadow var(--t-quick); }
+    .me-name:hover { background: var(--fill); }
+    .me-name:focus { background: var(--field); }
     .lk-agents { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
     .lk-agents li { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: var(--r-card); }
     .lk-agents li:hover { background: var(--btn); }
     .lk-agents li.unused .av, .lk-agents li.unused .who { opacity: .45; }
     .lk-agents .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     .lk-agents .who small { color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .lk-move { display: inline-flex; align-items: center; gap: 5px; opacity: 0; transition: opacity .15s; }
-    .lk-move svg { width: 13px; height: 13px; }
+    .lk-move { opacity: 0; transition: opacity var(--t-quick); }
     .lk-agents li:hover .lk-move, .lk-move:focus-visible { opacity: 1; }
     .lk-agents .use { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg2); cursor: pointer; }
-    .lk-list .err, .sheet .err { color: var(--danger); min-height: 0; margin: 4px 0 0; font-size: 13px; }
-    .lk-list .err:empty { display: none; }
-    /* phones: Add a phone, then each paired phone */
-    .phones { padding: 12px 14px 10px 16px; }
-    .phones p { margin: 4px 0 0; color: var(--fg2); font-size: 13px; line-height: 1.45; }
-    .ph-head { display: flex; align-items: center; gap: 16px; }
-    .ph-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-    .ph-list li { display: flex; align-items: center; gap: 12px; padding: 7px 8px; border-radius: var(--r-card); transition: background .3s; }
-    .ph-list li:hover { background: var(--btn); }
-    .ph-list li.fresh { background: color-mix(in srgb, var(--accent) 11%, transparent); }
-    .ph-icon { flex: none; width: 32px; height: 32px; border-radius: var(--r-control); display: grid; place-items: center; color: var(--fg2); background: var(--fill); }
-    .ph-icon svg { width: 18px; height: 18px; }
-    .ph-list .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-    .ph-list .who b { overflow-wrap: anywhere; }
-    .ph-list .who small { color: var(--fg2); }
+    /* phones: what they're for and Add a phone, then a row per paired phone, as the computers' rows */
     .ph-seen { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg2); white-space: nowrap; }
-    .dot.live { background: var(--working); }
     /* Add a phone: the dialog becomes one view about pairing. The code sits high and big on a white card (its quiet
        zone, whatever the theme), one line under it, and the buttons where the list's are. Nothing in it changes size:
        a new code, an error or a phone that paired only change what's on the card and the line. */
@@ -322,7 +297,7 @@
     #link.back > :not(.pair-view) { animation: pv-back var(--t-move) var(--out); }
     @keyframes pv-in { from { opacity: 0; transform: translateX(14px); } }
     @keyframes pv-back { from { opacity: 0; transform: translateX(-14px); } }
-    .pair-view h3 { margin-bottom: 18px; }
+    .pair-view .sheet-title { margin-bottom: 18px; }
     .pv-card { align-self: center; display: grid; place-items: center; width: var(--card); height: var(--card); border-radius: var(--r-window); background: #fff; box-shadow: 0 0 0 1px var(--line); transition: background .4s var(--out), box-shadow .4s var(--out); }
     .pv-card > * { grid-area: 1 / 1; }
     .pv-card > svg { display: block; width: var(--qr); height: var(--qr); transition: opacity .25s, scale .35s var(--out); }
@@ -342,28 +317,27 @@
     .pv-line { min-height: 2.9em; margin: 14px 24px 0; text-align: center; color: var(--fg2); font-size: 13px; line-height: 1.45; } /* two lines kept, for an error that wraps */
     .pv-line b { color: var(--fg); font-weight: 600; }
     .pv-line.failed { color: var(--danger); }
-    .pv-act { min-width: 124px; justify-content: center; } /* Copied in place of Copy code, or Try again, without a nudge */
+    .pv-act { min-width: 124px; } /* Copied in place of Copy code, or Try again, without a nudge */
     .pv-act[hidden] { visibility: hidden; }
-    .pv-close { min-width: 78px; justify-content: center; }
+    .pv-close { min-width: 78px; }
 
-    .imp-list { display: flex; flex-direction: column; gap: 8px; }
-    .imp { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-card); transition: opacity .2s; }
-    .imp.skip { opacity: .45; }
+    /* Import: a row per agent in the file (common.css .group-list); one left out fades, its switch stays clear */
+    .imp { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: 10px 14px 10px 16px; }
+    .imp > * { transition: opacity .2s; }
+    .imp.skip > :not(.switch) { opacity: .45; }
     .imp .imp-what { min-width: 0; }
     .imp .imp-what small { display: block; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .imp .imp-fields { grid-column: 3; display: flex; gap: 8px; }
-    .imp input[type=text], .imp select { font: inherit; font-size: 13px; border: 1px solid var(--line-strong); border-radius: var(--r-control); background: var(--btn); padding: 4px 8px; outline: 0; min-width: 0; }
-    .imp input[type=text]:focus { border-color: var(--accent); }
+    .imp input[type=text], .imp select { min-width: 0; height: 28px; padding: 0 8px; font: inherit; font-size: 13px; color: var(--fg); }
     .imp .imp-name { font-weight: 500; width: 150px; }
     .imp .imp-folder { flex: 1; }
-    .imp .imp-note { grid-column: 3; color: var(--fg2); font-size: 12px; }
 
     .tile-head .ctx { --ctx-calm: rgba(255, 255, 255, .5); --track: rgba(255, 255, 255, .14); }
     .tile-head .ctx.calm b { color: rgba(255, 255, 255, .45); }
 
     /* moving an agent: from one computer to another, the creature on its way between them */
-    dialog.move-sheet { width: 480px; padding: 22px 24px 18px; }
-    .mv-route { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; margin: 0 0 16px; padding: 14px 12px 12px; border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+    dialog.move-sheet { width: 480px; }
+    .mv-route { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; margin: 16px 0; padding: 14px 12px 12px; border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
     .mv-pc { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; color: var(--fg2); font-size: 12px; }
     .mv-pc svg { width: 26px; height: 26px; }
     .mv-pc b { font-weight: 500; color: var(--fg); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -372,11 +346,9 @@
     .mv-path i { width: 34px; height: 2px; border-radius: 1px; background: repeating-linear-gradient(90deg, var(--fg3) 0 4px, transparent 4px 8px); }
     .mv-path i:last-child { background: repeating-linear-gradient(90deg, var(--fg2) 0 4px, transparent 4px 8px); }
     .mv-av { line-height: 0; }
-    @keyframes mv-hop { 0%, 60%, 100% { transform: translateX(0); } 30% { transform: translateX(6px) translateY(-5px) rotate(4deg); } }
-    dialog.move-sheet h3 { margin: 0 0 14px; }
     .mv-folder { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 500; color: var(--fg2); }
-    .mv-field { display: flex; gap: 8px; align-items: center; height: 32px; padding: 0 4px 0 8px; border-radius: var(--r-control); background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); }
-    .mv-field:focus-within { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+    /* a folder field with Choose… inside it (here, and a workspace's folder in workspaces.css) */
+    .mv-field { display: flex; gap: 8px; align-items: center; height: 32px; padding: 0 2px 0 8px; }
     .mv-field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font: 13px var(--mono); color: var(--fg); user-select: text; }
     .mv-check { display: flex; align-items: center; gap: 5px; min-height: 16px; font-weight: 500; font-size: 12px; }
     .mv-check svg { width: 13px; height: 13px; stroke-width: 2.6; }
@@ -497,35 +469,35 @@
         </div>
         <div class="collection hidden"></div>
         <div class="tasks-view hidden"></div>
-        <div class="blank hidden"><span class="blank-mark"></span><b class="display">No agents yet</b><span>Give each one a name, an area of work and a model.</span><div><button class="btn primary lg" data-act="add">Add your first agent</button></div></div>
+        <div class="blank empty-state hidden"><span class="blank-mark"></span><h1 class="display">No agents yet</h1><p class="lead">Give each one a name, an area of work and a model.</p><div class="acts"><button class="btn primary lg" data-act="add">Add your first agent</button></div></div>
       </div>
     </section>
   </main>
 
 
   <dialog id="link" class="sheet">
-    <h3><span class="h-icon"></span>Computers</h3>
+    <h2 class="sheet-title"><span class="h-icon"></span>Computers</h2>
     <p class="lead" title="Each agent runs on one of them; linked computers see every agent, talk to them and hand work around.">One crew across your computers, over the same Wi-Fi or Tailscale.</p>
     <div class="sheet-body link-body"></div>
-    <div class="buttons"><button class="btn" data-link-add aria-pressed="false"></button><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
+    <div class="sheet-foot"><button class="btn" data-link-add aria-pressed="false"></button><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
     <div class="pair-view" tabindex="-1"></div>
   </dialog>
   <div class="use-pop" id="use-pop" popover></div>
 
   <dialog id="move" class="sheet move-sheet">
     <div class="mv-body"></div>
-    <div class="buttons"><button class="btn" data-close>Cancel</button><button class="btn primary" data-mv-go>Move</button></div>
+    <div class="sheet-foot"><span class="grow"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-mv-go>Move</button></div>
   </dialog>
   <div class="toast" role="status" aria-live="polite"></div>
 
   <dialog id="ws" class="sheet ws-sheet"></dialog>
 
   <dialog id="import" class="sheet">
-    <h3><span class="h-icon"></span>Import agents</h3>
+    <h2 class="sheet-title"><span class="h-icon"></span>Import agents</h2>
     <p class="lead"></p>
-    <div class="sheet-body imp-list"></div>
+    <div class="sheet-body"><div class="group-list imp-list"></div></div>
     <p class="err" data-import-err></p>
-    <div class="buttons"><button class="btn" data-close>Cancel</button><button class="btn primary" data-import-go>Import</button></div>
+    <div class="sheet-foot"><span class="grow"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-import-go>Import</button></div>
   </dialog>
 
   <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>

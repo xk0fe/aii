@@ -27,7 +27,6 @@ const TABS = [
 ]
 // at work: what it's doing says more than its status. Waiting on a teammate, the status says it (who it waits on).
 const atWork = (a) => (a?.status === 'working' && !a.waitingOn?.length) || a?.status === 'waiting'
-
 function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, onWorkspace, onRenamed }) {
   // the header: in the dashboard's row of place headers (common.js pageHead), like every place's
   headIn.insertAdjacentHTML('beforeend', pageHead({
@@ -40,9 +39,9 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     <section class="col-list">
       <div class="col-grid"></div>
       <div class="col-stats"></div>
-      <div class="col-empty hidden"></div>
-      <div class="bulk"></div>
-    </section>`
+      <div class="col-empty empty-state hidden"></div>
+    </section>
+    <div class="bulk bulk-bar"></div>`
   // The sheet lives at the top of the page, over everything (sidebar and chat included), not inside the view.
   const sheet = document.createElement('div')
   sheet.className = 'ed-layer'
@@ -135,7 +134,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       <span class="c-brain" title="${esc(brainLabel(a, state.providers))}">${esc(brainWords(a, state.providers))}</span>
       <span class="c-state">${statusLine(a)}${what ? `<span class="c-doing" title="${esc(what.tip)}">${esc(what.text)}</span>` : ''}${meta.length ? `<span class="c-meta">${meta.join('')}</span>` : ''}</span>
       <span class="c2-stage felt${huddle ? ' has-helpers' : ''}">${patchSVG(136, 136, { r: 8, inset: 5, dash: '4 3' })}<span class="c2-av">${avatarHTML(a, { size: huddle ? 92 : 112, pose })}</span>${helpers}${a.on && a.status === 'waiting' ? '<i class="dot needs c2-dot"></i>' : ''}</span>
-      <span class="pc-check">${ICONS.check}</span>
+      <span class="pick pc-check">${ICONS.check}</span>
     </div>`
   }
 
@@ -157,7 +156,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       <span class="pc-line ${cls === 'needs' ? 'needs-text' : ''}"><i class="dot ${cls}"></i><span>${esc(said)}</span></span>
       <span class="pc-tags">${esc(brainWords(a, state.providers, { short: true }))}${subs.length ? ` · ${helpersText(a)}` : ''}${clones ? ` · ${plural(clones, 'clone')}` : ''}</span>
       <span class="pc-av">${avatarHTML(a, { size: 56 })}</span>
-      <span class="pc-check">${ICONS.check}</span>
+      <span class="pick pc-check">${ICONS.check}</span>
     </div>`
   }
 
@@ -204,8 +203,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const ws = hasWorkspaces(state) ? state.workspace : null
     const on = crewNow.filter((a) => a.on).length
     const who = ws ? `Everyone in ${ws.name}` : 'Your whole crew'
-    const line = state.parked && crewNow.length ? `${ws?.name ?? 'This workspace'} is parked: its agents are stopped until you open it`
-      : crewNow.length ? `${who} · ${on} of ${crewNow.length} on` : 'Nobody yet'
+    const line = crewNow.length ? `${who} · ${on} of ${crewNow.length} on` : 'Nobody yet' // parked: the banner under it says so
     const sub = head.querySelector('.ph-sub')
     if (sub.textContent !== line) sub.textContent = line
     sub.title = line
@@ -371,30 +369,38 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     drawGrid()
   }
 
+  // The bulk bar (common.css .bulk-bar), floating over the cards: who's picked, what to change for all of them (left
+  // as it is unless you pick something), Export and Apply, and × to stop selecting.
   function drawBulk() {
     const providers = Object.entries(state.providers).filter(([, p]) => p.added !== false)
     const efforts = [...new Set(providers.flatMap(([, p]) => p.efforts))]
     const models = [...new Set(providers.flatMap(([, p]) => p.models))]
+    // a choice as a field, like the sheet's Model: its name until you pick, a chevron at its end
+    const field = (k, name, options, tip = '') => `<label class="bulk-field"${tip ? ` title="${esc(tip)}"` : ''}><select data-b="${k}" aria-label="${name}"><option value="">${name}</option>${options}</select><i>${ICONS.updown}</i></label>`
     bulk.innerHTML = `
-      <div class="bulk-who"></div>
-      <select data-b="provider"><option value="">Provider</option>${providers.map(([id, p]) => `<option value="${id}">${esc(p.label)}</option>`).join('')}</select>
-      <input data-b="model" placeholder="Model" list="bulk-models"><datalist id="bulk-models">${models.map((m) => `<option value="${esc(m)}">`).join('')}</datalist>
-      <select data-b="effort"><option value="">Effort</option><option value="-">default</option>${efforts.map((v) => `<option>${v}</option>`).join('')}</select>
-      <select data-b="yolo"><option value="">YOLO</option><option value="1">YOLO on</option><option value="0">YOLO off</option></select>
-      <select data-b="tier" title="Codex agents only"><option value="">Fast</option><option value="fast">Fast on</option><option value="default">Fast off</option></select>
-      <select data-b="power"><option value="">Power</option><option value="1">Turn on</option><option value="0">Turn off</option></select>
-      <button class="btn" data-act="all">All</button>
-      <button class="btn" data-act="export" title="Save the picked agents as a .crew file to share">${ICONS.export}Export</button>
-      <button class="btn" data-act="done" title="Stop selecting (Esc)">Done</button>
-      <button class="btn primary" data-act="apply"></button>`
+      <span class="bulk-count"></span>
+      <button class="btn plain" data-act="all" title="Pick every agent">All</button>
+      <div class="bulk-fields">
+        ${field('provider', 'Provider', providers.map(([id, p]) => `<option value="${id}">${esc(p.label)}</option>`).join(''))}
+        <label class="bulk-field"><input data-b="model" placeholder="Model" list="bulk-models" aria-label="Model" autocomplete="off" spellcheck="false"></label><datalist id="bulk-models">${models.map((m) => `<option value="${esc(m)}">`).join('')}</datalist>
+        ${field('effort', 'Effort', `<option value="-">default</option>${efforts.map((v) => `<option>${v}</option>`).join('')}`)}
+        ${field('yolo', 'YOLO', '<option value="1">YOLO on</option><option value="0">YOLO off</option>')}
+        ${field('tier', 'Fast', '<option value="fast">Fast on</option><option value="default">Fast off</option>', 'Codex agents only')}
+        ${field('power', 'Power', '<option value="1">Turn on</option><option value="0">Turn off</option>')}
+      </div>
+      <button class="btn" data-act="export" title="Save the picked agents as a .crew file to share">${ICONS.export}<span>Export</span></button>
+      <button class="btn primary" data-act="apply"></button>
+      <button class="icon" data-act="done" title="Done selecting (Esc)" aria-label="Done selecting">${ICONS.close}</button>`
     drawBulkCount()
   }
 
   function drawBulkCount() {
-    const who = bulk.querySelector('.bulk-who')
-    if (!who) return
+    const count = bulk.querySelector('.bulk-count')
+    if (!count) return
     const names = [...picked]
-    who.innerHTML = names.slice(0, 6).map((n) => avatarHTML(agentNamed(n) ?? { name: n }, { size: 28, mood: 'still' })).join('') + `<b>${names.length ? `${names.length} selected` : 'Tap cards to pick them'}</b>`
+    count.innerHTML = names.length
+      ? `<span class="bulk-faces">${names.slice(0, 4).map((n) => avatarHTML(agentNamed(n) ?? { name: n }, { size: 24, mood: 'still' })).join('')}</span><span><b>${names.length}</b> selected</span>`
+      : 'Tap cards to pick them'
     const apply = bulk.querySelector('[data-act=apply]')
     apply.disabled = bulk.querySelector('[data-act=export]').disabled = !names.length
     apply.textContent = names.length ? `Apply to ${names.length}` : 'Apply'
@@ -521,18 +527,17 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       <div class="ed-main">
         <header class="ed-head">
           <div class="seg ed-tabs" role="tablist">${TABS.map((t) => `<button role="tab" data-tab="${t.id}" ${t.id === 'stats' && !live ? 'disabled' : ''}>${t.icon}<span>${t.label}</span></button>`).join('')}</div>
-          <span class="grow"></span>
-          <button class="icon ed-close" data-act="back" title="Close (Esc)" aria-label="Close">${ICONS.close}</button>
+          <button class="icon sheet-x ed-close" data-act="back" title="Close (Esc)" aria-label="Close">${ICONS.close}</button>
         </header>
         <div class="ed-panes">
           <section class="ed-pane" data-pane="setup">
-            <h4>Brain</h4>
-            <div class="ed-list brain"></div>
-            <h4>Where it works</h4>
-            <div class="ed-list where"></div>
-            <h4>Behaviour</h4>
-            <div class="ed-list behave"></div>
-            <div class="ed-adv ${advOpen ? 'open' : ''}">
+            <h4 class="section-label">Brain</h4>
+            <div class="ed-list group-list brain"></div>
+            <h4 class="section-label">Where it works</h4>
+            <div class="ed-list group-list where"></div>
+            <h4 class="section-label">Behaviour</h4>
+            <div class="ed-list group-list behave"></div>
+            <div class="ed-adv group-list ${advOpen ? 'open' : ''}">
               <button class="ed-adv-head" data-act="advanced" aria-expanded="${advOpen}"><i class="ed-adv-chev">${ICONS.chevron}</i><b>Advanced</b><span class="ed-adv-sum"></span></button>
               <div class="ed-adv-body"><div class="limit"></div><div class="flags"></div></div>
             </div>
@@ -548,7 +553,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
           </section>
           <section class="ed-pane" data-pane="stats"><div class="experience"></div></section>
         </div>
-        <footer class="pd-foot">
+        <footer class="sheet-foot">
           <span class="pd-msg"></span><span class="grow"></span><span class="pd-dirty">Unsaved changes</span>
           <button class="btn" data-act="back">Cancel</button>
           <button class="btn primary" data-act="save" title="Save (${keys('⌘S')})">${live ? 'Save' : 'Add to crew'}</button>
@@ -619,7 +624,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const a = agentNamed(editing)
     if (!host) return
     if (!a || !a.stats.tasks) {
-      morph(host, `<div class="xp-empty">${ICONS.chart}<b>No work yet</b><span>Send it a task and its stats start counting.</span></div>${a ? convoHTML(a) : ''}`)
+      morph(host, `<div class="xp-empty empty-state small">${ICONS.chart}<b>No work yet</b><span>Send it a task and its stats start counting.</span></div>${a ? convoHTML(a) : ''}`)
       return
     }
     const s = a.stats
@@ -628,13 +633,13 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const no = roster().findIndex((x) => x.name === a.name)
     morph(host, `
       <div class="xp-big"><span class="lv">Lv ${lv.lv}</span><div class="grow"><i class="xpbar"><b style="width:${Math.round(lv.progress * 100)}%"></b></i><span class="h4-note">${no >= 0 ? `#${pad(no + 1)} · ` : ''}${lv.xp} XP · ${lv.toNext} to Lv ${lv.lv + 1}${s.first ? ` · working since ${new Date(s.first).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span></div></div>
-      <div class="base-stats">${METRICS.map((m) => {
+      <div class="base-stats well">${METRICS.map((m) => {
         const has = (m.has ?? (() => true))(s)
         const max = Math.max(0, ...roster().map((x) => x.stats[m.key] || 0))
         const mark = standouts(m)
         return `<div class="bs-row" title="${esc(m.tip?.(s) ?? '')}"><span class="bs-label">${m.label}</span><b>${has ? m.show(s) : '–'}${mark.best === a.name ? BEST : mark.worst === a.name ? SLOW : ''}</b>${has ? bar(s[m.key], max) : '<i class="mbar"></i>'}</div>`
       }).join('')}</div>
-      <div class="days"><span class="bs-label">Tasks a day, last 14 days</span>${sparkline(s.days)}</div>
+      <div class="days well"><span class="bs-label">Tasks a day, last 14 days</span>${sparkline(s.days)}</div>
       ${convoHTML(a)}`)
   }
 
@@ -651,7 +656,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       : level === 'hot' ? 'Nearly full: start fresh before its next task.'
       : level === 'warm' ? 'Getting long. Start fresh before something unrelated.'
       : 'Plenty of room.'
-    return `<div class="convo-stat ${level}" title="${esc(contextTip(a))}">
+    return `<div class="convo-stat well ${level}" title="${esc(contextTip(a))}">
         <div class="convo-gauge">${ctx && a.on ? contextRing(a, { label: false, size: 40 }) : '<span class="ctx calm" style="--s:40px"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.6" class="ctx-track"/></svg></span>'}<b>${ctx ? `${ctx.pct}%` : '–'}</b></div>
         <div class="convo-info">
           <span class="bs-label">This conversation</span>
@@ -665,8 +670,25 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
 
   // A row of the grouped list: what it is on the left, the control on the right.
   const row = (label, control, { note = '', cls = '' } = {}) => `<div class="ed-row ${cls}"><span class="ed-label">${label}${note ? `<small>${note}</small>` : ''}</span><div class="ed-ctl">${control}</div></div>`
-  // One choice of a few, as a segmented control in the app's neutral style (the creature's color stays on its side).
-  const pill = (v, label, on, attrs = '') => `<button class="pill ${on ? 'on' : ''}" data-v="${esc(v)}" aria-pressed="${on}" ${attrs}>${label}</button>`
+  // One choice of a few: the app's segmented control (common.css .seg, as the tabs above), filling its row unless it's
+  // a short one. Which segment is on comes from the draft (drawPicks), so a pick slides the thumb over, as tabs do.
+  const choices = (k, segments, { fill = true, tip = '' } = {}) => `<div class="seg ${fill ? 'fill' : ''}" data-pick="${k}"${tip ? ` title="${esc(tip)}"` : ''}>${segments}</div>`
+  const choice = (v, label) => `<button type="button" data-v="${esc(v)}">${label}</button>`
+  // The segment the draft has picked in each choice under host: none for an effort left to the model, the typed field
+  // for a context limit that isn't one of the presets.
+  function drawPicks(host = card) {
+    for (const el of host.querySelectorAll('.seg[data-pick]')) {
+      const k = el.dataset.pick
+      if (k === 'contextLimit') {
+        const limit = Number(draft.contextLimit) || 0
+        const preset = [...el.querySelectorAll('button')].some((b) => (Number(b.dataset.v) || 0) === limit)
+        segmented(el, (s) => (s.matches('.limit-custom') ? !preset : (Number(s.dataset.v) || 0) === limit), { none: true })
+      } else if (k === 'clones') segmented(el, (s) => (Number(s.dataset.v) || 0) === (Number(draft.clones) || 0), { none: true })
+      else if (k === 'onContextLimit') segmented(el, (s) => s.dataset.v === (draft.onContextLimit === 'notify' ? 'notify' : 'fresh'), { none: true })
+      else if (k === 'shared') segmented(el, (s) => s.dataset.v === (draft.shared ? '1' : ''), { none: true })
+      else segmented(el, (s) => s.dataset.v === String(draft[k] ?? ''), { none: true })
+    }
+  }
   // A switch row: the setting and a one-line hint on the left, the switch on the right. Clicking the row flips it.
   const switchRow = (label, hint, input, cls = '', tip = '') => `<label class="ed-row sw ${cls}" ${tip ? `title="${esc(tip)}"` : ''}><span class="ed-label">${label}<small>${hint}</small></span>${input}</label>`
 
@@ -680,34 +702,47 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const limit = Number(draft.contextLimit) || 0
     const presets = limitPresets(win)
     const custom = limit && !presets.includes(limit)
+    host.innerHTML =
+      row('Context limit', choices('contextLimit', `${choice('', win ? `Full ${tokenCount(win)}` : 'Full')}${presets.map((n) => choice(n, tokenCount(n))).join('')}<label class="limit-custom"><input type="number" min="10" step="10" data-limit-k value="${custom ? Math.round(limit / 1000) : ''}" placeholder="Custom" title="Any limit, in thousands of tokens"><span>k</span></label>`)) +
+      row('When it’s reached', choices('onContextLimit', choice('fresh', 'New conversation') + choice('notify', 'Just tell me')), { cls: 'when-row' }) +
+      '<p class="limit-note"></p>' +
+      `<div class="ed-row clones-row"><span class="ed-label">Clones at once<small>when it's busy</small></span><div class="ed-ctl">${choices('clones', choice('', 'None') + CLONES.map((v) => choice(v, v)).join(''))}</div></div>`
+    syncLimit()
+  }
+
+  // What a pick in Advanced changes, in place (so the thumb slides): the picks, whether "When it's reached" applies,
+  // the line under them, and what clones would do.
+  function syncLimit() {
+    const host = card.querySelector('.limit')
+    if (!host) return
+    const ctx = agentNamed(editing)?.convo?.context
+    const limit = Number(draft.contextLimit) || 0
     const fresh = draft.onContextLimit !== 'notify'
-    const past = limit && ctx && ctx.used >= limit
-    const note = !limit ? `Long conversations full of unrelated tasks are where agents mix things up; a limit keeps it sharp.`
+    const past = Boolean(limit && ctx && ctx.used >= limit)
+    drawPicks(host)
+    host.querySelector('.when-row').classList.toggle('off', !limit)
+    const note = host.querySelector('.limit-note')
+    note.textContent = !limit ? `Long conversations full of unrelated tasks are where agents mix things up; a limit keeps it sharp.`
       : past ? (fresh ? `Already past ${tokenCount(limit)}: once you save, it starts fresh as soon as it's free.` : `Already past ${tokenCount(limit)}: you'll get a heads-up once you save.`)
       : fresh ? `At ${tokenCount(limit)} it finishes what it's doing and starts a new conversation.`
       : `At ${tokenCount(limit)} you get a notification and decide when to start fresh.`
-    host.innerHTML =
-      row('Context limit', `<div class="pills fill" data-pick="contextLimit">${pill('', win ? `Full ${tokenCount(win)}` : 'Full', !limit)}${presets.map((n) => pill(n, tokenCount(n), limit === n)).join('')}
-        <label class="limit-custom ${custom ? 'on' : ''}"><input type="number" min="10" step="10" data-limit-k value="${custom ? Math.round(limit / 1000) : ''}" placeholder="Custom" title="Any limit, in thousands of tokens"><span>k</span></label></div>`) +
-      row('When it’s reached', `<div class="pills fill" data-pick="onContextLimit">${pill('fresh', 'New conversation', fresh)}${pill('notify', 'Just tell me', !fresh)}</div>`, { cls: limit ? '' : 'off' }) +
-      `<p class="limit-note ${past ? 'past' : ''}">${esc(note)}</p>` +
-      clonesRow()
+    note.classList.toggle('past', past)
+    host.querySelector('.clones-row').title = clonesTip()
   }
 
   // Clones: busy with one task, it takes the next on a clone of itself (its own conversation) instead of making it
   // wait in its queue. The row says how many at once; the clones at work show on the left, under its level.
-  function clonesRow() {
+  function clonesTip() {
     const n = Number(draft.clones) || 0
     const name = draft.name.trim() || 'it'
-    const tip = !n ? `Busy with one task, ${name} makes the next one wait in its queue. With clones, a copy of ${name} takes it right away instead.`
+    return !n ? `Busy with one task, ${name} makes the next one wait in its queue. With clones, a copy of ${name} takes it right away instead.`
       : `When ${name} is busy, a clone takes the next task: the same agent in a conversation of its own, up to ${n} at once. A clone with nothing left to do goes away after 5 minutes, and its work counts as ${name}'s. Clones share its folder, so they suit tasks that don't touch the same files.`
-    return `<div class="ed-row clones-row" title="${esc(tip)}"><span class="ed-label">Clones at once<small>when it's busy</small></span><div class="ed-ctl"><div class="pills fill" data-pick="clones">${pill('', 'None', !n)}${CLONES.map((v) => pill(v, v, n === v)).join('')}</div></div></div>`
   }
 
   // Extra CLI flags, in Advanced with the rest of what you rarely touch.
   function drawFlags() {
     const host = card.querySelector('.flags')
-    if (host) host.innerHTML = row('Extra flags', `<input class="ed-input mono" data-k="args" value="${esc(draft.args)}" placeholder="passed straight to the CLI" autocomplete="off" spellcheck="false">`)
+    if (host) host.innerHTML = row('Extra flags', `<input class="ed-input field mono" data-k="args" value="${esc(draft.args)}" placeholder="passed straight to the CLI" autocomplete="off" spellcheck="false">`)
   }
 
   // Advanced, folded: the four settings in a few words, so you know what's in there without opening it.
@@ -746,7 +781,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const efforts = effortsFor(draft)
     card.querySelector('.brain').innerHTML =
       row('Model', modelControl(), { cls: 'model-row' }) +
-      row('Effort', efforts.length ? effortPills(efforts) : '<em>set by the model</em>', { cls: 'effort-row' })
+      row('Effort', efforts.length ? effortChoices(efforts) : '<em>set by the model</em>', { cls: 'effort-row' })
+    drawPicks(card.querySelector('.brain'))
     drawBehaviour()
   }
 
@@ -760,7 +796,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   }
 
   // Effort: the model's own levels, none picked meaning its default. Picking the picked one again clears it.
-  const effortPills = (efforts) => `<div class="pills fill" data-pick="effort" title="Pick the selected one again for the model's default">${efforts.map((v) => pill(v, v, draft.effort === v)).join('')}</div>`
+  const effortChoices = (efforts) => choices('effort', efforts.map((v) => choice(v, v)).join(''), { tip: "Pick the selected one again for the model's default" })
 
   // The menu behind Model: every provider's known models, grouped, and a way to type one it doesn't list.
   function modelMenu(anchor) {
@@ -773,7 +809,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       const models = draft.provider === id && draft.model && !p.models.includes(draft.model) ? [...p.models, draft.model] : p.models
       for (const m of ['', ...models]) {
         const on = draft.provider === id && draft.model === m
-        items.push({ label: m || 'Default model', icon: on ? ICONS.check : undefined, act: String(choices.length), hint: !m ? 'its CLI picks' : p.models.includes(m) ? '' : 'typed' })
+        items.push({ label: m || 'Default model', on, act: String(choices.length), hint: !m ? 'its CLI picks' : p.models.includes(m) ? '' : 'typed' })
         choices.push({ provider: id, model: m })
       }
     }
@@ -844,18 +880,20 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const computer = places.length < 2 && !d.home ? ''
       : live
         ? row('Computer', `<span class="ed-pc">${at.here ? ICONS.desktop : ICONS.laptop}<b>${esc(at.name)}</b>${at.here ? `<small>${THIS_COMPUTER}</small>` : ''}</span><button class="btn" data-act="move-to" title="Its chat comes along" ${places.some((p) => p.slug !== (d.home ?? '') && p.online) ? '' : 'disabled'}>${ICONS.move}<span>Move…</span></button>`)
-        : row('Computer', `<div class="pills" data-pick="home">${places.filter((p) => p.online || p.slug === d.home).map((p) => pill(p.slug, esc(p.name), d.home === p.slug)).join('')}</div>`)
+        : row('Computer', choices('home', places.filter((p) => p.online || p.slug === d.home).map((p) => choice(p.slug, esc(p.name))).join(''), { fill: false }))
     // in a workspace other than the default: whether it's one of your shared agents or only this workspace's, and its
     // folder is the workspace's unless it has one of its own
     const ws = state.workspace && state.workspace.id !== 'default' ? state.workspace : null
     const lives = !ws ? ''
       : live
         ? row('Lives in', `<span class="ed-pc">${wsTile(ws, { size: 18 })}<b>${live.shared ? 'Your crew' : `${esc(ws.name)} only`}</b></span>`, { note: live.shared ? 'the same agent in every workspace it works in' : `only ${esc(ws.name)} has it` })
-        : row('Lives in', `<div class="pills" data-pick="shared">${pill('', `${esc(ws.name)} only`, !d.shared)}${pill('1', 'Your whole crew', Boolean(d.shared))}</div>`, { note: d.shared ? `joins your crew, and works here in ${esc(ws.name)}` : `only ${esc(ws.name)} has it` })
+        : row('Lives in', choices('shared', choice('', `${esc(ws.name)} only`) + choice('1', 'Your whole crew'), { fill: false }), { note: d.shared ? `joins your crew, and works here in ${esc(ws.name)}` : `only ${esc(ws.name)} has it` })
     const folder = ws?.folder ? tildePath(ws.folder) : ''
-    card.querySelector('.where').innerHTML = lives +
-      row('Folder', `<input class="ed-input mono" data-k="cwd" value="${esc(d.cwd)}" placeholder="${esc(folder || '~/code/my-app')}" autocomplete="off" spellcheck="false">${d.home ? '' : '<button type="button" class="btn" data-act="pick">Choose…</button>'}`, { note: d.home ? `a path on ${esc(at.name)}` : folder && !d.cwd ? `${esc(ws.name)}'s folder` : '' }) +
+    const where = card.querySelector('.where')
+    where.innerHTML = lives +
+      row('Folder', `<input class="ed-input field mono" data-k="cwd" value="${esc(d.cwd)}" placeholder="${esc(folder || '~/code/my-app')}" autocomplete="off" spellcheck="false">${d.home ? '' : '<button type="button" class="btn" data-act="pick">Choose…</button>'}`, { note: d.home ? `a path on ${esc(at.name)}` : folder && !d.cwd ? `${esc(ws.name)}'s folder` : '' }) +
       computer
+    drawPicks(where)
   }
 
   // A character creator: every option is shown as a tiny version of this agent wearing it.
@@ -886,7 +924,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   function syncSave() {
     const btn = card.querySelector('[data-act=save]')
     if (btn) btn.disabled = !dirty()
-    card.querySelector('.pd-foot')?.classList.toggle('dirty', Boolean(original) && dirty())
+    card.querySelector('.sheet-foot')?.classList.toggle('dirty', Boolean(original) && dirty())
     drawAdvSummary()
   }
 
@@ -894,9 +932,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     if ('limitK' in e.target.dataset) {
       const k = Math.round(Number(e.target.value))
       draft.contextLimit = k >= 10 ? k * 1000 : ''
-      for (const p of card.querySelectorAll('[data-pick=contextLimit] .pill')) p.classList.toggle('on', Number(p.dataset.v || 0) === (Number(draft.contextLimit) || 0) && !(k >= 10 && !p.dataset.v))
-      e.target.closest('.limit-custom').classList.toggle('on', k >= 10 && !LIMITS.includes(draft.contextLimit))
-      card.querySelector('.limit .ed-row + .ed-row')?.classList.toggle('off', !draft.contextLimit)
+      syncLimit()
       return syncSave()
     }
     const k = e.target.dataset.k
@@ -913,7 +949,9 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const efforts = effortsFor(draft)
     if (!efforts.includes(draft.effort)) draft.effort = ''
     const ctl = card.querySelector('.effort-row .ed-ctl')
-    if (ctl) ctl.innerHTML = efforts.length ? effortPills(efforts) : '<em>set by the model</em>'
+    if (!ctl) return
+    ctl.innerHTML = efforts.length ? effortChoices(efforts) : '<em>set by the model</em>'
+    drawPicks(ctl)
   }
 
   // Typing a model: Enter or leaving the field is done, Esc puts back the one it had.
@@ -942,12 +980,13 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   })
 
   card.addEventListener('click', async (e) => {
-    const t = e.target.closest('[data-tab]')
+    // a tab, or the creature (Look); not the sheet itself, which carries the open tab's name too
+    const t = e.target.closest('button[data-tab]')
     if (t && !t.disabled) return setTab(t.dataset.tab)
-    const p = e.target.closest('[data-pick] .pill')
+    const p = e.target.closest('[data-pick] button[data-v]')
     if (p && p.closest('[data-pick]').dataset.pick === 'clones') {
       draft.clones = Number(p.dataset.v) || ''
-      drawLimit()
+      syncLimit()
       return syncSave()
     }
     const clone = e.target.closest('[data-clone]')
@@ -959,13 +998,14 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     if (p && ['contextLimit', 'onContextLimit'].includes(p.closest('[data-pick]').dataset.pick)) {
       const k = p.closest('[data-pick]').dataset.pick
       draft[k] = k === 'contextLimit' ? Number(p.dataset.v) || '' : p.dataset.v
-      drawLimit()
+      if (k === 'contextLimit') card.querySelector('[data-limit-k]').value = '' // a preset, not what was typed
+      syncLimit()
       return syncSave()
     }
     if (p && p.closest('[data-pick]').dataset.pick === 'effort') {
       // picking the picked one again goes back to the model's default
       draft.effort = draft.effort === p.dataset.v ? '' : p.dataset.v
-      drawEffortOnly()
+      drawPicks(p.closest('.ed-ctl'))
       return syncSave()
     }
     if (p) {
@@ -1104,7 +1144,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
 
   document.addEventListener('keydown', (e) => {
     if (editing && commandKey(e) && !e.altKey && e.key === 's') return void (e.preventDefault(), save())
-    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open], .menu:not(.leaving), .mentions:not(.hidden)')) return
+    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open], .menu:not(.leaving, .hidden), .mentions:not(.hidden)')) return
     if (editing) return void (e.preventDefault(), close())
     if (selecting && root.offsetParent) setSelecting(false)
   })

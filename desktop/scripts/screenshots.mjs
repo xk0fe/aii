@@ -162,7 +162,7 @@ const SHOTS = {
   async chatSearch(theme) {
     const win = await dashboard(theme, 'chat')
     await sleep(900)
-    await js(win, "openSearch(); const q = document.querySelector('[data-ms-q]'); q.value = 'totals'; q.dispatchEvent(new Event('input'))")
+    await js(win, "openSearch(); const q = document.querySelector('.chat-search input'); q.value = 'totals'; q.dispatchEvent(new Event('input'))")
     await sleep(900)
     await save(win, `chat-search-${theme}`)
     win.destroy()
@@ -292,7 +292,7 @@ const SHOTS = {
     const win = await dashboard(theme, 'crew')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
-    await js(win, `${click('.col-head [data-act=more]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.menu [data-menu-act=select]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.pcard[data-name="Ada"]')}; ${click('.pcard[data-name="Theo"]')}`)
+    await js(win, `${click('.page-head[data-for=crew] [data-act=more]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.menu [data-menu-act=select]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.pcard[data-name="Ada"]')}; ${click('.pcard[data-name="Theo"]')}`)
     await sleep(900)
     await save(win, `select-${theme}`)
     win.destroy()
@@ -1013,15 +1013,15 @@ const SHOTS = {
       during: async () => {
         let at = { x: box.x + box.width - 40, y: box.y + 30 }
         await sleep(400)
-        at = await glide(win, at, await center(win, '[data-pick=contextLimit] .pill[data-v="150000"]'), 700)
+        at = await glide(win, at, await center(win, '[data-pick=contextLimit] [data-v="150000"]'), 700)
         await sleep(250)
         await tap(win, at)
         await sleep(1300)
-        at = await glide(win, at, await center(win, '[data-pick=onContextLimit] .pill[data-v=notify]'), 600)
+        at = await glide(win, at, await center(win, '[data-pick=onContextLimit] [data-v=notify]'), 600)
         await sleep(250)
         await tap(win, at)
         await sleep(1200)
-        at = await glide(win, at, await center(win, '[data-pick=onContextLimit] .pill[data-v=fresh]'), 500)
+        at = await glide(win, at, await center(win, '[data-pick=onContextLimit] [data-v=fresh]'), 500)
         await sleep(250)
         await tap(win, at)
         await sleep(700)
@@ -1108,7 +1108,7 @@ const SHOTS = {
     const win = await dashboard('light', 'crew')
     await js(win, click('[data-mode=cards]'))
     await sleep(900)
-    const head = await js(win, "const r = document.querySelector('.col-head').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height + 230) }")
+    const head = await js(win, "const r = document.querySelector('.page-head[data-for=crew]').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height + 230) }")
     await record(win, 'tabs', {
       clip: head, ms: 3600, width: 900,
       during: async () => {
@@ -1241,7 +1241,7 @@ const SHOTS = {
     const win = await dashboard('light', 'crew')
     await js(win, click('[data-mode=cards]'))
     await sleep(1400)
-    const box = await js(win, "const h = document.querySelector('.col-head').getBoundingClientRect(); const g = document.querySelector('.col-grid').getBoundingClientRect(); return { x: Math.round(h.x), y: Math.round(h.y), width: Math.round(h.width), height: Math.round(Math.min(innerHeight - h.y, g.bottom - h.y)) }")
+    const box = await js(win, "const h = document.querySelector('.page-head[data-for=crew]').getBoundingClientRect(); const g = document.querySelector('.col-grid').getBoundingClientRect(); return { x: Math.round(h.x), y: Math.round(h.y), width: Math.round(h.width), height: Math.round(Math.min(innerHeight - h.y, g.bottom - h.y)) }")
     let at = { x: box.x + box.width / 2, y: box.y + 60 }
     const flip = async (name) => {
       at = await glide(win, at, await center(win, `.pcard[data-name="${name}"] .switch`), 600)

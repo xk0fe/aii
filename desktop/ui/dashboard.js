@@ -1,6 +1,6 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: #crew, one agent's conversation with its terminal docked beside it, Agents, Tasks or Terminals.
-/* global pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup */
+/* global pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -76,9 +76,9 @@ $('.find-icon').outerHTML = ICONS.search
 $('[data-act=find]').innerHTML = ICONS.search
 $('.side-ws [data-act=add]').innerHTML = ICONS.plus
 $('.side-more').innerHTML = ICONS.more
-$('#link .h-icon').innerHTML = ICONS.computers
+$('#link .h-icon').outerHTML = ICONS.computers
 $('#link [data-link-add]').innerHTML = `${ICONS.link}Link a computer…`
-$('#import .h-icon').innerHTML = ICONS.import
+$('#import .h-icon').outerHTML = ICONS.import
 const DOWN = svg('<path d="M12 5v14M5 12l7 7 7-7"/>', 'stroke-width="2.4"')
 // the page's own hints in this computer's keys (⌘F is Ctrl+F on Windows)
 for (const el of document.querySelectorAll('[title]')) el.title = keysIn(el.title)
@@ -576,14 +576,18 @@ function drawBlank() {
   const on = state.agents.filter((a) => a.on && a.status !== 'parked').length
   $('.blank').classList.toggle('hidden', place !== 'terminals' || on > 0)
   const parked = state.parked && state.agents.some((a) => a.on)
-  $('.blank b').textContent = parked ? `${state.workspace.name} is parked` : state.agents.length ? 'All agents are off' : 'No agents yet'
-  $('.blank span').textContent = parked ? 'Open it to start its agents: each picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
+  $('.blank h1').textContent = parked ? `${state.workspace.name} is parked` : state.agents.length ? 'All agents are off' : 'No agents yet'
+  $('.blank .lead').textContent = parked ? 'Open it to start its agents: each picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
+  $('.blank .acts').classList.toggle('hidden', state.agents.length > 0) // Add your first agent, only when there's none
 }
 
 // The grid shows every terminal, the busy ones (working, starting or waiting on you), or the ones waiting on you; each
 // with how many there are. The dock shows its own, whatever the grid's filter.
 const busy = (a) => a && (a.status === 'working' || a.status === 'waiting' || a.status === 'starting')
-const SHOW_NONE = { busy: 'Nobody is busy right now', needs: 'Nobody needs you right now' }
+const SHOW_NONE = {
+  busy: ['Nobody is busy right now', 'A terminal shows here while its agent works.'],
+  needs: ['Nobody needs you right now', 'A terminal shows here when its agent waits on you.'],
+}
 function drawShow() {
   segmented($('[data-show]'), (b) => b.dataset.show === show)
   const waiting = new Set(needsYou(state).map((x) => x.agent.name))
@@ -607,8 +611,10 @@ function drawShow() {
   freshen()
   const none = $('.terms .terms-none')
   if (grid && SHOW_NONE[show] && !shown && terms.size) {
-    if (!none) $('.terms').insertAdjacentHTML('beforeend', `<p class="terms-none">${SHOW_NONE[show]}</p>`)
-    else if (none.textContent !== SHOW_NONE[show]) none.textContent = SHOW_NONE[show]
+    const [title, line] = SHOW_NONE[show]
+    const html = `${ICONS.terminal}<b>${title}</b><span>${line}</span>`
+    if (!none) $('.terms').insertAdjacentHTML('beforeend', `<div class="terms-none empty-state small" data-none="${show}">${html}</div>`)
+    else if (none.dataset.none !== show) (none.dataset.none = show), (none.innerHTML = html)
   } else none?.remove()
 }
 
@@ -1159,21 +1165,21 @@ function computersHTML({ me, links, phones }) {
       ${linkOpen.details ? `<div class="lk-details">
         <p>Anyone with the link code can use and drive your agents, so keep it to your own computers. Linked computers see these agents as <b>name@${esc(me.slug)}</b>.</p>
         <p>${esc(reachText(me.hosts))}</p>
-        <div class="lk-row"><span>A new code disconnects the computers using this one, until they link again.</span><span class="lk-btns"><button class="btn" data-link-details-copy title="This computer's addresses and port, for when a computer can't connect">${linkOpen.detailsCopied ? 'Copied' : 'Copy connection details'}</button><button class="btn" data-link-reset>New code</button></span></div>
+        <div class="lk-row"><span>A new code disconnects the computers using this one, until they link again.</span><span class="lk-btns"><button class="btn sm" data-link-details-copy title="This computer's addresses and port, for when a computer can't connect">${linkOpen.detailsCopied ? 'Copied' : 'Copy connection details'}</button><button class="btn sm" data-link-reset>New code</button></span></div>
       </div>` : ''}`
     : me.error ? `<div class="lk-li"><p class="err">${esc(sharingError(me.error))}</p></div>` : ''}`
   const form = linkOpen.form || linkErr ? `
-    <div class="lk-label">Link a computer</div>
-    <div class="lk-list"><div class="lk-form">
+    <div class="section-label">Link a computer</div>
+    <div class="group-list"><div class="lk-form">
       <p>Paste the code from the other computer's <b>Copy link code</b>. Linking works both ways: each computer sees the other's agents.</p>
-      <div class="code-in"><textarea data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Link</button></div>
+      <div class="code-in"><textarea class="field" data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Link</button></div>
       <p class="err" data-link-err>${esc(linkErr)}</p>
     </div></div>` : ''
-  return `<div class="lk-label">${upFirst(THIS_COMPUTER)}</div><div class="lk-list">${mine}</div>
-    <div class="lk-label">Linked</div>
-    <div class="lk-list">${links.length ? links.map(linkHTML).join('') : '<div class="lk-li lk-empty">No other computers yet. Copy the link code on one, then Link a computer… here.</div>'}</div>
+  return `<div class="section-label">${upFirst(THIS_COMPUTER)}</div><div class="group-list">${mine}</div>
+    <div class="section-label">Linked</div>
+    <div class="group-list">${links.length ? links.map(linkHTML).join('') : '<div class="lk-li lk-empty">No other computers yet. Copy the link code on one, then Link a computer… here.</div>'}</div>
     ${form}
-    <div class="lk-label">Phones</div>
+    <div class="section-label">Phones</div>
     ${phonesHTML(phones ?? { devices: [] })}`
 }
 
@@ -1206,13 +1212,12 @@ function linkHTML(l) {
   const open = linkOpen.computers.has(l.slug)
   const status = linkStatus(l)
   const shown = l.agents.filter((a) => !a.hidden)
-  const faces = (shown.length ? shown : l.agents).slice(0, 4)
   const used = shown.length
   return `<section class="lk-pc ${fresh === l.slug ? 'fresh' : ''}" data-computer="${esc(l.slug)}">
     <button class="lk-li" data-lk-open="${esc(l.slug)}" aria-expanded="${open}">
       <span class="lk-ic">${machineIcon(l.name)}</span>
-      <span class="lk-k">${esc(l.name)}<small title="${esc(status.tip)}"><span class="lk-dot ${l.online ? '' : 'off'}"></span>${esc(status.text)}</small></span>
-      ${faces.length ? `<span class="lk-faces">${faces.map((a) => avatarHTML(a, { size: 24, mood: 'still' })).join('')}${l.agents.length > faces.length ? `<i>+${l.agents.length - faces.length}</i>` : ''}</span>` : ''}
+      <span class="lk-k">${esc(l.name)}<small title="${esc(status.tip)}"><span class="dot ${l.online ? 'working' : 'away'}"></span>${esc(status.text)}</small></span>
+      ${l.agents.length ? faceStack(shown.length ? shown : l.agents, 4) : ''}
       ${LINK_CHEV}
     </button>
     ${open ? `<div class="lk-body">
@@ -1220,11 +1225,11 @@ function linkHTML(l) {
       ${l.agents.length ? `<ul class="lk-agents">${l.agents.map((a) => `
         <li class="${a.hidden ? 'unused' : ''}">${avatarHTML(a, { size: 30, mood: 'still' })}
           <span class="who"><b>${esc(a.seed)}</b><small>${esc(a.area || 'no area')}</small></span>
-          ${l.online ? `<button class="btn lk-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
+          ${l.online ? `<button class="btn sm lk-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
           <label class="use"><input type="checkbox" class="switch" data-use="${esc(a.name)}" ${a.hidden ? '' : 'checked'}>Use</label>
         </li>`).join('')}</ul>` : `<p>${l.online ? 'No agents there yet.' : 'Its agents show here once it\'s back.'}</p>`}
       <div class="lk-row"><span title="Move one with its Move to…, or drag it onto a computer in the sidebar">${l.agents.length > 1 ? `Using ${used} of ${l.agents.length}` : ''}</span>
-        <span class="lk-btns">${l.agents.length > 1 ? `<button class="btn" data-use-all="${esc(l.slug)}">All</button><button class="btn" data-use-none="${esc(l.slug)}">None</button>` : ''}${l.saved ? `<button class="btn" data-forget="${esc(l.slug)}" title="Unlink it from ${THIS_COMPUTER}">Forget</button>` : ''}</span></div>
+        <span class="lk-btns">${l.agents.length > 1 ? `<button class="btn sm" data-use-all="${esc(l.slug)}">All</button><button class="btn sm" data-use-none="${esc(l.slug)}">None</button>` : ''}${l.saved ? `<button class="btn sm" data-forget="${esc(l.slug)}" title="Unlink it from ${THIS_COMPUTER}">Forget</button>` : ''}</span></div>
     </div>` : ''}
   </section>`
 }
@@ -1240,23 +1245,24 @@ let phoneErr = ''
 let pairTick = null
 
 function phonesHTML(p) {
-  return `<section class="lk-list phones">
-    <div class="ph-head"><div class="grow"><p style="margin:0">The chat and the questions agents wait on you for, in the ${PRODUCT_NAME} app on your phone, over the same Wi-Fi or Tailscale.</p></div>
+  const err = phoneErr || p.error || p.warning
+  return `<section class="group-list phones">
+    <div class="lk-li"><p class="lk-note">The chat and the questions agents wait on you for, in the ${PRODUCT_NAME} app on your phone, over the same Wi-Fi or Tailscale.</p>
       <button class="btn" data-phone-add>Add a phone</button></div>
-    ${p.devices.length ? `<ul class="ph-list">${p.devices.map(phoneHTML).join('')}</ul>` : ''}
-    <p class="err">${esc(phoneErr || p.error || p.warning || '')}</p>
+    ${p.devices.map(phoneHTML).join('')}
+    ${err ? `<div class="lk-li"><p class="err">${esc(err)}</p></div>` : ''}
   </section>`
 }
 
 function phoneHTML(d) {
   const kind = { ios: 'iPhone', android: 'Android' }[d.platform] ?? 'Phone'
   const seen = d.online ? 'Connected' : phoneDay(d.seen) === 'today' ? `Seen at ${new Date(d.seen).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : `Seen ${phoneDay(d.seen)}`
-  return `<li class="${d.id === phoneFresh ? 'fresh' : ''}" data-phone="${esc(d.id)}">
-    <span class="ph-icon">${ICONS.phone}</span>
-    <span class="who"><b>${esc(d.name)}</b><small>${kind}${d.app ? ` · ${PRODUCT_NAME} ${esc(d.app)}` : ''} · paired ${phoneDay(d.paired)}</small></span>
-    <span class="ph-seen"><span class="dot ${d.online ? 'live' : 'off'}"></span>${seen}</span>
-    <button class="btn" data-phone-remove="${esc(d.id)}">Remove</button>
-  </li>`
+  return `<div class="lk-li lk-phone ${d.id === phoneFresh ? 'fresh' : ''}" data-phone="${esc(d.id)}">
+    <span class="lk-ic">${ICONS.phone}</span>
+    <span class="lk-k">${esc(d.name)}<small>${kind}${d.app ? ` · ${PRODUCT_NAME} ${esc(d.app)}` : ''} · paired ${phoneDay(d.paired)}</small></span>
+    <span class="ph-seen"><span class="dot ${d.online ? 'working' : 'away'}"></span>${seen}</span>
+    <button class="btn sm" data-phone-remove="${esc(d.id)}">Remove</button>
+  </div>`
 }
 
 // 'today', 'yesterday' or '12 Oct'
@@ -1288,10 +1294,10 @@ function pairHTML(v) {
   const { card, size } = qrFit(v.qr)
   const look = v.phone ? 'paired' : v.err ? 'off' : v.qr ? '' : 'wait'
   const line = v.phone ? `<b>${esc(v.phone.name)}</b> is paired` : v.err ? esc(v.err.charAt(0).toUpperCase() + v.err.slice(1)) : `Scan this with ${PRODUCT_NAME} on your phone`
-  return `<h3><span class="h-icon">${ICONS.phone}</span>Add a phone</h3>
+  return `<h2 class="sheet-title">${ICONS.phone}Add a phone</h2>
     <div class="pv-card ${look}" style="--card: ${card}px; --qr: ${size}px">${v.err && !v.phone ? `<span class="pv-off">${ICONS.phone}</span>` : v.qr ?? ''}${v.phone ? `<span class="pv-done">${ICONS.check}</span>` : ''}</div>
     <p class="pv-line ${v.err && !v.phone ? 'failed' : ''}" aria-live="polite">${line}</p>
-    <div class="buttons">
+    <div class="sheet-foot">
       ${v.err && !v.phone ? `<button class="btn pv-act" data-pair-retry ${v.making ? 'disabled' : ''}>${ICONS.restart}${v.making ? 'Trying…' : 'Try again'}</button>`
         : `<button class="btn pv-act" data-pair-copy ${v.code && !v.phone ? '' : 'disabled'} ${v.phone ? 'hidden' : ''} title="To paste it in ${PRODUCT_NAME} on your phone instead">${v.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy code`}</button>`}
       <span class="grow"></span><button class="btn pv-close" data-pair-close>${v.phone ? 'Done' : 'Cancel'}</button>
@@ -1529,14 +1535,14 @@ async function moveSheet(name, home) {
   const working = busy(a)
   const clonesAt = state.agents.filter((x) => x.cloneOf === a.name)
   moveDialog.querySelector('.mv-body').innerHTML = `
+    <h2 class="sheet-title">Move ${who} to ${esc(to.name)}</h2>
     <div class="mv-route" style="--c:${agentColor(a)}">
       <span class="mv-pc">${from.here ? ICONS.desktop : ICONS.laptop}<b>${esc(from.name)}</b></span>
       <span class="mv-path"><i></i><span class="mv-av">${avatarHTML(a, { size: 46 })}</span><i></i></span>
       <span class="mv-pc to">${to.here ? ICONS.desktop : ICONS.laptop}<b>${esc(to.name)}</b></span>
     </div>
-    <h3>Move ${who} to ${esc(to.name)}</h3>
     <label class="mv-folder"><span>Folder on ${esc(to.name)}</span>
-      <span class="mv-field"><input data-mv-folder value="${esc(moving.folder)}" spellcheck="false" autocomplete="off">${to.here ? '<button class="btn" data-mv-pick>Choose…</button>' : ''}</span>
+      <span class="mv-field field"><input data-mv-folder value="${esc(moving.folder)}" spellcheck="false" autocomplete="off">${to.here ? '<button class="btn" data-mv-pick>Choose…</button>' : ''}</span>
       <span class="mv-check" data-mv-check></span>
     </label>
     <div class="mv-sugs" data-mv-sugs></div>
@@ -1663,10 +1669,10 @@ function drawImport() {
     <div class="imp" data-i="${a.index}">
       <input type="checkbox" class="switch" data-take checked>
       ${avatarHTML({ name: a.seed, avatar: a.avatar }, { size: 40, mood: 'still' })}
-      <div class="imp-what"><input type="text" class="imp-name" data-name value="${esc(a.name)}" spellcheck="false" title="Its name here"><small title="${esc(a.area)}">${esc(a.area || 'no area')} · ${esc(brain(a))}${a.yolo ? ' · YOLO' : ''}${a.images ? ` · ${a.images} reference image${a.images > 1 ? 's' : ''}` : ''}</small></div>
+      <div class="imp-what"><input type="text" class="imp-name field" data-name value="${esc(a.name)}" spellcheck="false" title="Its name here"><small title="${esc(a.area)}">${esc(a.area || 'no area')} · ${esc(brain(a))}${a.yolo ? ' · YOLO' : ''}${a.images ? ` · ${a.images} reference image${a.images > 1 ? 's' : ''}` : ''}</small></div>
       <div class="imp-fields">
-        <input type="text" class="imp-folder" data-folder placeholder="Folder (home if empty)${a.folder ? `, it worked in …/${esc(a.folder)}` : ''}" spellcheck="false">
-        ${places.length > 1 ? `<select data-home title="Which computer it runs on">${places.map((p) => `<option value="${esc(p.slug)}">on ${esc(p.name)}</option>`).join('')}</select>` : ''}
+        <input type="text" class="imp-folder field" data-folder placeholder="Folder (home if empty)${a.folder ? `, it worked in …/${esc(a.folder)}` : ''}" spellcheck="false">
+        ${places.length > 1 ? `<select class="field" data-home title="Which computer it runs on">${places.map((p) => `<option value="${esc(p.slug)}">on ${esc(p.name)}</option>`).join('')}</select>` : ''}
       </div>
     </div>`).join('')
   importDialog.querySelector('[data-import-err]').textContent = ''
