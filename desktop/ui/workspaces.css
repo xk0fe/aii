@@ -1,6 +1,6 @@
 /* Workspaces in the dashboard: the switcher, its popover, the sheet and the parked banner (see workspaces.js). */
 
-/* ---- the switcher: the titlebar's left end, where the brand was ---- */
+/* ---- the workspace's name at the top of the sidebar: its menu (workspaces.js menu) ---- */
 .ws-switch {
   position: relative; display: inline-flex; align-items: center; gap: 7px; flex: none; max-width: 240px; height: 30px; padding: 0 7px 0 4px;
   border: 0; border-radius: var(--r-card); background: none; color: var(--fg); cursor: pointer; -webkit-app-region: no-drag;
@@ -13,84 +13,16 @@
 .ws-switch .ws-chev { display: grid; place-items: center; width: 14px; color: var(--fg2); transition: color .15s; }
 .ws-switch .ws-chev svg { width: 13px; height: 13px; }
 .ws-switch:hover .ws-chev, .ws-switch[aria-expanded=true] .ws-chev { color: var(--fg2); }
-/* another workspace needs you: a count (berry) or a dot for new replies (ink), on the tile's corner */
+/* another workspace needs you, on the menu bar's switcher (tray.js): a count (berry) or a dot for new replies (ink) */
 .ws-alert { position: absolute; top: -2px; left: 17px; display: grid; place-items: center; min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--r-control); font: 600 11px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: #fff; box-shadow: 0 0 0 2px var(--bg); animation: ws-alert-in var(--t-move) var(--out); }
 .ws-alert.waiting { background: var(--needs); color: #fff; }
 .ws-alert.unread { min-width: 10px; width: 10px; height: 10px; padding: 0; top: 0; left: 20px; background: var(--accent); }
 @keyframes ws-alert-in { from { transform: scale(0); } }
 
-/* ---- the popover ---- */
-.ws-pop {
-  position: fixed; z-index: 220; width: 360px; padding: 6px; border-radius: var(--r-window); background: var(--card); color: var(--fg);
-  box-shadow: 0 0 0 1px var(--line-strong), 0 24px 56px -16px rgba(0, 0, 0, .38), 0 6px 14px -8px rgba(0, 0, 0, .18);
-  transform-origin: 18px -6px; animation: ws-pop-in var(--t-pop) var(--out);
-}
-.ws-pop.closing { animation: ws-pop-out var(--t-leave) var(--in) forwards; pointer-events: none; }
-@keyframes ws-pop-in { from { opacity: 0; transform: translateY(-6px) scale(.94); } }
-@keyframes ws-pop-out { to { opacity: 0; transform: translateY(-4px) scale(.97); } }
-.ws-pop-head { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 10px 6px; }
-.ws-pop-head span { font-size: 12px; font-weight: 600; color: var(--fg2); }
-.ws-pop-head small { font-size: 11px; color: var(--fg2); }
-.ws-pop-lead { margin: 2px 10px 8px; color: var(--fg2); font-size: 12px; line-height: 1.45; }
-.ws-list { display: flex; flex-direction: column; gap: 2px; max-height: min(60vh, 520px); overflow-y: auto; }
-
-.ws-row {
-  position: relative; display: flex; align-items: center; gap: 11px; min-height: 52px; padding: 7px 8px 7px 9px; border-radius: var(--r-card); cursor: default; outline: 0;
-  transition: background .15s;
-}
-.ws-row:hover, .ws-row:focus-visible { background: var(--btn); }
-.ws-row:focus-visible { box-shadow: inset 0 0 0 1.5px var(--ring); }
-/* the one on screen: a pill of its color at the edge, like a tab that's in front */
-.ws-row.current { background: var(--selected); }
-.ws-row.current::before { content: ''; position: absolute; left: -3px; top: 50%; width: 4px; height: 22px; margin-top: -11px; border-radius: 0 3px 3px 0; background: var(--w); animation: ws-bar var(--t-move) var(--out); }
-@keyframes ws-bar { from { height: 6px; margin-top: -3px; opacity: 0; } }
-.ws-row .ws-tile { transition: transform var(--t-move) var(--out), filter .3s, opacity .3s; }
-.ws-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.ws-name { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.ws-name b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ws-here { display: grid; place-items: center; color: var(--w); }
-.ws-here svg { width: 13px; height: 13px; }
-.ws-line { font-size: 12px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ws-line.waiting { color: var(--needs-ink); font-weight: 600; }
-.ws-row.parked .ws-name b { color: var(--fg2); }
-.ws-end { position: relative; display: flex; align-items: center; gap: 2px; flex: none; }
-/* who's in it, until you point at it: then what you can do with it */
-.ws-faces { display: flex; justify-content: flex-end; min-width: 56px; transition: opacity .15s, transform .25s var(--out); }
-.ws-faces .faces .av + .av { margin-left: -8px; }
-.ws-acts { position: absolute; right: 30px; display: flex; gap: 1px; opacity: 0; pointer-events: none; transform: translateX(4px); transition: opacity .15s, transform .25s var(--out); }
-.ws-row.parked .ws-acts { position: static; transform: none; }
-.ws-row:hover .ws-acts, .ws-row:focus-visible .ws-acts, .ws-acts:focus-within { opacity: 1; pointer-events: auto; transform: none; }
-.ws-row:hover .ws-faces, .ws-row:focus-visible .ws-faces { opacity: 0; transform: translateX(-4px); }
-.ws-row.parked .ws-acts { width: 0; overflow: hidden; }
-.ws-row.parked:hover .ws-acts, .ws-row.parked:focus-visible .ws-acts { width: auto; }
-.ws-end kbd { min-width: 26px; text-align: center; font: 600 11px var(--mono); color: var(--fg2); padding: 2px 4px; border-radius: var(--r-tag); box-shadow: inset 0 0 0 1px var(--line-strong); margin-left: 3px; }
-.ws-act { width: 26px; height: 26px; padding: 0; }
-.ws-act svg { width: 14px; height: 14px; }
-.ws-open { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px 0 7px; font-size: 12px; font-weight: 500; color: var(--fg); background: var(--fill); }
-.ws-open:hover { background: var(--fill-hover); }
-.ws-open svg { width: 11px; height: 11px; }
-
-.ws-cmds { display: flex; flex-direction: column; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
-.ws-cmd { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: var(--r-control); font-size: 13px; cursor: default; }
-.ws-cmd svg { width: 15px; height: 15px; color: var(--fg2); flex: none; }
-.ws-cmd:hover, .ws-cmd:focus-visible { background: var(--accent); color: var(--on-accent); outline: 0; }
-.ws-cmd:hover svg, .ws-cmd:focus-visible svg { color: var(--on-accent); }
-
-/* ---- the dock: every workspace along the sidebar's foot ---- */
-.ws-dock { flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
-.ws-dock::-webkit-scrollbar { display: none; }
-.ws-dock-item { position: relative; flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: var(--r-card); background: none; cursor: pointer; transition: background .15s; }
-.ws-dock-item:hover { background: var(--row-hover); }
-.ws-dock-item:not(.current) .ws-tile:not(.parked) { opacity: .78; filter: saturate(.85); }
-.ws-dock-item:hover .ws-tile:not(.parked) { opacity: 1; filter: none; }
-.ws-dock-item.current { background: var(--row-on); }
-.ws-dock-item.current::after { content: ''; position: absolute; bottom: 1px; left: 50%; width: 12px; height: 3px; margin-left: -6px; border-radius: var(--r-tag); background: var(--w); animation: ws-dot var(--t-move) var(--out); }
-@keyframes ws-dot { from { width: 3px; margin-left: -1.5px; } }
-.ws-dock-item .ws-alert { top: 2px; left: 22px; box-shadow: 0 0 0 2px var(--side); }
-.ws-dock-item .ws-alert.unread { top: 4px; left: 25px; }
-.ws-dock-add { flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin-left: 4px; padding: 0; border: 0; border-radius: var(--r-control); background: none; color: var(--fg2); box-shadow: inset 0 0 0 1.5px var(--line-strong); cursor: pointer; transition: color .15s, box-shadow .15s; }
-.ws-dock-add svg { width: 13px; height: 13px; }
-.ws-dock-add:hover { color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--fg3); }
+/* the rail's tiles (dashboard.html .rail): the workspace's colour as the tile's fill, its initial or icon on it */
+.rail { --fill-hover: rgba(255, 255, 255, .1); --fg: #EEECF1; }
+.rail .ws-tile { background: color-mix(in srgb, var(--w) 34%, #2A2830); color: #fff; box-shadow: none; font-weight: 600; }
+.rail .ws-tile.plain { background: #2A2830; color: #EEECF1; }
 
 /* the sidebar stays neutral in every workspace: a workspace says where you are by its tile, not a tint of its colour */
 
@@ -177,16 +109,17 @@ dialog.ws-sheet .buttons { align-items: center; padding: 12px 24px 18px; border-
 .ws-remove svg { width: 14px; height: 14px; }
 .ws-remove:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 
-/* ---- switching: the crew slides over to the next workspace (the side it's on in the switcher) ---- */
+/* ---- switching: the sidebar and what's open slide the way the rail goes (up to one above, down to one below); the
+   rail stays where it is ---- */
 /* named only while switching: the cards' own transitions (card to sheet) mustn't slide the whole crew */
-html.ws-switching main { view-transition-name: ws-main; }
-html.ws-switching .ws-switch { view-transition-name: ws-switch; }
-html.ws-switching::view-transition-old(ws-main) { animation: ws-out var(--t-pop) var(--in) both; }
-html.ws-switching::view-transition-new(ws-main) { animation: ws-in var(--t-move) var(--move) both; }
+html.ws-switching .side { view-transition-name: ws-side; }
+html.ws-switching .center { view-transition-name: ws-main; }
+html.ws-switching::view-transition-old(ws-main), html.ws-switching::view-transition-old(ws-side) { animation: ws-out var(--t-pop) var(--in) both; }
+html.ws-switching::view-transition-new(ws-main), html.ws-switching::view-transition-new(ws-side) { animation: ws-in var(--t-move) var(--move) both; }
 html.ws-switching::view-transition-old(root), html.ws-switching::view-transition-new(root) { animation-duration: .2s; }
-@keyframes ws-out { to { opacity: 0; transform: translateX(calc(var(--ws-dir, 1) * -28px)) scale(.99); } }
-@keyframes ws-in { from { opacity: 0; transform: translateX(calc(var(--ws-dir, 1) * 36px)) scale(.99); } }
+@keyframes ws-out { to { opacity: 0; transform: translateY(calc(var(--ws-dir, 1) * -14px)); } }
+@keyframes ws-in { from { opacity: 0; transform: translateY(calc(var(--ws-dir, 1) * 18px)); } }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
-  .ws-pop, .ws-banner, dialog.ws-sheet[open] { animation: none; }
+  .ws-banner, dialog.ws-sheet[open] { animation: none; }
 }

@@ -135,7 +135,9 @@ export class Crew extends EventEmitter {
 
   // Every workspace, for the switcher: its look and folder, whether it's on screen or parked, and how it's doing.
   workspaces() {
-    return [...this.hubs.values()].map((h) => ({
+    // in config.json's order (which order() changes), the default first
+    const rank = new Map(workspacesIn(this.config.data).map((w, i) => [w.id, i + 1]))
+    return [...this.hubs.values()].sort((a, b) => (a.ws === DEFAULT ? 0 : rank.get(a.ws) ?? Infinity) - (b.ws === DEFAULT ? 0 : rank.get(b.ws) ?? Infinity)).map((h) => ({
       id: h.ws, name: h.space.name, color: h.space.color, icon: h.space.icon, folder: h.space.folder, parked: h.parked, current: h === this.here,
       members: h.ws === DEFAULT ? null : h.space.agents.filter((a) => a.shared).map((a) => ({ name: a.name, folder: this.memberFolder(h.ws, a.name) })),
       ...h.summary(),
@@ -149,13 +151,14 @@ export class Crew extends EventEmitter {
   }
 
   // switch(id): put it on screen. create({ name, color, icon, folder, members }): a new workspace, opened and on screen.
-  // edit(id, { name, color, icon, folder }), open(id), park(id), remove(id). members(id, { add, remove, folders }): which
+  // edit(id, { name, color, icon, folder }), open(id), park(id), remove(id). order(null, [ids]): the order they're listed
+  // in (the default stays first; ids left out keep their order after the ones given). members(id, { add, remove, folders }): which
   // shared agents work there, and the folder each has of its own there ('' for the workspace's). In the default
   // workspace, where every shared agent is, only folders: each agent's own ('' for the home folder).
   workspaceAction(op, id, arg) {
     const data = this.config.data
     const has = (x) => x === DEFAULT || workspacesIn(data).some((w) => w.id === x)
-    if (op !== 'create' && !has(id)) throw new Error('no such workspace')
+    if (op !== 'create' && op !== 'order' && !has(id)) throw new Error('no such workspace')
     const where = () => space(data, id)
     const ops = {
       switch: () => {
@@ -170,6 +173,11 @@ export class Crew extends EventEmitter {
       open: () => (where().parked = false),
       park: () => (where().parked = true),
       remove: () => dropWorkspace(data, id),
+      order: () => {
+        const ids = Array.isArray(arg) ? arg.map(String) : []
+        const at = (w) => (w && ids.includes(w.id) ? ids.indexOf(w.id) : ids.length)
+        if (Array.isArray(data.workspaces)) data.workspaces = data.workspaces.map((w, i) => [w, i]).sort(([a, i], [b, j]) => at(a) - at(b) || i - j).map(([w]) => w)
+      },
       members: () => {
         const { add = [], remove = [], folders = {} } = arg ?? {}
         if (id === DEFAULT && (add.length || remove.length)) throw new Error('every shared agent is in the default workspace')
