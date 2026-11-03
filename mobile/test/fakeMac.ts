@@ -105,7 +105,7 @@ type Phone = { socket: ServerSocket; tx: Channel; ws: string | null; sent: State
 export class FakeMac {
   m: KeyPair = keyPair(new Uint8Array(crypto.randomBytes(32)))
   id = b64(new Uint8Array(crypto.randomBytes(16)))
-  name = 'Mac mini'
+  name = 'Studio'
   secret: Uint8Array | null = null
   devices = new Map<string, string>() // b64(D.pub) -> device id
   phones = new Set<Phone>()
@@ -204,8 +204,8 @@ export class FakeMac {
     }
     if (name === 'send') {
       const [, to, text] = args
-      this.change(ws, { ...state, feed: [...state.feed, { id: `m${state.feed.length + 1}`, ts: Date.now(), kind: 'msg', from: 'you', to: to || 'joseph', text }] })
-      return reply(`sent to @${to || 'joseph'}\n`)
+      this.change(ws, { ...state, feed: [...state.feed, { id: `m${state.feed.length + 1}`, ts: Date.now(), kind: 'msg', from: 'you', to: to || 'Ada', text }] })
+      return reply(`sent to @${to || 'Ada'}\n`)
     }
     return error(`"${name}" isn't available on a phone`)
   }

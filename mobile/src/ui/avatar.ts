@@ -88,11 +88,150 @@ export const colorOf = (spec: { color: string }) => COLORS[spec.color] ?? spec.c
 export const agentColor = (agent: Someone) => colorOf(avatarOf(agent))
 
 export type Mood = 'working' | 'waiting' | 'starting' | 'sleep' | 'idle' | 'still'
-const MOODS: Record<string, Mood> = { working: 'working', waiting: 'waiting', starting: 'starting', off: 'sleep', stopped: 'sleep' }
+// parked (its workspace is resting) and away (its computer can't be reached) sleep too, as their pose does
+const MOODS: Record<string, Mood> = { working: 'working', waiting: 'waiting', starting: 'starting', off: 'sleep', stopped: 'sleep', parked: 'sleep', away: 'sleep' }
 
 // Waiting on a teammate's answer, it rests instead of hopping: it isn't working, it's waiting.
 export const moodOf = (agent: { status?: string; on?: boolean; waitingOn?: unknown[] }): Mood => {
   if (agent.on === false) return 'sleep'
   if (agent.status === 'working' && agent.waitingOn?.length) return 'idle'
   return MOODS[agent.status ?? ''] ?? 'idle'
+}
+
+// ---- v2: poses and felt props (the design's avatar-v2.js poseOf) ----
+// The creature acts out its status with a felt prop, from 64px up; smaller creatures stay plain.
+export type Pose = 'laptop' | 'mug' | 'sign' | 'question' | 'pop' | 'sleep'
+export const POSE_MIN = 64
+
+// Status -> pose: at its laptop while it works, a mug when idle, the "OK?" sign when it needs your OK, a speech
+// bubble when it has a question, rising from its patch while it starts, asleep when it's off. Waiting on a teammate's
+// answer it rests with its mug: it isn't working, it's waiting.
+export function poseOf(agent: { status?: string; on?: boolean; waitingOn?: unknown[] }, ask?: string): Pose {
+  if (agent.on === false || ['off', 'stopped', 'parked', 'away'].includes(agent.status ?? '')) return 'sleep'
+  if (agent.status === 'waiting') return ask === 'question' ? 'question' : 'sign'
+  if (agent.status === 'working') return agent.waitingOn?.length ? 'mug' : 'laptop'
+  if (agent.status === 'starting') return 'pop'
+  return 'mug'
+}
+
+// What a pose draws, in the creature's 100x100 box. `felt` shapes get the fuzzy edge, the roundness gradients and the
+// grain; the rest are drawn plain, `under` the felt or over it.
+export type Shape = (
+  | { kind: 'path'; d: string }
+  | { kind: 'rect'; x: number; y: number; w: number; h: number; r: number }
+  | { kind: 'ellipse'; cx: number; cy: number; rx: number; ry: number }
+  | { kind: 'text'; x: number; y: number; text: string; size: number }
+) & { fill?: string; stroke?: string; strokeWidth?: number; opacity?: number; felt?: boolean; under?: boolean }
+
+export type PoseArt = {
+  s: number // the figure's scale
+  dx: number // and shift, in % of the box
+  dy: number
+  rot: number // and tilt, in degrees
+  clip?: number // cut off this % from the bottom (rising out of a hole)
+  back?: Shape[] // behind the creature, still
+  held?: Shape[] // moves with it
+  stand?: Shape[] // in front of it, still
+  paws?: Shape[][] // in front, tapping
+  float?: Shape[] // drifting above
+}
+
+// Where each body's right side sits around paw height, so a paw can reach the stick of a sign.
+const SIDE: Record<string, number> = { blob: 92, frog: 89, drop: 86, heart: 86, bean: 83, mochi: 90, cat: 87, bunny: 85 }
+// Felt for the props: soft warm neutrals, so the creature's own colour stays the only loud one.
+export const PROP = { lid: '#dfe2e8', base: '#a3a9b4', mug: '#f6efe3', band: '#ff9478', coffee: '#7b4a2c', steam: '#c9c1b6', board: '#fff3d6', wood: '#c48a55', bubble: '#fffaf1', hole: '#2a2230', zz: '#a69fd0' }
+
+export function poseArt(pose: Pose, spec: Spec): PoseArt {
+  const b = BODIES[spec.body] ?? BODIES.blob
+  const color = colorOf(spec)
+  const paw = (cx: number, cy: number, rx = 5, ry = 3.8): Shape => ({ kind: 'ellipse', cx, cy, rx, ry, fill: color, felt: true })
+  switch (pose) {
+    case 'laptop': {
+      const s = 0.84
+      const lid = 70
+      const mouth = 97 - (97 - b.mouth[1]) * s
+      const dy = -Math.max(4, mouth + 5 - lid)
+      return {
+        s, dx: 0, dy, rot: 0,
+        stand: [
+          { kind: 'ellipse', cx: 50, cy: 96.8, rx: 35, ry: 2.8, fill: '#000', opacity: 0.2, under: true },
+          { kind: 'path', d: `M27 ${lid + 3}Q27 ${lid} 30 ${lid}H70Q73 ${lid} 73 ${lid + 3}L75 92H25Z`, fill: PROP.lid, felt: true },
+          { kind: 'rect', x: 18, y: 90.5, w: 64, h: 5.5, r: 2.75, fill: PROP.base, felt: true },
+          { kind: 'path', d: `M45.5 ${lid + 14.5}Q45.5 ${lid + 9.5} 50 ${lid + 9.5}Q54.5 ${lid + 9.5} 54.5 ${lid + 14.5}Z`, fill: '#fff', opacity: 0.6 },
+        ],
+        paws: [[paw(37, lid + 0.6)], [paw(63, lid + 0.6)]],
+      }
+    }
+    case 'mug': {
+      const s = 0.88
+      const eye = 50 + (b.eyes[1][0] - 50) * s
+      const mx = Math.min(72, Math.max(62, eye + 7))
+      return {
+        s, dx: -3, dy: -1, rot: -4,
+        held: [
+          { kind: 'rect', x: mx, y: 71, w: 19, h: 22, r: 4, fill: PROP.mug, felt: true },
+          { kind: 'path', d: `M${mx + 18} 76q7.5 0 7.5 6t-7.5 6`, fill: 'none', stroke: PROP.mug, strokeWidth: 3.4 },
+          { kind: 'rect', x: mx, y: 80, w: 19, h: 4, r: 0, fill: PROP.band, opacity: 0.85 },
+          { kind: 'ellipse', cx: mx + 9.5, cy: 72.6, rx: 7.8, ry: 1.9, fill: PROP.coffee },
+          paw(mx + 1, 85, 5, 4.6),
+        ],
+        float: [{ kind: 'path', d: `M${mx + 6} 67q-2.6-3.2 0-6.4t0-6.4M${mx + 13} 67q-2.6-3.2 0-6.4t0-6.4`, fill: 'none', stroke: PROP.steam, strokeWidth: 1.8 }],
+      }
+    }
+    case 'sign': {
+      const s = 0.84
+      const px = 50 + ((SIDE[spec.body] ?? 88) - 50) * s
+      const dx = Math.min(6, 80 - px)
+      const x = px + dx + 2
+      return {
+        s, dx, dy: 0, rot: 0,
+        held: [
+          { kind: 'rect', x: x - 1.6, y: 34, w: 3.2, h: 58, r: 1.6, fill: PROP.wood, felt: true },
+          { kind: 'rect', x: x - 15, y: 11, w: 30, h: 25, r: 4.5, fill: PROP.board, felt: true },
+          { kind: 'text', x, y: 28.3, text: 'OK?', size: 11.5, fill: INK },
+          paw(x - 0.5, 66, 4.8, 4.6),
+        ],
+      }
+    }
+    case 'question': {
+      const bubble = 'M67 2H89Q98 2 98 11V20Q98 29 89 29H75L63 38L67 29Q58 29 58 20V11Q58 2 67 2Z'
+      return {
+        s: 0.82, dx: -8, dy: 0, rot: 0,
+        float: [
+          { kind: 'path', d: bubble, fill: PROP.bubble, felt: true },
+          { kind: 'path', d: bubble, fill: 'none', stroke: 'rgba(0,0,0,0.08)', strokeWidth: 0.8 },
+          { kind: 'text', x: 78, y: 22.5, text: '?', size: 19, fill: INK },
+        ],
+      }
+    }
+    case 'pop': {
+      // it rises out of a hole in its patch: sunk until its eyes sit just above the rim (short bodies barely sink)
+      const s = 0.9
+      const rim = 87
+      const eyes = 97 - (97 - Math.max(b.eyes[0][1], b.eyes[1][1])) * s
+      const dy = Math.max(0, Math.min(14, rim - 9 - eyes))
+      return {
+        s, dx: 0, dy, rot: 0, clip: 100 - rim,
+        back: [
+          { kind: 'ellipse', cx: 50, cy: rim, rx: 46, ry: 9, fill: PROP.hole, felt: true },
+          { kind: 'ellipse', cx: 50, cy: rim + 1, rx: 38, ry: 6, fill: '#000', opacity: 0.35 },
+        ],
+        float: [
+          { kind: 'ellipse', cx: 12, cy: 78, rx: 2.8, ry: 2.8, fill: color, felt: true },
+          { kind: 'ellipse', cx: 88, cy: 72, rx: 2.3, ry: 2.3, fill: color, felt: true },
+          { kind: 'ellipse', cx: 82, cy: 60, rx: 1.7, ry: 1.7, fill: color, felt: true },
+          { kind: 'ellipse', cx: 20, cy: 64, rx: 1.6, ry: 1.6, fill: color, felt: true },
+        ],
+      }
+    }
+    case 'sleep':
+      // felt letters: chunky, softly outlined in their own colour
+      return {
+        s: 0.86, dx: -6, dy: 0, rot: 3,
+        float: [
+          { kind: 'text', x: 72, y: 34, text: 'z', size: 22, fill: PROP.zz, stroke: PROP.zz, strokeWidth: 1.2 },
+          { kind: 'text', x: 86, y: 17, text: 'z', size: 15, fill: PROP.zz, stroke: PROP.zz, strokeWidth: 1.2 },
+        ],
+      }
+  }
 }

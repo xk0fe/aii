@@ -8,6 +8,8 @@ import type { CrewLink } from '@/state/types'
 import { makeDemo, type Space } from './fixture'
 
 const familyOf = (name: string) => name.replace(/\.\d+(?=@|$)/, '')
+// Ada, Ada.2 (her clone), Rex@workstation (on another computer): the person each of them is
+const personOf = (name: string) => familyOf(name).split('@')[0]
 
 // The switcher's line for a workspace, as hub.summary() counts it.
 function summary(sp: Space, current: string): Workspace {
@@ -30,24 +32,24 @@ function summary(sp: Space, current: string): Workspace {
 
 // What an agent says back, so the demo feels alive.
 const REPLIES: Record<string, string[]> = {
-  joseph: ["On it. The server side is mine: I'll look at `hub.send` first and report back.", 'Done. **42 passing**, nothing flaky this time.'],
-  david: ["Got it. I'll start with the screen you mean and send a build when it's ready.", 'Pushed the fix to `feat/hold-card`. Want a TestFlight build?'],
-  gal: ['Love it. Sketching two directions now, both in the felt look.', 'Here are the spacing tokens I used: `8 / 12 / 16 / 24`.'],
-  marc: ['Painting it now, soft pastels and felt texture.'],
-  arie: ["Noted. I'll put it on the board and nudge whoever owns it.", 'Added to the release checklist.'],
-  jeff: ['Happy to help! Give me a sec to read up.'],
-  ye: ['Pulling the numbers from PostHog now.'],
+  Ada: ["On it. I'll start with how the cart adds up its lines.", 'Done. The coupon tests pass again.'],
+  Milo: ["Got it. I'll send a build when it's ready.", 'The settings page now follows the system theme.'],
+  Iris: ['Love it. Sketching two directions now.', 'Here are the spacing steps I used: 8, 12, 16 and 24.'],
+  Theo: ['Running them now on Chrome and Safari.', 'All green. Nothing flaky this time.'],
+  June: ["Happy to. I'll keep it short and friendly."],
+  Rex: ['Starting a fresh build on the Workstation.'],
+  Noor: ["I'll read it through and leave notes."],
 }
 const WORK: Record<string, string> = {
-  joseph: 'Read core/hub.js', david: 'Edit src/screens/Home.tsx', gal: 'Read design/tokens.json', marc: 'image_gen: new sketch',
-  arie: 'Read RELEASE.md', jeff: 'Read docs/faq.md', ye: 'Bash: npx posthog query', 'scarlett@mac-mini': 'Bash: npm run e2e',
+  Ada: 'Read · api/cart.ts', Milo: 'Edit · src/settings/theme.ts', Iris: 'Read · design/cart.fig', Theo: 'Running the checkout tests',
+  June: 'Edit · docs/release-notes.md', 'Rex@workstation': 'Bash · npm run deploy', 'Noor@workstation': 'Read · api/orders.ts',
 }
 
 export class DemoClient implements CrewLink {
   readonly macName = 'Demo crew'
   readonly demo = true
   private spaces: Space[] = makeDemo()
-  private ws = 'default'
+  private ws = this.spaces[0].id
   private listeners = new Set<() => void>()
   private timers = new Set<ReturnType<typeof setTimeout>>()
   private said = new Map<string, number>()
@@ -105,14 +107,14 @@ export class DemoClient implements CrewLink {
     return e
   }
   private reply(id: string, name: string, re: string | undefined, text?: string) {
-    const lines = REPLIES[familyOf(name)] ?? ['On it.']
+    const lines = REPLIES[personOf(name)] ?? ['On it.']
     const n = this.said.get(name) ?? 0
     this.said.set(name, n + 1)
     this.post(id, { kind: 'reply', from: name, to: 'you', re, text: text ?? lines[n % lines.length] })
   }
 
   async watch(ws: string) {
-    if (!this.spaces.some((s) => s.id === ws)) ws = 'default'
+    if (!this.spaces.some((s) => s.id === ws)) ws = this.spaces[0].id
     this.ws = ws
     this.emit()
   }
@@ -120,10 +122,12 @@ export class DemoClient implements CrewLink {
   async send(to: string, text: string, opts: { fresh?: boolean; re?: string } = {}) {
     const id = this.ws
     const sp = this.space(id)
-    if (sp.parked) throw new Error(`${sp.name} is parked: open it on the Mac first`)
+    if (sp.parked) throw new Error(`${sp.name} is parked: open it on your computer first`)
     const agents = sp.state.agents.filter((a) => !a.cloneOf)
     const mentioned = [...String(text).matchAll(/(?<![\w@])@([\w-]+(?:@[\w-]+)?)/g)].map((m) => m[1].toLowerCase())
-    const names = [...new Set([...String(to).split(',').filter(Boolean), ...mentioned])].filter((n) => agents.some((a) => a.name === n))
+    // names are written as given (Ada), mentions however they're typed (@ada)
+    const named = (n: string) => agents.find((a) => a.name.toLowerCase() === n.toLowerCase() || personOf(a.name).toLowerCase() === n.toLowerCase())?.name
+    const names = [...new Set([...String(to).split(',').filter(Boolean), ...mentioned].map(named).filter((n): n is string => Boolean(n)))]
     if (to && !names.length) throw new Error(`there's no ${to} here`)
     const off = names.find((n) => !agents.find((a) => a.name === n)?.on)
     if (off) throw new Error(`@${off} is off: turn it on first`)
@@ -135,7 +139,7 @@ export class DemoClient implements CrewLink {
     pick.forEach((n, i) => {
       const was = agents.find((a) => a.name === n)
       const busy = was?.status === 'waiting'
-      if (!busy) this.later(700 + i * 400, () => this.agent(id, n, { status: 'working', since: Date.now(), activity: WORK[n] ?? 'Read README.md' }))
+      if (!busy) this.later(700 + i * 400, () => this.agent(id, n, { status: 'working', since: Date.now(), activity: WORK[n] ?? 'Read · README.md' }))
       this.later(2600 + i * 900, () => {
         this.reply(id, n, sent[i].id)
         if (!busy) this.agent(id, n, { status: was?.status === 'working' ? 'working' : 'idle', since: Date.now(), activity: was?.status === 'working' ? was.activity : '' })
@@ -163,11 +167,11 @@ export class DemoClient implements CrewLink {
       }
       if (!Object.keys(answers).length) throw new Error('pick an answer first')
       answer = { by: 'you', answers }
-      next = `Going with **${Object.values(answers)[0]}**. I'll wire it up and send a build.`
+      next = `Going with **${Object.values(answers)[0]}**. I'll sketch it and send it over.`
     } else if ('allow' in reply && reply.allow) {
       const always = ask.type === 'permission' ? ask.always?.find((x) => x.i === reply.always)?.label : undefined
       answer = { by: 'you', allow: true, ...(always && { always }) }
-      next = ask.type === 'plan' ? 'Plan approved. Cutting `release/2.4` as soon as #4647 lands.' : ask.type === 'permission' && ask.tool === 'Bash' ? "Build's green: **0 errors**. The dist folder is fresh." : 'Done, the edit is in.'
+      next = ask.type === 'plan' ? "Thanks. I'll start with the first step." : ask.type === 'permission' && ask.tool === 'Bash' ? 'The build passed with **no errors**. The settings page looks right in dark mode.' : 'Done, the edit is in.'
     } else {
       const note = 'note' in reply ? String(reply.note ?? '').trim() : ''
       answer = { by: 'you', allow: false, ...(note && { note }) }
@@ -175,7 +179,7 @@ export class DemoClient implements CrewLink {
     }
     this.change(id, (s) => ({ ...s, feed: s.feed.map((x) => (x.id === cardId ? { ...x, answer: { ...answer, at: Date.now() } } : x)) }))
     const still = this.space(id).state.feed.some((x) => x.kind === 'ask' && !x.answer && x.from === e.from)
-    if (!('terminal' in reply)) this.agent(id, e.from, { status: still ? 'waiting' : 'working', since: Date.now(), activity: ask.type === 'permission' && ask.code ? `${ask.tool ?? 'Bash'}: ${ask.code.split('\n')[0].slice(0, 40)}` : WORK[e.from] ?? '' })
+    if (!('terminal' in reply)) this.agent(id, e.from, { status: still ? 'waiting' : 'working', since: Date.now(), activity: ask.type === 'permission' && ask.code ? `${ask.tool ?? 'Bash'} · ${ask.code.split('\n')[0].slice(0, 40)}` : WORK[e.from] ?? '' })
     this.emit()
     if (next) {
       this.later(3200, () => {
@@ -190,7 +194,7 @@ export class DemoClient implements CrewLink {
     const id = this.ws
     const e = this.space(id).state.feed.find((x) => x.id === cardId)
     this.change(id, (s) => ({ ...s, feed: s.feed.map((x) => (x.id === cardId ? { ...x, held: false } : x)) }))
-    if (e?.to) this.agent(id, e.to, { status: 'working', since: Date.now(), activity: WORK[familyOf(e.to)] ?? 'Read README.md' })
+    if (e?.to) this.agent(id, e.to, { status: 'working', since: Date.now(), activity: WORK[familyOf(e.to)] ?? 'Read · README.md' })
     this.emit()
   }
 
@@ -208,10 +212,14 @@ export class DemoClient implements CrewLink {
     this.emit()
   }
 
+  // As the Mac does: turned off, its open questions are no longer waiting (hub.forgetAsks); turned on, it starts in the
+  // workspace it was turned on in, wherever the phone looks meanwhile.
   async power(name: string, on: boolean) {
-    this.agent(this.ws, name, { on, status: on ? 'starting' : 'off', since: Date.now(), activity: '' })
+    const id = this.ws
+    this.agent(id, name, { on, status: on ? 'starting' : 'off', since: Date.now(), activity: '' })
+    if (!on) this.change(id, (s) => ({ ...s, feed: s.feed.map((x) => (x.kind === 'ask' && !x.answer && familyOf(x.from) === familyOf(name) ? { ...x, answer: { stale: true, at: Date.now() } } : x)) }))
     this.emit()
-    if (on) this.later(1400, () => this.agent(this.ws, name, { status: 'idle', since: Date.now() }))
+    if (on) this.later(1400, () => this.agent(id, name, { status: 'idle', since: Date.now() }))
   }
 
   async setModes(name: string, modes: { yolo?: boolean; fast?: boolean }) {

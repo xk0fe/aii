@@ -13,13 +13,15 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import Animated, { FadeIn, FadeOut, useAnimatedStyle, withTiming } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import { APP_NAME } from '@/brand'
 import { parsePairCode } from '@/net/pairing'
 import { useSession } from '@/state/hooks'
 import { PairError, session } from '@/state/session'
 import { Creature } from '@/ui/creature'
+import { tryWords } from '@/ui/format'
 import { useMountEffect } from '@/ui/hooks'
 import { Icon, type IconName } from '@/ui/icon'
-import { Button, Press, tap, thud } from '@/ui/parts'
+import { Button, Press, tap, thud, Wordmark } from '@/ui/parts'
 import { fonts, useTheme, type Theme } from '@/ui/theme'
 
 const BUDDIES = [
@@ -68,7 +70,7 @@ function Scanner({ t, onCode, caught }: { t: Theme; onCode: (code: string) => vo
           {permission && !granted ? (
             <View style={styles.ask}>
               <Icon name="scan" size={30} color="rgba(255,255,255,0.85)" weight="regular" />
-              <Text style={styles.askText}>{denied ? 'Camera access is off for Crew.' : 'Crew needs the camera to see the code.'}</Text>
+              <Text style={styles.askText}>{denied ? `Camera access is off for ${APP_NAME}.` : `${APP_NAME} needs the camera to see the code.`}</Text>
               <Button t={t} small kind="primary" title={denied ? 'Open Settings' : 'Allow the camera'} onPress={() => void (denied ? Linking.openSettings() : request())} />
             </View>
           ) : null}
@@ -87,16 +89,20 @@ function Status({ t, busy, retrying, error, open, onCancel, onDetails }: { t: Th
     <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={[styles.status, { backgroundColor: t.surface, borderColor: t.lineStrong }]}>
       {!busy && open && tries.length ? (
         <View style={[styles.tries, { borderBottomColor: t.line }]}>
-          {tries.map((x) => (
-            <View key={x.host} style={styles.try}>
-              <Text style={[styles.host, { color: t.fg }]} numberOfLines={1} ellipsizeMode="middle">
-                {x.host}
-              </Text>
-              <Text style={[styles.why, { color: t.fg2 }]} numberOfLines={1}>
-                {x.why}
-              </Text>
-            </View>
-          ))}
+          {tries.map((x, i) => {
+            // how each way of reaching the computer went, in words: no addresses or codes on screen
+            const w = tryWords(x)
+            return (
+              <View key={`${x.host}${i}`} style={styles.try}>
+                <Text style={[styles.host, { color: t.fg }]} numberOfLines={1}>
+                  {w.where}
+                </Text>
+                <Text style={[styles.why, { color: t.fg2 }]} numberOfLines={1}>
+                  {w.what}
+                </Text>
+              </View>
+            )
+          })}
         </View>
       ) : null}
       <View style={styles.statusRow}>
@@ -234,8 +240,9 @@ export default function Pair() {
       alwaysBounceVertical={false}
     >
       <View style={styles.head}>
+        <Wordmark name={APP_NAME} size={34} />
         <Text style={[styles.guide, { color: t.fg2 }]}>
-          On your Mac: <Text style={{ color: t.fg, fontWeight: '600' }}>{'Computers\u00a0›\u00a0Add\u00a0a\u00a0phone'}</Text>, then {pasting ? 'copy the code.' : 'point here.'}
+          In {APP_NAME} on your computer: <Text style={{ color: t.fg, fontWeight: '600' }}>{'Computers\u00a0›\u00a0Add\u00a0a\u00a0phone'}</Text>, then {pasting ? 'copy the code.' : 'point here.'}
         </Text>
         {s.active ? (
           <Press onPress={() => (attempt.current?.(), router.back())} style={[styles.close, { backgroundColor: t.btn }]} accessibilityRole="button" accessibilityLabel="Close" hitSlop={8}>
@@ -280,8 +287,9 @@ export default function Pair() {
       </View>
 
       <View style={styles.more}>
-        <Quiet t={t} icon={pasting ? 'scan' : 'paste'} title={pasting ? 'Scan instead' : 'Paste the code'} onPress={mode} disabled={Boolean(busy)} />
-        <Quiet t={t} icon="crew" title="Try the demo" onPress={demo} disabled={Boolean(busy)} />
+        {/* the way in without a computer (and App Review's): always on this first screen */}
+        <Button t={t} icon="crew" title="Try the demo crew" onPress={demo} disabled={Boolean(busy)} accessibilityHint="A made-up crew that lives only on this phone" />
+        <Quiet t={t} icon={pasting ? 'scan' : 'paste'} title={pasting ? 'Scan instead' : 'Paste the code instead'} onPress={mode} disabled={Boolean(busy)} />
       </View>
     </KeyboardAwareScrollView>
   )
@@ -290,8 +298,8 @@ export default function Pair() {
 const C = 38
 const styles = StyleSheet.create({
   content: { flexGrow: 1, paddingHorizontal: 16 },
-  head: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 34 },
-  guide: { fontSize: 16, lineHeight: 21, textAlign: 'center', letterSpacing: -0.15 },
+  head: { minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34, gap: 4 },
+  guide: { fontSize: 15, lineHeight: 20, textAlign: 'center' },
   close: { position: 'absolute', right: 0, top: 0, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   stage: { flex: 1, minHeight: 420, marginTop: PERCH + 6 },
   buddies: { position: 'absolute', top: -PERCH, left: 0, right: 0, height: PERCH + 4, flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end' },
@@ -329,13 +337,13 @@ const styles = StyleSheet.create({
   details: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   tries: { paddingTop: 12, paddingBottom: 10, gap: 6, borderBottomWidth: StyleSheet.hairlineWidth },
   try: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
-  host: { flexShrink: 1, fontFamily: fonts.mono, fontSize: 12.5 },
-  why: { marginLeft: 'auto', fontSize: 13 },
+  host: { flexShrink: 1, fontSize: 13, lineHeight: 18 },
+  why: { marginLeft: 'auto', fontSize: 13, lineHeight: 18 },
   pasteBox: { flex: 1, justifyContent: 'center', padding: 14, paddingBottom: 82, gap: 12 },
   badge: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 6 },
   paste: { height: 136, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth * 2, padding: 12, fontFamily: fonts.mono, fontSize: 13, textAlignVertical: 'top' },
   row: { flexDirection: 'row', gap: 10 },
-  more: { flexDirection: 'row', marginTop: 8 },
-  quiet: { flex: 1, height: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  quietText: { fontSize: 15, fontWeight: '600' },
+  more: { marginTop: 12, gap: 2 },
+  quiet: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  quietText: { fontSize: 15, lineHeight: 20, fontWeight: '500' },
 })

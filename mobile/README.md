@@ -1,18 +1,18 @@
 # Crew for your phone
 
-The phone app for when you're away from the Mac: see who's working, answer when an agent needs you, and send a message. iOS and Android, built with Expo (SDK 58, React Native 0.88, TypeScript, expo-router).
+The phone app for when you're away from your computer: see who's working, answer when an agent needs you, and send a message. iOS and Android, built with Expo (SDK 58, React Native 0.88, TypeScript, expo-router).
 
-It talks to Crew on your Mac directly, over your network or Tailscale, end to end encrypted. The contract is [`shared/PROTOCOL.md`](../shared/PROTOCOL.md); the app imports `shared/protocol.js` and `shared/sync.js` as they are.
+It talks to Crew on your computer (a Mac or a Windows PC) directly, over your network or Tailscale, end to end encrypted. The contract is [`shared/PROTOCOL.md`](../shared/PROTOCOL.md); the app imports `shared/protocol.js` and `shared/sync.js` as they are.
 
 ## What's in it
 
-- **Pair:** on the Mac, open **Computers** in Crew and choose **Add a phone**, then point the phone at the QR code it shows (or paste the code). The camera keeps looking by itself: a code that didn't get through is tried again after a few seconds, one the Mac turned away isn't. Or look around the demo crew.
+- **Pair:** on the computer, open **Computers** in Crew and choose **Add a phone**, then point the phone at the QR code it shows (or paste the code). The camera keeps looking by itself: a code that didn't get through is tried again after a few seconds, one the computer turned away isn't. Or **Try the demo crew** (the first screen always offers it; App Review uses it).
 - **Chat:** everyone's messages, or your conversation with one agent (tap its face). Replies render light Markdown. Type `@` to bring someone in. Replies you've seen are marked read on the Mac too.
-- **Needs you:** permission prompts, an agent's own questions and plans, as cards. They stack at the top of the chat and fill the Needs you tab (with a badge); the answer goes back as `answer(ws, id, reply)`, exactly what `Hub.answer` takes.
-- **Crew:** the agents as creature cards. Tap one for on/off, YOLO, Fast, New conversation, Restart and Mark free.
+- **Needs you:** permission prompts, an agent's own questions and plans. They stack at the top of the chat and fill the Needs you tab (with a badge), where the creature asks in its own words ("Can I run npm run build?") above thumb-sized buttons; the answer goes back as `answer(ws, id, reply)`, exactly what `Hub.answer` takes.
+- **Crew:** the Crew room at the top (the crew together, each acting out its status: at a laptop, with a mug, holding up "OK?", asking, rising, asleep) with one headline, and the list below it, grouped by computer. The room folds away. Tap anyone for on/off, YOLO, Fast, New conversation, Restart and Mark idle.
 - **Workspaces:** the phone watches one workspace at a time, its own choice. The switcher is the top left of every tab.
-- **Macs:** the Macs you've paired, how each is reached, and Remove.
-- **Offline:** the last state stays on screen, the top says "Mac mini unreachable since 14:02", and sending waits with the reason in the message box. It reconnects by itself (with backoff, and right away when the app comes back to the front).
+- **Computers:** the computers you've paired, how each is reached (Wi-Fi or Tailscale, never an address), and Remove.
+- **Offline:** the last state stays on screen, the top says "Studio unreachable since 14:02", and sending waits with the reason in the message box. It reconnects by itself (with backoff, and right away when the app comes back to the front).
 
 Version 1 has no Tasks board, no terminals and no push notifications.
 
@@ -40,30 +40,42 @@ Then pick **Try the demo crew**, or open `crew://demo` (`xcrun simctl openurl bo
 
 On an iPhone: `npx expo run:ios --device` with your phone plugged in. A bundle id belongs to one Apple team, so signing with your own team (a free Personal Team works) needs an id of your own: `CREW_BUNDLE_ID=com.you.crew CREW_APPLE_TEAM=<your team id> npx expo run:ios --device --configuration Release` (Release carries its JavaScript, so it runs without the dev server; a free team's build stops opening after 7 days, until you build it again). The phone has to reach the Mac on port 7788 (the same Wi-Fi, or Tailscale on both); iOS asks once for local network access.
 
-`ios/` and `android/` are generated from `app.json` by `npx expo prebuild` (Continuous Native Generation) and are gitignored: change native settings in `app.json`, never in those folders.
+`ios/` and `android/` are generated from `app.config.js` by `npx expo prebuild` (Continuous Native Generation) and are gitignored: change native settings in `app.config.js`, never in those folders. The name and the store id are in `src/brand.js` (one line each to change).
 
 ## Code
 
 ```
 src/
+  brand.js  the app's name and store id, read by app.config.js and the screens
   net/      the connection, runtime-agnostic (no React): crypto.ts (X25519, HKDF-SHA256, ChaCha20-Poly1305 with @noble),
             client.ts (every address at once, handshake, calls, watch + patches, reconnecting), pairing.ts, types.ts
-  state/    session.ts (paired Macs, the one in use, its connection), storage.ts (expo-secure-store), hooks.ts
-  demo/     a made-up crew in four workspaces that answers like a Mac (for screenshots and App Review)
-  ui/       the creatures (creature.tsx, ported from desktop/ui/avatar.js), cards, feed, composer, theme tokens
+  state/    session.ts (paired computers, the one in use, its connection), storage.ts and prefs.ts (expo-secure-store), hooks.ts
+  demo/     the neutral demo crew (design/DEMO-CREW.md) in two workspaces, answering like a computer would
+  ui/       the creatures (avatar.ts specs and poses, creature.tsx, felt.ts: the felt edge as geometry), the Crew room
+            (room.ts), felt surfaces, the ask cards, feed, composer, theme tokens (v1 calm + v2 Berry and Fredoka)
   app/      the screens (expo-router)
-scripts/smoke.ts   the network layer against a real Mac, from a terminal
-test/              Jest: the test vectors, the client against a fake Mac, pairing through the session, pairing codes
+assets/     the icon layers, the splash, the felt textures, Fredoka (OFL)
+store/      the store listing drafts, privacy answers, review notes and screenshots
+scripts/smoke.ts   the network layer against a real computer, from a terminal
+test/              Jest: the test vectors, the client against a fake computer, pairing, the words and the room, the
+                   demo crew and the store config
 ```
 
 ## Check it
 
 ```sh
-npx tsc --noEmit    # types
-npx jest            # shared/vectors.json reproduced, a whole session against a fake Mac, pairing, pairing-code errors
+npm run typecheck   # types
+npm test            # the above
 ```
 
-And against a real Mac running Crew, with a code from **Computers › Phones › Add a phone**:
+## Release
+
+`app.config.js` has the version (1.0.0) and the build number: raise `BUILD` by one for every upload to a store.
+`eas.json` has three profiles: `simulator` (an iOS Simulator build), `preview` (internal: ad hoc, an APK) and
+`production` (the App Store, an Android App Bundle). What the stores ask (the listing, App Privacy, Data safety, age
+rating, export compliance, review notes) is drafted in [`store/`](store/README.md).
+
+And against a real computer running Crew, with a code from **Computers › Add a phone**:
 
 ```sh
 npx tsx scripts/smoke.ts crewphone1.…            # pair, print the state, send a hello, print the patches that follow

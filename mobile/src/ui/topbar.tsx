@@ -10,9 +10,9 @@ import { useCrew } from '@/state/hooks'
 import { clock, when } from './format'
 import { Icon } from './icon'
 import { Press, WsTile } from './parts'
-import type { Theme } from './theme'
+import { themes, type Theme } from './theme'
 
-// "Mac mini unreachable since 14:02", or why the Mac turned us away.
+// "Studio unreachable since 14:02", or why the computer turned us away.
 export function offlineText(link: Link, macName: string) {
   if (link.status !== 'offline') return ''
   if (link.fatal) return link.reason
@@ -28,8 +28,8 @@ export function LinkChip({ t }: { t: Theme }) {
   const label = demo ? 'Demo' : link.status === 'online' ? name : link.status === 'offline' ? 'Offline' : 'Connecting'
   return (
     <Press onPress={() => router.navigate('/settings')} style={[styles.chip, { backgroundColor: t.btn }]} accessibilityRole="button" accessibilityLabel={`${label}. Connection settings`} hitSlop={6}>
-      {link.status === 'connecting' && !demo ? <ActivityIndicator size="small" color={t.fg2} style={styles.spinner} /> : <View style={[styles.dot, { backgroundColor: demo ? t.blocked : color }]} />}
-      <Text style={[styles.chipText, { color: t.fg2 }]} numberOfLines={1}>
+      {link.status === 'connecting' && !demo ? <ActivityIndicator size="small" color={t.fg2} style={styles.spinner} /> : <View style={[styles.dot, { backgroundColor: demo ? t.fg3 : color }]} />}
+      <Text style={[styles.chipText, { color: t.fg2 }]} numberOfLines={1} maxFontSizeMultiplier={1.35}>
         {label}
       </Text>
     </Press>
@@ -50,12 +50,12 @@ export function TopBar({ t, below, background }: { t: Theme; below?: ReactNode; 
           <View>
             <WsTile t={t} ws={w ?? { id: ws, name }} size={30} />
             {needsElsewhere ? (
-              <View style={[styles.elsewhere, { backgroundColor: t.waiting, borderColor: background ?? t.bg }]}>
-                <Text style={styles.elsewhereText}>{needsElsewhere > 9 ? '9+' : needsElsewhere}</Text>
+              <View style={[styles.elsewhere, { backgroundColor: themes.light.waitingInk, borderColor: background ?? t.bg }]}>
+                <Text style={styles.elsewhereText} maxFontSizeMultiplier={1}>{needsElsewhere > 9 ? '9+' : needsElsewhere}</Text>
               </View>
             ) : null}
           </View>
-          <Text style={[styles.wsName, { color: t.fg }]} numberOfLines={1}>
+          <Text style={[styles.wsName, { color: t.fg }]} numberOfLines={1} maxFontSizeMultiplier={1.35}>
             {name}
           </Text>
           {switching ? <ActivityIndicator size="small" color={t.fg3} /> : <Icon name="down" size={13} color={t.fg3} weight="bold" />}
@@ -69,13 +69,13 @@ export function TopBar({ t, below, background }: { t: Theme; below?: ReactNode; 
 
 const styles = StyleSheet.create({
   bar: { paddingHorizontal: 16, paddingBottom: 6 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, height: 44 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 44 },
   ws: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1 },
-  wsName: { fontSize: 19, fontWeight: '700', letterSpacing: -0.35, flexShrink: 1 },
+  wsName: { fontSize: 17, fontWeight: '600', flexShrink: 1 },
   elsewhere: { position: 'absolute', right: -6, top: -5, minWidth: 17, height: 17, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
-  elsewhereText: { color: '#241500', fontSize: 9.5, fontWeight: '800' },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 28, paddingHorizontal: 10, borderRadius: 14, maxWidth: 160 },
-  chipText: { fontSize: 13, fontWeight: '600' },
+  elsewhereText: { color: '#FFFFFF', fontSize: 10, fontWeight: '600' },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 28, paddingHorizontal: 10, borderRadius: 10, maxWidth: 170 },
+  chipText: { fontSize: 13, fontWeight: '500' },
   dot: { width: 7, height: 7, borderRadius: 4 },
   spinner: { transform: [{ scale: 0.7 }], width: 12, height: 12 },
 })

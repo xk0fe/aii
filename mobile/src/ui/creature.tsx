@@ -1,18 +1,28 @@
-// The plush creatures of desktop/ui/avatar.js, drawn with react-native-svg: the same bodies, colors, eyes, mouths,
-// hats and cheeks, so a spec gives the same creature as on the Mac. The felt texture (an SVG filter there) is left
-// out; the highlight and shade gradients that give the felt its roundness stay.
+// The plush creatures of desktop/ui/avatar.js, drawn with react-native-svg: the same bodies, colours, eyes, mouths,
+// hats and cheeks, so a spec gives the same creature as on the Mac. From 40px up they're felt (felt.ts: a fuzzy edge
+// and the fibre grain), and from 64px up they can act out their status with a felt prop (avatar.ts poseArt): at a
+// laptop, holding a mug, the "OK?" sign, a question bubble, rising from a hole, asleep.
 //
-// Moods move them, transform-only (Reanimated, on the UI thread): a working creature hops, one waiting on you
-// wiggles and wears an orange "!", one that's off sleeps, dimmed. A short `key` per mood restarts the animation.
-import { memo, useId } from 'react'
-import { StyleSheet, Text, View } from 'react-native'
-import Animated, { Easing, ReduceMotion, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated'
-import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Rect, Stop } from 'react-native-svg'
+// A creature never takes a touch itself (an SVG under the finger would swallow it): what holds it does.
+//
+// Motion is Reanimated's CSS animations: transforms only, run natively, no JavaScript per frame. A working creature
+// hops (or types, posed), one waiting on you wiggles, one that's off breathes slowly. Everything holds still when the
+// screen isn't in front (MotionContext) or the system asks for reduced motion.
+import { createContext, memo, useContext, useId } from 'react'
+import { StyleSheet, View } from 'react-native'
+import Animated, { cubicBezier, css, useReducedMotion } from 'react-native-reanimated'
+import Svg, { Circle, Defs, Ellipse, G, Image as SvgImage, Path, Pattern, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg'
 
-import { useMountEffect } from '@/ui/hooks'
 import { dim } from '@/ui/color'
-import { avatarOf, BODIES, colorOf, hash, INK, moodOf, type Body, type Mood, type Someone } from './avatar'
-import { fonts } from './theme'
+import { avatarOf, BODIES, colorOf, hash, INK, moodOf, POSE_MIN, poseArt, poseOf, type Body, type Mood, type Pose, type Shape, type Someone, type Spec } from './avatar'
+import { ellipse, flatten, fuzzy, roundRect, type Pt } from './felt'
+import { fonts, useTheme } from './theme'
+
+const GRAIN = require('../../assets/images/felt-creature.png')
+const FELT_MIN = 40 // smaller creatures skip the felt: it would only be noise
+
+// Whether creatures may move: a screen that isn't in front, or an app in the background, holds them still.
+export const MotionContext = createContext(true)
 
 type Tone = (c: string) => string
 const same: Tone = (c) => c
@@ -78,15 +88,17 @@ function Mouth({ kind, x, y, t }: { kind: string; x: number; y: number; t: Tone 
   }
 }
 
-// Felt accessories ride on the body layer; glasses and shades are crisp and sit on the face.
-function Hat({ kind, b, t }: { kind: string; b: Body; t: Tone }) {
+// Felt accessories ride on the body layer; glasses and shades are crisp and sit on the face. The beret and the
+// headphones are near-black felt that vanishes on a dark screen: there they're lifted to a charcoal.
+function Hat({ kind, b, t, dark }: { kind: string; b: Body; t: Tone; dark: boolean }) {
   const [x, y] = b.top
+  const black = (c: string) => t(dark ? '#4E4C56' : c)
   switch (kind) {
     case 'beret':
       return (
         <G transform={`translate(${x} ${y + 2}) rotate(-14)`}>
-          <Path d="M-2 -10Q0 -17 5 -16" fill="none" stroke={t('#1d1c22')} strokeWidth={3.6} strokeLinecap="round" />
-          <Ellipse cy={-2} rx={25} ry={10.5} fill={t('#1d1c22')} />
+          <Path d="M-2 -10Q0 -17 5 -16" fill="none" stroke={black('#1d1c22')} strokeWidth={3.6} strokeLinecap="round" />
+          <Ellipse cy={-2} rx={25} ry={10.5} fill={black('#1d1c22')} />
           <Ellipse cx={-6} cy={-6} rx={13} ry={3.5} fill="#fff" opacity={0.1} />
         </G>
       )
@@ -136,9 +148,9 @@ function Hat({ kind, b, t }: { kind: string; b: Body; t: Tone }) {
       const w = b.wide ? 40 : 33
       return (
         <G transform={`translate(${x} ${y + 18})`}>
-          <Path d={`M${-w} 6A${w} ${w + 4} 0 0 1 ${w} 6`} fill="none" stroke={t('#25242b')} strokeWidth={5.5} strokeLinecap="round" />
-          <Rect x={-w - 6} y={0} width={12} height={18} rx={6} fill={t('#25242b')} />
-          <Rect x={w - 6} y={0} width={12} height={18} rx={6} fill={t('#25242b')} />
+          <Path d={`M${-w} 6A${w} ${w + 4} 0 0 1 ${w} 6`} fill="none" stroke={black('#25242b')} strokeWidth={5.5} strokeLinecap="round" />
+          <Rect x={-w - 6} y={0} width={12} height={18} rx={6} fill={black('#25242b')} />
+          <Rect x={w - 6} y={0} width={12} height={18} rx={6} fill={black('#25242b')} />
           <Rect x={-w - 3} y={3} width={6} height={12} rx={3} fill={t('#ff5aa8')} />
           <Rect x={w - 3} y={3} width={6} height={12} rx={3} fill={t('#ff5aa8')} />
         </G>
@@ -181,48 +193,141 @@ function FaceWear({ kind, b, t }: { kind: string; b: Body; t: Tone }) {
   return null
 }
 
-function Shape({ b, fill }: { b: Body; fill: string }) {
+// ---- felt ----
+
+// A body's parts (ears, eye bumps, then the body) as outlines, plain or fuzzy.
+function bodyParts(b: Body, felt: boolean): string[] {
+  const parts: { key: string; polys: () => Pt[][]; plain: string }[] = (b.extra ?? []).map((x) =>
+    x.kind === 'circle'
+      ? { key: `c${x.cx},${x.cy},${x.r}`, polys: () => [ellipse(x.cx, x.cy, x.r, x.r)], plain: `M${x.cx - x.r} ${x.cy}a${x.r} ${x.r} 0 1 0 ${2 * x.r} 0a${x.r} ${x.r} 0 1 0 ${-2 * x.r} 0Z` }
+      : { key: `e${x.cx},${x.cy},${x.rx},${x.ry},${x.rotate}`, polys: () => [ellipse(x.cx, x.cy, x.rx, x.ry, x.rotate)], plain: '' },
+  )
+  parts.push({ key: b.d, polys: () => flatten(b.d), plain: b.d })
+  return parts.map((p, i) => (felt || !p.plain ? fuzzy(p.key, p.polys, 911 + i * 37, felt ? FUZZ : { amp: 0, step: 1 }) : p.plain))
+}
+const FUZZ = { amp: 1.7, step: 0.65 }
+
+function shapeOutline(s: Shape): string {
+  switch (s.kind) {
+    case 'path':
+      return fuzzy(s.d, () => flatten(s.d), hash(s.d) % 9973, FUZZ)
+    case 'rect':
+      return fuzzy(`r${s.x},${s.y},${s.w},${s.h},${s.r}`, () => [roundRect(s.x, s.y, s.w, s.h, s.r)], 313, FUZZ)
+    case 'ellipse':
+      return fuzzy(`e${s.cx},${s.cy},${s.rx},${s.ry}`, () => [ellipse(s.cx, s.cy, s.rx, s.ry)], 701, s.rx < 3 ? { amp: 0.5, step: 0.5 } : FUZZ)
+    default:
+      return ''
+  }
+}
+
+// The roundness of felt: a soft light from the top left and a shade at the bottom (avatar.js av-hi / av-lo).
+function Shading({ id }: { id: string }) {
   return (
-    <G fill={fill}>
-      {b.extra?.map((x, i) =>
-        x.kind === 'circle' ? (
-          <Circle key={i} cx={x.cx} cy={x.cy} r={x.r} />
-        ) : (
-          <Ellipse key={i} cx={x.cx} cy={x.cy} rx={x.rx} ry={x.ry} transform={`translate(${x.cx} ${x.cy}) rotate(${x.rotate}) translate(${-x.cx} ${-x.cy})`} />
-        ),
-      )}
-      <Path d={b.d} />
-    </G>
+    <>
+      <RadialGradient id={`hi${id}`} cx="0.32" cy="0.2" r="0.72" fx="0.32" fy="0.2">
+        <Stop offset="0" stopColor="#fff" stopOpacity={0.62} />
+        <Stop offset="0.45" stopColor="#fff" stopOpacity={0.14} />
+        <Stop offset="1" stopColor="#fff" stopOpacity={0} />
+      </RadialGradient>
+      <RadialGradient id={`lo${id}`} cx="0.55" cy="1.08" r="0.8" fx="0.55" fy="1.08">
+        <Stop offset="0.15" stopColor="#000" stopOpacity={0.34} />
+        <Stop offset="1" stopColor="#000" stopOpacity={0} />
+      </RadialGradient>
+    </>
   )
 }
 
-// The still picture: one <Svg>, layered as the Mac layers its parts (body and hat, cheeks, eyes, mouth and facewear).
-export const CreatureArt = memo(function CreatureArt({ agent, size, asleep = false }: { agent: Someone; size: number; asleep?: boolean }) {
+// The fibres, laid over the creature's whole box once.
+function GrainPattern({ id }: { id: string }) {
+  return (
+    <Pattern id={`grain${id}`} patternUnits="userSpaceOnUse" x={0} y={0} width={100} height={100}>
+      <SvgImage href={GRAIN} x={0} y={0} width={100} height={100} preserveAspectRatio="none" />
+    </Pattern>
+  )
+}
+
+// Outlines filled as felt: the colour, the roundness, and the grain (a pattern fill: a clipped image loses its clip
+// on iOS once anything above it is rotated).
+function Felt({ id, outlines, fill, grain }: { id: string; outlines: string[]; fill: string | string[]; grain: boolean }) {
+  return (
+    <>
+      {outlines.map((d, i) => (
+        <G key={i}>
+          <Path d={d} fill={Array.isArray(fill) ? fill[i] : fill} />
+          <Path d={d} fill={`url(#hi${id})`} />
+          <Path d={d} fill={`url(#lo${id})`} />
+        </G>
+      ))}
+      {grain ? outlines.map((d, i) => <Path key={`g${i}`} d={d} fill={`url(#grain${id})`} />) : null}
+    </>
+  )
+}
+
+function Plain({ s }: { s: Shape }) {
+  const paint = { fill: s.fill, stroke: s.stroke, strokeWidth: s.strokeWidth, opacity: s.opacity, strokeLinecap: s.stroke ? ('round' as const) : undefined }
+  switch (s.kind) {
+    case 'path':
+      return <Path d={s.d} {...paint} />
+    case 'rect':
+      return <Rect x={s.x} y={s.y} width={s.w} height={s.h} rx={s.r} {...paint} />
+    case 'ellipse':
+      return <Ellipse cx={s.cx} cy={s.cy} rx={s.rx} ry={s.ry} {...paint} />
+    case 'text':
+      return (
+        <SvgText x={s.x} y={s.y} textAnchor={s.text === 'z' ? 'start' : 'middle'} fontFamily={fonts.brandBold} fontSize={s.size} fill={s.fill} stroke={s.stroke} strokeWidth={s.strokeWidth} strokeLinejoin="round">
+          {s.text}
+        </SvgText>
+      )
+  }
+}
+
+// One layer of a pose (behind, held, in front, a paw, floating): its own <Svg> over the creature's box.
+const Layer = memo(function Layer({ shapes, size, felt }: { shapes: Shape[]; size: number; felt: boolean }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, '')
+  const soft = shapes.filter((s) => s.felt)
+  const outlines = soft.map((s) => (felt ? shapeOutline(s) : ''))
+  return (
+    <Svg width={size} height={size} viewBox="0 0 100 100" style={styles.layer} pointerEvents="none">
+      <Defs>
+        <Shading id={id} />
+        {felt && soft.length ? <GrainPattern id={id} /> : null}
+      </Defs>
+      {shapes.filter((s) => s.under).map((s, i) => (
+        <Plain key={`u${i}`} s={s} />
+      ))}
+      {felt ? <Felt id={id} outlines={outlines} fill={soft.map((s) => s.fill ?? '#888')} grain /> : soft.map((s, i) => <Plain key={`f${i}`} s={s} />)}
+      {shapes.filter((s) => !s.felt && !s.under).map((s, i) => (
+        <Plain key={`p${i}`} s={s} />
+      ))}
+    </Svg>
+  )
+})
+
+// The still picture: one <Svg>, layered as the Mac layers its parts (body and hat, cheeks, eyes, mouth and facewear).
+// `place`: how a pose sets the figure (scaled, shifted and tilted about its feet), drawn inside the SVG: a transform on
+// the view around it would leave the grain unclipped on iOS.
+export type Place = { s: number; dx: number; dy: number; rot: number }
+export const CreatureArt = memo(function CreatureArt({ agent, size, asleep = false, place }: { agent: Someone; size: number; asleep?: boolean; place?: Place }) {
+  const id = useId().replace(/[^a-zA-Z0-9]/g, '')
+  const { dark } = useTheme()
   const s = avatarOf(agent)
   const b = BODIES[s.body] ?? BODIES.blob
   const t: Tone = asleep ? (c) => dim(c) : same
   const color = t(colorOf(s))
   const look = asleep ? 'sleepy' : ['dot', 'sparkle', 'googly', 'happy', 'sleepy', 'line'].includes(s.eyes) ? s.eyes : 'dot'
   const [[x1, y1], [x2, y2]] = b.eyes
+  const felt = size >= FELT_MIN
+  const parts = bodyParts(b, felt)
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
       <Defs>
-        <RadialGradient id={`hi${id}`} cx="0.32" cy="0.2" r="0.72" fx="0.32" fy="0.2">
-          <Stop offset="0" stopColor="#fff" stopOpacity={0.62} />
-          <Stop offset="0.45" stopColor="#fff" stopOpacity={0.14} />
-          <Stop offset="1" stopColor="#fff" stopOpacity={0} />
-        </RadialGradient>
-        <RadialGradient id={`lo${id}`} cx="0.55" cy="1.08" r="0.8" fx="0.55" fy="1.08">
-          <Stop offset="0.15" stopColor="#000" stopOpacity={0.34} />
-          <Stop offset="1" stopColor="#000" stopOpacity={0} />
-        </RadialGradient>
+        <Shading id={id} />
+        {felt ? <GrainPattern id={id} /> : null}
       </Defs>
+      <G transform={place ? `translate(${50 + place.dx} ${97 + place.dy}) rotate(${place.rot}) scale(${place.s}) translate(-50 -97)` : undefined}>
       <Ellipse cx={50} cy={97.5} rx={33} ry={3.2} fill="#000" opacity={0.22} />
-      <Shape b={b} fill={color} />
-      <Shape b={b} fill={`url(#hi${id})`} />
-      <Shape b={b} fill={`url(#lo${id})`} />
-      <Hat kind={s.hat} b={b} t={t} />
+      <Felt id={id} outlines={parts} fill={color} grain={felt} />
+      <Hat kind={s.hat} b={b} t={t} dark={dark} />
       {s.cheeks ? (
         <G>
           <Ellipse cx={x1 - 6} cy={y1 + 7} rx={5} ry={3} fill={t('#ff5c9d')} opacity={0.42} />
@@ -237,118 +342,116 @@ export const CreatureArt = memo(function CreatureArt({ agent, size, asleep = fal
       )}
       <Mouth kind={s.mouth} x={b.mouth[0]} y={b.mouth[1]} t={t} />
       <FaceWear kind={s.hat} b={b} t={t} />
+      </G>
     </Svg>
   )
 })
 
-// ---- motion ----------------------------------------------------------------------------------------------
+// ---- motion: the Mac's keyframes (common.css, creature-v2.css), in px of each size ----
 
-// cubic-bezier(.3, .6, .4, 1), the Mac's hop curve, per keyframe segment
-function bezier(t: number) {
-  'worklet'
-  const x1 = 0.3
-  const y1 = 0.6
-  const x2 = 0.4
-  const y2 = 1
-  let u = t
-  for (let i = 0; i < 6; i++) {
-    const x = 3 * (1 - u) * (1 - u) * u * x1 + 3 * (1 - u) * u * u * x2 + u * u * u - t
-    const dx = 3 * (1 - u) * (1 - u) * x1 + 6 * (1 - u) * u * (x2 - x1) + 3 * u * u * (1 - x2)
-    if (Math.abs(dx) < 1e-6) break
-    u = Math.min(1, Math.max(0, u - x / dx))
+const ease = cubicBezier(0.42, 0, 0.58, 1)
+const motions = new Map<string, ReturnType<typeof css.keyframes>>()
+function motion(name: string, size: number, frames: (u: number) => Parameters<typeof css.keyframes>[0]) {
+  const key = `${name}:${size}`
+  let k = motions.get(key)
+  if (!k) motions.set(key, (k = css.keyframes(frames(size / 100))))
+  return k
+}
+const hop = (size: number) => {
+  const curve = cubicBezier(0.3, 0.6, 0.4, 1)
+  return motion('hop', size, (u) => ({
+    '0%': { transform: [{ translateY: 0 }, { scaleX: 1.07 }, { scaleY: 0.93 }], animationTimingFunction: curve },
+    '18%': { transform: [{ translateY: 0 }, { scaleX: 0.94 }, { scaleY: 1.07 }], animationTimingFunction: curve },
+    '50%': { transform: [{ translateY: -16 * u }, { scaleX: 0.98 }, { scaleY: 1.02 }], animationTimingFunction: curve },
+    '82%': { transform: [{ translateY: 0 }, { scaleX: 1.05 }, { scaleY: 0.95 }], animationTimingFunction: curve },
+    '100%': { transform: [{ translateY: 0 }, { scaleX: 1.07 }, { scaleY: 0.93 }] },
+  }))
+}
+const WIGGLE = css.keyframes({ '0%': { transform: [{ rotate: '-6deg' }] }, '50%': { transform: [{ rotate: '6deg' }] }, '100%': { transform: [{ rotate: '-6deg' }] } })
+const WIGGLE_SOFT = css.keyframes({ '0%': { transform: [{ rotate: '-2.5deg' }] }, '50%': { transform: [{ rotate: '2.5deg' }] }, '100%': { transform: [{ rotate: '-2.5deg' }] } })
+const BREATHE = css.keyframes({ '0%': { transform: [{ scaleX: 1 }, { scaleY: 1 }] }, '50%': { transform: [{ scaleX: 0.982 }, { scaleY: 1.03 }] }, '100%': { transform: [{ scaleX: 1 }, { scaleY: 1 }] } })
+const type_ = (size: number) => motion('type', size, (u) => ({ '0%': { transform: [{ translateY: 0 }] }, '50%': { transform: [{ translateY: 1.2 * u }] }, '100%': { transform: [{ translateY: 0 }] } }))
+const tapping = (size: number) => motion('tap', size, (u) => ({ from: { transform: [{ translateY: 0 }] }, to: { transform: [{ translateY: -2.5 * u }] } }))
+const drift = (size: number) => motion('drift', size, (u) => ({ '0%': { transform: [{ translateY: 0 }] }, '50%': { transform: [{ translateY: -3 * u }] }, '100%': { transform: [{ translateY: 0 }] } }))
+const rise = (size: number) => motion('rise', size, (u) => ({ from: { transform: [{ translateY: 30 * u }] }, to: { transform: [{ translateY: 0 }] } }))
+
+type Anim = Record<string, unknown>
+const loop = (name: unknown, ms: number, delay: number, extra: Anim = {}): Anim => ({ animationName: name, animationDuration: `${ms}ms`, animationIterationCount: 'infinite', animationTimingFunction: ease, animationDelay: `${-delay}ms`, ...extra })
+
+// What the creature's body does in a mood, posed or not.
+function bodyMotion(mood: Mood, posed: boolean, size: number, phase: number): Anim | null {
+  if (posed) {
+    if (mood === 'working') return loop(type_(size), 1200, phase % 1200)
+    if (mood === 'waiting') return loop(WIGGLE_SOFT, 1600, 0)
+    if (mood === 'starting') return { animationName: rise(size), animationDuration: '900ms', animationTimingFunction: cubicBezier(0.3, 1.4, 0.5, 1), animationFillMode: 'both' }
+    if (mood === 'sleep') return loop(BREATHE, 5500, phase % 5500)
+    return loop(BREATHE, 3600, phase % 3600)
   }
-  return 3 * (1 - u) * (1 - u) * u * y1 + 3 * (1 - u) * u * u * y2 + u * u * u
-}
-
-// av-hop: [at, translateY (share of the size), scaleX, scaleY]
-const HOP: [number, number, number, number][] = [
-  [0, 0, 1.07, 0.93],
-  [0.18, 0, 0.94, 1.07],
-  [0.5, -0.16, 0.98, 1.02],
-  [0.82, 0, 1.05, 0.95],
-  [1, 0, 1.07, 0.93],
-]
-
-function Moving({ mood, size, phase, children }: { mood: Mood; size: number; phase: number; children: React.ReactNode }) {
-  const p = useSharedValue(0)
-  const reduce = useReducedMotion()
-  useMountEffect(() => {
-    if (reduce || mood === 'still' || mood === 'idle' || mood === 'starting') return
-    const duration = mood === 'working' ? 720 : mood === 'waiting' ? 550 : 5500
-    const loop = withRepeat(withTiming(1, { duration, easing: Easing.linear, reduceMotion: ReduceMotion.System }), -1, false)
-    p.value = withDelay(phase % duration, loop)
-  })
-  const style = useAnimatedStyle(() => {
-    const v = p.value
-    if (mood === 'working') {
-      let i = 0
-      while (i < HOP.length - 2 && v > HOP[i + 1][0]) i++
-      const [a, ty0, sx0, sy0] = HOP[i]
-      const [z, ty1, sx1, sy1] = HOP[i + 1]
-      const k = bezier(Math.min(1, Math.max(0, (v - a) / (z - a))))
-      return { transform: [{ translateY: (ty0 + (ty1 - ty0) * k) * size }, { scaleX: sx0 + (sx1 - sx0) * k }, { scaleY: sy0 + (sy1 - sy0) * k }] }
-    }
-    if (mood === 'waiting') {
-      // av-wiggle: -6deg to 6deg and back, eased in and out
-      const deg = -6 * Math.cos(v * 2 * Math.PI)
-      return { transform: [{ rotate: `${deg}deg` }] }
-    }
-    if (mood === 'sleep') {
-      // a slow breath
-      const k = (1 - Math.cos(v * 2 * Math.PI)) / 2
-      return { transform: [{ scaleX: 1 - 0.018 * k }, { scaleY: 1 + 0.03 * k }] }
-    }
-    return { transform: [] }
-  })
-  return <Animated.View style={[{ width: size, height: size, transformOrigin: ['50%', '96%', 0] }, style]}>{children}</Animated.View>
-}
-
-function Bang({ size }: { size: number }) {
-  const d = Math.max(13, Math.min(30, size * 0.36))
-  const p = useSharedValue(1)
-  const reduce = useReducedMotion()
-  useMountEffect(() => {
-    if (reduce) return
-    p.value = withRepeat(withSequence(withTiming(1.15, { duration: 500 }), withTiming(1, { duration: 500 })), -1, false)
-  })
-  const style = useAnimatedStyle(() => ({ transform: [{ scale: p.value }] }))
-  return (
-    <Animated.View pointerEvents="none" style={[styles.bang, { width: d, height: d, borderRadius: d / 2, right: -size * 0.04, top: -size * 0.06 }, style]}>
-      <Text style={[styles.bangText, { fontSize: Math.max(9, Math.min(19, size * 0.24)) }]}>!</Text>
-    </Animated.View>
-  )
+  if (mood === 'working') return { ...loop(hop(size), 720, phase % 720), animationTimingFunction: 'linear' }
+  if (mood === 'waiting') return loop(WIGGLE, 550, 0)
+  if (mood === 'sleep') return loop(BREATHE, 5500, phase % 5500)
+  return null
 }
 
 export type CreatureProps = {
   agent: Someone & { status?: string; on?: boolean; waitingOn?: unknown[] }
   size?: number
   mood?: Mood // defaults to the agent's own (its status)
-  badge?: boolean // the "!" when it waits on you (on by default)
+  posed?: boolean // act out the status with a prop (64px and up)
+  ask?: string // what it's waiting on you for: 'question' holds up a speech bubble, anything else the "OK?" sign
 }
 
-export const Creature = memo(function Creature({ agent, size = 48, mood, badge = true }: CreatureProps) {
+export const Creature = memo(function Creature({ agent, size = 48, mood, posed = false, ask }: CreatureProps) {
   const m = mood ?? moodOf(agent)
+  const allowed = useContext(MotionContext)
+  const reduced = useReducedMotion()
+  const moving = allowed && !reduced && m !== 'still'
   const phase = hash(agent.name) % 4000
+  const pose: Pose | null = posed && size >= POSE_MIN ? poseOf(m === 'sleep' ? { status: 'off' } : agent, ask) : null
+  const art = pose ? poseArt(pose, avatarOf(agent) as Spec) : null
+  const felt = size >= FELT_MIN
+  const play = (a: Anim | null): Anim | undefined => (a && moving ? a : undefined)
+  const body = play(bodyMotion(m, Boolean(art), size, phase))
+  const figure = <CreatureArt agent={agent} size={size} asleep={m === 'sleep'} place={art ? { s: art.s, dx: art.dx, dy: art.dy, rot: art.rot } : undefined} />
+  if (!art) {
+    return (
+      <View style={{ width: size, height: size }} pointerEvents="none">
+        <Animated.View style={[{ width: size, height: size, transformOrigin: '50% 96%' }, body]}>{figure}</Animated.View>
+      </View>
+    )
+  }
+  const fig = (
+    <View style={StyleSheet.absoluteFill}>{figure}</View>
+  )
   return (
-    <View style={{ width: size, height: size }}>
-      <Moving key={m} mood={m} size={size} phase={phase}>
-        <CreatureArt agent={agent} size={size} asleep={m === 'sleep'} />
-      </Moving>
-      {m === 'waiting' && badge ? <Bang size={size} /> : null}
+    <View style={{ width: size, height: size }} pointerEvents="none">
+      {art.back ? <Layer shapes={art.back} size={size} felt={felt} /> : null}
+      <Animated.View style={[StyleSheet.absoluteFill, { transformOrigin: '50% 96%' }, body]}>
+        {art.clip ? (
+          // rising out of its hole: what's below the rim is cut away
+          <View style={{ position: 'absolute', left: -0.4 * size, right: -0.4 * size, top: -0.4 * size, bottom: (art.clip / 100) * size, overflow: 'hidden' }}>
+            <View style={{ position: 'absolute', left: 0.4 * size, top: 0.4 * size, width: size, height: size }}>{fig}</View>
+          </View>
+        ) : (
+          fig
+        )}
+        {art.held ? <Layer shapes={art.held} size={size} felt={felt} /> : null}
+      </Animated.View>
+      {art.stand ? <Layer shapes={art.stand} size={size} felt={felt} /> : null}
+      {art.paws?.map((p, i) => (
+        <Animated.View key={i} style={[StyleSheet.absoluteFill, play({ ...loop(tapping(size), 340, i * 170), animationDirection: 'alternate' })]} pointerEvents="none">
+          <Layer shapes={p} size={size} felt={felt} />
+        </Animated.View>
+      ))}
+      {art.float ? (
+        <Animated.View style={[StyleSheet.absoluteFill, play(loop(drift(size), 3200, phase % 3200))]} pointerEvents="none">
+          <Layer shapes={art.float} size={size} felt={felt} />
+        </Animated.View>
+      ) : null}
     </View>
   )
 })
 
 const styles = StyleSheet.create({
-  bang: {
-    position: 'absolute',
-    backgroundColor: '#ff9f0a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#a05000',
-    shadowOpacity: 0.45,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  bangText: { color: '#241500', fontWeight: '800', fontFamily: fonts.rounded, includeFontPadding: false },
+  layer: { position: 'absolute', left: 0, top: 0, overflow: 'visible' },
 })

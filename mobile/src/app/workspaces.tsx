@@ -72,12 +72,12 @@ export default function Workspaces() {
   return (
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.content}>
       <Text style={[styles.title, { color: t.fg }]}>Workspaces</Text>
-      <Text style={[styles.hint, { color: t.fg2 }]}>The phone shows one at a time. Picking one here doesn't change what's on the Mac's screen.</Text>
+      <Text style={[styles.hint, { color: t.fg2 }]}>The phone shows one at a time. Picking one here doesn't change what your computer shows.</Text>
       <View style={[styles.list, { backgroundColor: t.card }]}>
         {list.length ? (
           list.map((w) => <Row key={w.id} t={t} w={w} current={w.id === ws} busy={going === w.id} onPress={() => void pick(w.id)} disabled={Boolean(offline) || Boolean(going)} />)
         ) : (
-          <Text style={[styles.hint, { color: t.fg3, padding: 16 }]}>{state ? 'Just Home on this Mac.' : 'Waiting for the Mac…'}</Text>
+          <Text style={[styles.hint, { color: t.fg3, padding: 16 }]}>{state ? 'Just Home on this computer.' : 'Waiting for your computer…'}</Text>
         )}
       </View>
       <Text style={[styles.error, { color: offline ? t.waitingInk : t.danger }]}>{offline ? `${offline}: switching waits until it's back` : error || ' '}</Text>

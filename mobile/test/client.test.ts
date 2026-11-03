@@ -15,17 +15,17 @@ const FAST = { handshake: 500, call: 300, probe: 200, backoff: [40, 80], tooMany
 
 const STATE: State = {
   agents: [
-    { name: 'joseph', status: 'working', on: true, activity: 'Edit core/hub.js' },
-    { name: 'gal', status: 'waiting', on: true },
+    { name: 'Ada', status: 'working', on: true, activity: 'Edit core/hub.js' },
+    { name: 'Milo', status: 'waiting', on: true },
   ],
   feed: [
-    { id: 'f1', ts: 1, kind: 'msg', from: 'you', to: 'joseph', text: 'hi' },
-    { id: 'q1', ts: 2, kind: 'ask', from: 'gal', to: 'you', cli: 'claude', ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm test', always: [{ i: 0, label: 'Always allow Bash(npm test:*)' }] } },
+    { id: 'f1', ts: 1, kind: 'msg', from: 'you', to: 'Ada', text: 'hi' },
+    { id: 'q1', ts: 2, kind: 'ask', from: 'Milo', to: 'you', cli: 'claude', ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm test', always: [{ i: 0, label: 'Always allow Bash(npm test:*)' }] } },
   ],
   reads: { since: 0, agents: {} },
-  workspaces: [{ id: 'default', name: 'Home' }, { id: 'golf', name: 'Golf app' }],
+  workspaces: [{ id: 'default', name: 'Home' }, { id: 'docs', name: 'Docs site' }],
 }
-const GOLF: State = { agents: [{ name: 'david', status: 'idle', on: true }], feed: [], workspaces: STATE.workspaces }
+const DOCS: State = { agents: [{ name: 'Iris', status: 'idle', on: true }], feed: [], workspaces: STATE.workspaces }
 
 // Waits until the client's snapshot passes the check.
 function until(client: CrewClient, check: (s: Snapshot) => boolean, ms = 3000): Promise<Snapshot> {
@@ -46,7 +46,7 @@ function until(client: CrewClient, check: (s: Snapshot) => boolean, ms = 3000): 
 
 function setup() {
   const net = new FakeNet()
-  const mac = new FakeMac({ default: structuredClone(STATE), golf: structuredClone(GOLF) })
+  const mac = new FakeMac({ default: structuredClone(STATE), docs: structuredClone(DOCS) })
   // the code lists an address that never answers, then the one that does: the second must win
   net.listen('ws://192.168.1.20:7788', mac.serve)
   const deps: Deps = { WebSocket: net.WebSocket, random }
@@ -70,10 +70,10 @@ test('pairs with a code: the first address that completes the handshake wins, th
   expect(snap.link).toMatchObject({ status: 'online', host: '192.168.1.20' })
   expect(net.opened).toEqual(['ws://100.101.102.103:7788', 'ws://192.168.1.20:7788'])
   expect(mac.his).toEqual([{ t: 'hi', ...device }])
-  expect(paired).toMatchObject({ id: mac.id, name: 'Mac mini', deviceId: 'dev-1', hosts: ['100.101.102.103', '192.168.1.20'], port: 7788 })
+  expect(paired).toMatchObject({ id: mac.id, name: 'Studio', deviceId: 'dev-1', hosts: ['100.101.102.103', '192.168.1.20'], port: 7788 })
   expect(mac.secret).toBeNull() // the code is used up
   expect(snap.ws).toBe('default')
-  expect(snap.state?.agents.map((a) => a.name)).toEqual(['joseph', 'gal'])
+  expect(snap.state?.agents.map((a) => a.name)).toEqual(['Ada', 'Milo'])
   expect(mac.calls[0]).toEqual({ name: 'watch', args: ['default'] })
   client.stop()
 })
@@ -81,7 +81,7 @@ test('pairs with a code: the first address that completes the handshake wins, th
 test('applies patches as they come, and watches again after missing one', async () => {
   const { mac, client } = await pairedClient()
   const s = mac.states.default
-  mac.change('default', { ...s, agents: s.agents.map((a) => (a.name === 'joseph' ? { ...a, status: 'idle', activity: '' } : a)) })
+  mac.change('default', { ...s, agents: s.agents.map((a) => (a.name === 'Ada' ? { ...a, status: 'idle', activity: '' } : a)) })
   await until(client, (x) => x.state?.agents[0].status === 'idle')
 
   // a patch lost on the way: the next one doesn't follow, so the client asks for the whole state again
@@ -105,17 +105,17 @@ test('answers a question card with the shape hub.decide takes, and the card come
 
 test('sends a message, and switches workspaces', async () => {
   const { mac, client } = await pairedClient()
-  await expect(client.send('', 'make it fast')).resolves.toBe('sent to @joseph\n')
+  await expect(client.send('', 'make it fast')).resolves.toBe('sent to @Ada\n')
   expect(mac.calls.at(-1)).toEqual({ name: 'send', args: ['default', '', 'make it fast', [], {}] })
   await until(client, (x) => x.state?.feed.at(-1)?.text === 'make it fast')
 
-  await client.watch('golf')
-  expect(client.getSnapshot()).toMatchObject({ ws: 'golf', switching: false })
-  expect(client.getSnapshot().state?.agents.map((a) => a.name)).toEqual(['david'])
+  await client.watch('docs')
+  expect(client.getSnapshot()).toMatchObject({ ws: 'docs', switching: false })
+  expect(client.getSnapshot().state?.agents.map((a) => a.name)).toEqual(['Iris'])
   // patches for the workspace it no longer watches don't touch what's shown
   mac.change('default', { ...mac.states.default, autopilot: false })
   await new Promise((r) => setTimeout(r, 20))
-  expect(client.getSnapshot().state?.agents.map((a) => a.name)).toEqual(['david'])
+  expect(client.getSnapshot().state?.agents.map((a) => a.name)).toEqual(['Iris'])
   client.stop()
 })
 
@@ -123,7 +123,7 @@ test('a workspace that is gone falls back to the default one', async () => {
   const { client } = await pairedClient()
   await client.watch('gone')
   expect(client.getSnapshot().ws).toBe('default')
-  expect(client.getSnapshot().state?.agents.map((a) => a.name)).toEqual(['joseph', 'gal'])
+  expect(client.getSnapshot().state?.agents.map((a) => a.name)).toEqual(['Ada', 'Milo'])
   client.stop()
 })
 
@@ -131,7 +131,7 @@ test('reconnects without the code after the Mac goes away, and says since when i
   const { mac, client, paired, deps, secret } = await pairedClient()
   mac.kick()
   const off = await until(client, (x) => x.link.status === 'offline')
-  expect(off.link).toMatchObject({ status: 'offline', reason: 'Mac mini is unreachable' })
+  expect(off.link).toMatchObject({ status: 'offline', reason: 'Studio is unreachable' })
   expect(off.state?.agents.length).toBe(2) // the last state stays on screen
   await expect(client.send('', 'hello?')).rejects.toThrow('unreachable')
   // backoff: the first retry comes about a second later
@@ -166,7 +166,7 @@ test('"not paired" from one address while another is unreachable keeps trying: i
   const again = new CrewClient({ kind: 'mac', mac: paired!, secret }, { ...deps, timing: FAST }, device)
   again.start()
   const s = await until(again, (x) => x.link.status === 'offline')
-  expect(s.link).toMatchObject({ reason: 'Mac mini is unreachable' })
+  expect(s.link).toMatchObject({ reason: 'Studio is unreachable' })
   expect((s.link as { fatal?: boolean }).fatal).toBeFalsy()
   again.stop()
 })
@@ -186,25 +186,25 @@ test('a used-up code is refused with a reason', async () => {
   const client = new CrewClient({ kind: 'pair', code, secret: random(32) }, deps, device)
   client.start()
   const s = await until(client, (x) => x.link.status === 'offline')
-  expect(s.link).toMatchObject({ fatal: true, reason: 'That code is no longer valid, make a new one on the Mac.' })
+  expect(s.link).toMatchObject({ fatal: true, reason: 'That code is no longer valid, make a new one on your computer.' })
   client.stop()
 })
 
 test('offline says what each address did, in the code\'s order, and which close code decided it', async () => {
   const { net, mac, deps } = setup()
   net.listen('ws://192.168.1.20:7788', (socket) => socket.close(4008))
-  net.listen('ws://mac-mini.tail1234.ts.net:7788', () => {}) // takes the connection, never answers
-  const code = parsePairCode(mac.code(['100.101.102.103', '192.168.1.20', 'mac-mini.tail1234.ts.net'], 7788))
+  net.listen('ws://studio.tail1234.ts.net:7788', () => {}) // takes the connection, never answers
+  const code = parsePairCode(mac.code(['100.101.102.103', '192.168.1.20', 'studio.tail1234.ts.net'], 7788))
   const client = new CrewClient({ kind: 'pair', code, secret: random(32) }, { ...deps, timing: { ...FAST, handshake: 100 } }, device)
   client.start()
   const s = await until(client, (x) => x.link.status === 'offline')
   expect(s.link).toMatchObject({
     code: 4008,
-    reason: 'Too many tries from this network. The Mac listens again in a minute.',
+    reason: 'Too many tries from this network. Your computer listens again in a minute.',
     tries: [
       { host: '100.101.102.103', why: 'unreachable', code: 1006 },
       { host: '192.168.1.20', why: 'closed 4008', code: 4008 },
-      { host: 'mac-mini.tail1234.ts.net', why: 'no answer' },
+      { host: 'studio.tail1234.ts.net', why: 'no answer' },
     ],
   })
   client.stop()
@@ -231,15 +231,15 @@ test("a code a newer one replaced is refused (its hi doesn't open: 4006), as no 
   const client = new CrewClient({ kind: 'pair', code: old, secret: random(32) }, deps, device)
   client.start()
   const s = await until(client, (x) => x.link.status === 'offline')
-  expect(s.link).toMatchObject({ fatal: true, reason: 'That code is no longer valid, make a new one on the Mac.' })
+  expect(s.link).toMatchObject({ fatal: true, reason: 'That code is no longer valid, make a new one on your computer.' })
   expect(mac.devices.size).toBe(0)
   client.stop()
 })
 
 test('two addresses that both reach the Mac make one session: only one says hi', async () => {
   const { net, mac, deps } = setup()
-  net.listen('ws://mac-mini.tail1234.ts.net:7788', mac.serve)
-  const code = parsePairCode(mac.code(['192.168.1.20', 'mac-mini.tail1234.ts.net'], 7788))
+  net.listen('ws://studio.tail1234.ts.net:7788', mac.serve)
+  const code = parsePairCode(mac.code(['192.168.1.20', 'studio.tail1234.ts.net'], 7788))
   const client = new CrewClient({ kind: 'pair', code, secret: random(32) }, deps, device)
   client.start()
   await until(client, (x) => x.state !== null)
@@ -251,21 +251,21 @@ test('two addresses that both reach the Mac make one session: only one says hi',
 
 test('v keeps counting across watch calls: after a switch, the next patch applies', async () => {
   const { mac, client } = await pairedClient()
-  await client.watch('golf')
-  mac.change('golf', { ...mac.states.golf, autopilot: true })
+  await client.watch('docs')
+  mac.change('docs', { ...mac.states.docs, autopilot: true })
   const s = await until(client, (x) => x.state?.autopilot === true)
-  expect(s).toMatchObject({ ws: 'golf', shown: 'golf' })
+  expect(s).toMatchObject({ ws: 'docs', shown: 'docs' })
   expect(mac.calls.filter((c) => c.name === 'watch').length).toBe(2) // no re-watch needed
   client.stop()
 })
 
 test('a removed workspace: the Mac pushes Home, and the phone watches Home from then on', async () => {
   const { mac, client } = await pairedClient()
-  await client.watch('golf')
-  mac.removeWorkspace('golf')
+  await client.watch('docs')
+  mac.removeWorkspace('docs')
   const s = await until(client, (x) => x.ws === 'default')
   expect(s.shown).toBe('default')
-  expect(s.state?.agents.map((a) => a.name)).toEqual(['joseph', 'gal'])
+  expect(s.state?.agents.map((a) => a.name)).toEqual(['Ada', 'Milo'])
   // and patches go on from the pushed state's v
   mac.change('default', { ...mac.states.default, autopilot: true })
   await until(client, (x) => x.state?.autopilot === true)
@@ -279,12 +279,12 @@ test('a switch the Mac turns down leaves the phone where it was, and calls still
   client.start()
   await until(client, (x) => x.state !== null)
   mac.failNext.watch = 'Crew is busy'
-  await expect(client.watch('golf')).rejects.toThrow('busy')
+  await expect(client.watch('docs')).rejects.toThrow('busy')
   // the connection is started over (a failed watch leaves the phone unsure what the Mac sends), on the old workspace
   const s = await until(client, (x) => x.link.status === 'online' && x.state !== null && x.ws === 'default', 3000)
   expect(s.shown).toBe('default')
-  await client.send('joseph', 'still here?')
-  expect(mac.calls.at(-1)).toEqual({ name: 'send', args: ['default', 'joseph', 'still here?', [], {}] })
+  await client.send('Ada', 'still here?')
+  expect(mac.calls.at(-1)).toEqual({ name: 'send', args: ['default', 'Ada', 'still here?', [], {}] })
   mac.change('default', { ...mac.states.default, autopilot: true })
   await until(client, (x) => x.state?.autopilot === true)
   client.stop()
@@ -310,6 +310,6 @@ test('calls that return nothing resolve with null; send resolves with what Crew 
   const { mac, client } = await pairedClient()
   await expect(client.answer('q1', { allow: false, note: 'not now' })).resolves.toBeNull()
   expect(mac.answers.q1).toEqual({ allow: false, note: 'not now' })
-  await expect(client.send('', 'hi')).resolves.toBe('sent to @joseph\n')
+  await expect(client.send('', 'hi')).resolves.toBe('sent to @Ada\n')
   client.stop()
 })

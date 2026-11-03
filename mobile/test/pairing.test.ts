@@ -4,12 +4,12 @@ import { b64, makePairCode, utf8 } from '@/net/shared'
 
 const key = new Uint8Array(32).fill(7)
 const secret = new Uint8Array(32).fill(9)
-const good = makePairCode({ id: 'mac-id', name: 'Mac mini', key, secret, hosts: ['192.168.1.20', '100.101.102.103', 'mac-mini.tail1234.ts.net'], port: 7788 })
+const good = makePairCode({ id: 'mac-id', name: 'Studio', key, secret, hosts: ['192.168.1.20', '100.101.102.103', 'studio.tail1234.ts.net'], port: 7788 })
 const raw = (json: unknown) => `crewphone1.${b64(utf8(JSON.stringify(json)))}`
 
 test('reads a good code', () => {
   const c = parsePairCode(good)
-  expect(c).toMatchObject({ id: 'mac-id', name: 'Mac mini', hosts: ['192.168.1.20', '100.101.102.103', 'mac-mini.tail1234.ts.net'], port: 7788 })
+  expect(c).toMatchObject({ id: 'mac-id', name: 'Studio', hosts: ['192.168.1.20', '100.101.102.103', 'studio.tail1234.ts.net'], port: 7788 })
   expect([...c.key]).toEqual([...key])
   expect([...c.secret]).toEqual([...secret])
 })
@@ -45,6 +45,6 @@ test('a missing port means the default one', () => {
 
 test('addresses become WebSocket URLs, IPv6 in brackets', () => {
   expect(urlFor('192.168.1.20', 7788)).toBe('ws://192.168.1.20:7788')
-  expect(urlFor('mac-mini.tail1234.ts.net', 7788)).toBe('ws://mac-mini.tail1234.ts.net:7788')
+  expect(urlFor('studio.tail1234.ts.net', 7788)).toBe('ws://studio.tail1234.ts.net:7788')
   expect(urlFor('fd7a:115c:a1e0::1', 7788)).toBe('ws://[fd7a:115c:a1e0::1]:7788')
 })

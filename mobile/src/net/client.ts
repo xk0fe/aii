@@ -5,6 +5,7 @@
 // Runtime-agnostic on purpose: no React, no Expo. The WebSocket class and the source of random bytes come from the
 // caller, so this same file runs in the app, in Jest against a fake Mac, and under Node (scripts/smoke.ts) against a
 // real one.
+import { APP_NAME } from '../brand'
 import { Channel, keyPair, phoneKeys, type Bytes, type KeyPair } from './crypto'
 import { urlFor, type PairCode } from './pairing'
 import { apply, b64, CLOSE, pack, unb64, unpack, VERSION } from './shared'
@@ -81,17 +82,17 @@ export class HandshakeError extends Error {
 }
 
 // What a close code means, in words for the person holding the phone.
-export function closeReason(code: number | undefined, macName = 'your Mac', pairing = false): { reason: string; fatal: boolean } {
-  if (pairing && (code === CLOSE.noCode || code === CLOSE.badFrame)) return { reason: 'That code is no longer valid, make a new one on the Mac.', fatal: true }
+export function closeReason(code: number | undefined, macName = 'your computer', pairing = false): { reason: string; fatal: boolean } {
+  if (pairing && (code === CLOSE.noCode || code === CLOSE.badFrame)) return { reason: 'That code is no longer valid, make a new one on your computer.', fatal: true }
   switch (code) {
     case CLOSE.notPaired:
       return { reason: `${macName} doesn't know this phone any more. Pair it again.`, fatal: true }
     case CLOSE.version:
-      return { reason: `${macName} runs a different version of Crew. Update both.`, fatal: true }
+      return { reason: `${macName} runs a different version of ${APP_NAME}. Update both.`, fatal: true }
     case CLOSE.noCode:
-      return { reason: 'That code is no longer valid, make a new one on the Mac.', fatal: true }
+      return { reason: 'That code is no longer valid, make a new one on your computer.', fatal: true }
     case CLOSE.tooMany:
-      return { reason: 'Too many tries from this network. The Mac listens again in a minute.', fatal: false }
+      return { reason: 'Too many tries from this network. Your computer listens again in a minute.', fatal: false }
     default:
       return { reason: `${macName} is unreachable`, fatal: false }
   }
@@ -205,7 +206,7 @@ function handshake(o: HandshakeOpts): { done: Promise<Conn>; cancel: () => void 
           if (f.length !== 32) throw new Error('not a key')
           k = phoneKeys({ e, d: o.d, m: o.m, f, secret: o.secret }) // throws for a key X25519 can't agree with
         } catch {
-          return fail('not a Crew Mac')
+          return fail(`not ${APP_NAME}`)
         }
         tx = new Channel(k.kPhone)
         rx = new Channel(k.kMac)
@@ -256,7 +257,7 @@ function handshake(o: HandshakeOpts): { done: Promise<Conn>; cancel: () => void 
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
 
-// The Mac's words for a workspace that isn't there (core/remote.js: `… has no workspace "golf"`).
+// The Mac's words for a workspace that isn't there (core/remote.js: `… has no workspace "docs"`).
 const gone = (e: unknown) => /no workspace/i.test(String((e as Error)?.message ?? e))
 
 export class CrewClient {

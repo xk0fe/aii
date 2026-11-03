@@ -24,22 +24,61 @@ export function Press({ style, children, ...props }: PressableProps & { style?: 
   )
 }
 
-type ButtonKind = 'primary' | 'secondary' | 'danger' | 'warm'
+// primary: Berry, the brand's (one per place, the thing you'd most likely do); secondary: a neutral fill; danger: the
+// neutral fill with red words, for what can't be undone.
+type ButtonKind = 'primary' | 'secondary' | 'danger'
 
-export function Button({ t, title, kind = 'secondary', icon, onPress, disabled, busy, style, flex, small, accessibilityLabel }: { t: Theme; title: string; kind?: ButtonKind; icon?: IconName; onPress?: () => void; disabled?: boolean; busy?: boolean; style?: StyleProp<ViewStyle>; flex?: boolean; small?: boolean; accessibilityLabel?: string }) {
-  const bg = kind === 'primary' ? t.accent : kind === 'warm' ? t.waiting : t.btn
-  const fg = kind === 'primary' ? '#fff' : kind === 'warm' ? '#241500' : kind === 'danger' ? t.danger : t.fg
+export function Button({ t, title, kind = 'secondary', icon, onPress, disabled, busy, style, flex, small, wrap, align = 'center', accessibilityLabel, accessibilityHint }: { t: Theme; title: string; kind?: ButtonKind; icon?: IconName; onPress?: () => void; disabled?: boolean; busy?: boolean; style?: StyleProp<ViewStyle>; flex?: boolean; small?: boolean; wrap?: boolean; align?: 'center' | 'start'; accessibilityLabel?: string; accessibilityHint?: string }) {
+  const bg = kind === 'primary' ? t.brand : t.fill
+  const fg = kind === 'primary' ? t.onBrand : kind === 'danger' ? t.danger : t.fg
   return (
-    <Press accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? title} disabled={disabled || busy} onPress={onPress} style={[styles.button, small && styles.buttonSmall, { backgroundColor: bg }, flex && { flex: 1 }, style]}>
+    <Press accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? title} accessibilityHint={accessibilityHint} accessibilityState={{ disabled: Boolean(disabled || busy), busy: Boolean(busy) }} disabled={disabled || busy} onPress={onPress} style={[styles.button, small && styles.buttonSmall, { backgroundColor: bg }, align === 'start' && styles.buttonStart, flex && { flex: 1 }, style]}>
       {/* the label stays in place while busy, so the button never changes size */}
       <View style={[styles.buttonInner, busy && { opacity: 0 }]}>
-        {icon ? <Icon name={icon} size={small ? 13 : 15} color={fg} /> : null}
-        <Text style={[styles.buttonText, small && styles.buttonTextSmall, { color: fg }]} numberOfLines={1}>
+        {icon ? <Icon name={icon} size={small ? 15 : 17} color={fg} /> : null}
+        <Text style={[styles.buttonText, small && styles.buttonTextSmall, { color: fg, fontWeight: align === 'start' ? '500' : '600', textAlign: align === 'start' ? 'left' : 'center' }]} numberOfLines={wrap ? 3 : 1}>
           {title}
         </Text>
       </View>
       {busy ? <ActivityIndicator style={StyleSheet.absoluteFill} color={fg} size="small" /> : null}
     </Press>
+  )
+}
+
+// A quiet outline tag beside a name: YOLO (identity, so it's always shown where the agent is).
+export function Tag({ t, text, label }: { t: Theme; text: string; label?: string }) {
+  return (
+    <View style={[styles.tag, { borderColor: t.lineStrong }]} accessibilityLabel={label ?? text}>
+      <Text style={[styles.tagText, { color: t.fg2 }]} maxFontSizeMultiplier={1.4}>
+        {text}
+      </Text>
+    </View>
+  )
+}
+
+// A creature with its status dot on the shoulder, only where the status is the message: working, needs you.
+export function Who({ t, kind, size, ring, children }: { t: Theme; kind: string; size: number; ring?: string; children: ReactNode }) {
+  const fill = kind === 'working' ? t.working : kind === 'waiting' ? t.waiting : null
+  const d = size >= 64 ? 12 : 9
+  return (
+    <View style={{ width: size, height: size }}>
+      {children}
+      {fill ? <View style={{ position: 'absolute', right: size >= 64 ? 6 : 0, top: size >= 64 ? 22 : Math.round(size * 0.14), width: d, height: d, borderRadius: d / 2, backgroundColor: fill, borderWidth: 2, borderColor: ring ?? t.surface }} /> : null}
+    </View>
+  )
+}
+
+// The wordmark: the app's name in the brand face, each letter a creature's colour (LAB-style).
+const LETTERS = ['#ff45a8', '#3db8ff', '#ffc61f', '#2fd3a6']
+export function Wordmark({ name, size = 40 }: { name: string; size?: number }) {
+  return (
+    <Text style={{ fontFamily: fonts.brandBold, fontSize: size, lineHeight: size * 1.15, letterSpacing: -size * 0.02 }} accessibilityRole="header" accessibilityLabel={name} maxFontSizeMultiplier={1.2}>
+      {[...name.toLowerCase()].map((c, i) => (
+        <Text key={i} style={{ color: LETTERS[i % LETTERS.length] }}>
+          {c}
+        </Text>
+      ))}
+    </Text>
   )
 }
 
@@ -111,9 +150,9 @@ export function WsTile({ t, ws, size = 28 }: { t: Theme; ws?: { name: string; co
       {home ? (
         <CrewMark size={size * 0.78} />
       ) : ws?.icon ? (
-        <Text style={{ fontSize: size * 0.56, lineHeight: size * 0.72 }}>{ws.icon}</Text>
+        <Text style={{ fontSize: size * 0.56, lineHeight: size * 0.72 }} allowFontScaling={false}>{ws.icon}</Text>
       ) : (
-        <Text style={{ fontSize: size * 0.5, fontWeight: '800', color: color ? '#fff' : t.fg, fontFamily: fonts.rounded }}>{initial}</Text>
+        <Text style={{ fontSize: size * 0.5, fontWeight: '600', color: color ? '#fff' : t.fg }} allowFontScaling={false}>{initial}</Text>
       )}
     </View>
   )
@@ -173,16 +212,20 @@ export function Pill({ t, kind, text }: { t: Theme; kind: string; text: string }
 }
 
 const styles = StyleSheet.create({
-  button: { minHeight: 44, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  buttonSmall: { minHeight: 38, paddingHorizontal: 12, borderRadius: 11 },
+  // thumb-sized: 50pt, 44pt where space is short; they grow with the text size
+  button: { minHeight: 50, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  buttonSmall: { minHeight: 44, paddingHorizontal: 12, borderRadius: 10 },
+  buttonStart: { alignItems: 'flex-start' },
   buttonInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  buttonText: { fontSize: 16, fontWeight: '600', letterSpacing: -0.2 },
-  buttonTextSmall: { fontSize: 15 },
+  buttonText: { fontSize: 17, lineHeight: 22, fontWeight: '600', flexShrink: 1 },
+  buttonTextSmall: { fontSize: 15, lineHeight: 20 },
+  tag: { minHeight: 20, paddingHorizontal: 6, borderRadius: 4, borderWidth: 1, justifyContent: 'center' },
+  tagText: { fontSize: 13, lineHeight: 16, fontWeight: '500', letterSpacing: 0.2 },
   ctx: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   ctxText: { fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] },
   tile: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   badge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
-  badgeText: { fontSize: 10.5, fontWeight: '800', fontFamily: fonts.rounded, fontVariant: ['tabular-nums'] },
+  badgeText: { fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, height: 24, borderRadius: 12 },
   pillText: { fontSize: 13, fontWeight: '600' },
 })

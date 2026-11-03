@@ -1,107 +1,144 @@
-// Everything waiting for you, each card in full (always-allow choices, notes, the whole plan), and what you answered
-// lately underneath.
-import { router } from 'expo-router'
+// Everything waiting for you, each in full: the creature asks in its own words on its felt patch ("Can I run npm run
+// build?"), with the plain title kept for scanning, and the answers as big buttons under it. What you answered lately
+// is underneath.
+import { router, useIsFocused } from 'expo-router'
 import { StyleSheet, Text, View } from 'react-native'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-import type { FeedEntry } from '@/net/types'
+import type { FeedEntry, Reply } from '@/net/types'
 import { useCrew, useDerived } from '@/state/hooks'
 import { AskCard, AskSummary, askVerb } from '@/ui/ask'
 import { agentColor } from '@/ui/avatar'
-import { nameInk } from '@/ui/color'
-import { Creature } from '@/ui/creature'
+import { Creature, MotionContext } from '@/ui/creature'
 import { someone } from '@/ui/feed'
-import { ago, displayName } from '@/ui/format'
+import { ago, askKindOf, displayName, voiceOf } from '@/ui/format'
+import { useAppActive } from '@/ui/hooks'
 import { Press } from '@/ui/parts'
+import { Patch } from '@/ui/surface'
 import { offlineText, TopBar } from '@/ui/topbar'
-import { useTheme } from '@/ui/theme'
+import { fonts, type Theme, useTheme } from '@/ui/theme'
+
+const agoText = (ts?: number) => (ago(ts) === 'just now' ? 'Just now' : `${ago(ts)} ago`)
+
+function Ask({ t, e, d, answer, disabled }: { t: Theme; e: FeedEntry; d: ReturnType<typeof useDerived>; answer: (id: string, r: Reply) => Promise<unknown>; disabled: string | null }) {
+  const a = someone(e.from, d.byName)
+  const name = displayName(e.from).base
+  const said = voiceOf(e.ask)
+  const words = said.map((p) => p.text).join('')
+  return (
+    <View style={[styles.card, { backgroundColor: t.surface }]}>
+      <Press style={styles.head} onPress={() => router.push({ pathname: '/agent/[name]', params: { name: a.cloneOf ?? a.name } })} accessibilityRole="button" accessibilityLabel={`${name} ${askVerb(e)}, ${agoText(e.ts).toLowerCase()}`} accessibilityHint={`Opens ${name}`}>
+        <Text style={[styles.who, { color: t.fg2 }]}>
+          <Text style={{ color: t.fg, fontWeight: '600' }}>{name}</Text> {askVerb(e)}
+        </Text>
+        <Text style={[styles.when, { color: t.fg2 }]}>{agoText(e.ts)}</Text>
+      </Press>
+      <View style={styles.speak} accessible accessibilityLabel={`${name} says: ${words}`}>
+        <Patch color={agentColor(a)} width={112} height={112}>
+          <View style={styles.posed}>
+            <Creature agent={{ ...a, status: 'waiting', on: true }} size={104} posed ask={askKindOf(e.ask)} />
+          </View>
+        </Patch>
+        <View style={[styles.voice, { backgroundColor: t.bg }]}>
+          <Text style={[styles.voiceText, { color: t.fg }]}>
+            {said.map((p, i) =>
+              p.code ? (
+                <Text key={i} style={styles.mono}>
+                  {p.text}
+                </Text>
+              ) : (
+                p.text
+              ),
+            )}
+          </Text>
+        </View>
+      </View>
+      <AskCard t={t} e={e} onAnswer={answer} disabled={disabled} voiced />
+    </View>
+  )
+}
 
 export default function NeedsScreen() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
   const { client, link, state } = useCrew()
   const d = useDerived(state)
+  const focused = useIsFocused()
+  const active = useAppActive()
   const offline = client && link.status === 'offline' ? offlineText(link, client.macName) : ''
   const answered = (state?.feed ?? []).filter((e) => e.kind === 'ask' && e.answer).slice(-8).reverse()
-  const head = (e: FeedEntry) => {
-    const a = someone(e.from, d.byName)
-    return (
-      <Press style={styles.head} onPress={() => router.push({ pathname: '/agent/[name]', params: { name: a.cloneOf ?? a.name } })} accessibilityLabel={`${displayName(e.from).base} ${askVerb(e)}`}>
-        <Creature agent={a} size={36} />
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.who, { color: t.fg2 }]} numberOfLines={1}>
-            <Text style={{ color: nameInk(agentColor(a), t.fg), fontWeight: '700' }}>{displayName(e.from).base}</Text> {askVerb(e)}
-          </Text>
-          <Text style={[styles.when, { color: t.fg3 }]}>{ago(e.ts) === 'just now' ? 'just now' : `${ago(e.ts)} ago`}</Text>
-        </View>
-      </Press>
-    )
-  }
+  const n = d.open.length
   return (
-    <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <TopBar t={t} />
-      <KeyboardAwareScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]} bottomOffset={24} keyboardShouldPersistTaps="handled">
-        <Text style={[styles.title, { color: t.fg }]}>Needs you</Text>
-        <Text style={[styles.sub, { color: offline ? t.waitingInk : t.fg2 }]}>{offline ? `${offline}: answers wait until it's back` : d.open.length ? `${d.open.length === 1 ? 'One question' : `${d.open.length} questions`} waiting for you` : 'Nothing waiting for you'}</Text>
-        {d.open.length ? (
-          d.open.map((e) => (
-            <View key={e.id} style={[styles.card, { backgroundColor: t.card, borderColor: t.dark ? 'rgba(255,159,10,0.5)' : 'rgba(255,159,10,0.55)' }]}>
-              {head(e)}
-              <AskCard t={t} e={e} onAnswer={(id, r) => client!.answer(id, r)} disabled={offline ? `Answering waits until ${client?.macName} is back` : null} />
-            </View>
-          ))
-        ) : (
-          <View style={styles.empty}>
-            <View style={styles.buddies}>
-              {d.agents.slice(0, 3).map((a, i) => (
-                <View key={a.name} style={{ marginLeft: i ? -14 : 0, zIndex: i === 1 ? 2 : 1 }}>
-                  <Creature agent={{ ...a, status: 'idle' }} size={i === 1 ? 64 : 54} mood="idle" />
-                </View>
-              ))}
-            </View>
-            <Text style={[styles.emptyText, { color: t.fg2 }]}>When an agent asks for permission, has a question or a plan, it lands here.</Text>
-          </View>
-        )}
-        {answered.length ? (
-          <>
-            <Text style={[styles.section, { color: t.fg2 }]}>Answered lately</Text>
-            <View style={[styles.list, { backgroundColor: t.card }]}>
-              {answered.map((e, i) => {
-                const a = someone(e.from, d.byName)
-                return (
-                  <View key={e.id} style={[styles.row, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.line }]}>
-                    <Creature agent={a} size={28} mood="still" />
-                    <View style={{ flex: 1, gap: 5 }}>
-                      <Text style={[styles.rowWho, { color: t.fg2 }]} numberOfLines={1}>
-                        <Text style={{ color: nameInk(agentColor(a), t.fg), fontWeight: '700' }}>{displayName(e.from).base}</Text> · {ago(e.answer?.at ?? e.ts) === 'just now' ? 'just now' : `${ago(e.answer?.at ?? e.ts)} ago`}
-                      </Text>
-                      <AskSummary t={t} e={e} plain />
-                    </View>
+    <MotionContext.Provider value={focused && active}>
+      <View style={{ flex: 1, backgroundColor: t.bg }}>
+        <TopBar t={t} />
+        <KeyboardAwareScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]} bottomOffset={24} keyboardShouldPersistTaps="handled">
+          <Text style={[styles.display, { color: t.fg }]} accessibilityRole="header" maxFontSizeMultiplier={1.6}>
+            Needs you
+          </Text>
+          <Text style={[styles.sub, { color: offline ? t.waitingInk : t.fg2 }]}>{offline ? `${offline}. Answers wait until it's back.` : n ? `${n} waiting for you` : 'Nothing waiting for you'}</Text>
+          {n ? (
+            d.open.map((e) => <Ask key={e.id} t={t} e={e} d={d} answer={(id, r) => client!.answer(id, r)} disabled={offline ? `Answering waits until ${client?.macName} is back` : null} />)
+          ) : (
+            <View style={styles.empty}>
+              <View style={styles.buddies}>
+                {d.agents.slice(0, 3).map((a, i) => (
+                  <View key={a.name} style={{ marginLeft: i ? -10 : 0, zIndex: i === 1 ? 2 : 1 }}>
+                    <Creature agent={{ ...a, status: 'idle', on: true }} size={i === 1 ? 72 : 64} posed mood="still" />
                   </View>
-                )
-              })}
+                ))}
+              </View>
+              <Text style={[styles.emptyText, { color: t.fg2 }]}>When someone wants your OK, has a question or a plan, it lands here.</Text>
             </View>
-          </>
-        ) : null}
-      </KeyboardAwareScrollView>
-    </View>
+          )}
+          {answered.length ? (
+            <>
+              <Text style={[styles.section, { color: t.fg }]} accessibilityRole="header">
+                Answered lately
+              </Text>
+              <View style={[styles.list, { backgroundColor: t.surface }]}>
+                {answered.map((e, i) => {
+                  const a = someone(e.from, d.byName)
+                  return (
+                    <View key={e.id} style={[styles.row, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.line }]}>
+                      <Creature agent={a} size={28} mood="still" />
+                      <View style={{ flex: 1, gap: 4 }}>
+                        <Text style={[styles.rowWho, { color: t.fg2 }]} numberOfLines={1}>
+                          <Text style={{ color: t.fg, fontWeight: '600' }}>{displayName(e.from).base}</Text> {agoText(e.answer?.at ?? e.ts).toLowerCase()}
+                        </Text>
+                        <AskSummary t={t} e={e} plain />
+                      </View>
+                    </View>
+                  )
+                })}
+              </View>
+            </>
+          ) : null}
+        </KeyboardAwareScrollView>
+      </View>
+    </MotionContext.Provider>
   )
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 16, gap: 14 },
-  title: { fontSize: 32, lineHeight: 38, fontWeight: '800', letterSpacing: -0.6, marginTop: 6 },
-  sub: { fontSize: 15, marginTop: -10, marginBottom: 2 },
-  card: { borderRadius: 22, borderWidth: 1.5, padding: 16, gap: 14 },
-  head: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  who: { fontSize: 15, fontWeight: '500' },
-  when: { fontSize: 12.5 },
-  empty: { alignItems: 'center', paddingVertical: 36, gap: 16 },
+  content: { paddingHorizontal: 16, paddingTop: 4, gap: 16 },
+  display: { fontFamily: fonts.brand, fontSize: 28, lineHeight: 34, marginBottom: -14 },
+  sub: { fontSize: 15, lineHeight: 20 },
+  card: { borderRadius: 14, padding: 16, gap: 12 },
+  head: { gap: 2 },
+  who: { fontSize: 17, lineHeight: 22 },
+  when: { fontSize: 15, lineHeight: 20 },
+  speak: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  posed: { position: 'absolute', left: 4, bottom: 2 },
+  voice: { flex: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, borderTopLeftRadius: 4 },
+  voiceText: { fontSize: 15, lineHeight: 20 },
+  mono: { fontFamily: fonts.mono, fontSize: 14 },
+  empty: { alignItems: 'center', paddingVertical: 28, gap: 16 },
   buddies: { flexDirection: 'row', alignItems: 'flex-end' },
-  emptyText: { fontSize: 15, lineHeight: 21, textAlign: 'center', maxWidth: 300 },
-  section: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 12, marginLeft: 4 },
-  list: { borderRadius: 18, paddingHorizontal: 14 },
+  emptyText: { fontSize: 15, lineHeight: 20, textAlign: 'center', maxWidth: 300 },
+  section: { fontSize: 15, lineHeight: 20, fontWeight: '600', marginTop: 8, marginLeft: 16, marginBottom: -8 },
+  list: { borderRadius: 14, paddingHorizontal: 16 },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 12 },
-  rowWho: { fontSize: 13.5 },
+  rowWho: { fontSize: 15, lineHeight: 20 },
 })

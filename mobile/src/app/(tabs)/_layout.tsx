@@ -1,7 +1,7 @@
 import { NativeTabs } from 'expo-router/native-tabs'
 
 import { useCrew, useDerived } from '@/state/hooks'
-import { useTheme } from '@/ui/theme'
+import { themes, useTheme } from '@/ui/theme'
 
 export default function Tabs() {
   const t = useTheme()
@@ -9,7 +9,7 @@ export default function Tabs() {
   const d = useDerived(state)
   const unread = [...d.unread.values()].reduce((n, x) => n + x, 0)
   return (
-    <NativeTabs tintColor={t.accent} badgeBackgroundColor={t.waiting}>
+    <NativeTabs tintColor={t.accent} badgeBackgroundColor={themes.light.waitingInk}>
       <NativeTabs.Trigger name="chat">
         <NativeTabs.Trigger.Label>Chat</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.bubble.right', selected: 'bubble.left.and.bubble.right.fill' }} md="forum" />
@@ -25,7 +25,7 @@ export default function Tabs() {
         <NativeTabs.Trigger.Icon sf={{ default: 'person.2', selected: 'person.2.fill' }} md="group" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
-        <NativeTabs.Trigger.Label>Macs</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>Computers</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'desktopcomputer', selected: 'desktopcomputer' }} md="computer" />
       </NativeTabs.Trigger>
     </NativeTabs>
