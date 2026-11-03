@@ -2983,7 +2983,8 @@ export class Hub extends EventEmitter {
       files = fs.readdirSync(this.at(SPOOL))
     } catch {}
     const nameOf = (f) => f.replace(/\.jsonl(\.1)?$/, '')
-    files = files.filter((f) => /\.jsonl(\.1)?$/.test(f)).sort((x, y) => (nameOf(x) === nameOf(y) ? (x.endsWith('.1') ? -1 : 1) : 0))
+    const order = (f) => `${nameOf(f)}\0${f.endsWith('.1') ? 0 : 1}`
+    files.sort((x, y) => (order(x) < order(y) ? -1 : 1))
     for (const f of files) {
       const file = this.at(SPOOL, f)
       let text = ''
