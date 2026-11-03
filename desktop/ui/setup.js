@@ -173,8 +173,8 @@ function mountSetup({ onAdd = () => {} } = {}) {
     }
   })
   addEventListener('keydown', (e) => {
-    // not one another layer took (the agent's sheet over this screen, a menu, a dialog); Tasks' filter menu waits hidden
-    if (e.key !== 'Escape' || e.defaultPrevented || view.hidden || document.querySelector('dialog[open], .ed-layer.open, .menu:not(.leaving, .hidden)')) return
+    // not one another layer took (the agent's sheet over this screen, a menu, a popover, a dialog); Tasks' filter menu waits hidden
+    if (e.key !== 'Escape' || e.defaultPrevented || view.hidden || document.querySelector('dialog[open], .ed-layer.open, .menu:not(.leaving, .hidden), [popover]:popover-open')) return
     close()
   })
 

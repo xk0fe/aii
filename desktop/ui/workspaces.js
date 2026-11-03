@@ -1,6 +1,7 @@
-// Workspaces in the dashboard (core/workspaces.js): the switcher in the titlebar, which also says when another
-// workspace needs you; its popover, to switch, open and park; the sheet that makes a workspace or changes one; and the
-// banner over a parked one. The dashboard does the switching itself (onSwitch), so it can animate it.
+// Workspaces in the dashboard (core/workspaces.js): the rail of every workspace down the window's left edge (like
+// Discord's servers), which says which needs you and switches; the name at the top of the sidebar, whose menu has
+// what you do with the one on screen; the sheet that makes a workspace or changes one; and the banner over a parked
+// one. The dashboard does the switching itself (onSwitch), so it can animate it.
 /* global crew, esc, plural, morph, markSVG, popMenu, shortPath, tildePath, pathField, pathParts, keys, oops, errorLine, ICONS, COLORS, wsTile, wsColor, wsStatus, elsewhere, hasWorkspaces, faceStack, avatarHTML, agentColor, bounce */
 
 const WS_COLORS = ['blue', 'sky', 'teal', 'mint', 'lime', 'yellow', 'orange', 'peach', 'red', 'pink', 'lilac', 'purple']
@@ -9,129 +10,66 @@ const WS_ICONS = ['⛳', '🚀', '🎮', '📱', '🛒', '🎨', '🧪', '📚',
 const tilde = (p) => pathField(p)
 
 // onSwitch(id, { open }): put a workspace on screen (opening it first if it's parked). onSwitched(state): a workspace
-// the sheet just made is on screen. dock: the row of workspaces along the sidebar's foot.
-function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched }) {
+// the sheet just made is on screen. onMembers(anchor): show who works in the one on screen. dock: the rail.
+function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, onMembers }) {
   let state = null
-  let pop = null // the open popover: { el, close }
 
   // ---- the switcher ----------------------------------------------------------------------------------------
 
   function drawButton() {
     const w = state.workspace
     const on = hasWorkspaces(state)
-    const away = elsewhere(state)
-    const tip = away.who.map((x) => `${x.name}: ${wsStatus(x)}`).join('\n')
-    const alert = away.waiting ? `<i class="ws-alert waiting">${away.waiting > 9 ? '9+' : away.waiting}</i>` : away.unread ? '<i class="ws-alert unread"></i>' : ''
+    // its name (the rail has the tiles, and what the others need of you)
     morph(button, on
-      ? `${wsTile(w, { size: 22 })}<b>${esc(w.name)}</b><span class="ws-chev">${ICONS.updown}</span>${alert}`
-      : `<span class="ws-mark">${markSVG('0 6 24 16')}</span><b>${esc(PRODUCT_NAME)}</b><span class="ws-chev">${ICONS.updown}</span>${alert}`)
-    button.title = `${on ? `${w.name}: switch workspaces` : 'Workspaces: a crew, chat and tasks per project'} (${keys('⌃1–9')})${tip ? `\n\n${tip}` : ''}`
+      ? `<b>${esc(w.name)}</b><span class="ws-chev">${ICONS.chevron}</span>`
+      : `<span class="ws-mark">${markSVG('0 6 24 16')}</span><b>${esc(PRODUCT_NAME)}</b><span class="ws-chev">${ICONS.chevron}</span>`)
+    button.title = on ? `${w.name}${w.folder ? `, in ${tildePath(w.folder)}` : ''}: who works here, settings, a new workspace` : 'Workspaces: a crew, chat and tasks per project'
     // the workspace's color tints the sidebar, so you always know where you are
     const color = on ? wsColor(w) : null
     document.body.classList.toggle('ws-tint', Boolean(color))
     if (color) document.body.style.setProperty('--ws', color)
   }
 
-  button.addEventListener('click', () => (pop ? closePop() : openPop()))
+  // ---- the name's menu: what you do with the workspace on screen (like Discord's server menu) ---------------------
 
-  // ---- its popover -----------------------------------------------------------------------------------------
-
-  const rowHTML = (w, i) => `
-    <div class="ws-row ${w.current ? 'current' : ''} ${w.parked ? 'parked' : ''}" data-ws="${esc(w.id)}" role="menuitemradio" aria-checked="${w.current}" tabindex="-1" style="--w:${esc(wsColor(w) ?? 'var(--fg3)')}" title="${esc(w.folder ? tildePath(w.folder) : w.id === 'default' ? 'Each agent works in its own folder' : '')}">
-      ${wsTile(w, { size: 34 })}
-      <span class="ws-main">
-        <span class="ws-name"><b>${esc(w.name)}</b>${w.current ? `<i class="ws-here" title="On screen">${ICONS.check}</i>` : ''}</span>
-        <span class="ws-line ${w.waiting && !w.parked ? 'waiting' : ''}">${esc(wsStatus(w))}</span>
-      </span>
-      <span class="ws-end">
-        ${w.parked
-          ? `<button class="btn ws-open" data-ws-act="open" title="Start its agents, each picking up its conversation">${ICONS.play}<span>Open</span></button>`
-          : `<span class="ws-faces">${w.faces.length ? faceStack(w.faces, 3) : ''}</span>`}
-        <span class="ws-acts">
-          ${w.parked || state.workspaces.length < 2 ? '' : `<button class="icon ws-act" data-ws-act="park" title="Park ${esc(w.name)}: its agents stop, and pick up where they were when you open it">${ICONS.pause}</button>`}
-          <button class="icon ws-act" data-ws-act="settings" title="${esc(w.name)}: settings">${ICONS.gear}</button>
-        </span>
-        ${i < 9 ? `<kbd>${keys(`⌃${i + 1}`)}</kbd>` : ''}
-      </span>
-    </div>`
-
-  function popHTML() {
+  // A second click on the name closes its menu (the press outside already did): it doesn't open another. The menu
+  // gives the focus back to the name when nothing else took it.
+  let current = null
+  let wasOpen = false
+  button.addEventListener('pointerdown', () => (wasOpen = Boolean(current)))
+  function menu() {
+    if (wasOpen) return void (wasOpen = false)
+    const w = state.workspace
     const list = state.workspaces ?? []
-    const here = state.workspace
-    return `<div class="ws-pop-head"><span>Workspaces</span><small>${plural(list.length, 'workspace')}</small></div>
-      <div class="ws-list">${list.map(rowHTML).join('')}</div>
-      ${list.length < 2 ? '<p class="ws-pop-lead">A workspace is a project: a folder, the agents who work on it, and its own chat, notes and tasks.</p>' : ''}
-      <div class="ws-cmds">
-        <button class="ws-cmd" data-ws-cmd="new" role="menuitem" tabindex="-1">${ICONS.plus}<span>New workspace…</span></button>
-        ${list.length > 1 || hasWorkspaces(state) ? `<button class="ws-cmd" data-ws-cmd="settings" role="menuitem" tabindex="-1">${ICONS.gear}<span>${esc(here.name)} settings…</span></button>` : ''}
-      </div>`
-  }
-
-  function openPop() {
-    closePop()
-    const el = document.createElement('div')
-    el.className = 'ws-pop'
-    el.setAttribute('role', 'menu')
-    el.innerHTML = popHTML()
-    document.body.append(el)
-    const r = button.getBoundingClientRect()
-    el.style.left = `${Math.max(8, r.left - 6)}px`
-    el.style.top = `${r.bottom + 6}px`
+    const named = w && w.id !== 'default'
+    const on = hasWorkspaces(state)
     button.setAttribute('aria-expanded', 'true')
-    const items = () => [...el.querySelectorAll('.ws-row, .ws-cmd')]
-    const close = () => {
-      el.classList.add('closing')
-      setTimeout(() => el.remove(), 140)
-      removeEventListener('pointerdown', outside, true)
-      removeEventListener('keydown', key, true)
-      removeEventListener('blur', close)
-      button.setAttribute('aria-expanded', 'false')
-      if (pop?.el === el) pop = null
-    }
-    const outside = (e) => !el.contains(e.target) && !button.contains(e.target) && close()
-    const key = (e) => {
-      if (e.key === 'Escape') return void (e.preventDefault(), e.stopPropagation(), close(), button.focus())
-      if (/^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const w = state.workspaces[Number(e.key) - 1]
-        if (w) (e.preventDefault(), e.stopPropagation(), close(), onSwitch(w.id, { open: w.parked }))
-        return
-      }
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault()
-        const all = items()
-        const i = all.indexOf(document.activeElement)
-        all[(i + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % all.length]?.focus()
-      }
-      if (e.key === 'Enter' && el.contains(document.activeElement) && !document.activeElement.matches('button')) {
-        e.preventDefault()
-        document.activeElement.click()
-      }
-    }
-    el.addEventListener('click', (e) => pick(e, close))
-    setTimeout(() => {
-      addEventListener('pointerdown', outside, true)
-      addEventListener('keydown', key, true)
-      addEventListener('blur', close)
+    const m = popMenu(button, [
+      ...(on ? [{ head: w.folder ? `${w.name} · ${tildePath(w.folder)}` : w.name }] : []),
+      { label: 'Who works here…', icon: ICONS.subs, act: 'members', hint: plural(state.agents.filter((a) => !a.cloneOf).length, 'agent') },
+      ...(on || named ? [{ label: 'Settings…', icon: ICONS.gear, act: 'settings' }] : []),
+      ...(list.length > 1 ? [w.parked ? { label: `Open ${w.name}`, icon: ICONS.play, act: 'open' } : { label: `Park ${w.name}`, icon: ICONS.pause, act: 'park', hint: 'stops its agents' }] : []),
+      '-',
+      { label: 'New workspace…', icon: ICONS.plus, act: 'new' },
+    ], (act) => {
+      if (act === 'members') onMembers?.(button)
+      if (act === 'settings') openSheet(w.id)
+      if (act === 'open') crew.call('workspace', 'open', w.id).catch((err) => oops(`Couldn't open ${w.name}`, err))
+      if (act === 'park') park(w)
+      if (act === 'new') openSheet(null)
     })
-    pop = { el, close }
-    ;(el.querySelector('.ws-row.current') ?? items()[0])?.focus({ preventScroll: true })
+    current = m
+    // the menu says when it's gone (it closes itself on a pick, Esc or a click elsewhere)
+    new MutationObserver((_, o) => {
+      if (m.el.isConnected) return
+      o.disconnect()
+      if (current !== m) return
+      current = null
+      button.setAttribute('aria-expanded', 'false')
+      if (document.activeElement === document.body) button.focus({ preventScroll: true })
+    }).observe(document.body, { childList: true })
   }
-
-  const closePop = () => pop?.close()
-
-  async function pick(e, close) {
-    const cmd = e.target.closest('[data-ws-cmd]')?.dataset.wsCmd
-    if (cmd) return void (close(), openSheet(cmd === 'new' ? null : state.workspace.id))
-    const row = e.target.closest('.ws-row')
-    if (!row) return
-    const w = state.workspaces.find((x) => x.id === row.dataset.ws)
-    const act = e.target.closest('[data-ws-act]')?.dataset.wsAct
-    if (act === 'settings') return void (close(), openSheet(w.id))
-    if (act === 'park') return park(w)
-    close()
-    if (act === 'open' || w.parked) return onSwitch(w.id, { open: true })
-    if (!w.current) onSwitch(w.id)
-  }
+  button.addEventListener('click', menu)
 
   async function park(w) {
     const busy = w.working + w.waiting
@@ -143,42 +81,103 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     }
   }
 
-  // ---- the dock: every workspace at the sidebar's foot, each with what it needs of you -----------------------
-  // Like the spaces along Arc's sidebar: one click away, and a glance says which one wants you.
+  // ---- the rail: every workspace down the window's left edge, each with what it needs of you ---------------------
+  // Like Discord's servers: one click away, and a glance says which one wants you (a berry count) or has news for you
+  // (a short pill). Parked ones are in black and white. Drag one up or down to move it; right-click for the rest.
 
+  let dragging = null // the workspace being dragged, while it is
+  let railStale = false
   function drawDock() {
     const list = state.workspaces ?? []
     const on = list.length > 1
-    dock.classList.toggle('hidden', !on)
-    if (!on) return
-    const badge = (w) => (w.current || w.parked ? '' : w.waiting ? `<i class="ws-alert waiting">${w.waiting > 9 ? '9+' : w.waiting}</i>` : w.unread ? '<i class="ws-alert unread"></i>' : '')
-    morph(dock, list.map((w, i) => `<button class="ws-dock-item ${w.current ? 'current' : ''} ${w.parked ? 'parked' : ''}" data-ws="${esc(w.id)}" role="tab" aria-selected="${w.current}" style="--w:${esc(wsColor(w) ?? 'var(--fg3)')}" title="${esc(`${w.name}: ${wsStatus(w)}${i < 9 ? ` (${keys(`⌃${i + 1}`)})` : ''}`)}">${wsTile(w, { size: 24 })}${badge(w)}</button>`).join('') +
-      `<button class="ws-dock-add" data-ws-new title="New workspace">${ICONS.plus}</button>`)
+    document.body.classList.toggle('has-rail', on)
+    if (!on) return morph(dock, '')
+    if (dragging) return void (railStale = true) // a redraw mid-drag would drop where it's going
+    railStale = false
+    const badge = (w) => (w.current || w.parked || !w.waiting ? '' : `<i class="need-badge" aria-label="${esc(`${w.waiting} need${w.waiting > 1 ? '' : 's'} you`)}">${w.waiting > 9 ? '9+' : w.waiting}</i>`)
+    morph(dock, list.map((w, i) => `<button class="rail-ws ${w.current ? 'current' : ''} ${w.parked ? 'parked' : ''} ${!w.current && !w.parked && w.unread ? 'unread' : ''}" data-ws="${esc(w.id)}" role="tab" aria-selected="${w.current}" draggable="${w.id !== 'default'}" style="--w:${esc(wsColor(w) ?? 'var(--fg3)')}" title="${esc(`${w.name}: ${wsStatus(w)}${i < 9 ? ` (${keys(`⌃${i + 1}`)})` : ''}`)}"><i class="rail-pill"></i>${wsTile({ ...w, parked: false }, { size: 44 })}${badge(w)}</button>${i === 0 ? '<i class="rail-sep"></i>' : ''}`).join('') +
+      `<button class="rail-add" data-ws-new title="New workspace: a folder, who works on it, and its own chat and tasks" aria-label="New workspace">${ICONS.plus}</button>`)
   }
 
   dock.addEventListener('click', (e) => {
     if (e.target.closest('[data-ws-new]')) return openSheet(null)
     const w = state.workspaces.find((x) => x.id === e.target.closest('[data-ws]')?.dataset.ws)
-    if (w && !w.current) onSwitch(w.id, { open: w.parked })
-    else if (w?.parked) onSwitch(w.id, { open: true })
+    if (w && !w.current) onSwitch(w.id)
   })
   dock.addEventListener('contextmenu', (e) => {
     const w = state.workspaces.find((x) => x.id === e.target.closest('[data-ws]')?.dataset.ws)
     if (!w) return
     e.preventDefault()
     e.stopPropagation()
+    const others = state.workspaces.length > 1
     popMenu({ x: e.clientX, y: e.clientY }, [
       { head: w.name },
-      ...(w.current ? [] : [{ label: w.parked ? 'Open and switch' : 'Switch to it', icon: w.parked ? ICONS.play : ICONS.arrow, act: 'switch' }]),
-      w.parked ? { label: 'Open', icon: ICONS.play, act: 'open' } : { label: 'Park', icon: ICONS.pause, act: 'park' },
+      ...(w.current ? [] : [{ label: 'Switch to it', icon: ICONS.arrow, act: 'switch' }]),
+      ...(w.current ? [{ label: 'Who works here…', icon: ICONS.subs, act: 'members' }] : []),
+      ...(others ? [w.parked ? { label: 'Open', icon: ICONS.play, act: 'open', hint: 'starts its agents' } : { label: 'Park', icon: ICONS.pause, act: 'park', hint: 'stops its agents' }] : []),
       { label: 'Settings…', icon: ICONS.gear, act: 'settings' },
+      ...(w.id === 'default' ? [] : ['-', { label: 'Remove…', icon: ICONS.trash, act: 'remove', danger: true }]),
     ], (act) => {
-      if (act === 'switch') onSwitch(w.id, { open: w.parked })
+      if (act === 'switch') onSwitch(w.id)
+      if (act === 'members') onMembers?.(e.target.closest('[data-ws]'))
       if (act === 'open') crew.call('workspace', 'open', w.id).catch((err) => oops(`Couldn't open ${w.name}`, err))
       if (act === 'park') park(w)
       if (act === 'settings') openSheet(w.id)
+      if (act === 'remove') remove(w)
     })
   })
+  // Drag a workspace up or down the rail to move it (the default, first, stays put): a line shows where it lands.
+  const marks = () => dock.querySelectorAll('.drop-before, .drop-after')
+  dock.addEventListener('dragstart', (e) => {
+    const el = e.target.closest('.rail-ws')
+    if (!el || el.dataset.ws === 'default') return e.preventDefault()
+    dragging = el.dataset.ws
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('application/x-crew-workspace', dragging)
+    el.classList.add('dragging')
+  })
+  const target = (e) => {
+    const el = e.target.closest('.rail-ws')
+    if (!el || !dragging || el.dataset.ws === dragging) return null // back where it was: nowhere to move to
+    const r = el.getBoundingClientRect()
+    const after = e.clientY > r.top + r.height / 2
+    if (el.dataset.ws === 'default' && !after) return null // nothing goes above the default
+    return { el, after }
+  }
+  dock.addEventListener('dragover', (e) => {
+    const t = target(e)
+    for (const x of marks()) if (x !== t?.el) x.classList.remove('drop-before', 'drop-after') // the line is only where it'd land
+    if (!t) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    t.el.classList.toggle('drop-before', !t.after)
+    t.el.classList.toggle('drop-after', t.after)
+  })
+  dock.addEventListener('drop', async (e) => {
+    const t = target(e)
+    if (!t) return
+    e.preventDefault()
+    const moving = dragging
+    const ids = state.workspaces.map((w) => w.id).filter((id) => id !== moving)
+    ids.splice(ids.indexOf(t.el.dataset.ws) + (t.after ? 1 : 0), 0, moving)
+    endDrag()
+    try {
+      await crew.call('workspace', 'order', null, ids.filter((id) => id !== 'default'))
+    } catch (err) {
+      oops("Couldn't move that workspace", err)
+    }
+  })
+  const endDrag = () => {
+    if (!dragging) return
+    dragging = null
+    for (const x of dock.querySelectorAll('.dragging, .drop-before, .drop-after')) x.classList.remove('dragging', 'drop-before', 'drop-after')
+    if (railStale) drawDock()
+  }
+  dock.addEventListener('dragend', endDrag)
+  // on the document too: the tile you started from may be gone by the time you let go
+  document.addEventListener('dragend', endDrag)
+  document.addEventListener('drop', endDrag)
+  dock.addEventListener('dragleave', (e) => !dock.contains(e.relatedTarget) && marks().forEach((x) => x.classList.remove('drop-before', 'drop-after')))
 
   // ---- the banner over a parked workspace ------------------------------------------------------------------
 
@@ -439,15 +438,15 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
     }
   }
 
-  async function remove() {
-    const w = before
+  async function remove(w = before) {
     const own = (w.agents ?? 0) - (w.members?.length ?? 0)
     if (!confirm(`Remove ${w.name}?\n\nIts agents stop and it leaves the switcher.${own > 0 ? ` ${plural(own, 'agent')} of its own ${own > 1 ? 'go' : 'goes'} with it.` : ''} Your shared agents stay in your crew.\n\nIts chat, notes and tasks are kept on disk: a workspace made again with the same name picks them back up.`)) return
     try {
       await crew.call('workspace', 'remove', w.id)
-      dialog.close()
+      if (dialog.open) dialog.close()
     } catch (x) {
-      $d('[data-ws-err]').textContent = errorLine(x)
+      if (dialog.open) $d('[data-ws-err]').textContent = errorLine(x)
+      else oops(`Couldn't remove ${w.name}`, x)
     }
   }
 
@@ -457,10 +456,9 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
       drawButton()
       drawBanner()
       drawDock()
-      if (pop) morph(pop.el, popHTML())
       if (dialog.open && draft?.id && !state.workspaces.some((w) => w.id === draft.id)) dialog.close() // removed meanwhile
     },
-    toggle: () => (pop ? closePop() : openPop()),
+    menu,
     create: () => openSheet(null),
     settings: (id) => openSheet(id ?? state.workspace.id),
   }

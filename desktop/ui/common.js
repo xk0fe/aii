@@ -1521,7 +1521,8 @@ function markWords(root, words) {
 // inline: questions are cards where they were asked, answered there, rather than in a Needs you queue pinned above the
 // messages (the dashboard; the floating chat keeps the queue). face: the creatures' size beside their messages.
 // onFound: a search result was clicked, so the search is over and the chat shows that message where it was.
-function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), onFound, limit = 200, inline = false, face = 28 } = {}) {
+// welcome(): what everyone's chat shows while it has no messages at all (the dashboard's first steps), or nothing.
+function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket = (key) => crew.call('dashboard', `task:${key}`), onFound, welcome, limit = 200, inline = false, face = 28 } = {}) {
   const open = new Set()
   const seen = new Set()
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
@@ -1874,6 +1875,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   const emptyHTML = (agents) => {
     const a = convo && (agents.find((x) => x.name === talkingTo) ?? agents.find((x) => x.name === convo))
     if (words.length) return `<div class="empty empty-state small">${ICONS.search}<b>Nothing matches</b><span>No message${a ? ` with ${esc(displayName(a))}` : ''} has ${words.length > 1 ? 'all of those words' : 'that word'}.</span></div>`
+    if (!a && welcome?.()) return welcome()
     if (!a) return `<div class="empty empty-state small">${ICONS.mark}<b>No messages yet</b><span>Tasks, hand-offs and replies show up here.</span></div>`
     const n = esc(plainName(a))
     return `<div class="empty empty-state small convo-empty">${avatarHTML(a, { size: 56 })}<b>You and ${esc(displayName(a))}</b><span>What you send here goes to ${n}${a.on ? '' : ` once it's back on`}. @mention someone to bring them in too.</span></div>`
@@ -2002,7 +2004,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       // searching, who's at work right now isn't part of the results
       const busy = words.length ? [] : typingParts(convo ? agents.filter((a) => familyOf(a.name) === convo) : agents, asks, { all: typingAll, crew: agents, queue: !inline, cards: inline })
       let added = false
-      if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}` // the empty-feed hint shows only when nobody's busy
+      if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}:${!convo && !words.length ? welcome?.() ?? '' : ''}` // the empty-feed hint shows only when nobody's busy
       if (next !== key) {
         key = next
         // a re-render mustn't take away what you're typing into a question card

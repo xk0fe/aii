@@ -355,6 +355,22 @@ function workspaceAction(op, id, arg) {
   if (op === 'switch') window.__crewShow(id)
   if (op === 'open') (w.parked = false), window.__crewShow(state.workspace.id)
   if (op === 'park') (w.parked = true), window.__crewShow(state.workspace.id)
+  if (op === 'order') {
+    const at = (x) => (x.id === 'default' ? -1 : arg.includes(x.id) ? arg.indexOf(x.id) : arg.length)
+    WORKSPACES.sort((a, b) => at(a) - at(b))
+  }
+  // who works there: shared agents in and out (the default has everyone)
+  if (op === 'members' && w && id !== 'default') {
+    for (const name of arg.add ?? []) if (!w.members.some((m) => m.name === name)) w.members.push({ name, folder: '' })
+    w.members = w.members.filter((m) => !(arg.remove ?? []).includes(m.name))
+    Object.assign(w, { agents: w.members.length, on: w.members.length, faces: faces(w.members.map((m) => m.name)) })
+    if (w.current) window.__crewShow(id)
+  }
+  if (op === 'edit' && w) Object.assign(w, arg)
+  if (op === 'remove') {
+    WORKSPACES.splice(WORKSPACES.indexOf(w), 1)
+    if (w.current) window.__crewShow('default')
+  }
   if (op === 'create') {
     id = String(arg.name).toLowerCase().replace(/[^a-z0-9]+/g, '-')
     WORKSPACES.push({ id, name: arg.name, color: arg.color || null, icon: arg.icon || null, folder: arg.folder || null, parked: false, members: (arg.members ?? []).map((name) => ({ name, folder: '' })), agents: arg.members?.length ?? 0, on: arg.members?.length ?? 0, working: 0, waiting: 0, unread: 0, faces: faces(arg.members ?? []) })

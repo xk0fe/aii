@@ -490,6 +490,23 @@ test('a workspace made in the app: its look, folder and crew, then on screen; re
   }
 })
 
+test('the order workspaces are listed in: changed from the app, the default first, the ones not named after the rest', async () => {
+  const c = await crewApp({ agents: roster(), workspaces: [storefront()] })
+  try {
+    c.workspaceAction('create', null, { name: 'Docs' })
+    c.workspaceAction('create', null, { name: 'Lab' })
+    assert.deepEqual(c.workspaces().map((w) => w.id), [DEFAULT, 'storefront', 'docs', 'lab'])
+    const { state } = c.workspaceAction('order', null, ['lab', DEFAULT, 'storefront'])
+    assert.deepEqual(saved().workspaces.map((w) => w.id), ['lab', 'storefront', 'docs'], 'the default isn\'t in the list to move')
+    assert.deepEqual(state.workspaces.map((w) => w.id), [DEFAULT, 'lab', 'storefront', 'docs'], 'the default stays first')
+    c.config.data.workspaces.push(null) // a hand-edited config.json with a hole in it
+    c.workspaceAction('order', null, ['docs', 'nope'])
+    assert.deepEqual(c.workspaces().map((w) => w.id), [DEFAULT, 'docs', 'lab', 'storefront'], 'unknown ids are ignored; the rest keep their order')
+  } finally {
+    quit(c)
+  }
+})
+
 test("who works in a workspace: shared agents join and leave from the app, each with a folder of its own there or the workspace's", async () => {
   const c = await crewApp({ agents: roster(), workspaces: [storefront()] })
   try {

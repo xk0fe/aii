@@ -382,28 +382,27 @@ const SHOTS = {
     win.destroy()
   },
   // Switching workspaces: the switcher, Storefront, then back to Docs site from the sidebar's dock. The crew slides over.
+  // Workspaces on the rail: switch to the one that needs you, back, then see who works there.
   async workspacesGif() {
-    const win = await dashboard('light', 'crew', { fixture: 'workspaces', width: 1280, height: 800 })
+    const win = await dashboard('light', 'chat', { fixture: 'workspaces', width: 1280, height: 800 })
     await sleep(1200)
     await record(win, 'workspaces', {
-      ms: 7600, width: 1000,
+      ms: 8200, width: 1000,
       during: async () => {
         let at = { x: 640, y: 420 }
-        at = await glide(win, at, await center(win, '.ws-switch'), 650)
-        await tap(win, at)
-        await sleep(900)
-        at = await glide(win, at, await center(win, '.ws-row[data-ws=default]'), 600)
+        at = await glide(win, at, await center(win, '.rail-ws[data-ws=default]'), 700)
         await sleep(350)
         await tap(win, at)
         await sleep(1500)
-        at = await glide(win, at, await center(win, '.ws-switch'), 650)
-        await tap(win, at)
-        await sleep(900)
-        at = await glide(win, at, await center(win, '.ws-row[data-ws=docs]'), 600)
+        at = await glide(win, at, await center(win, '.rail-ws[data-ws=docs]'), 500)
         await sleep(300)
         await tap(win, at)
-        await sleep(1400)
-        await glide(win, at, { x: at.x + 260, y: at.y - 240 }, 500)
+        await sleep(1300)
+        at = await glide(win, at, await center(win, '.mh-faces'), 900)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1500)
+        await glide(win, at, { x: at.x - 260, y: at.y + 300 }, 500)
       },
     })
     win.destroy()
@@ -1322,13 +1321,14 @@ const SHOTS = {
   },
   // Workspaces: the switcher open over Docs site, the sheet that makes one, one's settings, and a parked one.
   async workspaces(theme) {
-    const win = await dashboard(theme, 'crew', { fixture: 'workspaces' })
+    const win = await dashboard(theme, 'chat', { fixture: 'workspaces' })
     await sleep(900)
-    await save(win, `ws-crew-${theme}`)
+    // the rail: Storefront needs you, Docs site on screen, Research parked
+    await save(win, `ws-rail-${theme}`)
     await js(win, click('.ws-switch'))
-    await sleep(700)
-    await save(win, `ws-switcher-${theme}`)
-    await js(win, click('[data-ws-cmd=new]'))
+    await sleep(500)
+    await save(win, `ws-menu-${theme}`)
+    await js(win, click('.menu [data-menu-act=new]'))
     await sleep(600)
     await js(win, `const i = document.querySelector('[data-ws-name]'); i.value = 'Checkout'; i.dispatchEvent(new Event('input', { bubbles: true }))`)
     await js(win, click('[data-ws-icon="🛒"]'))
@@ -1337,18 +1337,30 @@ const SHOTS = {
     await save(win, `ws-new-${theme}`)
     await js(win, "document.querySelector('#ws').close()")
     await sleep(300)
-    await js(win, "document.querySelector('.ws-switch').click()")
-    await sleep(500)
-    await js(win, click('.ws-row.current [data-ws-act=settings]'))
+    await js(win, 'workspaces.settings()')
     await sleep(700)
     await save(win, `ws-settings-${theme}`)
     await js(win, "document.querySelector('#ws').close()")
-    await js(win, "document.querySelector('.ws-switch').click()")
-    await sleep(500)
-    await js(win, click('.ws-row[data-ws=default] [data-ws-act=settings]'))
+    await js(win, "workspaces.settings('default')")
     await sleep(700)
     await save(win, `ws-home-settings-${theme}`)
     await js(win, "document.querySelector('#ws').close()")
+    await sleep(300)
+    // who works here, from #crew's faces
+    await js(win, click('.mh-faces'))
+    await sleep(500)
+    await save(win, `ws-members-${theme}`)
+    await js(win, "document.querySelector('.members-pop').hidePopover()")
+    // right-click a workspace on the rail
+    await js(win, "const r = document.querySelector('.rail-ws[data-ws=research]').getBoundingClientRect(); document.querySelector('.rail-ws[data-ws=research]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: r.right - 8, clientY: r.top + 20 }))")
+    await sleep(500)
+    await save(win, `ws-rail-menu-${theme}`)
+    await js(win, "openMenu?.close()")
+    await sleep(300)
+    // a new workspace's empty #crew: its first steps
+    await js(win, "await crew.call('workspace', 'create', null, { name: 'Checkout', icon: '🛒', color: 'teal', members: ['Ada', 'Iris'] }); const s = window.__crewState; s.feed = []; s.agents = s.agents.map((a) => ({ ...a, status: 'idle', activity: '', subs: [], unread: 0 })); window.__crewEmit('state', s)")
+    await sleep(900)
+    await save(win, `ws-welcome-${theme}`)
     await js(win, "window.__crewEmit('state', (window.__crewShow('research'), window.__crewState))")
     await sleep(900)
     await save(win, `ws-parked-${theme}`)

@@ -1144,7 +1144,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
 
   document.addEventListener('keydown', (e) => {
     if (editing && commandKey(e) && !e.altKey && e.key === 's') return void (e.preventDefault(), save())
-    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open], .menu:not(.leaving, .hidden), .mentions:not(.hidden)')) return
+    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open], .menu:not(.leaving, .hidden), .mentions:not(.hidden), [popover]:popover-open')) return
     if (editing) return void (e.preventDefault(), close())
     if (selecting && root.offsetParent) setSelecting(false)
   })
