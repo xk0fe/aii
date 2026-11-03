@@ -1,4 +1,4 @@
-<!-- crew-voice.exe: Crew's dictation helper on Windows (Program.cs). A self-contained folder, no .NET install needed:
+<!-- crew-voice.exe: CLIque's dictation helper on Windows (Program.cs). A self-contained folder, no .NET install needed:
        dotnet publish desktop/native/windows/CrewVoice -c Release -r win-x64 -o <out>     (or -r win-arm64)
      then put the speech model in <out>/models/ (see Program.cs). -->
 <Project Sdk="Microsoft.NET.Sdk">
@@ -10,8 +10,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>crew-voice</AssemblyName>
     <RootNamespace>CrewVoice</RootNamespace>
-    <Product>Crew</Product>
-    <Description>Crew's on-device dictation</Description>
+    <Product>CLIque</Product>
+    <Description>CLIque's on-device dictation</Description>
     <!-- language names ("Русский") come from the culture data -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>

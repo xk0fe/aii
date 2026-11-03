@@ -1,6 +1,6 @@
-# Crew's phone protocol, version 1
+# CLIque's phone protocol, version 1
 
-How the phone app (`mobile/`) and Crew on a Mac (`desktop/core/remote.js`) talk. The code both sides share is next to this file: `protocol.js` (names, pairing codes, encodings) and `sync.js` (state as patches). Neither has dependencies.
+How the phone app (`mobile/`) and CLIque on a Mac (`desktop/core/remote.js`) talk. The code both sides share is next to this file: `protocol.js` (names, pairing codes, encodings) and `sync.js` (state as patches). Neither has dependencies.
 
 The phone is a **device**, not a computer. It has no agents, never shows up under Computers, and can only make the calls listed below. It is "you": what it sends shows up in the chat as yours.
 
@@ -28,7 +28,7 @@ crewphone1.<b64(UTF-8 JSON)>
 
 - **The secret:** `s` is 32 random bytes. It is never sent over the network; it only goes into the key derivation (below), so a phone without the code can't pair.
 - **Lifetime:** a code pairs one phone within 10 minutes. Making a new code ends the old one.
-- **Addresses:** `h` lists every address the Mac has, the same list Crew Link's code carries (LAN, Tailscale IP, MagicDNS name). The phone tries them all at once and keeps the first that completes the handshake.
+- **Addresses:** `h` lists every address the Mac has, the same list CLIque Link's code carries (LAN, Tailscale IP, MagicDNS name). The phone tries them all at once and keeps the first that completes the handshake.
 
 ## Handshake
 
@@ -67,7 +67,7 @@ What each key buys:
 
 ## Messages
 
-These are the same shapes as Crew Link's (`desktop/core/link.js`).
+These are the same shapes as CLIque Link's (`desktop/core/link.js`).
 
 - **A call and its reply:** `{ "t": "call", "id": 7, "name": "send", "args": [...] }` gets `{ "t": "reply", "id": 7, "ok": value }` or `{ "t": "reply", "id": 7, "error": "text to show" }`. `ok` is `null` for a call with nothing to say.
 - **What the Mac pushes:**
@@ -76,7 +76,7 @@ These are the same shapes as Crew Link's (`desktop/core/link.js`).
   - `{ "t": "pty", "ws": id, "name": "ada", "data": "..." }`: terminal output, only for a terminal the phone asked for.
   - `{ "t": "alert", "ws": id, "name": "ada", "text": "wants to run a command: npm test" }`: an agent needs you.
   - `{ "t": "notice", "ws": id, "title": "...", "body": "...", "focus": "..." }`: something worth a line (a task in Review, a limit). One about your accounts' limits has no `ws`: they're no workspace's.
-- **Bytes:** byte values (images) travel as `{ "$bytes": "<base64>" }`, as on Crew Link.
+- **Bytes:** byte values (images) travel as `{ "$bytes": "<base64>" }`, as on CLIque Link.
 
 A phone watches **one workspace at a time, its own choice**: never the one on the Mac's screen. Every state carries the list of all workspaces with their counts, for the phone's switcher.
 
@@ -85,7 +85,7 @@ A phone watches **one workspace at a time, its own choice**: never the one on th
 | Call | Arguments | What it does |
 |---|---|---|
 | `watch` | `ws` | Stream workspace `ws`. Replies `{ v, state }` and patches follow. |
-| `send` | `ws, to, text, images?, opts?` | A message, as from the Mac's chat. `to` is `''` (Crew picks), a name, or names with commas. `opts`: `{ fresh?, re? }`. Replies with what Crew says, like `"sent to @kim\n"`. |
+| `send` | `ws, to, text, images?, opts?` | A message, as from the Mac's chat. `to` is `''` (CLIque picks), a name, or names with commas. `opts`: `{ fresh?, re? }`. Replies with what CLIque says, like `"sent to @kim\n"`. |
 | `answer` | `ws, id, reply` | Answer a question card. `reply` is what `Hub.answer` takes: `{ allow, always?, note? }`, `{ answers }` or `{ terminal: true }`. |
 | `approve`, `drop` | `ws, id` | A hand-off waiting for your approval (Autopilot off). |
 | `read` | `ws, seen` | `{ name: ts }`: replies seen up to then, so unread counts agree with the Mac. |
@@ -93,7 +93,7 @@ A phone watches **one workspace at a time, its own choice**: never the one on th
 | `power` | `ws, name, on` | Turn an agent on or off. |
 | `set` | `ws, name, { yolo?, fast? }` | YOLO and Fast. |
 | `freshStart`, `restart`, `markIdle` | `ws, name` | As in the agent's menu on the Mac. |
-| `image` | `path` | An image from the chat or a task, as bytes. Only files in Crew's attachments, or in its cache of linked computers' images. |
+| `image` | `path` | An image from the chat or a task, as bytes. Only files in CLIque's attachments, or in its cache of linked computers' images. |
 | `saveImage` | `name, type, bytes` | Store a photo the phone attaches; replies with its path on the Mac, for `send` or `task`. |
 | `terminal` | `ws, name, on` | Start (`true`) or stop streaming a terminal. Starting replies `{ data, cols, rows }`: what it printed so far, and the size it was drawn at (a full-screen CLI only replays right at that size). `pty` messages follow. |
 | `input` | `ws, name, data` | Type into a terminal. |
@@ -104,7 +104,7 @@ Anything else is refused with `"<name>" isn't available on a phone`.
 
 It's `Crew.snapshot(hub)` for the watched workspace, minus what a phone mustn't have or doesn't need:
 
-- **`computers`:** just `[{ slug, name, online }]`, this Mac first (agents with no `home` are its), then its linked computers. A snapshot's `computers.me.code` is the Crew Link pairing code, with its secret key, and must never reach a phone.
+- **`computers`:** just `[{ slug, name, online }]`, this Mac first (agents with no `home` are its), then its linked computers. A snapshot's `computers.me.code` is the CLIque Link pairing code, with its secret key, and must never reach a phone.
 - **`agents`:** without `prompt`, `args`, `images` or `cwd`.
 - **`providers`:** `{ id: { label } }`.
 - **`roster` and `theme`:** dropped.

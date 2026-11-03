@@ -1,16 +1,18 @@
-// Builds dist/Crew.app: the Electron runtime with Crew's own name, icon and bundle id, for working on Crew.
-// The bundle is only a launcher; it runs the code in this folder, so your edits apply on the next launch.
-// (The Crew people install comes from npm run dist: scripts/dist.mjs.)
-//   npm start      opens Crew.app, building it first if it's missing or out of date
+// Builds dist/CLIque.app (the name is PRODUCT_NAME in core/appid.js): the Electron runtime with the app's own name, icon
+// and bundle id, for working on it. The bundle is only a launcher; it runs the code in this folder, so your edits apply
+// on the next launch. (The app people install comes from npm run dist: scripts/dist.mjs.)
+//   npm start      opens the launcher, building it first if it's missing or out of date
 //   npm run app    rebuilds it
-// On Windows there's no launcher to build: npm start runs Crew from this folder, as npm run dev does.
+// Before the rename it was dist/Crew.app. That one is left alone (it may be the copy that's running); once it's quit,
+// delete it, and put the new one in the Dock in its place.
+// On Windows there's no launcher to build: npm start runs the app from this folder, as npm run dev does.
 import { packager } from '@electron/packager'
 import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { APP_ID } from '../core/appid.js'
+import { APP_ID, PRODUCT_NAME } from '../core/appid.js'
 import { Voice } from '../core/voice.js'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -18,9 +20,9 @@ if (process.platform !== 'darwin') process.exit(spawnSync(process.execPath, [pat
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const electronVersion = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', 'electron', 'package.json'), 'utf8')).version
 
-const app = path.join(root, 'dist', 'Crew.app')
+const app = path.join(root, 'dist', `${PRODUCT_NAME}.app`)
 const stamp = path.join(root, 'dist', '.build.json')
-const wanted = JSON.stringify({ electronVersion, root, icon: fs.statSync(path.join(root, 'assets', 'icon.icns')).mtimeMs, documents: 1, voice: 1, id: APP_ID })
+const wanted = JSON.stringify({ electronVersion, root, icon: fs.statSync(path.join(root, 'assets', 'icon.icns')).mtimeMs, documents: 1, voice: 1, id: APP_ID, name: PRODUCT_NAME })
 const open = process.argv.includes('--open')
 const current = fs.existsSync(app) && fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === wanted
 
@@ -29,24 +31,24 @@ if (open) execFileSync('open', [app])
 
 async function build() {
 const shim = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-app-'))
-fs.writeFileSync(path.join(shim, 'package.json'), JSON.stringify({ name: 'crew', productName: 'Crew', version: pkg.version, type: 'module', main: 'main.js' }, null, 2))
-fs.writeFileSync(path.join(shim, 'main.js'), `// Crew.app launcher: runs Crew from its source folder.\nimport ${JSON.stringify(pathToFileURL(path.join(root, 'main.js')).href)}\n`)
+fs.writeFileSync(path.join(shim, 'package.json'), JSON.stringify({ name: 'crew', productName: PRODUCT_NAME, version: pkg.version, type: 'module', main: 'main.js' }, null, 2))
+fs.writeFileSync(path.join(shim, 'main.js'), `// ${PRODUCT_NAME}.app launcher: runs the app from its source folder.\nimport ${JSON.stringify(pathToFileURL(path.join(root, 'main.js')).href)}\n`)
 
 const [built] = await packager({
   dir: shim,
   out: path.join(root, 'dist'),
-  name: 'Crew',
-  executableName: 'Crew',
-  // the installed Crew's id plus .dev, so macOS keeps the two apart when both are on this Mac
+  name: PRODUCT_NAME,
+  executableName: PRODUCT_NAME,
+  // the installed app's id plus .dev, so macOS keeps the two apart when both are on this Mac
   appBundleId: `${APP_ID}.dev`,
   appCategoryType: 'public.app-category.developer-tools',
   icon: path.join(root, 'assets', 'icon.icns'),
-  // .crew agent packs open in Crew from Finder or Mail; the two descriptions are what macOS shows when Crew
-  // first asks for the microphone (and, before macOS 26, speech recognition) for dictation
+  // .crew agent packs open in the app from Finder or Mail; the two descriptions are what macOS shows when it first
+  // asks for the microphone (and, before macOS 26, speech recognition) for dictation
   extendInfo: {
-    CFBundleDocumentTypes: [{ CFBundleTypeName: 'Crew agents', CFBundleTypeExtensions: ['crew'], CFBundleTypeRole: 'Viewer', LSHandlerRank: 'Owner' }],
-    NSMicrophoneUsageDescription: 'Crew listens while you dictate a message to your agents.',
-    NSSpeechRecognitionUsageDescription: 'Crew turns what you say into text, on this Mac.',
+    CFBundleDocumentTypes: [{ CFBundleTypeName: `${PRODUCT_NAME} agents`, CFBundleTypeExtensions: ['crew'], CFBundleTypeRole: 'Viewer', LSHandlerRank: 'Owner' }],
+    NSMicrophoneUsageDescription: `${PRODUCT_NAME} listens while you dictate a message to your agents.`,
+    NSSpeechRecognitionUsageDescription: `${PRODUCT_NAME} turns what you say into text, on this Mac.`,
   },
   electronVersion,
   platform: 'darwin',
@@ -59,7 +61,7 @@ fs.rmSync(shim, { recursive: true, force: true })
 
 // Tidy path, then re-sign ad hoc: packaging changes the bundle, and Apple Silicon won't run a broken signature.
 fs.rmSync(app, { recursive: true, force: true })
-fs.renameSync(path.join(built, 'Crew.app'), app)
+fs.renameSync(path.join(built, `${PRODUCT_NAME}.app`), app)
 fs.rmSync(built, { recursive: true, force: true })
 execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'ignore' })
 fs.writeFileSync(stamp, wanted)

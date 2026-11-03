@@ -130,7 +130,7 @@ export class HostRunner extends EventEmitter {
           reject(e)
         }
       }
-      const onClose = () => reject(new Error('the terminal host turned Crew away'))
+      const onClose = () => reject(new Error('the terminal host turned CLIque away'))
       sock.setEncoding('utf8')
       sock.on('data', onData)
       sock.on('close', onClose)
@@ -306,7 +306,7 @@ export function rotate(file, keep = LOG_KEEP) {
 }
 
 // Windows won't replace a program's files while it runs, and an update replaces Crew's. A host running from Crew's
-// folder would have to stop for an update, every agent with it (the installer stops whatever runs as Crew.exe there
+// folder would have to stop for an update, every agent with it (the installer stops whatever runs as CLIque.exe there
 // anyway). So on Windows it runs from a copy of what it needs, made once per version, in `into` (RUNTIMES):
 //   <version>/crew-host.exe      Crew's own binary (Electron, run as Node), with the DLLs and data files beside it
 //   <version>/app/ptyhost.js     this host, with node-pty in app/node_modules

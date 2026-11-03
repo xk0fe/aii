@@ -1,9 +1,9 @@
 {
   "name": "crew",
-  "productName": "Crew",
+  "productName": "CLIque",
   "version": "1.0.0",
   "private": true,
-  "description": "Crew: a team of AI coding agents (Claude Code, Codex) with names, jobs and one chat for all of them",
+  "description": "CLIque: a team of AI coding agents (Claude Code, Codex) with names, jobs and one chat for all of them",
   "author": {
     "name": "Greengrass"
   },

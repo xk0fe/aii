@@ -68,12 +68,13 @@ export function Who({ t, kind, size, ring, children }: { t: Theme; kind: string;
   )
 }
 
-// The wordmark: the app's name in the brand face, each letter a creature's colour (LAB-style).
-const LETTERS = ['#ff45a8', '#3db8ff', '#ffc61f', '#2fd3a6']
+// The wordmark: the app's name in the brand face, as it's written (the capitals are the CLI in CLIque), each letter a
+// creature's colour, as on the computer (desktop/ui/brand.js WORDMARK_INKS).
+const LETTERS = ['#ff45a8', '#3db8ff', '#ffc61f', '#2fd3a6', '#72d63a', '#ff8a1f', '#8b5cf6']
 export function Wordmark({ name, size = 40 }: { name: string; size?: number }) {
   return (
     <Text style={{ fontFamily: fonts.brandBold, fontSize: size, lineHeight: size * 1.15, letterSpacing: -size * 0.02 }} accessibilityRole="header" accessibilityLabel={name} maxFontSizeMultiplier={1.2}>
-      {[...name.toLowerCase()].map((c, i) => (
+      {[...name].map((c, i) => (
         <Text key={i} style={{ color: LETTERS[i % LETTERS.length] }}>
           {c}
         </Text>

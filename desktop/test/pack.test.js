@@ -53,6 +53,6 @@ test('importing: chosen name and folder, starts off, never overrides your provid
 })
 
 test('not a pack: a clear error', () => {
-  assert.throws(() => readPack('{"agents": []}'), /isn't a Crew agent pack/)
-  assert.throws(() => readPack('nope'), /isn't a Crew agent pack/)
+  assert.throws(() => readPack('{"agents": []}'), /isn't a CLIque agent pack/)
+  assert.throws(() => readPack('nope'), /isn't a CLIque agent pack/)
 })

@@ -109,17 +109,17 @@ export function makePairCode({ id, name, key, secret, hosts, port = PORT }) {
 
 export function readPairCode(code) {
   const text = String(code ?? '').trim()
-  if (!text.startsWith(PAIR_PREFIX)) throw new Error("that's not a Crew phone code")
+  if (!text.startsWith(PAIR_PREFIX)) throw new Error("that's not a CLIque phone code")
   let c
   try {
     c = JSON.parse(unutf8(unb64(text.slice(PAIR_PREFIX.length))))
   } catch {
-    throw new Error("that's not a Crew phone code")
+    throw new Error("that's not a CLIque phone code")
   }
-  if (c.v !== VERSION) throw new Error('that code is from a different Crew version, update both')
+  if (c.v !== VERSION) throw new Error('that code is from a different CLIque version, update both')
   const key = unb64(c.k)
   const secret = unb64(c.s)
-  if (key.length !== 32 || secret.length !== 32 || !Array.isArray(c.h)) throw new Error("that's not a Crew phone code")
+  if (key.length !== 32 || secret.length !== 32 || !Array.isArray(c.h)) throw new Error("that's not a CLIque phone code")
   return { id: String(c.id), name: String(c.n ?? 'Mac'), key, secret, hosts: c.h.map(String), port: Number(c.p) || PORT }
 }
 

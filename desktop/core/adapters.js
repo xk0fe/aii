@@ -151,7 +151,7 @@ export const adapters = {
   codex(a, { resume, platform = process.platform }) {
     const where = { platform }
     const events = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'Interrupt']
-    const ask = `[{hooks=[{type="command",command=${toml(codexHook('ask', CODEX_WAIT, where))},timeout=${CODEX_WAIT},statusMessage="Waiting for your answer in Crew's chat"}]}]`
+    const ask = `[{hooks=[{type="command",command=${toml(codexHook('ask', CODEX_WAIT, where))},timeout=${CODEX_WAIT},statusMessage="Waiting for your answer in CLIque's chat"}]}]`
     return {
       file: 'codex',
       readyAfter: 3000, // Codex fires SessionStart with the first prompt, not at launch

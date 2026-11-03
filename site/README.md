@@ -1,6 +1,6 @@
 # The website, and where releases go
 
-Crew's source stays in this private repo. The website and the downloads live in a separate **public** repo: its
+CLIque's source stays in this private repo. The website and the downloads live in a separate **public** repo: its
 GitHub Pages serves the site, and its Releases hold the Mac and Windows apps. `.github/workflows/release.yml` builds
 both from here and puts them there. Nothing else goes into the public repo.
 
@@ -43,7 +43,7 @@ Do these in order. Steps 4 and 5 can come later; until then the apps are built u
 
 3. **Tell this repo about it.** In this repo: Settings › Secrets and variables › Actions.
    - Variables tab › New repository variable: `RELEASE_REPO` = `<owner>/<name>` of the public repo.
-     Optional: `SITE_DOMAIN` = a custom domain such as `crew.example.com` (step 7), or `SITE_URL` = the site's full
+     Optional: `SITE_DOMAIN` = a custom domain such as `clique.example.com` (step 7), or `SITE_URL` = the site's full
      address with a trailing slash, if it isn't `https://<owner>.github.io/<name>/`.
    - Secrets tab › New repository secret: `RELEASE_TOKEN` = the token from step 2.
 
@@ -101,7 +101,7 @@ the site. Any button can go back to "Coming soon" the same way.
 
 - Privacy policy URL: `<site>/privacy.html`. Support URL: `<site>/support.html`. Marketing URL: the site itself.
 - `privacy.md` is the same policy as plain text, if a form asks for the text.
-- The policy says Crew collects no data; the stores' privacy questions should be answered the same way, checked
+- The policy says CLIque collects no data; the stores' privacy questions should be answered the same way, checked
   against the app being submitted.
 
 ## Pictures to replace with real screenshots
@@ -127,7 +127,8 @@ Also drawn from the design for now:
 
 ## Renaming
 
-Change `PRODUCT` in `config.mjs`: every page, title, the wordmark (drawn letter by letter in Fredoka, in the
-creatures' colours) and `privacy.html` follow. Then redraw `og.png` (it shows the wordmark) with `tools/icons.mjs`.
-`privacy.md` itself still says "Crew" for anyone pasting it into a store form: replace the word there too. The
-headline's "working as a crew" is the ordinary word and stays.
+Change `PRODUCT` in `config.mjs`: every page, title, the wordmark (drawn letter by letter in Fredoka, as written, in
+the creatures' colours) and `privacy.html` follow. Then redraw `og.png` (it shows the wordmark) with `tools/icons.mjs`.
+`privacy.md` itself says "CLIque" for anyone pasting it into a store form: replace the word there too, and in the
+`replace` that `build.mjs` gives it. The headline's "working as a crew" is the ordinary word and stays. (`og.png` still
+shows the wordmark from before the rename to CLIque until it's redrawn.)

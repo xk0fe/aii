@@ -409,7 +409,7 @@ test("a config.json that can't be read is said in the default workspace's chat, 
   const first = new Hub(new Scoped(new FakeRunner(), DEFAULT, true), { bin: BIN, config: cfg, token: 'tok' })
   const other = new Hub(new Scoped(new FakeRunner(), 'storefront', false), { bin: BIN, workspace: 'storefront', config: cfg, token: 'tok' })
   try {
-    assert.match(first.feed.at(-1)?.text ?? '', /^Crew couldn't read its settings \(.*config\.json: .*\), so it carries on with the ones it had$/)
+    assert.match(first.feed.at(-1)?.text ?? '', /^CLIque couldn't read its settings \(.*config\.json: .*\), so it carries on with the ones it had$/)
     assert.equal(first.space.autopilot, true)
     assert.equal(first.config.theme, 'system')
     assert.equal(first.agents.size, 0)
@@ -686,7 +686,7 @@ test('a linked computer: its terminals show in their own workspace, typing reach
     peer.emit('input', 'storefront/june', 'y')
     peer.emit('input', 'june', 'n')
     assert.deepEqual(typed, [['storefront', 'june', 'y'], ['default', 'june', 'n']])
-    await assert.rejects(c.linkCall(l, 'update', [['milo'], {}]), /Laptop runs an older Crew, without workspaces: update it/)
+    await assert.rejects(c.linkCall(l, 'update', [['milo'], {}]), /Laptop runs an older CLIque, without workspaces: update it/)
   } finally {
     quit(c)
   }

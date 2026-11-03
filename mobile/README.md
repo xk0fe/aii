@@ -1,12 +1,12 @@
-# Crew for your phone
+# CLIque for your phone
 
 The phone app for when you're away from your computer: see who's working, answer when an agent needs you, and send a message. iOS and Android, built with Expo (SDK 58, React Native 0.88, TypeScript, expo-router).
 
-It talks to Crew on your computer (a Mac or a Windows PC) directly, over your network or Tailscale, end to end encrypted. The contract is [`shared/PROTOCOL.md`](../shared/PROTOCOL.md); the app imports `shared/protocol.js` and `shared/sync.js` as they are.
+It talks to CLIque on your computer (a Mac or a Windows PC) directly, over your network or Tailscale, end to end encrypted. The contract is [`shared/PROTOCOL.md`](../shared/PROTOCOL.md); the app imports `shared/protocol.js` and `shared/sync.js` as they are.
 
 ## What's in it
 
-- **Pair:** on the computer, open **Computers** in Crew and choose **Add a phone**, then point the phone at the QR code it shows (or paste the code). The camera keeps looking by itself: a code that didn't get through is tried again after a few seconds, one the computer turned away isn't. Or **Try the demo crew** (the first screen always offers it; App Review uses it).
+- **Pair:** on the computer, open **Computers** in CLIque and choose **Add a phone**, then point the phone at the QR code it shows (or paste the code). The camera keeps looking by itself: a code that didn't get through is tried again after a few seconds, one the computer turned away isn't. Or **Try the demo crew** (the first screen always offers it; App Review uses it).
 - **Chat:** everyone's messages, or your conversation with one agent (tap its face). Replies render light Markdown. Type `@` to bring someone in. Replies you've seen are marked read on the Mac too.
 - **Needs you:** permission prompts, an agent's own questions and plans. They stack at the top of the chat and fill the Needs you tab (with a badge), where the creature asks in its own words ("Can I run npm run build?") above thumb-sized buttons; the answer goes back as `answer(ws, id, reply)`, exactly what `Hub.answer` takes.
 - **Crew:** the Crew room at the top (the crew together, each acting out its status: at a laptop, with a mug, holding up "OK?", asking, rising, asleep) with one headline, and the list below it, grouped by computer. The room folds away. Tap anyone for on/off, YOLO, Fast, New conversation, Restart and Mark idle.
@@ -23,7 +23,7 @@ Version 1 has no Tasks board, no terminals and no push notifications.
 - **Workspaces:** the phone's own choice, remembered per Mac. If the Mac removes the one it watches, the Mac pushes Home's state and the phone stays on Home.
 - **Going away and back:** when the Mac can't be reached, the last state stays on screen and the phone retries with backoff (1 s up to 30 s, a minute after "too many tries"). Back in the foreground it proves the connection with a quick `watch` and reconnects if that goes unanswered; a call the Mac never answers does the same.
 - **Pairing:** a round where no address gets through doesn't end it (the first one often fails while iOS asks about the local network): the phone keeps trying for 25 s, unless the Mac's answer won't change or it asked for a minute's wait. What went wrong is one line; Details lists what each address did (`no answer`, `closed 4008`…).
-- **Turned away:** "pair it again" when every address says this phone isn't paired (one address alone could be another Crew Mac on another network), and "that code is no longer valid" when a pairing code was used, ran out, or a newer one replaced it.
+- **Turned away:** "pair it again" when every address says this phone isn't paired (one address alone could be another CLIque Mac on another network), and "that code is no longer valid" when a pairing code was used, ran out, or a newer one replaced it.
 
 ## Run it
 
@@ -75,7 +75,7 @@ npm test            # the above
 `production` (the App Store, an Android App Bundle). What the stores ask (the listing, App Privacy, Data safety, age
 rating, export compliance, review notes) is drafted in [`store/`](store/README.md).
 
-And against a real computer running Crew, with a code from **Computers › Add a phone**:
+And against a real computer running CLIque, with a code from **Computers › Add a phone**:
 
 ```sh
 npx tsx scripts/smoke.ts crewphone1.…            # pair, print the state, send a hello, print the patches that follow

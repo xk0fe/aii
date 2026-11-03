@@ -115,7 +115,7 @@ export const markOffered = (providers = {}, config = {}) =>
 
 // Add provider…: GLM or Ollama in the picker from now on (saved in config.json).
 export function addProvider(cfg, id) {
-  if (!OPTIONAL.includes(id)) throw new Error('Crew has no such provider to add')
+  if (!OPTIONAL.includes(id)) throw new Error('CLIque has no such provider to add')
   const added = listOf(cfg.data.addedProviders)
   if (added.includes(id)) return
   cfg.data.addedProviders = [...added, id]
@@ -147,7 +147,7 @@ export function keepProvidersInUse(cfg) {
 // CODEX_OSS_BASE_URL moves it). The CLI each runs through is the first-run check's (core/setup.js).
 export async function checkProvider(id, { env = process.env, fetch = globalThis.fetch, timeout = 1500 } = {}) {
   if (id === 'glm') return { id, key: Boolean(env.ZAI_API_KEY) }
-  if (id !== 'local') throw new Error('Crew has no such provider to add')
+  if (id !== 'local') throw new Error('CLIque has no such provider to add')
   const base = String(env.CODEX_OSS_BASE_URL?.trim() || `http://127.0.0.1:${Number(env.CODEX_OSS_PORT) || 11434}`).replace(/\/$/, '').replace(/\/v1$/, '')
   try {
     const res = await fetch(`${base}/api/version`, { signal: AbortSignal.timeout(timeout) })

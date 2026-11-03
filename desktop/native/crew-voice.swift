@@ -1,4 +1,4 @@
-// crew-voice: on-device dictation for Crew's chat. Nothing leaves the Mac.
+// crew-voice: on-device dictation for CLIque's chat. Nothing leaves the Mac.
 //
 // stdin:  16 kHz mono Float32 PCM (little-endian), streamed while you talk. Closing stdin means "stop".
 // stdout: one JSON object per line
@@ -14,7 +14,7 @@
 // macOS 26+ uses SpeechAnalyzer's DictationTranscriber (punctuated, on-device). Older macOS falls back to
 // SFSpeechRecognizer, on-device only (languages that would need Apple's servers are refused). It needs the app's
 // speech-recognition permission: pass --may-ask-permission only from an app bundle whose Info.plist explains it
-// (Crew.app), or macOS stops the process.
+// (CLIque.app), or macOS stops the process.
 //
 // --locale=<id> picks the language (default: the system's).
 //
@@ -176,11 +176,11 @@ func locales() async -> [[String: Any]] {
 // macOS 13–15: the older recognizer, on-device where the language allows it.
 func recognize(_ locale: Locale) async throws {
   guard CommandLine.arguments.contains("--may-ask-permission") else {
-    throw Failure(message: "Voice input on this version of macOS needs Crew.app (npm start), or macOS 26")
+    throw Failure(message: "Voice input on this version of macOS needs CLIque.app (npm start), or macOS 26")
   }
   let status = await withCheckedContinuation { c in SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) } }
   guard status == .authorized else {
-    throw Failure(message: "Crew isn't allowed to use speech recognition. Turn it on in System Settings › Privacy & Security › Speech Recognition")
+    throw Failure(message: "CLIque isn't allowed to use speech recognition. Turn it on in System Settings › Privacy & Security › Speech Recognition")
   }
   guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
     throw Failure(message: "Speech recognition isn't available for \(locale.identifier)")

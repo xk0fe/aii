@@ -1,5 +1,5 @@
-// Builds Crew for people to install, into release/ (electron-builder.config.mjs has the details and the signing).
-//   npm run dist                  what this computer makes: on a Mac, Crew.app for Apple Silicon and Intel; on Windows,
+// Builds CLIque for people to install, into release/ (electron-builder.config.mjs has the details and the signing).
+//   npm run dist                  what this computer makes: on a Mac, CLIque.app for Apple Silicon and Intel; on Windows,
 //                                 the installers for x64 and arm64
 //   npm run dist -- --mac         macOS only: a DMG and a zip per arch (needs a Mac)
 //   npm run dist -- --win         Windows only: one installer per arch (a Mac can make these too)

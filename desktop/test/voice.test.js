@@ -143,7 +143,7 @@ test('dictation: an installed Crew whose helper is gone says so, and never tries
   const id = voice.start('en_US')
   const seen = await until(voice, id, 'error')
   assert.deepEqual(seen.map((e) => e.type), ['error'], 'no "building" first')
-  assert.match(seen[0].message, /missing from this copy of Crew/)
+  assert.match(seen[0].message, /missing from this copy of CLIque/)
 })
 
 // The microphone permission, per platform, with Electron's systemPreferences and shell faked.

@@ -3,7 +3,7 @@
 // to paste and Check again; once one is, the crew invites you to make its first agent. "Claude Code and Codex…" in the
 // ⋯ menu shows the same screen any time. Add provider… (here, and in the model picker) adds GLM or Ollama, which the
 // picker offers only once added (state.providers[id].added, core/providers.js).
-/* global crew, esc, morph, avatarHTML, oops, errorLine, ON_WINDOWS, roomFeltHTML */
+/* global crew, esc, morph, avatarHTML, oops, errorLine, ON_WINDOWS, roomFeltHTML, PRODUCT_NAME */
 
 let setupScreen = null // the dashboard's, once mounted: the model picker (ui/collection.js) opens Add provider… with it
 function openAddProvider() {
@@ -45,7 +45,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
     if (c.state === 'missing') return `Open ${SHELL} and paste this:`
     if (c.state === 'broken') return `It's here but doesn't start. Installing it again usually fixes that. Open ${SHELL} and paste this:`
     if (c.state === 'signin') return `Open ${SHELL}, paste this and follow the steps in your browser:`
-    if (c.state === 'update') return `Crew needs a newer ${c.name} on Windows. Open ${SHELL} and paste this:`
+    if (c.state === 'update') return `${PRODUCT_NAME} needs a newer ${c.name} on Windows. Open ${SHELL} and paste this:`
     return ''
   }
 
@@ -56,7 +56,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
           <div class="su-cmd"><code>${esc(how.command)}</code><button type="button" class="btn su-copy" data-copy="${esc(c.id)}">${copied === c.id ? 'Copied' : 'Copy'}</button></div>
           <button type="button" class="su-link" data-url="${esc(how.page)}">${LINK_WORDS[c.state] ?? 'Other ways to install'}</button></div>`
       : ''
-    const tip = c.version ? `Version ${c.version}${c.needs ? `; Crew needs ${c.needs} or later` : ''}` : ''
+    const tip = c.version ? `Version ${c.version}${c.needs ? `; ${PRODUCT_NAME} needs ${c.needs} or later` : ''}` : ''
     return `<div class="su-row" data-row="${esc(c.id)}">
       <div class="su-top"><span class="su-name">${esc(c.name)}</span><span class="su-state ${c.state === 'ready' ? 'ready' : 'needs'}" title="${esc(tip)}"><i></i>${STATE_WORDS[c.state] ?? ''}</span></div>
       <div class="su-by">${esc(BY[c.id] ?? '')}</div>${step}</div>`
@@ -66,7 +66,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
     const here = g.state === 'ready'
     return `<div class="su-row" data-row="git">
       <div class="su-top"><span class="su-name">${esc(g.name)}</span><span class="su-state ${here ? 'ready' : 'quiet'}"><i></i>${here ? 'Ready' : 'Not installed'}</span></div>
-      <div class="su-by">Recommended for Claude Code: it runs its commands in Git Bash, which comes with Git, and Crew can then stop anything those commands leave running. Without it, Claude Code uses PowerShell.</div>
+      <div class="su-by">Recommended for Claude Code: it runs its commands in Git Bash, which comes with Git, and ${PRODUCT_NAME} can then stop anything those commands leave running. Without it, Claude Code uses PowerShell.</div>
       ${here ? '' : `<div class="su-how"><button type="button" class="btn su-get" data-url="${esc(g.how.page)}">Download Git for Windows</button></div>`}</div>`
   }
 
@@ -189,7 +189,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
     const c = checks[p.id]
     const lines = []
     if (c && p.id === 'glm') {
-      lines.push(c.key ? [true, 'Your key is set.'] : [false, ON_WINDOWS ? 'No key yet. Add ZAI_API_KEY to your environment variables in Windows settings, then quit Crew and open it again.' : 'No key yet. Add ZAI_API_KEY to your shell profile, then check again.'])
+      lines.push(c.key ? [true, 'Your key is set.'] : [false, ON_WINDOWS ? `No key yet. Add ZAI_API_KEY to your environment variables in Windows settings, then quit ${PRODUCT_NAME} and open it again.` : 'No key yet. Add ZAI_API_KEY to your shell profile, then check again.'])
     }
     if (c && p.id === 'local') lines.push(c.running ? [true, 'Ollama is running.'] : [false, 'Ollama isn’t running. Open it, or get it first.', 'https://ollama.com/download', 'Get Ollama'])
     if (status()?.checked && !ready(p.cli)) lines.push([false, `It runs through ${p.cli === 'claude' ? 'Claude Code' : 'Codex'}, which isn’t ready on this computer yet.`])

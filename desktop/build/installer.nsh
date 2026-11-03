@@ -1,21 +1,22 @@
-; Crew's additions to the Windows installer (electron-builder's NSIS; electron-builder.config.mjs includes this file).
-; The installer is per user: it runs without admin rights and installs to %LOCALAPPDATA%\Programs\Crew.
+; The app's additions to the Windows installer (electron-builder's NSIS; electron-builder.config.mjs includes this file).
+; The installer is per user: it runs without admin rights and installs to %LOCALAPPDATA%\Programs\crew (named after
+; package.json's name, so the same folder as before the rename to CLIque; the program in it is CLIque.exe).
 ; Uninstalling leaves your crew alone: agents, chats and settings live in %USERPROFILE%\.crew (CREW_HOME).
 
 !macro customInstall
-  ; TODO, Windows Firewall (Crew Link between computers, phones; core/link.js, core/remote.js): to be decided. The
+  ; TODO, Windows Firewall (linked computers, phones; core/link.js, core/remote.js): to be decided. The
   ; rule needs admin rights, which this per-user installer doesn't have, so it would have to elevate just for this:
-  ;   ExecShellWait "runas" "netsh" 'advfirewall firewall add rule name="Crew" dir=in action=allow program="$INSTDIR\Crew.exe" protocol=TCP profile=private,domain enable=yes'
-  ; Until then Windows asks the first time Crew listens on the network, and Crew says what to do if it's blocked.
+  ;   ExecShellWait "runas" "netsh" 'advfirewall firewall add rule name="CLIque" dir=in action=allow program="$INSTDIR\CLIque.exe" protocol=TCP profile=private,domain enable=yes'
+  ; Until then Windows asks the first time the app listens on the network, and the app says what to do if it's blocked.
 !macroend
 
 !macro customUnInstall
   ; TODO, Windows Firewall: remove the rule customInstall would add, elevated too:
-  ;   ExecShellWait "runas" "netsh" 'advfirewall firewall delete rule name="Crew"'
+  ;   ExecShellWait "runas" "netsh" 'advfirewall firewall delete rule name="CLIque"'
 
-  ; Uninstalling, not updating (an update runs this uninstaller too): the terminal host runs from a copy of Crew's
+  ; Uninstalling, not updating (an update runs this uninstaller too): the terminal host runs from a copy of the app's
   ; runtime in CREW_HOME\run\runtime (core/ptyclient.js stage), out of reach of the installer's own "stop what runs
-  ; from $INSTDIR", so that agents survive updates. With Crew gone it goes too, and its copies with it (about 300 MB
+  ; from $INSTDIR", so that agents survive updates. With the app gone it goes too, and its copies with it (about 300 MB
   ; each). Everything else in CREW_HOME is yours and stays.
   ${ifNot} ${isUpdated}
     ReadEnvStr $R0 CREW_HOME

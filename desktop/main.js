@@ -18,9 +18,9 @@ import { Voice, voiceActions, voiceAudio } from './core/voice.js'
 import { pillWindow } from './core/pill.js'
 import { Setup, withSetup, hasAgents } from './core/setup.js'
 import { addProvider, removeProvider, checkProvider, keepProvidersInUse } from './core/providers.js'
-// Crew's app id (core/appid.js), which packaging uses too: on Windows notifications carry it, and it must match the
-// installer's Start menu shortcut.
-import { APP_ID } from './core/appid.js'
+// The app's name and id (core/appid.js), which packaging uses too: on Windows notifications carry the id, and it must
+// match the installer's Start menu shortcut.
+import { APP_ID, PRODUCT_NAME, USER_DATA } from './core/appid.js'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
 const TRAY_WIDTH = 340
@@ -47,7 +47,11 @@ process.on('uncaughtException', (e) => logLine('crash', e?.stack ?? String(e)))
 process.on('unhandledRejection', (e) => logLine('unhandled', e?.stack ?? String(e)))
 process.stderr.on('error', () => {}) // a closed terminal (npm run dev) mustn't make each log line another crash
 
-app.setName('Crew')
+// Electron names its folder for the app (userData) after the package's productName, as it starts. It's pinned to the
+// one the app had before its rename, before anything reads it (the single-instance lock below lives there too), so
+// your view settings stay, and a renamed copy and an older one can't run at once.
+app.setPath('userData', path.join(app.getPath('appData'), USER_DATA))
+app.setName(PRODUCT_NAME) // the Mac's app menu: About, Hide and Quit say it
 // Windows shows a notification only for an app id it knows: the installer's (packaged), or this Electron's own when
 // running from source.
 if (WINDOWS) app.setAppUserModelId(app.isPackaged ? APP_ID : process.execPath)
@@ -97,7 +101,7 @@ app.whenReady().then(() => primary && start().catch(failedToStart))
 
 async function start() {
   app.dock?.hide()
-  app.setAboutPanelOptions?.({ applicationName: 'Crew', iconPath: path.join(dir, 'assets', 'icon.png'), credits: 'Your crew of AI agents, side by side.' })
+  app.setAboutPanelOptions?.({ applicationName: PRODUCT_NAME, iconPath: path.join(dir, 'assets', 'icon.png'), credits: 'Your crew of AI agents, side by side.' })
 
   // The agents' terminals live in the terminal host (core/ptyhost.js), run by this same binary as Node, so they keep
   // working while Crew quits or relaunches with new code.
@@ -118,7 +122,7 @@ async function start() {
   wire()
   const key = hub.config.hotkey ?? 'Alt+Shift+Space'
   const hotkey = () => (dashOnScreen() ? dash.focus() : overlay.webContents.send('toggle'))
-  if (!globalShortcut.register(key, hotkey)) hub.post({ kind: 'event', from: 'crew', text: shortcutTaken(key, 'opens the floating chat', `open the chat from Crew's icon in the ${MAC ? 'menu bar' : 'taskbar'}`) })
+  if (!globalShortcut.register(key, hotkey)) hub.post({ kind: 'event', from: 'crew', text: shortcutTaken(key, 'opens the floating chat', `open the chat from ${PRODUCT_NAME}'s icon in the ${MAC ? 'menu bar' : 'taskbar'}`) })
   wireVoice()
 
   // Running from source: CREW_SHOW=tray,panel,dashboard opens those views on launch.
@@ -145,8 +149,8 @@ function failedToStart(e) {
   logLine('start', e?.stack ?? String(e))
   dialog.showMessageBoxSync({
     type: 'error',
-    message: "Crew couldn't start",
-    detail: `Open Crew again to try once more. If this keeps happening, send Crew's log to support: ${LOG}\n\n${e?.message ?? e}`,
+    message: `${PRODUCT_NAME} couldn't start`,
+    detail: `Open ${PRODUCT_NAME} again to try once more. If this keeps happening, send ${PRODUCT_NAME}'s log to support: ${LOG}\n\n${e?.message ?? e}`,
     buttons: ['Quit'],
   })
   quitting = true
@@ -221,16 +225,16 @@ app.on('before-quit', (e) => {
     : crew.outlives
       ? dialog.showMessageBoxSync({
           type: 'question',
-          message: 'Quit Crew?',
-          detail: `${live} agent${s} on this computer keep${live > 1 ? '' : 's'} working, and Crew picks ${live > 1 ? 'them' : 'it'} up where ${live > 1 ? 'they are' : 'it is'} next time you open it. Messages you send wait until then.`,
+          message: `Quit ${PRODUCT_NAME}?`,
+          detail: `${live} agent${s} on this computer keep${live > 1 ? '' : 's'} working, and ${PRODUCT_NAME} picks ${live > 1 ? 'them' : 'it'} up where ${live > 1 ? 'they are' : 'it is'} next time you open it. Messages you send wait until then.`,
           buttons: ['Quit', 'Stop Agents and Quit', 'Cancel'],
           defaultId: 0,
           cancelId: 2,
         })
       : [1, 2][dialog.showMessageBoxSync({
           type: 'question',
-          message: 'Quit Crew?',
-          detail: `${live} agent session${s} on this computer will stop. They pick up where they left off next time you open Crew.`,
+          message: `Quit ${PRODUCT_NAME}?`,
+          detail: `${live} agent session${s} on this computer will stop. They pick up where they left off next time you open ${PRODUCT_NAME}.`,
           buttons: ['Quit', 'Cancel'],
           defaultId: 0,
           cancelId: 1,
@@ -289,7 +293,7 @@ function keepOpen(win) {
 // takes its frame for the screen's scale (16px at 100%, up to 32px at 200%).
 function createTray() {
   tray = new Tray(MAC ? nativeImage.createFromPath(path.join(dir, 'assets', 'trayTemplate.png')) : WINDOWS ? nativeImage.createFromPath(WIN_ICON) : nativeImage.createFromPath(path.join(dir, 'assets', 'icon.png')).resize({ width: 32, height: 32 }))
-  tray.setToolTip('Crew')
+  tray.setToolTip(PRODUCT_NAME)
   trayWin = page('tray.html', {
     width: TRAY_WIDTH, height: 320, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false,
     fullscreenable: false, skipTaskbar: true, alwaysOnTop: true,
@@ -341,7 +345,7 @@ async function drawTrayIcon(counts) {
   const { waiting, working, on } = counts
   const tone = waiting ? 'need' : working ? 'work' : ''
   const next = `${tone}:${waiting || working}`
-  const tip = waiting ? `Crew · ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? `Crew · ${working} of ${on} at work` : 'Crew'
+  const tip = waiting ? `${PRODUCT_NAME} · ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? `${PRODUCT_NAME} · ${working} of ${on} at work` : PRODUCT_NAME
   if (tip !== trayTip) tray.setToolTip((trayTip = tip))
   if (next === trayDrawn) return
   trayDrawn = next
@@ -408,7 +412,7 @@ function openDashboard(focus = '') {
   showDock()
   dash = page('dashboard.html', {
     width: Math.min(1500, wa.width), height: Math.min(940, wa.height), minWidth: 980, minHeight: 560,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#161719' : '#f3f3f6', title: 'Crew',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#161719' : '#f3f3f6', title: PRODUCT_NAME,
     // a Mac's traffic lights sit in the page's titlebar; Windows draws its window buttons over the titlebar's right end
     ...(MAC ? { titleBarStyle: 'hiddenInset' } : { titleBarStyle: 'hidden', titleBarOverlay: captionColors(), icon: WINDOWS ? WIN_ICON : path.join(dir, 'assets', 'icon.png') }),
   }, { focus })
@@ -438,7 +442,7 @@ function openDashboard(focus = '') {
 // tall, so the line under the titlebar shows under them too.
 const captionColors = () => ({ height: 45, ...(nativeTheme.shouldUseDarkColors ? { color: '#161719', symbolColor: '#f2f2f4' } : { color: '#f4f4f7', symbolColor: '#1d1d1f' }) })
 
-// `npm run dev` runs Electron's generic app, so give the Dock our icon each time it appears (Crew.app has it built in).
+// `npm run dev` runs Electron's generic app, so give the Dock our icon each time it appears (CLIque.app has it built in).
 function showDock() {
   Promise.resolve(app.dock?.show()).then(() => app.isPackaged || app.dock?.setIcon(path.join(dir, 'assets', 'icon.png')))
 }
@@ -499,7 +503,7 @@ const actions = {
     const { canceled, filePath } = await dialog.showSaveDialog(dash, {
       title: 'Export agents',
       defaultPath: path.join(app.getPath('downloads'), `${names.length === 1 ? names[0].split('@')[0] : 'crew'}.crew`),
-      filters: [{ name: 'Crew agents', extensions: ['crew'] }],
+      filters: [{ name: `${PRODUCT_NAME} agents`, extensions: ['crew'] }],
     })
     if (canceled || !filePath) return null
     fs.writeFileSync(filePath, JSON.stringify(await crew.exportAgents(names), null, 2))
@@ -511,7 +515,7 @@ const actions = {
   openPack: async (dropped) => {
     let { name, text } = dropped ?? {}
     if (!dropped) {
-      const file = (await dialog.showOpenDialog(dash, { title: 'Import agents', properties: ['openFile'], filters: [{ name: 'Crew agents', extensions: ['crew', 'json'] }] })).filePaths[0]
+      const file = (await dialog.showOpenDialog(dash, { title: 'Import agents', properties: ['openFile'], filters: [{ name: `${PRODUCT_NAME} agents`, extensions: ['crew', 'json'] }] })).filePaths[0]
       if (!file) return null
       ;[name, text] = [path.basename(file), fs.readFileSync(file, 'utf8')]
     }
@@ -628,7 +632,7 @@ function wire() {
     try {
       if (!Object.hasOwn(actions, name)) {
         logLine('action', `a page asked for "${name}", which this Crew doesn't have`)
-        return { error: "Crew can't do that right now. Quit Crew and open it again, then try once more." }
+        return { error: `${PRODUCT_NAME} can't do that right now. Quit ${PRODUCT_NAME} and open it again, then try once more.` }
       }
       return { ok: await actions[name](...args) }
     } catch (e) {
@@ -701,7 +705,7 @@ function wire() {
 // Voice input (core/voice.js): the chat's mic button, plus a hotkey that opens the chat and starts listening.
 // Dictation runs on this computer: it only fills in your message, wherever the agent you send it to lives.
 function wireVoice() {
-  // Older macOS asks for speech-recognition permission, which needs the app's Info.plist to say why (Crew.app does).
+  // Older macOS asks for speech-recognition permission, which needs the app's Info.plist to say why (CLIque.app does).
   const plist = path.join(process.resourcesPath, '..', 'Info.plist')
   const mayAskPermission = process.platform === 'darwin' && fs.existsSync(plist) && fs.readFileSync(plist, 'utf8').includes('NSSpeechRecognitionUsageDescription')
   // An installed Crew carries the helper in Resources/voice; from source (npm start, npm run dev) it's built here.

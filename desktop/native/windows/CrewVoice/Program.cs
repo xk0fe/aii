@@ -1,4 +1,4 @@
-// crew-voice for Windows: on-device dictation for Crew's chat. Nothing leaves the PC.
+// crew-voice for Windows: on-device dictation for CLIque's chat. Nothing leaves the PC.
 // The same helper as native/crew-voice.swift, speaking the same protocol, so core/voice.js and the chat can't tell them apart.
 //
 // stdin:  16 kHz mono Float32 PCM (little-endian), streamed while you talk. Closing stdin means "stop".
@@ -49,7 +49,7 @@ audio.Listen(); // from the start: words said while the model loads aren't lost
 try {
   var (id, code) = WantedLanguage(args.FirstOrDefault((a) => a.StartsWith("--locale="))?["--locale=".Length..] ?? "");
   var model = Environment.GetEnvironmentVariable("CREW_VOICE_MODEL") is { Length: > 0 } m ? m : Path.Combine(AppContext.BaseDirectory, "models", ModelFile);
-  if (!File.Exists(model)) throw new Failure($"Voice input's speech model is missing ({model}). Reinstall Crew to get it back");
+  if (!File.Exists(model)) throw new Failure($"Voice input's speech model is missing ({model}). Reinstall CLIque to get it back");
   using var factory = WhisperFactory.FromPath(model, new WhisperFactoryOptions { UseGpu = false }); // the CPU: what every PC has
   await using var whisper = factory.CreateBuilder()
     .WithLanguage(code)

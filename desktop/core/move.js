@@ -60,7 +60,7 @@ export const claudeProject = (cwd, env = process.env) => path.join(claudeHome(en
 export function sessionRoot(cli, cwd, env = process.env) {
   if (cli === 'claude') return claudeProject(cwd, env)
   if (cli === 'codex') return path.join(codexHome(env), 'sessions')
-  throw new Error(`Crew can't carry ${cli} conversations`)
+  throw new Error(`CLIque can't carry ${cli} conversations`)
 }
 
 // The files of a conversation: { cli, id, root, files: [{ rel, path }] } (rel: relative to root, the same on the
@@ -85,7 +85,7 @@ export function sessionOf(cli, id, { cwd, env = process.env, transcript } = {}) 
     if (rel.startsWith('..') || path.isAbsolute(rel)) rel = path.join(new Date().toISOString().slice(0, 10).replaceAll('-', '/'), path.basename(file))
     return { cli, id, root, files: [{ rel: portable(rel), path: file }] }
   }
-  return { reason: `Crew can't carry ${cli} conversations` }
+  return { reason: `CLIque can't carry ${cli} conversations` }
 }
 
 // A session started in another folder: Claude Code finds it in that folder's project.

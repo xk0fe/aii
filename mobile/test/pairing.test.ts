@@ -26,14 +26,14 @@ test('finds the code inside what was pasted, even wrapped onto several lines', (
 test.each([
   ['nothing', '', 'paste the code'],
   ['spaces', '   \n ', 'paste the code'],
-  ['another kind of code', 'crew1.eyJuYW1lIjoiU3R1ZGlvIE1hYyJ9.k3y', "not a Crew phone code"],
-  ['a web address', 'https://example.com', "not a Crew phone code"],
-  ['not base64', 'crewphone1.!!!!', "not a Crew phone code"],
-  ['not JSON', `crewphone1.${b64(utf8('hello'))}`, "not a Crew phone code"],
-  ['another version', raw({ v: 2, id: 'x', n: 'Mac', k: b64(key), s: b64(secret), h: ['1.2.3.4'], p: 7788 }), 'different Crew version'],
-  ['a short key', raw({ v: 1, id: 'x', n: 'Mac', k: b64(key.slice(0, 16)), s: b64(secret), h: ['1.2.3.4'], p: 7788 }), "not a Crew phone code"],
-  ['no secret', raw({ v: 1, id: 'x', n: 'Mac', k: b64(key), h: ['1.2.3.4'], p: 7788 }), "not a Crew phone code"],
-  ['no addresses', raw({ v: 1, id: 'x', n: 'Mac', k: b64(key), s: b64(secret), p: 7788 }), "not a Crew phone code"],
+  ['another kind of code', 'crew1.eyJuYW1lIjoiU3R1ZGlvIE1hYyJ9.k3y', "not a CLIque phone code"],
+  ['a web address', 'https://example.com', "not a CLIque phone code"],
+  ['not base64', 'crewphone1.!!!!', "not a CLIque phone code"],
+  ['not JSON', `crewphone1.${b64(utf8('hello'))}`, "not a CLIque phone code"],
+  ['another version', raw({ v: 2, id: 'x', n: 'Mac', k: b64(key), s: b64(secret), h: ['1.2.3.4'], p: 7788 }), 'different CLIque version'],
+  ['a short key', raw({ v: 1, id: 'x', n: 'Mac', k: b64(key.slice(0, 16)), s: b64(secret), h: ['1.2.3.4'], p: 7788 }), "not a CLIque phone code"],
+  ['no secret', raw({ v: 1, id: 'x', n: 'Mac', k: b64(key), h: ['1.2.3.4'], p: 7788 }), "not a CLIque phone code"],
+  ['no addresses', raw({ v: 1, id: 'x', n: 'Mac', k: b64(key), s: b64(secret), p: 7788 }), "not a CLIque phone code"],
   ['an empty address list', raw({ v: 1, id: 'x', n: 'Mac', k: b64(key), s: b64(secret), h: [], p: 7788 }), "doesn't say where"],
 ])('refuses %s', (_, code, message) => {
   expect(() => parsePairCode(code)).toThrow(message)

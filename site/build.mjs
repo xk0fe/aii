@@ -54,13 +54,13 @@ const ICONS = { // Lucide (ISC, assets/LICENSES.txt)
 }
 const icon = (name, size = 20) => `<svg class="i" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`
 
-// The wordmark: the name in Fredoka Bold, each letter a creature's colour, on felt (brand.html). Letters are placed one
-// by one from Fredoka's widths, as the app's wordmark is.
+// The wordmark: the name in Fredoka Bold as it's written (the capitals are the CLI in CLIque), each letter a creature's
+// colour, on felt (brand.html). Letters are placed one by one from Fredoka's widths, as the app's wordmark is.
 const WIDTHS = JSON.parse(read('tools/fredoka-700.json'))
 const LETTER_COLOURS = ['#ff45a8', '#3db8ff', '#ffc61f', '#2fd3a6', '#72d63a', '#ff8a1f', '#8b5cf6', '#ffa27f']
 function wordmark(fs_ = 36) {
   let x = 0
-  const letters = [...PRODUCT.toLowerCase()].map((l, i) => {
+  const letters = [...PRODUCT].map((l, i) => {
     const at = x
     x += (WIDTHS[l] ?? 0.55) * fs_ - fs_ * 0.02
     return l === ' ' ? '' : `<text x="${+at.toFixed(2)}" y="${+(fs_ * 0.86).toFixed(2)}" fill="${LETTER_COLOURS[i % LETTER_COLOURS.length]}">${esc(l)}</text>`
@@ -233,7 +233,7 @@ if (DOMAIN) fs.writeFileSync(path.join(out, 'CNAME'), DOMAIN + '\n')
 
 page({ file: 'index.html', title: `${PRODUCT}: your AI agents, working as a crew`, description: DESCRIPTION, creatures: true, main: fill(read('src/index.html'), vars) })
 page({ file: 'support.html', title: `Support · ${PRODUCT}`, description: `How to get help with ${PRODUCT}.`, main: fill(read('src/support.html'), vars) })
-page({ file: 'privacy.html', title: `Privacy · ${PRODUCT}`, description: `What ${PRODUCT} does with your data: it collects nothing, and your work stays on your own devices.`, main: `<article class="prose">${markdown(read('privacy.md').replace(/\bCrew\b/g, PRODUCT))}</article>` })
+page({ file: 'privacy.html', title: `Privacy · ${PRODUCT}`, description: `What ${PRODUCT} does with your data: it collects nothing, and your work stays on your own devices.`, main: `<article class="prose">${markdown(read('privacy.md').replace(/\bCLIque\b/g, PRODUCT))}</article>` })
 page({ file: '404.html', title: `Not found · ${PRODUCT}`, description: DESCRIPTION, creatures: ['noor'], main: fill(read('src/404.html'), vars) })
 // --og: also the link-preview card (tools/icons.mjs takes its picture as og.png). Not part of the site.
 if (args.includes('--og')) {

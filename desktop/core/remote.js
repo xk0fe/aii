@@ -86,7 +86,7 @@ const inside = (file, ...dirs) => dirs.some((dir) => real(dir) && file.startsWit
 function image(file) {
   const at = real(file)
   if (!at) throw new Error('that image is gone')
-  if (!inside(at, ATTACHMENTS, CACHE)) throw new Error("that isn't an image from Crew")
+  if (!inside(at, ATTACHMENTS, CACHE)) throw new Error("that isn't an image from CLIque")
   return new Uint8Array(fs.readFileSync(at))
 }
 

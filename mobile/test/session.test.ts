@@ -130,7 +130,7 @@ test("only the Mac's minute says when to try a code again, not the phone's own b
 test('a code that is not a Crew code is refused before anything is opened', async () => {
   const { net, session } = setup()
   const e = await failure(session.pair('https://example.com').done)
-  expect(e).toMatchObject({ title: "That's not a Crew phone code", more: { fatal: true } })
+  expect(e).toMatchObject({ title: "That's not a CLIque phone code", more: { fatal: true } })
   expect(net.opened).toEqual([])
 })
 

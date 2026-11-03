@@ -354,12 +354,12 @@ test('a computer on an older Crew: the agent moves without its conversation, and
   const MOVE = ['folderInfo', 'folders', 'moveOut', 'moveRead', 'moveEnd', 'moveWrite', 'moveIn', 'moveDrop', 'agentMoved']
   await studio.run(`(crew.oldServe = crew.serve, crew.serve = (fn, args) => { if (${JSON.stringify(MOVE)}.includes(fn)) throw new Error('"' + fn + '" isn\\'t available over Crew Link'); return crew.oldServe(fn, args) }, 1)`)
   try {
-    assert.deepEqual(await laptop.run(`crew.moveAgent('ann', 'studio-mac')`), { name: 'ann@studio-mac', conversation: 'fresh', reason: 'Studio Mac runs an older Crew', older: true })
+    assert.deepEqual(await laptop.run(`crew.moveAgent('ann', 'studio-mac')`), { name: 'ann@studio-mac', conversation: 'fresh', reason: 'Studio Mac runs an older CLIque', older: true })
     await sleep(200)
     assert.equal(await studio.run(`crew.hub.agents.has('ann')`), true)
     assert.equal(await laptop.run(`crew.hub.agents.has('ann')`), false)
     // and from it
-    assert.deepEqual(await laptop.run(`crew.moveAgent('ann@studio-mac', '')`), { name: 'ann', conversation: 'fresh', reason: 'Studio Mac runs an older Crew', older: true })
+    assert.deepEqual(await laptop.run(`crew.moveAgent('ann@studio-mac', '')`), { name: 'ann', conversation: 'fresh', reason: 'Studio Mac runs an older CLIque', older: true })
   } finally {
     await studio.run(`(crew.serve = crew.oldServe, 1)`)
   }

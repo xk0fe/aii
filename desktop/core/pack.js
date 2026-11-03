@@ -51,9 +51,9 @@ export function readPack(text) {
   try {
     pack = JSON.parse(text)
   } catch {
-    throw new Error("that file isn't a Crew agent pack")
+    throw new Error("that file isn't a CLIque agent pack")
   }
-  if (pack?.crew !== 1 || !Array.isArray(pack.agents)) throw new Error("that file isn't a Crew agent pack")
+  if (pack?.crew !== 1 || !Array.isArray(pack.agents)) throw new Error("that file isn't a CLIque agent pack")
   return pack
 }
 

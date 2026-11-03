@@ -1,7 +1,7 @@
 # Release: builds what people install, puts it in a draft release on the public repo, and deploys the website there.
 #
 # A v* tag (matching desktop/package.json's version) does both. By hand (Actions › Release › Run workflow, or
-# gh workflow run release.yml --ref <branch or tag> -f apps=true -f site=false) it does either: the apps (Crew.app for
+# gh workflow run release.yml --ref <branch or tag> -f apps=true -f site=false) it does either: the apps (CLIque.app for
 # Apple Silicon and Intel as DMG + zip, the Windows installers for x64 and arm64) and/or the site (site/, built by
 # site/build.mjs). The builds use desktop/scripts/dist.mjs, as CI's do; site/README.md has the one-time setup.
 #
@@ -89,10 +89,10 @@ jobs:
           if [ "$MAC_CERTIFICATE" = true ] && [ "$NOTARY_KEY" = true ]; then
             say "- Mac: signed with the Developer ID certificate and notarized"
           elif [ "$MAC_CERTIFICATE" = true ]; then
-            echo "::warning title=Mac app not notarized::MAC_CERTIFICATE is set but APPLE_API_KEY_P8, APPLE_API_KEY_ID and APPLE_API_ISSUER aren't: Crew.app is signed but not notarized, and Gatekeeper blocks it on other Macs."
+            echo "::warning title=Mac app not notarized::MAC_CERTIFICATE is set but APPLE_API_KEY_P8, APPLE_API_KEY_ID and APPLE_API_ISSUER aren't: CLIque.app is signed but not notarized, and Gatekeeper blocks it on other Macs."
             say "- Mac: signed, **not notarized** (no App Store Connect API key)"
           else
-            echo "::warning title=Mac app unsigned::No MAC_CERTIFICATE: Crew.app is signed ad hoc and not notarized. On other Macs it opens only after System Settings › Privacy & Security › Open Anyway. Add the Apple secrets (site/README.md) before a public release."
+            echo "::warning title=Mac app unsigned::No MAC_CERTIFICATE: CLIque.app is signed ad hoc and not notarized. On other Macs it opens only after System Settings › Privacy & Security › Open Anyway. Add the Apple secrets (site/README.md) before a public release."
             say "- Mac: **ad hoc** (no Developer ID certificate): Gatekeeper blocks it until people choose Open Anyway"
           fi
           if [ "$WIN_CERTIFICATE" = true ] || [ "$AZURE" = true ]; then
@@ -162,7 +162,7 @@ jobs:
       - name: check the apps
         working-directory: desktop/release
         run: |
-          for app in mac*/Crew.app; do
+          for app in mac*/CLIque.app; do
             codesign --verify --deep --strict "$app"
             codesign -dv "$app" 2>&1 | grep -E 'Identifier|Authority|TeamIdentifier|flags'
             test -x "$app/Contents/Resources/voice/crew-voice"
@@ -229,7 +229,7 @@ jobs:
         working-directory: desktop/release
         run: |
           foreach ($arch in 'x64', 'arm64') {
-            $exe = Get-ChildItem "Crew-Setup-*-$arch.exe" | Select-Object -First 1
+            $exe = Get-ChildItem "CLIque-Setup-*-$arch.exe" | Select-Object -First 1
             if (-not $exe) { throw "no installer for $arch" }
             $head = [IO.File]::ReadAllBytes($exe.FullName)[0..1]
             if ([Text.Encoding]::ASCII.GetString($head) -ne 'MZ') { throw "$($exe.Name) is not a Windows program" }
@@ -241,15 +241,15 @@ jobs:
             else { Write-Output "::warning title=Unsigned installer::$($exe.Name) is not signed ($($sig.Status)): SmartScreen will warn" }
             Write-Output ("{0}: {1:N0} MB" -f $exe.Name, ($exe.Length / 1MB))
           }
-          $setup = Get-ChildItem Crew-Setup-*-x64.exe | Select-Object -First 1
+          $setup = Get-ChildItem CLIque-Setup-*-x64.exe | Select-Object -First 1
           Start-Process $setup.FullName -ArgumentList '/S' -Wait
-          $dir = "$env:LOCALAPPDATA\Programs\Crew"
-          foreach ($f in 'Crew.exe', 'resources\app.asar', 'resources\voice\crew-voice.exe', 'Uninstall Crew.exe') {
-            if (-not (Test-Path "$dir\$f")) { throw "the installed Crew has no $f" }
+          $dir = "$env:LOCALAPPDATA\Programs\crew"
+          foreach ($f in 'CLIque.exe', 'resources\app.asar', 'resources\voice\crew-voice.exe', 'Uninstall CLIque.exe') {
+            if (-not (Test-Path "$dir\$f")) { throw "the installed app has no $f" }
           }
-          Start-Process "$dir\Uninstall Crew.exe" -ArgumentList '/S' -Wait
-          for ($i = 0; $i -lt 60 -and (Test-Path "$dir\Crew.exe"); $i++) { Start-Sleep -Seconds 1 }
-          if (Test-Path "$dir\Crew.exe") { throw 'uninstalling left Crew.exe behind' }
+          Start-Process "$dir\Uninstall CLIque.exe" -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 60 -and (Test-Path "$dir\CLIque.exe"); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path "$dir\CLIque.exe") { throw 'uninstalling left CLIque.exe behind' }
           # the step ends with the last program's exit code otherwise, and 7-Zip's 1 is only a warning
           exit 0
       - uses: actions/upload-artifact@v4

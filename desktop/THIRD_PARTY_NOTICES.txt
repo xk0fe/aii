@@ -1,6 +1,6 @@
-Third-party software in Crew
+Third-party software in CLIque
 
-Crew is made by Green Grass Inc. and is not open source (see LICENSE). It includes the open source software below,
+CLIque is made by Green Grass Inc. and is not open source (see LICENSE). It includes the open source software below,
 each under its own license. Their copyright notices and license terms follow, as they came with each one.
 
 ----------------------------------------------------------------------------------------------------
@@ -10,8 +10,8 @@ https://github.com/electron/electron
 License: MIT
 
 Electron includes Chromium and the open source projects Chromium is built from. Their licenses ship
-with Crew as LICENSES.chromium.html, in Crew.app/Contents/Resources on macOS and next to Crew.exe on
-Windows.
+with CLIque as LICENSES.chromium.html, in CLIque.app/Contents/Resources on macOS and next to
+CLIque.exe on Windows.
 
 Copyright (c) Electron contributors
 Copyright (c) 2013-2020 GitHub Inc.
@@ -1815,8 +1815,8 @@ Zig 0.16.0 (compiler-rt)
 https://ziglang.org
 License: MIT
 
-Crew's crew.exe, crew-status.exe and crew-hook.exe for Windows are built with Zig, and contain parts
-of it.
+CLIque's crew.exe, crew-status.exe and crew-hook.exe for Windows are built with Zig, and contain
+parts of it.
 
 The MIT License (Expat)
 
