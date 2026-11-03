@@ -73,6 +73,7 @@ export type FeedEntry = {
   to?: string
   cc?: string[]
   auto?: boolean // you named nobody: Auto picked `to`
+  channel?: string // said in a channel other than #general (its id)
   text?: string
   re?: string
   also?: string[]
@@ -122,7 +123,8 @@ export type Workspace = {
   needs?: Face[]
 }
 
-export type Reads = { since?: number; agents?: Record<string, number> }
+// agents: up to when you've read each agent's replies in #general; channels: the same for each other channel
+export type Reads = { since?: number; agents?: Record<string, number>; channels?: Record<string, Record<string, number>> }
 
 export type State = {
   parked?: boolean

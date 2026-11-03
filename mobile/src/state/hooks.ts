@@ -19,8 +19,10 @@ export function useCrew() {
 
 export const familyOf = (name: string) => String(name ?? '').replace(/\.\d+(?=@|$)/, '')
 
-export const isUnread = (e: FeedEntry, reads: State['reads']) =>
-  e.kind === 'reply' && e.from !== 'you' && Boolean(reads) && e.ts > Math.max(reads?.since ?? 0, reads?.agents?.[e.from] ?? 0)
+// Read marks are kept per channel on the Mac: #general's in `agents`, the others' in `channels`.
+export const readTo = (e: FeedEntry, reads: State['reads']) =>
+  Math.max(reads?.since ?? 0, (e.channel && e.channel !== 'general' ? reads?.channels?.[e.channel] : reads?.agents)?.[e.from] ?? 0)
+export const isUnread = (e: FeedEntry, reads: State['reads']) => e.kind === 'reply' && e.from !== 'you' && Boolean(reads) && e.ts > readTo(e, reads)
 
 export const isOpenAsk = (e: FeedEntry) => e.kind === 'ask' && !e.answer && typeof e.ask === 'object'
 
