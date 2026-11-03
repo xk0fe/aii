@@ -1111,6 +1111,32 @@ const SHOTS = {
     })
     win.destroy()
   },
+  // The group chat: answer a question where it was asked in #crew, then open an agent's conversation, its terminal
+  // docked beside it.
+  async groupChatGif() {
+    const win = await dashboard('light', 'chat')
+    await sleep(1400)
+    await record(win, 'group-chat', {
+      ms: 9000, width: 1000,
+      during: async () => {
+        let at = { x: 900, y: 500 }
+        at = await glide(win, at, await center(win, '.feed .ask-option[data-label="Recently viewed"]'), 800)
+        await sleep(400)
+        await tap(win, at)
+        await sleep(1300)
+        at = await glide(win, at, await center(win, '.roster .dm[data-agent="Theo"]'), 900)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1600)
+        at = await glide(win, at, await center(win, '.roster .dm[data-agent="Milo"]'), 600)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1500)
+        await glide(win, at, { x: at.x + 500, y: at.y - 120 }, 500)
+      },
+    })
+    win.destroy()
+  },
   // Sidebar: a click opens your conversation with an agent; a computer's name folds its agents away.
   async sidebarGif() {
     const win = await dashboard('light', 'chat', { fixture: 'big', reset: ['crew.folds'] })

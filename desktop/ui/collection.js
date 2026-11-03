@@ -28,7 +28,7 @@ const TABS = [
 // at work: what it's doing says more than its status. Waiting on a teammate, the status says it (who it waits on).
 const atWork = (a) => (a?.status === 'working' && !a.waitingOn?.length) || a?.status === 'waiting'
 
-function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
+function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace, onRenamed }) {
   root.innerHTML = `
     <section class="col-list">
       <header class="col-head">
@@ -1103,6 +1103,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
         if (JSON.stringify(draft.avatar) !== JSON.stringify(original.avatar)) patch.avatar = draft.avatar
         if (Object.keys(patch).length) await crew.call('update', editing, patch)
         reopen = 'name' in patch ? qualified(slug(draft.name), draft.home) : editing
+        if ('name' in patch) onRenamed?.(editing, reopen)
       }
     } catch (err) {
       msg.textContent = errorLine(err)

@@ -23,10 +23,11 @@ const feed = mountFeed($('.feed'), {
   onTicket: (key) => openTask(key),
   onReply: (e) => composer.replyTo(e),
 })
-const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to) })
+const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to), onDictate: () => place === 'chat' || place === 'dm' || goPlace('chat') })
 const collection = mountCollection($('.collection'), {
   onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home),
   onWorkspace: () => workspaces.settings(),
+  onRenamed: (from, to) => renamed(from, to),
 })
 const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next) })
@@ -39,6 +40,8 @@ const PLACES = ['chat', 'crew', 'tasks', 'terminals']
 let place = store.get('crew.place') === 'dm' || PLACES.includes(store.get('crew.place')) ? store.get('crew.place') : 'chat'
 let layout = store.get('crew.layout') === 'focus' ? 'focus' : 'grid'
 let show = ['busy', 'needs'].includes(store.get('crew.show')) ? store.get('crew.show') : 'all' // the grid: every terminal, the busy ones, or the ones waiting on you
+let lastDm = null // the agent whose conversation was open last, and when you left it (an agent renamed or gone)
+let left = null
 let selected = null // the terminal picked in Terminals
 let dockPick = null // the terminal picked in a conversation's dock: the agent's own, or one of its clones'
 let state = { agents: [], providers: {}, feed: [] }
@@ -78,7 +81,7 @@ for (const el of document.querySelectorAll('[title]')) el.title = keysIn(el.titl
 
 // The agent whose conversation is open (an agent, for a clone's), and its terminal in the dock: the one picked there,
 // else the one the conversation is with, else its first clone's. Off agents have no terminal: no dock.
-const dmAgent = () => (isConvo(composer.target()) ? state.agents.find((a) => a.name === composer.target()) ?? state.agents.find((a) => a.name === familyOf(composer.target())) : null)
+const dmAgent = () => (isConvo(composer.target()) ? state.agents.find((a) => a.name === familyOf(composer.target())) ?? state.agents.find((a) => a.name === composer.target()) : null)
 const family = (name) => [...terms.keys()].filter((n) => familyOf(n) === familyOf(name))
 function dockName() {
   if (place !== 'dm') return null
@@ -93,8 +96,10 @@ const docked = () => place === 'dm' && dockOn() && Boolean(dockName())
 function showPlace(next) {
   if (next === 'dm' && !isConvo(composer.target())) next = 'chat'
   const moved = next !== place
+  if (moved) (openMenu?.close(), document.querySelector('.use-pop:popover-open')?.hidePopover()) // a menu from the last place doesn't float over this one
   place = next
   store.set('crew.place', next)
+  if (place === 'dm') lastDm = dmAgent()?.name ?? lastDm
   const dock = docked()
   collection.setVisible(place === 'crew')
   tasks.setVisible(place === 'tasks')
@@ -133,11 +138,29 @@ function goPlace(next) {
 function targetChanged(to) {
   feed.setConvo(to)
   if (!booted) return
+  if (place === 'dm' && !isConvo(to)) left = { name: lastDm, at: Date.now() }
   dockPick = null
   if (isConvo(to)) showPlace('dm')
   else if (place === 'dm') showPlace('chat')
   else drawHead()
 }
+// An agent renamed in its sheet: if its conversation was open, it follows the new name, with what you were writing.
+// The save and the state with the new name come in either order.
+let renaming = null
+function renamed(from, to) {
+  renaming = { from, to }
+  followRename()
+}
+function followRename() {
+  if (!renaming || !state.agents.some((a) => a.name === renaming.to)) return
+  const { from, to } = renaming
+  renaming = null
+  const open = place === 'dm' ? dmAgent()?.name : null
+  if (open === to || (open !== from && !(left?.name === from && Date.now() - left.at < 10000))) return
+  composer.moveDraft(from, to)
+  openDM(to)
+}
+
 // Your conversation with an agent. terminal: with its terminal docked beside it (and that one picked, for a clone).
 function openDM(name, { terminal = false } = {}) {
   if (terminal) store.set('crew.dock', '1')
@@ -323,7 +346,6 @@ function windowsTerminalKey(term, e) {
   }
   if (key === 'v' && !e.altKey) return false
   if (/^[1-4]$/.test(e.key) && !e.altKey && !e.shiftKey) return false
-  if ((e.code === 'KeyS' || e.code === 'KeyC') && e.altKey) return false
   return true
 }
 
@@ -455,7 +477,7 @@ const tileActs = (a) => `
 function answerTile(name) {
   const ask = needsYou(state).find((x) => x.agent.name === name)?.ask
   if (!ask) return select(name)
-  openDM(familyOf(name), { terminal: true })
+  openDM(name, { terminal: true }) // a clone asking: its tab in the dock
   requestAnimationFrame(() => feed.jump(ask.id))
 }
 
@@ -1044,6 +1066,7 @@ const ready = live((next) => {
   feed.render(state)
   composer.render(state) // first: it may move the conversation (a clone gone, an agent moved), which redraws the place
   showPlace(place) // the dock (a terminal that came or went), the header, the sidebar, the filters' counts
+  followRename()
   collection.render(state)
   tasks.render(state)
   setup.render(state)

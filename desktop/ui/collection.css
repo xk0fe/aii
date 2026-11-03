@@ -90,7 +90,7 @@
 .selecting .pc-check { opacity: 1; }
 .selecting .pcard:not(.picked):not(.add) { opacity: .7; }
 .pcard.picked { box-shadow: inset 0 0 0 1.5px var(--accent); }
-.pcard.picked .pc-check { background: var(--accent); box-shadow: none; color: #fff; }
+.pcard.picked .pc-check { background: var(--accent); box-shadow: none; color: var(--on-accent); }
 .selecting .pcard.add { display: none; }
 
 /* the bulk bar: a solid sheet pinned to the bottom, who's picked and the actions on top, what to change below */

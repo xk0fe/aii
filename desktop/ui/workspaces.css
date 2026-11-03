@@ -73,8 +73,8 @@
 .ws-cmds { display: flex; flex-direction: column; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
 .ws-cmd { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: var(--r-control); font-size: 13px; cursor: default; }
 .ws-cmd svg { width: 15px; height: 15px; color: var(--fg2); flex: none; }
-.ws-cmd:hover, .ws-cmd:focus-visible { background: var(--accent); color: #fff; outline: 0; }
-.ws-cmd:hover svg, .ws-cmd:focus-visible svg { color: #fff; }
+.ws-cmd:hover, .ws-cmd:focus-visible { background: var(--accent); color: var(--on-accent); outline: 0; }
+.ws-cmd:hover svg, .ws-cmd:focus-visible svg { color: var(--on-accent); }
 
 /* ---- the dock: every workspace along the sidebar's foot ---- */
 .ws-dock { flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }

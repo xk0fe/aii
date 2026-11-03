@@ -401,8 +401,8 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .menu button svg, .menu button > i { width: 16px; height: 16px; flex: none; color: var(--fg2); }
 .menu button span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .menu button small { color: var(--fg2); font-size: 12px; }
-.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--accent); color: #fff; outline: 0; }
-.menu button:hover:not(:disabled) svg, .menu button:hover:not(:disabled) small, .menu button:focus-visible svg { color: #fff; }
+.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--accent); color: var(--on-accent); outline: 0; }
+.menu button:hover:not(:disabled) svg, .menu button:hover:not(:disabled) small, .menu button:focus-visible svg { color: var(--on-accent); }
 .menu button.danger { color: var(--danger); }
 .menu button.danger svg { color: var(--danger); }
 .menu button.danger:hover { background: var(--danger); color: #fff; }
@@ -479,7 +479,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 .ch-back { position: relative; flex: none; display: inline-flex; align-items: center; gap: 1px; height: 28px; padding: 0 9px 0 4px; border: 0; border-radius: var(--r-control); background: var(--fill); color: var(--fg2); font: 500 13px/1 var(--ui); cursor: pointer; transition: background .15s, color .15s; }
 .ch-back:hover { background: var(--btn-hover); color: var(--fg); }
 .ch-back svg { width: 15px; height: 15px; }
-.ch-count { margin-left: 5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 600 10px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: #fff; background: var(--accent); }
+.ch-count { margin-left: 5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 600 10px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: var(--on-accent); background: var(--accent); }
 .ch-back.alert::after { content: ''; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--needs); box-shadow: 0 0 0 2px var(--panel); }
 .ch-face { position: relative; flex: none; margin-left: 2px; line-height: 0; --orbit-ring: var(--panel); --dot: 6px; }
 .ch-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -804,7 +804,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .rt-close { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; background: none; color: var(--fg3); cursor: pointer; transition: background .15s, color .15s; }
 .rt-close:hover { background: var(--btn-hover); color: var(--fg); }
 .rt-close svg { width: 13px; height: 13px; stroke-width: 2.2; }
-.unread-badge { position: absolute; right: -3px; bottom: -2px; z-index: 2; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 600 10px/1 var(--ui); font-variant-numeric: tabular-nums; color: #fff; background: var(--accent); box-shadow: 0 0 0 2px var(--orbit-ring, var(--surface)); pointer-events: none; }
+.unread-badge { position: absolute; right: -3px; bottom: -2px; z-index: 2; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 600 10px/1 var(--ui); font-variant-numeric: tabular-nums; color: var(--on-accent); background: var(--accent); box-shadow: 0 0 0 2px var(--orbit-ring, var(--surface)); pointer-events: none; }
 @keyframes badge-in { from { transform: scale(0); } }
 .chip { position: relative; }
 .chip .unread-badge { right: -2px; bottom: -1px; min-width: 14px; height: 14px; padding: 0 3px; font-size: 9px; --orbit-ring: var(--panel); }

@@ -2193,7 +2193,8 @@ function mountInk(field, { agents, strict = () => true }) {
 }
 
 // onTarget(target): who it's aimed at changed (an agent's name opens your conversation with it; see isConvo).
-function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
+// onDictate: the dictation hotkey is about to start, so the box should be on screen.
+function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) {
   el.classList.add('composer')
   // Who it goes to is one picker in the box's bar (To: Auto, Task, or an agent), beside the Task switch.
   el.innerHTML = `<div class="input">
@@ -2342,7 +2343,11 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
       const same = agents.filter((a) => !a.cloneOf && a.name.split('@')[0] === base)
       return same.length === 1 ? same[0].name : null
     }
-    if (isConvo(target) && agents.length && !known(target)) target = known(familyOf(target)) ? familyOf(target) : (moved(target) ?? 'auto')
+    if (isConvo(target) && agents.length && !known(target)) {
+      const next = known(familyOf(target)) ? familyOf(target) : (moved(target) ?? 'auto')
+      if (draftKey(next) !== draftKey(target)) swapDraft(next) // renamed or removed: what you were writing to it stays its
+      target = next
+    }
     const off = isConvo(target) && agents.find((a) => a.name === target)?.on === false
     const task = Boolean(kindIn(ta.value))
     const changed = morph(chips, [
@@ -2517,7 +2522,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
   })
   send.addEventListener('click', submit)
   // Dictation (ui/voice.js): the mic button fills in the message as you talk.
-  const voice = typeof mountVoice === 'function' && crew.onVoice ? mountVoice({ composer: el, textarea: ta, button: el.querySelector('.mic'), changed: autosize, submit }) : null
+  const voice = typeof mountVoice === 'function' && crew.onVoice ? mountVoice({ composer: el, textarea: ta, button: el.querySelector('.mic'), changed: autosize, submit, reveal: onDictate }) : null
   if (!voice) el.querySelector('.mic').remove()
   draw()
 
@@ -2531,6 +2536,12 @@ function mountComposer(el, { dropZone = el, onSend, onTarget } = {}) {
     },
     setTarget,
     target: () => target,
+    // an agent renamed: the draft you put aside for it goes with it
+    moveDraft(from, to) {
+      if (!drafts.has(from) || drafts.has(to)) return
+      drafts.set(to, drafts.get(from))
+      drafts.delete(from)
+    },
     replyTo,
     stopReply,
     focus: () => ta.focus(),
