@@ -9,7 +9,7 @@ const roundTrip = (a, b) => {
 }
 
 test('nothing changed: no patch', () => {
-  const s = { autopilot: true, feed: [{ id: 'a', text: 'hi' }], agents: [{ name: 'gal', status: 'free' }] }
+  const s = { autopilot: true, feed: [{ id: 'a', text: 'hi' }], agents: [{ name: 'ada', status: 'free' }] }
   assert.equal(diff(s, structuredClone(s)), null)
 })
 
@@ -22,11 +22,11 @@ test('a new reply is one entry, not the whole feed', () => {
 })
 
 test('an answered question is amended in place; an agent going busy is one agent', () => {
-  const a = { feed: [{ id: 'q', kind: 'ask' }, { id: 'r', kind: 'reply' }], agents: [{ name: 'gal', status: 'free' }, { name: 'joseph', status: 'free' }] }
-  const b = { feed: [{ id: 'q', kind: 'ask', answer: { by: 'you' } }, { id: 'r', kind: 'reply' }], agents: [{ name: 'gal', status: 'working' }, { name: 'joseph', status: 'free' }] }
+  const a = { feed: [{ id: 'q', kind: 'ask' }, { id: 'r', kind: 'reply' }], agents: [{ name: 'ada', status: 'free' }, { name: 'june', status: 'free' }] }
+  const b = { feed: [{ id: 'q', kind: 'ask', answer: { by: 'you' } }, { id: 'r', kind: 'reply' }], agents: [{ name: 'ada', status: 'working' }, { name: 'june', status: 'free' }] }
   const patch = roundTrip(a, b)
   assert.deepEqual(patch.lists.feed, { amend: [{ id: 'q', kind: 'ask', answer: { by: 'you' } }] })
-  assert.deepEqual(patch.lists.agents, { amend: [{ name: 'gal', status: 'working' }] })
+  assert.deepEqual(patch.lists.agents, { amend: [{ name: 'ada', status: 'working' }] })
 })
 
 test('other keys go whole, and a key that goes away is null', () => {
