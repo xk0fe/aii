@@ -67,13 +67,13 @@
 .pcard:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
 .pcard:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 /* picked in the room */
-.pcard.sel { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.pcard.sel { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg) 40%, transparent); }
 @keyframes card-in { from { opacity: 0; transform: translateY(8px); } }
 .pcard .c-name { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: calc(100% - 144px); }
 .pcard .c-name b { font: 600 17px/20px var(--font-brand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pcard .c-job, .pcard .c-brain { max-width: calc(100% - 144px); margin-top: 4px; color: var(--fg2); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pcard .c-brain { margin-top: 2px; }
-.pcard .c-state { margin-top: auto; display: flex; flex-direction: column; gap: 2px; max-width: calc(100% - 144px); min-width: 0; }
+.pcard .c-state { margin-top: auto; height: 56px; display: flex; flex-direction: column; justify-content: flex-start; gap: 2px; max-width: calc(100% - 144px); min-width: 0; }
 .pcard .c-status { display: flex; align-items: center; gap: 8px; font-weight: 500; white-space: nowrap; min-width: 0; }
 .pcard .c-status > span:not(.t) { overflow: hidden; text-overflow: ellipsis; }
 .pcard .c-status .t { color: var(--fg2); font-weight: 400; }

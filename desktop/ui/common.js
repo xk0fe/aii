@@ -1231,7 +1231,8 @@ function needsHTML(needs, expanded, drafts = new Map()) {
     const verb = ask ? NEED_VERBS[ask.ask?.type] ?? 'needs your OK' : 'is waiting in its terminal'
     const face = `<span class="nq-face">${avatarHTML(a, { size: 40, mood: 'waiting' })}</span>`
     const term = `<button class="icon nq-term" data-needs-term="${esc(a.name)}" title="${esc(`Answer in ${displayName(a)}'s terminal`)}">${ICONS.terminal}</button>`
-    const who = `<div class="nq-who"><b>${nameHTML(a)}</b><span class="nq-verb">${verb} · ${ago(n.since || Date.now())}</span>${ask && ask.id !== expanded ? '' : term}</div>`
+    const since = n.since || Date.now()
+    const who = `<div class="nq-who"><b>${nameHTML(a)}</b><span class="nq-verb">${verb} · <span class="nq-ago" data-since="${since}">${ago(since)}</span></span>${ask && ask.id !== expanded ? '' : term}</div>`
     const say = `<div class="nq-say">${sayLine(n)}</div>`
     if (ask && ask.id === expanded) return `<article class="nq-item open" data-need="${esc(ask.id)}">${face}<div class="nq-main">${who}${say}${askCard(ask, drafts.get(ask.id), { queue: true })}</div></article>`
     const go = ask
@@ -1401,13 +1402,15 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
   let queued = new Map() // id -> an open question in the queue (it may be outside what the feed shows)
   let expanded = null // the queued question that's open: the oldest, until you open another
   let queueKey = ''
+  let alwaysMenu = null // { id, menu }: the open Always allow menu, and whose question it's for
   const entry = (id) => shown.get(id) ?? queued.get(id)
   // the title bar's "need you", a terminal's Answer, or a question's line in the feed: open it in the queue
   const showNeeds = (id) => {
     if (id && queued.has(id)) expanded = id
     if (last) api.render(last)
     if (queue.classList.contains('hidden')) return
-    queue.querySelector('.nq-item.open button, .nq-item.open input, .nq-go')?.focus({ preventScroll: true })
+    const open = queue.querySelector('.nq-item.open')
+    ;(open?.querySelector('.ask-card :is(button, input):not(:disabled)') ?? open?.querySelector('button') ?? queue.querySelector('.nq-go'))?.focus({ preventScroll: true })
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) queue.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.02)' }, { transform: 'scale(1)' }], { duration: 420, easing: 'cubic-bezier(.3, 1.5, .5, 1)' })
   }
   document.addEventListener('crew:needs', (ev) => {
@@ -1516,7 +1519,8 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
       const id = always.dataset.always
       const e = entry(id)
       if (!e?.ask?.always?.length || e.answer) return
-      return void popMenu(always, e.ask.always.map((s) => ({ label: s.label, icon: ICONS.check, act: String(s.i) })), (i) => answerFrom(el.querySelector(`[data-ask="${CSS.escape(id)}"]`) ?? always.closest('[data-ask]'), 'always', i))
+      alwaysMenu = { id, menu: popMenu(always, e.ask.always.map((s) => ({ label: s.label, icon: ICONS.check, act: String(s.i) })), (i) => answerFrom(el.querySelector(`[data-ask="${CSS.escape(id)}"]`) ?? always.closest('[data-ask]'), 'always', i)) }
+      return
     }
     const ans = ev.target.closest('[data-answer]')
     if (ans) return answerFrom(ans.closest('[data-ask]'), ans.dataset.answer, ans.dataset.i)
@@ -1720,7 +1724,14 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onReply, onTicket 
     const needs = needsYou({ feed, agents })
     queued = new Map(needs.filter((n) => n.ask).map((n) => [n.ask.id, n.ask]))
     if (!queued.has(expanded)) expanded = needs.find((n) => n.ask)?.ask.id ?? null
-    const next = JSON.stringify([expanded, needs.map((n) => [n.agent.name, n.agent.activity, n.agent.avatar, n.ask?.id, ago(n.since || Date.now())])])
+    // a question answered elsewhere (or gone) takes its open Always allow menu with it
+    if (alwaysMenu && (!queued.has(alwaysMenu.id) || queued.get(alwaysMenu.id).answer)) (alwaysMenu.menu.close(), (alwaysMenu = null))
+    const next = JSON.stringify([expanded, needs.map((n) => [n.agent.name, n.agent.activity, n.agent.avatar, n.ask?.id])])
+    // how long each one has waited ticks in place, without a redraw
+    for (const t of queue.querySelectorAll('.nq-ago[data-since]')) {
+      const now = ago(Number(t.dataset.since))
+      if (t.textContent !== now) t.textContent = now
+    }
     if (next === queueKey) return
     queueKey = next
     const active = queue.contains(document.activeElement) && document.activeElement.closest('[data-ask]') ? document.activeElement : null

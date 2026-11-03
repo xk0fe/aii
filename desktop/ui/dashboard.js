@@ -260,7 +260,7 @@ crew.onPty((name, data) => {
 })
 
 // The brain in one word: its model when it has one (opus, sonnet), its provider otherwise (Codex).
-const modelWord = (a) => (a.model ? modelName(a.model) : (state.providers?.[a.provider]?.label ?? a.provider ?? ''))
+const modelWord = (a) => [a.model ? modelName(a.model) : (state.providers?.[a.provider]?.label ?? a.provider ?? ''), a.fast ? 'Fast' : ''].filter(Boolean).join(' · ')
 // Its name, a clone with its number, and an agent on another computer with that computer: "Rex · Workstation".
 const tileName = (a) => `${esc(a.cloneOf ? a.cloneOf.split('@')[0] : a.home ? a.seed ?? a.name : a.name)}${cloneTag(a)}${a.home ? `<span class="t-home"> · ${esc(a.homeName ?? a.home)}</span>` : ''}`
 
@@ -851,7 +851,7 @@ const ready = live((next) => {
     t.agent = a
     t.stale = true // drawn by freshen() below, if it's on screen
   })
-  if (!terms.has(selected)) selected = on[0]?.name
+  if (!terms.has(selected) && !(view === 'crew' && state.agents.some((a) => a.name === selected))) selected = on[0]?.name
   drawRoster()
   drawNeedsButton()
   highlight(selected)

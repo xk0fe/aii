@@ -1,7 +1,7 @@
 // Crew's brand layer: the name the app shows, its felt, and the Crew room. Felt is the creatures' material, and the
 // brand surfaces are made of it too: the room at the top of the Crew view, each creature's patch on its card, empty
 // states and the wordmark. Never on controls, and text never sits on it. One felt surface per region.
-/* global avatarHTML, poseOf, statusWord, esc */
+/* global avatarHTML, poseOf, statusWord, plainName, esc */
 
 // The product's name wherever it's shown (the wordmark, window titles). A rename is this one line; the `crew` command,
 // the ~/.crew folder, environment variables and app IDs keep theirs.
@@ -81,14 +81,15 @@ function redrawWordmarks() {
 // ---- the Crew room: the whole crew in one felt scene, each acting out its status ----
 
 // The one line the room says, in plain words: who needs you comes first, then how busy everyone is.
+const crewKey = (a) => a.cloneOf ?? a.name
 function crewHeadline(agents, needs) {
-  const asking = [...new Map(needs.map((n) => [n.agent.name, n.agent])).values()]
-  if (asking.length === 1) return `${asking[0].seed ?? asking[0].name} needs you`
+  const asking = [...new Map(needs.map((n) => [crewKey(n.agent), n.agent])).values()]
+  if (asking.length === 1) return `${plainName(asking[0])} needs you`
   if (asking.length) return `${asking.length} of your crew need you`
   const on = agents.filter((a) => a.on && a.status !== 'parked')
   const busy = on.filter((a) => a.status === 'working' && !a.waitingOn?.length)
   if (!on.length) return agents.length ? 'Everyone’s off' : 'No crew yet'
-  if (busy.length && busy.length === on.length) return on.length === 1 ? `${busy[0].seed ?? busy[0].name} is busy` : 'Everyone’s busy'
+  if (busy.length && busy.length === on.length) return on.length === 1 ? `${plainName(busy[0])} is busy` : 'Everyone’s busy'
   if (busy.length) return `${busy.length} at work`
   return 'All quiet'
 }
@@ -101,12 +102,12 @@ function namesList(names, max = 3) {
 
 // The sentence under the headline: what each one asking you wants, then who's at work.
 function crewSentence(agents, needs) {
-  const nameOf = (a) => a.seed ?? a.name
+  const nameOf = plainName
   const seen = new Set()
   const wants = []
   for (const n of needs) {
-    if (seen.has(n.agent.name)) continue
-    seen.add(n.agent.name)
+    if (seen.has(crewKey(n.agent))) continue
+    seen.add(crewKey(n.agent))
     const q = n.ask?.ask
     wants.push(`${nameOf(n.agent)} ${!q ? 'is waiting in its terminal' : q.type === 'question' ? 'has a question' : q.type === 'plan' ? 'has a plan for you' : q.code ? 'wants to run a command' : 'wants your OK'}`)
   }
@@ -144,14 +145,17 @@ function roomHTML(agents, { width = 728, asks = new Map(), picked = null } = {})
 }
 
 // The mini crew strip, for the menu bar's popover: the room in small, the crew on its floor (plain creatures at this
-// size, hopping while they work, wiggling when they need you, asleep when off). A click opens one (data-open).
+// size, hopping while they work, wiggling when they need you, asleep when off). A click opens one (data-open). A crew
+// too big for it shows the ones that matter most right now, in your order, and how many more on a little card of
+// its own at the end (never on the felt itself).
 function stripHTML(agents, width = 318) {
   const fit = Math.max(1, Math.floor((width - 16) / 40))
-  const keep = agents.length <= fit ? null : new Set([...agents].sort((x, y) => (ROOM_RANK[x.on ? x.status : 'off'] ?? 4) - (ROOM_RANK[y.on ? y.status : 'off'] ?? 4)).slice(0, fit).map((a) => a.name))
+  const keep = agents.length <= fit ? null : new Set([...agents].sort((x, y) => (ROOM_RANK[x.on ? x.status : 'off'] ?? 4) - (ROOM_RANK[y.on ? y.status : 'off'] ?? 4)).slice(0, fit - 1).map((a) => a.name))
   const cast = keep ? agents.filter((a) => keep.has(a.name)) : agents
-  return `<div class="strip">${roomFeltHTML(16)}<div class="strip-crew">${cast.map((a) => `<button class="strip-who" data-open="${esc(a.name)}" title="${esc(a.seed ?? a.name)}">${avatarHTML(a, { size: 36 })}${a.on && a.status === 'waiting' ? '<i class="dot waiting"></i>' : ''}</button>`).join('')}</div></div>`
+  const more = agents.length - cast.length
+  const who = (a) => `<button class="strip-who" data-open="${esc(a.name)}" title="${esc(a.seed ?? a.name)}">${avatarHTML(a, { size: 36 })}${a.on && a.status === 'waiting' ? '<i class="dot waiting"></i>' : ''}</button>`
+  return `<div class="strip">${roomFeltHTML(16)}<div class="strip-crew">${cast.map(who).join('')}${more ? `<button class="strip-more" data-act="dashboard" title="Everyone, in the dashboard">+${more}</button>` : ''}</div></div>`
 }
-
 // An empty room with one creature popping up and dashed spots where the rest of the crew will stand: the empty
 // Crew view. And the crew waiting with their mugs: the empty Tasks board.
 function firstRoomHTML(w = 440, h = 196) {

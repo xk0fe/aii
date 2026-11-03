@@ -3,7 +3,7 @@
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, a few facts), everything you can set on the right, in four
 // tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
-/* global roomHTML, crewHeadline, crewSentence, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
+/* global roomHTML, roomCast, crewHeadline, crewSentence, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -220,8 +220,8 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
     const crewNow = roster()
     const parked = state.parked && crewNow.length
     const ws = hasWorkspaces(state) ? state.workspace : null
-    const headline = parked ? `${ws?.name ?? 'This workspace'} is parked` : crewHeadline(state.agents, needs)
-    const sentence = parked ? 'Its agents are stopped until you open it again. Each picks up its conversation.' : crewSentence(state.agents, needs)
+    const headline = parked ? `${ws?.name ?? 'This workspace'} is parked` : crewHeadline(crewNow, needs)
+    const sentence = parked ? 'Its agents are stopped until you open it again. Each picks up its conversation.' : crewSentence(crewNow, needs)
     const h2 = $('.col-head h2')
     if (h2.textContent !== headline) h2.textContent = headline
     h2.title = headline
@@ -260,7 +260,8 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
     const crewNow = roster()
     if (!roomW) roomW = widthNow() || 728
     const asks = asksByName
-    const next = JSON.stringify([Math.floor(roomW / 76), roomPick, crewNow.map((a) => [a.name, a.seed, a.status, a.on, a.avatar, a.waitingOn?.length ?? 0, asks.get(a.name)])])
+    const fits = roomCast(crewNow, roomW)
+    const next = JSON.stringify([fits.size, fits.cast.length, roomPick, crewNow.map((a) => [a.name, a.seed, a.status, a.on, a.avatar, a.waitingOn?.length ?? 0, asks.get(a.name)])])
     roomWrap.classList.toggle('hidden', !crewNow.length)
     if (next === roomKey) return
     roomKey = next
@@ -273,6 +274,11 @@ function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorks
     const who = e.target.closest('[data-room]')
     if (!who) return
     const name = who.dataset.room
+    if (selecting) {
+      picked[picked.has(name) ? 'delete' : 'add'](name)
+      gridKey = ''
+      return drawGrid()
+    }
     if (roomPick === name) return open(name)
     pickInRoom(name)
   })
