@@ -91,9 +91,8 @@ export function Composer({ t, agents, convo, unread, disabled, onFace, onSend }:
         </Animated.View>
       ) : null}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.to} keyboardShouldPersistTaps="handled">
-        <Press onPress={() => onFace(null)} style={[styles.all, { backgroundColor: convo ? t.btn : t.accent }]} accessibilityRole="button" accessibilityState={{ selected: !convo }} accessibilityLabel="Everyone's messages">
-          <Icon name="auto" size={13} color={convo ? t.fg2 : '#fff'} />
-          <Text style={[styles.allText, { color: convo ? t.fg2 : '#fff' }]}>All</Text>
+        <Press onPress={() => onFace(null)} style={[styles.all, { backgroundColor: convo ? t.btn : t.dark ? 'rgba(10,132,255,0.2)' : 'rgba(0,122,255,0.12)' }]} accessibilityRole="button" accessibilityState={{ selected: !convo }} accessibilityLabel="Everyone's messages">
+          <Text style={[styles.allText, { color: convo ? t.fg2 : t.accent }]}>Everyone</Text>
         </Press>
         {agents.filter((a) => a.on || a.name === convo).map((a) => {
           const on = convo === a.name

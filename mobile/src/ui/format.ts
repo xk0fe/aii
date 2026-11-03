@@ -173,6 +173,16 @@ export function tryWords(t: { host: string; why: string; code?: number }): { whe
 // ---- the creature's own voice, where it asks for something (SPEC v2 rule 8) ----
 // "Can I run npm run build? I'd like to check the settings page." Code is a part of its own, set in mono.
 export type Said = { text: string; code?: boolean }[]
+
+// Why it wants to run a command, when the computer sends that in words (Claude Code's description of a command), not a
+// path. The creature says it, so the card under it doesn't say it again.
+export function reasonOf(ask: unknown): string {
+  const q = (typeof ask === 'object' && ask ? ask : {}) as { type?: string; tool?: string; code?: string; detail?: string }
+  if (q.type !== 'permission' || !String(q.code ?? '').trim()) return ''
+  if (q.tool && !/^(bash|powershell|shell|exec_command|local_shell|unified_exec)$/i.test(q.tool)) return ''
+  const d = String(q.detail ?? '').trim()
+  return d && /\s/.test(d) && !/^[~/\\]|^[A-Za-z]:\\/.test(d) ? d.replace(/[.!]+$/, '') : ''
+}
 export function voiceOf(ask: unknown): Said {
   if (typeof ask !== 'object' || !ask) return [{ text: "I'm waiting for you in my terminal." }]
   const q = ask as { type?: string; tool?: string; title?: string; code?: string; detail?: string; questions?: { question: string }[] }
@@ -183,8 +193,8 @@ export function voiceOf(ask: unknown): Said {
   if (q.type === 'plan') return [{ text: "Here's my plan. Can I go ahead?" }]
   const first = String(q.code ?? '').split('\n')[0].trim()
   const shell = /^(bash|powershell|shell|exec_command|local_shell|unified_exec)$/i.test(q.tool ?? '') || (!q.tool && first)
-  // a reason, when the Mac sends one in words (Claude Code's description of a command), not a path
-  const why = q.detail && /\s/.test(q.detail.trim()) && !/^[~/\\]|^[A-Za-z]:\\/.test(q.detail.trim()) ? ` I'd like to ${low(q.detail.trim().replace(/[.!]+$/, ''))}.` : ''
+  const reason = reasonOf(ask)
+  const why = reason ? ` I'd like to ${low(reason)}.` : ''
   if (shell && first) return [{ text: 'Can I run ' }, { text: first.length > 48 ? `${first.slice(0, 47)}…` : first, code: true }, { text: `?${why}` }]
   const title = String(q.title ?? '').trim()
   if (/^(run|edit|write|read|use|fetch|search|delete|create|open|make|move|install|change|update)\b/i.test(title)) return [{ text: `Can I ${low(title)}?${shell ? why : ''}` }]

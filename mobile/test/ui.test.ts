@@ -3,7 +3,7 @@
 import type { Agent, FeedEntry } from '@/net/types'
 import { BODIES, COLORS, poseArt, poseOf, type Pose, type Spec } from '@/ui/avatar'
 import { ellipse, flatten, fuzz, fuzzy, roundRect, toPath } from '@/ui/felt'
-import { activityWords, brainLine, reachedOver, statusWord, tryWords, voiceOf } from '@/ui/format'
+import { activityWords, brainLine, reachedOver, reasonOf, statusWord, tryWords, voiceOf } from '@/ui/format'
 import { andList, headline, needsOf, roomLayout, ROOM } from '@/ui/room'
 import { makeDemo } from '@/demo/fixture'
 
@@ -75,6 +75,12 @@ describe("the creature's own voice", () => {
     expect(said[1].code).toBe(true)
     expect(said[1].text.length).toBeLessThanOrEqual(48)
     expect(said[2].text).toBe('?')
+  })
+  test('the reason it says is the one the card leaves out', () => {
+    expect(reasonOf(permission({ tool: 'Bash', code: 'npm run build', detail: 'Check the settings page.' }))).toBe('Check the settings page')
+    expect(reasonOf(permission({ tool: 'Edit', code: '- a', detail: 'Tidy the cart' }))).toBe('') // an edit's detail is its file
+    expect(reasonOf(permission({ tool: 'Bash', code: 'ls', detail: 'C:\\Users\\you\\shop' }))).toBe('')
+    expect(reasonOf({ type: 'question', questions: [] })).toBe('')
   })
   test('an edit, a question, a plan, a terminal', () => {
     expect(voiceOf(permission({ tool: 'Edit', title: 'Edit cart.ts', code: '- a\n+ b' }))).toEqual([{ text: 'Can I edit cart.ts?' }])

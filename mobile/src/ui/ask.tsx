@@ -8,7 +8,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from
 
 import type { Answer, FeedEntry, PermissionAsk, PlanAsk, QuestionAsk, Reply } from '@/net/types'
 
-import { displayName } from './format'
+import { displayName, reasonOf } from './format'
 import { Icon, type IconName } from './icon'
 import { Markdown } from './markdown'
 import { Button, Press } from './parts'
@@ -33,6 +33,7 @@ export type AskProps = {
   compact?: boolean // the deck at the top of Chat: the essentials, with More for the rest
   onMore?: () => void
   disabled?: string | null // why answering can't work right now (offline)
+  voiced?: boolean // the creature has already said it in its own words (Needs you), reason and all
 }
 
 // "Milo needs your OK", "Iris has a question": the plain title kept for scanning, beside the creature's own words.
@@ -132,20 +133,21 @@ function Code({ t, code, compact }: { t: Theme; code: string; compact?: boolean 
 }
 
 function PermissionCard(props: AskProps & { ask: PermissionAsk }) {
-  const { t, e, ask, compact, onMore, disabled } = props
+  const { t, e, ask, compact, onMore, disabled, voiced } = props
   const [draft, setDraft] = useDraft(e.id)
   const { busy, error, send } = useSend(props)
   const name = displayName(e.from).base
   const note = draft.note ?? ''
   const always = ask.always ?? []
+  const detail = voiced && reasonOf(ask) ? '' : ask.detail
   const off = Boolean(busy || disabled)
   return (
     <View style={styles.body}>
       {compact ? null : <Title t={t} icon="permission" text={ask.title ?? 'Use a tool'} />}
       {ask.code ? <Code t={t} code={ask.code} compact={compact} /> : compact ? <Title t={t} icon="permission" text={ask.title ?? 'Use a tool'} /> : null}
-      {ask.detail ? (
+      {detail ? (
         <Text style={[styles.detail, { color: t.fg2 }]} numberOfLines={compact ? 1 : 4}>
-          {ask.detail}
+          {detail}
         </Text>
       ) : null}
       <View style={styles.row}>

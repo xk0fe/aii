@@ -54,7 +54,7 @@ function Ask({ t, e, d, answer, disabled }: { t: Theme; e: FeedEntry; d: ReturnT
           </Text>
         </View>
       </View>
-      <AskCard t={t} e={e} onAnswer={answer} disabled={disabled} />
+      <AskCard t={t} e={e} onAnswer={answer} disabled={disabled} voiced />
     </View>
   )
 }

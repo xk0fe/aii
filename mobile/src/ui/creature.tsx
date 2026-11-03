@@ -3,6 +3,8 @@
 // and the fibre grain), and from 64px up they can act out their status with a felt prop (avatar.ts poseArt): at a
 // laptop, holding a mug, the "OK?" sign, a question bubble, rising from a hole, asleep.
 //
+// A creature never takes a touch itself (an SVG under the finger would swallow it): what holds it does.
+//
 // Motion is Reanimated's CSS animations: transforms only, run natively, no JavaScript per frame. A working creature
 // hops (or types, posed), one waiting on you wiggles, one that's off breathes slowly. Everything holds still when the
 // screen isn't in front (MotionContext) or the system asks for reduced motion.
@@ -413,7 +415,7 @@ export const Creature = memo(function Creature({ agent, size = 48, mood, posed =
   const figure = <CreatureArt agent={agent} size={size} asleep={m === 'sleep'} place={art ? { s: art.s, dx: art.dx, dy: art.dy, rot: art.rot } : undefined} />
   if (!art) {
     return (
-      <View style={{ width: size, height: size }}>
+      <View style={{ width: size, height: size }} pointerEvents="none">
         <Animated.View style={[{ width: size, height: size, transformOrigin: '50% 96%' }, body]}>{figure}</Animated.View>
       </View>
     )
@@ -422,7 +424,7 @@ export const Creature = memo(function Creature({ agent, size = 48, mood, posed =
     <View style={StyleSheet.absoluteFill}>{figure}</View>
   )
   return (
-    <View style={{ width: size, height: size }}>
+    <View style={{ width: size, height: size }} pointerEvents="none">
       {art.back ? <Layer shapes={art.back} size={size} felt={felt} /> : null}
       <Animated.View style={[StyleSheet.absoluteFill, { transformOrigin: '50% 96%' }, body]}>
         {art.clip ? (

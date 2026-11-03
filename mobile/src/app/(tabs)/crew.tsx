@@ -34,7 +34,7 @@ function Room({ agents, asks, width, now }: { agents: Agent[]; asks: Map<string,
       {spots.map((s) => {
         const a = byName.get(s.name)!
         return (
-          <Press key={s.name} onPress={() => open(a)} style={[styles.spot, { left: s.x, top: s.y }]} accessibilityRole="button" accessibilityLabel={spoken(a, asks.get(a.name), now)} accessibilityHint="Opens what you can do with it">
+          <Press key={s.name} onPress={() => open(a)} style={[styles.spot, { left: s.x, top: s.y, width: s.size, height: s.size }]} accessibilityRole="button" accessibilityLabel={spoken(a, asks.get(a.name), now)} accessibilityHint="Opens what you can do with it">
             <Creature agent={a} size={s.size} posed ask={asks.get(a.name)} />
           </Press>
         )
