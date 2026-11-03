@@ -51,7 +51,8 @@ function roomFeltHTML(floor = 44) {
 // The wordmark: the product's name in the brand face, as it's written (the capitals are the CLI in CLIque), each
 // letter in a creature's colour, felt edges, sewn on with one stitch (dropped below 40px, where it would only blur).
 // Drawn as SVG text so the felt and the stitch follow the letters; spaced by the face's own advances once it's loaded
-// (wordmarks drawn before that are redrawn).
+// (wordmarks drawn before that are redrawn). The stitch shows only in a band along the letters' edges: Fredoka draws
+// some letters from overlapping strokes (the q's bowl and stem), and a stitch along every outline would cross them.
 const WORDMARK_INKS = ['#ff45a8', '#3db8ff', '#ffc61f', '#2fd3a6', '#72d63a', '#ff8a1f', '#8b5cf6']
 let wordmarkCtx = null
 function wordmarkHTML(size = 24, { stitch = size >= 40 } = {}) {
@@ -73,8 +74,9 @@ function wordmarkHTML(size = 24, { stitch = size >= 40 } = {}) {
   const id = `wm-${size}` // the same wordmark draws the same HTML (morph leaves it be); same-size copies share identical defs
   const text = (l, i, attrs) => `<text x="${(xs[i] + size * 0.04).toFixed(1)}" y="${base}" font-family="Fredoka" font-weight="700" font-size="${size}" ${attrs}>${esc(l)}</text>`
   const ink = letters.map((l, i) => text(l, i, `fill="${WORDMARK_INKS[i % WORDMARK_INKS.length]}"`)).join('')
-  const seam = stitch ? `<g clip-path="url(#${id})">${letters.map((l, i) => text(l, i, `fill="none" stroke="rgba(255,255,255,.85)" stroke-width="${(size / 32).toFixed(2)}" stroke-dasharray="${(size / 26).toFixed(2)} ${(size / 34).toFixed(2)}" stroke-linecap="round"`)).join('')}</g>` : ''
-  return `<span class="wordmark${ready ? '' : ' stale'}" data-size="${size}" data-stitch="${stitch ? 1 : 0}" role="img" aria-label="${esc(PRODUCT_NAME)}"><svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">${stitch ? `<defs><clipPath id="${id}">${ink}</clipPath></defs>` : ''}<g filter="url(#felt-grain)">${ink}</g>${seam}</svg></span>`
+  const edge = stitch ? `<filter id="${id}-edge"><feMorphology in="SourceAlpha" operator="erode" radius="${(size * 0.03).toFixed(2)}" result="core"/><feComposite in="SourceGraphic" in2="core" operator="out"/></filter><mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}"><g filter="url(#${id}-edge)" fill="#fff">${letters.map((l, i) => text(l, i, '')).join('')}</g></mask>` : ''
+  const seam = stitch ? `<g mask="url(#${id})">${letters.map((l, i) => text(l, i, `fill="none" stroke="rgba(255,255,255,.85)" stroke-width="${(size / 32).toFixed(2)}" stroke-dasharray="${(size / 26).toFixed(2)} ${(size / 34).toFixed(2)}" stroke-linecap="round"`)).join('')}</g>` : ''
+  return `<span class="wordmark${ready ? '' : ' stale'}" data-size="${size}" data-stitch="${stitch ? 1 : 0}" role="img" aria-label="${esc(PRODUCT_NAME)}"><svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">${stitch ? `<defs>${edge}</defs>` : ''}<g filter="url(#felt-grain)">${ink}</g>${seam}</svg></span>`
 }
 function redrawWordmarks() {
   for (const el of document.querySelectorAll('.wordmark.stale')) el.outerHTML = wordmarkHTML(Number(el.dataset.size), { stitch: el.dataset.stitch === '1' })
