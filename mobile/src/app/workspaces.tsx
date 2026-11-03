@@ -13,7 +13,7 @@ import { offlineText } from '@/ui/topbar'
 import { useTheme, type Theme } from '@/ui/theme'
 
 function line(w: Workspace) {
-  if (w.parked) return [{ text: 'Parked', tone: 'quiet' }]
+  if (w.parked) return [{ text: 'Asleep', tone: 'quiet' }]
   const out: { text: string; tone: 'warm' | 'work' | 'new' | 'quiet' }[] = []
   if (w.waiting) out.push({ text: `${w.waiting} need${w.waiting === 1 ? 's' : ''} you`, tone: 'warm' })
   if (w.working) out.push({ text: `${w.working} working`, tone: 'work' })

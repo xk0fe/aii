@@ -9,7 +9,7 @@ const WS_ICONS = ['⛳', '🚀', '🎮', '📱', '🛒', '🎨', '🧪', '📚',
 // a folder in a field (pathField: ~/code/app on a Mac, written out on Windows), and in words (tildePath)
 const tilde = (p) => pathField(p)
 
-// onSwitch(id, { open }): put a workspace on screen (opening it first if it's parked). onSwitched(state): a workspace
+// onSwitch(id): put a workspace on screen (one that's asleep wakes). onSwitched(state): a workspace
 // the sheet just made is on screen. onMembers(anchor): show who works in the one on screen. dock: the rail.
 function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, onMembers }) {
   let state = null
@@ -48,13 +48,13 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       ...(on ? [{ head: w.folder ? `${w.name} · ${tildePath(w.folder)}` : w.name }] : []),
       { label: 'Who works here…', icon: ICONS.subs, act: 'members', hint: plural(state.agents.filter((a) => !a.cloneOf).length, 'agent') },
       ...(on || named ? [{ label: 'Settings…', icon: ICONS.gear, act: 'settings' }] : []),
-      ...(list.length > 1 ? [w.parked ? { label: `Open ${w.name}`, icon: ICONS.play, act: 'open' } : { label: `Park ${w.name}`, icon: ICONS.pause, act: 'park', hint: 'stops its agents' }] : []),
+      // the one thing to do about running: sleep. Waking is going there, or sending it a message.
+      ...(list.length > 1 && !w.parked ? [{ label: 'Put to sleep', icon: ICONS.moon, act: 'park', hint: 'stops its agents' }] : []),
       '-',
       { label: 'New workspace…', icon: ICONS.plus, act: 'new' },
     ], (act) => {
       if (act === 'members') onMembers?.(button)
       if (act === 'settings') openSheet(w.id)
-      if (act === 'open') crew.call('workspace', 'open', w.id).catch((err) => oops(`Couldn't open ${w.name}`, err))
       if (act === 'park') park(w)
       if (act === 'new') openSheet(null)
     })
@@ -73,11 +73,11 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
 
   async function park(w) {
     const busy = w.working + w.waiting
-    if (busy && !confirm(`${plural(busy, 'agent')} in ${w.name} ${busy > 1 ? 'are' : 'is'} in the middle of something. Park it anyway? They stop now, and pick their conversations back up when you open it.`)) return
+    if (busy && !confirm(`${plural(busy, 'agent')} in ${w.name} ${busy > 1 ? 'are' : 'is'} in the middle of something. Put it to sleep anyway? They stop now, and pick their conversations back up when it wakes.`)) return
     try {
       await crew.call('workspace', 'park', w.id)
     } catch (err) {
-      oops(`Couldn't park ${w.name}`, err)
+      oops(`Couldn't put ${w.name} to sleep`, err)
     }
   }
 
@@ -102,7 +102,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
   dock.addEventListener('click', (e) => {
     if (e.target.closest('[data-ws-new]')) return openSheet(null)
     const w = state.workspaces.find((x) => x.id === e.target.closest('[data-ws]')?.dataset.ws)
-    if (w && !w.current) onSwitch(w.id)
+    if (w && (!w.current || w.parked)) onSwitch(w.id) // its own tile wakes the one on screen
   })
   dock.addEventListener('contextmenu', (e) => {
     const w = state.workspaces.find((x) => x.id === e.target.closest('[data-ws]')?.dataset.ws)
@@ -112,15 +112,14 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     const others = state.workspaces.length > 1
     popMenu({ x: e.clientX, y: e.clientY }, [
       { head: w.name },
-      ...(w.current ? [] : [{ label: 'Switch to it', icon: ICONS.arrow, act: 'switch' }]),
+      ...(w.current && !w.parked ? [] : [{ label: w.current ? 'Wake it' : 'Switch to it', icon: ICONS.arrow, act: 'switch', ...(w.parked && { hint: 'wakes it up' }) }]),
       ...(w.current ? [{ label: 'Who works here…', icon: ICONS.subs, act: 'members' }] : []),
-      ...(others ? [w.parked ? { label: 'Open', icon: ICONS.play, act: 'open', hint: 'starts its agents' } : { label: 'Park', icon: ICONS.pause, act: 'park', hint: 'stops its agents' }] : []),
+      ...(others && !w.parked ? [{ label: 'Put to sleep', icon: ICONS.moon, act: 'park', hint: 'stops its agents' }] : []),
       { label: 'Settings…', icon: ICONS.gear, act: 'settings' },
       ...(w.id === 'default' ? [] : ['-', { label: 'Remove…', icon: ICONS.trash, act: 'remove', danger: true }]),
     ], (act) => {
       if (act === 'switch') onSwitch(w.id)
       if (act === 'members') onMembers?.(e.target.closest('[data-ws]'))
-      if (act === 'open') crew.call('workspace', 'open', w.id).catch((err) => oops(`Couldn't open ${w.name}`, err))
       if (act === 'park') park(w)
       if (act === 'settings') openSheet(w.id)
       if (act === 'remove') remove(w)
@@ -179,7 +178,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
   document.addEventListener('drop', endDrag)
   dock.addEventListener('dragleave', (e) => !dock.contains(e.relatedTarget) && marks().forEach((x) => x.classList.remove('drop-before', 'drop-after')))
 
-  // ---- the banner over a parked workspace ------------------------------------------------------------------
+  // ---- the banner over a workspace that's asleep: what wakes it, and no button for it ----------------------
 
   function drawBanner() {
     const w = state.workspace
@@ -189,17 +188,12 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     if (!parked) return
     banner.style.setProperty('--w', wsColor(w) ?? 'var(--fg3)')
     morph(banner, `${wsTile(w, { size: 30 })}
-      <div class="grow"><b>${esc(w.name)} is parked</b><span>Its agents aren't running. Their chat, tasks and conversations wait right where they were.</span></div>
-      <button class="btn primary" data-ws-open>${ICONS.play}<span>Open ${esc(w.name)}</span></button>`)
+      <div class="grow"><b>${esc(w.name)} is asleep</b><span>Its agents are stopped. Send a message and they wake up where they left off.</span></div>`)
   }
-
-  banner.addEventListener('click', (e) => {
-    if (e.target.closest('[data-ws-open]')) crew.call('workspace', 'open', state.workspace.id).catch((err) => oops(`Couldn't open ${state.workspace.name}`, err))
-  })
 
   // ---- the sheet: a new workspace, or one's settings -------------------------------------------------------
 
-  let draft = null // { id, name, color, icon, folder, members: Set, folders: {}, running }
+  let draft = null // { id, name, color, icon, folder, members: Set, folders: {} }
   let before = null // the workspace as it was, when changing one
 
   dialog.innerHTML = `
@@ -227,9 +221,6 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
         <ul class="ws-crew"></ul>
         <p class="ws-note" data-crew-note></p>
       </section>
-      <section class="ws-sec" data-sec="run">
-        <label class="ws-run"><span class="ws-run-glyph"></span><div class="grow"><b></b><small></small></div><input type="checkbox" class="switch" data-ws-running></label>
-      </section>
     </div>
     <p class="err" data-ws-err></p>
     <div class="sheet-foot">
@@ -251,12 +242,10 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       id: w?.id ?? null, name: w?.name ?? '', color: w?.color ?? (w ? '' : freshColor()), icon: w?.icon ?? '', folder: w?.folder ?? '',
       members: new Set(home ? roster.map((a) => a.name) : w?.members?.map((m) => m.name) ?? []),
       folders: Object.fromEntries(home ? roster.filter((a) => a.cwd).map((a) => [a.name, a.cwd]) : (w?.members ?? []).filter((m) => m.folder).map((m) => [m.name, m.folder])),
-      running: w ? !w.parked : true,
     }
     $d('[data-ws-name]').value = draft.name
     $d('[data-ws-folder]').value = tilde(draft.folder)
     $d('[data-sec=folder]').classList.toggle('hidden', !named)
-    $d('[data-sec=run]').classList.toggle('hidden', !w)
     $d('[data-ws-remove]').classList.toggle('hidden', !w || !named)
     $d('[data-ws-save]').textContent = w ? 'Save' : 'Create workspace'
     $d('[data-ws-err]').textContent = ''
@@ -275,7 +264,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
   // crew: the list of agents too (typing a name or a folder leaves it be)
   function drawSheet({ crew: list = true } = {}) {
     const named = draft.id !== 'default'
-    const look = { id: draft.id ?? 'new', name: draft.name || 'New workspace', color: draft.color, icon: draft.icon, parked: !draft.running }
+    const look = { id: draft.id ?? 'new', name: draft.name || 'New workspace', color: draft.color, icon: draft.icon }
     $d('.ws-hero-tile').innerHTML = wsTile(look, { size: 58, cls: 'hero' })
     dialog.style.setProperty('--hero', wsColor(look) ?? 'var(--fg3)')
     const roster = state.roster ?? []
@@ -291,12 +280,6 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     $d('[data-crew-title]').textContent = named ? 'Who works here' : 'Where they work'
     $d('.ws-count').textContent = !roster.length ? '' : named ? `${draft.members.size} of ${roster.length}` : plural(roster.length, 'agent')
     if (list) drawCrew(roster)
-    const run = $d('.ws-run')
-    run.querySelector('b').textContent = draft.running ? 'Running' : 'Parked'
-    run.querySelector('small').textContent = draft.running ? 'Its agents are on. Park it to stop them; nothing is lost.' : 'Its agents are stopped. Its chat, tasks and conversations wait.'
-    run.querySelector('.ws-run-glyph').innerHTML = draft.running ? ICONS.play : ICONS.pause
-    run.querySelector('input').checked = draft.running
-    run.classList.toggle('on', draft.running)
   }
 
   // Home: every agent, each with the folder of its own to change. Any other workspace: who's in it (the switches), and a
@@ -339,10 +322,6 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       t.checked ? draft.members.add(name) : draft.members.delete(name)
       drawSheet()
       if (t.checked) bounce(dialog.querySelector(`.ws-agent[data-agent="${CSS.escape(name)}"] .av`))
-    }
-    if (t.matches('[data-ws-running]')) {
-      draft.running = t.checked
-      drawSheet()
     }
     if (t.matches('[data-ws-own-input]')) setOwn(t)
   })
@@ -428,7 +407,6 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
           const folders = Object.fromEntries([...draft.members].map((n) => [n, draft.folders[n] ?? '']).filter(([n, f]) => f !== (before.members.find((m) => m.name === n)?.folder ?? '')))
           await crew.call('workspace', 'members', id, { add: [...draft.members].filter((n) => !was.has(n)), remove: [...was].filter((n) => !draft.members.has(n)), folders })
         }
-        if (draft.running === before.parked) await crew.call('workspace', draft.running ? 'open' : 'park', id)
         dialog.close()
       }
     } catch (x) {

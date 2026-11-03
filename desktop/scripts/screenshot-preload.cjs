@@ -364,7 +364,6 @@ else {
   show('default')
 }
 window.__crewShow = show
-// The workspace actions, enough for the shots: switch, open, park, make one.
 // The channels' sheet and menu, as Crew.channelAction does them.
 function channelAction(op, id, arg = {}) {
   const slug = (n) => String(n ?? '').toLowerCase().replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
@@ -380,9 +379,10 @@ function channelAction(op, id, arg = {}) {
   return { id, state }
 }
 
+// The workspace actions, enough for the shots: switch (one asleep wakes, as in Crew), open, park, make one.
 function workspaceAction(op, id, arg) {
   const w = WORKSPACES.find((x) => x.id === id)
-  if (op === 'switch') window.__crewShow(id)
+  if (op === 'switch') (w.parked = false), window.__crewShow(id)
   if (op === 'open') (w.parked = false), window.__crewShow(state.workspace.id)
   if (op === 'park') (w.parked = true), window.__crewShow(state.workspace.id)
   if (op === 'order') {
@@ -535,6 +535,7 @@ window.crew = {
     // is who it's for when no one's picked; Auto goes to Ada.
     if (action === 'send') {
       const [picked, text, , opts = {}] = args
+      if (state.workspace.parked) workspaceAction('open', state.workspace.id) // what you send wakes it, as in Crew
       const to = picked || [...new Set([...String(text).matchAll(MENTION)].map((m) => named(m[2])?.name).filter(Boolean))].join(',')
       // a busy agent that can clone itself: a clone takes it (sendAction)
       if (to && !to.includes(',') && !opts.re && named(to)?.clones) return sendAction(to, text)

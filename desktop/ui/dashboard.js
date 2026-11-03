@@ -666,9 +666,27 @@ function createTile(name, before = null) {
     clearTimeout(timer)
     timer = setTimeout(() => resize(name), 40)
   }).observe(tile.querySelector('.term'))
+  shownTerm.observe(tile.querySelector('.term'))
   replay(t)
   return t
 }
+
+function dropTile(t) {
+  shownTerm.unobserve(t.tile.querySelector('.term'))
+  t.term.dispose()
+  t.tile.remove()
+}
+
+// A terminal out of sight replays once it comes into view. xterm keeps each character's width as it draws a row, but
+// in a hidden terminal every character measures 0 wide and nothing is kept, so it lays the window out again for every
+// character of every row. Replaying a workspace's terminals while you were in #crew (every switch) held the window for
+// seconds.
+const shownTerm = new IntersectionObserver((seen) => {
+  for (const e of seen) {
+    const t = e.isIntersecting && terms.get(e.target.closest('.tile').dataset.name)
+    if (t?.waiting) replay(t)
+  }
+})
 
 // On Windows, Ctrl is the terminal's own key (Ctrl+C stops what the agent runs), so copy and paste go as in Windows
 // Terminal: Ctrl+C copies when there's a selection, Ctrl+Shift+C always, Ctrl+V and Ctrl+Shift+V paste (the page's paste,
@@ -709,6 +727,9 @@ function quietSelection(term) {
 // Live chunks that arrive before this are already in the buffer. Again after an agent's computer comes back.
 function replay(t) {
   const name = t.tile.dataset.name
+  // out of sight (in #crew, or Focus showing another one): shownTerm replays it when it shows
+  t.waiting = !t.tile.querySelector('.term').offsetWidth
+  if (t.waiting) return void (t.ready = false)
   const done = () => {
     t.ready = true
     t.replaying = false
@@ -887,8 +908,8 @@ function drawBlank() {
   const on = state.agents.filter((a) => a.on && a.status !== 'parked').length
   $('.blank').classList.toggle('hidden', place !== 'terminals' || on > 0)
   const parked = state.parked && state.agents.some((a) => a.on)
-  $('.blank h1').textContent = parked ? `${state.workspace.name} is parked` : state.agents.length ? 'All agents are off' : 'No agents yet'
-  $('.blank .lead').textContent = parked ? 'Open it to start its agents: each picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
+  $('.blank h1').textContent = parked ? `${state.workspace.name} is asleep` : state.agents.length ? 'All agents are off' : 'No agents yet'
+  $('.blank .lead').textContent = parked ? 'Send a message to wake it: each agent picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
   $('.blank .acts').classList.toggle('hidden', state.agents.length > 0) // Add your first agent, only when there's none
 }
 
@@ -960,7 +981,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'n' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), addAgent())
 })
 
-// ⌃1–9: the workspaces, in the switcher's order (a parked one opens). ⌃Tab and ⌃⇧Tab: the next and previous open one.
+// ⌃1–9: the workspaces, in the switcher's order (one asleep wakes). ⌃Tab and ⌃⇧Tab: the next and previous awake one.
 // On Windows, Alt+1–9 (Ctrl+1–4 are the views there) and Ctrl+Tab. Ahead of the terminals (capture), which would take ⌃1
 // as a key of their own.
 document.addEventListener('keydown', (e) => {
@@ -982,24 +1003,23 @@ document.addEventListener('keydown', (e) => {
   if (!w) return
   e.preventDefault()
   e.stopPropagation()
-  switchTo(w.id, { open: w.parked })
+  switchTo(w.id)
 }, true)
 
 // ---- workspaces: switching, with the crew sliding over to the next one ----------------------------
 
 // The new workspace renders inside a view transition, from the state the switch answers with; the side it slides in
-// from is where it sits in the switcher. A parked one is opened first when asked.
+// from is where it sits in the switcher. One that's asleep wakes (Crew does that), the one on screen too.
 let push = null
-async function switchTo(id, { open = false } = {}) {
+async function switchTo(id) {
   const list = state.workspaces ?? []
   const from = list.findIndex((w) => w.current)
   const to = list.findIndex((w) => w.id === id)
-  if (to < 0 || (to === from && !open)) return
+  if (to < 0 || (to === from && !list[to].parked)) return
   const unsaved = collection.unsaved()
   if (unsaved && !confirm(`Discard your changes to ${unsaved}?`)) return
   const go = async () => {
     try {
-      if (open) await crew.call('workspace', 'open', id)
       const { state: next } = await crew.call('workspace', 'switch', id)
       ;(push ??= await ready)(next)
     } catch (err) {
@@ -1035,10 +1055,7 @@ function workspaceChanged(next) {
   const first = shownWorkspace === null
   shownWorkspace = id
   if (first) return
-  for (const t of terms.values()) {
-    t.term.dispose()
-    t.tile.remove()
-  }
+  for (const t of terms.values()) dropTile(t)
   terms.clear()
   selected = null
   composer.stopReply() // the message it answered is in the other workspace's chat
@@ -1058,7 +1075,7 @@ function workspaceChanged(next) {
 // "free", "starting", "off".
 const DOING = [[/^(Planning|Writing up a plan)/, 'planning'], [/^Editing\b/, 'editing'], [/^Writing\b/, 'writing'], [/^Reading\b/, 'reading'], [/^Searching\b/, 'searching'], [/^Running the tests/, 'testing'], [/^Running\b/, 'running'], [/^Asking\b/, 'asking'], [/^Handing work/, 'handing off'], [/^Starting a sub-agent/, 'delegating'], [/^Drawing\b/, 'drawing']]
 function doingWord(a) {
-  if (!a.on) return a.status === 'parked' ? 'parked' : 'off'
+  if (!a.on) return a.status === 'parked' ? 'asleep' : 'off'
   if (blockedOn(a)) return 'waiting'
   switch (a.status) {
     case 'working': {
@@ -1069,7 +1086,7 @@ function doingWord(a) {
     case 'idle': return runningSubs(a).length ? 'helpers at work' : 'free'
     case 'starting': return 'starting'
     case 'away': return 'offline'
-    case 'parked': return 'parked'
+    case 'parked': return 'asleep'
     default: return 'stopped'
   }
 }
@@ -1241,7 +1258,7 @@ function agentMenu(name, at) {
     { label: 'Edit…', icon: ICONS.edit, act: 'edit' },
     { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a.on || a.freshPending },
     ...(places.length ? ['-', ...places.map((g) => ({ label: `Move to ${g.name}`, icon: g.here ? ICONS.desktop : ICONS.laptop, act: `move:${g.key}`, disabled: !g.online, hint: g.online ? '' : 'offline' }))] : []),
-    ...(joins.length ? ['-', ...joins.map((w) => ({ label: `Add to ${w.name}`, icon: wsTile(w, { size: 16 }), act: `join:${w.id}`, hint: w.parked ? 'parked' : '' }))] : []),
+    ...(joins.length ? ['-', ...joins.map((w) => ({ label: `Add to ${w.name}`, icon: wsTile(w, { size: 16 }), act: `join:${w.id}`, hint: w.parked ? 'asleep' : '' }))] : []),
     '-',
     { label: a.on ? 'Turn off' : 'Turn on', icon: ICONS.power, act: 'power' },
     { label: leave ? `Take out of ${ws.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
@@ -1400,8 +1417,7 @@ const ready = live((next) => {
   const names = new Set(on.map((a) => a.name))
   for (const [name, t] of terms) {
     if (names.has(name)) continue
-    t.term.dispose()
-    t.tile.remove()
+    dropTile(t)
     terms.delete(name)
   }
   on.forEach((a, i) => {

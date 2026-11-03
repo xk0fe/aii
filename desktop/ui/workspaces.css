@@ -91,12 +91,6 @@ dialog.sheet.ws-sheet { width: 560px; }
 .ws-own:hover { background: var(--btn-hover); color: var(--fg); }
 .ws-own-input { width: 190px; height: 24px; padding: 0 9px; font-size: 12px; }
 
-.ws-run { display: flex; align-items: center; gap: 12px; cursor: pointer; }
-.ws-run b { display: block; font-size: 13px; }
-.ws-run small { display: block; font-size: 12px; color: var(--fg2); margin-top: 1px; }
-.ws-run-glyph { width: 28px; height: 28px; border-radius: var(--r-control); display: grid; place-items: center; flex: none; color: var(--fg2); background: var(--btn); transition: background .3s, color .3s; }
-.ws-run-glyph svg { width: 12px; height: 12px; }
-.ws-run.on .ws-run-glyph { color: var(--working-ink); background: var(--fill); }
 
 /* ---- a channel's sheet (dashboard.js channelSheet): the same hero, with # for its tile; its brief, and who's in it ---- */
 .ch-hero-glyph { width: 58px; height: 58px; flex: none; display: grid; place-items: center; border-radius: 18px; background: var(--fill); color: var(--fg2); font: 600 32px/1 var(--font-brand); }

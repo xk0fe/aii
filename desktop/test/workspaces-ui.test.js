@@ -24,7 +24,7 @@ test("a workspace's tile: its icon or initial on its color; the default without 
 test("each workspace's line in the switcher: who needs you and who works first, else how it is", () => {
   assert.equal(wsStatus(ws('storefront', { waiting: 2, working: 1, unread: 1 })), '2 need you · 1 working · 1 new reply')
   assert.equal(wsStatus(ws('storefront', { waiting: 1 })), '1 needs you')
-  assert.equal(wsStatus(ws('storefront', { waiting: 3, parked: true })), 'Parked')
+  assert.equal(wsStatus(ws('storefront', { waiting: 3, parked: true })), 'Asleep')
   assert.equal(wsStatus(ws('storefront', { on: 3 })), 'all 3 free')
   assert.equal(wsStatus(ws('storefront', { on: 0 })), 'All off')
   assert.equal(wsStatus(ws('storefront', { agents: 0, on: 0 })), 'No agents yet')
@@ -46,7 +46,7 @@ test('a switcher once there is more than the default, or the default has a look 
 test("a parked workspace's crew says so; linked computers only show in the default", () => {
   const agent = (name, extra) => ({ name, on: true, status: 'parked', since: Date.now(), ...extra })
   assert.match(crewSummary({ parked: true, agents: [agent('milo')] }), /parked/)
-  assert.equal(statusText(agent('milo')), 'parked')
+  assert.equal(statusText(agent('milo')), 'asleep')
   const computers = { me: { name: 'Studio Mac' }, links: [{ slug: 'mini', name: 'Workstation', online: true }] }
   const names = (workspace) => [...crewGroups({ agents: [], computers, workspace }).map((g) => g.name)]
   assert.deepEqual(names(ws('default')), ['Studio Mac', 'Workstation'])

@@ -38,7 +38,7 @@ export function statusText(a: Agent, now = Date.now()) {
     case 'off':
       return 'Off'
     case 'parked':
-      return 'Parked'
+      return 'Asleep'
     case 'away':
       return "Can't be reached"
     default:

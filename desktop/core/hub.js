@@ -297,7 +297,7 @@ export class Hub extends EventEmitter {
       this.launch(a)
       this.startWaiting(a)
     }
-    if (starting.length) this.post({ kind: 'event', from: 'crew', text: `opened: ${starting.map((a) => `@${a.name}`).join(', ')} pick${starting.length === 1 ? 's' : ''} up where ${starting.length === 1 ? 'it' : 'they'} left off` })
+    if (starting.length) this.post({ kind: 'event', from: 'crew', text: `woke up: ${starting.map((a) => `@${a.name}`).join(', ')} pick${starting.length === 1 ? 's' : ''} up where ${starting.length === 1 ? 'it' : 'they'} left off` })
     this.changed()
   }
 
@@ -324,7 +324,7 @@ export class Hub extends EventEmitter {
       if (run) run.quiet = true
       this.dismiss(c.name)
     }
-    if (stopping.length) this.post({ kind: 'event', from: 'crew', text: `parked: ${stopping.map((a) => `@${a.name}`).join(', ')} stopped, and their conversations wait for the workspace to open again` })
+    if (stopping.length) this.post({ kind: 'event', from: 'crew', text: `went to sleep: ${stopping.map((a) => `@${a.name}`).join(', ')} stopped, and pick up their conversations when it wakes` })
     this.changed()
   }
 
@@ -600,7 +600,7 @@ export class Hub extends EventEmitter {
 
   restart(name, fresh = false) {
     const a = this.agents.get(name)
-    if (a && this.parked && !this.runner.running(name)) throw new Error(`${this.space.name} is parked: open it to start its agents`)
+    if (a && this.parked && !this.runner.running(name)) throw new Error(`${this.space.name} is asleep: send a message there to wake it`)
     if (a) this.launch(a, fresh)
   }
 
