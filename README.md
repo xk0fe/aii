@@ -8,7 +8,7 @@ It runs Claude Code and Codex. GLM and local models (through Ollama) work too, a
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/crew-dark.webp">
-  <img src="docs/images/crew-light.webp" alt="The dashboard: the crew on the left, the Crew room and the agents' cards in the middle, the chat with what needs you on the right">
+  <img src="docs/images/crew-light.webp" alt="The dashboard: the crew on the left, the agents' cards in the middle, the chat with what needs you on the right">
 </picture>
 
 ## Get started
@@ -33,11 +33,11 @@ On a Mac, the first `npm start` builds `Crew.app` and opens it; after that it op
 
 ## Meet your crew
 
-The Crew view opens on the crew's room. Each creature acts out what it's doing: it types at a little felt laptop while it works, holds a mug while it's free, holds up an "OK?" sign when it wants your permission, and asks with a speech bubble when it has a question. One line on top says how things are, like "2 of your crew need you" or "Everyone's busy". Click a creature to find its card, or fold the room away if you'd rather see only the cards.
+The Crew view gives each agent a card: what it does, which model it runs on, what it's busy with, and how full its conversation is when that matters. One line on top says how things are, like "2 of your crew need you" or "Everyone's busy". Each creature acts out what it's doing: it types at a little felt laptop while it works, holds a mug while it's free, holds up an "OK?" sign when it wants your permission, and asks with a speech bubble when it has a question.
 
-<p align="center"><img src="docs/images/crew-room.webp" alt="The Crew room: Milo gets his OK and goes back to his laptop, Theo finishes and picks up a mug, Iris gets her answer, and the line on top goes from 2 of your crew need you to Everyone's busy" width="1000"></p>
+Every card has an on/off switch. An agent you turn off falls asleep in black and white, right where its card was, and picks up its conversation when you turn it back on.
 
-Under the room, each agent has a card: what it does, which model it runs on, what it's busy with, and how full its conversation is when that matters.
+<p align="center"><img src="docs/images/crew-switch.webp" alt="Turning June and Rex off from their cards: each falls asleep in black and white and wakes up again, and no card moves" width="1000"></p>
 
 Click a card to open it. This is where you set the agent's job, model and folder, and write its instructions (or let it draft them for itself). You can also dress it up.
 

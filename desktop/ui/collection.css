@@ -166,6 +166,8 @@
   background: var(--surface); box-shadow: var(--shadow-float);
   opacity: 0; transform: translateY(8px) scale(.985); transition: opacity var(--t-leave) var(--in), transform var(--t-pop) var(--in);
 }
+.ed[data-tab=look] .pd-av .av.asleep { filter: none; }
+.ed:focus { outline: none; } /* focused as it opens, so the keyboard is in it (the ring is for what's inside) */
 .ed-layer.open .ed { opacity: 1; transform: none; transition: opacity var(--t-pop) var(--out), transform var(--t-move) var(--move); }
 /* on Windows its corners stay clear of the window buttons over the titlebar */
 html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }

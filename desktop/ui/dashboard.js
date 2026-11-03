@@ -86,7 +86,7 @@ function setPanel(which, on) {
     out.finished.then(() => (panel.classList.remove('leaving'), (panel.style.width = ''), out.cancel()), () => {})
   }
   glide(animate ? () => $('.center').querySelectorAll(GLIDING) : [], () => document.body.classList.toggle(`no-${which}`, !on))
-  if (animate && on) panel.animate([{ opacity: 0, transform: away }, { opacity: 1, transform: 'none' }], { duration: DUR.move, easing: EASE.out })
+  if (animate && on) panel.animate([{ offset: 0, opacity: 0, transform: away }], { duration: DUR.move, easing: EASE.out })
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 }
 const panelShown = (which) => !document.body.classList.contains(`no-${which}`)

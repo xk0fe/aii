@@ -1187,42 +1187,32 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // The Crew room: you answer Milo, Theo finishes, Iris gets her answer and Rex is up, and the room acts it out
-  // while its line keeps up ("2 of your crew need you", "Iris needs you", "Everyone's busy").
-  async roomGif() {
-    const win = await dashboard('light', 'crew', { reset: ['crew.room'] })
+  // On and off from the cards: June goes to sleep (black and white, where her card was) and wakes up again, and Rex
+  // too; nothing else moves.
+  async switchGif() {
+    const win = await dashboard('light', 'crew')
+    await js(win, click('[data-mode=cards]'))
     await sleep(1400)
-    const box = await js(win, "const h = document.querySelector('.col-head').getBoundingClientRect(); const n = document.querySelector('.room-names').getBoundingClientRect(); return { x: Math.round(h.x), y: Math.round(h.y), width: Math.round(h.width), height: Math.round(n.bottom - h.y + 14) }")
-    const step = (code) => js(win, `const s = window.__crewState; const a = (n) => s.agents.find((x) => x.name.toLowerCase() === n.toLowerCase() || (x.seed ?? '').toLowerCase() === n.toLowerCase()); ${code}; window.__crewEmit('state', s)`)
-    await record(win, 'crew-room', {
-      clip: box, ms: 9000, width: 1000,
+    const box = await js(win, "const h = document.querySelector('.col-head').getBoundingClientRect(); const g = document.querySelector('.col-grid').getBoundingClientRect(); return { x: Math.round(h.x), y: Math.round(h.y), width: Math.round(h.width), height: Math.round(Math.min(innerHeight - h.y, g.bottom - h.y)) }")
+    let at = { x: box.x + box.width / 2, y: box.y + 60 }
+    const flip = async (name) => {
+      at = await glide(win, at, await center(win, `.pcard[data-name="${name}"] .switch`), 600)
+      await sleep(250)
+      await tap(win, at)
+    }
+    await record(win, 'crew-switch', {
+      clip: box, ms: 7200, width: 1000,
       during: async () => {
+        await sleep(500)
+        await flip('June')
         await sleep(1300)
-        // Allow for Milo: he's back at his laptop
-        await step("const e = s.feed.find((x) => x.kind === 'ask' && !x.answer && x.from === 'Milo'); if (e) e.answer = { by: 'you', allow: true }; Object.assign(a('Milo'), { status: 'working', since: Date.now(), activity: 'Bash · npm run build' })")
-        await sleep(1700)
-        // Theo's tests pass: a mug
-        await step("Object.assign(a('Theo'), { status: 'idle', since: Date.now(), activity: '' })")
-        await sleep(1500)
-        // Iris gets her answer, and Rex is up
-        await step("const e = s.feed.find((x) => x.kind === 'ask' && !x.answer && x.from === 'Iris'); if (e) e.answer = { by: 'you', answers: { [e.ask.questions[0].question]: e.ask.questions[0].options[0].label } }; Object.assign(a('Iris'), { status: 'working', since: Date.now(), activity: 'Edit · cart/EmptyCart.tsx' }); Object.assign(a('Rex'), { status: 'working', since: Date.now(), activity: 'Bash · npm run deploy' })")
-        await sleep(1500)
-        // and the rest pick something up
-        await step("Object.assign(a('Theo'), { status: 'working', since: Date.now(), activity: 'Bash · npm test -- coupons' }); Object.assign(a('June'), { status: 'working', since: Date.now(), activity: 'Write · RELEASE.md' })")
-        await sleep(2600)
+        await flip('Rex@workstation')
+        await sleep(1300)
+        await flip('June')
+        await sleep(1100)
+        await flip('Rex@workstation')
       },
     })
-    win.destroy()
-  },
-  // The room alone, still, light and dark (for the README and the PR).
-  async room(theme) {
-    const win = await dashboard(theme, 'crew', { reset: ['crew.room'] })
-    await sleep(1400)
-    await js(win, "for (const a of document.getAnimations()) { try { const t = a.effect?.getTiming?.(); if (t && t.iterations !== Infinity) a.finish(); else { a.pause(); a.currentTime = a.animationName === 'av-wiggle-soft' ? 400 : 0 } } catch {} }")
-    await sleep(200)
-    const box = await js(win, "const h = document.querySelector('.col-head').getBoundingClientRect(); const n = document.querySelector('.room-names').getBoundingClientRect(); return { x: Math.round(h.x), y: Math.round(h.y), width: Math.round(h.width), height: Math.round(n.bottom - h.y + 14) }")
-    fs.writeFileSync(path.join(out, `room-${theme}.png`), (await win.webContents.capturePage(box)).toPNG())
-    console.log('saved', `room-${theme}.png`)
     win.destroy()
   },
   // Nobody yet, and no tasks yet: the empty Crew view and the empty board.

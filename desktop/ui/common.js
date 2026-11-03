@@ -350,7 +350,7 @@ function modeChips(a) {
 
 function powerSwitch(a) {
   const busy = a.status === 'working' || a.status === 'waiting'
-  return `<input type="checkbox" class="switch sm" data-power="${esc(a.name)}" ${busy ? 'data-busy' : ''} ${a.on ? 'checked' : ''} title="${a.on ? 'Turn off (stays off after restarts)' : 'Turn on (resumes its session)'}">`
+  return `<input type="checkbox" class="switch sm" data-power="${esc(a.name)}" ${busy ? 'data-busy' : ''} ${a.on ? 'checked' : ''} title="${a.on ? 'Turn off (stays off after restarts)' : 'Turn on (resumes its session)'}" aria-label="${esc(`${a.seed ?? a.name.split('@')[0]} on`)}">`
 }
 
 // One row per agent: name and status / what it owns / brain and modes, plus what it's doing while it works.
@@ -762,7 +762,7 @@ const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matche
 // height lays out and repaints everything around it on every frame, and a grid of cards jumps between column counts
 // on the way; here the layout changes once and the pictures move. targets: the elements that may move (a list, or a
 // function that finds them, asked before and after the change; never one inside another). appear: elements that
-// weren't there before fade in. Returns what change() returns.
+// weren't there before fade in (to their own opacity: a dimmed row stays dimmed). Returns what change() returns.
 const glides = new WeakMap() // element -> its running glide
 function glide(targets, change, { duration = DUR.move, easing = EASE.move, appear = false } = {}) {
   if (reduceMotion()) return change()
@@ -780,7 +780,7 @@ function glide(targets, change, { duration = DUR.move, easing = EASE.move, appea
     if (!now.width && !now.height) continue
     const was = before.get(el)
     if (!was) {
-      if (appear && seen(now)) el.animate([{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }], { duration: DUR.move, easing: EASE.out, delay: 60, fill: 'backwards' })
+      if (appear && seen(now)) el.animate([{ offset: 0, opacity: 0, transform: 'translateY(-4px)' }], { duration: DUR.move, easing: EASE.out, delay: 60, fill: 'backwards' })
       continue
     }
     const dx = was.left - now.left
@@ -790,7 +790,7 @@ function glide(targets, change, { duration = DUR.move, easing = EASE.move, appea
     // lands instead, while the ones that stay in their row slide along it
     const jumps = Math.abs(dx) > now.width / 2 && Math.abs(dy) > now.height / 2
     const anim = jumps
-      ? el.animate([{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration, easing: EASE.out, delay: 40, fill: 'backwards' })
+      ? el.animate([{ offset: 0, opacity: 0, transform: 'scale(.97)' }], { duration, easing: EASE.out, delay: 40, fill: 'backwards' })
       : el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration, easing })
     glides.set(el, anim)
     anim.finished.then(() => glides.get(el) === anim && glides.delete(el), () => {})
@@ -2643,9 +2643,12 @@ function popMenu(at, items, onPick) {
   el.style.left = `${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`
   el.style.top = `${up ? Math.max(8, r.top - h - 4) : r.bottom + 4}px`
   const close = () => {
-    // it fades away, quicker than it came, and takes no more clicks while it does
+    if (el.classList.contains('leaving')) return // closed again (a pick, then the state push it caused): one fade
+    // it fades away, quicker than it came, and takes no more clicks, keys or focus while it does (as if it were gone)
     el.classList.add('leaving')
     el.removeAttribute('role')
+    if (el.contains(document.activeElement)) document.activeElement.blur()
+    el.inert = true
     if (reduceMotion()) el.remove()
     else el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: DUR.leave, easing: EASE.in, fill: 'forwards' }).finished.then(() => el.remove(), () => el.remove())
     removeEventListener('pointerdown', outside, true)
@@ -2666,7 +2669,7 @@ function popMenu(at, items, onPick) {
   }
   el.addEventListener('click', (e) => {
     const b = e.target.closest('[data-menu-act]')
-    if (!b) return
+    if (!b || el.classList.contains('leaving')) return
     close()
     onPick(b.dataset.menuAct)
   })

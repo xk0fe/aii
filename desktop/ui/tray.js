@@ -261,7 +261,7 @@
   // already did).
   let settingsMenu = null
   let settingsWasOpen = false
-  addEventListener('pointerdown', (e) => (settingsWasOpen = Boolean(e.target.closest?.('[data-act=settings]') && settingsMenu?.el.isConnected)), true)
+  addEventListener('pointerdown', (e) => (settingsWasOpen = Boolean(e.target.closest?.('[data-act=settings]') && settingsMenu?.el.isConnected && !settingsMenu.el.classList.contains('leaving'))), true)
   function settings(btn) {
     if (settingsWasOpen) return (settingsWasOpen = false)
     const theme = state.theme ?? 'system'

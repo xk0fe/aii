@@ -50,7 +50,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
   // The sheet lives at the top of the page, over everything (sidebar and chat included), not inside the view.
   const sheet = document.createElement('div')
   sheet.className = 'ed-layer'
-  sheet.innerHTML = '<div class="ed-scrim" data-act="back"></div><section class="ed" role="dialog" aria-modal="true"></section>'
+  sheet.innerHTML = '<div class="ed-scrim" data-act="back"></div><section class="ed" role="dialog" aria-modal="true" tabindex="-1"></section>'
   document.body.append(sheet)
   sheet.querySelector('.ed-scrim').addEventListener('click', () => close())
   const $ = (s) => root.querySelector(s)
@@ -132,7 +132,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
     const huddle = Math.min(3, subs.length + clones.length)
     const helpers = huddle ? `<span class="c2-helpers">${Array.from({ length: huddle }, (_, i) => avatarHTML({ ...a, name: `${a.name}·${i + 2}`, avatar: look, status: 'working', on: true }, { size: 42, mood: 'working', pose: 'laptop', poseMin: 40 })).join('')}</span>` : ''
     const pose = poseOf(a, { ask })
-    return `<div class="pcard c2 ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" role="button" tabindex="0">
+    return `<div class="pcard c2 ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" role="button" tabindex="0" aria-label="${esc(`${a.seed ?? a.name}: ${statusWord(a, ask)}`)}">
       <span class="c-name"><b>${esc(a.seed ?? a.name)}</b>${a.yolo ? '<i class="tag" title="YOLO: skips every permission prompt">YOLO</i>' : ''}</span>
       <span class="pc-power">${powerSwitch(a)}</span>
       <span class="c-job" title="${esc(a.area)}">${esc(a.area || 'No job yet. Open the card to give it one.')}</span>
@@ -155,7 +155,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
     const line = atWork(a) && a.status !== 'waiting' && a.activity ? activityWords(a.activity) : statusWord(a, ask)
     const cls = !a.on ? 'off' : a.status === 'waiting' ? 'needs' : a.status === 'working' && !a.waitingOn?.length ? 'working' : a.status === 'starting' ? 'starting' : 'idle'
     const said = a.status === 'waiting' && a.on ? statusWord(a, ask) : line
-    return `<div class="pcard mini ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, brainWords(a, state.providers), what?.tip].filter(Boolean).join('\n'))}" role="button" tabindex="0">
+    return `<div class="pcard mini ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, brainWords(a, state.providers), what?.tip].filter(Boolean).join('\n'))}" role="button" tabindex="0" aria-label="${esc(`${a.seed ?? a.name}: ${said}`)}">
       <span class="pc-name"><b>${esc(a.seed ?? a.name)}</b>${a.yolo ? '<i class="tag">YOLO</i>' : ''}</span>
       <span class="pc-power">${powerSwitch(a)}</span>
       <span class="pc-line ${cls === 'needs' ? 'needs-text' : ''}"><i class="dot ${cls}"></i><span>${esc(said)}</span></span>
@@ -473,11 +473,16 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
     if (!force) advOpen = false
     modelTyping = false
     const scrolled = force && sheet.classList.contains('open') ? card.querySelector('.ed-pane.on')?.scrollTop ?? 0 : 0
+    const opening = !sheet.classList.contains('open')
     morphTo(a?.name, 'open', () => {
       drawCard()
       if (scrolled) card.querySelector('.ed-pane.on').scrollTop = scrolled
       sheet.classList.add('open')
     })
+    // the keyboard goes with it: into the sheet, and not to the cards behind it (their switches would turn agents off
+    // under the sheet) until it closes
+    list.inert = true
+    if (opening && !card.contains(document.activeElement)) card.focus({ preventScroll: true })
     if (!a) setTimeout(() => card.querySelector('.pd-name')?.focus(), 250)
   }
 
@@ -486,6 +491,13 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
     const name = editing
     editing = null
     morphTo(name, 'close', () => sheet.classList.remove('open'))
+    list.inert = false
+    // focus back where it came from: the agent's card (when the keyboard was in the sheet)
+    if (!document.activeElement || document.activeElement === document.body || card.contains(document.activeElement)) {
+      const from = name && grid.querySelector(`.pcard[data-name="${CSS.escape(name)}"]`)
+      if (from) from.focus({ preventScroll: true })
+      else document.activeElement?.blur?.()
+    }
     return true
   }
 
@@ -577,6 +589,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
   function drawTab() {
     segmented(card.querySelector('.ed-tabs'), (b) => b.dataset.tab === tab)
     for (const p of card.querySelectorAll('.ed-pane')) p.classList.toggle('on', p.dataset.pane === tab)
+    card.dataset.tab = tab // on Look, an agent that's off shows its colours: they're what you're choosing
   }
 
   function setTab(next) {
@@ -1097,7 +1110,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
 
   document.addEventListener('keydown', (e) => {
     if (editing && commandKey(e) && !e.altKey && e.key === 's') return void (e.preventDefault(), save())
-    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open], .menu, .mentions:not(.hidden)')) return
+    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open], .menu:not(.leaving), .mentions:not(.hidden)')) return
     if (editing) return void (e.preventDefault(), close())
     if (selecting && root.offsetParent) setSelecting(false)
   })
@@ -1119,8 +1132,10 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace }) {
         drawAvatar(true)
         card.querySelector('.pd-msg').textContent = 'Saved'
       } else if (editing && editing !== ':new' && !agentNamed(editing)) {
-        editing = null
+        editing = null // it's gone (removed, or moved away): its sheet closes with it
         sheet.classList.remove('open')
+        list.inert = false
+        if (card.contains(document.activeElement)) document.activeElement.blur()
       } else if (editing) {
         drawState()
         drawFacts()
