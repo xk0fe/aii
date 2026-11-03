@@ -64,7 +64,7 @@ function mountTasks(root, { onTerminal }) {
         <span class="tk-active"></span>
         <button class="btn tk-hbtn" data-filter-btn title="Filter by kind or owner" aria-haspopup="true" aria-expanded="false">${TK_FUNNEL}<span>Filter</span></button>
         <div class="seg tk-views"><button data-mode="board" title="Board">${BOARD}</button><button data-mode="list" title="List">${LIST}</button></div>
-        <button class="btn tk-hbtn" data-new-task title="New task (N)">${ICONS.plus}<span>New task</span></button>
+        <button class="btn primary tk-hbtn" data-new-task title="New task (N)">${ICONS.plus}<span>New task</span></button>
         <button class="icon tk-more" data-board-menu title="Workflow, and acting on many tasks at once">${ICONS.more}</button>
       </header>
       <div class="tk-body">
@@ -397,7 +397,7 @@ function mountTasks(root, { onTerminal }) {
   search.addEventListener('blur', () => !search.value && (searchBox.classList.remove('open'), drawSearch()))
 
   // Filters: kind and owner, in the Filter button's popover. While some are on, one chip beside the button says
-  // which ("Bugs · gal") and its × clears them.
+  // which ("Bugs · Iris") and its × clears them.
   const fpop = $('[data-filter-pop]')
   const fbtn = $('[data-filter-btn]')
   const filtersOpen = () => !fpop.classList.contains('hidden')
@@ -531,7 +531,7 @@ function mountTasks(root, { onTerminal }) {
     return `<span class="tk-face" data-agent="${esc(n)}" title="@${esc(n)}">${avatarHTML(a, { size, mood: moving ? undefined : 'still' })}</span>`
   }
   const ownerHTML = (t, size = 20) => {
-    const n = (t.status === 'fixing' && worker(t)?.name) || t.fixer || t.owner // a clone on it shows as itself: gal ②
+    const n = (t.status === 'fixing' && worker(t)?.name) || t.fixer || t.owner // a clone on it shows as itself: Theo ②
     if (!n) return `<button class="tk-assign" data-menu="owner" title="Who does it?"><i class="tk-nobody">?</i><span>Assign</span></button>`
     return `<span class="tk-owner">${face(n, { size, live: t.status === 'fixing' })}<span class="tk-owner-name">${nameHTML(agent(n))}</span></span>`
   }
@@ -664,7 +664,9 @@ function mountTasks(root, { onTerminal }) {
     drawBulk()
     const shown = Object.values(by).flat().length
     const none = !tickets.length
-    morph($('.tk-empty'), none ? `<div class="tk-hello">${ICONS.mark}<b>No tasks yet</b><span>Add one with New task, or from the chat with the Task chip.</span></div>`
+    // nothing yet: the board's columns stay (so nothing jumps when the first task lands), and the crew waits with mugs
+    const crewNow = state.agents.filter((a) => !a.cloneOf)
+    morph($('.tk-empty'), none ? `<div class="tk-hello">${crewNow.length ? mugsRoomHTML(crewNow.filter((a) => a.on).concat(crewNow.filter((a) => !a.on))) : ''}<h1 class="display">${crewNow.length ? 'We’re all here. What should we work on?' : 'Nothing to work on yet'}</h1><p>Add a task, or just ask in the chat: whoever’s free picks it up.</p><div><button class="btn primary lg" data-add-to="new">${ICONS.plus}New task</button></div></div>`
       : !shown ? '<div class="tk-hello small"><b>No tasks match</b><button class="btn" data-filter="clear:1">Clear filters</button></div>' : '')
     $('.tk-body').classList.toggle('empty', none || !shown)
     if (mode === 'board') drawBoard(by)

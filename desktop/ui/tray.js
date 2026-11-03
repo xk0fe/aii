@@ -1,11 +1,12 @@
 // Menu bar popover: what needs you first, who's at work, the accounts' limits, and the way into everything else.
 /* global activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, elsewhere, hasWorkspaces, crew, live, morph, esc, celebrate, markSVG, store, ICONS,
    needsYou, needText, usageTip, paceWarning, resetsText, runningSubs, subsTip, clonesOf, displayName, statusText, blockedOn, ago,
-   plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys */
+   plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys, wordmarkHTML, stripHTML, PRODUCT_NAME */
 // Everything here is local: classic scripts share one global scope with common.js and avatar.js.
 ;(() => {
   const $ = (s) => document.querySelector(s)
-  $('.logo').outerHTML = markSVG('0 6 24 16')
+  $('header .brand').innerHTML = wordmarkHTML(22)
+  $('[data-act=quit]').title = `Quit ${PRODUCT_NAME}`
   $('.autopilot .glyph').innerHTML = ICONS.plane
   $('[data-act=add]').innerHTML = `${ICONS.plus}New agent`
   $('[data-act=dashboard]').innerHTML = ICONS.expand
@@ -106,7 +107,7 @@
     if (a.status === 'away') return `Offline${where(a)}`
     if (a.status === 'parked') return 'Parked'
     if (a.status !== 'idle') return 'Stopped'
-    return `Free${where(a)}` // its sub-agents are the count beside it
+    return `Idle${where(a)}` // its sub-agents are the count beside it
   }
   // its creature, with how many of its replies you haven't read (as on the dashboard's rows)
   const face = (a, size) => `<span class="t-face">${avatarHTML(a, { size })}${unreadBadge(a.unread)}</span>`
@@ -116,7 +117,7 @@
   // ---- rows -------------------------------------------------------------------------------------------------------
 
   const tags = (a) => (a.yolo ? '<i class="t-yolo" title="YOLO: skips every permission prompt">YOLO</i>' : '') +
-    (a.fast ? `<i class="t-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</i>` : '')
+    (a.fast ? '<i class="t-fast" title="Fast: the fast service tier">Fast</i>' : '')
   const clonesAt = (a) => clonesOf(state.agents, a).filter((c) => c.on)
   // its clones (a click lists them, each one's terminal a click away) and its sub-agents, as counts
   function counts(a) {
@@ -158,7 +159,7 @@
     (open ? '<span class="gap"></span>Show fewer' : `<span class="faces">${hidden.slice(0, 2).map((a) => avatarHTML(a, { size: 18, mood: 'still' })).join('')}</span>+${hidden.length} more`) +
     `<span class="chev">${ICONS.chevron}</span></button>`
 
-  // "arie is free, with 1 sub-agent · ye is off", or with many, "5 free · 4 off · the MacBook Air is offline"
+  // "June is idle, with 1 helper at work · Noor is off", or with many, "5 idle · 4 off · the Laptop is offline"
   const together = (names, one, many) => (!names.length ? '' : names.length === 1 ? `${names[0]} ${one}` : `${names.slice(0, -1).join(', ')} and ${names.at(-1)} ${many}`)
   function restText(rest) {
     const free = rest.filter((a) => a.on && a.status === 'idle')
@@ -168,12 +169,12 @@
     const off = rest.filter((a) => !a.on)
     const computers = [...new Set(away.map((a) => a.homeName ?? a.home))].map(theOf)
     const offline = computers.length ? `${together(computers, 'is', 'are')} offline` : ''
-    if (rest.length > 3) return [free.length && `${free.length} free`, stopped.length && `${stopped.length} stopped`, parked.length && `${parked.length} parked`, off.length && `${off.length} off`, offline].filter(Boolean).join(' · ')
+    if (rest.length > 3) return [free.length && `${free.length} idle`, stopped.length && `${stopped.length} stopped`, parked.length && `${parked.length} parked`, off.length && `${off.length} off`, offline].filter(Boolean).join(' · ')
     const names = (list) => list.map(nameOf)
     const helped = free.filter((a) => runningSubs(a).length)
     return [
-      ...helped.map((a) => `${nameOf(a)} is free, with ${plural(runningSubs(a).length, 'sub-agent')}`),
-      together(names(free.filter((a) => !helped.includes(a))), 'is free', 'are free'),
+      ...helped.map((a) => `${nameOf(a)} is idle, with ${plural(runningSubs(a).length, 'helper')} at work`),
+      together(names(free.filter((a) => !helped.includes(a))), 'is idle', 'are idle'),
       together(names(stopped), 'has stopped', 'have stopped'),
       together(names(parked), 'is parked', 'are parked'),
       together(names(off), 'is off', 'are off'),
@@ -205,17 +206,17 @@
 
   function drawLists() {
     if (!state.agents.length && !elsewhere(state).waiting) {
-      morph($('.needs'), [])
-      morph($('.work'), ['<div class="empty">No agents yet. Add one per area of work, like onboarding or the 3D character.</div>'])
-      morph($('.rest'), [])
+      morph($('.lists > .needs'), [])
+      morph($('.lists > .work'), ['<div class="empty">No agents yet. Add one per area of work, like the checkout or the docs.</div>'])
+      morph($('.lists > .rest'), [])
       return
     }
     const { needs, away, work, rest } = sections()
     const asks = [...needs.map((n) => ({ a: n.agent, html: () => needRow(n) })), ...away.map((x) => ({ a: x.a, html: () => awayRow(x) }))]
-    morph($('.needs'), asks.length ? [label(`Needs you · ${asks.length}`, 'amber'), ...capped(asks, 4, 'needs', (x) => x.html())] : [])
-    morph($('.work'), work.length ? [label(`At work · ${work.length}`), ...capped(work, Math.max(3, 7 - capOf(asks, 4, 'needs')), 'work', workRow)] : [])
+    morph($('.lists > .needs'), asks.length ? [label(`Needs you · ${asks.length}`, 'amber'), ...capped(asks, 4, 'needs', (x) => x.html())] : [])
+    morph($('.lists > .work'), work.length ? [label(`At work · ${work.length}`), ...capped(work, Math.max(3, 7 - capOf(asks, 4, 'needs')), 'work', workRow)] : [])
     const open = unfolded.has('rest')
-    morph($('.rest'), rest.length ? [`<button class="t-fold t-in" data-fold="rest" aria-expanded="${open}" title="${open ? 'Hide them' : 'Show them'}"><span class="gap"></span><span class="grow">${esc(restText(rest))}</span><span class="chev">${ICONS.chevron}</span></button>`,
+    morph($('.lists > .rest'), rest.length ? [`<button class="t-fold t-in" data-fold="rest" aria-expanded="${open}" title="${open ? 'Hide them' : 'Show them'}"><span class="gap"></span><span class="grow">${esc(restText(rest))}</span><span class="chev">${ICONS.chevron}</span></button>`,
       ...(open ? rest.map(slimRow) : [])] : [])
     celebrate($('.lists'), state.agents)
   }
@@ -319,7 +320,10 @@
       morph($('.ws-switch'), `${wsTile(state.workspace, { size: 22 })}<b>${esc(state.workspace.name)}</b><span class="ws-chev">${ICONS.updown}</span>${away.waiting ? `<i class="ws-alert waiting">${away.waiting}</i>` : away.unread ? '<i class="ws-alert unread"></i>' : ''}`)
       $('.ws-switch').title = ['Switch workspaces', ...away.who.map((w) => `${w.name}: ${wsStatus(w)}`)].join('\n')
     }
-    document.documentElement.style.setProperty('--max', `${Math.max(260, Math.min(620, screen.availHeight - 260))}px`)
+    document.documentElement.style.setProperty('--max', `${Math.max(260, Math.min(620, screen.availHeight - 330))}px`)
+    // the mini crew strip: everyone at a glance, at the top
+    const crewNow = state.agents.filter((a) => !a.cloneOf)
+    morph($('.t-strip'), crewNow.length ? stripHTML(crewNow, 318) : '')
     drawLists()
     const usage = Object.values(state.usage ?? {}).filter((u) => u.windows?.length)
     morph($('.usage'), usage.length ? `<div class="t-hr first"></div>${usage.map(usageRow).join('')}` : '')

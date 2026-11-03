@@ -1,5 +1,7 @@
 // Plush little creatures, one per agent. Pure SVG: a fuzzy felt body (filtered) under a crisp face.
 // An avatar is a spec { body, color, eyes, mouth, hat, cheeks }; agents without one get a stable random one from their name.
+// From 64px up a creature can act out its status with a felt prop (a pose: poseOf below). The dark felt accessories
+// (the beret, the headphones) carry class="av-acc" / "av-acc-line", so dark mode can lift them (common.css).
 
 const INK = '#17161a'
 const LINE = `fill="none" stroke="${INK}" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"`
@@ -71,7 +73,7 @@ const MOUTHS = {
 // Felt accessories ride on the fuzzy body layer; glasses are crisp and sit on the face.
 const HATS = {
   none: () => '',
-  beret: ([x, y]) => `<g transform="translate(${x} ${y + 2}) rotate(-14)"><path d="M-2 -10Q0 -17 5 -16" fill="none" stroke="#1d1c22" stroke-width="3.6" stroke-linecap="round"/><ellipse cy="-2" rx="25" ry="10.5" fill="#1d1c22"/><ellipse cx="-6" cy="-6" rx="13" ry="3.5" fill="#fff" opacity=".1"/></g>`,
+  beret: ([x, y]) => `<g transform="translate(${x} ${y + 2}) rotate(-14)"><path class="av-acc-line" d="M-2 -10Q0 -17 5 -16" fill="none" stroke="#1d1c22" stroke-width="3.6" stroke-linecap="round"/><ellipse class="av-acc" cy="-2" rx="25" ry="10.5" fill="#1d1c22"/><ellipse cx="-6" cy="-6" rx="13" ry="3.5" fill="#fff" opacity=".1"/></g>`,
   party: ([x, y]) => `<g transform="translate(${x} ${y + 3}) rotate(10)"><path d="M-12 0L0 -28L12 0Z" fill="#ffd23f"/><path d="M-8.5 -8L6 -14M-5 -16L3.5 -20M-10.5 -3L9.5 -7" stroke="#ff5aa8" stroke-width="2.6" stroke-linecap="round"/><circle cy="-29" r="4.4" fill="#ff5aa8"/></g>`,
   crown: ([x, y]) => `<g transform="translate(${x} ${y + 2})"><path d="M-14 0L-16 -17L-7 -9L0 -21L7 -9L16 -17L14 0Z" fill="#ffcf3a" stroke="#f0a500" stroke-width="1.6" stroke-linejoin="round"/><circle cy="-5" r="2.6" fill="#ff5a7a"/><circle cx="-8" cy="-4" r="1.8" fill="#4dabf7"/><circle cx="8" cy="-4" r="1.8" fill="#4dabf7"/></g>`,
   bow: ([x, y]) => `<g transform="translate(${x + 13} ${y + 4}) rotate(18)"><path d="M0 0C-6 -10 -19 -10 -17 0C-19 10 -6 10 0 0Z" fill="#ff4fa3"/><path d="M0 0C6 -10 19 -10 17 0C19 10 6 10 0 0Z" fill="#ff4fa3"/><circle r="4.3" fill="#ff86c0"/></g>`,
@@ -79,7 +81,7 @@ const HATS = {
   flower: ([x, y]) => `<g transform="translate(${x + 15} ${y + 6})">${[0, 72, 144, 216, 288].map((r) => `<ellipse cy="-6.5" rx="4.2" ry="6.5" fill="#fff" transform="rotate(${r})"/>`).join('')}<circle r="4.2" fill="#ffc61f"/></g>`,
   headphones: ([x, y], b) => {
     const w = b.wide ? 40 : 33
-    return `<g transform="translate(${x} ${y + 18})"><path d="M${-w} 6A${w} ${w + 4} 0 0 1 ${w} 6" fill="none" stroke="#25242b" stroke-width="5.5" stroke-linecap="round"/><rect x="${-w - 6}" y="0" width="12" height="18" rx="6" fill="#25242b"/><rect x="${w - 6}" y="0" width="12" height="18" rx="6" fill="#25242b"/><rect x="${-w - 3}" y="3" width="6" height="12" rx="3" fill="#ff5aa8"/><rect x="${w - 3}" y="3" width="6" height="12" rx="3" fill="#ff5aa8"/></g>`
+    return `<g transform="translate(${x} ${y + 18})"><path class="av-acc-line" d="M${-w} 6A${w} ${w + 4} 0 0 1 ${w} 6" fill="none" stroke="#25242b" stroke-width="5.5" stroke-linecap="round"/><rect class="av-acc" x="${-w - 6}" y="0" width="12" height="18" rx="6" fill="#25242b"/><rect class="av-acc" x="${w - 6}" y="0" width="12" height="18" rx="6" fill="#25242b"/><rect x="${-w - 3}" y="3" width="6" height="12" rx="3" fill="#ff5aa8"/><rect x="${w - 3}" y="3" width="6" height="12" rx="3" fill="#ff5aa8"/></g>`
   },
   glasses: () => '',
   shades: () => '',
@@ -168,17 +170,103 @@ const EYE_EXTENT = { dot: [-5, 5], sparkle: [-5.9, 5.9], googly: [-8, 8], happy:
 const avatarCache = new Map()
 
 // agent: anything with a name (+ optional avatar/status). Big avatars get the felt filter; tiny ones skip it.
-function avatarHTML(agent, { size = 48, mood } = {}) {
+// pose: the creature acts out its status with a felt prop, 'laptop' | 'mug' | 'sign' | 'question' | 'pop' | 'sleep'
+// (poseOf picks one from a status). Only from 64px up: smaller creatures stay plain.
+function avatarHTML(agent, { size = 48, mood, pose, poseMin = 64 } = {}) {
   ensureDefs()
   // waiting on a teammate's answer, it rests instead of hopping: it isn't working, it's waiting (core/hub.js question)
   mood ??= agent.status === 'working' && agent.waitingOn?.length ? 'idle' : (MOODS[agent.status] ?? 'idle')
-  const key = `${agent.name}\u0000${agent.seed ?? ''}\u0000${size}\u0000${mood}\u0000${agent.avatar ? JSON.stringify(agent.avatar) : ''}`
+  if (size < poseMin || !POSES.has(pose)) pose = undefined
+  const key = `${agent.name}\u0000${agent.seed ?? ''}\u0000${size}\u0000${mood}\u0000${pose ?? ''}\u0000${agent.avatar ? JSON.stringify(agent.avatar) : ''}`
   let html = avatarCache.get(key)
   if (html === undefined) {
     if (avatarCache.size > 2000) avatarCache.clear()
-    avatarCache.set(key, (html = creatureHTML(agent, size, mood)))
+    avatarCache.set(key, (html = creatureHTML(agent, size, mood, pose)))
   }
   return html
+}
+
+// ---- poses: the creature acts out its status with a felt prop ----
+const POSES = new Set(['laptop', 'mug', 'sign', 'question', 'pop', 'sleep'])
+// Which pose a status gets: at a laptop while it works, a mug while it's free (or waits on a teammate's answer), a
+// sign that asks "OK?" while it needs your OK, a speech bubble while it has a question (ask: the open ask's type),
+// popping up from its patch while it starts, asleep while it's off. The status text and dot stay as they are; the pose
+// only adds the character.
+function poseOf(agent, { ask } = {}) {
+  if (!agent) return undefined
+  if (agent.on === false || agent.status === 'off' || agent.status === 'stopped' || agent.status === 'parked' || agent.status === 'away') return 'sleep'
+  if (agent.status === 'waiting') return ask === 'question' ? 'question' : 'sign'
+  if (agent.status === 'working') return agent.waitingOn?.length ? 'mug' : 'laptop'
+  if (agent.status === 'starting') return 'pop'
+  if (agent.status === 'idle') return 'mug'
+  return undefined
+}
+// Where each body's right side sits around paw height (100x100 box), so a paw can reach the stick of a sign.
+const SIDE = { blob: 92, frog: 89, drop: 86, heart: 86, bean: 83, mochi: 90, cat: 87, bunny: 85 }
+// Felt for the props: soft warm neutrals, so the creature's own colour stays the only loud one.
+const PROP = { lid: '#dfe2e8', base: '#a3a9b4', mug: '#f6efe3', band: '#ff9478', coffee: '#7b4a2c', steam: '#c9c1b6', board: '#fff3d6', wood: '#c48a55', bubble: '#fffaf1', hole: '#2a2230', zz: '#a69fd0' }
+const BRAND_FACE = 'Fredoka, ui-rounded, "SF Pro Rounded", sans-serif'
+
+// What a pose adds: how the figure sits (scale s, shift dx/dy in % of the box, tilt rot, clip from the bottom) and the
+// felt layers around it: back (behind), held (moves with the creature), stand (in front, still), paws (typing), float.
+function poseLayers(pose, b, body, color, fuzz) {
+  const felt = (shape, fill) => `<g ${fuzz}><g fill="${fill}">${shape}</g><g fill="url(#av-hi)">${shape}</g><g fill="url(#av-lo)">${shape}</g></g>`
+  const paw = (x, y, rx = 5, ry = 3.8) => felt(`<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}"/>`, color)
+  if (pose === 'laptop') {
+    const s = 0.84, lid = 70
+    const mouth = 97 - (97 - b.mouth[1]) * s
+    const dy = -Math.max(4, mouth + 5 - lid)
+    const stand = `<ellipse cx="50" cy="96.8" rx="35" ry="2.8" fill="#000" opacity=".2"/>` +
+      felt(`<path d="M27 ${lid + 3}Q27 ${lid} 30 ${lid}H70Q73 ${lid} 73 ${lid + 3}L75 92H25Z"/>`, PROP.lid) +
+      felt('<rect x="18" y="90.5" width="64" height="5.5" rx="2.75"/>', PROP.base) +
+      `<path d="M45.5 ${lid + 14.5}Q45.5 ${lid + 9.5} 50 ${lid + 9.5}Q54.5 ${lid + 9.5} 54.5 ${lid + 14.5}Z" fill="#fff" opacity=".6"/>`
+    return { s, dx: 0, dy, stand, paws: [paw(37, lid + 0.6), paw(63, lid + 0.6)] }
+  }
+  if (pose === 'mug') {
+    const s = 0.88
+    const eye = 50 + (b.eyes[1][0] - 50) * s
+    const mx = Math.min(72, Math.max(62, eye + 7))
+    const held = felt(`<rect x="${mx}" y="71" width="19" height="22" rx="4"/>`, PROP.mug) +
+      `<g ${fuzz}><path d="M${mx + 18} 76q7.5 0 7.5 6t-7.5 6" fill="none" stroke="${PROP.mug}" stroke-width="3.4" stroke-linecap="round"/>` +
+      `<rect x="${mx}" y="80" width="19" height="4" fill="${PROP.band}" opacity=".85"/><ellipse cx="${mx + 9.5}" cy="72.6" rx="7.8" ry="1.9" fill="${PROP.coffee}"/></g>` +
+      paw(mx + 1, 85, 5, 4.6)
+    const float = `<path d="M${mx + 6} 67q-2.6-3.2 0-6.4t0-6.4M${mx + 13} 67q-2.6-3.2 0-6.4t0-6.4" stroke="${PROP.steam}" stroke-width="1.8" fill="none" stroke-linecap="round"/>`
+    return { s, dx: -3, dy: -1, rot: -4, held, float }
+  }
+  if (pose === 'sign') {
+    const s = 0.84
+    const px = 50 + ((SIDE[body] ?? 88) - 50) * s
+    const dx = Math.min(6, 80 - px)
+    const x = 50 + ((SIDE[body] ?? 88) - 50) * s + dx + 2
+    const held = felt(`<rect x="${x - 1.6}" y="34" width="3.2" height="58" rx="1.6"/>`, PROP.wood) +
+      felt(`<rect x="${x - 15}" y="11" width="30" height="25" rx="4.5"/>`, PROP.board) +
+      `<text x="${x}" y="28.3" text-anchor="middle" font-family='${BRAND_FACE}' font-weight="700" font-size="11.5" fill="${INK}">OK?</text>` +
+      paw(x - 0.5, 66, 4.8, 4.6)
+    return { s, dx, dy: 0, held }
+  }
+  if (pose === 'question') {
+    const bubble = '<path d="M67 2H89Q98 2 98 11V20Q98 29 89 29H75L63 38L67 29Q58 29 58 20V11Q58 2 67 2Z"/>'
+    const float = felt(bubble, PROP.bubble) +
+      `<path d="M67 2H89Q98 2 98 11V20Q98 29 89 29H75L63 38L67 29Q58 29 58 20V11Q58 2 67 2Z" fill="none" stroke="#000" stroke-opacity=".08" stroke-width=".8"/>` +
+      `<text x="78" y="22.5" text-anchor="middle" font-family='${BRAND_FACE}' font-weight="700" font-size="19" fill="${INK}">?</text>`
+    return { s: 0.82, dx: -8, dy: 0, float }
+  }
+  if (pose === 'pop') {
+    // it rises out of a hole in its patch: sunk until its eyes sit just above the rim (short bodies barely sink)
+    const s = 0.9, rim = 87
+    const eyes = 97 - (97 - Math.max(b.eyes[0][1], b.eyes[1][1])) * s
+    const dy = Math.max(0, Math.min(14, rim - 9 - eyes))
+    const back = felt(`<ellipse cx="50" cy="${rim}" rx="46" ry="9"/>`, PROP.hole) + `<ellipse cx="50" cy="${rim + 1}" rx="38" ry="6" fill="#000" opacity=".35"/>`
+    const float = felt('<circle cx="12" cy="78" r="2.8"/><circle cx="88" cy="72" r="2.3"/><circle cx="82" cy="60" r="1.7"/><circle cx="20" cy="64" r="1.6"/>', color)
+    return { s, dx: 0, dy, clip: 100 - rim, back, float }
+  }
+  if (pose === 'sleep') {
+    // felt letters: chunky, softly outlined in their own colour (the fuzz filter would melt letters this small)
+    const z = (x, y, fs) => `<text x="${x}" y="${y}" font-family='${BRAND_FACE}' font-weight="700" font-size="${fs}" stroke="${PROP.zz}" stroke-width="1.2" stroke-linejoin="round">z</text>`
+    const float = `<g fill="${PROP.zz}">${z(72, 34, 22)}${z(86, 17, 15)}</g>`
+    return { s: 0.86, dx: -6, dy: 0, rot: 3, float }
+  }
+  return null
 }
 
 // The eyes are an <svg> of their own in a <span>, between the cheeks and the mouth, so the blink is a transform on an
@@ -186,11 +274,12 @@ function avatarHTML(agent, { size = 48, mood } = {}) {
 // creatures costs no main-thread frames. Same picture as one face <svg>: three layers drawn in the same order, and
 // the eyes and what's drawn over them (.av-eye, .av-front) are layered as Chrome layers a blinking SVG group, so
 // they land on the same pixels as before (see common.css).
-function creatureHTML(agent, size, mood) {
+function creatureHTML(agent, size, mood, pose) {
   const s = avatarOf(agent)
   const b = BODIES[s.body] ?? BODIES.blob
   const color = COLORS[s.color] ?? s.color
   const asleep = mood === 'sleep'
+  const fuzz = size >= 40 ? 'filter="url(#av-fuzz)"' : ''
   const shape = `${b.extra ?? ''}<path d="${b.d}"/>`
   const look = asleep ? 'sleepy' : EYES[s.eyes] ? s.eyes : 'dot'
   const eye = EYES[look]
@@ -204,18 +293,26 @@ function creatureHTML(agent, size, mood) {
   const front = `${(MOUTHS[s.mouth] ?? MOUTHS.none)(...b.mouth)}${FACEWEAR[s.hat]?.(b) ?? ''}`
   const over = front && `<g class="av-front">${front}</g>`
   const delay = -((hash(agent.name) % 4000) / 1000).toFixed(2)
-  const sig = hash(JSON.stringify([s, mood, size])) // lets morph() keep a running avatar untouched
-  return `<span class="av ${mood}" data-sig="${sig}" style="--size:${size}px;--delay:${delay}s" title="${String(agent.name).replace(/"/g, '')}">
-    <span class="av-in">
-      <svg viewBox="0 0 100 100" class="av-body" aria-hidden="true">
+  const sig = hash(JSON.stringify([s, mood, size, pose ?? ''])) // lets morph() keep a running avatar untouched
+  const p = pose ? poseLayers(pose, b, s.body, color, fuzz) : null
+  const layer = (cls, inner) => (inner ? `<svg viewBox="0 0 100 100" class="av-prop ${cls}" aria-hidden="true">${inner}</svg>` : '')
+  let figure = `<svg viewBox="0 0 100 100" class="av-body" aria-hidden="true">
         <ellipse cx="50" cy="97.5" rx="33" ry="3.2" fill="#000" opacity=".22"/>
-        <g ${size >= 40 ? 'filter="url(#av-fuzz)"' : ''}>
+        <g ${fuzz}>
           <g fill="${color}">${shape}</g><g fill="url(#av-hi)">${shape}</g><g fill="url(#av-lo)">${shape}</g>
           ${HATS[s.hat]?.(b.top, b) ?? ''}
         </g>
       </svg>
-      ${cheeks ? `<svg viewBox="0 0 100 100" class="av-face" aria-hidden="true">${cheeks}</svg>` : ''}${eyes}${over ? `<svg viewBox="0 0 100 100" class="av-face" aria-hidden="true">${over}</svg>` : ''}
-    </span>
-    ${mood === 'waiting' ? '<span class="av-bang">!</span>' : ''}${asleep ? '<span class="av-z">z</span>' : ''}
+      ${cheeks ? `<svg viewBox="0 0 100 100" class="av-face" aria-hidden="true">${cheeks}</svg>` : ''}${eyes}${over ? `<svg viewBox="0 0 100 100" class="av-face" aria-hidden="true">${over}</svg>` : ''}`
+  if (p) {
+    figure = `<span class="av-fig" style="transform:translate(${+p.dx.toFixed(2)}%, ${+p.dy.toFixed(2)}%) rotate(${p.rot ?? 0}deg) scale(${p.s})">${figure}</span>`
+    if (p.clip) figure = `<span class="av-clip" style="clip-path:inset(-40% -40% ${p.clip}% -40%)">${figure}</span>`
+  }
+  const paws = p?.paws ? p.paws.map((g, i) => `<span class="av-paw p${i}">${layer('', g)}</span>`).join('') : ''
+  return `<span class="av ${mood}${pose ? ` posed pose-${pose}` : ''}" data-sig="${sig}" style="--size:${size}px;--delay:${delay}s" title="${String(agent.name).replace(/"/g, '')}">
+    ${layer('av-back', p?.back)}<span class="av-in">
+      ${figure}${layer('av-held', p?.held)}
+    </span>${layer('av-stand', p?.stand)}${paws}${p?.float ? `<span class="av-float">${layer('', p.float)}</span>` : ''}
+    ${mood === 'waiting' ? '<span class="av-bang">!</span>' : ''}${asleep && pose !== 'sleep' ? '<span class="av-z">z</span>' : ''}
   </span>`
 }

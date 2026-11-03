@@ -19,7 +19,12 @@ const feed = mountFeed($('.feed'), {
   onReply: (e) => composer.replyTo(e),
 })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to)) })
-const collection = mountCollection($('.collection'), { onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home) })
+// A creature picked in the Crew room: its row lights up, and what it's asking you comes up in the chat.
+const collection = mountCollection($('.collection'), {
+  onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home),
+  onSelect: (name, needs) => (highlight(name), needs && showNeeds(name)),
+  onWorkspace: () => workspaces.settings(),
+})
 const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next) })
 // Views: Crew, Tasks and Terminals, the terminals laid out as a grid or one big one. Older saves said grid,
@@ -41,6 +46,8 @@ const folds = new Set((() => {
 let find = ''
 
 $('.blank .blank-mark').outerHTML = ICONS.mark
+// Windows has no traffic lights at the titlebar's left: the app's mark sits there, before the workspace
+if (ON_WINDOWS) $('.tb-left').insertAdjacentHTML('afterbegin', `<span class="app-mark" aria-hidden="true">${markSVG('0 4 24 18')}</span>`)
 const VIEW_LABEL = { crew: [markSVG('0 4 24 18'), 'Crew'], tasks: [ICONS.task, 'Tasks'], terminals: [ICONS.terminal, 'Terminals'] }
 for (const b of document.querySelectorAll('.seg.views button')) b.innerHTML = `${VIEW_LABEL[b.dataset.view][0]}<span>${VIEW_LABEL[b.dataset.view][1]}</span>${b.dataset.view === 'tasks' ? '<i class="seg-badge"></i>' : ''}`
 $('[data-layout=grid]').innerHTML = ICONS.grid
@@ -254,7 +261,7 @@ crew.onPty((name, data) => {
 
 // The brain in one word: its model when it has one (opus, sonnet), its provider otherwise (Codex).
 const modelWord = (a) => a.model || (state.providers?.[a.provider]?.label ?? a.provider ?? '')
-// Its name, a clone with its number, and an agent on another computer with that computer: "scarlett · Mac mini".
+// Its name, a clone with its number, and an agent on another computer with that computer: "Rex · Workstation".
 const tileName = (a) => `${esc(a.cloneOf ? a.cloneOf.split('@')[0] : a.home ? a.seed ?? a.name : a.name)}${cloneTag(a)}${a.home ? `<span class="t-home"> · ${esc(a.homeName ?? a.home)}</span>` : ''}`
 
 // Who helps it right now: its clones at work (their faces), or else its sub-agents. A clone's own tile has no clones.

@@ -1,8 +1,9 @@
-// The crew as a collection: a Pokédex of agent cards, grouped by the computer each one runs on. Cards come big
+// The crew as a collection: the Crew room on top (the whole crew in one felt scene, each acting out its status, and
+// one line saying how things are), then a card per agent, grouped by the computer each one runs on. Cards come big
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
-// sheet: who it is on the left (creature, name, area, level, a few facts), everything you can set on the right,
-// in four tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
-/* global activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
+// sheet: who it is on the left (creature, name, area, a few facts), everything you can set on the right, in four
+// tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
+/* global roomHTML, crewHeadline, crewSentence, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -27,19 +28,25 @@ const TABS = [
 // at work: what it's doing says more than its status. Waiting on a teammate, the status says it (who it waits on).
 const atWork = (a) => (a?.status === 'working' && !a.waitingOn?.length) || a?.status === 'waiting'
 
-function mountCollection(root, { onTerminal, onImport, onMove }) {
+function mountCollection(root, { onTerminal, onImport, onMove, onSelect, onWorkspace }) {
   root.innerHTML = `
     <section class="col-list">
       <header class="col-head">
-        <div class="col-title"><h2>Your crew</h2><p class="col-sub"></p></div>
-        <span class="grow"></span>
-        <div class="seg icons" data-mode-switch>
-          <button data-mode="cards" title="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the crew">${ICONS.table}</button>
+        <h2 class="display"></h2>
+        <div class="col-tools">
+          <span class="col-on"></span>
+          <button class="icon room-fold" data-act="room" aria-expanded="true">${ICONS.chevron}</button>
+          <div class="seg icons" data-mode-switch>
+            <button data-mode="cards" title="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the crew">${ICONS.table}</button>
+          </div>
+          <button class="icon col-more" data-act="more" title="Select, export, import" aria-haspopup="menu">${ICONS.more}</button>
         </div>
-        <button class="icon col-more" data-act="more" title="Select, export, import" aria-haspopup="menu">${ICONS.more}</button>
+        <p class="col-sub"></p>
       </header>
+      <div class="room-wrap"><div class="room-box"></div></div>
       <div class="col-grid"></div>
       <div class="col-stats"></div>
+      <div class="col-empty hidden"></div>
       <div class="bulk"></div>
     </section>`
   // The sheet lives at the top of the page, over everything (sidebar and chat included), not inside the view.
@@ -53,6 +60,9 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   const card = sheet.querySelector('.ed')
   const bulk = $('.bulk')
   const list = $('.col-list')
+  const roomWrap = $('.room-wrap')
+  const roomBox = $('.room-box')
+  const empty = $('.col-empty')
   const picked = new Set()
   // View Transitions move the creature from its card into the sheet and back; without them, a plain fade.
   const canMorph = typeof document.startViewTransition === 'function'
@@ -70,6 +80,11 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   let modelTyping = false // the Model row is a text field (a model the menu doesn't list)
   let reopen = null // name to open once it shows up in state (after add/rename)
   let transitioning = false
+  // The room: folded away or not (remembered), how wide it is, and the creature you picked in it.
+  let roomFolded = store.get('crew.room') === 'folded'
+  let roomW = 0
+  let roomKey = ''
+  let roomPick = null
 
   const modeNow = () => mode ?? (state.agents.length > 9 ? 'tiles' : 'cards')
   const agentNamed = (name) => state.agents.find((a) => a.name === name)
@@ -79,46 +94,63 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
 
   // ---- grid ------------------------------------------------------------------
 
-  // What it's waiting on you for, by agent (needsYou: its open question or prompt). Refreshed with each grid draw.
+  // What it's waiting on you for, by agent (needsYou: its open question or prompt), and the type of each one's open
+  // question. Refreshed with each grid draw.
   let needsByName = new Map()
+  let asksByName = new Map()
 
-  // What it's doing, in plain words, under its status: its step and its sub-agents while it works, what it wants
-  // while it needs you, a sub-agent still at work while it's free. { text, tip } or null.
+  // What it's doing, in plain words, under its status: its step while it works, what it wants (or asks) while it
+  // needs you, the question it put to a teammate while it waits on one. Its helpers are a count of their own.
+  // { text, tip } or null.
   function doingOf(a) {
     if (!a.on) return null
     const subs = runningSubs(a)
     const subsTip = subs.map((s) => s.description || s.type || 'sub-agent').join('\n')
     if (a.status === 'waiting') {
-      const need = needsByName.get(a.name) ?? { agent: a, ask: null }
-      const text = need.ask?.ask?.type === 'question' ? 'Asked you a question' : needText(need)
-      return { text, tip: need.ask?.ask?.type === 'question' ? needText(need) : text }
+      const text = needText(needsByName.get(a.name) ?? { agent: a, ask: null })
+      return { text, tip: text }
     }
-    if (atWork(a) && a.activity) return { text: subs.length ? `${activityWords(a.activity)} · ${plural(subs.length, 'sub-agent')}` : activityWords(a.activity), tip: [a.activity, subsTip].filter(Boolean).join('\n') }
+    if (a.waitingOn?.length && a.status === 'working') return a.waitingOn[0].text ? { text: `“${a.waitingOn[0].text}”`, tip: a.waitingOn[0].text } : null
+    if (atWork(a) && a.activity) return { text: activityWords(a.activity), tip: [a.activity, subsTip].filter(Boolean).join('\n') }
     if (!subs.length) return null
-    if (subs.length === 1 && subs[0].description) return { text: `1 sub-agent: ${subs[0].description}`, tip: subsTip }
-    return { text: `${plural(subs.length, 'sub-agent')} at work`, tip: subsTip }
+    if (a.status === 'idle') return { text: 'Its helpers are still working', tip: subsTip }
+    return null
   }
   // The context ring only once the conversation is nearly full; calm, it's a number in the sheet.
   const hotRing = (a, opts) => (ctxLevel(a.convo?.context?.pct ?? 0) === 'hot' ? contextRing(a, opts) : '')
 
-  function cardHTML(a, i) {
+  // Its status as the card says it: a dot, the word, how long (amber only when it needs you).
+  function statusLine(a) {
+    const ask = asksByName.get(a.name)
+    const cls = !a.on ? 'off' : a.status === 'waiting' ? 'needs' : a.status === 'working' && !a.waitingOn?.length ? 'working' : a.status === 'starting' ? 'starting' : a.status === 'stopped' ? 'stopped' : 'idle'
+    const since = a.on && (a.status === 'working' || a.status === 'waiting') && a.since ? ago(a.since) : ''
+    return `<span class="c-status ${cls === 'needs' ? 'needs-text' : ''}" title="${esc(statusText(a))}"><i class="dot ${cls}"></i><span>${esc(statusWord(a, ask))}</span>${since && since !== 'just now' ? `<span class="t">${since}</span>` : ''}</span>`
+  }
+
+  function cardHTML(a) {
     const look = avatarOf(a)
-    const modes = (a.fast ? `<span class="pc-fast" title="Fast: Codex's fast service tier">${ICONS.bolt}</span>` : '') + (a.yolo ? '<span class="pc-yolo" title="YOLO: skips every permission prompt">YOLO</span>' : '')
     const what = doingOf(a)
-    const doing = what ? `<span class="pc-doing" title="${esc(what.tip)}">${esc(what.text)}</span>` : ''
-    // its clones at work peek out from behind it, smaller, each with its number
+    const ask = asksByName.get(a.name)
     const clones = a.on ? clonesOf(state.agents, a) : []
-    const litter = clones.length ? `<span class="pc-clones" style="--n:${clones.length}">${clones.map((c, j) => `<span class="pc-clone" style="--j:${j}" title="${esc(`${displayName(c)}: ${statusText(c)}${c.activity ? ` · ${c.activity}` : ''}`)}">${avatarHTML(c, { size: 50 })}${cloneTag(c)}</span>`).join('')}</span>` : ''
-    return `<button class="pcard hop ${LIGHT.has(look.color) ? 'light' : ''} ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''} ${clones.length ? 'has-clones' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}; --clones:${clones.length}">
-      <span class="pc-mark">${ICONS.mark}</span>
-      <span class="pc-no"><b title="${levelOf(a.stats).xp} XP">Lv ${levelOf(a.stats).lv}</b><span>#${pad(i + 1)}</span></span>
-      <span class="pc-name">${esc(a.seed ?? a.name)}</span>
-      <span class="pc-area" title="${esc(a.area)}">${esc(a.area || 'No area yet. Open the card to set one.')}</span>
-      ${modes ? `<span class="pc-modes">${modes}</span>` : ''}
-      <span class="pc-chips"><span title="${esc(brainLabel(a, state.providers))}">${esc(brainShort(a, state.providers))}</span></span>
-      <span class="pc-state" title="${esc(statusText(a))}"><span><span class="dot ${statusClass(a)}"></span><span>${esc(statusText(a))}</span>${hotRing(a)}</span>${doing}</span>
-      ${litter}<span class="pc-av">${avatarHTML(a, { size: 104 })}</span>
-      <span class="pc-check">${ICONS.check}</span><span class="pc-glow"></span>
+    const subs = runningSubs(a)
+    const ctx = a.on ? a.convo?.context : null
+    const meta = [
+      subs.length ? `<span title="${esc(subs.map((s) => s.description || s.type).join('\n'))}">${helpersText(a)}</span>` : '',
+      clones.length ? `<span title="${esc(clones.map((c) => `${displayName(c)}: ${statusText(c)}`).join('\n'))}">${plural(clones.length, 'clone')} at work</span>` : '',
+      ctx && ctx.pct >= 80 ? `<span class="c-ctx">${contextRing(a, { label: false, size: 13 })}Context ${ctx.pct}% full</span>` : '',
+      a.on && a.queue ? `<span>${plural(a.queue, 'message')} waiting</span>` : '',
+    ].filter(Boolean)
+    // its helpers (sub-agents and clones at work) huddle beside it, at laptops of their own
+    const huddle = Math.min(3, subs.length + clones.length)
+    const helpers = huddle ? `<span class="c2-helpers">${Array.from({ length: huddle }, (_, i) => avatarHTML({ ...a, name: `${a.name}·${i + 2}`, avatar: look, status: 'working', on: true }, { size: 42, mood: 'working', pose: 'laptop', poseMin: 40 })).join('')}</span>` : ''
+    const pose = poseOf(a, { ask })
+    return `<button class="pcard c2 ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''} ${a.name === roomPick ? 'sel' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}">
+      <span class="c-name"><b>${esc(a.seed ?? a.name)}</b>${a.yolo ? '<i class="tag" title="YOLO: skips every permission prompt">YOLO</i>' : ''}</span>
+      <span class="c-job" title="${esc(a.area)}">${esc(a.area || 'No job yet. Open the card to give it one.')}</span>
+      <span class="c-brain" title="${esc(brainLabel(a, state.providers))}">${esc(brainWords(a, state.providers))}</span>
+      <span class="c-state">${statusLine(a)}${what ? `<span class="c-doing" title="${esc(what.tip)}">${esc(what.text)}</span>` : ''}${meta.length ? `<span class="c-meta">${meta.join('')}</span>` : ''}</span>
+      <span class="c2-stage felt${huddle ? ' has-helpers' : ''}">${patchSVG(136, 136, { r: 8, inset: 5, dash: '4 3' })}<span class="c2-av">${avatarHTML(a, { size: huddle ? 92 : 112, pose })}</span>${helpers}${a.on && a.status === 'waiting' ? '<i class="dot needs c2-dot"></i>' : ''}</span>
+      <span class="pc-check">${ICONS.check}</span>
     </button>`
   }
 
@@ -131,13 +163,15 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const clones = a.on ? clonesOf(state.agents, a).length : 0
     const subs = runningSubs(a)
     const line = atWork(a) && a.status !== 'waiting' && a.activity ? activityWords(a.activity) : statusText(a)
-    return `<button class="pcard mini hop ${LIGHT.has(look.color) ? 'light' : ''} ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, brainShort(a, state.providers), what?.tip].filter(Boolean).join('\n'))}">
-      <span class="pc-mark">${ICONS.mark}</span>
-      <span class="pc-name">${esc(a.seed ?? a.name)}</span>
-      <span class="pc-line"><span class="dot ${a.on ? statusClass(a) : 'off'}"></span><span>${esc(line)}</span></span>
-      <span class="pc-tags">${a.yolo ? '<i class="mark-yolo">YOLO</i>' : ''}${a.fast ? `<i class="mark-fast">${ICONS.bolt}</i>` : ''}${hotRing(a, { label: false })}${subs.length ? `<i class="pc-subs-n" title="${esc(`${plural(subs.length, 'sub-agent')} at work:\n${subs.map((s) => s.description || s.type).join('\n')}`)}">${ICONS.subs}${subs.length}</i>` : ''}${clones ? `<i class="pc-clone-n" title="${plural(clones, 'clone')} at work">+${clones}</i>` : ''}</span>
-      <span class="pc-av">${avatarHTML(a, { size: 62 })}</span>
-      <span class="pc-check">${ICONS.check}</span><span class="pc-glow"></span>
+    const ask = asksByName.get(a.name)
+    const cls = !a.on ? 'off' : a.status === 'waiting' ? 'needs' : a.status === 'working' && !a.waitingOn?.length ? 'working' : a.status === 'starting' ? 'starting' : 'idle'
+    const said = a.status === 'waiting' && a.on ? statusWord(a, ask) : line
+    return `<button class="pcard mini ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''} ${a.name === roomPick ? 'sel' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, brainWords(a, state.providers), what?.tip].filter(Boolean).join('\n'))}">
+      <span class="pc-name"><b>${esc(a.seed ?? a.name)}</b>${a.yolo ? '<i class="tag">YOLO</i>' : ''}</span>
+      <span class="pc-line ${cls === 'needs' ? 'needs-text' : ''}"><i class="dot ${cls}"></i><span>${esc(a.on && a.status === 'idle' ? 'Idle' : said)}</span></span>
+      <span class="pc-tags">${esc(brainWords(a, state.providers, { short: true }))}${subs.length ? ` · ${helpersText(a)}` : ''}${clones ? ` · ${plural(clones, 'clone')}` : ''}</span>
+      <span class="pc-av">${avatarHTML(a, { size: 56 })}</span>
+      <span class="pc-check">${ICONS.check}</span>
     </button>`
   }
 
@@ -146,50 +180,134 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const m = modeNow()
     root.classList.toggle('stats-mode', m === 'stats')
     segmented($('[data-mode-switch]'), (b) => b.dataset.mode === m)
-    if (m === 'stats') drawStatsTable()
     const groups = crewGroups(state)
-    needsByName = new Map(needsYou(state).map((n) => [n.agent.name, n]))
-    const next = JSON.stringify([m, selecting, [...picked], groups.map((g) => [g.key, g.name, g.online]), roster().map((a) => [a.name, a.status, a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, levelOf(a.stats).lv, a.convo?.context?.pct, a.convo?.compactions, doingOf(a), runningSubs(a).length, clonesOf(state.agents, a).map((c) => [c.name, c.status, c.activity])])])
+    const needs = needsYou(state)
+    needsByName = new Map(needs.map((n) => [n.agent.name, n]))
+    asksByName = askTypes(state)
+    drawHead(needs)
+    drawRoom()
+    const none = !roster().length
+    root.classList.toggle('empty', none)
+    empty.classList.toggle('hidden', !none)
+    if (none) drawEmpty()
+    if (m === 'stats') drawStatsTable()
+    const next = JSON.stringify([m, selecting, [...picked], roomPick, groups.map((g) => [g.key, g.name, g.online]), roster().map((a) => [a.name, a.status, a.since && Math.floor((Date.now() - a.since) / 60000), a.activity, a.provider, a.model, a.effort, a.yolo, a.fast, a.on, a.avatar, a.area, a.queue, a.convo?.context?.pct, a.convo?.compactions, doingOf(a), asksByName.get(a.name), runningSubs(a).length, clonesOf(state.agents, a).map((c) => [c.name, c.status, c.activity])])])
     if (next === gridKey) return
     gridKey = next
-    const index = new Map(roster().map((a, i) => [a.name, i]))
-    const one = (a) => (m === 'tiles' ? tileHTML(a) : cardHTML(a, index.get(a.name)))
+    const one = (a) => (m === 'tiles' ? tileHTML(a) : cardHTML(a))
     // on agents first in each group, off ones after them; your order otherwise
     const order = (agents) => [...agents.filter((a) => a.on), ...agents.filter((a) => !a.on)]
-    const add = `<button class="pcard add ${m === 'tiles' ? 'mini' : ''}" data-act="new"><b>${ICONS.plus}</b>New agent</button>`
+    const add = `<button class="pcard add ${m === 'tiles' ? 'mini' : ''}" data-act="new">${ICONS.plus}<span>New agent</span></button>`
     // in parts (see morph): a push that changes one agent re-reads its card alone
     const filled = groups.filter((g) => g.agents.length)
+    const where = (g) => (g.here ? upFirst(THIS_COMPUTER) : g.online ? 'Linked' : 'Offline')
     const parts = grouped(groups) && filled.length
       ? filled.map((g, i) => ({
           start: `<section class="col-group" data-home="${esc(g.key)}">
-          <h3>${g.here ? ICONS.desktop : ICONS.laptop}<b>${esc(g.name)}</b><span>${plural(g.agents.length, 'agent')}${g.here ? ` · ${THIS_COMPUTER}` : g.online ? '' : ' · offline'}</span></h3>
+          <h3><b>${esc(g.name)}</b><span>${where(g)}</span></h3>
           <div class="col-cards ${m}">`,
           end: '</div></section>', slot: '.col-cards', parts: [...order(g.agents).map(one), ...(i === 0 ? [add] : [])],
         }))
       : [{ start: `<div class="col-cards ${m}">`, end: '</div>', slot: '.col-cards', parts: [...order(roster()).map(one), add] }]
-    morph(grid, parts)
+    morph(grid, none ? '' : parts)
     celebrate(grid, state.agents)
-    const on = roster().filter((a) => a.on).length
-    const pcs = groups.filter((g) => g.agents.length).length
-    // in a workspace: its name, and where its agents work
-    const ws = hasWorkspaces(state) ? state.workspace : null
-    $('.col-title h2').textContent = ws ? ws.name : 'Your crew'
-    const where = ws?.folder ? ` · ${shortPath(ws.folder)}` : ''
-    $('.col-sub').textContent = roster().length ? `${plural(roster().length, 'agent')} · ${on} on${pcs > 1 ? ` · ${pcs} computers` : ''}${where}` : ws && ws.id !== 'default' ? 'Add your agents in its settings, or make one only it needs' : 'Start with one agent per area of work'
     root.classList.toggle('selecting', selecting)
     drawBulkCount()
   }
 
-  // The hovered card tilts toward the pointer (see .pcard:hover). The position lives on the grid, which morph()
-  // never rewrites, so a state push mid-hover doesn't snap the card back.
-  grid.addEventListener('pointermove', (e) => {
-    const c = e.target.closest('.pcard:not(.add)')
-    if (!c) return
-    const r = c.getBoundingClientRect()
-    grid.style.setProperty('--mx', ((e.clientX - r.left) / r.width).toFixed(3))
-    grid.style.setProperty('--my', ((e.clientY - r.top) / r.height).toFixed(3))
+  // The header: the one line the room says (in the brand face), the sentence under it, and how many are on.
+  function drawHead(needs) {
+    const crewNow = roster()
+    const parked = state.parked && crewNow.length
+    const ws = hasWorkspaces(state) ? state.workspace : null
+    const headline = parked ? `${ws?.name ?? 'This workspace'} is parked` : crewHeadline(state.agents, needs)
+    const sentence = parked ? 'Its agents are stopped until you open it again. Each picks up its conversation.' : crewSentence(state.agents, needs)
+    const h2 = $('.col-head h2')
+    if (h2.textContent !== headline) h2.textContent = headline
+    h2.title = headline
+    const sub = $('.col-sub')
+    if (sub.textContent !== sentence) sub.textContent = sentence
+    sub.title = sentence
+    const on = crewNow.filter((a) => a.on).length
+    $('.col-on').textContent = crewNow.length ? `${on} of ${crewNow.length} on` : ''
+    const fold = $('.room-fold')
+    fold.title = roomFolded ? 'Show the crew room' : 'Fold the crew room away'
+    fold.setAttribute('aria-expanded', String(!roomFolded))
+  }
+
+  // ---- the Crew room ------------------------------------------------------------
+
+  // Folded away or not, remembered. Drawn folded from the first frame, so nothing jumps on the way in.
+  roomWrap.classList.toggle('folded', roomFolded)
+  function setRoomFolded(on) {
+    roomFolded = on
+    store.set('crew.room', on ? 'folded' : 'open')
+    roomWrap.classList.toggle('folded', on)
+    roomWrap.classList.add('moving')
+    setTimeout(() => roomWrap.classList.remove('moving'), 320)
+    drawHead(needsYou(state))
+  }
+  // How many fit depends on its width: measured when it changes (a resized window, a panel put away).
+  const widthNow = () => roomBox.clientWidth || roomWrap.clientWidth
+  new ResizeObserver(() => {
+    const w = widthNow()
+    if (!w || Math.abs(w - roomW) < 1) return
+    roomW = w
+    if (state) drawRoom()
+  }).observe(roomWrap)
+
+  function drawRoom() {
+    const crewNow = roster()
+    if (!roomW) roomW = widthNow() || 728
+    const asks = asksByName
+    const next = JSON.stringify([Math.floor(roomW / 76), roomPick, crewNow.map((a) => [a.name, a.seed, a.status, a.on, a.avatar, a.waitingOn?.length ?? 0, asks.get(a.name)])])
+    roomWrap.classList.toggle('hidden', !crewNow.length)
+    if (next === roomKey) return
+    roomKey = next
+    morph(roomBox, crewNow.length ? roomHTML(crewNow, { width: roomW, asks, picked: roomPick }) : '')
+  }
+
+  // A creature in the room, clicked: it's picked (its card comes into view, its row lights up, and what it asks you
+  // comes up in the chat). Clicked again, its card opens.
+  roomBox.addEventListener('click', (e) => {
+    const who = e.target.closest('[data-room]')
+    if (!who) return
+    const name = who.dataset.room
+    if (roomPick === name) return open(name)
+    pickInRoom(name)
   })
-  // ...and the creature in the open sheet watches the pointer.
+  function pickInRoom(name) {
+    roomPick = name
+    roomKey = gridKey = ''
+    drawGrid()
+    const tile = grid.querySelector(`.pcard[data-name="${CSS.escape(name)}"]`)
+    tile?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    onSelect?.(name, needsByName.has(name))
+  }
+
+  // ---- no crew yet: one creature pops up in an empty room and asks who it should be ----
+
+  let emptyKey = ''
+  function drawEmpty() {
+    const ws = hasWorkspaces(state) && state.workspace?.id !== 'default' ? state.workspace : null
+    const next = JSON.stringify([ws?.id, ws?.name])
+    if (next === emptyKey) return
+    emptyKey = next
+    empty.innerHTML = ws
+      ? `${firstRoomHTML()}<h1 class="display">Who works on ${esc(ws.name)}?</h1>
+        <p class="lead">Pick teammates for it in its settings, or make an agent only it needs. Everyone keeps their own creature.</p>
+        <div class="acts"><button class="btn primary lg" data-act="new">Add an agent</button><button class="btn lg" data-act="ws-settings">Workspace settings</button></div>`
+      : `${firstRoomHTML()}<h1 class="display">Let’s build your crew</h1>
+        <p class="lead">Each agent is a teammate with a job, a model and a creature of its own. Start with one; you can add more any time.</p>
+        <div class="acts"><button class="btn primary lg" data-act="new">Add your first agent</button><button class="btn lg" data-act="import">Import agents</button></div>`
+  }
+  empty.addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act
+    if (act === 'new') open(null)
+    if (act === 'import') onImport()
+    if (act === 'ws-settings') onWorkspace?.()
+  })
+  // The creature in the open sheet watches the pointer.
   card.addEventListener('pointermove', (e) => {
     const hero = card.querySelector('.ed-id')
     if (!hero) return
@@ -229,6 +347,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   $('.col-head').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-act]')
     if (btn?.dataset.act === 'more') headMenu(btn)
+    if (btn?.dataset.act === 'room') return setRoomFolded(!roomFolded)
     const m = e.target.closest('[data-mode]')?.dataset.mode
     if (m) {
       mode = m
@@ -289,7 +408,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const sp = spendLine(state.spend)
     morph($('.col-stats'), `${sp ? `<p class="stats-spend" title="${esc(spendTip(state.spend))}">The crew: <b>${sp}</b> · last 7 days ${money(state.spend.week)} · 30 days ${money(state.spend.month)}</p>` : ''}<table class="stats-table"><thead><tr><th>Agent</th>${COLUMNS.map((m) => `<th data-sort="${m.key}" class="${m.key === sortBy ? 'on' : ''}" title="${{ high: 'more is better', low: 'less is better' }[m.better] ?? ''}">${m.label}</th>`).join('')}<th>14 days</th></tr></thead><tbody>${
       rows.map((a) => `<tr data-name="${esc(a.name)}" class="${a.on ? '' : 'off'}" style="--c:${colorOf(avatarOf(a))}">
-        <td class="who" title="${esc(a.area)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span><b>${nameHTML(a)}</b><small title="last active">Lv ${levelOf(a.stats).lv} · ${!a.stats.last ? 'no work yet' : Date.now() - a.stats.last < 60000 ? 'just now' : `${ago(a.stats.last)} ago`}</small></span></td>
+        <td class="who" title="${esc(a.area)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span><b>${nameHTML(a)}</b><small title="last active">${!a.stats.last ? 'No work yet' : Date.now() - a.stats.last < 60000 ? 'Active just now' : `Active ${ago(a.stats.last)} ago`}</small></span></td>
         ${COLUMNS.map((m) => {
           const s = a.stats
           const has = (m.has ?? (() => true))(s)
@@ -471,15 +590,12 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   function drawCard() {
     const d = draft
     const live = agentNamed(editing)
-    const i = roster().findIndex((x) => x.name === editing)
     card.innerHTML = `
       <aside class="ed-id">
-        <div class="ed-top"><span class="pd-state"></span><span class="pd-no">${i >= 0 ? `#${pad(i + 1)}` : 'new'}</span></div>
-        <span class="pd-mark">${ICONS.mark}</span>
-        <button class="ed-av" data-tab="look" title="Change its look"><span class="pd-av"></span><i class="ed-av-edit">${ICONS.palette}</i></button>
+        <div class="ed-top"><span class="pd-state"></span></div>
+        <button class="ed-av felt" data-tab="look" title="Change its look">${patchSVG(256, 220, { r: 10, inset: 6, dash: '5 3.5' })}<span class="pd-av"></span><i class="ed-av-edit">${ICONS.palette}</i></button>
         <input class="pd-name" data-k="name" value="${esc(d.name)}" placeholder="Name" spellcheck="false" autocomplete="off" aria-label="Name">
-        <textarea class="pd-area" data-k="area" rows="2" placeholder="What does it own? e.g. 3D character: rig, animations, materials" aria-label="Area of work">${esc(d.area)}</textarea>
-        <div class="ed-level"></div>
+        <textarea class="pd-area" data-k="area" rows="2" placeholder="What does it own? e.g. Checkout: the cart, payments and coupons" aria-label="Area of work">${esc(d.area)}</textarea>
         <div class="ed-facts"></div>
         <span class="grow"></span>
         ${live ? `<div class="ed-id-acts">
@@ -525,7 +641,6 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
       </div>`
     drawTab()
     drawState()
-    drawLevel()
     drawFacts()
     drawExperience()
     drawLimit()
@@ -562,17 +677,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     if (next === 'instructions') card.querySelector('.pd-prompt')?.focus({ preventScroll: true })
   }
 
-  // Level and XP, under the name: the card's "Lv" grown up. The full stats are on the Stats tab.
-  function drawLevel() {
-    const host = card.querySelector('.ed-level')
-    const a = agentNamed(editing)
-    if (!host) return
-    if (!a) return void (host.innerHTML = '')
-    const lv = levelOf(a.stats)
-    morph(host, `<span class="lv">Lv ${lv.lv}</span><i class="xpbar"><b style="width:${Math.round(lv.progress * 100)}%"></b></i><span class="xp-n" title="${lv.toNext} XP to Lv ${lv.lv + 1}">${lv.xp} XP</span>`)
-  }
-
-  // Under the level, a few plain facts: how full its conversation is (red only when nearly full), what it has cost,
+  // Under its name, a few plain facts: how full its conversation is (red only when nearly full), what it has cost,
   // and its helpers while they work (a clone opens its terminal). Numbers and charts live on the Stats tab.
   function drawFacts() {
     const host = card.querySelector('.ed-facts')
@@ -603,8 +708,10 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     }
     const s = a.stats
     const lv = levelOf(s)
+    // its level and its number in the crew live here, and only here
+    const no = roster().findIndex((x) => x.name === a.name)
     morph(host, `
-      <div class="xp-big"><span class="lv">Lv ${lv.lv}</span><div class="grow"><i class="xpbar"><b style="width:${Math.round(lv.progress * 100)}%"></b></i><span class="h4-note">${lv.xp} XP · ${lv.toNext} to Lv ${lv.lv + 1}${s.first ? ` · working since ${new Date(s.first).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span></div></div>
+      <div class="xp-big"><span class="lv">Lv ${lv.lv}</span><div class="grow"><i class="xpbar"><b style="width:${Math.round(lv.progress * 100)}%"></b></i><span class="h4-note">${no >= 0 ? `#${pad(no + 1)} · ` : ''}${lv.xp} XP · ${lv.toNext} to Lv ${lv.lv + 1}${s.first ? ` · working since ${new Date(s.first).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span></div></div>
       <div class="base-stats">${METRICS.map((m) => {
         const has = (m.has ?? (() => true))(s)
         const max = Math.max(0, ...roster().map((x) => x.stats[m.key] || 0))
@@ -715,7 +822,7 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
   function drawState() {
     const live = agentNamed(editing)
     const el = card.querySelector('.pd-state')
-    if (el) el.innerHTML = live ? `<span class="dot ${live.on ? live.status : 'off'}"></span>${esc(statusText(live))}${live.pending ? ' · restarts when free' : ''}` : `${ICONS.sparkles}New agent`
+    if (el) el.innerHTML = live ? `<span class="dot ${!live.on ? 'off' : live.status === 'waiting' ? 'needs' : live.status === 'working' && !live.waitingOn?.length ? 'working' : 'idle'}"></span>${esc(statusWord(live, asksByName.get(live.name)))}${live.pending ? ' · restarts when free' : ''}` : 'New agent'
   }
 
   // The brain: one Model control (provider and model together, picked from a menu) and its efforts.
@@ -853,7 +960,8 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
     const live = agentNamed(editing)
     const host = card.querySelector('.pd-av')
     const mood = live?.status === 'working' || live?.status === 'waiting' ? undefined : live && !live.on ? 'sleep' : 'idle'
-    host.innerHTML = avatarHTML({ name: draft.name || 'new', avatar: draft.avatar, status: live?.status }, { size: 170, mood })
+    const pose = live ? poseOf(live, { ask: asksByName.get(live.name) }) : undefined
+    host.innerHTML = avatarHTML({ name: draft.name || 'new', avatar: draft.avatar, status: live?.status }, { size: 168, mood, pose })
     if (hop) bounce(host.querySelector('.av'), 'pop')
   }
 
@@ -1097,13 +1205,12 @@ function mountCollection(root, { onTerminal, onImport, onMove }) {
         reopen = null
         open(name, { at: tab, force: true })
         drawAvatar(true)
-        card.querySelector('.pd-msg').textContent = 'Saved ✓'
+        card.querySelector('.pd-msg').textContent = 'Saved'
       } else if (editing && editing !== ':new' && !agentNamed(editing)) {
         editing = null
         sheet.classList.remove('open')
       } else if (editing) {
         drawState()
-        drawLevel()
         drawFacts()
         drawExperience()
         if (!card.querySelector('.limit')?.contains(document.activeElement)) drawLimit()
