@@ -66,7 +66,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
     const here = g.state === 'ready'
     return `<div class="su-row" data-row="git">
       <div class="su-top"><span class="su-name">${esc(g.name)}</span><span class="su-state ${here ? 'ready' : 'quiet'}"><i></i>${here ? 'Ready' : 'Not installed'}</span></div>
-      <div class="su-by">Recommended for Claude Code: it runs its commands in Git Bash, which comes with Git. Without it, Claude Code uses PowerShell.</div>
+      <div class="su-by">Recommended for Claude Code: it runs its commands in Git Bash, which comes with Git, and Crew can then stop anything those commands leave running. Without it, Claude Code uses PowerShell.</div>
       ${here ? '' : `<div class="su-how"><button type="button" class="btn su-get" data-url="${esc(g.how.page)}">Download Git for Windows</button></div>`}</div>`
   }
 
