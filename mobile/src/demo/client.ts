@@ -212,10 +212,14 @@ export class DemoClient implements CrewLink {
     this.emit()
   }
 
+  // As the Mac does: turned off, its open questions are no longer waiting (hub.forgetAsks); turned on, it starts in the
+  // workspace it was turned on in, wherever the phone looks meanwhile.
   async power(name: string, on: boolean) {
-    this.agent(this.ws, name, { on, status: on ? 'starting' : 'off', since: Date.now(), activity: '' })
+    const id = this.ws
+    this.agent(id, name, { on, status: on ? 'starting' : 'off', since: Date.now(), activity: '' })
+    if (!on) this.change(id, (s) => ({ ...s, feed: s.feed.map((x) => (x.kind === 'ask' && !x.answer && familyOf(x.from) === familyOf(name) ? { ...x, answer: { stale: true, at: Date.now() } } : x)) }))
     this.emit()
-    if (on) this.later(1400, () => this.agent(this.ws, name, { status: 'idle', since: Date.now() }))
+    if (on) this.later(1400, () => this.agent(id, name, { status: 'idle', since: Date.now() }))
   }
 
   async setModes(name: string, modes: { yolo?: boolean; fast?: boolean }) {

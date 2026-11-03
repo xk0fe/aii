@@ -227,7 +227,7 @@ function QuestionCard(props: AskProps & { ask: QuestionAsk }) {
             </Text>
           ) : null}
           {/* the creature already says a lone question in its own words */}
-          {direct ? null : <Text style={[styles.qtext, { color: t.fg }]}>{q.question}</Text>}
+          {direct && props.voiced ? null : <Text style={[styles.qtext, { color: t.fg }]}>{q.question}</Text>}
           <View style={styles.options}>
             {q.options.map((o) =>
               direct ? (

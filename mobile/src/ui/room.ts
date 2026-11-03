@@ -7,14 +7,18 @@ import { askKindOf, displayName, type AskKind } from './format'
 
 const name = (a: { name: string }) => displayName(a.name).base
 
-// Who needs you, and for what: each agent waiting on you, by its oldest open question (or its terminal, without one).
-export function needsOf(agents: Agent[], open: FeedEntry[]): { agent: Agent; kind: AskKind }[] {
+const family = (n: string) => n.replace(/\.\d+(?=@|$)/, '')
+
+// Who needs you, and for what: each agent waiting on you (or one of its clones is: Ada.2's question is Ada's to
+// answer), by its oldest open question, or its terminal without one. `everyone` has the clones, `agents` doesn't.
+export function needsOf(agents: Agent[], open: FeedEntry[], everyone: Agent[] = agents): { agent: Agent; kind: AskKind }[] {
   const first = new Map<string, FeedEntry>()
   for (const e of open) {
-    const n = e.from.replace(/\.\d+(?=@|$)/, '')
+    const n = family(e.from)
     if (!first.has(n)) first.set(n, e)
   }
-  return agents.filter((a) => a.on && (a.status === 'waiting' || first.has(a.name))).map((a) => ({ agent: a, kind: askKindOf(first.get(a.name)?.ask) }))
+  const waiting = new Set(everyone.filter((x) => x.on && x.status === 'waiting').map((x) => family(x.name)))
+  return agents.filter((a) => a.on && (waiting.has(a.name) || first.has(a.name))).map((a) => ({ agent: a, kind: askKindOf(first.get(a.name)?.ask) }))
 }
 
 const WANTS: Record<AskKind, string> = { ok: 'needs your OK', question: 'has a question', plan: 'has a plan for you', terminal: 'is waiting in its terminal' }
@@ -29,11 +33,11 @@ export const andList = (xs: string[]) => (xs.length < 2 ? (xs[0] ?? '') : `${xs.
 
 // The headline and the line under it, in plain words: "2 of your crew need you" / "Milo wants to run a command and
 // Iris has a question." Then "Everyone's busy", "2 at work", "All quiet".
-export function headline(agents: Agent[], open: FeedEntry[], parked = false): { title: string; line: string } {
+export function headline(agents: Agent[], open: FeedEntry[], parked = false, everyone: Agent[] = agents): { title: string; line: string } {
   if (!agents.length) return { title: 'No one here yet', line: `Add agents to this workspace in ${APP_NAME} on your computer.` }
   if (parked) return { title: 'Parked', line: `This workspace is resting. Open it in ${APP_NAME} on your computer to wake the crew.` }
-  const needs = needsOf(agents, open)
-  const byFrom = (a: Agent) => open.find((e) => e.from.replace(/\.\d+(?=@|$)/, '') === a.name)
+  const needs = needsOf(agents, open, everyone)
+  const byFrom = (a: Agent) => open.find((e) => family(e.from) === a.name)
   if (needs.length) {
     const said = needs.map(({ agent, kind }) => `${name(agent)} ${wants(kind, byFrom(agent))}`)
     const line = said.length > 3 ? `${said.slice(0, 2).join(', ')} and ${needs.length - 2} more are waiting.` : `${andList(said)}.`
@@ -54,12 +58,17 @@ export function headline(agents: Agent[], open: FeedEntry[], parked = false): { 
 export type Spot = { name: string; x: number; y: number; size: number }
 export const ROOM = { height: 196, floor: 84, front: 80, back: 64, backFloor: 126, frontFloor: 188 }
 
-export function roomLayout(agents: Agent[], width: number, max = 5): { spots: Spot[]; more: number } {
+export function roomLayout(agents: Agent[], width: number, max = 5, needy: Set<string> = new Set(agents.filter((a) => a.on && a.status === 'waiting').map((a) => a.name))): { spots: Spot[]; more: number } {
   const front: Agent[] = []
   const back: Agent[] = []
-  for (const a of agents) (a.on && (a.status === 'waiting' || a.status === 'working') ? front : back).push(a)
-  // a full front row hands its quieter members to the back; an empty one takes the back row's
-  while (front.length > max) back.unshift(front.pop()!)
+  for (const a of agents) (needy.has(a.name) || (a.on && a.status === 'working') ? front : back).push(a)
+  // a full front row hands its busy members to the back, the last first, and keeps whoever needs you; an empty front
+  // row takes the back row's
+  while (front.length > max) {
+    let i = front.length - 1
+    while (i >= 0 && needy.has(front[i].name)) i--
+    back.unshift(...front.splice(i >= 0 ? i : front.length - 1, 1))
+  }
   if (!front.length) front.push(...back.splice(0, max))
   const shown = back.slice(0, max)
   const spread = (row: Agent[], size: number, pad: number, floor: number): Spot[] => {

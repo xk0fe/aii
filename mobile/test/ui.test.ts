@@ -1,7 +1,7 @@
 // The words and pictures the screens are made of, without React: status in plain words, the creatures' own voice,
 // the Crew room's headline and where everyone stands, the poses, the felt.
 import type { Agent, FeedEntry } from '@/net/types'
-import { BODIES, COLORS, poseArt, poseOf, type Pose, type Spec } from '@/ui/avatar'
+import { BODIES, COLORS, moodOf, poseArt, poseOf, type Pose, type Spec } from '@/ui/avatar'
 import { ellipse, flatten, fuzz, fuzzy, roundRect, toPath } from '@/ui/felt'
 import { activityWords, brainLine, reachedOver, reasonOf, statusWord, tryWords, voiceOf } from '@/ui/format'
 import { andList, headline, needsOf, roomLayout, ROOM } from '@/ui/room'
@@ -26,6 +26,7 @@ describe('plain words', () => {
     ['TodoWrite', 'Planning its next steps'],
     ['mcp__github__create_issue', 'Using github'],
     ['running the checkout tests', 'Running the checkout tests'],
+    ['Bash · cd web &&', 'Running a command'],
   ])('%s reads "%s"', (raw, words) => expect(activityWords(raw)).toBe(words))
 
   test('a row says how each agent is, in v1 words', () => {
@@ -108,6 +109,24 @@ describe('the Crew room', () => {
     expect(headline([], []).title).toBe('No one here yet')
     expect(headline(busy, [], true).title).toBe('Parked')
   })
+  test("a clone's question is its agent's: the headline, the row and the room agree", () => {
+    const ada = agent({ name: 'Ada', status: 'idle' })
+    const clone = agent({ name: 'Ada.2', cloneOf: 'Ada', status: 'waiting' })
+    const ask = { id: 'q', ts: 1, kind: 'ask', from: 'Ada.2', ask: { type: 'question', questions: [] } } as FeedEntry
+    expect(needsOf([ada], [ask], [ada, clone]).map((n) => [n.agent.name, n.kind])).toEqual([['Ada', 'question']])
+    expect(needsOf([ada], [], [ada, clone]).map((n) => [n.agent.name, n.kind])).toEqual([['Ada', 'terminal']])
+    expect(headline([ada], [ask], false, [ada, clone]).title).toBe('Ada needs you')
+    const { spots } = roomLayout([ada], 361, 5, new Set(['Ada']))
+    expect(spots[0].y + spots[0].size).toBe(ROOM.frontFloor)
+  })
+  test('a full front row keeps whoever needs you, and sends the busy to the back', () => {
+    const crew = [...['A', 'B', 'C', 'D', 'E'].map((name) => agent({ name, status: 'working' })), agent({ name: 'Needy', status: 'waiting' })]
+    const { spots } = roomLayout(crew, 361)
+    const front = spots.filter((s) => s.y + s.size === ROOM.frontFloor).map((s) => s.name)
+    expect(front).toContain('Needy')
+    expect(front).toHaveLength(5)
+    expect(spots.map((s) => s.name).sort()).toEqual(crew.map((a) => a.name).sort())
+  })
   test('many waiting fold into "and 2 more"', () => {
     const many = ['Ada', 'Milo', 'Iris', 'Theo'].map((name) => agent({ name, status: 'waiting' }))
     expect(headline(many, []).line).toBe('Ada is waiting in its terminal, Milo is waiting in its terminal and 2 more are waiting.')
@@ -142,6 +161,11 @@ describe('the Crew room', () => {
 })
 
 describe('poses', () => {
+  test('parked and away creatures sleep, matching their pose', () => {
+    expect(moodOf({ status: 'parked', on: true })).toBe('sleep')
+    expect(moodOf({ status: 'away', on: true })).toBe('sleep')
+    expect(moodOf({ status: 'idle', on: true })).toBe('idle')
+  })
   test('the status picks the pose', () => {
     expect(poseOf({ status: 'working' })).toBe('laptop')
     expect(poseOf({ status: 'working', waitingOn: [{}] })).toBe('mug')
@@ -179,6 +203,9 @@ describe('felt', () => {
     expect(curvy[0].length).toBeGreaterThan(80)
     expect(flatten('M0 0l10 0l0 10z m20 20 h5 v5 z')).toEqual([[[0, 0], [10, 0], [10, 10]], [[20, 20], [25, 20], [25, 25]]])
     expect(flatten('M0 0Q5 5 10 0T20 0').at(0)?.at(-1)).toEqual([20, 0])
+    expect(flatten('M1e+1 0L2E1 1.5L.5.5Z')).toEqual([[[10, 0], [20, 1.5], [0.5, 0.5]]]) // exponents, and .5 running on
+    expect(flatten('M0 0L10 0L10 10L5')).toEqual([[[0, 0], [10, 0], [10, 10]]]) // a command short of numbers ends it
+    expect(flatten('L5 5 x 9 M')).toEqual([]) // nonsense ends, never hangs
   })
   test('the fuzzy edge stays within reach of the shape, and is the same every time', () => {
     const square = roundRect(20, 20, 60, 60, 8)

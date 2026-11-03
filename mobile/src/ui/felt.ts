@@ -12,15 +12,19 @@ const r1 = (n: number) => Math.round(n * 10) / 10
 // their props are drawn with). Curves become short straight steps.
 export function flatten(d: string): Pt[][] {
   const out: Pt[][] = []
-  const tokens = d.match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?/g) ?? []
+  const tokens = d.match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g) ?? []
   let i = 0
   let cmd = ''
   let cur: Pt = [0, 0]
   let start: Pt = [0, 0]
   let ctrl: Pt | null = null // the last curve's second control point, for S and T
   let poly: Pt[] = []
-  const num = () => Number(tokens[i++])
+  let short = false // a command ran out of numbers: the path stops there
   const isNum = () => i < tokens.length && !/^[a-zA-Z]$/.test(tokens[i])
+  const num = () => {
+    if (!isNum()) short = true
+    return short ? 0 : Number(tokens[i++])
+  }
   const close = () => {
     if (poly.length > 1) out.push(poly)
     poly = []
@@ -49,6 +53,8 @@ export function flatten(d: string): Pt[][] {
     if (/^[a-zA-Z]$/.test(tokens[i])) cmd = tokens[i++]
     else if (!cmd) break
     const rel = cmd === cmd.toLowerCase()
+    const had = poly
+    const hadLength = poly.length
     const at = (x: number, y: number): Pt => (rel ? [cur[0] + x, cur[1] + y] : [x, y])
     switch (cmd.toUpperCase()) {
       case 'M': {
@@ -118,6 +124,12 @@ export function flatten(d: string): Pt[][] {
       default:
         // an arc or anything else: not used by anything this draws
         while (isNum()) i++
+    }
+    if (short) {
+      // drop what the unfinished command drew (a moveto has started a new outline: that goes too)
+      if (poly === had) poly.length = hadLength
+      else poly = []
+      break
     }
   }
   close()

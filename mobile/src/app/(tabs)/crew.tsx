@@ -25,10 +25,11 @@ const open = (a: Agent) => router.push({ pathname: '/agent/[name]', params: { na
 const spoken = (a: Agent, kind: AskKind | undefined, now: number, extra = '') =>
   [displayName(a.name).base, statusWord(a, kind).text, a.yolo ? 'YOLO' : '', extra, (a.status === 'working' || a.status === 'waiting') && a.since ? `for ${ago(a.since, now)}` : ''].filter(Boolean).join(', ')
 
-function Room({ agents, asks, width, now }: { agents: Agent[]; asks: Map<string, AskKind>; width: number; now: number }) {
-  const { spots } = roomLayout(agents, width)
+function Room({ t, agents, asks, width, now }: { t: Theme; agents: Agent[]; asks: Map<string, AskKind>; width: number; now: number }) {
+  const { spots, more } = roomLayout(agents, width, 5, new Set(asks.keys()))
   const byName = new Map(agents.map((a) => [a.name, a]))
   return (
+    <View>
     <View style={{ width, height: ROOM.height }}>
       <RoomFelt width={width} height={ROOM.height} floor={ROOM.floor} />
       {spots.map((s) => {
@@ -39,6 +40,9 @@ function Room({ agents, asks, width, now }: { agents: Agent[]; asks: Map<string,
           </Press>
         )
       })}
+    </View>
+      {/* the room holds ten; the rest are in the list (never written on the felt) */}
+      {more ? <Text style={[styles.more, { color: t.fg2 }]}>{more === 1 ? 'And 1 more below' : `And ${more} more below`}</Text> : null}
     </View>
   )
 }
@@ -88,8 +92,11 @@ export default function CrewScreen() {
   const focused = useIsFocused()
   const active = useAppActive()
   const moving = focused && active
-  const asks = useMemo(() => new Map(needsOf(d.agents, d.open).map((n) => [n.agent.name, n.kind])), [d.agents, d.open])
-  const head = headline(d.agents, d.open, Boolean(state?.parked))
+  const everyone = state?.agents
+  const asks = useMemo(() => new Map(needsOf(d.agents, d.open, everyone).map((n) => [n.agent.name, n.kind])), [d.agents, d.open, everyone])
+  const head = headline(d.agents, d.open, Boolean(state?.parked), everyone)
+  // an agent whose clone needs you needs you: its row, its place and its pose say so too
+  const shown = useMemo(() => d.agents.map((a) => (asks.has(a.name) && a.status !== 'waiting' ? { ...a, status: 'waiting' } : a)), [d.agents, asks])
 
   // one section per computer, this one first (PROTOCOL.md: agents with no `home` are on the computer the phone talks to)
   const sections = useMemo(() => {
@@ -97,7 +104,7 @@ export default function CrewScreen() {
     const here = computers[0]?.slug ?? ''
     const out = new Map<string, Agent[]>()
     for (const c of computers) out.set(c.slug, [])
-    for (const a of d.agents) {
+    for (const a of shown) {
       const k = a.home ?? here
       out.set(k, [...(out.get(k) ?? []), a])
     }
@@ -105,7 +112,7 @@ export default function CrewScreen() {
       const c = computers.find((x) => x.slug === slug)
       return { slug, name: c?.name ?? list[0].homeName ?? (slug || client?.macName || 'This computer'), offline: c ? !c.online : false, list }
     })
-  }, [state?.computers, d.agents, client?.macName])
+  }, [state?.computers, shown, client?.macName])
 
   const roomWidth = Math.min(width - 32, 560)
   return (
@@ -113,7 +120,7 @@ export default function CrewScreen() {
       <View style={{ flex: 1, backgroundColor: t.bg }}>
         <TopBar t={t} />
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
-          {roomFolded || !state ? null : <Room agents={d.agents} asks={asks} width={roomWidth} now={now} />}
+          {roomFolded || !state ? null : <Room t={t} agents={shown} asks={asks} width={roomWidth} now={now} />}
           <View style={styles.headRow}>
             <Text style={[styles.display, { color: t.fg }]} accessibilityRole="header" maxFontSizeMultiplier={1.6}>
               {state ? head.title : ' '}
@@ -147,6 +154,7 @@ export default function CrewScreen() {
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 16, paddingTop: 4 },
   spot: { position: 'absolute' },
+  more: { fontSize: 13, lineHeight: 18, textAlign: 'right', marginTop: 6 },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 },
   display: { flex: 1, fontFamily: fonts.brand, fontSize: 28, lineHeight: 34 },
   fold: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },

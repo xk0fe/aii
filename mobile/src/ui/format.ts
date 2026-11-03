@@ -84,6 +84,7 @@ const urlHost = (url: string) => {
 }
 function commandWords(cmd: string) {
   const c = String(cmd).replace(/^(?:cd\s+\S+\s*&&\s*)+/, '').trim()
+  if (!c) return 'Running a command'
   const own = c.match(/^crew\s+(ask|send|lease|note|board)\b\s*([\w@.-]*)/)
   if (own) {
     const [, verb, what] = own

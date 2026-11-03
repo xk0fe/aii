@@ -82,6 +82,32 @@ describe('the demo answers like a computer would', () => {
   })
 })
 
+describe('switches in the demo', () => {
+  test('turned on, an agent starts in its own workspace, wherever you look meanwhile', async () => {
+    jest.useFakeTimers()
+    const demo = new DemoClient()
+    await demo.power('June', false)
+    await demo.power('June', true)
+    await demo.watch('docs')
+    jest.advanceTimersByTime(2000)
+    await demo.watch('storefront')
+    expect(demo.getSnapshot().state!.agents.find((a) => a.name === 'June')).toMatchObject({ on: true, status: 'idle' })
+    demo.stop()
+    jest.useRealTimers()
+  })
+  test('turned off, its questions stop waiting, so nothing can answer them', async () => {
+    const demo = new DemoClient()
+    const card = demo.getSnapshot().state!.feed.find((e) => e.from === 'Milo' && e.kind === 'ask')!
+    await demo.power('Milo', false)
+    const s = demo.getSnapshot().state!
+    expect(s.feed.filter((e) => e.kind === 'ask' && !e.answer).map((e) => e.from)).toEqual(['Iris'])
+    expect(s.feed.find((e) => e.id === card.id)?.answer).toMatchObject({ stale: true })
+    await expect(demo.answer(card.id, { allow: true })).rejects.toThrow('already been answered')
+    expect(demo.getSnapshot().state!.agents.find((a) => a.name === 'Milo')).toMatchObject({ on: false, status: 'off' })
+    demo.stop()
+  })
+})
+
 describe('the store build', () => {
   const load = (env: Record<string, string> = {}) => {
     const saved = { ...process.env }

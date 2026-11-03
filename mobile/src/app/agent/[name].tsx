@@ -55,7 +55,7 @@ export default function AgentSheet() {
   // what you just switched, until the computer's state agrees (or says no)
   const [pending, setPending] = useState<{ on?: boolean; yolo?: boolean; fast?: boolean }>({})
   const [error, setError] = useState('')
-  const asks = useMemo(() => new Map(needsOf(d.agents, d.open).map((n) => [n.agent.name, n.kind])), [d.agents, d.open])
+  const asks = useMemo(() => new Map(needsOf(d.agents, d.open, state?.agents).map((n) => [n.agent.name, n.kind])), [d.agents, d.open, state?.agents])
   const a = d.byName.get(String(name))
   if (!a || !client) {
     return (

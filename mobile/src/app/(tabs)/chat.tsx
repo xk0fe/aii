@@ -20,6 +20,7 @@ import { displayName, plural, rowLine } from '@/ui/format'
 import { useNow } from '@/ui/hooks'
 import { Icon } from '@/ui/icon'
 import { Button, Faces, inkFor, Press } from '@/ui/parts'
+import { needsOf } from '@/ui/room'
 import { offlineText, TopBar } from '@/ui/topbar'
 import { fonts, useTheme, type Theme } from '@/ui/theme'
 
@@ -157,7 +158,9 @@ function Line({ t, d, here, onAll, offline, parked }: { t: Theme; d: Derived; he
       </View>
     )
   // who's at work and who needs you, in a few plain words (the line keeps its height in every mode)
-  const bits = parked ? [{ text: 'Parked', ink: t.fg2 }] : [d.waiting ? { text: (d.waiting === 1 ? '1 needs' : d.waiting + ' need') + ' you', ink: t.waitingInk } : null, d.working ? { text: d.working + ' at work', ink: t.fg2 } : null].filter((x): x is { text: string; ink: string } => Boolean(x))
+  // who needs you counts the way the Crew tab does: an agent once, with its clones
+  const needing = needsOf(d.agents, d.open, [...d.byName.values()]).length
+  const bits = parked ? [{ text: 'Parked', ink: t.fg2 }] : [needing ? { text: (needing === 1 ? '1 needs' : needing + ' need') + ' you', ink: t.waitingInk } : null, d.working ? { text: d.working + ' at work', ink: t.fg2 } : null].filter((x): x is { text: string; ink: string } => Boolean(x))
   if (!bits.length && d.agents.length) bits.push({ text: d.agents.some((a) => a.on) ? 'Everyone is idle' : 'Everyone is off', ink: t.fg2 })
   return (
     <View style={styles.line}>

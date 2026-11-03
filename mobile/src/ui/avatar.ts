@@ -88,7 +88,8 @@ export const colorOf = (spec: { color: string }) => COLORS[spec.color] ?? spec.c
 export const agentColor = (agent: Someone) => colorOf(avatarOf(agent))
 
 export type Mood = 'working' | 'waiting' | 'starting' | 'sleep' | 'idle' | 'still'
-const MOODS: Record<string, Mood> = { working: 'working', waiting: 'waiting', starting: 'starting', off: 'sleep', stopped: 'sleep' }
+// parked (its workspace is resting) and away (its computer can't be reached) sleep too, as their pose does
+const MOODS: Record<string, Mood> = { working: 'working', waiting: 'waiting', starting: 'starting', off: 'sleep', stopped: 'sleep', parked: 'sleep', away: 'sleep' }
 
 // Waiting on a teammate's answer, it rests instead of hopping: it isn't working, it's waiting.
 export const moodOf = (agent: { status?: string; on?: boolean; waitingOn?: unknown[] }): Mood => {
