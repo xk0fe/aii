@@ -3,7 +3,7 @@
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, a few facts), everything you can set on the right, in four
 // tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
-/* global powerSwitch, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
+/* global pageHead, markSVG, powerSwitch, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -28,20 +28,16 @@ const TABS = [
 // at work: what it's doing says more than its status. Waiting on a teammate, the status says it (who it waits on).
 const atWork = (a) => (a?.status === 'working' && !a.waitingOn?.length) || a?.status === 'waiting'
 
-function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace, onRenamed }) {
+function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, onWorkspace, onRenamed }) {
+  // the header: in the dashboard's row of place headers (common.js pageHead), like every place's
+  headIn.insertAdjacentHTML('beforeend', pageHead({
+    id: 'crew', glyph: markSVG('0 4 24 18'), title: 'Agents',
+    tools: `<div class="seg icons" data-mode-switch><button data-mode="cards" title="Cards" aria-label="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards" aria-label="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the crew" aria-label="Stats">${ICONS.table}</button></div>
+      <button class="icon" data-act="more" title="New agent, select, export, import" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`,
+  }))
+  const head = headIn.lastElementChild
   root.innerHTML = `
     <section class="col-list">
-      <header class="col-head">
-        <h2 class="display"></h2>
-        <div class="col-tools">
-          <span class="col-on"></span>
-          <div class="seg icons" data-mode-switch>
-            <button data-mode="cards" title="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the crew">${ICONS.table}</button>
-          </div>
-          <button class="icon col-more" data-act="more" title="Select, export, import" aria-haspopup="menu">${ICONS.more}</button>
-        </div>
-        <p class="col-sub"></p>
-      </header>
       <div class="col-grid"></div>
       <div class="col-stats"></div>
       <div class="col-empty hidden"></div>
@@ -168,12 +164,12 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace, onRe
   function drawGrid() {
     const m = modeNow()
     root.classList.toggle('stats-mode', m === 'stats')
-    segmented($('[data-mode-switch]'), (b) => b.dataset.mode === m)
+    segmented(head.querySelector('[data-mode-switch]'), (b) => b.dataset.mode === m)
     const groups = crewGroups(state)
     const needs = needsYou(state)
     needsByName = new Map(needs.map((n) => [n.agent.name, n]))
     asksByName = askTypes(state)
-    drawHead(needs)
+    drawHead()
     const none = !roster().length
     root.classList.toggle('empty', none)
     empty.classList.toggle('hidden', !none)
@@ -201,22 +197,18 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace, onRe
     drawBulkCount()
   }
 
-  // The header: Agents (in the brand face), the sentence under it, and how many are on.
-  function drawHead(needs) {
+  // The header: Agents, who they are and how many are on (what needs you is in #crew and beside each name in the
+  // sidebar: here it's the crew itself).
+  function drawHead() {
     const crewNow = roster()
-    const parked = state.parked && crewNow.length
     const ws = hasWorkspaces(state) ? state.workspace : null
-    // what needs you is in #crew and beside each name in the sidebar: here it's the crew itself
-    const headline = parked ? `${ws?.name ?? 'This workspace'} is parked` : 'Agents'
-    const sentence = parked ? 'Its agents are stopped until you open it again. Each picks up its conversation.' : crewNow.length ? `Everyone${ws ? ` in ${ws.name}` : ''}. Turn them on and off here, and open one to change it.` : ''
-    const h2 = $('.col-head h2')
-    if (h2.textContent !== headline) h2.textContent = headline
-    h2.title = headline
-    const sub = $('.col-sub')
-    if (sub.textContent !== sentence) sub.textContent = sentence
-    sub.title = sentence
     const on = crewNow.filter((a) => a.on).length
-    $('.col-on').textContent = crewNow.length ? `${on} of ${crewNow.length} on` : ''
+    const who = ws ? `Everyone in ${ws.name}` : 'Your whole crew'
+    const line = state.parked && crewNow.length ? `${ws?.name ?? 'This workspace'} is parked: its agents are stopped until you open it`
+      : crewNow.length ? `${who} · ${on} of ${crewNow.length} on` : 'Nobody yet'
+    const sub = head.querySelector('.ph-sub')
+    if (sub.textContent !== line) sub.textContent = line
+    sub.title = line
   }
 
   // ---- no crew yet: one creature pops up in an empty room and asks who it should be ----
@@ -284,7 +276,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace, onRe
     })
   }
 
-  $('.col-head').addEventListener('click', (e) => {
+  head.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-act]')
     if (btn?.dataset.act === 'more') headMenu(btn)
     const m = e.target.closest('[data-mode]')?.dataset.mode
@@ -546,12 +538,12 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace, onRe
             </div>
           </section>
           <section class="ed-pane" data-pane="instructions">
-            <div class="ed-pane-head"><p>Its system prompt, on top of the crew basics: what it owns, its bar, when to hand off.</p><button class="btn small" data-act="write" title="Its own brain drafts them from its name and area">${ICONS.sparkles}<span>Write it</span></button></div>
+            <div class="ed-pane-head"><p>Its system prompt, on top of the crew basics: what it owns, its bar, when to hand off.</p><button class="btn" data-act="write" title="Its own brain drafts them from its name and area">${ICONS.sparkles}<span>Write it</span></button></div>
             <textarea class="pd-prompt" data-k="prompt" placeholder="Leave it empty, or press Write it for a first draft from the name and area." aria-label="Instructions">${esc(d.prompt)}</textarea>
-            <div class="refs"><div class="thumbs refs-thumbs"></div><button type="button" class="btn small" data-ref title="Mockups, brand guides, screenshots: paste or drop them on the instructions too">${ICONS.plus}<span>Reference image</span></button></div>
+            <div class="refs"><div class="thumbs refs-thumbs"></div><button type="button" class="btn" data-ref title="Mockups, brand guides, screenshots: paste or drop them on the instructions too">${ICONS.plus}<span>Reference image</span></button></div>
           </section>
           <section class="ed-pane" data-pane="look">
-            <div class="ed-pane-head"><p>Every option shows ${esc(d.name || 'it')} wearing it.</p><button class="btn small" data-act="shuffle">${ICONS.dice}<span>Shuffle</span></button></div>
+            <div class="ed-pane-head"><p>Every option shows ${esc(d.name || 'it')} wearing it.</p><button class="btn" data-act="shuffle">${ICONS.dice}<span>Shuffle</span></button></div>
             <div class="look"></div>
           </section>
           <section class="ed-pane" data-pane="stats"><div class="experience"></div></section>
@@ -667,7 +659,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace, onRe
           <p>${esc(advice)}</p>
           ${usageLine(a, state)}
         </div>
-        <button class="btn small convo-fresh" data-act="fresh" ${a.freshPending || !a.on ? 'disabled' : ''} title="${a.freshPending ? 'Starts a new conversation when it’s free' : 'A clean slate (the old one stays in its history)'}">${ICONS.fresh}<span>${a.freshPending ? 'When it’s free' : 'New conversation'}</span></button>
+        <button class="btn convo-fresh" data-act="fresh" ${a.freshPending || !a.on ? 'disabled' : ''} title="${a.freshPending ? 'Starts a new conversation when it’s free' : 'A clean slate (the old one stays in its history)'}">${ICONS.fresh}<span>${a.freshPending ? 'When it’s free' : 'New conversation'}</span></button>
       </div>`
   }
 
@@ -851,7 +843,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace, onRe
     const at = places.find((p) => p.slug === (d.home ?? '')) ?? { name: d.home, online: false }
     const computer = places.length < 2 && !d.home ? ''
       : live
-        ? row('Computer', `<span class="ed-pc">${at.here ? ICONS.desktop : ICONS.laptop}<b>${esc(at.name)}</b>${at.here ? `<small>${THIS_COMPUTER}</small>` : ''}</span><button class="btn small" data-act="move-to" title="Its chat comes along" ${places.some((p) => p.slug !== (d.home ?? '') && p.online) ? '' : 'disabled'}>${ICONS.move}<span>Move…</span></button>`)
+        ? row('Computer', `<span class="ed-pc">${at.here ? ICONS.desktop : ICONS.laptop}<b>${esc(at.name)}</b>${at.here ? `<small>${THIS_COMPUTER}</small>` : ''}</span><button class="btn" data-act="move-to" title="Its chat comes along" ${places.some((p) => p.slug !== (d.home ?? '') && p.online) ? '' : 'disabled'}>${ICONS.move}<span>Move…</span></button>`)
         : row('Computer', `<div class="pills" data-pick="home">${places.filter((p) => p.online || p.slug === d.home).map((p) => pill(p.slug, esc(p.name), d.home === p.slug)).join('')}</div>`)
     // in a workspace other than the default: whether it's one of your shared agents or only this workspace's, and its
     // folder is the workspace's unless it has one of its own
@@ -862,7 +854,7 @@ function mountCollection(root, { onTerminal, onImport, onMove, onWorkspace, onRe
         : row('Lives in', `<div class="pills" data-pick="shared">${pill('', `${esc(ws.name)} only`, !d.shared)}${pill('1', 'Your whole crew', Boolean(d.shared))}</div>`, { note: d.shared ? `joins your crew, and works here in ${esc(ws.name)}` : `only ${esc(ws.name)} has it` })
     const folder = ws?.folder ? tildePath(ws.folder) : ''
     card.querySelector('.where').innerHTML = lives +
-      row('Folder', `<input class="ed-input mono" data-k="cwd" value="${esc(d.cwd)}" placeholder="${esc(folder || '~/code/my-app')}" autocomplete="off" spellcheck="false">${d.home ? '' : '<button type="button" class="btn small" data-act="pick">Choose…</button>'}`, { note: d.home ? `a path on ${esc(at.name)}` : folder && !d.cwd ? `${esc(ws.name)}'s folder` : '' }) +
+      row('Folder', `<input class="ed-input mono" data-k="cwd" value="${esc(d.cwd)}" placeholder="${esc(folder || '~/code/my-app')}" autocomplete="off" spellcheck="false">${d.home ? '' : '<button type="button" class="btn" data-act="pick">Choose…</button>'}`, { note: d.home ? `a path on ${esc(at.name)}` : folder && !d.cwd ? `${esc(ws.name)}'s folder` : '' }) +
       computer
   }
 

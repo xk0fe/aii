@@ -106,7 +106,6 @@
 .ws-banner > div span { font-size: 12px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-banner .btn { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .ws-banner .btn svg { width: 11px; height: 11px; }
-body.ws-parked .center > .collection, body.ws-parked .center > .tasks-view, body.ws-parked .center > .terms-view { top: 64px; }
 
 /* ---- the sheet ---- */
 dialog.sheet.ws-sheet { width: 560px; padding: 0; overflow: hidden; }

@@ -45,7 +45,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
       </span>
       <span class="ws-end">
         ${w.parked
-          ? `<button class="btn small ws-open" data-ws-act="open" title="Start its agents, each picking up its conversation">${ICONS.play}<span>Open</span></button>`
+          ? `<button class="btn ws-open" data-ws-act="open" title="Start its agents, each picking up its conversation">${ICONS.play}<span>Open</span></button>`
           : `<span class="ws-faces">${w.faces.length ? faceStack(w.faces, 3) : ''}</span>`}
         <span class="ws-acts">
           ${w.parked || state.workspaces.length < 2 ? '' : `<button class="icon ws-act" data-ws-act="park" title="Park ${esc(w.name)}: its agents stop, and pick up where they were when you open it">${ICONS.pause}</button>`}
@@ -220,7 +220,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched })
       </section>
       <section class="ws-sec" data-sec="folder">
         <h4>Folder</h4>
-        <div class="mv-field"><input data-ws-folder class="mono" placeholder="~/code/my-app" spellcheck="false" autocomplete="off"><button type="button" class="btn small" data-ws-pick>Choose…</button></div>
+        <div class="mv-field"><input data-ws-folder class="mono" placeholder="~/code/my-app" spellcheck="false" autocomplete="off"><button type="button" class="btn" data-ws-pick>Choose…</button></div>
         <p class="ws-note">Where its agents work, unless one has a folder of its own here.</p>
       </section>
       <section class="ws-sec" data-sec="crew">

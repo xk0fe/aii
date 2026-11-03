@@ -1,4 +1,4 @@
-/* The Tasks board (ui/tasks.js): header, board or list, the composer and the filter popover, and a panel for one task. */
+/* The Tasks board (ui/tasks.js): board or list (its header is the places' own, common.css .page-head), the composer and the filter popover, and a panel for one task. */
 .tasks-view { position: absolute; inset: 0; overflow: hidden; }
 .tasks { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; container-type: inline-size; }
 
@@ -20,32 +20,6 @@
 .tk-nobody { width: 20px; height: 20px; border-radius: 50%; border: 1.5px dashed var(--fg3); display: inline-grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 600; color: var(--fg2); flex: none; box-sizing: border-box; }
 .tk-nobody.sm { width: 18px; height: 18px; font-size: 11px; }
 
-/* ---- header: title and what's open on the left; search, Filter, board/list, New task and ⋯ on the right ---- */
-.tk-head { display: flex; align-items: center; gap: 8px; padding: 20px 24px 14px; flex: none; }
-/* the headline gives way only once the search is at its narrowest (a narrow window, with a search and a filter on) */
-.tk-headline { display: flex; align-items: baseline; gap: 12px; min-width: 72px; flex: 0 1 auto; overflow: hidden; } /* "Tasks" itself never gives way */
-.tk-headline h2 { white-space: nowrap; }
-.tk-headline h2 { margin: 0; font-size: 20px; line-height: 24px; font-weight: 600; }
-.tk-sub { color: var(--fg2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sub-urgent { color: var(--fg); font-weight: 600; }
-.sub-review { color: var(--needs-ink); font-weight: 600; }
-.tk-hbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px 0 10px; flex: none; font-weight: 500; }
-.tk-hbtn > .ti, .tk-hbtn > svg { width: 15px; height: 15px; flex: none; }
-.tk-hbtn.on { background: var(--btn-hover); color: var(--fg); }
-.tk-more { width: 28px; height: 28px; flex: none; }
-.tk-views { height: 28px; }
-.tk-views button { padding: 0 11px; display: grid; place-items: center; }
-.tk-views .ti { width: 14px; height: 14px; }
-/* search: the magnifier stays where it is; the field opens to its left, into the header's free space */
-.tk-search { display: flex; align-items: center; flex: 0 0 28px; height: 28px; min-width: 28px; border-radius: var(--r-control); }
-.tk-search.open { flex: 1000 0 96px; max-width: 220px; background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.tk-search.open:focus-within { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
-.tk-search input { display: none; flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; padding: 0 0 0 11px; font-size: 13px; user-select: text; }
-.tk-search.open input { display: block; animation: fade-in var(--t-pop) var(--out); }
-.tk-search input::-webkit-search-cancel-button { display: none; }
-.tk-search-btn { flex: none; width: 28px; height: 28px; margin-left: auto; }
-.tk-search-btn svg { width: 15px; height: 15px; }
-.tk-search.open .tk-search-btn:hover { background: none; }
 /* the filters that are on, as one chip beside Filter: what they are, and × to clear them */
 .tk-active { display: contents; }
 .tk-on-chip { display: inline-flex; align-items: center; height: 28px; flex: none; border-radius: var(--r-control); background: var(--btn); color: var(--fg); font-size: 13px; font-weight: 600; white-space: nowrap; animation: fade-in var(--t-pop) var(--out); }
@@ -57,7 +31,7 @@
 .tk-on-chip button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: var(--r-control); }
 
 /* ---- the filter popover: kind and owner, one pick each ---- */
-.tk-fpop { position: absolute; z-index: 9; width: 250px; max-height: calc(100% - 110px); overflow-y: auto; padding: 4px; border-radius: var(--r-card); background: var(--float); box-shadow: var(--shadow-float); animation: pop-in var(--t-pop) var(--out); }
+.tk-fpop { position: fixed; z-index: 60; width: 250px; max-height: calc(100vh - 80px); overflow-y: auto; padding: 4px; border-radius: var(--r-card); background: var(--float); box-shadow: var(--shadow-float); animation: pop-in var(--t-pop) var(--out); }
 .tk-fp-sec + .tk-fp-sec { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
 .tk-fp-sec h6 { margin: 6px 8px 4px; font-size: 12px; font-weight: 600; color: var(--fg2); }
 .tk-fp-item { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 8px; border-radius: var(--r-control); font-size: 13px; cursor: pointer; }
@@ -99,7 +73,7 @@
 .tk-add-go:disabled { opacity: .45; cursor: default; }
 .lane-compose { flex: none; padding: 2px 10px 8px 9px; }
 .lane-compose:empty { display: none; }
-.tk-add-pop { position: absolute; z-index: 9; width: 420px; max-width: calc(100% - 32px); }
+.tk-add-pop { position: fixed; z-index: 60; width: 420px; max-width: calc(100vw - 32px); }
 .tk-add-pop .tk-add { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent), var(--shadow-float); }
 
 /* ---- the body: board, list, or a friendly empty state ---- */
@@ -118,7 +92,7 @@
 .tk-hello.small { gap: 12px; padding: 30px; border-radius: var(--r-window); background: var(--bg); }
 
 /* board */
-.tk-board { display: grid; grid-template-columns: repeat(4, minmax(186px, 1fr)); gap: 12px; padding: 0 24px 20px; overflow-x: auto; transition: grid-template-columns var(--t-move) var(--move); }
+.tk-board { display: grid; grid-template-columns: repeat(4, minmax(186px, 1fr)); gap: 12px; padding: 20px var(--gx, 24px); overflow-x: auto; transition: grid-template-columns var(--t-move) var(--move); }
 .tk-board.done-folded { grid-template-columns: repeat(3, minmax(196px, 1fr)) 46px; }
 .lane { --k: var(--accent); display: flex; flex-direction: column; min-height: 0; border-radius: var(--r-card); background: color-mix(in srgb, var(--fg) 2.5%, var(--bg)); transition: background .2s, box-shadow .2s; }
 .lane-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 14px; flex: none; font-size: 13px; }
@@ -187,7 +161,7 @@
 .tk-verdict .tk-btn:not(.good) { color: var(--fg); }
 
 /* list */
-.tk-list { overflow-y: auto; padding: 0 24px 24px; scrollbar-gutter: stable; }
+.tk-list { overflow-y: auto; padding: 20px var(--gx, 24px) 24px; scrollbar-gutter: stable; }
 .tl-group { --k: var(--accent); border-radius: var(--r-card); transition: background .2s, box-shadow .2s; }
 .tl-group + .tl-group { margin-top: 10px; }
 .tl-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 6px 0 12px; border-radius: var(--r-card); background: color-mix(in srgb, var(--fg) 4%, var(--bg)); font-size: 13px; }
@@ -211,19 +185,9 @@
 .tr .tk-owner, .tr .tk-assign { justify-self: start; max-width: 104px; }
 .tr .tk-age { text-align: right; }
 
-/* a narrow middle: the buttons keep their icons, the words step aside */
-@container (max-width: 780px) {
-  .tk-head { padding: 16px 16px 12px; }
-  .tk-hbtn > span { display: none; }
-  .tk-hbtn { padding: 0 8px; }
-  .tk-board, .tk-list { padding-left: 16px; padding-right: 16px; }
-}
-/* the narrowest board (the window at its minimum, both panels open): the filters say so on the Filter button itself
-   (it's lit, and its popover clears them), and an open search takes less room */
-@container (max-width: 520px) {
-  .tk-on-chip { display: none; }
-  .tk-search.open { flex-basis: 64px; }
-}
+/* the narrowest board (the window at its minimum): the filters say so on the Filter button itself (it's lit, and its
+   popover clears them) */
+@container (max-width: 520px) { .tk-on-chip { display: none; } }
 
 /* ---- picking several (⌘-click, Shift-click, a lane's select-all) and the bar that acts on them all ---- */
 .tc-check, .tr-check { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-style: normal; color: transparent; background: var(--surface); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fg3) 80%, transparent); cursor: pointer; transition: transform var(--t-quick) var(--out), background .15s, box-shadow .15s, color .15s; }

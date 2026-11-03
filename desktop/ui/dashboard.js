@@ -1,6 +1,6 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: #crew, one agent's conversation with its terminal docked beside it, Agents, Tasks or Terminals.
-/* global glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup */
+/* global pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -26,11 +26,12 @@ const feed = mountFeed($('.feed'), {
 })
 const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to), onDictate: () => place === 'chat' || place === 'dm' || goPlace('chat') })
 const collection = mountCollection($('.collection'), {
+  headIn: $('.heads'),
   onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home),
   onWorkspace: () => workspaces.settings(),
   onRenamed: (from, to) => renamed(from, to),
 })
-const tasks = mountTasks($('.tasks-view'), { onTerminal: (name) => select(name) })
+const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onTerminal: (name) => select(name) })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next) })
 // first run: Claude Code and Codex, what to install or sign in to, then the first agent (ui/setup.js)
 const setup = mountSetup({ onAdd: () => addAgent() })
@@ -65,11 +66,13 @@ $('.blank .blank-mark').outerHTML = ICONS.mark
 if (ON_WINDOWS) $('.side-top').innerHTML = `<span class="app-mark" aria-hidden="true">${markSVG('0 4 24 18')}</span>`
 const NAV_ICON = { crew: markSVG('0 4 24 18'), tasks: ICONS.task, terminals: ICONS.terminal }
 for (const b of document.querySelectorAll('.nv .nv-icon')) b.outerHTML = NAV_ICON[b.closest('.nv').dataset.place]
-$('[data-layout=grid]').innerHTML = ICONS.grid
-$('[data-layout=focus]').innerHTML = ICONS.focus
+// Terminals' header: which terminals (with how many), and the grid or one big one
+$('.heads').insertAdjacentHTML('beforeend', pageHead({
+  id: 'terminals', glyph: ICONS.terminal, title: 'Terminals', sub: 'Every agent’s terminal, live',
+  tools: `<div class="seg tv-show" data-show><button data-show="all" title="Every terminal">All <i class="n"></i></button><button data-show="busy" title="The ones working, starting or waiting on you">Busy <i class="n"></i></button><button data-show="needs" title="The ones waiting on you">Needs you <i class="n"></i></button></div>
+    <div class="seg icons tv-layout" data-layout><button data-layout="grid" title="Every terminal side by side" aria-label="Grid">${ICONS.grid}</button><button data-layout="focus" title="One terminal, big" aria-label="Focus">${ICONS.focus}</button></div>`,
+}))
 $('.find-icon').outerHTML = ICONS.search
-$('.ms-icon').outerHTML = ICONS.search
-$('.ms-open').innerHTML = ICONS.search
 $('[data-act=find]').innerHTML = ICONS.search
 $('.side-ws [data-act=add]').innerHTML = ICONS.plus
 $('.side-more').innerHTML = ICONS.more
@@ -115,6 +118,7 @@ function showPlace(next) {
   $('.stage').classList.toggle('docked', dock)
   $('.terms').classList.toggle('focus', dock || layout === 'focus')
   for (const b of document.querySelectorAll('.nv')) b.dataset.place === place ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')
+  for (const h of document.querySelectorAll('.heads > .page-head')) h.classList.toggle('hidden', h.dataset.for !== (place === 'dm' ? 'chat' : place))
   segmented($('[data-layout]'), (b) => b.dataset.layout === layout)
   $('[data-show]').classList.toggle('idle', layout === 'focus') // stays in place, so nothing moves
   if (!terms.has(selected)) selected = terms.keys().next().value ?? null
@@ -179,11 +183,13 @@ function openDM(name, { terminal = false } = {}) {
 
 // ---- the header: #crew, or who you're talking to ---------------------------------------------------------------
 
+const chatHeadEl = $('.page-head[data-for=chat]')
 function drawHead() {
-  const h = $('.mh-main')
-  const html = place === 'chat' ? chatHead() : place === 'dm' && dmAgent() ? dmHead(dmAgent()) : ''
-  $('.mainhead').classList.toggle('none', !html)
-  morph(h, html)
+  const a = place === 'dm' ? dmAgent() : null
+  const [title, acts] = place === 'chat' ? chatHead() : a ? dmHead(a) : ['', '']
+  chatHeadEl.classList.toggle('none', !title)
+  morph(chatHeadEl.querySelector('.ph-title'), title)
+  morph(chatHeadEl.querySelector('.ph-acts'), acts)
 }
 // #crew: who it reaches, what's waiting on you (a click goes to the oldest), and who's in it (a click opens Agents).
 function chatHead() {
@@ -191,11 +197,9 @@ function chatHead() {
   const members = state.agents.filter((a) => !a.cloneOf)
   const faces = [...members.filter((a) => a.on), ...members.filter((a) => !a.on)]
   const who = hasWorkspaces(state) ? `Everyone in ${state.workspace.name}` : 'Your whole crew'
-  return `<h1 class="mh-title"><span class="hash" aria-hidden="true">#</span>crew</h1><span class="mh-sub">${esc(who)} · Auto picks who answers</span>
-    <span class="mh-acts">
-      ${needs.length ? `<button class="mh-needs" data-head="needs" title="${esc(`${needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick for the oldest`)}">${needs.length} waiting on you${DOWN}</button>` : ''}
-      ${members.length ? `<button class="mh-faces" data-place="crew" title="${esc(`${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on: open Agents`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 26, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}
-    </span>`
+  return [headTitle({ glyph: '#', title: 'crew', sub: `${esc(who)} · Auto picks who answers` }),
+    `${needs.length ? `<button class="mh-needs" data-head="needs" title="${esc(`${needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick for the oldest`)}">${needs.length} waiting on you${DOWN}</button>` : ''}
+      ${members.length ? `<button class="mh-faces" data-place="crew" title="${esc(`${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on: open Agents`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 24, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}`]
 }
 // An agent: its creature and name, what it is and its brain in one line (with its clones or helpers), then its
 // switches (YOLO, Fast, on/off), its terminal, its profile (the sheet) and everything else (⋯).
@@ -204,17 +208,15 @@ function dmHead(a) {
   const helpers = runningSubs(a).length
   const meta = [a.area, brainWords(a, state.providers, { short: true }), clones.length ? plural(clones.length, 'clone') : helpers ? plural(helpers, 'helper') : ''].filter(Boolean)
   const canDock = family(a.name).length > 0
-  return `<span class="mh-face">${avatarHTML(a, { size: 30 })}</span><h1 class="mh-name">${nameHTML({ ...a, cloneOf: null })}</h1>
-    <span class="mh-sub" title="${esc([statusText(a), brainLabel(a, state.providers)].join('\n'))}">${esc(meta.join(' · '))}</span>
-    <span class="mh-acts">
-      ${modeChips(a)}
+  return [headTitle({ glyph: avatarHTML(a, { size: 28 }), title: nameHTML({ ...a, cloneOf: null }), sub: esc(meta.join(' · ')), tip: [statusText(a), brainLabel(a, state.providers)].join('\n') }),
+    `${modeChips(a)}
       <label class="mh-power" title="${esc(a.on ? 'On: turn it off (it stays off after restarts)' : 'Off: turn it on (it picks up its session)')}">${powerSwitch(a)}<span>${a.on ? 'On' : 'Off'}</span></label>
       <button class="btn" data-head="terminal" aria-pressed="${docked()}" ${canDock ? '' : 'disabled'} title="${canDock ? (docked() ? 'Put its terminal away' : 'Show its terminal beside the conversation') : `${esc(a.seed ?? a.name)} is off: no terminal`}">${ICONS.terminal}<span>Terminal</span></button>
-      <button class="btn" data-head="profile" title="Its brain, folder, rules, instructions and look">Profile</button>
-      <button class="icon" data-head="menu" title="More" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>
-    </span>`
+      <button class="btn" data-head="profile" title="Its brain, folder, rules, instructions and look">${ICONS.edit}<span>Profile</span></button>
+      <button class="icon" data-head="menu" title="More" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`]
 }
-$('.mainhead').addEventListener('click', (e) => {
+chatHeadEl.addEventListener('click', (e) => {
+  if (e.target.closest('.ph-glyph')) return dmAgent() && place === 'dm' && edit(dmAgent().name) // its creature: its profile
   const b = e.target.closest('[data-head], [data-place]')
   if (!b) return
   if (b.dataset.place) return goPlace(b.dataset.place)
@@ -243,46 +245,22 @@ function answerOldest() {
 
 // The magnifier opens a field; what you type narrows the chat to the messages with every word (marked), with how many
 // in the field. A click on one shows it where it was. Esc, or leaving, ends it.
-const msearch = $('.msearch')
-const msq = $('[data-ms-q]')
-let msTimer = null
-function openSearch() {
-  msearch.classList.add('on')
-  msq.placeholder = place === 'dm' && dmAgent() ? `Search with ${dmAgent().seed ?? dmAgent().name}` : 'Search #crew'
-  msq.focus()
-  msq.select()
-}
-// keep: the search ended on its own (a result was clicked): only the field goes
-function closeSearch({ keep = false } = {}) {
-  clearTimeout(msTimer)
-  if (!msearch.classList.contains('on') && !msq.value) return
-  msq.value = ''
-  $('.ms-count').textContent = ''
-  msearch.classList.remove('on')
-  $('.feed').classList.remove('searching')
-  if (!keep) feed.search('')
-}
-function runSearch() {
-  const n = feed.search(msq.value)
-  const on = Boolean(msq.value.trim())
-  $('.feed').classList.toggle('searching', on)
-  $('.ms-count').textContent = on ? (n ? `${n}${n >= 200 ? '+' : ''}` : 'none') : ''
-}
-$('.ms-open').addEventListener('click', openSearch)
-msq.addEventListener('input', () => {
-  clearTimeout(msTimer)
-  msTimer = setTimeout(runSearch, 120)
+const msearch = mountSearch($('.chat-search'), {
+  label: 'Search messages',
+  placeholder: () => (place === 'dm' && dmAgent() ? `Search with ${dmAgent().seed ?? dmAgent().name}` : 'Search #crew'),
+  delay: 120,
+  onSearch: (q) => {
+    const n = feed.search(q)
+    $('.feed').classList.toggle('searching', Boolean(q.trim()))
+    return n >= 200 ? `${n}+` : n
+  },
+  onClose: ({ escape }) => {
+    $('.feed').classList.remove('searching')
+    if (escape) composer.focus()
+  },
 })
-msq.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    e.stopPropagation()
-    closeSearch()
-    composer.focus()
-  }
-  if (e.key === 'Enter') (clearTimeout(msTimer), runSearch())
-})
-msq.addEventListener('blur', () => !msq.value && setTimeout(() => document.activeElement !== msq && !msq.value && closeSearch(), 150))
+const openSearch = () => msearch.open()
+const closeSearch = (opts) => msearch.close(opts)
 
 // ---- the dock: the conversation's agent's terminal, with a tab for each of its clones -----------------------------
 
@@ -660,7 +638,7 @@ document.addEventListener('keydown', (e) => {
   if (!commandKey(e)) return
   if (document.querySelector('.ed-layer.open, dialog[open]')) return // the agent's sheet or a dialog is in front
   if (KEYS[e.key] && !e.altKey && !e.shiftKey) return void (e.preventDefault(), goPlace(KEYS[e.key]))
-  if (e.key === 'f' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), place === 'chat' || place === 'dm' ? openSearch() : startFind())
+  if (e.key === 'f' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), place === 'chat' || place === 'dm' ? openSearch() : place === 'tasks' ? tasks.search() : startFind())
   if (e.key === 'k' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), startFind())
   if (e.key === 'n' && !e.shiftKey && !e.altKey) return void (e.preventDefault(), addAgent())
 })
@@ -975,7 +953,7 @@ function agentMenu(name, at) {
   })
 }
 document.addEventListener('contextmenu', (e) => {
-  const el = e.target.closest('.roster .dm, .pcard[data-name], .tile-head, .dock-tab, .mainhead .mh-face, .mainhead .mh-name')
+  const el = e.target.closest('.roster .dm, .pcard[data-name], .tile-head, .dock-tab, .page-head[data-for=chat] .ph-glyph .av, .page-head[data-for=chat] .ph-name')
   if (!el) return
   e.preventDefault()
   agentMenu(el.dataset.agent ?? el.dataset.name ?? el.dataset.dock ?? el.closest('.tile')?.dataset.name ?? dmAgent()?.name, { x: e.clientX, y: e.clientY })
@@ -1181,7 +1159,7 @@ function computersHTML({ me, links, phones }) {
       ${linkOpen.details ? `<div class="lk-details">
         <p>Anyone with the link code can use and drive your agents, so keep it to your own computers. Linked computers see these agents as <b>name@${esc(me.slug)}</b>.</p>
         <p>${esc(reachText(me.hosts))}</p>
-        <div class="lk-row"><span>A new code disconnects the computers using this one, until they link again.</span><span class="lk-btns"><button class="btn small" data-link-details-copy title="This computer's addresses and port, for when a computer can't connect">${linkOpen.detailsCopied ? 'Copied' : 'Copy connection details'}</button><button class="btn small" data-link-reset>New code</button></span></div>
+        <div class="lk-row"><span>A new code disconnects the computers using this one, until they link again.</span><span class="lk-btns"><button class="btn" data-link-details-copy title="This computer's addresses and port, for when a computer can't connect">${linkOpen.detailsCopied ? 'Copied' : 'Copy connection details'}</button><button class="btn" data-link-reset>New code</button></span></div>
       </div>` : ''}`
     : me.error ? `<div class="lk-li"><p class="err">${esc(sharingError(me.error))}</p></div>` : ''}`
   const form = linkOpen.form || linkErr ? `
@@ -1242,11 +1220,11 @@ function linkHTML(l) {
       ${l.agents.length ? `<ul class="lk-agents">${l.agents.map((a) => `
         <li class="${a.hidden ? 'unused' : ''}">${avatarHTML(a, { size: 30, mood: 'still' })}
           <span class="who"><b>${esc(a.seed)}</b><small>${esc(a.area || 'no area')}</small></span>
-          ${l.online ? `<button class="btn small lk-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
+          ${l.online ? `<button class="btn lk-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
           <label class="use"><input type="checkbox" class="switch" data-use="${esc(a.name)}" ${a.hidden ? '' : 'checked'}>Use</label>
         </li>`).join('')}</ul>` : `<p>${l.online ? 'No agents there yet.' : 'Its agents show here once it\'s back.'}</p>`}
       <div class="lk-row"><span title="Move one with its Move to…, or drag it onto a computer in the sidebar">${l.agents.length > 1 ? `Using ${used} of ${l.agents.length}` : ''}</span>
-        <span class="lk-btns">${l.agents.length > 1 ? `<button class="btn small" data-use-all="${esc(l.slug)}">All</button><button class="btn small" data-use-none="${esc(l.slug)}">None</button>` : ''}${l.saved ? `<button class="btn small" data-forget="${esc(l.slug)}" title="Unlink it from ${THIS_COMPUTER}">Forget</button>` : ''}</span></div>
+        <span class="lk-btns">${l.agents.length > 1 ? `<button class="btn" data-use-all="${esc(l.slug)}">All</button><button class="btn" data-use-none="${esc(l.slug)}">None</button>` : ''}${l.saved ? `<button class="btn" data-forget="${esc(l.slug)}" title="Unlink it from ${THIS_COMPUTER}">Forget</button>` : ''}</span></div>
     </div>` : ''}
   </section>`
 }
@@ -1277,7 +1255,7 @@ function phoneHTML(d) {
     <span class="ph-icon">${ICONS.phone}</span>
     <span class="who"><b>${esc(d.name)}</b><small>${kind}${d.app ? ` · ${PRODUCT_NAME} ${esc(d.app)}` : ''} · paired ${phoneDay(d.paired)}</small></span>
     <span class="ph-seen"><span class="dot ${d.online ? 'live' : 'off'}"></span>${seen}</span>
-    <button class="btn small" data-phone-remove="${esc(d.id)}">Remove</button>
+    <button class="btn" data-phone-remove="${esc(d.id)}">Remove</button>
   </li>`
 }
 
@@ -1558,7 +1536,7 @@ async function moveSheet(name, home) {
     </div>
     <h3>Move ${who} to ${esc(to.name)}</h3>
     <label class="mv-folder"><span>Folder on ${esc(to.name)}</span>
-      <span class="mv-field"><input data-mv-folder value="${esc(moving.folder)}" spellcheck="false" autocomplete="off">${to.here ? '<button class="btn small" data-mv-pick>Choose…</button>' : ''}</span>
+      <span class="mv-field"><input data-mv-folder value="${esc(moving.folder)}" spellcheck="false" autocomplete="off">${to.here ? '<button class="btn" data-mv-pick>Choose…</button>' : ''}</span>
       <span class="mv-check" data-mv-check></span>
     </label>
     <div class="mv-sugs" data-mv-sugs></div>

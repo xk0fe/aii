@@ -1,29 +1,14 @@
-/* The crew collection: a header, cards grouped by computer, bulk select, the stats table, and the agent's sheet. */
+/* The crew collection: cards grouped by computer, bulk select, the stats table, and the agent's sheet. */
 .collection { overflow: hidden; }
 .col-list { position: absolute; inset: 0; overflow-y: auto; scrollbar-gutter: stable; container-type: inline-size; }
 /* a narrow middle (small window, both panels out): the header keeps its controls and lets the words go */
 @container (max-width: 640px) {
-  .col-head { padding: 16px 16px 12px; }
-  .col-head h2.display { font-size: 24px; line-height: 30px; }
-  .col-grid { padding: 4px 16px 120px; }
   .col-cards { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 }
+.empty .col-grid, .empty .col-stats { display: none !important; }
 
-/* The header: one line in the brand face saying how the crew is, a plain sentence under it, and the view's tools.
-   Both lines keep one line each (the full text on hover), so a change of words never moves what's below. */
-.col-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 20px 24px 16px; }
-.col-head h2.display { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.col-sub { grid-column: 1 / -1; margin: 4px 0 0; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.col-tools { display: flex; align-items: center; gap: 8px; }
-.col-on { color: var(--fg2); white-space: nowrap; font-variant-numeric: tabular-nums; margin-right: 4px; }
-.col-more { width: 28px; height: 28px; padding: 0; flex: none; }
-.col-more svg { width: 16px; height: 16px; }
-.seg.icons { height: 28px; align-items: stretch; }
-.seg.icons button { display: grid; place-items: center; padding: 0 8px; }
-.seg.icons button svg { width: 16px; height: 16px; }
-.empty .col-head, .empty .col-grid, .empty .col-stats { display: none !important; }
-
-.col-grid { padding: 8px 24px 130px; display: flex; flex-direction: column; gap: 24px; }
+/* under the header (the place's, common.css .page-head): the same gutter as every place */
+.col-grid { padding: 20px var(--gx, 24px) 130px; display: flex; flex-direction: column; gap: 24px; }
 .col-group h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; height: 26px; padding-top: 6px; font-size: 13px; font-weight: 600; }
 .col-group h3 b { color: var(--fg); font-weight: 600; }
 .col-group h3 span { font-size: 12px; font-weight: 400; color: var(--fg2); }
@@ -95,7 +80,7 @@
 
 /* the bulk bar: a solid sheet pinned to the bottom, who's picked and the actions on top, what to change below */
 .bulk {
-  position: sticky; bottom: 18px; margin: 0 24px; display: none; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px;
+  position: sticky; bottom: 18px; margin: 0 var(--gx, 24px); display: none; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px;
   padding: 10px 12px; border-radius: var(--r-window); background: var(--float); box-shadow: var(--shadow-float);
 }
 .selecting .bulk { display: flex; animation: bulk-in var(--t-move) var(--out); }
@@ -118,7 +103,7 @@
 .col-empty .lead { max-width: 420px; margin: 8px 0 0; color: var(--fg2); font-size: 15px; line-height: 22px; text-wrap: pretty; }
 .col-empty .acts { display: flex; gap: 8px; margin-top: 24px; }
 /* ---- stats table ---- */
-.col-stats { display: none; padding: 8px 20px 40px 24px; overflow-x: auto; container-type: inline-size; }
+.col-stats { display: none; padding: 20px var(--gx, 24px) 40px; overflow-x: auto; container-type: inline-size; }
 .stats-mode .col-stats { display: block; }
 .stats-mode .col-grid { display: none; }
 .stats-spend { margin: 0 2px 4px; font-size: 13px; color: var(--fg2); cursor: help; }
@@ -239,11 +224,6 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .ed-pane h4:first-child { margin-top: 4px; }
 .ed-pane-head { flex: none; display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
 .ed-pane-head p { flex: 1; margin: 0; font-size: 13px; line-height: 1.4; color: var(--fg2); }
-.btn.small { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; font-size: 13px; white-space: nowrap; flex: none; }
-.btn.small svg { width: 14px; height: 14px; }
-.btn:disabled { opacity: .4; cursor: default; }
-.btn.danger { color: var(--danger); }
-.btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 
 /* a grouped list, like System Settings: label (and a one-line hint) on the left, control on the right */
 .ed-list { flex: none; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }

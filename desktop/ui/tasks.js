@@ -2,7 +2,7 @@
 // Add one with New task or a column's + (or from the chat). Starting one hands it to its owner in a fresh
 // conversation, so tasks don't pile into one long context; you review what comes back. Board or list, filtered by
 // kind, owner or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via crew.call('task').
-/* global PRODUCT_NAME, ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine */
+/* global pageHead, mountSearch, PRODUCT_NAME, ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine */
 
 const STATUS = [
   { id: 'new', label: 'To do' },
@@ -54,26 +54,30 @@ const TK_FUNNEL = icon('<path d="M2.6 3.4h10.8L9.3 8.4v4.3l-2.6-1.3v-3z" fill="n
 // The columns you can add to with their +: To do adds, In progress adds and starts it right away.
 const TK_ADD_TO = { new: 'Add a task', fixing: 'Start a new task' }
 
-function mountTasks(root, { onTerminal }) {
+function mountTasks(root, { headIn = root, onTerminal }) {
+  // the header: in the dashboard's row of place headers (common.js pageHead), like every place's. Search, the filters
+  // that are on and Filter, board or list, New task, ⋯.
+  headIn.insertAdjacentHTML('beforeend', pageHead({
+    id: 'tasks', glyph: ICONS.task, title: 'Tasks',
+    tools: `<div class="tk-search"></div><span class="tk-active"></span>
+      <button class="btn" data-filter-btn title="Filter by kind or owner" aria-haspopup="true" aria-expanded="false">${TK_FUNNEL}<span>Filter</span></button>
+      <div class="seg icons tk-views"><button data-mode="board" title="Board" aria-label="Board">${BOARD}</button><button data-mode="list" title="List" aria-label="List">${LIST}</button></div>
+      <button class="btn primary" data-new-task title="New task (N)">${ICONS.plus}<span>New task</span></button>
+      <button class="icon" data-board-menu title="Workflow, and acting on many tasks at once" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`,
+  }))
+  const head = headIn.lastElementChild
+  // what floats over the page (the filters, the list's composer) hangs from the header too: it lives on the page's top
+  const floats = document.createElement('div')
+  floats.className = 'tk-floats'
+  floats.innerHTML = '<div class="tk-fpop hidden" data-filter-pop role="menu" aria-label="Filter"></div><div class="tk-add-pop hidden"></div>'
+  document.body.append(floats)
   root.innerHTML = `
     <section class="tasks">
-      <header class="tk-head">
-        <div class="tk-headline"><h2>Tasks</h2><div class="tk-sub"></div></div>
-        <span class="grow"></span>
-        <div class="tk-search"><input type="search" placeholder="Search tasks" spellcheck="false" data-search><button class="icon tk-search-btn" data-search-btn></button></div>
-        <span class="tk-active"></span>
-        <button class="btn tk-hbtn" data-filter-btn title="Filter by kind or owner" aria-haspopup="true" aria-expanded="false">${TK_FUNNEL}<span>Filter</span></button>
-        <div class="seg tk-views"><button data-mode="board" title="Board">${BOARD}</button><button data-mode="list" title="List">${LIST}</button></div>
-        <button class="btn primary tk-hbtn" data-new-task title="New task (N)">${ICONS.plus}<span>New task</span></button>
-        <button class="icon tk-more" data-board-menu title="Workflow, and acting on many tasks at once">${ICONS.more}</button>
-      </header>
       <div class="tk-body">
         <div class="tk-board"></div>
         <div class="tk-list"></div>
         <div class="tk-empty"></div>
       </div>
-      <div class="tk-fpop hidden" data-filter-pop role="menu" aria-label="Filter"></div>
-      <div class="tk-add-pop hidden"></div>
       <div class="tk-add-home hidden">
         <div class="tk-add" data-kind="task">
           <textarea rows="1" spellcheck="true" data-add></textarea>
@@ -91,7 +95,7 @@ function mountTasks(root, { onTerminal }) {
       <div class="tk-toast"></div>
     </section>
     <aside class="tp"></aside>`
-  const $ = (s) => root.querySelector(s)
+  const $ = (s) => root.querySelector(s) ?? head.querySelector(s) ?? floats.querySelector(s)
   const tp = $('.tp')
   const add = $('[data-add]')
   let ink = null // mentions in color (mountInk), set up with the composer's other listeners below
@@ -294,13 +298,11 @@ function mountTasks(root, { onTerminal }) {
   // The list's popover: under the button, its right edge on the button's (above it if there's no room below).
   function placeAddPop(from) {
     addPop.classList.remove('hidden')
-    const box = $('.tasks').getBoundingClientRect()
     const r = from.getBoundingClientRect()
     const w = addPop.offsetWidth
     const h = addPop.offsetHeight
-    const below = r.bottom - box.top + 6
-    addPop.style.left = `${Math.max(16, Math.min(r.right - box.left - w, box.width - w - 16))}px`
-    addPop.style.top = `${below + h > box.height - 8 ? Math.max(8, r.top - box.top - h - 6) : below}px`
+    addPop.style.left = `${Math.max(16, Math.min(r.right - w, innerWidth - w - 16))}px`
+    addPop.style.top = `${r.bottom + 6 + h > innerHeight - 8 ? Math.max(8, r.top - h - 6) : r.bottom + 6}px`
   }
   // A click somewhere else closes it, unless something's written in it (Escape always does).
   const composeOutside = (e) => {
@@ -360,42 +362,16 @@ function mountTasks(root, { onTerminal }) {
 
   // ---- header: search, filters, board or list, the ⋯ menu ------------------------------------------
 
-  // Search: a magnifier that opens a field to its left, so nothing beside it moves; it closes when you leave it empty.
-  const search = $('[data-search]')
-  const searchBox = $('.tk-search')
-  const searchBtn = $('[data-search-btn]')
-  function drawSearch() {
-    const open = searchBox.classList.contains('open')
-    morph(searchBtn, filter.q ? ICONS.close : ICONS.search)
-    searchBtn.title = filter.q ? 'Clear the search' : open ? 'Close the search' : 'Search tasks'
-  }
-  function openSearch() {
-    closeFilters()
-    searchBox.classList.add('open')
-    search.focus()
-    drawSearch()
-  }
-  function closeSearch() {
-    if (search.value) {
-      search.value = ''
-      filter.q = ''
+  // Search: the places' own (common.js mountSearch), narrowing the board or list to the tasks with the words.
+  const search = mountSearch($('.tk-search'), {
+    label: 'Search tasks',
+    onOpen: () => closeFilters(),
+    onSearch: (q) => {
+      filter.q = q.trim().toLowerCase()
       draw()
-    }
-    searchBox.classList.remove('open')
-    drawSearch()
-  }
-  searchBtn.addEventListener('mousedown', (e) => e.preventDefault()) // the field keeps the focus, so a click toggles it
-  searchBtn.addEventListener('click', () => (searchBox.classList.contains('open') ? closeSearch() : openSearch()))
-  search.addEventListener('input', () => {
-    filter.q = search.value.trim().toLowerCase()
-    drawSearch()
-    draw()
+      return Object.values(grouped()).flat().length
+    },
   })
-  search.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') (e.preventDefault(), e.stopPropagation(), closeSearch(), search.blur())
-    if (e.key === 'Enter') search.blur()
-  })
-  search.addEventListener('blur', () => !search.value && (searchBox.classList.remove('open'), drawSearch()))
 
   // Filters: kind and owner, in the Filter button's popover. While some are on, one chip beside the button says
   // which ("Bugs · Iris") and its × clears them.
@@ -407,10 +383,9 @@ function mountTasks(root, { onTerminal }) {
     fpop.classList.remove('hidden')
     fbtn.classList.add('on')
     fbtn.setAttribute('aria-expanded', 'true')
-    const box = $('.tasks').getBoundingClientRect()
     const r = fbtn.getBoundingClientRect()
-    fpop.style.left = `${Math.max(16, Math.min(r.left - box.left, box.width - fpop.offsetWidth - 16))}px`
-    fpop.style.top = `${r.bottom - box.top + 6}px`
+    fpop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - fpop.offsetWidth - 8))}px`
+    fpop.style.top = `${r.bottom + 6}px`
     document.addEventListener('pointerdown', filtersOutside, true)
     fpop.querySelector('.tk-fp-item.on, .tk-fp-item')?.focus({ preventScroll: true })
   }
@@ -427,9 +402,7 @@ function mountTasks(root, { onTerminal }) {
     Object.assign(filter, { kind: '', owner: '' })
     if (all) {
       filter.q = ''
-      search.value = ''
-      if (document.activeElement !== search) searchBox.classList.remove('open')
-      drawSearch()
+      search.close({ keep: true })
     }
     draw()
   }
@@ -696,7 +669,7 @@ function mountTasks(root, { onTerminal }) {
     const open = tickets.filter((t) => t.status !== 'done').length
     const review = tickets.filter((t) => t.status === 'check').length
     const urgent = tickets.filter((t) => t.status !== 'done' && t.severity === 'blocker').length
-    morph($('.tk-sub'), [open ? `${open} open` : 'Nothing open', urgent && `<span class="sub-urgent">${urgent} urgent</span>`, review && `<span class="sub-review">${review} to review</span>`].filter(Boolean).join(' · '))
+    morph(head.querySelector('.ph-sub'), [open ? `${open} open` : 'Nothing open', urgent && `<span class="strong">${urgent} urgent</span>`, review && `<span class="needs">${review} to review</span>`].filter(Boolean).join(' · '))
   }
 
   // ---- picking several tasks, and the bar that acts on them all at once ----------------------------
@@ -1141,7 +1114,6 @@ function mountTasks(root, { onTerminal }) {
   })
 
   syncAdd()
-  drawSearch()
   // While another view is up, the board isn't redrawn on every push: it catches up just before it's shown again,
   // without the slide-ins it would have played out of sight.
   let shown = true
@@ -1159,6 +1131,7 @@ function mountTasks(root, { onTerminal }) {
     },
     setVisible(on) {
       shown = on
+      floats.classList.toggle('hidden', !on) // its popovers go with it (they're on the page's top layer)
       if (!on || !stale || !state) return
       stale = false
       first = true
@@ -1168,6 +1141,7 @@ function mountTasks(root, { onTerminal }) {
     },
     open: (key) => (state ? open(String(key)) : setTimeout(() => open(String(key)), 300)),
     focus: () => openComposer('new'),
+    search: () => search.open(),
     close: () => selected && close(),
     // the titlebar tab's count: tasks waiting on your review first
     badge: (next) => {

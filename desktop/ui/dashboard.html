@@ -124,7 +124,7 @@
     .use-pop small { color: var(--fg2); font-size: 12px; }
     .use-pop small.warn { color: var(--needs-ink); font-weight: 500; }
 
-    /* ---- what's open: a header (for #crew and a conversation) over the view ---- */
+    /* ---- what's open: the place's header (common.css .page-head) over the view ---- */
     .center { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
     /* Windows draws its window buttons over the top right (main.js titleBarOverlay, 45px tall): nothing goes beneath
        them. The width they take comes from the page (titlebar-area), 138px if it can't say. */
@@ -132,52 +132,22 @@
     html[data-os=win] .center { --caption-w: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))); }
     /* with the sidebar put away, a Mac's traffic lights sit over the header's left end */
     html:not([data-os=win]) body.no-side .center { --lights-w: 76px; }
-    .mainhead { flex: none; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 calc(14px + var(--caption-w)) 0 calc(24px + var(--lights-w, 0px)); border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
-    .mainhead.none { display: none; }
-    .mh-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; }
-    .mainhead :is(button, input, label, a) { -webkit-app-region: no-drag; }
-    .tk-head, .col-head, .tv-head { -webkit-app-region: drag; }
-    :is(.tk-head, .col-head, .tv-head) :is(button, input, label, select, .seg, a, [role=button]) { -webkit-app-region: no-drag; }
-    html[data-os=win] :is(.tk-head, .col-head) { padding-right: calc(24px + var(--caption-w)); }
-    html[data-os=win] .tv-head { padding-right: calc(14px + var(--caption-w)); }
-    body.no-side :is(.tk-head, .col-head, .tv-head) { padding-left: calc(24px + var(--lights-w, 0px)); }
-    .mh-title { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 16px; font-weight: 700; white-space: nowrap; }
-    .mh-title .hash { color: var(--fg3); font-weight: 600; }
-    .mh-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--fg2); }
-    .mh-face { flex: none; position: relative; line-height: 0; }
-    .mh-name { flex: none; margin: 0; font: 600 18px/22px var(--font-brand); white-space: nowrap; }
-    .mh-name .at { font-family: var(--ui); }
-    .mainhead .mark-yolo { flex: none; height: 16px; padding: 0 4px; border-radius: var(--r-tag); box-shadow: inset 0 0 0 1px var(--line-strong); font: 600 10px/16px var(--ui); font-style: normal; color: var(--fg2); }
-    .mh-acts { margin-left: auto; flex: none; display: flex; align-items: center; gap: 6px; }
-    .mh-power { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: var(--r-control); font-size: 13px; color: var(--fg2); cursor: pointer; }
+    /* the views' gutter: the header's title and what's under it line up (a narrow middle takes less) */
+    @media (max-width: 960px) { .heads, .stage { --gx: 16px; } }
+    .heads { flex: none; }
+    .page-head.none { display: none; }
+    /* a conversation's header: its switch, and the agent's YOLO next to its name as everywhere else */
+    .mh-power { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: var(--r-control); font-size: 13px; color: var(--fg2); cursor: pointer; }
     .mh-power:hover { background: var(--fill); }
-    .mainhead .btn { height: 30px; }
-    .mainhead .btn[aria-pressed=true] { background: var(--fill-hover); }
-    .mainhead .icon { width: 30px; height: 30px; padding: 0; }
-    .mainhead .mode { height: 22px; }
+    .ph-tools .mode { height: 22px; }
     /* #crew: what's waiting on you (a berry pill that jumps to the oldest), and who's in it */
-    .mh-needs { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--needs-tint); color: var(--needs-ink); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background var(--t-quick); animation: mh-in var(--t-move) var(--out); }
+    .mh-needs { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--needs-tint); color: var(--needs-ink); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background var(--t-quick); animation: mh-in var(--t-move) var(--out); }
     .mh-needs:hover { background: color-mix(in srgb, var(--needs) 16%, transparent); }
     .mh-needs svg { width: 12px; height: 12px; }
     @keyframes mh-in { from { opacity: 0; } }
-    .mh-faces { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px 0 4px; border: 0; border-radius: 9px; background: none; color: var(--fg2); font: inherit; font-size: 13px; cursor: pointer; }
+    .mh-faces { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 4px; border: 0; border-radius: var(--r-control); background: none; color: var(--fg2); font: inherit; font-size: 13px; cursor: pointer; }
     .mh-faces:hover { background: var(--fill); color: var(--fg); }
-    .mh-faces .av + .av { margin-left: -8px; }
-    /* searching the messages: a magnifier at the header's end that opens into a field, with how many match */
-    .msearch { flex: none; display: flex; align-items: center; }
-    .msearch .icon { width: 30px; height: 30px; padding: 0; }
-    .msearch .icon svg { width: 16px; height: 16px; }
-    .ms-field { display: none; align-items: center; gap: 7px; width: 260px; height: 32px; padding: 0 10px; border-radius: 9px; background: var(--fill); color: var(--fg3); cursor: text; animation: ms-in var(--t-pop) var(--out); }
-    .ms-field:focus-within { background: var(--field); box-shadow: inset 0 0 0 1px var(--line-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); }
-    .ms-field svg { width: 15px; height: 15px; flex: none; }
-    .ms-field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 13px; color: var(--fg); user-select: text; }
-    .ms-field input::placeholder { color: var(--fg3); }
-    .ms-field input::-webkit-search-cancel-button { display: none; }
-    .ms-count { flex: none; font-size: 12px; color: var(--fg3); font-variant-numeric: tabular-nums; }
-    .msearch.on .ms-field { display: flex; }
-    .msearch.on .ms-open { display: none; }
-    @keyframes ms-in { from { opacity: 0; transform: translateX(6px); } }
-    @media (max-width: 1240px) { .ms-field { width: 200px; } }
+    .mh-faces .av + .av { margin-left: -7px; }
     /* the words found, in the results */
     .chat mark { background: color-mix(in srgb, var(--accent) 14%, transparent); color: inherit; border-radius: 3px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent); }
     .chat .feed.searching .item, .chat .feed.searching .task-ev, .chat .feed.searching .event { cursor: pointer; }
@@ -191,17 +161,10 @@
     /* Grid: tiles stay tall enough to read (a dozen lines or so) and the grid scrolls, rather than squeezing
        every terminal down to three lines. Two columns once there's room for two full-width terminals. */
     .terms-view { position: absolute; inset: 0; display: flex; flex-direction: column; }
-    /* which terminals (with counts) on the left, Grid or Focus on the right */
-    .tv-head { flex: none; display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 14px 0 24px; }
-    .tv-title { margin: 0 8px 0 0; font: 600 20px/24px var(--font-brand); }
-    .tv-show button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 4px 12px; }
-    .tv-show button i { font-style: normal; font-weight: 500; color: var(--fg2); font-variant-numeric: tabular-nums; }
-    .tv-show button[data-show=needs] i.some { color: var(--needs-ink); }
-    .tv-show.idle { opacity: .55; } /* in Focus the filter waits for the grid; a click on it goes back there */
+    /* in Focus the filter waits for the grid; a click on it goes back there */
+    .tv-show.idle { opacity: .55; }
     .tv-show.idle:hover { opacity: 1; }
-    .tv-layout button { display: grid; place-items: center; width: 32px; height: 24px; padding: 0; }
-    .tv-layout button svg { width: 16px; height: 16px; }
-    .terms { position: relative; flex: 1; min-height: 0; padding: 2px 14px 14px; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); grid-auto-rows: minmax(250px, 1fr); overflow-y: auto; }
+    .terms { position: relative; flex: 1; min-height: 0; padding: 20px var(--gx, 24px) var(--gx, 24px); display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); grid-auto-rows: minmax(250px, 1fr); overflow-y: auto; }
     .terms.focus { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); overflow: hidden; }
     .terms.focus .tile:not(.on) { display: none; }
     .terms .tile.filtered { display: none; }
@@ -438,8 +401,8 @@
        included. What needs you is a card in the conversation (760px at most, as wide as the lines of who's at work),
        answered where it is. */
     .chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--surface); }
-    .chat .feed { flex: 1; gap: 14px; padding: 20px 28px 12px; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12px); }
-    .chat .composer { padding: 6px 28px 18px; }
+    .chat .feed { flex: 1; gap: 14px; padding: 20px var(--gx, 24px) 12px; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12px); }
+    .chat .composer { padding: 6px var(--gx, 24px) 18px; }
     .chat .needs-queue { display: none !important; }
     .chat .item.said { gap: 12px; }
     .chat .item.said .face { width: 36px; }
@@ -473,7 +436,6 @@
     .stage { --dock-w: clamp(340px, 46%, 660px); }
     .stage.docked .chat { right: var(--dock-w); }
     .terms-view.docked { left: auto; width: var(--dock-w); padding: 10px 10px 10px 0; }
-    .terms-view.docked .tv-head { display: none; }
     .dock-bar { display: none; }
     .terms-view.docked .dock-bar { flex: none; display: flex; align-items: center; gap: 4px; height: 42px; padding: 0 6px 0 8px; border-radius: var(--r-window) var(--r-window) 0 0; background: #1a1a1a; color: #EDEDED; box-shadow: 0 0 0 1px rgba(0, 0, 0, .06); }
     .dock-tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
@@ -520,13 +482,9 @@
       </footer>
     </nav>
     <section class="center">
-      <header class="mainhead">
-        <div class="mh-main"></div>
-        <div class="msearch" role="search">
-          <button class="icon ms-open" data-ms="open" title="Search messages (⌘F)" aria-label="Search messages"></button>
-          <label class="ms-field"><span class="ms-icon"></span><input type="search" data-ms-q spellcheck="false" autocomplete="off" aria-label="Search messages"><span class="ms-count" aria-live="polite"></span></label>
-        </div>
-      </header>
+      <div class="heads">
+        <header class="page-head" data-for="chat"><div class="ph-title"></div><div class="ph-tools"><div class="chat-search"></div><span class="ph-acts"></span></div></header>
+      </div>
       <div class="ws-banner hidden"></div>
       <div class="stage">
         <aside class="chat" aria-label="Messages">
@@ -535,12 +493,6 @@
         </aside>
         <div class="terms-view hidden">
           <div class="dock-bar"></div>
-          <header class="tv-head">
-            <h2 class="tv-title">Terminals</h2>
-            <div class="seg tv-show" data-show><button data-show="all" title="Every terminal">All <i></i></button><button data-show="busy" title="The ones working, starting or waiting on you">Busy <i></i></button><button data-show="needs" title="The ones waiting on you">Needs you <i></i></button></div>
-            <span class="grow"></span>
-            <div class="seg tv-layout" data-layout><button data-layout="grid" title="Every terminal side by side" aria-label="Grid"></button><button data-layout="focus" title="One terminal, big" aria-label="Focus"></button></div>
-          </header>
           <div class="terms"></div>
         </div>
         <div class="collection hidden"></div>
