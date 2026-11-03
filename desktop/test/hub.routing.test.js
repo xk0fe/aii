@@ -148,13 +148,13 @@ test('copies of one send share a sendId; separate sends and single sends do not'
 test('held hand-offs in one send share a sendId but are approved and dropped one by one', () => {
   hub.config.autopilot = false
   hub.send({ from: 'abe', text: '@ada @june go' })
-  const [toDavid, toJoseph] = sent()
-  assert.equal(toDavid.sendId, toJoseph.sendId)
-  hub.approve(toDavid.id)
+  const [toAda, toJune] = sent()
+  assert.equal(toAda.sendId, toJune.sendId)
+  hub.approve(toAda.id)
   assert.deepEqual(queued(), { ada: 1 })
-  assert.equal(toJoseph.held, true)
-  hub.drop(toJoseph.id)
-  assert.equal(toJoseph.dropped, true)
+  assert.equal(toJune.held, true)
+  hub.drop(toJune.id)
+  assert.equal(toJune.dropped, true)
   assert.deepEqual(queued(), { ada: 1 })
 })
 
