@@ -254,9 +254,55 @@ const PHONES = {
 }
 const TAILNET = `${HERE.slug}.example-tailnet.ts.net`
 const COMPUTERS = {
-  me: { name: HERE.name, slug: HERE.slug, sharing: true, agents: AGENTS.filter((a) => !a.home && !a.cloneOf).length, port: 7787, code: `crew1.${Buffer.from(JSON.stringify({ name: HERE.name })).toString('base64url')}.k3y`, hosts: [{ address: HERE.address, via: 'Wi-Fi' }, { address: TAILNET, via: 'Tailscale' }] },
+  me: { name: HERE.name, slug: HERE.slug, sharing: true, share: true, agents: AGENTS.filter((a) => !a.home && !a.cloneOf).length, port: 7787, code: `crew1.${Buffer.from(JSON.stringify({ name: HERE.name })).toString('base64url')}.k3y`, hosts: [{ address: HERE.address, via: 'Wi-Fi' }, { address: TAILNET, via: 'Tailscale' }] },
   links: [linked(LINK.slug, LINK.name, true), ...(BIG ? [linked('laptop', 'Laptop', false)] : [])],
   phones: PHONES,
+  nearby: null, // while Computers is open: the computers on this network with it open too (linkAction 'discover')
+  pairing: null,
+}
+// Nearby, as Crew.nearbyView() reports it: a Mac mini with Computers open. window.__crewNearby replaces it ([] for none).
+const NEARBY = [{ id: 'n1', name: 'Mac mini', platform: 'darwin', agents: 5 }]
+// Crew Link from the Computers sheet, acted out: Nearby while it's open, linking one (asking, the code, Link on both
+// sides, then linked; or window.__crewPairEnd's way of failing: 'declined', 'blocked'…), answering one asking
+// (window.__crewAsk() starts one).
+function linkAction(op, ...args) {
+  const later = (ms, fn) => setTimeout(() => (fn(), emit()), ms)
+  if (op === 'discover') COMPUTERS.nearby = args[0] ? (window.__crewNearby ?? NEARBY) : null
+  if (op === 'discover' && !args[0]) COMPUTERS.pairing = null
+  if (op === 'pair') {
+    const n = COMPUTERS.nearby?.find((x) => x.id === args[0])
+    const out = { id: n.id, name: n.name, stage: 'asking' }
+    COMPUTERS.pairing = { out, in: null }
+    later(window.__crewPairDelay ?? 500, () => COMPUTERS.pairing?.out === out && Object.assign(out, window.__crewPairEnd ? { stage: 'failed', error: window.__crewPairEnd } : { stage: 'confirm', sas: '4827' }))
+  }
+  if (op === 'pairConfirm') {
+    const out = COMPUTERS.pairing?.out
+    out.stage = 'waiting' // until the Mac mini says yes too (window.__crewTheyAgree() does)
+    if (out.theyAgreed) later(300, () => Object.assign(out, { stage: 'linked', slug: 'mac-mini' }))
+  }
+  if (op === 'pairCancel' || op === 'pairDone') COMPUTERS.pairing = null
+  if (op === 'pairAnswer') {
+    const inn = COMPUTERS.pairing?.in
+    if (!args[1]) COMPUTERS.pairing = null
+    else {
+      inn.stage = 'accepted'
+      later(400, () => Object.assign(inn, { stage: 'linked', slug: 'mac-mini' }))
+    }
+  }
+  if (op === 'code') return COMPUTERS.me.code
+  if (op === 'localNetwork') window.__crewOpenedLocalNetwork = (window.__crewOpenedLocalNetwork ?? 0) + 1
+  emit()
+}
+// the Mac mini clicking Link on its side: linked if this side did already, or said on screen if not
+window.__crewTheyAgree = () => {
+  const out = COMPUTERS.pairing?.out
+  if (out.stage === 'waiting') Object.assign(out, { stage: 'linked', slug: 'mac-mini' })
+  else out.theyAgreed = true
+  emit()
+}
+window.__crewAsk = (name = 'Laptop') => {
+  COMPUTERS.pairing = { out: null, in: { id: 'r1', name, sas: '0519', stage: 'ask' } }
+  emit()
 }
 // A pairing code for a phone, with made-up keys (a new secret each time), as a QR code the way main.js draws it (qrSvg).
 // window.__crewPhoneTTL makes codes end sooner than ten minutes, to watch the pairing view renew them.
@@ -604,6 +650,7 @@ window.crew = {
       setTimeout(() => window.__crewEmit('state', state), 30)
     }
     if (action === 'task') return taskAction(...args)
+    if (action === 'link') return linkAction(...args)
     // phones: a code to pair one, and unpairing one
     if (action === 'phones') {
       const [op, id] = args

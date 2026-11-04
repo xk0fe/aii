@@ -249,13 +249,59 @@ const SHOTS = {
     await save(win, `move-${theme}`)
     win.destroy()
   },
-  // Computers: this one shared, Workstation linked, the Laptop asleep.
+  // Computers: this one, Workstation linked, the Laptop asleep, and a Mac mini nearby with Computers open too.
   async computers(theme) {
     const win = await dashboard(theme, 'crew', { fixture: 'big' })
     await sleep(900)
     await js(win, 'openComputers()')
     await sleep(800)
     await save(win, `computers-${theme}`)
+    win.destroy()
+  },
+  // Nearby with nothing found yet (the radar), and with macOS keeping the app off the network.
+  async nearby(theme) {
+    const win = await dashboard(theme, 'crew')
+    await sleep(900)
+    await js(win, 'window.__crewNearby = []; openComputers()')
+    await sleep(900)
+    await save(win, `nearby-find-${theme}`)
+    await js(win, "const s = window.__crewState; s.computers.me.localNetwork = 'blocked'; window.__crewEmit('state', s)")
+    await sleep(500)
+    await save(win, `nearby-blocked-${theme}`)
+    win.destroy()
+  },
+  // Linking the Mac mini found nearby: asking, the code to check on both screens, Link here and waiting for the Mac mini,
+  // linked; one that said no; a computer asking this one; and Link with a code.
+  async linking(theme) {
+    const win = await dashboard(theme, 'crew')
+    await sleep(900)
+    await js(win, 'window.__crewPairDelay = 1500; openComputers()')
+    await sleep(700)
+    await js(win, "document.querySelector('[data-pair=\"n1\"]').click()")
+    await sleep(500)
+    await save(win, `link-asking-${theme}`)
+    await sleep(1400)
+    await save(win, `link-confirm-${theme}`)
+    await js(win, "document.querySelector('[data-pair-confirm]').click()")
+    await sleep(500)
+    await save(win, `link-waiting-${theme}`)
+    await js(win, 'window.__crewTheyAgree()')
+    await sleep(700)
+    await save(win, `link-linked-${theme}`)
+    await sleep(1600)
+    await js(win, "window.__crewPairDelay = 200; window.__crewPairEnd = 'declined'; document.querySelector('[data-pair=\"n1\"]').click()")
+    await sleep(700)
+    await save(win, `link-declined-${theme}`)
+    await js(win, "window.__crewPairEnd = null; document.querySelector('[data-pair-back]').click()")
+    await sleep(400)
+    await js(win, "window.__crewAsk('Laptop')")
+    await sleep(700)
+    await save(win, `link-ask-${theme}`)
+    await js(win, "document.querySelector('[data-pair-no]').click()")
+    await sleep(500)
+    await js(win, "document.querySelector('[data-link-add]').click()")
+    await sleep(600)
+    await save(win, `link-code-${theme}`)
     win.destroy()
   },
   // Token savers: a switch each, what each counted, and cost per turn with them on and off. Then a switch flipped, as you

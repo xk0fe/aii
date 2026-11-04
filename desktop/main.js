@@ -548,6 +548,17 @@ const actions = {
       forget: (home) => crew.forget(home),
       hide: (names, hidden) => crew.setHidden(names, hidden),
       rename: (name) => crew.rename(name),
+      // nearby (core/discover.js): on while Computers is open; pair asks one found nearby, pairAnswer says yes or no to
+      // one asking, pairDone puts a finished one away
+      discover: (on) => crew.discover(on),
+      pair: (id) => crew.pairWith(id),
+      pairConfirm: () => crew.pairConfirm(),
+      pairCancel: () => crew.pairCancel(),
+      pairAnswer: (id, yes) => crew.pairAnswer(id, yes),
+      pairDone: () => crew.pairDone(),
+      code: () => crew.linkCode(),
+      // macOS's Privacy & Security > Local Network, where CLIque is let onto the local network
+      localNetwork: () => process.platform === 'darwin' && shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork'),
     }
     if (!Object.hasOwn(ops, op)) throw new Error(`unknown link action "${op}"`)
     const out = await ops[op](...args)
