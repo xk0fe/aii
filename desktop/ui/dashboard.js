@@ -1,7 +1,7 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: a channel (#general or one you made), one agent's conversation with its terminal docked beside it,
 // Agents, Tasks or Terminals.
-/* global pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
+/* global pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -1474,44 +1474,73 @@ document.addEventListener('drop', endDrag)
 
 for (const b of document.querySelectorAll('[data-act=add]')) b.addEventListener('click', addAgent)
 
-// ---- the sidebar's foot: the account's usage (click for every limit), and ⋯ ---------------------------------------
+// ---- the sidebar's foot: your accounts' usage (click for every limit), and ⋯ --------------------------------------
 
 // The account closest to its limit, its fullest window as a bar. Berry only when it will run out before it resets, at
-// this pace. A dot on ⋯ when a linked computer can't be reached (Computers says which).
+// this pace. With linked computers that report theirs, a row like that for each computer, under its name: their
+// agents run on their own accounts. A dot on ⋯ when a linked computer can't be reached (Computers says which).
+const fullestPct = (u) => Math.max(...u.windows.map((w) => w.pct))
+const topAccount = (accounts) => accounts.find((u) => paceWarning(u)) ?? [...accounts].sort((x, y) => fullestPct(y) - fullestPct(x))[0]
+const useBar = (pct) => `<i class="use-bar"><i style="width:${Math.min(100, Math.max(pct, 3))}%"></i></i><span class="use-pct">${pct}%</span>`
 function drawFoot(state) {
   const c = state.computers ?? { me: {}, links: [] }
   const away = c.links.filter((l) => !l.online)
   $('.side-more').classList.toggle('warn', away.length > 0)
   $('.side-more').title = `Autopilot, Computers, Claude Code and Codex, theme${away.length ? `\n${away.map((l) => l.name).join(', ')} can't be reached` : ''}`
-  const accounts = Object.values(state.usage ?? {}).filter((u) => u.windows?.length)
+  const machines = usageByComputer(state)
   const use = $('.use-line')
-  use.classList.toggle('none', !accounts.length)
-  if (!accounts.length) return
-  const fullest = (u) => Math.max(...u.windows.map((w) => w.pct))
-  const top = accounts.find((u) => paceWarning(u)) ?? [...accounts].sort((x, y) => fullest(y) - fullest(x))[0]
-  const pct = fullest(top)
-  const warn = paceWarning(top)
-  use.classList.toggle('warm', Boolean(warn))
-  use.title = `${accounts.map(usageTip).join('\n\n')}${warn ? `\n\n${top.label}: ${warn}` : ''}`
-  morph(use, `<span>${esc(top.label)}</span><i class="use-bar"><i style="width:${Math.min(100, Math.max(pct, 3))}%"></i></i><span>${pct}%</span>`)
+  use.classList.toggle('none', !machines.length)
+  const each = machines.length > 1 || machines.some((m) => !m.here)
+  use.classList.toggle('each', each)
+  if (!machines.length) {
+    if (usePop.matches(':popover-open')) usePop.hidePopover()
+    return
+  }
+  const tip = (m) => m.accounts.map((u) => `${usageTip(u, !m.here && m.name)}${paceWarning(u) ? `\n${paceWarning(u)}` : ''}`).join('\n\n')
+  if (!each) {
+    const top = topAccount(machines[0].accounts)
+    use.classList.toggle('warm', Boolean(paceWarning(top)))
+    use.title = tip(machines[0])
+    morph(use, `<span class="use-row"><span class="use-name">${esc(top.label)}</span>${useBar(fullestPct(top))}</span>`)
+  } else {
+    use.classList.remove('warm')
+    use.title = ''
+    morph(use, machines.map((m) => {
+      const top = topAccount(m.accounts)
+      const warn = paceWarning(top)
+      const where = m.here ? `${m.name}: ${THIS_COMPUTER}` : `${m.name}${m.online ? '' : ': offline, as it last said'}`
+      return `<span class="use-row ${warn ? 'warm' : ''} ${m.online ? '' : 'off'}" data-key="${esc(m.key)}" title="${esc(`${where}\n\n${tip(m)}`)}">` +
+        `<span class="use-pc">${computerIcon(m.name)}</span><span class="use-name">${esc(m.name)}</span>${useBar(fullestPct(top))}</span>`
+    }).join(''))
+  }
   if (usePop.matches(':popover-open')) drawUsePop()
 }
 
-// A click on the usage line: every account's limits, one line each, and when one runs out at this pace.
+// A click on the usage line: every account's limits, one line each, and when one runs out at this pace. With linked
+// computers, under each computer's name.
 const usePop = $('.use-pop')
 function drawUsePop() {
-  morph(usePop, Object.entries(state.usage ?? {}).filter(([, u]) => u.windows?.length).map(([provider, u]) => {
-    const warn = paceWarning(u)
-    return `<div class="up-row">${usageLine({ provider }, state)}<small class="${warn ? 'warn' : ''}">${esc(warn || u.windows.map((w) => `${w.pct}% ${resetsText(w.resetsAt)}`).join(' · '))}</small></div>`
+  const machines = usageByComputer(state)
+  const each = machines.length > 1 || machines.some((m) => !m.here)
+  morph(usePop, machines.map((m) => {
+    const head = each ? `<div class="up-pc ${m.online ? '' : 'off'}" data-key="${esc(m.key)}"><span class="use-pc">${computerIcon(m.name)}</span><b>${esc(m.name)}</b><small>${m.here ? THIS_COMPUTER : m.online ? '' : 'offline'}</small></div>` : ''
+    const rows = m.accounts.map((u) => {
+      const warn = paceWarning(u)
+      return `<div class="up-row">${usageLine({ provider: u.provider, home: m.here ? null : m.key, homeName: m.name }, state)}<small class="${warn ? 'warn' : ''}">${esc(warn || u.windows.map((w) => `${w.pct}% ${resetsText(w.resetsAt)}`).join(' · '))}</small></div>`
+    })
+    return `<div class="up-group" data-key="${esc(m.key)}">${head}${rows.join('')}</div>`
   }).join(''))
+  placeUsePop()
 }
-// The line is its invoker (popovertarget), so a second click closes it and a click anywhere else does too.
-usePop.addEventListener('beforetoggle', (e) => {
-  if (e.newState !== 'open') return
-  drawUsePop()
+// Over the usage line, which grows a row per computer: placed again on every redraw, not only when it opens.
+function placeUsePop() {
   const r = $('.use-line').getBoundingClientRect()
   usePop.style.left = `${Math.round(r.left)}px`
   usePop.style.bottom = `${Math.round(innerHeight - r.top + 6)}px`
+}
+// The line is its invoker (popovertarget), so a second click closes it and a click anywhere else does too.
+usePop.addEventListener('beforetoggle', (e) => {
+  if (e.newState === 'open') drawUsePop()
 })
 
 function addAgent() {
