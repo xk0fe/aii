@@ -14,6 +14,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { APP_ID, PRODUCT_NAME } from '../core/appid.js'
 import { Voice } from '../core/voice.js'
+import { giveOwnUUIDs } from './own-uuid.mjs'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 if (process.platform !== 'darwin') process.exit(spawnSync(process.execPath, [path.join(root, 'node_modules', 'electron', 'cli.js'), root], { stdio: 'inherit' }).status ?? 1)
@@ -22,7 +23,7 @@ const electronVersion = JSON.parse(fs.readFileSync(path.join(root, 'node_modules
 
 const app = path.join(root, 'dist', `${PRODUCT_NAME}.app`)
 const stamp = path.join(root, 'dist', '.build.json')
-const wanted = JSON.stringify({ electronVersion, root, icon: fs.statSync(path.join(root, 'assets', 'icon.icns')).mtimeMs, documents: 1, voice: 1, network: 1, id: APP_ID, name: PRODUCT_NAME })
+const wanted = JSON.stringify({ electronVersion, root, icon: fs.statSync(path.join(root, 'assets', 'icon.icns')).mtimeMs, documents: 1, voice: 1, network: 2, id: APP_ID, name: PRODUCT_NAME })
 const open = process.argv.includes('--open')
 const current = fs.existsSync(app) && fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === wanted
 
@@ -66,6 +67,9 @@ fs.rmSync(shim, { recursive: true, force: true })
 fs.rmSync(app, { recursive: true, force: true })
 fs.renameSync(path.join(built, `${PRODUCT_NAME}.app`), app)
 fs.rmSync(built, { recursive: true, force: true })
+// Electron's executables as they come share their UUID with every app on the same Electron, and macOS's Local Network
+// privacy goes by it: without one of its own the launcher never shows up there to be let on (scripts/own-uuid.mjs)
+giveOwnUUIDs(app, `${APP_ID}.dev`)
 execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'ignore' })
 fs.writeFileSync(stamp, wanted)
 // The voice input helper builds on first use anyway; doing it now saves those seconds later.
