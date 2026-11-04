@@ -97,7 +97,7 @@ describe('the Crew room', () => {
     expect(headline(store.agents, open)).toEqual({ title: '2 of your crew need you', line: 'Milo wants to run a command and Iris has a question.' })
     expect(needsOf(store.agents, open).map((n) => [n.agent.name, n.kind])).toEqual([['Milo', 'ok'], ['Iris', 'question']])
   })
-  test('one, busy, quiet, empty, parked', () => {
+  test('one, busy, quiet, empty, asleep', () => {
     const milo = store.agents.find((a) => a.name === 'Milo')!
     const one = open.filter((e) => e.from === 'Milo')
     expect(headline([milo], one).title).toBe('Milo needs you')
@@ -107,7 +107,7 @@ describe('the Crew room', () => {
     expect(headline([agent({ name: 'June' })], [])).toEqual({ title: 'All quiet', line: 'Nobody needs you right now.' })
     expect(headline([agent({ name: 'Noor', on: false, status: 'off' })], []).line).toBe('Everyone is off. Turn someone on to get going.')
     expect(headline([], []).title).toBe('No one here yet')
-    expect(headline(busy, [], true).title).toBe('Parked')
+    expect(headline(busy, [], true).title).toBe('Asleep')
   })
   test("a clone's question is its agent's: the headline, the row and the room agree", () => {
     const ada = agent({ name: 'Ada', status: 'idle' })
