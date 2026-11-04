@@ -33,7 +33,11 @@ export type FeedCtx = {
 export const someone = (name: string, byName: Map<string, Agent>): Agent => byName.get(name) ?? byName.get(familyOf(name)) ?? ({ name, status: 'idle', on: true } as Agent)
 
 const ink = (name: string, c: FeedCtx) => (name === 'you' ? c.t.fg : nameInk(agentColor(someone(name, c.byName)), c.t.fg))
-const mentionInk = (c: FeedCtx) => (name: string) => (c.byName.has(name) ? nameInk(agentColor(someone(name, c.byName)), c.t.fg) : null)
+// Markdown hands over a mention lowercased (@Theo → theo), so match agents by name in any case.
+const mentionInk = (c: FeedCtx) => (name: string) => {
+  const a = [...c.byName.values()].find((x) => x.name.toLowerCase() === name)
+  return a ? nameInk(agentColor(a), c.t.fg) : null
+}
 
 function Name({ name, c, at = false }: { name: string; c: FeedCtx; at?: boolean }) {
   if (name === 'you') return <Text style={{ color: c.t.fg, fontWeight: '600' }}>{at ? 'you' : 'You'}</Text>
