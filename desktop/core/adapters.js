@@ -1,6 +1,8 @@
 // How to launch each agent CLI. An adapter returns { file, args } for the pty, and optionally
 // readyAfter (ms) when the CLI doesn't announce itself at startup, and env for it. Providers pick an adapter by "cli".
-// trust: what its "do you trust this folder?" question looks like on screen, with escapes and spaces taken out.
+// trust: its "do you trust this folder?" question as it looks on screen, with escapes and spaces taken out: `ask` spots
+// the question, `yes` and `no` are its two answers, and `pointer` is what it draws before the one that's selected
+// (Hub.pickTrust answers it from the chat by moving that).
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -117,6 +119,15 @@ Image files listed in a message are attachments (screenshots, mockups, reference
 const toml = (s) => JSON.stringify(s)
 
 // platform and bin (where Crew's bin/ is) say how the hooks reach Crew: see claudeHook.
+export const TRUST = {
+  // "Is this a project you created or one you trust? … ❯ No, exit  Yes, I trust this folder" (numbered "1. No, exit"
+  // before 2.1.318), and no SessionStart until it's answered. The question itself has to be there: moving the
+  // selection redraws just the answers. Its "no" can also be "No, continue without these permissions".
+  claude: { ask: /trust.{0,800}Yes,Itrustthisfolder/, yes: 'Yes,Itrustthisfolder', no: 'No,', pointer: '❯' },
+  // "Trust this folder? … › 1. Trust and continue  2. Quit", even in YOLO mode
+  codex: { ask: /Trustthisfolder\?.{0,400}1\.Trustandcontinue/, yes: 'Trustandcontinue', no: 'Quit', pointer: '›' },
+}
+
 export const adapters = {
   claude(a, { resume, session, attachments, platform = process.platform, bin, checks }) {
     const where = { platform, bin }
@@ -143,7 +154,7 @@ export const adapters = {
     }
     return {
       file: 'claude',
-      trust: /Yes,Itrustthisfolder/, // "❯ No, exit  Yes, I trust this folder", and no SessionStart until it's answered
+      trust: TRUST.claude,
       env: { CREW_STATUS_LINE: userStatusLine() },
       args: [
         '--name', a.name,
@@ -167,7 +178,7 @@ export const adapters = {
     return {
       file: 'codex',
       readyAfter: 3000, // Codex fires SessionStart with the first prompt, not at launch
-      trust: /Trustthisfolder\?.{0,400}1\.Trustandcontinue/, // "Trust this folder? … › 1. Trust and continue  2. Quit", even in YOLO mode
+      trust: TRUST.codex,
       args: [
         // Resumed in the agent's folder even when the session was started elsewhere (it moved here from another
         // computer): otherwise Codex stops to ask which folder to use.

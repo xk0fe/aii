@@ -77,7 +77,7 @@ function Foot({ t, e, error, disabled, send, busy, compact }: { t: Theme; e: Fee
   return (
     <View style={styles.foot}>
       {said}
-      {e.cli === 'codex' ? (
+      {e.cli === 'codex' && !(typeof e.ask === 'object' && e.ask?.type === 'permission' && e.ask.trust) ? (
         <Press onPress={() => send('terminal', { terminal: true })} disabled={Boolean(busy || disabled)} accessibilityRole="button" style={styles.elsewhereBtn}>
           <Text style={[styles.elsewhere, { color: t.accent }]}>Answer in {name}'s terminal instead</Text>
         </Press>
@@ -143,6 +143,8 @@ function PermissionCard(props: AskProps & { ask: PermissionAsk }) {
   const always = ask.always ?? []
   const detail = voiced && reasonOf(ask) ? '' : ask.detail
   const off = Boolean(busy || disabled)
+  // a CLI's "do you trust this folder?" (desktop core/hub.js trustCard): the computer picks the answer in its terminal
+  const trust = Boolean(ask.trust)
   return (
     <View style={styles.body}>
       {compact ? null : <Title t={t} icon="permission" text={ask.title ?? 'Use a tool'} />}
@@ -153,10 +155,10 @@ function PermissionCard(props: AskProps & { ask: PermissionAsk }) {
         </Text>
       ) : null}
       <View style={styles.row}>
-        <Button t={t} small={compact} title="Deny" flex disabled={off} busy={busy === 'deny'} onPress={() => send('deny', { allow: false, ...(note.trim() && { note: note.trim() }) })} accessibilityLabel={`Deny. ${name} won't ${ask.code ? 'run it' : 'do it'}`} />
-        <Button t={t} small={compact} kind="primary" title="Allow" flex disabled={off} busy={busy === 'allow'} onPress={() => send('allow', { allow: true })} accessibilityLabel={`Allow ${name} to ${ask.code && !ask.app ? `run ${ask.code.split('\n')[0]}` : (ask.title ?? 'go ahead').toLowerCase()}`} />
+        <Button t={t} small={compact} title={trust ? "Don't trust" : 'Deny'} flex disabled={off} busy={busy === 'deny'} onPress={() => send('deny', { allow: false, ...(note.trim() && { note: note.trim() }) })} accessibilityLabel={trust ? `Don't trust it. ${name} quits` : `Deny. ${name} won't ${ask.code ? 'run it' : 'do it'}`} />
+        <Button t={t} small={compact} kind="primary" title={trust ? 'Trust' : 'Allow'} flex disabled={off} busy={busy === 'allow'} onPress={() => send('allow', { allow: true })} accessibilityLabel={trust ? `Trust ${ask.detail ?? 'its folder'}` : `Allow ${name} to ${ask.code && !ask.app ? `run ${ask.code.split('\n')[0]}` : (ask.title ?? 'go ahead').toLowerCase()}`} />
       </View>
-      {compact ? (
+      {trust ? null : compact ? (
         always.length || onMore ? (
           <Press onPress={onMore} accessibilityRole="button" style={styles.more}>
             <Text style={[styles.moreText, { color: t.fg2 }]}>{always.length ? 'Always allow, or say no with a note' : 'Say no with a note'}</Text>
@@ -325,7 +327,8 @@ export function AskSummary({ t, e, plain }: { t: Theme; e: FeedEntry; plain?: bo
   const ask = typeof e.ask === 'object' ? e.ask : null
   if (!ask || !e.answer) return null
   const what = ask.type === 'permission' ? (ask.title ?? '') : ''
-  const line = answerLine(ask.type, e.answer, what)
+  const trusted = ask.type === 'permission' && ask.trust && e.answer.by === 'you'
+  const line = trusted ? (e.answer.allow ? { icon: 'check' as const, tone: 'ok' as const, text: 'Trusted' } : { icon: 'close' as const, tone: 'no' as const, text: 'Not trusted' }) : answerLine(ask.type, e.answer, what)
   const ink = line.tone === 'ok' ? t.workingInk : line.tone === 'no' ? t.danger : t.fg2
   const questions = ask.type === 'question' ? Object.entries(e.answer.answers ?? {}) : []
   return (
