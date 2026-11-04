@@ -1515,7 +1515,7 @@ export class Hub extends EventEmitter {
         // something, so the chat still says it's done instead of leaving your message hanging.
         const said = String(e.last_assistant_message ?? '')
         const reply = said || a.replyDue
-          ? this.post({ kind: 'reply', from: name, text: said ? said.slice(0, 4000) : NO_WORDS, ...(!said && { empty: true }), ...(a.current && { re: a.current }), ...(also.length && { also }), ...(subs.length && { subs }) })
+          ? this.post({ kind: 'reply', from: name, text: said ? clip(said, REPLY_MAX) : NO_WORDS, ...(!said && { empty: true }), ...(a.current && { re: a.current }), ...(also.length && { also }), ...(subs.length && { subs }) })
           : null
         a.replyDue = false
         this.settleCalls(a, said ? reply : null) // a teammate who asked hears it finished without an answer, as before
@@ -2387,7 +2387,7 @@ export class Hub extends EventEmitter {
     const open = all.filter((m) => !asked.length || asked.includes(m.from) || asked.includes(this.baseOf(m.from)))
     if (!open.length) throw new Error(asked.length ? `@${asked[0]} hasn't asked you anything that's still open` : 'No question to answer: nobody is waiting on you (or it was answered already).')
     const m = open[0]
-    const reply = this.post({ kind: 'reply', from, text: text.slice(0, 4000), re: m.id })
+    const reply = this.post({ kind: 'reply', from, text: clip(text, REPLY_MAX), re: m.id })
     this.respond(this.calls.get(m.id), { by: from, text, reply })
     const left = all.length - 1
     return `@${m.from} has your answer.${left ? ` ${left} more question${left > 1 ? 's' : ''} waiting: crew answer "@name" "…"` : ''}\n`
@@ -3774,6 +3774,9 @@ const withOpenAsks = (recent, asks) => {
   return older.length ? [...older, ...recent] : recent
 }
 
+// A reply is kept whole up to here: a plan or a review runs past 4000 characters, and the chat (on the computer and the
+// phone) is where you read it. Past it, the cut shows as "…" instead of stopping mid-word.
+const REPLY_MAX = 16000
 const clip = (text, max = 4000) => (String(text ?? '').length > max ? `${String(text).slice(0, max)}\n…` : String(text ?? ''))
 const firstLines = (text, n) => clip(String(text ?? '').split('\n').slice(0, n).join('\n'))
 
