@@ -43,6 +43,36 @@ describe('blocks', () => {
     expect(blocks('  ```sh\n  git switch fix\n    npm test\n  ```')).toEqual([{ kind: 'code', lang: 'sh', text: 'git switch fix\n  npm test' }])
   })
 
+  test('a heading keeps a # that is part of it', () => {
+    expect(blocks('## Using C#')).toEqual([{ kind: 'h', level: 2, text: 'Using C#' }])
+  })
+
+  test('code indented under an item: tabs survive, nothing is eaten', () => {
+    const [, code] = blocks('1. Add to the Makefile:\n   ```make\n   build:\n\tgo build ./...\n   ```')
+    expect(code).toEqual({ kind: 'code', lang: 'make', text: 'build:\n\tgo build ./...' })
+  })
+
+  test('"1." numbering keeps counting past code and a paragraph under an item', () => {
+    const b = blocks('1. Install\n   ```sh\n   npm i\n   ```\n1. Run\n\n   It takes a minute.\n\n1. Test')
+    expect(b.map((x) => x.kind)).toEqual(['list', 'code', 'list', 'p', 'list'])
+    expect(b.flatMap((x) => (x.kind === 'list' ? x.items.map((i) => i.n) : []))).toEqual([1, 2, 3])
+    expect(b[3]).toEqual({ kind: 'p', text: 'It takes a minute.' })
+  })
+
+  test('a numbered list after a heading starts over', () => {
+    const b = blocks('1. One\n2. Two\n\n## Next\n\n1. Again')
+    expect(b.flatMap((x) => (x.kind === 'list' ? x.items.map((i) => i.n) : []))).toEqual([1, 2, 1])
+  })
+
+  test('inline triple backticks at the start of a line are a sentence, not a fence', () => {
+    expect(blocks('```npm install``` then restart.\nNext, open it.')).toEqual([{ kind: 'p', text: '```npm install``` then restart.\nNext, open it.' }])
+  })
+
+  test('a bare --- under a line with a pipe is a rule, not a table', () => {
+    expect(blocks('Use `a || b` here\n\n---').map((x) => x.kind)).toEqual(['p', 'hr'])
+    expect(blocks('Use `a || b` here\n---')[0].kind).toBe('p')
+  })
+
   test('headings lose closing hashes; rules', () => {
     expect(blocks('## T9. Better anomaly evaluation ##\n\n---')).toEqual([{ kind: 'h', level: 2, text: 'T9. Better anomaly evaluation' }, { kind: 'hr' }])
   })

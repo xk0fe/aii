@@ -22,7 +22,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 // The chat shows its last 200 lines; the 100 before them are what those reply to and quote. A line is a few hundred
-// bytes and a reply at most 4000 characters, so the count is what usually binds. The size binds when lines are long
+// bytes and a reply at most 16000 characters, so the count is what usually binds. The size binds when lines are long
 // (pasted logs, plans), and keeps Crew's start quick: feed.jsonl is read whole then.
 export const FEED_KEEP = 300
 export const FEED_BYTES = 2 * 1024 * 1024

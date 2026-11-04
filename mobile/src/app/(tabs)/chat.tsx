@@ -5,7 +5,7 @@
 import * as Clipboard from 'expo-clipboard'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { ActionSheetIOS, Alert, AppState, FlatList, Platform, Share, StyleSheet, Text, View, type ListViewToken } from 'react-native'
+import { ActionSheetIOS, Alert, AppState, FlatList, Keyboard, Platform, Share, StyleSheet, Text, View, type ListViewToken } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 import { KeyboardChatScrollView, KeyboardStickyView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -130,11 +130,12 @@ function Working({ t, d, here, now }: { t: Theme; d: Derived; here: string | nul
 
 // Who's at work and who needs you, in a few plain words, for the line under the workspace's name. Who needs you
 // counts the way the Crew tab does: an agent once, with its clones.
-function Summary({ t, d, parked }: { t: Theme; d: Derived; parked: boolean }) {
+function summary(t: Theme, d: Derived, parked: boolean) {
   if (parked) return <Text>Asleep</Text>
   const needing = needsOf(d.agents, d.open, [...d.byName.values()]).length
   const bits = [needing ? { text: (needing === 1 ? '1 needs' : needing + ' need') + ' you', ink: t.waitingInk } : null, d.working ? { text: d.working + ' at work', ink: t.fg2 } : null].filter((x): x is { text: string; ink: string } => Boolean(x))
   if (!bits.length && d.agents.length) bits.push({ text: d.agents.some((a) => a.on) ? 'Everyone is idle' : 'Everyone is off', ink: t.fg2 })
+  if (!bits.length) return null
   return (
     <>
       {bits.map((b, i) => (
@@ -149,9 +150,10 @@ function Summary({ t, d, parked }: { t: Theme; d: Derived; parked: boolean }) {
 
 // In a conversation with one agent, the header is that agent: back to everyone on the left, then who it is and what
 // it's doing (tap for its sheet).
-function WithAgent({ t, d, here, onAll }: { t: Theme; d: Derived; here: Agent; onAll: () => void }) {
+function WithAgent({ t, d, here, onAll, link }: { t: Theme; d: Derived; here: Agent; onAll: () => void; link: string }) {
   const now = useNow(30000)
-  const line = rowLine(here, now)
+  // while the computer can't be reached, what it was doing is old news: the line says so instead
+  const line = link ? { text: link, kind: 'waiting', mono: false } : rowLine(here, now)
   const elsewhere = [...d.unread.entries()].filter(([n]) => n !== here.name).reduce((n, [, x]) => n + x, 0)
   return (
     <View style={styles.with}>
@@ -242,7 +244,8 @@ export default function ChatScreen() {
       ]
       if (Platform.OS === 'ios')
         ActionSheetIOS.showActionSheetWithOptions({ options: [...actions.map(([l]) => l), 'Cancel'], cancelButtonIndex: actions.length }, (i) => actions[i]?.[1]())
-      else Alert.alert(e.from === 'you' ? 'Your message' : displayName(e.from).base, undefined, [...actions.map(([text, onPress]) => ({ text, onPress })), { text: 'Cancel', style: 'cancel' as const }])
+      // Android's dialog holds three buttons at most, so there's no Cancel: tapping outside it (or Back) closes it
+      else Alert.alert(e.from === 'you' ? 'Your message' : displayName(e.from).base, undefined, actions.map(([text, onPress]) => ({ text, onPress })), { cancelable: true })
     },
     canAct: !disabled,
   }
@@ -268,8 +271,8 @@ export default function ChatScreen() {
       <TopBar
         t={t}
         background={t.page}
-        sub={<Summary t={t} d={d} parked={Boolean(state?.parked)} />}
-        left={here ? <WithAgent t={t} d={d} here={here} onAll={() => openConvo(null)} /> : undefined}
+        sub={state ? summary(t, d, Boolean(state.parked)) : null}
+        left={here ? <WithAgent t={t} d={d} here={here} onAll={() => openConvo(null)} link={!client ? '' : offline || (link.status === 'connecting' ? `Connecting to ${client.macName}…` : '')} /> : undefined}
         right={here ? undefined : <People t={t} d={d} />}
       />
       <View style={[styles.hair, { backgroundColor: t.line }]} />
@@ -306,7 +309,12 @@ export default function ChatScreen() {
         </View>
         {away ? (
           <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={styles.latestWrap} pointerEvents="box-none">
-            <Press onPress={() => list.current?.scrollToOffset({ offset: 0, animated: true })} style={[styles.latest, { backgroundColor: t.surface, borderColor: t.lineStrong }]} accessibilityRole="button" accessibilityLabel="Go to the latest message" hitSlop={8}>
+            <Press
+              onPress={() => {
+                // with the keyboard up the latest sits below offset 0 (the list makes room for it): put it away first
+                Keyboard.dismiss()
+                list.current?.scrollToOffset({ offset: 0, animated: true })
+              }} style={[styles.latest, { backgroundColor: t.surface, borderColor: t.lineStrong }]} accessibilityRole="button" accessibilityLabel="Go to the latest message" hitSlop={8}>
               <Icon name="latest" size={16} color={t.fg} weight="semibold" />
             </Press>
           </Animated.View>

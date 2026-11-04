@@ -3,7 +3,7 @@
 // bubble; crew events are centered and quiet. Messages in a row from one sender stack under one face and name, and a
 // reply right under what it answers doesn't quote it again. Long-press a message to copy or share it.
 import { memo, type ReactNode } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import type { Agent, FeedEntry } from '@/net/types'
 import { familyOf } from '@/state/hooks'
@@ -93,7 +93,7 @@ function Said({ e, c, cont, caption, quote, long = true, children }: { e: FeedEn
     </>
   )
   return long ? (
-    <Pressable onLongPress={() => c.onLong(e)} delayLongPress={320} accessible={false} style={[styles.said, cont && styles.cont]}>
+    <Pressable onPress={Keyboard.dismiss} onLongPress={() => c.onLong(e)} delayLongPress={320} accessible={false} style={[styles.said, cont && styles.cont]}>
       {inner}
     </Pressable>
   ) : (
@@ -267,7 +267,7 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
   // you sent a task to an agent: the task, not its whole brief
   if (e.from === 'you' && e.ticket !== undefined) {
     return (
-      <Pressable onLongPress={() => c.onLong(e)} delayLongPress={320} accessible={false} style={styles.me}>
+      <Pressable onPress={Keyboard.dismiss} onLongPress={() => c.onLong(e)} delayLongPress={320} accessible={false} style={styles.me}>
         <View style={styles.meCap}>
           <Text style={[styles.capText, { color: t.fg2 }]}>
             to <Name name={e.to ?? ''} c={c} at />
@@ -289,7 +289,7 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
     // in a conversation with one agent, who it went to goes without saying
     const said = !cont && (!c.here || e.auto || e.queued || e.fresh || to.length > 1 || familyOf(to[0]) !== c.here)
     return (
-      <Pressable onLongPress={() => c.onLong(e)} delayLongPress={320} accessible={false} style={[styles.me, cont && styles.cont]}>
+      <Pressable onPress={Keyboard.dismiss} onLongPress={() => c.onLong(e)} delayLongPress={320} accessible={false} style={[styles.me, cont && styles.cont]}>
         {said ? (
           <View style={styles.meCap}>
             <Text style={[styles.capText, styles.meCapText, { color: t.fg2 }]} numberOfLines={1}>

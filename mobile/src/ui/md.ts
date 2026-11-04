@@ -22,11 +22,38 @@ const cells = (line: string) =>
 
 const LI = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/
 const RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
+// a table's separator row has a pipe in it: a bare "---" under a line is a rule, not a table
+const isRule = (line: string) => line.includes('|') && RULE.test(line)
 const indent = (s: string) => s.replace(/\t/g, '    ').length
+const lead = (s: string) => indent(s.match(/^\s*/)![0])
+// Up to `cut` columns of leading whitespace off a line, a tab counting as 4, without eating into the code itself.
+function dedent(line: string, cut: number) {
+  let col = 0
+  let at = 0
+  while (at < line.length && (line[at] === ' ' ? col + 1 <= cut : line[at] === '\t' && col + 4 <= cut)) col += line[at++] === '\t' ? 4 : 1
+  return line.slice(at)
+}
+// A fence line is the fence and an info string, nothing else: "```npm install``` then restart" is a sentence.
+const FENCE = /^\s*(```+|~~~+)\s*([^`]*)$/
 
 export function blocks(src: string): Block[] {
   const lines = String(src ?? '').replace(/\r\n?/g, '\n').split('\n')
   const out: Block[] = []
+  // A numbered list goes on counting past code or a paragraph indented under its item ("1. Install", the commands,
+  // "1. Run" reads 1, 2): the last number, while what follows still belongs to the list.
+  let carry: number | null = null
+  const push = (b: Block, inItem: boolean) => {
+    if (b.kind === 'list') {
+      const top = b.items.filter((x) => x.level === 0)
+      if (carry !== null && top[0]?.ordered && (top[0].n === 1 || top[0].n === carry + 1)) {
+        const shift = carry + 1 - top[0].n
+        for (const x of top) if (x.ordered) x.n += shift
+      }
+      const last = top.at(-1)
+      carry = last?.ordered ? last.n : null
+    } else if (!inItem) carry = null
+    out.push(b)
+  }
   let i = 0
   while (i < lines.length) {
     const line = lines[i]
@@ -34,34 +61,35 @@ export function blocks(src: string): Block[] {
       i++
       continue
     }
-    const fence = line.match(/^\s*(```+|~~~+)\s*([\w+#.-]*)/)
+    const inItem = carry !== null && lead(line) >= 2
+    const fence = line.match(FENCE)
     if (fence) {
       const body: string[] = []
       i++
       while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++])
       i++
       // the fence's own indentation (a block inside a list item) comes off every line
-      const cut = indent(line.match(/^\s*/)![0])
-      out.push({ kind: 'code', lang: fence[2] ?? '', text: body.map((l) => l.slice(Math.min(cut, indent(l.match(/^\s*/)![0])))).join('\n') })
+      const cut = lead(line)
+      push({ kind: 'code', lang: fence[2].trim().split(/\s+/)[0] ?? '', text: body.map((l) => dedent(l, cut)).join('\n') }, inItem)
       continue
     }
-    const h = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/)
+    const h = line.match(/^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/)
     if (h) {
-      out.push({ kind: 'h', level: h[1].length, text: h[2] })
+      push({ kind: 'h', level: h[1].length, text: h[2] }, false)
       i++
       continue
     }
     if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) {
-      out.push({ kind: 'hr' })
+      push({ kind: 'hr' }, false)
       i++
       continue
     }
-    if (line.includes('|') && i + 1 < lines.length && RULE.test(lines[i + 1])) {
+    if (line.includes('|') && i + 1 < lines.length && isRule(lines[i + 1])) {
       const align = cells(lines[i + 1]).map((c): Align => (c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : 'left'))
       const rows = [cells(line)]
       i += 2
       while (i < lines.length && lines[i].includes('|') && lines[i].trim()) rows.push(cells(lines[i++]))
-      out.push({ kind: 'table', rows, align })
+      push({ kind: 'table', rows, align }, false)
       continue
     }
     if (LI.test(line)) {
@@ -100,19 +128,20 @@ export function blocks(src: string): Block[] {
         }
         break
       }
-      out.push({ kind: 'list', items })
+      push({ kind: 'list', items }, false)
       continue
     }
     if (/^\s*>/.test(line)) {
       const body: string[] = []
       while (i < lines.length && /^\s*>/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ''))
-      out.push({ kind: 'quote', text: body.join('\n') })
+      push({ kind: 'quote', text: body.join('\n') }, false)
       continue
     }
     const para: string[] = []
-    while (i < lines.length && lines[i].trim() && !/^\s*(```|~~~|#{1,6}\s|>|[-*+]\s|\d+[.)]\s)/.test(lines[i]) && !(lines[i].includes('|') && RULE.test(lines[i + 1] ?? ''))) para.push(lines[i++])
+    while (i < lines.length && lines[i].trim() && !FENCE.test(lines[i]) && !/^\s*(#{1,6}\s|>|[-*+]\s|\d+[.)]\s)/.test(lines[i]) && !(lines[i].includes('|') && isRule(lines[i + 1] ?? ''))) para.push(lines[i++])
     if (!para.length) para.push(lines[i++])
-    out.push({ kind: 'p', text: para.join('\n') })
+    // indentation means nothing inside a paragraph (one under a list item comes in indented)
+    push({ kind: 'p', text: para.map((l) => l.trimStart()).join('\n') }, inItem)
   }
   return out
 }
