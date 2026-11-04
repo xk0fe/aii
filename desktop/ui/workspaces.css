@@ -8,6 +8,7 @@
 }
 .ws-switch:hover, .ws-switch[aria-expanded=true] { background: var(--btn); }
 .ws-switch b { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ws-switch .ws-owner { flex: none; max-width: 90px; font-size: 12px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-switch .ws-mark { display: grid; place-items: center; width: 27px; height: 22px; }
 .ws-switch .ws-mark svg { width: 27px; height: 18px; color: var(--fg); }
 .ws-switch .ws-chev { display: grid; place-items: center; width: 14px; color: var(--fg2); transition: color .15s; }

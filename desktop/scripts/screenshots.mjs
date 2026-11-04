@@ -1448,6 +1448,36 @@ const SHOTS = {
     })
     win.destroy()
   },
+  // A linked computer's workspaces: the name's menu offering them, a joined one on screen (a second Storefront, the
+  // linked computer's), the same one while its owner is off, one joined from the menu, and the tray's switcher.
+  async workspaceJoin(theme) {
+    const win = await dashboard(theme, 'chat', { fixture: 'workspaces' })
+    await sleep(900)
+    await js(win, click('.ws-switch'))
+    await sleep(500)
+    await save(win, `join-menu-${theme}`)
+    await js(win, 'openMenu?.close()')
+    await sleep(300)
+    await js(win, "window.__crewEmit('state', (window.__crewShow('storefront-2'), window.__crewState))")
+    await sleep(900)
+    await save(win, `join-joined-${theme}`)
+    await js(win, "const s = window.__crewState; s.workspaces.find((w) => w.id === 'storefront-2').ownerOnline = false; window.__crewEmit('state', s)")
+    await sleep(600)
+    await save(win, `join-owner-offline-${theme}`)
+    await js(win, click('.ws-switch'))
+    await sleep(500)
+    await js(win, click(`.menu [data-menu-act="join:${LINK.slug}:api"]`))
+    await sleep(1200)
+    await save(win, `join-api-${theme}`)
+    win.destroy()
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover', fixture: 'workspaces' })
+    await sleep(500)
+    await fitToContent(tray)
+    await js(tray, click('.ws-switch'))
+    await sleep(400)
+    await save(tray, `join-tray-${theme}`)
+    tray.destroy()
+  },
   // Workspaces: the switcher open over Docs site, the sheet that makes one, one's settings, and a parked one.
   async workspaces(theme) {
     const win = await dashboard(theme, 'chat', { fixture: 'workspaces' })

@@ -424,8 +424,20 @@ const show = (id) => {
 }
 state.workspaces = WORKSPACES
 state.roster = LOCAL.map((a) => ({ name: a.name, area: a.area, avatar: a.avatar, cwd: here(`/Users/you/Projects/${a.name === 'June' ? 'docs-site' : 'storefront'}`) }))
-if (FIXTURE === 'workspaces') show('docs')
-else {
+// Linked computers' workspaces, as Crew.remoteWorkspaces() reports them. The linked computer has a Storefront of its
+// own, joined here (so there are two Storefronts on the rail), and an API you could join; the Laptop is off, so its
+// Notes shows greyed.
+const REMOTE = [
+  { key: `${LINK.slug}:storefront`, owner: LINK.slug, name: 'Storefront', color: 'orange', icon: null, computer: LINK.slug, computerName: LINK.name, online: true, joined: 'storefront-2' },
+  { key: `${LINK.slug}:api`, owner: LINK.slug, name: 'API', color: 'teal', icon: null, computer: LINK.slug, computerName: LINK.name, online: true, joined: null },
+  { key: 'laptop:notes', owner: 'laptop', name: 'Notes', color: 'yellow', icon: null, computer: 'laptop', computerName: 'Laptop', online: false, joined: null },
+]
+const joined = (r, id, members) => ({ id, name: r.name, color: r.color, icon: r.icon, folder: null, parked: false, owner: r.owner, ownerName: r.computerName, ownerOnline: r.online, members: members.map((name) => ({ name, folder: '' })), agents: members.length, on: members.length, working: 0, waiting: 0, unread: 0, faces: faces(members), needs: [] })
+if (FIXTURE === 'workspaces') {
+  WORKSPACES.splice(2, 0, joined(REMOTE[0], 'storefront-2', ['Ada', 'Theo']))
+  state.remoteWorkspaces = REMOTE
+  show('docs')
+} else {
   WORKSPACES.splice(2) // the default crew has Storefront and Docs site
   show('default')
 }
@@ -465,7 +477,20 @@ function workspaceAction(op, id, arg) {
   if (op === 'edit' && w) Object.assign(w, arg)
   if (op === 'remove') {
     WORKSPACES.splice(WORKSPACES.indexOf(w), 1)
+    for (const r of REMOTE) if (r.joined === id) r.joined = null
     if (w.current) window.__crewShow('default')
+  }
+  // a linked computer's workspace, here too (Crew.workspaceAction join): its copy, or a new one while its owner is on
+  if (op === 'join') {
+    const r = REMOTE.find((x) => x.key === id)
+    if (!r) throw new Error('no such workspace on your linked computers')
+    if (!r.joined) {
+      if (!r.online) throw new Error(`${r.computerName} is offline: open its workspaces while it's on`)
+      r.joined = r.key.slice(r.key.indexOf(':') + 1)
+      WORKSPACES.push(joined(r, r.joined, []))
+    }
+    id = r.joined
+    window.__crewShow(id)
   }
   if (op === 'create') {
     id = String(arg.name).toLowerCase().replace(/[^a-z0-9]+/g, '-')

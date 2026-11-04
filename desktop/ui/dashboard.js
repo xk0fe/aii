@@ -1,7 +1,7 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: a channel (#general or one you made), one agent's conversation with its terminal docked beside it,
 // Agents, Tasks or Terminals.
-/* global pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack */
+/* global pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -210,7 +210,7 @@ function chatHead() {
   const everyone = state.agents.filter((a) => !a.cloneOf)
   const members = c.members ? everyone.filter((a) => c.members.includes(a.name)) : everyone
   const faces = [...members.filter((a) => a.on), ...members.filter((a) => !a.on)]
-  const who = hasWorkspaces(state) ? `Everyone in ${state.workspace.name}` : 'Your whole crew'
+  const who = hasWorkspaces(state) ? `Everyone in ${wsLabel(state.workspace)}` : 'Your whole crew'
   const folder = state.workspace?.folder
   const brief = c.brief.split('\n').find((l) => l.trim())?.trim()
   const sub = brief ? esc(brief) : c.id === 'general' ? `${esc(who)} · ${folder ? esc(tildePath(folder)) : 'Auto picks who answers'}` : c.members ? esc(nameList(members.map((a) => a.seed ?? a.name))) : esc(who)

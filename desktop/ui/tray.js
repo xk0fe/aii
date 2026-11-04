@@ -1,5 +1,5 @@
 // Menu bar popover: what needs you first, who's at work, the accounts' limits, and the way into everything else.
-/* global activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, elsewhere, hasWorkspaces, crew, live, morph, esc, celebrate, markSVG, store, ICONS,
+/* global activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, crew, live, morph, esc, celebrate, markSVG, store, ICONS,
    needsYou, needText, usageTip, paceWarning, resetsText, runningSubs, subsTip, clonesOf, displayName, statusText, blockedOn, ago,
    plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys, wordmarkHTML, stripHTML, PRODUCT_NAME */
 // Everything here is local: classic scripts share one global scope with common.js and avatar.js.
@@ -246,11 +246,13 @@
     const list = state.workspaces ?? []
     popMenu($('.ws-switch'), [
       { head: 'Workspaces' },
-      ...list.map((w) => ({ label: w.name, icon: wsTile(w, { size: 18 }), act: w.id, hint: w.current ? 'on screen' : wsStatus(w) })),
+      ...list.map((w) => ({ label: wsLabel(w), icon: wsTile(w, { size: 18 }), act: w.id, hint: w.current ? 'on screen' : wsStatus(w) })),
       '-',
       { label: 'New workspace…', icon: ICONS.plus, act: ':new' },
+      ...(joinable(state).length ? ['-', { head: 'On your other computers' }, ...joinable(state).map(joinItem)] : []),
     ], async (id) => {
       if (id === ':new') return crew.call('dashboard', ':workspace')
+      if (id.startsWith('join:')) return crew.call('workspace', 'join', id.slice('join:'.length)).catch((err) => oops("Couldn't join that workspace", err))
       const w = list.find((x) => x.id === id)
       if (w.parked) await crew.call('workspace', 'open', id)
       await crew.call('workspace', 'switch', id)
@@ -319,8 +321,8 @@
     $('.ws-switch').classList.toggle('hidden', !ws)
     if (ws) {
       const away = elsewhere(state)
-      morph($('.ws-switch'), `${wsTile(state.workspace, { size: 22 })}<b>${esc(state.workspace.name)}</b><span class="ws-chev">${ICONS.updown}</span>${away.waiting ? `<i class="ws-alert waiting">${away.waiting}</i>` : away.unread ? '<i class="ws-alert unread"></i>' : ''}`)
-      $('.ws-switch').title = ['Switch workspaces', ...away.who.map((w) => `${w.name}: ${wsStatus(w)}`)].join('\n')
+      morph($('.ws-switch'), `${wsTile(state.workspace, { size: 22 })}<b>${esc(wsLabel(state.workspace))}</b><span class="ws-chev">${ICONS.updown}</span>${away.waiting ? `<i class="ws-alert waiting">${away.waiting}</i>` : away.unread ? '<i class="ws-alert unread"></i>' : ''}`)
+      $('.ws-switch').title = ['Switch workspaces', ...away.who.map((w) => `${wsLabel(w)}: ${wsStatus(w)}`)].join('\n')
     }
     document.documentElement.style.setProperty('--max', `${Math.max(260, Math.min(620, screen.availHeight - 330))}px`)
     // the mini crew strip: everyone at a glance, at the top

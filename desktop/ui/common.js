@@ -736,9 +736,23 @@ function elsewhere(state) {
   const others = (state.workspaces ?? []).filter((w) => !w.current && !w.parked)
   return { waiting: others.reduce((n, w) => n + w.waiting, 0), unread: others.reduce((n, w) => n + w.unread, 0), who: others.filter((w) => w.waiting || w.unread) }
 }
+// A workspace by name, and for one joined from a linked computer, whose it is: "Storefront · Studio", so it isn't taken
+// for a Storefront of this computer's own.
+function wsLabel(w) {
+  return w?.ownerName ? `${w.name} · ${w.ownerName}` : w?.name ?? ''
+}
+// Linked computers' workspaces not joined here yet: what the switchers offer to join, a computer that's off greyed.
+function joinable(state) {
+  return (state.remoteWorkspaces ?? []).filter((r) => !r.joined)
+}
+// One of those as a menu item (popMenu), its act join:<key>.
+function joinItem(r) {
+  return { label: `${r.name} · ${r.computerName}`, icon: wsTile({ id: r.key, name: r.name, color: r.color, icon: r.icon }, { size: 18 }), act: `join:${r.key}`, hint: r.online ? 'Join' : 'offline', disabled: !r.online }
+}
 // "2 need you · 1 working", or "Asleep", for a workspace's line in the switcher.
 function wsStatus(w) {
   if (w.parked) return 'Asleep'
+  if (w.ownerName && !w.ownerOnline) return `${w.ownerName} is offline`
   const bits = [w.waiting && `${w.waiting} need${w.waiting > 1 ? '' : 's'} you`, w.working && `${w.working} working`, w.unread && plural(w.unread, 'new reply', 'new replies')].filter(Boolean)
   return bits.length ? bits.join(' · ') : !w.agents ? 'No agents yet' : w.on ? `${w.on > 1 ? `all ${w.on}` : w.on} free` : 'All off'
 }

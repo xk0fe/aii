@@ -713,18 +713,58 @@ test('a linked computer: its terminals show in their own workspace, typing reach
     }
     const l = c.attach(peer)
     await new Promise((r) => setTimeout(r, 10))
-    assert.equal(l.aware, false, "it didn't answer 'spaces'")
+    assert.equal(l.aware, false, "it didn't answer 'workspaces'")
     const pty = []
     c.on('pty', (n, d) => pty.push([n, d]))
-    peer.emit('pty', 'storefront/milo', 'storefront output')
+    const key = c.keyOf('storefront')
+    peer.emit('pty', `${key}/milo`, 'storefront output')
+    peer.emit('pty', 'storefront/milo', 'by bare id') // an older Crew's way: no workspace here has that key
     peer.emit('pty', 'ann', 'default output') // the default's, while storefront is on screen
     assert.deepEqual(pty, [['milo@laptop', 'storefront output']])
     const typed = []
     for (const [id, h] of c.hubs) h.input = (n, d) => typed.push([id, n, d])
-    peer.emit('input', 'storefront/june', 'y')
+    peer.emit('input', `${key}/june`, 'y')
+    peer.emit('input', 'storefront/june', 'x')
     peer.emit('input', 'june', 'n')
     assert.deepEqual(typed, [['storefront', 'june', 'y'], ['default', 'june', 'n']])
     await assert.rejects(c.linkCall(l, 'update', [['milo'], {}]), /Laptop runs an older CLIque, without workspaces: update it/)
+  } finally {
+    quit(c)
+  }
+})
+
+test("a linked computer's own workspaces can be joined while it's on, and stay listed, unavailable, once it's off", async () => {
+  const c = await crewApp({ agents: roster(), workspaces: [storefront()] })
+  try {
+    const { EventEmitter: Emitter } = await import('node:events')
+    const pushed = []
+    const peer = Object.assign(new Emitter(), { name: 'Laptop', push: (...m) => pushed.push(m), input() {}, close() {} })
+    peer.call = async (fn) => {
+      if (fn === 'state') return { agents: [], feed: [], tasks: { tickets: [] }, providers: {} }
+      if (fn === 'workspaces') return [
+        { key: 'laptop:storefront', owner: 'laptop', name: 'Storefront', color: 'not a color!' },
+        { key: c.keyOf('storefront'), owner: c.me.slug, name: 'Storefront' }, // joined there from here: not the laptop's to offer
+        { key: 'bad/key', owner: 'laptop', name: 'x' },
+      ]
+      throw new Error(`"${fn}" isn't available over Crew Link`)
+    }
+    const l = c.attach(peer)
+    await new Promise((r) => setTimeout(r, 10))
+    assert.deepEqual([...l.theirs], ['storefront'], 'the one with our key')
+    assert.ok(pushed.some(([t, key]) => t === 'ws' && key === c.keyOf('storefront')), 'it gets ours by key')
+    assert.deepEqual(c.remoteWorkspaces().map((w) => [w.key, w.name, w.computerName, w.online, w.joined]), [['laptop:storefront', 'Storefront', 'Laptop', true, null]])
+    // the same name as ours, joined under its own id; a look this version can't show is dropped, not fatal
+    const { id } = c.workspaceAction('join', 'laptop:storefront')
+    assert.equal(id, 'storefront-2')
+    assert.equal(c.keyOf(id), 'laptop:storefront')
+    assert.equal(c.snapshot().workspace.ownerName, 'Laptop')
+    // it goes offline: still listed, unavailable, and a new one can't be joined
+    peer.emit('close')
+    const left = c.remoteWorkspaces()
+    assert.deepEqual(left.map((w) => [w.key, w.online, w.joined]), [['laptop:storefront', false, 'storefront-2']])
+    assert.equal(c.workspaces().find((w) => w.id === id).ownerOnline, false)
+    c.knownSpaces.get('laptop').list.push({ key: 'laptop:lab', owner: 'laptop', name: 'Lab' })
+    assert.throws(() => c.workspaceAction('join', 'laptop:lab'), /Laptop is offline/)
   } finally {
     quit(c)
   }
@@ -744,7 +784,7 @@ test("a connection that loses to another doesn't take the winner's workspaces wi
     const l = c.attach(slow) // the slower of two sockets dialed at once
     const fast = peer()
     c.attach(fast) // ...and the one that wins
-    answers[1].resolve(['storefront']) // the winner knows workspaces
+    answers[1].resolve([{ key: c.keyOf('storefront'), owner: c.me.slug, name: 'Storefront' }]) // the winner knows workspaces
     await new Promise((r) => setTimeout(r, 10))
     assert.equal(l.aware, true)
     answers[0].reject(new Error('lost the connection to Laptop')) // the loser is closed afterwards
