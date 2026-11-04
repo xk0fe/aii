@@ -7,6 +7,7 @@ import { Platform, useColorScheme } from 'react-native'
 const light = {
   dark: false,
   bg: '#F2F2F7',
+  page: '#FFFFFF', // where you read: the chat
   surface: '#FFFFFF',
   fg: '#1C1C1C',
   fg2: '#6B6B6B', // the lowest contrast any text you have to read uses
@@ -43,7 +44,7 @@ const light = {
   track: 'rgba(0,0,0,0.08)',
   link: '#007AFF',
   bubble: 'rgba(120,120,128,0.12)',
-  bubbleMe: '#FFFFFF',
+  bubbleMe: '#EFEFF2', // your messages: a quiet grey on the page, words in the text colour
   idle: '#9A9A9A',
   starting: '#9A9A9A',
   blocked: '#9A9A9A',
@@ -56,6 +57,7 @@ const dark: Theme = {
   ...light,
   dark: true,
   bg: '#000000',
+  page: '#000000',
   surface: '#1C1C1E',
   fg: '#EDEDED',
   fg2: '#A0A0A0',
@@ -88,7 +90,7 @@ const dark: Theme = {
   track: 'rgba(255,255,255,0.1)',
   link: '#0A84FF',
   bubble: 'rgba(118,118,128,0.24)',
-  bubbleMe: '#1C1C1E',
+  bubbleMe: '#262629',
   idle: '#6E6E6E',
   starting: '#6E6E6E',
   blocked: '#6E6E6E',
