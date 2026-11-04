@@ -1,4 +1,4 @@
-// The chat, one entry at a time, as on the Mac: agents on the left beside their creature, you on the right in blue,
+// The chat, one entry at a time, as on the Mac: agents on the left beside their creature, you on the right,
 // crew events centered and quiet. Messages in a row from one sender stack under one face and name.
 import { memo, type ReactNode } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
@@ -101,7 +101,7 @@ function Bubble({ e, c, tone = 'agent' }: { e: FeedEntry; c: FeedCtx; tone?: 'ag
         tone === 'dropped' && { opacity: 0.45 },
       ]}
     >
-      <Markdown text={e.text ?? ''} t={me ? { ...t, link: '#ffffff', codeBg: 'rgba(255,255,255,0.18)' } : t} color={me ? '#ffffff' : tone === 'note' ? t.fg2 : t.fg} mention={me ? () => '#ffffff' : mentionInk(c)} />
+      <Markdown text={e.text ?? ''} t={t} color={tone === 'note' ? t.fg2 : t.fg} mention={mentionInk(c)} />
     </View>
   )
 }
@@ -266,8 +266,8 @@ function Entry({ e, c, cont }: { e: FeedEntry; c: FeedCtx; cont: boolean }) {
           <Text style={[styles.time, { color: t.fg3 }]}>{clock(e.ts)}</Text>
         </View>
         <View style={[styles.bubble, styles.bubbleMe, styles.ticket, { backgroundColor: t.bubbleMe }]}>
-          <Icon name={(e.type ?? 'bug') === 'bug' ? 'bug' : 'task'} size={15} color="#fff" />
-          <Text style={styles.ticketText}>
+          <Icon name={(e.type ?? 'bug') === 'bug' ? 'bug' : 'task'} size={15} color={t.fg2} />
+          <Text style={[styles.ticketText, { color: t.fg }]}>
             <Text style={{ fontWeight: '600' }}>#{String(e.ticket).split('@')[0]}</Text> {e.title}
           </Text>
         </View>
@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
   me: { alignItems: 'flex-end', paddingLeft: 56, paddingRight: 12, marginTop: 14, gap: 4 },
   meCap: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 2 },
   ticket: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  ticketText: { color: '#fff', fontSize: 16, flexShrink: 1 },
+  ticketText: { fontSize: 16, flexShrink: 1 },
   quote: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '100%', paddingHorizontal: 2 },
   quoteText: { fontSize: 12.5, flexShrink: 1 },
   askLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 14, paddingRight: 10, borderRadius: 14, borderTopLeftRadius: 4, borderWidth: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
