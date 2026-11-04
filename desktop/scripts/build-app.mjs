@@ -22,7 +22,7 @@ const electronVersion = JSON.parse(fs.readFileSync(path.join(root, 'node_modules
 
 const app = path.join(root, 'dist', `${PRODUCT_NAME}.app`)
 const stamp = path.join(root, 'dist', '.build.json')
-const wanted = JSON.stringify({ electronVersion, root, icon: fs.statSync(path.join(root, 'assets', 'icon.icns')).mtimeMs, documents: 1, voice: 1, id: APP_ID, name: PRODUCT_NAME })
+const wanted = JSON.stringify({ electronVersion, root, icon: fs.statSync(path.join(root, 'assets', 'icon.icns')).mtimeMs, documents: 1, voice: 1, network: 1, id: APP_ID, name: PRODUCT_NAME })
 const open = process.argv.includes('--open')
 const current = fs.existsSync(app) && fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === wanted
 
@@ -49,6 +49,9 @@ const [built] = await packager({
     CFBundleDocumentTypes: [{ CFBundleTypeName: `${PRODUCT_NAME} agents`, CFBundleTypeExtensions: ['crew'], CFBundleTypeRole: 'Viewer', LSHandlerRank: 'Owner' }],
     NSMicrophoneUsageDescription: `${PRODUCT_NAME} listens while you dictate a message to your agents.`,
     NSSpeechRecognitionUsageDescription: `${PRODUCT_NAME} turns what you say into text, on this Mac.`,
+    // what macOS says when it asks to let it onto the local network (other computers, phones, finding them nearby);
+    // without it the dev app was never asked, and Local Network stayed off for it
+    NSLocalNetworkUsageDescription: `${PRODUCT_NAME} connects to your other computers and your phone on this network.`,
   },
   electronVersion,
   platform: 'darwin',

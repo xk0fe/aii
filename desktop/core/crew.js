@@ -10,7 +10,8 @@ import { Runner, Scoped } from './runner.js'
 import { DEFAULT, workspacesIn, space, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
-import { LinkHost, LinkClient, identity, addresses, firewallWarning, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
+import { LinkHost, LinkClient, PairClient, identity, addresses, firewallWarning, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
+import { Discovery, DISCOVER_PORT } from './discover.js'
 import { packAgents, unpackAgents } from './pack.js'
 import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, folderInfo, folders } from './move.js'
 import { Phones } from './phones.js'
@@ -20,6 +21,7 @@ import { SAVERS, SAVER_IDS, saversFrom, report } from './savers.js'
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
 const SETTINGS = path.join(LINK_DIR, 'link.json')
+const DISCOVER_FOR = 150000 // Computers open, as the dashboard last said: it says so every minute
 // Images nothing needs any more go this long after Crew starts (sweepImages), once its workspaces have read their chats.
 const SWEEP_AFTER = 60000
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
@@ -339,6 +341,7 @@ export class Crew extends EventEmitter {
       l.client?.close()
       l.peer?.close()
     }
+    this.discover(false)
     this.sharing?.stop()
     for (const hub of this.hubs.values()) {
       hub.saveStats()
@@ -964,7 +967,7 @@ export class Crew extends EventEmitter {
   computers() {
     const hidden = new Set(this.settings.hidden ?? [])
     const port = this.settings.port ?? DEFAULT_PORT
-    let me = { name: this.me.name, slug: this.me.slug, sharing: Boolean(this.sharing), error: this.linkError, agents: this.hub.config.agents.length }
+    let me = { name: this.me.name, slug: this.me.slug, sharing: Boolean(this.sharing), share: Boolean(this.settings.share), error: this.linkError, agents: this.hub.config.agents.length }
     // while other computers or phones may connect: networks come and go (Wi-Fi, Tailscale), and so does a firewall's say
     const phones = this.phones.devices.length > 0 || Boolean(this.phones.open())
     if ((this.sharing || phones) && Date.now() - this.hosts.at > 30000) this.findHosts()
@@ -980,7 +983,9 @@ export class Crew extends EventEmitter {
         agents: (l.state?.agents ?? []).filter((a) => !a.cloneOf).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)) })),
       }
     })
-    return { me, links, phones: { ...this.phones.view(), ...(phones && this.hosts.warning && { warning: this.hosts.warning }) } }
+    // blocked: macOS keeps this app off the local network (Local Network is off for it), as discovery or a link found
+    if (this.discovery?.blocked || links.some((l) => !l.online && l.status?.blocked)) me.localNetwork = 'blocked'
+    return { me, links, phones: { ...this.phones.view(), ...(phones && this.hosts.warning && { warning: this.hosts.warning }) }, ...this.nearbyView() }
   }
 
   hosts = { at: 0, list: [], warning: null } // warning: why connections can't get in (Windows Firewall), if they can't
@@ -1005,7 +1010,10 @@ export class Crew extends EventEmitter {
     this.settings.share = Boolean(on)
     this.saveSettings()
     if (on && !this.sharing) await this.startSharing()
-    if (!on) this.stopSharing()
+    if (!on && this.sharing) {
+      this.stopSharing() // the computers that linked with its code are let go
+      if (this.discovery) await this.startSharing().catch(() => {}) // still there for computers nearby to ask
+    }
     this.changed()
   }
 
@@ -1017,7 +1025,10 @@ export class Crew extends EventEmitter {
     const id = identity(LINK_DIR)
     const host = new LinkHost({ key: this.settings.key, cert: id.cert, keyPem: id.key, name: this.me.name, handle: (fn, args) => this.serve(fn, args) })
     host.fingerprint = id.fingerprint
+    host.pairable = () => Boolean(this.discovery) // only while Computers is open here
+    host.authable = () => Boolean(this.settings.share) // linked computers' key: not while it runs only for Nearby
     host.on('peer', (peer) => this.attach(peer))
+    host.on('pair', (req) => this.asked(req))
     const port = this.settings.port ?? DEFAULT_PORT
     try {
       await host.start(port)
@@ -1079,6 +1090,174 @@ export class Crew extends EventEmitter {
     })
   }
 
+  // ---- nearby: linking a computer found on this network (core/discover.js), with a code checked on both screens ----
+  // While Computers is open (the dashboard says so, and again every minute: a page that went away stops it after
+  // DISCOVER_FOR), this computer says who it is on the local network and lists the others doing the same. It shares
+  // meanwhile, so the one you click can be asked; it stops again when the sheet closes, unless sharing was on anyway.
+
+  pairing = { out: null, in: null } // out: { id, name, stage, sas, error, slug }; in: { id, name, sas, stage, slug }
+
+  async discover(on) {
+    clearTimeout(this.discoverTimer)
+    await this.discoverStarting // one that's starting finishes first, so there's never two
+    if (!on) {
+      if (!this.discovery) return
+      this.discovery.stop()
+      this.discovery = null
+      this.pairCancel()
+      if (this.pairing.in?.stage === 'ask') this.pairing.in.request.decline()
+      this.pairing.in = null
+      if (!this.settings.share && this.sharing) this.stopSharing()
+      return this.changed()
+    }
+    this.discoverTimer = setTimeout(() => this.discover(false), DISCOVER_FOR)
+    this.discoverTimer.unref?.()
+    if (this.discovery) return
+    this.discoverStarting = this.startDiscovery()
+    await this.discoverStarting
+    this.discoverStarting = null
+  }
+
+  async startDiscovery() {
+    if (!this.sharing) await this.startSharing().catch(() => {}) // a port in use: the sheet says so, and nothing can ask
+    const fingerprint = this.sharing?.fingerprint ?? identity(LINK_DIR).fingerprint
+    const d = new Discovery({
+      port: this.settings.discoverPort ?? DISCOVER_PORT,
+      // for tests, and networks where broadcasts need a nudge: "host:port" to send beacons to instead
+      ...(this.settings.discoverTo && { targets: () => this.settings.discoverTo.map((t) => ({ address: t.split(':')[0], port: Number(t.split(':')[1]) })) }),
+      beacon: () => ({ name: this.me.name, agents: this.hub.config.agents.length, port: this.settings.port ?? DEFAULT_PORT, fingerprint }),
+    })
+    d.on('change', () => this.changed())
+    d.on('blocked', () => this.changed())
+    this.discovery = d
+    await d.start()
+    this.changed()
+  }
+
+  // The computers nearby that aren't linked already, and any pairing under way, for the Computers sheet.
+  nearbyView() {
+    if (!this.discovery) return { nearby: null, pairing: this.pairingView() }
+    const linkedPrints = new Set([...this.links.values()].map((l) => { try { return l.code && readCode(l.code).fingerprint } catch { return null } }).filter(Boolean))
+    const found = this.discovery.list().filter((f) => !linkedPrints.has(f.fingerprint) && !this.links.get(slug(f.name))?.peer)
+    // two of the same name (one of them may be pretending): each says where it is, so they can be told apart
+    const twins = new Set(found.filter((f, i) => found.findIndex((g) => g.name === f.name) !== i).map((f) => f.name))
+    const nearby = found
+      .map(({ id, name, platform, agents, address }) => ({ id, name, platform, agents, ...(twins.has(name) && { address }) }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    return { nearby, pairing: this.pairingView() }
+  }
+
+  pairingView() {
+    const out = this.pairing.out && (({ client, code, ...rest }) => rest)(this.pairing.out) // the code has the key in it
+    const inn = this.pairing.in && (({ request, ...rest }) => rest)(this.pairing.in)
+    return out || inn ? { out, in: inn } : null
+  }
+
+  // Ask the computer found nearby with this id to link. The sheet follows it in pairing.out: 'asking', then 'confirm'
+  // with the code to check on both screens, then 'linking' and 'linked' (with its slug), or 'failed' with why. It links
+  // only once the code is checked on both: there (it sends its link code) and here (pairConfirm). Checking it here is
+  // what keeps a computer pretending to be the one you clicked from getting linked: the real one shows no code.
+  pairWith(id) {
+    const found = this.discovery?.get(id)
+    if (!found) throw new Error("that computer isn't nearby any more: is Computers still open on it?")
+    if (this.pairing.in && !['linked', 'failed'].includes(this.pairing.in.stage)) throw new Error(`${this.pairing.in.name} is linking with ${this.me.name} right now`)
+    this.pairCancel()
+    const myFingerprint = this.sharing?.fingerprint ?? identity(LINK_DIR).fingerprint
+    const client = new PairClient({ host: found.address, port: found.port, fingerprint: found.fingerprint, name: this.me.name, myFingerprint })
+    const out = { id, name: found.name, stage: 'asking', client }
+    this.pairing.out = out
+    client.on('sas', (sas) => this.outNow(out, { stage: 'confirm', sas }))
+    client.on('end', (why) => this.outNow(out, { stage: 'failed', error: why }))
+    client.on('code', (code) => {
+      out.code = code
+      if (out.agreed) this.linkWith(out)
+      else this.outNow(out, { theyAgreed: true })
+    })
+    client.start()
+    this.changed()
+  }
+
+  outNow(out, change) {
+    if (this.pairing.out !== out) return
+    Object.assign(out, change)
+    this.changed()
+  }
+
+  // The code matches here too: link, if the other computer said yes already, or wait for it ('waiting').
+  pairConfirm() {
+    const out = this.pairing.out
+    if (!out || out.stage !== 'confirm') return
+    out.agreed = true
+    if (out.code) this.linkWith(out)
+    else this.outNow(out, { stage: 'waiting' })
+  }
+
+  linkWith(out) {
+    this.outNow(out, { stage: 'linking' })
+    this.connect(out.code).then(
+      (key) => (out.client.close(), this.outNow(out, { stage: 'linked', slug: key })),
+      (e) => (out.client.close(), this.outNow(out, { stage: 'failed', error: e.message })),
+    )
+  }
+
+  pairCancel() {
+    const out = this.pairing.out
+    if (!out) return
+    this.pairing.out = null
+    out.client.cancel()
+    this.changed()
+  }
+
+  // A computer nearby asking to link this one: the sheet asks you, with the code. Another one asking while a linking is
+  // under way (either way) is told this one's busy. One that goes after you said yes, without linking (it said no on
+  // its side), ends as 'failed': 'cancelled'.
+  asked(request) {
+    const busy = (p) => p && !['linked', 'failed'].includes(p.stage)
+    if (busy(this.pairing.in) || busy(this.pairing.out)) return request.busy()
+    const inn = { id: request.id, name: request.name, sas: request.sas, stage: 'ask', request }
+    this.pairing.in = inn
+    request.on('gone', () => {
+      if (this.pairing.in !== inn) return
+      if (inn.stage === 'ask') this.pairing.in = null // it gave up, or the minute ran out
+      // it closes this once it has linked, and a link that came first made this 'linked'; a moment's grace for one
+      // whose connection is still coming in
+      else if (inn.stage === 'accepted') return void setTimeout(() => this.pairing.in === inn && inn.stage === 'accepted' && (Object.assign(inn, { stage: 'failed', error: 'cancelled' }), this.changed()), 3000)
+      this.changed()
+    })
+    this.changed()
+  }
+
+  // Yes: it gets this computer's link code and connects with it, and this computer keeps sharing so it can come back.
+  pairAnswer(id, yes) {
+    const inn = this.pairing.in
+    if (!inn || inn.id !== id) throw new Error('that computer stopped asking')
+    if (inn.stage !== 'ask') return (this.pairing.in = null), this.changed() // done with the result
+    if (!yes) {
+      inn.request.decline()
+      this.pairing.in = null
+      return this.changed()
+    }
+    if (!this.sharing) throw new Error(this.linkError ?? `${this.me.name} isn't sharing`)
+    this.settings.share = true
+    this.saveSettings()
+    const port = this.settings.port ?? DEFAULT_PORT
+    inn.request.accept(makeCode({ name: this.me.name, port, key: this.settings.key, fingerprint: this.sharing.fingerprint, hosts: this.hosts.list.map((h) => h.address) }))
+    inn.stage = 'accepted'
+    this.changed()
+  }
+
+  // This computer's link code, to paste on another one ("Link with a code"); copying it is what turns sharing on.
+  async linkCode() {
+    if (!this.settings.share || !this.sharing) await this.share(true)
+    return makeCode({ name: this.me.name, port: this.settings.port ?? DEFAULT_PORT, key: this.settings.key, fingerprint: this.sharing.fingerprint, hosts: this.hosts.list.map((h) => h.address) })
+  }
+
+  pairDone() {
+    if (this.pairing.out && ['linked', 'failed'].includes(this.pairing.out.stage)) this.pairing.out = null
+    if (this.pairing.in && ['linked', 'failed'].includes(this.pairing.in.stage)) this.pairing.in = null
+    this.changed()
+  }
+
   newLink(key) {
     const l = { slug: key, peer: null, toHost: new Map(), fetching: new Set() }
     this.links.set(key, l)
@@ -1088,6 +1267,8 @@ export class Crew extends EventEmitter {
   attach(peer, client) {
     const key = slug(peer.name)
     const l = this.links.get(key) ?? this.newLink(key)
+    const asked = this.pairing.in
+    if (asked?.stage === 'accepted' && slug(asked.name) === key) this.pairing.in = { ...asked, stage: 'linked', slug: key }
     Object.assign(l, { name: peer.name, peer, client: client ?? l.client, aware: false }) // until it says otherwise
     const q = this.qualifier(l)
     peer.on('state', (s) => {

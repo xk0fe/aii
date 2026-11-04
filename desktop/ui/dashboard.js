@@ -86,7 +86,7 @@ $('.side-ws [data-act=add]').innerHTML = ICONS.plus
 $('.chan-sec [data-act=new-channel]').innerHTML = ICONS.plus
 $('.side-more').innerHTML = ICONS.more
 $('#link .h-icon').outerHTML = ICONS.computers
-$('#link [data-link-add]').innerHTML = `${ICONS.link}Link a computer…`
+$('#link [data-link-add]').innerHTML = `${ICONS.link}Link with a code…`
 $('#import .h-icon').outerHTML = ICONS.import
 const DOWN = svg('<path d="M12 5v14M5 12l7 7 7-7"/>', 'stroke-width="2.4"')
 // the page's own hints in this computer's keys (⌘F is Ctrl+F on Windows)
@@ -1533,74 +1533,187 @@ function drawNav() {
 }
 
 // ---- Computers (Crew Link) -------------------------------------------------------
+// One list of your computers, this one first; under it Nearby: the computers on this network with Computers open too
+// (core/discover.js), to link with a click and a code checked on both screens. Linking (either way) and Link with a code
+// take the sheet over, the way Add a phone does, and hand back to the list with the new computer's agents unfolded.
 
 const linkDialog = $('#link')
 let linkKey = ''
 let fresh = null // a computer just linked: its agents are shown to pick from
-let linkErr = '' // kept across redraws until the next try
-// what's unfolded: this computer's security details, each linked computer's agents, the paste-a-code form; and "Copied" for a moment
-const linkOpen = { details: false, computers: new Set(), form: false, copied: false, detailsCopied: false }
+let linkErr = '' // Link with a code's, kept across redraws until the next try
+// what's unfolded: each linked computer's agents; the Link with a code view; "Copied" for a moment
+const linkOpen = { computers: new Set(), code: false, copied: false, detailsCopied: false }
 let copiedTimer = null
+let discoverTick = null // Computers says it's open every minute, so a page that went away stops discovery (core/crew.js)
+let handing = null // the computer a finished linking is handing over to the list
+let codeTyped = '' // what's in Link with a code's box, kept while something else takes the sheet over (one asking)
+
+// What takes the sheet over: a computer asking to link this one, one this one is asking, or Link with a code.
+const linkView = (c) => (c.pairing?.in ? 'in' : c.pairing?.out ? 'out' : linkOpen.code ? 'code' : null)
 
 function drawComputers(state) {
   const c = state.computers ?? { me: {}, links: [] }
   drawPairing(c.phones)
-  const next = JSON.stringify([c, fresh, linkErr, phoneFresh, phoneErr, linkOpen, [...linkOpen.computers]])
+  const view = phonePair ? null : linkView(c)
+  const next = JSON.stringify([c, fresh, linkErr, phoneFresh, phoneErr, linkOpen, [...linkOpen.computers], view])
   if (next === linkKey) return
   linkKey = next
-  // keep what's being typed across redraws
-  const body = linkDialog.querySelector('.link-body')
-  const typed = body.querySelector('[data-link-code]')?.value ?? ''
-  morph(body, computersHTML(c))
-  const box = body.querySelector('[data-link-code]')
-  if (box) box.value = typed
-  linkDialog.querySelector('[data-link-add]').setAttribute('aria-pressed', String(linkOpen.form))
+  morph(linkDialog.querySelector('.link-body'), computersHTML(c))
+  const was = linkDialog.classList.contains('linking')
+  linkDialog.classList.toggle('linking', Boolean(view))
+  const lv = linkDialog.querySelector('.link-view')
+  const typing = lv.querySelector('[data-link-code]')
+  if (typing) codeTyped = typing.value // however it got there (typed, pasted, dropped)
+  if (view) {
+    morph(lv, view === 'code' ? codeHTML(c) : linkingHTML(c, view))
+    const box = lv.querySelector('[data-link-code]')
+    if (box) box.value = codeTyped // what was typed, across redraws and back from a computer asking
+    if (!was) lv.focus({ preventScroll: true })
+  } else if (was && linkDialog.open) {
+    linkDialog.classList.add('back')
+    setTimeout(() => linkDialog.classList.remove('back'), 400)
+  }
+  handOver(c)
+}
+
+// A linking that's done says so for a moment, then the list shows the new computer with its agents unfolded.
+function handOver(c) {
+  const done = [c.pairing?.out, c.pairing?.in].find((p) => p?.stage === 'linked')
+  if (!done || handing === done.slug) return
+  handing = done.slug
+  setTimeout(() => linkHanded(done.slug), 1600)
+}
+function linkHanded(slug) {
+  if (!slug || handing !== slug) return
+  handing = null
+  fresh = slug
+  linkOpen.computers.add(slug)
+  crew.call('link', 'pairDone').catch(() => {})
+  requestAnimationFrame(() => linkDialog.querySelector(`[data-computer="${CSS.escape(slug)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
 }
 
 const LINK_CHEV = `<span class="lk-chev">${ICONS.chevron}</span>`
 // A computer's icon by its name: a MacBook is a laptop, anything else a desktop.
 const machineIcon = (name) => (/book|laptop/i.test(name ?? '') ? ICONS.laptop : ICONS.desktop)
 
-// This computer (its name, sharing, the code to copy, and how safe it is behind that), the linked computers, the
-// paste-a-code form when it's asked for, and phones. The code itself, the addresses and the port aren't shown: Copy link
-// code is what you need, and Copy connection details has the rest for when something doesn't connect.
-function computersHTML({ me, links, phones }) {
-  const mine = `
-    <div class="lk-li"><span class="lk-ic">${machineIcon(me.name)}</span><div class="lk-k">
-      <input class="me-name" data-me-name value="${esc(me.name)}" spellcheck="false" title="${esc(upFirst(THIS_COMPUTER))}'s name: click to rename it. Linked computers see its agents as name@${esc(me.slug)}">
-      <small>${plural(me.agents ?? 0, 'agent')} run here</small></div></div>
-    <label class="lk-li lk-sw"><div class="lk-k">Let your other computers link to this one</div><input type="checkbox" class="switch" data-link-share ${me.sharing ? 'checked' : ''}></label>
-    ${me.sharing ? `
-      <div class="lk-li"><button class="btn primary lk-copy" data-link-copy title="Anyone with this code can use and drive your agents, so keep it to your own computers">${linkOpen.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy link code`}</button>
-        <span class="lk-note"><b>Ready to link.</b> Paste the code on your other computer, under Link a computer.</span></div>
-      ${me.warning ? `<div class="lk-li"><p class="err">${esc(me.warning)}</p></div>` : ''}
-      <button class="lk-li lk-more" data-lk-details aria-expanded="${linkOpen.details}"><span>Security and a new code</span>${LINK_CHEV}</button>
-      ${linkOpen.details ? `<div class="lk-details">
-        <p>Anyone with the link code can use and drive your agents, so keep it to your own computers. Linked computers see these agents as <b>name@${esc(me.slug)}</b>.</p>
-        <p>${esc(reachText(me.hosts))}</p>
-        <div class="lk-row"><span>A new code disconnects the computers using this one, until they link again.</span><span class="lk-btns"><button class="btn sm" data-link-details-copy title="This computer's addresses and port, for when a computer can't connect">${linkOpen.detailsCopied ? 'Copied' : 'Copy connection details'}</button><button class="btn sm" data-link-reset>New code</button></span></div>
-      </div>` : ''}`
-    : me.error ? `<div class="lk-li"><p class="err">${esc(sharingError(me.error))}</p></div>` : ''}`
-  const form = linkOpen.form || linkErr ? `
-    <div class="section-label">Link a computer</div>
-    <div class="group-list"><div class="lk-form">
-      <p>Paste the code from the other computer's <b>Copy link code</b>. Linking works both ways: each computer sees the other's agents.</p>
-      <div class="code-in"><textarea class="field" data-link-code rows="2" placeholder="crew1.…" spellcheck="false"></textarea><button class="btn primary" data-link-connect>Link</button></div>
-      <p class="err" data-link-err>${esc(linkErr)}</p>
-    </div></div>` : ''
-  return `<div class="section-label">${upFirst(THIS_COMPUTER)}</div><div class="group-list">${mine}</div>
-    <div class="section-label">Linked</div>
-    <div class="group-list">${links.length ? links.map(linkHTML).join('') : '<div class="lk-li lk-empty">No other computers yet. Copy the link code on one, then Link a computer… here.</div>'}</div>
-    ${form}
+// The list: macOS keeping the app off the network (when it is), your computers, Nearby, phones.
+function computersHTML({ me, links, phones, nearby }) {
+  const blocked = me.localNetwork === 'blocked'
+  const why = me.error ? sharingError(me.error) : me.warning
+  return `${blocked ? blockedHTML() : ''}
+    <div class="section-label">Your computers</div>
+    <div class="group-list">
+      <div class="lk-li lk-me"><span class="lk-ic">${machineIcon(me.name)}</span><div class="lk-k">
+        <input class="me-name" data-me-name value="${esc(me.name)}" spellcheck="false" aria-label="${esc(upFirst(THIS_COMPUTER))}'s name" title="Click to rename it. Linked computers see its agents as name@${esc(me.slug)}">
+        <small>${upFirst(THIS_COMPUTER)} · ${plural(me.agents ?? 0, 'agent')}</small></div></div>
+      ${links.map(linkHTML).join('')}
+    </div>
+    ${why ? `<p class="err lk-why">${esc(why)}</p>` : ''}
+    <div class="section-label lk-near-label">Nearby${nearby && !blocked ? '<span class="lk-looking"><span class="lk-ping"></span>Looking on this network</span>' : ''}</div>
+    ${nearbyHTML(me, nearby, blocked)}
     <div class="section-label">Phones</div>
     ${phonesHTML(phones ?? { devices: [] })}`
+}
+
+// macOS's Local Network privacy, off for this app: nothing on this Wi-Fi can be reached until it's on (link.js and
+// discover.js tell it by an address refused at once).
+const blockedHTML = () => `<div class="well lk-banner" role="alert"><span class="lk-ic">${ICONS.shield}</span>
+  <div class="lk-k">macOS is keeping ${PRODUCT_NAME} off this network<small>Turn on ${PRODUCT_NAME} in Privacy &amp; Security › Local Network, so your other computers and phones on this Wi-Fi can be found and reached.</small></div>
+  <button class="btn sm" data-local-network>Open Settings</button></div>`
+
+// Computers found nearby, each with Link; none yet, a radar and what to do on the other computer.
+function nearbyHTML(me, nearby, blocked) {
+  if (nearby?.length && !blocked) {
+    return `<div class="group-list">${nearby.map((n) => `<div class="lk-li lk-near">
+      <span class="lk-ic">${machineIcon(n.name)}</span>
+      <span class="lk-k">${esc(n.name)}<small>${plural(n.agents, 'agent')} · ${n.address ? `at ${esc(n.address)}` : 'Computers is open there'}</small></span>
+      <button class="btn primary sm" data-pair="${esc(n.id)}">${ICONS.link}Link</button></div>`).join('')}</div>`
+  }
+  return `<div class="well lk-find ${blocked ? 'off' : ''}">
+    <div class="lk-radar" aria-hidden="true"><i></i><i></i><span class="lk-ic">${machineIcon(me.name)}</span></div>
+    <div class="lk-find-k"><b>${blocked ? 'Nothing nearby can be found right now' : 'Open Computers on your other computer'}</b>
+      <p>${blocked ? `Once ${PRODUCT_NAME} is allowed onto the local network, computers with Computers open show up here.` : 'It shows up here while Computers is open on both, on the same Wi-Fi.'}
+      Another network, or Tailscale? <button class="lk-a" data-link-code-open>Link with a code</button></p></div>
+  </div>`
+}
+
+// Linking one found nearby, or answering one asking: both computers, the code both screens show, and one line on
+// what to do. Nothing in it changes size as it goes: the code's place is kept while there's none.
+const LINK_FAILS = {
+  declined: (n) => `<b>${n}</b> said no.`,
+  timeout: (n) => `Nobody answered on <b>${n}</b> in time.`,
+  closed: (n) => `Computers closed on <b>${n}</b>. Open it there and try again.`,
+  busy: (n) => `<b>${n}</b> is answering another computer. Try again in a moment.`,
+  version: (n) => `<b>${n}</b> runs a different ${PRODUCT_NAME} version. Update both, then try again.`,
+  certificate: (n) => `Something other than <b>${n}</b> answered, so nothing was sent. Try again, or link with a code.`,
+  blocked: () => `macOS is keeping ${PRODUCT_NAME} off this network. Turn it on in Privacy &amp; Security › Local Network.`,
+  unreachable: (n) => `Couldn't reach <b>${n}</b>. Is it still on this Wi-Fi, with Computers open?`,
+  cancelled: (n) => `<b>${n}</b> didn't link after all.`,
+}
+function linkingHTML({ me, pairing }, view) {
+  const p = pairing[view]
+  const them = esc(p.name)
+  const { stage } = p
+  const asking = view === 'in'
+  const code = ['confirm', 'waiting', 'ask', 'accepted', 'linking'].includes(stage) ? p.sas : null
+  const done = stage === 'linked'
+  const failed = stage === 'failed'
+  // Both screens ask the same: check the code, and Link on both. Neither links alone.
+  const check = stage === 'confirm' || stage === 'ask'
+  const line = done ? `<b>${them}</b>'s agents are part of your crew now.`
+    : failed ? (LINK_FAILS[p.error]?.(them) ?? esc(upFirst(String(p.error ?? 'it didn\'t link'))))
+    : stage === 'asking' ? `Asking <b>${them}</b>…`
+    : check && p.theyAgreed ? `<b>${them}</b> clicked Link. If it shows the same code, click <b>Link</b> here too.`
+    : check ? `If <b>${them}</b> shows the same code, click <b>Link</b> here and on ${them}.`
+    : stage === 'waiting' || stage === 'accepted' ? `Now click <b>Link</b> on <b>${them}</b>.`
+    : 'Linking…'
+  const foot = done ? `<span class="grow"></span><button class="btn" data-pair-done>Done</button>`
+    : check ? `<button class="btn" ${asking ? 'data-pair-no' : 'data-pair-cancel'}>${asking ? 'Not now' : 'Cancel'}</button><span class="grow"></span><button class="btn primary" ${asking ? 'data-pair-yes' : 'data-pair-confirm'}>${ICONS.link}Link</button>`
+    : failed ? `<button class="btn" data-pair-back>${ICONS.back}Back</button><span class="grow"></span>${p.error === 'blocked' ? '<button class="btn" data-local-network>Open Settings</button>' : ''}${asking ? '' : `<button class="btn primary" data-pair-retry>${ICONS.restart}Try again</button>`}`
+    : `<span class="grow"></span><button class="btn" data-pair-cancel ${asking ? 'disabled' : ''}>Cancel</button>`
+  return `<h2 class="sheet-title"><span class="h-icon">${ICONS.computers}</span>${asking && !done ? `${them} wants to link` : done ? `Linked with ${them}` : `Link with ${them}`}</h2>
+    <div class="lk-pair ${done ? 'done' : failed ? 'failed' : ['asking', 'waiting', 'accepted', 'linking'].includes(stage) ? 'busy' : ''}">
+      <div class="lk-end"><span class="lk-ic">${machineIcon(me.name)}</span><b>${esc(me.name)}</b><small>${upFirst(THIS_COMPUTER)}</small></div>
+      <div class="lk-wire" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="lk-end"><span class="lk-ic">${machineIcon(p.name)}</span><b>${them}</b><small>${asking ? 'Asking to link' : 'Nearby'}</small></div>
+    </div>
+    ${done || failed ? `<div class="lk-result ${done ? 'ok' : 'no'}" aria-hidden="true"><span>${done ? ICONS.check : ICONS.close}</span></div>`
+      : `<div class="lk-sas ${code ? '' : 'empty'}" ${code ? `aria-label="Code ${code.split('').join(' ')}"` : 'aria-hidden="true"'}>${[0, 1, 2, 3].map((i) => `<span>${code?.[i] ?? ''}</span>`).join('')}</div>`}
+    <p class="pv-line ${failed ? 'failed' : ''}" aria-live="polite">${line}</p>
+    <div class="sheet-foot">${foot}</div>`
+}
+
+// Link with a code: copy this computer's on one, paste it on the other. For another network, Tailscale, or a computer
+// Nearby doesn't find. Copying it is what lets computers link to this one with it (sharing).
+function codeHTML({ me }) {
+  return `<h2 class="sheet-title"><span class="h-icon">${ICONS.link}</span>Link with a code</h2>
+    <p class="lead">Copy the code on one computer and paste it on the other. For another network, Tailscale, or a computer Nearby doesn't find.</p>
+    <div class="lk-codes">
+      <section class="well lk-code">
+        <b>${upFirst(THIS_COMPUTER)}'s code</b>
+        <p>Paste it on your other computer, under Computers › Link with a code.</p>
+        <div class="lk-row"><button class="btn primary lk-copy" data-link-copy>${linkOpen.copied ? `${ICONS.check}Copied` : `${ICONS.copy}Copy code`}</button>
+          <span class="lk-hint">Anyone with it can use and drive your agents, so keep it to your own computers.</span></div>
+      </section>
+      <div class="lk-or"><span>or</span></div>
+      <section class="well lk-code">
+        <b>The other computer's code</b>
+        <div class="code-in"><textarea class="field" data-link-code rows="2" placeholder="crew1.…" spellcheck="false" aria-label="The other computer's code"></textarea><button class="btn primary" data-link-connect>Link</button></div>
+        <p class="err" data-link-err>${esc(linkErr)}</p>
+      </section>
+    </div>
+    <div class="lk-share">
+      <label class="lk-sw-row" title="Off: computers can't link to ${THIS_COMPUTER} with its code, and the ones that did are disconnected"><span>Let computers link with this code</span><input type="checkbox" class="switch" data-link-share ${me.share ? 'checked' : ''}></label>
+      <span class="lk-btns" ${me.share && me.sharing ? '' : 'hidden'}><button class="btn sm" data-link-details-copy title="${esc(reachText(me.hosts))} For when a computer can't connect.">${linkOpen.detailsCopied ? 'Copied' : 'Copy connection details'}</button><button class="btn sm" data-link-reset>New code</button></span>
+    </div>
+    <div class="sheet-foot"><button class="btn" data-link-code-close>${ICONS.back}Back</button><span class="grow"></span><button class="btn" data-close>Done</button></div>`
 }
 
 // Why this computer can't share, in words. A port another app has is the usual one, and there's no setting for the port
 // on screen (it's in Crew's settings file), so it says what you can do instead.
 const sharingError = (error) => (/port \d+ is in use/.test(error)
-  ? `Another app is using the port ${PRODUCT_NAME} Link listens on, so this computer can't share right now. Quit that app and turn sharing off and on again.`
-  : errorReason(error) || `${PRODUCT_NAME} couldn't start sharing this computer. Turn it off and on again.`)
+  ? `Another app is using the port ${PRODUCT_NAME} Link listens on, so this computer can't share right now. Quit that app and reopen Computers.`
+  : errorReason(error) || `${PRODUCT_NAME} couldn't start sharing this computer. Close Computers and open it again.`)
 // How others reach this computer, in words: "Reachable over your local network and Tailscale."
 function reachText(hosts = []) {
   const ways = [...new Set(hosts.map((h) => (/tailscale/i.test(h.via) ? 'Tailscale' : 'your local network')))]
@@ -1609,11 +1722,16 @@ function reachText(hosts = []) {
 // For Copy connection details: what someone helping you would ask for.
 const connectionDetails = (me) => [`${me.name} (${me.slug}), ${PRODUCT_NAME} Link port ${me.port}`, ...(me.hosts ?? []).map((h) => `${h.address} (${h.via})`)].join('\n')
 
-// How a linked computer is: "Online · local network · 7 agents", or "Offline · 3 agents" (why, on hover).
+// How a linked computer is, in words on the row: "Online · local network · 7 agents", or "Offline · 3 agents · off,
+// asleep or on another network" (it reconnects on its own).
 function linkStatus(l) {
   const used = l.agents.filter((a) => !a.hidden).length
   const count = used < l.agents.length ? `${used} of ${plural(l.agents.length, 'agent')}` : plural(l.agents.length, 'agent')
-  if (!l.online) return { text: `Offline · ${count}`, tip: `${l.status?.error ?? 'Unreachable'}: it reconnects on its own` }
+  if (!l.online) {
+    const err = l.status?.error ?? ''
+    const why = l.status?.blocked ? 'macOS keeps it off the network' : /certificate|reset|version|stopped/.test(err) ? err : 'off, asleep or on another network'
+    return { text: `Offline · ${count} · ${why}`, tip: 'It reconnects on its own' }
+  }
   const addr = l.status?.address
   const via = !addr ? `linked to ${THIS_COMPUTER}` : /\.ts\.net$/.test(addr) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(addr) ? 'Tailscale' : 'local network'
   return { text: `Online · ${via} · ${count}`, tip: addr ? `Linked via ${addr}` : `It linked to ${THIS_COMPUTER}` }
@@ -1819,13 +1937,31 @@ watchScale()
 function openComputers() {
   fresh = null
   linkErr = ''
-  Object.assign(linkOpen, { details: false, form: false, copied: false, detailsCopied: false })
+  handing = null
+  Object.assign(linkOpen, { code: false, copied: false, detailsCopied: false })
   linkOpen.computers.clear()
   phoneFresh = null
   phoneErr = ''
   linkKey = ''
   drawComputers(state)
   linkDialog.showModal()
+  // Nearby: this computer says who it is on the network while the sheet is open, and lists the others doing the same
+  const discover = () => crew.call('link', 'discover', true).catch((x) => crew.call('log', `discover: ${x.message}`))
+  discover()
+  clearInterval(discoverTick)
+  discoverTick = setInterval(discover, 60000)
+}
+
+// Back from a takeover to the list: Link with a code closes, a linking that's done or failed is put away, one asking
+// this computer is told no, and one this computer is asking is cancelled.
+function linkBack() {
+  const p = state.computers?.pairing
+  if (p?.in) return crew.call('link', ...(p.in.stage === 'ask' ? ['pairAnswer', p.in.id, false] : ['pairDone']))
+  if (p?.out) return crew.call('link', ['linked', 'failed'].includes(p.out.stage) ? 'pairDone' : 'pairCancel')
+  linkOpen.code = false
+  linkErr = ''
+  codeTyped = ''
+  drawComputers(state)
 }
 
 linkDialog.addEventListener('click', async (e) => {
@@ -1838,21 +1974,26 @@ linkDialog.addEventListener('click', async (e) => {
   }
   if (t.closest('.phones')) return phoneAction(t).catch((x) => ((phoneErr = errorLine(x)), drawComputers(state)))
   if (t.closest('.pair-view')) return pairAction(t)
-  // what folds: the details, a linked computer's agents, the paste-a-code form
-  if (t.closest('[data-lk-details]')) return void ((linkOpen.details = !linkOpen.details), drawComputers(state))
   const pc = t.closest('[data-lk-open]')?.dataset.lkOpen
   if (pc) return void (linkOpen.computers.has(pc) ? linkOpen.computers.delete(pc) : linkOpen.computers.add(pc), drawComputers(state))
-  if (t.closest('[data-link-add]')) {
-    linkOpen.form = !linkOpen.form
-    if (!linkOpen.form) linkErr = ''
+  if (t.closest('[data-link-add], [data-link-code-open]')) {
+    linkOpen.code = true
     drawComputers(state)
-    const box = linkDialog.querySelector('[data-link-code]')
-    box?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    return box?.focus({ preventScroll: true })
+    return
   }
+  if (t.closest('[data-link-code-close]')) return linkBack()
   try {
+    // nearby: Link, and the linking view's buttons
+    const pair = t.closest('[data-pair]')?.dataset.pair
+    if (pair) await crew.call('link', 'pair', pair)
+    if (t.closest('[data-pair-retry]')) await crew.call('link', 'pair', state.computers.pairing.out.id)
+    if (t.closest('[data-pair-cancel], [data-pair-back], [data-pair-no]')) await linkBack()
+    if (t.closest('[data-pair-yes]')) await crew.call('link', 'pairAnswer', state.computers.pairing.in.id, true)
+    if (t.closest('[data-pair-confirm]')) await crew.call('link', 'pairConfirm')
+    if (t.closest('[data-pair-done]')) handing ? linkHanded(handing) : await crew.call('link', 'pairDone')
+    if (t.closest('[data-local-network]')) await crew.call('link', 'localNetwork')
     if (t.closest('[data-link-copy]')) {
-      await crew.call('copy', state.computers.me.code)
+      await crew.call('copy', await crew.call('link', 'code'))
       linkOpen.copied = true
       drawComputers(state)
       clearTimeout(copiedTimer)
@@ -1874,9 +2015,9 @@ linkDialog.addEventListener('click', async (e) => {
       linkErr = ''
       try {
         fresh = await crew.call('link', 'connect', code)
-        linkDialog.querySelector('[data-link-code]').value = ''
+        codeTyped = ''
         linkOpen.computers.add(fresh) // its agents unfolded, to pick from
-        linkOpen.form = false
+        linkOpen.code = false
         linkKey = ''
         drawComputers(state)
         linkDialog.querySelector(`[data-computer="${CSS.escape(fresh)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -1886,7 +2027,7 @@ linkDialog.addEventListener('click', async (e) => {
       }
     }
     const forget = t.closest('[data-forget]')?.dataset.forget
-    if (forget && confirm(`Forget ${linked(forget)?.name}? Its agents disappear from here (they keep running there). Link it again with its code any time.`)) await crew.call('link', 'forget', forget)
+    if (forget && confirm(`Forget ${linked(forget)?.name}? Its agents disappear from here (they keep running there). Link it again any time.`)) await crew.call('link', 'forget', forget)
     const all = t.closest('[data-use-all]')?.dataset.useAll
     const none = t.closest('[data-use-none]')?.dataset.useNone
     if (all || none) await crew.call('link', 'hide', linked(all || none).agents.map((a) => a.name), Boolean(none))
@@ -1901,7 +2042,8 @@ linkDialog.addEventListener('click', async (e) => {
       })
     }
   } catch (x) {
-    fail(errorLine(x))
+    if (linkOpen.code) fail(errorLine(x))
+    else oops("Couldn't do that", x)
   }
 })
 linkDialog.addEventListener('change', async (e) => {
@@ -1923,11 +2065,22 @@ linkDialog.addEventListener('change', async (e) => {
   }
 })
 linkDialog.addEventListener('keydown', (e) => e.key === 'Enter' && e.target.matches('[data-me-name]') && e.target.blur())
-// Esc in the pairing view goes back to the list. On keydown, since Chromium lets a dialog's cancel be stopped only so
-// often before it closes the dialog anyway; cancel covers an Esc from outside it. Closing the dialog ends the pairing.
-linkDialog.addEventListener('keydown', (e) => e.key === 'Escape' && phonePair && (e.preventDefault(), closePairing()))
-linkDialog.addEventListener('cancel', (e) => phonePair && (e.preventDefault(), closePairing()))
-linkDialog.addEventListener('close', closePairing)
+linkDialog.addEventListener('input', (e) => e.target.matches('[data-link-code]') && (codeTyped = e.target.value))
+// Esc in a takeover (Add a phone, linking, Link with a code) goes back to the list. On keydown, since Chromium lets a
+// dialog's cancel be stopped only so often before it closes the dialog anyway; cancel covers an Esc from outside it.
+const inTakeover = () => phonePair || linkDialog.classList.contains('linking')
+const takeoverBack = () => (phonePair ? closePairing() : linkBack())
+linkDialog.addEventListener('keydown', (e) => e.key === 'Escape' && inTakeover() && (e.preventDefault(), takeoverBack()))
+linkDialog.addEventListener('cancel', (e) => inTakeover() && (e.preventDefault(), takeoverBack()))
+// Closing the sheet ends the phone pairing, stops Nearby (which cancels a linking under way, and says no to one asking)
+linkDialog.addEventListener('close', () => {
+  closePairing()
+  clearInterval(discoverTick)
+  discoverTick = null
+  linkOpen.code = false
+  codeTyped = ''
+  crew.call('link', 'discover', false).catch(() => {})
+})
 
 // ---- moving an agent to another computer ------------------------------------------
 // From any computer, to any linked one: drag it onto a computer in the sidebar, pick Move to… on it, or choose

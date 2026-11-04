@@ -252,7 +252,7 @@ const pack = (v) => JSON.stringify(v, (_, x) => (x instanceof Uint8Array ? { $by
 const unpack = (s) => JSON.parse(s, (_, x) => (x && typeof x === 'object' && typeof x.$bytes === 'string' ? new Uint8Array(Buffer.from(x.$bytes, 'base64')) : x))
 
 const closedWhy = (code, host) =>
-  new Error(code === 4003 ? 'the pairing code was reset on the other computer, get a new one' : code === 4004 ? 'the other computer runs a different CLIque version, update both' : `${host}: closed`)
+  new Error(code === 4003 ? 'the pairing code was reset on the other computer, get a new one' : code === 4004 ? 'the other computer runs a different CLIque version, update both' : code === 4009 ? 'the other computer stopped letting computers link with its code' : `${host}: closed`)
 
 // ---- a peer: one live connection, the same on both ends --------------------------------------------
 
@@ -340,7 +340,7 @@ export class LinkHost extends EventEmitter {
   start(port) {
     this.server = https.createServer({ cert: this.cert, key: this.keyPem }, (_, res) => res.writeHead(426).end('Crew Link speaks WebSocket\n'))
     this.wss = new WebSocketServer({ server: this.server, maxPayload: 32 * 1024 * 1024 })
-    this.wss.on('connection', (ws) => this.welcome(ws))
+    this.wss.on('connection', (ws, req) => this.welcome(ws, req.socket.remoteAddress))
     return new Promise((resolve, reject) => {
       this.server.once('error', reject)
       this.server.listen(port, '0.0.0.0', () => resolve(this))
@@ -353,8 +353,10 @@ export class LinkHost extends EventEmitter {
     this.server?.close()
   }
 
-  // A computer has 5 seconds to prove it has the key, which it only sends after verifying our certificate.
-  welcome(ws) {
+  // A computer has 5 seconds to prove it has the key, which it only sends after verifying our certificate. Or to ask to
+  // link, as one found nearby does (pairing). authable() says whether the key is taken now: not while sharing is off,
+  // when the host runs only so computers nearby can ask.
+  welcome(ws, from) {
     const timer = setTimeout(() => ws.close(4001, 'no key'), 5000)
     ws.once('message', (raw) => {
       clearTimeout(timer)
@@ -364,12 +366,183 @@ export class LinkHost extends EventEmitter {
       } catch {
         return ws.close(4002, 'bad message')
       }
+      if (m.t === 'pair') return this.pairing(ws, m, from)
       const ok = m.t === 'auth' && typeof m.key === 'string' && m.key.length === this.key.length && crypto.timingSafeEqual(Buffer.from(m.key), Buffer.from(this.key))
       if (!ok) return ws.close(4003, 'wrong key')
       if (m.protocol !== PROTOCOL) return ws.close(4004, 'different version')
+      if (this.authable && !this.authable()) return ws.close(4009, 'not sharing')
       ws.send(pack({ t: 'hello', protocol: PROTOCOL, name: this.name })) // first, before anything else reaches it
       this.emit('peer', new Peer(ws, String(m.name || 'computer'), this.handle))
     })
+  }
+
+  // A computer found nearby asks to link. Only while this one is open to it (Computers is open here: pairable), and one
+  // at a time. This side commits to its nonce before it has the other's, then reveals it, so both screens' code is the
+  // same only if nobody sits between them (sasCode). Emits 'pair' (a PairRequest) for the person here to answer.
+  // An address told no (or left unanswered) waits a little before it can ask again, so nothing nearby can keep the
+  // question on screen.
+  cooling = new Map() // address -> until when it's turned away
+  pairing(ws, m, from) {
+    if (typeof m.name !== 'string' || typeof m.fingerprint !== 'string') return ws.close(4002, 'bad message')
+    if (m.protocol !== PROTOCOL) return ws.close(4004, 'different version')
+    if (!this.pairable?.()) return ws.close(4007, 'not open')
+    if ((this.cooling.get(from) ?? 0) > Date.now()) return ws.close(4008, 'busy')
+    const hostNonce = crypto.randomBytes(16).toString('base64url')
+    ws.send(pack({ t: 'pairing', name: this.name, commit: commitTo(hostNonce) }))
+    const timer = setTimeout(() => ws.close(4001, 'no nonce'), 10000)
+    ws.once('message', (raw) => {
+      clearTimeout(timer)
+      let n
+      try {
+        n = unpack(raw.toString())
+      } catch {
+        return ws.close(4002, 'bad message')
+      }
+      if (n.t !== 'nonce' || typeof n.nonce !== 'string' || n.nonce.length < 16) return ws.close(4002, 'bad message')
+      ws.send(pack({ t: 'reveal', nonce: hostNonce }))
+      const sas = sasCode({ host: this.fingerprint, client: m.fingerprint, clientNonce: n.nonce, hostNonce })
+      const request = new PairRequest(ws, { name: m.name.slice(0, 64) || 'computer', fingerprint: m.fingerprint, sas })
+      request.on('gone', () => [4005, 4006].includes(request.ended) && this.cooling.set(from, Date.now() + COOL_OFF))
+      this.emit('pair', request)
+    })
+  }
+}
+
+// ---- pairing: linking a computer found nearby (core/discover.js), with a code to check on both screens --------------
+
+// The four digits both screens show. They match only when each side's certificate is the one the other sees, and
+// neither side could pick its nonce knowing the other's (the host committed to its own first), so someone in between
+// gets one guess in 10,000 per try, each try a code on screen that nobody asked for.
+export function sasCode({ host, client, clientNonce, hostNonce }) {
+  const h = crypto.createHash('sha256').update(['clique-pair', host, client, clientNonce, hostNonce].join('|')).digest()
+  return String(h.readUInt32BE(0) % 10000).padStart(4, '0')
+}
+const commitTo = (nonce) => crypto.createHash('sha256').update(`clique-commit|${nonce}`).digest('base64url')
+
+// Why a pairing ended, from how the host closed it.
+export const PAIR_ENDS = { 4004: 'version', 4005: 'declined', 4006: 'timeout', 4007: 'closed', 4008: 'busy' }
+const COOL_OFF = 20000
+
+// One computer asking to link, as the host sees it: { name, fingerprint, sas }. accept(code) hands it this computer's
+// link code (with the key); it connects with that, as if pasted, once the person there has checked the code too, and
+// then closes this. decline() says no. Unanswered, it's declined after a minute. Emits 'gone' when it's over, however it
+// ended (ended: the close code this side gave, if it was this side).
+export class PairRequest extends EventEmitter {
+  answered = false
+  ended = null
+
+  constructor(ws, { name, fingerprint, sas }) {
+    super()
+    Object.assign(this, { ws, name, fingerprint, sas, id: crypto.randomBytes(6).toString('hex') })
+    this.timer = setTimeout(() => this.end(4006, 'timed out'), 60000)
+    ws.on('close', () => {
+      clearTimeout(this.timer)
+      this.emit('gone')
+    })
+    ws.on('message', () => {}) // nothing more is expected from it
+  }
+
+  accept(code) {
+    if (this.answered) return
+    this.answered = true
+    clearTimeout(this.timer)
+    if (this.ws.readyState === WebSocket.OPEN) this.ws.send(pack({ t: 'paired', code }))
+    this.timer = setTimeout(() => this.end(4006, 'timed out'), 180000) // the other side checking its code, at most this long
+  }
+
+  decline() {
+    this.end(4005, 'declined')
+  }
+
+  busy() {
+    this.end(4008, 'busy')
+  }
+
+  end(code, why) {
+    this.answered = true
+    this.ended = code
+    clearTimeout(this.timer)
+    this.ws.close(code, why)
+  }
+}
+
+// Asks a computer found nearby to link: over TLS to the certificate its beacon named, so only that computer can answer.
+// Emits 'sas' (the code to check on both screens), then 'code' (its link code, once the person there says yes), or
+// 'end' (why it didn't: 'declined', 'timeout', 'closed', 'busy', 'version', 'certificate', 'blocked' or 'unreachable').
+export class PairClient extends EventEmitter {
+  done = false
+
+  constructor({ host, port, fingerprint, name, myFingerprint, platform = process.platform }) {
+    super()
+    Object.assign(this, { host, port, fingerprint, name, myFingerprint, platform })
+  }
+
+  start() {
+    const nonce = crypto.randomBytes(16).toString('base64url')
+    let commitment = null
+    const started = Date.now()
+    const ws = new WebSocket(`wss://${this.host}:${this.port}`, { rejectUnauthorized: false, handshakeTimeout: 5000 })
+    this.ws = ws
+    ws.on('upgrade', (res) => {
+      if (res.socket.getPeerCertificate?.().fingerprint256 !== this.fingerprint) {
+        ws.terminate()
+        this.end('certificate')
+      }
+    })
+    ws.on('open', () => ws.send(pack({ t: 'pair', protocol: PROTOCOL, name: this.name, fingerprint: this.myFingerprint })))
+    ws.on('message', (raw) => {
+      let m
+      try {
+        m = unpack(raw.toString())
+      } catch {
+        return
+      }
+      if (m.t === 'pairing' && typeof m.commit === 'string' && !commitment) {
+        commitment = m.commit
+        ws.send(pack({ t: 'nonce', nonce }))
+      } else if (m.t === 'reveal' && commitment && !this.sas) {
+        if (typeof m.nonce !== 'string' || commitTo(m.nonce) !== commitment) {
+          ws.close(1000)
+          return this.end('certificate') // a host that changed its nonce after seeing ours: not one to trust
+        }
+        this.sas = sasCode({ host: this.fingerprint, client: this.myFingerprint, clientNonce: nonce, hostNonce: m.nonce })
+        this.emit('sas', this.sas)
+      } else if (m.t === 'paired' && this.sas && !this.done) {
+        let code
+        try {
+          code = readCode(m.code)
+        } catch {
+          return this.end('closed')
+        }
+        if (code.fingerprint !== this.fingerprint) return this.end('certificate')
+        this.done = true // kept open: the host knows this side is still deciding, until close()
+        this.emit('code', m.code)
+      }
+    })
+    ws.on('error', (e) => (this.error = e))
+    ws.on('close', (code) => {
+      if (this.done) return
+      // macOS keeping this app off the local network answers at once, where a computer that's away takes a while
+      const blocked = this.platform === 'darwin' && this.error?.code === 'EHOSTUNREACH' && Date.now() - started < 300
+      this.end(PAIR_ENDS[code] ?? (blocked ? 'blocked' : this.sas ? 'closed' : 'unreachable'))
+    })
+    return this
+  }
+
+  // Done with it: linked (the host sees this computer connect first), or cancelled here (the host is told it's over).
+  cancel() {
+    this.done = true
+    this.ws?.close(1000)
+  }
+
+  close() {
+    this.cancel()
+  }
+
+  end(why) {
+    if (this.done) return
+    this.done = true
+    this.emit('end', why)
   }
 }
 
@@ -414,14 +587,18 @@ export class LinkClient extends EventEmitter {
       this.emit('peer', peer)
     } catch (e) {
       // the most telling reason wins: an impostor, a revoked code, a version mismatch, then plain unreachable
-      const why = ['certificate', 'reset', 'version'].map((w) => (e.errors ?? [e]).find((x) => x.message.includes(w))?.message).find(Boolean) ?? "couldn't reach it on any address"
-      this.setStatus({ connected: false, error: why })
+      const errors = e.errors ?? [e]
+      const why = ['certificate', 'reset', 'version', 'stopped'].map((w) => errors.find((x) => x.message.includes(w))?.message).find(Boolean)
+      // macOS keeping this app off the local network: a local address refused at once, as one that's away isn't
+      const blocked = !why && process.platform === 'darwin' && errors.some((x) => x.code === 'EHOSTUNREACH' && x.fast)
+      this.setStatus({ connected: false, error: why ?? (blocked ? 'macOS keeps it off the local network' : "couldn't reach it on any address"), ...(blocked && { blocked }) })
       if (!this.closed) this.retry = setTimeout(() => this.connect(), 4000)
     }
   }
 
   // A connection to one address, once its certificate checks out (nothing secret has been sent yet).
   attempt(host, port) {
+    const started = Date.now()
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(`wss://${host}:${port}`, { rejectUnauthorized: false, handshakeTimeout: 4000, maxPayload: 32 * 1024 * 1024 })
       this.trying.push(ws)
@@ -434,7 +611,7 @@ export class LinkClient extends EventEmitter {
       })
       ws.on('open', () => resolve({ ws, address: host }))
       ws.on('close', (code) => reject(closedWhy(code, host)))
-      ws.on('error', (e) => reject(e))
+      ws.on('error', (e) => reject(Object.assign(e, { fast: Date.now() - started < 300 })))
     })
   }
 

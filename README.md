@@ -127,7 +127,7 @@ Give each project a workspace: a folder, the agents who work on it, and its own 
   <img src="docs/images/computers-light.webp" alt="Computers: Studio shares its crew, Workstation is linked, and an iPhone and a Pixel are paired">
 </picture>
 
-Link your computers, Macs and PCs alike, with a pairing code and each one sees the whole crew. Chat with any agent and watch its terminal from either side. You can move an agent to another computer, and its conversation goes with it. Workspaces work across computers too: give a project's workspace the same name on each one, and it's one crew.
+Link your computers, Macs and PCs alike: open Computers on both, click Link, check the code matches, and each one sees the whole crew. Chat with any agent and watch its terminal from either side. You can move an agent to another computer, and its conversation goes with it. Workspaces work across computers too: give a project's workspace the same name on each one, and it's one crew.
 
 ## Share agents
 
