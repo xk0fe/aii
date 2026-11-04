@@ -619,6 +619,7 @@ $('.side-more').addEventListener('click', (e) => {
   popMenu(e.currentTarget, [
     { label: 'Autopilot', icon: ICONS.plane, act: 'autopilot', hint: state.autopilot ? 'On: hand-offs go through' : 'Off: hand-offs wait for you' },
     { label: 'Token savers…', icon: ICONS.chart, act: 'savers', hint: saversHint() },
+    { label: 'Agent tools…', icon: ICONS.mark, act: 'tools', hint: toolHint() },
     '-',
     { label: 'Computers…', icon: ICONS.computers, act: 'computers', hint: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : '' },
     { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
@@ -629,6 +630,7 @@ $('.side-more').addEventListener('click', (e) => {
   ], (act) => {
     if (act === 'autopilot') crew.call('autopilot', !state.autopilot).catch((err) => oops("Couldn't change Autopilot", err))
     if (act === 'savers') openSavers()
+    if (act === 'tools') openTools()
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
     if (act.startsWith('theme:')) crew.call('theme', act.slice(6))
@@ -709,6 +711,57 @@ saversDialog.addEventListener('change', (e) => {
 })
 saversDialog.addEventListener('click', (e) => {
   if (e.target.closest('[data-close]') || e.target === saversDialog) saversDialog.close()
+})
+
+// ---- agent tools (core/tools.js): what agents may change in CLIque with `crew app`, and whether they ask first ----
+
+const toolsDialog = $('#tools')
+toolsDialog.querySelector('.h-icon').innerHTML = ICONS.mark
+const TOOL_MODES = [
+  ['off', 'Off', "Agents can't change CLIque, or look at it. Ask one, and it tells you to do it yourself."],
+  ['ask', 'Ask first', 'Each change waits for your OK in the chat, like a permission prompt. Looking never asks.'],
+  ['auto', 'Automatic', 'Changes go through right away, and the chat says what changed. Removing something, linking a computer, and starting or changing a YOLO agent still ask first.'],
+]
+// icon (as the sidebar draws it), what, what agents can do with it, and whether Automatic lets it through
+const TOOL_KINDS = [
+  ['mark', 'Agents', 'Add agents, change their job, brain or folder, turn them on and off. Removing one always asks.', true],
+  ['#', 'Channels', 'Add channels, change their briefs and who’s in them. Removing one always asks.', true],
+  ['tiles', 'Workspaces', 'Make workspaces, choose who works in them, put them to sleep. Removing one always asks.', true],
+  ['computers', 'Computers', 'Link and unlink your other computers. Always asks.', false],
+]
+const toolHint = () => TOOL_MODES.find(([id]) => id === (state.tools ?? 'ask'))?.[1] ?? ''
+toolsDialog.querySelector('.tl-modes').innerHTML = TOOL_MODES.map(([id, label]) => `<button data-tl="${id}">${label}</button>`).join('')
+// every mode's words in one cell, the one picked showing: the sheet keeps its height as you switch
+toolsDialog.querySelector('.tl-about').innerHTML = TOOL_MODES.map(([id, , about]) => `<p data-mode="${id}">${esc(about)}</p>`).join('')
+toolsDialog.querySelector('.tl-list').innerHTML = TOOL_KINDS.map(([icon, label, can, auto]) => `
+  <div class="tl-kind" data-auto="${auto ? 1 : 0}"><span class="tl-icon">${ICONS[icon] ?? `<span class="tl-hash" aria-hidden="true">${icon}</span>`}</span><b>${label}</b><span class="tl-can">${esc(can)}</span><span class="tl-how"></span></div>`).join('')
+function drawTools() {
+  const mode = state.tools ?? 'ask'
+  segmented(toolsDialog.querySelector('.tl-modes'), (b) => b.dataset.tl === mode)
+  for (const p of toolsDialog.querySelectorAll('.tl-about p')) p.classList.toggle('on', p.dataset.mode === mode)
+  for (const row of toolsDialog.querySelectorAll('.tl-kind')) {
+    row.classList.toggle('off', mode === 'off')
+    row.querySelector('.tl-how').textContent = mode === 'off' ? 'Off' : mode === 'auto' && row.dataset.auto === '1' ? 'Automatic' : 'Asks first'
+  }
+}
+function openTools() {
+  toolsDialog.querySelector('[data-tl-err]').textContent = ''
+  drawTools()
+  toolsDialog.showModal()
+}
+toolsDialog.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]') || e.target === toolsDialog) return toolsDialog.close()
+  const pick = e.target.closest('button[data-tl]')
+  if (!pick || pick.dataset.tl === (state.tools ?? 'ask')) return
+  const was = state.tools
+  state.tools = pick.dataset.tl // shown now; the state that follows says it for good
+  toolsDialog.querySelector('[data-tl-err]').textContent = ''
+  drawTools()
+  crew.call('tools', pick.dataset.tl).catch((x) => {
+    state.tools = was
+    drawTools()
+    toolsDialog.querySelector('[data-tl-err]').textContent = errorLine(x)
+  })
 })
 
 // ---- terminals -------------------------------------------------------------
@@ -1488,6 +1541,7 @@ const ready = live((next) => {
   workspaces.render(state)
   drawComputers(state)
   if (saversDialog.open) drawSavers()
+  if (toolsDialog.open) drawTools()
   drawFoot(state)
   // Terminals only for agents that are on (and not parked); the sidebar lists everyone so off agents are one click from
   // coming back.

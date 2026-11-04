@@ -222,6 +222,7 @@ export class Hub extends EventEmitter {
     this.replaySpool()
     this.sweepStale()
     if (!park) for (const a of this.agents.values()) if (!a.off && !adopted.has(a.name)) this.launch(a)
+    this.toolsLost()
     for (const name of adopted) {
       const a = this.agents.get(name)
       if (a?.status === 'idle') this.pump(a)
@@ -259,7 +260,7 @@ export class Hub extends EventEmitter {
     const names = new Set(list.map((c) => c.name))
     for (const [name, a] of this.agents) {
       if (a.cloneOf || names.has(name)) continue // clones follow their original, below
-      this.forgetAsks(name)
+      this.forgetAsks(name, { gone: true })
       this.forgetCalls(name, 'went away before it answered')
       this.runner.stop(name)
       this.agents.delete(name)
@@ -352,15 +353,18 @@ export class Hub extends EventEmitter {
   summary() {
     const agents = this.ordered().filter((a) => !a.cloneOf)
     const live = agents.filter((a) => !a.off && (!this.parked || this.runner.running(a.name)))
+    // an agent tool's card still up needs you, even once its agent has carried on with other work
+    const carded = new Set([...this.asks.values()].filter((q) => q.plan).map((q) => q.name))
+    const needs = (x) => x.status === 'waiting' || carded.has(x.name)
     return {
       agents: agents.length,
       on: agents.filter((a) => !a.off).length,
       working: live.filter((a) => [a, ...this.clonesOf(a)].some((x) => x.status === 'working')).length,
-      waiting: live.flatMap((a) => [a, ...this.clonesOf(a)]).filter((x) => x.status === 'waiting').length,
+      waiting: live.flatMap((a) => [a, ...this.clonesOf(a)]).filter(needs).length,
       unread: this.feed.slice(-200).filter((e) => e.kind === 'reply' && e.from !== 'you' && e.ts > this.readTo(e)).length,
       faces: agents.filter((a) => !a.off).slice(0, 4).map((a) => ({ name: a.name, avatar: a.avatar, status: this.parked ? 'parked' : a.status })),
       // who's waiting on you there, so another workspace can say so
-      needs: live.flatMap((a) => [a, ...this.clonesOf(a)]).filter((x) => x.status === 'waiting').slice(0, 4).map((x) => ({ name: x.name, avatar: x.avatar ?? (x.cloneOf && this.agents.get(x.cloneOf)?.avatar), activity: x.activity })),
+      needs: live.flatMap((a) => [a, ...this.clonesOf(a)]).filter(needs).slice(0, 4).map((x) => ({ name: x.name, avatar: x.avatar ?? (x.cloneOf && this.agents.get(x.cloneOf)?.avatar), activity: x.activity })),
     }
   }
 
@@ -449,6 +453,7 @@ export class Hub extends EventEmitter {
   // numbers, and the tasks it owns or is working on.
   renameAgent(from, to) {
     if (this.runner.running(from)) this.carryOn.add(to)
+    for (const q of this.asks.values()) if (q.plan && q.name === from) q.name = to // an agent tool's card: its answer finds it
     if (this.sessions[from]) this.sessions[to] = this.sessions[from]
     this.saveSession(from, null) // also writes the moved session
     if (this.stats[from]) [this.stats[to], this.stats[from]] = [this.stats[from], undefined]
@@ -1673,6 +1678,7 @@ export class Hub extends EventEmitter {
   answer(id, reply = {}) {
     const q = this.asks.get(id)
     if (!q) throw new Error('that question has already been answered')
+    if (q.plan) return this.answerTool(id, q, reply)
     if (reply.terminal) return this.settle(id, '', { by: 'terminal', handedOver: true }, true)
     const { output, answer } = decide(q.entry.ask, q.input, q.cli, reply)
     this.settle(id, JSON.stringify(output), { by: 'you', ...answer })
@@ -1689,8 +1695,9 @@ export class Hub extends EventEmitter {
     if (a?.status === 'waiting' && !stillWaiting && !this.asking(q.name)) this.setStatus(a, 'working')
   }
 
+  // (an agent tool's card that the agent's command has stopped waiting on doesn't keep the agent waiting)
   asking(name) {
-    return [...this.asks.values()].some((q) => q.name === name)
+    return [...this.asks.values()].some((q) => q.name === name && (!q.plan || q.held))
   }
 
   // Claude Code can settle a question without anyone answering it: its built-in safety check turns a risky command
@@ -1721,15 +1728,121 @@ export class Hub extends EventEmitter {
   }
 
   // Its turn is over, so nothing it asked in that turn is waiting any more. (A sub-agent's question can outlive the
-  // turn: those stay.)
+  // turn: those stay. So does an agent tool's card: what you decide comes to the agent as a message.)
   closeAsks(a) {
-    for (const [id, q] of this.asks) if (q.name === a.name && !q.input.agent_id && !this.checkAsk(id, true)) this.settle(id, '', { stale: true }, true)
+    for (const [id, q] of this.asks) if (q.name === a.name && !q.plan && !q.input.agent_id && !this.checkAsk(id, true)) this.settle(id, '', { stale: true }, true)
   }
 
   // An agent that exits, restarts or goes away isn't waiting on its questions any more (even if a hook
-  // process outlives it, nothing would read the answer).
-  forgetAsks(name) {
-    for (const [id, q] of this.asks) if (q.name === name) this.settle(id, '', { stale: true }, true)
+  // process outlives it, nothing would read the answer). An agent tool's card stays up for you to answer, unless its
+  // agent is gone for good: what you decide reaches the agent as a message once it's back (a clone's, its original).
+  forgetAsks(name, { gone = false } = {}) {
+    for (const [id, q] of this.asks) {
+      if (q.name !== name) continue
+      if (q.plan && !gone) q.resolve('')
+      else this.settle(id, '', { stale: true }, true)
+    }
+  }
+
+  // ---- agent tools (core/tools.js): a change to CLIque that waits for your OK -----------------------------------
+  // `crew app …` asking first is a card like a permission prompt's, in the chat where the agent is working. Its
+  // command waits for your answer, up to `hold`, and prints what came of it. Past that the agent carries on, the card
+  // stays up, and what you decide comes to it as a message. What asks and what doesn't is Crew.tool's (core/crew.js),
+  // which sets appTool.
+  appTool() {
+    throw new Error("this CLIque can't change itself for agents")
+  }
+
+  toolAsk(from, plan, closed, hold = ASK_HOLD) {
+    const a = this.agents.get(from)
+    const ask = { type: 'permission', tool: 'crew app', app: true, title: plan.title, ...(plan.code && { code: plan.code }), ...(plan.detail && { detail: plan.detail }), say: plan.say, always: [], alert: plan.alert }
+    const e = this.post({ kind: 'ask', from, to: 'you', ask, cli: 'crew', ...(a.current && { re: a.current }) })
+    this.record(from, { waits: 1 })
+    this.emit('alert', a, ask.alert)
+    this.setStatus(a, 'waiting')
+    return new Promise((resolve) => {
+      const q = { name: from, cli: 'crew', input: {}, entry: e, plan, held: true }
+      // The command lets go: with what came of it, with where things stand, or with nothing (it was closed, or the
+      // agent went away). -> whether it was still waiting
+      q.resolve = (text) => {
+        if (!q.held) return false
+        q.held = false
+        clearTimeout(q.holdTimer)
+        resolve(text)
+        const b = this.agents.get(from)
+        if (b?.status === 'waiting' && !this.asking(from)) this.setStatus(b, 'working')
+        this.changed()
+        return true
+      }
+      q.holdTimer = setTimeout(() => q.resolve("The user hasn't answered yet: the card waits for them in CLIque. Don't ask again. Carry on with other work, and what they decide comes to you as a message.\n"), hold)
+      q.holdTimer.unref?.()
+      closed?.addEventListener('abort', () => q.resolve(''), { once: true })
+      this.asks.set(e.id, q)
+    })
+  }
+
+  // Your answer to an agent tool's card. Allowed, the change is made now; either way, what came of it goes back into
+  // the agent's command if that's still waiting, else to the agent as a message.
+  async answerTool(id, q, reply) {
+    if (reply.terminal) throw new Error('this one is answered here, in the chat')
+    this.asks.delete(id) // the first answer wins: the app and a phone can both answer
+    let answer
+    let text
+    if (reply.allow) {
+      try {
+        text = `The user allowed it: ${await q.plan.run()}.`
+        answer = { by: 'you', allow: true }
+      } catch (e) {
+        answer = { by: 'you', allow: true, failed: clip(e?.message ?? String(e), 300) }
+        text = `The user allowed it, but it didn't work: ${answer.failed}`
+      }
+    } else {
+      const note = String(reply.note ?? '').trim().slice(0, 2000)
+      answer = { by: 'you', allow: false, ...(note && { note }) }
+      text = note ? `The user said no: ${note}` : 'The user said no.'
+    }
+    this.amend(q.entry, { answer: { ...answer, at: Date.now() } })
+    this.toolReply(q, text)
+  }
+
+  // What came of an agent tool's card: into the agent's command while that waits, else a message to the agent (a
+  // clone that's gone: its original).
+  toolReply(q, text) {
+    if (q.resolve(`${text}\n`)) return
+    const a = this.agents.get(q.name) ?? this.agents.get(this.baseOf(q.name))
+    if (!a) return
+    this.queue(a, crewPrompt(a, `[crew] You asked to ${q.plan.title.charAt(0).toLowerCase()}${q.plan.title.slice(1)} (crew app). ${text}`, q.entry.id))
+    this.pump(a)
+  }
+
+  // Agent tools turned off: the cards still up close, and their agents hear why.
+  dropTools(text) {
+    for (const [id, q] of this.asks) {
+      if (!q.plan) continue
+      this.asks.delete(id)
+      this.amend(q.entry, { answer: { stale: true, at: Date.now() } })
+      this.toolReply(q, text)
+    }
+  }
+
+  // CLIque restarted while an agent tool's card was up (loadFeed closed it): its agent hears that nothing was made.
+  toolsLost() {
+    for (const e of this.feed) {
+      if (!e.answer?.lost) continue
+      this.amend(e, { answer: { stale: true, at: e.answer.at } })
+      const a = this.agents.get(e.from) ?? this.agents.get(this.baseOf(e.from))
+      if (!a) continue
+      const title = String(e.ask?.title ?? 'change CLIque')
+      this.queue(a, crewPrompt(a, `[crew] CLIque restarted before the user answered when you asked to ${title.charAt(0).toLowerCase()}${title.slice(1)} (crew app), so it wasn't made. If it's still needed, ask again.`, e.id))
+      this.pump(a)
+    }
+  }
+
+  // Automatic: an agent tool's change went through without asking, and the chat says so where the agent is working.
+  toolDone(from, plan) {
+    const current = this.agents.get(from)?.current
+    const channel = current && this.feed.findLast((x) => x.id === current)?.channel
+    this.post({ kind: 'event', from, text: plan.did, app: true, ...(channel && { channel }) })
   }
 
   needsYou(a, text) {
@@ -3621,8 +3734,9 @@ function loadFeed(file, keep = new Set()) {
     all.push(entry)
     byId.set(entry.id, entry)
   }
-  // An unanswered question's hook ended with the last run: the agent isn't waiting on it any more.
-  for (const e of all) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true }
+  // An unanswered question's hook ended with the last run: the agent isn't waiting on it any more. (An agent tool's
+  // agent was told to wait for a message: lost says to tell it, see toolsLost.)
+  for (const e of all) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true, ...(e.ask?.app && { lost: true, at: Date.now() }) }
   const feed = keepFeed(all, { needed: (e) => keep.has(e.id) })
   const bytes = Buffer.byteLength(text)
   const at = rewriteAt(feed.length, feed.reduce((n, e) => n + lineSize(e), 0))

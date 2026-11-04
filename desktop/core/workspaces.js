@@ -165,13 +165,19 @@ export function newId(config, name) {
 
 // A workspace's name, look and folder, as the app sets them (the default's are top-level). Empty values go.
 const LOOK = ['name', 'color', 'icon', 'folder']
+// A look that can't be set says so before anything changes: a half-made change would stay in memory, and the next save
+// would write it.
+export function checkLook(patch = {}) {
+  const color = typeof patch.color === 'string' ? patch.color.trim() : ''
+  if (color && !COLOR.test(color)) throw new Error(`"${color}" isn't a color`)
+}
 export function setLook(config, id, patch) {
   const own = id === DEFAULT ? config : workspacesIn(config).find((w) => w.id === id)
   if (!own) throw new Error('no such workspace')
+  checkLook(patch)
   for (const k of LOOK) {
     if (!(k in patch) || (k === 'folder' && id === DEFAULT)) continue
     const v = typeof patch[k] === 'string' ? patch[k].trim() : ''
-    if (k === 'color' && v && !COLOR.test(v)) throw new Error(`"${v}" isn't a color`)
     if (v) own[k] = v
     else delete own[k]
   }
@@ -182,6 +188,7 @@ export function setLook(config, id, patch) {
 export function addWorkspace(config, { name, members = [], folders = {}, ...look }) {
   name = String(name ?? '').trim()
   if (!name) throw new Error('give the workspace a name')
+  checkLook(look)
   const id = newId(config, name)
   const shared = new Set(named(config.agents).map((a) => a.name))
   const entry = (n) => (String(folders[n] ?? '').trim() ? { folder: String(folders[n]).trim() } : {})

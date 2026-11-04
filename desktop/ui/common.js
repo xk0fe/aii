@@ -706,6 +706,7 @@ function needText({ agent, ask }) {
   if (!q) return agent.activity ? `Waiting in its terminal · ${activityWords(agent.activity)}` : 'Waiting in its terminal'
   if (q.type === 'question') return q.questions?.[0]?.question ?? 'Has a question'
   if (q.type === 'plan') return 'Wants you to approve a plan'
+  if (q.app) return `Wants to ${lowerFirst(q.title ?? 'change CLIque')}` // an agent tool: its code is no command
   return q.code ? `Wants to run ${q.code.split('\n')[0]}` : `Wants to use ${q.title ?? 'a tool'}`
 }
 
@@ -1331,12 +1332,14 @@ function ruleLine(e, who, time) {
 function askCard(e, draft = {}, { queue = false } = {}) {
   const q = e.ask ?? {}
   const name = esc(String(e.from).split('@')[0].replace(/\.(\d+)$/, ' $1')) // a clone, Theo.2: "Theo 2"
-  const icon = ICONS[{ permission: 'shield', question: 'ask', plan: 'plan' }[q.type] ?? 'ask']
+  // an agent tool (crew app, core/tools.js) is about CLIque itself: its mark, not a tool's shield
+  const icon = q.app ? ICONS.mark : ICONS[{ permission: 'shield', question: 'ask', plan: 'plan' }[q.type] ?? 'ask']
   if (e.answer) return `<div class="ask-card done" data-ask="${e.id}">${askSummary(q, e.answer)}</div>`
   const code = q.code ? `<pre class="ask-code"><code>${esc(q.code)}</code></pre>` : ''
   const note = (placeholder) => `<input class="ask-note" data-note value="${esc(draft.note ?? '')}" placeholder="${placeholder}" spellcheck="false">`
-  // in the queue its terminal is the icon beside its name; a Codex agent's prompt is handed over from here
-  const elsewhere = e.cli === 'codex'
+  // in the queue its terminal is the icon beside its name; a Codex agent's prompt is handed over from here. An agent
+  // tool's is answered only here: its terminal is just waiting.
+  const elsewhere = q.app ? '' : e.cli === 'codex'
     ? `<button class="ask-elsewhere" data-answer="terminal" title="${name} shows its own prompt once you hand it over">Answer in its terminal instead</button>`
     : queue ? '' : '<span class="ask-elsewhere">or answer in its terminal</span>'
   if (q.type === 'question') {
@@ -1386,6 +1389,7 @@ function sayLine({ agent, ask }) {
     return esc(q.questions?.length > 1 ? `${first} And ${plural(q.questions.length - 1, 'more question')}.` : first)
   }
   if (q.type === 'plan') return 'I have a plan. Can I go ahead?'
+  if (q.say) return esc(q.say) // an agent tool says it in its own words: "Can I add a #design channel?"
   if (q.code) return `Can I run <code>${esc(q.code.split('\n')[0].trim())}</code>?`
   const title = String(q.title ?? '').trim()
   return /^(run|edit|write|read|use|open|fetch|create|delete|change|search|move|install|make|add|remove|update|start|stop|send|call)\b/i.test(title) ? `Can I ${esc(lowerFirst(title))}?` : 'Can I go ahead?'
@@ -1400,7 +1404,8 @@ function needsHTML(needs, expanded, drafts = new Map()) {
     const { agent: a, ask } = n
     const verb = ask ? NEED_VERBS[ask.ask?.type] ?? 'needs your OK' : 'is waiting in its terminal'
     const face = `<span class="nq-face">${avatarHTML(a, { size: 40, mood: 'waiting' })}</span>`
-    const term = `<button class="icon nq-term" data-needs-term="${esc(a.name)}" title="${esc(`Answer in ${displayName(a)}'s terminal`)}">${ICONS.terminal}</button>`
+    // (an agent tool's card is answered only here: its terminal is just waiting)
+    const term = ask?.ask?.app ? '' : `<button class="icon nq-term" data-needs-term="${esc(a.name)}" title="${esc(`Answer in ${displayName(a)}'s terminal`)}">${ICONS.terminal}</button>`
     const since = n.since || Date.now()
     const who = `<div class="nq-who"><b>${nameHTML(a)}</b><span class="nq-verb">${verb} · <span class="nq-ago" data-since="${since}">${ago(since)}</span></span>${ask && ask.id !== expanded ? '' : term}</div>`
     const say = `<div class="nq-say">${sayLine(n)}</div>`
@@ -1422,6 +1427,7 @@ function askSummary(q, a) {
   if (a.by === 'cli') return `${mark('no', 'close')}<span>Claude Code said no${a.why ? ` (${esc(a.why)})` : ''}</span>${what}`
   if (q.type === 'question') return Object.entries(a.answers ?? {}).map(([k, v]) => `<div class="ask-answer">${mark('ok', 'check')}<span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')
   if (q.type === 'plan') return a.allow ? `${mark('ok', 'check')}<span>Plan approved</span>` : `${mark('', 'undo')}<span>Keep planning${a.note ? `: “${esc(a.note)}”` : ''}</span>`
+  if (a.failed) return `${mark('no', 'close')}<span>Allowed, but it didn't work: ${esc(a.failed)}</span>${what}`
   if (a.allow) return `${mark('ok', 'check')}<span>Allowed${a.always ? ` · ${esc(a.always)}` : ''}</span>${what}`
   return `${mark('no', 'close')}<span>Said no${a.note ? `: “${esc(a.note)}”` : ''}</span>${what}`
 }

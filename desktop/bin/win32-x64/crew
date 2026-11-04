@@ -46,6 +46,9 @@ case "$cmd" in
   task|bug)
     # each word NUL-terminated, so quotes, newlines and flags arrive as typed
     printf '%s\0' "$@" | call --data-binary @- "$URL/task?from=$FROM" ;;
+  app)
+    # crew app <what> ...: change CLIque itself (crew app help). Held open while the user is asked; Crew lets go after 100s
+    printf '%s\0' "$@" | WAIT=110 call --data-binary @- "$URL/app?from=$FROM" ;;
   *)
     cat <<'EOF'
 crew who                    agents, their areas and status
@@ -60,6 +63,7 @@ crew leases                 who has what
 crew note "..."             share context with the whole crew
 crew board [words]          the shared notes you haven't read (--all for every one, or words to search)
 crew task                   the Tasks board: list, show, done, note, add (crew task help)
+crew app <what> ...         change CLIque itself: agents, channels, workspaces, computers (crew app help)
 EOF
     ;;
 esac

@@ -629,6 +629,12 @@ window.crew = {
       emit()
       return state.savers
     }
+    // agent tools: off, ask (the default) or auto
+    if (action === 'tools') {
+      state.tools = args[0]
+      emit()
+      return args[0]
+    }
     // sending from the chat: your message lands in the feed, threaded when it's a reply. Like the hub, an @name in it
     // is who it's for when no one's picked; Auto goes to Ada.
     if (action === 'send') {

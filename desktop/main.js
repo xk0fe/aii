@@ -491,6 +491,8 @@ const actions = {
   autopilot: (on) => crew.here.setAutopilot(on),
   // The token savers (core/savers.js): savers({ coldStart: false }) turns one off.
   savers: (patch) => crew.setSavers(patch),
+  // What agents may change in CLIque with `crew app` (core/tools.js): tools('off' | 'ask' | 'auto').
+  tools: (mode) => crew.setTools(mode),
   // You've seen agents' replies up to then: { name: ts }. Unread badges count what's newer.
   read: (seen, ws) => (crew.hubs.get(ws) ?? crew.here).read(seen),
   update: (names, patch) => crew.update(names, patch),
