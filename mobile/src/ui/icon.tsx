@@ -45,6 +45,9 @@ const ICONS = {
   copy: ['doc.on.doc', 'content_copy'],
   share: ['square.and.arrow.up', 'share'],
   latest: ['arrow.down', 'arrow_downward'],
+  menu: ['line.3.horizontal', 'menu'],
+  plus: ['plus', 'add'],
+  person: ['person.fill', 'person'],
 } as const
 
 export type IconName = keyof typeof ICONS

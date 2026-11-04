@@ -43,8 +43,6 @@ const light = {
   codeBg: 'rgba(120,120,128,0.12)',
   track: 'rgba(0,0,0,0.08)',
   link: '#007AFF',
-  bubble: 'rgba(120,120,128,0.12)',
-  bubbleMe: '#EFEFF2', // your messages: a quiet grey on the page, words in the text colour
   idle: '#9A9A9A',
   starting: '#9A9A9A',
   blocked: '#9A9A9A',
@@ -89,8 +87,6 @@ const dark: Theme = {
   codeBg: 'rgba(118,118,128,0.24)',
   track: 'rgba(255,255,255,0.1)',
   link: '#0A84FF',
-  bubble: 'rgba(118,118,128,0.24)',
-  bubbleMe: '#262629',
   idle: '#6E6E6E',
   starting: '#6E6E6E',
   blocked: '#6E6E6E',
