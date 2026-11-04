@@ -127,6 +127,23 @@ test('moving an agent takes its definition and work experience, from either side
   assert.deepEqual((await names(laptop)).filter((n) => n.startsWith('iris')), ['iris-copy@studio-mac', 'iris@studio-mac'])
 })
 
+test('each computer\'s usage limits reach the other, with its link: its agents run on its own accounts', async () => {
+  const soon = Date.now() + 3600000
+  await studio.run(`crew.hub.setUsage('claude', [{ id: 'five_hour', pct: 12, resetsAt: ${soon} }])`)
+  await sleep(300)
+  const there = await laptop.run(`crew.snapshot().computers.links[0].usage`)
+  assert.deepEqual(there.claude.windows.map((w) => [w.id, w.pct]), [['five_hour', 12]])
+  assert.equal(there.claude.label, 'Claude')
+  assert.equal(await laptop.run(`JSON.stringify(crew.snapshot().usage)`), '{}', 'this computer\'s own stay its own')
+  // read by an agent in another workspace there: the account is the computer's, so it still comes across
+  await studio.run(`(crew.workspace('elsewhere').setUsage('codex', [{ id: 'seven_day', pct: 7, resetsAt: ${soon + 86400000} }]), 1)`)
+  await sleep(300)
+  assert.deepEqual(Object.keys(await laptop.run(`crew.snapshot().computers.links[0].usage`)).sort(), ['claude', 'codex'])
+  // a window that has reset since its last word is gone (two hours on: Claude's 5-hour has, Codex's week hasn't)
+  const later = await laptop.run(`((now) => { Date.now = () => now() + 7200000; try { return Object.keys(crew.snapshot().computers.links[0].usage) } finally { Date.now = now } })(Date.now)`)
+  assert.deepEqual(later, ['codex'])
+})
+
 test('forgetting a computer drops its agents here, and it drops ours', async () => {
   await laptop.run(`crew.forget('studio-mac')`)
   await sleep(300)

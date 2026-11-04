@@ -1,6 +1,6 @@
 // Menu bar popover: what needs you first, who's at work, the accounts' limits, and the way into everything else.
 /* global activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, crew, live, morph, esc, celebrate, markSVG, store, ICONS,
-   needsYou, needText, usageTip, paceWarning, resetsText, runningSubs, subsTip, clonesOf, displayName, statusText, blockedOn, ago,
+   needsYou, needText, usageTip, usageByComputer, computerIcon, THIS_COMPUTER, paceWarning, resetsText, runningSubs, subsTip, clonesOf, displayName, statusText, blockedOn, ago,
    plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys, wordmarkHTML, stripHTML, PRODUCT_NAME */
 // Everything here is local: classic scripts share one global scope with common.js and avatar.js.
 ;(() => {
@@ -230,11 +230,11 @@
     const t = resetsText(ms).replace(/^resets /, '')
     return /^\d/.test(t) ? `out at ${t}` : `out ${t}`
   }
-  function usageRow(u) {
+  function usageRow(u, where) {
     const warn = paceWarning(u)
     const w = (warn && u.windows.filter((x) => x.pace?.runsOut).sort((x, y) => x.pace.runsOut - y.pace.runsOut)[0]) || [...u.windows].sort((x, y) => y.pct - x.pct)[0]
     const say = warn ? `${w.pct}% · ${outAt(w.pace.runsOut)}` : w.id === 'seven_day' ? `${w.pct}% this week` : `${w.pct}% · ${resetsText(w.resetsAt)}`
-    return `<div class="t-use" title="${esc(`${usageTip(u)}${warn ? `\n${warn}` : ''}`)}"><b>${esc(u.label)}</b>` +
+    return `<div class="t-use" title="${esc(`${usageTip(u, where)}${warn ? `\n${warn}` : ''}`)}"><b>${esc(u.label)}</b>` +
       `<span class="bar ${warn ? 'warm' : ''}"><i style="width:${Math.min(100, Math.max(2, w.pct))}%"></i></span><span class="say ${warn ? 'warm' : ''}">${esc(say)}</span></div>`
   }
 
@@ -329,8 +329,11 @@
     const crewNow = state.agents.filter((a) => !a.cloneOf)
     morph($('.t-strip'), crewNow.length ? stripHTML(crewNow, 318) : '')
     drawLists()
-    const usage = Object.values(state.usage ?? {}).filter((u) => u.windows?.length)
-    morph($('.usage'), usage.length ? `<div class="t-hr first"></div>${usage.map(usageRow).join('')}` : '')
+    // a bar per account; with a linked computer that reports its own, each computer's under its name
+    const machines = usageByComputer(state)
+    const each = machines.length > 1 || machines.some((m) => !m.here)
+    const pcHead = (m) => `<div class="t-use-pc ${m.online ? '' : 'off'}">${computerIcon(m.name)}<b>${esc(m.name)}</b><small>${m.here ? THIS_COMPUTER : m.online ? '' : 'offline'}</small></div>`
+    morph($('.usage'), machines.length ? `<div class="t-hr first"></div>${machines.map((m) => `${each ? pcHead(m) : ''}${m.accounts.map((u) => usageRow(u, !m.here && m.name)).join('')}`).join('')}` : '')
     $('.autopilot .switch').checked = state.autopilot
     $('.autopilot').title = state.autopilot ? 'Autopilot is on: agents hand work to each other without asking you first' : 'Autopilot is off: each hand-off waits in the chat for your Send it'
     crew.fit(340, Math.ceil(document.body.getBoundingClientRect().height)) // rounded up, or the page scrolls by a fraction
