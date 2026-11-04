@@ -42,7 +42,7 @@ export function Deck({ t, open, byName, onAnswer, disabled }: { t: Theme; open: 
   if (isFolded)
     return (
       <Animated.View entering={FadeIn.duration(180)} style={styles.wrap}>
-        <Press onPress={() => setFolded(false)} style={[styles.folded, { backgroundColor: t.surface }]} accessibilityRole="button" accessibilityLabel={`${open.length} need you. Show`}>
+        <Press onPress={() => setFolded(false)} style={[styles.folded, { backgroundColor: t.needsTint }]} accessibilityRole="button" accessibilityLabel={`${open.length} need you. Show`}>
           <Faces faces={open.map((x) => someone(x.from, byName)).filter((x, i, all) => all.findIndex((y) => y.name === x.name) === i)} size={24} />
           <Text style={[styles.foldedText, { color: t.waitingInk }]}>{open.length === 1 ? '1 needs you' : `${open.length} need you`}</Text>
           <Icon name="down" size={13} color={t.fg3} weight="bold" />
@@ -52,7 +52,7 @@ export function Deck({ t, open, byName, onAnswer, disabled }: { t: Theme; open: 
 
   return (
     <Animated.View style={styles.wrap} layout={LinearTransition.duration(220)}>
-      <Animated.View key={e.id} entering={FadeIn.duration(220)} exiting={FadeOut.duration(150)} style={[styles.card, { backgroundColor: t.surface, shadowColor: '#000' }]}>
+      <Animated.View key={e.id} entering={FadeIn.duration(220)} exiting={FadeOut.duration(150)} style={[styles.card, { backgroundColor: t.surface, shadowColor: '#000', borderColor: t.line }]}>
         <View style={styles.head}>
           <Creature agent={a} size={34} />
           <View style={styles.who}>
@@ -87,7 +87,7 @@ export function Deck({ t, open, byName, onAnswer, disabled }: { t: Theme; open: 
 
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4 },
-  card: { borderRadius: 14, padding: 12, gap: 10, shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2, zIndex: 3 },
+  card: { borderRadius: 14, padding: 12, gap: 10, borderWidth: StyleSheet.hairlineWidth, shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2, zIndex: 3 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   who: { flex: 1, gap: 1 },
   whoText: { fontSize: 15, fontWeight: '500' },
@@ -96,6 +96,6 @@ const styles = StyleSheet.create({
   countText: { fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
   foldBtn: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '180deg' }] },
   sliver: { height: 7, marginTop: -1, borderBottomLeftRadius: 12, borderBottomRightRadius: 12, borderWidth: StyleSheet.hairlineWidth * 2, borderTopWidth: 0 },
-  folded: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48, paddingHorizontal: 12, borderRadius: 14 },
+  folded: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44, paddingHorizontal: 12, borderRadius: 14 },
   foldedText: { flex: 1, fontSize: 15, fontWeight: '600' },
 })

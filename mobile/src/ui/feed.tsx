@@ -1,7 +1,9 @@
-// The chat, one entry at a time, as on the Mac: agents on the left beside their creature, you on the right in blue,
-// crew events centered and quiet. Messages in a row from one sender stack under one face and name.
+// The chat, one entry at a time, set for reading: an agent's message is its face and name on one line, then what it
+// said across the whole width (no bubble, so a long plan reads like a page); yours sit on the right in a quiet grey
+// bubble; crew events are centered and quiet. Messages in a row from one sender stack under one face and name, and a
+// reply right under what it answers doesn't quote it again. Long-press a message to copy or share it.
 import { memo, type ReactNode } from 'react'
-import { StyleSheet, Text, View } from 'react-native'
+import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import type { Agent, FeedEntry } from '@/net/types'
 import { familyOf } from '@/state/hooks'
@@ -26,6 +28,7 @@ export type FeedCtx = {
   onFace: (name: string) => void
   onAsk: (id: string) => void
   onHeld: (id: string, how: 'approve' | 'drop') => void
+  onLong: (e: FeedEntry) => void // copy, share, talk to
   canAct: boolean
 }
 
@@ -33,7 +36,11 @@ export type FeedCtx = {
 export const someone = (name: string, byName: Map<string, Agent>): Agent => byName.get(name) ?? byName.get(familyOf(name)) ?? ({ name, status: 'idle', on: true } as Agent)
 
 const ink = (name: string, c: FeedCtx) => (name === 'you' ? c.t.fg : nameInk(agentColor(someone(name, c.byName)), c.t.fg))
-const mentionInk = (c: FeedCtx) => (name: string) => (c.byName.has(name) ? nameInk(agentColor(someone(name, c.byName)), c.t.fg) : null)
+// Markdown hands over a mention lowercased (@Theo → theo), so match agents by name in any case.
+const mentionInk = (c: FeedCtx) => (name: string) => {
+  const a = [...c.byName.values()].find((x) => x.name.toLowerCase() === name)
+  return a ? nameInk(agentColor(a), c.t.fg) : null
+}
 
 function Name({ name, c, at = false }: { name: string; c: FeedCtx; at?: boolean }) {
   if (name === 'you') return <Text style={{ color: c.t.fg, fontWeight: '600' }}>{at ? 'you' : 'You'}</Text>
@@ -63,45 +70,45 @@ function Quote({ e, c }: { e: FeedEntry; c: FeedCtx }) {
   )
 }
 
-// An agent's line: its face, a caption (name, what it did, time), and what it said.
-function Said({ e, c, cont, caption, children }: { e: FeedEntry; c: FeedCtx; cont: boolean; caption: ReactNode; children: ReactNode }) {
+// An agent's line: its face and a caption (name, what it did, time) on one line, then what it said, full width.
+function Said({ e, c, cont, caption, quote, long = true, children }: { e: FeedEntry; c: FeedCtx; cont: boolean; caption: ReactNode; quote: boolean; long?: boolean; children: ReactNode }) {
   const a = someone(e.from, c.byName)
   const fresh = c.unread.has(e.id)
-  return (
-    <View style={[styles.said, cont && styles.cont]}>
-      <Press style={styles.face} onPress={() => c.onFace(familyOf(e.from))} disabled={cont || c.here === familyOf(e.from)} accessibilityLabel={`Talk to ${displayName(e.from).base}`}>
-        {cont ? null : <Creature agent={a} size={30} mood="still" />}
-      </Press>
-      <View style={styles.stack}>
-        {cont ? null : (
-          <View style={styles.cap}>
-            <Text style={[styles.capText, { color: c.t.fg2 }]} numberOfLines={1}>
-              {caption}
-            </Text>
-            <Text style={[styles.time, { color: c.t.fg3 }]}>{clock(e.ts)}</Text>
-            {fresh ? <View style={[styles.unreadDot, { backgroundColor: c.t.accent }]} accessibilityLabel="new" /> : null}
-          </View>
-        )}
-        <Quote e={e} c={c} />
-        {children}
-      </View>
-    </View>
+  const inner = (
+    <>
+      {cont ? null : (
+        <View style={styles.head}>
+          <Press onPress={() => c.onFace(familyOf(e.from))} disabled={c.here === familyOf(e.from)} hitSlop={8} accessibilityLabel={`Talk to ${displayName(e.from).base}`}>
+            <Creature agent={a} size={26} mood="still" />
+          </Press>
+          <Text style={[styles.capText, { color: c.t.fg2 }]} numberOfLines={1}>
+            {caption}
+          </Text>
+          <Text style={[styles.time, { color: c.t.fg3 }]}>{clock(e.ts)}</Text>
+          {fresh ? <View style={[styles.unreadDot, { backgroundColor: c.t.accent }]} accessibilityLabel="new" /> : null}
+        </View>
+      )}
+      {quote ? <Quote e={e} c={c} /> : null}
+      {children}
+    </>
+  )
+  return long ? (
+    <Pressable onPress={Keyboard.dismiss} onLongPress={() => c.onLong(e)} delayLongPress={320} accessible={false} style={[styles.said, cont && styles.cont]}>
+      {inner}
+    </Pressable>
+  ) : (
+    <View style={[styles.said, cont && styles.cont]}>{inner}</View>
   )
 }
 
-function Bubble({ e, c, tone = 'agent' }: { e: FeedEntry; c: FeedCtx; tone?: 'agent' | 'note' | 'me' | 'dropped' }) {
+// What an agent said to you: plain on the page. To another agent (a hand-off), or a note for the crew: on a card,
+// smaller, so what's for you stands out.
+function Body({ e, c, tone = 'agent' }: { e: FeedEntry; c: FeedCtx; tone?: 'agent' | 'card' | 'dropped' }) {
   const t = c.t
-  const me = tone === 'me'
+  if (tone === 'agent') return <Markdown text={e.text ?? ''} t={t} color={t.fg} mention={mentionInk(c)} />
   return (
-    <View
-      style={[
-        styles.bubble,
-        me ? [styles.bubbleMe, { backgroundColor: t.bubbleMe }] : { backgroundColor: tone === 'note' ? 'transparent' : t.bubble },
-        tone === 'note' && { borderWidth: 1, borderColor: t.lineStrong },
-        tone === 'dropped' && { opacity: 0.45 },
-      ]}
-    >
-      <Markdown text={e.text ?? ''} t={me ? { ...t, link: '#ffffff', codeBg: 'rgba(255,255,255,0.18)' } : t} color={me ? '#ffffff' : tone === 'note' ? t.fg2 : t.fg} mention={me ? () => '#ffffff' : mentionInk(c)} />
+    <View style={[styles.card, { backgroundColor: t.fill }, tone === 'dropped' && { opacity: 0.45 }]}>
+      <Markdown text={e.text ?? ''} t={t} color={t.fg} size={15.5} mention={mentionInk(c)} />
     </View>
   )
 }
@@ -115,7 +122,7 @@ function AskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
   const title = ask.type === 'permission' ? (ask.title ?? 'Use a tool') : ask.type === 'plan' ? 'A plan to approve' : (ask.questions[0]?.question ?? 'A question')
   const sub = ask.type === 'permission' ? (ask.code ?? '').split('\n')[0] : ask.type === 'question' ? ask.questions[0]?.options.map((o) => o.label).join(' · ') : ''
   return (
-    <Press onPress={() => c.onAsk(e.id)} style={[styles.askLine, { backgroundColor: t.surface, borderColor: t.line }]} accessibilityRole="button" accessibilityLabel={`Answer ${displayName(e.from).base}`}>
+    <Press onPress={() => c.onAsk(e.id)} style={[styles.askLine, { backgroundColor: t.surface, borderColor: t.lineStrong }]} accessibilityRole="button" accessibilityLabel={`Answer ${displayName(e.from).base}`}>
       <View style={styles.askText}>
         <Text style={[styles.askTitle, { color: t.fg }]} numberOfLines={3}>
           {title}
@@ -171,7 +178,7 @@ function TaskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
       </Quiet>
     )
   return (
-    <View style={[styles.taskRow, { backgroundColor: c.t.btn }]}>
+    <View style={[styles.taskRow, { backgroundColor: c.t.fill }]}>
       <Icon name={bug ? 'bug' : 'task'} size={14} color={bug ? c.t.danger : c.t.blocked} />
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={[styles.taskText, { color: c.t.fg2 }]} numberOfLines={2}>
@@ -223,7 +230,10 @@ function RuleLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
 
 export const FeedItem = memo(function FeedItem({ e, prev, c }: { e: FeedEntry; prev?: FeedEntry; c: FeedCtx }) {
   const t = c.t
-  const cont = Boolean(prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && !prev.auto === !e.auto && e.ts - prev.ts < 120000 && !e.re && e.kind !== 'ask' && e.kind !== 'event')
+  // what it answers, quoted only when that isn't right above it (or quoted already by the message above, its own)
+  const quoted = e.re ? c.byId.get(e.re) : undefined
+  const near = !quoted || quoted === prev || Boolean(prev && prev.from === e.from && prev.re && c.byId.get(prev.re) === quoted)
+  const cont = Boolean(prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && !prev.auto === !e.auto && e.ts - prev.ts < 120000 && near && e.kind !== 'ask' && e.kind !== 'event')
   const divider = c.divider === e.id ? (
     <View style={styles.newLine} accessibilityLabel="New replies">
       <View style={[styles.rule, { backgroundColor: t.accent, opacity: 0.4 }]} />
@@ -234,12 +244,12 @@ export const FeedItem = memo(function FeedItem({ e, prev, c }: { e: FeedEntry; p
   return (
     <View>
       {divider}
-      <Entry e={e} c={c} cont={cont} />
+      <Entry e={e} c={c} cont={cont} quote={!near} />
     </View>
   )
 })
 
-function Entry({ e, c, cont }: { e: FeedEntry; c: FeedCtx; cont: boolean }) {
+function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean; quote: boolean }) {
   const t = c.t
   if (e.kind === 'task' || e.kind === 'bug') return <TaskLine e={e} c={c} />
   if (e.kind === 'rule') return <RuleLine e={e} c={c} />
@@ -257,7 +267,7 @@ function Entry({ e, c, cont }: { e: FeedEntry; c: FeedCtx; cont: boolean }) {
   // you sent a task to an agent: the task, not its whole brief
   if (e.from === 'you' && e.ticket !== undefined) {
     return (
-      <View style={styles.me}>
+      <Pressable onPress={Keyboard.dismiss} onLongPress={() => c.onLong(e)} delayLongPress={320} accessible={false} style={styles.me}>
         <View style={styles.meCap}>
           <Text style={[styles.capText, { color: t.fg2 }]}>
             to <Name name={e.to ?? ''} c={c} at />
@@ -265,22 +275,24 @@ function Entry({ e, c, cont }: { e: FeedEntry; c: FeedCtx; cont: boolean }) {
           </Text>
           <Text style={[styles.time, { color: t.fg3 }]}>{clock(e.ts)}</Text>
         </View>
-        <View style={[styles.bubble, styles.bubbleMe, styles.ticket, { backgroundColor: t.bubbleMe }]}>
-          <Icon name={(e.type ?? 'bug') === 'bug' ? 'bug' : 'task'} size={15} color="#fff" />
-          <Text style={styles.ticketText}>
+        <View style={[styles.bubbleMe, styles.ticket, { backgroundColor: t.bubbleMe }]}>
+          <Icon name={(e.type ?? 'bug') === 'bug' ? 'bug' : 'task'} size={15} color={t.fg2} />
+          <Text style={[styles.ticketText, { color: t.fg }]}>
             <Text style={{ fontWeight: '600' }}>#{String(e.ticket).split('@')[0]}</Text> {e.title}
           </Text>
         </View>
-      </View>
+      </Pressable>
     )
   }
   if (e.from === 'you') {
     const to = e.cc ?? [e.to ?? '']
+    // in a conversation with one agent, who it went to goes without saying
+    const said = !cont && (!c.here || e.auto || e.queued || e.fresh || to.length > 1 || familyOf(to[0]) !== c.here)
     return (
-      <View style={[styles.me, cont && styles.cont]}>
-        {cont ? null : (
+      <Pressable onPress={Keyboard.dismiss} onLongPress={() => c.onLong(e)} delayLongPress={320} accessible={false} style={[styles.me, cont && styles.cont]}>
+        {said ? (
           <View style={styles.meCap}>
-            <Text style={[styles.capText, { color: t.fg2 }]} numberOfLines={1}>
+            <Text style={[styles.capText, styles.meCapText, { color: t.fg2 }]} numberOfLines={1}>
               {e.auto ? 'Auto picked' : 'to'}{' '}
               {to.map((n, i) => (
                 <Text key={n}>
@@ -289,31 +301,34 @@ function Entry({ e, c, cont }: { e: FeedEntry; c: FeedCtx; cont: boolean }) {
                 </Text>
               ))}
               {e.queued ? <Text style={{ color: t.fg3 }}> · queued</Text> : null}
+              {e.fresh ? <Text style={{ color: t.accent }}> · new conversation</Text> : null}
             </Text>
             <Text style={[styles.time, { color: t.fg3 }]}>{clock(e.ts)}</Text>
           </View>
-        )}
-        <Quote e={e} c={c} />
-        <Bubble e={e} c={c} tone="me" />
-      </View>
+        ) : null}
+        {quote ? <Quote e={e} c={c} /> : null}
+        <View style={[styles.bubbleMe, { backgroundColor: t.bubbleMe }]}>
+          <Markdown text={e.text ?? ''} t={t} color={t.fg} mention={mentionInk(c)} />
+        </View>
+      </Pressable>
     )
   }
   if (e.kind === 'ask')
     return (
-      <Said e={e} c={c} cont={false} caption={<><Name name={e.from} c={c} /> {askVerb(e)}</>}>
+      <Said e={e} c={c} cont={false} quote={quote} long={false} caption={<><Name name={e.from} c={c} /> {askVerb(e)}</>}>
         <AskLine e={e} c={c} />
       </Said>
     )
   if (e.kind === 'note')
     return (
-      <Said e={e} c={c} cont={cont} caption={<><Name name={e.from} c={c} /> shared a note</>}>
-        <Bubble e={e} c={c} tone="note" />
+      <Said e={e} c={c} cont={cont} quote={quote} caption={<><Name name={e.from} c={c} /> shared a note</>}>
+        <Body e={e} c={c} tone="card" />
       </Said>
     )
   if (e.kind === 'reply')
     return (
-      <Said e={e} c={c} cont={cont} caption={<Name name={e.from} c={c} />}>
-        <Bubble e={e} c={c} />
+      <Said e={e} c={c} cont={cont} quote={quote} caption={<Name name={e.from} c={c} />}>
+        <Body e={e} c={c} />
         {e.subs?.length ? (
           <Text style={[styles.subs, { color: t.fg3 }]}>
             {e.subs.length === 1 ? '1 sub-agent' : `${e.subs.length} sub-agents`} helped · {e.subs.map((s) => (s.type === 'general-purpose' ? 'general' : s.type)).join(', ')}
@@ -333,8 +348,8 @@ function Entry({ e, c, cont }: { e: FeedEntry; c: FeedCtx; cont: boolean }) {
       </>
     )
   return (
-    <Said e={e} c={c} cont={cont} caption={caption}>
-      <Bubble e={e} c={c} tone={e.dropped ? 'dropped' : 'agent'} />
+    <Said e={e} c={c} cont={cont} quote={quote} caption={caption}>
+      <Body e={e} c={c} tone={e.dropped ? 'dropped' : 'card'} />
       {e.held ? (
         <View style={styles.held}>
           <Button t={t} small title="Drop" onPress={() => c.onHeld(e.id, 'drop')} disabled={!c.canAct} />
@@ -347,37 +362,36 @@ function Entry({ e, c, cont }: { e: FeedEntry; c: FeedCtx; cont: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  said: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, marginTop: 14 },
-  cont: { marginTop: 4 },
-  face: { width: 30, paddingTop: 2 },
-  stack: { flex: 1, alignItems: 'flex-start', gap: 4, paddingRight: 28 },
-  cap: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 2 },
-  capText: { fontSize: 13, fontWeight: '500', flexShrink: 1 },
-  time: { fontSize: 12, fontVariant: ['tabular-nums'] },
+  said: { paddingHorizontal: 16, marginTop: 22 },
+  cont: { marginTop: 12 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  capText: { fontSize: 14.5, flexShrink: 1 },
+  time: { fontSize: 12.5, fontVariant: ['tabular-nums'] },
   unreadDot: { width: 7, height: 7, borderRadius: 4 },
-  bubble: { borderRadius: 18, borderTopLeftRadius: 6, paddingHorizontal: 13, paddingVertical: 9, maxWidth: '100%' },
-  bubbleMe: { borderTopLeftRadius: 18, borderBottomRightRadius: 6 },
-  me: { alignItems: 'flex-end', paddingLeft: 56, paddingRight: 12, marginTop: 14, gap: 4 },
-  meCap: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 2 },
+  card: { borderRadius: 14, paddingHorizontal: 13, paddingVertical: 10, alignSelf: 'stretch' },
+  bubbleMe: { borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, maxWidth: '100%' },
+  me: { alignItems: 'flex-end', paddingLeft: 52, paddingRight: 16, marginTop: 22, gap: 4 },
+  meCap: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 4 },
+  meCapText: { fontSize: 13 },
   ticket: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  ticketText: { color: '#fff', fontSize: 16, flexShrink: 1 },
-  quote: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '100%', paddingHorizontal: 2 },
+  ticketText: { fontSize: 16, flexShrink: 1 },
+  quote: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '100%', paddingHorizontal: 2, marginBottom: 4 },
   quoteText: { fontSize: 12.5, flexShrink: 1 },
-  askLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 14, paddingRight: 10, borderRadius: 14, borderTopLeftRadius: 4, borderWidth: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
+  askLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 14, paddingRight: 10, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
   askText: { flex: 1, gap: 1 },
   askTitle: { fontSize: 15, fontWeight: '600' },
   askSub: { fontSize: 12.5, lineHeight: 17 },
   answerChip: { paddingHorizontal: 14, minHeight: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   answerChipText: { fontSize: 15, fontWeight: '600' },
-  quietRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, marginTop: 14 },
+  quietRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 24, marginTop: 18 },
   quiet: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 5, justifyContent: 'center', marginHorizontal: 'auto' },
   quietText: { fontSize: 12.5, lineHeight: 17, textAlign: 'center', flexShrink: 1 },
   rule: { flex: 1, height: StyleSheet.hairlineWidth },
-  taskRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginHorizontal: 12, marginTop: 14, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14 },
+  taskRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginHorizontal: 16, marginTop: 18, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14 },
   taskText: { fontSize: 13.5, lineHeight: 18 },
-  newLine: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, marginTop: 16 },
+  newLine: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, marginTop: 18 },
   newText: { fontSize: 13, fontWeight: '600' },
-  held: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  held: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   heldText: { fontSize: 12.5 },
-  subs: { fontSize: 12, paddingLeft: 4 },
+  subs: { fontSize: 12.5, marginTop: 8 },
 })

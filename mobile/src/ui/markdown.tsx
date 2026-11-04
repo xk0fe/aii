@@ -1,91 +1,14 @@
-// Light Markdown for agents' replies and plans: paragraphs, headings, bold, italics, strikethrough, `code`, code blocks,
-// lists, quotes, links, simple tables, and @mentions in the agent's color. Not a full CommonMark: what agents write.
-import { memo, useMemo, type ReactNode } from 'react'
+// Markdown for agents' replies and plans, set for reading on a phone: paragraphs, headings, bold, italics,
+// strikethrough, `code`, code blocks you can copy, lists (nested, numbered, checklists), quotes, links, tables that use
+// the whole width, and @mentions in the agent's color. Not a full CommonMark: what agents write.
+import * as Clipboard from 'expo-clipboard'
+import { memo, useMemo, useState, type ReactNode } from 'react'
 import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native'
 
+import { Icon } from './icon'
+import { blocks, codeText, type Align, type Block } from './md'
+import { Press, tap } from './parts'
 import { fonts, type Theme } from './theme'
-
-type Block =
-  | { kind: 'p'; text: string }
-  | { kind: 'h'; level: number; text: string }
-  | { kind: 'code'; text: string }
-  | { kind: 'list'; ordered: boolean; start: number; items: string[] }
-  | { kind: 'quote'; text: string }
-  | { kind: 'table'; rows: string[][] }
-  | { kind: 'hr' }
-
-const cells = (line: string) =>
-  line
-    .trim()
-    .replace(/^\||\|$/g, '')
-    .split(/(?<!\\)\|/)
-    .map((c) => c.trim().replace(/\\\|/g, '|'))
-
-export function blocks(src: string): Block[] {
-  const lines = String(src ?? '').replace(/\r\n?/g, '\n').split('\n')
-  const out: Block[] = []
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
-    if (!line.trim()) {
-      i++
-      continue
-    }
-    const fence = line.match(/^\s*(```+|~~~+)/)
-    if (fence) {
-      const body: string[] = []
-      i++
-      while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++])
-      i++
-      out.push({ kind: 'code', text: body.join('\n') })
-      continue
-    }
-    const h = line.match(/^(#{1,6})\s+(.*)$/)
-    if (h) {
-      out.push({ kind: 'h', level: h[1].length, text: h[2] })
-      i++
-      continue
-    }
-    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) {
-      out.push({ kind: 'hr' })
-      i++
-      continue
-    }
-    if (line.includes('|') && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(lines[i + 1])) {
-      const rows = [cells(line)]
-      i += 2
-      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) rows.push(cells(lines[i++]))
-      out.push({ kind: 'table', rows })
-      continue
-    }
-    const item = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/)
-    if (item) {
-      const ordered = /\d/.test(item[1])
-      const start = ordered ? parseInt(item[1], 10) : 1
-      const items: string[] = []
-      while (i < lines.length) {
-        const m = lines[i].match(/^\s*([-*+]|\d+[.)])\s+(.*)$/)
-        if (m && /\d/.test(m[1]) === ordered) items.push(m[2])
-        else if (lines[i].trim() && /^\s{2,}/.test(lines[i]) && items.length) items[items.length - 1] += ` ${lines[i].trim()}`
-        else break
-        i++
-      }
-      out.push({ kind: 'list', ordered, start, items })
-      continue
-    }
-    if (/^\s*>/.test(line)) {
-      const body: string[] = []
-      while (i < lines.length && /^\s*>/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ''))
-      out.push({ kind: 'quote', text: body.join('\n') })
-      continue
-    }
-    const para: string[] = []
-    while (i < lines.length && lines[i].trim() && !/^\s*(```|~~~|#{1,6}\s|>|[-*+]\s|\d+[.)]\s)/.test(lines[i])) para.push(lines[i++])
-    if (!para.length) para.push(lines[i++])
-    out.push({ kind: 'p', text: para.join('\n') })
-  }
-  return out
-}
 
 const INLINE =
   /(`+)([\s\S]*?[^`])\1(?!`)|\*\*([\s\S]+?)\*\*|__([\s\S]+?)__|\*(?![\s*])([\s\S]*?[^\s*])\*|(?<![\w])_(?![\s_])([\s\S]*?[^\s_])_(?![\w])|~~([\s\S]+?)~~|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<>()]*[^\s<>().,;:!?'"*_])|(?<![\w.@/'-])@([\w-]+(?:@[\w-]+)?)(?![\w@/'-]|\.\w)/g
@@ -103,7 +26,7 @@ function inline(text: string, c: Ctx, key = 'i'): ReactNode[] {
     if (m[2] !== undefined)
       out.push(
         <Text key={k} style={c.code}>
-          {m[2].replace(/^ (.*) $/, '$1')}
+          {codeText(m[2])}
         </Text>,
       )
     else if (m[3] !== undefined || m[4] !== undefined)
@@ -135,11 +58,11 @@ function inline(text: string, c: Ctx, key = 'i'): ReactNode[] {
       const url = m[10]
       out.push(
         <Text key={k} style={c.link} onPress={() => void Linking.openURL(url).catch(() => {})} accessibilityRole="link">
-          {url}
+          {url.replace(/^https?:\/\/(www\.)?/, '')}
         </Text>,
       )
     } else if (m[11] !== undefined) {
-      const color = c.mention?.(m[11].toLowerCase())
+      const color = c.mention?.(m[11].toLowerCase()) ?? c.mention?.(m[11])
       out.push(
         color ? (
           <Text key={k} style={[styles.mention, { color }]}>
@@ -156,76 +79,153 @@ function inline(text: string, c: Ctx, key = 'i'): ReactNode[] {
   return out
 }
 
-export const Markdown = memo(function Markdown({ text, t, color, size = 16, mention }: { text: string; t: Theme; color: string; size?: number; mention?: (name: string) => string | null }) {
+// A code block: its language and a Copy button on top, the code scrolling sideways under it, never wrapped.
+function Code({ t, lang, text, size }: { t: Theme; lang: string; text: string; size: number }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    tap()
+    void Clipboard.setStringAsync(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1600)
+    })
+  }
+  const fs = size - 3.5
+  return (
+    <View style={[styles.code, { backgroundColor: t.codeBg }]}>
+      <View style={styles.codeTop}>
+        <Text style={[styles.codeLang, { color: t.fg2 }]}>{lang || 'code'}</Text>
+        <Press onPress={copy} style={styles.copy} hitSlop={10} accessibilityRole="button" accessibilityLabel={copied ? 'Copied' : 'Copy the code'}>
+          <Icon name={copied ? 'check' : 'copy'} size={13} color={t.fg2} />
+          <Text style={[styles.codeLang, { color: t.fg2 }]}>{copied ? 'Copied' : 'Copy'}</Text>
+        </Press>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.codeInner}>
+        <Text style={{ fontFamily: fonts.mono, fontSize: fs, lineHeight: Math.round(fs * 1.5), color: t.fg }}>{text}</Text>
+      </ScrollView>
+    </View>
+  )
+}
+
+// A table across the whole width, as a reader would set it: a bold header, hairlines between rows, no grid. The
+// columns share the width by how much each holds; one too wide for the screen scrolls sideways instead.
+function Table({ t, rows, align, c, size, k }: { t: Theme; rows: string[][]; align: Align[]; c: Ctx; size: number; k: string }) {
+  const [width, setWidth] = useState(0)
+  const fs = size - 1.5
+  const cols = Math.max(...rows.map((r) => r.length))
+  const want = Array.from({ length: cols }, (_, j) => Math.min(220, Math.max(56, Math.max(...rows.map((r) => (r[j] ?? '').replace(/[*`_]/g, '').length)) * fs * 0.52 + 16)))
+  const total = want.reduce((a, b) => a + b, 0)
+  const fits = width > 0 && total <= width
+  // fitting: each column gets its share of the whole width; not: its own width, and the row scrolls
+  const widths = fits ? want.map((w) => (w / total) * width) : want
+  const body = (
+    <View style={fits ? { width } : null}>
+      {rows.map((row, r) => (
+        <View key={r} style={[styles.tr, { borderBottomColor: r === 0 ? t.lineStrong : t.line, borderBottomWidth: r === rows.length - 1 ? 0 : StyleSheet.hairlineWidth * (r === 0 ? 2 : 1) }]}>
+          {Array.from({ length: cols }, (_, j) => (
+            <Text key={j} style={[styles.td, { width: widths[j], fontSize: fs, lineHeight: Math.round(fs * 1.38), color: c.t.fg, textAlign: align[j] ?? 'left', paddingLeft: j ? 10 : 0, paddingRight: j === cols - 1 ? 0 : 6 }, r === 0 && styles.th]}>
+              {inline(row[j] ?? '', c, `${k}.${r}.${j}`)}
+            </Text>
+          ))}
+        </View>
+      ))}
+    </View>
+  )
+  return (
+    <View onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}>
+      {width === 0 ? null : fits ? (
+        body
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {body}
+        </ScrollView>
+      )}
+    </View>
+  )
+}
+
+function Check({ t, on, size }: { t: Theme; on: boolean; size: number }) {
+  const s = Math.round(size * 1.05)
+  return (
+    <View style={[styles.check, { width: s, height: s, borderRadius: s * 0.3, borderColor: on ? t.fg2 : t.fg3, backgroundColor: on ? t.fg2 : 'transparent' }]}>
+      {on ? <Icon name="check" size={s * 0.7} color={t.surface} weight="heavy" /> : null}
+    </View>
+  )
+}
+
+// Space above a block, by what came before it: headings get room above and sit close to what they head.
+function above(b: Block, prev: Block | undefined, gap: number) {
+  if (!prev) return 0
+  if (b.kind === 'h') return gap + (b.level <= 2 ? 10 : 6)
+  if (prev.kind === 'h') return Math.round(gap * 0.55)
+  return gap
+}
+
+export const Markdown = memo(function Markdown({ text, t, color, size = 17, mention }: { text: string; t: Theme; color: string; size?: number; mention?: (name: string) => string | null }) {
   const parsed = useMemo(() => blocks(text), [text])
-  const lh = Math.round(size * 1.38)
+  const lh = Math.round(size * 1.42)
+  const gap = Math.round(size * 0.72)
   const c: Ctx = {
     t,
     mention,
-    code: { fontFamily: fonts.mono, fontSize: size - 2.5, backgroundColor: t.codeBg },
-    link: { color: t.link, textDecorationLine: 'underline' },
+    code: { fontFamily: fonts.mono, fontSize: size * 0.86, backgroundColor: t.codeBg },
+    link: { color: t.link, fontWeight: '500' },
   }
   const base = { color, fontSize: size, lineHeight: lh }
   return (
-    <View style={styles.wrap}>
+    <View>
       {parsed.map((b, i) => {
         const k = `b${i}`
+        const mt = above(b, parsed[i - 1], gap)
         switch (b.kind) {
-          case 'h':
+          case 'h': {
+            const fs = b.level === 1 ? size + 6 : b.level === 2 ? size + 3 : b.level === 3 ? size + 1 : size
             return (
-              <Text key={k} style={[base, styles.bold, { fontSize: size + (b.level <= 2 ? 2 : 0.5), lineHeight: lh + 2 }]}>
+              <Text key={k} style={[base, styles.heading, { marginTop: mt, fontSize: fs, lineHeight: Math.round(fs * 1.28) }]} accessibilityRole="header">
                 {inline(b.text, c, k)}
               </Text>
             )
+          }
           case 'code':
             return (
-              <ScrollView key={k} horizontal showsHorizontalScrollIndicator={false} style={[styles.codeBlock, { backgroundColor: t.codeBg }]} contentContainerStyle={styles.codeInner}>
-                <Text style={{ fontFamily: fonts.mono, fontSize: size - 3, lineHeight: Math.round((size - 3) * 1.45), color }} selectable>
-                  {b.text}
-                </Text>
-              </ScrollView>
+              <View key={k} style={{ marginTop: mt }}>
+                <Code t={t} lang={b.lang} text={b.text} size={size} />
+              </View>
             )
           case 'list':
             return (
-              <View key={k} style={styles.list}>
+              <View key={k} style={[styles.list, { marginTop: mt }]}>
                 {b.items.map((item, j) => (
-                  <View key={j} style={styles.li}>
-                    <Text style={[base, styles.marker, { color: t.fg2, minWidth: b.ordered ? size * 1.3 : size * 0.8 }]}>{b.ordered ? `${b.start + j}.` : '•'}</Text>
-                    <Text style={[base, styles.liText]}>{inline(item, c, `${k}.${j}`)}</Text>
+                  <View key={j} style={[styles.li, { marginLeft: item.level * Math.round(size * 1.3) }]}>
+                    <View style={[styles.marker, { minWidth: item.check !== null ? size * 1.5 : item.ordered ? size * 1.35 : size * 1.05, height: lh }]}>
+                      {item.check !== null ? (
+                        <Check t={t} on={item.check} size={size} />
+                      ) : (
+                        <Text style={[base, styles.markerText, { color: t.fg2 }, !item.ordered && { fontSize: size * (item.level ? 1 : 1.2) }]}>{item.ordered ? `${item.n}.` : item.level ? '◦' : '•'}</Text>
+                      )}
+                    </View>
+                    <Text style={[base, styles.liText, item.check && { color: t.fg2 }]}>{inline(item.text, c, `${k}.${j}`)}</Text>
                   </View>
                 ))}
               </View>
             )
           case 'quote':
             return (
-              <View key={k} style={[styles.quote, { borderLeftColor: t.lineStrong }]}>
-                <Text style={[base, { color: t.fg2 }]}>{inline(b.text, c, k)}</Text>
+              <View key={k} style={[styles.quote, { marginTop: mt }]}>
+                <View style={[styles.quoteBar, { backgroundColor: t.lineStrong }]} />
+                <Text style={[base, styles.quoteText, { color: t.fg2 }]}>{inline(b.text, c, k)}</Text>
               </View>
             )
-          case 'table': {
-            // every row is its own line of cells, so the columns get fixed widths from their longest cell
-            const widths = b.rows[0].map((_, j) => Math.min(240, Math.max(72, Math.max(...b.rows.map((r) => (r[j] ?? '').replace(/[*`_]/g, '').length)) * (size - 2) * 0.56 + 22)))
+          case 'table':
             return (
-              <ScrollView key={k} horizontal showsHorizontalScrollIndicator={false} style={[styles.table, { borderColor: t.lineStrong }]}>
-                <View>
-                  {b.rows.map((row, r) => (
-                    <View key={r} style={[styles.tr, r > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.lineStrong }, r === 0 && { backgroundColor: t.btn }]}>
-                      {row.map((cell, j) => (
-                        <Text key={j} style={[base, styles.td, { width: widths[j], fontSize: size - 2, lineHeight: lh - 3 }, r === 0 && styles.bold, j > 0 && { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: t.lineStrong }]}>
-                          {inline(cell, c, `${k}.${r}.${j}`)}
-                        </Text>
-                      ))}
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
+              <View key={k} style={{ marginTop: mt }}>
+                <Table t={t} rows={b.rows} align={b.align} c={c} size={size} k={k} />
+              </View>
             )
-          }
           case 'hr':
-            return <View key={k} style={[styles.hr, { backgroundColor: t.line }]} />
+            return <View key={k} style={[styles.hr, { marginTop: mt + 4, marginBottom: 4, backgroundColor: t.lineStrong }]} />
           default:
             return (
-              <Text key={k} style={base}>
+              <Text key={k} style={[base, { marginTop: mt }]}>
                 {inline(b.text, c, k)}
               </Text>
             )
@@ -236,20 +236,27 @@ export const Markdown = memo(function Markdown({ text, t, color, size = 16, ment
 })
 
 const styles = StyleSheet.create({
-  wrap: { gap: 8 },
-  bold: { fontWeight: '700' },
+  bold: { fontWeight: '600' },
+  heading: { fontWeight: '700', letterSpacing: -0.2 },
   italic: { fontStyle: 'italic' },
   strike: { textDecorationLine: 'line-through' },
   mention: { fontWeight: '600' },
-  codeBlock: { borderRadius: 10, flexGrow: 0, overflow: 'hidden' },
-  codeInner: { paddingHorizontal: 11, paddingVertical: 9 },
-  list: { gap: 4 },
+  code: { borderRadius: 12, overflow: 'hidden' },
+  codeTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 8 },
+  codeLang: { fontSize: 12.5, fontWeight: '500' },
+  copy: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  codeInner: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 11 },
+  list: { gap: 6 },
   li: { flexDirection: 'row' },
-  marker: { fontVariant: ['tabular-nums'] },
+  marker: { justifyContent: 'center', paddingRight: 4 },
+  markerText: { fontVariant: ['tabular-nums'] },
   liText: { flex: 1 },
-  quote: { borderLeftWidth: 2, paddingLeft: 10 },
-  table: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 8, flexGrow: 0 },
+  check: { borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  quote: { flexDirection: 'row', gap: 12 },
+  quoteBar: { width: 3, borderRadius: 1.5 },
+  quoteText: { flex: 1 },
   tr: { flexDirection: 'row' },
-  td: { paddingHorizontal: 10, paddingVertical: 6 },
-  hr: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
+  td: { paddingVertical: 8 },
+  th: { fontWeight: '600' },
+  hr: { height: StyleSheet.hairlineWidth * 2 },
 })

@@ -1,5 +1,6 @@
-// The message box, with the crew above it: tap a face for your conversation with that agent (All goes back to
-// everyone), type @ to bring someone in. Sending is off, with the reason in the box, while the Mac can't be reached.
+// The message box. While you type, the crew shows above it: tap a face to talk to that agent alone (Everyone goes back
+// to the whole crew), or type @ to bring someone in. Reading, it's just the box, so the messages get the room.
+// Sending is off, with the reason in the box, while the computer can't be reached.
 import { useState } from 'react'
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
@@ -20,6 +21,7 @@ type Props = {
   convo: string | null
   unread: Map<string, number>
   disabled: string | null // why sending is off
+  background: string
   onFace: (name: string | null) => void
   onSend: (text: string) => Promise<unknown>
 }
@@ -30,8 +32,9 @@ function mentionAt(text: string, cursor: number) {
   return m ? { query: m[2].toLowerCase(), start: cursor - m[2].length - 1 } : null
 }
 
-export function Composer({ t, agents, convo, unread, disabled, onFace, onSend }: Props) {
+export function Composer({ t, agents, convo, unread, disabled, background, onFace, onSend }: Props) {
   const [text, setText] = useState('')
+  const [focused, setFocused] = useState(false)
   const [cursor, setCursor] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -46,7 +49,7 @@ export function Composer({ t, agents, convo, unread, disabled, onFace, onSend }:
         .map((x) => x.a)
     : []
   const target = convo ? agents.find((a) => a.name === convo) : null
-  const placeholder = disabled ?? (target ? `Message ${displayName(target.name).base}…` : 'Message the crew')
+  const placeholder = disabled ?? (target ? `Message ${displayName(target.name).base}` : 'Message the crew')
 
   const insert = (a: Agent) => {
     if (!at) return
@@ -72,7 +75,7 @@ export function Composer({ t, agents, convo, unread, disabled, onFace, onSend }:
   }
 
   return (
-    <View style={[styles.wrap, { backgroundColor: t.panel, borderTopColor: t.line }]}>
+    <View style={[styles.wrap, { backgroundColor: background }]}>
       {matches.length ? (
         <Animated.View entering={FadeIn.duration(120)} exiting={FadeOut.duration(100)} style={[styles.picker, { backgroundColor: t.surface, borderColor: t.lineStrong }]}>
           {matches.map((a) => (
@@ -90,6 +93,8 @@ export function Composer({ t, agents, convo, unread, disabled, onFace, onSend }:
           ))}
         </Animated.View>
       ) : null}
+      {focused ? (
+      <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(90)}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.to} keyboardShouldPersistTaps="handled">
         <Press onPress={() => onFace(null)} style={[styles.all, { backgroundColor: convo ? t.btn : t.dark ? 'rgba(10,132,255,0.2)' : 'rgba(0,122,255,0.12)' }]} accessibilityRole="button" accessibilityState={{ selected: !convo }} accessibilityLabel="Everyone's messages">
           <Text style={[styles.allText, { color: convo ? t.fg2 : t.accent }]}>Everyone</Text>
@@ -108,7 +113,9 @@ export function Composer({ t, agents, convo, unread, disabled, onFace, onSend }:
           )
         })}
       </ScrollView>
-      <View style={[styles.box, { backgroundColor: t.field, borderColor: error ? t.danger : t.lineStrong }]}>
+      </Animated.View>
+      ) : null}
+      <View style={[styles.box, { backgroundColor: t.field, borderColor: error ? t.danger : 'transparent' }]}>
         <TextInput
           value={text}
           onChangeText={(v) => {
@@ -116,6 +123,8 @@ export function Composer({ t, agents, convo, unread, disabled, onFace, onSend }:
             if (error) setError('')
           }}
           onSelectionChange={(ev) => setCursor(ev.nativeEvent.selection.end)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           placeholder={placeholder}
           placeholderTextColor={disabled ? t.waitingInk : t.fg3}
           editable={!disabled}
@@ -137,16 +146,16 @@ export function Composer({ t, agents, convo, unread, disabled, onFace, onSend }:
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingTop: 6, paddingBottom: 8, borderTopWidth: StyleSheet.hairlineWidth },
-  to: { paddingHorizontal: 12, gap: 6, alignItems: 'center', height: 46 },
+  wrap: { paddingTop: 4, paddingBottom: 6 },
+  to: { paddingHorizontal: 12, gap: 6, alignItems: 'center', height: 48, paddingBottom: 4 },
   all: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 32, paddingHorizontal: 12, borderRadius: 16, marginRight: 4 },
   allText: { fontSize: 14, fontWeight: '600' },
   face: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   ring: { borderWidth: 2, borderRadius: 21, padding: 2 },
   badge: { position: 'absolute', right: -2, bottom: -1 },
-  box: { flexDirection: 'row', alignItems: 'flex-end', marginHorizontal: 12, marginTop: 4, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth * 2, paddingLeft: 14, paddingRight: 5, paddingVertical: 5, minHeight: 44 },
-  input: { flex: 1, fontSize: 16, lineHeight: 21, maxHeight: 120, paddingTop: 7, paddingBottom: 7 },
-  send: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
+  box: { flexDirection: 'row', alignItems: 'flex-end', marginHorizontal: 12, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth * 2, paddingLeft: 16, paddingRight: 5, paddingVertical: 4, minHeight: 44 },
+  input: { flex: 1, fontSize: 17, lineHeight: 22, maxHeight: 132, paddingTop: 7, paddingBottom: 7 },
+  send: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
   error: { fontSize: 13, marginHorizontal: 18, marginTop: 6 },
   picker: { position: 'absolute', left: 12, right: 12, bottom: '100%', marginBottom: 6, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth * 2, paddingVertical: 6, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
   pick: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 7 },

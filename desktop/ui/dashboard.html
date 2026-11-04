@@ -143,15 +143,32 @@
     .dm.off { color: var(--fg3); }
     .dm.off .dm-av { opacity: .75; }
     .roster-none { padding: 8px 10px; font-size: 13px; color: var(--fg3); }
-    /* the footer: the account's usage, and ⋯ for everything else (Autopilot, Computers, theme) */
-    .side-foot { flex: none; display: flex; align-items: center; gap: 4px; height: 52px; padding: 0 8px; border-top: 1px solid var(--line); }
-    .use-line { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--fg2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; transition: background var(--t-quick); }
+    /* the footer: your accounts' usage (a row per computer once a linked one reports its own), and ⋯ for everything
+       else (Autopilot, Computers, theme). Two computers fit its 52px; a third makes it taller. */
+    .side-foot { flex: none; display: flex; align-items: center; gap: 4px; min-height: 52px; padding: 2px 8px; border-top: 1px solid var(--line); container-type: inline-size; }
+    .use-line { flex: 1; min-width: 0; display: flex; align-items: center; height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--fg2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: left; cursor: pointer; transition: background var(--t-quick); }
     .use-line:hover { background: var(--row-hover); color: var(--fg); }
     .use-line.none { visibility: hidden; }
+    .use-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
     .use-bar { flex: 1; min-width: 24px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .12); overflow: hidden; }
     .use-bar i { display: block; height: 100%; border-radius: 2px; background: var(--fg); }
-    .use-line.warm { color: #FF8CC6; }
-    .use-line.warm .use-bar i { background: var(--needs); }
+    .use-line.warm, .use-row.warm { color: #FF8CC6; }
+    :is(.use-line.warm, .use-row.warm) .use-bar i { background: var(--needs); }
+    /* a row per computer: its icon and name, then its fullest account; the bars start and end together */
+    .use-line.each { display: grid; grid-template-columns: 14px minmax(0, max-content) minmax(20px, 1fr) auto; column-gap: 8px; row-gap: 2px; align-content: center; height: auto; min-height: 32px; padding: 4px 8px; }
+    .use-line.each .use-row { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; height: 18px; }
+    .use-line.each .use-bar { min-width: 0; }
+    .use-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .use-pct { text-align: right; }
+    .use-pc { display: grid; place-items: center; width: 14px; height: 14px; color: var(--fg3); }
+    .use-pc svg { width: 14px; height: 14px; }
+    .use-row.off { color: var(--fg3); }
+    .use-row.off .use-bar i { background: var(--fg3); }
+    /* a narrow sidebar keeps the names whole and the bars readable: the icons go (the names say which computer) */
+    @container (max-width: 240px) {
+      .use-line.each { grid-template-columns: minmax(0, max-content) minmax(20px, 1fr) auto; }
+      .use-line.each .use-pc { display: none; }
+    }
     .side-more { position: relative; flex: none; width: 32px; height: 32px; padding: 0; border-radius: 8px; color: var(--fg2); }
     .side-more:hover { color: var(--fg); background: var(--row-hover); }
     .side-more svg { width: 17px; height: 17px; }
@@ -161,6 +178,11 @@
     .use-pop:popover-open { display: flex; flex-direction: column; gap: 6px; }
     .use-pop .up-row { display: flex; flex-direction: column; gap: 2px; padding: 3px 2px; }
     .use-pop .up-row + .up-row { border-top: 1px solid var(--line); padding-top: 7px; }
+    .use-pop .up-group + .up-group { margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--line-strong); }
+    .use-pop .up-pc { display: flex; align-items: center; gap: 6px; padding: 0 2px 2px; color: var(--fg2); font-size: 12px; }
+    .use-pop .up-pc b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .use-pop .up-pc small { flex: none; color: var(--fg3); font-size: 12px; }
+    .use-pop .up-pc.off { color: var(--fg3); }
     .use-pop .usage-line { display: flex; align-items: baseline; gap: 5px; font-weight: 500; }
     .use-pop .warm { color: var(--ctx-warm); }
     .use-pop .hot { color: var(--ctx-hot); }

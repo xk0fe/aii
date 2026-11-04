@@ -7,6 +7,38 @@ export type Space = { id: string; name: string; color: string | null; icon: stri
 
 const MIN = 60000
 
+// A long answer, written the way agents write them: a heading, a checklist, code, a table. The chat has to read well.
+const RELEASE_PLAN = `## Release 1.2: what's left
+
+Checkout is **green on Chrome and Safari**. Three things stand between us and the release:
+
+1. **Coupons.** Stacking two codes still counts the discount twice. The fix is in \`api/cart.ts\`; I'm writing its test now.
+2. **Dark mode.** Milo's settings page is done, but the receipt email still puts \`#ffffff\` text on white.
+3. **Release notes.** June has a first draft in \`docs/release-notes.md\`.
+
+### Where each part stands
+
+| Part | Status | Who |
+| --- | --- | --- |
+| Checkout | Ready | Theo |
+| Coupons | Fixing | Ada |
+| Dark mode | In review | Milo |
+| Release notes | Draft | June |
+
+- [x] Totals round once, on the whole cart
+- [x] Checkout tests pass on both browsers
+- [ ] Two coupons count once
+- [ ] The receipt email reads in dark mode
+
+To try the coupon fix on your machine:
+
+\`\`\`sh
+git switch fix/coupon-stacking
+npm test -- coupons
+\`\`\`
+
+> Nothing else blocks the release. Once coupons pass, Rex can deploy from the Workstation.`
+
 export function makeDemo(now = Date.now()): Space[] {
   const t = (m: number) => now - m * MIN
   const ctx = (pct: number, size: number, tasks: number) => ({ since: t(40 + tasks * 9), tasks, compactions: 0, context: { pct, size, used: Math.round((pct / 100) * size) } })
@@ -53,6 +85,8 @@ export function makeDemo(now = Date.now()): Space[] {
     { id: 'f7', kind: 'msg', from: 'you', to: 'Iris', text: 'Can you sketch the empty cart?', ts: t(7) },
     { id: 'f8', kind: 'reply', from: 'Theo', to: 'you', re: 'f4', text: 'All 48 checkout tests pass on Chrome and Safari.', ts: t(6) },
     { id: 'q1', kind: 'ask', from: 'Iris', to: 'you', cli: 'claude', re: 'f7', ts: t(5), ask: { type: 'question', alert: 'asks: Should the empty cart show suggestions?', questions: [{ question: 'Should the empty cart show suggestions?', options: [{ label: 'Yes, show a few products' }, { label: 'No, keep it empty' }] }] } },
+    { id: 'f9', kind: 'msg', from: 'you', to: 'Ada', text: "What's left before we ship 1.2?", ts: t(4.5) },
+    { id: 'f10', kind: 'reply', from: 'Ada', to: 'you', re: 'f9', ts: t(3.5), subs: [{ type: 'Explore', description: 'Find what is still open for 1.2', tools: 9, ms: 36000 }], text: RELEASE_PLAN },
     { id: 'q2', kind: 'ask', from: 'Milo', to: 'you', cli: 'claude', re: 'f5', ts: t(2), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm run build', detail: 'Check the settings page', alert: 'wants to run a command', always: [{ i: 0, label: 'Always allow npm run build' }] } },
   ]
   const reads = { since: 0, agents: { Milo: t(7.5) } }

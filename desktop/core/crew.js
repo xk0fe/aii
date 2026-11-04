@@ -91,6 +91,8 @@ export class Crew extends EventEmitter {
         this.emit('alert', a.name, text, id)
         this.pushSpace(id, 'alert', `${this.keyOf(id)}/${a.name}`, text)
       })
+      // usage is the computer's, and linked computers read it from the default's state: tell them through that
+      hub.on('usage', () => this.hub.emit('change'))
       let pending = null
       hub.on('change', () => {
         this.changed()
@@ -1207,11 +1209,27 @@ export class Crew extends EventEmitter {
       return {
         slug: l.slug, name: l.name, online: Boolean(l.peer), saved: Boolean(l.code), status: l.client?.status, spaces: Object.keys(l.spaces ?? {}),
         agents: (l.state?.agents ?? []).filter((a) => !a.cloneOf).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)) })),
+        usage: this.linkedUsage(l),
       }
     })
     // blocked: macOS keeps this app off the local network (Local Network is off for it), as discovery or a link found
     if (this.discovery?.blocked || links.some((l) => !l.online && l.status?.blocked)) me.localNetwork = 'blocked'
     return { me, links, phones: { ...this.phones.view(), ...(phones && this.hosts.warning && { warning: this.hosts.warning }) }, ...this.nearbyView() }
+  }
+
+  // A linked computer's usage limits: its own accounts, the ones its agents run on, as a snapshot's `usage` says them
+  // ({ claude: { label, at, windows, credits? } }). Each account's newest reading from any of its workspaces' states
+  // we have, without the windows that have reset since (an offline computer's last word stays until then).
+  linkedUsage(l) {
+    const now = Date.now()
+    const out = {}
+    for (const s of [l.state, ...Object.values(l.spaces ?? {})]) {
+      for (const [id, u] of Object.entries(s?.usage ?? {})) {
+        const windows = (u?.windows ?? []).filter((w) => w.resetsAt > now)
+        if (windows.length && !((out[id]?.at ?? -1) >= (u.at ?? 0))) out[id] = { ...u, windows }
+      }
+    }
+    return out
   }
 
   hosts = { at: 0, list: [], warning: null } // warning: why connections can't get in (Windows Firewall), if they can't

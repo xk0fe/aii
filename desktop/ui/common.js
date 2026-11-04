@@ -439,7 +439,8 @@ function resetsText(ms) {
 const creditsText = (c) => (!c ? '' : c.unlimited ? '\nUnlimited credits' : c.balance !== undefined ? `\nCredits left: ${Math.round(c.balance).toLocaleString()}` : '')
 // Where a window is heading at this pace (core/hub.js paceOf): "runs out Wed 21:00", or "on pace for 82% by then".
 const paceText = (w) => (!w.pace ? '' : w.pace.runsOut ? `, runs out ${resetsText(w.pace.runsOut).replace(/^resets /, '')} at this pace` : `, on pace for ${Math.min(w.pace.projected, 100)}% by then`)
-const usageTip = (u) => `${u.label} account\n${u.windows.map((w) => `${limitLong(w)}: ${w.pct}% used, ${resetsText(w.resetsAt)}${paceText(w)}`).join('\n')}${creditsText(u.credits)}${u.windows.some((w) => w.pace) ? '\n(At the pace since each limit began; the 5-hour one at its pace over the last few minutes.)' : ''}`
+// where: a linked computer's name, for its accounts ("Claude account on Workstation")
+const usageTip = (u, where) => `${u.label} account${where ? ` on ${where}` : ''}\n${u.windows.map((w) => `${limitLong(w)}: ${w.pct}% used, ${resetsText(w.resetsAt)}${paceText(w)}`).join('\n')}${creditsText(u.credits)}${u.windows.some((w) => w.pace) ? '\n(At the pace since each limit began; the 5-hour one at its pace over the last few minutes.)' : ''}`
 // The first window that runs out before it resets, in words for the menu bar: "Week runs out Wed 21:00 at this pace".
 function paceWarning(u) {
   const w = u.windows.filter((x) => x.pace?.runsOut).sort((x, y) => x.pace.runsOut - y.pace.runsOut)[0]
@@ -457,18 +458,36 @@ function usageChip(state) {
   return `<span class="sum usage" title="${esc(all.map(usageTip).join('\n\n'))}">${all.map((u) => `<span>${esc(u.label)}</span>${limitNums(fullest(u))}`).join('<i>·</i>')}</span>`
 }
 
-// Next to an agent's context ring: its account's fullest window ("5h 42%"), all of them on hover. An agent on
-// another computer runs on that computer's account, which this one doesn't see.
+// The account an agent runs on: its provider's on its own computer. An agent on a linked computer runs on that
+// computer's account, which reports its limits to us with the rest of that computer's state (Crew.linkedUsage).
+function usageOf(a, state) {
+  const all = a.home ? state.computers?.links?.find((l) => l.slug === a.home)?.usage : state.usage
+  const u = all?.[a.provider]
+  return u?.windows?.length ? u : null
+}
+
+// Every computer's accounts that have a reading: this computer first, then the linked ones in the order they were
+// linked. [{ key, name, here, online, accounts: [{ provider, label, windows, … }] }]
+function usageByComputer(state) {
+  const c = state.computers ?? { me: {}, links: [] }
+  const live = (all) => Object.entries(all ?? {}).filter(([, u]) => u?.windows?.length).map(([provider, u]) => ({ provider, ...u }))
+  return [
+    { key: '', name: c.me?.name || 'This computer', here: true, online: true, accounts: live(state.usage) },
+    ...(c.links ?? []).map((l) => ({ key: l.slug, name: l.name, here: false, online: Boolean(l.online), accounts: live(l.usage) })),
+  ].filter((m) => m.accounts.length)
+}
+
+// Next to an agent's context ring: its account's fullest window ("5h 42%"), all of them on hover.
 function limitMark(a, state) {
-  const u = !a.home && a.on && state.usage?.[a.provider]
+  const u = a.on && usageOf(a, state)
   const w = u && [...u.windows].sort((x, y) => y.pct - x.pct)[0]
-  return w ? `<span class="lim ${ctxLevel(w.pct)}" title="${esc(usageTip(u))}">${limitShort(w)} ${w.pct}%</span>` : ''
+  return w ? `<span class="lim ${ctxLevel(w.pct)}" title="${esc(usageTip(u, a.home && a.homeName))}">${limitShort(w)} ${w.pct}%</span>` : ''
 }
 
 // The same as a line, for an agent's sheet: "Claude · 5h 42% · week 61%".
 function usageLine(a, state) {
-  const u = !a.home && state.usage?.[a.provider]
-  return u ? `<span class="usage-line" title="${esc(usageTip(u))}">${esc(u.label)}<i>·</i>${limitNums(u)}</span>` : ''
+  const u = usageOf(a, state)
+  return u ? `<span class="usage-line" title="${esc(usageTip(u, a.home && a.homeName))}">${esc(u.label)}<i>·</i>${limitNums(u)}</span>` : ''
 }
 
 // ---- sub-agents: the helpers an agent hands parts of its work to (Claude Code's Agent tool) -----------
