@@ -15,6 +15,7 @@ import { Creature } from './creature'
 import { clock, displayName } from './format'
 import { Icon } from './icon'
 import { Markdown } from './markdown'
+import { stacks } from './stack'
 import { Button, Press } from './parts'
 import { fonts, type Theme } from './theme'
 
@@ -258,9 +259,7 @@ export const FeedItem = memo(function FeedItem({ e, prev, c }: { e: FeedEntry; p
   // what it answers, quoted only when that isn't right above it (or quoted already by the message above, its own)
   const quoted = e.re ? c.byId.get(e.re) : undefined
   const near = !quoted || quoted === prev || Boolean(prev && prev.from === e.from && prev.re && c.byId.get(prev.re) === quoted)
-  // under the one before when it's the same sender saying more, a moment later, to the same people, in the same place
-  const talks = (x: FeedEntry) => x.kind === 'reply' || x.kind === 'msg' || x.kind === 'note' || x.kind === 'handoff' || (x.from === 'you' && x.kind !== 'task' && x.kind !== 'bug')
-  const cont = Boolean(prev && talks(prev) && talks(e) && prev.ticket === undefined && e.ticket === undefined && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && (prev.channel ?? '') === (e.channel ?? '') && !prev.auto === !e.auto && e.ts - prev.ts < 300000 && near)
+  const cont = stacks(prev, e, { near, divider: c.divider })
   const divider = c.divider === e.id ? (
     <View style={styles.newLine} accessibilityLabel="New replies">
       <View style={[styles.rule, { backgroundColor: t.accent }]} />

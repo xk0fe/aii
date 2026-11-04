@@ -32,6 +32,8 @@ type Props = {
   link: Link
   mac: string
   demo: boolean
+  offline: boolean // the rail can't switch while the computer can't be reached
+  switching: boolean // rows act on the workspace on screen: not while another one opens
   onWorkspace: (id: string) => void
   onChannel: (id: string) => void
   onAgent: (name: string | null) => void
@@ -39,11 +41,11 @@ type Props = {
   onComputer: () => void
 }
 
-function RailTile({ t, w, on, going, onPress }: { t: Theme; w: Workspace; on: boolean; going: boolean; onPress: () => void }) {
+function RailTile({ t, w, on, going, disabled, onPress }: { t: Theme; w: Workspace; on: boolean; going: boolean; disabled: boolean; onPress: () => void }) {
   const needs = w.waiting ?? 0
   const fresh = !on && (w.unread ?? 0) > 0
   return (
-    <Press onPress={onPress} style={styles.railItem} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={`${w.name}${needs ? `, ${needs} waiting for you` : ''}${fresh ? `, ${w.unread} new` : ''}`}>
+    <Press onPress={onPress} disabled={disabled && !on} style={styles.railItem} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={`${w.name}${needs ? `, ${needs} waiting for you` : ''}${fresh ? `, ${w.unread} new` : ''}`}>
       {/* Discord's pill on the left edge: tall for the one you're in, a dot for one with something new */}
       <View style={[styles.pill, { backgroundColor: t.fg, height: on ? 36 : fresh ? 8 : 0 }]} />
       <View style={{ opacity: going ? 0.5 : 1 }}>
@@ -80,7 +82,7 @@ function AgentRow({ t, a, on, unread, now, onPress }: { t: Theme; a: Agent; on: 
   return (
     <Press onPress={onPress} style={[styles.row, styles.dm, on && { backgroundColor: t.fill }, !a.on && { opacity: 0.6 }]} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={`${displayName(a.name).base}, ${line.text}${unread ? `, ${unread} new` : ''}`}>
       {unread && !on ? <View style={[styles.newDot, { backgroundColor: t.fg }]} /> : null}
-      <Who t={t} kind={line.kind} size={32} ring={on ? t.fill : t.page}>
+      <Who t={t} kind={line.kind} size={32} ring={t.dark ? t.surface : t.page}>
         <Creature agent={a} size={32} mood="still" />
       </Who>
       <View style={styles.dmText}>
@@ -109,7 +111,7 @@ function Section({ t, title, onAdd, addLabel }: { t: Theme; title: string; onAdd
   )
 }
 
-export function Drawer({ t, d, workspaces, ws, going, title, summary, here, chan, now, link, mac, demo, onWorkspace, onChannel, onAgent, onNewChannel, onComputer }: Props) {
+export function Drawer({ t, d, workspaces, ws, going, title, summary, here, chan, now, link, mac, demo, offline: away, switching, onWorkspace, onChannel, onAgent, onNewChannel, onComputer }: Props) {
   const insets = useSafeAreaInsets()
   const offline = link.status === 'offline' ? offlineText(link, mac) : ''
   const total = [...d.unread.values()].reduce((n, x) => n + x, 0)
@@ -119,10 +121,11 @@ export function Drawer({ t, d, workspaces, ws, going, title, summary, here, chan
     <View style={[styles.wrap, { backgroundColor: t.bg, paddingTop: insets.top }]}>
       <ScrollView style={styles.rail} contentContainerStyle={styles.railInner} showsVerticalScrollIndicator={false}>
         {workspaces.map((w) => (
-          <RailTile key={w.id} t={t} w={w} on={w.id === ws} going={going === w.id} onPress={() => (tap(), onWorkspace(w.id))} />
+          <RailTile key={w.id} t={t} w={w} on={w.id === ws} going={going === w.id} disabled={away} onPress={() => (tap(), onWorkspace(w.id))} />
         ))}
       </ScrollView>
-      <View style={[styles.panel, { backgroundColor: t.page }]}>
+      {/* a card on the rail: white on grey; in the dark, a step up from the black rail, as Discord layers them */}
+      <View style={[styles.panel, { backgroundColor: t.dark ? t.surface : t.page }]}>
         <View style={styles.head}>
           <Text style={[styles.title, { color: t.fg }]} numberOfLines={1} accessibilityRole="header">
             {title}
@@ -131,7 +134,7 @@ export function Drawer({ t, d, workspaces, ws, going, title, summary, here, chan
             {summary}
           </Text>
         </View>
-        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false} style={switching && { opacity: 0.5 }} pointerEvents={switching ? 'none' : 'auto'}>
           {d.channels ? (
             <>
               <Section t={t} title="Channels" onAdd={onNewChannel} addLabel="New channel" />

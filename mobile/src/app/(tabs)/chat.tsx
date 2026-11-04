@@ -190,7 +190,7 @@ function Where({ t, d, here, channel, title, sub, link, menu }: { t: Theme; d: D
   return (
     <View style={styles.with}>
       {menu}
-      <Press onPress={channel ? () => router.push({ pathname: '/channel', params: { id: channel.id } }) : undefined} disabled={!channel} style={styles.convo} accessibilityRole="button" accessibilityLabel={channel ? `#${channel.name}: its brief and who's in it` : title}>
+      <Press onPress={channel ? () => router.push({ pathname: '/channel', params: { id: channel.id } }) : undefined} style={styles.convo} accessibilityRole="button" accessibilityLabel={channel ? `#${channel.name}: its brief and who's in it` : title}>
         <View style={{ flexShrink: 1 }}>
           <Text style={[styles.convoName, { color: t.fg }]} numberOfLines={1}>
             {channel ? (
@@ -285,7 +285,7 @@ export default function ChatScreen() {
   // the list under the chat: the chat slides right to show it, and back
   const { width } = useWindowDimensions()
   const W = width - 60 // what the list takes; the chat stays in sight at the right edge
-  const x = useSharedValue(0)
+  const p = useSharedValue(0) // how far out the list is, 0 to 1 (not points: the width can change while it's out)
   const from = useSharedValue(0)
   const [listed, setListed] = useState(false)
   const settle = (to: boolean) => {
@@ -294,34 +294,35 @@ export default function ChatScreen() {
   }
   const slide = (to: boolean) => {
     settle(to)
-    x.value = withTiming(to ? W : 0, MOVE)
+    p.set(withTiming(to ? 1 : 0, MOVE))
   }
   const onBegin = () => {
     'worklet'
-    from.value = x.value
+    from.set(p.get())
   }
   const onUpdate = (e: { translationX: number }) => {
     'worklet'
-    x.value = Math.min(W, Math.max(0, from.value + e.translationX))
+    p.set(Math.min(1, Math.max(0, from.get() + e.translationX / W)))
   }
   const onDeactivate = (e: { velocityX: number }) => {
     'worklet'
-    const to = e.velocityX > 500 || (e.velocityX > -500 && x.value > W / 2)
-    x.value = withTiming(to ? W : 0, MOVE)
+    const to = e.velocityX > 500 || (e.velocityX > -500 && p.get() > 0.5)
+    p.set(withTiming(to ? 1 : 0, MOVE))
     scheduleOnRN(settle, to)
   }
-  // from the chat: only from its left edge while it's in front (the rest of it scrolls, sideways too in code and tables)
-  const chatSwipe = usePanGesture({ activeOffsetX: [-14, 14], failOffsetY: [-12, 12], hitSlop: listed ? undefined : { left: 0, width: 24 }, onBegin, onUpdate, onDeactivate })
+  // From the chat while it's in front: a swipe to the right, anywhere, as in Discord (not from the very edge, which
+  // Android keeps for its Back gesture). Sideways scrollers (code, tables, the faces row) keep their own drags.
+  const chatSwipe = usePanGesture({ activeOffsetX: listed ? [-14, 14] : 14, failOffsetY: [-12, 12], onBegin, onUpdate, onDeactivate })
   const listSwipe = usePanGesture({ activeOffsetX: [-14, 14], failOffsetY: [-12, 12], enabled: listed, onBegin, onUpdate, onDeactivate })
-  const chatMoves = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }))
-  const listMoves = useAnimatedStyle(() => ({ opacity: 0.4 + 0.6 * (x.value / W), transform: [{ translateX: (x.value - W) * 0.12 }] }))
+  // get() and set() rather than the value property, which the React Compiler would read during render to compare
+  const chatMoves = useAnimatedStyle(() => ({ transform: [{ translateX: p.get() * W }] }))
+  const listMoves = useAnimatedStyle(() => ({ opacity: 0.4 + 0.6 * p.get(), transform: [{ translateX: (p.get() - 1) * W * 0.12 }] }))
   useFocusEffect(
     useCallback(() => {
       if (!listed) return
       const sub = BackHandler.addEventListener('hardwareBackPress', () => (slide(false), true))
       return () => sub.remove()
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [listed]),
+    }, [listed, slide]),
   )
   const go = (fn: () => void) => {
     fn()
@@ -388,7 +389,8 @@ export default function ChatScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: t.bg }]}>
-      <Animated.View style={[StyleSheet.absoluteFill, listMoves]} pointerEvents={listed ? 'auto' : 'none'}>
+      {/* closed, the list is out of reach for screen readers too; open, the chat behind it is (all but the way back) */}
+      <Animated.View style={[StyleSheet.absoluteFill, listMoves]} pointerEvents={listed ? 'auto' : 'none'} accessibilityElementsHidden={!listed} importantForAccessibility={listed ? 'auto' : 'no-hide-descendants'}>
         <GestureDetector gesture={listSwipe}>
           <View style={StyleSheet.absoluteFill}>
             <Drawer
@@ -405,11 +407,19 @@ export default function ChatScreen() {
               link={link}
               mac={client.macName}
               demo={Boolean(client.demo)}
+              offline={Boolean(offline)}
+              switching={switching}
               onWorkspace={(id) => {
-                if (id === space) return slide(false)
+                // the one on screen: back to it (and, mid-switch, it's the one that stays)
+                if (id === space) {
+                  if (switching) void session.watch(id).catch(() => {})
+                  return slide(false)
+                }
                 // another workspace: its channels, not a conversation with someone who may not be there
-                openConvo(null)
-                void session.watch(id).catch(() => {})
+                void session
+                  .watch(id)
+                  .then(() => openConvo(null))
+                  .catch((e: Error) => Alert.alert(`Couldn't open it`, String(e?.message ?? e)))
               }}
               onChannel={(id) => go(() => openChannel(space, id))}
               onAgent={(name) => go(() => openConvo(name))}
@@ -421,7 +431,8 @@ export default function ChatScreen() {
       </Animated.View>
       <GestureDetector gesture={chatSwipe}>
       <Animated.View style={[styles.screen, styles.chat, { backgroundColor: t.page }, chatMoves]}>
-      <TopBar t={t} background={t.page} left={<Where t={t} d={d} here={here} channel={inChannel} title={wsName} sub={<>{wsName}{sum ? <Text style={{ color: t.fg3 }}>{'  ·  '}</Text> : null}{sum}</>} link={linkLine} menu={menu} />} right={inChannel ? <Members t={t} d={d} c={inChannel} /> : undefined} />
+      <View style={styles.screen} accessibilityElementsHidden={listed} importantForAccessibility={listed ? 'no-hide-descendants' : 'auto'}>
+      <TopBar t={t} background={t.page} left={<Where t={t} d={d} here={here} channel={inChannel} title={wsName} sub={inChannel ? <>{wsName}{sum ? <Text style={{ color: t.fg3 }}>{'  ·  '}</Text> : null}{sum}</> : sum} link={linkLine} menu={menu} />} right={inChannel ? <Members t={t} d={d} c={inChannel} /> : undefined} />
       <View style={[styles.hair, { backgroundColor: t.line }]} />
       <Deck t={t} open={open} byName={d.byName} onAnswer={answer} disabled={offline ? `Answering waits until ${client.macName} is back` : null} />
       <View style={styles.list}>
@@ -478,6 +489,7 @@ export default function ChatScreen() {
         <Composer t={t} background={t.page} agents={d.agents} convo={here?.name ?? null} channel={channel} place={here ? `${space}@${here.name}` : `${space}#${chan ?? ''}`} unread={d.unread} disabled={disabled} onFace={(n) => openConvo(n)} onSend={(text) => client.send(here?.name ?? '', text, !here && chan ? { channel: chan } : undefined)} />
       </KeyboardStickyView>
       <View style={{ height: tabH, backgroundColor: t.page }} />
+      </View>
       {/* while the list is out, the sliver of chat at the edge brings it back */}
       {listed ? <Pressable style={StyleSheet.absoluteFill} onPress={() => slide(false)} accessibilityRole="button" accessibilityLabel="Back to the chat" /> : null}
       </Animated.View>
@@ -500,9 +512,6 @@ const styles = StyleSheet.create({
   edge: { position: 'absolute', left: 0, right: 0, top: 0, height: 14 },
   listEmpty: { paddingVertical: 40, paddingHorizontal: 32, alignItems: 'center', gap: 12, transform: [{ scaleY: -1 }] },
   with: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
-  back: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  backBadge: { position: 'absolute', right: -5, top: -4, minWidth: 18, height: 18, borderRadius: 9, borderWidth: 2, paddingHorizontal: 3, alignItems: 'center', justifyContent: 'center' },
-  backBadgeText: { color: '#fff', fontSize: 10.5, fontWeight: '700', fontVariant: ['tabular-nums'] },
   convo: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1 },
   convoName: { fontSize: 17, lineHeight: 21, fontWeight: '600' },
   convoLine: { fontSize: 13, lineHeight: 17 },
