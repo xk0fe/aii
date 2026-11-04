@@ -2,68 +2,78 @@
   <img src="docs/images/cover.webp" alt="CLIque: your AI agents, working as a crew. Seven felt creatures in their room: two at laptops, one holding up an OK? sign, one asking a question, one with a mug, one popping up, one asleep">
 </p>
 
-CLIque is an app for your Mac or Windows PC that runs a team of AI coding agents. Each agent gets a name, a job, its own instructions and a small felt creature for a face. You talk to all of them in one chat. They hand work to each other, and when one of them needs a decision, it asks you.
+<h3 align="center">Your AI coding agents, working as a crew.</h3>
 
-It runs Claude Code and Codex. GLM and local models (through Ollama) work too, and you can add other providers.
+<p align="center">
+  CLIque runs a team of Claude Code and Codex agents side by side on your Mac or Windows PC.<br>
+  You talk to all of them in one chat. They split the work, ask each other, and come to you only when it matters.
+</p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/crew-dark.webp">
-  <img src="docs/images/crew-light.webp" alt="The dashboard: the crew on the left, the agents' cards in the middle, the chat with what needs you on the right">
+  <img src="docs/images/crew-light.webp" alt="The Crew view: every agent's card with its job, model and what it's doing, beside the sidebar's channels and conversations">
 </picture>
+
+## Why CLIque
+
+- **A crew instead of one prompt.** Each agent has a name, a job, its own instructions and a felt creature for a face. Give work to whoever's free instead of waiting for one agent to finish.
+- **One chat for everything.** `@mention` anyone, or let CLIque pick who fits. Permission prompts and questions come to you in the chat, in plain words.
+- **They work together.** Agents hand off tasks, ask each other questions mid-task, and never edit the same file at once.
+- **Nothing is lost.** Quit CLIque and your agents keep working. Open it again and they're right where they were.
+- **Every computer, one crew.** Link your Macs and PCs, and keep an eye on everything from your phone.
+- **It watches the bill.** Usage limits, what each task costs, and token savers that cut what the crew spends.
+
+It runs Claude Code and Codex. GLM and local models (through Ollama) work too, and you can add other providers.
 
 ## Get started
 
-You need a Mac (Apple silicon or Intel) or a Windows PC (Windows 10 or 11, x64 or Arm), and Claude Code or Codex installed and signed in with your own account. CLIque runs them for you; it doesn't need an account of its own.
+You need a Mac (Apple silicon or Intel) or a Windows PC (Windows 10 or 11), with Claude Code or Codex installed and signed in. CLIque uses your own account and doesn't need one of its own.
 
-- **On a Mac:** open the DMG and drag CLIque into Applications.
-- **On Windows:** run the installer. It installs CLIque for you alone, with shortcuts on the desktop and in the Start menu. Git for Windows is recommended: Claude Code runs its commands in Git Bash when it's there, and in PowerShell when it isn't.
+1. **Install.** On a Mac, drag CLIque into Applications. On Windows, run the installer.
+2. **Open it.** CLIque finds Claude Code and Codex, and tells you exactly what to install or sign in to if one is missing.
+3. **Add your first agent**, give it a job, and start talking.
 
-The first time you open CLIque, it looks for Claude Code and Codex. If neither is ready yet, it shows what to install or sign in to, with the command to paste, and looks again when you press **Check again**. Once one is ready, it asks you to add your first agent. On Windows the same screen says whether Git for Windows is there, with a button to download it.
+On Windows, Git for Windows is recommended: Claude Code runs its commands in Git Bash when it's there.
 
-Quitting CLIque doesn't stop your agents: they keep working, and the next time you open CLIque they're right where they were.
+<details>
+<summary><b>Run it from source</b></summary>
 
-To run it from this folder instead, you also need Node.js:
+You also need Node.js.
 
 ```sh
 npm install
 npm start
 ```
 
-On a Mac, the first `npm start` builds `CLIque.app` and opens it; after that it opens right away. Drag `desktop/dist/CLIque.app` to your Dock to keep it handy. On Windows, `npm start` runs CLIque from the folder. `npm run dist` makes the installers.
+On a Mac, the first `npm start` builds `CLIque.app` and opens it. `npm run dist` makes the installers, and `npm test` runs the tests.
+
+</details>
 
 ## Meet your crew
 
-The Crew view gives each agent a card: what it does, which model it runs on, what it's busy with, and how full its conversation is when that matters. One line on top says how things are, like "2 of your crew need you" or "Everyone's busy". Each creature acts out what it's doing: it types at a little felt laptop while it works, holds a mug while it's free, holds up an "OK?" sign when it wants your permission, and asks with a speech bubble when it has a question.
-
-Every card has an on/off switch. An agent you turn off falls asleep in black and white, right where its card was, and picks up its conversation when you turn it back on.
+Every agent gets a card: what it does, which model it runs on, and what it's busy with. Each creature acts it out. It types at a little laptop while it works, holds a mug while it's free, and holds up an "OK?" sign when it needs your permission. Switch one off and it falls asleep in black and white, ready to pick its conversation back up.
 
 <p align="center"><img src="docs/images/crew-switch.webp" alt="Turning June and Rex off from their cards: each falls asleep in black and white and wakes up again, and no card moves" width="1000"></p>
 
-Click a card to open it. This is where you set the agent's job, model and folder, and write its instructions (or let it draft them for itself). You can also dress it up.
+Click a card to set the agent's job, model and folder, and to write its instructions, or let it draft them for itself from its name and job.
 
 <p align="center"><img src="docs/images/sheet.webp" alt="Opening an agent: Setup, Instructions, Look and Stats tabs" width="1000"></p>
 
-## One chat for everyone
+## One chat, one conversation per agent
 
 <img src="docs/images/mentions.webp" alt="Typing @ opens the crew; arrow keys and Enter pick an agent" width="400" align="right">
 
-Write a message and CLIque gives it to the agent whose job fits and who's free. Or type `@` and pick who it's for. Mention a few agents and each one gets its own copy.
+Everyone talks in **#general**. Write a message and CLIque gives it to the agent whose job fits and who's free, or type `@` and pick. Mention several agents and each gets one copy, knowing who else has it.
 
-Click an agent's face and the chat turns into your conversation with it. You see just what the two of you said, and everything you send goes to that agent. **All**, or clicking the agent again, takes you back to everyone.
+Click an agent to open your conversation with it, with its terminal beside the chat. Make **channels** for parts of the work, each with its own members and a short brief.
 
-If an agent is busy, your message waits and goes in the moment it's done.
-
-When an agent wants permission or has a question, it asks you at the top of the chat, in its own words ("Can I run `npm run build`?"). You answer there, no terminal needed.
-
-You can also hold the mic and talk. Dictation runs on your computer, so your voice never leaves it.
+When an agent needs a decision ("Can I run `npm run build`?"), it asks at the top of the chat and you answer there, no terminal needed. Busy agents get your message the moment they're free. Or hold the mic and just talk: dictation runs on your computer, so your voice never leaves it.
 
 <br clear="right">
 
 ## Tasks
 
-Agents get confused when one conversation piles up unrelated work. So on the Tasks board, every task starts a fresh conversation.
-
-Add a bug or a feature, give it to someone (or let a triage agent pick), and press Start. Finished work lands in Review. Accept it, or send it back with a note.
+Unrelated work piling up in one conversation confuses agents. On the Tasks board, every task gets a fresh conversation. Add a bug or a feature, assign it (or let a triage agent pick), and press Start. Finished work lands in Review: accept it, or send it back with a note.
 
 <p align="center"><img src="docs/images/tasks-loop.webp" alt="Adding a task, starting it, and accepting another one" width="1000"></p>
 
@@ -74,24 +84,24 @@ Add a bug or a feature, give it to someone (or let a triage agent pick), and pre
   <img src="docs/images/terminals-light.webp" alt="Every agent's terminal side by side">
 </picture>
 
-Every agent has its own terminal. Watch them all side by side, or open one and type into it.
+Every agent has its own terminal. See them all side by side, or open one and type into it.
 
 <table>
 <tr>
 <td width="50%" valign="top">
-When a Claude Code agent splits a job between sub-agents, the chat shows each one and the step it's on.
+<b>Sub-agents.</b> When a Claude Code agent splits a job, the chat shows each sub-agent and the step it's on.
 <br><br>
 <img src="docs/images/subagents.webp" alt="Two sub-agents start, step through their tools and finish">
 </td>
 <td width="50%" valign="top">
-Give an agent clones and it stops making you wait. While it's busy, a copy of it takes the next task.
+<b>Clones.</b> Give an agent clones and it stops making you wait. While it's busy, a copy of it takes the next task.
 <br><br>
 <img src="docs/images/clones.webp" alt="Two messages for a busy agent each start a clone of it">
 </td>
 </tr>
 </table>
 
-## The pill and the menu bar
+## Always within reach
 
 <p align="center">
   <picture>
@@ -105,18 +115,18 @@ Give an agent clones and it stops making you wait. While it's busy, a copy of it
   </picture>
 </p>
 
-A little pill sits on the edge of your screen with the crew inside. They hop while they work. Click it, or press `⌥⇧Space` (Alt+Shift+Space on Windows), and the chat opens. Drag the pill anywhere; near the top or bottom of the screen it lies flat, like the Dock.
-
-The menu bar (on Windows, CLIque's icon in the taskbar) has the crew too, standing in a little felt strip. Hover an agent to switch it on or off, or to let it skip permission prompts (YOLO).
+- **The pill** sits on the edge of your screen with the crew inside, hopping while they work. Click it or press `⌥⇧Space` (Alt+Shift+Space on Windows) to open the chat from any app.
+- **The menu bar** (the taskbar on Windows) shows who's working and who needs you, with a switch for each agent.
+- **Your phone.** Pair the CLIque phone app with a QR code to chat and answer your agents' questions away from your desk, encrypted end to end.
 
 ## A crew per project
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/workspaces-dark.webp">
-  <img src="docs/images/workspaces-light.webp" alt="The workspace switcher: each project with who's working and who needs you">
+  <img src="docs/images/workspaces-light.webp" alt="A workspace's menu: who works here, its settings, put to sleep, and workspaces on your other computers to join">
 </picture>
 
-Give each project a workspace: a folder, the agents who work on it, and its own chat, notes and tasks. Your agents are the same everywhere, so pick who works where and they start in that project's folder. Every workspace runs at once; switch with the switcher, the dock at the foot of the sidebar or `⌃1`–`⌃9`, and an orange count says when another one needs you. Park a project you're not on: its agents stop, and pick up where they left off when you open it again.
+Give each project a workspace: its folder, the agents who work on it, and its own chat, channels and tasks. Your agents are the same everywhere; pick who works where. Every workspace runs at once, and an orange count tells you when another one needs you. Jump between them with `⌃1`–`⌃9`, and put one to sleep when you're not on it.
 
 <p align="center"><img src="docs/images/workspaces-switch.webp" alt="Switching from Docs site to Storefront and back: the crew slides over" width="1000"></p>
 
@@ -124,14 +134,18 @@ Give each project a workspace: a folder, the agents who work on it, and its own 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/computers-dark.webp">
-  <img src="docs/images/computers-light.webp" alt="Computers: Studio shares its crew, Workstation is linked, and an iPhone and a Pixel are paired">
+  <img src="docs/images/computers-light.webp" alt="Computers: Studio, Workstation and a laptop linked, a Mac mini nearby to link, and an iPhone and a Pixel paired">
 </picture>
 
-Link your computers, Macs and PCs alike: open Computers on both, click Link, check the code matches, and each one sees the whole crew. Chat with any agent and watch its terminal from either side. You can move an agent to another computer, and its conversation goes with it. Workspaces work across computers too: give a project's workspace the same name on each one, and it's one crew.
+Open **Computers** on two of your machines and they find each other. Click **Link**, check the code is the same on both screens, and each one sees the whole crew. Chat with any agent and watch its terminal from either side. Drag an agent to another computer and its conversation goes with it.
 
-## Share agents
+A workspace belongs to the computer that made it. Your other computers can **Join** it while that computer is on, and add agents of their own. Two workspaces with the same name on different computers stay separate.
 
-Export one agent or a few as a `.crew` file and send it to someone. They get the names, jobs, instructions and looks. Your folders and history stay with you.
+## Spend less
+
+- **Usage limits** for your Claude and Codex accounts, with the pace they're heading at and a heads-up before you run out.
+- **What it costs**, per agent and per task.
+- **Token savers**: six switches that cut what a crew spends, such as starting fresh after a long break and showing agents only the notes they haven't read. Each one measures what it saved.
 
 ## How agents talk to each other
 
@@ -146,16 +160,18 @@ crew who                                     # see who's around
 crew task list                               # pick up work from the Tasks board
 ```
 
-A question reaches a teammate even when it's busy with something else. It shows up at the teammate's next step, the teammate answers and carries on, and the asker has the answer within seconds instead of waiting for the teammate to finish.
-
-CLIque also decides who goes first when agents need each other, so they never end up waiting in circles. An agent that's being waited on can't wait on its waiter, work can't be handed back to an agent that's waiting for your answer, and two agents never edit the same file at once. When CLIque steps in, the chat says so in one quiet line.
+A question reaches a teammate even mid-task, so the answer comes back in seconds. CLIque also decides who goes first when agents need each other, so they never wait on each other in circles, and the chat says so in one quiet line.
 
 <p align="center"><img src="docs/images/right-of-way.webp" alt="June asks Ada while Ada is busy: June waits on her, Ada answers mid-task in two seconds and carries on" width="560"></p>
 
-Hand-offs show up in the chat with the sender's face next to them. Turn Autopilot off if you'd rather approve each one.
+Prefer to approve every hand-off? Turn Autopilot off.
+
+## Share agents
+
+Export one agent or a few as a `.crew` file and send it to a friend. They get the names, jobs, instructions and looks. Your folders and history stay with you.
 
 ## More
 
-- [The full guide](docs/guide.md) covers every setting, the files CLIque keeps in `~/.crew`, and how it works inside.
-- `npm run shots` renders every screen with a made-up crew. That's where these pictures come from.
-- The desktop app's code is in `desktop/`, the phone app's in `mobile/`, and the protocol they share in `shared/`. Run everything from the top folder: `npm start`, `npm test` and `npm run shots` reach into `desktop/`.
+- **[The full guide](docs/guide.md)** covers every setting, the files CLIque keeps in `~/.crew`, and how it works inside.
+- **The code:** the desktop app is in `desktop/`, the phone app in `mobile/`, and the protocol they share in `shared/`.
+- **The pictures:** `npm run shots` renders every screen with a made-up crew.

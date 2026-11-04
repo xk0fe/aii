@@ -502,7 +502,8 @@ const SHOTS = {
     await new Promise((r) => win.webContents.once('did-finish-load', r))
     await sleep(1200)
     // the sidebar and the board, without the chat column, so the cards stay readable
-    const board = await js(win, "return { x: 0, y: 0, width: Math.round(document.querySelector('.chat').getBoundingClientRect().x), height: innerHeight }")
+    // (the Tasks view may have no chat column: then the whole window)
+    const board = await js(win, "const x = Math.round(document.querySelector('.chat')?.getBoundingClientRect().x ?? 0); return { x: 0, y: 0, width: x > 200 ? x : innerWidth, height: innerHeight }")
     await record(win, 'tasks-loop', {
       clip: board, ms: 11500, width: 1000,
       during: async () => {
