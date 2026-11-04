@@ -7,7 +7,7 @@ It talks to CLIque on your computer (a Mac or a Windows PC) directly, over your 
 ## What's in it
 
 - **Pair:** on the computer, open **Computers** in CLIque and choose **Add a phone**, then point the phone at the QR code it shows (or paste the code). The camera keeps looking by itself: a code that didn't get through is tried again after a few seconds, one the computer turned away isn't. Or **Try the demo crew** (the first screen always offers it; App Review uses it).
-- **Chat:** everyone's messages, or your conversation with one agent (tap its face). Replies render light Markdown. Type `@` to bring someone in. Replies you've seen are marked read on the Mac too.
+- **Chat:** everyone's messages, or your conversation with one agent (tap its face, or the faces at the top right for **Conversations**: everyone and each agent, with what it's doing and what's new). Set for reading: one header line, an agent's words across the whole width without a bubble, and the Markdown agents write (headings, nested and numbered lists, checklists, tables, code blocks with Copy). Long-press a message to copy or share it; a button takes you back to the latest once you've scrolled up. The faces row above the message box shows while you type, to pick who it's for; type `@` to bring someone in. Replies you've seen are marked read on the Mac too.
 - **Needs you:** permission prompts, an agent's own questions and plans. They stack at the top of the chat and fill the Needs you tab (with a badge), where the creature asks in its own words ("Can I run npm run build?") above thumb-sized buttons; the answer goes back as `answer(ws, id, reply)`, exactly what `Hub.answer` takes.
 - **Crew:** the Crew room at the top (the crew together, each acting out its status: at a laptop, with a mug, holding up "OK?", asking, rising, asleep) with one headline, and the list below it, grouped by computer. The room folds away. Tap anyone for on/off, YOLO, Fast, New conversation, Restart and Mark idle.
 - **Workspaces:** the phone watches one workspace at a time, its own choice. The switcher is the top left of every tab.
@@ -52,13 +52,14 @@ src/
   state/    session.ts (paired computers, the one in use, its connection), storage.ts and prefs.ts (expo-secure-store), hooks.ts
   demo/     the neutral demo crew (design/DEMO-CREW.md) in two workspaces, answering like a computer would
   ui/       the creatures (avatar.ts specs and poses, creature.tsx, felt.ts: the felt edge as geometry), the Crew room
-            (room.ts), felt surfaces, the ask cards, feed, composer, theme tokens (v1 calm + v2 Berry and Fredoka)
+            (room.ts), felt surfaces, the ask cards, feed, Markdown (md.ts parses, markdown.tsx draws), composer, theme
+            tokens (v1 calm + v2 Berry and Fredoka)
   app/      the screens (expo-router)
 assets/     the icon layers, the splash, the felt textures, Fredoka (OFL)
 store/      the store listing drafts, privacy answers, review notes and screenshots
 scripts/smoke.ts   the network layer against a real computer, from a terminal
 test/              Jest: the test vectors, the client against a fake computer, pairing, the words and the room, the
-                   demo crew and the store config
+                   Markdown agents write, the demo crew and the store config
 ```
 
 ## Check it
