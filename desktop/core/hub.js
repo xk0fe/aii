@@ -1092,7 +1092,9 @@ export class Hub extends EventEmitter {
       this.warnPace(id, u, w)
     }
     this.saveUsage()
-    if (JSON.stringify([this.liveUsage(id), u.credits]) !== before) this.changed()
+    if (JSON.stringify([this.liveUsage(id), u.credits]) === before) return
+    this.changed()
+    this.emit('usage') // the account's, not this workspace's: Crew tells linked computers through the default's state
   }
 
   liveUsage(id) {

@@ -372,6 +372,13 @@ const USAGE = {
   claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 64, resetsAt: now + 140 * min, pace: { projected: 128, runsOut: now + 66 * min } }, { id: 'seven_day', pct: 38, resetsAt: now + 3.2 * day, pace: { projected: 71, runsOut: null } }] },
   codex: { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 5, resetsAt: now + 5.5 * day, pace: { projected: 23, runsOut: null } }], credits: { unlimited: false, balance: 12000 } },
 }
+// The linked computers' own accounts, which their agents run on (Crew.linkedUsage): Workstation's Claude well into its
+// week and its Codex barely used; the asleep Laptop's last word.
+COMPUTERS.links[0].usage = {
+  claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 18, resetsAt: now + 4 * 60 * min, pace: { projected: 40, runsOut: null } }, { id: 'seven_day', pct: 81, resetsAt: now + 1.4 * day, pace: { projected: 96, runsOut: null } }] },
+  codex: { label: 'Codex', at: now, windows: [{ id: 'five_hour', pct: 9, resetsAt: now + 3 * 60 * min }, { id: 'seven_day', pct: 22, resetsAt: now + 4 * day }] },
+}
+if (BIG) COMPUTERS.links[1].usage = { claude: { label: 'Claude', at: now - 3 * 60 * min, windows: [{ id: 'seven_day', pct: 12, resetsAt: now + 6 * day }] } }
 // what the work on a task cost so far
 for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [5, { cost: 1.31, tokens: 0, added: 42, removed: 18 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }], [3, { cost: 0.86, tokens: 0, added: 21, removed: 4 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })
 // the crew's spend: today against what's usual by now, and the last week and month
