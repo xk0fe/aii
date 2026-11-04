@@ -14,7 +14,7 @@ import { ATTACHMENTS } from './hub.js'
 import { CACHE, LINK_DIR } from './crew.js'
 import { DEFAULT } from './workspaces.js'
 import { keyPair, privateKey, publicKey } from './phones.js'
-import { VERSION, PORT, SALT, CLOSE, CALLS, TASK_OPS, b64, unb64, utf8, concat, keyInfo, nonce } from 'crew-shared/protocol.js'
+import { VERSION, PORT, SALT, CLOSE, CALLS, TASK_OPS, CHANNEL_OPS, b64, unb64, utf8, concat, keyInfo, nonce } from 'crew-shared/protocol.js'
 import { diff } from 'crew-shared/sync.js'
 
 const TRIES = 5 // failed handshakes from one address within a minute, before it waits a minute (CLOSE.tooMany)
@@ -65,6 +65,8 @@ export function phoneState(s) {
   const { parked, autopilot, feed, reads, usage, spend, tasks, workspace, workspaces } = s
   return {
     parked, autopilot, feed, reads, usage, spend, tasks, workspace, workspaces,
+    // the workspace's channels, #general first: each with its brief and who's in it (no members: everyone)
+    channels: (s.channels ?? []).map(({ id, name, brief, members }) => ({ id, name, ...(brief && { brief }), ...(members && { members }) })),
     agents: s.agents.map(({ prompt, args, images, cwd, ...a }) => a),
     providers: Object.fromEntries(Object.entries(s.providers).map(([id, p]) => [id, { label: p.label }])),
     // this computer first, then the linked ones
@@ -326,7 +328,25 @@ class Session {
     }
     const calls = {
       watch: (ws) => this.watch(hub(ws)),
-      send: (ws, to, text, images, opts) => crew.send(to ?? '', text, attached(images), { fresh: Boolean(opts?.fresh), re: opts?.re }, hub(ws)),
+      send: (ws, to, text, images, opts) => {
+        const h = hub(ws)
+        // said in a channel (its id): Auto picks among its members, and its agents get its brief
+        const channel = opts?.channel == null ? undefined : String(opts.channel)
+        if (channel !== undefined && !h.channel(channel)) throw new Error('that channel is gone: it was deleted on the computer')
+        return crew.send(to ?? '', text, attached(images), { fresh: Boolean(opts?.fresh), re: opts?.re, ...(channel !== undefined && { channel }) }, h)
+      },
+      // a channel made, changed or deleted: channelAction's, minus the snapshot it hands back (the watch sends it)
+      channel: (ws, op, id, arg) => {
+        hub(ws)
+        if (!CHANNEL_OPS.includes(op)) throw new Error(`"${op}" isn't a channel action`)
+        const a = arg && typeof arg === 'object' ? arg : {}
+        const clean = {
+          ...(typeof a.name === 'string' && { name: a.name }),
+          ...(typeof a.brief === 'string' && { brief: a.brief }),
+          ...('members' in a && { members: Array.isArray(a.members) ? a.members.map(String) : null }),
+        }
+        return { id: crew.channelAction(op, op === 'create' ? null : String(id ?? ''), clean, ws).id }
+      },
       answer: (ws, id, reply) => crew.feedAction(id, 'answer', [reply ?? {}], hub(ws)),
       approve: (ws, id) => crew.feedAction(id, 'approve', [], hub(ws)),
       drop: (ws, id) => crew.feedAction(id, 'drop', [], hub(ws)),

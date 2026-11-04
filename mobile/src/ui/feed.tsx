@@ -5,8 +5,8 @@
 import { memo, type ReactNode } from 'react'
 import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native'
 
-import type { Agent, FeedEntry } from '@/net/types'
-import { familyOf } from '@/state/hooks'
+import type { Agent, Channel, FeedEntry } from '@/net/types'
+import { channelOf, familyOf, GENERAL } from '@/state/hooks'
 
 import { AskSummary, askVerb } from './ask'
 import { agentColor } from './avatar'
@@ -23,6 +23,7 @@ export type FeedCtx = {
   byName: Map<string, Agent>
   byId: Map<string, FeedEntry>
   here: string | null // the agent whose conversation this is
+  channels: Channel[] | null // in a conversation (which spans the channels): each message says where it was said
   unread: Set<string>
   divider: string | null // the entry the "New" line goes above
   onFace: (name: string) => void
@@ -70,6 +71,14 @@ function Quote({ e, c }: { e: FeedEntry; c: FeedCtx }) {
   )
 }
 
+// In a conversation with one agent, which spans the channels: " · #ship" after a caption said outside #general.
+function Where({ e, c }: { e: FeedEntry; c: FeedCtx }) {
+  if (!c.channels) return null
+  const id = channelOf(e, c.channels)
+  if (id === GENERAL) return null
+  return <Text style={{ color: c.t.fg3 }}>{`  #${c.channels.find((x) => x.id === id)?.name ?? id}`}</Text>
+}
+
 // An agent's line: its face and a caption (name, what it did, time) on one line, then what it said, full width.
 function Said({ e, c, cont, caption, quote, long = true, children }: { e: FeedEntry; c: FeedCtx; cont: boolean; caption: ReactNode; quote: boolean; long?: boolean; children: ReactNode }) {
   const a = someone(e.from, c.byName)
@@ -83,6 +92,7 @@ function Said({ e, c, cont, caption, quote, long = true, children }: { e: FeedEn
           </Press>
           <Text style={[styles.capText, { color: c.t.fg2 }]} numberOfLines={1}>
             {caption}
+            <Where e={e} c={c} />
           </Text>
           <Text style={[styles.time, { color: c.t.fg3 }]}>{clock(e.ts)}</Text>
           {fresh ? <View style={[styles.unreadDot, { backgroundColor: c.t.accent }]} accessibilityLabel="new" /> : null}
@@ -233,7 +243,7 @@ export const FeedItem = memo(function FeedItem({ e, prev, c }: { e: FeedEntry; p
   // what it answers, quoted only when that isn't right above it (or quoted already by the message above, its own)
   const quoted = e.re ? c.byId.get(e.re) : undefined
   const near = !quoted || quoted === prev || Boolean(prev && prev.from === e.from && prev.re && c.byId.get(prev.re) === quoted)
-  const cont = Boolean(prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && !prev.auto === !e.auto && e.ts - prev.ts < 120000 && near && e.kind !== 'ask' && e.kind !== 'event')
+  const cont = Boolean(prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && (prev.channel ?? '') === (e.channel ?? '') && !prev.auto === !e.auto && e.ts - prev.ts < 120000 && near && e.kind !== 'ask' && e.kind !== 'event')
   const divider = c.divider === e.id ? (
     <View style={styles.newLine} accessibilityLabel="New replies">
       <View style={[styles.rule, { backgroundColor: t.accent, opacity: 0.4 }]} />
@@ -287,7 +297,8 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
   if (e.from === 'you') {
     const to = e.cc ?? [e.to ?? '']
     // in a conversation with one agent, who it went to goes without saying
-    const said = !cont && (!c.here || e.auto || e.queued || e.fresh || to.length > 1 || familyOf(to[0]) !== c.here)
+    const elsewhere = Boolean(c.channels) && channelOf(e, c.channels ?? undefined) !== GENERAL
+    const said = !cont && (!c.here || e.auto || e.queued || e.fresh || to.length > 1 || familyOf(to[0]) !== c.here || elsewhere)
     return (
       <Pressable onPress={Keyboard.dismiss} onLongPress={() => c.onLong(e)} delayLongPress={320} accessible={false} style={[styles.me, cont && styles.cont]}>
         {said ? (
@@ -302,6 +313,7 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
               ))}
               {e.queued ? <Text style={{ color: t.fg3 }}> · queued</Text> : null}
               {e.fresh ? <Text style={{ color: t.accent }}> · new conversation</Text> : null}
+              <Where e={e} c={c} />
             </Text>
             <Text style={[styles.time, { color: t.fg3 }]}>{clock(e.ts)}</Text>
           </View>

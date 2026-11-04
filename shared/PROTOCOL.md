@@ -85,7 +85,8 @@ A phone watches **one workspace at a time, its own choice**: never the one on th
 | Call | Arguments | What it does |
 |---|---|---|
 | `watch` | `ws` | Stream workspace `ws`. Replies `{ v, state }` and patches follow. |
-| `send` | `ws, to, text, images?, opts?` | A message, as from the Mac's chat. `to` is `''` (CLIque picks), a name, or names with commas. `opts`: `{ fresh?, re? }`. Replies with what CLIque says, like `"sent to @kim\n"`. |
+| `send` | `ws, to, text, images?, opts?` | A message, as from the Mac's chat. `to` is `''` (CLIque picks), a name, or names with commas. `opts`: `{ fresh?, re?, channel? }`: `channel` is the id of the channel it's said in (none: #general); Auto picks among that channel's members, and its agents get its brief. A channel that's gone is refused. Replies with what CLIque says, like `"sent to @kim\n"`. |
+| `channel` | `ws, op, id, arg?` | The workspace's channels. `op` is `create` (`id` null, `arg` `{ name, brief?, members? }`), `edit` (`arg` any of `{ name, brief, members }`; `members: null` is everyone again; #general keeps its name and has everyone) or `remove` (never #general; its messages stay, shown in #general). Replies `{ id }`; the change arrives with the watch. |
 | `answer` | `ws, id, reply` | Answer a question card. `reply` is what `Hub.answer` takes: `{ allow, always?, note? }`, `{ answers }` or `{ terminal: true }`. |
 | `approve`, `drop` | `ws, id` | A hand-off waiting for your approval (Autopilot off). |
 | `read` | `ws, seen` | `{ name: ts }`: replies seen up to then, in every channel, so unread counts agree with the Mac. `{ 'name#channel': ts }` reads one channel's (`#general` for messages with no `channel`). |
@@ -109,7 +110,7 @@ It's `Crew.snapshot(hub)` for the watched workspace, minus what a phone mustn't 
 - **`providers`:** `{ id: { label } }`.
 - **`roster` and `theme`:** dropped.
 - **Everything else as is:** `feed`, `reads`, `usage`, `spend`, `tasks`, `workspaces`, `workspace`, `parked`, `autopilot`.
-- **Channels:** a feed entry said in a channel other than #general carries `channel` (its id), and `reads.channels` is `{ channel: { name: ts } }`, read marks per channel (`reads.agents` is #general's). The channel list itself isn't sent yet: a phone shows every channel in one chat, and what it sends goes to #general.
+- **`channels`:** the workspace's channels, #general first: `[{ id, name, brief?, members? }]` (no `members`: everyone in the workspace). A feed entry said in a channel other than #general carries `channel` (its id; one whose channel was deleted shows in #general), an agent working on something said in a channel carries `channel` too, and `reads.channels` is `{ channel: { name: ts } }`, read marks per channel (`reads.agents` is #general's). A Mac from before this sends no `channels`: the phone then shows one chat for everything, and what it sends goes to #general.
 
 ## Sync
 

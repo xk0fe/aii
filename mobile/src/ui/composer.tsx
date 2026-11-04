@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 
-import type { Agent } from '@/net/types'
+import type { Agent, Channel } from '@/net/types'
 
 import { agentColor } from './avatar'
 import { nameInk } from './color'
@@ -19,6 +19,8 @@ type Props = {
   t: Theme
   agents: Agent[] // the crew, without clones
   convo: string | null
+  channel?: Channel | null // the channel it's said in (none: the Mac has no channels)
+  place: string // where it's said (workspace and channel, or agent): each place keeps its own draft
   unread: Map<string, number>
   disabled: string | null // why sending is off
   background: string
@@ -32,8 +34,19 @@ function mentionAt(text: string, cursor: number) {
   return m ? { query: m[2].toLowerCase(), start: cursor - m[2].length - 1 } : null
 }
 
-export function Composer({ t, agents, convo, unread, disabled, background, onFace, onSend }: Props) {
-  const [text, setText] = useState('')
+// What you'd started typing, per place, as on the computer: a half-written message stays where you wrote it.
+const drafts = new Map<string, string>()
+
+export function Composer({ t, agents, convo, channel, place, unread, disabled, background, onFace, onSend }: Props) {
+  const [text, setText] = useState(() => drafts.get(place) ?? '')
+  const [was, setWas] = useState(place)
+  if (was !== place) {
+    // moved to another channel or conversation: this one's draft is kept, that one's comes back
+    if (text.trim()) drafts.set(was, text)
+    else drafts.delete(was)
+    setWas(place)
+    setText(drafts.get(place) ?? '')
+  }
   const [focused, setFocused] = useState(false)
   const [cursor, setCursor] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -49,7 +62,8 @@ export function Composer({ t, agents, convo, unread, disabled, background, onFac
         .map((x) => x.a)
     : []
   const target = convo ? agents.find((a) => a.name === convo) : null
-  const placeholder = disabled ?? (target ? `Message ${displayName(target.name).base}` : 'Message the crew')
+  const placeholder = disabled ?? (target ? `Message ${displayName(target.name).base}` : channel ? `Message #${channel.name}` : 'Message the crew')
+  const all = channel ? `#${channel.name}` : 'Everyone'
 
   const insert = (a: Agent) => {
     if (!at) return
@@ -60,12 +74,15 @@ export function Composer({ t, agents, convo, unread, disabled, background, onFac
   }
   const send = async () => {
     const body = text.trim()
+    const from = place
     if (!body || busy || disabled) return
     setBusy(true)
     setError('')
     try {
       await onSend(body)
-      setText('')
+      // sent: gone from where it was written; the box empties unless you've moved on and it holds something else
+      if (drafts.get(from)?.trim() === body) drafts.delete(from)
+      setText((now) => (now.trim() === body ? '' : now))
       setCursor(0)
     } catch (e) {
       setError(String((e as Error)?.message ?? e))
@@ -96,8 +113,10 @@ export function Composer({ t, agents, convo, unread, disabled, background, onFac
       {focused ? (
       <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(90)}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.to} keyboardShouldPersistTaps="handled">
-        <Press onPress={() => onFace(null)} style={[styles.all, { backgroundColor: convo ? t.btn : t.dark ? 'rgba(10,132,255,0.2)' : 'rgba(0,122,255,0.12)' }]} accessibilityRole="button" accessibilityState={{ selected: !convo }} accessibilityLabel="Everyone's messages">
-          <Text style={[styles.allText, { color: convo ? t.fg2 : t.accent }]}>Everyone</Text>
+        <Press onPress={() => onFace(null)} style={[styles.all, { backgroundColor: convo ? t.btn : t.dark ? 'rgba(10,132,255,0.2)' : 'rgba(0,122,255,0.12)' }]} accessibilityRole="button" accessibilityState={{ selected: !convo }} accessibilityLabel={channel ? `#${channel.name}` : "Everyone's messages"}>
+          <Text style={[styles.allText, { color: convo ? t.fg2 : t.accent }]} numberOfLines={1}>
+            {all}
+          </Text>
         </Press>
         {agents.filter((a) => a.on || a.name === convo).map((a) => {
           const on = convo === a.name

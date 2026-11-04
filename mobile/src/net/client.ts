@@ -9,7 +9,7 @@ import { APP_NAME } from '../brand'
 import { Channel, keyPair, phoneKeys, type Bytes, type KeyPair } from './crypto'
 import { urlFor, type PairCode } from './pairing'
 import { apply, b64, CLOSE, pack, unb64, unpack, VERSION } from './shared'
-import type { MacRecord, Reply, State } from './types'
+import type { ChannelEdit, MacRecord, Reply, SendOpts, State } from './types'
 
 // ---- what the client needs from its runtime ------------------------------------------------------------
 
@@ -563,8 +563,12 @@ export class CrewClient {
   private get here() {
     return this.snap.shown ?? this.snap.ws
   }
-  send(to: string, text: string, opts?: { fresh?: boolean; re?: string }) {
+  send(to: string, text: string, opts?: SendOpts) {
     return this.call<string>('send', this.here, to, text, [], opts ?? {})
+  }
+  // make, change or delete a channel of the workspace on screen; the change itself comes with the watch
+  channel(op: 'create' | 'edit' | 'remove', id: string | null, arg?: ChannelEdit) {
+    return this.call<{ id: string }>('channel', this.here, op, id, arg ?? {})
   }
   answer(id: string, reply: Reply) {
     return this.call('answer', this.here, id, reply)

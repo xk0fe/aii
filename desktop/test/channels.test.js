@@ -52,6 +52,8 @@ const msgs = () => crew.hub.feed.filter((e) => e.kind === 'msg')
 
 test('channel names, #general, and editing, renaming and removing channels in config.json', () => {
   assert.equal(channelName('#iOS Release!'), 'ios-release')
+  // accents drop, they don't split a word (the phone makes the same names: mobile/src/app/channel.tsx)
+  assert.deepEqual(['Café', 'Über Team', 'Résumé review', 'naïve-ui'].map(channelName), ['cafe', 'uber-team', 'resume-review', 'naive-ui'])
   const c = { agents: [{ name: 'ada' }, { name: 'bo' }] }
   assert.deepEqual(channelsIn(c), [{ id: 'general', name: 'general', brief: '' }])
   const id = addChannel(c, 'default', { name: 'Review', brief: '  look, do not touch  ', members: ['ada', 'ada'] })
