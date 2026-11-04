@@ -706,6 +706,7 @@ function needText({ agent, ask }) {
   if (!q) return agent.activity ? `Waiting in its terminal · ${activityWords(agent.activity)}` : 'Waiting in its terminal'
   if (q.type === 'question') return q.questions?.[0]?.question ?? 'Has a question'
   if (q.type === 'plan') return 'Wants you to approve a plan'
+  if (q.trust) return `Asks to trust its folder, ${shortPath(q.detail)}`
   if (q.app) return `Wants to ${lowerFirst(q.title ?? 'change CLIque')}` // an agent tool: its code is no command
   return q.code ? `Wants to run ${q.code.split('\n')[0]}` : `Wants to use ${q.title ?? 'a tool'}`
 }
@@ -1339,7 +1340,7 @@ function askCard(e, draft = {}, { queue = false } = {}) {
   const note = (placeholder) => `<input class="ask-note" data-note value="${esc(draft.note ?? '')}" placeholder="${placeholder}" spellcheck="false">`
   // in the queue its terminal is the icon beside its name; a Codex agent's prompt is handed over from here. An agent
   // tool's is answered only here: its terminal is just waiting.
-  const elsewhere = q.app ? '' : e.cli === 'codex'
+  const elsewhere = q.app ? '' : e.cli === 'codex' && !q.trust
     ? `<button class="ask-elsewhere" data-answer="terminal" title="${name} shows its own prompt once you hand it over">Answer in its terminal instead</button>`
     : queue ? '' : '<span class="ask-elsewhere">or answer in its terminal</span>'
   if (q.type === 'question') {
@@ -1354,6 +1355,16 @@ function askCard(e, draft = {}, { queue = false } = {}) {
         <input class="ask-other" data-other="${qi}" value="${esc(draft.other?.[qi] ?? '')}" placeholder="Something else" spellcheck="false">
       </div>`).join('')}
       ${quick && !elsewhere ? '' : `<div class="ask-actions">${quick ? '' : `<button class="btn primary" data-answer="send" ${ready ? '' : 'disabled'}>Send ${q.questions.length > 1 ? 'answers' : 'answer'}</button>`}${elsewhere}</div>`}
+      <div class="ask-error"></div>
+    </div>`
+  }
+  // a CLI's "do you trust this folder?" (core/hub.js trustCard): CLIque picks your answer in its terminal for you
+  if (q.trust) {
+    const cli = { claude: 'Claude Code', codex: 'Codex' }[e.cli] ?? 'It'
+    return `<div class="ask-card trust" data-ask="${e.id}">
+      <div class="ask-title">${ICONS.folder}<span>${esc(q.title)}</span></div>
+      <div class="ask-detail ask-path" title="${esc(q.detail)}">${esc(shortPath(q.detail))}</div>
+      <div class="ask-actions"><button class="btn primary" data-answer="allow" title="${cli} can then read, edit and run files there">Trust</button><button class="btn deny" data-answer="deny" title="${cli} quits, and ${name} stays stopped until you start it again">Don't trust</button>${elsewhere}</div>
       <div class="ask-error"></div>
     </div>`
   }
@@ -1420,13 +1431,14 @@ function needsHTML(needs, expanded, drafts = new Map()) {
 
 // An answered card, in one line or two.
 function askSummary(q, a) {
-  const what = q.type === 'question' ? '' : `<span class="ask-what">${esc(q.type === 'plan' ? 'the plan' : q.title ?? '')}</span>`
+  const what = q.type === 'question' ? '' : `<span class="ask-what">${esc(q.type === 'plan' ? 'the plan' : q.trust ? shortPath(q.detail) : q.title ?? '')}</span>`
   const mark = (cls, icon) => `<span class="ask-mark ${cls}">${ICONS[icon]}</span>`
   if (a.stale) return `${mark('', 'dash')}<span>No longer waiting</span>${what}`
   if (a.by === 'terminal') return `${mark('', 'keyboard')}<span>${a.handedOver ? 'Handed to its terminal' : 'Answered in the terminal'}</span>${what}`
   if (a.by === 'cli') return `${mark('no', 'close')}<span>Claude Code said no${a.why ? ` (${esc(a.why)})` : ''}</span>${what}`
   if (q.type === 'question') return Object.entries(a.answers ?? {}).map(([k, v]) => `<div class="ask-answer">${mark('ok', 'check')}<span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')
   if (q.type === 'plan') return a.allow ? `${mark('ok', 'check')}<span>Plan approved</span>` : `${mark('', 'undo')}<span>Keep planning${a.note ? `: “${esc(a.note)}”` : ''}</span>`
+  if (q.trust) return a.allow ? `${mark('ok', 'check')}<span>Trusted</span>${what}` : `${mark('no', 'close')}<span>Not trusted</span>${what}`
   if (a.failed) return `${mark('no', 'close')}<span>Allowed, but it didn't work: ${esc(a.failed)}</span>${what}`
   if (a.allow) return `${mark('ok', 'check')}<span>Allowed${a.always ? ` · ${esc(a.always)}` : ''}</span>${what}`
   return `${mark('no', 'close')}<span>Said no${a.note ? `: “${esc(a.note)}”` : ''}</span>${what}`

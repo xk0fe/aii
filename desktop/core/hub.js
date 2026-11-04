@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { adapters, ASK_WAIT } from './adapters.js'
+import { adapters, ASK_WAIT, TRUST } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt, quickAsk } from './promptgen.js'
 import { resolveCommand, withTools } from './launch.js'
@@ -39,7 +39,8 @@ const RUNTIME = 'runtime.json'
 // How far back the first look through the agents' logs goes for what their work cost (Hub.lookBack, core/backfill.js).
 const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
-  'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks']
+  'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks',
+  'trustAsk', 'trustAt']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 // config.json, for every workspace's hub to share.
@@ -69,6 +70,12 @@ const PASSING_ERRORS = new Set(['server_error', 'overloaded', 'unknown', 'max_ou
 const API_RETRY = [20000, 60000, 180000]
 // How often an open question looks at its agent's transcript, in case Claude Code settled it by itself (see watchAsk).
 const ASK_CHECK = 5000
+// Answering a trust question from the chat (Hub.pickTrust): not before this long after it asked, a look at its screen
+// this long after it last drew, again after PICK_WAIT if it doesn't, and at most PICK_KEYS arrow keys.
+const TRUST_SETTLE = 1500
+const PICK_SETTLE = 300 // (Claude Code ignores keys for 150 ms after it draws)
+const PICK_WAIT = 1000
+const PICK_KEYS = 4
 const CONTINUE = 'continue'
 // An account's usage limits: crossing these (percent of a window) is said once each, in the chat and as a notification.
 // At NEAR_LIMIT of its 5-hour or weekly window, routing prefers agents on other providers among equal area matches.
@@ -567,7 +574,8 @@ export class Hub extends EventEmitter {
     a.checks = this.checksFor(a) // what it checks before building, as its system prompt says (see apply)
     const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session, attachments: ATTACHMENTS, bin: this.bin, checks: a.checks })
     a.sessionId = resume ?? session // the conversation this process runs (see onStatusLine)
-    Object.assign(a, { readyAfter, trust, trustAsk: false, boot: '' }) // see onOutput
+    this.stopPick(a, { stale: true })
+    Object.assign(a, { readyAfter, trust, trustAsk: false, trustNo: false, boot: '' }) // see onOutput
     a.resumed = Boolean(resume)
     if (!resume) this.newConvo(a)
     try {
@@ -611,15 +619,114 @@ export class Hub extends EventEmitter {
   // The first time a CLI runs in a folder it asks whether you trust it, YOLO or not, and nothing typed reaches its
   // prompt until that's answered: Codex would take the Enter after the first message as "Trust and continue" and lose
   // the message, and Claude Code doesn't even say it started. So until it's up and has taken its first prompt, Crew
-  // watches its screen for that question and hands it to you. Messages wait in its queue meanwhile.
+  // watches its screen for that question and hands it to you, as a card in the chat (trustCard). Messages wait in its
+  // queue meanwhile. While it's up the screen is still read: answering from the chat picks by what's selected there.
   onOutput(name, data) {
     const a = this.agents.get(name)
-    if (!a?.trust || a.trustAsk) return
+    if (!a?.trust) return
     a.boot = (a.boot + data).slice(-6000)
-    if (!a.trust.test(flat(a.boot))) return
+    if (a.trustAsk) return a.trustPick && this.pickSoon(a)
+    if (!a.trust.ask.test(flat(a.boot))) return
     clearTimeout(a.readyTimer)
-    Object.assign(a, { trustAsk: true, boot: '' })
-    this.needsYou(a, `asks whether to trust its folder, ${a.cwd}. Answer in its terminal: messages wait until then`)
+    Object.assign(a, { trustAsk: true, trustAt: Date.now() })
+    this.trustCard(a)
+  }
+
+  // Its trust question as a card in the chat, like a permission prompt's: Trust or Don't trust there answers it in
+  // its terminal for you (pickTrust), and answering in the terminal itself closes the card.
+  trustCard(a) {
+    const cli = this.providerOf(a)?.cli ?? 'claude'
+    const folder = String(a.cwd ?? '')
+    const base = path.basename(expand(folder)) || folder
+    const alert = `asks whether to trust its folder, ${folder}. Messages wait until you answer`
+    const ask = { type: 'permission', trust: true, title: 'Trust this folder', detail: folder, say: `First time in ${base}. Can I trust this folder?`, always: [], alert }
+    const e = this.post({ kind: 'ask', from: a.name, to: 'you', ask, cli })
+    this.asks.set(e.id, { name: a.name, cli, input: {}, entry: e, trust: true, resolve() {} })
+    this.record(a.name, { waits: 1 })
+    this.emit('alert', a, alert)
+    this.setStatus(a, 'waiting')
+  }
+
+  // Your answer from the chat (or a phone). Trusting it answers the same question from every agent on the same CLI in
+  // that folder: it's the folder that's trusted, and they all started before it was.
+  answerTrust(id, q, reply) {
+    const a = this.agents.get(q.name)
+    if (reply.terminal || !a?.trustAsk) return this.settle(id, '', { by: 'terminal', handedOver: true }, true)
+    const yes = Boolean(reply.allow)
+    const same = yes ? [...this.asks].filter(([, x]) => x.trust && x.name !== q.name && x.cli === q.cli && folderOf(this.agents.get(x.name)) === folderOf(a)) : []
+    for (const [other, x] of [[id, q], ...same]) {
+      const b = this.agents.get(x.name)
+      this.settle(other, '', { by: 'you', allow: yes }, true)
+      if (b?.trustAsk) this.pickTrust(b, yes, x.entry)
+    }
+  }
+
+  // Answering it for you: its selection moves one arrow key at a time, and Enter goes in only once its screen shows
+  // your answer selected. (Claude Code redraws the question right after drawing it, back on "No, exit", so keys sent
+  // blind can quit it; not before TRUST_SETTLE has passed since it asked, either.) The card says your answer meanwhile;
+  // if it can't be picked, the card says what became of it instead, and the question goes back to you in its terminal.
+  pickTrust(a, yes, entry) {
+    this.stopPick(a)
+    a.trustPick = { want: yes ? 'yes' : 'no', keys: 0, due: 0, entry }
+    a.trustPick.timer = setTimeout(() => this.stepTrust(a), Math.max(0, (a.trustAt ?? 0) + TRUST_SETTLE - Date.now()))
+  }
+
+  // Its screen changed while Crew is picking: look again once it has settled, but no later than PICK_WAIT after the last
+  // key (a CLI can keep drawing for a while: Codex animates its title for half a minute after it starts). Before the
+  // first look, TRUST_SETTLE stands.
+  pickSoon(a) {
+    const p = a.trustPick
+    if (!p.due) return
+    clearTimeout(p.timer)
+    p.timer = setTimeout(() => this.stepTrust(a), Math.max(0, Math.min(PICK_SETTLE, p.due - Date.now())))
+  }
+
+  stepTrust(a) {
+    const p = a.trustPick
+    if (!p) return
+    clearTimeout(p.timer)
+    if (!a.trustAsk || !this.runner.running(a.name)) return this.stopPick(a, { stale: true })
+    const screen = flat(a.boot)
+    if (trustSelected(screen, a.trust) === p.want) {
+      this.stopPick(a)
+      this.runner.write(a.name, '\r')
+      return this.trustAnswered(a)
+    }
+    const key = trustKey(screen, a.trust, p.want)
+    if (!key || p.keys >= PICK_KEYS) {
+      this.stopPick(a, { by: 'terminal', handedOver: true })
+      return this.needsYou(a, `asks whether to trust its folder, and CLIque couldn't answer it for you. Answer in its terminal: messages wait until then`)
+    }
+    p.keys += 1
+    p.due = Date.now() + PICK_WAIT
+    this.runner.write(a.name, key)
+    p.timer = setTimeout(() => this.stepTrust(a), PICK_WAIT) // in case it doesn't redraw
+  }
+
+  // The pick ends: with Enter in (its card already says your answer), or without, and then its card says `answer`.
+  stopPick(a, answer) {
+    const p = a.trustPick
+    if (!p) return
+    clearTimeout(p.timer)
+    a.trustPick = null
+    if (answer && p.entry) this.amend(p.entry, { answer: { ...answer, at: Date.now() } })
+  }
+
+  // Enter on its trust question, from its terminal or from the chat: it's starting up now, or quitting if "no" was
+  // selected (onExit then knows it wasn't a failed resume). A card still up was answered in the terminal.
+  trustAnswered(a) {
+    const no = trustSelected(flat(a.boot), a.trust) === 'no'
+    Object.assign(a, { trustAsk: false, trustNo: no, boot: '' })
+    for (const [id, q] of this.asks) if (q.trust && q.name === a.name) this.settle(id, '', { by: 'terminal' }, true)
+    this.setStatus(a, 'starting')
+    this.readyIn(a)
+  }
+
+  // It exited or was turned off with its question up: the question went with it.
+  dropTrust(a) {
+    this.stopPick(a, { stale: true })
+    a.trustAsk = false
+    for (const [id, q] of this.asks) if (q.trust && q.name === a.name) this.settle(id, '', { stale: true }, true)
   }
 
   restart(name, fresh = false) {
@@ -1308,11 +1415,12 @@ export class Hub extends EventEmitter {
     if (!a) return
     this.forgetAsks(name)
     this.setStatus(a, 'stopped')
-    if (a.resumed && code !== 0 && ms < 5000) {
+    // (quitting because its folder wasn't trusted is no failed resume: its conversation stays)
+    if (a.resumed && code !== 0 && ms < 5000 && !a.trustNo) {
       this.post({ kind: 'event', from: name, text: "couldn't resume the previous session, starting a fresh one" })
       return this.launch(a, true)
     }
-    this.post({ kind: 'event', from: name, text: code ? `exited (code ${code})` : 'exited' })
+    this.post({ kind: 'event', from: name, text: a.trustNo ? "quit: its folder wasn't trusted" : code ? `exited (code ${code})` : 'exited' })
     if (a.cloneOf) this.dismiss(name) // a clone isn't restarted: what it had queued goes back to its original
   }
 
@@ -1395,7 +1503,11 @@ export class Hub extends EventEmitter {
     this.noteGroups(a)
     // when its conversation last went to the API (its cache lasts from then: see coldFor). A sub-agent's steps don't count.
     if (!e.agent_id && ['UserPromptSubmit', 'PostToolUse', 'Stop', 'StopFailure'].includes(e.hook_event_name)) (this.convoOf(a).lastAt = a.hookAt), this.saveConvos()
-    if (e.hook_event_name === 'SessionStart' || e.hook_event_name === 'UserPromptSubmit') Object.assign(a, { trust: null, boot: '' }) // past any trust question
+    if (e.hook_event_name === 'SessionStart' || e.hook_event_name === 'UserPromptSubmit') {
+      // past any trust question: one still up was answered after all (a late redraw can bring its card back)
+      if (a.trustAsk && !e.agent_id) this.stopPick(a, { by: 'terminal' }), this.trustAnswered(a)
+      Object.assign(a, { trust: null, trustNo: false, boot: '' })
+    }
     // where its CLI keeps this conversation, so a move to another computer can take it along (core/move.js)
     if (e.transcript_path && e.session_id && !e.agent_id) a.transcript = { id: e.session_id, path: String(e.transcript_path) }
     if (e.hook_event_name === 'SessionStart' && e.session_id && !e.agent_id) a.sessionId = e.session_id // /clear starts another
@@ -1679,6 +1791,7 @@ export class Hub extends EventEmitter {
     const q = this.asks.get(id)
     if (!q) throw new Error('that question has already been answered')
     if (q.plan) return this.answerTool(id, q, reply)
+    if (q.trust) return this.answerTrust(id, q, reply)
     if (reply.terminal) return this.settle(id, '', { by: 'terminal', handedOver: true }, true)
     const { output, answer } = decide(q.entry.ask, q.input, q.cli, reply)
     this.settle(id, JSON.stringify(output), { by: 'you', ...answer })
@@ -1730,7 +1843,7 @@ export class Hub extends EventEmitter {
   // Its turn is over, so nothing it asked in that turn is waiting any more. (A sub-agent's question can outlive the
   // turn: those stay. So does an agent tool's card: what you decide comes to the agent as a message.)
   closeAsks(a) {
-    for (const [id, q] of this.asks) if (q.name === a.name && !q.plan && !q.input.agent_id && !this.checkAsk(id, true)) this.settle(id, '', { stale: true }, true)
+    for (const [id, q] of this.asks) if (q.name === a.name && !q.plan && !q.trust && !q.input.agent_id && !this.checkAsk(id, true)) this.settle(id, '', { stale: true }, true)
   }
 
   // An agent that exits, restarts or goes away isn't waiting on its questions any more (even if a hook
@@ -1853,6 +1966,7 @@ export class Hub extends EventEmitter {
   }
 
   setStatus(a, status) {
+    if ((status === 'stopped' || status === 'off') && (a.trustAsk || a.trustPick)) this.dropTrust(a)
     if (a.status !== status) {
       const spent = Date.now() - a.since
       if (a.status === 'working') this.record(a.name, { activeMs: spent })
@@ -2005,16 +2119,12 @@ export class Hub extends EventEmitter {
     if (!a) return
     // Codex waits on its hook while a question is in the chat: typing in its terminal hands the question over.
     // Only real keys count, not what the terminal reports by itself (focus in/out, cursor position, mouse).
-    if (typed(data)) for (const [id, q] of this.asks) if (q.name === name && q.cli === 'codex') this.answer(id, { terminal: true })
+    if (typed(data)) for (const [id, q] of this.asks) if (q.name === name && q.cli === 'codex' && !q.trust) this.answer(id, { terminal: true })
     if (typed(data)) a.typedAt = Date.now()
+    if (typed(data)) this.stopPick(a, { by: 'terminal' }) // you're answering its trust question yourself
     hold(a, 3000)
     this.runner.write(name, data)
-    // Enter on its trust question: it's starting up now (or quitting, if that's what you picked)
-    if (a.trustAsk && data.includes('\r')) {
-      a.trustAsk = false
-      this.setStatus(a, 'starting')
-      return this.readyIn(a)
-    }
+    if (a.trustAsk && data.includes('\r')) return this.trustAnswered(a)
     if (a.status === 'waiting' && data === '\r') this.setStatus(a, 'working')
     // Esc / Ctrl+C interrupt Claude without a Stop hook, so assume idle unless a hook says otherwise.
     if ((data === '\x1b' || data === '\x03') && (a.status === 'working' || a.status === 'waiting')) {
@@ -3432,6 +3542,13 @@ export class Hub extends EventEmitter {
       Object.assign(a, { subs: new Map(), subPending: [] })
       this.runs.set(p.tag, { name, file: this.at(GROUPS, `${name}.${p.tag}`), pid: p.pid, at: 0 })
       adopted.add(name)
+      // its trust question, up or still to come: watched for again, and its card back up (the last one closed with the
+      // chat when CLIque quit) with the screen as it last was
+      if (a.status === 'starting' || a.trustAsk) Object.assign(a, { trust: TRUST[this.providerOf(a)?.cli] ?? null, boot: '' })
+      if (a.trustAsk && a.trust) {
+        a.boot = String(this.runner.buffer?.(name)?.data ?? '').slice(-6000)
+        this.trustCard(a)
+      } else a.trustAsk = false
       if (a.status === 'starting') this.readyIn(a)
       if (a.status === 'working' && a.expect) this.awaitPickup(a)
       if (a.retrying) a.retryTimer = setTimeout(() => this.resumeTurn(a), API_RETRY[0])
@@ -3570,6 +3687,24 @@ const withImages = (text, images) =>
 
 // A terminal's text without its escape sequences and spaces: what's on screen, however it was drawn.
 const flat = (s) => s.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-9;?<>=]*[ -\/]*[@-~]/g, '').replace(/\x1b./g, '').replace(/\s+/g, '')
+
+// Which answer to its trust question is selected on screen: the one right after the last pointer it drew (past a "1."
+// in front of it). -> 'yes', 'no', or '' when the screen doesn't say.
+function trustSelected(screen, t) {
+  const i = screen.lastIndexOf(t.pointer)
+  if (i < 0) return ''
+  const next = screen.slice(i + t.pointer.length).replace(/^\d+\./, '')
+  return next.startsWith(t.yes) ? 'yes' : next.startsWith(t.no) ? 'no' : ''
+}
+// The arrow key that moves its selection toward the answer wanted: down if that answer was last drawn after the
+// pointer, up if before. '' when the screen shows no pointer, or not that answer.
+function trustKey(screen, t, want) {
+  const at = screen.lastIndexOf(t.pointer)
+  const label = screen.lastIndexOf(want === 'yes' ? t.yes : t.no)
+  return at < 0 || label < 0 ? '' : label > at ? '\x1b[B' : '\x1b[A'
+}
+// The folder an agent works in, however it's written (~, a trailing slash).
+const folderOf = (a) => (a ? path.resolve(expand(a.cwd)) : null)
 
 const hold = (a, ms) => {
   a.holdUntil = Math.max(a.holdUntil, Date.now() + ms)

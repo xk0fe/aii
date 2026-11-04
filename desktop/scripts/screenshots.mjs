@@ -375,6 +375,45 @@ const SHOTS = {
     await save(chat, `tools-chat-${theme}`)
     chat.destroy()
   },
+  // A CLI's "do you trust this folder?" (core/hub.js trustCard): how it was (waiting in its terminal), its card in the
+  // Needs you queue, and the card once Trust is clicked. Then the floating chat's queue with the card open.
+  async trust(theme) {
+    const win = await dashboard(theme, 'chat')
+    await sleep(900)
+    const ask = `{ type: 'permission', trust: true, title: 'Trust this folder', detail: '${os.homedir()}/Projects/storefront', say: 'First time in storefront. Can I trust this folder?', always: [], alert: 'asks whether to trust its folder' }`
+    const setup = (card) => `const s = window.__crewState
+      s.feed = s.feed.filter((e) => !(e.kind === 'ask' && !e.answer) && !/^t[rb]/.test(e.id))
+      s.feed.push({ id: '${card ? 'tr0' : 'tb0'}', kind: 'msg', from: 'you', to: 'June', text: 'Can you set up the storefront repo and get its tests running?', ts: Date.now() - 60000 })
+      ${card ? `s.feed.push({ id: 'tr1', kind: 'ask', from: 'June', to: 'you', cli: 'claude', ts: Date.now() - 20000, ask: ${ask} })` : "s.feed.push({ id: 'tb1', kind: 'event', from: 'June', alert: true, ts: Date.now() - 20000, text: 'asks whether to trust its folder, ~/Projects/storefront. Answer in its terminal: messages wait until then' })"}
+      for (const a of s.agents) if (a.status === 'waiting') a.status = 'idle'
+      Object.assign(s.agents.find((a) => a.name === 'June'), { status: 'waiting', since: Date.now() - 20000, activity: '' })
+      window.__crewEmit('state', s)`
+    await js(win, setup(false))
+    await sleep(1000)
+    await save(win, `trust-before-${theme}`)
+    await js(win, setup(true))
+    await sleep(1000)
+    await save(win, `trust-ask-${theme}`)
+    const said = await js(win, `const b = document.querySelector('[data-ask="tr1"] [data-answer="allow"]')
+      if (!b) return 'no Trust button'
+      b.click()
+      await new Promise((r) => setTimeout(r, 600))
+      return document.querySelector('[data-ask="tr1"].done')?.textContent.trim() ?? 'no answered card'`)
+    if (!/^Trusted/.test(said)) throw new Error(`trust: clicking Trust gave ${said}`)
+    await sleep(400)
+    await save(win, `trust-done-${theme}`)
+    win.destroy()
+    const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
+    await sleep(400)
+    await js(chat, `${setup(true)}
+      window.__crewEmit('toggle', { open: true, focus: false })`)
+    await sleep(900)
+    await js(chat, "document.querySelector('.nq-go')?.click()")
+    await sleep(700)
+    await fitToContent(chat)
+    await save(chat, `trust-chat-${theme}`)
+    chat.destroy()
+  },
   // Add a phone: the pairing view with its code to scan, the phone that paired with it, then the list with that phone
   // highlighted (two paired before it, one connected).
   async phones(theme) {
