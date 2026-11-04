@@ -1,6 +1,6 @@
-// The chat: everyone's messages, or your conversation with one agent (tap a face, or the faces at the top right).
-// Questions waiting for you sit in a stack at the top; who's at work shows under the last message; the message box is
-// at the bottom. Everything else gives way to reading: one line of header, no bubbles on agents' words, the faces row
+// The chat: a channel of the workspace (#general and the ones you made; the title opens the list of channels and
+// conversations), or your conversation with one agent (tap a face). Questions waiting for you sit in a stack at the
+// top; who's at work shows under the last message; the message box is at the bottom. Everything else gives way to reading: one line of header, no bubbles on agents' words, the faces row
 // only while you type.
 import * as Clipboard from 'expo-clipboard'
 import { router, useFocusEffect } from 'expo-router'
@@ -10,9 +10,9 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 import { KeyboardChatScrollView, KeyboardStickyView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-import type { Agent, FeedEntry, Reply } from '@/net/types'
-import { familyOf, isUnread, useCrew, useDerived, type Derived } from '@/state/hooks'
-import { openConvo, useConvo } from '@/state/convo'
+import type { Agent, Channel, FeedEntry, Reply } from '@/net/types'
+import { channelOf, familyOf, GENERAL, isUnread, membersOf, useCrew, useDerived, type Derived } from '@/state/hooks'
+import { openConvo, useConvo, usePickedChannel } from '@/state/convo'
 import { session } from '@/state/session'
 import { agentColor } from '@/ui/avatar'
 import { nameInk } from '@/ui/color'
@@ -59,7 +59,7 @@ function inConvo(e: FeedEntry, name: string) {
 // foreground), sent to the Mac a moment later, for the workspace they were seen in. What was last on screen is kept,
 // so coming back to the chat counts it as seen (the list doesn't report items that never left).
 const reader = (() => {
-  let seen = new Map<string, Record<string, number>>() // workspace -> { agent: ts }
+  let seen = new Map<string, Record<string, number>>() // workspace -> { 'agent#channel': ts }
   let visible: FeedEntry[] = []
   let focused = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -69,21 +69,20 @@ const reader = (() => {
     const batch = seen
     seen = new Map()
     if (!client) return
-    const snap = client.getSnapshot()
-    for (const [ws, marks] of batch) {
-      const reads = ws === snap.shown ? snap.state?.reads : undefined
-      // a plain name reads every channel: sent while any channel's mark for it is behind
-      const behind = (n: string) => Math.min(reads?.agents?.[n] ?? 0, ...Object.values(reads?.channels ?? {}).map((book) => book[n] ?? 0))
-      const fresh = Object.fromEntries(Object.entries(marks).filter(([n, ts]) => ts > Math.max(reads?.since ?? 0, behind(n))))
-      if (Object.keys(fresh).length) void client.read(fresh, ws).catch(() => {})
-    }
+    for (const [ws, marks] of batch) if (Object.keys(marks).length) void client.read(marks, ws).catch(() => {})
   }
   const see = () => {
     if (!focused || AppState.currentState !== 'active') return
-    const ws = session.client?.getSnapshot().shown
+    const snap = session.client?.getSnapshot()
+    const ws = snap?.shown
     if (!ws) return
     const marks = seen.get(ws) ?? {}
-    for (const e of visible) if (e.kind === 'reply' && e.from !== 'you') marks[e.from] = Math.max(marks[e.from] ?? 0, e.ts)
+    // each reply is read in its own channel, as on the computer: 'ada#ship', 'ada#general'
+    for (const e of visible) {
+      if (!isUnread(e, snap?.state?.reads)) continue
+      const key = `${e.from}#${e.channel || GENERAL}`
+      marks[key] = Math.max(marks[key] ?? 0, e.ts)
+    }
     seen.set(ws, marks)
     if (!timer) timer = setTimeout(flush, 700)
   }
@@ -99,8 +98,9 @@ const reader = (() => {
   }
 })()
 
-function Working({ t, d, here, now }: { t: Theme; d: Derived; here: string | null; now: number }) {
-  const busy = [...d.byName.values()].filter((a) => a.on && (a.status === 'working' || (a.cloneOf && a.status === 'starting')) && (!here || familyOf(a.name) === here))
+// chan: in a channel, who's at work on something said there
+function Working({ t, d, here, chan, now }: { t: Theme; d: Derived; here: string | null; chan: string | null; now: number }) {
+  const busy = [...d.byName.values()].filter((a) => a.on && (a.status === 'working' || (a.cloneOf && a.status === 'starting')) && (here ? familyOf(a.name) === here : !chan || channelOf(a, d.channels ?? undefined) === chan))
   if (!busy.length) return <View style={{ height: 10 }} />
   const shown = busy.slice(0, busy.length > 4 ? 3 : 4)
   const rest = busy.slice(shown.length)
@@ -150,14 +150,14 @@ function summary(t: Theme, d: Derived, parked: boolean) {
 
 // In a conversation with one agent, the header is that agent: back to everyone on the left, then who it is and what
 // it's doing (tap for its sheet).
-function WithAgent({ t, d, here, onAll, link }: { t: Theme; d: Derived; here: Agent; onAll: () => void; link: string }) {
+function WithAgent({ t, d, here, onAll, link, back }: { t: Theme; d: Derived; here: Agent; onAll: () => void; link: string; back: string }) {
   const now = useNow(30000)
   // while the computer can't be reached, what it was doing is old news: the line says so instead
   const line = link ? { text: link, kind: 'waiting', mono: false } : rowLine(here, now)
   const elsewhere = [...d.unread.entries()].filter(([n]) => n !== here.name).reduce((n, [, x]) => n + x, 0)
   return (
     <View style={styles.with}>
-      <Press onPress={onAll} style={[styles.back, { backgroundColor: t.fill }]} accessibilityRole="button" accessibilityLabel={`Back to everyone's messages${elsewhere ? `, ${elsewhere} new` : ''}`} hitSlop={8}>
+      <Press onPress={onAll} style={[styles.back, { backgroundColor: t.fill }]} accessibilityRole="button" accessibilityLabel={`Back to ${back}${elsewhere ? `, ${elsewhere} new` : ''}`} hitSlop={8}>
         <Icon name="back" size={16} color={t.fg} weight="semibold" />
         {elsewhere ? (
           <View style={[styles.backBadge, { backgroundColor: t.accent, borderColor: t.page }]}>
@@ -177,6 +177,38 @@ function WithAgent({ t, d, here, onAll, link }: { t: Theme; d: Derived; here: Ag
         </View>
       </Press>
     </View>
+  )
+}
+
+// A channel's people at the top right: its members' faces, which open the channel (its brief, who's in it, Edit).
+function Members({ t, d, c }: { t: Theme; d: Derived; c: Channel }) {
+  const who = membersOf(c, d.agents)
+  return (
+    <Press onPress={() => router.push({ pathname: '/channel', params: { id: c.id } })} style={[styles.people, { backgroundColor: t.fill }]} accessibilityRole="button" accessibilityLabel={`#${c.name}: its brief and who's in it`} hitSlop={6}>
+      {who.length ? <Faces faces={who.filter((a) => a.on).length ? who.filter((a) => a.on) : who} size={24} max={3} /> : null}
+      <Text style={[styles.peopleCount, { color: t.fg2 }]}>{who.length}</Text>
+    </Press>
+  )
+}
+
+// The top of a channel's history: what it's for (its brief) and who's in it.
+function Intro({ t, d, c }: { t: Theme; d: Derived; c: Channel }) {
+  const who = membersOf(c, d.agents)
+  return (
+    <Press onPress={() => router.push({ pathname: '/channel', params: { id: c.id } })} style={[styles.intro, { borderColor: t.line }]} accessibilityRole="button" accessibilityLabel={`The start of #${c.name}. ${c.brief ?? 'No brief yet'}. Open the channel`}>
+      <View style={[styles.introMark, { backgroundColor: t.fill }]}>
+        <Text style={[styles.introHash, { color: t.fg2 }]}>#</Text>
+      </View>
+      <Text style={[styles.introTitle, { color: t.fg }]}>This is the start of #{c.name}</Text>
+      <Text style={[styles.introText, { color: c.brief ? t.fg : t.fg2 }]}>{c.brief ?? (c.id === GENERAL ? 'Everyone in the workspace, everything that has no channel of its own.' : 'No brief yet. Give it one to tell its agents how to work here.')}</Text>
+      {c.brief ? <Text style={[styles.introNote, { color: t.fg2 }]}>Each agent reads this brief with its first message here, and again if you change it.</Text> : null}
+      <View style={styles.introWho}>
+        <Faces faces={who} size={22} max={6} />
+        <Text style={[styles.introNote, { color: t.fg2 }]} numberOfLines={1}>
+          {c.members ? who.map((a) => displayName(a.name).base).join(', ') : 'Everyone in this workspace'}
+        </Text>
+      </View>
+    </Press>
   )
 }
 
@@ -209,17 +241,23 @@ export default function ChatScreen() {
   const list = useRef<FlatList<FeedEntry>>(null)
   const [away, setAway] = useState(false) // scrolled back from the latest
   const here = convo ? (d.byName.get(convo) ?? null) : null
+  // the channel on screen (null: the Mac sends none, so it's one chat); a conversation with an agent spans them all
+  const chan = usePickedChannel(ws, d.channels?.map((c) => c.id) ?? null)
+  const channel = d.channels?.find((c) => c.id === chan) ?? null
+  const inChannel = !here && channel ? channel : null
   const offline = client && link.status === 'offline' ? offlineText(link, client.macName) : ''
   const disabled = !client ? 'Pair with your computer to send' : offline ? `Can't send: ${client.macName} is offline` : link.status === 'connecting' || !state ? `Connecting to ${client.macName}…` : switching ? `Opening ${state.workspaces?.find((w) => w.id === ws)?.name ?? 'the workspace'}…` : null
 
   const { items, byId } = useMemo(() => {
     const merged = mergeSends((state?.feed ?? []).filter((e) => !(e as FeedEntry & { answers?: unknown }).answers))
-    const shown = here ? merged.shown.filter((e) => inConvo(e, here.name)) : merged.shown
+    const shown = here ? merged.shown.filter((e) => inConvo(e, here.name)) : chan ? merged.shown.filter((e) => channelOf(e, d.channels ?? undefined) === chan) : merged.shown
     return { items: shown.slice(-200).reverse(), byId: merged.byId }
-  }, [state?.feed, here])
+  }, [state?.feed, here, chan, d.channels])
   const unread = useMemo(() => new Set(items.filter((e) => isUnread(e, state?.reads)).map((e) => e.id)), [items, state?.reads])
   const divider = items.findLast((e) => unread.has(e.id))?.id ?? null
-  const open = here ? d.open.filter((e) => familyOf(e.from) === here.name) : d.open
+  const open = here ? d.open.filter((e) => familyOf(e.from) === here.name) : chan ? d.open.filter((e) => channelOf(e, d.channels ?? undefined) === chan) : d.open
+  // new replies and questions in the other channels: a dot beside the title
+  const elsewhere = d.channels ? d.channels.filter((c) => c.id !== chan).reduce((n, c) => ({ unread: n.unread + (d.unreadIn.get(c.id) ?? 0), needs: n.needs + (d.needsIn.get(c.id) ?? 0) }), { unread: 0, needs: 0 }) : null
 
   const answer = useCallback((id: string, reply: Reply) => client!.answer(id, reply), [client])
   const ctx: FeedCtx = {
@@ -227,6 +265,7 @@ export default function ChatScreen() {
     byName: d.byName,
     byId,
     here: here?.name ?? null,
+    channels: here ? (d.channels ?? null) : null,
     unread,
     divider,
     onFace: (name) => openConvo(name),
@@ -272,8 +311,19 @@ export default function ChatScreen() {
         t={t}
         background={t.page}
         sub={state ? summary(t, d, Boolean(state.parked)) : null}
-        left={here ? <WithAgent t={t} d={d} here={here} onAll={() => openConvo(null)} link={!client ? '' : offline || (link.status === 'connecting' ? `Connecting to ${client.macName}…` : '')} /> : undefined}
-        right={here ? undefined : <People t={t} d={d} />}
+        left={here ? <WithAgent t={t} d={d} here={here} onAll={() => openConvo(null)} back={channel ? `#${channel.name}` : "everyone's messages"} link={!client ? '' : offline || (link.status === 'connecting' ? `Connecting to ${client.macName}…` : '')} /> : undefined}
+        right={here ? undefined : inChannel ? <Members t={t} d={d} c={inChannel} /> : <People t={t} d={d} />}
+        title={
+          inChannel ? (
+            <>
+              <Text style={{ color: t.fg3 }}># </Text>
+              {inChannel.name}
+              {elsewhere?.needs || elsewhere?.unread ? <Text style={{ color: elsewhere.needs ? t.waitingInk : t.accent }}> •</Text> : null}
+            </>
+          ) : undefined
+        }
+        titleLabel={inChannel ? `#${inChannel.name}${elsewhere?.needs ? `, ${elsewhere.needs} waiting for you in other channels` : elsewhere?.unread ? `, ${elsewhere.unread} new in other channels` : ''}. Channels and conversations` : undefined}
+        onTitle={() => router.push('/convos')}
       />
       <View style={[styles.hair, { backgroundColor: t.line }]} />
       <Deck t={t} open={open} byName={d.byName} onAnswer={answer} disabled={offline ? `Answering waits until ${client.macName} is back` : null} />
@@ -286,12 +336,19 @@ export default function ChatScreen() {
           keyExtractor={(e) => e.id}
           renderItem={({ item, index }) => <FeedItem e={item} prev={items[index + 1]} c={ctx} />}
           renderScrollComponent={(props) => <KeyboardChatScrollView {...props} inverted offset={tabH} />}
-          ListHeaderComponent={<Working t={t} d={d} here={here?.name ?? null} now={now} />}
+          ListHeaderComponent={<Working t={t} d={d} here={here?.name ?? null} chan={here ? null : chan} now={now} />}
+          ListFooterComponent={inChannel && state && items.length ? <Intro t={t} d={d} c={inChannel} /> : undefined}
           ListEmptyComponent={
+            inChannel && state ? (
+              <View style={styles.flip}>
+                <Intro t={t} d={d} c={inChannel} />
+              </View>
+            ) : (
             <View style={styles.listEmpty}>
               {here && state ? <Creature agent={here} size={64} /> : null}
               <Text style={[styles.emptyText, { color: t.fg3 }]}>{!state ? (offline ? offline : `Connecting to ${client.macName}…`) : here ? `Nothing with ${displayName(here.name).base} yet. Say hi.` : 'Nothing here yet. Say hi to your crew.'}</Text>
             </View>
+            )
           }
           onViewableItemsChanged={onViewable}
           viewabilityConfig={{ itemVisiblePercentThreshold: 30, minimumViewTime: 600 }}
@@ -321,7 +378,7 @@ export default function ChatScreen() {
         ) : null}
       </View>
       <KeyboardStickyView offset={{ closed: 0, opened: tabH }}>
-        <Composer t={t} background={t.page} agents={d.agents} convo={here?.name ?? null} unread={d.unread} disabled={disabled} onFace={(n) => openConvo(n)} onSend={(text) => client.send(here?.name ?? '', text)} />
+        <Composer t={t} background={t.page} agents={d.agents} convo={here?.name ?? null} channel={channel} unread={d.unread} disabled={disabled} onFace={(n) => openConvo(n)} onSend={(text) => client.send(here?.name ?? '', text, !here && chan ? { channel: chan } : undefined)} />
       </KeyboardStickyView>
       <View style={{ height: tabH, backgroundColor: t.page }} />
     </View>
@@ -343,6 +400,15 @@ const styles = StyleSheet.create({
   convoName: { fontSize: 17, lineHeight: 21, fontWeight: '600' },
   convoLine: { fontSize: 13, lineHeight: 17 },
   people: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 36, paddingLeft: 6, paddingRight: 9, borderRadius: 18 },
+  peopleCount: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'], marginLeft: 2 },
+  flip: { transform: [{ scaleY: -1 }] },
+  intro: { marginHorizontal: 16, marginTop: 18, marginBottom: 6, paddingBottom: 18, gap: 6, borderBottomWidth: StyleSheet.hairlineWidth },
+  introMark: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  introHash: { fontSize: 24, fontWeight: '600' },
+  introTitle: { fontSize: 20, lineHeight: 25, fontWeight: '700' },
+  introText: { fontSize: 16, lineHeight: 22 },
+  introNote: { fontSize: 13, lineHeight: 18, flexShrink: 1 },
+  introWho: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   latestWrap: { position: 'absolute', left: 0, right: 0, bottom: 10, alignItems: 'center' },
   latest: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   working: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6, gap: 8 },

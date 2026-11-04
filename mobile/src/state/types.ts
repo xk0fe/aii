@@ -1,7 +1,7 @@
 // What the screens talk to: a connection to a Mac (net/client.ts) or the demo crew (demo/client.ts), which behave
 // the same.
 import type { Push, Snapshot } from '@/net/client'
-import type { Reply } from '@/net/types'
+import type { ChannelEdit, Reply, SendOpts } from '@/net/types'
 
 export interface CrewLink {
   readonly macName: string
@@ -13,7 +13,8 @@ export interface CrewLink {
   stop(): void
   wake(): void
   watch(ws: string): Promise<void>
-  send(to: string, text: string, opts?: { fresh?: boolean; re?: string }): Promise<unknown>
+  send(to: string, text: string, opts?: SendOpts): Promise<unknown>
+  channel(op: 'create' | 'edit' | 'remove', id: string | null, arg?: ChannelEdit): Promise<{ id: string }>
   answer(id: string, reply: Reply): Promise<unknown>
   approve(id: string): Promise<unknown>
   drop(id: string): Promise<unknown>

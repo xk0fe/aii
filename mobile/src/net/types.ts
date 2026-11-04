@@ -41,7 +41,15 @@ export type Agent = {
   home?: string | null
   homeName?: string
   nearLimit?: boolean
+  channel?: string // the channel of what it's working on, while working or waiting (none: #general)
 }
+
+// A channel of the workspace: #general (id 'general', everyone) first, then the ones you made. Its brief is what its
+// agents are told with their first message there; members are who's in it (none: everyone).
+export type Channel = { id: string; name: string; brief?: string; members?: string[] }
+// what's said in a channel goes with its id (none: #general); a channel's change (members: null is everyone again)
+export type SendOpts = { fresh?: boolean; re?: string; channel?: string }
+export type ChannelEdit = { name?: string; brief?: string; members?: string[] | null }
 
 // app: an agent tool (crew app, desktop/core/tools.js), a change to CLIque itself, answered only in the chat; say: its own words
 export type PermissionAsk = { type: 'permission'; tool?: string; title?: string; code?: string; detail?: string; always?: { i: number; label: string }[]; alert?: string; app?: boolean; say?: string }
@@ -141,6 +149,7 @@ export type State = {
   workspaces?: Workspace[]
   workspace?: Workspace
   computers?: { slug: string; name: string; online: boolean }[]
+  channels?: Channel[] // missing from a Mac from before channels reached phones: one chat, sends go to #general
 }
 
 // One Mac this phone is paired with, as kept on the phone (the private key D lives apart, in secure storage).

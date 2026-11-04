@@ -2,12 +2,16 @@
 // agent gets back to work, send a message and someone picks it up and replies, switch workspaces, flip YOLO.
 // Nothing leaves the phone.
 import type { Push, Snapshot } from '@/net/client'
-import type { Agent, FeedEntry, Reply, State, Workspace } from '@/net/types'
+import type { Agent, ChannelEdit, FeedEntry, Reply, SendOpts, State, Workspace } from '@/net/types'
 import type { CrewLink } from '@/state/types'
 
 import { makeDemo, type Space } from './fixture'
 
 const familyOf = (name: string) => name.replace(/\.\d+(?=@|$)/, '')
+// read marks are kept per channel, as on the computer (hub.readTo): #general's in `agents`, the others' in `channels`
+const readTo = (e: FeedEntry, reads: State['reads']) => Math.max(reads?.since ?? 0, (e.channel && e.channel !== 'general' ? reads?.channels?.[e.channel] : reads?.agents)?.[e.from] ?? 0)
+// a channel's id from its name, as core/workspaces.js makes it: lowercase words joined by dashes
+const channelId = (name: string) => String(name).toLowerCase().replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
 // Ada, Ada.2 (her clone), Rex@workstation (on another computer): the person each of them is
 const personOf = (name: string) => familyOf(name).split('@')[0]
 
@@ -17,14 +21,14 @@ function summary(sp: Space, current: string): Workspace {
   const agents = s.agents.filter((a) => !a.cloneOf)
   const live = agents.filter((a) => a.on && !sp.parked)
   const family = (a: Agent) => s.agents.filter((x) => x === a || x.cloneOf === a.name)
-  const read = (from: string) => Math.max(s.reads?.since ?? 0, s.reads?.agents?.[from] ?? 0)
+  const read = (e: FeedEntry) => readTo(e, s.reads)
   return {
     id: sp.id, name: sp.name, color: sp.color, icon: sp.icon, parked: sp.parked, current: sp.id === current,
     agents: agents.length,
     on: agents.filter((a) => a.on).length,
     working: live.filter((a) => family(a).some((x) => x.status === 'working')).length,
     waiting: live.flatMap(family).filter((x) => x.status === 'waiting').length,
-    unread: s.feed.filter((e) => e.kind === 'reply' && e.from !== 'you' && e.ts > read(e.from)).length,
+    unread: s.feed.filter((e) => e.kind === 'reply' && e.from !== 'you' && e.ts > read(e)).length,
     faces: agents.filter((a) => a.on).slice(0, 4).map((a) => ({ name: a.name, avatar: a.avatar, status: sp.parked ? 'parked' : a.status })),
     needs: live.flatMap(family).filter((x) => x.status === 'waiting').slice(0, 4).map((x) => ({ name: x.name, avatar: x.avatar, activity: x.activity })),
   }
@@ -110,7 +114,9 @@ export class DemoClient implements CrewLink {
     const lines = REPLIES[personOf(name)] ?? ['On it.']
     const n = this.said.get(name) ?? 0
     this.said.set(name, n + 1)
-    this.post(id, { kind: 'reply', from: name, to: 'you', re, text: text ?? lines[n % lines.length] })
+    // said where what it answers was said (hub.post inherits the channel through re)
+    const channel = this.space(id).state.feed.find((x) => x.id === re)?.channel
+    this.post(id, { kind: 'reply', from: name, to: 'you', re, text: text ?? lines[n % lines.length], ...(channel && { channel }) })
   }
 
   async watch(ws: string) {
@@ -119,9 +125,11 @@ export class DemoClient implements CrewLink {
     this.emit()
   }
 
-  async send(to: string, text: string, opts: { fresh?: boolean; re?: string } = {}) {
+  async send(to: string, text: string, opts: SendOpts = {}) {
     const id = this.ws
     const sp = this.space(id)
+    const ch = opts.channel && opts.channel !== 'general' ? sp.state.channels?.find((c) => c.id === opts.channel) : undefined
+    if (opts.channel && opts.channel !== 'general' && !ch) throw new Error('that channel is gone: it was deleted on the computer')
     if (sp.parked) sp.parked = false // what you send wakes it, as on the computer
     const agents = sp.state.agents.filter((a) => !a.cloneOf)
     const mentioned = [...String(text).matchAll(/(?<![\w@])@([\w-]+(?:@[\w-]+)?)/g)].map((m) => m[1].toLowerCase())
@@ -131,15 +139,17 @@ export class DemoClient implements CrewLink {
     if (to && !names.length) throw new Error(`there's no ${to} here`)
     const off = names.find((n) => !agents.find((a) => a.name === n)?.on)
     if (off) throw new Error(`@${off} is off: turn it on first`)
-    const pick = names.length ? names : [(agents.find((a) => a.on && a.status === 'idle') ?? agents.find((a) => a.on))?.name].filter(Boolean) as string[]
-    if (!pick.length) throw new Error('no agents to send to')
+    // Auto picks among the channel's members, as Crew.send does
+    const pool = ch?.members ? agents.filter((a) => ch.members!.includes(a.name)) : agents
+    const pick = names.length ? names : [(pool.find((a) => a.on && a.status === 'idle') ?? pool.find((a) => a.on))?.name].filter(Boolean) as string[]
+    if (!pick.length) throw new Error(ch?.members ? `nobody in #${ch.name} is on to take it: turn one on, or @name someone` : 'no agents to send to')
     const group = pick.length > 1 ? { cc: pick, sendId: `s${Date.now()}` } : {}
-    const sent = pick.map((n) => this.post(id, { kind: 'msg', from: 'you', to: n, text, ...group, ...(!names.length && { auto: true }), ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }) }))
+    const sent = pick.map((n) => this.post(id, { kind: 'msg', from: 'you', to: n, text, ...group, ...(!names.length && { auto: true }), ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }), ...(ch && { channel: ch.id }) }))
     this.emit()
     pick.forEach((n, i) => {
       const was = agents.find((a) => a.name === n)
       const busy = was?.status === 'waiting'
-      if (!busy) this.later(700 + i * 400, () => this.agent(id, n, { status: 'working', since: Date.now(), activity: WORK[n] ?? 'Read · README.md' }))
+      if (!busy) this.later(700 + i * 400, () => this.agent(id, n, { status: 'working', since: Date.now(), activity: WORK[n] ?? 'Read · README.md', channel: ch?.id }))
       this.later(2600 + i * 900, () => {
         this.reply(id, n, sent[i].id)
         if (!busy) this.agent(id, n, { status: was?.status === 'working' ? 'working' : 'idle', since: Date.now(), activity: was?.status === 'working' ? was.activity : '' })
@@ -203,13 +213,60 @@ export class DemoClient implements CrewLink {
     this.emit()
   }
 
+  // { name: ts } reads every channel; { 'name#channel': ts } one channel's (#general's in `agents`)
   async read(seen: Record<string, number>, ws = this.ws) {
     this.change(ws, (s) => {
       const agents = { ...(s.reads?.agents ?? {}) }
-      for (const [n, ts] of Object.entries(seen)) agents[n] = Math.max(agents[n] ?? 0, ts)
-      return { ...s, reads: { ...s.reads, agents } }
+      const channels: Record<string, Record<string, number>> = Object.fromEntries(Object.entries(s.reads?.channels ?? {}).map(([c, book]) => [c, { ...book }]))
+      const raise = (book: Record<string, number>, n: string, ts: number) => (book[n] = Math.max(book[n] ?? 0, ts))
+      for (const [key, ts] of Object.entries(seen)) {
+        const [n, channel] = key.split('#')
+        if (channel === undefined) {
+          raise(agents, n, ts)
+          for (const c of new Set([...Object.keys(channels), ...s.feed.map((e) => e.channel).filter((c): c is string => Boolean(c))])) raise((channels[c] ??= {}), n, ts)
+        } else if (channel === 'general') raise(agents, n, ts)
+        else raise((channels[channel] ??= {}), n, ts)
+      }
+      return { ...s, reads: { ...s.reads, agents, channels } }
     })
     this.emit()
+  }
+
+  // As crew.channelAction: a new channel's id comes from its name and is never one used before; #general stays.
+  async channel(op: 'create' | 'edit' | 'remove', id: string | null, arg: ChannelEdit = {}) {
+    const ws = this.ws
+    const list = this.space(ws).state.channels ?? [{ id: 'general', name: 'general' }]
+    const name = arg.name === undefined ? undefined : channelId(arg.name)
+    const members = arg.members === undefined ? undefined : arg.members?.length ? arg.members : null
+    if (op === 'create') {
+      if (!name) throw new Error('give the channel a name')
+      if (list.some((c) => c.name === name)) throw new Error(`there's a #${name} already`)
+      const used = new Set(this.space(ws).state.feed.map((e) => e.channel))
+      let made = name
+      for (let i = 2; used.has(made) || list.some((c) => c.id === made); i++) made = `${name}-${i}`
+      this.change(ws, (s) => ({ ...s, channels: [...list, { id: made, name, ...(arg.brief?.trim() && { brief: arg.brief.trim() }), ...(members && { members }) }] }))
+      this.emit()
+      return { id: made }
+    }
+    const c = list.find((x) => x.id === id)
+    if (!c) throw new Error('no such channel')
+    if (op === 'remove') {
+      if (c.id === 'general') throw new Error("#general can't be removed")
+      this.change(ws, (s) => ({ ...s, channels: list.filter((x) => x.id !== c.id) }))
+    } else {
+      if (name !== undefined && c.id !== 'general') {
+        if (!name) throw new Error('give the channel a name')
+        if (list.some((x) => x.name === name && x.id !== c.id)) throw new Error(`there's a #${name} already`)
+      }
+      const next = { ...c, ...(name && c.id !== 'general' && { name }), ...(arg.brief !== undefined && { brief: arg.brief.trim() || undefined }) }
+      if (members !== undefined && c.id !== 'general') {
+        if (members) next.members = members
+        else delete next.members
+      }
+      this.change(ws, (s) => ({ ...s, channels: list.map((x) => (x.id === c.id ? next : x)) }))
+    }
+    this.emit()
+    return { id: c.id }
   }
 
   // As the Mac does: turned off, its open questions are no longer waiting (hub.forgetAsks); turned on, it starts in the
