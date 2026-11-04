@@ -733,38 +733,84 @@ test('a linked computer: its terminals show in their own workspace, typing reach
   }
 })
 
-test("a linked computer's own workspaces can be joined while it's on, and stay listed, unavailable, once it's off", async () => {
+test("a linked computer's own workspaces show up here on their own, as its; hidden ones stay hidden; one it drops goes", async () => {
   const c = await crewApp({ agents: roster(), workspaces: [storefront()] })
   try {
     const { EventEmitter: Emitter } = await import('node:events')
     const pushed = []
+    const theirs = [
+      { key: 'laptop:storefront', owner: 'laptop', name: 'Storefront', color: 'not a color!' },
+      { key: c.keyOf('storefront'), owner: c.me.slug, name: 'Storefront' }, // shown there from here: not the laptop's to offer
+      { key: 'bad/key', owner: 'laptop', name: 'x' },
+    ]
     const peer = Object.assign(new Emitter(), { name: 'Laptop', push: (...m) => pushed.push(m), input() {}, close() {} })
     peer.call = async (fn) => {
       if (fn === 'state') return { agents: [], feed: [], tasks: { tickets: [] }, providers: {} }
-      if (fn === 'workspaces') return [
-        { key: 'laptop:storefront', owner: 'laptop', name: 'Storefront', color: 'not a color!' },
-        { key: c.keyOf('storefront'), owner: c.me.slug, name: 'Storefront' }, // joined there from here: not the laptop's to offer
-        { key: 'bad/key', owner: 'laptop', name: 'x' },
-      ]
+      if (fn === 'workspaces') return theirs
       throw new Error(`"${fn}" isn't available over Crew Link`)
     }
+    const before = c.current
     const l = c.attach(peer)
     await new Promise((r) => setTimeout(r, 10))
-    assert.deepEqual([...l.theirs], ['storefront'], 'the one with our key')
+    // its Storefront is here, under an id of this computer's (ours has the name too), with nobody of ours in it, and it
+    // doesn't take the screen; a look this version can't show is dropped, not fatal
+    const shown = () => c.config.data.workspaces.find((w) => w.of?.computer === 'laptop')
+    assert.equal(shown()?.id, 'storefront-2')
+    assert.deepEqual(shown().of, { computer: 'laptop', id: 'storefront', name: 'Laptop' }, 'its computer, by name too for when it is gone')
+    assert.deepEqual(shown().members, {}, 'none of ours: nothing starts here')
+    assert.equal(c.current, before, 'not put on screen')
+    assert.equal(c.keyOf('storefront-2'), 'laptop:storefront')
+    assert.deepEqual([...l.theirs].sort(), ['storefront', 'storefront-2'], 'ours it has, and its own now here: both shared')
     assert.ok(pushed.some(([t, key]) => t === 'ws' && key === c.keyOf('storefront')), 'it gets ours by key')
-    assert.deepEqual(c.remoteWorkspaces().map((w) => [w.key, w.name, w.computerName, w.online, w.joined]), [['laptop:storefront', 'Storefront', 'Laptop', true, null]])
-    // the same name as ours, joined under its own id; a look this version can't show is dropped, not fatal
+    const ws = c.workspaces().find((w) => w.id === 'storefront-2')
+    assert.deepEqual([ws.owner, ws.ownerName, ws.ownerOnline], ['laptop', 'Laptop', true])
+    assert.deepEqual(c.remoteWorkspaces().map((w) => [w.key, w.name, w.computerName, w.online, w.joined]), [['laptop:storefront', 'Storefront', 'Laptop', true, 'storefront-2']])
+
+    // hidden: gone, and it stays gone when the laptop says its list again
+    c.workspaceAction('remove', 'storefront-2')
+    assert.equal(shown(), undefined)
+    assert.deepEqual(c.settings.hiddenWorkspaces, ['laptop:storefront'])
+    peer.emit('wslist', theirs)
+    assert.equal(shown(), undefined, 'hidden stays hidden')
+    assert.equal(c.remoteWorkspaces()[0].joined, null, 'offered to show again')
+    // shown again: back, and on screen this time (you asked for it)
     const { id } = c.workspaceAction('join', 'laptop:storefront')
-    assert.equal(id, 'storefront-2')
-    assert.equal(c.keyOf(id), 'laptop:storefront')
-    assert.equal(c.snapshot().workspace.ownerName, 'Laptop')
-    // it goes offline: still listed, unavailable, and a new one can't be joined
+    assert.equal(shown().id, id)
+    assert.equal(c.current, id)
+    assert.deepEqual(c.settings.hiddenWorkspaces, [])
+
+    // the laptop drops it: it goes here too, unless it's on screen (until you leave it) or you've made it yours
+    peer.emit('wslist', theirs.filter((w) => w.key !== 'laptop:storefront'))
+    assert.equal(shown()?.id, id, 'on screen: not taken from under you')
+    c.workspaceAction('switch', 'default')
+    assert.equal(shown(), undefined, 'left: it goes with its owner')
+    peer.emit('wslist', theirs)
+    c.workspaceAction('members', 'storefront-2', { add: ['iris'] })
+    peer.emit('wslist', theirs.filter((w) => w.key !== 'laptop:storefront'))
+    assert.equal(shown()?.id, 'storefront-2', 'iris works there: it stays')
+    c.workspaceAction('members', 'storefront-2', { remove: ['iris'] })
+    assert.equal(shown(), undefined, 'the last of ours out: it goes, without waiting for the laptop to say so again')
+    peer.emit('wslist', theirs)
+    c.workspaceAction('edit', 'storefront-2', { folder: '/tmp' })
+    peer.emit('wslist', theirs.filter((w) => w.key !== 'laptop:storefront'))
+    assert.equal(shown()?.id, 'storefront-2', 'a folder of yours set on it: it stays')
+    c.workspaceAction('remove', 'storefront-2') // hidden, with its folder
+    peer.emit('wslist', theirs)
+    c.workspaceAction('join', 'laptop:storefront') // shown again: not hidden for what follows
+    c.workspaceAction('switch', 'default')
+    peer.emit('wslist', theirs)
+    assert.equal(shown()?.id, 'storefront-2', 'there while the laptop has it')
+
+    // it goes offline: still here and listed, unavailable; one it adds meanwhile can't be shown until it's back
     peer.emit('close')
-    const left = c.remoteWorkspaces()
-    assert.deepEqual(left.map((w) => [w.key, w.online, w.joined]), [['laptop:storefront', false, 'storefront-2']])
-    assert.equal(c.workspaces().find((w) => w.id === id).ownerOnline, false)
+    assert.deepEqual(c.remoteWorkspaces().map((w) => [w.key, w.online, w.joined]), [['laptop:storefront', false, 'storefront-2']])
+    assert.equal(c.workspaces().find((w) => w.id === 'storefront-2').ownerOnline, false)
     c.knownSpaces.get('laptop').list.push({ key: 'laptop:lab', owner: 'laptop', name: 'Lab' })
     assert.throws(() => c.workspaceAction('join', 'laptop:lab'), /Laptop is offline/)
+    // forgotten: its workspaces go with it, and it isn't offered any more
+    c.forget('laptop')
+    assert.equal(shown(), undefined)
+    assert.deepEqual(c.remoteWorkspaces(), [])
   } finally {
     quit(c)
   }

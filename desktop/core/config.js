@@ -23,11 +23,13 @@ export class Config extends EventEmitter {
     try {
       raw = JSON.parse(fs.readFileSync(this.file, 'utf8'))
     } catch (e) {
-      if (e.code !== 'ENOENT') return void this.emit('problem', `CLIque couldn't read its settings (${this.file}: ${e.message}), so it carries on with the ones it had`)
+      // broken: what's in memory isn't what's on disk, so nothing should save over the file until it reads again
+      if (e.code !== 'ENOENT') return void ((this.broken = true), this.emit('problem', `CLIque couldn't read its settings (${this.file}: ${e.message}), so it carries on with the ones it had`))
       raw = {}
       fs.writeFileSync(this.file, JSON.stringify(this.defaults, null, 2) + '\n')
     }
     this.data = { ...this.defaults, ...raw }
+    this.broken = false
     this.emit('change')
   }
 

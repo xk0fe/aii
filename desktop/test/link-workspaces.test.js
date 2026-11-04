@@ -1,7 +1,8 @@
-// Crew Link in workspaces: a workspace belongs to the computer that made it. Another linked computer sees it in
-// remoteWorkspaces and can join it; then it's one crew there, each computer seeing the other's agents in it (and only
-// in it), edits and messages reach them there, their alerts say which workspace, and an agent moves to that workspace
-// on the other computer. The same id or name on two computers is still two workspaces. Two real Crews, each in its own process and throwaway
+// Crew Link in workspaces: a workspace belongs to the computer that made it, and shows up on the computers linked to it
+// on their own, as that computer's (one you hide stays hidden). Then it's one crew there, each computer seeing the
+// other's agents in it (and only in it), edits and messages reach them there, their alerts say which workspace, and an
+// agent moves to that workspace on the other computer. The same id or name on two computers is still two workspaces.
+// Two real Crews, each in its own process and throwaway
 // CREW_HOME, linked over 127.0.0.1 only. No CLI is launched: agents are off, or on with launching stubbed. Run with
 // `npm test`.
 import { test, before, after } from 'node:test'
@@ -16,10 +17,10 @@ import { fileURLToPath } from 'node:url'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const port = 20000 + Math.floor(Math.random() * 20000)
 
-function computer(name, linkPort, config) {
+function computer(name, linkPort, config, link = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-link-ws-'))
   fs.mkdirSync(path.join(home, 'link'))
-  fs.writeFileSync(path.join(home, 'link', 'link.json'), JSON.stringify({ name, port: linkPort }))
+  fs.writeFileSync(path.join(home, 'link', 'link.json'), JSON.stringify({ name, port: linkPort, ...link }))
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(config))
   const p = spawn(process.execPath, [fileURLToPath(new URL('./helpers/computer.mjs', import.meta.url))], { env: { ...process.env, CREW_HOME: home, NAME: name }, stdio: ['pipe', 'pipe', 'inherit'] })
   const waiting = new Map()
@@ -48,14 +49,15 @@ function computer(name, linkPort, config) {
 }
 
 const off = { off: true }
-// storefront is the studio's, joined on the laptop; site is on both but each computer's own; lab only on the laptop
+// storefront is the studio's, shown on the laptop; site is on both but each computer's own; lab only on the laptop. Each
+// hid the other's site (and the studio the laptop's lab), so they stay each computer's to itself
 const studio = computer('Studio Mac', port, {
   agents: [{ name: 'iris', area: 'design', ...off }, { name: 'bob', area: 'backend', ...off }],
   workspaces: [
     { id: 'storefront', name: 'Storefront', members: { iris: off }, agents: [{ name: 'ivo', area: 'release', ...off }] },
     { id: 'site', members: { bob: off } },
   ],
-})
+}, { hiddenWorkspaces: ['laptop:site', 'laptop:lab'] })
 const laptop = computer('Laptop', port + 1, {
   agents: [{ name: 'ann', area: 'docs', ...off }],
   workspaces: [
@@ -63,7 +65,7 @@ const laptop = computer('Laptop', port + 1, {
     { id: 'site', name: 'site', members: { ann: off } },
     { id: 'lab', members: { ann: off } },
   ],
-})
+}, { hiddenWorkspaces: ['studio-mac:site'] })
 const names = async (c) => (await c.run(`crew.snapshot().agents.map((a) => a.name)`)).sort()
 const until = async (c, code, ms = 5000) => {
   for (const end = Date.now() + ms; Date.now() < end; await sleep(100)) if (await c.run(code)) return
@@ -86,7 +88,7 @@ after(() => {
   laptop.stop()
 })
 
-test("a joined workspace is one crew; the same id on both computers is two workspaces, each its own computer's", async () => {
+test("a workspace shown from another computer is one crew; the same id on both computers is two workspaces, each its own computer's", async () => {
   await studio.run(`crew.workspaceAction('switch', 'storefront')`)
   assert.deepEqual(await names(studio), ['ann@laptop', 'iris', 'ivo', 'milo@laptop'])
   assert.deepEqual(await studio.run(`crew.snapshot().computers.links[0].spaces`), ['storefront'], 'only the joined one: the laptop keeps its site and lab to itself')
@@ -163,25 +165,26 @@ test('a shared agent moved there and back rejoins its crew here, not as a copy',
   assert.equal('iris' in laptop.config().workspaces[0].members, false, "it left the laptop's storefront")
 })
 
-test('a workspace made on both with the same name stays two; joining one makes it one crew, and leaving undoes it', async () => {
+test("a workspace made on one computer shows up on the other on its own, as its; the same name there stays two; gone there, gone here", async () => {
+  const of = (key) => `crew.config.data.workspaces.find((w) => w.of && w.of.computer + ':' + w.of.id === ${JSON.stringify(key)})?.id ?? null`
   await laptop.run(`crew.workspaceAction('create', null, { name: 'Side', color: 'teal' })`)
-  await studio.run(`crew.workspaceAction('create', null, { name: 'Side' })`)
-  await until(laptop, `crew.snapshot().remoteWorkspaces.some((w) => w.key === 'studio-mac:side')`)
-  assert.equal(await studio.run(`Boolean(crew.links.get('laptop')?.spaces?.side)`), false, 'the same name, not the same workspace')
-  // the laptop joins the studio's site: it's there under an id of its own, with the studio's look and the studio as owner
-  const { id } = await laptop.run(`crew.workspaceAction('join', 'studio-mac:site')`)
-  assert.equal(id, 'site-2', 'its own site keeps the id')
-  assert.deepEqual(laptop.config().workspaces.find((w) => w.id === 'site-2').of, { computer: 'studio-mac', id: 'site' })
-  assert.equal(await laptop.run(`crew.current`), 'site-2', 'on screen')
-  await until(studio, `Boolean(crew.links.get('laptop')?.spaces?.site)`)
-  await until(laptop, `Boolean(crew.links.get('studio-mac')?.spaces?.['site-2'])`)
-  await laptop.run(`crew.workspaceAction('switch', 'site-2')`)
-  assert.deepEqual(await names(laptop), ['bob@studio-mac'], "the studio's site's agents, in the laptop's copy")
-  assert.equal((await laptop.run(`crew.workspaceAction('join', 'studio-mac:site')`)).id, 'site-2', 'joined twice is the same one')
-  await assert.rejects(laptop.run(`crew.workspaceAction('join', 'studio-mac:nope')`), /no such workspace/)
-  // leaving: the laptop's copy goes, and the studio's site is its own again
-  await laptop.run(`crew.workspaceAction('remove', 'site-2')`)
-  await until(studio, `!crew.links.get('laptop')?.spaces?.site`)
-  assert.deepEqual(await studio.run(`crew.snapshot().computers.links[0].spaces`), ['storefront'])
   await laptop.run(`crew.workspaceAction('switch', 'default')`)
+  await until(studio, `Boolean(${of('laptop:side')})`)
+  assert.equal(await studio.run(of('laptop:side')), 'side')
+  const side = await studio.run(`crew.workspaces().find((w) => w.id === 'side')`)
+  assert.deepEqual([side.owner, side.ownerName, side.ownerOnline, side.color], ['laptop', 'Laptop', true, 'teal'])
+  assert.notEqual(await studio.run(`crew.current`), 'side', 'it shows up without taking the screen')
+  assert.deepEqual(studio.config().workspaces.find((w) => w.id === 'side').members, {}, "none of the studio's agents in it: nothing starts there")
+  // the studio makes a Side of its own: a second Side, the studio's, and it shows up on the laptop as the studio's
+  const { id: mine } = await studio.run(`crew.workspaceAction('create', null, { name: 'Side' })`)
+  assert.equal(mine, 'side-2', "the laptop's Side has the id here")
+  await until(laptop, `Boolean(${of(`studio-mac:${mine}`)})`)
+  assert.equal(await laptop.run(`crew.workspaces().find((w) => w.id === ${of(`studio-mac:${mine}`)}).ownerName`), 'Studio Mac')
+  assert.equal(await laptop.run(`crew.workspaces().find((w) => w.id === 'side').owner`), undefined, "the laptop's own Side is its own")
+  // the laptop removes its Side: it goes from the studio too (nobody of the studio's worked in it)
+  await laptop.run(`crew.workspaceAction('remove', 'side')`)
+  await until(studio, `!(${of('laptop:side')})`)
+  await studio.run(`crew.workspaceAction('remove', ${JSON.stringify(mine)})`)
+  await until(laptop, `!(${of(`studio-mac:${mine}`)})`)
+  await studio.run(`crew.workspaceAction('switch', 'default')`)
 })

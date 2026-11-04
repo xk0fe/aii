@@ -178,23 +178,28 @@ export class Crew extends EventEmitter {
       },
       create: () => {
         id = addWorkspace(data, arg ?? {}) // members with folders of their own start there, the first time
+        // this computer's own go before linked computers' ones, so the rail keeps them together
+        const list = data.workspaces
+        const first = list.findIndex((w) => w?.of)
+        if (first >= 0 && first < list.length - 1) list.splice(first, 0, list.pop())
         data.current = id
       },
       // join(key): a linked computer's workspace (key from remoteWorkspaces), here too and on screen. It stays its
       // owner's: its chat, tasks and agents are there, and this computer adds its own agents to it with members.
+      // (A linked computer's workspaces show up on their own, showTheirs: this is for one you hid, to show it again.)
       join: () => {
         const r = this.remoteWorkspaces().find((w) => w.key === id)
         if (!r) throw new Error('no such workspace on your linked computers')
+        if (this.settings.hiddenWorkspaces?.includes(r.key)) {
+          this.settings.hiddenWorkspaces = this.settings.hiddenWorkspaces.filter((k) => k !== r.key)
+          this.saveSettings()
+        }
         const have = this.localOf(r.key)
         if (have) {
           id = have
         } else {
           if (!r.online) throw new Error(`${r.computerName} is offline: open its workspaces while it's on`)
-          id = addWorkspace(data, { name: r.name })
-          try {
-            setLook(data, id, { color: r.color ?? '', icon: r.icon ?? '' })
-          } catch {} // a look this version can't show: it keeps the default one
-          data.workspaces.find((w) => w.id === id).of = { computer: r.computer, id: r.key.slice(r.key.indexOf(':') + 1) }
+          id = this.addTheirs(data, r)
         }
         data.current = id
         where().parked = false
@@ -202,7 +207,15 @@ export class Crew extends EventEmitter {
       edit: () => setLook(data, id, arg ?? {}),
       open: () => (where().parked = false),
       park: () => (where().parked = true),
-      remove: () => dropWorkspace(data, id),
+      // a linked computer's: hidden here, and it doesn't come back on its own (join shows it again)
+      remove: () => {
+        const of = workspacesIn(data).find((w) => w.id === id)?.of
+        if (of) {
+          this.settings.hiddenWorkspaces = [...new Set([...(this.settings.hiddenWorkspaces ?? []), `${of.computer}:${of.id}`])]
+          this.saveSettings()
+        }
+        dropWorkspace(data, id)
+      },
       order: () => {
         const ids = Array.isArray(arg) ? arg.map(String) : []
         const at = (w) => (w && ids.includes(w.id) ? ids.indexOf(w.id) : ids.length)
@@ -228,6 +241,11 @@ export class Crew extends EventEmitter {
     this.config.save()
     // parked by hand while Crew was closed, and still running what carried on: park stops those too
     if (op === 'park') this.hubs.get(id)?.park()
+    // the last of yours out of a linked computer's workspace it has removed since, or you left one that was on screen
+    // when it did: that one goes now
+    const of = op === 'members' && workspacesIn(data).find((w) => w.id === id)?.of
+    if (of) this.showTheirs(of.computer)
+    if (op === 'switch') for (const computer of this.knownSpaces.keys()) this.showTheirs(computer)
     // out right away rather than after the usual pause, so what follows it (a notification's click focusing an agent
     // there) lands in the workspace now on screen
     const state = this.snapshot()
@@ -425,7 +443,8 @@ export class Crew extends EventEmitter {
     const owner = key === DEFAULT ? this.me.slug : key.slice(0, key.indexOf(':'))
     if (owner === this.me.slug) return {}
     const l = this.links.get(owner)
-    return { owner, ownerName: l?.name ?? this.knownSpaces.get(owner)?.name ?? owner, ownerOnline: Boolean(l?.peer) }
+    const kept = workspacesIn(this.config.data).find((w) => w.id === id)?.of?.name
+    return { owner, ownerName: l?.name ?? this.knownSpaces.get(owner)?.name ?? kept ?? owner, ownerOnline: Boolean(l?.peer) }
   }
 
   // This computer's workspaces besides the default, as linked computers get them.
@@ -471,12 +490,75 @@ export class Crew extends EventEmitter {
   // l.theirs: the ones here with the same key, by their id here; what it no longer shares goes, and it gets ours for
   // every one we share. The ones it owns are remembered for remoteWorkspaces.
   theirSpaces(l, peer, list) {
+    if (this.links.get(l.slug) !== l) return // forgotten while its list was on the way
     l.list = (Array.isArray(list) ? list : []).filter((w) => w && typeof w.key === 'string' && w.key.includes(':') && !w.key.includes('/'))
     l.theirs = new Set(l.list.map((w) => this.localOf(w.key)).filter(Boolean))
     for (const id of Object.keys(l.spaces ?? {})) if (!l.theirs.has(id)) delete l.spaces[id]
     for (const id of l.theirs) peer.push('ws', this.keyOf(id), this.hubs.get(id).snapshot())
     this.knownSpaces.set(l.slug, { name: l.name, list: l.list.filter((w) => w.owner === l.slug).map(({ key, owner, name, color, icon }) => ({ key, owner, name: String(name ?? key), color, icon })) })
+    this.showTheirs(l.slug)
     this.changed()
+  }
+
+  // A linked computer's workspaces show up here on their own, each as that computer's (its owner, on the rail and in
+  // the header): no agents of this computer's are in one until you add them, so nothing starts here. One you hid stays
+  // hidden (settings.hiddenWorkspaces) until you show it again; one its computer no longer has goes again, unless you put
+  // agents of yours in it. Checked against config.json itself, not the hubs: saving runs this again, before they're made.
+  showTheirs(computer) {
+    const known = this.knownSpaces.get(computer)
+    // a config.json that couldn't be read isn't saved over (it runs again once the file reads: syncWorkspaces)
+    if (!known || this.showing || this.config.broken) return
+    this.showing = true
+    try {
+      const data = this.config.data
+      const hidden = new Set(this.settings.hiddenWorkspaces ?? [])
+      const here = new Set(workspacesIn(data).map((w) => this.entryKey(w)))
+      let changed = false
+      for (const r of known.list) {
+        if (here.has(r.key) || hidden.has(r.key)) continue
+        try {
+          this.addTheirs(data, { ...r, computer, computerName: known.name })
+          changed = true
+        } catch {} // one it says oddly doesn't keep the rest from showing
+      }
+      const listed = new Set(known.list.map((r) => r.key))
+      for (const w of workspacesIn(data)) {
+        if (w.of?.computer !== computer || listed.has(this.entryKey(w)) || !this.untouched(w) || data.current === w.id) continue
+        dropWorkspace(data, w.id) // its computer removed it, and nothing of this computer's is in it
+        changed = true
+      }
+      if (changed) this.config.save()
+    } finally {
+      this.showing = false
+    }
+  }
+
+  entryKey(w) {
+    return w.of ? `${w.of.computer}:${w.of.id}` : `${this.me.slug}:${w.id}`
+  }
+
+  // A linked computer's workspace here as it showed up: nobody of yours in it, and nothing of yours set on it (a folder,
+  // channels, triage…). Only such a one goes on its own when its computer removes it; one you've made yours stays, and
+  // its banner says its computer is offline or doesn't have it.
+  untouched(w) {
+    const own = new Set(['id', 'name', 'color', 'icon', 'of', 'members', 'parked'])
+    return Object.keys(w).every((k) => own.has(k)) && !Object.keys(w.members ?? {}).length
+  }
+
+  // A linked computer's workspace (one of remoteWorkspaces), here as its: under an id of this computer's, with its look
+  // and its computer's name (for when that computer is gone), after the other workspaces of that computer.
+  addTheirs(data, r) {
+    const name = String(r.name ?? '').trim() || r.key.slice(r.key.indexOf(':') + 1)
+    const id = addWorkspace(data, { name })
+    try {
+      setLook(data, id, { color: r.color ?? '', icon: r.icon ?? '' })
+    } catch {} // a look this version can't show: it keeps the default one
+    const list = data.workspaces
+    const w = list.pop()
+    w.of = { computer: r.computer ?? r.owner, id: r.key.slice(r.key.indexOf(':') + 1), ...(r.computerName && { name: r.computerName }) }
+    const last = list.findLastIndex((x) => x?.of?.computer === w.of.computer)
+    list.splice(last >= 0 ? last + 1 : list.length, 0, w)
+    return id
   }
 
   // A call to a linked computer, for a workspace (the one on screen unless said).
@@ -852,7 +934,12 @@ export class Crew extends EventEmitter {
       },
       // an older Crew matched workspaces by id: it gets none, and shares only the default (see keyOf)
       spaces: () => [],
-      workspaces: () => this.spaceList(),
+      // not while config.json can't be read: what's in memory then isn't its workspaces, and an empty list would make
+      // linked computers drop theirs (it says so as an older Crew would, and they keep what they have)
+      workspaces: () => {
+        if (this.config.broken) throw new Error(`${this.me.name} can't read its settings right now`)
+        return this.spaceList()
+      },
       state: () => h.snapshot(),
       deliver: (opts) => h.send({ ...opts, mentions: false }),
       saveImage: (name, type, bytes) => h.saveImage(name, type, bytes),
@@ -1365,13 +1452,14 @@ export class Crew extends EventEmitter {
     // its other workspaces, by key: shown here in the workspace with that key, if this computer has one
     peer.on('ws', (key, s) => {
       const id = this.localOf(String(key))
-      if (l.peer !== peer || !l.aware || !id || id === DEFAULT) return
+      // from either connection to it (two computers that each have the other's code keep two, and push on their own)
+      if (this.links.get(l.slug) !== l || !l.peer || !l.aware || !id || id === DEFAULT) return
       l.spaces ??= {}
       if (s) l.spaces[id] = s
       else delete l.spaces[id]
       this.changed()
     })
-    peer.on('wslist', (list) => l.peer === peer && l.aware && this.theirSpaces(l, peer, list))
+    peer.on('wslist', (list) => l.peer && l.aware && this.theirSpaces(l, l.peer, list))
     // terminals and alerts say which workspace (workspace/name; a bare name is the default's): a terminal shows when
     // its workspace is on screen, an alert when this computer has that workspace
     peer.on('pty', (n, d) => {
@@ -1417,13 +1505,19 @@ export class Crew extends EventEmitter {
 
   forget(home) {
     const l = this.links.get(home)
-    if (!l) return
-    l.client?.close()
-    l.peer?.close()
+    l?.client?.close()
+    l?.peer?.close()
     this.links.delete(home)
-    this.settings.peers = (this.settings.peers ?? []).filter((c) => c !== l.code)
+    if (l) this.settings.peers = (this.settings.peers ?? []).filter((c) => c !== l.code)
     this.settings.hidden = (this.settings.hidden ?? []).filter((n) => !n.endsWith(`@${home}`))
     this.saveSettings()
+    // its workspaces go with it, as when it removes one: the ones you've made yours stay (and say it's offline). Also
+    // for a computer known only by its workspaces here (renamed since, or gone before this Crew started).
+    this.knownSpaces.delete(home)
+    const data = this.config.data
+    const gone = this.config.broken ? [] : workspacesIn(data).filter((w) => w.of?.computer === home && this.untouched(w))
+    for (const w of gone) dropWorkspace(data, w.id)
+    if (gone.length) this.config.save()
     this.changed()
   }
 

@@ -57,9 +57,9 @@
     .rail-ws:hover .ws-tile, .rail-ws.current .ws-tile { border-radius: 11px; }
     .rail-ws.parked .ws-tile { filter: grayscale(1); opacity: .6; }
     .rail-ws.parked:hover .ws-tile { opacity: .85; }
-    /* joined from a linked computer: a link mark in the corner, and the tile dimmed while that computer is off */
-    .rail-ws .rail-owner { position: absolute; left: 11px; bottom: -3px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 9px; background: #2A2830; color: #EEECF1; box-shadow: 0 0 0 3px var(--rail-bg); }
-    .rail-ws .rail-owner svg { width: 11px; height: 11px; }
+    /* hosted on a linked computer: that computer's icon in the corner, and the tile dimmed while it's off */
+    .rail-ws .rail-owner { position: absolute; left: 10px; bottom: -4px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 10px; background: #EEECF1; color: #1E1C22; box-shadow: 0 0 0 3px var(--rail-bg); }
+    .rail-ws .rail-owner svg { width: 12px; height: 12px; }
     .rail-ws.owner-off .ws-tile { opacity: .5; }
     .rail-pill { position: absolute; left: 0; top: 50%; width: 4px; height: 8px; margin-top: -4px; border-radius: 0 4px 4px 0; background: #fff; opacity: 0; transform: scaleY(.5); transition: opacity var(--t-quick), transform var(--t-move) var(--out); }
     .rail-ws.unread .rail-pill { opacity: 1; transform: none; }
