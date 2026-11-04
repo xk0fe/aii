@@ -1,6 +1,7 @@
-// Crew Link in workspaces: a workspace with the same id on two linked computers is one crew. Each computer sees the
-// other's agents in it (and only in it), edits and messages reach them there, their alerts say which workspace, and an
-// agent moves to that workspace on the other computer. Two real Crews, each in its own process and throwaway
+// Crew Link in workspaces: a workspace belongs to the computer that made it. Another linked computer sees it in
+// remoteWorkspaces and can join it; then it's one crew there, each computer seeing the other's agents in it (and only
+// in it), edits and messages reach them there, their alerts say which workspace, and an agent moves to that workspace
+// on the other computer. The same id or name on two computers is still two workspaces. Two real Crews, each in its own process and throwaway
 // CREW_HOME, linked over 127.0.0.1 only. No CLI is launched: agents are off, or on with launching stubbed. Run with
 // `npm test`.
 import { test, before, after } from 'node:test'
@@ -47,7 +48,7 @@ function computer(name, linkPort, config) {
 }
 
 const off = { off: true }
-// storefront on both; site only on the studio, lab only on the laptop
+// storefront is the studio's, joined on the laptop; site is on both but each computer's own; lab only on the laptop
 const studio = computer('Studio Mac', port, {
   agents: [{ name: 'iris', area: 'design', ...off }, { name: 'bob', area: 'backend', ...off }],
   workspaces: [
@@ -58,7 +59,8 @@ const studio = computer('Studio Mac', port, {
 const laptop = computer('Laptop', port + 1, {
   agents: [{ name: 'ann', area: 'docs', ...off }],
   workspaces: [
-    { id: 'storefront', name: 'Storefront', members: { ann: off }, agents: [{ name: 'milo', area: 'writing', ...off }] },
+    { id: 'storefront', name: 'Storefront', of: { computer: 'studio-mac', id: 'storefront' }, members: { ann: off }, agents: [{ name: 'milo', area: 'writing', ...off }] },
+    { id: 'site', name: 'site', members: { ann: off } },
     { id: 'lab', members: { ann: off } },
   ],
 })
@@ -84,12 +86,19 @@ after(() => {
   laptop.stop()
 })
 
-test('a workspace with the same id on both computers is one crew; the others show only on their own computer', async () => {
+test("a joined workspace is one crew; the same id on both computers is two workspaces, each its own computer's", async () => {
   await studio.run(`crew.workspaceAction('switch', 'storefront')`)
   assert.deepEqual(await names(studio), ['ann@laptop', 'iris', 'ivo', 'milo@laptop'])
-  assert.deepEqual(await studio.run(`crew.snapshot().computers.links[0].spaces`), ['storefront'], 'the workspaces both have: the laptop keeps its lab to itself')
+  assert.deepEqual(await studio.run(`crew.snapshot().computers.links[0].spaces`), ['storefront'], 'only the joined one: the laptop keeps its site and lab to itself')
   await studio.run(`crew.workspaceAction('switch', 'site')`)
-  assert.deepEqual(await names(studio), ['bob'], "the laptop has no site: none of its agents here")
+  assert.deepEqual(await names(studio), ['bob'], "the laptop's site is another workspace: none of its agents here")
+  // each lists what the other owns, to join
+  const theirs = async (c) => (await c.run(`crew.snapshot().remoteWorkspaces.map((w) => w.key + (w.joined ? '=' + w.joined : '') + (w.online ? '' : ' off'))`)).sort()
+  assert.deepEqual(await theirs(laptop), ['studio-mac:site', 'studio-mac:storefront=storefront'])
+  assert.deepEqual(await theirs(studio), ['laptop:lab', 'laptop:site'], "the laptop's storefront is the studio's own")
+  const shop = await laptop.run(`crew.workspaces().find((w) => w.id === 'storefront')`)
+  assert.deepEqual([shop.owner, shop.ownerName, shop.ownerOnline], ['studio-mac', 'Studio Mac', true])
+  assert.equal(await studio.run(`crew.workspaces().find((w) => w.id === 'storefront').owner`), undefined, 'its own')
   await studio.run(`crew.workspaceAction('switch', 'default')`)
   assert.deepEqual(await names(studio), ['ann@laptop', 'bob', 'iris'], "the default as always: milo is only the laptop's storefront's")
   await laptop.run(`crew.workspaceAction('switch', 'lab')`)
@@ -154,12 +163,25 @@ test('a shared agent moved there and back rejoins its crew here, not as a copy',
   assert.equal('iris' in laptop.config().workspaces[0].members, false, "it left the laptop's storefront")
 })
 
-test('a workspace made on both shows up on both; one removed on one computer is gone from the other', async () => {
-  await laptop.run(`crew.workspaceAction('create', null, { name: 'Side' })`)
+test('a workspace made on both with the same name stays two; joining one makes it one crew, and leaving undoes it', async () => {
+  await laptop.run(`crew.workspaceAction('create', null, { name: 'Side', color: 'teal' })`)
   await studio.run(`crew.workspaceAction('create', null, { name: 'Side' })`)
-  await until(studio, `Boolean(crew.links.get('laptop')?.spaces?.side)`)
-  await until(laptop, `Boolean(crew.links.get('studio-mac')?.spaces?.side)`)
-  await laptop.run(`crew.workspaceAction('remove', 'side')`)
-  await until(studio, `!crew.links.get('laptop')?.spaces?.side`)
+  await until(laptop, `crew.snapshot().remoteWorkspaces.some((w) => w.key === 'studio-mac:side')`)
+  assert.equal(await studio.run(`Boolean(crew.links.get('laptop')?.spaces?.side)`), false, 'the same name, not the same workspace')
+  // the laptop joins the studio's site: it's there under an id of its own, with the studio's look and the studio as owner
+  const { id } = await laptop.run(`crew.workspaceAction('join', 'studio-mac:site')`)
+  assert.equal(id, 'site-2', 'its own site keeps the id')
+  assert.deepEqual(laptop.config().workspaces.find((w) => w.id === 'site-2').of, { computer: 'studio-mac', id: 'site' })
+  assert.equal(await laptop.run(`crew.current`), 'site-2', 'on screen')
+  await until(studio, `Boolean(crew.links.get('laptop')?.spaces?.site)`)
+  await until(laptop, `Boolean(crew.links.get('studio-mac')?.spaces?.['site-2'])`)
+  await laptop.run(`crew.workspaceAction('switch', 'site-2')`)
+  assert.deepEqual(await names(laptop), ['bob@studio-mac'], "the studio's site's agents, in the laptop's copy")
+  assert.equal((await laptop.run(`crew.workspaceAction('join', 'studio-mac:site')`)).id, 'site-2', 'joined twice is the same one')
+  await assert.rejects(laptop.run(`crew.workspaceAction('join', 'studio-mac:nope')`), /no such workspace/)
+  // leaving: the laptop's copy goes, and the studio's site is its own again
+  await laptop.run(`crew.workspaceAction('remove', 'site-2')`)
+  await until(studio, `!crew.links.get('laptop')?.spaces?.site`)
   assert.deepEqual(await studio.run(`crew.snapshot().computers.links[0].spaces`), ['storefront'])
+  await laptop.run(`crew.workspaceAction('switch', 'default')`)
 })

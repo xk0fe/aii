@@ -285,6 +285,8 @@ export class Peer extends EventEmitter {
     if (m.t === 'state') this.emit('state', m.state)
     else if (m.t === 'space') this.emit('space', m.id, m.state) // one of its other workspaces (an older Crew never sends it)
     else if (m.t === 'spaces') this.emit('spaces', m.ids) // which workspaces it has now
+    else if (m.t === 'ws') this.emit('ws', m.key, m.state) // one of its workspaces, by owner:id (see Crew.keyOf)
+    else if (m.t === 'wslist') this.emit('wslist', m.list) // its workspaces now, each with its key and look
     else if (m.t === 'pty') this.emit('pty', m.name, m.data)
     else if (m.t === 'alert') this.emit('alert', m.name, m.text)
     else if (m.t === 'input') this.emit('input', m.name, m.data)
@@ -316,7 +318,7 @@ export class Peer extends EventEmitter {
   }
 
   push(t, ...args) {
-    this.send(t === 'state' ? { t, state: args[0] } : t === 'space' ? { t, id: args[0], state: args[1] } : t === 'spaces' ? { t, ids: args[0] } : t === 'pty' || t === 'input' ? { t, name: args[0], data: args[1] } : { t, name: args[0], text: args[1] })
+    this.send(t === 'state' ? { t, state: args[0] } : t === 'space' ? { t, id: args[0], state: args[1] } : t === 'ws' ? { t, key: args[0], state: args[1] } : t === 'spaces' ? { t, ids: args[0] } : t === 'wslist' ? { t, list: args[0] } : t === 'pty' || t === 'input' ? { t, name: args[0], data: args[1] } : { t, name: args[0], text: args[1] })
   }
 
   input(name, data) {
