@@ -1,4 +1,6 @@
-// The bar at the top of every tab: the workspace this phone watches (tap to switch) and how the Mac is reached.
+// The bar at the top of every tab, one row: the workspace this phone watches (tap to switch) with a line under its name
+// saying how the computer is reached and, from the screen, who's at work. A screen can put its own control on the
+// right, or replace the switcher on the left (a conversation's back button and who it's with).
 import { router } from 'expo-router'
 import type { ReactNode } from 'react'
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
@@ -20,62 +22,69 @@ export function offlineText(link: Link, macName: string) {
   return `${macName} unreachable since ${since}`
 }
 
-export function LinkChip({ t }: { t: Theme }) {
-  const { client, link } = useCrew()
-  const name = client?.macName ?? 'Mac'
-  const demo = Boolean(client?.demo)
-  const color = link.status === 'online' ? t.working : link.status === 'offline' ? t.waiting : t.starting
-  const label = demo ? 'Demo' : link.status === 'online' ? name : link.status === 'offline' ? 'Offline' : 'Connecting'
-  return (
-    <Press onPress={() => router.navigate('/settings')} style={[styles.chip, { backgroundColor: t.btn }]} accessibilityRole="button" accessibilityLabel={`${label}. Connection settings`} hitSlop={6}>
-      {link.status === 'connecting' && !demo ? <ActivityIndicator size="small" color={t.fg2} style={styles.spinner} /> : <View style={[styles.dot, { backgroundColor: demo ? t.fg3 : color }]} />}
-      <Text style={[styles.chipText, { color: t.fg2 }]} numberOfLines={1} maxFontSizeMultiplier={1.35}>
-        {label}
-      </Text>
-    </Press>
-  )
-}
-
-export function TopBar({ t, below, background }: { t: Theme; below?: ReactNode; background?: string }) {
+export function TopBar({ t, background, sub, left, right }: { t: Theme; background?: string; sub?: ReactNode; left?: ReactNode; right?: ReactNode }) {
   const insets = useSafeAreaInsets()
-  const { state, ws, switching } = useCrew()
+  const { client, link, state, ws, switching } = useCrew()
   const w = state?.workspaces?.find((x) => x.id === ws) ?? state?.workspace
   const others = (state?.workspaces ?? []).filter((x) => x.id !== ws)
   const needsElsewhere = others.reduce((n, x) => n + (x.waiting ?? 0), 0)
   const name = w?.name ?? (ws === 'default' ? 'Home' : ws)
+  const bg = background ?? t.bg
+  const mac = client?.demo ? 'Demo' : (client?.macName ?? '')
+  // the connection comes first: while it's down, that's all the line says
+  const status =
+    link.status === 'offline' && client ? (
+      <Text style={{ color: t.waitingInk }}>{offlineText(link, client.macName)}</Text>
+    ) : link.status === 'connecting' && client && !client.demo ? (
+      <Text style={{ color: t.fg3 }}>Connecting to {client.macName}…</Text>
+    ) : (
+      <>
+        {mac}
+        {sub ? <Text style={{ color: t.fg3 }}>{'  ·  '}</Text> : null}
+        {sub}
+      </>
+    )
   return (
-    <View style={[styles.bar, { paddingTop: insets.top + 4, backgroundColor: background ?? t.bg }]}>
+    <View style={[styles.bar, { paddingTop: insets.top + 2, backgroundColor: bg }]}>
       <View style={styles.row}>
-        <Press onPress={() => router.push('/workspaces')} style={styles.ws} accessibilityRole="button" accessibilityLabel={`Workspace ${name}. Switch workspace`} hitSlop={8}>
-          <View>
-            <WsTile t={t} ws={w ?? { id: ws, name }} size={30} />
-            {needsElsewhere ? (
-              <View style={[styles.elsewhere, { backgroundColor: themes.light.waitingInk, borderColor: background ?? t.bg }]}>
-                <Text style={styles.elsewhereText} maxFontSizeMultiplier={1}>{needsElsewhere > 9 ? '9+' : needsElsewhere}</Text>
+        {left ?? (
+          <Press onPress={() => router.push('/workspaces')} style={styles.ws} accessibilityRole="button" accessibilityLabel={`Workspace ${name}. Switch workspace`} hitSlop={8}>
+            <View>
+              <WsTile t={t} ws={w ?? { id: ws, name }} size={34} />
+              {needsElsewhere ? (
+                <View style={[styles.elsewhere, { backgroundColor: themes.light.waitingInk, borderColor: bg }]}>
+                  <Text style={styles.elsewhereText} maxFontSizeMultiplier={1}>{needsElsewhere > 9 ? '9+' : needsElsewhere}</Text>
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.titles}>
+              <View style={styles.nameRow}>
+                <Text style={[styles.wsName, { color: t.fg }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                  {name}
+                </Text>
+                {switching ? <ActivityIndicator size="small" color={t.fg3} style={styles.spinner} /> : <Icon name="down" size={11} color={t.fg3} weight="bold" />}
               </View>
-            ) : null}
-          </View>
-          <Text style={[styles.wsName, { color: t.fg }]} numberOfLines={1} maxFontSizeMultiplier={1.35}>
-            {name}
-          </Text>
-          {switching ? <ActivityIndicator size="small" color={t.fg3} /> : <Icon name="down" size={13} color={t.fg3} weight="bold" />}
-        </Press>
-        <LinkChip t={t} />
+              <Text style={[styles.sub, { color: t.fg2 }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                {status}
+              </Text>
+            </View>
+          </Press>
+        )}
+        {right}
       </View>
-      {below}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   bar: { paddingHorizontal: 16, paddingBottom: 6 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 44 },
-  ws: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1 },
-  wsName: { fontSize: 17, fontWeight: '600', flexShrink: 1 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48 },
+  ws: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
+  titles: { flexShrink: 1, gap: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  wsName: { fontSize: 17, lineHeight: 21, fontWeight: '600', flexShrink: 1 },
+  sub: { fontSize: 13, lineHeight: 17 },
   elsewhere: { position: 'absolute', right: -6, top: -5, minWidth: 17, height: 17, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   elsewhereText: { color: '#FFFFFF', fontSize: 10, fontWeight: '600' },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 28, paddingHorizontal: 10, borderRadius: 10, maxWidth: 170 },
-  chipText: { fontSize: 13, fontWeight: '500' },
-  dot: { width: 7, height: 7, borderRadius: 4 },
-  spinner: { transform: [{ scale: 0.7 }], width: 12, height: 12 },
+  spinner: { transform: [{ scale: 0.6 }], width: 12, height: 12 },
 })

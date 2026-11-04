@@ -29,6 +29,7 @@ export default function Root() {
             <Stack.Screen name="agent/[name]" options={{ ...sheet, sheetAllowedDetents: [0.78, 1] }} />
             <Stack.Screen name="ask/[id]" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />
             <Stack.Screen name="workspaces" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />
+            <Stack.Screen name="convos" options={{ ...sheet, sheetAllowedDetents: [0.62, 1] }} />
           </Stack>
         </ThemeProvider>
       </KeyboardProvider>
