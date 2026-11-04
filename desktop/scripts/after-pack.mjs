@@ -4,6 +4,7 @@ import { listPackage } from '@electron/asar'
 import { Arch } from 'electron-builder'
 import fs from 'node:fs'
 import path from 'node:path'
+import { giveOwnUUIDs } from './own-uuid.mjs'
 
 // node-pty's Windows terminals drain their output on a worker thread whose script it finds next to itself, mapping
 // only VS Code's node_modules.asar to the unpacked folder. In Crew it sits in app.asar: point it at
@@ -62,4 +63,8 @@ export async function afterPack({ appOutDir, electronPlatformName: platform, pac
     for (const f of [need(path.join(pty, 'prebuilds', prebuilds[0], 'spawn-helper'), "node-pty's spawn-helper"), ...run]) fs.chmodSync(f, 0o755)
     need(path.join(resources, 'voice', 'crew-voice'), 'dictation helper')
   }
+
+  // Electron's executables as they come share their UUID with every app on the same Electron, and macOS's Local Network
+  // privacy goes by it: without one of its own CLIque never shows up there to be let on (scripts/own-uuid.mjs)
+  if (platform === 'darwin') giveOwnUUIDs(path.join(appOutDir, `${packager.appInfo.productFilename}.app`), packager.appInfo.id)
 }
