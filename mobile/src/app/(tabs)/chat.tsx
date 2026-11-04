@@ -1,24 +1,27 @@
-// The chat: a channel of the workspace (#general and the ones you made; the title opens the list of channels and
-// conversations), or your conversation with one agent (tap a face). Questions waiting for you sit in a stack at the
-// top; who's at work shows under the last message; the message box is at the bottom. Everything else gives way to reading: one line of header, no bubbles on agents' words, the faces row
-// only while you type.
+// The chat, as in Discord: one channel of the workspace (or your conversation with one agent) on top, and under it,
+// a swipe from the left edge (or ☰) away, the list: the workspaces as a rail, the channels and a conversation with
+// each agent. Questions waiting for you sit in a stack at the top; who's at work shows under the last message; the
+// message box is at the bottom.
 import * as Clipboard from 'expo-clipboard'
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { ActionSheetIOS, Alert, AppState, FlatList, Keyboard, Platform, Share, StyleSheet, Text, View, type ListViewToken } from 'react-native'
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ActionSheetIOS, Alert, AppState, BackHandler, FlatList, Keyboard, Platform, Pressable, Share, StyleSheet, Text, useWindowDimensions, View, type ListViewToken } from 'react-native'
+import { GestureDetector, usePanGesture } from 'react-native-gesture-handler'
+import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
+import { scheduleOnRN } from 'react-native-worklets'
 import { KeyboardChatScrollView, KeyboardStickyView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import type { Agent, Channel, FeedEntry, Reply } from '@/net/types'
 import { channelOf, familyOf, GENERAL, isUnread, membersOf, useCrew, useDerived, type Derived } from '@/state/hooks'
-import { openConvo, useConvo, usePickedChannel } from '@/state/convo'
+import { openChannel, openConvo, useConvo, usePickedChannel } from '@/state/convo'
 import { session } from '@/state/session'
 import { agentColor } from '@/ui/avatar'
 import { nameInk } from '@/ui/color'
 import { Composer } from '@/ui/composer'
 import { Creature } from '@/ui/creature'
 import { Deck } from '@/ui/deck'
+import { Drawer } from '@/ui/drawer'
 import { FeedItem, type FeedCtx } from '@/ui/feed'
 import { displayName, plural, rowLine } from '@/ui/format'
 import { useNow } from '@/ui/hooks'
@@ -149,31 +152,58 @@ function summary(t: Theme, d: Derived, parked: boolean) {
   )
 }
 
-// In a conversation with one agent, the header is that agent: back to everyone on the left, then who it is and what
-// it's doing (tap for its sheet).
-function WithAgent({ t, d, here, onAll, link, back }: { t: Theme; d: Derived; here: Agent; onAll: () => void; link: string; back: string }) {
+// ☰: the list (the workspaces, the channels, a conversation with each agent), with a dot when something's new there.
+function Menu({ t, dot, label, onPress }: { t: Theme; dot: string | null; label: string; onPress: () => void }) {
+  return (
+    <Press onPress={onPress} style={[styles.menu, { backgroundColor: t.fill }]} accessibilityRole="button" accessibilityLabel={label} hitSlop={8}>
+      <Icon name="menu" size={17} color={t.fg} weight="semibold" />
+      {dot ? <View style={[styles.menuDot, { backgroundColor: dot, borderColor: t.page }]} /> : null}
+    </Press>
+  )
+}
+
+// The header: ☰, then where you are. A channel: its name, and under it the computer's state or the workspace and who's
+// at work (tap for the channel's sheet). A conversation: the agent and what it's doing (tap for its sheet).
+function Where({ t, d, here, channel, title, sub, link, menu }: { t: Theme; d: Derived; here: Agent | null; channel: Channel | null; title: string; sub: ReactNode; link: string; menu: ReactNode }) {
   const now = useNow(30000)
-  // while the computer can't be reached, what it was doing is old news: the line says so instead
-  const line = link ? { text: link, kind: 'waiting', mono: false } : rowLine(here, now)
-  const elsewhere = [...d.unread.entries()].filter(([n]) => n !== here.name).reduce((n, [, x]) => n + x, 0)
+  if (here) {
+    // while the computer can't be reached, what it was doing is old news: the line says so instead
+    const line = link ? { text: link, kind: 'waiting', mono: false } : rowLine(here, now)
+    return (
+      <View style={styles.with}>
+        {menu}
+        <Press onPress={() => router.push({ pathname: '/agent/[name]', params: { name: here.name } })} style={styles.convo} accessibilityRole="button" accessibilityLabel={`${here.name}, ${line.text}. Open`}>
+          <Creature agent={here} size={32} />
+          <View style={{ flexShrink: 1 }}>
+            <Text style={[styles.convoName, { color: nameInk(agentColor(here), t.fg) }]} numberOfLines={1}>
+              {displayName(here.name).base}
+            </Text>
+            <Text style={[styles.convoLine, { color: inkFor(t, line.kind), fontFamily: line.mono ? fonts.mono : undefined }]} numberOfLines={1}>
+              {line.text}
+            </Text>
+          </View>
+        </Press>
+      </View>
+    )
+  }
+  const status = link ? <Text style={{ color: t.waitingInk }}>{link}</Text> : sub
   return (
     <View style={styles.with}>
-      <Press onPress={onAll} style={[styles.back, { backgroundColor: t.fill }]} accessibilityRole="button" accessibilityLabel={`Back to ${back}${elsewhere ? `, ${elsewhere} new` : ''}`} hitSlop={8}>
-        <Icon name="back" size={16} color={t.fg} weight="semibold" />
-        {elsewhere ? (
-          <View style={[styles.backBadge, { backgroundColor: t.accent, borderColor: t.page }]}>
-            <Text style={styles.backBadgeText}>{elsewhere > 9 ? '9+' : elsewhere}</Text>
-          </View>
-        ) : null}
-      </Press>
-      <Press onPress={() => router.push({ pathname: '/agent/[name]', params: { name: here.name } })} style={styles.convo} accessibilityRole="button" accessibilityLabel={`${here.name}, ${line.text}. Open`}>
-        <Creature agent={here} size={34} />
+      {menu}
+      <Press onPress={channel ? () => router.push({ pathname: '/channel', params: { id: channel.id } }) : undefined} disabled={!channel} style={styles.convo} accessibilityRole="button" accessibilityLabel={channel ? `#${channel.name}: its brief and who's in it` : title}>
         <View style={{ flexShrink: 1 }}>
-          <Text style={[styles.convoName, { color: nameInk(agentColor(here), t.fg) }]} numberOfLines={1}>
-            {displayName(here.name).base}
+          <Text style={[styles.convoName, { color: t.fg }]} numberOfLines={1}>
+            {channel ? (
+              <>
+                <Text style={{ color: t.fg3 }}># </Text>
+                {channel.name}
+              </>
+            ) : (
+              title
+            )}
           </Text>
-          <Text style={[styles.convoLine, { color: inkFor(t, line.kind), fontFamily: line.mono ? fonts.mono : undefined }]} numberOfLines={1}>
-            {line.text}
+          <Text style={[styles.convoLine, { color: t.fg2 }]} numberOfLines={1}>
+            {status}
           </Text>
         </View>
       </Press>
@@ -213,18 +243,6 @@ function Intro({ t, d, c }: { t: Theme; d: Derived; c: Channel }) {
   )
 }
 
-// The crew's faces at the top right: the list of conversations, one per agent.
-function People({ t, d }: { t: Theme; d: Derived }) {
-  const faces = [...d.agents].filter((a) => a.on).sort((x, y) => (d.unread.get(y.name) ?? 0) - (d.unread.get(x.name) ?? 0))
-  if (!d.agents.length) return null
-  return (
-    <Press onPress={() => router.push('/convos')} style={[styles.people, { backgroundColor: t.fill }]} accessibilityRole="button" accessibilityLabel="Conversations: talk to one agent" hitSlop={6}>
-      <Faces faces={faces.length ? faces : d.agents} size={24} max={3} />
-      <Icon name="down" size={11} color={t.fg2} weight="bold" />
-    </Press>
-  )
-}
-
 export default function ChatScreen() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
@@ -259,8 +277,56 @@ export default function ChatScreen() {
   const unread = useMemo(() => new Set(items.filter((e) => isUnread(e, state?.reads)).map((e) => e.id)), [items, state?.reads])
   const divider = items.findLast((e) => unread.has(e.id))?.id ?? null
   const open = here ? d.open.filter((e) => familyOf(e.from) === here.name) : chan ? d.open.filter((e) => channelOf(e, d.channels ?? undefined) === chan) : d.open
-  // new replies and questions in the other channels: a dot beside the title
-  const elsewhere = d.channels ? d.channels.filter((c) => c.id !== chan).reduce((n, c) => ({ unread: n.unread + (d.unreadIn.get(c.id) ?? 0), needs: n.needs + (d.needsIn.get(c.id) ?? 0) }), { unread: 0, needs: 0 }) : null
+  // what's new or waiting where you aren't: the other channels, your conversations, the other workspaces (a dot on ☰)
+  const others = (state?.workspaces ?? []).filter((w) => w.id !== space)
+  const needsElsewhere = (d.channels ?? []).filter((c) => here || c.id !== chan).reduce((n, c) => n + (d.needsIn.get(c.id) ?? 0), 0) + others.reduce((n, w) => n + (w.waiting ?? 0), 0)
+  const newElsewhere = (d.channels ?? []).filter((c) => here || c.id !== chan).reduce((n, c) => n + (d.unreadIn.get(c.id) ?? 0), 0) + others.reduce((n, w) => n + (w.unread ?? 0), 0)
+
+  // the list under the chat: the chat slides right to show it, and back
+  const { width } = useWindowDimensions()
+  const W = width - 60 // what the list takes; the chat stays in sight at the right edge
+  const x = useSharedValue(0)
+  const from = useSharedValue(0)
+  const [listed, setListed] = useState(false)
+  const settle = (to: boolean) => {
+    if (to) Keyboard.dismiss()
+    setListed(to)
+  }
+  const slide = (to: boolean) => {
+    settle(to)
+    x.value = withTiming(to ? W : 0, MOVE)
+  }
+  const onBegin = () => {
+    'worklet'
+    from.value = x.value
+  }
+  const onUpdate = (e: { translationX: number }) => {
+    'worklet'
+    x.value = Math.min(W, Math.max(0, from.value + e.translationX))
+  }
+  const onDeactivate = (e: { velocityX: number }) => {
+    'worklet'
+    const to = e.velocityX > 500 || (e.velocityX > -500 && x.value > W / 2)
+    x.value = withTiming(to ? W : 0, MOVE)
+    scheduleOnRN(settle, to)
+  }
+  // from the chat: only from its left edge while it's in front (the rest of it scrolls, sideways too in code and tables)
+  const chatSwipe = usePanGesture({ activeOffsetX: [-14, 14], failOffsetY: [-12, 12], hitSlop: listed ? undefined : { left: 0, width: 24 }, onBegin, onUpdate, onDeactivate })
+  const listSwipe = usePanGesture({ activeOffsetX: [-14, 14], failOffsetY: [-12, 12], enabled: listed, onBegin, onUpdate, onDeactivate })
+  const chatMoves = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }))
+  const listMoves = useAnimatedStyle(() => ({ opacity: 0.4 + 0.6 * (x.value / W), transform: [{ translateX: (x.value - W) * 0.12 }] }))
+  useFocusEffect(
+    useCallback(() => {
+      if (!listed) return
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => (slide(false), true))
+      return () => sub.remove()
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [listed]),
+  )
+  const go = (fn: () => void) => {
+    fn()
+    slide(false)
+  }
 
   const answer = useCallback((id: string, reply: Reply) => client!.answer(id, reply), [client])
   const ctx: FeedCtx = {
@@ -308,26 +374,54 @@ export default function ChatScreen() {
     )
   }
 
+  const wsName = state?.workspaces?.find((w) => w.id === space)?.name ?? state?.workspace?.name ?? 'Home'
+  const linkLine = offline || (link.status === 'connecting' && !client.demo ? `Connecting to ${client.macName}…` : '')
+  const sum = state ? summary(t, d, Boolean(state.parked)) : null
+  const menu = (
+    <Menu
+      t={t}
+      dot={needsElsewhere ? t.waitingInk : newElsewhere ? t.accent : null}
+      label={`Channels and conversations${needsElsewhere ? `, ${needsElsewhere} waiting for you elsewhere` : newElsewhere ? `, ${newElsewhere} new elsewhere` : ''}`}
+      onPress={() => slide(true)}
+    />
+  )
+
   return (
-    <View style={[styles.screen, { backgroundColor: t.page }]}>
-      <TopBar
-        t={t}
-        background={t.page}
-        sub={state ? summary(t, d, Boolean(state.parked)) : null}
-        left={here ? <WithAgent t={t} d={d} here={here} onAll={() => openConvo(null)} back={channel ? `#${channel.name}` : "everyone's messages"} link={!client ? '' : offline || (link.status === 'connecting' ? `Connecting to ${client.macName}…` : '')} /> : undefined}
-        right={here ? undefined : inChannel ? <Members t={t} d={d} c={inChannel} /> : <People t={t} d={d} />}
-        title={
-          inChannel ? (
-            <>
-              <Text style={{ color: t.fg3 }}># </Text>
-              {inChannel.name}
-              {elsewhere?.needs || elsewhere?.unread ? <Text style={{ color: elsewhere.needs ? t.waitingInk : t.accent }}> •</Text> : null}
-            </>
-          ) : undefined
-        }
-        titleLabel={inChannel ? `#${inChannel.name}${elsewhere?.needs ? `, ${elsewhere.needs} waiting for you in other channels` : elsewhere?.unread ? `, ${elsewhere.unread} new in other channels` : ''}. Channels and conversations` : undefined}
-        onTitle={() => router.push('/convos')}
-      />
+    <View style={[styles.screen, { backgroundColor: t.bg }]}>
+      <Animated.View style={[StyleSheet.absoluteFill, listMoves]} pointerEvents={listed ? 'auto' : 'none'}>
+        <GestureDetector gesture={listSwipe}>
+          <View style={StyleSheet.absoluteFill}>
+            <Drawer
+              t={t}
+              d={d}
+              workspaces={state?.workspaces ?? []}
+              ws={space}
+              going={switching ? ws : null}
+              title={wsName}
+              summary={sum}
+              here={here?.name ?? null}
+              chan={chan}
+              now={now}
+              link={link}
+              mac={client.macName}
+              demo={Boolean(client.demo)}
+              onWorkspace={(id) => {
+                if (id === space) return slide(false)
+                // another workspace: its channels, not a conversation with someone who may not be there
+                openConvo(null)
+                void session.watch(id).catch(() => {})
+              }}
+              onChannel={(id) => go(() => openChannel(space, id))}
+              onAgent={(name) => go(() => openConvo(name))}
+              onNewChannel={() => go(() => router.push('/channel'))}
+              onComputer={() => go(() => router.navigate('/settings'))}
+            />
+          </View>
+        </GestureDetector>
+      </Animated.View>
+      <GestureDetector gesture={chatSwipe}>
+      <Animated.View style={[styles.screen, styles.chat, { backgroundColor: t.page }, chatMoves]}>
+      <TopBar t={t} background={t.page} left={<Where t={t} d={d} here={here} channel={inChannel} title={wsName} sub={<>{wsName}{sum ? <Text style={{ color: t.fg3 }}>{'  ·  '}</Text> : null}{sum}</>} link={linkLine} menu={menu} />} right={inChannel ? <Members t={t} d={d} c={inChannel} /> : undefined} />
       <View style={[styles.hair, { backgroundColor: t.line }]} />
       <Deck t={t} open={open} byName={d.byName} onAnswer={answer} disabled={offline ? `Answering waits until ${client.macName} is back` : null} />
       <View style={styles.list}>
@@ -384,12 +478,22 @@ export default function ChatScreen() {
         <Composer t={t} background={t.page} agents={d.agents} convo={here?.name ?? null} channel={channel} place={here ? `${space}@${here.name}` : `${space}#${chan ?? ''}`} unread={d.unread} disabled={disabled} onFace={(n) => openConvo(n)} onSend={(text) => client.send(here?.name ?? '', text, !here && chan ? { channel: chan } : undefined)} />
       </KeyboardStickyView>
       <View style={{ height: tabH, backgroundColor: t.page }} />
+      {/* while the list is out, the sliver of chat at the edge brings it back */}
+      {listed ? <Pressable style={StyleSheet.absoluteFill} onPress={() => slide(false)} accessibilityRole="button" accessibilityLabel="Back to the chat" /> : null}
+      </Animated.View>
+      </GestureDetector>
     </View>
   )
 }
 
+// The list slides as the desktop's panels do: one ease-out move, transform only.
+const MOVE = { duration: 260, easing: Easing.bezier(0.2, 0.8, 0.2, 1) }
+
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  chat: { shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: -2, height: 0 }, elevation: 8 },
+  menu: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  menuDot: { position: 'absolute', right: 0, top: 0, width: 11, height: 11, borderRadius: 6, borderWidth: 2 },
   hair: { height: StyleSheet.hairlineWidth },
   list: { flex: 1 },
   listInner: { paddingBottom: 8 },
