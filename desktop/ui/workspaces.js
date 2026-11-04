@@ -2,7 +2,7 @@
 // Discord's servers), which says which needs you and switches; the name at the top of the sidebar, whose menu has
 // what you do with the one on screen; the sheet that makes a workspace or changes one; and the banner over a parked
 // one. The dashboard does the switching itself (onSwitch), so it can animate it.
-/* global crew, esc, plural, morph, markSVG, popMenu, shortPath, tildePath, pathField, pathParts, keys, oops, errorLine, ICONS, COLORS, wsTile, wsColor, wsStatus, wsLabel, joinable, joinItem, elsewhere, hasWorkspaces, faceStack, avatarHTML, agentColor, bounce */
+/* global crew, esc, plural, morph, markSVG, popMenu, shortPath, tildePath, pathField, pathParts, keys, oops, errorLine, ICONS, COLORS, wsTile, wsColor, wsStatus, wsLabel, joinable, joinItem, computerIcon, elsewhere, hasWorkspaces, faceStack, avatarHTML, agentColor, bounce */
 
 const WS_COLORS = ['blue', 'sky', 'teal', 'mint', 'lime', 'yellow', 'orange', 'peach', 'red', 'pink', 'lilac', 'purple']
 const WS_ICONS = ['⛳', '🚀', '🎮', '📱', '🛒', '🎨', '🧪', '📚', '🏡', '💼', '🌱', '⚡', '🔧', '🌍']
@@ -19,11 +19,12 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
   function drawButton() {
     const w = state.workspace
     const on = hasWorkspaces(state)
-    // its name (the rail has the tiles, and what the others need of you)
+    // its name (the rail has the tiles, and what the others need of you); one hosted on a linked computer says which on
+    // a second line in the same button, so the header is the same height whichever workspace is on screen
     morph(button, on
-      ? `<b>${esc(w.name)}</b>${w.ownerName ? `<small class="ws-owner">${esc(w.ownerName)}</small>` : ''}<span class="ws-chev">${ICONS.chevron}</span>`
+      ? `<span class="ws-names"><b>${esc(w.name)}</b>${w.ownerName ? `<small class="ws-host ${w.ownerOnline ? '' : 'off'}">${computerIcon(w.ownerName)}<span>on ${esc(w.ownerName)}${w.ownerOnline ? '' : ' · offline'}</span></small>` : ''}</span><span class="ws-chev">${ICONS.chevron}</span>`
       : `<span class="ws-mark">${markSVG('0 6 24 16')}</span><b>${esc(PRODUCT_NAME)}</b><span class="ws-chev">${ICONS.chevron}</span>`)
-    button.title = on ? `${wsLabel(w)}${w.folder ? `, in ${tildePath(w.folder)}` : ''}: who works here, settings, a new workspace` : 'Workspaces: a crew, chat and tasks per project'
+    button.title = on ? `${w.ownerName ? `${w.name}, hosted on ${w.ownerName}${w.ownerOnline ? '' : ' (offline)'}` : w.name}${w.folder ? `, in ${tildePath(w.folder)}` : ''}: who works here, settings, a new workspace` : 'Workspaces: a crew, chat and tasks per project'
     // the workspace's color tints the sidebar, so you always know where you are
     const color = on ? wsColor(w) : null
     document.body.classList.toggle('ws-tint', Boolean(color))
@@ -80,7 +81,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       const { state: next } = await crew.call('workspace', 'join', key)
       onSwitched(next)
     } catch (err) {
-      oops(`Couldn't join ${r ? `${r.name} · ${r.computerName}` : 'that workspace'}`, err)
+      oops(`Couldn't show ${r ? `${r.name} · ${r.computerName}` : 'that workspace'}`, err)
     }
   }
 
@@ -108,7 +109,11 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     if (dragging) return void (railStale = true) // a redraw mid-drag would drop where it's going
     railStale = false
     const badge = (w) => (w.current || w.parked || !w.waiting ? '' : `<i class="need-badge" aria-label="${esc(`${w.waiting} need${w.waiting > 1 ? '' : 's'} you`)}">${w.waiting > 9 ? '9+' : w.waiting}</i>`)
-    morph(dock, list.map((w, i) => `<button class="rail-ws ${w.current ? 'current' : ''} ${w.parked ? 'parked' : ''} ${w.ownerName && !w.ownerOnline ? 'owner-off' : ''} ${!w.current && !w.parked && w.unread ? 'unread' : ''}" data-ws="${esc(w.id)}" role="tab" aria-selected="${w.current}" draggable="${w.id !== 'default'}" style="--w:${esc(wsColor(w) ?? 'var(--fg3)')}" title="${esc(`${wsLabel(w)}: ${wsStatus(w)}${i < 9 ? ` (${keys(`⌃${i + 1}`)})` : ''}`)}"><i class="rail-pill"></i>${wsTile({ ...w, parked: false }, { size: 44 })}${w.ownerName ? `<i class="rail-owner" aria-label="${esc(`${w.ownerName}'s`)}">${ICONS.link}</i>` : ''}${badge(w)}</button>${i === 0 ? '<i class="rail-sep"></i>' : ''}`).join('') +
+    // Hosted on a linked computer: that computer's icon on the tile, and a line between this computer's workspaces and
+    // each other computer's, so where each one lives shows at a glance
+    const host = (w) => w?.owner ?? ''
+    const named = (w) => (w.ownerName ? `${w.name}, hosted on ${w.ownerName}` : w.name)
+    morph(dock, list.map((w, i) => `<button class="rail-ws ${w.current ? 'current' : ''} ${w.parked ? 'parked' : ''} ${w.ownerName ? 'hosted' : ''} ${w.ownerName && !w.ownerOnline ? 'owner-off' : ''} ${!w.current && !w.parked && w.unread ? 'unread' : ''}" data-ws="${esc(w.id)}" role="tab" aria-selected="${w.current}" draggable="${w.id !== 'default'}" style="--w:${esc(wsColor(w) ?? 'var(--fg3)')}" title="${esc(`${named(w)}: ${wsStatus(w)}${i < 9 ? ` (${keys(`⌃${i + 1}`)})` : ''}`)}"><i class="rail-pill"></i>${wsTile({ ...w, parked: false }, { size: 44 })}${w.ownerName ? `<i class="rail-owner" aria-label="${esc(`on ${w.ownerName}`)}">${computerIcon(w.ownerName)}</i>` : ''}${badge(w)}</button>${i === 0 || (list[i + 1] && host(list[i + 1]) !== host(w)) ? '<i class="rail-sep"></i>' : ''}`).join('') +
       `<button class="rail-add" data-ws-new title="New workspace: a folder, who works on it, and its own chat and tasks" aria-label="New workspace">${ICONS.plus}</button>`)
   }
 
@@ -129,7 +134,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       ...(w.current ? [{ label: 'Who works here…', icon: ICONS.subs, act: 'members' }] : []),
       ...(others && !w.parked ? [{ label: 'Put to sleep', icon: ICONS.moon, act: 'park', hint: 'stops its agents' }] : []),
       { label: 'Settings…', icon: ICONS.gear, act: 'settings' },
-      ...(w.id === 'default' ? [] : ['-', { label: w.ownerName ? 'Leave…' : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true }]),
+      ...(w.id === 'default' ? [] : ['-', w.ownerName ? { label: 'Hide on this computer…', icon: ICONS.close, act: 'remove' } : { label: 'Remove…', icon: ICONS.trash, act: 'remove', danger: true }]),
     ], (act) => {
       if (act === 'switch') onSwitch(w.id)
       if (act === 'members') onMembers?.(e.target.closest('[data-ws]'))
@@ -265,7 +270,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     $d('[data-ws-folder]').value = tilde(draft.folder)
     $d('[data-sec=folder]').classList.toggle('hidden', !named)
     $d('[data-ws-remove]').classList.toggle('hidden', !w || !named)
-    $d('[data-ws-remove] span').textContent = w?.ownerName ? 'Leave workspace…' : 'Remove workspace…'
+    $d('[data-ws-remove] span').textContent = w?.ownerName ? 'Hide on this computer…' : 'Remove workspace…'
     $d('[data-ws-save]').textContent = w ? 'Save' : 'Create workspace'
     $d('[data-ws-err]').textContent = ''
     dialog.classList.toggle('new', !w)
@@ -437,7 +442,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
 
   async function remove(w = before) {
     const own = (w.agents ?? 0) - (w.members?.length ?? 0)
-    if (w.ownerName && !confirm(`Leave ${wsLabel(w)}?\n\nYour agents in it stop and it leaves your switcher. It stays on ${w.ownerName}, with its chat, tasks and agents: join it again from the menu any time.`)) return
+    if (w.ownerName && !confirm(`Hide ${w.name} on this computer?\n\nIt's hosted on ${w.ownerName}, and stays there with its chat, tasks and agents. Any of your agents you added to it stop here. Show it again from the workspace menu, under On your other computers.`)) return
     if (!w.ownerName && !confirm(`Remove ${w.name}?\n\nIts agents stop and it leaves the switcher.${own > 0 ? ` ${plural(own, 'agent')} of its own ${own > 1 ? 'go' : 'goes'} with it.` : ''} Your shared agents stay in your crew.\n\nIts chat, notes and tasks are kept on disk: a workspace made again with the same name picks them back up.`)) return
     try {
       await crew.call('workspace', 'remove', w.id)

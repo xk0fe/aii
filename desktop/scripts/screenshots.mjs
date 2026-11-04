@@ -1451,32 +1451,32 @@ const SHOTS = {
   },
   // A linked computer's workspaces: the name's menu offering them, a joined one on screen (a second Storefront, the
   // linked computer's), the same one while its owner is off, one joined from the menu, and the tray's switcher.
+  // Linked computers' workspaces, there on their own: the rail with this computer's first and each other computer's
+  // after a line, each tile marked with its computer; one on screen (its header chip says where it's hosted); one whose
+  // computer is off; the menu offering one you hid; and the tray.
   async workspaceJoin(theme) {
     const win = await dashboard(theme, 'chat', { fixture: 'workspaces' })
     await sleep(900)
-    await js(win, click('.ws-switch'))
-    await sleep(500)
-    await save(win, `join-menu-${theme}`)
-    await js(win, 'openMenu?.close()')
-    await sleep(300)
+    await save(win, `hosted-rail-${theme}`)
     await js(win, "window.__crewEmit('state', (window.__crewShow('storefront-2'), window.__crewState))")
     await sleep(900)
-    await save(win, `join-joined-${theme}`)
-    await js(win, "const s = window.__crewState; s.workspaces.find((w) => w.id === 'storefront-2').ownerOnline = false; window.__crewEmit('state', s)")
-    await sleep(600)
-    await save(win, `join-owner-offline-${theme}`)
+    await save(win, `hosted-on-screen-${theme}`)
+    await js(win, "window.__crewEmit('state', (window.__crewShow('notes'), window.__crewState))")
+    await sleep(900)
+    await save(win, `hosted-owner-offline-${theme}`)
     await js(win, click('.ws-switch'))
     await sleep(500)
+    await save(win, `hosted-menu-${theme}`)
     await js(win, click(`.menu [data-menu-act="join:${LINK.slug}:api"]`))
     await sleep(1200)
-    await save(win, `join-api-${theme}`)
+    await save(win, `hosted-shown-again-${theme}`)
     win.destroy()
     const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover', fixture: 'workspaces' })
     await sleep(500)
     await fitToContent(tray)
     await js(tray, click('.ws-switch'))
     await sleep(400)
-    await save(tray, `join-tray-${theme}`)
+    await save(tray, `hosted-tray-${theme}`)
     tray.destroy()
   },
   // Workspaces: the switcher open over Docs site, the sheet that makes one, one's settings, and a parked one.

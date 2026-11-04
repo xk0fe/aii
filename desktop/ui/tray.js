@@ -252,7 +252,7 @@
       ...(joinable(state).length ? ['-', { head: 'On your other computers' }, ...joinable(state).map(joinItem)] : []),
     ], async (id) => {
       if (id === ':new') return crew.call('dashboard', ':workspace')
-      if (id.startsWith('join:')) return crew.call('workspace', 'join', id.slice('join:'.length)).catch((err) => oops("Couldn't join that workspace", err))
+      if (id.startsWith('join:')) return crew.call('workspace', 'join', id.slice('join:'.length)).catch((err) => oops("Couldn't show that workspace", err))
       const w = list.find((x) => x.id === id)
       if (w.parked) await crew.call('workspace', 'open', id)
       await crew.call('workspace', 'switch', id)

@@ -741,13 +741,17 @@ function elsewhere(state) {
 function wsLabel(w) {
   return w?.ownerName ? `${w.name} · ${w.ownerName}` : w?.name ?? ''
 }
-// Linked computers' workspaces not joined here yet: what the switchers offer to join, a computer that's off greyed.
+// A computer's icon by its name: a MacBook (or anything called a laptop) is a laptop, anything else a desktop. It marks
+// what's hosted on another computer: its workspaces' tiles, its header chip.
+const computerIcon = (name) => (/book|laptop/i.test(name ?? '') ? ICONS.laptop : ICONS.desktop)
+// Linked computers' workspaces not here: the ones you hid (the rest show up on their own), offered to show again, a
+// computer that's off greyed.
 function joinable(state) {
   return (state.remoteWorkspaces ?? []).filter((r) => !r.joined)
 }
 // One of those as a menu item (popMenu), its act join:<key>.
 function joinItem(r) {
-  return { label: `${r.name} · ${r.computerName}`, icon: wsTile({ id: r.key, name: r.name, color: r.color, icon: r.icon }, { size: 18 }), act: `join:${r.key}`, hint: r.online ? 'Join' : 'offline', disabled: !r.online }
+  return { label: `${r.name} · ${r.computerName}`, icon: wsTile({ id: r.key, name: r.name, color: r.color, icon: r.icon }, { size: 18 }), act: `join:${r.key}`, hint: r.online ? 'Show' : 'offline', disabled: !r.online }
 }
 // "2 need you · 1 working", or "Asleep", for a workspace's line in the switcher.
 function wsStatus(w) {
