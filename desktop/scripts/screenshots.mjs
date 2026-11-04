@@ -323,6 +323,58 @@ const SHOTS = {
     if (String(flipped) !== 'true,true,6') throw new Error(`savers: flipping a switch gave ${flipped}`)
     win.destroy()
   },
+  // Agent tools: an agent asking to change CLIque (its card in the chat, its words in the Needs-you queue), the card
+  // once allowed beside what an automatic change says, and the sheet that says how far agents go, in Ask first and in
+  // Automatic (which mustn't change its height)
+  async tools(theme) {
+    const win = await dashboard(theme, 'chat')
+    await sleep(900)
+    await js(win, `const s = window.__crewState
+      s.feed = s.feed.filter((e) => !(e.kind === 'ask' && !e.answer))
+      s.feed.push({ id: 't0', kind: 'msg', from: 'you', to: 'Ada', text: 'Can you add a #design channel for Iris and Milo? They should check new screens against the design system.', ts: Date.now() - 60000 })
+      s.feed.push({ id: 't1', kind: 'ask', from: 'Ada', to: 'you', cli: 'crew', re: 't0', ts: Date.now() - 20000, ask: { type: 'permission', tool: 'crew app', app: true, title: 'Add a channel', code: '#design\\nCheck new screens against the design system: spacing, type scale and dark mode. Post before/after screenshots.', detail: 'For @Iris, @Milo', say: 'Can I add a #design channel?', always: [], alert: 'wants to add a channel' } })
+      for (const a of s.agents) if (a.status === 'waiting') a.status = 'idle'
+      Object.assign(s.agents.find((a) => a.name === 'Ada'), { status: 'waiting', since: Date.now() - 20000 })
+      window.__crewEmit('state', s)`)
+    await sleep(1000)
+    await save(win, `tools-ask-${theme}`)
+    await js(win, `const s = window.__crewState
+      s.feed.find((e) => e.id === 't1').answer = { by: 'you', allow: true, at: Date.now() - 15000 }
+      s.feed.push({ id: 't2', kind: 'reply', from: 'Ada', to: 'you', re: 't0', text: 'Done: **#design** is up, with Iris and Milo in it and your brief as its instructions.', ts: Date.now() - 12000 })
+      s.feed.push({ id: 't3', kind: 'msg', from: 'you', to: 'Ada', text: 'Thanks! And a workspace for the storefront, with you and June in it.', ts: Date.now() - 8000 })
+      s.feed.push({ id: 't4', kind: 'event', from: 'Ada', text: 'made the Storefront workspace', app: true, ts: Date.now() - 4000 })
+      Object.assign(s.agents.find((a) => a.name === 'Ada'), { status: 'working', since: Date.now() - 8000 })
+      window.__crewEmit('state', s)`)
+    await sleep(900)
+    await save(win, `tools-done-${theme}`)
+    await js(win, 'openTools()')
+    await sleep(800)
+    await save(win, `tools-sheet-${theme}`)
+    const after = await js(win, `const d = document.querySelector('#tools')
+      const h = d.getBoundingClientRect().height
+      d.querySelector('[data-tl="auto"]').click()
+      await new Promise((r) => setTimeout(r, 500))
+      return [Math.round(d.getBoundingClientRect().height - h), window.__crewState.tools, [...d.querySelectorAll('.tl-how')].map((x) => x.textContent).join('/'), d.querySelector('.tl-about p.on').dataset.mode]`)
+    if (String(after) !== '0,auto,Automatic/Automatic/Automatic/Asks first,auto') throw new Error(`tools: switching to Automatic gave ${after}`)
+    await save(win, `tools-sheet-auto-${theme}`)
+    win.destroy()
+    // the floating chat's Needs you queue: the creature asks in its own words, the card under them
+    const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
+    await sleep(400)
+    await js(chat, `const s = window.__crewState
+      s.feed = s.feed.filter((e) => !(e.kind === 'ask' && !e.answer))
+      s.feed.push({ id: 't1', kind: 'ask', from: 'Ada', to: 'you', cli: 'crew', ts: Date.now() - 20000, ask: { type: 'permission', tool: 'crew app', app: true, title: 'Add a workspace', code: '🛒 Storefront\\n~/Projects/storefront', detail: '@Ada, @June work there, and start right away.', say: 'Can I make a workspace called Storefront?', always: [], alert: 'wants to add a workspace' } })
+      for (const a of s.agents) if (a.status === 'waiting') a.status = 'idle'
+      Object.assign(s.agents.find((a) => a.name === 'Ada'), { status: 'waiting', since: Date.now() - 20000 })
+      window.__crewEmit('state', s)
+      window.__crewEmit('toggle', { open: true, focus: false })`)
+    await sleep(900)
+    await js(chat, "document.querySelector('.nq-go')?.click()")
+    await sleep(700)
+    await fitToContent(chat)
+    await save(chat, `tools-chat-${theme}`)
+    chat.destroy()
+  },
   // Add a phone: the pairing view with its code to scan, the phone that paired with it, then the list with that phone
   // highlighted (two paired before it, one connected).
   async phones(theme) {

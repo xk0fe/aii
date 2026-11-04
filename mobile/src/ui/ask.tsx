@@ -72,6 +72,8 @@ function Foot({ t, e, error, disabled, send, busy, compact }: { t: Theme; e: Fee
   // in the deck at the top of the chat, only what went wrong (the header already says when the computer is away, and
   // the card mustn't grow when it goes): the rest is in the full card
   if (compact) return error ? <Text style={[styles.error, { color: t.danger }]}>{error}</Text> : null
+  // an agent tool's card (crew app) is answered only here: its terminal is just waiting
+  if (e.cli === 'crew') return said ? <View style={styles.foot}>{said}</View> : null
   return (
     <View style={styles.foot}>
       {said}
@@ -152,7 +154,7 @@ function PermissionCard(props: AskProps & { ask: PermissionAsk }) {
       ) : null}
       <View style={styles.row}>
         <Button t={t} small={compact} title="Deny" flex disabled={off} busy={busy === 'deny'} onPress={() => send('deny', { allow: false, ...(note.trim() && { note: note.trim() }) })} accessibilityLabel={`Deny. ${name} won't ${ask.code ? 'run it' : 'do it'}`} />
-        <Button t={t} small={compact} kind="primary" title="Allow" flex disabled={off} busy={busy === 'allow'} onPress={() => send('allow', { allow: true })} accessibilityLabel={`Allow ${name} to ${ask.code ? `run ${ask.code.split('\n')[0]}` : (ask.title ?? 'go ahead').toLowerCase()}`} />
+        <Button t={t} small={compact} kind="primary" title="Allow" flex disabled={off} busy={busy === 'allow'} onPress={() => send('allow', { allow: true })} accessibilityLabel={`Allow ${name} to ${ask.code && !ask.app ? `run ${ask.code.split('\n')[0]}` : (ask.title ?? 'go ahead').toLowerCase()}`} />
       </View>
       {compact ? (
         always.length || onMore ? (
@@ -314,6 +316,7 @@ export function answerLine(type: string | undefined, a: Answer, what = ''): { ic
   if (a.by === 'cli') return { icon: 'close', tone: 'no', text: `Claude Code said no${a.why ? ` (${a.why})` : ''}` }
   if (type === 'question') return { icon: 'check', tone: 'ok', text: Object.values(a.answers ?? {}).join(' · ') || 'Answered' }
   if (type === 'plan') return a.allow ? { icon: 'check', tone: 'ok', text: 'Plan approved' } : { icon: 'undo', tone: 'quiet', text: `Keep planning${a.note ? `: “${a.note}”` : ''}` }
+  if (a.failed) return { icon: 'close', tone: 'no', text: `Allowed, but it didn't work: ${a.failed}` }
   if (a.allow) return { icon: 'check', tone: 'ok', text: a.always ? a.always : `Allowed${what ? ` · ${what}` : ''}` }
   return { icon: 'close', tone: 'no', text: `Said no${a.note ? `: “${a.note}”` : ''}` }
 }

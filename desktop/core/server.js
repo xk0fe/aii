@@ -35,6 +35,9 @@ export function serve(to) {
     // `crew task <op> <args...>` (or `crew bug`): the words arrive NUL-separated, so any text survives intact
     task: (q, body) => hub.taskCommand(q.from || 'you', body.split('\0').slice(0, -1)),
     bug: (q, body) => hub.taskCommand(q.from || 'you', body.split('\0').slice(0, -1)),
+    // `crew app <what> …`: an agent changing CLIque itself (core/tools.js). Held open while you're asked (up to
+    // ASK_HOLD), the reply is what came of it.
+    app: (q, body, name, closed) => hub.appTool(q.from || 'you', body.split('\0').slice(0, -1), closed),
     // Claude Code's status line: how full the context is; the answer is the line it shows
     status: (q, body, name) => hub.onStatusLine(name, JSON.parse(body || '{}')),
   })

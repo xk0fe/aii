@@ -17,6 +17,9 @@ import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, fo
 import { Phones } from './phones.js'
 import { sweepFiles, ATTACHMENT_DAYS, CACHE_DAYS } from './keep.js'
 import { SAVERS, SAVER_IDS, saversFrom, report } from './savers.js'
+import { MODES, toolMode, parse as parseTool, help as toolHelp, offText, alertOf } from './tools.js'
+
+const BROKEN = "CLIque can't read its settings (config.json) right now, so it changes nothing until it can"
 
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
@@ -75,6 +78,7 @@ export class Crew extends EventEmitter {
     hub.relay = (from, names, text, images, extra) => this.relay(from, names, text, images, extra, hub)
     hub.relayTask = (host, from, args) => this.linkCall(this.link(host), 'task', [`${from}@${this.me.slug}`, args], hub.ws)
     hub.self = this.me.slug
+    hub.appTool = (from, words, closed) => this.tool(hub, from, words, closed) // `crew app …`
     hub.directory = () => this.linkedAgents(hub)
     hub.elsewhere = (name) => {
       const there = hub.directory().filter((a) => a.seed === name)
@@ -176,13 +180,15 @@ export class Crew extends EventEmitter {
         else data.current = id
         where().parked = false
       },
+      // (show: false, an agent made it: it opens without taking over the screen)
       create: () => {
-        id = addWorkspace(data, arg ?? {}) // members with folders of their own start there, the first time
+        const { show = true, ...fields } = arg ?? {}
+        id = addWorkspace(data, fields) // members with folders of their own start there, the first time
         // this computer's own go before linked computers' ones, so the rail keeps them together
         const list = data.workspaces
         const first = list.findIndex((w) => w?.of)
         if (first >= 0 && first < list.length - 1) list.splice(first, 0, list.pop())
-        data.current = id
+        if (show) data.current = id
       },
       // join(key): a linked computer's workspace (key from remoteWorkspaces), here too and on screen. It stays its
       // owner's: its chat, tasks and agents are there, and this computer adds its own agents to it with members.
@@ -271,6 +277,52 @@ export class Crew extends EventEmitter {
     clearTimeout(this.changeTimer)
     this.emit('state', state)
     return { id, state }
+  }
+
+  // ---- agent tools (core/tools.js): `crew app …` from an agent's shell -------------------------------------------
+  // hub: the workspace it came from. Looking runs as it is. A change runs right away in Automatic, unless it's one that
+  // always asks; otherwise it waits for your OK on a card in that workspace's chat. Only an agent can ask: anything
+  // else (your own terminal, or a caller saying it's no agent) gets only what runs without asking.
+  // -> what the command prints
+  async tool(hub, from, words, closed, { hold } = {}) {
+    const call = parseTool(words)
+    const mode = toolMode(this.config.data)
+    if (call.help) return toolHelp(mode)
+    if (mode === 'off') throw new Error(offText())
+    const plan = call.tool.plan({ crew: this, hub, from }, call)
+    if (call.tool.read) return plan.run()
+    // Checked again when it runs, which may be a while after the card went up: tools turned off since, config.json that
+    // can't be read (what's in memory isn't what's on disk, and saving would overwrite it), or the workspace it was for
+    // gone.
+    const { run, hub: target } = plan
+    const where = target?.space.name // as it was: a hub that's gone reads as no workspace
+    plan.run = () => {
+      if (toolMode(this.config.data) === 'off') throw new Error('the user has turned agent tools off')
+      if (this.config.broken) throw new Error(BROKEN)
+      if (target && this.hubs.get(target.ws) !== target) throw new Error(`${where} isn't there any more`)
+      return run()
+    }
+    if (this.config.broken) throw new Error(BROKEN)
+    const risky = Boolean(call.tool.risky || plan.risky)
+    if (mode === 'auto' && !risky) {
+      const text = await plan.run()
+      hub.toolDone(from, plan)
+      return `${text}\n`
+    }
+    if (!hub.agents.has(from)) throw new Error(`that needs the user's OK, and only one of their agents can ask for it here: ${mode === 'auto' ? 'it always asks' : 'agent tools ask first'}. Do it in CLIque instead`)
+    return hub.toolAsk(from, { ...plan, risky, alert: alertOf(plan) }, closed, hold)
+  }
+
+  // Agent tools: 'off', 'ask' (the default, so config.json doesn't say it) or 'auto'. Turned off, the cards still up
+  // close, and their agents hear that nothing was made.
+  setTools(mode) {
+    if (!MODES.includes(mode)) throw new Error(`agent tools are ${MODES.join(', ')}, not ${mode}`)
+    if (mode === 'ask') delete this.config.data.tools
+    else this.config.data.tools = mode
+    this.config.save()
+    if (mode === 'off') for (const hub of this.hubs.values()) hub.dropTools('The user turned agent tools off, so it wasn\'t made.')
+    this.changed()
+    return mode
   }
 
   async start() {
@@ -645,6 +697,7 @@ export class Crew extends EventEmitter {
       // linked computers' workspaces you can join (workspaceAction('join', key)), greyed while their computer is off
       remoteWorkspaces: this.remoteWorkspaces(),
       savers: this.saversState(),
+      tools: toolMode(this.config.data), // what agents may change in CLIque: off, ask or auto (core/tools.js)
       // your shared agents, to pick who works in a workspace, each with the folder of its own (where it works in the
       // default workspace)
       roster: (this.config.data.agents ?? []).filter((a) => a?.name).map((a) => ({ name: a.name, area: a.area, avatar: a.avatar, cwd: a.cwd })),

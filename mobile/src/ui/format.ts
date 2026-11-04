@@ -186,12 +186,13 @@ export function reasonOf(ask: unknown): string {
 }
 export function voiceOf(ask: unknown): Said {
   if (typeof ask !== 'object' || !ask) return [{ text: "I'm waiting for you in my terminal." }]
-  const q = ask as { type?: string; tool?: string; title?: string; code?: string; detail?: string; questions?: { question: string }[] }
+  const q = ask as { type?: string; tool?: string; title?: string; code?: string; detail?: string; say?: string; questions?: { question: string }[] }
   if (q.type === 'question') {
     const qs = q.questions ?? []
     return [{ text: (qs[0]?.question ?? 'I have a question.') + (qs.length > 1 ? ` And ${qs.length - 1} more.` : '') }]
   }
   if (q.type === 'plan') return [{ text: "Here's my plan. Can I go ahead?" }]
+  if (q.say) return [{ text: q.say }] // an agent tool (crew app) asks in its own words: "Can I add a #design channel?"
   const first = String(q.code ?? '').split('\n')[0].trim()
   const shell = /^(bash|powershell|shell|exec_command|local_shell|unified_exec)$/i.test(q.tool ?? '') || (!q.tool && first)
   const reason = reasonOf(ask)

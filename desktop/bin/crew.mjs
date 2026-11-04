@@ -179,6 +179,7 @@ crew leases                 who has what
 crew note "..."             share context with the whole crew
 crew board [words]          the shared notes you haven't read (--all for every one, or words to search)
 crew task                   the Tasks board: list, show, done, note, add (crew task help)
+crew app <what> ...         change CLIque itself: agents, channels, workspaces, computers (crew app help)
 `
 
 function stop(text, code) {
@@ -239,6 +240,9 @@ async function cli([cmd, ...args]) {
     case 'task':
     case 'bug':
       return send(`/task?from=${from}`, { body: words(args) })
+    case 'app':
+      // crew app <what> ...: held open while the user is asked; Crew lets go after 100s
+      return send(`/app?from=${from}`, { body: words(args), seconds: 110 })
     default:
       return write(HELP)
   }

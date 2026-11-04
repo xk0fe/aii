@@ -92,6 +92,8 @@ Crew commands (run them in the shell):
   crew busy                 what each teammate is working on right now
   crew board [words]        read the shared notes, or search them
   crew task                 the Tasks board: list, show, done, note, add, decline (crew task help)
+  crew app                  change CLIque itself when the user asks: agents, channels, workspaces, linked computers
+                            (crew app help). Changes may wait for the user's OK: your command waits with them
 Crew keeps the crew from stalling. Its rules:
 - Need it back? crew ask. Never poll, sleep or loop waiting for a teammate, and never ask the same thing twice.
 - "[question from @name]": they're waiting on you. Answer with crew answer as soon as you can (mid-task is fine), then

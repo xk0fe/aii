@@ -90,7 +90,8 @@ test('crew: every command asks Crew the same thing as bin/crew and prints the sa
   const cases = [
     ['who'], ['board'], ['leases'], ['send', 'bob', TRICKY], ['send', 'bob'], ['send'], ['ask', 'any', 'which port?', 'the dev one'], ['ask', 'any'], ['wait'],
     ['answer', '@bob', 'port 3000'], ['answer', 'yes'], ['answer', '@bob'], ['lease', 'iOS Simulator', 'UI tests'], ['lease'], ['release'], ['release', 'iOS Simulator'],
-    ['note', 'we use pnpm', 'now'], ['note'], ['task', 'add', 'Fix login', '--priority', 'high', TRICKY], ['task'], ['bug', 'it crashes'], ['help'], [], ['nonsense'],
+    ['note', 'we use pnpm', 'now'], ['note'], ['task', 'add', 'Fix login', '--priority', 'high', TRICKY], ['task'], ['bug', 'it crashes'],
+    ['app'], ['app', 'help'], ['app', 'channel', 'add', 'design', '--brief', TRICKY, '--members', 'iris, june'], ['app', 'link', 'crew1.abc'], ['help'], [], ['nonsense'],
   ]
   for (const args of cases) {
     crew.got.length = 0

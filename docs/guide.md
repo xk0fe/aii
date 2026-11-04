@@ -93,7 +93,8 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
   - `crew note "fact"` to share what it learned;
   - `crew who` to see the crew;
   - `crew board` to read the shared notes;
-  - `crew task …` to work the Tasks board (see below).
+  - `crew task …` to work the Tasks board (see below);
+  - `crew app …` to change CLIque itself when you ask it to (see [Agent tools](#agent-tools-asking-an-agent-to-change-clique)).
 
   Every hand-off and reply shows up in the chat, with the agent's face beside it.
 - **Threads.** Each reply, and each hand-off an agent makes while working on your request, quotes the message it answers, with a bar in its sender's color. Click the quote to jump back. Your messages link forward too ("@iris replied"), so with several messages and several agents in flight you can always tell what answers what. Prompts you type straight into an agent's terminal show up in the chat too, tagged *in terminal*.
@@ -114,6 +115,26 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
 - **On/off** is saved. An agent you turn off stays off after a restart and resumes its session when you turn it back on.
 - **Fast** (Codex agents) uses Codex's fast service tier. It shows on the agent's row and is a switch in its sheet; until you set it, it follows `service_tier` in your Codex config.
 - **YOLO** skips every permission prompt: Claude Code runs with `--dangerously-skip-permissions`, Codex with `--dangerously-bypass-approvals-and-sandbox`. Turn it on only for an agent and a folder you'd let run anything.
+
+## Agent tools: asking an agent to change CLIque
+
+You can ask any agent to do what you'd otherwise click through yourself: "add a #design channel for iris and june", "make a workspace called Storefront with ada and milo in it", "turn milo off", "link with my Mac mini, here's its code". The agent runs `crew app` in its terminal (`crew app help` lists everything), and you decide how far it goes under **Agent tools** in the sidebar's **…** menu:
+
+- **Ask first** (the default): each change shows up in the chat as a card, like a permission prompt, saying what will change. **Allow** makes it; **Deny** (with a note, if you like) tells the agent no and why. The agent's command waits for your answer. If you take longer than about a minute and a half it carries on with other work, the card stays, and what you decide reaches it as a message. The card shows in the floating chat, the menu bar and on your phone too, and you get a notification.
+- **Automatic:** changes go through right away, and the chat says what changed ("@ada added the #design channel"). Removing an agent, a channel or a workspace, linking or unlinking a computer, and starting, changing or adding a YOLO agent still ask first: those can't be undone, let another computer in, or hand an agent that asks nobody something new to do.
+- **Off:** agents can't change CLIque or look at it. They tell you to do it yourself.
+
+What agents can do:
+
+| | |
+|---|---|
+| Agents | add one (its job, brain, model, effort, folder, instructions), change one, turn it on or off, remove it. Added from a workspace other than Home, it's that workspace's own; `--crew` makes it one of your agents everywhere |
+| Channels | add one with a brief and members, change its name, brief or members, remove it (its messages stay, under #general) |
+| Workspaces | make one (it opens in the background: your screen stays where it is), change its name, folder or look, choose who works there, put it to sleep or wake it, remove it |
+| Computers | link one by its CLIque Link code, unlink one. The link code of this computer is never shown to agents |
+| Looking | list your agents, brains, channels, workspaces and computers, which never asks |
+
+An agent works in its own workspace unless it says `--in <workspace>`. A workspace hosted on a linked computer is changed on that computer. Agent tools are a way for an agent to ask before it changes your app, not a sandbox: agents run as you, and a YOLO agent could edit `config.json` itself. The setting is `"tools"` in `config.json` (`"off"`, `"ask"` or `"auto"`).
 
 ## Clones: one agent, several tasks at once
 
