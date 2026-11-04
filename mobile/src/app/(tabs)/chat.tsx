@@ -1,8 +1,12 @@
-// The chat: everyone's messages, or your conversation with one agent (tap a face). Questions waiting for you sit in a
-// stack at the top; who's at work shows under the last message; the message box is at the bottom.
+// The chat: everyone's messages, or your conversation with one agent (tap a face, or the faces at the top right).
+// Questions waiting for you sit in a stack at the top; who's at work shows under the last message; the message box is
+// at the bottom. Everything else gives way to reading: one line of header, no bubbles on agents' words, the faces row
+// only while you type.
+import * as Clipboard from 'expo-clipboard'
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useMemo, useState } from 'react'
-import { AppState, FlatList, StyleSheet, Text, View, type ListViewToken } from 'react-native'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { ActionSheetIOS, Alert, AppState, FlatList, Keyboard, Platform, Share, StyleSheet, Text, View, type ListViewToken } from 'react-native'
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 import { KeyboardChatScrollView, KeyboardStickyView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -19,7 +23,7 @@ import { FeedItem, type FeedCtx } from '@/ui/feed'
 import { displayName, plural, rowLine } from '@/ui/format'
 import { useNow } from '@/ui/hooks'
 import { Icon } from '@/ui/icon'
-import { Button, Faces, inkFor, Press } from '@/ui/parts'
+import { Button, Faces, inkFor, Press, thud } from '@/ui/parts'
 import { needsOf } from '@/ui/room'
 import { offlineText, TopBar } from '@/ui/topbar'
 import { fonts, useTheme, type Theme } from '@/ui/theme'
@@ -124,54 +128,67 @@ function Working({ t, d, here, now }: { t: Theme; d: Derived; here: string | nul
   )
 }
 
-function Line({ t, d, here, onAll, offline, parked }: { t: Theme; d: Derived; here: Agent | null; onAll: () => void; offline: string; parked: boolean }) {
-  const now = useNow(30000)
-  if (here) {
-    const line = rowLine(here, now)
-    const elsewhere = [...d.unread.entries()].filter(([n]) => n !== here.name).reduce((n, [, x]) => n + x, 0)
-    return (
-      <View style={styles.line}>
-        <Press onPress={onAll} style={[styles.back, { backgroundColor: t.btn }]} accessibilityRole="button" accessibilityLabel="Back to everyone's messages" hitSlop={6}>
-          <Icon name="back" size={13} color={t.fg2} weight="bold" />
-          <Text style={[styles.backText, { color: t.fg2 }]}>All</Text>
-          {elsewhere ? <Text style={[styles.backCount, { color: t.accent }]}>{elsewhere}</Text> : null}
-        </Press>
-        <Press onPress={() => router.push({ pathname: '/agent/[name]', params: { name: here.name } })} style={styles.convo} accessibilityRole="button" accessibilityLabel={`${here.name}, ${line.text}. Open`}>
-          <Creature agent={here} size={28} />
-          <View style={{ flexShrink: 1 }}>
-            <Text style={[styles.convoName, { color: nameInk(agentColor(here), t.fg) }]} numberOfLines={1}>
-              {displayName(here.name).base}
-            </Text>
-            <Text style={[styles.convoLine, { color: inkFor(t, line.kind), fontFamily: line.mono ? fonts.mono : undefined }]} numberOfLines={1}>
-              {line.text}
-            </Text>
-          </View>
-        </Press>
-      </View>
-    )
-  }
-  if (offline)
-    return (
-      <View style={styles.line}>
-        <Icon name="offline" size={14} color={t.waitingInk} />
-        <Text style={[styles.offline, { color: t.waitingInk }]} numberOfLines={1}>
-          {offline}
-        </Text>
-      </View>
-    )
-  // who's at work and who needs you, in a few plain words (the line keeps its height in every mode)
-  // who needs you counts the way the Crew tab does: an agent once, with its clones
+// Who's at work and who needs you, in a few plain words, for the line under the workspace's name. Who needs you
+// counts the way the Crew tab does: an agent once, with its clones.
+function summary(t: Theme, d: Derived, parked: boolean) {
+  if (parked) return <Text>Asleep</Text>
   const needing = needsOf(d.agents, d.open, [...d.byName.values()]).length
-  const bits = parked ? [{ text: 'Parked', ink: t.fg2 }] : [needing ? { text: (needing === 1 ? '1 needs' : needing + ' need') + ' you', ink: t.waitingInk } : null, d.working ? { text: d.working + ' at work', ink: t.fg2 } : null].filter((x): x is { text: string; ink: string } => Boolean(x))
+  const bits = [needing ? { text: (needing === 1 ? '1 needs' : needing + ' need') + ' you', ink: t.waitingInk } : null, d.working ? { text: d.working + ' at work', ink: t.fg2 } : null].filter((x): x is { text: string; ink: string } => Boolean(x))
   if (!bits.length && d.agents.length) bits.push({ text: d.agents.some((a) => a.on) ? 'Everyone is idle' : 'Everyone is off', ink: t.fg2 })
+  if (!bits.length) return null
   return (
-    <View style={styles.line}>
-      {bits.map((b) => (
-        <Text key={b.text} style={[styles.lineText, { color: b.ink }]}>
+    <>
+      {bits.map((b, i) => (
+        <Text key={b.text} style={{ color: b.ink }}>
+          {i ? ', ' : ''}
           {b.text}
         </Text>
       ))}
+    </>
+  )
+}
+
+// In a conversation with one agent, the header is that agent: back to everyone on the left, then who it is and what
+// it's doing (tap for its sheet).
+function WithAgent({ t, d, here, onAll, link }: { t: Theme; d: Derived; here: Agent; onAll: () => void; link: string }) {
+  const now = useNow(30000)
+  // while the computer can't be reached, what it was doing is old news: the line says so instead
+  const line = link ? { text: link, kind: 'waiting', mono: false } : rowLine(here, now)
+  const elsewhere = [...d.unread.entries()].filter(([n]) => n !== here.name).reduce((n, [, x]) => n + x, 0)
+  return (
+    <View style={styles.with}>
+      <Press onPress={onAll} style={[styles.back, { backgroundColor: t.fill }]} accessibilityRole="button" accessibilityLabel={`Back to everyone's messages${elsewhere ? `, ${elsewhere} new` : ''}`} hitSlop={8}>
+        <Icon name="back" size={16} color={t.fg} weight="semibold" />
+        {elsewhere ? (
+          <View style={[styles.backBadge, { backgroundColor: t.accent, borderColor: t.page }]}>
+            <Text style={styles.backBadgeText}>{elsewhere > 9 ? '9+' : elsewhere}</Text>
+          </View>
+        ) : null}
+      </Press>
+      <Press onPress={() => router.push({ pathname: '/agent/[name]', params: { name: here.name } })} style={styles.convo} accessibilityRole="button" accessibilityLabel={`${here.name}, ${line.text}. Open`}>
+        <Creature agent={here} size={34} />
+        <View style={{ flexShrink: 1 }}>
+          <Text style={[styles.convoName, { color: nameInk(agentColor(here), t.fg) }]} numberOfLines={1}>
+            {displayName(here.name).base}
+          </Text>
+          <Text style={[styles.convoLine, { color: inkFor(t, line.kind), fontFamily: line.mono ? fonts.mono : undefined }]} numberOfLines={1}>
+            {line.text}
+          </Text>
+        </View>
+      </Press>
     </View>
+  )
+}
+
+// The crew's faces at the top right: the list of conversations, one per agent.
+function People({ t, d }: { t: Theme; d: Derived }) {
+  const faces = [...d.agents].filter((a) => a.on).sort((x, y) => (d.unread.get(y.name) ?? 0) - (d.unread.get(x.name) ?? 0))
+  if (!d.agents.length) return null
+  return (
+    <Press onPress={() => router.push('/convos')} style={[styles.people, { backgroundColor: t.fill }]} accessibilityRole="button" accessibilityLabel="Conversations: talk to one agent" hitSlop={6}>
+      <Faces faces={faces.length ? faces : d.agents} size={24} max={3} />
+      <Icon name="down" size={11} color={t.fg2} weight="bold" />
+    </Press>
   )
 }
 
@@ -189,6 +206,8 @@ export default function ChatScreen() {
   )
   // inside the native tabs, the bottom inset is the tab bar's top: content runs under the bar
   const tabH = insets.bottom
+  const list = useRef<FlatList<FeedEntry>>(null)
+  const [away, setAway] = useState(false) // scrolled back from the latest
   const here = convo ? (d.byName.get(convo) ?? null) : null
   const offline = client && link.status === 'offline' ? offlineText(link, client.macName) : ''
   const disabled = !client ? 'Pair with your computer to send' : offline ? `Can't send: ${client.macName} is offline` : link.status === 'connecting' || !state ? `Connecting to ${client.macName}…` : switching ? `Opening ${state.workspaces?.find((w) => w.id === ws)?.name ?? 'the workspace'}…` : null
@@ -213,6 +232,21 @@ export default function ChatScreen() {
     onFace: (name) => openConvo(name),
     onAsk: (id) => router.push({ pathname: '/ask/[id]', params: { id } }),
     onHeld: (id, how) => void (how === 'approve' ? client?.approve(id) : client?.drop(id))?.catch(() => {}),
+    onLong: (e) => {
+      const text = e.ticket !== undefined && !e.text ? `#${String(e.ticket).split('@')[0]} ${e.title ?? ''}` : (e.text ?? '')
+      if (!text) return
+      thud()
+      const who = e.from !== 'you' && !here && d.byName.has(familyOf(e.from)) ? familyOf(e.from) : null
+      const actions: [string, () => void][] = [
+        ['Copy', () => void Clipboard.setStringAsync(text)],
+        ['Share…', () => void Share.share({ message: text }).catch(() => {})],
+        ...(who ? ([[`Talk to ${displayName(who).base}`, () => openConvo(who)]] as [string, () => void][]) : []),
+      ]
+      if (Platform.OS === 'ios')
+        ActionSheetIOS.showActionSheetWithOptions({ options: [...actions.map(([l]) => l), 'Cancel'], cancelButtonIndex: actions.length }, (i) => actions[i]?.[1]())
+      // Android's dialog holds three buttons at most, so there's no Cancel: tapping outside it (or Back) closes it
+      else Alert.alert(e.from === 'you' ? 'Your message' : displayName(e.from).base, undefined, actions.map(([text, onPress]) => ({ text, onPress })), { cancelable: true })
+    },
     canAct: !disabled,
   }
   const now = useNow(30000)
@@ -224,7 +258,7 @@ export default function ChatScreen() {
 
   if (!client) {
     return (
-      <View style={[styles.empty, { backgroundColor: t.panel, paddingTop: insets.top }]}>
+      <View style={[styles.empty, { backgroundColor: t.page, paddingTop: insets.top }]}>
         <Text style={[styles.emptyTitle, { color: t.fg }]}>No computer yet</Text>
         <Text style={[styles.emptyText, { color: t.fg2 }]}>Pair this phone with your computer, or look around the demo crew.</Text>
         <Button t={t} kind="primary" title="Pair with your computer" onPress={() => router.push('/pair')} />
@@ -233,12 +267,19 @@ export default function ChatScreen() {
   }
 
   return (
-    <View style={[styles.screen, { backgroundColor: t.panel }]}>
-      <TopBar t={t} background={t.panel} below={<Line t={t} d={d} here={here} onAll={() => openConvo(null)} offline={offline} parked={Boolean(state?.parked)} />} />
+    <View style={[styles.screen, { backgroundColor: t.page }]}>
+      <TopBar
+        t={t}
+        background={t.page}
+        sub={state ? summary(t, d, Boolean(state.parked)) : null}
+        left={here ? <WithAgent t={t} d={d} here={here} onAll={() => openConvo(null)} link={!client ? '' : offline || (link.status === 'connecting' ? `Connecting to ${client.macName}…` : '')} /> : undefined}
+        right={here ? undefined : <People t={t} d={d} />}
+      />
       <View style={[styles.hair, { backgroundColor: t.line }]} />
       <Deck t={t} open={open} byName={d.byName} onAnswer={answer} disabled={offline ? `Answering waits until ${client.macName} is back` : null} />
       <View style={styles.list}>
         <FlatList
+          ref={list}
           style={styles.list}
           data={state ? items : []}
           inverted
@@ -254,22 +295,35 @@ export default function ChatScreen() {
           }
           onViewableItemsChanged={onViewable}
           viewabilityConfig={{ itemVisiblePercentThreshold: 30, minimumViewTime: 600 }}
+          onScroll={(ev) => setAway(ev.nativeEvent.contentOffset.y > 560)}
+          scrollEventThrottle={100}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.listInner}
         />
-        {/* What scrolls up under the questions (or the header) fades out instead of being cut mid-line, so it never
-            reads as the cards stacked behind the top one. */}
+        {/* what scrolls up under the header or the questions fades out in a few points instead of being cut mid-line */}
         <View pointerEvents="none" style={styles.edge}>
-          {Array.from({ length: 14 }, (_, i) => (
-            <View key={i} style={{ flex: 1, backgroundColor: t.panel, opacity: i < 6 ? 1 : (1 - (i - 6) / 8) ** 1.3 }} />
+          {Array.from({ length: 7 }, (_, i) => (
+            <View key={i} style={{ flex: 1, backgroundColor: t.page, opacity: (1 - i / 7) ** 1.4 }} />
           ))}
         </View>
+        {away ? (
+          <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={styles.latestWrap} pointerEvents="box-none">
+            <Press
+              onPress={() => {
+                // with the keyboard up the latest sits below offset 0 (the list makes room for it): put it away first
+                Keyboard.dismiss()
+                list.current?.scrollToOffset({ offset: 0, animated: true })
+              }} style={[styles.latest, { backgroundColor: t.surface, borderColor: t.lineStrong }]} accessibilityRole="button" accessibilityLabel="Go to the latest message" hitSlop={8}>
+              <Icon name="latest" size={16} color={t.fg} weight="semibold" />
+            </Press>
+          </Animated.View>
+        ) : null}
       </View>
       <KeyboardStickyView offset={{ closed: 0, opened: tabH }}>
-        <Composer t={t} agents={d.agents} convo={here?.name ?? null} unread={d.unread} disabled={disabled} onFace={(n) => openConvo(n)} onSend={(text) => client.send(here?.name ?? '', text)} />
+        <Composer t={t} background={t.page} agents={d.agents} convo={here?.name ?? null} unread={d.unread} disabled={disabled} onFace={(n) => openConvo(n)} onSend={(text) => client.send(here?.name ?? '', text)} />
       </KeyboardStickyView>
-      <View style={{ height: tabH, backgroundColor: t.panel }} />
+      <View style={{ height: tabH, backgroundColor: t.page }} />
     </View>
   )
 }
@@ -278,19 +332,20 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   hair: { height: StyleSheet.hairlineWidth },
   list: { flex: 1 },
-  edge: { position: 'absolute', left: 0, right: 0, top: 0, height: 46 },
   listInner: { paddingBottom: 8 },
+  edge: { position: 'absolute', left: 0, right: 0, top: 0, height: 14 },
   listEmpty: { paddingVertical: 40, paddingHorizontal: 32, alignItems: 'center', gap: 12, transform: [{ scaleY: -1 }] },
-  line: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 40 },
-  offline: { fontSize: 15, fontWeight: '500', flexShrink: 1 },
-  lineText: { fontSize: 15, lineHeight: 20, fontWeight: '500' },
-  back: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 30, paddingLeft: 8, paddingRight: 11, borderRadius: 15 },
-  backText: { fontSize: 14, fontWeight: '600' },
-  backCount: { fontSize: 13, fontWeight: '700', marginLeft: 3 },
-  convo: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
-  convoName: { fontSize: 17, fontWeight: '600' },
-  convoLine: { fontSize: 12.5 },
-  working: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, gap: 8 },
+  with: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
+  back: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  backBadge: { position: 'absolute', right: -5, top: -4, minWidth: 18, height: 18, borderRadius: 9, borderWidth: 2, paddingHorizontal: 3, alignItems: 'center', justifyContent: 'center' },
+  backBadgeText: { color: '#fff', fontSize: 10.5, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  convo: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1 },
+  convoName: { fontSize: 17, lineHeight: 21, fontWeight: '600' },
+  convoLine: { fontSize: 13, lineHeight: 17 },
+  people: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 36, paddingLeft: 6, paddingRight: 9, borderRadius: 18 },
+  latestWrap: { position: 'absolute', left: 0, right: 0, bottom: 10, alignItems: 'center' },
+  latest: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  working: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6, gap: 8 },
   workRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   workName: { fontSize: 15, fontWeight: '600' },
   workWhat: { flex: 1, fontSize: 13.5 },

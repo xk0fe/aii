@@ -42,6 +42,9 @@ const ICONS = {
   settings: ['gearshape', 'settings'],
   message: ['square.and.pencil', 'edit_note'],
   parked: ['moon.zzz', 'bedtime'],
+  copy: ['doc.on.doc', 'content_copy'],
+  share: ['square.and.arrow.up', 'share'],
+  latest: ['arrow.down', 'arrow_downward'],
 } as const
 
 export type IconName = keyof typeof ICONS

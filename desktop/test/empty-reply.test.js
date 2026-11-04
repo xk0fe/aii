@@ -58,6 +58,19 @@ test('a reply with words is just the reply', () => {
   assert.deepEqual(replies('rex').map((r) => [r.text, r.empty]), [['Cover drawn.', undefined]])
 })
 
+test('a long reply (a plan, a review) reaches the chat whole; past 16000 characters the cut shows', () => {
+  const plan = '## Phase 2\n\n' + Array.from({ length: 120 }, (_, i) => `${i + 1}. Save per-class mAP for gun and knife, precision and recall.`).join('\n')
+  assert.ok(plan.length > 4000 && plan.length < 16000)
+  hub.send({ to: 'rex', text: 'plan the evaluation work' })
+  hook('rex', { hook_event_name: 'UserPromptSubmit', prompt: runner.typed.at(-1) })
+  hook('rex', { hook_event_name: 'Stop', last_assistant_message: plan })
+  assert.equal(replies('rex').at(-1).text, plan)
+  hub.send({ to: 'rex', text: 'and the whole log, please' })
+  hook('rex', { hook_event_name: 'UserPromptSubmit', prompt: runner.typed.at(-1) })
+  hook('rex', { hook_event_name: 'Stop', last_assistant_message: 'x'.repeat(20000) })
+  assert.equal(replies('rex').at(-1).text, `${'x'.repeat(16000)}\n…`)
+})
+
 test('a /command typed in its terminal, or a turn a background task started after the reply, adds nothing', () => {
   hook('noor', { hook_event_name: 'UserPromptSubmit', prompt: '/compact' })
   hook('noor', { hook_event_name: 'Stop', last_assistant_message: '' })
