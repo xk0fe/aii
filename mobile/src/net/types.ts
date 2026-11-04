@@ -44,7 +44,7 @@ export type Agent = {
 }
 
 // app: an agent tool (crew app, desktop/core/tools.js), a change to CLIque itself, answered only in the chat; say: its own words
-export type PermissionAsk = { type: 'permission'; tool?: string; title?: string; code?: string; detail?: string; always?: { i: number; label: string }[]; alert?: string; app?: boolean; say?: string }
+export type PermissionAsk = { type: 'permission'; tool?: string; title?: string; code?: string; detail?: string; always?: { i: number; label: string }[]; alert?: string; app?: boolean; say?: string; trust?: boolean }
 export type Question = { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string }[] }
 export type QuestionAsk = { type: 'question'; questions: Question[]; alert?: string }
 export type PlanAsk = { type: 'plan'; plan: string; alert?: string }
