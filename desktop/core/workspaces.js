@@ -241,7 +241,7 @@ export const GENERAL = 'general'
 export const BRIEF_MAX = 4000
 // What a channel can be called: what Slack allows, lowercase words joined by hyphens. "iOS Release" -> ios-release.
 export const channelName = (raw) =>
-  String(raw ?? '').toLowerCase().normalize('NFKD').replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+  String(raw ?? '').toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
 const listOf = (own) => (Array.isArray(own.channels) ? own.channels.filter((c) => c && typeof c === 'object' && ID.test(c.id)) : [])
 const cleanBrief = (b) => String(b ?? '').trim().slice(0, BRIEF_MAX)
 const cleanMembers = (m) => (Array.isArray(m) ? [...new Set(m.filter((n) => typeof n === 'string' && n))] : undefined)

@@ -84,5 +84,9 @@ describe('the demo crew in channels', () => {
     await demo.channel('remove', 'launch-day')
     expect(state().channels?.map((c) => c.id)).toEqual(['general', 'ship', 'design'])
     await expect(demo.send('June', 'still there?', { channel: 'launch-day' })).rejects.toThrow('that channel is gone')
+    // its id is never handed out again (its messages still point at it), and a name's accents drop
+    expect(await demo.channel('create', null, { name: 'Launch day' })).toEqual({ id: 'launch-day-2' })
+    expect(await demo.channel('create', null, { name: 'Café' })).toEqual({ id: 'cafe' })
+    await expect(demo.channel('rename' as 'edit', 'ship', { name: 'x' })).rejects.toThrow('"rename" isn\'t a channel action')
   })
 })

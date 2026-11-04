@@ -11,7 +11,7 @@ const familyOf = (name: string) => name.replace(/\.\d+(?=@|$)/, '')
 // read marks are kept per channel, as on the computer (hub.readTo): #general's in `agents`, the others' in `channels`
 const readTo = (e: FeedEntry, reads: State['reads']) => Math.max(reads?.since ?? 0, (e.channel && e.channel !== 'general' ? reads?.channels?.[e.channel] : reads?.agents)?.[e.from] ?? 0)
 // a channel's id from its name, as core/workspaces.js makes it: lowercase words joined by dashes
-const channelId = (name: string) => String(name).toLowerCase().replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+const channelId = (name: string) => String(name).toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
 // Ada, Ada.2 (her clone), Rex@workstation (on another computer): the person each of them is
 const personOf = (name: string) => familyOf(name).split('@')[0]
 
@@ -57,6 +57,7 @@ export class DemoClient implements CrewLink {
   private listeners = new Set<() => void>()
   private timers = new Set<ReturnType<typeof setTimeout>>()
   private said = new Map<string, number>()
+  private gone = new Set<string>() // ids of deleted channels, never handed out again (core/workspaces.js channelsGone)
   private snap: Snapshot
   private nextId = 1
 
@@ -234,6 +235,7 @@ export class DemoClient implements CrewLink {
 
   // As crew.channelAction: a new channel's id comes from its name and is never one used before; #general stays.
   async channel(op: 'create' | 'edit' | 'remove', id: string | null, arg: ChannelEdit = {}) {
+    if (!['create', 'edit', 'remove'].includes(op)) throw new Error(`"${op}" isn't a channel action`)
     const ws = this.ws
     const list = this.space(ws).state.channels ?? [{ id: 'general', name: 'general' }]
     const name = arg.name === undefined ? undefined : channelId(arg.name)
@@ -243,7 +245,7 @@ export class DemoClient implements CrewLink {
       if (list.some((c) => c.name === name)) throw new Error(`there's a #${name} already`)
       const used = new Set(this.space(ws).state.feed.map((e) => e.channel))
       let made = name
-      for (let i = 2; used.has(made) || list.some((c) => c.id === made); i++) made = `${name}-${i}`
+      for (let i = 2; used.has(made) || this.gone.has(made) || list.some((c) => c.id === made); i++) made = `${name}-${i}`
       this.change(ws, (s) => ({ ...s, channels: [...list, { id: made, name, ...(arg.brief?.trim() && { brief: arg.brief.trim() }), ...(members && { members }) }] }))
       this.emit()
       return { id: made }
@@ -252,6 +254,7 @@ export class DemoClient implements CrewLink {
     if (!c) throw new Error('no such channel')
     if (op === 'remove') {
       if (c.id === 'general') throw new Error("#general can't be removed")
+      this.gone.add(c.id)
       this.change(ws, (s) => ({ ...s, channels: list.filter((x) => x.id !== c.id) }))
     } else {
       if (name !== undefined && c.id !== 'general') {

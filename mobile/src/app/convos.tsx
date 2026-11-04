@@ -47,7 +47,8 @@ const briefLine = (c: Channel) => (c.brief ? c.brief.split('\n')[0] : c.id === G
 
 export default function Convos() {
   const t = useTheme()
-  const { state, ws } = useCrew()
+  const { state, ws: watching, shown } = useCrew()
+  const ws = shown ?? watching // the workspace `state` is of
   const d = useDerived(state)
   const here = useConvo()
   const chan = usePickedChannel(ws, d.channels?.map((c) => c.id) ?? null)

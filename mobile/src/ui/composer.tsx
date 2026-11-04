@@ -20,6 +20,7 @@ type Props = {
   agents: Agent[] // the crew, without clones
   convo: string | null
   channel?: Channel | null // the channel it's said in (none: the Mac has no channels)
+  place: string // where it's said (workspace and channel, or agent): each place keeps its own draft
   unread: Map<string, number>
   disabled: string | null // why sending is off
   background: string
@@ -33,8 +34,19 @@ function mentionAt(text: string, cursor: number) {
   return m ? { query: m[2].toLowerCase(), start: cursor - m[2].length - 1 } : null
 }
 
-export function Composer({ t, agents, convo, channel, unread, disabled, background, onFace, onSend }: Props) {
-  const [text, setText] = useState('')
+// What you'd started typing, per place, as on the computer: a half-written message stays where you wrote it.
+const drafts = new Map<string, string>()
+
+export function Composer({ t, agents, convo, channel, place, unread, disabled, background, onFace, onSend }: Props) {
+  const [text, setText] = useState(() => drafts.get(place) ?? '')
+  const [was, setWas] = useState(place)
+  if (was !== place) {
+    // moved to another channel or conversation: this one's draft is kept, that one's comes back
+    if (text.trim()) drafts.set(was, text)
+    else drafts.delete(was)
+    setWas(place)
+    setText(drafts.get(place) ?? '')
+  }
   const [focused, setFocused] = useState(false)
   const [cursor, setCursor] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -62,12 +74,15 @@ export function Composer({ t, agents, convo, channel, unread, disabled, backgrou
   }
   const send = async () => {
     const body = text.trim()
+    const from = place
     if (!body || busy || disabled) return
     setBusy(true)
     setError('')
     try {
       await onSend(body)
-      setText('')
+      // sent: gone from where it was written; the box empties unless you've moved on and it holds something else
+      if (drafts.get(from)?.trim() === body) drafts.delete(from)
+      setText((now) => (now.trim() === body ? '' : now))
       setCursor(0)
     } catch (e) {
       setError(String((e as Error)?.message ?? e))

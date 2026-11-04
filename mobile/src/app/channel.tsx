@@ -17,8 +17,9 @@ import { Button, Press, tap } from '@/ui/parts'
 import { offlineText } from '@/ui/topbar'
 import { useTheme, type Theme } from '@/ui/theme'
 
-// As core/workspaces.js channelName makes it: lowercase words joined by dashes, at most 40 characters.
-const tidy = (name: string) => name.toLowerCase().replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 40)
+// As core/workspaces.js channelName makes it: lowercase words joined by dashes, accents dropped (Café: cafe), at most
+// 40 characters. A dash at the end stays while you type; it's trimmed when saved.
+const tidy = (name: string) => name.toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 40)
 
 function Check({ t, on }: { t: Theme; on: boolean }) {
   return <View style={styles.check}>{on ? <Icon name="check" size={17} color={t.accent} weight="bold" /> : null}</View>
@@ -27,7 +28,8 @@ function Check({ t, on }: { t: Theme; on: boolean }) {
 export default function ChannelSheet() {
   const t = useTheme()
   const { id } = useLocalSearchParams<{ id?: string }>()
-  const { client, link, state, ws } = useCrew()
+  const { client, link, state, ws: watching, shown } = useCrew()
+  const ws = shown ?? watching // the workspace `state` is of
   const d = useDerived(state)
   const c = id ? d.channels?.find((x) => x.id === id) : undefined
   const general = c?.id === GENERAL

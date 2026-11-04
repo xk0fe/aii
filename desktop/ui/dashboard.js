@@ -414,7 +414,7 @@ function drawChannelSheet({ list = true } = {}) {
   $c('[data-ch-save]').disabled = !general && !name
 }
 // as the hub names it (core/workspaces.js channelName)
-const channelName = (raw) => String(raw ?? '').toLowerCase().normalize('NFKD').replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+const channelName = (raw) => String(raw ?? '').toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
 
 channelDialog.addEventListener('input', (e) => {
   if (e.target.matches('[data-ch-name]')) (chDraft.name = e.target.value), drawChannelSheet({ list: false })

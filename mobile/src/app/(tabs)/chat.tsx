@@ -77,10 +77,11 @@ const reader = (() => {
     const ws = snap?.shown
     if (!ws) return
     const marks = seen.get(ws) ?? {}
-    // each reply is read in its own channel, as on the computer: 'ada#ship', 'ada#general'
+    // each reply is read in its own channel, as on the computer: 'ada#ship', 'ada#general' (a computer that sends no
+    // channels may not know those: it gets the plain name)
     for (const e of visible) {
       if (!isUnread(e, snap?.state?.reads)) continue
-      const key = `${e.from}#${e.channel || GENERAL}`
+      const key = snap?.state?.channels ? `${e.from}#${e.channel || GENERAL}` : e.from
       marks[key] = Math.max(marks[key] ?? 0, e.ts)
     }
     seen.set(ws, marks)
@@ -227,9 +228,11 @@ function People({ t, d }: { t: Theme; d: Derived }) {
 export default function ChatScreen() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
-  const { client, link, state, ws, switching } = useCrew()
+  const { client, link, state, ws, shown, switching } = useCrew()
   const d = useDerived(state)
   const convo = useConvo()
+  // the workspace `state` is of: while switching, the one still on screen
+  const space = shown ?? ws
   useFocusEffect(
     useCallback(() => {
       reader.focus(true)
@@ -242,7 +245,7 @@ export default function ChatScreen() {
   const [away, setAway] = useState(false) // scrolled back from the latest
   const here = convo ? (d.byName.get(convo) ?? null) : null
   // the channel on screen (null: the Mac sends none, so it's one chat); a conversation with an agent spans them all
-  const chan = usePickedChannel(ws, d.channels?.map((c) => c.id) ?? null)
+  const chan = usePickedChannel(space, d.channels?.map((c) => c.id) ?? null)
   const channel = d.channels?.find((c) => c.id === chan) ?? null
   const inChannel = !here && channel ? channel : null
   const offline = client && link.status === 'offline' ? offlineText(link, client.macName) : ''
@@ -378,7 +381,7 @@ export default function ChatScreen() {
         ) : null}
       </View>
       <KeyboardStickyView offset={{ closed: 0, opened: tabH }}>
-        <Composer t={t} background={t.page} agents={d.agents} convo={here?.name ?? null} channel={channel} unread={d.unread} disabled={disabled} onFace={(n) => openConvo(n)} onSend={(text) => client.send(here?.name ?? '', text, !here && chan ? { channel: chan } : undefined)} />
+        <Composer t={t} background={t.page} agents={d.agents} convo={here?.name ?? null} channel={channel} place={here ? `${space}@${here.name}` : `${space}#${chan ?? ''}`} unread={d.unread} disabled={disabled} onFace={(n) => openConvo(n)} onSend={(text) => client.send(here?.name ?? '', text, !here && chan ? { channel: chan } : undefined)} />
       </KeyboardStickyView>
       <View style={{ height: tabH, backgroundColor: t.page }} />
     </View>
