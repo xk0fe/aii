@@ -331,7 +331,8 @@ test('a phone watches a workspace of its own: state without secrets, patches, al
   assert.deepEqual(state.computers, [{ slug: 'studio', name: 'Studio', online: true }])
   for (const a of state.agents) for (const k of ['prompt', 'args', 'images', 'cwd']) assert.ok(!(k in a), k)
   assert.deepEqual(state.providers.claude, { label: 'Claude' })
-  assert.deepEqual(Object.keys(state).sort(), ['agents', 'autopilot', 'computers', 'feed', 'parked', 'providers', 'reads', 'spend', 'tasks', 'usage', 'workspace', 'workspaces'])
+  assert.deepEqual(Object.keys(state).sort(), ['agents', 'autopilot', 'channels', 'computers', 'feed', 'parked', 'providers', 'reads', 'spend', 'tasks', 'usage', 'workspace', 'workspaces'])
+  assert.deepEqual(state.channels, [{ id: 'general', name: 'general' }])
   assert.deepEqual(state.workspaces.map((w) => w.id), [DEFAULT, 'storefront'])
 
   // changes come as patches, at most one every 200 ms, and turn what the phone has into what the Mac has
@@ -395,6 +396,24 @@ test('a phone watches a workspace of its own: state without secrets, patches, al
   await sleep(450)
   assert.ok(phone.state.feed.some((e) => e.text === 'storefront only') && !phone.state.feed.some((e) => e.text === 'home only'))
   assert.deepEqual(phone.state, session().state)
+  phone.inbox.length = 0
+
+  // channels: the phone makes one, says something in it, changes it and deletes it; the list follows in the state
+  assert.deepEqual(await phone.call('channel', 'storefront', 'create', null, { name: 'Ship It', brief: 'Release work only.', members: ['milo'], extra: 'ignored' }), { id: 'ship-it' })
+  await sleep(450)
+  assert.deepEqual(phone.state.channels, [{ id: 'general', name: 'general' }, { id: 'ship-it', name: 'ship-it', brief: 'Release work only.', members: ['milo'] }])
+  assert.match(await phone.call('send', 'storefront', 'milo', 'notes for 1.2?', [], { channel: 'ship-it' }), /@milo/)
+  assert.equal(storefront.feed.findLast((e) => e.from === 'you').channel, 'ship-it')
+  await phone.call('channel', 'storefront', 'edit', 'ship-it', { brief: 'Release work.', members: null })
+  assert.deepEqual(storefront.channel('ship-it'), { id: 'ship-it', name: 'ship-it', brief: 'Release work.' })
+  await assert.rejects(phone.call('channel', 'storefront', 'remove', 'general'), /can't be removed/)
+  await assert.rejects(phone.call('channel', 'storefront', 'rename', 'ship-it'), /"rename" isn't a channel action/)
+  await assert.rejects(phone.call('channel', 'nowhere', 'create', null, { name: 'x' }), /no workspace "nowhere"/)
+  await phone.call('channel', 'storefront', 'remove', 'ship-it')
+  await assert.rejects(phone.call('send', 'storefront', 'milo', 'still there?', [], { channel: 'ship-it' }), /that channel is gone/)
+  await sleep(450)
+  assert.deepEqual(phone.state.channels.map((c) => c.id), ['general'])
+  assert.ok(!JSON.stringify(phone.state).includes('crew1.'), 'a channel change sends no snapshot with the Link code')
   phone.inbox.length = 0
 
   // a terminal it asked for, and only that one
