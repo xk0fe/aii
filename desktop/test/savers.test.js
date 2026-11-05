@@ -311,7 +311,7 @@ test('busyCheck: switching it starts running agents again once they are free; a 
 // ---- 4. quickTriage ----
 
 const triageWith = (answer) => {
-  hub.config.triage = 'abe'
+  hub.space.triage = 'abe'
   const calls = []
   hub.oneShot = async (provider, { prompt }) => {
     calls.push({ provider: provider.id, prompt })

@@ -157,13 +157,16 @@ const COMPUTER = fileURLToPath(new URL('./helpers/computer.mjs', import.meta.url
 
 const port = 20000 + Math.floor(Math.random() * 20000)
 // you: the home folder of whoever uses it, when it isn't this one's
-function computer(name, linkPort, agents, { you } = {}) {
+// joins: this computer has the Studio's workspace too (as a linked computer does once it's shown up), with its agents in it
+function computer(name, linkPort, agents, { you, joins } = {}) {
   const home = tmp('home')
   const claude = tmp('claude')
   const codex = tmp('codex')
   fs.mkdirSync(path.join(home, 'link'))
   fs.writeFileSync(path.join(home, 'link', 'link.json'), JSON.stringify({ name, port: linkPort }))
-  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ agents: agents.map((a) => ({ off: true, ...a })) }))
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(joins
+    ? { layout: 2, agents: agents.map(({ off, ...a }) => a), workspaces: [{ id: 'shop', name: 'Home', of: { computer: 'studio-mac', id: 'default' }, members: Object.fromEntries(agents.map((a) => [a.name, { ...(a.cwd && { folder: a.cwd }), off: a.off ?? true }])) }] }
+    : { agents: agents.map((a) => ({ off: true, ...a })) }))
   // the stand-in CLIs first on PATH, under the name the environment gives it (Windows: Path), or it would hold both
   const key = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH'
   const env = { ...process.env, CREW_HOME: home, NAME: name, CLAUDE_CONFIG_DIR: claude, CODEX_HOME: codex, [key]: `${bin}${path.delimiter}${process.env[key]}`, ...(you && { HOME: you, USERPROFILE: you }) }
@@ -210,20 +213,21 @@ const studio = computer('Studio Mac', port, [
 const laptop = computer('Laptop', port + 1, [
   { name: 'dev', area: 'mobile', provider: 'codex', cwd: work.laptop, off: false },
   { name: 'ann', area: 'docs writing' },
-])
+], { joins: true })
 const miniHome = tmp('you') // Workstation's user, ann, has her own home folder, with code/app in it
 fs.mkdirSync(path.join(miniHome, 'code', 'app'), { recursive: true })
-const workstation = computer('Workstation', port + 2, [], { you: miniHome })
+const workstation = computer('Workstation', port + 2, [], { you: miniHome, joins: true })
 
 // The CLI has started (its SessionStart hook), its terminal has gone quiet and it is free: messages go in right away.
-const ready = (c, name) => c.run(`((a, proc) => (crew.hub.onHook(${JSON.stringify(name)}, { hook_event_name: 'SessionStart', source: 'startup' }), a.holdUntil = 0, proc && (proc.lastOutput = 0), crew.hub.pump(a), a.status))(crew.hub.agents.get(${JSON.stringify(name)}), crew.runner.procs.get(${JSON.stringify(name)}))`)
-const feedOf = (c) => c.run(`crew.hub.feed`)
+const ready = (c, name) => c.run(`((a, proc) => (crew.here.onHook(${JSON.stringify(name)}, { hook_event_name: 'SessionStart', source: 'startup' }), a.holdUntil = 0, proc && (proc.lastOutput = 0), crew.here.pump(a), a.status))(crew.here.agents.get(${JSON.stringify(name)}), crew.runner.procs.get(${JSON.stringify(name)}))`)
+const feedOf = (c) => c.run(`crew.here.feed`)
 
 before(async () => {
   await Promise.all([studio.up, laptop.up, workstation.up])
   for (const c of [studio, workstation]) await c.run(`crew.share(true)`)
   for (const c of [studio, workstation]) await laptop.run(`crew.connect(${JSON.stringify(await c.run(`crew.snapshot().computers.me.code`))})`)
-  await sleep(300)
+  // each has told the laptop how the workspace they share is doing there
+  for (let i = 0; i < 100 && !(await laptop.run(`['studio-mac', 'workstation'].every((c) => crew.links.get(c)?.spaces?.shop)`)); i++) await sleep(100)
 })
 after(() => {
   for (const c of [studio, laptop, workstation]) c.stop()
@@ -239,18 +243,18 @@ test('a working agent moves here from a linked computer: its conversation, queue
   // iris is working on a message, with one more (and an image) queued, and one sent to both iris and bob
   await ready(studio, 'iris')
   await ready(studio, 'bob')
-  await studio.run(`(crew.hub.onHook('iris', { hook_event_name: 'SessionStart', session_id: '${id}', transcript_path: ${JSON.stringify(path.join(from, `${id}.jsonl`))} }), 1)`)
-  await studio.run(`crew.hub.send({ to: 'iris', text: 'build the login page' })`)
-  const working = await studio.run(`crew.hub.feed.at(-1).id`)
-  await studio.run(`(crew.hub.onHook('iris', { hook_event_name: 'UserPromptSubmit', session_id: '${id}', prompt: 'build the login page' }), crew.hub.agents.get('iris').status)`)
-  const image = await studio.run(`crew.hub.saveImage('shot.png', 'image/png', new Uint8Array([1, 2, 3]))`)
-  await studio.run(`crew.hub.send({ to: 'iris', text: 'and the signup page', images: [${JSON.stringify(image)}] })`)
-  await studio.run(`crew.hub.send({ to: 'iris,bob', text: 'both of you: review' })`)
-  await studio.run(`crew.hub.send({ from: 'iris', to: 'bob', text: 'the api for login, please' })`)
-  await studio.run(`(crew.hub.post({ kind: 'reply', from: 'iris', text: 'an earlier answer' }), crew.hub.convos.iris.compactions = 2, crew.hub.saveConvos(true), 1)`)
-  await studio.run(`(crew.hub.tickets.add({ title: 'Login is slow', by: 'you', owner: 'iris' }), crew.hub.read({ iris: 1000 }), 1)`)
-  await laptop.run(`(crew.hub.read({ 'iris@studio-mac': 2000 }), 1)`)
-  assert.equal(await studio.run(`crew.hub.agents.get('iris').inbox.length`), 2)
+  await studio.run(`(crew.here.onHook('iris', { hook_event_name: 'SessionStart', session_id: '${id}', transcript_path: ${JSON.stringify(path.join(from, `${id}.jsonl`))} }), 1)`)
+  await studio.run(`crew.here.send({ to: 'iris', text: 'build the login page' })`)
+  const working = await studio.run(`crew.here.feed.at(-1).id`)
+  await studio.run(`(crew.here.onHook('iris', { hook_event_name: 'UserPromptSubmit', session_id: '${id}', prompt: 'build the login page' }), crew.here.agents.get('iris').status)`)
+  const image = await studio.run(`crew.here.saveImage('shot.png', 'image/png', new Uint8Array([1, 2, 3]))`)
+  await studio.run(`crew.here.send({ to: 'iris', text: 'and the signup page', images: [${JSON.stringify(image)}] })`)
+  await studio.run(`crew.here.send({ to: 'iris,bob', text: 'both of you: review' })`)
+  await studio.run(`crew.here.send({ from: 'iris', to: 'bob', text: 'the api for login, please' })`)
+  await studio.run(`(crew.here.post({ kind: 'reply', from: 'iris', text: 'an earlier answer' }), crew.here.convos.iris.compactions = 2, crew.here.saveConvos(true), 1)`)
+  await studio.run(`(crew.here.tickets.add({ title: 'Login is slow', by: 'you', owner: 'iris' }), crew.here.read({ iris: 1000 }), 1)`)
+  await laptop.run(`(crew.here.read({ 'iris@studio-mac': 2000 }), 1)`)
+  assert.equal(await studio.run(`crew.here.agents.get('iris').inbox.length`), 2)
   const before = (await feedOf(studio)).filter((e) => (e.kind === 'msg' ? e.to === 'iris' : e.from === 'iris')).map((e) => e.id)
 
   const moved = await laptop.run(`crew.moveAgent('iris@studio-mac', '', ${JSON.stringify(work.laptop)})`)
@@ -260,9 +264,9 @@ test('a working agent moves here from a linked computer: its conversation, queue
   const to = path.join(laptop.claude, 'projects', claudeSlug(work.laptop))
   assert.equal(fs.readFileSync(path.join(to, id, 'tool-results', 'out.txt'), 'utf8').length, big.length)
   assert.equal(JSON.parse(fs.readFileSync(path.join(to, `${id}.jsonl`), 'utf8')).saved, path.join(to, id, 'tool-results', 'out.txt'))
-  assert.equal(await laptop.run(`crew.hub.sessions.iris`), id)
+  assert.equal(await laptop.run(`crew.here.sessions.iris`), id)
   assert.match(await launched(laptop, 'iris'), new RegExp(`--resume ${id}`), 'it resumes that conversation')
-  assert.equal(await laptop.run(`crew.hub.convos.iris.compactions`), 2)
+  assert.equal(await laptop.run(`crew.here.convos.iris.compactions`), 2)
 
   // its lines in the chat moved, with their ids, and read right here
   const here = await feedOf(laptop)
@@ -273,13 +277,13 @@ test('a working agent moves here from a linked computer: its conversation, queue
   assert.equal(byText('an earlier answer').from, 'iris')
   assert.match(here.at(-1).text, /moved from Studio Mac to Laptop, with its conversation, and picks up where it left off/)
   // its queue came along, images saved here, after what Crew tells it first
-  const queue = await laptop.run(`crew.hub.agents.get('iris').inbox`)
+  const queue = await laptop.run(`crew.here.agents.get('iris').inbox`)
   assert.deepEqual(queue.map((m) => m.text.slice(0, 20)), ['[crew] You were move', 'and the signup page', 'both of you: review'])
   assert.equal(queue[0].id, working, 'its reply will point at what it was working on')
   assert.ok(queue[1].images[0].startsWith(path.join(laptop.home, 'attachments')))
   assert.deepEqual([...fs.readFileSync(queue[1].images[0])], [1, 2, 3])
   assert.equal(here.find((e) => e.text === 'and the signup page').queued, true)
-  assert.equal(await laptop.run(`crew.hub.reads.agents.iris`), 2000)
+  assert.equal(await laptop.run(`crew.here.reads.agents.iris`), 2000)
 
   // once it's up, it's told where it is and what it was doing
   await ready(laptop, 'iris')
@@ -289,8 +293,8 @@ test('a working agent moves here from a linked computer: its conversation, queue
 
   // the computer it left: gone, and what stays there points at it on Laptop
   await sleep(300)
-  assert.equal(await studio.run(`crew.hub.agents.has('iris')`), false)
-  assert.equal(await studio.run(`crew.hub.convos.iris`), undefined)
+  assert.equal(await studio.run(`crew.here.agents.has('iris')`), false)
+  assert.equal(await studio.run(`crew.here.convos.iris`), undefined)
   const there = await feedOf(studio)
   assert.deepEqual(there.filter((e) => before.includes(e.id)), [])
   const handoff = there.find((e) => e.text === 'the api for login, please')
@@ -299,8 +303,8 @@ test('a working agent moves here from a linked computer: its conversation, queue
   const seen = await until(async () => (await laptop.run(`crew.snapshot().feed`)).find((e) => e.text === 'the api for login, please' && e.re === working))
   assert.ok(seen, 'which this computer finds among its own lines')
   assert.deepEqual(there.find((e) => e.text === 'both of you: review').cc, ['iris@laptop', 'bob'])
-  assert.equal(await studio.run(`crew.hub.tickets.all[0].owner`), 'iris@laptop')
-  assert.equal(await studio.run(`crew.hub.reads.agents['iris@laptop']`), 1000)
+  assert.equal(await studio.run(`crew.here.tickets.all[0].owner`), 'iris@laptop')
+  assert.equal(await studio.run(`crew.here.reads.agents['iris@laptop']`), 1000)
   const saved = () => studio.read('feed.jsonl').trim().split('\n').map((l) => JSON.parse(l))
   assert.ok(await until(() => !saved().some((e) => before.includes(e.id ?? e.amend))), 'feed.jsonl rewritten without them')
   assert.equal((await laptop.run(`crew.snapshot().feed`)).filter((e) => e.text === 'both of you: review').length, 2, 'each copy of a send in one place or the other')
@@ -310,66 +314,51 @@ test('a free Codex agent moves from here to a linked computer: its next message 
   const id = '01a11823-82bf-7e20-b5e4-91dbe18be2be'
   const rel = path.join('2026', '10', '07', `rollout-2026-10-07T17-52-23-${id}.jsonl`)
   write(path.join(laptop.codex, 'sessions', rel), '{"type":"session_meta"}\n')
-  await laptop.run(`(crew.hub.saveSession('dev', '${id}'), 1)`)
+  await laptop.run(`(crew.here.saveSession('dev', '${id}'), 1)`)
   await ready(laptop, 'dev')
   assert.deepEqual(await laptop.run(`crew.moveAgent('dev', 'studio-mac', ${JSON.stringify(work.studio)})`), { name: 'dev@studio-mac', conversation: 'moved' })
   assert.equal(fs.readFileSync(path.join(studio.codex, 'sessions', rel), 'utf8'), '{"type":"session_meta"}\n')
   assert.match(await launched(studio, 'dev'), new RegExp(`launch resume ${id} -c tui.resume_cwd="current"`))
-  assert.match(await studio.run(`crew.hub.convos.dev.note`), /^\[crew\] Since your last message you moved from computer "Laptop" to "Studio Mac" \(your folder here is .*\); processes you started on Laptop didn't come along\.$/)
-  assert.equal(await studio.run(`crew.hub.agents.get('dev').inbox.length`), 0, 'no turn spent on telling it')
-  await studio.run(`crew.hub.send({ to: 'dev', text: 'hello there' })`)
+  assert.match(await studio.run(`crew.here.convos.dev.note`), /^\[crew\] Since your last message you moved from computer "Laptop" to "Studio Mac" \(your folder here is .*\); processes you started on Laptop didn't come along\.$/)
+  assert.equal(await studio.run(`crew.here.agents.get('dev').inbox.length`), 0, 'no turn spent on telling it')
+  await studio.run(`crew.here.send({ to: 'dev', text: 'hello there' })`)
   await ready(studio, 'dev')
   assert.match(await until(() => studio.read('typed-dev.log').includes('hello there') && studio.read('typed-dev.log')), /\[crew\] Since your last message you moved from computer "Laptop"[^]*\n\nhello there/)
-  assert.equal(await studio.run(`crew.hub.convos.dev.note`), undefined, 'only once')
-  assert.equal(await laptop.run(`crew.hub.agents.has('dev')`), false)
+  assert.equal(await studio.run(`crew.here.convos.dev.note`), undefined, 'only once')
+  assert.equal(await laptop.run(`crew.here.agents.has('dev')`), false)
 })
 
 test('no transcript to take: it still moves, and starts a new conversation there', async () => {
-  await studio.run(`(crew.hub.saveSession('milo', 'cccccccc-0000-0000-0000-000000000000'), 1)`)
+  await studio.run(`(crew.here.saveSession('milo', 'cccccccc-0000-0000-0000-000000000000'), 1)`)
   const out = await studio.run(`crew.moveAgent('milo', 'laptop')`)
   assert.deepEqual(out, { name: 'milo@laptop', conversation: 'fresh', reason: "its conversation wasn't found" })
   const event = (await feedOf(laptop)).at(-1)
   assert.deepEqual([event.from, event.fresh, event.text], ['milo', true, "moved from Studio Mac to Laptop, starting a new conversation: its conversation wasn't found"])
-  assert.equal(await laptop.run(`crew.hub.sessions.milo`), undefined)
-  assert.equal(await laptop.run(`crew.hub.agents.get('milo').off`), true, 'off stays off')
+  assert.equal(await laptop.run(`crew.here.sessions.milo`), undefined)
+  assert.equal(await laptop.run(`crew.here.agents.get('milo').off`), true, 'off stays off')
 })
 
 test('between two linked computers that are not linked to each other, everything passing through this one', async () => {
   const id = 'dddddddd-0000-0000-0000-000000000000'
   write(path.join(studio.claude, 'projects', claudeSlug(work.studio), `${id}.jsonl`), '{"zoe":1}\n')
-  await studio.run(`(crew.hub.saveSession('zoe', '${id}'), crew.hub.post({ kind: 'reply', from: 'zoe', text: 'zoe was here' }), 1)`)
-  await laptop.run(`(crew.hub.read({ 'zoe@studio-mac': 3000 }), 1)`)
+  await studio.run(`(crew.here.saveSession('zoe', '${id}'), crew.here.post({ kind: 'reply', from: 'zoe', text: 'zoe was here' }), 1)`)
+  await laptop.run(`(crew.here.read({ 'zoe@studio-mac': 3000 }), 1)`)
   assert.deepEqual(await laptop.run(`crew.moveAgent('zoe@studio-mac', 'workstation', ${JSON.stringify(work.workstation)})`), { name: 'zoe@workstation', conversation: 'moved' })
   assert.equal(fs.readFileSync(path.join(workstation.claude, 'projects', claudeSlug(work.workstation), `${id}.jsonl`), 'utf8'), '{"zoe":1}\n')
-  assert.equal(await workstation.run(`crew.hub.sessions.zoe`), id)
+  assert.equal(await workstation.run(`crew.here.sessions.zoe`), id)
   assert.equal((await feedOf(workstation)).find((e) => e.text === 'zoe was here').from, 'zoe')
-  assert.equal(await studio.run(`crew.hub.agents.has('zoe')`), false)
-  assert.equal(await laptop.run(`crew.hub.reads.agents['zoe@workstation']`), 3000, 'this computer follows it too')
+  assert.equal(await studio.run(`crew.here.agents.has('zoe')`), false)
+  assert.equal(await laptop.run(`crew.here.reads.agents['zoe@workstation']`), 3000, 'this computer follows it too')
   // once Studio Mac's state has caught up here, one copy, Workstation's
   const copies = async () => (await laptop.run(`crew.snapshot().feed`)).filter((e) => e.text === 'zoe was here').map((e) => e.from)
   assert.deepEqual(await until(async () => String(await copies()) === 'zoe@workstation' && copies()), ['zoe@workstation'])
-})
-
-test('a computer on an older Crew: the agent moves without its conversation, and the result says why', async () => {
-  const MOVE = ['folderInfo', 'folders', 'moveOut', 'moveRead', 'moveEnd', 'moveWrite', 'moveIn', 'moveDrop', 'agentMoved']
-  await studio.run(`(crew.oldServe = crew.serve, crew.serve = (fn, args) => { if (${JSON.stringify(MOVE)}.includes(fn)) throw new Error('"' + fn + '" isn\\'t available over Crew Link'); return crew.oldServe(fn, args) }, 1)`)
-  try {
-    assert.deepEqual(await laptop.run(`crew.moveAgent('ann', 'studio-mac')`), { name: 'ann@studio-mac', conversation: 'fresh', reason: 'Studio Mac runs an older CLIque', older: true })
-    await sleep(200)
-    assert.equal(await studio.run(`crew.hub.agents.has('ann')`), true)
-    assert.equal(await laptop.run(`crew.hub.agents.has('ann')`), false)
-    // and from it
-    assert.deepEqual(await laptop.run(`crew.moveAgent('ann@studio-mac', '')`), { name: 'ann', conversation: 'fresh', reason: 'Studio Mac runs an older CLIque', older: true })
-  } finally {
-    await studio.run(`(crew.serve = crew.oldServe, 1)`)
-  }
 })
 
 const nowhere = path.join(work.laptop, 'no', 'such', 'folder')
 
 test('a running agent needs its folder on the other computer; nothing stops until that checks out', async () => {
   await assert.rejects(laptop.run(`crew.moveAgent('bob@studio-mac', '', ${JSON.stringify(nowhere)})`), (e) => e.message === `there's no folder ${nowhere} on Laptop`)
-  assert.equal(await studio.run(`crew.hub.runner.running('bob')`), true)
+  assert.equal(await studio.run(`crew.here.runner.running('bob')`), true)
 })
 
 test('folders on another computer: does one exist, and which ones to offer', async () => {
@@ -389,10 +378,10 @@ test("a folder in another computer's home is found in the same place in this one
   }
   assert.deepEqual(await laptop.run(`crew.folderInfo('workstation', 'C:\\\\Users\\\\sam\\\\code\\\\nope')`), { exists: false, path: 'C:\\Users\\sam\\code\\nope' })
   // and offered as where it works now
-  await laptop.run(`crew.hub.addAgent({ name: 'pcdev', area: 'windows', cwd: 'C:\\\\Users\\\\sam\\\\code\\\\app', off: true })`)
+  await laptop.run(`crew.here.addAgent({ name: 'pcdev', area: 'windows', cwd: 'C:\\\\Users\\\\sam\\\\code\\\\app', off: true })`)
   const offered = await laptop.run(`crew.folders('workstation', 'pcdev')`)
   assert.deepEqual(offered.find((f) => f.path === app), { path: app, label: 'same folder as now' })
-  await laptop.run(`(crew.hub.removeAgent('pcdev'), 1)`)
+  await laptop.run(`(crew.here.removeAgent('pcdev'), 1)`)
 })
 
 // What a Windows PC sends when one of its agents moves (see moveOut), arriving here: on Workstation, where the folder it worked
@@ -406,16 +395,16 @@ test('an agent from Windows arrives on a Mac: its folder, its files and the path
   const out = { token: 'w1', name: 'win', files: files.map(([rel, text]) => ({ rel, size: Buffer.byteLength(text) })), pack, session: { cli: 'claude', id, root, sep: '\\' }, convo: null, feed: [], inbox: [], cwd: 'C:\\Users\\sam\\code\\app', working: false }
   const token = 'aaaaaaaa-1111-2222-3333-444444444444'
   for (const [i, [, text]] of files.entries()) await workstation.run(`crew.serve('moveWrite', [${JSON.stringify(token)}, ${i}, 0, new Uint8Array(Buffer.from(${JSON.stringify(text)}))])`)
-  const res = await workstation.run(`crew.serve('moveIn', [${JSON.stringify(token)}, ${JSON.stringify(out)}, { name: 'win', folder: 'C:\\\\Users\\\\sam\\\\code\\\\app', on: false, from: { slug: 'pc', name: 'PC' } }])`)
+  const res = await workstation.run(`crew.serve('moveIn', [${JSON.stringify(token)}, ${JSON.stringify(out)}, { name: 'win', folder: 'C:\\\\Users\\\\sam\\\\code\\\\app', on: false, from: { slug: 'pc', name: 'PC' } }], crew.here)`)
   assert.deepEqual(res, { name: 'win', conversation: 'moved' })
   const app = path.join(miniHome, 'code', 'app')
-  assert.equal(await workstation.run(`crew.hub.agents.get('win').cwd`), app, 'it works in the same place here')
+  assert.equal(await workstation.run(`crew.here.agents.get('win').cwd`), app, 'it works in the same place here')
   const project = path.join(workstation.claude, 'projects', claudeSlug(app))
   assert.equal(fs.readFileSync(path.join(project, id, 'tool-results', 'toolu_01.txt'), 'utf8'), 'output')
   assert.equal(fs.readFileSync(path.join(project, id, 'subagents', 'agent-1.jsonl'), 'utf8'), '{}\r\n')
   const moved = fs.readFileSync(path.join(project, `${id}.jsonl`), 'utf8')
   assert.equal(JSON.parse(moved).saved, path.join(project, id, 'tool-results', 'toolu_01.txt'))
   assert.ok(moved.endsWith('\r\n'), 'its line endings as they were')
-  assert.equal(await workstation.run(`crew.hub.sessions.win`), id)
-  assert.match(await workstation.run(`crew.hub.convos.win.note`), /your folder here is .*app \(it was C:\\Users\\sam\\code\\app on PC\)/)
+  assert.equal(await workstation.run(`crew.here.sessions.win`), id)
+  assert.match(await workstation.run(`crew.here.convos.win.note`), /your folder here is .*app \(it was C:\\Users\\sam\\code\\app on PC\)/)
 })

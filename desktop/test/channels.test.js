@@ -39,23 +39,24 @@ after(() => {
 function start() {
   quiet()
   typed = []
-  for (const a of crew.hub.agents.values()) Object.assign(a, { status: 'idle', inbox: [], expect: null, steering: null, current: undefined })
+  for (const a of crew.hubs.get('default').agents.values()) Object.assign(a, { status: 'idle', inbox: [], expect: null, steering: null, current: undefined })
   return typed
 }
 // the agent took what it was typed: free again for the next one
 const done = (name) => {
-  const a = crew.hub.agents.get(name)
+  const a = crew.hubs.get('default').agents.get(name)
   a.expect = null
   a.status = 'idle'
 }
-const msgs = () => crew.hub.feed.filter((e) => e.kind === 'msg')
+const msgs = () => crew.hubs.get('default').feed.filter((e) => e.kind === 'msg')
 
 test('channel names, #general, and editing, renaming and removing channels in config.json', () => {
   assert.equal(channelName('#iOS Release!'), 'ios-release')
   // accents drop, they don't split a word (the phone makes the same names: mobile/src/app/channel.tsx)
   assert.deepEqual(['Café', 'Über Team', 'Résumé review', 'naïve-ui'].map(channelName), ['cafe', 'uber-team', 'resume-review', 'naive-ui'])
-  const c = { agents: [{ name: 'ada' }, { name: 'bo' }] }
-  assert.deepEqual(channelsIn(c), [{ id: 'general', name: 'general', brief: '' }])
+  const c = { agents: [{ name: 'ada' }, { name: 'bo' }], workspaces: [{ id: 'default', members: { ada: {}, bo: {} } }] }
+  const own = c.workspaces[0]
+  assert.deepEqual(channelsIn(own), [{ id: 'general', name: 'general', brief: '' }])
   const id = addChannel(c, 'default', { name: 'Review', brief: '  look, do not touch  ', members: ['ada', 'ada'] })
   assert.equal(id, 'review')
   assert.throws(() => addChannel(c, 'default', { name: 'review' }), /there's a #review already/)
@@ -63,21 +64,21 @@ test('channel names, #general, and editing, renaming and removing channels in co
   // renamed: same id, so the chat's messages stay in it; a new #review then gets another id
   editChannel(c, 'default', 'review', { name: 'audit', members: [] })
   assert.equal(addChannel(c, 'default', { name: 'review' }), 'review-2')
-  assert.deepEqual(channelsIn(c).map((x) => [x.id, x.name, x.brief, x.members]), [['general', 'general', '', undefined], ['review', 'audit', 'look, do not touch', undefined], ['review-2', 'review', '', undefined]])
+  assert.deepEqual(channelsIn(own).map((x) => [x.id, x.name, x.brief, x.members]), [['general', 'general', '', undefined], ['review', 'audit', 'look, do not touch', undefined], ['review-2', 'review', '', undefined]])
   // #general: only a brief, which goes again when it's emptied
   editChannel(c, 'default', 'general', { brief: 'be kind', name: 'random' })
-  assert.deepEqual(channelsIn(c)[0], { id: 'general', name: 'general', brief: 'be kind' })
+  assert.deepEqual(channelsIn(own)[0], { id: 'general', name: 'general', brief: 'be kind' })
   editChannel(c, 'default', 'general', { brief: '' })
-  assert.ok(!c.channels.some((x) => x.id === 'general'))
+  assert.ok(!own.channels.some((x) => x.id === 'general'))
   assert.throws(() => dropChannel(c, 'default', 'general'), /can't be removed/)
   // members follow an agent's new name, and leave with it
   editChannel(c, 'default', 'review-2', { members: ['ada', 'bo'] })
   renameShared(c, 'ada', 'ava')
   forget(c, 'bo')
-  assert.deepEqual(channelsIn(c).find((x) => x.id === 'review-2').members, ['ava'])
+  assert.deepEqual(channelsIn(own).find((x) => x.id === 'review-2').members, ['ava'])
   dropChannel(c, 'default', 'review')
   dropChannel(c, 'default', 'review-2')
-  assert.equal(c.channels, undefined)
+  assert.equal(own.channels, undefined)
   // a workspace's own agent renamed or removed there
   const w = { agents: [], workspaces: [{ id: 'shop', name: 'Shop', members: {}, agents: [{ name: 'kit' }] }] }
   addChannel(w, 'shop', { name: 'web', members: ['kit'] })
@@ -115,7 +116,7 @@ test('a brief goes in once per conversation, again when it changes or after a co
   assert.equal(typed.at(-1)[1], '[in #review] PR 73')
 
   // compacted: the brief was summarized with the rest, so it comes again
-  crew.hub.onHook('iris', { hook_event_name: 'SessionStart', source: 'compact' })
+  crew.hubs.get('default').onHook('iris', { hook_event_name: 'SessionStart', source: 'compact' })
   await crew.send('iris', 'PR 74', [], { channel: 'review' })
   done('iris')
   assert.match(typed.at(-1)[1], /^\[in #review\. Channel brief, for every message in #review: Review only\. Say/)
@@ -136,7 +137,7 @@ test('a brief goes in once per conversation, again when it changes or after a co
   assert.deepEqual(typed.slice(-2).map(([, t]) => t), ["[in #general. #general has no brief any more: what it said before doesn't apply] three", 'four'])
 
   // a new conversation hasn't been given anything
-  crew.hub.newConvo(crew.hub.agents.get('iris'))
+  crew.hubs.get('default').newConvo(crew.hubs.get('default').agents.get('iris'))
   await crew.send('iris', 'PR 75', [], { channel: 'review' })
   done('iris')
   assert.match(typed.at(-1)[1], /^\[in #review\. Channel brief/)
@@ -144,17 +145,17 @@ test('a brief goes in once per conversation, again when it changes or after a co
 
 test('hand-offs, questions, replies and notes stay in the channel of the work they came from', async () => {
   const typed = start()
-  crew.hub.newConvo(crew.hub.agents.get('iris')) // a conversation that hasn't had #review's brief
+  crew.hubs.get('default').newConvo(crew.hubs.get('default').agents.get('iris')) // a conversation that hasn't had #review's brief
   await crew.send('june', 'check the API for PR 70', [], { channel: 'review' })
-  const june = crew.hub.agents.get('june')
+  const june = crew.hubs.get('default').agents.get('june')
   const asked = msgs().at(-1)
   june.current = asked.id // the turn it's working on (UserPromptSubmit sets it)
   june.status = 'working'
-  crew.hub.send({ from: 'june', to: 'iris', text: 'does the login screen send the token?' })
-  crew.hub.send({ from: 'june', to: 'milo', text: 'is this on iOS too?', ask: true })
-  crew.hub.note('june', 'the token refresh moved to /v2')
-  const reply = crew.hub.post({ kind: 'reply', from: 'june', text: 'looks fine', re: june.current })
-  assert.deepEqual(crew.hub.feed.slice(-4).map((e) => [e.kind, e.channel]), [['msg', 'review'], ['msg', 'review'], ['note', 'review'], ['reply', 'review']])
+  crew.hubs.get('default').send({ from: 'june', to: 'iris', text: 'does the login screen send the token?' })
+  crew.hubs.get('default').send({ from: 'june', to: 'milo', text: 'is this on iOS too?', ask: true })
+  crew.hubs.get('default').note('june', 'the token refresh moved to /v2')
+  const reply = crew.hubs.get('default').post({ kind: 'reply', from: 'june', text: 'looks fine', re: june.current })
+  assert.deepEqual(crew.hubs.get('default').feed.slice(-4).map((e) => [e.kind, e.channel]), [['msg', 'review'], ['msg', 'review'], ['note', 'review'], ['reply', 'review']])
   // the teammate it reached gets the brief with it, the first time
   assert.match(typed.find(([n]) => n === 'iris')[1], /^\[in #review\. Channel brief, .*\] \[from @june: it's yours now/)
   // your reply to it from the agent's conversation (no channel of its own) stays in #review
@@ -163,10 +164,10 @@ test('hand-offs, questions, replies and notes stay in the channel of the work th
   // and a removed channel's messages are #general's: no tag, no brief
   crew.channelAction('remove', 'review')
   done('june')
-  crew.hub.agents.get('june').inbox = []
+  crew.hubs.get('default').agents.get('june').inbox = []
   await crew.send('june', 'anything else?', [], { channel: 'review' })
   assert.equal(msgs().at(-1).channel, undefined)
-  crew.config.data.channels = [{ id: 'review', name: 'review', brief: REVIEW }, { id: 'ios', name: 'ios-release', members: ['milo', 'june'] }]
+  crew.config.data.workspaces[0].channels = [{ id: 'review', name: 'review', brief: REVIEW }, { id: 'ios', name: 'ios-release', members: ['milo', 'june'] }]
   crew.config.save()
 })
 
@@ -179,18 +180,19 @@ test('Auto picks from the channel\'s members, and says so when none of them is o
   // naming someone outside the channel still reaches them
   await crew.send('iris', 'a look from you too', [], { channel: 'ios' })
   assert.deepEqual([msgs().at(-1).to, msgs().at(-1).channel], ['iris', 'ios'])
-  crew.config.data.agents = crew.config.data.agents.map((a) => (a.name === 'iris' ? a : { ...a, off: true }))
+  const members = crew.config.data.workspaces[0].members
+  for (const name of ['june', 'milo']) members[name] = { off: true }
   crew.config.save()
-  crew.hub.apply()
+  crew.hubs.get('default').apply()
   await assert.rejects(crew.send(undefined, 'anyone?', [], { channel: 'ios' }), /nobody in #ios-release is on/)
-  crew.config.data.agents = crew.config.data.agents.map(({ off, ...a }) => a)
+  for (const name of ['june', 'milo']) members[name] = {}
   crew.config.save()
-  crew.hub.apply()
+  crew.hubs.get('default').apply()
 })
 
 test('a question typed into a busy turn that never went in gives its brief back', () => {
   start()
-  const hub = crew.hub
+  const hub = crew.hubs.get('default')
   const milo = hub.agents.get('milo')
   hub.newConvo(milo)
   const ask = hub.post({ kind: 'msg', from: 'june', to: 'milo', text: 'is this on iOS too?', ask: true, channel: 'review' })
@@ -204,7 +206,7 @@ test('a question typed into a busy turn that never went in gives its brief back'
 
 test('each channel keeps its own unread replies; a phone reading everything reads them all', () => {
   start()
-  const hub = crew.hub
+  const hub = crew.hubs.get('default')
   const since = Date.now() + 1000 // what earlier tests said is old
   hub.reads = { since, agents: {} }
   const general = hub.post({ kind: 'reply', from: 'milo', text: 'in general', ts: since + 1 })
@@ -227,7 +229,7 @@ test('each channel keeps its own unread replies; a phone reading everything read
 })
 
 test('a removed channel\'s id is never taken again, and long names still get one', () => {
-  const c = { agents: [] }
+  const c = { agents: [], workspaces: [{ id: 'default', members: {} }] }
   addChannel(c, 'default', { name: 'design' })
   dropChannel(c, 'default', 'design')
   assert.equal(addChannel(c, 'default', { name: 'design' }), 'design-2') // design's old messages stay in #general
@@ -235,12 +237,12 @@ test('a removed channel\'s id is never taken again, and long names still get one
   addChannel(c, 'default', { name: long })
   editChannel(c, 'default', long, { name: 'short' })
   const second = addChannel(c, 'default', { name: long })
-  assert.ok(second.length <= 40 && channelsIn(c).some((x) => x.id === second), second)
+  assert.ok(second.length <= 40 && channelsIn(c.workspaces[0]).some((x) => x.id === second), second)
 })
 
 test('crew ask with nobody named picks from the channel it\'s working in', () => {
   start()
-  const hub = crew.hub
+  const hub = crew.hubs.get('default')
   const milo = hub.agents.get('milo')
   milo.current = hub.post({ kind: 'msg', from: 'you', to: 'milo', text: 'ship it', channel: 'ios' }).id
   hub.send({ from: 'milo', text: 'ui/ux designer: is the login screen right?', ask: true }) // iris fits, but isn't in #ios-release
@@ -250,7 +252,7 @@ test('crew ask with nobody named picks from the channel it\'s working in', () =>
 
 test('hand-offs from two channels go in one turn each, and what comes of each stays in its channel', () => {
   start()
-  const hub = crew.hub
+  const hub = crew.hubs.get('default')
   const iris = hub.agents.get('iris')
   hub.newConvo(iris)
   iris.status = 'working'
@@ -268,7 +270,7 @@ test('hand-offs from two channels go in one turn each, and what comes of each st
 
 test('a brief taken back after a steer that never went in leaves what was given before', () => {
   start()
-  const hub = crew.hub
+  const hub = crew.hubs.get('default')
   const milo = hub.agents.get('milo')
   hub.newConvo(milo)
   hub.convoOf(milo).briefs = { review: 'old' } // given an older version
@@ -282,7 +284,7 @@ test('a brief taken back after a steer that never went in leaves what was given 
 
 test('a channel said on another computer comes with its name and brief, and its agents get the brief', async () => {
   start()
-  const hub = crew.hub
+  const hub = crew.hubs.get('default')
   hub.newConvo(hub.agents.get('iris'))
   // as Crew.send delivers it from a computer with a #design-qa this workspace doesn't have
   hub.send({ from: 'you', to: 'iris', text: 'check the new screens', mentions: false, channel: 'design-qa', channelName: 'design-qa', brief: 'Screens only. Post screenshots.' })
@@ -305,7 +307,7 @@ test('a channel said on another computer comes with its name and brief, and its 
 
 test('a phone reading by plain name reads channels this computer never read in', () => {
   start()
-  const hub = crew.hub
+  const hub = crew.hubs.get('default')
   const since = Date.now() + 5000
   hub.reads = { since, agents: {} }
   const r = hub.post({ kind: 'reply', from: 'june', text: 'done', channel: 'ios', ts: since + 1 })

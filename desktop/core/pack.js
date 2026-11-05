@@ -6,14 +6,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { BUILT_IN } from './providers.js'
 import { MAX_CLONES } from './hub.js'
-import { DEFAULT, space } from './workspaces.js'
+import { ROOT, space } from './workspaces.js'
 
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const expand = (dir) => (dir ? dir.replace(/^~(?=[\\/]|$)/, os.homedir()) : os.homedir()) // ~/code, or ~\code on Windows
 
 export function packAgents(hub, names, { stats = false } = {}) {
   const agents = names.map((name) => {
-    const c = space(hub.config, hub.ws ?? DEFAULT)?.agents.find((a) => a.name === name) // as it is in its workspace (its folder there)
+    const c = space(hub.config, hub.ws ?? ROOT)?.agents.find((a) => a.name === name) // as it is in its workspace (its folder there)
     if (!c) throw new Error(`no agent named "${name}"`)
     return {
       name: c.name,
@@ -58,7 +58,7 @@ export function readPack(text) {
 }
 
 // choices: [{ index, name, folder, on, shared }] — which agents to take, what to call them here, where they work, and
-// (in a workspace other than the default) whether it's one of your shared agents or only that workspace's.
+// whether it's one of your shared agents or only that workspace's.
 export function unpackAgents(hub, pack, choices) {
   if (pack.providers) hub.config.providers = { ...pack.providers, ...hub.config.providers } // never replaces yours
   return choices.map((choice) => {

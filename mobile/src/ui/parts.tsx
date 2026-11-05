@@ -140,11 +140,11 @@ export function ContextRing({ t, ctx, compacted, size = 15, ink, label = true }:
   )
 }
 
-// A workspace's tile: its icon (an emoji) or its initial, on its color; the default one wears the crew.
+// A workspace's tile: its icon (an emoji) or its initial, on its color; until there's one, the crew's mark.
 export function WsTile({ t, ws, size = 28 }: { t: Theme; ws?: { name: string; color?: string | null; icon?: string | null; parked?: boolean; id?: string }; size?: number }) {
   const color = ws?.color ? (COLORS[ws.color] ?? ws.color) : null
   const initial = ([...String(ws?.name ?? '').trim()][0] ?? '?').toUpperCase()
-  const home = !color && (ws?.id === 'default' || !ws)
+  const home = !ws
   return (
     <View style={[styles.tile, { width: size, height: size, borderRadius: size * 0.3, backgroundColor: color ?? t.btn, opacity: ws?.parked ? 0.55 : 1 }, !color && { borderWidth: StyleSheet.hairlineWidth, borderColor: t.lineStrong }]}>
       {color ? <View style={[StyleSheet.absoluteFill, { borderRadius: size * 0.3, backgroundColor: 'rgba(255,255,255,0.18)', bottom: size * 0.5 }]} /> : null}

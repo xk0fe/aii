@@ -126,7 +126,7 @@ export class Session {
     return c
   }
 
-  // The client in use. It remembers the workspace you watch per Mac, including when the Mac moves the phone to Home
+  // The client in use. It remembers the workspace you watch per Mac, including when the Mac moves the phone to another
   // because the one it watched was removed.
   private setClient(client: CrewLink | null) {
     this.unwatch?.()
@@ -280,4 +280,4 @@ export class Session {
 export const session = new Session()
 
 // What a screen shows when there's no connection at all.
-export const EMPTY: Snapshot = { link: { status: 'connecting', since: 0 }, state: null, ws: 'default', shown: null, switching: false }
+export const EMPTY: Snapshot = { link: { status: 'connecting', since: 0 }, state: null, ws: '', shown: null, switching: false }

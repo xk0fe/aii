@@ -7,7 +7,7 @@ TOKEN=$(cat "$DIR/token" 2>/dev/null); TOKEN=${TOKEN:-$CREW_TOKEN}
 FROM=${CREW_AGENT:-you}
 [ -n "$URL" ] || { echo "crew app is not running" >&2; exit 1; }
 
-# CREW_WORKSPACE: which workspace this agent works in (none: the default)
+# CREW_WORKSPACE: which workspace this agent works in (none: its files are in CREW_HOME itself)
 call() { curl -sS -m "${WAIT:-5}" -H "X-Crew: $TOKEN" -H "X-Crew-Workspace: ${CREW_WORKSPACE:-}" "$@" || echo "crew app is not running" >&2; }
 
 cmd=$1

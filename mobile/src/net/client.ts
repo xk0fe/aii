@@ -287,7 +287,8 @@ export class CrewClient {
     this.target = target
     this.d = keyPair(target.secret)
     this.t = { ...TIMING, ...deps.timing }
-    const ws = target.kind === 'mac' ? (target.mac.ws ?? 'default') : 'default'
+    // none yet ('') until the computer says which it shows
+    const ws = target.kind === 'mac' ? (target.mac.ws ?? '') : ''
     this.snap = { link: { status: 'connecting', since: this.now() }, state: null, ws, shown: null, switching: false }
   }
 
@@ -478,14 +479,15 @@ export class CrewClient {
       return
     }
     if (msg.t === 'state') {
-      // The Mac only pushes a whole state when the watched workspace was removed: the phone watches Home from now on.
+      // The Mac pushes a whole state when the watched workspace was removed, or when it has its first: the phone watches
+      // the one on the Mac's screen from now on (null: the Mac has none left).
       this.watching++ // a watch still on its way is moot
       this.v = msg.v
-      this.set({ ws: msg.ws, shown: msg.ws, state: msg.state, switching: false })
+      this.set({ ws: msg.ws ?? '', shown: msg.ws ?? '', state: msg.state, switching: false })
       return
     }
     if (msg.t === 'patch') {
-      if (msg.ws !== this.snap.shown || this.v === null || !this.snap.state) return
+      if ((msg.ws ?? '') !== this.snap.shown || this.v === null || !this.snap.state) return
       if (msg.v <= this.v) return // one we have
       let next: State | null = null
       // the next one in line applies; after a gap (or one that doesn't apply) the client asks for the whole state
@@ -537,21 +539,22 @@ export class CrewClient {
     })
   }
 
-  // Watch a workspace: its whole state now, patches after. Switching keeps the old state on screen until the new one
-  // is in (`switching`), and if the Mac says no, the phone stays where it was.
+  // Watch a workspace ('': the one on the Mac's screen): its whole state now, patches after. Switching keeps the old
+  // state on screen until the new one is in (`switching`), and if the Mac says no, the phone stays where it was.
   async watch(ws: string, timeout = this.t.call): Promise<void> {
     const n = ++this.watching
     const conn = this.conn
     this.set({ ws, switching: ws !== this.snap.shown && this.snap.shown !== null })
     try {
       // `v` counts up for the whole connection: the reply carries the next one, patches follow
-      const r = await this.callWithin<{ v: number; state: State }>(timeout, 'watch', ws)
+      const r = await this.callWithin<{ v: number; ws?: string | null; state: State }>(timeout, 'watch', ws)
       if (n !== this.watching) return
       this.v = r.v
-      this.set({ state: r.state, shown: ws, switching: false })
+      const id = r.ws === undefined ? ws : (r.ws ?? '')
+      this.set({ state: r.state, ws: id, shown: id, switching: false })
     } catch (e) {
       if (n !== this.watching) return
-      if (gone(e) && ws !== 'default' && this.conn) return this.watch('default')
+      if (gone(e) && ws !== '' && this.conn) return this.watch('')
       this.set({ ws: this.snap.shown ?? ws, switching: false })
       // anything else leaves us unsure what the Mac is sending: start over (the new connection watches again)
       if (conn && this.conn === conn) this.dropConn(conn)

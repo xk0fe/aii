@@ -5,9 +5,10 @@ import { EventEmitter } from 'node:events'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { Hub, HOME, ATTACHMENTS, addressees, openConfig } from './hub.js'
+import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage } from './hub.js'
 import { Runner, Scoped } from './runner.js'
-import { DEFAULT, workspacesIn, space, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
+import { ROOT, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
+import { providersFrom } from './providers.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
 import { LinkHost, LinkClient, PairClient, identity, addresses, firewallWarning, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
@@ -27,6 +28,8 @@ const SETTINGS = path.join(LINK_DIR, 'link.json')
 const DISCOVER_FOR = 150000 // Computers open, as the dashboard last said: it says so every minute
 // Images nothing needs any more go this long after Crew starts (sweepImages), once its workspaces have read their chats.
 const SWEEP_AFTER = 60000
+// What a linked computer may ask with no workspace (see serve).
+const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'readImage', 'moveWrite', 'moveDrop', 'folderInfo'])
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const readJSON = (file) => {
   try {
@@ -55,14 +58,23 @@ export class Crew extends EventEmitter {
     this.runner = host ? new HostRunner({ runtime: host }) : new Runner()
     // A hub per workspace (core/workspaces.js), all on one config.json, one terminal runner and one local server.
     this.token = crypto.randomBytes(16).toString('hex')
-    this.config = openConfig() // read by the first hub, so a broken one is said in its chat
+    fs.mkdirSync(ATTACHMENTS, { recursive: true })
+    this.config = openConfig()
+    this.config.on('problem', (text) => this.say(text)) // what's wrong with the file: said where you are
     this.usage = readJSON(path.join(HOME, 'usage.json')) ?? {} // your accounts' limits, the same in every workspace
     this.samples = {} // and their recent readings, for the pace
     this.locks = { files: new Map(), held: new Map(), waits: [] } // files being edited and things leased, in any workspace
     this.hubs = new Map()
-    this.hub = this.workspace(DEFAULT) // the default workspace's: what a linked computer on an older Crew sees
-    this.syncWorkspaces()
     this.config.on('change', () => this.syncWorkspaces())
+    this.config.load()
+  }
+
+  // Crew's own word about this computer (a shortcut that's taken, a terminal host that's gone), in the chat on screen. It
+  // waits for a workspace when there's none yet.
+  say(text) {
+    const hub = this.screen
+    if (hub) hub.post({ kind: 'event', from: 'crew', text })
+    else (this.unsaid ??= []).push(text)
   }
 
   // A workspace's hub, made when it's first needed. What it says to you (alerts, notices) says which workspace it's from,
@@ -70,7 +82,7 @@ export class Crew extends EventEmitter {
   workspace(id) {
     let hub = this.hubs.get(id)
     if (hub) return hub
-    hub = new Hub(new Scoped(this.runner, id, id === DEFAULT), { bin: this.bin, workspace: id, config: this.config, token: this.token, usage: this.usage, samples: this.samples, locks: this.locks })
+    hub = new Hub(new Scoped(this.runner, id), { bin: this.bin, workspace: id, config: this.config, token: this.token, usage: this.usage, samples: this.samples, locks: this.locks })
     hub.others = () => [...this.hubs.values()].filter((h) => h !== hub)
     hub.hubOf = (ws) => this.hubs.get(ws) // whose a lease is
     // your accounts' limits: said where you are, and a window's line before it goes from whichever workspace it's in
@@ -88,34 +100,31 @@ export class Crew extends EventEmitter {
       const there = hub.directory().filter((a) => a.seed === name)
       return there.length === 1 ? there[0].name : undefined
     }
-    if (id !== DEFAULT) {
-      // the default's go further, to linked computers on older Crews too: see start
-      hub.on('notice', (n) => this.emit('notice', { ...n, ...(!n.account && { workspace: id }) }))
-      hub.on('alert', (a, text) => {
-        this.emit('alert', a.name, text, id)
-        this.pushSpace(id, 'alert', `${this.keyOf(id)}/${a.name}`, text)
-      })
-      // usage is the computer's, and linked computers read it from the default's state: tell them through that
-      hub.on('usage', () => this.hub.emit('change'))
-      let pending = null
-      hub.on('change', () => {
-        this.changed()
-        if (![...this.links.values()].some((l) => l.peer && l.aware && l.theirs?.has(id))) return
-        pending ??= setTimeout(() => {
-          pending = null
-          if (this.hubs.get(id) === hub) this.pushSpace(id, 'ws', this.keyOf(id), hub.snapshot())
-        }, 50)
-      })
-    }
+    hub.on('notice', (n) => this.emit('notice', { ...n, ...(!n.account && { workspace: id }) }))
+    hub.on('alert', (a, text) => {
+      this.emit('alert', a.name, text, id)
+      this.pushSpace(id, 'alert', `${this.keyOf(id)}/${a.name}`, text)
+    })
+    // usage is the computer's, not the workspace's: linked computers read it from computerState
+    hub.on('usage', () => this.pushComputer())
+    let pending = null
+    hub.on('change', () => {
+      this.changed()
+      if (![...this.links.values()].some((l) => l.peer && l.aware && l.theirs?.has(id))) return
+      pending ??= setTimeout(() => {
+        pending = null
+        if (this.hubs.get(id) === hub) this.pushSpace(id, 'ws', this.keyOf(id), hub.snapshot())
+      }, 50)
+    })
     this.hubs.set(id, hub)
     if (this.url) this.startWorkspace(hub)
     return hub
   }
 
   // A hub for each workspace in config.json; one that's gone stops (its hub has stopped its agents already). The one on
-  // screen is the one config.json says ("current"), or the default.
+  // screen is the one config.json says ("current"), or the first; with none, nothing is.
   syncWorkspaces() {
-    const ids = new Set([DEFAULT, ...workspacesIn(this.config.data).map((w) => w.id)])
+    const ids = new Set(workspacesIn(this.config.data).map((w) => w.id))
     for (const id of ids) this.workspace(id)
     for (const [id, hub] of this.hubs) {
       if (ids.has(id)) continue
@@ -130,16 +139,33 @@ export class Crew extends EventEmitter {
       this.pushAware('wslist', list)
       for (const l of this.links.values()) if (l.peer && l.aware && l.list) this.theirSpaces(l, l.peer, l.list)
     }
-    const current = ids.has(this.config.data.current) ? this.config.data.current : DEFAULT
+    // and who's on your roster: a shared agent that moves there rejoins by name
+    const roster = JSON.stringify(this.sharedNames())
+    if (roster !== this.rosterWas) {
+      this.rosterWas = roster
+      this.pushComputer()
+    }
+    const current = ids.has(this.config.data.current) ? this.config.data.current : ids.values().next().value ?? null
     if (current !== this.current) {
       this.current = current
       this.changed()
     }
+    const unsaid = this.unsaid
+    if (unsaid && this.screen) {
+      this.unsaid = null
+      for (const text of unsaid) this.say(text)
+    }
   }
 
-  // The workspace on screen: what the app shows, and where what you do in it goes.
+  // The workspace on screen: what the app shows. null when there's no workspace at all.
+  get screen() {
+    return this.hubs.get(this.current) ?? null
+  }
+
+  // ...and where what you do in it goes, which needs one.
   get here() {
-    return this.hubs.get(this.current) ?? this.hub
+    if (!this.screen) throw new Error('make a workspace first')
+    return this.screen
   }
 
   // Each workspace's agents start unless it's parked; those still at work from before Crew restarted carry on either way
@@ -153,12 +179,12 @@ export class Crew extends EventEmitter {
 
   // Every workspace, for the switcher: its look and folder, whether it's on screen or parked, and how it's doing.
   workspaces() {
-    // in config.json's order (which order() changes), the default first
-    const rank = new Map(workspacesIn(this.config.data).map((w, i) => [w.id, i + 1]))
-    return [...this.hubs.values()].sort((a, b) => (a.ws === DEFAULT ? 0 : rank.get(a.ws) ?? Infinity) - (b.ws === DEFAULT ? 0 : rank.get(b.ws) ?? Infinity)).map((h) => ({
-      id: h.ws, name: h.space.name, color: h.space.color, icon: h.space.icon, folder: h.space.folder, parked: h.parked, current: h === this.here,
+    // in config.json's order (which order() changes)
+    const rank = new Map(workspacesIn(this.config.data).map((w, i) => [w.id, i]))
+    return [...this.hubs.values()].sort((a, b) => (rank.get(a.ws) ?? Infinity) - (rank.get(b.ws) ?? Infinity)).map((h) => ({
+      id: h.ws, name: h.space.name, color: h.space.color, icon: h.space.icon, folder: h.space.folder, parked: h.parked, current: h === this.screen,
       ...this.ownerOf(h.ws),
-      members: h.ws === DEFAULT ? null : h.space.agents.filter((a) => a.shared).map((a) => ({ name: a.name, folder: this.memberFolder(h.ws, a.name) })),
+      members: h.space.agents.filter((a) => a.shared).map((a) => ({ name: a.name, folder: this.memberFolder(h.ws, a.name) })),
       ...h.summary(),
     }))
   }
@@ -171,19 +197,19 @@ export class Crew extends EventEmitter {
 
   // switch(id): put it on screen. create({ name, color, icon, folder, members }): a new workspace, opened and on screen.
   // edit(id, { name, color, icon, folder }), open(id), park(id), remove(id). order(null, [ids]): the order they're listed
-  // in (the default stays first; ids left out keep their order after the ones given). members(id, { add, remove, folders }): which
-  // shared agents work there, and the folder each has of its own there ('' for the workspace's). In the default
-  // workspace, where every shared agent is, only folders: each agent's own ('' for the home folder).
+  // in (ids left out keep their order after the ones given). members(id, { add, remove, folders }): which shared agents
+  // work there, and the folder each has of its own there ('' for the workspace's).
   workspaceAction(op, id, arg) {
+    // what's in memory isn't what's on disk: saving would overwrite a file that can still be fixed
+    if (this.config.broken) throw new Error(BROKEN)
     const data = this.config.data
-    const has = (x) => x === DEFAULT || workspacesIn(data).some((w) => w.id === x)
+    const has = (x) => workspacesIn(data).some((w) => w.id === x)
     if (op !== 'create' && op !== 'order' && op !== 'join' && !has(id)) throw new Error('no such workspace')
     const where = () => space(data, id)
     const ops = {
       // going to a workspace that's asleep wakes it
       switch: () => {
-        if (id === DEFAULT) delete data.current
-        else data.current = id
+        data.current = id
         where().parked = false
       },
       // (show: false, an agent made it: it opens without taking over the screen)
@@ -235,7 +261,6 @@ export class Crew extends EventEmitter {
       },
       members: () => {
         const { add = [], remove = [], folders = {} } = arg ?? {}
-        if (id === DEFAULT && (add.length || remove.length)) throw new Error('every shared agent is in the default workspace')
         const w = where()
         const shared = new Set((data.agents ?? []).map((a) => a?.name))
         for (const name of add) {
@@ -270,7 +295,7 @@ export class Crew extends EventEmitter {
   // { name, brief, members }), channel('remove', id). -> { id, state }
   // ws: the workspace it's for (the sheet's, which may not be on screen any more); the one on screen if not given.
   channelAction(op, id, arg, ws = this.current) {
-    if (ws !== DEFAULT && !workspacesIn(this.config.data).some((w) => w.id === ws)) throw new Error('no such workspace')
+    if (!workspacesIn(this.config.data).some((w) => w.id === ws)) throw new Error('no such workspace')
     const ops = {
       create: () => (id = addChannel(this.config.data, ws, arg ?? {})),
       edit: () => editChannel(this.config.data, ws, id, arg ?? {}),
@@ -319,6 +344,11 @@ export class Crew extends EventEmitter {
     return hub.toolAsk(from, { ...plan, risky, alert: alertOf(plan) }, closed, hold)
   }
 
+  setTheme(theme) {
+    this.config.data.theme = ['light', 'dark'].includes(theme) ? theme : 'system'
+    this.config.save()
+  }
+
   // Agent tools: 'off', 'ask' (the default, so config.json doesn't say it) or 'auto'. Turned off, the cards still up
   // close, and their agents hear that nothing was made.
   setTools(mode) {
@@ -332,7 +362,8 @@ export class Crew extends EventEmitter {
   }
 
   async start() {
-    const server = (this.server = await serve({ token: this.token, hubFor: (id) => this.hubs.get(id) }))
+    // (no workspace said: ROOT's agents, or `crew` in a terminal of your own, which goes to the one on screen)
+    const server = (this.server = await serve({ token: this.token, hubFor: (id) => this.hubs.get(id) ?? (id === ROOT ? this.screen : undefined) }))
     let survivors = []
     if (this.runner.connect) {
       try {
@@ -340,55 +371,38 @@ export class Crew extends EventEmitter {
       } catch (e) {
         // no terminal host: the agents run in here, as before, and stop when Crew quits
         this.runner = new Runner()
-        for (const hub of this.hubs.values()) hub.useRunner(new Scoped(this.runner, hub.ws, hub.ws === DEFAULT))
-        this.hub.post({ kind: 'event', from: 'crew', text: `${e.message}, so agents stop when CLIque quits this time` })
+        for (const hub of this.hubs.values()) hub.useRunner(new Scoped(this.runner, hub.ws))
+        this.say(`${e.message}, so agents stop when CLIque quits this time`)
       }
     }
-    if (this.runner.replaced) this.hub.post({ kind: 'event', from: 'crew', text: 'the terminal host was from another CLIque version, so its agents started again, resuming their conversations' })
+    if (this.runner.replaced) this.say('the terminal host was from another CLIque version, so its agents started again, resuming their conversations')
     this.url = `http://127.0.0.1:${server.address().port}`
     for (const hub of this.hubs.values()) this.startWorkspace(hub, survivors)
+    this.config.watch() // (a hub does too, but there may be none yet)
     // terminals still running for a workspace that's gone from config.json: nothing would ever hear from them again
-    const stray = survivors.filter((s) => ![...this.hubs.values()].some((hub) => hub.runner.own(s.name)))
+    // (a config.json that can't be read says nothing about what's gone)
+    const stray = this.config.broken ? [] : survivors.filter((s) => ![...this.hubs.values()].some((hub) => hub.runner.own(s.name)))
     for (const s of stray) this.runner.stop(s.name)
-    if (stray.length) this.hub.post({ kind: 'event', from: 'crew', text: `stopped ${stray.map((s) => s.name).join(', ')}: ${stray.length === 1 ? 'it was' : 'they were'} still running for a workspace that's been removed` })
-    const pushAll = (...msg) => this.pushAll(...msg)
+    if (stray.length) this.say(`stopped ${stray.map((s) => s.name).join(', ')}: ${stray.length === 1 ? 'it was' : 'they were'} still running for a workspace that's been removed`)
     // Terminal output is batched per frame so a chatty agent doesn't flood IPC or the network. The app gets the
-    // terminals of the workspace on screen by its agents' names. Linked computers get the default's by name, and any
-    // other workspace's as workspace/name, if they know about workspaces. Phones get any workspace's they asked for
-    // ('terminal': workspace, name, data).
+    // terminals of the workspace on screen by its agents' names. Linked computers that share a workspace get its
+    // terminals as key/name. Phones get any workspace's they asked for ('terminal': workspace, name, data).
     const out = new Map()
     this.flushPty = () => {
       clearTimeout(this.ptyTimer)
       this.ptyTimer = null
       for (const [name, data] of out) {
-        const shown = this.here.runner.own(name)
+        const shown = this.screen?.runner.own(name)
         if (shown) this.emit('pty', shown, data)
-        const linked = this.hub.runner.own(name)
-        if (linked) pushAll('pty', linked, data)
-        else {
-          const [ws, base] = Crew.split(name)
-          this.pushSpace(ws, 'pty', `${this.keyOf(ws)}/${base}`, data)
-        }
-        this.emit('terminal', ...Crew.split(name), data)
+        const [ws, base] = Crew.split(name)
+        this.pushSpace(ws, 'pty', `${this.keyOf(ws)}/${base}`, data)
+        this.emit('terminal', ws, base, data)
       }
       out.clear()
     }
     this.runner.on('data', (name, data) => {
       out.set(name, (out.get(name) ?? '') + data)
       this.ptyTimer ??= setTimeout(this.flushPty, 16)
-    })
-    let pending = null
-    this.hub.on('change', () => {
-      pending ??= setTimeout(() => {
-        pending = null
-        pushAll('state', this.hub.snapshot())
-        this.changed()
-      }, 50)
-    })
-    this.hub.on('notice', (n) => this.emit('notice', { ...n, ...(!n.account && { workspace: DEFAULT }) }))
-    this.hub.on('alert', (a, text) => {
-      this.emit('alert', a.name, text, DEFAULT)
-      pushAll('alert', a.name, text)
     })
     if (this.settings.share) await this.share(true).catch(() => {})
     for (const code of this.settings.peers ?? []) this.connect(code, { save: false }).catch(() => {})
@@ -441,6 +455,7 @@ export class Crew extends EventEmitter {
 
   close() {
     clearTimeout(this.sweepTimer)
+    clearTimeout(this.computerTimer)
     for (const l of this.links.values()) {
       l.client?.close()
       l.peer?.close()
@@ -472,42 +487,39 @@ export class Crew extends EventEmitter {
   }
 
   // ---- Crew Link and workspaces ------------------------------------------------------------------
-  // A workspace is the same project on every computer that has one with its id: "storefront" here and "storefront" on
-  // the Workstation are one crew, each computer's agents working in its own checkout. The default workspace is the
-  // default everywhere.
-  // A linked computer gets the default's state, terminals and alerts as always, and those of every other workspace
-  // ('space' messages, workspace/name for terminals and alerts) once it has said it knows about workspaces (aware, see
-  // attach). Calls for a workspace other than the default go through 'in'.
+  // A workspace belongs to the computer that made it, and shows up on the computers linked with it (showTheirs). Where
+  // two computers have the one workspace, its crew is both computers' agents, each working in that computer's folder.
+  // A linked computer gets what's about this computer ('state': computerState) and, once it has said it knows about
+  // workspaces (aware, see attach), each workspace's state, terminals and alerts ('ws', key/name for the others). Calls
+  // for a workspace go through 'in'.
 
   // A workspace's key on Crew Link: the computer it belongs to and its id there (owner:id). One made here is this
   // computer's; one joined from a linked computer keeps its owner's ("of" in config.json). Two computers' workspaces
   // are one crew only when their keys match, so the same name or id on two computers stays two workspaces.
   keyOf(id) {
-    if (id === DEFAULT) return DEFAULT
     const of = workspacesIn(this.config.data).find((w) => w.id === id)?.of
     return of && typeof of.computer === 'string' && typeof of.id === 'string' ? `${of.computer}:${of.id}` : `${this.me.slug}:${id}`
   }
 
   // The workspace here with that key, or null.
   localOf(key) {
-    if (key === DEFAULT) return DEFAULT
-    for (const id of this.hubs.keys()) if (id !== DEFAULT && this.keyOf(id) === key) return id
+    for (const id of this.hubs.keys()) if (this.keyOf(id) === key) return id
     return null
   }
 
   // A joined workspace's owner, for the switcher: { owner, ownerName, ownerOnline }. Nothing for this computer's own.
   ownerOf(id) {
     const key = this.keyOf(id)
-    const owner = key === DEFAULT ? this.me.slug : key.slice(0, key.indexOf(':'))
+    const owner = key.slice(0, key.indexOf(':'))
     if (owner === this.me.slug) return {}
     const l = this.links.get(owner)
     const kept = workspacesIn(this.config.data).find((w) => w.id === id)?.of?.name
     return { owner, ownerName: l?.name ?? this.knownSpaces.get(owner)?.name ?? kept ?? owner, ownerOnline: Boolean(l?.peer) }
   }
 
-  // This computer's workspaces besides the default, as linked computers get them.
+  // This computer's workspaces, as linked computers get them.
   spaceList() {
-    return [...this.hubs.keys()].filter((id) => id !== DEFAULT).map((id) => {
+    return [...this.hubs.keys()].map((id) => {
       const h = this.hubs.get(id)
       const key = this.keyOf(id)
       return { key, owner: key.slice(0, key.indexOf(':')), name: h.space.name, color: h.space.color, icon: h.space.icon }
@@ -525,7 +537,27 @@ export class Crew extends EventEmitter {
     return out
   }
 
-  // name as it crosses the link (key/name) -> [this computer's workspace or null, name]; a bare name is the default's.
+  // What's about this computer rather than any workspace, as a linked computer gets it: its accounts' usage, and who's on
+  // its roster. A computer on an older Crew reads this as the crew of its default workspace: an empty one.
+  computerState() {
+    const hub = this.screen ?? this.hubs.values().next().value
+    return { agents: [], feed: [], tasks: { tickets: [] }, providers: {}, usage: hub?.usageNow() ?? {}, roster: this.sharedNames() }
+  }
+
+  pushComputer() {
+    this.computerTimer ??= setTimeout(() => {
+      this.computerTimer = null
+      if (this.links.size) this.pushAll('state', this.computerState())
+    }, 50)
+    this.computerTimer.unref?.()
+  }
+
+  // Your shared agents' names.
+  sharedNames() {
+    return (this.config.data.agents ?? []).filter((a) => a?.name).map((a) => a.name)
+  }
+
+  // name as it crosses the link (key/name) -> [this computer's workspace or null, name].
   fromWire(n) {
     const [key, base] = Crew.split(n)
     return [this.localOf(key), base]
@@ -544,7 +576,7 @@ export class Crew extends EventEmitter {
     for (const l of this.links.values()) if (l.aware && l.theirs?.has(id)) l.peer?.push(...msg)
   }
 
-  // A linked computer's workspaces (besides the default), from its answer to 'workspaces' or its 'wslist' message.
+  // A linked computer's workspaces, from its answer to 'workspaces' or its 'wslist' message.
   // l.theirs: the ones here with the same key, by their id here; what it no longer shares goes, and it gets ours for
   // every one we share. The ones it owns are remembered for remoteWorkspaces.
   theirSpaces(l, peer, list) {
@@ -607,7 +639,7 @@ export class Crew extends EventEmitter {
   // and its computer's name (for when that computer is gone), after the other workspaces of that computer.
   addTheirs(data, r) {
     const name = String(r.name ?? '').trim() || r.key.slice(r.key.indexOf(':') + 1)
-    const id = addWorkspace(data, { name })
+    const id = addWorkspace(data, { name }, { again: false })
     try {
       setLook(data, id, { color: r.color ?? '', icon: r.icon ?? '' })
     } catch {} // a look this version can't show: it keeps the default one
@@ -621,7 +653,6 @@ export class Crew extends EventEmitter {
 
   // A call to a linked computer, for a workspace (the one on screen unless said).
   async linkCall(l, fn, args = [], ws = this.here.ws) {
-    if (ws === DEFAULT) return l.peer.call(fn, args)
     try {
       return await l.peer.call('in', [this.keyOf(ws), fn, args])
     } catch (e) {
@@ -634,19 +665,20 @@ export class Crew extends EventEmitter {
   input(name, data, here = this.here) {
     const { l, base } = this.where(name)
     if (!l) return here.input(base, data)
-    l.peer?.input(here === this.hub ? base : `${this.keyOf(here.ws)}/${base}`, data)
+    l.peer?.input(`${this.keyOf(here.ws)}/${base}`, data)
   }
 
-  // workspace/name (a terminal or an alert from a linked computer) -> [workspace, name]; a bare name is the default's.
+  // A terminal's name in the runner (workspace/name, see Scoped), or from a linked computer (key/name) -> [workspace or
+  // key, name].
   static split(n) {
     const s = String(n)
     const at = s.indexOf('/')
-    return at < 0 ? [DEFAULT, s] : [s.slice(0, at), s.slice(at + 1)]
+    return at < 0 ? [ROOT, s] : [s.slice(0, at), s.slice(at + 1)]
   }
 
-  // What a linked computer has of a workspace: its state for the default or for one of the same id.
+  // What a linked computer has of a workspace: its state for the one they share.
   linkedState(l, ws) {
-    return ws === DEFAULT ? l.state : l.spaces?.[ws]
+    return l.spaces?.[ws]
   }
 
   // ---- the merged crew -------------------------------------------------------------------------
@@ -661,16 +693,26 @@ export class Crew extends EventEmitter {
     }
   }
 
-  // The workspace on screen (or `here`), with the linked computers' agents when that's the default (theirs are in their
-  // own defaults), and every workspace for the switcher.
-  snapshot(here = this.here) {
-    const s = here.snapshot()
+  // A workspace's state when there's no workspace: nothing in it, for the app to ask you to make one.
+  blank() {
+    const providers = providersFrom(this.config.data, this.config.discovered)
+    return {
+      parked: false, autopilot: this.config.data.autopilot ?? true, theme: this.config.data.theme,
+      providers: Object.fromEntries(Object.values(providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault }])),
+      agents: [], feed: [], channels: channelsIn({}), reads: { since: 0, agents: {} },
+      spend: { today: 0, usual: null, week: 0, weekBefore: 0 }, usage: {}, tasks: { tickets: [], triage: null, autofix: false },
+    }
+  }
+
+  // The workspace on screen (or `here`), with its linked computers' agents, and every workspace for the switcher.
+  snapshot(here = this.screen) {
+    const s = here?.snapshot() ?? this.blank()
     const agents = s.agents.map((a) => ({ ...a, home: null }))
     const feed = [...s.feed]
     const tickets = s.tasks.tickets.map((t) => ({ ...t, key: String(t.id), home: null }))
     const providers = {}
     for (const l of this.links.values()) {
-      const st = this.linkedState(l, here.ws)
+      const st = here && this.linkedState(l, here.ws)
       if (!st) continue
       const q = this.qualifier(l)
       Object.assign(providers, st.providers)
@@ -699,13 +741,13 @@ export class Crew extends EventEmitter {
     const workspaces = this.workspaces()
     return {
       ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.cloneOf ?? a.name)), feed: [...open, ...recent], computers: this.computers(),
-      tasks: { ...s.tasks, tickets }, workspace: workspaces.find((w) => w.id === here.ws), workspaces,
+      tasks: { ...s.tasks, tickets }, workspace: workspaces.find((w) => w.id === here?.ws) ?? null, workspaces,
       // linked computers' workspaces you can join (workspaceAction('join', key)), greyed while their computer is off
       remoteWorkspaces: this.remoteWorkspaces(),
       savers: this.saversState(),
+      settingsBroken: Boolean(this.config.broken), // config.json can't be read: with no workspace, the app says so instead of asking for one
       tools: toolMode(this.config.data), // what agents may change in CLIque: off, ask or auto (core/tools.js)
-      // your shared agents, to pick who works in a workspace, each with the folder of its own (where it works in the
-      // default workspace)
+      // your shared agents, to pick who works in a workspace, each with the folder of its own
       roster: (this.config.data.agents ?? []).filter((a) => a?.name).map((a) => ({ name: a.name, area: a.area, avatar: a.avatar, cwd: a.cwd })),
     }
   }
@@ -715,7 +757,7 @@ export class Crew extends EventEmitter {
   saversState() {
     const ledgers = [...this.hubs.values()].map((h) => h.ledger)
     return {
-      on: this.here.savers, forced: Boolean(String(process.env.CREW_SAVERS ?? '').trim()),
+      on: saversFrom(this.config.data), forced: Boolean(String(process.env.CREW_SAVERS ?? '').trim()),
       list: SAVERS.map(({ id, label, about }) => ({ id, label, about })),
       all: report(ledgers), week: report(ledgers, { days: 7 }),
     }
@@ -866,7 +908,7 @@ export class Crew extends EventEmitter {
   }
 
   // A local agent's `crew send` (or a bug sent to its fixer) to agents on other computers, in its workspace there.
-  async relay(from, names, text, images, extra = {}, hub = this.hub) {
+  async relay(from, names, text, images, extra = {}, hub = this.here) {
     const out = []
     for (const [home, bases] of this.group(names)) {
       if (!home) throw new Error(`${bases.join(', ')}: that's this computer, leave off the @${this.me.slug}`)
@@ -981,8 +1023,10 @@ export class Crew extends EventEmitter {
 
   // ---- what linked computers may ask of this one -----------------------------------------------
 
-  // h: the hub it's for (linked computers only ever reach the default's; this computer's app, the one on screen).
-  serve(fn, args, h = this.hub) {
+  // h: the hub it's for ('in' says which, and this computer's app and moves pass the one on screen). What's for no
+  // workspace needs none; a call without one otherwise is a computer on an older Crew, asking for its default workspace.
+  serve(fn, args, h) {
+    if (!h && !COMPUTER_CALLS.has(fn)) throw new Error(`${this.me.name} runs a newer CLIque, where every workspace is its own: update this computer's to work with its agents`)
     const allowed = {
       // the same call, for one of this computer's workspaces (not on an older Crew); and which ones it has
       in: (key, call, rest) => {
@@ -991,7 +1035,7 @@ export class Crew extends EventEmitter {
         if (call === 'in') throw new Error('one workspace at a time')
         return this.serve(call, rest ?? [], there)
       },
-      // an older Crew matched workspaces by id: it gets none, and shares only the default (see keyOf)
+      // an older Crew matched workspaces by id: it gets none (see keyOf)
       spaces: () => [],
       // not while config.json can't be read: what's in memory then isn't its workspaces, and an empty list would make
       // linked computers drop theirs (it says so as an older Crew would, and they keep what they have)
@@ -999,9 +1043,9 @@ export class Crew extends EventEmitter {
         if (this.config.broken) throw new Error(`${this.me.name} can't read its settings right now`)
         return this.spaceList()
       },
-      state: () => h.snapshot(),
+      state: () => h?.snapshot() ?? this.computerState(),
       deliver: (opts) => h.send({ ...opts, mentions: false }),
-      saveImage: (name, type, bytes) => h.saveImage(name, type, bytes),
+      saveImage: (name, type, bytes) => saveImage(name, type, bytes),
       readImage: (file) => {
         if (!String(file).startsWith(ATTACHMENTS + path.sep)) throw new Error('not an attachment')
         return new Uint8Array(fs.readFileSync(file))
@@ -1012,7 +1056,7 @@ export class Crew extends EventEmitter {
       update: (names, patch) => h.update(names, patch),
       draftPrompt: (agent) => h.draftPrompt(agent),
       addAgent: (fields) => h.addAgent(fields),
-      removeAgent: (name) => h.removeAgent(name),
+      removeAgent: (name, opts) => h.removeAgent(name, { everywhere: Boolean(opts?.everywhere) }),
       restart: (name) => h.restart(name),
       markIdle: (name) => h.markIdle(name),
       dismiss: (name) => h.dismiss(name),
@@ -1058,8 +1102,8 @@ export class Crew extends EventEmitter {
   namesOn(home) {
     const l = home && this.links.get(home)
     const ws = this.here.ws
-    if (l) return new Set([...(l.state?.agents ?? []), ...(ws === DEFAULT ? [] : l.spaces?.[ws]?.agents ?? [])].map((a) => a.name))
-    return new Set([...this.here.agents.keys(), ...this.hub.agents.keys()])
+    if (l) return new Set([...(l.state?.roster ?? []), ...(l.spaces?.[ws]?.agents ?? []).map((a) => a.name)])
+    return new Set([...this.here.agents.keys(), ...this.sharedNames()])
   }
 
   freeName(name, home) {
@@ -1094,11 +1138,9 @@ export class Crew extends EventEmitter {
   // Moves an agent to another computer (home: a linked computer, '' for this one), from whichever computer it's on,
   // with its definition, look, work experience, queued messages, its lines in the chat and its conversation: the
   // CLI's session files go along and it resumes there (core/move.js). Everything passes through this computer, so
-  // the two needn't be linked to each other. A computer on an older Crew can only take the agent, not its
-  // conversation (`older`). -> { name, conversation: 'moved' | 'fresh', reason?, older? }
-  // In a workspace other than the default, it moves to that workspace on the other computer, which needs one with the
-  // same id: one of the workspace's own agents is its own there too, one of your shared agents joins that computer's
-  // crew (off in its default workspace until you turn it on there) and leaves only this workspace here.
+  // the two needn't be linked to each other. -> { name, conversation: 'moved' | 'fresh', reason? }
+  // It moves to the same workspace on the other computer: one of the workspace's own agents is its own there too, one of
+  // your shared agents joins that computer's crew and leaves only this workspace here.
   async moveAgent(name, home, folder) {
     home ??= ''
     const here = this.here
@@ -1108,35 +1150,22 @@ export class Crew extends EventEmitter {
     if (from === home) throw new Error('it already lives there')
     const agent = this.snapshot().agents.find((a) => a.name === name)
     if (!agent) throw new Error(`no agent named "${name}"`)
-    if (ws !== DEFAULT && home && !this.links.get(home)?.spaces?.[ws]) throw new Error(`${this.links.get(home)?.name ?? home} has no ${here.space.name} workspace: make one with that name there first`)
+    if (home && !this.links.get(home)?.spaces?.[ws]) throw new Error(`${this.links.get(home)?.name ?? home} has no ${here.space.name} workspace: make one with that name there first`)
     folder = String(folder ?? '').trim() || agent.cwd || '~'
     const on = (h, fn, ...args) => (h ? this.linkCall(this.link(h), fn, args, ws) : this.serve(fn, args, here))
     const label = (h) => (h ? this.links.get(h)?.name ?? h : this.me.name)
     // one of your shared agents that the other computer's crew has already (it was there before) rejoins it there,
     // rather than arriving as a copy under another name
-    const shared = ws !== DEFAULT && Boolean(agent.shared)
+    const shared = Boolean(agent.shared)
     const l = home && this.links.get(home)
-    const crewThere = new Set(l ? (l.state?.agents ?? []).filter((a) => !a.cloneOf).map((a) => a.name) : this.hub.agents.keys())
+    const crewThere = new Set(l ? l.state?.roster ?? [] : this.sharedNames())
     const inThere = new Set(l ? (l.spaces?.[ws]?.agents ?? []).map((a) => a.name) : here.agents.keys())
     const join = shared && crewThere.has(src.base) && !inThere.has(src.base)
     const move = { from: from || this.me.slug, to: home || this.me.slug, old: src.base, name: join ? src.base : this.freeName(src.base, home) }
-    const older = (e) => ws === DEFAULT && /isn't available over Crew Link/.test(e.message) // in a workspace: no way back
-    // A running agent needs its folder there; and a computer on an older Crew says so here, before anything stops.
-    let there
-    try {
-      there = await on(home, 'folderInfo', folder)
-    } catch (e) {
-      if (older(e)) return this.packMove(src, home, folder, agent, move, label(home))
-      throw e
-    }
+    // a running agent needs its folder there
+    const there = await on(home, 'folderInfo', folder)
     if (agent.on && !there.exists) throw new Error(`there's no folder ${there.path} on ${label(home)}`)
-    let out
-    try {
-      out = await on(from, 'moveOut', src.base)
-    } catch (e) {
-      if (older(e)) return this.packMove(src, home, folder, agent, move, label(from))
-      throw e
-    }
+    const out = await on(from, 'moveOut', src.base)
     const token = crypto.randomUUID()
     let res
     try {
@@ -1164,22 +1193,11 @@ export class Crew extends EventEmitter {
     return { name: home ? `${res.name}@${home}` : res.name, conversation: res.conversation, ...(res.reason && { reason: res.reason }) }
   }
 
-  // The move from before conversations could travel, for a computer on an older Crew: the agent goes, its
-  // conversation and its lines in the chat stay where they were.
-  async packMove(src, home, folder, agent, move, who) {
-    const pack = src.l ? await src.l.peer.call('exportAgents', [[src.base], { stats: true }]) : packAgents(this.hub, [src.base], { stats: true })
-    const pick = [{ index: 0, name: move.name, folder, on: Boolean(agent.on) }]
-    const [moved] = home ? await this.link(home).peer.call('importAgents', [pack, pick]) : unpackAgents(this.hub, pack, pick)
-    await (src.l ? src.l.peer.call('removeAgent', [src.base]) : this.hub.removeAgent(src.base))
-    this.tellMoved({ ...move, name: moved }, [])
-    return { name: home ? `${moved}@${home}` : moved, conversation: 'fresh', reason: `${who} runs an older CLIque`, older: true }
-  }
-
   // Every computer within reach (this one too) but `skip` writes the agent by its new name from now on, in the
   // workspace it moved in.
-  tellMoved(move, skip, ws = DEFAULT) {
+  tellMoved(move, skip, ws) {
     if (!skip.includes('') && this.hubs.has(ws)) agentMoved(this.hubs.get(ws), move)
-    for (const l of this.links.values()) if (l.peer && !skip.includes(l.slug) && (ws === DEFAULT || l.spaces?.[ws])) this.linkCall(l, 'agentMoved', [move], ws).catch(() => {})
+    for (const l of this.links.values()) if (l.peer && !skip.includes(l.slug) && l.spaces?.[ws]) this.linkCall(l, 'agentMoved', [move], ws).catch(() => {})
   }
 
   // Folders on any computer (home '' = this one): the folder picker only browses this one.
@@ -1199,7 +1217,7 @@ export class Crew extends EventEmitter {
   computers() {
     const hidden = new Set(this.settings.hidden ?? [])
     const port = this.settings.port ?? DEFAULT_PORT
-    let me = { name: this.me.name, slug: this.me.slug, sharing: Boolean(this.sharing), share: Boolean(this.settings.share), error: this.linkError, agents: this.hub.config.agents.length }
+    let me = { name: this.me.name, slug: this.me.slug, sharing: Boolean(this.sharing), share: Boolean(this.settings.share), error: this.linkError, agents: this.agentCount() }
     // while other computers or phones may connect: networks come and go (Wi-Fi, Tailscale), and so does a firewall's say
     const phones = this.phones.devices.length > 0 || Boolean(this.phones.open())
     if ((this.sharing || phones) && Date.now() - this.hosts.at > 30000) this.findHosts()
@@ -1212,13 +1230,28 @@ export class Crew extends EventEmitter {
       const q = this.qualifier(l)
       return {
         slug: l.slug, name: l.name, online: Boolean(l.peer), saved: Boolean(l.code), status: l.client?.status, spaces: Object.keys(l.spaces ?? {}),
-        agents: (l.state?.agents ?? []).filter((a) => !a.cloneOf).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)) })),
+        agents: this.agentsOn(l).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)) })),
         usage: this.linkedUsage(l),
       }
     })
     // blocked: macOS keeps this app off the local network (Local Network is off for it), as discovery or a link found
     if (this.discovery?.blocked || links.some((l) => !l.online && l.status?.blocked)) me.localNetwork = 'blocked'
     return { me, links, phones: { ...this.phones.view(), ...(phones && this.hosts.warning && { warning: this.hosts.warning }) }, ...this.nearbyView() }
+  }
+
+  // A linked computer's agents in the workspaces you share with it, each once (one working in two is on in either).
+  agentsOn(l) {
+    const seen = new Map()
+    for (const s of Object.values(l.spaces ?? {})) {
+      for (const a of s?.agents ?? []) if (!a.cloneOf && !(seen.get(a.name)?.on)) seen.set(a.name, a)
+    }
+    return [...seen.values()]
+  }
+
+  // How many agents this computer has: yours, and each workspace's own.
+  agentCount() {
+    const own = workspacesIn(this.config.data).reduce((n, w) => n + (Array.isArray(w.agents) ? w.agents.filter((a) => a?.name).length : 0), 0)
+    return this.sharedNames().length + own
   }
 
   // A linked computer's usage limits: its own accounts, the ones its agents run on, as a snapshot's `usage` says them
@@ -1374,7 +1407,7 @@ export class Crew extends EventEmitter {
       port: this.settings.discoverPort ?? DISCOVER_PORT,
       // for tests, and networks where broadcasts need a nudge: "host:port" to send beacons to instead
       ...(this.settings.discoverTo && { targets: () => this.settings.discoverTo.map((t) => ({ address: t.split(':')[0], port: Number(t.split(':')[1]) })) }),
-      beacon: () => ({ name: this.me.name, agents: this.hub.config.agents.length, port: this.settings.port ?? DEFAULT_PORT, fingerprint }),
+      beacon: () => ({ name: this.me.name, agents: this.agentCount(), port: this.settings.port ?? DEFAULT_PORT, fingerprint }),
     })
     d.on('change', () => this.changed())
     d.on('blocked', () => this.changed())
@@ -1528,15 +1561,15 @@ export class Crew extends EventEmitter {
     peer.on('ws', (key, s) => {
       const id = this.localOf(String(key))
       // from either connection to it (two computers that each have the other's code keep two, and push on their own)
-      if (this.links.get(l.slug) !== l || !l.peer || !l.aware || !id || id === DEFAULT) return
+      if (this.links.get(l.slug) !== l || !l.peer || !l.aware || !id) return
       l.spaces ??= {}
       if (s) l.spaces[id] = s
       else delete l.spaces[id]
       this.changed()
     })
     peer.on('wslist', (list) => l.peer && l.aware && this.theirSpaces(l, l.peer, list))
-    // terminals and alerts say which workspace (workspace/name; a bare name is the default's): a terminal shows when
-    // its workspace is on screen, an alert when this computer has that workspace
+    // terminals and alerts say which workspace (key/name): a terminal shows when its workspace is on screen, an alert
+    // when this computer has that workspace
     peer.on('pty', (n, d) => {
       const [ws, base] = this.fromWire(n)
       if (!ws) return
@@ -1557,13 +1590,13 @@ export class Crew extends EventEmitter {
       if (!l.client) this.links.delete(key) // a computer that linked to us: it'll come back on its own
       this.changed()
     })
-    peer.push('state', this.hub.snapshot())
+    peer.push('state', this.computerState())
     peer.call('state').then((s) => {
       l.state = s
       this.changed()
     }, () => {})
     // Does it know workspaces by owner (keyOf)? Then it gets ours (and asks the same of us, so we get its). An older
-    // Crew doesn't answer 'workspaces', and only ever sees the default.
+    // Crew doesn't answer 'workspaces', and shares nothing with this one.
     peer.call('workspaces').then((list) => {
       if (l.peer !== peer) return
       l.aware = true

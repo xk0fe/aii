@@ -329,8 +329,7 @@ function sweep() {
 
 // The agent arrives: added under `name`, working in `folder`, its conversation resumed when its files came whole.
 // from: { slug, name } of the computer it left; here: this computer's name. -> { name, conversation, reason? }
-// shared: one of your shared agents, moving in a workspace other than the default: it joins this computer's crew too,
-// or (join) this computer's crew has it already and it rejoins this workspace.
+// shared: one of your shared agents: it joins this computer's crew too, or (join) this computer's crew has it already and it rejoins this workspace.
 export function moveIn(hub, token, out, { name, folder, on, from, shared, join }, here) {
   const dir = staging(token)
   const staged = (i) => path.join(dir, String(i))

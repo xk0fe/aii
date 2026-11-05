@@ -31,7 +31,7 @@ const WIN_ICON = path.join(dir, 'assets', 'icon.ico')
 const LOG = path.join(HOME, 'logs', 'crew.log') // ~/.crew/logs/crew.log (logLine)
 const LOG_MAX = 1024 * 1024
 
-let crew, hub, remote, tray, trayWin, overlay, dash
+let crew, remote, tray, trayWin, overlay, dash
 let phoneCodes = Promise.resolve() // phones('code') one at a time: the code made last is the one asked for last
 let dashPage = 0 // the dashboard's page: a new one on each load, and when it closes
 let pill // the floating pill's window placement (core/pill.js)
@@ -108,21 +108,20 @@ async function start() {
   // bin/ goes on the agents' PATH, so it has to be a real folder: in an installed Crew, the one next to app.asar.
   const bin = path.join(dir, 'bin').replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
   crew = new Crew({ bin, computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
-  hub = crew.hub
   const checked = setup.check() // meanwhile, in the background
   await crew.start()
   checked.then(() => crew.changed())
   remote = new Remote(crew)
   await remote.start()
-  nativeTheme.themeSource = hub.config.theme // every window + the popover's material
+  nativeTheme.themeSource = crew.config.data.theme // every window + the popover's material
 
   setMenu()
   createTray()
   createOverlay()
   wire()
-  const key = hub.config.hotkey ?? 'Alt+Shift+Space'
+  const key = crew.config.data.hotkey ?? 'Alt+Shift+Space'
   const hotkey = () => (dashOnScreen() ? dash.focus() : overlay.webContents.send('toggle'))
-  if (!globalShortcut.register(key, hotkey)) hub.post({ kind: 'event', from: 'crew', text: shortcutTaken(key, 'opens the floating chat', `open the chat from ${PRODUCT_NAME}'s icon in the ${MAC ? 'menu bar' : 'taskbar'}`) })
+  if (!globalShortcut.register(key, hotkey)) crew.say(shortcutTaken(key, 'opens the floating chat', `open the chat from ${PRODUCT_NAME}'s icon in the ${MAC ? 'menu bar' : 'taskbar'}`))
   wireVoice()
 
   // Running from source: CREW_SHOW=tray,panel,dashboard opens those views on launch.
@@ -139,8 +138,9 @@ async function start() {
   } catch (e) {
     logLine('config', `couldn't note the providers in use: ${e.message}`) // the picker counts them anyway
   }
-  // A first run: no agents yet, so Crew opens on its dashboard, which says what to set up or invites the first agent
-  if (!hasAgents(crew.config.data)) openDashboard()
+  // A first run: no workspace or no agents yet, so Crew opens on its dashboard, which says what to set up, asks for the
+  // first workspace, or invites the first agent
+  if (!crew.screen || !hasAgents(crew.config.data)) openDashboard()
 }
 
 // Crew couldn't start (its terminal host, say): say so and quit, rather than run on with no icon and no window, holding
@@ -498,7 +498,8 @@ const actions = {
   update: (names, patch) => crew.update(names, patch),
   draftPrompt: (agent) => crew.draftPrompt(agent),
   addAgent: (fields) => crew.addAgent(fields),
-  removeAgent: (name) => crew.at(name, 'removeAgent'),
+  // everywhere: one of your shared agents, out of every workspace and off your roster
+  removeAgent: (name, opts) => crew.at(name, 'removeAgent', [opts]),
   restart: (name) => crew.at(name, 'restart'),
   markIdle: (name) => crew.at(name, 'markIdle'),
   dismiss: (name) => crew.at(name, 'dismiss'), // send a clone away
@@ -588,7 +589,7 @@ const actions = {
   copy: (text) => clipboard.writeText(String(text)),
   // What went wrong on a page, for Crew's log (the page tells you in words).
   log: (text) => logLine('page', String(text).slice(0, 4000)),
-  theme: (theme) => hub.setTheme(theme),
+  theme: (theme) => crew.setTheme(theme),
   dashboard: (focus) => {
     trayWin.hide()
     openDashboard(focus)
@@ -736,7 +737,7 @@ function wireVoice() {
   ipcMain.on('voice-audio', (e, id, samples) => audio(e.sender, id, samples))
   app.on('will-quit', () => voice.cancel())
 
-  const key = hub.config.voiceHotkey ?? 'Alt+Shift+D'
+  const key = crew.config.data.voiceHotkey ?? 'Alt+Shift+D'
   const dictate = () => {
     if (dashOnScreen()) {
       dash.focus()
@@ -746,7 +747,7 @@ function wireVoice() {
     overlay.webContents.send('toggle', { open: true, focus: true })
     overlay.webContents.send('voice', { type: 'toggle' })
   }
-  if (key && !globalShortcut.register(key, dictate)) hub.post({ kind: 'event', from: 'crew', text: shortcutTaken(key, 'starts dictation', "click the microphone in the chat's message box") })
+  if (key && !globalShortcut.register(key, dictate)) crew.say(shortcutTaken(key, 'starts dictation', "click the microphone in the chat's message box"))
 }
 
 // How many need you, are at work, and are on; one counts as working while it or any of its clones is. With workspaces,

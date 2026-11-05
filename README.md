@@ -137,9 +137,9 @@ Give each project a workspace: its folder, the agents who work on it, and its ow
   <img src="docs/images/computers-light.webp" alt="Computers: Studio, Workstation and a laptop linked, a Mac mini nearby to link, and an iPhone and a Pixel paired">
 </picture>
 
-Open **Computers** on two of your machines and they find each other. Click **Link**, check the code is the same on both screens, and each one sees the whole crew. Chat with any agent and watch its terminal from either side. Drag an agent to another computer and its conversation goes with it.
+Open **Computers** on two of your machines and they find each other. Click **Link**, check the code is the same on both screens, and each one's workspaces show up on the other. Add agents from both to a workspace and they work as one crew. Chat with any of them and watch its terminal from either side. Drag an agent to another computer and its conversation goes with it.
 
-A workspace belongs to the computer that made it. Your other computers can **Join** it while that computer is on, and add agents of their own. Two workspaces with the same name on different computers stay separate.
+A workspace belongs to the computer that made it. It shows up on your other computers on its own, and they can add agents of their own. Two workspaces with the same name on different computers stay separate.
 
 ## Spend less
 

@@ -1628,10 +1628,6 @@ const SHOTS = {
     await sleep(700)
     await save(win, `ws-settings-${theme}`)
     await js(win, "document.querySelector('#ws').close()")
-    await js(win, "workspaces.settings('default')")
-    await sleep(700)
-    await save(win, `ws-home-settings-${theme}`)
-    await js(win, "document.querySelector('#ws').close()")
     await sleep(300)
     // who works here, from #general's faces
     await js(win, click('.mh-faces'))

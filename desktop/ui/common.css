@@ -1239,8 +1239,6 @@ dialog::backdrop { background: rgba(0, 0, 0, .28); animation: fade-in var(--t-mo
   transition: filter .3s, opacity .3s;
 }
 .ws-tile .ws-emoji { font-size: calc(var(--s) * .6); line-height: 1; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .18)); }
-.ws-tile.plain { background: var(--fill-hover); color: var(--fg); box-shadow: none; }
-.ws-tile.plain svg { width: 74%; height: 74%; }
 .ws-tile.parked { filter: grayscale(.9); opacity: .55; }
 .menu button > .ws-tile { flex: none; }
 .crow.parked .crow-av { opacity: .55; filter: saturate(.3); }

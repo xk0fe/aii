@@ -299,7 +299,7 @@ test('packs carry how many clones an agent may have', () => {
   const pack = packAgents(hub, ['iris'])
   assert.equal(pack.agents[0].clones, 2)
   const added = unpackAgents(hub, { ...pack, agents: [{ ...pack.agents[0], clones: 99 }] }, [{ index: 0, name: 'iris-copy', on: false }])
-  assert.equal(hub.config.agents.find((a) => a.name === added[0]).clones, 5)
+  assert.equal(hub.space.def(added[0]).clones, 5)
 })
 
 // ---- how clones look in the UI (ui/common.js, rendered from the hub's snapshot) ----

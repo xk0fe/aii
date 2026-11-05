@@ -71,7 +71,7 @@ These are the same shapes as CLIque Link's (`desktop/core/link.js`).
 
 - **A call and its reply:** `{ "t": "call", "id": 7, "name": "send", "args": [...] }` gets `{ "t": "reply", "id": 7, "ok": value }` or `{ "t": "reply", "id": 7, "error": "text to show" }`. `ok` is `null` for a call with nothing to say.
 - **What the Mac pushes:**
-  - `{ "t": "state", "ws": id, "v": 1, "state": {...} }`: the whole state of the workspace the phone watches. The Mac pushes one when the workspace the phone watched is removed: it watches Home (`"default"`) from then on.
+  - `{ "t": "state", "ws": id, "v": 1, "state": {...} }`: the whole state of the workspace the phone watches. The Mac pushes one when the workspace the phone watched is removed, or when it has a first one to show a phone that has none: the phone watches the one on the Mac's screen from then on. `ws` is `null` when the Mac has no workspace left (the state is an empty one, `workspace: null`).
   - `{ "t": "patch", "ws": id, "v": 2, "patch": {...} }`: what changed since `v - 1` (see Sync). A phone that misses one calls `watch` again. `v` counts up for as long as the connection lasts, across `watch` calls: a `watch` reply carries the next one.
   - `{ "t": "pty", "ws": id, "name": "ada", "data": "..." }`: terminal output, only for a terminal the phone asked for.
   - `{ "t": "alert", "ws": id, "name": "ada", "text": "wants to run a command: npm test" }`: an agent needs you.
@@ -84,7 +84,7 @@ A phone watches **one workspace at a time, its own choice**: never the one on th
 
 | Call | Arguments | What it does |
 |---|---|---|
-| `watch` | `ws` | Stream workspace `ws`. Replies `{ v, state }` and patches follow. |
+| `watch` | `ws` | Stream workspace `ws`; empty or null: the one on the Mac's screen, for a phone that hasn't picked one. Replies `{ v, ws, state }` (`ws`: the one it's watching, `null` while the Mac has none) and patches follow. |
 | `send` | `ws, to, text, images?, opts?` | A message, as from the Mac's chat. `to` is `''` (CLIque picks), a name, or names with commas. `opts`: `{ fresh?, re?, channel? }`: `channel` is the id of the channel it's said in (none: #general); Auto picks among that channel's members, and its agents get its brief. A channel that's gone is refused. Replies with what CLIque says, like `"sent to @kim\n"`. |
 | `channel` | `ws, op, id, arg?` | The workspace's channels. `op` is `create` (`id` null, `arg` `{ name, brief?, members? }`), `edit` (`arg` any of `{ name, brief, members }`; `members: null` is everyone again; #general keeps its name and has everyone) or `remove` (never #general; its messages stay, shown in #general). Replies `{ id }`; the change arrives with the watch. |
 | `answer` | `ws, id, reply` | Answer a question card. `reply` is what `Hub.answer` takes: `{ allow, always?, note? }`, `{ answers }` or `{ terminal: true }`. |

@@ -28,7 +28,7 @@ export function TopBar({ t, background, sub, left, right }: { t: Theme; backgrou
   const w = state?.workspaces?.find((x) => x.id === ws) ?? state?.workspace
   const others = (state?.workspaces ?? []).filter((x) => x.id !== ws)
   const needsElsewhere = others.reduce((n, x) => n + (x.waiting ?? 0), 0)
-  const name = w?.name ?? (ws === 'default' ? 'Home' : ws)
+  const name = w?.name ?? ws
   const bg = background ?? t.bg
   const mac = client?.demo ? 'Demo' : (client?.macName ?? '')
   // the connection comes first: while it's down, that's all the line says

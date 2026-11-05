@@ -8,6 +8,8 @@ import { b64, CLOSE, diff, makePairCode, pack, unb64, unpack, VERSION } from '@/
 import type { State } from '@/net/types'
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0))
+// What a computer with no workspace sends (Crew.blank, core/crew.js).
+const NO_WORKSPACE = { workspace: null, workspaces: [], agents: [], feed: [] } as unknown as State
 
 // ---- the network ----
 
@@ -184,7 +186,14 @@ export class FakeMac {
       delete this.failNext[name]
       return error(why)
     }
-    const [ws] = args
+    // none named: the one on the Mac's screen, the first
+    const ws = args[0] || Object.keys(this.states)[0]
+    if (name === 'watch' && !ws) {
+      phone.ws = null
+      phone.v++
+      phone.sent = NO_WORKSPACE
+      return reply({ v: phone.v, ws: null, state: NO_WORKSPACE })
+    }
     const state = this.states[ws]
     if (!state) return error(`${this.name} has no workspace "${ws}"`)
     if (name === 'watch') {
@@ -192,7 +201,7 @@ export class FakeMac {
       phone.ws = ws
       phone.v++
       phone.sent = state
-      return reply({ v: phone.v, state })
+      return reply({ v: phone.v, ws, state })
     }
     if (name === 'answer') {
       const [, card, answer] = args
@@ -228,15 +237,28 @@ export class FakeMac {
     for (const p of this.phones) p.socket.close(code)
   }
 
-  // A workspace removed on the Mac: phones watching it get Home's state, pushed whole.
+  // A workspace removed on the Mac: phones watching it get the first left's state, pushed whole.
   removeWorkspace(ws: string) {
     delete this.states[ws]
+    const next = Object.keys(this.states)[0]
     for (const phone of this.phones) {
       if (phone.ws !== ws) continue
-      phone.ws = 'default'
+      phone.ws = next ?? null
       phone.v++
-      phone.sent = this.states.default
-      this.push(phone, { t: 'state', ws: 'default', v: phone.v, state: this.states.default })
+      phone.sent = next ? this.states[next] : NO_WORKSPACE
+      this.push(phone, { t: 'state', ws: next ?? null, v: phone.v, state: phone.sent })
+    }
+  }
+
+  // A workspace made on the Mac: a phone with none to watch gets it, pushed whole.
+  addWorkspace(ws: string, state: State) {
+    this.states[ws] = state
+    for (const phone of this.phones) {
+      if (phone.ws !== null) continue
+      phone.ws = ws
+      phone.v++
+      phone.sent = state
+      this.push(phone, { t: 'state', ws, v: phone.v, state })
     }
   }
 

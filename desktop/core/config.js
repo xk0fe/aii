@@ -8,11 +8,13 @@ export class Config extends EventEmitter {
   tried = false // read yet (or tried: a broken file is said once)
   discovered = {} // what the CLIs on this computer say about themselves (Codex's models), for providersFrom
 
-  constructor(file, defaults) {
+  // settle(data): brings what was read to today's layout, each time it's read (saving is what writes it).
+  constructor(file, defaults, { settle } = {}) {
     super()
     this.setMaxListeners(0) // a hub per workspace listens
     this.file = file
     this.defaults = defaults
+    this.settle = settle
     this.data = { ...defaults } // until it's read, or when it can't be
   }
 
@@ -29,6 +31,7 @@ export class Config extends EventEmitter {
       fs.writeFileSync(this.file, JSON.stringify(this.defaults, null, 2) + '\n')
     }
     this.data = { ...this.defaults, ...raw }
+    this.settle?.(this.data)
     this.broken = false
     this.emit('change')
   }

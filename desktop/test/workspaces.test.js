@@ -17,7 +17,7 @@ process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-workspaces-'
 if (process.platform !== 'win32') process.env.PATH = '/usr/bin:/bin'
 const HOME = process.env.CREW_HOME
 const { Hub, CONFIG, openConfig, fileKey, filePath } = await import('../core/hub.js')
-const { DEFAULT, dirOf, space, workspacesIn, forget, renameShared, sharedNames } = await import('../core/workspaces.js')
+const { ROOT, dirOf, space, workspacesIn, forget, renameShared, sharedNames, settle } = await import('../core/workspaces.js')
 const { Scoped } = await import('../core/runner.js')
 const { serve } = await import('../core/server.js')
 const { adapters } = await import('../core/adapters.js')
@@ -35,8 +35,8 @@ class FakeRunner extends EventEmitter {
 }
 
 // folders to work in
-const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-workspaces-folders-'))
-const [OWN, API, APP] = ['own', 'api', 'app'].map((d) => path.join(ROOT, d))
+const FOLDERS = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-workspaces-folders-'))
+const [OWN, API, APP] = ['own', 'api', 'app'].map((d) => path.join(FOLDERS, d))
 for (const d of [OWN, API, APP]) fs.mkdirSync(d)
 const storefront = () => ({
   id: 'storefront', name: 'Storefront', folder: API,
@@ -44,24 +44,26 @@ const storefront = () => ({
   agents: [{ name: 'milo', area: 'docs' }],
   triage: 'june',
 })
-const roster = () => [{ name: 'june', area: 'backend', cwd: OWN }, { name: 'ada', area: 'app', off: true }, { name: 'iris', area: 'design' }]
+const roster = () => [{ name: 'june', area: 'backend', cwd: OWN }, { name: 'ada', area: 'app' }, { name: 'iris', area: 'design' }]
+// another workspace, with no folder: every shared agent in it, june in its own folder, ada off
+const home_ = () => ({ id: ROOT, name: 'Home', members: { june: { folder: OWN }, ada: { off: true }, iris: {} } })
 
 let runner, config, hubs, home, ws
 // A Crew's hubs on config.json as `raw` says, picking up what the workspaces kept from before.
-function crew(raw = { autopilot: true, agents: roster(), workspaces: [storefront()] }) {
+function crew(raw = { layout: 2, autopilot: true, agents: roster(), workspaces: [storefront(), home_()] }) {
   fs.writeFileSync(CONFIG, JSON.stringify(raw))
   runner = new FakeRunner()
   config = openConfig()
   config.load()
   hubs = new Map()
   const locks = { files: new Map(), held: new Map(), waits: [] } // as Crew shares them
-  for (const id of [DEFAULT, ...workspacesIn(config.data).map((w) => w.id)]) {
-    const hub = new Hub(new Scoped(runner, id, id === DEFAULT), { bin: BIN, workspace: id, config, token: 'tok', locks })
+  for (const id of workspacesIn(config.data).map((w) => w.id)) {
+    const hub = new Hub(new Scoped(runner, id), { bin: BIN, workspace: id, config, token: 'tok', locks })
     hub.others = () => [...hubs.values()].filter((h) => h !== hub)
     hub.hubOf = (ws) => hubs.get(ws)
     hubs.set(id, hub)
   }
-  home = hubs.get(DEFAULT)
+  home = hubs.get(ROOT)
   ws = hubs.get('storefront')
 }
 const saved = () => JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
@@ -79,28 +81,57 @@ afterEach(() => {
 })
 after(() => {
   fs.rmSync(HOME, { recursive: true, force: true, maxRetries: 10 })
-  fs.rmSync(ROOT, { recursive: true, force: true, maxRetries: 10 })
+  fs.rmSync(FOLDERS, { recursive: true, force: true, maxRetries: 10 })
 })
 
 // ---- what config.json says ------------------------------------------------------------------------------
 
-test('the default workspace has every shared agent, each in its own folder, with the top-level settings', () => {
-  const s = space({ autopilot: false, triage: 'iris', agents: roster(), workspaces: [storefront()] }, DEFAULT)
+test("config.json as an older Crew left it: its one workspace becomes an entry like any other, its agents where they worked", () => {
+  const old = {
+    autopilot: false, triage: 'iris', name: 'Studio', icon: '🏡', parked: true, autofix: true, channels: [{ id: 'review', name: 'review' }], channelsGone: ['old'],
+    agents: [{ name: 'june', area: 'backend', cwd: OWN }, { name: 'ada', area: 'app', off: true }, { name: 'iris', area: 'design' }],
+    workspaces: [{ ...storefront(), color: 'blue' }],
+  }
+  settle(old)
+  const [own, other] = old.workspaces
+  assert.equal(other.id, 'storefront')
+  assert.deepEqual(own, {
+    id: ROOT, name: 'Studio', color: 'sky', members: { june: { folder: OWN }, ada: { off: true }, iris: {} }, icon: '🏡', parked: true,
+    channels: [{ id: 'review', name: 'review' }], channelsGone: ['old'], triage: 'iris', autofix: true,
+  }, 'a color no other workspace has, so it looks like one of them')
+  for (const k of ['name', 'icon', 'parked', 'triage', 'autofix', 'channels', 'channelsGone']) assert.equal(old[k], undefined, k)
+  assert.equal(old.agents[1].off, undefined, "whether it's on is the workspace's now")
+  const s = space(old, ROOT)
   assert.deepEqual(s.agents.map((a) => [a.name, a.cwd, Boolean(a.off), a.shared]), [['june', OWN, false, true], ['ada', undefined, true, true], ['iris', undefined, false, true]])
-  assert.equal(s.autopilot, false)
+  assert.equal(s.autopilot, false, 'its autopilot, as before')
   assert.equal(s.triage, 'iris')
-  assert.equal(dirOf(HOME, DEFAULT), HOME, 'its files stay where Crew always kept them')
+  assert.equal(dirOf(HOME, ROOT), HOME, 'its files stay where they were')
+  // once: read again, or removed, it doesn't come back
+  old.workspaces = [other]
+  settle(old)
+  assert.deepEqual(old.workspaces.map((w) => w.id), ['storefront'])
+})
+
+test('a new install, or one with nothing yet, has no workspace: you make the first', () => {
+  const fresh = { agents: [], autopilot: true }
+  settle(fresh)
+  assert.deepEqual(fresh.workspaces, undefined)
+  assert.equal(fresh.layout, 2)
+  // an older one with no agents left can still have a chat in CREW_HOME
+  const chat = { agents: [] }
+  settle(chat, { hadFiles: true })
+  assert.deepEqual(chat.workspaces.map((w) => [w.id, w.name]), [[ROOT, 'Home']])
 })
 
 test("another workspace: its members and its own agents, each in the most specific folder there is", () => {
   const s = space({ autopilot: false, agents: roster(), workspaces: [storefront()] }, 'storefront')
   assert.deepEqual(s.agents.map((a) => [a.name, a.cwd, Boolean(a.off), a.shared]), [
     ['june', API, false, true], // the workspace's folder, over its own
-    ['ada', APP, false, true], // its folder here, over the workspace's; and off in the default only
+    ['ada', APP, false, true], // its folder here, over the workspace's
     ['milo', API, false, false], // the workspace's own agent, in the workspace's folder
   ])
   assert.equal(s.name, 'Storefront')
-  assert.equal(s.autopilot, false, "autopilot as the default's until the workspace says otherwise")
+  assert.equal(s.autopilot, false, 'autopilot as config.json says for all until the workspace says otherwise')
   assert.equal(s.triage, 'june')
   assert.equal(dirOf(HOME, 'storefront'), path.join(HOME, 'workspaces', 'storefront'))
   const bare = space({ agents: roster(), workspaces: [{ id: 'side', members: { june: {}, iris: {} } }] }, 'side')
@@ -108,7 +139,7 @@ test("another workspace: its members and its own agents, each in the most specif
 })
 
 test('workspace ids that could not name a folder, or name one twice, are left out; so is an own agent with a taken name', () => {
-  const config = { agents: roster(), workspaces: [{ id: 'storefront' }, { id: 'storefront' }, { id: 'default' }, { id: '../x' }, { id: 'Big' }, null, { id: 'ok-2' }] }
+  const config = { agents: roster(), workspaces: [{ id: 'storefront' }, { id: 'storefront' }, { id: '../x' }, { id: 'Big' }, null, { id: 'ok-2' }] }
   assert.deepEqual(workspacesIn(config).map((w) => w.id), ['storefront', 'ok-2'])
   const s = space({ agents: roster(), workspaces: [{ id: 'w', members: { iris: {} }, agents: [{ name: 'iris' }, { name: 'milo' }, { name: 'milo' }] }] }, 'w')
   assert.deepEqual(s.agents.map((a) => [a.name, a.shared]), [['iris', true], ['milo', false]])
@@ -130,17 +161,16 @@ test("where it works and whether it's on are the workspace's; who it is is the a
   assert.equal(config.agents[0].model, 'opus', 'the same agent everywhere')
   assert.equal(config.workspaces[0].agents[0].cwd, '~/docs')
   assert.equal(config.workspaces[0].autopilot, false)
-  assert.equal(config.autopilot, undefined, "the default's stays")
+  assert.equal(config.autopilot, undefined, 'only this workspace')
   assert.equal(config.workspaces[0].triage, 'milo')
 })
 
 test('a shared agent renamed or taken off the roster: every workspace it is in follows', () => {
-  const config = { triage: 'june', agents: roster(), workspaces: [storefront(), { id: 'side', members: { iris: {} } }] }
+  const config = { agents: roster(), workspaces: [storefront(), { id: 'side', members: { iris: {} } }] }
   renameShared(config, 'june', 'jo')
   assert.equal(config.agents[0].name, 'jo')
   assert.deepEqual(Object.keys(config.workspaces[0].members), ['jo', 'ada'], 'in the same place')
   assert.equal(config.workspaces[0].triage, 'jo')
-  assert.equal(config.triage, 'jo')
   assert.deepEqual([...sharedNames(config, 'jo')].sort(), ['ada', 'iris', 'jo', 'milo'], "names it can't take: shared ones, and the own agents of a workspace it's in")
   assert.deepEqual([...sharedNames(config, 'iris')].sort(), ['ada', 'iris', 'jo'])
   forget(config, 'ada')
@@ -261,8 +291,7 @@ test("a workspace's own agent is only there; a new shared one joins the roster a
   assert.equal(ws.addAgent({ name: 'pat', area: 'qa', shared: true, cwd: '~/qa' }), 'pat')
   assert.ok(ws.agents.has('mo') && ws.agents.has('pat'))
   assert.ok(!home.agents.has('mo'))
-  assert.ok(home.agents.has('pat'))
-  assert.equal(home.agents.get('pat').off, true, 'off in the default until turned on there')
+  assert.ok(!home.agents.has('pat'), 'it works where you made it, until you add it elsewhere')
   assert.equal(ws.agents.get('pat').off, undefined)
   const raw = saved()
   assert.deepEqual(raw.workspaces[0].agents.map((a) => a.name), ['milo', 'mo'])
@@ -274,7 +303,7 @@ test("a workspace's own agent is only there; a new shared one joins the roster a
   assert.throws(() => ws.addAgent({ name: 'milo', shared: true }), /already exists/)
 })
 
-test('an agent out of a workspace: its own one is gone, a shared one only leaves; out of the default, it leaves everywhere', () => {
+test('an agent out of a workspace: its own one is gone, a shared one only leaves, wherever you take it out of; everywhere takes it off your roster', () => {
   ws.saveSession('june', 'sess-storefront')
   ws.stats.june = { first: 1, days: {}, tasks: 3 }
   ws.removeAgent('milo')
@@ -284,7 +313,10 @@ test('an agent out of a workspace: its own one is gone, a shared one only leaves
   assert.ok(!ws.agents.has('ada'))
   assert.ok(home.agents.has('ada'), 'still yours')
   assert.deepEqual(Object.keys(saved().workspaces[0].members), ['june'])
-  home.removeAgent('june')
+  home.removeAgent('iris')
+  assert.ok(!home.agents.has('iris'), 'any workspace: out of this one')
+  assert.ok(saved().agents.some((a) => a.name === 'iris'), 'and still yours')
+  home.removeAgent('june', { everywhere: true })
   assert.ok(!home.agents.has('june') && !ws.agents.has('june'))
   assert.deepEqual(saved().workspaces[0].members, {})
   assert.equal(ws.sessions.june, undefined, 'what storefront kept about it goes too')
@@ -325,7 +357,7 @@ test("a workspace gone from config.json stops its agents; a hub's settings are i
   assert.equal(ws.snapshot().tasks.autofix, true)
   assert.equal(home.snapshot().tasks.autofix, false)
   ws.setAutopilot(false)
-  assert.equal(saved().workspaces[0].autopilot, false)
+  assert.equal(saved().workspaces.find((w) => w.id === 'storefront').autopilot, false)
   assert.equal(home.snapshot().autopilot, true)
   fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'june', area: 'backend' }] }))
   config.load()
@@ -374,27 +406,27 @@ test('Crew keeps a hub for each workspace in config.json: open ones run, parked 
   const c = new Crew({ bin: BIN, computerName: 'test' })
   await c.start()
   try {
-    assert.deepEqual([...c.hubs.keys()], [DEFAULT, 'storefront'])
-    assert.equal(c.hub, c.hubs.get(DEFAULT))
+    assert.deepEqual([...c.hubs.keys()], [ROOT, 'storefront'])
+    assert.equal(c.hubs.get(ROOT), c.hubs.get(ROOT))
     assert.equal(c.hubs.get('storefront').parked, true)
     assert.ok(c.hubs.get('storefront').agents.has('june'))
     assert.ok(!c.runner.running('storefront/june'), 'on there, but not started until storefront is opened')
-    // the agents' logs don't say which workspace they worked in: only the default looks back through them for spend
-    assert.equal(c.hub.lookingBack, true)
+    // the agents' logs don't say which workspace they worked in: one workspace looks back through them for spend
+    assert.equal(c.hubs.get(ROOT).lookingBack, true)
     assert.ok(!c.hubs.get('storefront').lookingBack)
     // a workspace added by hand gets its hub, open unless it says it's parked; one taken out loses it
     fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'june', area: 'backend', off: true }], workspaces: [{ id: 'side', members: { june: { off: true } } }] }))
     c.config.load()
-    assert.deepEqual([...c.hubs.keys()], [DEFAULT, 'side'])
+    assert.deepEqual([...c.hubs.keys()], [ROOT, 'side'])
     assert.equal(c.hubs.get('side').parked, false)
     // its agents talk to it through the one server
-    const res = await fetch(`${c.hub.url}/who`, { headers: { 'x-crew': c.token, 'x-crew-workspace': 'side' } })
+    const res = await fetch(`${c.hubs.get(ROOT).url}/who`, { headers: { 'x-crew': c.token, 'x-crew-workspace': 'side' } })
     assert.match(await res.text(), /june/)
     // your accounts' usage limits are one record, whichever workspace's agent reported them
-    assert.equal(c.hubs.get('side').usage, c.hub.usage)
+    assert.equal(c.hubs.get('side').usage, c.hubs.get(ROOT).usage)
     c.hubs.get('side').usage.claude = { told: {}, at: 1, windows: [] }
     c.hubs.get('side').saveUsage(true)
-    c.hub.saveUsage(true)
+    c.hubs.get(ROOT).saveUsage(true)
     assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(HOME, 'usage.json'), 'utf8'))), ['claude'])
   } finally {
     c.server.close()
@@ -403,21 +435,64 @@ test('Crew keeps a hub for each workspace in config.json: open ones run, parked 
   }
 })
 
-test("a config.json that can't be read is said in the default workspace's chat, once, and Crew carries on as it was", () => {
+test("a config.json that can't be read: said once, in the chat on screen once there is one, and nothing saves over it", async () => {
+  const { Crew } = await import('../core/crew.js')
   fs.writeFileSync(CONFIG, '{ "agents": [ oops')
-  const cfg = openConfig()
-  const first = new Hub(new Scoped(new FakeRunner(), DEFAULT, true), { bin: BIN, config: cfg, token: 'tok' })
-  const other = new Hub(new Scoped(new FakeRunner(), 'storefront', false), { bin: BIN, workspace: 'storefront', config: cfg, token: 'tok' })
+  const c = new Crew({ bin: BIN, computerName: 'test' })
   try {
-    assert.match(first.feed.at(-1)?.text ?? '', /^CLIque couldn't read its settings \(.*config\.json: .*\), so it carries on with the ones it had$/)
-    assert.equal(first.space.autopilot, true)
-    assert.equal(first.config.theme, 'system')
-    assert.equal(first.agents.size, 0)
-    assert.ok(!other.feed.some((e) => /config\.json/.test(e.text ?? '')))
-    assert.equal(first.feed.filter((e) => /config\.json/.test(e.text ?? '')).length, 1)
+    assert.equal(c.config.broken, true)
+    assert.equal(c.screen, null, 'what the file says is not known, so no workspace')
+    assert.throws(() => c.workspaceAction('create', null, { name: 'Mine' }), /can't read its settings/)
+    assert.match(fs.readFileSync(CONFIG, 'utf8'), /oops/, 'as it was, to be fixed')
+    fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'june', area: 'backend' }], workspaces: [{ id: 'storefront', members: {} }] }))
+    c.config.load()
+    const said = [...c.hubs.values()].flatMap((h) => h.feed.filter((e) => /config\.json/.test(e.text ?? '')))
+    assert.equal(said.length, 1)
+    assert.match(said[0].text, /^CLIque couldn't read its settings \(.*config\.json: .*\), so it carries on with the ones it had$/)
+    assert.ok(c.here.feed.includes(said[0]), 'on screen')
   } finally {
-    first.dispose()
-    other.dispose()
+    clearTimeout(c.changeTimer)
+    for (const h of c.hubs.values()) h.dispose()
+  }
+})
+
+test("no workspace at all: the app gets an empty state, and anything that needs one says so", async () => {
+  const { Crew } = await import('../core/crew.js')
+  fs.writeFileSync(CONFIG, JSON.stringify({ agents: [] }))
+  const c = new Crew({ bin: BIN, computerName: 'test' })
+  await c.start()
+  try {
+    assert.equal(c.screen, null)
+    // `crew` in a terminal of your own: nowhere to go yet, then the one on screen
+    const who = () => fetch(`${c.url}/who`, { headers: { 'x-crew': c.token } })
+    assert.equal((await who()).status, 404)
+    assert.match(await (await who()).text(), /no workspace yet/)
+    const s = c.snapshot()
+    assert.equal(s.workspace, null)
+    assert.deepEqual(s.workspaces, [])
+    assert.deepEqual([s.agents, s.feed, s.tasks.tickets], [[], [], []])
+    assert.equal(s.channels[0].id, 'general')
+    assert.ok(s.providers.claude)
+    assert.throws(() => c.here, /make a workspace first/)
+    await assert.rejects(c.send('anyone', 'hello'), /make a workspace first/)
+    c.say('a shortcut is taken')
+    const { id, state } = c.workspaceAction('create', null, { name: 'First', folder: API })
+    assert.equal(id, 'first')
+    assert.equal(state.workspace.id, 'first')
+    assert.equal(c.hubs.get('first').feed.at(-1).text, 'a shortcut is taken', 'what waited for a workspace is said there')
+    assert.equal(saved().current, 'first')
+    assert.equal(fs.existsSync(path.join(HOME, 'workspaces', 'first')), true, 'in a folder of its own')
+    assert.equal((await who()).status, 200)
+    assert.equal(await c.addAgent({ name: 'ada', area: 'backend', off: true }), 'ada')
+    assert.equal(c.snapshot().agents[0].name, 'ada')
+    // and back to none: any of them can go
+    c.workspaceAction('remove', 'first')
+    assert.equal(c.screen, null)
+    assert.equal(c.snapshot().workspace, null)
+  } finally {
+    c.server.close()
+    c.stop()
+    for (const h of c.hubs.values()) h.dispose()
   }
 })
 
@@ -432,7 +507,7 @@ test("terminals still running for a workspace that's gone from config.json are s
   await c.start()
   try {
     assert.deepEqual(killed, ['old/milo'])
-    assert.match(c.hub.feed.at(-1).text, /stopped old\/milo: it was still running for a workspace that's been removed/)
+    assert.match(c.hubs.get(ROOT).feed.at(-1).text, /stopped old\/milo: it was still running for a workspace that's been removed/)
   } finally {
     c.server.close()
     c.stop()
@@ -457,47 +532,64 @@ const quit = (c) => {
 
 test('a workspace made in the app: its look, folder and crew, then on screen; renamed, and removed with its files kept', async () => {
   const c = await crewApp({ agents: roster() })
+  const own = (id) => saved().workspaces.find((w) => w.id === id)
   try {
-    assert.deepEqual(c.workspaces().map((w) => [w.id, w.name, w.current]), [[DEFAULT, 'Home', true]], 'no workspaces yet: the default, called Home')
+    assert.deepEqual(c.workspaces().map((w) => [w.id, w.name, w.current]), [[ROOT, 'Home', true]], 'an older Crew left one: a workspace like any other')
     const { id, state } = c.workspaceAction('create', null, { name: 'Storefront app', color: 'teal', icon: '🛒', folder: API, members: ['june', 'nobody'] })
     assert.equal(id, 'storefront-app')
-    assert.deepEqual(saved().workspaces, [{ id: 'storefront-app', name: 'Storefront app', members: { june: {} }, color: 'teal', icon: '🛒', folder: API }])
+    assert.deepEqual(own(id), { id: 'storefront-app', name: 'Storefront app', members: { june: {} }, color: 'teal', icon: '🛒', folder: API })
     assert.equal(saved().current, 'storefront-app')
     assert.equal(state.workspace.id, 'storefront-app', 'the new one is on screen')
     assert.deepEqual(state.agents.map((a) => [a.name, a.cwd, a.shared]), [['june', API, true]])
-    assert.deepEqual(state.workspaces.map((w) => [w.id, w.current, w.parked]), [[DEFAULT, false, false], ['storefront-app', true, false]])
+    assert.deepEqual(state.workspaces.map((w) => [w.id, w.current, w.parked]), [[ROOT, false, false], ['storefront-app', true, false]])
     assert.equal(c.workspaceAction('create', null, { name: 'Storefront app' }).id, 'storefront-app-2', 'a name taken gets a number')
     assert.throws(() => c.workspaceAction('create', null, { name: '  ' }), /name/)
-    // renamed, the default too, which keeps its look at the top level
+    // every one of them has a name, a look and a folder
     c.workspaceAction('edit', 'storefront-app', { name: 'Storefront', color: '', icon: '🏌️' })
-    c.workspaceAction('edit', DEFAULT, { name: 'Studio', color: 'pink', folder: '/nope' })
-    assert.deepEqual([saved().workspaces[0].name, saved().workspaces[0].color, saved().workspaces[0].icon], ['Storefront', undefined, '🏌️'])
-    assert.deepEqual([saved().name, saved().color, saved().folder], ['Studio', 'pink', undefined], "the default has no folder: each agent works in its own")
-    // switching is remembered in config.json; removing the one on screen goes back to the default
-    c.workspaceAction('switch', DEFAULT)
-    assert.equal(saved().current, undefined)
+    c.workspaceAction('edit', ROOT, { name: 'Studio', color: 'pink', folder: APP })
+    assert.deepEqual([own(id).name, own(id).color, own(id).icon], ['Storefront', undefined, '🏌️'])
+    assert.deepEqual([own(ROOT).name, own(ROOT).color, own(ROOT).folder], ['Studio', 'pink', APP])
+    assert.equal(saved().name, undefined)
+    assert.equal(c.hubs.get(ROOT).space.folder, APP)
+    assert.equal(c.hubs.get(ROOT).agents.get('iris').cwd, APP, 'its agents work there, unless one has a folder of its own')
+    // switching is remembered in config.json; removing the one on screen goes to the first there is
+    c.workspaceAction('switch', ROOT)
+    assert.equal(saved().current, ROOT)
     c.workspaceAction('switch', 'storefront-app')
     fs.mkdirSync(path.join(HOME, 'workspaces', 'storefront-app'), { recursive: true })
     fs.writeFileSync(path.join(HOME, 'workspaces', 'storefront-app', 'board.md'), 'kept')
     c.workspaceAction('remove', 'storefront-app')
-    assert.deepEqual(c.workspaces().map((w) => w.id), [DEFAULT, 'storefront-app-2'])
-    assert.equal(c.here, c.hub)
+    assert.deepEqual(c.workspaces().map((w) => w.id), [ROOT, 'storefront-app-2'])
+    assert.equal(c.here, c.hubs.get(ROOT))
     assert.equal(fs.readFileSync(path.join(HOME, 'workspaces', 'storefront-app', 'board.md'), 'utf8'), 'kept', 'its files stay, for if it comes back')
-    assert.throws(() => c.workspaceAction('remove', DEFAULT), /can't be removed/)
     assert.throws(() => c.workspaceAction('switch', 'nope'), /no such workspace/)
+    // the one an older Crew left goes like any other, and made again by that name it has its files back
+    fs.writeFileSync(path.join(HOME, 'board.md'), 'kept too')
+    c.workspaceAction('remove', ROOT)
+    assert.deepEqual(c.workspaces().map((w) => w.id), ['storefront-app-2'])
+    assert.ok(saved().agents.some((a) => a.name === 'june'), 'your shared agents are still yours')
+    assert.equal(c.workspaceAction('create', null, { name: 'Other' }).id, 'other', 'another name, another id')
+    assert.equal(c.workspaceAction('create', null, { name: 'Studio' }).id, ROOT)
+    assert.match(c.hubs.get(ROOT).board(), /kept too/)
+    assert.equal(saved().rootWas, undefined)
+    assert.deepEqual(own(ROOT).members, {})
+    // a linked computer's workspace by that name has its own chat: it never takes those files
+    c.workspaceAction('remove', ROOT)
+    assert.notEqual(c.addTheirs(c.config.data, { key: 'laptop:home', computer: 'laptop', name: 'Studio' }), ROOT)
   } finally {
+    fs.rmSync(path.join(HOME, 'board.md'), { force: true })
     quit(c)
   }
 })
 
 test('a workspace asleep wakes when you go to it, and when you send it a message: no Open to press', async () => {
-  const c = await crewApp({ agents: roster(), workspaces: [{ ...storefront(), parked: true }] })
+  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), parked: true }, home_()] })
   try {
     c.workspaceAction('switch', 'storefront')
     assert.equal(saved().workspaces[0].parked, undefined, 'going there woke it (and left nothing behind in config.json)')
     c.workspaceAction('park', 'storefront')
     assert.equal(saved().workspaces[0].parked, true, 'put to sleep while on screen')
-    c.workspaceAction('switch', DEFAULT)
+    c.workspaceAction('switch', ROOT)
     assert.equal(saved().workspaces[0].parked, true, 'going elsewhere leaves it asleep')
     c.workspaceAction('switch', 'storefront')
     c.workspaceAction('park', 'storefront')
@@ -511,43 +603,43 @@ test('a workspace asleep wakes when you go to it, and when you send it a message
   }
 })
 
-test('the order workspaces are listed in: changed from the app, the default first, the ones not named after the rest', async () => {
-  const c = await crewApp({ agents: roster(), workspaces: [storefront()] })
+test('the order workspaces are listed in: changed from the app, any of them first, the ones not named after the rest', async () => {
+  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
   try {
     c.workspaceAction('create', null, { name: 'Docs' })
     c.workspaceAction('create', null, { name: 'Lab' })
-    assert.deepEqual(c.workspaces().map((w) => w.id), [DEFAULT, 'storefront', 'docs', 'lab'])
-    const { state } = c.workspaceAction('order', null, ['lab', DEFAULT, 'storefront'])
-    assert.deepEqual(saved().workspaces.map((w) => w.id), ['lab', 'storefront', 'docs'], 'the default isn\'t in the list to move')
-    assert.deepEqual(state.workspaces.map((w) => w.id), [DEFAULT, 'lab', 'storefront', 'docs'], 'the default stays first')
+    assert.deepEqual(c.workspaces().map((w) => w.id), ['storefront', ROOT, 'docs', 'lab'])
+    const { state } = c.workspaceAction('order', null, ['lab', ROOT, 'storefront'])
+    assert.deepEqual(saved().workspaces.map((w) => w.id), ['lab', ROOT, 'storefront', 'docs'])
+    assert.deepEqual(state.workspaces.map((w) => w.id), ['lab', ROOT, 'storefront', 'docs'])
     c.config.data.workspaces.push(null) // a hand-edited config.json with a hole in it
     c.workspaceAction('order', null, ['docs', 'nope'])
-    assert.deepEqual(c.workspaces().map((w) => w.id), [DEFAULT, 'docs', 'lab', 'storefront'], 'unknown ids are ignored; the rest keep their order')
+    assert.deepEqual(c.workspaces().map((w) => w.id), ['docs', 'lab', ROOT, 'storefront'], 'unknown ids are ignored; the rest keep their order')
   } finally {
     quit(c)
   }
 })
 
 test("who works in a workspace: shared agents join and leave from the app, each with a folder of its own there or the workspace's", async () => {
-  const c = await crewApp({ agents: roster(), workspaces: [storefront()] })
+  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
   try {
     c.workspaceAction('members', 'storefront', { add: ['iris', 'nobody'], remove: ['ada'], folders: { iris: APP, june: '' } })
     assert.deepEqual(saved().workspaces[0].members, { june: {}, iris: { folder: APP } })
     const w = c.workspaces().find((x) => x.id === 'storefront')
     assert.deepEqual(w.members, [{ name: 'june', folder: '' }, { name: 'iris', folder: APP }])
     assert.deepEqual(c.hubs.get('storefront').space.agents.map((a) => [a.name, a.cwd]), [['june', API], ['iris', APP], ['milo', API]])
-    assert.throws(() => c.workspaceAction('members', DEFAULT, { add: ['iris'] }), /every shared agent/)
-    // in Home, each agent's own folder: where it works there
-    c.workspaceAction('members', DEFAULT, { folders: { iris: APP, june: '' } })
-    assert.deepEqual(saved().agents.map((a) => [a.name, a.cwd]), [['june', undefined], ['ada', undefined], ['iris', APP]])
-    assert.equal(c.snapshot().roster.find((a) => a.name === 'iris').cwd, APP, 'the sheet shows it')
+    // any workspace, the same way
+    c.workspaceAction('members', ROOT, { remove: ['iris'], folders: { june: APP } })
+    assert.deepEqual(saved().workspaces.find((x) => x.id === ROOT).members, { june: { folder: APP }, ada: { off: true } })
+    assert.deepEqual(c.hubs.get(ROOT).space.agents.map((a) => a.name), ['june', 'ada'])
+    assert.equal(c.snapshot().roster.find((a) => a.name === 'iris').name, 'iris', 'still yours')
   } finally {
     quit(c)
   }
 })
 
 test("what the app does lands in the workspace on screen: its agents, edits, new agents and tasks; a linked computer's agents show in the workspace it has too", async () => {
-  const c = await crewApp({ agents: roster(), workspaces: [storefront()], current: 'storefront' })
+  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()], current: 'storefront' })
   try {
     assert.equal(c.here, c.hubs.get('storefront'))
     assert.deepEqual(c.snapshot().agents.map((a) => a.name), ['june', 'ada', 'milo'])
@@ -558,12 +650,12 @@ test("what the app does lands in the workspace on screen: its agents, edits, new
     assert.equal(saved().agents.some((a) => a.name === 'ivo'), false)
     await c.ticket('file', null, { text: 'rate limits are off by one', kind: 'bug' })
     assert.equal(c.hubs.get('storefront').tickets.all.length, 1)
-    assert.equal(c.hub.tickets.all.length, 0)
-    // a linked computer's default agents are in the default here; it has no storefront, so none of its agents are in storefront
-    c.links.set('laptop', { slug: 'laptop', name: 'Laptop', peer: {}, toHost: new Map(), fetching: new Set(), state: { agents: [{ name: 'bo', status: 'idle' }], feed: [], tasks: { tickets: [] }, providers: {} } })
+    assert.equal(c.hubs.get(ROOT).tickets.all.length, 0)
+    // a linked computer's agents show in the workspace you share with it; it has no storefront, so none of them are in storefront
+    c.links.set('laptop', { slug: 'laptop', name: 'Laptop', peer: { push() {} }, toHost: new Map(), fetching: new Set(), spaces: { [ROOT]: { agents: [{ name: 'bo', status: 'idle' }], feed: [], tasks: { tickets: [] }, providers: {} } } })
     assert.equal(c.snapshot().agents.some((a) => a.home), false)
     await assert.rejects(() => c.moveAgent('milo', 'laptop'), /Laptop has no Storefront workspace/)
-    c.workspaceAction('switch', DEFAULT)
+    c.workspaceAction('switch', ROOT)
     assert.deepEqual(c.snapshot().agents.filter((a) => a.home).map((a) => a.name), ['bo@laptop'])
   } finally {
     quit(c)
@@ -623,12 +715,12 @@ test("a parked workspace's agents don't start behind its back: restart refuses, 
 })
 
 test("made with members' own folders, they start there the first time; a shared agent can't take an own agent's name there", async () => {
-  const c = await crewApp({ agents: [...roster(), { name: 'milo', area: 'shared docs' }], workspaces: [storefront()] })
+  const c = await crewApp({ layout: 2, agents: [...roster(), { name: 'milo', area: 'shared docs' }], workspaces: [storefront(), home_()] })
   try {
     let pushed = null
     c.on('state', (s) => (pushed = s))
     c.workspaceAction('create', null, { name: 'Site', folder: API, members: ['june', 'iris'], folders: { iris: APP } })
-    assert.deepEqual(saved().workspaces[1].members, { june: {}, iris: { folder: APP } })
+    assert.deepEqual(saved().workspaces.find((w) => w.id === 'site').members, { june: {}, iris: { folder: APP } })
     assert.equal(pushed?.workspace.id, 'site', 'the state goes out at once, ahead of whatever follows')
     assert.throws(() => c.workspaceAction('members', 'storefront', { add: ['milo'] }), /Storefront has an agent of its own called milo/)
     assert.throws(() => c.workspaceAction('edit', 'site', { color: 'red;}</style><b>' }), /isn't a color/)
@@ -640,11 +732,11 @@ test("made with members' own folders, they start there the first time; a shared 
 })
 
 test("your accounts' limits: said once, where you are, whichever workspace's agent reports them; the pace counts every workspace's readings", async () => {
-  const c = await crewApp({ agents: roster(), workspaces: [storefront()] })
+  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()], current: ROOT })
   try {
     const notices = []
     c.on('notice', (n) => notices.push(n))
-    const home = c.hub
+    const home = c.hubs.get(ROOT)
     const g = c.hubs.get('storefront')
     const at = Date.now() + 3600e3
     g.setUsage('claude', [{ id: 'five_hour', pct: 81, resetsAt: at }]) // a Storefront agent's status line, Home on screen
@@ -706,8 +798,18 @@ test('crew lease: one simulator for every workspace; it goes to whoever waits fo
   assert.match(home.give({ from: 'milo' }), /isn't yours|hold nothing/, "Home's agents can't give back Storefront's")
 })
 
+test('a lease of yours is saved with the workspace you took it in, whichever that is, and its other state with it', async () => {
+  await ws.claim({ from: 'you', words: ['android device'] })
+  ws.saveRuntime(true)
+  home.saveRuntime(true)
+  const heldIn = (dir) => JSON.parse(fs.readFileSync(path.join(dir, 'runtime.json'), 'utf8')).held.map(([, h]) => [h.thing, h.name])
+  assert.deepEqual(heldIn(dirOf(HOME, 'storefront')), [['android device', 'you']])
+  assert.deepEqual(heldIn(HOME), [], 'once')
+  ws.give({ from: 'you', words: ['android device'] })
+})
+
 test('a linked computer: its terminals show in their own workspace, typing reaches the right one, and an older Crew is told to update', async () => {
-  const c = await crewApp({ agents: roster(), workspaces: [storefront()], current: 'storefront' })
+  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()], current: 'storefront' })
   try {
     const { EventEmitter: Emitter } = await import('node:events')
     const peer = Object.assign(new Emitter(), { name: 'Laptop', push() {}, input() {}, close() {} })
@@ -723,14 +825,14 @@ test('a linked computer: its terminals show in their own workspace, typing reach
     const key = c.keyOf('storefront')
     peer.emit('pty', `${key}/milo`, 'storefront output')
     peer.emit('pty', 'storefront/milo', 'by bare id') // an older Crew's way: no workspace here has that key
-    peer.emit('pty', 'ann', 'default output') // the default's, while storefront is on screen
+    peer.emit('pty', 'ann', 'no workspace') // an older Crew's other way: nothing here
     assert.deepEqual(pty, [['milo@laptop', 'storefront output']])
     const typed = []
     for (const [id, h] of c.hubs) h.input = (n, d) => typed.push([id, n, d])
     peer.emit('input', `${key}/june`, 'y')
     peer.emit('input', 'storefront/june', 'x')
     peer.emit('input', 'june', 'n')
-    assert.deepEqual(typed, [['storefront', 'june', 'y'], ['default', 'june', 'n']])
+    assert.deepEqual(typed, [['storefront', 'june', 'y']])
     await assert.rejects(c.linkCall(l, 'update', [['milo'], {}]), /Laptop runs an older CLIque, without workspaces: update it/)
   } finally {
     quit(c)
@@ -738,7 +840,7 @@ test('a linked computer: its terminals show in their own workspace, typing reach
 })
 
 test("a linked computer's own workspaces show up here on their own, as its; hidden ones stay hidden; one it drops goes", async () => {
-  const c = await crewApp({ agents: roster(), workspaces: [storefront()] })
+  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
   try {
     const { EventEmitter: Emitter } = await import('node:events')
     const pushed = []
@@ -821,7 +923,7 @@ test("a linked computer's own workspaces show up here on their own, as its; hidd
 })
 
 test("a connection that loses to another doesn't take the winner's workspaces with it", async () => {
-  const c = await crewApp({ agents: roster(), workspaces: [storefront()] })
+  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
   try {
     const { EventEmitter: Emitter } = await import('node:events')
     const answers = []

@@ -14,7 +14,7 @@ import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCo
 import { callResult } from './transcript.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
-import { DEFAULT, GENERAL, dirOf, space, forget, renameShared, sharedNames } from './workspaces.js'
+import { ROOT, GENERAL, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
 
@@ -43,8 +43,31 @@ const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'r
   'trustAsk', 'trustAt']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
-// config.json, for every workspace's hub to share.
-export const openConfig = () => new Config(CONFIG, DEFAULTS)
+// An image saved with this computer's attachments, whichever workspace it's for. -> where
+export function saveImage(name, type, bytes) {
+  const ext = Object.hasOwn(IMAGE_TYPES, type) && IMAGE_TYPES[type]
+  if (!ext) throw new Error('only PNG, JPEG, GIF and WebP images')
+  if (bytes.length > 20 * 1024 * 1024) throw new Error(`${name || 'image'} is over 20 MB`)
+  fs.mkdirSync(ATTACHMENTS, { recursive: true })
+  const file = path.join(ATTACHMENTS, `${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}.${ext}`)
+  fs.writeFileSync(file, Buffer.from(bytes))
+  return file
+}
+
+// config.json, for every workspace's hub to share. A file from before today's layout (core/workspaces.js settle) is
+// copied once as it was, and reads in today's: the first save writes it.
+const BEFORE = at('config.before-layout-2.json')
+export const openConfig = (also) => new Config(CONFIG, DEFAULTS, {
+  settle: (data) => {
+    if (!(Number(data.layout) >= 2) && (data.agents?.length || data.workspaces) && !fs.existsSync(BEFORE)) {
+      try {
+        fs.copyFileSync(CONFIG, BEFORE)
+      } catch {}
+    }
+    settle(data, { hadFiles: fs.existsSync(at('feed.jsonl')) })
+    also?.(data)
+  },
+})
 const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared']
 const RESERVED = new Set(['you', 'any', 'crew'])
 const SUB_TOOLS = new Set(['Agent', 'Task']) // Claude Code's sub-agent tool ("Task" in older versions)
@@ -113,7 +136,7 @@ export class Hub extends EventEmitter {
 
   // config, token, usage, samples, locks: what every workspace's hub shares (one of each of its own when it's the only
   // hub).
-  constructor(runner, { bin, workspace = DEFAULT, config, token, usage, samples, locks }) {
+  constructor(runner, { bin, workspace = ROOT, config, token, usage, samples, locks }) {
     super()
     this.ws = workspace
     this.dir = dirOf(HOME, workspace)
@@ -159,11 +182,15 @@ export class Hub extends EventEmitter {
     this.ledger = new Ledger(this.at('savers.json'))
     this.fellBack = new Set() // tasks quick triage handed to the triage agent after all
     this.useRunner(runner)
-    this.cfg = config ?? new Config(CONFIG, DEFAULTS)
+    // the only hub (no Crew around it): its config.json has this workspace, and what's wrong with the file is said here
+    this.cfg = config ?? openConfig((data) => {
+      if (space(data, workspace)) return
+      data.workspaces = [{ id: workspace, name: 'Workspace', members: {} }, ...(Array.isArray(data.workspaces) ? data.workspaces : [])]
+    })
     this.onConfig = () => this.apply()
     this.onProblem = (text) => this.post({ kind: 'event', from: 'crew', text })
     this.cfg.on('change', this.onConfig)
-    if (this.ws === DEFAULT) this.cfg.on('problem', this.onProblem) // said once, in the default workspace's chat
+    if (!config) this.cfg.on('problem', this.onProblem)
     if (!this.cfg.tried) this.cfg.load()
     if (!this.space) this.apply() // read before this hub was made, or unreadable: as it is
   }
@@ -218,12 +245,10 @@ export class Hub extends EventEmitter {
     this.url = url
     const park = (this.parked = this.space.parked)
     this.startedAt = Date.now()
-    if (this.ws === DEFAULT) {
-      // where agents' hooks and `crew` find Crew: every workspace's, told apart by the X-Crew-Workspace header
-      fs.writeFileSync(at('url'), url)
-      fs.writeFileSync(at('token'), this.token)
-      fs.chmodSync(at('token'), 0o600)
-    }
+    // where agents' hooks and `crew` find Crew: every workspace's, told apart by the X-Crew-Workspace header
+    fs.writeFileSync(at('url'), url)
+    fs.writeFileSync(at('token'), this.token)
+    fs.chmodSync(at('token'), 0o600)
     this.keepRuntime = Boolean(this.runner.survivors)
     const adopted = this.adopt(survivors)
     this.replaySpool()
@@ -238,8 +263,9 @@ export class Hub extends EventEmitter {
     this.cfg.watch()
     this.stallTimer = setInterval(() => this.checkStalls(), STALL_CHECK)
     this.stallTimer.unref?.()
-    // the agents' logs don't say which workspace they worked in, and what came before workspaces is the default's
-    if (this.ws === DEFAULT && !this.spend.lookedBack) {
+    // the agents' logs don't say which workspace they worked in: one workspace counts what came before (the first to
+    // start on a computer where none has yet)
+    if (!this.spend.lookedBack && !this.others().some((h) => h.spend.lookedBack || h.lookingBack)) {
       this.lookingBack = true
       this.lookTimer = setTimeout(() => this.lookBack(), 5000)
       this.lookTimer.unref?.()
@@ -262,7 +288,7 @@ export class Hub extends EventEmitter {
   apply() {
     const before = new Map([...this.agents].map(([n, a]) => [n, [this.launchKey(a), a.contextLimit, a.onContextLimit]]))
     this.providers = providersFrom(this.config, this.cfg.discovered)
-    this.space = space(this.config, this.ws) ?? space({ agents: [] }, DEFAULT) // no agents once it's gone from config.json
+    this.space = space(this.config, this.ws) ?? space({ workspaces: [{ id: this.ws }] }, this.ws) // no agents once it's gone from config.json
     const list = this.space.agents
     const names = new Set(list.map((c) => c.name))
     for (const [name, a] of this.agents) {
@@ -384,18 +410,15 @@ export class Hub extends EventEmitter {
     return []
   }
 
-  // shared: in a workspace other than the default, whether the new agent is one of your shared ones (it's in this
-  // workspace and the default) or this workspace's own. In the default workspace every agent is shared.
+  // shared: whether the new agent is one of your shared ones, or this workspace's own.
   addAgent({ name, shared, ...fields }) {
-    const own = this.ws !== DEFAULT && !shared
-    name = this.freeName(name, own ? undefined : (n) => this.agents.has(n) || sharedNames(this.config, n).has(n))
+    name = this.freeName(name, shared ? (n) => this.agents.has(n) || sharedNames(this.config, n).has(n) : undefined)
     const def = JSON.parse(JSON.stringify({ name, ...clean(fields) }))
-    if (own || this.ws === DEFAULT) this.space.add(def, { shared: !own })
+    if (!shared) this.space.add(def)
     else {
-      // Where it works here, and whether it's on, are this workspace's. In the default workspace it starts off, until
-      // it's turned on there.
+      // where it works here, and whether it's on, are this workspace's
       const { cwd, off, ...who } = def
-      this.space.add({ ...who, off: true }, { shared: true, member: { ...(cwd && { folder: cwd }), ...(off && { off }) } })
+      this.space.add(who, { shared: true, member: { ...(cwd && { folder: cwd }), ...(off && { off }) } })
     }
     this.saveConfig()
     return name
@@ -408,10 +431,11 @@ export class Hub extends EventEmitter {
     return name
   }
 
-  // An agent out of this workspace. Its own, or a shared one in the default workspace, is gone for good, and so is what
-  // every workspace kept about it. A shared one leaving any other workspace is still yours, and still in the others.
-  // everywhere: a shared agent off the roster even from another workspace (a move that didn't go through, core/move.js).
-  removeAgent(name, { everywhere = this.ws === DEFAULT } = {}) {
+  // An agent out of this workspace. Its own is gone for good, and so is what this workspace kept about it. A shared one is
+  // still yours, and still in the others.
+  // everywhere: a shared agent off the roster and out of every workspace (Agents, or a move that didn't go through,
+  // core/move.js).
+  removeAgent(name, { everywhere = false } = {}) {
     if (everywhere) forget(this.config, name)
     else this.space.remove(name)
     for (const h of everywhere ? [this, ...this.others()] : [this]) h.forgetAgent(name)
@@ -535,11 +559,6 @@ export class Hub extends EventEmitter {
     }, 500)
   }
 
-  setTheme(theme) {
-    this.config.theme = ['light', 'dark'].includes(theme) ? theme : 'system'
-    this.saveConfig()
-  }
-
   setAutopilot(on) {
     this.space.autopilot = on
     this.saveConfig()
@@ -591,7 +610,7 @@ export class Hub extends EventEmitter {
         CREW_GROUPS: groups, ...(provider.cli === 'claude' && shellPrefix(this.bin)),
         // which workspace its hooks and `crew` talk to: empty for the default (as for agents started before workspaces),
         // whatever Crew itself was started with
-        CREW_WORKSPACE: this.ws === DEFAULT ? '' : this.ws,
+        CREW_WORKSPACE: this.ws === ROOT ? '' : this.ws, // ROOT's files are in CREW_HOME itself, where its hooks' spool is (core/adapters.js)
       }
       // the program itself on Windows, through the .cmd npm installs it as (core/launch.js)
       const command = resolveCommand(file, [...args, ...(provider.args ?? []), ...(a.args ?? [])], { ...process.env, ...env })
@@ -2145,12 +2164,7 @@ export class Hub extends EventEmitter {
 
   // Images pasted, dropped or picked in the UI become files that agents open by path.
   saveImage(name, type, bytes) {
-    const ext = Object.hasOwn(IMAGE_TYPES, type) && IMAGE_TYPES[type]
-    if (!ext) throw new Error('only PNG, JPEG, GIF and WebP images')
-    if (bytes.length > 20 * 1024 * 1024) throw new Error(`${name || 'image'} is over 20 MB`)
-    const file = path.join(ATTACHMENTS, `${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}.${ext}`)
-    fs.writeFileSync(file, Buffer.from(bytes))
-    return file
+    return saveImage(name, type, bytes)
   }
 
   // Who gets a message: the `to` field (a name, several names, or "any") plus every @name in the text.
@@ -3517,7 +3531,7 @@ export class Hub extends EventEmitter {
       }
       const calls = [...this.calls.values()].map((c) => ({ ...c, msg: c.msg?.id, to: this.ownerOf(c), hold: null }))
       try {
-        fs.writeFileSync(this.at(RUNTIME), JSON.stringify({ at: Date.now(), agents, calls, leases: [...this.leases].filter(([, l]) => this.mine(l, l.name)), held: [...this.held].filter(([, h]) => (h.name === 'you' ? this.ws === DEFAULT : this.mine(h, h.name))) }))
+        fs.writeFileSync(this.at(RUNTIME), JSON.stringify({ at: Date.now(), agents, calls, leases: [...this.leases].filter(([, l]) => this.mine(l, l.name)), held: [...this.held].filter(([, h]) => (h.name === 'you' ? (h.ws ?? this.ws) === this.ws : this.mine(h, h.name))) }))
       } catch {}
     }
     if (now) return write()
@@ -3623,6 +3637,11 @@ export class Hub extends EventEmitter {
     }
   }
 
+  // Each provider's usage limits that haven't reset yet (your accounts', the same from any workspace's hub).
+  usageNow() {
+    return Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id).map((w) => ({ ...w, pace: this.pace(id, w) ?? undefined })), ...(this.usage[id].credits && { credits: this.usage[id].credits }) }]).filter(([, u]) => u.windows.length))
+  }
+
   snapshot() {
     return {
       parked: this.parked,
@@ -3640,8 +3659,8 @@ export class Hub extends EventEmitter {
         convo: this.convos[a.name] ? { ...this.convos[a.name], context: againstLimit(this.convos[a.name].context, a.contextLimit) } : null,
         contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : null, onContextLimit: a.onContextLimit === 'notify' ? 'notify' : 'fresh',
         freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
-        // in a workspace other than the default: one of your shared agents (in other workspaces too), or only this one's
-        ...(this.ws !== DEFAULT && !a.cloneOf && { shared: Boolean(a.shared) }),
+        // one of your shared agents (in other workspaces too), or only this one's
+        ...(!a.cloneOf && { shared: Boolean(a.shared) }),
         // a clone: whose, and its number (iris.2 is clone 2); it looks like its original
         clones: this.maxClones(a), ...(a.cloneOf && { cloneOf: a.cloneOf, clone: a.clone, avatar: { seed: a.avatar?.seed ?? a.cloneOf, ...a.avatar } }),
         // its sub-agents: the running ones, and ones that just finished
@@ -3657,9 +3676,9 @@ export class Hub extends EventEmitter {
       channels: this.space.channels,
       reads: this.reads,
       spend: this.spendNow(),
-      // each provider's usage limits that haven't reset yet: { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
+      // { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
       // each window with where it's heading at this pace: { projected (percent at its reset), runsOut (ms) }
-      usage: Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id).map((w) => ({ ...w, pace: this.pace(id, w) ?? undefined })), ...(this.usage[id].credits && { credits: this.usage[id].credits }) }]).filter(([, u]) => u.windows.length)),
+      usage: this.usageNow(),
       tasks: {
         tickets: [...this.tickets.open(), ...this.tickets.all.filter((t) => t.status === 'done').sort((x, y) => x.updated - y.updated).slice(-60)],
         triage: this.space.triage ?? null,

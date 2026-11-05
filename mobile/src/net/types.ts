@@ -147,7 +147,7 @@ export type State = {
   spend?: Record<string, number>
   tasks?: unknown
   workspaces?: Workspace[]
-  workspace?: Workspace
+  workspace?: Workspace | null // null: the computer has none yet
   computers?: { slug: string; name: string; online: boolean }[]
   channels?: Channel[] // missing from a Mac from before channels reached phones: one chat, sends go to #general
 }

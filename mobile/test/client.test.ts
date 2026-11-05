@@ -74,7 +74,7 @@ test('pairs with a code: the first address that completes the handshake wins, th
   expect(mac.secret).toBeNull() // the code is used up
   expect(snap.ws).toBe('default')
   expect(snap.state?.agents.map((a) => a.name)).toEqual(['Ada', 'Milo'])
-  expect(mac.calls[0]).toEqual({ name: 'watch', args: ['default'] })
+  expect(mac.calls[0]).toEqual({ name: 'watch', args: [''] })
   client.stop()
 })
 
@@ -119,7 +119,22 @@ test('sends a message, and switches workspaces', async () => {
   client.stop()
 })
 
-test('a workspace that is gone falls back to the default one', async () => {
+test('a computer with no workspace left: an empty state, then the first it makes', async () => {
+  const { mac, client } = await pairedClient()
+  for (const ws of Object.keys(mac.states)) mac.removeWorkspace(ws)
+  const none = await until(client, (s) => s.state?.workspace === null)
+  expect([none.ws, none.shown]).toEqual(['', ''])
+  // connected again in that state, or just asked: the same
+  await client.watch('')
+  expect(client.getSnapshot().state?.workspace).toBeNull()
+  mac.addWorkspace('fresh', structuredClone(STATE))
+  const first = await until(client, (s) => s.ws === 'fresh')
+  expect(first.shown).toBe('fresh')
+  expect(first.state?.agents.map((a) => a.name)).toEqual(['Ada', 'Milo'])
+  client.stop()
+})
+
+test('a workspace that is gone falls back to the one on the computer', async () => {
   const { client } = await pairedClient()
   await client.watch('gone')
   expect(client.getSnapshot().ws).toBe('default')
