@@ -323,7 +323,7 @@ export class Hub extends EventEmitter {
       this.launch(a)
       this.startWaiting(a)
     }
-    if (starting.length) this.post({ kind: 'event', from: 'crew', text: `woke up: ${starting.map((a) => `@${a.name}`).join(', ')} pick${starting.length === 1 ? 's' : ''} up where ${starting.length === 1 ? 'it' : 'they'} left off` })
+    if (starting.length) this.post({ kind: 'event', from: 'crew', text: `woke up: ${atNames(starting.map((a) => a.name))} pick${starting.length === 1 ? 's' : ''} up where ${starting.length === 1 ? 'it' : 'they'} left off` })
     this.changed()
   }
 
@@ -350,7 +350,7 @@ export class Hub extends EventEmitter {
       if (run) run.quiet = true
       this.dismiss(c.name)
     }
-    if (stopping.length) this.post({ kind: 'event', from: 'crew', text: `went to sleep: ${stopping.map((a) => `@${a.name}`).join(', ')} stopped, and pick up their conversations when it wakes` })
+    if (stopping.length) this.post({ kind: 'event', from: 'crew', text: `went to sleep: ${atNames(stopping.map((a) => a.name))} stopped, and pick up their conversations when it wakes` })
     this.changed()
   }
 
@@ -1184,9 +1184,16 @@ export class Hub extends EventEmitter {
   // The account is yours, not a workspace's: whichever workspace's agent reports it, it's said once, where you are
   // (aboutAccount), and its notification belongs to no workspace.
 
-  // A line in the chat about your accounts. Crew puts it in the workspace on screen; on its own, a hub keeps it.
+  // A line in the chat about your accounts. Crew puts it in the workspace on screen; on its own, a hub keeps it. A
+  // window's line takes the place of the one before it, wherever that is (Crew looks in every workspace).
   aboutAccount(entry) {
+    this.unsayLimit(entry.limit)
     this.post(entry)
+  }
+
+  // A usage window's earlier lines leave the chat: its newer line says what they said, and more.
+  unsayLimit(limit) {
+    if (limit) for (const e of this.feed.filter((x) => sameWindow(x.limit, limit))) this.unsay(e)
   }
 
   setUsage(id, windows, credits) {
@@ -1196,7 +1203,6 @@ export class Hub extends EventEmitter {
     for (const w of windows) {
       this.sample(id, w)
       this.warnUsage(id, u, w)
-      this.warnPace(id, u, w)
     }
     this.saveUsage()
     if (JSON.stringify([this.liveUsage(id), u.credits]) === before) return
@@ -1214,18 +1220,31 @@ export class Hub extends EventEmitter {
     return this.liveUsage(id).some((w) => (w.id === 'five_hour' || w.id === 'seven_day') && w.pct >= NEAR_LIMIT)
   }
 
-  // Crossing 80%, then 95%, of a window: one line in the chat and a notification each, once per window. Said once
-  // already survives a restart (usage.json); a new window (another reset time) starts over.
+  // Crossing 80%, then 95%, of a window (each said once; that survives a restart, usage.json, and a new window, another
+  // reset time, starts over), or heading to run out before it resets once that's close enough to plan around (PACE_WARN
+  // of the window away; said once per window): one line in the chat and one notification, however many of those come
+  // at once. The line says all of it (limit, for the chat to draw), so it takes the place of the window's line before it.
   warnUsage(id, u, w) {
     u.told ??= {}
     if (u.told[w.id] && Math.abs(u.told[w.id].resetsAt - w.resetsAt) > 60000) delete u.told[w.id]
-    const level = LIMIT_WARN.findLast((l) => w.pct >= l)
-    if (!level || (u.told[w.id]?.level ?? 0) >= level) return
-    u.told[w.id] = { level, resetsAt: w.resetsAt }
-    const what = `${this.providers[id]?.label ?? id} is at ${w.pct}% of its ${limitName(w)}`
+    const level = LIMIT_WARN.findLast((l) => w.pct >= l) ?? 0
+    const crossed = level > (u.told[w.id]?.level ?? 0)
+    const p = this.pace(id, w)
+    const runsOut = p?.runsOut && p.runsOut - Date.now() <= windowMs(w) * PACE_WARN ? p.runsOut : null
+    const pace = `pace:${w.id}`
+    const forecast = runsOut && u.told[pace]?.resetsAt !== w.resetsAt
+    if (!crossed && !forecast) return
+    if (crossed) u.told[w.id] = { level, resetsAt: w.resetsAt }
+    if (forecast) u.told[pace] = { resetsAt: w.resetsAt }
+    const label = this.providers[id]?.label ?? id
+    const at = `${label} is at ${w.pct}% of its ${limitName(w)}`
     const when = resetsWhen(w.resetsAt)
-    this.aboutAccount({ kind: 'event', from: 'crew', text: `${what}, resets ${when}`, ...(level >= 95 && { alert: true }) })
-    this.emit('notice', { title: what, body: `It resets ${when}.${level >= NEAR_LIMIT ? ' Until then, new work goes to agents on other providers when they cover the same area.' : ''}`, focus: '', account: true })
+    const out = runsOut && `At this pace it runs out ${resetsWhen(runsOut)}, before it resets ${when}`
+    const limit = { account: id, label, window: w.id, name: limitName(w), pct: w.pct, resetsAt: w.resetsAt, ...(runsOut && { runsOut }) }
+    this.aboutAccount({ kind: 'event', from: 'crew', text: out ? `${at}. ${out}` : `${at}, resets ${when}`, limit, ...((level >= 95 || runsOut) && { alert: true }) })
+    const routing = w.pct >= NEAR_LIMIT ? ' Until then, new work goes to agents on other providers when they cover the same area.' : ''
+    if (crossed) this.emit('notice', { title: at, body: `${out ? `${out}.` : `It resets ${when}.`}${routing}`, focus: '', account: true })
+    else this.emit('notice', { title: `At this pace, ${label}'s ${limitName(w)} runs out ${resetsWhen(runsOut)}`, body: `It's at ${w.pct}% and resets ${when}.${routing}`, focus: '', account: true })
   }
 
   // Readings of a window over the last RECENT minutes, for its pace right now. A drop or a new reset time is a new window.
@@ -1239,19 +1258,6 @@ export class Hub extends EventEmitter {
 
   pace(id, w) {
     return paceOf(w, this.samples[id]?.[w.id])
-  }
-
-  // At this pace a window runs out before it resets: one line in the chat and a notification, once per window, when it's
-  // close enough to plan around (PACE_WARN of the window away).
-  warnPace(id, u, w) {
-    const p = this.pace(id, w)
-    const key = `pace:${w.id}`
-    const length = windowMs(w)
-    if (!p?.runsOut || u.told[key]?.resetsAt === w.resetsAt || p.runsOut - Date.now() > length * PACE_WARN) return
-    u.told[key] = { resetsAt: w.resetsAt }
-    const what = `At this pace, ${this.providers[id]?.label ?? id}'s ${limitName(w)} runs out ${resetsWhen(p.runsOut)}`
-    this.aboutAccount({ kind: 'event', from: 'crew', text: `${what}, before it resets ${resetsWhen(w.resetsAt)}`, alert: true })
-    this.emit('notice', { title: what, body: `It resets ${resetsWhen(w.resetsAt)}.`, focus: '', account: true })
   }
 
   // Debounced like the context gauges; `now` on quit.
@@ -3418,6 +3424,16 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
+  // A line that leaves the chat (another says it again, better). feed.jsonl drops it when it's next read or written.
+  unsay(e) {
+    const i = this.feed.indexOf(e)
+    if (i < 0) return
+    this.feed.splice(i, 1)
+    this.sizes.delete(e)
+    this.save({ amend: e.id, gone: true })
+    this.changed()
+  }
+
   // Appended, one line after another, until feed.jsonl holds about twice what's kept (rewriteAt): then it's written
   // anew with what's kept (the line included), so it never grows past about that.
   save(line) {
@@ -3567,7 +3583,7 @@ export class Hub extends EventEmitter {
     for (const c of saved.calls ?? []) this.calls.set(c.id, { ...c, msg: c.msg ? this.feed.find((e) => e.id === c.msg) : undefined, hold: null })
     for (const [file, l] of saved.leases ?? []) if (adopted.has(l.name)) this.leases.set(file, { ...l, ws: this.ws })
     for (const [k, h] of saved.held ?? []) if (h.name === 'you' || adopted.has(h.name)) this.held.set(k, { ...h, ws: this.ws })
-    if (adopted.size) this.post({ kind: 'event', from: 'crew', text: `picked up ${[...adopted].map((n) => `@${n}`).join(' ')} where ${adopted.size === 1 ? 'it was' : 'they were'}: ${adopted.size === 1 ? 'it' : 'they'} kept working while CLIque was closed` })
+    if (adopted.size) this.post({ kind: 'event', from: 'crew', text: `picked up ${atNames([...adopted])} where ${adopted.size === 1 ? 'it was' : 'they were'}: ${adopted.size === 1 ? 'it' : 'they'} kept working while CLIque was closed` })
     return adopted
   }
 
@@ -3746,6 +3762,8 @@ export const shellPrefix = (bin, env = process.env, platform = process.platform,
 const rank = (m) => (m.answers ? 0 : m.ask ? 1 : 2)
 
 // How long a window is (Codex names its own by length: window_120 is two hours); null when unknown, as a spend limit's is.
+// Two lines about the same usage window: one account's, one window of it, the same reset (give or take a minute).
+const sameWindow = (a, b) => Boolean(a && b && a.account === b.account && a.window === b.window && Math.abs(a.resetsAt - b.resetsAt) <= 60000)
 const windowMs = (w) => ({ five_hour: 5 * 3600000, seven_day: 7 * 864e5 })[w.id] ?? (Number(String(w.id).match(/^window_(\d+)$/)?.[1]) * 60000 || null)
 
 // Where a window is heading, as Side A forecasts it without a weekly rhythm: the share used so far at the pace it has
@@ -3771,6 +3789,9 @@ const resetsWhen = (ms) => {
   const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   return d.toDateString() === new Date().toDateString() ? `at ${time}` : `${d.toLocaleDateString('en-US', { weekday: 'short' })} at ${time}`
 }
+
+// Agents named in a line of the chat: "@ada", "@ada and @june", "@ada, @june and @milo".
+const atNames = (names) => (names.length > 1 ? `${names.slice(0, -1).map((n) => `@${n}`).join(', ')} and @${names.at(-1)}` : names.map((n) => `@${n}`).join(''))
 
 // A message in one line, for quoting it back: code blocks folded, cut at `max`.
 const gist = (text, max = 100) => {
@@ -3874,7 +3895,7 @@ function loadFeed(file, keep = new Set()) {
   // An unanswered question's hook ended with the last run: the agent isn't waiting on it any more. (An agent tool's
   // agent was told to wait for a message: lost says to tell it, see toolsLost.)
   for (const e of all) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true, ...(e.ask?.app && { lost: true, at: Date.now() }) }
-  const feed = keepFeed(all, { needed: (e) => keep.has(e.id) })
+  const feed = keepFeed(all.filter((e) => !e.gone), { needed: (e) => keep.has(e.id) })
   const bytes = Buffer.byteLength(text)
   const at = rewriteAt(feed.length, feed.reduce((n, e) => n + lineSize(e), 0))
   if (lines.length <= at.lines && bytes <= at.bytes) return { feed, lines: lines.length, bytes }

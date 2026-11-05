@@ -19,6 +19,24 @@ const WIN = process.argv.includes('--win')
 const LINK = WIN ? { slug: 'studio', name: 'Studio' } : { slug: 'workstation', name: 'Workstation' }
 const REX = `Rex@${LINK.slug}`
 const NOOR = `Noor@${LINK.slug}`
+// The events shot: what CLIque says in the chat, as the hub posts it (two agents stopping together, Claude's weekly
+// limit getting close, a crew waking up, a lost turn, a task fixed, a new conversation, a context limit passed)
+const EVENTS_FEED = `const s = window.__crewState; const t = (m) => Date.now() - m * 60000
+  const day = new Date(Date.now() + 2 * 86400000); day.setHours(15, 0, 0, 0); const resets = day.getTime()
+  s.feed = [
+    { id: 'e1', kind: 'reply', from: 'Theo', to: 'you', text: 'All 48 checkout tests pass on Chrome and Safari.', ts: t(30) },
+    { id: 'e2', kind: 'event', from: '${REX}', text: 'exited (code 143)', ts: t(26) },
+    { id: 'e3', kind: 'event', from: '${NOOR}', text: 'exited (code 143)', ts: t(26) },
+    { id: 'e4', kind: 'event', from: 'crew', alert: true, text: "Claude is at 90% of its weekly limit. At this pace it runs out Wed at 13:54, before it resets Wed at 15:00", ts: t(20),
+      limit: { account: 'claude', label: 'Claude', window: 'seven_day', name: 'weekly limit', pct: 90, resetsAt: resets, runsOut: resets - 66 * 60000 } },
+    { id: 'e6', kind: 'event', from: 'crew', text: 'woke up: @Ada and @Milo pick up where they left off', ts: t(12) },
+    { id: 'e7', kind: 'event', from: 'Ada', text: 'lost its turn to an API error (overloaded), so CLIque types "continue" for it in 20s', ts: t(9) },
+    { id: 'e7b', kind: 'task', type: 'bug', act: 'fixed', from: 'Ada', ticket: 4, title: 'Totals round wrong with 3 items', text: 'Rounding happened per line; now once on the total.', ts: t(8) },
+    { id: 'e8', kind: 'event', from: 'Milo', fresh: true, text: 'started a new conversation for #7', ts: t(6) },
+    { id: 'e9', kind: 'msg', from: 'you', to: 'Milo', text: 'Start with the coupon guard, then the expired-code message.', ts: t(5.9) },
+    { id: 'e10', kind: 'event', from: 'Iris', alert: true, text: 'passed its 400k context limit (412k used). Start a new conversation when it suits you', ts: t(2) },
+  ]
+  window.__crewEmit('state', s)`
 // What's behind the transparent windows: the popover's material, or a soft desktop for the floating pill.
 const BACKDROP = {
   popover: { light: '#ececef', dark: '#2b2b2f' },
@@ -157,6 +175,24 @@ const SHOTS = {
     await sleep(1200)
     await save(win, `channel-${theme}`)
     win.destroy()
+  },
+  // What CLIque itself says in the chat: agents stopping, your accounts' limits, a crew waking up, a new conversation
+  // in the window, and in the floating chat
+  async events(theme) {
+    const win = await dashboard(theme, 'chat', { width: 1100, height: 760 })
+    await sleep(600)
+    await js(win, EVENTS_FEED)
+    await sleep(900)
+    await save(win, `events-${theme}`)
+    win.destroy()
+    const chat = await open('overlay.html', { theme, width: 520, height: 820, backdrop: 'desktop' })
+    await sleep(400)
+    await js(chat, EVENTS_FEED.replace("s.feed = [", "s.agents = s.agents.map((a) => ({ ...a, status: 'idle', activity: '', subs: [] })); s.feed = ["))
+    await js(chat, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(900)
+    await fitToContent(chat)
+    await save(chat, `events-chat-${theme}`)
+    chat.destroy()
   },
   // Channels: the sidebar's list (unread counts), #review open with its brief in the header, an agent's conversation
   // tagging what came from a channel, the sheet that makes one, and a new channel before anyone has said anything

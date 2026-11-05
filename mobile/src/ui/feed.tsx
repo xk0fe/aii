@@ -323,7 +323,7 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
               <Name name={e.from} c={c} />{' '}
             </>
           ) : null}
-          {e.text}
+          {e.from === 'crew' && e.text ? e.text.charAt(0).toUpperCase() + e.text.slice(1) : e.text}
         </Text>
       </Quiet>
     )

@@ -72,6 +72,7 @@ const ICONS = {
   auto: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/>'),
   braces: svg('<path d="M8.5 4C6.6 4 6 5 6 6.8v2.4C6 10.6 5.2 11.6 4 12c1.2.4 2 1.4 2 2.8v2.4C6 19 6.6 20 8.5 20M15.5 4c1.9 0 2.5 1 2.5 2.8v2.4c0 1.4.8 2.4 2 2.8-1.2.4-2 1.4-2 2.8v2.4c0 1.8-.6 2.8-2.5 2.8"/>'),
   power: svg('<path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/>'),
+  gauge: svg('<path d="M4.2 17.5a8.6 8.6 0 1 1 15.6 0"/><path d="M12 14l3.6-4.2"/><circle cx="12" cy="14.2" r="1.3" fill="currentColor" stroke="none"/>'),
   restart: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/>'),
   close: svg('<path d="M6 6l12 12M18 6 6 18"/>'),
   up: svg('<path d="M12 19V5M5 12l7-7 7 7"/>', 'stroke-width="2.4"'),
@@ -1159,7 +1160,7 @@ function dayLabel(ts, now = Date.now()) {
 const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider, only, here, queued = false, face = 28, rows = false, channels = [], channel = null } = {}) => {
   const merged = mergeSends(feed)
   const visible = merged.shown.filter((e) => !e.answers)
-  const shown = only ? visible.filter(only) : visible
+  const shown = sameEvents(only ? visible.filter(only) : visible)
   const as = merged.as
   // the last `limit` entries, plus questions still waiting for you from before them
   const items = [...shown.slice(0, -limit).filter((e) => e.kind === 'ask' && !e.answer), ...shown.slice(-limit)]
@@ -1175,7 +1176,7 @@ const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divide
   }
   const line = '<div class="new-line" aria-label="New replies"><span>New</span></div>'
   const day = (e, prev) => (prev && sameDay(prev.ts, e.ts) ? '' : `<div class="day-line"><span>${esc(dayLabel(e.ts))}</span></div>`)
-  return { items, html: () => items.map((e, i) => day(e, items[i - 1]) + (e.id === divider ? line : '') + feedItem(e, items[i - 1], ctx)).join('') }
+  return { items, html: () => items.map((e, i) => day(e, items[i - 1]) + ((e.ids ?? [e.id]).includes(divider) ? line : '') + feedItem(e, items[i - 1], ctx)).join('') }
 }
 
 // An empty channel: what it's for, and who its agents are. Its brief is what they're told with their first message here.
@@ -1292,10 +1293,11 @@ function feedItem(e, prev, ctx) {
   const mine = (cls, body) => `<div class="item said mine ${cls}${cont}" id="m-${e.id}" title="${time}"><span class="face">${cont ? '' : YOU_FACE}</span><div class="stack">${cap(`<span class="you">You</span>${toWhom(e.cc ?? [e.to])}`)}${body}${replied}</div>${withTools(cls)}</div>`
   const withTools = (cls) => (cls.includes('ticket') ? '' : tools)
 
-  if (e.kind === 'task' || e.kind === 'bug') return taskEvent(e, who)
+  // the quiet lines (tasks, right of way, CLIque's own) name agents plainly, as captions do
+  if (e.kind === 'task' || e.kind === 'bug') return taskEvent(e, name)
   // a new conversation starts: a line across the feed, so what came before is visibly "before"
-  if (e.kind === 'event' && e.fresh) return `<div class="fresh-ev" id="m-${e.id}" title="${time}"><span>${ICONS.fresh}${who(e.from)} ${esc(e.text)}</span></div>`
-  if (e.kind === 'event') return `<div class="event ${e.alert ? 'alert' : ''}" id="m-${e.id}" title="${time}">${who(e.from)} ${esc(e.text)}</div>`
+  if (e.kind === 'event' && e.fresh) return `<div class="fresh-ev" id="m-${e.id}" title="${time}"><span>${ICONS.fresh}${name(e.from)} ${esc(e.text)}</span></div>`
+  if (e.kind === 'event') return eventLine(e, name, time, (n) => Boolean(byName[n] ?? cloneGhost(n, byName)))
   // a bug sent to an agent (to fix, or to triage): the ticket, not the whole brief
   if (e.ticket !== undefined && e.from === 'you') {
     const key = String(e.ticket)
@@ -1305,7 +1307,7 @@ function feedItem(e, prev, ctx) {
       <button class="bubble ticket-bubble" data-ticket="${esc(key)}" data-id="${e.id}"><span class="tb-icon">${ICONS[e.type ?? 'bug'] ?? ICONS.task}</span><b>#${esc(key.split('@')[0])}</b> ${esc(e.title ?? '')}</button>${replied}</div>`
   }
   if (e.kind === 'note') return said('note', `${name(e.from)} <span>shared a note</span>`)
-  if (e.kind === 'rule') return ruleLine(e, who, time)
+  if (e.kind === 'rule') return ruleLine(e, name, time)
   if (e.kind === 'reply') {
     // an answer to a teammate's question: it went back to that teammate by itself
     const back = ctx.backTo[e.id]
@@ -1353,6 +1355,67 @@ const RULES = {
     tip: "Right of way: a task never sits with an owner that said no. It goes to the next agent whose area it is, or back to you.",
   },
 }
+// ---- CLIque's own lines in the chat (kind 'event') ----
+// One look for all of them, like a group chat's system lines: an icon where the faces go, the words beside it, wrapping
+// under themselves. The icon says what it's about (by the hub's words, so lines from before say it too), berry when it
+// needs you. Agents go by their plain names; CLIque's own lines have its mark and start with a capital (they used to
+// follow "@crew").
+const EVENT_ICONS = [
+  [/^(exited|quit\b|failed to start|can't start)|still running for a workspace|left (a|\d+) process/, 'power'],
+  [/^woke up/, 'sun'],
+  [/^went to sleep/, 'moon'],
+  [/API error|couldn't resume/, 'restart'],
+  [/\bmoved to\b|^moved\b|^picked up /, 'move'],
+  [/conversation|context limit|compacted/, 'fresh'],
+  [/#\d+/, 'task'],
+  [/\bcost\b/, 'chart'],
+  [/another app already uses it/, 'keyboard'],
+  [/terminal/, 'terminal'],
+]
+const eventIcon = (e) => (e.limit ? 'gauge' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'crew' ? 'mark' : null))
+// "Rex", "Rex and Noor", "Rex, Noor and Ada", "Rex, Noor and 3 others" (names as HTML)
+const andList = (list) => (list.length > 3 ? `${list.slice(0, 2).join(', ')} and ${list.length - 2} others` : list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0] ?? '')
+
+// name(n): an agent's name as the chat shows it; known(n): whether n is one of the crew (an @name in the words). A linked
+// computer's line (its id ends in @that-computer, see Crew.snapshot) names its own agents: its @ada is ada@that-computer
+// here, and its @ada@this-computer is our ada.
+function eventLine(e, name, time, known) {
+  const icon = eventIcon(e)
+  const there = String(e.id).split('@')[1]
+  const whose = (n) => (!there ? n : !n.includes('@') ? `${n}@${there}` : known(n) ? n : n.split('@')[0])
+  const words = e.from === 'crew' ? e.text.charAt(0).toUpperCase() + e.text.slice(1) : e.text
+  const text = esc(words)
+    .replace(/@([\w-]+(?:\.\d+)?(?:@[\w-]+)?)/g, (m, n) => (known(whose(n)) ? name(whose(n)) : m))
+    .replace(/ \((code \d+)\)$/, ' <span class="ev-quiet">($1)</span>')
+  const who = e.from === 'crew' ? '' : `${andList((e.group ?? [e.from]).map(name))} `
+  const body = e.limit ? limitLine(e.limit) : `${who}${text}`
+  return `<div class="event${e.alert ? ' alert' : ''}" id="m-${e.id}" title="${time}"><span class="ev-icon">${icon ? ICONS[icon] : '<i class="ev-dot"></i>'}</span><div class="ev-text">${body}</div></div>`
+}
+
+// A usage window, as its line has it (core/hub.js warnUsage): whose and which, how full, and when it resets, or runs out
+// first at this pace. A line from before the reset says it reset.
+function limitLine(l) {
+  const at = (ms) => resetsText(ms).replace(/^resets /, '')
+  const live = l.resetsAt > Date.now()
+  const resets = live ? `resets ${at(l.resetsAt)}` : `reset ${at(l.resetsAt)}`
+  const sub = l.runsOut && live ? `<span class="ev-warn">Runs out ${at(l.runsOut)} at this pace</span> · ${resets}` : resets.replace(/^./, (c) => c.toUpperCase())
+  return `<div class="ev-limit"><span class="ev-what">${esc(l.label)}'s ${esc(l.name)}</span><i class="ev-bar"><i style="width:${Math.min(100, Math.max(l.pct, 3))}%"></i></i><b class="ev-pct">${l.pct}%</b></div><div class="ev-sub">${sub}</div>`
+}
+
+// Agents saying the same thing together (two exits as CLIque quits) make one line: "Rex and Noor exited (code 143)".
+// It keeps the first one's id, and the rest in ids (the New line can be at any of them).
+function sameEvents(list) {
+  const out = []
+  for (const e of list) {
+    const last = out.at(-1)
+    const joins = e.kind === 'event' && last?.kind === 'event' && !e.fresh && !last.fresh && !e.limit && !last.limit && e.from !== 'crew' && last.from !== 'crew' &&
+      e.text === last.text && !e.alert === !last.alert && e.channel === last.channel && e.ts - (last.until ?? last.ts) < 60000 && !(last.group ?? [last.from]).includes(e.from)
+    if (joins) out[out.length - 1] = { ...last, group: [...(last.group ?? [last.from]), e.from], ids: [...(last.ids ?? [last.id]), e.id], until: e.ts }
+    else out.push(e)
+  }
+  return out
+}
+
 function ruleLine(e, who, time) {
   const r = RULES[e.rule]
   if (!r) return ''
@@ -1580,7 +1643,7 @@ function subsUsed(e, open) {
 // and who sent it and to whom.
 function searchText(e) {
   const q = e.ask ?? {}
-  return [e.text, e.title, e.from, e.to, ...(e.cc ?? []), q.title, q.code, q.detail, q.plan, ...(q.questions ?? []).flatMap((x) => [x.question, x.header, ...(x.options ?? []).flatMap((o) => [o.label, o.description])])]
+  return [e.text, e.title, e.from, e.to, ...(e.cc ?? []), e.limit && `${e.limit.label}'s ${e.limit.name}`, q.title, q.code, q.detail, q.plan, ...(q.questions ?? []).flatMap((x) => [x.question, x.header, ...(x.options ?? []).flatMap((o) => [o.label, o.description])])]
     .filter(Boolean).join(' ').toLowerCase()
 }
 // Every word typed, wherever it is in the entry, in any order.
@@ -1742,15 +1805,17 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     const it = document.getElementById(id)
     return it && list.contains(it) ? it.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop : null
   }
+  // a line on screen by its id, or the line it joined (sameEvents: "Ada and Milo exited" is Ada's line)
+  const lineOf = (id) => el.querySelector(`#m-${CSS.escape(id)}`) ?? el.querySelector(`#m-${CSS.escape([...shown.values()].find((e) => e.ids?.includes(id))?.id ?? '')}`)
   const jump = (id) => {
-    let target = el.querySelector(`#m-${CSS.escape(id)}`)
+    let target = lineOf(id)
     // a quote, a "replied" link or an Answer pointing outside this conversation, or into another channel: the channel
     // it was said in, if that shows it
     const home = !target && (!convo || onLeave) && homeOf(id)
     if (home) {
       if (convo) onLeave()
       if (channel && home !== channel) onChannel?.(home)
-      target = el.querySelector(`#m-${CSS.escape(id)}`)
+      target = lineOf(id)
     }
     if (!target) return
     jumpTo = target.id
@@ -2011,7 +2076,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     const lead = mergeSends(last.feed).as[id]
     if (!lead) return null
     const home = channelOf(lead, channels)
-    const there = feedView(last.feed, last.agents, open, limit, drafts, { only: channel ? (e) => channelOf(e, channels) === home : null }).items.some((e) => e.id === lead.id)
+    const there = feedView(last.feed, last.agents, open, limit, drafts, { only: channel ? (e) => channelOf(e, channels) === home : null }).items.some((e) => (e.ids ?? [e.id]).includes(lead.id))
     return there ? home : null
   }
   const only = () => {
@@ -2128,7 +2193,8 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       last = { feed, agents, reads, workspace, channels: chans }
       const view = feedView(feed, agents, open, limit, drafts, { reads, divider: words.length ? null : divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline, channels, channel: convo ? null : channel })
       shown = new Map(view.items.map((e) => [e.id, e]))
-      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
+      // (a line others joined, sameEvents, counts them; a usage line turns to "reset" once its window has)
+      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
       // searching, who's at work right now isn't part of the results

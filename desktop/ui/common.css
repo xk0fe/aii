@@ -712,8 +712,30 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 .replied.answered { color: var(--working-ink); }
 .replied.answered.none { color: var(--fg3); }
 .item .actions { display: flex; gap: 6px; margin-top: 8px; }
-.event { align-self: center; max-width: 92%; padding: 0 8px; text-align: center; font-size: 12px; line-height: 1.4; color: var(--fg2); }
-.event.alert { color: var(--needs-ink); font-weight: 500; }
+/* ---- CLIque's own lines (eventLine in common.js), and the task and right-of-way lines with them ----
+   A group chat's system lines: an icon in the faces' column (--gut wide, --gut-gap from the words), the words beside
+   it, wrapping under themselves. Lines in a row sit together. One that needs you has a berry icon and darker words. */
+.feed { --gut: 24px; --gut-gap: 8px; }
+.event { align-self: stretch; display: grid; grid-template-columns: var(--gut, 24px) minmax(0, 1fr); column-gap: var(--gut-gap, 8px); align-items: start; font-size: 12.5px; line-height: 18px; color: var(--fg2); }
+.event + .event { margin-top: -6px; }
+.ev-icon { justify-self: center; display: grid; place-items: center; width: 18px; height: 18px; color: var(--fg3); }
+.ev-icon svg { width: 15px; height: 15px; }
+.ev-icon .mark { width: 18px; }
+.ev-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.ev-text { min-width: 0; overflow-wrap: anywhere; }
+.event .who .at { font-weight: 500; color: var(--fg3); }
+.ev-quiet { color: var(--fg3); }
+.event.alert .ev-icon { color: var(--needs-ink); }
+.event.alert .ev-text { color: var(--fg); }
+/* a usage window: whose and which, a bar and how full, then when it resets (or runs out first, in berry) */
+.ev-limit { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ev-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--fg); }
+.ev-bar { flex: none; width: 88px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.ev-bar i { display: block; height: 100%; border-radius: inherit; background: var(--fg2); }
+.event.alert .ev-bar i { background: var(--needs); }
+.ev-pct { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--fg); }
+.ev-sub { color: var(--fg2); }
+.ev-warn { font-weight: 500; color: var(--needs-ink); }
 
 /* ---- an agent's question, answered right here (askCard in common.js) ----
    Open: a raised card with a warm edge until you answer. Answered: a quiet line saying what happened. */
@@ -817,10 +839,10 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .ask-answer { display: flex; align-items: center; gap: 7px; flex-basis: 100%; }
 /* a new conversation: a soft rule across the feed */
 /* right of way: Crew deciding who goes first, as one quiet line (hover it for the rule) */
-.rule-ev { align-self: center; display: flex; align-items: flex-start; gap: 6px; max-width: 92%; padding: 2px 10px 2px 6px; border-radius: var(--r-control); font-size: 12px; line-height: 1.45; color: var(--fg2); cursor: help; }
+.rule-ev { align-self: stretch; display: grid; grid-template-columns: var(--gut, 24px) minmax(0, 1fr); column-gap: var(--gut-gap, 8px); align-items: start; padding: 2px 10px 2px 0; border-radius: var(--r-control); font-size: 12.5px; line-height: 18px; color: var(--fg2); cursor: help; }
 .rule-ev.link { cursor: pointer; transition: background .15s; }
 .rule-ev.link:hover { background: var(--btn); }
-.rule-icon { flex: none; display: grid; margin-top: 1px; color: var(--fg2); }
+.rule-icon { justify-self: center; display: grid; place-items: center; height: 18px; color: var(--fg2); }
 .rule-icon svg { width: 14px; height: 14px; }
 .rule-text .who { font-weight: 600; }
 .rule-file { font: 500 12px var(--mono); color: var(--fg2); }
@@ -832,11 +854,11 @@ button.ask-elsewhere:hover { color: var(--fg); }
 
 /* tasks in the feed: one tappable line each, the kind in its icon's color */
 /* a task changing hands: one quiet line, the colour only on its icon */
-.task-ev { --k: var(--fg2); align-self: stretch; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: center; max-width: 100%; padding: 3px 8px 3px 4px; margin: -6px 0; border-radius: var(--r-control); cursor: pointer; font-size: 13px; color: var(--fg2); transition: background .15s; }
+.task-ev { --k: var(--fg2); align-self: stretch; display: grid; grid-template-columns: var(--gut, 24px) minmax(0, 1fr); column-gap: var(--gut-gap, 8px); align-items: center; max-width: 100%; padding: 3px 8px 3px 0; margin: -6px 0; border-radius: var(--r-control); cursor: pointer; font-size: 13px; color: var(--fg2); transition: background .15s; }
 .task-ev.type-bug { --k: var(--bug); }
 .task-ev.type-feature { --k: var(--feature); }
 .task-ev:hover { background: var(--btn); }
-.task-ev-icon { width: 18px; height: 18px; display: grid; place-items: center; color: var(--k); }
+.task-ev-icon { justify-self: center; width: 18px; height: 18px; display: grid; place-items: center; color: var(--k); }
 .task-ev-icon svg { width: 15px; height: 15px; }
 .task-ev-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-ev-line b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
