@@ -571,8 +571,10 @@
     .chat .item.mine .stack > .bubble { background: none; padding: 0; border-radius: 0; }
     .chat .item.cont { margin-top: -10px; }
     .you-av { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--fg); color: var(--surface); font: 600 11px/1 var(--ui); letter-spacing: .01em; }
-    .chat .event, .chat .rule-ev { align-self: flex-start; margin-left: 48px; text-align: left; }
-    .chat .fresh-ev, .chat .task-ev { margin-left: 48px; }
+    .chat .feed { --gut: 36px; --gut-gap: 12px; }
+    .chat .event, .chat .rule-ev { font-size: 13px; line-height: 19px; }
+    .chat .ev-icon, .chat .rule-icon { height: 19px; }
+    .chat .fresh-ev { margin-left: 48px; }
     .chat .ask-card { width: min(760px, 100%); margin-top: 6px; padding: 14px 16px; border-radius: 14px; }
     .chat .item.ask.open .ask-card { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--needs) 62%, transparent); }
     .chat .item.ask.open .ask-title svg { color: var(--needs-ink); }

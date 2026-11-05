@@ -1,5 +1,5 @@
 // An account's usage limits, from Claude Code's status line: reading them (and nothing that isn't a number), keeping
-// the newest per provider until each window resets, saying once when a window passes 80% and 95%, and routing new
+// the newest per provider until each window resets, saying once when a window passes 80% and 95% (one line per window), and routing new
 // work to agents on other providers among equal area matches. Real Hub, fake runner and clock, throwaway CREW_HOME.
 // Run with `npm test`.
 import { test, beforeEach, afterEach, after, mock } from 'node:test'
@@ -65,8 +65,8 @@ const usage = (id = 'claude') => {
   const u = hub.snapshot().usage[id]
   return u && { ...u, windows: u.windows.map(({ pace, ...w }) => w) }
 }
-// the 80% and 95% heads-ups (the pace heads-up has its own tests)
-const said = () => hub.feed.filter((e) => e.kind === 'event' && e.from === 'crew' && !/^At this pace/.test(e.text)).map((e) => e.text)
+// the chat's lines about the limits, one per window (the pace forecast in them has its own tests)
+const said = () => hub.feed.filter((e) => e.kind === 'event' && e.from === 'crew' && e.limit).map((e) => e.text)
 
 test('limits come out of the status line as numbers, each with when it resets', () => {
   const resets = (now + 2 * HOUR) / 1000
@@ -118,28 +118,31 @@ test("Crew's line in the terminal footer adds the 5-hour number", () => {
 test('passing 80% and 95% is said once each per window, and a new window starts over', () => {
   const notices = []
   hub.on('notice', (n) => notices.push(n))
-  report('june', { five_hour: [70, 3] })
+  // two minutes before the window resets: too close for any of these to run out first (that's test/pace.test.js)
+  const SOON = 2 / 60
+  report('june', { five_hour: [70, SOON] })
   assert.deepEqual(said(), [])
-  report('june', { five_hour: [82, 3] })
-  report('june', { five_hour: [85, 3] })
-  report('iris', { five_hour: [88, 3] }) // the same account, through another agent
+  report('june', { five_hour: [82, SOON] })
+  report('june', { five_hour: [85, SOON] })
+  report('iris', { five_hour: [88, SOON] }) // the same account, through another agent
   assert.equal(said().length, 1)
   assert.match(said()[0], /^Claude is at 82% of its 5-hour limit, resets at \d\d:\d\d$/)
-  report('june', { five_hour: [96, 3] })
-  report('june', { five_hour: [99, 3] })
-  assert.equal(said().length, 2)
-  assert.match(said()[1], /Claude is at 96% of its 5-hour limit/)
-  assert.equal(hub.feed.filter((e) => e.from === 'crew' && e.text === said()[1]).at(-1).alert, true, '95% stands out in the chat')
-  const limits = notices.filter((n) => !/^At this pace/.test(n.title))
-  assert.equal(limits.length, 2)
-  assert.match(limits[1].body, /other providers/)
-  // the window resets: the next one is watched afresh
-  mock.timers.tick(3 * HOUR + 1000)
+  report('june', { five_hour: [96, SOON] })
+  report('june', { five_hour: [99, SOON] })
+  // the window's line says it again: one line, the newest, at the bottom
+  assert.equal(said().length, 1)
+  assert.match(said()[0], /Claude is at 96% of its 5-hour limit/)
+  assert.equal(hub.feed.filter((e) => e.from === 'crew' && e.text === said()[0]).at(-1).alert, true, '95% stands out in the chat')
+  assert.equal(notices.length, 2)
+  assert.match(notices[1].body, /other providers/)
+  // the window resets: the next one is watched afresh, with a line of its own
+  mock.timers.tick(SOON * HOUR + 1000)
   report('june', { five_hour: [81, 5] })
-  assert.equal(said().length, 3)
+  assert.equal(said().length, 2)
   // the weekly window is its own, and says which day it resets
   report('june', { five_hour: [81, 5], seven_day: [95, 72] })
-  assert.match(said().at(-1), /Claude is at 95% of its weekly limit, resets [A-Z][a-z]{2} at \d\d:\d\d/)
+  assert.equal(said().length, 3)
+  assert.match(said().at(-1), /^Claude is at 95% of its weekly limit\. At this pace it runs out .+, before it resets [A-Z][a-z]{2} at \d\d:\d\d$/)
 })
 
 test('a jump straight past 95% is said once; a restart in the same window says nothing again', () => {
