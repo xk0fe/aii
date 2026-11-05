@@ -271,7 +271,7 @@
       { head: 'Theme' },
       ...[['system', `Match ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light'], ['dark', 'Dark']].map(([id, text]) => ({ label: text, act: `theme:${id}`, icon: id === theme ? ICONS.check : undefined })),
       ...(crew.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
-    ], (act) => (act === 'config' ? crew.call('config') : crew.call('theme', act.slice('theme:'.length))))
+    ], (act) => (act === 'config' ? crew.call('config') : crew.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
   }
 
   // an agent's clones, each a click from its terminal
@@ -299,7 +299,7 @@
     else if (act === 'settings') settings(e.target.closest('[data-act]'))
     else if (act) crew.call(act) // dashboard, quit
   })
-  $('.autopilot .switch').addEventListener('change', (e) => crew.call('autopilot', e.target.checked))
+  $('.autopilot .switch').addEventListener('change', (e) => crew.call('autopilot', e.target.checked).catch((err) => oops('Couldn’t change autopilot', err)))
 
   // The window is hidden, not closed, between clicks on the menu bar icon: replay the entrance on each open. The class
   // goes once it's played, so a row that turns up later doesn't play it again.
@@ -334,6 +334,7 @@
     const each = machines.length > 1 || machines.some((m) => !m.here)
     const pcHead = (m) => `<div class="t-use-pc ${m.online ? '' : 'off'}">${computerIcon(m.name)}<b>${esc(m.name)}</b><small>${m.here ? THIS_COMPUTER : m.online ? '' : 'offline'}</small></div>`
     morph($('.usage'), machines.length ? `<div class="t-hr first"></div>${machines.map((m) => `${each ? pcHead(m) : ''}${m.accounts.map((u) => usageRow(u, !m.here && m.name)).join('')}`).join('')}` : '')
+    $('.autopilot').classList.toggle('hidden', !ws) // it's a workspace's
     $('.autopilot .switch').checked = state.autopilot
     $('.autopilot').title = state.autopilot ? 'Autopilot is on: agents hand work to each other without asking you first' : 'Autopilot is off: each hand-off waits in the chat for your Send it'
     crew.fit(340, Math.ceil(document.body.getBoundingClientRect().height)) // rounded up, or the page scrolls by a fraction

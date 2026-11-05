@@ -6,8 +6,9 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage } from './hub.js'
+import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
-import { ROOT, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
+import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
 import { providersFrom } from './providers.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
@@ -19,8 +20,6 @@ import { Phones } from './phones.js'
 import { sweepFiles, ATTACHMENT_DAYS, CACHE_DAYS } from './keep.js'
 import { SAVERS, SAVER_IDS, saversFrom, report } from './savers.js'
 import { MODES, toolMode, parse as parseTool, help as toolHelp, offText, alertOf } from './tools.js'
-
-const BROKEN = "CLIque can't read its settings (config.json) right now, so it changes nothing until it can"
 
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
@@ -257,12 +256,13 @@ export class Crew extends EventEmitter {
       order: () => {
         const ids = Array.isArray(arg) ? arg.map(String) : []
         const at = (w) => (w && ids.includes(w.id) ? ids.indexOf(w.id) : ids.length)
+        if (!has(data.current) && this.current) data.current = this.current // on screen as "the first": it stays on screen
         if (Array.isArray(data.workspaces)) data.workspaces = data.workspaces.map((w, i) => [w, i]).sort(([a, i], [b, j]) => at(a) - at(b) || i - j).map(([w]) => w)
       },
       members: () => {
         const { add = [], remove = [], folders = {} } = arg ?? {}
         const w = where()
-        const shared = new Set((data.agents ?? []).map((a) => a?.name))
+        const shared = new Set(named(data.agents).map((a) => a.name))
         for (const name of add) {
           if (!shared.has(name) || w.shared(name)) continue
           if (w.has(name)) throw new Error(`${w.name} has an agent of its own called ${name}`)
@@ -362,8 +362,8 @@ export class Crew extends EventEmitter {
   }
 
   async start() {
-    // (no workspace said: ROOT's agents, or `crew` in a terminal of your own, which goes to the one on screen)
-    const server = (this.server = await serve({ token: this.token, hubFor: (id) => this.hubs.get(id) ?? (id === ROOT ? this.screen : undefined) }))
+    // anywhere: no workspace said, by something that isn't an agent's hook: ROOT's, else the one on screen
+    const server = (this.server = await serve({ token: this.token, hubFor: (id, { anywhere } = {}) => this.hubs.get(id) ?? (anywhere ? this.screen : undefined) }))
     let survivors = []
     if (this.runner.connect) {
       try {
@@ -414,6 +414,7 @@ export class Crew extends EventEmitter {
   // over ATTACHMENT_DAYS ago, and linked computers' images fetched over CACHE_DAYS ago (fetched again when they're
   // shown). -> { attachments, cache }: how many went.
   sweepImages(now = Date.now()) {
+    if (this.config.broken) return { attachments: 0, cache: 0 } // which workspaces there are isn't known: nor is what they need
     const key = (p) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p))
     const used = new Set()
     const add = (images) => {
@@ -428,7 +429,23 @@ export class Crew extends EventEmitter {
       }
       for (const c of hub.calls.values()) add(c.msg?.images)
     }
-    const attachments = sweepFiles(ATTACHMENTS, { days: ATTACHMENT_DAYS, inUse: (f) => used.has(key(f)), now })
+    // your agents, whichever workspaces they're in right now
+    for (const a of named(this.config.data.agents)) add(a.images)
+    // and what a removed workspace's files refer to: made again, it has its chat back
+    let kept = ''
+    let dirs = []
+    try {
+      dirs = fs.readdirSync(path.join(HOME, 'workspaces'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path.join(HOME, 'workspaces', d.name))
+    } catch {}
+    const open = new Set([...this.hubs.values()].map((h) => h.dir))
+    for (const dir of [HOME, ...dirs].filter((d) => !open.has(d))) {
+      for (const file of ['feed.jsonl', 'tickets.json']) {
+        try {
+          kept += fs.readFileSync(path.join(dir, file), 'utf8')
+        } catch {}
+      }
+    }
+    const attachments = sweepFiles(ATTACHMENTS, { days: ATTACHMENT_DAYS, inUse: (f) => used.has(key(f)) || kept.includes(path.basename(f)), now })
     let cache = 0
     let computers = []
     try {
@@ -554,7 +571,7 @@ export class Crew extends EventEmitter {
 
   // Your shared agents' names.
   sharedNames() {
-    return (this.config.data.agents ?? []).filter((a) => a?.name).map((a) => a.name)
+    return named(this.config.data.agents).map((a) => a.name)
   }
 
   // name as it crosses the link (key/name) -> [this computer's workspace or null, name].
@@ -605,6 +622,14 @@ export class Crew extends EventEmitter {
       const here = new Set(workspacesIn(data).map((w) => this.entryKey(w)))
       let changed = false
       for (const r of known.list) {
+        // shown here already: as its computer has it now
+        const shown = workspacesIn(data).find((w) => w.of && this.entryKey(w) === r.key)
+        if (shown && (shown.name !== r.name || (shown.color ?? null) !== (r.color ?? null) || (shown.icon ?? null) !== (r.icon ?? null))) {
+          try {
+            setLook(data, shown.id, { name: r.name, color: r.color ?? '', icon: r.icon ?? '' })
+            changed = true
+          } catch {} // a look this version can't show
+        }
         if (here.has(r.key) || hidden.has(r.key)) continue
         try {
           this.addTheirs(data, { ...r, computer, computerName: known.name })
@@ -747,8 +772,8 @@ export class Crew extends EventEmitter {
       savers: this.saversState(),
       settingsBroken: Boolean(this.config.broken), // config.json can't be read: with no workspace, the app says so instead of asking for one
       tools: toolMode(this.config.data), // what agents may change in CLIque: off, ask or auto (core/tools.js)
-      // your shared agents, to pick who works in a workspace, each with the folder of its own
-      roster: (this.config.data.agents ?? []).filter((a) => a?.name).map((a) => ({ name: a.name, area: a.area, avatar: a.avatar, cwd: a.cwd })),
+      // your shared agents, to pick who works in a workspace
+      roster: named(this.config.data.agents).map((a) => ({ name: a.name, area: a.area, avatar: a.avatar })),
     }
   }
 
@@ -1567,7 +1592,12 @@ export class Crew extends EventEmitter {
       else delete l.spaces[id]
       this.changed()
     })
-    peer.on('wslist', (list) => l.peer && l.aware && this.theirSpaces(l, l.peer, list))
+    // (only a computer that knows workspaces sends one, even if it couldn't say when it was asked: see attach)
+    peer.on('wslist', (list) => {
+      if (!l.peer) return
+      l.aware = true
+      this.theirSpaces(l, l.peer, list)
+    })
     // terminals and alerts say which workspace (key/name): a terminal shows when its workspace is on screen, an alert
     // when this computer has that workspace
     peer.on('pty', (n, d) => {

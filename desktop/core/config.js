@@ -4,6 +4,8 @@
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 
+export const BROKEN = "CLIque can't read its settings (config.json) right now, so it changes nothing until it can"
+
 export class Config extends EventEmitter {
   tried = false // read yet (or tried: a broken file is said once)
   discovered = {} // what the CLIs on this computer say about themselves (Codex's models), for providersFrom
@@ -36,7 +38,20 @@ export class Config extends EventEmitter {
     this.emit('change')
   }
 
+  // Never over a file that can't be read, whoever asks: what's in memory isn't what's on disk, and the file can still be
+  // fixed. It's looked at now as well, since it may have gone bad (or been fixed) since the last time it was read.
   save() {
+    let readable = true
+    try {
+      JSON.parse(fs.readFileSync(this.file, 'utf8'))
+    } catch (e) {
+      readable = e.code === 'ENOENT'
+    }
+    const broken = Boolean(this.broken)
+    if (broken || !readable) {
+      if (broken === readable) this.load() // changed since the last read: says so if it's broken, picks it up if it's fixed
+      throw new Error(BROKEN)
+    }
     fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2) + '\n')
     this.load()
   }

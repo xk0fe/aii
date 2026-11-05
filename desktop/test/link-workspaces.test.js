@@ -167,6 +167,18 @@ test('a shared agent moved there and back rejoins its crew here, not as a copy',
   assert.equal('iris' in wsOf(laptop, 'storefront').members, false, "it left the laptop's storefront")
 })
 
+test("the owner's new name and look reach the computers it shows up on", async () => {
+  const shown = (key) => `crew.config.data.workspaces.find((w) => w.of && w.of.computer + ':' + w.of.id === ${JSON.stringify(key)})`
+  await studio.run(`crew.workspaceAction('edit', 'storefront', { name: 'Shopfront', color: 'orange', icon: '🛒' })`)
+  await until(laptop, `${shown('studio-mac:storefront')}.name === 'Shopfront'`)
+  const copy = await laptop.run(shown('studio-mac:storefront'))
+  assert.deepEqual([copy.name, copy.color, copy.icon], ['Shopfront', 'orange', '🛒'])
+  assert.ok('ann' in copy.members, 'and who you put there stays')
+  await studio.run(`crew.workspaceAction('edit', 'storefront', { name: 'Storefront', color: '', icon: '' })`)
+  await until(laptop, `${shown('studio-mac:storefront')}.name === 'Storefront'`)
+  assert.equal((await laptop.run(shown('studio-mac:storefront'))).color, undefined)
+})
+
 test("a workspace made on one computer shows up on the other on its own, as its; the same name there stays two; gone there, gone here", async () => {
   const of = (key) => `crew.config.data.workspaces.find((w) => w.of && w.of.computer + ':' + w.of.id === ${JSON.stringify(key)})?.id ?? null`
   await laptop.run(`crew.workspaceAction('create', null, { name: 'Side', color: 'teal' })`)

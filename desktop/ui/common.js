@@ -2992,7 +2992,7 @@ const NEXT_THEME = { system: 'light', light: 'dark', dark: 'system' }
 function themeButton(btn) {
   let theme = 'system'
   let drawn = false
-  btn.addEventListener('click', () => crew.call('theme', NEXT_THEME[theme]))
+  btn.addEventListener('click', () => crew.call('theme', NEXT_THEME[theme]).catch((err) => oops('Couldn’t change the theme', err)))
   return (next) => {
     if (drawn && (next ?? 'system') === theme) return // every state push asks; redrawn only when it changes
     drawn = true

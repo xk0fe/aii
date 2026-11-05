@@ -50,7 +50,7 @@ export function workspacesIn(config) {
   return list.filter((w) => w && typeof w === 'object' && ID.test(w.id) && !seen.has(w.id) && seen.add(w.id))
 }
 
-const named = (list) => (Array.isArray(list) ? list.filter((a) => a && typeof a.name === 'string' && a.name) : [])
+export const named = (list) => (Array.isArray(list) ? list.filter((a) => a && typeof a.name === 'string' && a.name) : [])
 const memberMap = (w) => (w.members && typeof w.members === 'object' && !Array.isArray(w.members) ? w.members : {})
 
 // config.json as an older Crew left it, in the layout of today. It had one workspace with no entry of its own: its look
@@ -58,12 +58,14 @@ const memberMap = (w) => (w.members && typeof w.members === 'object' && !Array.i
 // workspace's. It becomes an entry like any other, first in the list, with its agents as members working where they
 // did. No files move: it keeps ROOT as its id. hadFiles: is there a chat in CREW_HOME itself? (An install with no agents
 // left can still have one.) A file with no such history gets no entry: you make your first workspace.
+// -> whether it made one. In a workspace with no folder, a shared agent's "cwd" was where it worked there too: that goes
+// in its member entry, so its folder in each workspace is that workspace's to change.
 export function settle(config, { hadFiles = false } = {}) {
-  if (Number(config.layout) >= LAYOUT) return
+  if (Number(config.layout) >= LAYOUT) return false
   config.layout = LAYOUT
   const agents = named(config.agents)
   const had = agents.length > 0 || hadFiles || typeof config.name === 'string' || TOP_LEVEL.some((k) => config[k] !== undefined)
-  if (!had) return
+  if (!had) return false
   const others = workspacesIn(config)
   const own = {
     id: ROOT,
@@ -77,8 +79,17 @@ export function settle(config, { hadFiles = false } = {}) {
     delete config[k]
   }
   delete config.name
-  for (const a of agents) delete a.off
+  for (const a of agents) {
+    for (const w of others) {
+      const m = memberMap(w)
+      if (!a.cwd || w.folder || !Object.hasOwn(m, a.name) || m[a.name]?.folder) continue
+      m[a.name] = { ...(m[a.name] && typeof m[a.name] === 'object' ? m[a.name] : {}), folder: a.cwd }
+    }
+    delete a.cwd
+    delete a.off
+  }
   config.workspaces = [own, ...(Array.isArray(config.workspaces) ? config.workspaces : [])]
+  return true
 }
 
 // One workspace, as config.json has it: its agents as they work there, and its settings, which read and write the file
@@ -140,12 +151,14 @@ export function space(config, id) {
     leave(name) {
       delete memberMap(own)[name]
       renameInChannels(own, name, null)
+      if (own.triage === name) delete own.triage
     },
     // one of its own agents goes; a shared one only leaves (see forget for taking it off the roster)
     remove(name) {
       if (isMember(name)) delete members[name]
       else own.agents = named(own.agents).filter((a) => a.name !== name)
       renameInChannels(own, name, null)
+      if (own.triage === name) delete own.triage
     },
     // one of its own agents renamed: its channels know it by the new name (a shared one's: renameShared)
     renamed(from, to) {
@@ -184,13 +197,18 @@ export function space(config, id) {
 }
 
 // A free id for a new workspace, from its name: "Docs site" -> docs-site, docs-site-2.
-const slugOf = (name) => String(name ?? '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'workspace'
-// again: it may pick up the files of one you removed under that name. (Not a linked computer's, which has its own.)
+// Workspaces you removed, by name ("workspacesGone" in config.json: name -> id). Their files stay, and a workspace made
+// again by that name has them back; an id comes from the name a workspace was first given, so the id alone can't say.
+const goneKey = (name) => String(name ?? '').trim().toLowerCase()
+const goneList = (config) => (config.workspacesGone && typeof config.workspacesGone === 'object' ? config.workspacesGone : {})
+
+// again: it may pick up the files of one you removed under that name. (Not a linked computer's, which has its own. Nor
+// can anything else take an id whose files wait for that name.)
 export function newId(config, name, { again = true } = {}) {
-  const base = slugOf(name)
-  const taken = new Set([ROOT, ...workspacesIn(config).map((w) => w.id)])
-  // made again with the name it was removed under: ROOT's files are where they were (see dropWorkspace)
-  if (again && config.rootWas === base && !workspacesIn(config).some((w) => w.id === ROOT)) return ROOT
+  const taken = new Set([ROOT, ...workspacesIn(config).map((w) => w.id), ...Object.values(goneList(config))])
+  const was = goneList(config)[goneKey(name)]
+  if (again && was && !workspacesIn(config).some((w) => w.id === was)) return was
+  const base = String(name ?? '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'workspace'
   let id = base
   for (let i = 2; taken.has(id); i++) id = `${base}-${i}`
   return id
@@ -223,7 +241,10 @@ export function addWorkspace(config, { name, members = [], folders = {}, ...look
   if (!name) throw new Error('give the workspace a name')
   checkLook(look)
   const id = newId(config, name, { again })
-  if (id === ROOT) delete config.rootWas
+  // back: its files are in use again
+  const left = Object.entries(goneList(config)).filter(([, was]) => was !== id)
+  if (left.length) config.workspacesGone = Object.fromEntries(left)
+  else delete config.workspacesGone
   const shared = new Set(named(config.agents).map((a) => a.name))
   const entry = (n) => (String(folders[n] ?? '').trim() ? { folder: String(folders[n]).trim() } : {})
   const w = { id, name, members: Object.fromEntries(members.filter((n) => shared.has(n)).map((n) => [n, entry(n)])) }
@@ -232,13 +253,11 @@ export function addWorkspace(config, { name, members = [], folders = {}, ...look
   return id
 }
 
-// A workspace out of config.json. Its files stay in its folder, so one made again with the same id picks its chat, notes
-// and tasks back up. (ROOT's id comes from no name, so its name is remembered: rootWas.)
+// A workspace out of config.json. Its files stay in its folder, so one made again by the same name picks its chat, notes
+// and tasks back up. (A linked computer's is that computer's: nothing here to pick up.)
 export function dropWorkspace(config, id) {
-  if (id === ROOT) {
-    const w = workspacesIn(config).find((x) => x.id === ROOT)
-    if (w) config.rootWas = slugOf(w.name)
-  }
+  const w = workspacesIn(config).find((x) => x.id === id)
+  if (w && !w.of) config.workspacesGone = { ...goneList(config), [goneKey(w.name || w.id)]: id }
   config.workspaces = (Array.isArray(config.workspaces) ? config.workspaces : []).filter((w) => w?.id !== id)
   if (config.current === id) delete config.current
 }
@@ -249,6 +268,7 @@ export function forget(config, name) {
   for (const w of workspacesIn(config)) {
     delete memberMap(w)[name]
     renameInChannels(w, name, null)
+    if (w.triage === name) delete w.triage
   }
 }
 

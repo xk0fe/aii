@@ -7,6 +7,7 @@ import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
@@ -290,4 +291,19 @@ test('both with Computers open: each lists the other; Link, the same code on bot
 
   await studio.run('crew.discover(false)')
   assert.equal((await view(studio)).nearby, null)
+})
+
+test("a link port that's taken is an answer, not a crash", async () => {
+  const blocker = net.createServer()
+  await new Promise((r) => blocker.listen(0, '0.0.0.0', r))
+  const { cert, key } = identity(fs.mkdtempSync(path.join(os.tmpdir(), 'crew-link-port-')))
+  const host = new LinkHost({ key: 'k', cert, keyPem: key, name: 'Test', handle: () => {} })
+  let crashed = null
+  const watch = (e) => (crashed = e)
+  process.once('uncaughtException', watch)
+  await assert.rejects(host.start(blocker.address().port), /EADDRINUSE/)
+  await new Promise((r) => setImmediate(r))
+  process.off('uncaughtException', watch)
+  blocker.close()
+  assert.equal(crashed, null)
 })

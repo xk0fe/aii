@@ -4,9 +4,12 @@ import http from 'node:http'
 import { ROOT } from './workspaces.js'
 
 // Every workspace's agents come to the one server, and the X-Crew-Workspace header says which workspace's hub a request
-// is for (none: ROOT's agents don't say, see Hub.launch). `to` is a hub (the one there is) or { token, hubFor(workspace) }.
+// is for (none: ROOT's agents don't say, see Hub.launch, nor does `crew` in a terminal of your own). `to` is a hub (the one there is) or { token, hubFor(workspace) }.
+// What only an agent's hooks and status line ask: they're about that agent, so they never land in another workspace.
+const AGENTS_OWN = new Set(['hook', 'lease', 'ask', 'status'])
+
 export function serve(to) {
-  const hubFor = to.hubFor ? (id) => to.hubFor(id) : (id) => (id === (to.ws ?? ROOT) ? to : null)
+  const hubFor = to.hubFor ? (id, opts) => to.hubFor(id, opts) : (id) => (id === (to.ws ?? ROOT) ? to : null)
   const routes = (hub) => ({
     hook: (q, body, name) => hub.onHook(name, JSON.parse(body || '{}')),
     // `crew send <name> --new "…"`: new work for the teammate whose hand-off the sender is on (see Hub.send)
@@ -51,7 +54,7 @@ export function serve(to) {
     if (req.headers['x-crew'] !== to.token) return res.writeHead(403).end('bad token, is crew running?\n')
     const said = req.headers['x-crew-workspace']
     const ws = said || ROOT
-    const hub = hubFor(ws)
+    const hub = hubFor(ws, { anywhere: !said && !AGENTS_OWN.has(route) })
     if (!hub) return res.writeHead(404).end(said ? `there's no workspace "${ws}" in Crew any more\n` : "there's no workspace yet: make one in CLIque first\n")
     const api = routes(hub)
     if (!Object.hasOwn(api, route)) return res.writeHead(404).end('unknown command, try: crew help\n')

@@ -33,7 +33,7 @@ function page({ layers = null } = {}) {
     clearTimeout,
   })
   vm.runInContext(`${fs.readFileSync(path.join(A, 'ui/setup.js'), 'utf8')};globalThis.__mount = mountSetup`, ctx)
-  const screen = ctx.__mount({ onAdd: () => calls.push(['onAdd']), onWorkspace: () => calls.push(['onWorkspace']) })
+  const screen = ctx.__mount({ onAdd: () => calls.push(['onAdd']), onWorkspace: () => calls.push(['onWorkspace']), onComputers: () => calls.push(['onComputers']) })
   const [view, sheet] = made
   const escape = (prevented = false) => keys.forEach((fn) => fn({ key: 'Escape', defaultPrevented: prevented }))
   // a click on one of its buttons, as the page's own handler sees it
@@ -86,7 +86,7 @@ test('no workspace yet: there is nothing else to show, so it stays, and asks for
   p.press(p.view, { act: 'close' })
   assert.equal(p.view.hidden, false)
   assert.equal(p.title(), 'Make your first workspace')
-  assert.deepEqual(p.buttons(), ['Create a workspace'])
+  assert.deepEqual(p.buttons(), ['Create a workspace', 'Link a computer'])
   p.screen.render(none({ setup: setup('ready') }))
   assert.equal(p.title(), 'Make your first workspace')
   p.escape()
@@ -94,6 +94,8 @@ test('no workspace yet: there is nothing else to show, so it stays, and asks for
   p.press(p.view, { act: 'workspace' })
   assert.ok(p.calls.some((c) => c[0] === 'onWorkspace'), 'the sheet every workspace is made with')
   assert.equal(p.view.hidden, false, 'it stays until there is one')
+  p.press(p.view, { act: 'computers' })
+  assert.ok(p.calls.some((c) => c[0] === 'onComputers'), 'a second computer can link first')
   // made: it goes, whatever was dismissed
   p.screen.render(state({ setup: setup('ready') }))
   assert.equal(p.view.hidden, true)

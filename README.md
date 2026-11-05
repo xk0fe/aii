@@ -31,7 +31,8 @@ You need a Mac (Apple silicon or Intel) or a Windows PC (Windows 10 or 11), with
 
 1. **Install.** On a Mac, drag CLIque into Applications. On Windows, run the installer.
 2. **Open it.** CLIque finds Claude Code and Codex, and tells you exactly what to install or sign in to if one is missing.
-3. **Add your first agent**, give it a job, and start talking.
+3. **Make your first workspace**: a name and the folder of what you're working on.
+4. **Add your first agent**, give it a job, and start talking.
 
 On Windows, Git for Windows is recommended: Claude Code runs its commands in Git Bash when it's there.
 

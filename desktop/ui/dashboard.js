@@ -37,7 +37,7 @@ const collection = mountCollection($('.collection'), {
 const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onTerminal: (name) => select(name) })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next), onMembers: (at) => openMembers(at) })
 // first run: Claude Code and Codex, what to install or sign in to, then the first agent (ui/setup.js)
-const setup = mountSetup({ onAdd: () => addAgent(), onWorkspace: () => workspaces.create() })
+const setup = mountSetup({ onAdd: () => addAgent(), onWorkspace: () => workspaces.create(), onComputers: () => openComputers() })
 
 // Where you are: 'chat' (the channel open, see setChannel), 'dm' (the conversation the composer is aimed at), 'crew' (Agents, the cards),
 // 'tasks' or 'terminals'. The terminals are laid out as a grid or one big one.
@@ -632,7 +632,7 @@ $('.side-more').addEventListener('click', (e) => {
     if (act === 'tools') openTools()
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
-    if (act.startsWith('theme:')) crew.call('theme', act.slice(6))
+    if (act.startsWith('theme:')) crew.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
     if (act === 'config') crew.call('config')
   })
 })
@@ -1545,6 +1545,7 @@ usePop.addEventListener('beforetoggle', (e) => {
 })
 
 function addAgent() {
+  if (!state.workspace) return workspaces.create() // the menu bar's New agent, say: it needs somewhere to work first
   collection.create()
 }
 

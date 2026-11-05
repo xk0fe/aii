@@ -9,7 +9,7 @@
 // config.json itself. It's the way an agent asks before it changes your app, and the way you say yes or no.
 // Crew.tool runs them: core/crew.js. No Electron in here.
 import path from 'node:path'
-import { GENERAL, channelName, checkLook, sharedNames, workspacesIn } from './workspaces.js'
+import { GENERAL, channelName, checkLook, named, sharedNames, workspacesIn } from './workspaces.js'
 import { isOffered } from './providers.js'
 import { readCode } from './link.js'
 import { folderInfo } from './move.js'
@@ -138,10 +138,10 @@ function folderOf(raw) {
 }
 
 // Whether one of your shared agents runs YOLO.
-const yoloOf = (crew, name) => Boolean((crew.config.data.agents ?? []).find((a) => a?.name === name)?.yolo)
+const yoloOf = (crew, name) => Boolean(named(crew.config.data.agents).find((a) => a.name === name)?.yolo)
 
 // Your shared agents, who can work in any workspace.
-const rosterOf = (crew) => (crew.config.data.agents ?? []).filter((a) => a?.name).map((a) => a.name)
+const rosterOf = (crew) => named(crew.config.data.agents).map((a) => a.name)
 
 function rosterNames(crew, raw) {
   const roster = new Set(rosterOf(crew))
@@ -172,7 +172,7 @@ export const TOOLS = {
       run: () => {
         const data = crew.config.data
         const rows = []
-        for (const a of (data.agents ?? []).filter((x) => x?.name)) {
+        for (const a of named(data.agents)) {
           const where = workspacesIn(data).filter((w) => !w.of && Object.hasOwn(w.members ?? {}, a.name)).map((w) => w.name || w.id)
           rows.push(`${a.name.padEnd(16)} ${clip(a.area || 'general', 40).padEnd(40)} ${brainText(hub, a).padEnd(18)} ${where.length ? `works in ${where.join(', ')}` : 'in no workspace right now'}`)
         }

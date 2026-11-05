@@ -10,7 +10,7 @@ function openAddProvider() {
   setupScreen?.addProvider()
 }
 
-function mountSetup({ onAdd = () => {}, onWorkspace = () => {} } = {}) {
+function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = () => {} } = {}) {
   const view = Object.assign(document.createElement('section'), { className: 'setup-view', hidden: true })
   view.setAttribute('aria-label', 'Set up Claude Code and Codex')
   const sheet = Object.assign(document.createElement('dialog'), { className: 'sheet su-sheet' })
@@ -104,7 +104,8 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {} } = {}) {
         title: 'Make your first workspace',
         lead: 'A workspace is a project: its folder, the agents who work on it, and its own chat and tasks. Make one for each thing you work on.',
         primary: ['workspace', 'Create a workspace'],
-        more: [],
+        // a second computer: linked, the first one's workspaces show up here on their own
+        more: [['computers', 'Link a computer']],
         bare: true,
       }
     }
@@ -191,6 +192,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {} } = {}) {
     if (act === 'close') close()
     if (act === 'providers') addProvider()
     if (act === 'workspace') onWorkspace()
+    if (act === 'computers') onComputers()
     if (act === 'add') {
       close()
       onAdd()

@@ -59,12 +59,11 @@ export function saveImage(name, type, bytes) {
 const BEFORE = at('config.before-layout-2.json')
 export const openConfig = (also) => new Config(CONFIG, DEFAULTS, {
   settle: (data) => {
-    if (!(Number(data.layout) >= 2) && (data.agents?.length || data.workspaces) && !fs.existsSync(BEFORE)) {
+    if (settle(data, { hadFiles: fs.existsSync(at('feed.jsonl')) }) && !fs.existsSync(BEFORE)) {
       try {
         fs.copyFileSync(CONFIG, BEFORE)
       } catch {}
     }
-    settle(data, { hadFiles: fs.existsSync(at('feed.jsonl')) })
     also?.(data)
   },
 })
@@ -436,10 +435,17 @@ export class Hub extends EventEmitter {
   // everywhere: a shared agent off the roster and out of every workspace (Agents, or a move that didn't go through,
   // core/move.js).
   removeAgent(name, { everywhere = false } = {}) {
+    const kept = everywhere ? this.keptBy(name) : [this]
     if (everywhere) forget(this.config, name)
     else this.space.remove(name)
-    for (const h of everywhere ? [this, ...this.others()] : [this]) h.forgetAgent(name)
+    for (const h of kept) h.forgetAgent(name)
     this.saveConfig()
+  }
+
+  // The workspaces that may have kept something about a shared agent: all but one whose own agent has that name, which is
+  // another agent. (Asked before the change: renaming one changes its definition where they read it.)
+  keptBy(name) {
+    return [this, ...this.others()].filter((h) => h.space.shared(name) || !h.space.has(name))
   }
 
   // What this workspace kept about an agent that's gone: its conversation and experience here.
@@ -469,13 +475,14 @@ export class Hub extends EventEmitter {
     if (!this.space.has(from)) throw new Error(`no agent named "${from}"`)
     const shared = this.space.shared(from)
     to = this.freeName(to, shared ? (n) => this.agents.has(n) || sharedNames(this.config, from).has(n) : undefined)
+    const kept = shared ? this.keptBy(from) : [this]
     if (shared) renameShared(this.config, from, to)
     else {
       this.space.def(from).name = to
       this.space.renamed(from, to)
       if (this.space.triage === from) this.space.triage = to
     }
-    for (const h of shared ? [this, ...this.others()] : [this]) h.renameAgent(from, to)
+    for (const h of kept) h.renameAgent(from, to)
     this.saveConfig() // stops `from`, starts `to` resuming the same conversation
     return to
   }

@@ -101,6 +101,7 @@ test("config.json as an older Crew left it: its one workspace becomes an entry l
   }, 'a color no other workspace has, so it looks like one of them')
   for (const k of ['name', 'icon', 'parked', 'triage', 'autofix', 'channels', 'channelsGone']) assert.equal(old[k], undefined, k)
   assert.equal(old.agents[1].off, undefined, "whether it's on is the workspace's now")
+  assert.equal(old.agents[0].cwd, undefined, "and where it works: clearing it there doesn't bring an old folder back")
   const s = space(old, ROOT)
   assert.deepEqual(s.agents.map((a) => [a.name, a.cwd, Boolean(a.off), a.shared]), [['june', OWN, false, true], ['ada', undefined, true, true], ['iris', undefined, false, true]])
   assert.equal(s.autopilot, false, 'its autopilot, as before')
@@ -110,6 +111,34 @@ test("config.json as an older Crew left it: its one workspace becomes an entry l
   old.workspaces = [other]
   settle(old)
   assert.deepEqual(old.workspaces.map((w) => w.id), ['storefront'])
+})
+
+test("converting keeps where a shared agent works everywhere: in a workspace with no folder its own folder was where it worked", () => {
+  const old = {
+    agents: [{ name: 'june', cwd: OWN }, { name: 'ada', cwd: OWN }],
+    workspaces: [
+      { id: 'bare', members: { june: {}, ada: { folder: APP, off: true } } },
+      { id: 'folded', folder: API, members: { june: {} } },
+    ],
+  }
+  const before = (id) => space(structuredClone(old), id).agents.map((a) => [a.name, a.cwd, Boolean(a.off)])
+  const was = { bare: before('bare'), folded: before('folded') }
+  settle(old)
+  for (const id of ['bare', 'folded']) assert.deepEqual(space(old, id).agents.map((a) => [a.name, a.cwd, Boolean(a.off)]), was[id], id)
+  assert.deepEqual(old.workspaces[1].members, { june: { folder: OWN }, ada: { folder: APP, off: true } })
+  assert.deepEqual(old.workspaces[2].members, { june: {} }, 'its folder decides there')
+  space(old, ROOT).set('june', 'cwd', undefined)
+  assert.equal(space(old, ROOT).agents.find((a) => a.name === 'june').cwd, undefined, 'cleared: the home folder')
+})
+
+test('a hand-edited config.json that makes no sense: Crew still starts', async () => {
+  const c = await crewApp({ agents: { june: {} }, workspaces: 'nope' })
+  try {
+    assert.deepEqual(c.snapshot().roster, [])
+    assert.equal(c.screen, null)
+  } finally {
+    quit(c)
+  }
 })
 
 test('a new install, or one with nothing yet, has no workspace: you make the first', () => {
@@ -456,6 +485,146 @@ test("a config.json that can't be read: said once, in the chat on screen once th
   }
 })
 
+test("nothing saves over a config.json that can't be read: not a theme, not a provider, not a change made just after it went bad", async () => {
+  const { Crew } = await import('../core/crew.js')
+  const { addProvider } = await import('../core/providers.js')
+  fs.writeFileSync(CONFIG, '{ "agents": [ oops')
+  const c = new Crew({ bin: BIN, computerName: 'test' })
+  const same = () => assert.match(fs.readFileSync(CONFIG, 'utf8'), /oops/, 'as it was')
+  try {
+    assert.throws(() => c.setTheme('light'), /can't read its settings/)
+    same()
+    assert.throws(() => c.setSavers({ coldStart: false }), /can't read its settings/)
+    same()
+    assert.throws(() => c.setTools('auto'), /can't read its settings/)
+    same()
+    assert.throws(() => addProvider(c.config, 'glm'), /can't read its settings/)
+    same()
+    // fixed: it's picked up, and then it saves
+    fs.writeFileSync(CONFIG, JSON.stringify({ agents: [], theme: 'dark' }))
+    assert.throws(() => c.setTheme('light'), /can't read its settings/, "what's in memory is the old: this one doesn't count")
+    assert.equal(c.config.data.theme, 'dark')
+    c.setTheme('light')
+    assert.equal(saved().theme, 'light')
+    // gone bad since it was last read, before anything noticed
+    fs.writeFileSync(CONFIG, '{ "agents": [ oops')
+    assert.equal(c.config.broken, false)
+    assert.throws(() => c.setTheme('dark'), /can't read its settings/)
+    same()
+    assert.equal(c.config.broken, true)
+  } finally {
+    clearTimeout(c.changeTimer)
+    for (const h of c.hubs.values()) h.dispose()
+  }
+})
+
+test('images: the sweep leaves what your agents, and the files of a removed workspace, still refer to; and everything when config.json can\'t be read', async () => {
+  const { ATTACHMENTS } = await import('../core/hub.js')
+  fs.mkdirSync(ATTACHMENTS, { recursive: true })
+  const old = (name) => {
+    const file = path.join(ATTACHMENTS, name)
+    fs.writeFileSync(file, 'x')
+    fs.utimesSync(file, new Date(0), new Date(0))
+    return file
+  }
+  const [loose, ref, chat] = ['2020-01-01-loose.png', '2020-01-01-ref.png', '2020-01-01-chat.png'].map(old)
+  const c = await crewApp({ layout: 2, agents: [{ name: 'june', images: [ref] }], workspaces: [{ id: 'shop', name: 'Shop', members: {} }, { id: 'side', name: 'Side', members: {} }] })
+  try {
+    fs.writeFileSync(path.join(HOME, 'workspaces', 'shop', 'feed.jsonl'), `${JSON.stringify({ id: 'm1', ts: 1, kind: 'msg', from: 'you', to: 'june', text: 'look', images: [chat] })}\n`)
+    c.workspaceAction('remove', 'shop')
+    c.config.broken = true
+    assert.deepEqual(c.sweepImages(), { attachments: 0, cache: 0 })
+    assert.ok(fs.existsSync(loose), "it doesn't know what's needed")
+    c.config.broken = false
+    assert.equal(c.sweepImages().attachments, 1)
+    assert.ok(!fs.existsSync(loose))
+    assert.ok(fs.existsSync(ref), 'an agent in no workspace still has its reference images')
+    assert.ok(fs.existsSync(chat), 'a removed workspace made again has its chat back')
+  } finally {
+    fs.rmSync(path.join(HOME, 'workspaces', 'shop', 'feed.jsonl'), { force: true })
+    for (const f of [ref, chat]) fs.rmSync(f, { force: true })
+    quit(c)
+  }
+})
+
+test('removing or renaming a shared agent leaves alone another workspace\'s own agent of that name', () => {
+  crew({ layout: 2, agents: [{ name: 'ada', area: 'app' }], workspaces: [{ id: 'storefront', members: { ada: {} } }, { id: ROOT, name: 'Home', members: {}, agents: [{ name: 'ada', area: 'its own' }] }] })
+  home.saveSession('ada', 'home-own-ada')
+  home.tickets.add({ title: 'its task', by: 'you', owner: 'ada' })
+  ws.saveSession('ada', 'shared-ada')
+  ws.rename('ada', 'ann')
+  assert.equal(ws.sessions.ann, 'shared-ada')
+  assert.equal(home.sessions.ada, 'home-own-ada', 'its conversation stays')
+  assert.equal(home.sessions.ann, undefined)
+  assert.equal(home.tickets.all[0].owner, 'ada', 'and its task')
+  ws.saveSession('ann', 'shared-ann')
+  ws.removeAgent('ann', { everywhere: true })
+  assert.equal(home.sessions.ada, 'home-own-ada')
+  assert.equal(ws.sessions.ann, undefined)
+})
+
+test('the triage agent gone from a workspace: nobody is said to be triaging', () => {
+  crew({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), triage: 'june' }, home_()] })
+  assert.equal(ws.snapshot().tasks.triage, 'june')
+  ws.removeAgent('june')
+  assert.equal(saved().workspaces[0].triage, undefined)
+  crew({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), triage: 'milo' }, home_()] })
+  ws.removeAgent('milo')
+  assert.equal(saved().workspaces[0].triage, undefined)
+  crew({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), triage: 'june' }, home_()] })
+  ws.removeAgent('june', { everywhere: true })
+  assert.equal(saved().workspaces[0].triage, undefined)
+})
+
+test('a workspace made again by its name has its files back; nothing else takes them', async () => {
+  const c = await crewApp({ layout: 2, agents: [], workspaces: [{ id: ROOT, name: 'Дом', members: {} }, { id: 'docsy', name: 'Site', members: {} }, { id: 'keep', name: 'Keep', members: {} }] })
+  const gone = () => saved().workspacesGone ?? {}
+  try {
+    c.workspaceAction('remove', ROOT)
+    c.workspaceAction('remove', 'docsy')
+    assert.deepEqual(gone(), { 'дом': ROOT, site: 'docsy' })
+    // names with nothing latin all come to the same id: not the same workspace
+    assert.notEqual(c.workspaceAction('create', null, { name: '新项目' }).id, ROOT)
+    // nor is a name that happens to be another's first name, or the id
+    assert.equal(c.workspaceAction('create', null, { name: 'Docsy' }).id, 'docsy-2')
+    assert.equal(c.addTheirs(c.config.data, { key: 'laptop:docsy', computer: 'laptop', name: 'Site' }), 'site', "a linked computer's has its own files")
+    assert.equal(c.workspaceAction('create', null, { name: 'site' }).id, 'docsy', 'its name, in any case: it has its files back')
+    assert.equal(c.workspaceAction('create', null, { name: 'Дом' }).id, ROOT)
+    assert.deepEqual(gone(), {})
+  } finally {
+    quit(c)
+  }
+})
+
+test('moving a workspace on the rail leaves the one on screen on screen', async () => {
+  const c = await crewApp({ layout: 2, agents: [], workspaces: [{ id: 'first', name: 'First', members: {} }, { id: 'second', name: 'Second', members: {} }] })
+  try {
+    assert.equal(c.current, 'first', "on screen as the first: nothing says so in config.json")
+    c.workspaceAction('order', null, ['second', 'first'])
+    assert.equal(c.current, 'first')
+    assert.equal(saved().current, 'first')
+  } finally {
+    quit(c)
+  }
+})
+
+test("`crew` in a terminal of your own goes to the one on screen; a late hook of a removed workspace's agent lands nowhere", async () => {
+  const { Crew } = await import('../core/crew.js')
+  fs.writeFileSync(CONFIG, JSON.stringify({ layout: 2, agents: [], workspaces: [{ id: 'docs', name: 'Docs', members: {}, agents: [{ name: 'ada', area: 'docs', off: true }] }] }))
+  const c = new Crew({ bin: BIN, computerName: 'test' })
+  await c.start()
+  try {
+    const noHeader = (route, init) => fetch(`${c.url}/${route}`, { headers: { 'x-crew': c.token }, ...init })
+    assert.match(await (await noHeader('who')).text(), /ada/)
+    const late = await noHeader('hook/ada', { method: 'POST', body: JSON.stringify({ hook_event_name: 'Stop' }) })
+    assert.equal(late.status, 404)
+  } finally {
+    c.server.close()
+    c.stop()
+    for (const h of c.hubs.values()) h.dispose()
+  }
+})
+
 test("no workspace at all: the app gets an empty state, and anything that needs one says so", async () => {
   const { Crew } = await import('../core/crew.js')
   fs.writeFileSync(CONFIG, JSON.stringify({ agents: [] }))
@@ -571,11 +740,12 @@ test('a workspace made in the app: its look, folder and crew, then on screen; re
     assert.equal(c.workspaceAction('create', null, { name: 'Other' }).id, 'other', 'another name, another id')
     assert.equal(c.workspaceAction('create', null, { name: 'Studio' }).id, ROOT)
     assert.match(c.hubs.get(ROOT).board(), /kept too/)
-    assert.equal(saved().rootWas, undefined)
+    assert.equal(saved().workspacesGone?.studio, undefined, 'back: nothing waits for that name')
     assert.deepEqual(own(ROOT).members, {})
     // a linked computer's workspace by that name has its own chat: it never takes those files
     c.workspaceAction('remove', ROOT)
     assert.notEqual(c.addTheirs(c.config.data, { key: 'laptop:home', computer: 'laptop', name: 'Studio' }), ROOT)
+    assert.equal(fs.existsSync(path.join(HOME, 'board.md')), true)
   } finally {
     fs.rmSync(path.join(HOME, 'board.md'), { force: true })
     quit(c)
