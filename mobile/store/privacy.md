@@ -11,7 +11,7 @@ Checked against the code on 2026-11-02 (`package.json`, `src/`):
 - **What the phone sends its computer:** your answers, your messages, which replies you've read, and at pairing the
   phone's model name ("iPhone 17 Pro", from expo-device) and platform, so the computer can list it under Computers.
 - **What stays on the phone:** the paired computers and their keys (Keychain / Android Keystore via expo-secure-store,
-  this device only), whether the Crew room is folded. Uninstalling removes all of it. "Remove" forgets one computer.
+  this device only). Uninstalling removes all of it. "Remove" forgets one computer.
 - **Camera:** only while the pairing screen is open, to read the QR code; frames are processed on the device and never
   stored or sent. Pasting the code works without the camera.
 - **Local network:** to reach the user's own computer. No Bonjour browsing, no scanning.

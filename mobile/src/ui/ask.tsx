@@ -74,16 +74,16 @@ function Foot({ t, e, error, disabled, send, busy, compact }: { t: Theme; e: Fee
   if (compact) return error ? <Text style={[styles.error, { color: t.danger }]}>{error}</Text> : null
   // an agent tool's card (crew app) is answered only here: its terminal is just waiting
   if (e.cli === 'crew') return said ? <View style={styles.foot}>{said}</View> : null
+  const handOver = e.cli === 'codex' && !(typeof e.ask === 'object' && e.ask?.type === 'permission' && e.ask.trust)
+  if (!said && !handOver) return null
   return (
     <View style={styles.foot}>
       {said}
-      {e.cli === 'codex' && !(typeof e.ask === 'object' && e.ask?.type === 'permission' && e.ask.trust) ? (
+      {handOver ? (
         <Press onPress={() => send('terminal', { terminal: true })} disabled={Boolean(busy || disabled)} accessibilityRole="button" style={styles.elsewhereBtn}>
           <Text style={[styles.elsewhere, { color: t.accent }]}>Answer in {name}'s terminal instead</Text>
         </Press>
-      ) : (
-        <Text style={[styles.elsewhere, { color: t.fg2 }]}>Or answer in its terminal on your computer.</Text>
-      )}
+      ) : null}
     </View>
   )
 }

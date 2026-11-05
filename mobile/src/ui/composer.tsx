@@ -1,8 +1,8 @@
-// The message box. While you type, the crew shows above it: tap a face to talk to that agent alone (Everyone goes back
-// to the whole crew), or type @ to bring someone in. Reading, it's just the box, so the messages get the room.
+// The message box, and nothing else, so the messages keep the room while you type. To bring someone in, type @ or press
+// the button (@ is a keyboard layer away on a phone); a conversation with one agent is in the list under the chat.
 // Sending is off, with the reason in the box, while the computer can't be reached.
-import { useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useRef, useState, type ComponentRef } from 'react'
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native'
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated'
 
 import type { Agent, Channel } from '@/net/types'
@@ -12,7 +12,7 @@ import { nameInk } from './color'
 import { Creature } from './creature'
 import { displayName } from './format'
 import { Icon } from './icon'
-import { CountBadge, Press, tap } from './parts'
+import { Press, tap } from './parts'
 import { fonts, type Theme } from './theme'
 
 type Props = {
@@ -21,10 +21,8 @@ type Props = {
   convo: string | null
   channel?: Channel | null // the channel it's said in (none: the Mac has no channels)
   place: string // where it's said (workspace and channel, or agent): each place keeps its own draft
-  unread: Map<string, number>
   disabled: string | null // why sending is off
   background: string
-  onFace: (name: string | null) => void
   onSend: (text: string) => Promise<unknown>
 }
 
@@ -37,8 +35,9 @@ function mentionAt(text: string, cursor: number) {
 // What you'd started typing, per place, as on the computer: a half-written message stays where you wrote it.
 const drafts = new Map<string, string>()
 
-export function Composer({ t, agents, convo, channel, place, unread, disabled, background, onFace, onSend }: Props) {
+export function Composer({ t, agents, convo, channel, place, disabled, background, onSend }: Props) {
   const [text, setText] = useState(() => drafts.get(place) ?? '')
+  const [cursor, setCursor] = useState(() => (drafts.get(place) ?? '').length)
   const [was, setWas] = useState(place)
   if (was !== place) {
     // moved to another channel or conversation: this one's draft is kept, that one's comes back
@@ -46,16 +45,16 @@ export function Composer({ t, agents, convo, channel, place, unread, disabled, b
     else drafts.delete(was)
     setWas(place)
     setText(drafts.get(place) ?? '')
+    setCursor((drafts.get(place) ?? '').length) // iOS reports no selection for text set from here
   }
-  const [focused, setFocused] = useState(false)
-  const [cursor, setCursor] = useState(0)
+  const input = useRef<ComponentRef<typeof TextInput>>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const at = mentionAt(text, cursor)
   const matches = at
     ? agents
         .filter((a) => a.on && a.name !== convo)
-        .map((a) => ({ a, score: a.name.startsWith(at.query) ? 0 : a.name.includes(at.query) ? 1 : (a.area ?? '').toLowerCase().includes(at.query) ? 2 : 9 }))
+        .map((a) => ({ a, score: a.name.toLowerCase().startsWith(at.query) ? 0 : a.name.toLowerCase().includes(at.query) ? 1 : (a.area ?? '').toLowerCase().includes(at.query) ? 2 : 9 }))
         .filter((x) => x.score < 9)
         .sort((x, y) => x.score - y.score)
         .slice(0, 5)
@@ -63,8 +62,16 @@ export function Composer({ t, agents, convo, channel, place, unread, disabled, b
     : []
   const target = convo ? agents.find((a) => a.name === convo) : null
   const placeholder = disabled ?? (target ? `Message ${displayName(target.name).base}` : channel ? `Message #${channel.name}` : 'Message the crew')
-  const all = channel ? `#${channel.name}` : 'Everyone'
 
+  // @ at the cursor, with a space before it after a word: the picker opens on it
+  const startMention = () => {
+    const before = text.slice(0, cursor)
+    const lead = before && !/\s$/.test(before) ? ' ' : ''
+    setText(`${before}${lead}@${text.slice(cursor)}`)
+    setCursor(cursor + lead.length + 1)
+    input.current?.focus()
+    tap()
+  }
   const insert = (a: Agent) => {
     if (!at) return
     const next = `${text.slice(0, at.start)}@${a.name} ${text.slice(cursor)}`
@@ -110,40 +117,15 @@ export function Composer({ t, agents, convo, channel, place, unread, disabled, b
           ))}
         </Animated.View>
       ) : null}
-      {focused ? (
-      <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(90)}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.to} keyboardShouldPersistTaps="handled">
-        <Press onPress={() => onFace(null)} style={[styles.all, { backgroundColor: convo ? t.btn : t.dark ? 'rgba(10,132,255,0.2)' : 'rgba(0,122,255,0.12)' }]} accessibilityRole="button" accessibilityState={{ selected: !convo }} accessibilityLabel={channel ? `#${channel.name}` : "Everyone's messages"}>
-          <Text style={[styles.allText, { color: convo ? t.fg2 : t.accent }]} numberOfLines={1}>
-            {all}
-          </Text>
-        </Press>
-        {agents.filter((a) => a.on || a.name === convo).map((a) => {
-          const on = convo === a.name
-          return (
-            <Press key={a.name} onPress={() => onFace(on ? null : a.name)} style={styles.face} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={`${displayName(a.name).base}${unread.get(a.name) ? `, ${unread.get(a.name)} new` : ''}`}>
-              <View style={[styles.ring, { borderColor: on ? t.accent : 'transparent' }]}>
-                <Creature agent={a} size={32} />
-              </View>
-              <View style={styles.badge}>
-                <CountBadge t={t} n={unread.get(a.name) ?? 0} />
-              </View>
-            </Press>
-          )
-        })}
-      </ScrollView>
-      </Animated.View>
-      ) : null}
       <View style={[styles.box, { backgroundColor: t.field, borderColor: error ? t.danger : 'transparent' }]}>
         <TextInput
+          ref={input}
           value={text}
           onChangeText={(v) => {
             setText(v)
             if (error) setError('')
           }}
           onSelectionChange={(ev) => setCursor(ev.nativeEvent.selection.end)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
           placeholder={placeholder}
           placeholderTextColor={disabled ? t.waitingInk : t.fg3}
           editable={!disabled}
@@ -151,6 +133,9 @@ export function Composer({ t, agents, convo, channel, place, unread, disabled, b
           style={[styles.input, { color: t.fg }]}
           accessibilityLabel="Message"
         />
+        <Press onPress={startMention} disabled={Boolean(disabled)} style={styles.at} accessibilityRole="button" accessibilityLabel="Mention someone" hitSlop={{ top: 8, bottom: 8 }}>
+          <Text style={[styles.atText, { color: t.fg2 }]}>@</Text>
+        </Press>
         <Press onPress={send} disabled={!text.trim() || busy || Boolean(disabled)} style={[styles.send, { backgroundColor: text.trim() && !disabled ? t.brand : t.btn }]} accessibilityRole="button" accessibilityLabel="Send">
           {busy ? <ActivityIndicator size="small" color="#fff" /> : <Icon name="send" size={16} color={text.trim() && !disabled ? '#fff' : t.fg3} weight="bold" />}
         </Press>
@@ -166,15 +151,11 @@ export function Composer({ t, agents, convo, channel, place, unread, disabled, b
 
 const styles = StyleSheet.create({
   wrap: { paddingTop: 4, paddingBottom: 6 },
-  to: { paddingHorizontal: 12, gap: 6, alignItems: 'center', height: 48, paddingBottom: 4 },
-  all: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 32, paddingHorizontal: 12, borderRadius: 16, marginRight: 4 },
-  allText: { fontSize: 14, fontWeight: '600' },
-  face: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  ring: { borderWidth: 2, borderRadius: 21, padding: 2 },
-  badge: { position: 'absolute', right: -2, bottom: -1 },
   box: { flexDirection: 'row', alignItems: 'flex-end', marginHorizontal: 12, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth * 2, paddingLeft: 16, paddingRight: 5, paddingVertical: 4, minHeight: 44 },
   input: { flex: 1, fontSize: 17, lineHeight: 22, maxHeight: 132, paddingTop: 7, paddingBottom: 7 },
-  send: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
+  at: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
+  atText: { fontSize: 18, lineHeight: 22, fontWeight: '500' },
+  send: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
   error: { fontSize: 13, marginHorizontal: 18, marginTop: 6 },
   picker: { position: 'absolute', left: 12, right: 12, bottom: '100%', marginBottom: 6, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth * 2, paddingVertical: 6, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
   pick: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 7 },

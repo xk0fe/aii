@@ -87,7 +87,7 @@ export default function Workspaces() {
 
 const styles = StyleSheet.create({
   content: { padding: 16, paddingTop: 26, gap: 10 },
-  title: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
+  title: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
   hint: { fontSize: 14, lineHeight: 19 },
   list: { borderRadius: 18, padding: 6, marginTop: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 10, paddingVertical: 10, borderRadius: 13 },
