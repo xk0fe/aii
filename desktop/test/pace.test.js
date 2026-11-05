@@ -59,21 +59,26 @@ beforeEach(() => {
   notices = []
   hub.on('notice', (n) => notices.push(n))
 })
-afterEach(() => clearTimeout(hub.usageTimer))
+// (and its writes to feed.jsonl land before the next test starts the file over)
+afterEach(() => (clearTimeout(hub.usageTimer), hub.saving))
 after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
-const paceLines = () => hub.feed.filter((e) => e.kind === 'event' && /At this pace/.test(e.text))
+// the chat's lines about a window running out before it resets
+const paceLines = () => hub.feed.filter((e) => e.kind === 'event' && e.limit?.runsOut)
 
 test('a heads-up once a window will run out before it resets, close enough to plan around, once per window', () => {
   // 60% two days into the week runs out in about 1.3 days: under 42 hours away, so you hear about it
   const week = { id: 'seven_day', pct: 60, resetsAt: now + 5 * DAY }
   hub.setUsage('claude', [week])
   assert.equal(paceLines().length, 1)
-  assert.match(paceLines()[0].text, /^At this pace, Claude's weekly limit runs out .+, before it resets /)
+  assert.match(paceLines()[0].text, /^Claude is at 60% of its weekly limit\. At this pace it runs out .+, before it resets /)
   assert.equal(paceLines()[0].alert, true)
-  assert.equal(notices.filter((n) => /At this pace/.test(n.title)).length, 1)
+  assert.deepEqual(paceLines()[0].limit, { account: 'claude', label: 'Claude', window: 'seven_day', name: 'weekly limit', pct: 60, resetsAt: week.resetsAt, runsOut: paceLines()[0].limit.runsOut })
+  assert.equal(notices.filter((n) => /^At this pace, Claude's weekly limit runs out /.test(n.title)).length, 1)
+  assert.match(notices[0].body, /^It's at 60% and resets /)
   hub.setUsage('claude', [{ ...week, pct: 61 }])
   assert.equal(paceLines().length, 1, 'once per window')
+  assert.equal(notices.length, 1)
   // the snapshot carries the forecast for the UI
   const w = hub.snapshot().usage.claude.windows[0]
   assert.ok(w.pace.runsOut > now && w.pace.projected > 100)
@@ -93,8 +98,37 @@ test('the 5-hour window learns its pace from the readings as they come in', () =
   hub.samples = { claude: { five_hour: [[now - 10 * MIN, 50, now + 2 * HOUR], [now - 5 * MIN, 55, now + 2 * HOUR]] } }
   hub.setUsage('claude', [at(0, 60)])
   assert.equal(paceLines().length, 1) // 40 minutes to go: under a quarter of five hours
-  assert.match(paceLines()[0].text, /5-hour limit runs out/)
+  assert.match(paceLines()[0].text, /5-hour limit\. At this pace it runs out/)
   // a drop is a new window: its readings start over
   hub.setUsage('claude', [{ id: 'five_hour', pct: 2, resetsAt: now + 5 * HOUR }])
   assert.equal(hub.samples.claude.five_hour.length, 1)
+})
+
+test("one reading that crosses 90% and runs out before the reset is one line, and the window's next line replaces it", () => {
+  const week = { id: 'seven_day', pct: 90, resetsAt: now + 1.5 * DAY }
+  hub.setUsage('claude', [week])
+  const lines = () => hub.feed.filter((e) => e.limit)
+  assert.equal(lines().length, 1)
+  assert.match(lines()[0].text, /^Claude is at 90% of its weekly limit\. At this pace it runs out .+, before it resets /)
+  assert.equal(notices.length, 1, 'one notification too')
+  assert.match(notices[0].title, /^Claude is at 90% of its weekly limit$/)
+  assert.match(notices[0].body, /^At this pace it runs out .+\. Until then, new work goes to agents on other providers/)
+  // 95%: a new line, at the bottom of the chat, in place of the 90% one
+  const first = lines()[0].id
+  hub.setUsage('claude', [{ ...week, pct: 95 }])
+  assert.equal(lines().length, 1)
+  assert.notEqual(lines()[0].id, first)
+  assert.equal(lines()[0].limit.pct, 95)
+  assert.equal(hub.feed.at(-1), lines()[0])
+  // another account's window, and a new week, keep their own lines
+  hub.setUsage('codex', [{ ...week, pct: 96 }])
+  hub.setUsage('claude', [{ ...week, pct: 81, resetsAt: now + 6 * DAY }])
+  assert.deepEqual(lines().map((e) => [e.limit.account, e.limit.pct]), [['claude', 95], ['codex', 96], ['claude', 81]])
+  // the line that left is gone after a restart too
+  hub.saveUsage(true)
+  return hub.saving.then(() => {
+    const again = new Hub(new FakeRunner(), { bin: '/nonexistent' })
+    assert.deepEqual(again.feed.filter((e) => e.limit).map((e) => e.limit.pct), [95, 96, 81])
+    clearTimeout(again.usageTimer)
+  })
 })

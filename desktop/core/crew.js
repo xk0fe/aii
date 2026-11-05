@@ -73,7 +73,11 @@ export class Crew extends EventEmitter {
     hub = new Hub(new Scoped(this.runner, id, id === DEFAULT), { bin: this.bin, workspace: id, config: this.config, token: this.token, usage: this.usage, samples: this.samples, locks: this.locks })
     hub.others = () => [...this.hubs.values()].filter((h) => h !== hub)
     hub.hubOf = (ws) => this.hubs.get(ws) // whose a lease is
-    hub.aboutAccount = (entry) => this.here.post(entry) // your accounts' limits: said where you are
+    // your accounts' limits: said where you are, and a window's line before it goes from whichever workspace it's in
+    hub.aboutAccount = (entry) => {
+      for (const h of this.hubs.values()) h.unsayLimit(entry.limit)
+      this.here.post(entry)
+    }
     // Its agents reach the agents of the same workspace on linked computers (name@computer), and its tasks theirs.
     hub.relay = (from, names, text, images, extra) => this.relay(from, names, text, images, extra, hub)
     hub.relayTask = (host, from, args) => this.linkCall(this.link(host), 'task', [`${from}@${this.me.slug}`, args], hub.ws)

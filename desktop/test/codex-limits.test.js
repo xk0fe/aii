@@ -103,11 +103,13 @@ test("a Codex agent's step brings its account's limits in, kept per provider nex
 test("heads-ups say it's Codex, and name a window Codex measures in hours", () => {
   log(count({ primary: [96, 10080, 100], secondary: [81, 120, 1] }))
   step('ada')
-  const limits = () => hub.feed.filter((e) => e.kind === 'event' && !/^At this pace/.test(e.text))
+  const limits = () => hub.feed.filter((e) => e.kind === 'event' && e.limit)
   const said = limits().map((e) => e.text)
   assert.equal(said.length, 2)
-  assert.match(said[0], /^Codex is at 96% of its weekly limit, resets /)
-  assert.match(said[1], /^Codex is at 81% of its 2-hour limit, resets at /)
+  // (each may go on to say it runs out first at this pace: test/pace.test.js)
+  assert.match(said[0], /^Codex is at 96% of its weekly limit[,.] /)
+  assert.match(said[1], /^Codex is at 81% of its 2-hour limit[,.] /)
+  assert.deepEqual(limits().map((e) => [e.limit.label, e.limit.name]), [['Codex', 'weekly limit'], ['Codex', '2-hour limit']])
   // the next step, same windows: nothing again
   mock.timers.tick(6000)
   step('ada')

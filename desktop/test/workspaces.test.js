@@ -582,7 +582,7 @@ test('parking a workspace stops its agents and keeps their conversations; openin
   assert.equal(saved().workspaces[0].parked, true)
   assert.ok(!runner.running('storefront/june') && !runner.running('storefront/milo'), 'its agents stop')
   assert.equal(ws.sessions.june, 'sess-storefront', 'their conversations wait')
-  assert.match(ws.feed.at(-1).text, /^went to sleep: @june, @milo stopped/, 'one line in its chat, not one per agent')
+  assert.match(ws.feed.at(-1).text, /^went to sleep: @june and @milo stopped/, 'one line in its chat, not one per agent')
   const shown = ws.snapshot()
   assert.equal(shown.parked, true)
   assert.deepEqual(shown.agents.map((a) => [a.name, a.status]), [['june', 'parked'], ['ada', 'off'], ['milo', 'parked']])
@@ -595,7 +595,7 @@ test('parking a workspace stops its agents and keeps their conversations; openin
   assert.equal(ws.parked, false)
   assert.ok(runner.running('storefront/june') && runner.running('storefront/milo'))
   assert.ok(runner.live.get('storefront/june').args.includes('sess-storefront'), 'resumes its conversation')
-  assert.match(ws.feed.at(-1).text, /^woke up: @june, @milo pick up where they left off/)
+  assert.match(ws.feed.at(-1).text, /^woke up: @june and @milo pick up where they left off/)
   assert.ok(!runner.running('storefront/ada'), 'one that was off stays off')
 })
 
@@ -649,11 +649,15 @@ test("your accounts' limits: said once, where you are, whichever workspace's age
     const at = Date.now() + 3600e3
     g.setUsage('claude', [{ id: 'five_hour', pct: 81, resetsAt: at }]) // a Storefront agent's status line, Home on screen
     home.setUsage('claude', [{ id: 'five_hour', pct: 82, resetsAt: at }])
-    const said = (h) => h.feed.filter((e) => /5-hour limit, resets/.test(e.text ?? '')).length
+    const said = (h) => h.feed.filter((e) => e.limit?.window === 'five_hour').length
     assert.deepEqual([said(home), said(g)], [1, 0], 'once, in the workspace on screen')
     assert.ok(notices.length >= 1 && notices.every((n) => n.account && !('workspace' in n)), "its notification is no workspace's")
     assert.equal(g.samples, home.samples, 'one record of readings')
     assert.equal(g.samples.claude.five_hour.length, 2)
+    // 95% with Storefront on screen: its line there takes the place of Home's
+    c.workspaceAction('switch', 'storefront')
+    home.setUsage('claude', [{ id: 'five_hour', pct: 96, resetsAt: at }])
+    assert.deepEqual([said(home), said(g)], [0, 1], "a window's line, once, wherever you are now")
   } finally {
     quit(c)
   }
