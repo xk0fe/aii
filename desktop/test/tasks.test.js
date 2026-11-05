@@ -66,7 +66,7 @@ test('without a triage agent, a bug goes to whoever owns that area, and only a r
 })
 
 test('with a triage agent, it gets the raw report to triage, without becoming "about" that bug', async () => {
-  hub.config.triage = 'abe'
+  hub.space.triage = 'abe'
   assert.match(hub.fileTask({ kind: 'bug', text: 'jump broken after pause' }), /@abe is triaging it/)
   const msg = hub.feed.findLast((e) => e.kind === 'msg')
   assert.equal(msg.to, 'abe')
@@ -77,8 +77,8 @@ test('with a triage agent, it gets the raw report to triage, without becoming "a
 })
 
 test('triage via `crew bug triage` assigns it; with Auto-fix the owner gets it in a fresh conversation', async () => {
-  hub.config.triage = 'abe'
-  hub.config.autofix = true
+  hub.space.triage = 'abe'
+  hub.space.autofix = true
   hub.fileTask({ kind: 'bug', text: 'jump broken after pause' })
   const out = hub.taskCommand('abe', ['triage', '1', '--owner', 'ada', '--severity', 'high', '--title', 'Jump dead after unpausing', '--details', '1. pause 2. resume 3. press jump'])
   assert.match(out, /#1: bug, for @ada, sent to them/)
@@ -279,7 +279,7 @@ test('a task is a task unless it says otherwise; kinds and priorities change by 
 })
 
 test('naming the owner skips triage; a feature gets a "do it" brief, not a bug hunt', async () => {
-  hub.config.triage = 'abe'
+  hub.space.triage = 'abe'
   assert.match(hub.fileTask({ text: 'Add a pause menu shortcut', kind: 'feature', owner: '@ada' }), /added #1 for @ada/)
   assert.equal(hub.tickets.get(1).triaged, true)
   assert.equal(hub.agents.get('abe').inbox.length + runner.typed.filter((x) => x.n === 'abe').length, 0)
@@ -300,8 +300,8 @@ test('the old names still work: crew bug fixed / report, works / broken', async 
 })
 
 test('an agent that is off never gets a task from a teammate; one you give it waits and starts when it is back on', async () => {
-  hub.config.triage = 'abe'
-  hub.config.autofix = true
+  hub.space.triage = 'abe'
+  hub.space.autofix = true
   hub.update('ada', { off: true })
   hub.fileTask({ kind: 'bug', text: 'pause menu buttons overlap' })
   // triage can't hand it to ada while he's off: it hears why, and the task stays unassigned

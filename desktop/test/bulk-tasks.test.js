@@ -147,20 +147,22 @@ test('delete takes the picked tasks; Clear Done takes every done task, picked or
 
 test('a bulk action goes to each computer with its own tasks; an older Crew gets them one at a time', async () => {
   const crew = new Crew({ bin: '/nonexistent', computerName: 'Studio' })
-  const here = add('Pause menu overlaps', { owner: 'ada', on: crew.hub })
+  const here = add('Pause menu overlaps', { owner: 'ada', on: crew.hubs.get('default') })
   const calls = []
-  crew.links.set('laptop', { slug: 'laptop', name: 'Laptop', peer: { call: async (fn, args) => (calls.push([fn, args]), fn === 'bulk' ? `closed ${args[1].length} tasks\n` : undefined) } })
+  // what a call for a workspace is on the wire: 'in' its key
+  const inWs = (handle) => ({ call: async (_in, [, fn, args]) => handle(fn, args) })
+  crew.links.set('laptop', { slug: 'laptop', name: 'Laptop', peer: { call: async (_in, [, fn, args]) => (calls.push([fn, args]), fn === 'bulk' ? `closed ${args[1].length} tasks\n` : undefined) } })
   crew.links.set('old', {
     slug: 'old', name: 'Old Mac',
-    peer: { call: async (fn, args) => {
+    peer: inWs(async (fn, args) => {
       calls.push([fn, args])
       if (fn === 'bulk') throw new Error('"bulk" isn\'t available over Crew Link')
-    } },
+    }),
   })
   crew.links.set('gone', { slug: 'gone', name: 'Gone', peer: null })
   const out = await crew.ticket('bulk', null, { op: 'close', keys: [`${here}@studio`, '7@laptop', '8@laptop', '3@old', '4@old', '5@gone'] })
   assert.equal(out, "closed 1 task\non Laptop: closed 2 tasks\non Old Mac: 2 of 2 done one at a time (it runs an older CLIque)\n1 on Gone left as they were: it's unreachable right now\n")
-  assert.equal(crew.hub.tickets.all.find((t) => t.id === here).status, 'done')
+  assert.equal(crew.hubs.get('default').tickets.all.find((t) => t.id === here).status, 'done')
   assert.deepEqual(calls, [
     ['bulk', ['close', ['7', '8'], undefined]],
     ['bulk', ['close', ['3', '4'], undefined]],

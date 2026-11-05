@@ -49,15 +49,16 @@ function computer(name, linkPort, config, link = {}) {
 }
 
 const off = { off: true }
-// storefront is the studio's, shown on the laptop; site is on both but each computer's own; lab only on the laptop. Each
-// hid the other's site (and the studio the laptop's lab), so they stay each computer's to itself
+// storefront is the studio's, shown on the laptop; site is on both but each computer's own; lab only on the laptop; and
+// each has the workspace an older Crew left it with (agents at the top of config.json). Each hid the other's site and that
+// one (and the studio the laptop's lab), so they stay each computer's to itself
 const studio = computer('Studio Mac', port, {
   agents: [{ name: 'iris', area: 'design', ...off }, { name: 'bob', area: 'backend', ...off }],
   workspaces: [
     { id: 'storefront', name: 'Storefront', members: { iris: off }, agents: [{ name: 'ivo', area: 'release', ...off }] },
     { id: 'site', members: { bob: off } },
   ],
-}, { hiddenWorkspaces: ['laptop:site', 'laptop:lab'] })
+}, { hiddenWorkspaces: ['laptop:site', 'laptop:lab', 'laptop:default'] })
 const laptop = computer('Laptop', port + 1, {
   agents: [{ name: 'ann', area: 'docs', ...off }],
   workspaces: [
@@ -65,8 +66,9 @@ const laptop = computer('Laptop', port + 1, {
     { id: 'site', name: 'site', members: { ann: off } },
     { id: 'lab', members: { ann: off } },
   ],
-}, { hiddenWorkspaces: ['studio-mac:site'] })
+}, { hiddenWorkspaces: ['studio-mac:site', 'studio-mac:default'] })
 const names = async (c) => (await c.run(`crew.snapshot().agents.map((a) => a.name)`)).sort()
+const wsOf = (c, id) => c.config().workspaces.find((w) => w.id === id)
 const until = async (c, code, ms = 5000) => {
   for (const end = Date.now() + ms; Date.now() < end; await sleep(100)) if (await c.run(code)) return
   throw new Error(`timed out: ${code}`)
@@ -96,13 +98,13 @@ test("a workspace shown from another computer is one crew; the same id on both c
   assert.deepEqual(await names(studio), ['bob'], "the laptop's site is another workspace: none of its agents here")
   // each lists what the other owns, to join
   const theirs = async (c) => (await c.run(`crew.snapshot().remoteWorkspaces.map((w) => w.key + (w.joined ? '=' + w.joined : '') + (w.online ? '' : ' off'))`)).sort()
-  assert.deepEqual(await theirs(laptop), ['studio-mac:site', 'studio-mac:storefront=storefront'])
-  assert.deepEqual(await theirs(studio), ['laptop:lab', 'laptop:site'], "the laptop's storefront is the studio's own")
+  assert.deepEqual(await theirs(laptop), ['studio-mac:default', 'studio-mac:site', 'studio-mac:storefront=storefront'])
+  assert.deepEqual(await theirs(studio), ['laptop:default', 'laptop:lab', 'laptop:site'], "the laptop's storefront is the studio's own")
   const shop = await laptop.run(`crew.workspaces().find((w) => w.id === 'storefront')`)
   assert.deepEqual([shop.owner, shop.ownerName, shop.ownerOnline], ['studio-mac', 'Studio Mac', true])
   assert.equal(await studio.run(`crew.workspaces().find((w) => w.id === 'storefront').owner`), undefined, 'its own')
   await studio.run(`crew.workspaceAction('switch', 'default')`)
-  assert.deepEqual(await names(studio), ['ann@laptop', 'bob', 'iris'], "the default as always: milo is only the laptop's storefront's")
+  assert.deepEqual(await names(studio), ['bob', 'iris'], 'the one an older Crew left is a workspace like any other: this computer\'s own')
   await laptop.run(`crew.workspaceAction('switch', 'lab')`)
   assert.deepEqual(await names(laptop), ['ann'])
   await laptop.run(`crew.workspaceAction('switch', 'default')`)
@@ -112,14 +114,14 @@ test('edits and messages in a workspace reach its agents on the other computer, 
   await studio.run(`crew.workspaceAction('switch', 'storefront')`)
   await studio.run(`crew.update('milo@laptop', { area: 'docs and guides' })`)
   await sleep(200)
-  assert.equal(laptop.config().workspaces[0].agents[0].area, 'docs and guides', "the laptop's storefront's own milo")
+  assert.equal(wsOf(laptop, 'storefront').agents[0].area, 'docs and guides', "the laptop's storefront's own milo")
   // on in config.json (so no reload turns it back off), with launching stubbed: no CLI, and the message queues
   const on = (name) => `(crew.hubs.get('storefront').launch = () => {}, crew.hubs.get('storefront').update(${JSON.stringify(name)}, { off: false }), 1)`
   await laptop.run(on('milo'))
   await studio.run(`crew.send('milo@laptop', 'write the readme')`)
   await sleep(200)
   assert.equal(await laptop.run(`crew.hubs.get('storefront').feed.some((e) => e.kind === 'msg' && e.text === 'write the readme')`), true)
-  assert.equal(await laptop.run(`crew.hub.feed.some((e) => e.text === 'write the readme')`), false, 'not in its default')
+  assert.equal(await laptop.run(`crew.hubs.get('default').feed.some((e) => e.text === 'write the readme')`), false, 'not in its default')
   // an agent there writes back to one here, in storefront
   await studio.run(on('ivo'))
   assert.match(await laptop.run(`crew.hubs.get('storefront').send({ from: 'milo', to: 'ivo@studio-mac', text: 'check the release notes' })`), /ivo/)
@@ -142,15 +144,15 @@ test('moving an agent in a workspace takes it to that workspace on the other com
   // one of storefront's own agents: storefront's own there
   assert.equal((await studio.run(`crew.moveAgent('ivo', 'laptop', '~')`)).name, 'ivo@laptop')
   await sleep(200)
-  assert.deepEqual(laptop.config().workspaces[0].agents.map((a) => a.name), ['milo', 'ivo'])
-  assert.equal(studio.config().workspaces[0].agents?.some((a) => a.name === 'ivo') ?? false, false)
-  // one of your shared agents: it joins the laptop's crew (off in its default) and its storefront, and leaves only storefront here
+  assert.deepEqual(wsOf(laptop, 'storefront').agents.map((a) => a.name), ['milo', 'ivo'])
+  assert.equal(wsOf(studio, 'storefront').agents?.some((a) => a.name === 'ivo') ?? false, false)
+  // one of your shared agents: it joins the laptop's crew and its storefront, and leaves only storefront here
   assert.equal((await studio.run(`crew.moveAgent('iris', 'laptop', '~')`)).name, 'iris@laptop')
   await sleep(200)
-  assert.equal(laptop.config().agents.find((a) => a.name === 'iris')?.off, true)
-  assert.ok('iris' in laptop.config().workspaces[0].members)
+  assert.ok(laptop.config().agents.some((a) => a.name === 'iris'))
+  assert.ok('iris' in wsOf(laptop, 'storefront').members)
   assert.ok(studio.config().agents.some((a) => a.name === 'iris'), 'still in the studio\'s crew')
-  assert.equal('iris' in studio.config().workspaces[0].members, false)
+  assert.equal('iris' in wsOf(studio, 'storefront').members, false)
   // a computer without the workspace
   await studio.run(`crew.workspaceAction('switch', 'site')`)
   await assert.rejects(studio.run(`crew.moveAgent('bob', 'laptop', '~')`), /Laptop has no site workspace/)
@@ -161,8 +163,20 @@ test('a shared agent moved there and back rejoins its crew here, not as a copy',
   assert.equal((await studio.run(`crew.moveAgent('iris@laptop', '', '~')`)).name, 'iris')
   await sleep(200)
   assert.deepEqual(studio.config().agents.map((a) => a.name).sort(), ['bob', 'iris'], 'no iris-2')
-  assert.ok('iris' in studio.config().workspaces[0].members)
-  assert.equal('iris' in laptop.config().workspaces[0].members, false, "it left the laptop's storefront")
+  assert.ok('iris' in wsOf(studio, 'storefront').members)
+  assert.equal('iris' in wsOf(laptop, 'storefront').members, false, "it left the laptop's storefront")
+})
+
+test("the owner's new name and look reach the computers it shows up on", async () => {
+  const shown = (key) => `crew.config.data.workspaces.find((w) => w.of && w.of.computer + ':' + w.of.id === ${JSON.stringify(key)})`
+  await studio.run(`crew.workspaceAction('edit', 'storefront', { name: 'Shopfront', color: 'orange', icon: '🛒' })`)
+  await until(laptop, `${shown('studio-mac:storefront')}.name === 'Shopfront'`)
+  const copy = await laptop.run(shown('studio-mac:storefront'))
+  assert.deepEqual([copy.name, copy.color, copy.icon], ['Shopfront', 'orange', '🛒'])
+  assert.ok('ann' in copy.members, 'and who you put there stays')
+  await studio.run(`crew.workspaceAction('edit', 'storefront', { name: 'Storefront', color: '', icon: '' })`)
+  await until(laptop, `${shown('studio-mac:storefront')}.name === 'Storefront'`)
+  assert.equal((await laptop.run(shown('studio-mac:storefront'))).color, undefined)
 })
 
 test("a workspace made on one computer shows up on the other on its own, as its; the same name there stays two; gone there, gone here", async () => {

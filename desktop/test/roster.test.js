@@ -15,7 +15,7 @@ const remote = (seed, home, homeName, extra) => agent(`${seed}@${home}`, { seed,
 const rows = (html) => [...html.matchAll(/class="crow [^"]*" data-agent="([^"]+)"/g)].map((m) => m[1])
 const heads = (html) => [...html.matchAll(/<div class="cgroup-head"[\s\S]*?<b>([^<]+)<\/b>/g)].map((m) => m[1])
 
-const state = (agents, links = []) => ({ agents, computers: { me: { name: 'Studio Mac', slug: 'studio-mac' }, links } })
+const state = (agents, links = []) => ({ workspace: { id: 'shop', name: 'Shop' }, agents, computers: { me: { name: 'Studio Mac', slug: 'studio-mac' }, links } })
 
 test('one computer: no group headers, agents in config order', () => {
   const s = state([agent('june'), agent('ada', { status: 'working' }), agent('iris')])
@@ -28,7 +28,7 @@ test('one computer: no group headers, agents in config order', () => {
 test('linked computers: one group each, this computer first, a linked one listed even when empty', () => {
   const s = state(
     [agent('june'), remote('theo', 'workstation', 'Workstation'), agent('ada')],
-    [{ slug: 'workstation', name: 'Workstation', online: true }, { slug: 'laptop', name: 'Laptop', online: false }],
+    [{ slug: 'workstation', name: 'Workstation', online: true, spaces: ['shop'] }, { slug: 'laptop', name: 'Laptop', online: false, spaces: ['shop'] }],
   )
   const html = rosterHTML(s)
   assert.deepEqual(heads(html), ['Studio Mac', 'Workstation', 'Laptop'])

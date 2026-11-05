@@ -12,7 +12,7 @@ import { SPOOL_MAX } from './keep.js'
 // Where the hub is, read from CREW_HOME on every call: Crew's address and token change each time it starts, and an agent
 // can outlive a Crew (its CLI keeps running in the terminal host while Crew relaunches), so what it was started with
 // can be out of date. Every workspace's agents talk to the one Crew, saying which workspace they're in (CREW_WORKSPACE,
-// none for the default: core/workspaces.js).
+// none for ROOT: core/workspaces.js).
 const TOKEN = '-H "X-Crew: $(cat "$CREW_HOME/token" 2>/dev/null)" -H "X-Crew-Workspace: $CREW_WORKSPACE"'
 const HUB = (route) => `"$(cat "$CREW_HOME/url" 2>/dev/null)/${route}/$CREW_AGENT"`
 // The agent's workspace's folder for hook events Crew wasn't there to take (Hub.at('spool')).

@@ -36,7 +36,7 @@ export function TabHead({ t, title, sub, workspace = true }: { t: Theme; title: 
   const { client, link, state, ws, switching } = useCrew()
   const w = state?.workspaces?.find((x) => x.id === ws) ?? state?.workspace
   const needsElsewhere = (state?.workspaces ?? []).filter((x) => x.id !== ws).reduce((n, x) => n + (x.waiting ?? 0), 0)
-  const name = w?.name ?? (ws === 'default' ? 'Home' : ws)
+  const name = w?.name ?? ws
   const offline = workspace && link.status === 'offline' && client ? offlineText(link, client.macName) : ''
   const connecting = workspace && link.status === 'connecting' && client && !client.demo ? `Connecting to ${client.macName}…` : ''
   const line = offline || connecting || (workspace ? [name, sub].filter(Boolean).join('  ·  ') : (sub ?? ''))

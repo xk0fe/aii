@@ -343,6 +343,7 @@ export class LinkHost extends EventEmitter {
     this.server = https.createServer({ cert: this.cert, key: this.keyPem }, (_, res) => res.writeHead(426).end('Crew Link speaks WebSocket\n'))
     this.wss = new WebSocketServer({ server: this.server, maxPayload: 32 * 1024 * 1024 })
     this.wss.on('connection', (ws, req) => this.welcome(ws, req.socket.remoteAddress))
+    this.wss.on('error', () => {}) // the server's errors, which it passes on: a port in use is said by the promise below
     return new Promise((resolve, reject) => {
       this.server.once('error', reject)
       this.server.listen(port, '0.0.0.0', () => resolve(this))

@@ -490,7 +490,17 @@ export default function ChatScreen() {
     )
   }
 
-  const wsName = state?.workspaces?.find((w) => w.id === space)?.name ?? state?.workspace?.name ?? 'Home'
+  // the computer has no workspace yet (they're made there): it shows up here as soon as it does
+  if (state && !state.workspace) {
+    return (
+      <View style={[styles.empty, { backgroundColor: t.page, paddingTop: insets.top }]}>
+        <Text style={[styles.emptyTitle, { color: t.fg }]}>No workspaces yet</Text>
+        <Text style={[styles.emptyText, { color: t.fg2 }]}>Make your first one on {client.macName}, and it shows up here.</Text>
+      </View>
+    )
+  }
+
+  const wsName = state?.workspaces?.find((w) => w.id === space)?.name ?? state?.workspace?.name ?? ''
   const linkLine = offline || (link.status === 'connecting' && !client.demo ? `Connecting to ${client.macName}…` : '')
   const sum = state ? summary(t, d, Boolean(state.parked)) : null
   const headSub = [wsName, state?.parked ? 'Asleep' : d.working ? `${d.working} at work` : ''].filter(Boolean).join('  ·  ')

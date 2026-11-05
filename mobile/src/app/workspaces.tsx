@@ -77,7 +77,7 @@ export default function Workspaces() {
         {list.length ? (
           list.map((w) => <Row key={w.id} t={t} w={w} current={w.id === ws} busy={going === w.id} onPress={() => void pick(w.id)} disabled={Boolean(offline) || Boolean(going)} />)
         ) : (
-          <Text style={[styles.hint, { color: t.fg3, padding: 16 }]}>{state ? 'Just Home on this computer.' : 'Waiting for your computer…'}</Text>
+          <Text style={[styles.hint, { color: t.fg3, padding: 16 }]}>{state ? 'No workspaces on this computer yet. Make one there.' : 'Waiting for your computer…'}</Text>
         )}
       </View>
       <Text style={[styles.error, { color: offline ? t.waitingInk : t.danger }]}>{offline ? `${offline}: switching waits until it's back` : error || ' '}</Text>

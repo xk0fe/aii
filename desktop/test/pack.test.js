@@ -10,7 +10,7 @@ function fakeHub(agents, providers = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-pack-test-'))
   return {
     dir,
-    config: { agents, providers },
+    config: { agents, providers, workspaces: [{ id: 'default', members: Object.fromEntries(agents.map((a) => [a.name, {}])) }] },
     stats: {},
     added: [],
     saveStats() {},
@@ -30,6 +30,7 @@ test('a pack carries the definition, look, images and custom providers, not fold
   const src = fakeHub([], { mine: { label: 'Mine', cli: 'claude' } })
   const image = path.join(src.dir, 'ref.png')
   fs.writeFileSync(image, 'png bytes')
+  src.config.workspaces[0].members.iris = {}
   src.config.agents.push({ name: 'iris', area: 'design', prompt: 'be nice', provider: 'mine', model: 'opus', yolo: true, cwd: '/Users/me/code/app', images: [image], avatar: { color: 'pink' } })
   const pack = packAgents(src, ['iris'])
   const [a] = pack.agents

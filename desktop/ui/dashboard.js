@@ -37,7 +37,7 @@ const collection = mountCollection($('.collection'), {
 const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onTerminal: (name) => select(name) })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next), onMembers: (at) => openMembers(at) })
 // first run: Claude Code and Codex, what to install or sign in to, then the first agent (ui/setup.js)
-const setup = mountSetup({ onAdd: () => addAgent() })
+const setup = mountSetup({ onAdd: () => addAgent(), onWorkspace: () => workspaces.create(), onComputers: () => openComputers() })
 
 // Where you are: 'chat' (the channel open, see setChannel), 'dm' (the conversation the composer is aimed at), 'crew' (Agents, the cards),
 // 'tasks' or 'terminals'. The terminals are laid out as a grid or one big one.
@@ -210,7 +210,7 @@ function chatHead() {
   const everyone = state.agents.filter((a) => !a.cloneOf)
   const members = c.members ? everyone.filter((a) => c.members.includes(a.name)) : everyone
   const faces = [...members.filter((a) => a.on), ...members.filter((a) => !a.on)]
-  const who = hasWorkspaces(state) ? `Everyone in ${wsLabel(state.workspace)}` : 'Your whole crew'
+  const who = `Everyone in ${wsLabel(state.workspace)}`
   const folder = state.workspace?.folder
   const brief = c.brief.split('\n').find((l) => l.trim())?.trim()
   const sub = brief ? esc(brief) : c.id === 'general' ? `${esc(who)} · ${folder ? esc(tildePath(folder)) : 'Auto picks who answers'}` : c.members ? esc(nameList(members.map((a) => a.seed ?? a.name))) : esc(who)
@@ -260,7 +260,7 @@ chatHeadEl.addEventListener('click', (e) => {
 let chan = 'general' // the channel open in the chat
 const channelsNow = () => state.channels ?? [{ id: 'general', name: 'general', brief: '' }]
 const openChannel = () => channelsNow().find((c) => c.id === chan) ?? channelsNow()[0]
-const chanKey = () => `crew.channel.${state.workspace?.id ?? 'default'}`
+const chanKey = () => `crew.channel.${state.workspace?.id}`
 // The workspace's channel, as it was left (one that's gone: #general), told to the chat and the composer.
 function syncChannel() {
   const kept = store.get(chanKey())
@@ -268,7 +268,7 @@ function syncChannel() {
   if (next !== chan && booted) closeSearch() // the search was the last channel's
   chan = next
   feed.setChannel(chan)
-  composer.setChannel({ ...openChannel(), ws: state.workspace?.id ?? 'default' }) // each workspace's channels keep their own drafts
+  composer.setChannel({ ...openChannel(), ws: state.workspace?.id }) // each workspace's channels keep their own drafts
 }
 // Open a channel. go: as a place from the sidebar (the composer back to everyone's); otherwise only the chat changes,
 // for a jump into another channel's message.
@@ -317,7 +317,7 @@ function channelMenu(id, at) {
   })
 }
 
-async function removeChannel(c, ws = state.workspace?.id ?? 'default') {
+async function removeChannel(c, ws = state.workspace?.id) {
   if (!confirm(`Delete #${c.name}? Its messages stay, in #general. Agents stop getting its brief.`)) return
   try {
     const { state: next } = await crew.call('channel', 'remove', c.id, null, ws)
@@ -370,7 +370,7 @@ function channelSheet(id) {
   if (id && !c) return
   const agents = state.agents.filter((a) => !a.cloneOf)
   // ws: the workspace it's for, whichever is on screen by the time it's saved. Only some: you pick them.
-  chDraft = { ws: state.workspace?.id ?? 'default', id: c?.id ?? null, name: c?.name ?? '', brief: c?.brief ?? '', everyone: !c?.members, members: new Set(c?.members ?? []) }
+  chDraft = { ws: state.workspace?.id, id: c?.id ?? null, name: c?.name ?? '', brief: c?.brief ?? '', everyone: !c?.members, members: new Set(c?.members ?? []) }
   const general = c?.id === 'general'
   $c('[data-ch-name]').value = chDraft.name
   $c('[data-ch-name]').disabled = general
@@ -461,7 +461,7 @@ async function saveChannel() {
 
 // ---- who works here: the workspace's agents, from #general's faces, the workspace's menu or its welcome -----------------
 // Its agents (one shared with your other workspaces can be taken out of this one), the rest of your crew (bring one
-// in: it starts here in a conversation of its own), and a new agent. The default workspace has everyone.
+// in: it starts here in a conversation of its own), and a new agent.
 const membersPop = $('.members-pop')
 let membersAt = null
 // a second click on what opened it closes it: the press already did (light dismiss), so the click doesn't reopen it
@@ -480,19 +480,19 @@ function openMembers(at) {
   if (r.left < 200) membersPop.style.left = `${Math.round(Math.max(8, r.left))}px` // from the sidebar or the rail: under it, to the right
 }
 function drawMembers() {
-  const w = state.workspace ?? { id: 'default', name: 'Home' }
-  const named = w.id !== 'default'
+  const w = state.workspace
+  if (!w) return
   const here = state.agents.filter((a) => !a.cloneOf)
-  const others = named ? (state.roster ?? []).filter((r) => !here.some((a) => a.name === r.name)) : []
+  const others = (state.roster ?? []).filter((r) => !here.some((a) => a.name === r.name))
   const row = (a, end) => `<div class="mp-row" data-agent="${esc(a.name)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span class="mp-who"><b>${esc(a.seed ?? a.name)}</b><small>${esc(a.area || (a.status ? upFirst(statusText(a)) : ''))}</small></span>${end}</div>`
-  const take = (a) => (named && a.shared ? `<button class="btn sm plain mp-take" data-mp-take="${esc(a.name)}" title="${esc(`Take ${a.name} out of ${w.name}: it stays in your crew and your other workspaces`)}">Take out</button>` : named ? '<span class="mp-only" title="Made for this workspace: it works only here">only here</span>' : '')
+  const take = (a) => (a.shared ? `<button class="btn sm plain mp-take" data-mp-take="${esc(a.name)}" title="${esc(`Take ${a.name} out of ${w.name}: it stays in your crew and your other workspaces`)}">Take out</button>` : '<span class="mp-only" title="Made for this workspace: it works only here">only here</span>')
   morph(membersPop, `<header class="mp-head"><b>Who works here</b><span>${here.length}</span></header>
-    <p class="mp-lead">${named ? `${esc(w.name)}'s agents${w.folder ? `, in ${esc(tildePath(w.folder))}` : ''}. One from your crew works here in a conversation of its own.` : 'Everyone in your crew works here, each in its own folder.'}</p>
+    <p class="mp-lead">${esc(w.name)}'s agents${w.folder ? `, in ${esc(tildePath(w.folder))}` : ''}. One from your crew works here in a conversation of its own.</p>
     <div class="mp-body">
       ${here.length ? here.map((a) => row(a, take(a))).join('') : `<p class="mp-lead">Nobody yet.</p>`}
       ${others.length ? `<div class="mp-sec section-label">From your crew</div>${others.map((r) => row({ ...r, status: '' }, `<button class="btn sm mp-add" data-mp-add="${esc(r.name)}">Add</button>`)).join('')}` : ''}
     </div>
-    <footer class="mp-foot"><button class="btn" data-mp-new>${ICONS.plus}<span>New agent${named ? ` for ${esc(w.name)}` : ''}</span></button><span class="grow"></span><button class="btn plain" data-mp-agents>All agents</button></footer>`)
+    <footer class="mp-foot"><button class="btn" data-mp-new>${ICONS.plus}<span>New agent for ${esc(w.name)}</span></button><span class="grow"></span><button class="btn plain" data-mp-agents>All agents</button></footer>`)
 }
 // closed with Esc or a click outside: the focus goes back to what opened it, if nothing else took it
 membersPop.addEventListener('toggle', (e) => e.newState === 'closed' && (document.activeElement === document.body || membersPop.contains(document.activeElement)) && membersAt?.isConnected && membersAt.focus({ preventScroll: true }))
@@ -522,16 +522,15 @@ membersPop.addEventListener('click', async (e) => {
 // ---- an empty #general: its first steps, like Discord's welcome to a new server ------------------------------------
 // Who works here, its folder (a workspace of your own), and the first message; each a click away, ticked once done.
 function welcomeHTML() {
-  if (!state.agents.length && !hasWorkspaces(state)) return '' // the very first run: setup and Agents say what to do
-  const w = state.workspace ?? { id: 'default', name: 'Home' }
-  const named = w.id !== 'default'
+  const w = state.workspace
+  if (!w) return '' // the very first run: the setup screen asks for one
   const here = state.agents.filter((a) => !a.cloneOf)
   const step = (done, act, title, sub) => `<button class="wl-step ${done ? 'done' : ''}" data-welcome="${act}"><i class="pick ${done ? 'on' : ''}">${ICONS.check}</i><span><b>${esc(title)}</b><small>${esc(sub)}</small></span><i class="wl-go">${ICONS.chevron}</i></button>`
-  return `<div class="welcome empty-state">${wsTile(w, { size: 64 })}<h2 class="display">${hasWorkspaces(state) ? `Welcome to ${esc(w.name)}` : 'Welcome to #general'}</h2>
+  return `<div class="welcome empty-state">${wsTile(w, { size: 64 })}<h2 class="display">Welcome to ${esc(w.name)}</h2>
     <p class="lead">Everyone here sees what's said in #general. Ask for something and Auto picks who answers, or @name someone. Make a channel (+ by Channels) for work with rules of its own.</p>
     <div class="wl-steps">
-      ${step(here.length > 0, 'members', here.length ? `${plural(here.length, 'agent')} work${here.length > 1 ? '' : 's'} here` : 'Choose who works here', named ? 'Agents from your crew, or new ones just for this workspace' : 'Everyone in your crew, each in its own folder')}
-      ${named ? step(Boolean(w.folder), 'settings', w.folder ? `They work in ${tildePath(w.folder)}` : 'Pick its folder', 'Where its agents work, unless one has a folder of its own') : ''}
+      ${step(here.length > 0, 'members', here.length ? `${plural(here.length, 'agent')} work${here.length > 1 ? '' : 's'} here` : 'Choose who works here', 'Agents from your crew, or new ones just for this workspace')}
+      ${step(Boolean(w.folder), 'settings', w.folder ? `They work in ${tildePath(w.folder)}` : 'Pick its folder', 'Where its agents work, unless one has a folder of its own')}
       ${step(false, 'message', 'Send the first message', here.length ? `${nameList(here.map((a) => a.seed ?? a.name))} ${here.length > 2 ? 'all see' : here.length > 1 ? 'both see' : 'sees'} it` : 'Once someone works here')}
     </div></div>`
 }
@@ -633,7 +632,7 @@ $('.side-more').addEventListener('click', (e) => {
     if (act === 'tools') openTools()
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
-    if (act.startsWith('theme:')) crew.call('theme', act.slice(6))
+    if (act.startsWith('theme:')) crew.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
     if (act === 'config') crew.call('config')
   })
 })
@@ -1180,7 +1179,7 @@ function slide(dir, update) {
 // (a shared agent has a terminal in each workspace it's in, under the same name).
 let shownWorkspace = null
 function workspaceChanged(next) {
-  const id = next.workspace?.id ?? 'default'
+  const id = next.workspace?.id ?? ''
   if (shownWorkspace === id) return
   const first = shownWorkspace === null
   shownWorkspace = id
@@ -1195,7 +1194,7 @@ function workspaceChanged(next) {
   composer.setTarget('auto')
   const unsaved = collection.unsaved() // switched from the menu bar or a notification, with an agent's sheet open
   collection.close()
-  if (unsaved) toast(`Closed ${unsaved} without saving: you switched to ${next.workspace.name}`, true)
+  if (unsaved && next.workspace) toast(`Closed ${unsaved} without saving: you switched to ${next.workspace.name}`, true)
   tasks.close()
 }
 
@@ -1376,11 +1375,11 @@ function agentMenu(name, at) {
   }
   const here = a.home ?? ''
   const places = crewGroups(state).filter((g) => g.key !== here)
-  // in the default workspace, a shared agent can join the others; in another one, a shared agent only leaves it
+  // one of your shared agents can join your other workspaces, and leave this one (or leave your crew altogether);
+  // a workspace's own agent is only here
   const ws = state.workspace
-  const named = ws && ws.id !== 'default'
-  const joins = !named && !a.home ? (state.workspaces ?? []).filter((w) => w.id !== 'default' && !w.members?.some((m) => m.name === name)) : []
-  const leave = named && a.shared
+  const joins = a.shared && !a.home ? (state.workspaces ?? []).filter((w) => w.id !== ws?.id && !w.members?.some((m) => m.name === name)) : []
+  const leave = Boolean(a.shared)
   popMenu(at, [
     { head: a.seed ?? a.name },
     { label: 'Message', icon: ICONS.reply, act: 'message', disabled: !a.on },
@@ -1392,6 +1391,7 @@ function agentMenu(name, at) {
     '-',
     { label: a.on ? 'Turn off' : 'Turn on', icon: ICONS.power, act: 'power' },
     { label: leave ? `Take out of ${ws.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
+    ...(leave ? [{ label: 'Remove from your crew…', icon: ICONS.trash, act: 'forget', danger: true }] : []),
   ], async (act) => {
     const who = a.seed ?? a.name
     const doing = { fresh: `Couldn't start a new conversation for ${who}`, power: `Couldn't turn ${who} ${a.on ? 'off' : 'on'}`, remove: `Couldn't remove ${who}` }[act] ?? (act.startsWith('join:') ? `Couldn't add ${who} to that workspace` : `Couldn't do that for ${who}`)
@@ -1415,8 +1415,9 @@ function agentMenu(name, at) {
       }
       const sure = act === 'remove' && confirm(leave
         ? `Take ${name} out of ${ws.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your crew and your other workspaces.`
-        : named ? `Remove ${name}? It's only in ${ws.name}, so it's gone for good. Its session stops (the transcript stays with the CLI).` : `Remove ${a.seed ?? a.name}? Its session stops (the transcript stays with the CLI).${(state.workspaces ?? []).length > 1 ? ' It leaves every workspace it\'s in.' : ''}`)
+        : `Remove ${name}? It's only in ${ws.name}, so it's gone for good. Its session stops (the transcript stays with the CLI).`)
       if (sure) await crew.call('removeAgent', name)
+      if (act === 'forget' && confirm(`Remove ${a.seed ?? a.name} from your crew? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) await crew.call('removeAgent', name, { everywhere: true })
     } catch (err) {
       oops(doing, err)
     }
@@ -1544,6 +1545,7 @@ usePop.addEventListener('beforetoggle', (e) => {
 })
 
 function addAgent() {
+  if (!state.workspace) return workspaces.create() // the menu bar's New agent, say: it needs somewhere to work first
   collection.create()
 }
 
@@ -2309,9 +2311,9 @@ async function importPack(dropped) {
 
 function drawImport() {
   const { file, pack, agents } = pending
-  // in a workspace other than the default, the linked computers that have it too
-  const ws = state.workspace?.id ?? 'default'
-  const places = [{ slug: '', name: 'this computer' }, ...(state.computers?.links ?? []).filter((l) => l.online && (ws === 'default' || l.spaces?.includes(ws)))]
+  // the linked computers that have this workspace too
+  const ws = state.workspace?.id
+  const places = [{ slug: '', name: 'this computer' }, ...(state.computers?.links ?? []).filter((l) => l.online && l.spaces?.includes(ws))]
   const brain = (a) => [state.providers[a.provider]?.label ?? a.provider, a.model, a.effort].filter(Boolean).join(' · ')
   importDialog.querySelector('.lead').innerHTML = `<b>${esc(file)}</b> · ${agents.length} agent${agents.length === 1 ? '' : 's'}${pack.exported ? `, exported ${new Date(pack.exported).toLocaleDateString()}` : ''}. Imported agents start switched off, so you can look them over first.`
   importDialog.querySelector('.imp-list').innerHTML = agents.map((a) => `

@@ -9,7 +9,7 @@
 // config.json itself. It's the way an agent asks before it changes your app, and the way you say yes or no.
 // Crew.tool runs them: core/crew.js. No Electron in here.
 import path from 'node:path'
-import { DEFAULT, GENERAL, channelName, checkLook, sharedNames, workspacesIn } from './workspaces.js'
+import { GENERAL, channelName, checkLook, named, sharedNames, workspacesIn } from './workspaces.js'
 import { isOffered } from './providers.js'
 import { readCode } from './link.js'
 import { folderInfo } from './move.js'
@@ -138,10 +138,10 @@ function folderOf(raw) {
 }
 
 // Whether one of your shared agents runs YOLO.
-const yoloOf = (crew, name) => Boolean((crew.config.data.agents ?? []).find((a) => a?.name === name)?.yolo)
+const yoloOf = (crew, name) => Boolean(named(crew.config.data.agents).find((a) => a.name === name)?.yolo)
 
 // Your shared agents, who can work in any workspace.
-const rosterOf = (crew) => (crew.config.data.agents ?? []).filter((a) => a?.name).map((a) => a.name)
+const rosterOf = (crew) => named(crew.config.data.agents).map((a) => a.name)
 
 function rosterNames(crew, raw) {
   const roster = new Set(rosterOf(crew))
@@ -168,17 +168,16 @@ const AGENT_FLAGS = { area: 'value', brain: 'value', model: 'value', effort: 'va
 export const TOOLS = {
   agents: {
     group: 'look', about: 'your agents: their jobs, brains, and the workspaces each works in', read: true,
-    plan: ({ crew }) => ({
+    plan: ({ crew, hub }) => ({
       run: () => {
         const data = crew.config.data
-        const homeName = crew.hubs.get(DEFAULT).space.name
         const rows = []
-        for (const a of (data.agents ?? []).filter((x) => x?.name)) {
-          const where = [homeName, ...workspacesIn(data).filter((w) => !w.of && Object.hasOwn(w.members ?? {}, a.name)).map((w) => w.name || w.id)]
-          rows.push(`${a.name.padEnd(16)} ${clip(a.area || 'general', 40).padEnd(40)} ${brainText(crew.hub, a).padEnd(18)} works in ${where.join(', ')}`)
+        for (const a of named(data.agents)) {
+          const where = workspacesIn(data).filter((w) => !w.of && Object.hasOwn(w.members ?? {}, a.name)).map((w) => w.name || w.id)
+          rows.push(`${a.name.padEnd(16)} ${clip(a.area || 'general', 40).padEnd(40)} ${brainText(hub, a).padEnd(18)} ${where.length ? `works in ${where.join(', ')}` : 'in no workspace right now'}`)
         }
         for (const w of workspacesIn(data).filter((x) => !x.of)) {
-          for (const a of (w.agents ?? []).filter((x) => x?.name)) rows.push(`${a.name.padEnd(16)} ${clip(a.area || 'general', 40).padEnd(40)} ${brainText(crew.hub, a).padEnd(18)} ${w.name || w.id} only`)
+          for (const a of (w.agents ?? []).filter((x) => x?.name)) rows.push(`${a.name.padEnd(16)} ${clip(a.area || 'general', 40).padEnd(40)} ${brainText(hub, a).padEnd(18)} ${w.name || w.id} only`)
         }
         return rows.length ? `${rows.join('\n')}\n` : '(no agents yet)\n'
       },
@@ -204,7 +203,7 @@ export const TOOLS = {
     group: 'look', about: 'your workspaces: their folders, who works in each, which are asleep', read: true,
     plan: ({ crew, hub }) => ({
       run: () => `${crew.workspaces().map((w) => {
-        const bits = [w.id === DEFAULT ? 'the default' : `id ${w.id}`, w.folder, w.ownerName && `hosted on ${w.ownerName}`, w.members?.length && w.members.map((m) => `@${m.name}`).join(' '), w.parked && 'asleep', w.id === hub.ws && "you're here"]
+        const bits = [`id ${w.id}`, w.folder, w.ownerName && `hosted on ${w.ownerName}`, w.members?.length && w.members.map((m) => `@${m.name}`).join(' '), w.parked && 'asleep', w.id === hub.ws && "you're here"]
         return `${w.name.padEnd(20)} ${bits.filter(Boolean).join(' · ')}`
       }).join('\n')}\n`,
     }),
@@ -222,20 +221,20 @@ export const TOOLS = {
   },
 
   'agent add': {
-    group: 'agents', what: 'name', about: "a new agent. In a workspace other than Home it's that workspace's own; --crew makes it one of your agents everywhere",
+    group: 'agents', what: 'name', about: "a new agent, the workspace's own; --crew makes it one of your agents, who can work in any workspace",
     use: '<name> --area "<its job>" [--brain claude|codex|…] [--model <m>] [--effort <e>] [--folder <dir>] [--prompt "<instructions>"] [--crew] [--off] [--yolo] [--in <workspace>]',
     flags: { ...AGENT_FLAGS, crew: 'switch', off: 'switch', yolo: 'switch' },
     plan: ({ crew, hub: mine }, { name: raw, flags }) => {
       const hub = hubFor(crew, mine, flags)
       notHosted(crew, { id: hub.ws, name: hub.space.name }, 'agents')
-      const shared = hub.ws === DEFAULT || Boolean(flags.crew)
+      const shared = Boolean(flags.crew)
       const name = hub.freeName(raw, shared ? (n) => hub.agents.has(n) || sharedNames(hub.config, n).has(n) : undefined)
       const brain = brainOf(hub, flags.brain)
       const effort = effortOf(brain, flags.effort)
       const cwd = folderOf(flags.folder)
       const area = String(flags.area ?? '').trim()
       const prompt = String(flags.prompt ?? '').trim()
-      const where = hub.ws === DEFAULT ? `works in ${hub.space.name}` : shared ? `joins your crew and works in ${hub.space.name}` : `only ${hub.space.name} has it`
+      const where = shared ? `joins your crew and works in ${hub.space.name}` : `only ${hub.space.name} has it`
       return {
         title: 'Add an agent',
         code: [`@${name}${area ? ` · ${area}` : ''}`, [brain.label, flags.model, effort, cwd].filter(Boolean).join(' · '), flags.yolo && 'YOLO: runs every command without asking'].filter(Boolean).join('\n'),
@@ -245,7 +244,7 @@ export const TOOLS = {
         hub,
         did: `added a new agent, @${name}${inWs(hub, mine)}`,
         run: () => {
-          const made = hub.addAgent({ name, area, prompt, provider: brain.id, model: flags.model, effort, cwd, shared: shared && hub.ws !== DEFAULT, off: flags.off, yolo: flags.yolo })
+          const made = hub.addAgent({ name, area, prompt, provider: brain.id, model: flags.model, effort, cwd, shared, off: flags.off, yolo: flags.yolo })
           return `added @${made}${hub !== mine ? ` in ${hub.space.name}` : ''}${flags.off ? `, off (crew app agent on ${made} starts it)` : ', starting now'}`
         },
       }
@@ -309,11 +308,12 @@ export const TOOLS = {
     plan: (ctx, call) => onOff(ctx, call, false),
   },
   'agent remove': {
-    group: 'agents', what: 'agent', risky: true, about: 'take an agent out of a workspace, or out of CLIque', use: '<name> [--in <workspace>]', flags: { in: 'value' },
+    group: 'agents', what: 'agent', risky: true, about: 'take an agent out of a workspace; --everywhere takes one of your own agents out of CLIque', use: '<name> [--everywhere] [--in <workspace>]', flags: { in: 'value', everywhere: 'switch' },
     plan: ({ crew, hub: mine }, { name: raw, flags }) => {
       const hub = hubFor(crew, mine, flags)
       const name = agentIn(hub, raw)
-      const leaves = hub.ws !== DEFAULT && hub.space.shared(name)
+      const shared = hub.space.shared(name)
+      const leaves = shared && !flags.everywhere
       return {
         title: `Remove @${name}${inWs(hub, mine)}`,
         code: `@${name}${hub.space.agents.find((a) => a.name === name)?.area ? ` · ${hub.space.agents.find((a) => a.name === name).area}` : ''}`,
@@ -322,7 +322,7 @@ export const TOOLS = {
         hub,
         did: leaves ? `took @${name} out of ${hub.space.name}` : `removed @${name}`,
         run: () => {
-          hub.removeAgent(name)
+          hub.removeAgent(name, { everywhere: shared && !leaves })
           return leaves ? `@${name} is out of ${hub.space.name}` : `removed @${name}`
         },
       }
@@ -447,10 +447,7 @@ export const TOOLS = {
       notHosted(crew, w, 'settings')
       const patch = {}
       if (flags.name !== undefined) patch.name = String(flags.name).trim()
-      if (flags.folder !== undefined) {
-        if (w.id === DEFAULT) throw new Error(`${w.name} has no folder of its own: each agent works in its own there`)
-        patch.folder = folderOf(flags.folder)
-      }
+      if (flags.folder !== undefined) patch.folder = folderOf(flags.folder)
       if (flags.icon !== undefined) patch.icon = flags.icon
       if (flags.color !== undefined) patch.color = flags.color
       checkLook(patch)
@@ -472,7 +469,6 @@ export const TOOLS = {
     group: 'workspaces', what: 'workspace', about: 'which of your agents work in a workspace', use: '<name> [--add a,b] [--remove a,b]', flags: { add: 'value', remove: 'value' },
     plan: ({ crew }, { name: raw, flags }) => {
       const w = workspaceNamed(crew, raw)
-      if (w.id === DEFAULT) throw new Error(`all your agents work in ${w.name}`)
       const add = rosterNames(crew, flags.add).filter((n) => !w.members.some((m) => m.name === n))
       const remove = names(flags.remove).filter((n) => w.members.some((m) => m.name === n))
       if (!add.length && !remove.length) throw new Error(`nothing to change: ${flags.add || flags.remove ? `that's how ${w.name} is already` : `say who, e.g. ${usage('workspace members')}`}`)
@@ -530,7 +526,6 @@ export const TOOLS = {
     group: 'workspaces', what: 'workspace', risky: true, about: 'remove a workspace (its chat, notes and tasks stay on disk)', use: '<name>',
     plan: ({ crew, hub }, { name: raw }) => {
       const w = workspaceNamed(crew, raw)
-      if (w.id === DEFAULT) throw new Error(`${w.name} can't be removed`)
       const owner = crew.ownerOf(w.id)
       const own = (workspacesIn(crew.config.data).find((x) => x.id === w.id)?.agents ?? []).filter((a) => a?.name).length
       return {

@@ -520,9 +520,9 @@ function crewGroups(state) {
   const c = state.computers ?? { me: {}, links: [] }
   const group = (key, name, online, here = false) => ({ key, name, here, online, agents: [], clones: [] })
   const groups = new Map([['', group('', c.me?.name || 'This computer', true, true)]])
-  // in a workspace other than the default, the linked computers that have one like it (the same id)
-  const ws = state.workspace?.id ?? 'default'
-  for (const l of c.links ?? []) if (ws === 'default' || l.spaces?.includes(ws)) groups.set(l.slug, group(l.slug, l.name, Boolean(l.online)))
+  // the linked computers that have this workspace too
+  const ws = state.workspace?.id
+  for (const l of c.links ?? []) if (l.spaces?.includes(ws)) groups.set(l.slug, group(l.slug, l.name, Boolean(l.online)))
   for (const a of state.agents) {
     const k = a.home ?? ''
     if (!groups.has(k)) groups.set(k, group(k, a.homeName ?? k, a.status !== 'away'))
@@ -733,16 +733,14 @@ function needText({ agent, ask }) {
 
 // ---- workspaces: each project the crew works on, with its own chat, tasks and agents (core/workspaces.js) ----------
 
-// A workspace's color: one of the creatures' (avatar.js), or any CSS color. The default one has none unless you give it
-// one.
+// A workspace's color: one of the creatures' (avatar.js), or any CSS color.
 const wsColor = (w) => (w?.color ? COLORS[w.color] ?? w.color : null)
 const wsInitial = (name) => ([...String(name ?? '').trim()][0] ?? '?').toUpperCase()
-// Its tile: its icon (an emoji) or its initial, on its color. The default one without a look wears the crew's mark.
+// Its tile: its icon (an emoji) or its initial, on its color.
 function wsTile(w, { size = 22, cls = '' } = {}) {
   const color = wsColor(w)
-  const plain = !color && !w?.icon && w?.id === 'default'
-  const face = plain ? markSVG('0 4 24 18') : w?.icon ? `<span class="ws-emoji">${esc(w.icon)}</span>` : esc(wsInitial(w?.name))
-  return `<span class="ws-tile ${plain ? 'plain' : ''} ${w?.parked ? 'parked' : ''} ${cls}" style="--s:${size}px${color ? `;--w:${esc(color)}` : ''}" aria-hidden="true">${face}</span>`
+  const face = w?.icon ? `<span class="ws-emoji">${esc(w.icon)}</span>` : esc(wsInitial(w?.name))
+  return `<span class="ws-tile ${w?.parked ? 'parked' : ''} ${cls}" style="--s:${size}px${color ? `;--w:${esc(color)}` : ''}" aria-hidden="true">${face}</span>`
 }
 // A folder in a few characters: ~ for your home, and only its last two folders when it's long (in its own separators).
 function shortPath(p) {
@@ -751,8 +749,8 @@ function shortPath(p) {
   const sep = /^[A-Za-z]:|\\/.test(t) ? '\\' : '/'
   return t.length > 30 && parts.length > 2 ? `…${sep}${parts.slice(-2).join(sep)}` : t
 }
-// Workspaces worth a switcher: more than the default, or a default you've given a look.
-const hasWorkspaces = (state) => (state.workspaces?.length ?? 0) > 1 || Boolean(state.workspace?.color || state.workspace?.icon || (state.workspace && state.workspace.name !== 'Home'))
+// Is there a workspace on screen? (Until you've made your first, there's none.)
+const hasWorkspaces = (state) => Boolean(state.workspace)
 // Other open workspaces that want you: agents waiting on you, and replies you haven't read.
 function elsewhere(state) {
   const others = (state.workspaces ?? []).filter((w) => !w.current && !w.parked)
@@ -2994,7 +2992,7 @@ const NEXT_THEME = { system: 'light', light: 'dark', dark: 'system' }
 function themeButton(btn) {
   let theme = 'system'
   let drawn = false
-  btn.addEventListener('click', () => crew.call('theme', NEXT_THEME[theme]))
+  btn.addEventListener('click', () => crew.call('theme', NEXT_THEME[theme]).catch((err) => oops('Couldn’t change the theme', err)))
   return (next) => {
     if (drawn && (next ?? 'system') === theme) return // every state push asks; redrawn only when it changes
     drawn = true

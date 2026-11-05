@@ -23,7 +23,7 @@ export const useConvo = () =>
     () => convo,
   )
 
-// Remembered per computer and workspace: every computer's Home is 'default'.
+// Remembered per computer and workspace.
 const keyOf = (mac: string | null, ws: string) => `${mac ?? ''}/${ws}`
 
 // A channel of a workspace, opened: the chat shows it, and the phone opens it again next time.

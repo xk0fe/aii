@@ -15,7 +15,7 @@
 //                   (as macOS does); PowerShell and cmd run the .exe files (core/launch.js withTools).
 //   CREW_HOME       where Crew writes its address (url) and token each time it starts; read on every call, since an
 //                   agent can outlive the Crew that started it. CREW_URL and CREW_TOKEN when those files aren't there.
-//   CREW_AGENT, CREW_WORKSPACE   who is asking, and in which workspace (none: the default).
+//   CREW_AGENT, CREW_WORKSPACE   who is asking, and in which workspace (none: its files are in CREW_HOME itself).
 import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'

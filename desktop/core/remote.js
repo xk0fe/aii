@@ -10,9 +10,8 @@ import http from 'node:http'
 import path from 'node:path'
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { WebSocketServer, WebSocket } from 'ws'
-import { ATTACHMENTS } from './hub.js'
+import { ATTACHMENTS, saveImage } from './hub.js'
 import { CACHE, LINK_DIR } from './crew.js'
-import { DEFAULT } from './workspaces.js'
 import { keyPair, privateKey, publicKey } from './phones.js'
 import { VERSION, PORT, SALT, CLOSE, CALLS, TASK_OPS, CHANNEL_OPS, b64, unb64, utf8, concat, keyInfo, nonce } from 'crew-shared/protocol.js'
 import { diff } from 'crew-shared/sync.js'
@@ -276,7 +275,7 @@ class Session {
   sent = 0 // frames each way so far, each one's nonce (the phone's first was its hi)
   got = 1
   v = 0 // the version of the state the phone has
-  watching = null // the workspace it watches, and its state as the phone has it
+  watching // the workspace it watches (null: this computer has none yet), and its state as the phone has it
   state = null
   patched = 0 // when it last got a patch
   terms = new Map() // the terminals it follows (workspace\0name -> true, or the request still getting its buffer), and
@@ -327,7 +326,8 @@ class Session {
       return h
     }
     const calls = {
-      watch: (ws) => this.watch(hub(ws)),
+      // none named (a phone that hasn't picked one yet): the one on this computer's screen, if there's any
+      watch: (ws) => this.watch(ws ? hub(ws) : crew.screen),
       send: (ws, to, text, images, opts) => {
         const h = hub(ws)
         // said in a channel (its id): Auto picks among its members, and its agents get its brief
@@ -363,7 +363,7 @@ class Session {
       image: (file) => image(file),
       saveImage: (name, type, bytes) => {
         if (!(bytes instanceof Uint8Array)) throw new Error('send the image as bytes')
-        return crew.hub.saveImage(String(name ?? ''), type, bytes)
+        return saveImage(String(name ?? ''), type, bytes)
       },
       terminal: (ws, name, on) => this.terminal(hub(ws), String(name), on),
       input: (ws, name, data) => crew.input(name, String(data ?? ''), hub(ws)),
@@ -378,31 +378,31 @@ class Session {
   }
 
   watch(hub) {
-    this.watching = hub.ws
+    this.watching = hub?.ws ?? null
     this.state = this.view(hub)
-    return { v: ++this.v, state: this.state }
+    return { v: ++this.v, ws: this.watching, state: this.state }
   }
 
   // Something changed: the phone gets what changed in its workspace, at most once every PACE ms.
   changed() {
-    if (!this.watching || this.patchTimer) return
+    if (this.watching === undefined || this.patchTimer) return
     this.patchTimer = setTimeout(() => this.patch(), Math.max(0, this.patched + PACE - Date.now()))
   }
 
   patch() {
     this.patchTimer = null
-    const hub = this.crew.hubs.get(this.watching)
-    if (!hub) {
-      // its workspace is gone: it gets the default's, whole
-      this.watch(this.crew.hub)
-      return this.send({ t: 'state', ws: DEFAULT, v: this.v, state: this.state })
+    const hub = this.crew.hubs.get(this.watching) ?? null
+    // its workspace is gone, or there's a first one now: it gets the one on this computer's screen, whole
+    if (!hub && (this.watching !== null || this.crew.screen)) {
+      const { ws, state } = this.watch(this.crew.screen)
+      return this.send({ t: 'state', ws, v: this.v, state })
     }
     const next = this.view(hub)
     const patch = diff(this.state, next)
     if (!patch) return
     this.state = next
     this.patched = Date.now()
-    this.send({ t: 'patch', ws: hub.ws, v: ++this.v, patch })
+    this.send({ t: 'patch', ws: this.watching, v: ++this.v, patch })
   }
 
   // Follow a terminal (on: replies with what it printed so far, as the app's buffer) or stop.

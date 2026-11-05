@@ -10,7 +10,7 @@ function openAddProvider() {
   setupScreen?.addProvider()
 }
 
-function mountSetup({ onAdd = () => {} } = {}) {
+function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = () => {} } = {}) {
   const view = Object.assign(document.createElement('section'), { className: 'setup-view', hidden: true })
   view.setAttribute('aria-label', 'Set up Claude Code and Codex')
   const sheet = Object.assign(document.createElement('dialog'), { className: 'sheet su-sheet' })
@@ -70,12 +70,25 @@ function mountSetup({ onAdd = () => {} } = {}) {
       ${here ? '' : `<div class="su-how"><button type="button" class="btn su-get" data-url="${esc(g.how.page)}">Download Git for Windows</button></div>`}</div>`
   }
 
-  // What the screen says: nothing ready yet, ready with no agents (make the first), or ready (opened from the menu).
+  // Until there's a workspace there's nothing else to show: this screen stays, and asks for the first.
+  const noWorkspace = () => Boolean(state) && !state.workspace
+
+  // What the screen says: nothing ready yet, ready with no workspace or no agents (make the first), or ready (opened from
+  // the menu).
   function words() {
+    if (noWorkspace() && state.settingsBroken) {
+      return {
+        say: 'Hmm.',
+        title: `${PRODUCT_NAME} can’t read its settings`,
+        lead: 'Something in config.json can’t be read right now. Nothing is written over it, and everything comes back as soon as it can be read again.',
+        more: [],
+      }
+    }
     // no agents anywhere: none here, none of yours (the roster), none in another workspace
     const none = !state.agents?.length && !state.roster?.length && !state.workspaces?.some((w) => w.agents > 0)
     if (!status()?.checked) return { say: 'One moment…', title: 'Looking for Claude Code and Codex', lead: '', primary: ['check', 'Checking…'], more: [['close', 'Close']] }
-    if (!status().ready) {
+    // (Not now, with nothing else to show: on to the workspace, and it says what's missing when an agent starts)
+    if (!status().ready && !(noWorkspace() && dismissed)) {
       const signIn = status().clis.some((c) => c.state === 'signin')
       return {
         say: signIn ? 'Almost there! Can you sign me in?' : 'Hi! I just need Claude Code or Codex.',
@@ -83,6 +96,17 @@ function mountSetup({ onAdd = () => {} } = {}) {
         lead: 'Your crew works through Claude Code or Codex, with your own account. Set up either one, then check again.',
         primary: ['check', checking ? 'Checking…' : 'Check again'],
         more: [['close', 'Not now']],
+      }
+    }
+    if (noWorkspace()) {
+      return {
+        say: 'Hi! What are we working on?',
+        title: 'Make your first workspace',
+        lead: 'A workspace is a project: its folder, the agents who work on it, and its own chat and tasks. Make one for each thing you work on.',
+        primary: ['workspace', 'Create a workspace'],
+        // a second computer: linked, the first one's workspaces show up here on their own
+        more: [['computers', 'Link a computer']],
+        bare: true,
       }
     }
     if (none) {
@@ -104,7 +128,7 @@ function mountSetup({ onAdd = () => {} } = {}) {
   }
 
   function draw() {
-    const open = manual || (shown && !dismissed)
+    const open = manual || (shown && !dismissed) || noWorkspace()
     view.hidden = !open
     if (!open) return
     const w = words()
@@ -118,9 +142,9 @@ function mountSetup({ onAdd = () => {} } = {}) {
         <span class="su-who">${avatarHTML(creature, { size: 96, mood: 'starting', pose: 'pop' })}</span><span class="su-say">${esc(w.say)}</span></div>
       <h1 class="display">${esc(w.title)}</h1>
       <p class="lead">${esc(w.lead)}</p>
-      <div class="group-list su-list">${s.clis.map(cliRow).join('')}${s.git ? gitRow(s.git) : ''}</div>
-      <div class="acts">${btn(w.primary, 'brand-btn su-primary')}${w.more.map((b) => btn(b, '')).join('')}</div>
-      <p class="su-more">Want other models? <button type="button" class="su-link" data-act="providers">Add a provider…</button></p>
+      ${w.bare || !w.primary ? '' : `<div class="group-list su-list">${s.clis.map(cliRow).join('')}${s.git ? gitRow(s.git) : ''}</div>`}
+      <div class="acts">${w.primary ? btn(w.primary, 'brand-btn su-primary') : ''}${w.more.map((b) => btn(b, '')).join('')}</div>
+      ${w.bare || !w.primary ? '' : '<p class="su-more">Want other models? <button type="button" class="su-link" data-act="providers">Add a provider…</button></p>'}
     </div>`)
   }
 
@@ -167,6 +191,8 @@ function mountSetup({ onAdd = () => {} } = {}) {
     if (act === 'check') check()
     if (act === 'close') close()
     if (act === 'providers') addProvider()
+    if (act === 'workspace') onWorkspace()
+    if (act === 'computers') onComputers()
     if (act === 'add') {
       close()
       onAdd()
@@ -254,8 +280,8 @@ function mountSetup({ onAdd = () => {} } = {}) {
   setupScreen = {
     render(next) {
       state = next
-      if (stuck() && !dismissed && !shown) {
-        shown = true
+      if ((stuck() && !dismissed && !shown) || (noWorkspace() && view.hidden)) {
+        shown = stuck()
         const appears = view.hidden // (not already open from the ⋯ menu, where focus is wherever you left it)
         draw()
         if (appears) view.querySelector('.su-primary')?.focus({ preventScroll: true })

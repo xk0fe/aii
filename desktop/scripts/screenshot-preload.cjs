@@ -240,6 +240,7 @@ const TERM = [
 
 // Linked computers, as Crew.computers() reports them: what each one runs.
 const linked = (slug, name, online) => ({
+  spaces: ['storefront'],
   slug, name, online, saved: true, status: online ? { address: LINK.address } : { error: 'unreachable, it reconnects on its own' },
   agents: AGENTS.filter((a) => a.home === slug).map((a) => ({ name: a.name, seed: a.seed, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: false })),
 })
@@ -405,17 +406,16 @@ const SAVER_STATE = {
 SAVER_STATE.week = SAVER_STATE.all
 const state = { savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
 
-// Workspaces, as Crew.workspaces() reports them. Storefront is the default one, renamed and given a quiet grey (so its
-// tile is an S); Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the crew, Storefront
+// Workspaces, as Crew.workspaces() reports them. Storefront has everyone; Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the crew, Storefront
 // in the background with two of its crew needing you and a reply you haven't read, and Research parked.
 const LOCAL = AGENTS.filter((a) => !a.home && !a.cloneOf)
 const faces = (names) => names.map((n) => AGENTS.find((a) => a.name === n)).map((a) => ({ name: a.name, avatar: a.avatar, status: a.status }))
 const WORKSPACES = [
-  { id: 'default', name: 'Storefront', color: '#8e8e93', icon: null, folder: null, parked: false, members: null, agents: 7, on: 6, working: 2, waiting: 2, unread: 1, faces: faces(['Ada', 'Milo', 'Iris', 'Theo']), needs: [...faces(['Milo']).map((f) => ({ ...f, activity: 'Bash: npm run build' })), ...faces(['Iris'])] },
+  { id: 'storefront', name: 'Storefront', color: 'teal', icon: null, folder: here('/Users/you/Projects/storefront'), parked: false, members: LOCAL.map((a) => ({ name: a.name, folder: '' })), agents: 7, on: 6, working: 2, waiting: 2, unread: 1, faces: faces(['Ada', 'Milo', 'Iris', 'Theo']), needs: [...faces(['Milo']).map((f) => ({ ...f, activity: 'Bash: npm run build' })), ...faces(['Iris'])] },
   { id: 'docs', name: 'Docs site', color: 'sky', icon: null, folder: here('/Users/you/Projects/docs-site'), parked: false, members: [{ name: 'June', folder: '' }, { name: 'Iris', folder: '' }, { name: 'Milo', folder: here('/Users/you/Projects/docs-site/theme') }], agents: 3, on: 3, working: 1, waiting: 0, unread: 0, faces: faces(['June', 'Iris', 'Milo']), needs: [] },
   { id: 'research', name: 'Research', color: 'purple', icon: null, folder: here('/Users/you/Notes/research'), parked: true, members: [{ name: 'June', folder: '' }, { name: 'Theo', folder: '' }], agents: 2, on: 2, working: 0, waiting: 0, unread: 0, faces: faces(['June', 'Theo']), needs: [] },
 ]
-// how the shared agents are doing in a workspace other than the default (each has its own session there)
+// how the shared agents are doing in the other workspaces (each has its own session there)
 const AT = { docs: { June: { status: 'working', since: t(4), activity: 'Edit docs/checkout.md' }, Iris: { status: 'idle', since: t(25), activity: '' }, Milo: { status: 'idle', since: t(40), activity: '' } } }
 const EVERY = AGENTS
 const show = (id) => {
@@ -423,7 +423,7 @@ const show = (id) => {
   state.workspace = WORKSPACES.find((w) => w.current)
   const w = state.workspace
   state.parked = w.parked
-  state.agents = id === 'default' ? EVERY
+  state.agents = id === 'storefront' ? EVERY.map((a) => (a.home ? a : { ...a, shared: true }))
     : EVERY.filter((a) => w.members?.some((m) => m.name === a.name)).map((a) => {
       const folder = w.members.find((m) => m.name === a.name).folder || w.folder
       return { ...a, shared: true, cwd: folder ? folder.replace(HOME, '~') : a.cwd, ...AT[id]?.[a.name], ...(w.parked && { status: 'parked' }) }
@@ -445,8 +445,8 @@ if (FIXTURE === 'workspaces') {
   state.remoteWorkspaces = REMOTE
   show('docs')
 } else {
-  WORKSPACES.splice(2) // the default crew has Storefront and Docs site
-  show('default')
+  WORKSPACES.splice(2) // the usual crew has Storefront and Docs site
+  show('storefront')
 }
 window.__crewShow = show
 // The channels' sheet and menu, as Crew.channelAction does them.
@@ -471,11 +471,11 @@ function workspaceAction(op, id, arg) {
   if (op === 'open') (w.parked = false), window.__crewShow(state.workspace.id)
   if (op === 'park') (w.parked = true), window.__crewShow(state.workspace.id)
   if (op === 'order') {
-    const at = (x) => (x.id === 'default' ? -1 : arg.includes(x.id) ? arg.indexOf(x.id) : arg.length)
+    const at = (x) => (arg.includes(x.id) ? arg.indexOf(x.id) : arg.length)
     WORKSPACES.sort((a, b) => at(a) - at(b))
   }
-  // who works there: shared agents in and out (the default has everyone)
-  if (op === 'members' && w && id !== 'default') {
+  // who works there: shared agents in and out
+  if (op === 'members' && w) {
     for (const name of arg.add ?? []) if (!w.members.some((m) => m.name === name)) w.members.push({ name, folder: '' })
     w.members = w.members.filter((m) => !(arg.remove ?? []).includes(m.name))
     Object.assign(w, { agents: w.members.length, on: w.members.length, faces: faces(w.members.map((m) => m.name)) })
@@ -485,7 +485,7 @@ function workspaceAction(op, id, arg) {
   if (op === 'remove') {
     WORKSPACES.splice(WORKSPACES.indexOf(w), 1)
     for (const r of REMOTE) if (r.joined === id) r.joined = null
-    if (w.current) window.__crewShow('default')
+    if (w.current) window.__crewShow(WORKSPACES[0].id)
   }
   // a linked computer's workspace, here too (Crew.workspaceAction join): its copy, or a new one while its owner is on
   if (op === 'join') {

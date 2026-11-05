@@ -200,9 +200,9 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   // sidebar: here it's the crew itself).
   function drawHead() {
     const crewNow = roster()
-    const ws = hasWorkspaces(state) ? state.workspace : null
+    const ws = state.workspace
     const on = crewNow.filter((a) => a.on).length
-    const who = ws ? `Everyone in ${ws.name}` : 'Your whole crew'
+    const who = ws ? `Everyone in ${ws.name}` : ''
     const line = crewNow.length ? `${who} · ${on} of ${crewNow.length} on` : 'Nobody yet' // parked: the banner under it says so
     const sub = head.querySelector('.ph-sub')
     if (sub.textContent !== line) sub.textContent = line
@@ -213,7 +213,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
 
   let emptyKey = ''
   function drawEmpty() {
-    const ws = hasWorkspaces(state) && state.workspace?.id !== 'default' ? state.workspace : null
+    // anyone to pick? With nobody on your roster yet, it's your first agent, whichever workspace you're in
+    const ws = state.roster?.length ? state.workspace : null
     const next = JSON.stringify([ws?.id, ws?.name])
     if (next === emptyKey) return
     emptyKey = next
@@ -866,8 +867,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   }
   const onHint = () => `Stays ${draft.on ? 'on' : 'off'} after restarts`
 
-  // Linked computers an agent can run on from here: in a workspace other than the default, the ones that have it too.
-  const linkedHere = (c) => (c.links ?? []).filter((l) => !state.workspace || state.workspace.id === 'default' || l.spaces?.includes(state.workspace.id))
+  // Linked computers an agent can run on from here: the ones that have this workspace too.
+  const linkedHere = (c) => (c.links ?? []).filter((l) => l.spaces?.includes(state.workspace?.id))
 
   // Its folder and which computer it runs on. An agent that exists moves with the move sheet (its conversation goes
   // along); a new one is simply made there.
@@ -881,9 +882,9 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       : live
         ? row('Computer', `<span class="ed-pc">${at.here ? ICONS.desktop : ICONS.laptop}<b>${esc(at.name)}</b>${at.here ? `<small>${THIS_COMPUTER}</small>` : ''}</span><button class="btn" data-act="move-to" title="Its chat comes along" ${places.some((p) => p.slug !== (d.home ?? '') && p.online) ? '' : 'disabled'}>${ICONS.move}<span>Move…</span></button>`)
         : row('Computer', choices('home', places.filter((p) => p.online || p.slug === d.home).map((p) => choice(p.slug, esc(p.name))).join(''), { fill: false }))
-    // in a workspace other than the default: whether it's one of your shared agents or only this workspace's, and its
-    // folder is the workspace's unless it has one of its own
-    const ws = state.workspace && state.workspace.id !== 'default' ? state.workspace : null
+    // whether it's one of your shared agents or only this workspace's, and its folder is the workspace's unless it has
+    // one of its own
+    const ws = state.workspace
     const lives = !ws ? ''
       : live
         ? row('Lives in', `<span class="ed-pc">${wsTile(ws, { size: 18 })}<b>${live.shared ? 'Your crew' : `${esc(ws.name)} only`}</b></span>`, { note: live.shared ? 'the same agent in every workspace it works in' : `only ${esc(ws.name)} has it` })
@@ -1073,18 +1074,26 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
 
   function moreMenu(anchor) {
     const a = agentNamed(editing)
+    const shared = Boolean(a?.shared)
     popMenu(anchor, [
       { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a?.on || a.freshPending, hint: a?.freshPending ? 'when it’s free' : a?.convo?.context ? `${a.convo.context.pct}% full` : '' },
       { label: 'Export…', icon: ICONS.export, act: 'export', hint: '.crew file' },
       { label: 'Move to another computer…', icon: ICONS.move, act: 'move', disabled: !linkedHere(state.computers ?? {}).some((l) => l.online) && !draft.home },
       '-',
-      { label: 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
+      { label: shared ? `Take out of ${state.workspace.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
+      ...(shared ? [{ label: 'Remove from your crew…', icon: ICONS.trash, act: 'forget', danger: true }] : []),
     ], async (act) => {
       if (act === 'fresh') freshStart()
       if (act === 'export') exportAgents([editing])
       if (act === 'move') moveMenu(anchor)
-      if (act === 'remove' && confirm(`Remove ${draft.name || editing}? Its session stops (the transcript stays with the CLI).`)) {
+      if (act === 'remove' && confirm(shared
+        ? `Take ${draft.name || editing} out of ${state.workspace.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your crew and your other workspaces.`
+        : `Remove ${draft.name || editing}? It's only in ${state.workspace.name}, so it's gone for good. Its session stops (the transcript stays with the CLI).`)) {
         await crew.call('removeAgent', editing)
+        close(true)
+      }
+      if (act === 'forget' && confirm(`Remove ${draft.name || editing} from your crew? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) {
+        await crew.call('removeAgent', editing, { everywhere: true })
         close(true)
       }
     })

@@ -38,6 +38,7 @@ after(() => {
 const home = () => crew.hubs.get('default')
 const shop = () => crew.hubs.get('storefront')
 const data = () => JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
+const homeOf = () => data().workspaces.find((w) => w.id === 'default')
 // `crew app <words>` from an agent, as the /app route hands it over
 const app = (from, line, { hub = home(), hold } = {}) => crew.tool(hub, from, line, undefined, { hold })
 const asks = (hub = home()) => hub.feed.filter((e) => e.kind === 'ask' && !e.answer)
@@ -91,7 +92,7 @@ test('looking never asks: agents, brains, channels, workspaces, computers', asyn
   assert.doesNotMatch(await app('iris', ['brains']), /GLM/, 'only the brains the picker offers')
   assert.match(await app('iris', ['channels']), /^#general +everyone +\(no brief\)$/m)
   const spaces = await app('iris', ['workspaces'], { hub: shop() })
-  assert.match(spaces, /^Home +the default$/m)
+  assert.match(spaces, /^Home +id default · @iris @june @milo$/m)
   assert.match(spaces, new RegExp(`^Storefront +id storefront · ${FOLDER} · @iris · you're here$`, 'm'))
   assert.match(await app('iris', ['computers']), /^Studio +this computer$/m)
   assert.doesNotMatch(await app('iris', ['computers']), /crew1\./, "never this computer's link code")
@@ -108,10 +109,10 @@ test('ask first: a card where the agent is working; allowed, the change is made 
   assert.equal(e.cli, 'crew')
   assert.deepEqual(e.ask, { type: 'permission', tool: 'crew app', app: true, title: 'Add a channel', code: '#design\nPixels only: no backend changes.', detail: 'For @iris, @june', say: 'Can I add a #design channel?', always: [], alert: 'wants to add a channel' })
   assert.equal(iris.status, 'waiting')
-  assert.equal(data().channels, undefined, 'nothing changes until you say yes')
+  assert.equal(homeOf().channels, undefined, 'nothing changes until you say yes')
   await home().answer(e.id, { allow: true })
   assert.equal(await out, 'The user allowed it: added #design.\n')
-  assert.deepEqual(data().channels, [{ id: 'design', name: 'design', brief: 'Pixels only: no backend changes.', members: ['iris', 'june'] }])
+  assert.deepEqual(homeOf().channels, [{ id: 'design', name: 'design', brief: 'Pixels only: no backend changes.', members: ['iris', 'june'] }])
   assert.deepEqual({ ...e.answer, at: 0 }, { by: 'you', allow: true, at: 0 })
   assert.equal(iris.status, 'working')
   await assert.rejects(Promise.resolve().then(() => home().answer(e.id, { allow: true })), /already been answered/)
@@ -126,7 +127,7 @@ test("said no: nothing changes, and the agent hears why; the first answer wins (
   assert.throws(() => home().answer(e.id, { allow: true }), /already been answered/)
   await first
   assert.equal(await out, 'The user said no: use #general for that\n')
-  assert.equal(data().channels.some((c) => c.id === 'random'), false)
+  assert.equal(homeOf().channels.some((c) => c.id === 'random'), false)
   assert.deepEqual({ ...e.answer, at: 0 }, { by: 'you', allow: false, note: 'use #general for that', at: 0 })
 })
 
@@ -150,9 +151,8 @@ test("checked before you're asked: a wrong name, brain, folder or member fails a
   await no(['agent', 'edit', 'iris@laptop', '--area', 'x'], /@iris@laptop is on another computer/)
   await no(['workspace', 'add', 'storefront'], /there's a workspace called storefront already/)
   await no(['workspace', 'add', 'Lab', '--members', 'kit'], /@kit isn't one of your agents/, "a workspace's own agent works only there")
-  await no(['workspace', 'members', 'Home', '--add', 'june'], /all your agents work in Home/)
+  await no(['workspace', 'members', 'Home', '--add', 'june'], /that's how Home is already/)
   await no(['workspace', 'members', 'Storefront', '--add', 'iris'], /nothing to change: that's how Storefront is already/)
-  await no(['workspace', 'remove', 'Home'], /Home can't be removed/)
   await no(['workspace', 'wake', 'Storefront'], /Storefront is awake already/)
   await no(['channel', 'add', 'x', '--in', 'Attic'], /there's no workspace called Attic \(crew app workspaces lists them\)/)
   await no(['link', 'hello'], /that's not a CLIque pairing code/)
@@ -171,7 +171,7 @@ test("its command stops waiting: the card stays up (even past its turn), and wha
   home().closeAsks(iris) // its turn ended meanwhile
   assert.equal(lastAsk()?.id, e.id, 'still up')
   await home().answer(e.id, { allow: true })
-  assert.equal(data().channels.find((c) => c.id === 'design').brief, 'Pixels and copy')
+  assert.equal(homeOf().channels.find((c) => c.id === 'design').brief, 'Pixels and copy')
   const told = iris.inbox.find((m) => m.crew)
   assert.equal(told.text, '[crew] You asked to change #design (crew app). The user allowed it: changed #design.')
   assert.equal(told.id, e.id, 'its reply goes where the card was')
@@ -207,7 +207,7 @@ test('automatic: a change goes through and says so where the agent works; removi
   fresh()
   mode('auto')
   assert.equal(await app('iris', ['channel', 'add', 'qa', '--brief', 'Test plans']), 'added #qa\n')
-  assert.equal(data().channels.at(-1).id, 'qa')
+  assert.equal(homeOf().channels.at(-1).id, 'qa')
   const said = home().feed.at(-1)
   assert.deepEqual([said.kind, said.from, said.text, said.app], ['event', 'iris', 'added the #qa channel', true])
   assert.equal(asks().length, 0)
@@ -244,7 +244,7 @@ test("agents: one added where the agent works is that workspace's own (--crew: o
   assert.deepEqual(sf().agents.find((a) => a.name === 'bob'), { name: 'bob', area: 'QA for checkout', provider: 'claude', model: 'sonnet', cwd: FOLDER, off: true })
   assert.equal(data().agents.some((a) => a.name === 'bob'), false)
   assert.equal(await app('iris', ['agent', 'add', 'cleo', '--area', 'docs', '--brain', 'Codex', '--effort', 'low', '--crew'], { hub: shop() }), 'added @cleo, starting now\n')
-  assert.deepEqual(data().agents.find((a) => a.name === 'cleo'), { name: 'cleo', area: 'docs', provider: 'codex', effort: 'low', off: true }, "off in Home until it's turned on there")
+  assert.deepEqual(data().agents.find((a) => a.name === 'cleo'), { name: 'cleo', area: 'docs', provider: 'codex', effort: 'low' }, 'who it is; whether it\'s on is each workspace\'s')
   assert.deepEqual(sf().members.cleo, {})
   // from Home, into Storefront
   assert.equal(await app('june', ['agent', 'add', 'dot', '--in', 'storefront']), 'added @dot in Storefront, starting now\n')
@@ -365,7 +365,8 @@ test('a look that can\'t be set changes nothing, not even in memory (a later sav
 
 test('automatic: anything that starts a YOLO agent, points it somewhere new or tells it what to do still asks', async () => {
   const cfg = data()
-  cfg.agents.push({ name: 'rex', area: 'scripts', yolo: true, off: true })
+  cfg.agents.push({ name: 'rex', area: 'scripts', yolo: true })
+  cfg.workspaces.find((w) => w.id === 'default').members.rex = { off: true }
   fs.writeFileSync(CONFIG, JSON.stringify(cfg))
   crew.config.load()
   fresh()
@@ -410,7 +411,7 @@ test("checked again when you answer: config.json unreadable, tools turned off, o
   await home().answer(lastAsk().id, { allow: true })
   crew.config.broken = false
   assert.equal(await out, "The user allowed it, but it didn't work: CLIque can't read its settings (config.json) right now, so it changes nothing until it can\n")
-  assert.equal(data().channels.some((c) => c.id === 'late'), false)
+  assert.equal(homeOf().channels.some((c) => c.id === 'late'), false)
 
   mode('auto')
   await app('iris', ['workspace', 'add', 'Temp'])

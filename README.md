@@ -31,7 +31,8 @@ You need a Mac (Apple silicon or Intel) or a Windows PC (Windows 10 or 11), with
 
 1. **Install.** On a Mac, drag CLIque into Applications. On Windows, run the installer.
 2. **Open it.** CLIque finds Claude Code and Codex, and tells you exactly what to install or sign in to if one is missing.
-3. **Add your first agent**, give it a job, and start talking.
+3. **Make your first workspace**: a name and the folder of what you're working on.
+4. **Add your first agent**, give it a job, and start talking.
 
 On Windows, Git for Windows is recommended: Claude Code runs its commands in Git Bash when it's there.
 
@@ -137,9 +138,9 @@ Give each project a workspace: its folder, the agents who work on it, and its ow
   <img src="docs/images/computers-light.webp" alt="Computers: Studio, Workstation and a laptop linked, a Mac mini nearby to link, and an iPhone and a Pixel paired">
 </picture>
 
-Open **Computers** on two of your machines and they find each other. Click **Link**, check the code is the same on both screens, and each one sees the whole crew. Chat with any agent and watch its terminal from either side. Drag an agent to another computer and its conversation goes with it.
+Open **Computers** on two of your machines and they find each other. Click **Link**, check the code is the same on both screens, and each one's workspaces show up on the other. Add agents from both to a workspace and they work as one crew. Chat with any of them and watch its terminal from either side. Drag an agent to another computer and its conversation goes with it.
 
-A workspace belongs to the computer that made it. Your other computers can **Join** it while that computer is on, and add agents of their own. Two workspaces with the same name on different computers stay separate.
+A workspace belongs to the computer that made it. It shows up on your other computers on its own, and they can add agents of their own. Two workspaces with the same name on different computers stay separate.
 
 ## Spend less
 
