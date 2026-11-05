@@ -648,6 +648,10 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 .bubble.open { max-height: none; }
 .bubble.long { cursor: pointer; }
 .bubble.long:not(.open) { -webkit-mask-image: linear-gradient(#000 calc(100% - 4.5em), transparent); }
+/* what agents say to each other: five lines, quieter, the rest a click away */
+.bubble.between { color: var(--fg2); }
+.bubble.between.long:not(.open) { max-height: 7.5em; }
+.bubble.between.long:not(.open) { -webkit-mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); }
 .more { all: unset; display: inline-flex; align-items: center; gap: 6px; margin: 5px 0 0; font-size: 12px; font-weight: 500; color: var(--fg2); cursor: pointer; }
 .more::after { content: ''; width: 5px; height: 5px; border: solid currentColor; border-width: 0 1.6px 1.6px 0; transform: translateY(-2px) rotate(45deg); transition: transform .3s var(--out); }
 .bubble.open + .more::after { transform: translateY(1px) rotate(-135deg); }
@@ -686,11 +690,11 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 
 /* threads: a reply quotes what it answers (a bar in the quoted sender's color), a message links to its replies */
 .quote, .replied { all: unset; box-sizing: border-box; cursor: pointer; max-width: 100%; font-size: 12px; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quote { display: flex; align-items: center; gap: 5px; margin: 0 0 4px; padding: 4px 10px 4px 7px; border-radius: var(--r-control); background: var(--fill); transition: background .15s, color .15s; }
-.quote svg { flex: none; width: 13px; height: 13px; color: var(--fg2); }
+.quote { display: flex; align-items: center; gap: 5px; margin: 0 0 2px; transition: color .15s; }
+.quote svg { flex: none; width: 12px; height: 12px; color: var(--fg3); }
 .quote b { flex: none; font-weight: 600; color: var(--fg); }
 .quote span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.quote:hover { background: var(--fill-hover); color: var(--fg); }
+.quote:hover { color: var(--fg); }
 .replied { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 1px 0; font-weight: 500; color: var(--fg2); transition: color .15s; }
 .replied svg { width: 13px; height: 13px; flex: none; }
 .replied span { overflow: hidden; text-overflow: ellipsis; }
@@ -956,18 +960,24 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .new-line { display: flex; align-items: center; gap: 8px; margin: 0 2px -4px; animation: hint-in var(--t-move) var(--out); }
 .new-line::before { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
 .new-line span { font-size: 12px; font-weight: 500; color: var(--accent); }
-/* Scrolled up while messages came in: a pill to jump back down. It sticks to the feed's bottom edge and takes no
-   space (the negative margin cancels the feed's gap), so showing or hiding it moves nothing. */
+/* where a day starts */
+.day-line { display: flex; align-items: center; gap: 10px; margin: 2px 0 -2px; user-select: none; }
+.day-line::before, .day-line::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.day-line span { font-size: 12px; font-weight: 500; color: var(--fg2); }
+/* Scrolled up: a way back down, round, or a pill counting what came in meanwhile. It sticks to the feed's bottom edge
+   and takes no space (the negative margin cancels the feed's gap), so showing or hiding it moves nothing. */
 .feed-latest { position: sticky; bottom: 0; z-index: 3; align-self: center; height: 0; margin-top: -14px; }
 .feed-latest button {
-  position: absolute; left: 0; bottom: 14px; translate: -50% 0; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 12px 0 9px;
-  border: 0; border-radius: var(--r-control); background: var(--float); color: var(--fg); font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer;
+  position: absolute; left: 0; bottom: 14px; translate: -50% 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 32px; height: 32px; padding: 0 12px 0 9px;
+  border: 0; border-radius: 16px; background: var(--float); color: var(--fg); font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer;
   box-shadow: var(--shadow-float);
   opacity: 0; scale: .85; visibility: hidden; transition: opacity var(--t-leave) var(--in), scale var(--t-leave) var(--in), visibility 0s var(--t-leave);
 }
 .feed-latest.on button { opacity: 1; scale: 1; visibility: visible; transition: opacity var(--t-pop) var(--out), scale var(--t-move) var(--out), visibility 0s; }
 .feed-latest button:hover { background: var(--surface-2); }
 .feed-latest svg { width: 14px; height: 14px; rotate: 180deg; }
+.feed-latest button:has(span:empty) { padding: 0; }
+.feed-latest span:empty { display: none; }
 .sum.unread { color: var(--accent); }
 .dot.unread { background: var(--accent); }
 

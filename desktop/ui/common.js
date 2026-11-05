@@ -1145,6 +1145,17 @@ function mountConvoHead(el, { onBack, onTerminal }) {
 // queued: open questions live in the chat's Needs you queue (mountFeed), so the feed only points at them.
 // face: the creatures' size beside their messages. rows: everyone down the left like a group chat, you included (the
 // dashboard); otherwise yours sit on the right (the floating chat).
+const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString()
+// The line where a day starts: "Today", "Yesterday", "Mon, Nov 2", with the year when it isn't this one.
+function dayLabel(ts, now = Date.now()) {
+  if (sameDay(ts, now)) return 'Today'
+  const before = new Date(now)
+  before.setDate(before.getDate() - 1)
+  if (sameDay(ts, before.getTime())) return 'Yesterday'
+  const d = new Date(ts)
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', ...(d.getFullYear() !== new Date(now).getFullYear() && { year: 'numeric' }) })
+}
+
 const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divider, only, here, queued = false, face = 28, rows = false, channels = [], channel = null } = {}) => {
   const merged = mergeSends(feed)
   const visible = merged.shown.filter((e) => !e.answers)
@@ -1163,7 +1174,8 @@ const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divide
     if (e.ask && e.answered?.reply && !ctx.backTo[e.answered.reply]) ctx.backTo[e.answered.reply] = { to: e.from }
   }
   const line = '<div class="new-line" aria-label="New replies"><span>New</span></div>'
-  return { items, html: () => items.map((e, i) => (e.id === divider ? line : '') + feedItem(e, items[i - 1], ctx)).join('') }
+  const day = (e, prev) => (prev && sameDay(prev.ts, e.ts) ? '' : `<div class="day-line"><span>${esc(dayLabel(e.ts))}</span></div>`)
+  return { items, html: () => items.map((e, i) => day(e, items[i - 1]) + (e.id === divider ? line : '') + feedItem(e, items[i - 1], ctx)).join('') }
 }
 
 // An empty channel: what it's for, and who its agents are. Its brief is what they're told with their first message here.
@@ -1237,7 +1249,7 @@ function feedItem(e, prev, ctx) {
   }
   const name = (n) => (n === 'you' ? 'You' : `<span class="who${here(n)}" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">${label(n)}</span>`)
   const time = new Date(e.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  const repeat = prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && !prev.auto === !e.auto && e.ts - prev.ts < 120000 && !e.re
+  const repeat = prev && prev.kind === e.kind && prev.from === e.from && prev.to === e.to && !prev.auto === !e.auto && e.ts - prev.ts < 120000 && !e.re && sameDay(prev.ts, e.ts)
   // a message from a channel, shown somewhere that isn't that channel (an agent's conversation, the floating chat)
   const from = channelOf(e, ctx.channels)
   const where = from !== 'general' && from !== ctx.channel ? `<span class="tag ch" title="${esc(`Said in #${ctx.channels.find((c) => c.id === from).name}`)}">#${esc(ctx.channels.find((c) => c.id === from).name)}</span>` : ''
@@ -1262,7 +1274,9 @@ function feedItem(e, prev, ctx) {
     const a = mentioned(n, Object.values(byName))
     return a ? `<span class="mention" style="--c:${agentColor(a)}">${at}</span>` : at
   })
-  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}${e.empty ? ' wordless' : ''}" data-id="${e.id}">${text}</div>`
+  // what agents say to each other stays out of the way of what's for you: it folds sooner, in a quieter colour
+  const between = e.from !== 'you' && e.kind !== 'reply' && e.kind !== 'ask'
+  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}${between ? ' between' : ''}${e.empty ? ' wordless' : ''}" data-id="${e.id}">${text}</div>`
   const cap = (html) => (cont ? '' : `<div class="cap">${html}${tags}<span class="time">${time}</span></div>`)
   // hover a message for its tools: Reply (the chat's message box then answers it)
   const tools = `<div class="msg-tools"><button class="msg-tool" data-reply="${e.id}" title="Reply to this message">${ICONS.reply}<span>Reply</span></button></div>`
@@ -1545,7 +1559,7 @@ function subTree(a, cap = 4) {
         <span class="sub-line"><span class="sub-kind">${esc(subType(s.type))}</span><span class="sub-job">${esc(s.description || 'sub-agent')}</span></span>
         <span class="sub-doing">${esc(done ? 'done' : s.activity || 'starting…')}</span>
       </span>
-      <span class="sub-meta">${s.tools ? `${plural(s.tools, 'step')}<br>` : ''}${duration((s.ended ?? Date.now()) - s.started)}</span>
+      <span class="sub-meta">${s.tools ? `${plural(s.tools, 'step')} · ` : ''}${duration((s.ended ?? Date.now()) - s.started)}</span>
     </div>`
   }).join('')}${all.length > subs.length ? `<div class="sub-row sub-more"><span class="sub-face"></span><span class="sub-doing">+${all.length - subs.length} more</span></div>` : ''}</div>`
 }
@@ -1611,7 +1625,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
   let first = true
   // Pinned while you're at the bottom: new messages, typing rows and folding long bubbles keep it there.
   // Scrolled up, nothing moves under you: a re-render puts the message you were reading back where it was, and a
-  // pill counts what came in below.
+  // button leads back down, counting what came in below.
   let pinned = true
   let gliding = false
   let missed = 0 // messages that came in while you were scrolled up
@@ -1682,8 +1696,11 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
   const count = latest.querySelector('span')
   // runs on every scroll event, so it only touches the DOM when something changed
   const drawLatest = () => {
-    latest.classList.toggle('on', missed > 0 && !pinned)
-    if (missed && count.textContent !== `${missed} new`) count.textContent = `${missed} new`
+    const on = !pinned && (missed > 0 || el.scrollHeight - el.scrollTop - el.clientHeight > 160)
+    latest.classList.toggle('on', on)
+    if (!on) return // the count stays on it as it fades away
+    const words = missed ? `${missed} new` : ''
+    if (count.textContent !== words) count.textContent = words
   }
   const toLatest = () => {
     pinned = true
@@ -1903,13 +1920,15 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     bubble.classList.toggle('open')
     open[open.has(bubble.dataset.id) ? 'delete' : 'add'](bubble.dataset.id)
     measure()
+    settle() // opened at the end, you're reading it now: the next message mustn't pull you past it
   }
   // Long messages fold with a fade and a "Show more" button. Measured whenever the feed is visible and changes
   // size (a hidden chat panel has no layout, so it's measured again when it opens).
   // All the measuring first, then all the changes: measuring after each change would lay the feed out again per bubble.
   const measure = () => {
     const bubbles = [...el.querySelectorAll('.bubble')].filter((b) => b.offsetParent)
-    const long = bubbles.map((b) => b.scrollHeight > parseFloat(getComputedStyle(b).fontSize) * 22 + 4)
+    // what's between agents folds to five lines, once that hides more than a line
+    const long = bubbles.map((b) => b.scrollHeight > parseFloat(getComputedStyle(b).fontSize) * (b.classList.contains('between') ? 9 : 22) + 4)
     bubbles.forEach((b, i) => {
       b.classList.toggle('long', long[i])
       let more = b.nextElementSibling?.matches('.more') ? b.nextElementSibling : null
@@ -2109,7 +2128,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       last = { feed, agents, reads, workspace, channels: chans }
       const view = feedView(feed, agents, open, limit, drafts, { reads, divider: words.length ? null : divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline, channels, channel: convo ? null : channel })
       shown = new Map(view.items.map((e) => [e.id, e]))
-      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief]))
+      let next = view.items.map((e) => e.id + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
       // searching, who's at work right now isn't part of the results
