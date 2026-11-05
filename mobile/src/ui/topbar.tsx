@@ -1,6 +1,6 @@
-// The bar at the top of every tab, one row: the workspace this phone watches (tap to switch) with a line under its name
-// saying how the computer is reached and, from the screen, who's at work. A screen can put its own control on the
-// right, or replace the switcher on the left (the chat: ☰ and where you are).
+// The tops of the screens. The chat's bar: one row with whatever says where you are. The other tabs' head: one title
+// with one line under it (the workspace, what's going on there, or the computer's state), and at the right the
+// workspace's tile, which switches. One header each, however many facts it has to carry.
 import { router } from 'expo-router'
 import type { ReactNode } from 'react'
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
@@ -10,9 +10,8 @@ import type { Link } from '@/net/client'
 import { useCrew } from '@/state/hooks'
 
 import { clock, when } from './format'
-import { Icon } from './icon'
 import { Press, WsTile } from './parts'
-import { themes, type Theme } from './theme'
+import { type as typeScale, themes, type Theme } from './theme'
 
 // "Studio unreachable since 14:02", or why the computer turned us away.
 export function offlineText(link: Link, macName: string) {
@@ -22,69 +21,61 @@ export function offlineText(link: Link, macName: string) {
   return `${macName} unreachable since ${since}`
 }
 
-export function TopBar({ t, background, sub, left, right }: { t: Theme; background?: string; sub?: ReactNode; left?: ReactNode; right?: ReactNode }) {
+export function TopBar({ background, children }: { background: string; children: ReactNode }) {
+  const insets = useSafeAreaInsets()
+  return (
+    <View style={[styles.bar, { paddingTop: insets.top, backgroundColor: background }]}>
+      <View style={styles.row}>{children}</View>
+    </View>
+  )
+}
+
+// A tab's head. `workspace`: this tab shows one workspace, so the head says which and can switch it.
+export function TabHead({ t, title, sub, workspace = true }: { t: Theme; title: string; sub?: string; workspace?: boolean }) {
   const insets = useSafeAreaInsets()
   const { client, link, state, ws, switching } = useCrew()
   const w = state?.workspaces?.find((x) => x.id === ws) ?? state?.workspace
-  const others = (state?.workspaces ?? []).filter((x) => x.id !== ws)
-  const needsElsewhere = others.reduce((n, x) => n + (x.waiting ?? 0), 0)
+  const needsElsewhere = (state?.workspaces ?? []).filter((x) => x.id !== ws).reduce((n, x) => n + (x.waiting ?? 0), 0)
   const name = w?.name ?? ws
-  const bg = background ?? t.bg
-  const mac = client?.demo ? 'Demo' : (client?.macName ?? '')
-  // the connection comes first: while it's down, that's all the line says
-  const status =
-    link.status === 'offline' && client ? (
-      <Text style={{ color: t.waitingInk }}>{offlineText(link, client.macName)}</Text>
-    ) : link.status === 'connecting' && client && !client.demo ? (
-      <Text style={{ color: t.fg3 }}>Connecting to {client.macName}…</Text>
-    ) : (
-      <>
-        {mac}
-        {sub ? <Text style={{ color: t.fg3 }}>{'  ·  '}</Text> : null}
-        {sub}
-      </>
-    )
+  const offline = workspace && link.status === 'offline' && client ? offlineText(link, client.macName) : ''
+  const connecting = workspace && link.status === 'connecting' && client && !client.demo ? `Connecting to ${client.macName}…` : ''
+  const line = offline || connecting || (workspace ? [name, sub].filter(Boolean).join('  ·  ') : (sub ?? ''))
   return (
-    <View style={[styles.bar, { paddingTop: insets.top + 2, backgroundColor: bg }]}>
-      <View style={styles.row}>
-        {left ?? (
-          <Press onPress={() => router.push('/workspaces')} style={styles.ws} accessibilityRole="button" accessibilityLabel={`Workspace ${name}. Switch workspace`} hitSlop={8}>
-            <View>
-              <WsTile t={t} ws={w ?? { id: ws, name }} size={34} />
-              {needsElsewhere ? (
-                <View style={[styles.elsewhere, { backgroundColor: themes.light.waitingInk, borderColor: bg }]}>
-                  <Text style={styles.elsewhereText} maxFontSizeMultiplier={1}>{needsElsewhere > 9 ? '9+' : needsElsewhere}</Text>
-                </View>
-              ) : null}
-            </View>
-            <View style={styles.titles}>
-              <View style={styles.nameRow}>
-                <Text style={[styles.wsName, { color: t.fg }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                  {name}
-                </Text>
-                {switching ? <ActivityIndicator size="small" color={t.fg3} style={styles.spinner} /> : <Icon name="down" size={11} color={t.fg3} weight="bold" />}
-              </View>
-              <Text style={[styles.sub, { color: t.fg2 }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                {status}
+    <View style={[styles.head, { paddingTop: insets.top + 8, backgroundColor: t.bg }]}>
+      <View style={styles.headText}>
+        <Text style={[typeScale.display, { color: t.fg }]} accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={1.4}>
+          {title}
+        </Text>
+        {line ? (
+          <Text style={[styles.headLine, { color: offline ? t.waitingInk : t.fg2 }]} numberOfLines={workspace ? 1 : 3} maxFontSizeMultiplier={1.4}>
+            {line}
+          </Text>
+        ) : null}
+      </View>
+      {workspace ? (
+        <Press onPress={() => router.push('/workspaces')} style={styles.tile} accessibilityRole="button" accessibilityLabel={`Workspace ${name}. Switch workspace`} hitSlop={8}>
+          <WsTile t={t} ws={w ?? { id: ws, name }} size={36} />
+          {switching ? <ActivityIndicator style={StyleSheet.absoluteFill} size="small" color={t.fg} /> : null}
+          {needsElsewhere ? (
+            <View style={[styles.elsewhere, { backgroundColor: themes.light.waitingInk, borderColor: t.bg }]}>
+              <Text style={styles.elsewhereText} maxFontSizeMultiplier={1}>
+                {needsElsewhere > 9 ? '9+' : needsElsewhere}
               </Text>
             </View>
-          </Press>
-        )}
-        {right}
-      </View>
+          ) : null}
+        </Press>
+      ) : null}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  bar: { paddingHorizontal: 16, paddingBottom: 6 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48 },
-  ws: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
-  titles: { flexShrink: 1, gap: 1 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  wsName: { fontSize: 17, lineHeight: 21, fontWeight: '600', flexShrink: 1 },
-  sub: { fontSize: 13, lineHeight: 17 },
+  bar: { paddingHorizontal: 16, paddingBottom: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', minHeight: 44 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingBottom: 10 },
+  headText: { flex: 1, minWidth: 0 },
+  headLine: { fontSize: 14, lineHeight: 19 },
+  tile: { width: 36, height: 36 },
   elsewhere: { position: 'absolute', right: -6, top: -5, minWidth: 17, height: 17, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   elsewhereText: { color: '#FFFFFF', fontSize: 10, fontWeight: '600' },
-  spinner: { transform: [{ scale: 0.6 }], width: 12, height: 12 },
 })

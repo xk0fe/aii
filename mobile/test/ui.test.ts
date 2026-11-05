@@ -1,10 +1,10 @@
 // The words and pictures the screens are made of, without React: status in plain words, the creatures' own voice,
-// the Crew room's headline and where everyone stands, the poses, the felt.
+// the crew's headline, the poses, the felt.
 import type { Agent, FeedEntry } from '@/net/types'
 import { BODIES, COLORS, moodOf, poseArt, poseOf, type Pose, type Spec } from '@/ui/avatar'
 import { ellipse, flatten, fuzz, fuzzy, roundRect, toPath } from '@/ui/felt'
 import { activityWords, brainLine, reachedOver, reasonOf, statusWord, tryWords, voiceOf } from '@/ui/format'
-import { andList, headline, needsOf, roomLayout, ROOM } from '@/ui/room'
+import { andList, headline, needsOf } from '@/ui/room'
 import { makeDemo } from '@/demo/fixture'
 
 const agent = (a: Partial<Agent> & { name: string }): Agent => ({ status: 'idle', on: true, ...a })
@@ -92,7 +92,7 @@ describe("the creature's own voice", () => {
   })
 })
 
-describe('the Crew room', () => {
+describe('how the crew is doing', () => {
   test('the demo: two need you, in plain words', () => {
     expect(headline(store.agents, open)).toEqual({ title: '2 of your crew need you', line: 'Milo wants to run a command and Iris has a question.' })
     expect(needsOf(store.agents, open).map((n) => [n.agent.name, n.kind])).toEqual([['Milo', 'ok'], ['Iris', 'question']])
@@ -109,54 +109,18 @@ describe('the Crew room', () => {
     expect(headline([], []).title).toBe('No one here yet')
     expect(headline(busy, [], true).title).toBe('Asleep')
   })
-  test("a clone's question is its agent's: the headline, the row and the room agree", () => {
+  test("a clone's question is its agent's: the headline and the row agree", () => {
     const ada = agent({ name: 'Ada', status: 'idle' })
     const clone = agent({ name: 'Ada.2', cloneOf: 'Ada', status: 'waiting' })
     const ask = { id: 'q', ts: 1, kind: 'ask', from: 'Ada.2', ask: { type: 'question', questions: [] } } as FeedEntry
     expect(needsOf([ada], [ask], [ada, clone]).map((n) => [n.agent.name, n.kind])).toEqual([['Ada', 'question']])
     expect(needsOf([ada], [], [ada, clone]).map((n) => [n.agent.name, n.kind])).toEqual([['Ada', 'terminal']])
     expect(headline([ada], [ask], false, [ada, clone]).title).toBe('Ada needs you')
-    const { spots } = roomLayout([ada], 361, 5, new Set(['Ada']))
-    expect(spots[0].y + spots[0].size).toBe(ROOM.frontFloor)
-  })
-  test('a full front row keeps whoever needs you, and sends the busy to the back', () => {
-    const crew = [...['A', 'B', 'C', 'D', 'E'].map((name) => agent({ name, status: 'working' })), agent({ name: 'Needy', status: 'waiting' })]
-    const { spots } = roomLayout(crew, 361)
-    const front = spots.filter((s) => s.y + s.size === ROOM.frontFloor).map((s) => s.name)
-    expect(front).toContain('Needy')
-    expect(front).toHaveLength(5)
-    expect(spots.map((s) => s.name).sort()).toEqual(crew.map((a) => a.name).sort())
   })
   test('many waiting fold into "and 2 more"', () => {
     const many = ['Ada', 'Milo', 'Iris', 'Theo'].map((name) => agent({ name, status: 'waiting' }))
     expect(headline(many, []).line).toBe('Ada is waiting in its terminal, Milo is waiting in its terminal and 2 more are waiting.')
     expect(andList(['a', 'b', 'c'])).toBe('a, b and c')
-  })
-  test('the front row is who needs you and who works; the rest stand behind', () => {
-    const { spots } = roomLayout(store.agents, 361)
-    const front = spots.filter((s) => s.y + s.size === ROOM.frontFloor).map((s) => s.name)
-    const back = spots.filter((s) => s.y + s.size === ROOM.backFloor).map((s) => s.name)
-    expect(front).toEqual(['Ada', 'Milo', 'Iris', 'Theo'])
-    expect(back).toEqual(['June', 'Rex@workstation', 'Noor@workstation'])
-  })
-  test.each([288, 361, 398, 560])('at %ipx everyone fits, posed (64px and up), without overlapping their row', (width) => {
-    for (const n of [1, 3, 7, 12]) {
-      const crew = Array.from({ length: n }, (_, i) => agent({ name: `A${i}`, status: i % 3 === 0 ? 'working' : i % 3 === 1 ? 'waiting' : 'idle' }))
-      const { spots, more } = roomLayout(crew, width)
-      expect(spots.length + more).toBe(n)
-      for (const s of spots) {
-        expect(s.size).toBeGreaterThanOrEqual(64)
-        expect(s.x).toBeGreaterThanOrEqual(-8)
-        expect(s.x + s.size).toBeLessThanOrEqual(width + 8)
-        expect(s.y).toBeGreaterThanOrEqual(0)
-      }
-      for (const floor of [ROOM.frontFloor, ROOM.backFloor]) {
-        const row = spots.filter((s) => s.y + s.size === floor).sort((a, b) => a.x - b.x)
-        expect(row.length).toBeLessThanOrEqual(5)
-        // neighbours may lean on each other a little, never stand on top of each other
-        for (let i = 1; i < row.length; i++) expect(row[i].x - row[i - 1].x).toBeGreaterThanOrEqual(row[i].size * 0.7)
-      }
-    }
   })
 })
 

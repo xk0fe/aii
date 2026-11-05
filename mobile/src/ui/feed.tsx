@@ -1,8 +1,9 @@
 // The chat, one entry at a time, as Slack and Discord set it: every message, yours too, is a row with a face in the
 // gutter, the name and time on top and the words beside it, with no bubbles. Messages in a row from one sender stack
 // under one face; crew events are a quiet line with an icon in the gutter. A reply right under what it answers doesn't
-// quote it again. Long-press a message to copy or share it.
-import { memo, type ReactNode } from 'react'
+// quote it again. What the agents say to each other stays out of the way: a few lines, with the rest a tap away. A line
+// marks where each day starts. Long-press a message to copy or share it.
+import { memo, useRef, useState, type ReactNode } from 'react'
 import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import type { Agent, Channel, FeedEntry } from '@/net/types'
@@ -12,7 +13,7 @@ import { AskSummary, askVerb } from './ask'
 import { agentColor } from './avatar'
 import { nameInk } from './color'
 import { Creature } from './creature'
-import { clock, displayName } from './format'
+import { clock, dayLabel, displayName, sameDay } from './format'
 import { Icon } from './icon'
 import { Markdown } from './markdown'
 import { stacks } from './stack'
@@ -25,8 +26,9 @@ export type FeedCtx = {
   byId: Map<string, FeedEntry>
   here: string | null // the agent whose conversation this is
   channels: Channel[] | null // in a conversation (which spans the channels): each message says where it was said
-  unread: Set<string>
   divider: string | null // the entry the "New" line goes above
+  foldAt: number // what's said between agents folds past about this many characters: three lines at this width
+  onResized: (by: number) => void // a row you opened or closed changed height by this much
   onFace: (name: string) => void
   onAsk: (id: string) => void
   onHeld: (id: string, how: 'approve' | 'drop') => void
@@ -44,12 +46,11 @@ const mentionInk = (c: FeedCtx) => (name: string) => {
   return a ? nameInk(agentColor(a), c.t.fg) : null
 }
 
-function Name({ name, c, at = false }: { name: string; c: FeedCtx; at?: boolean }) {
-  if (name === 'you') return <Text style={{ color: c.t.fg, fontWeight: '600' }}>{at ? 'you' : 'You'}</Text>
+function Name({ name, c }: { name: string; c: FeedCtx }) {
+  if (name === 'you') return <Text style={{ color: c.t.fg, fontWeight: '600' }}>You</Text>
   const { base, home } = displayName(name)
   return (
     <Text style={{ color: ink(name, c), fontWeight: '600' }} onPress={c.here === familyOf(name) ? undefined : () => c.onFace(familyOf(name))}>
-      {at ? '@' : ''}
       {base}
       {home ? <Text style={{ fontWeight: '500', opacity: 0.6 }}>@{home}</Text> : null}
     </Text>
@@ -83,7 +84,6 @@ function Where({ e, c }: { e: FeedEntry; c: FeedCtx }) {
 // One row of the chat: a face in the gutter, the name and time on top, then what was said. The next message from the
 // same sender goes under it without the face.
 function Row({ e, c, cont, face, head, quote, long = true, children }: { e: FeedEntry; c: FeedCtx; cont: boolean; face: ReactNode; head: ReactNode; quote: boolean; long?: boolean; children: ReactNode }) {
-  const fresh = c.unread.has(e.id)
   const inner = (
     <>
       <View style={styles.gutter}>{cont ? null : face}</View>
@@ -95,7 +95,6 @@ function Row({ e, c, cont, face, head, quote, long = true, children }: { e: Feed
               <Where e={e} c={c} />
             </Text>
             <Text style={[styles.time, { color: c.t.fg3 }]}>{clock(e.ts)}</Text>
-            {fresh ? <View style={[styles.unreadDot, { backgroundColor: c.t.accent }]} accessibilityLabel="new" /> : null}
           </View>
         )}
         {quote ? <Quote e={e} c={c} /> : null}
@@ -130,16 +129,45 @@ function YouFace({ t }: { t: Theme }) {
   )
 }
 
-// What an agent said to you: plain, like anyone's message. To another agent (a hand-off), or a note for the crew: on a
-// card, smaller, so what's for you stands out.
-function Body({ e, c, tone = 'agent' }: { e: FeedEntry; c: FeedCtx; tone?: 'agent' | 'card' | 'dropped' }) {
+// Opened, for as long as the app runs: the list unmounts a row as it scrolls away, and it should come back as you left it.
+const unfolded = new Set<string>()
+
+// What agents say to each other: a few lines, plain, with the rest a tap away, so what's for you stands out. (On an
+// average crew's chat these are almost half the messages, and they run to hundreds of characters each.)
+function Between({ e, c, tone }: { e: FeedEntry; c: FeedCtx; tone?: 'dropped' }) {
   const t = c.t
-  if (tone === 'agent') return <Markdown text={e.text ?? ''} t={t} color={t.fg} size={TEXT} mention={mentionInk(c)} />
+  const text = e.text ?? ''
+  const preview = snippet(text)
+  const [open, setOpen] = useState(() => unfolded.has(e.id))
+  const long = preview.length > c.foldAt || text.includes('```') || text.includes('\n\n')
+  const height = useRef(0)
+  const flipped = useRef(false)
+  const flip = (to: boolean) => {
+    if (to) unfolded.add(e.id)
+    else unfolded.delete(e.id)
+    flipped.current = true
+    setOpen(to)
+  }
+  const measured = (h: number) => {
+    if (flipped.current && height.current) c.onResized(h - height.current)
+    flipped.current = false
+    height.current = h
+  }
   return (
-    <View style={[styles.card, { backgroundColor: t.fill }, tone === 'dropped' && { opacity: 0.45 }]}>
-      <Markdown text={e.text ?? ''} t={t} color={t.fg} size={15} mention={mentionInk(c)} />
+    <View style={tone === 'dropped' && { opacity: 0.45 }} onLayout={(ev) => measured(ev.nativeEvent.layout.height)}>
+      {long && !open ? <Text style={[styles.between, { color: t.fg2 }]} numberOfLines={3}>{preview}</Text> : <Markdown text={text} t={t} color={t.fg2} size={15} mention={mentionInk(c)} />}
+      {long ? (
+        <Pressable onPress={() => flip(!open)} hitSlop={{ top: 6, bottom: 10, right: 40 }} style={styles.more} accessibilityRole="button" accessibilityLabel={open ? 'Show less' : 'Show more'}>
+          <Text style={[styles.moreText, { color: t.fg2 }]}>{open ? 'Show less' : 'Show more'}</Text>
+        </Pressable>
+      ) : null}
     </View>
   )
+}
+
+// What an agent said to you: plain, like anyone's message.
+function Body({ e, c }: { e: FeedEntry; c: FeedCtx }) {
+  return <Markdown text={e.text ?? ''} t={c.t} color={c.t.fg} size={TEXT} mention={mentionInk(c)} />
 }
 
 // A question card in the chat: a short line that opens it, or what became of it.
@@ -147,11 +175,11 @@ function AskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
   const t = c.t
   const ask = typeof e.ask === 'object' ? e.ask : null
   if (!ask) return null
-  if (e.answer) return <AskSummary t={t} e={e} />
+  if (e.answer) return <AskSummary t={t} e={e} plain />
   const title = ask.type === 'permission' ? (ask.title ?? 'Use a tool') : ask.type === 'plan' ? 'A plan to approve' : (ask.questions[0]?.question ?? 'A question')
   const sub = ask.type === 'permission' ? (ask.code ?? '').split('\n')[0] : ask.type === 'question' ? ask.questions[0]?.options.map((o) => o.label).join(' · ') : ''
   return (
-    <Press onPress={() => c.onAsk(e.id)} style={[styles.askLine, { backgroundColor: t.surface, borderColor: t.lineStrong }]} accessibilityRole="button" accessibilityLabel={`Answer ${displayName(e.from).base}`}>
+    <Press onPress={() => c.onAsk(e.id)} style={styles.askLine} accessibilityRole="button" accessibilityLabel={`Answer ${displayName(e.from).base}`}>
       <View style={styles.askText}>
         <Text style={[styles.askTitle, { color: t.fg }]} numberOfLines={3}>
           {title}
@@ -182,15 +210,15 @@ function Quiet({ c, icon = 'handoff', tint, children }: { c: FeedCtx; icon?: Par
 }
 
 const TASK_ACTS: Record<string, (e: FeedEntry, c: FeedCtx) => ReactNode> = {
-  filed: (e, c) => (e.from === 'you' ? 'You' : <Name name={e.from} c={c} at />),
+  filed: (e, c) => (e.from === 'you' ? 'You' : <Name name={e.from} c={c} />),
   triaged: (e, c) => (
     <>
-      <Name name={e.from} c={c} at /> triaged it{e.text ? ' for ' : ''}
-      {e.text ? <Name name={e.text} c={c} at /> : null}
+      <Name name={e.from} c={c} /> triaged it{e.text ? ' for ' : ''}
+      {e.text ? <Name name={e.text} c={c} /> : null}
     </>
   ),
-  fixed: (e, c) => <Name name={e.from} c={c} at />,
-  note: (e, c) => <Name name={e.from} c={c} at />,
+  fixed: (e, c) => <Name name={e.from} c={c} />,
+  note: (e, c) => <Name name={e.from} c={c} />,
 }
 
 function TaskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
@@ -202,12 +230,12 @@ function TaskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
     return (
       <Quiet c={c} icon="task">
         <Text style={[styles.sysText, { color: c.t.fg2 }]}>
-          {e.from === 'you' ? 'You' : <Name name={e.from} c={c} at />} {e.text}
+          {e.from === 'you' ? 'You' : <Name name={e.from} c={c} />} {e.text}
         </Text>
       </Quiet>
     )
   return (
-    <Quiet c={c} icon={bug ? 'bug' : 'task'} tint={bug ? c.t.danger : c.t.blocked}>
+    <Quiet c={c} icon={bug ? 'bug' : 'task'}>
       <Text style={[styles.sysText, { color: c.t.fg2 }]} numberOfLines={2}>
         {who}
         {e.act === 'triaged' ? ' ' : verb}
@@ -223,7 +251,7 @@ function TaskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
 }
 
 function RuleLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
-  const n = (x?: string) => (x ? <Name name={x} c={c} at /> : null)
+  const n = (x?: string) => (x ? <Name name={x} c={c} /> : null)
   const body =
     e.rule === 'loop' ? (
       <>
@@ -259,7 +287,8 @@ export const FeedItem = memo(function FeedItem({ e, prev, c }: { e: FeedEntry; p
   // what it answers, quoted only when that isn't right above it (or quoted already by the message above, its own)
   const quoted = e.re ? c.byId.get(e.re) : undefined
   const near = !quoted || quoted === prev || Boolean(prev && prev.from === e.from && prev.re && c.byId.get(prev.re) === quoted)
-  const cont = stacks(prev, e, { near, divider: c.divider })
+  const newDay = !prev || !sameDay(prev.ts, e.ts)
+  const cont = !newDay && stacks(prev, e, { near, divider: c.divider })
   const divider = c.divider === e.id ? (
     <View style={styles.newLine} accessibilityLabel="New replies">
       <View style={[styles.rule, { backgroundColor: t.accent }]} />
@@ -268,6 +297,13 @@ export const FeedItem = memo(function FeedItem({ e, prev, c }: { e: FeedEntry; p
   ) : null
   return (
     <View>
+      {newDay ? (
+        <View style={styles.dayLine}>
+          <View style={[styles.dayRule, { backgroundColor: t.line }]} />
+          <Text style={[styles.dayText, { color: t.fg2 }]}>{dayLabel(e.ts)}</Text>
+          <View style={[styles.dayRule, { backgroundColor: t.line }]} />
+        </View>
+      ) : null}
       {divider}
       <Entry e={e} c={c} cont={cont} quote={!near} />
     </View>
@@ -305,7 +341,7 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
             {to.map((n, i) => (
               <Text key={n}>
                 {i ? ' ' : ''}
-                <Name name={n} c={c} at />
+                <Name name={n} c={c} />
               </Text>
             ))}
           </Text>
@@ -340,7 +376,7 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
   if (e.kind === 'note')
     return (
       <Row e={e} c={c} cont={cont} quote={quote} face={<Face e={e} c={c} />} head={<><Name name={e.from} c={c} /> shared a note</>}>
-        <Body e={e} c={c} tone="card" />
+        <Between e={e} c={c} />
       </Row>
     )
   if (e.kind === 'reply')
@@ -358,16 +394,16 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
   const head =
     e.ask === true ? (
       <>
-        <Name name={e.from} c={c} /> asks <Name name={e.to ?? ''} c={c} at />
+        <Name name={e.from} c={c} /> asks <Name name={e.to ?? ''} c={c} />
       </>
     ) : (
       <>
-        <Name name={e.from} c={c} /> → <Name name={e.to ?? ''} c={c} at />
+        <Name name={e.from} c={c} /> → <Name name={e.to ?? ''} c={c} />
       </>
     )
   return (
     <Row e={e} c={c} cont={cont} quote={quote} face={<Face e={e} c={c} />} head={head}>
-      <Body e={e} c={c} tone={e.dropped ? 'dropped' : 'card'} />
+      <Between e={e} c={c} tone={e.dropped ? 'dropped' : undefined} />
       {e.held ? (
         <View style={styles.held}>
           <Button t={t} small title="Drop" onPress={() => c.onHeld(e.id, 'drop')} disabled={!c.canAct} />
@@ -383,31 +419,35 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
 const TEXT = 16.5
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 10, paddingHorizontal: 12, marginTop: 16 },
-  cont: { marginTop: 6 },
+  row: { flexDirection: 'row', gap: 10, paddingHorizontal: 12, marginTop: 14 },
+  cont: { marginTop: 5 },
   gutter: { width: 38, alignItems: 'center', paddingTop: 1 },
   main: { flex: 1, minWidth: 0 },
   head: { flexDirection: 'row', alignItems: 'baseline', gap: 7, marginBottom: 2 },
   headText: { fontSize: 15.5, flexShrink: 1 },
   time: { fontSize: 12, fontVariant: ['tabular-nums'] },
-  unreadDot: { width: 7, height: 7, borderRadius: 4, alignSelf: 'center' },
   you: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  card: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, alignSelf: 'stretch', marginTop: 2 },
+  between: { fontSize: 15, lineHeight: 21 },
+  more: { alignSelf: 'flex-start', paddingTop: 3 },
+  moreText: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
   ticket: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 },
   ticketText: { fontSize: 16, flexShrink: 1 },
   quote: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '100%', marginBottom: 3 },
   quoteText: { fontSize: 12.5, flexShrink: 1 },
-  askLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 14, paddingRight: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignSelf: 'stretch', marginTop: 4 },
+  askLine: { flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'stretch', marginTop: 2 },
   askText: { flex: 1, gap: 1 },
   askTitle: { fontSize: 15, fontWeight: '600' },
   askSub: { fontSize: 12.5, lineHeight: 17 },
-  answerChip: { paddingHorizontal: 14, minHeight: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  answerChip: { paddingHorizontal: 14, minHeight: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   answerChipText: { fontSize: 15, fontWeight: '600' },
-  sys: { marginTop: 12, alignItems: 'flex-start' },
+  sys: { marginTop: 10, alignItems: 'flex-start' },
   sysIcon: { paddingTop: 2 },
   sysText: { fontSize: 14, lineHeight: 19 },
   rule: { flex: 1, height: StyleSheet.hairlineWidth * 2 },
-  newLine: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 12, marginTop: 18 },
+  newLine: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, marginTop: 16 },
+  dayLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, marginTop: 18 },
+  dayRule: { flex: 1, height: StyleSheet.hairlineWidth },
+  dayText: { fontSize: 12.5, fontWeight: '500' },
   newText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
   held: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   heldText: { fontSize: 12.5 },

@@ -1,5 +1,4 @@
-// The Crew room at the top of the Crew tab (SPEC v2, "The Crew room"): where the crew stands together, each acting out
-// its status, and the one headline that says how things are. Plain TypeScript, no React: the tests check it.
+// Who needs you and the one headline that says how things are. Plain TypeScript, no React: the tests check it.
 import { APP_NAME } from '@/brand'
 import type { Agent, FeedEntry } from '@/net/types'
 
@@ -51,33 +50,4 @@ export function headline(agents: Agent[], open: FeedEntry[], parked = false, eve
     return { title: busy.length === on.length ? 'Everyone’s busy' : `${busy.length} at work`, line }
   }
   return { title: 'All quiet', line: on.length ? 'Nobody needs you right now.' : 'Everyone is off. Turn someone on to get going.' }
-}
-
-// Where each creature stands: who needs you and who works in the front row, bigger; the rest behind. Up to five a row
-// (`max`), in the Mac's order within a row, so a status change only moves a creature between the rows.
-export type Spot = { name: string; x: number; y: number; size: number }
-export const ROOM = { height: 196, floor: 84, front: 80, back: 64, backFloor: 126, frontFloor: 188 }
-
-export function roomLayout(agents: Agent[], width: number, max = 5, needy: Set<string> = new Set(agents.filter((a) => a.on && a.status === 'waiting').map((a) => a.name))): { spots: Spot[]; more: number } {
-  const front: Agent[] = []
-  const back: Agent[] = []
-  for (const a of agents) (needy.has(a.name) || (a.on && a.status === 'working') ? front : back).push(a)
-  // a full front row hands its busy members to the back, the last first, and keeps whoever needs you; an empty front
-  // row takes the back row's
-  while (front.length > max) {
-    let i = front.length - 1
-    while (i >= 0 && needy.has(front[i].name)) i--
-    back.unshift(...front.splice(i >= 0 ? i : front.length - 1, 1))
-  }
-  if (!front.length) front.push(...back.splice(0, max))
-  const shown = back.slice(0, max)
-  const spread = (row: Agent[], size: number, pad: number, floor: number): Spot[] => {
-    const slot = (width - 2 * pad) / Math.max(1, row.length)
-    return row.map((a, i) => ({ name: a.name, size, x: Math.round(pad + slot * i + (slot - size) / 2), y: floor - size }))
-  }
-  const fSize = Math.max(64, Math.min(ROOM.front, Math.floor(width / Math.max(4, front.length)) - 6))
-  return {
-    spots: [...spread(shown, ROOM.back, 20, ROOM.backFloor), ...spread(front, fSize, 0, ROOM.frontFloor)],
-    more: back.length - shown.length,
-  }
 }

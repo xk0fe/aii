@@ -1,6 +1,6 @@
 // Crew's look on the phone, light and dark, following the system: the calm v1 tokens (neutral greys, one accent for
 // selection and links, status colours only where status is the message) and the v2 brand layer on top (Berry for
-// primary buttons and brand moments, Fredoka for display type, felt for the Crew room and the creatures' patches).
+// primary buttons and brand moments, Fredoka for display type, felt for the creatures' patches).
 // The values are the design's (mock/tokens.css, phone section, and mock/brand-v2.css).
 import { Platform, useColorScheme } from 'react-native'
 
@@ -29,9 +29,6 @@ const light = {
   brand: '#CC2277', // Berry: white on it is 5.17:1
   onBrand: '#FFFFFF',
   brandInk: '#CC2277', // brand text
-  roomWall: '#F6EEEA',
-  roomFloor: '#EEDFD8',
-  roomThread: 'rgba(204,34,119,0.32)',
   patchMix: 0.13, // a creature's felt patch: this much of its colour in the surface
   threadMix: 0.46, // and its stitch
   // older names the screens use, now on the tokens above
@@ -74,9 +71,6 @@ const dark: Theme = {
   ctxWarm: '#F5A524',
   ctxHot: '#F97066',
   brandInk: '#FF7AC0', // 7.58:1 on the background
-  roomWall: '#2A2326',
-  roomFloor: '#332A2E',
-  roomThread: 'rgba(255,122,192,0.30)',
   patchMix: 0.2,
   threadMix: 0.55,
   btn: 'rgba(118,118,128,0.24)',
@@ -109,7 +103,7 @@ export const fonts = {
 }
 
 // iOS's Dynamic Type styles at their default size, nothing else (the system scales them with the reader's setting).
-// One display size per screen, in the brand face: the room's headline, a screen's title.
+// One display size per screen, in the brand face: a screen's title.
 export const type = {
   display: { fontFamily: fonts.brand, fontSize: 28, lineHeight: 34 },
   largeTitle: { fontSize: 34, lineHeight: 41, fontWeight: '600' },
