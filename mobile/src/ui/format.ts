@@ -18,6 +18,18 @@ export function when(ts: number, now = Date.now()) {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+export const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString()
+
+// The line between days in the chat: "Today", "Yesterday", "Mon, Nov 2", with the year when it isn't this one.
+export function dayLabel(ts: number, now = Date.now()) {
+  if (sameDay(ts, now)) return 'Today'
+  const before = new Date(now)
+  before.setDate(before.getDate() - 1)
+  if (sameDay(ts, before.getTime())) return 'Yesterday'
+  const d = new Date(ts)
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', ...(d.getFullYear() !== new Date(now).getFullYear() && { year: 'numeric' }) })
+}
+
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 export const blockedOn = (a: Agent) => (a.status === 'working' && a.waitingOn?.length ? a.waitingOn : null)

@@ -13,8 +13,8 @@ import { reachedOver, when } from '@/ui/format'
 import { useNow } from '@/ui/hooks'
 import { Icon } from '@/ui/icon'
 import { Button, CrewMark, Press, Wordmark } from '@/ui/parts'
-import { offlineText } from '@/ui/topbar'
-import { fonts, useTheme, type Theme } from '@/ui/theme'
+import { offlineText, TabHead } from '@/ui/topbar'
+import { useTheme, type Theme } from '@/ui/theme'
 
 function ComputerCard({ t, mac, active }: { t: Theme; mac: MacRecord; active: boolean }) {
   const { link, client } = useCrew()
@@ -60,11 +60,8 @@ export default function SettingsScreen() {
   const demo = s.active === DEMO
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 24 }]}>
-        <Text style={[styles.title, { color: t.fg }]} accessibilityRole="header" maxFontSizeMultiplier={1.6}>
-          Your computers
-        </Text>
-        <Text style={[styles.sub, { color: t.fg2 }]}>The phone talks to {APP_NAME} on one computer at a time, straight over your Wi-Fi or Tailscale. Everything is encrypted end to end.</Text>
+      <TabHead t={t} title="Computers" workspace={false} sub={`The phone talks to ${APP_NAME} on one computer at a time, over your Wi-Fi or Tailscale, encrypted end to end.`} />
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
         {s.macs.map((m) => (
           <ComputerCard key={m.id} t={t} mac={m} active={s.active === m.id} />
         ))}
@@ -102,8 +99,6 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 16, gap: 14 },
-  title: { fontFamily: fonts.brand, fontSize: 28, lineHeight: 34 },
-  sub: { fontSize: 15, lineHeight: 20, marginTop: -8, marginBottom: 4 },
   card: { borderRadius: 14, padding: 16, gap: 10 },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   macName: { fontSize: 17, lineHeight: 22, fontWeight: '600' },

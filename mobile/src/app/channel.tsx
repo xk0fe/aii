@@ -93,7 +93,7 @@ export default function ChannelSheet() {
   return (
     <KeyboardAwareScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.content} bottomOffset={24} keyboardShouldPersistTaps="handled">
       <Text style={[styles.title, { color: t.fg }]}>{c ? `#${c.name}` : 'New channel'}</Text>
-      <Text style={[styles.hint, { color: t.fg2 }]}>{general ? 'Everyone in the workspace, and everything that has no channel of its own.' : 'A place for one kind of work, with its own brief and its own people.'}</Text>
+      {general || !c ? <Text style={[styles.hint, { color: t.fg2 }]}>{general ? 'Everyone in the workspace, and everything without a channel of its own.' : 'A place for one kind of work, with its own brief and its own people.'}</Text> : null}
 
       {general ? null : (
         <>
@@ -163,11 +163,11 @@ export default function ChannelSheet() {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 16, paddingTop: 26, paddingBottom: 48, gap: 8 },
+  content: { padding: 16, paddingTop: 22, paddingBottom: 48, gap: 6 },
   gone: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  title: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
-  hint: { fontSize: 15, lineHeight: 20, marginBottom: 6 },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 10, marginLeft: 4, textTransform: 'uppercase', letterSpacing: 0.3 },
+  title: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
+  hint: { fontSize: 14, lineHeight: 19 },
+  label: { fontSize: 13, lineHeight: 18, fontWeight: '600', marginTop: 12, marginLeft: 4 },
   field: { borderRadius: 14, paddingHorizontal: 14, fontSize: 17 },
   nameField: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 50 },
   hash: { fontSize: 17, fontWeight: '600' },

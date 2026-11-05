@@ -1,6 +1,5 @@
 // Everything waiting for you, each in full: the creature asks in its own words on its felt patch ("Can I run npm run
-// build?"), with the plain title kept for scanning, and the answers as big buttons under it. What you answered lately
-// is underneath.
+// build?"), under one line saying who and when, with the answers under it. What you answered lately is underneath.
 import { router, useIsFocused } from 'expo-router'
 import { StyleSheet, Text, View } from 'react-native'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
@@ -16,10 +15,11 @@ import { ago, askKindOf, displayName, voiceOf } from '@/ui/format'
 import { useAppActive } from '@/ui/hooks'
 import { Press } from '@/ui/parts'
 import { Patch } from '@/ui/surface'
-import { offlineText, TopBar } from '@/ui/topbar'
+import { offlineText, TabHead } from '@/ui/topbar'
 import { fonts, type Theme, useTheme } from '@/ui/theme'
 
 const agoText = (ts?: number) => (ago(ts) === 'just now' ? 'Just now' : `${ago(ts)} ago`)
+const PATCH = 72
 
 function Ask({ t, e, d, answer, disabled }: { t: Theme; e: FeedEntry; d: ReturnType<typeof useDerived>; answer: (id: string, r: Reply) => Promise<unknown>; disabled: string | null }) {
   const a = someone(e.from, d.byName)
@@ -29,15 +29,15 @@ function Ask({ t, e, d, answer, disabled }: { t: Theme; e: FeedEntry; d: ReturnT
   return (
     <View style={[styles.card, { backgroundColor: t.surface }]}>
       <Press style={styles.head} onPress={() => router.push({ pathname: '/agent/[name]', params: { name: a.cloneOf ?? a.name } })} accessibilityRole="button" accessibilityLabel={`${name} ${askVerb(e)}, ${agoText(e.ts).toLowerCase()}`} accessibilityHint={`Opens ${name}`}>
-        <Text style={[styles.who, { color: t.fg2 }]}>
+        <Text style={[styles.who, { color: t.fg2 }]} numberOfLines={1}>
           <Text style={{ color: t.fg, fontWeight: '600' }}>{name}</Text> {askVerb(e)}
         </Text>
-        <Text style={[styles.when, { color: t.fg2 }]}>{agoText(e.ts)}</Text>
+        <Text style={[styles.when, { color: t.fg3 }]}>{ago(e.ts)}</Text>
       </Press>
       <View style={styles.speak} accessible accessibilityLabel={`${name} says: ${words}`}>
-        <Patch color={agentColor(a)} width={112} height={112}>
+        <Patch color={agentColor(a)} width={PATCH} height={PATCH} inset={4}>
           <View style={styles.posed}>
-            <Creature agent={{ ...a, status: 'waiting', on: true }} size={104} posed ask={askKindOf(e.ask)} />
+            <Creature agent={{ ...a, status: 'waiting', on: true }} size={PATCH - 6} posed ask={askKindOf(e.ask)} />
           </View>
         </Patch>
         <View style={[styles.voice, { backgroundColor: t.bg }]}>
@@ -72,12 +72,8 @@ export default function NeedsScreen() {
   return (
     <MotionContext.Provider value={focused && active}>
       <View style={{ flex: 1, backgroundColor: t.bg }}>
-        <TopBar t={t} />
+        <TabHead t={t} title="Needs you" sub={n ? `${n} waiting` : ''} />
         <KeyboardAwareScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]} bottomOffset={24} keyboardShouldPersistTaps="handled">
-          <Text style={[styles.display, { color: t.fg }]} accessibilityRole="header" maxFontSizeMultiplier={1.6}>
-            Needs you
-          </Text>
-          <Text style={[styles.sub, { color: offline ? t.waitingInk : t.fg2 }]}>{offline ? `${offline}. Answers wait until it's back.` : n ? `${n} waiting for you` : 'Nothing waiting for you'}</Text>
           {n ? (
             d.open.map((e) => <Ask key={e.id} t={t} e={e} d={d} answer={(id, r) => client!.answer(id, r)} disabled={offline ? `Answering waits until ${client?.macName} is back` : null} />)
           ) : (
@@ -122,15 +118,13 @@ export default function NeedsScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 16, paddingTop: 4, gap: 16 },
-  display: { fontFamily: fonts.brand, fontSize: 28, lineHeight: 34, marginBottom: -14 },
-  sub: { fontSize: 15, lineHeight: 20 },
-  card: { borderRadius: 14, padding: 16, gap: 12 },
-  head: { gap: 2 },
-  who: { fontSize: 17, lineHeight: 22 },
-  when: { fontSize: 15, lineHeight: 20 },
-  speak: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  posed: { position: 'absolute', left: 4, bottom: 2 },
+  content: { paddingHorizontal: 16, gap: 12 },
+  card: { borderRadius: 14, padding: 14, gap: 10 },
+  head: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  who: { flex: 1, fontSize: 16, lineHeight: 21 },
+  when: { fontSize: 13, lineHeight: 18 },
+  speak: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  posed: { position: 'absolute', left: 3, bottom: 1 },
   voice: { flex: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, borderTopLeftRadius: 4 },
   voiceText: { fontSize: 15, lineHeight: 20 },
   mono: { fontFamily: fonts.mono, fontSize: 14 },

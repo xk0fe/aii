@@ -68,7 +68,7 @@ coding,agents,ai,developer,programming,terminal,approve,remote,assistant,code,de
 
 [`screenshots/iphone-6.9/`](screenshots/iphone-6.9/): iPhone 6.9" (1320 x 2868), light, from the demo crew, in this order:
 
-1. The Crew room: "2 of your crew need you"
+1. The crew: "2 of your crew need you"
 2. Needs you: Iris's question and Milo's command, in their own words
 3. Milo asks to run `npm run build`: Deny, Allow, Always allow
 4. The chat

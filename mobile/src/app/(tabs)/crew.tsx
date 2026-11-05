@@ -1,51 +1,26 @@
-// The crew: the Crew room at the top (everyone together, each acting out its status, and one headline that says how
-// things are), the list below it, one row per agent, grouped by the computer it runs on. The room folds away, and the
-// phone remembers. The rows keep the Mac's order: a status change never moves a row.
+// The crew: one row per agent, grouped by the computer it runs on, under one line that says how things are. The rows
+// keep the Mac's order: a status change never moves a row.
 import { router, useIsFocused } from 'expo-router'
 import { memo, useMemo } from 'react'
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import type { Agent, State } from '@/net/types'
 import { useCrew, useDerived } from '@/state/hooks'
-import { setPref, usePrefs } from '@/state/prefs'
 import { Creature, MotionContext } from '@/ui/creature'
 import { ago, brainLine, displayName, plural, statusWord, type AskKind } from '@/ui/format'
 import { useAppActive, useNow } from '@/ui/hooks'
 import { Icon } from '@/ui/icon'
 import { Press, Tag, Who } from '@/ui/parts'
-import { headline, needsOf, ROOM, roomLayout } from '@/ui/room'
-import { RoomFelt } from '@/ui/surface'
-import { TopBar } from '@/ui/topbar'
-import { fonts, type Theme, useTheme } from '@/ui/theme'
+import { headline, needsOf } from '@/ui/room'
+import { TabHead } from '@/ui/topbar'
+import { type Theme, useTheme } from '@/ui/theme'
 
 const open = (a: Agent) => router.push({ pathname: '/agent/[name]', params: { name: a.name } })
 
 // What VoiceOver and TalkBack say for an agent: its name, how it is, who it is.
 const spoken = (a: Agent, kind: AskKind | undefined, now: number, extra = '') =>
   [displayName(a.name).base, statusWord(a, kind).text, a.yolo ? 'YOLO' : '', extra, (a.status === 'working' || a.status === 'waiting') && a.since ? `for ${ago(a.since, now)}` : ''].filter(Boolean).join(', ')
-
-function Room({ t, agents, asks, width, now }: { t: Theme; agents: Agent[]; asks: Map<string, AskKind>; width: number; now: number }) {
-  const { spots, more } = roomLayout(agents, width, 5, new Set(asks.keys()))
-  const byName = new Map(agents.map((a) => [a.name, a]))
-  return (
-    <View>
-    <View style={{ width, height: ROOM.height }}>
-      <RoomFelt width={width} height={ROOM.height} floor={ROOM.floor} />
-      {spots.map((s) => {
-        const a = byName.get(s.name)!
-        return (
-          <Press key={s.name} onPress={() => open(a)} style={[styles.spot, { left: s.x, top: s.y, width: s.size, height: s.size }]} accessibilityRole="button" accessibilityLabel={spoken(a, asks.get(a.name), now)} accessibilityHint="Opens what you can do with it">
-            <Creature agent={a} size={s.size} posed ask={asks.get(a.name)} />
-          </Press>
-        )
-      })}
-    </View>
-      {/* the room holds ten; the rest are in the list (never written on the felt) */}
-      {more ? <Text style={[styles.more, { color: t.fg2 }]}>{more === 1 ? 'And 1 more below' : `And ${more} more below`}</Text> : null}
-    </View>
-  )
-}
 
 const Row = memo(function Row({ t, a, kind, helpers, clones, providers, now, first }: { t: Theme; a: Agent; kind?: AskKind; helpers: number; clones: number; providers?: State['providers']; now: number; first: boolean }) {
   const st = statusWord(a, kind)
@@ -54,8 +29,8 @@ const Row = memo(function Row({ t, a, kind, helpers, clones, providers, now, fir
   return (
     <Press onPress={() => open(a)} style={styles.row} accessibilityRole="button" accessibilityLabel={spoken(a, kind, now, who)} accessibilityHint="Opens what you can do with it">
       {first ? null : <View style={[styles.sep, { backgroundColor: t.line }]} />}
-      <Who t={t} kind={a.on ? (a.status === 'waiting' ? 'waiting' : a.status === 'working' && !a.waitingOn?.length ? 'working' : '') : ''} size={48}>
-        <Creature agent={a} size={48} mood="still" />
+      <Who t={t} kind={a.on ? (a.status === 'waiting' ? 'waiting' : a.status === 'working' && !a.waitingOn?.length ? 'working' : '') : ''} size={44}>
+        <Creature agent={a} size={44} mood="still" />
       </Who>
       <View style={styles.text}>
         <View style={styles.l1}>
@@ -84,11 +59,9 @@ const Row = memo(function Row({ t, a, kind, helpers, clones, providers, now, fir
 export default function CrewScreen() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
-  const { width } = useWindowDimensions()
   const { client, state } = useCrew()
   const d = useDerived(state)
   const now = useNow(30000)
-  const { roomFolded } = usePrefs()
   const focused = useIsFocused()
   const active = useAppActive()
   const moving = focused && active
@@ -114,24 +87,11 @@ export default function CrewScreen() {
     })
   }, [state?.computers, shown, client?.macName])
 
-  const roomWidth = Math.min(width - 32, 560)
   return (
     <MotionContext.Provider value={moving}>
       <View style={{ flex: 1, backgroundColor: t.bg }}>
-        <TopBar t={t} />
+        <TabHead t={t} title="Crew" sub={state ? head.title : ''} />
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
-          {roomFolded || !state ? null : <Room t={t} agents={shown} asks={asks} width={roomWidth} now={now} />}
-          <View style={styles.headRow}>
-            <Text style={[styles.display, { color: t.fg }]} accessibilityRole="header" maxFontSizeMultiplier={1.6}>
-              {state ? head.title : ' '}
-            </Text>
-            {state ? (
-              <Press onPress={() => setPref('roomFolded', !roomFolded)} style={[styles.fold, { backgroundColor: t.fill }]} hitSlop={8} accessibilityRole="button" accessibilityLabel={roomFolded ? 'Show the room' : 'Fold the room away'}>
-                <Icon name={roomFolded ? 'down' : 'up'} size={13} color={t.fg2} weight="bold" />
-              </Press>
-            ) : null}
-          </View>
-          <Text style={[styles.line, { color: t.fg2 }]}>{state ? head.line : ' '}</Text>
           {sections.map((s) => (
             <View key={s.slug || 'here'}>
               <Text style={[styles.section, { color: t.fg }]} accessibilityRole="header">
@@ -152,23 +112,17 @@ export default function CrewScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 16, paddingTop: 4 },
-  spot: { position: 'absolute' },
-  more: { fontSize: 13, lineHeight: 18, textAlign: 'right', marginTop: 6 },
-  headRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 },
-  display: { flex: 1, fontFamily: fonts.brand, fontSize: 28, lineHeight: 34 },
-  fold: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  line: { fontSize: 15, lineHeight: 20, marginTop: 2 },
-  section: { fontSize: 15, lineHeight: 20, fontWeight: '600', paddingHorizontal: 16, paddingTop: 24, paddingBottom: 8 },
+  content: { paddingHorizontal: 16 },
+  section: { fontSize: 13, lineHeight: 18, fontWeight: '600', paddingHorizontal: 4, paddingTop: 12, paddingBottom: 6 },
   group: { borderRadius: 14, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
-  sep: { position: 'absolute', top: 0, left: 76, right: 0, height: StyleSheet.hairlineWidth },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 14, paddingVertical: 10 },
+  sep: { position: 'absolute', top: 0, left: 70, right: 0, height: StyleSheet.hairlineWidth },
   text: { flex: 1, minWidth: 0 },
   l1: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  name: { fontSize: 17, lineHeight: 22, fontWeight: '600', flexShrink: 1 },
+  name: { fontSize: 16, lineHeight: 21, fontWeight: '600', flexShrink: 1 },
   end: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 8 },
-  since: { fontSize: 15, lineHeight: 20 },
-  l2: { fontSize: 15, lineHeight: 20 },
+  since: { fontSize: 13, lineHeight: 18 },
+  l2: { fontSize: 14, lineHeight: 19 },
   needs: { fontWeight: '500' },
   l3: { fontSize: 13, lineHeight: 18 },
 })
