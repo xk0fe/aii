@@ -91,6 +91,9 @@ Crew commands (run them in the shell):
                             minutes) and then says who has it
   crew release [thing]      give it back when you're done (it also goes back when your turn ends with nothing running)
   crew note "<fact>"        share context with everyone: decisions, interfaces, gotchas
+  crew channels             the channels here: who's in each, and its brief
+  crew post <channel> "<text>"  say it in that channel, whichever one you're working in (its name alone, no #). It takes
+                            up nobody's turn unless you @name them, which hands it to them there
   crew busy                 what each teammate is working on right now
   crew board [words]        read the shared notes, or search them
   crew task                 the Tasks board: list, show, done, note, add, decline (crew task help)
@@ -106,6 +109,7 @@ Crew keeps the crew from stalling. Its rules:
 - Lease the simulator, a device or a port before you use it, and never take over one a teammate has: no killing their
   server or closing their simulator. Stop the servers and simulators you started once you're done with them.
 - crew send is for work you hand off. News goes in crew note: a busy teammate starts a clone for anything you send.
+- crew post is for what belongs in another channel than the one you were messaged in: your final message shows there.
 One builder per piece of work:
 ${BUILD_CHECK[checks] ?? BUILD_CHECK.full}- Work in your folder, on the branch checked out there, unless the user or your task asks for a branch. Never write
   in a worktree or branch someone else made, unless its owner handed it to you.

@@ -14,7 +14,7 @@ import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCo
 import { callResult } from './transcript.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
-import { ROOT, GENERAL, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
+import { ROOT, GENERAL, channelName, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
 
@@ -69,6 +69,8 @@ export const openConfig = (also) => new Config(CONFIG, DEFAULTS, {
 })
 const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared']
 const RESERVED = new Set(['you', 'any', 'crew'])
+// an unquoted # starts a comment in the shell, and `crew post` is all that arrives
+const POST_USAGE = 'usage: crew post <channel> "message" (the name alone: an unquoted # starts a shell comment)'
 const SUB_TOOLS = new Set(['Agent', 'Task']) // Claude Code's sub-agent tool ("Task" in older versions)
 const SUB_LINGER = 6000 // a finished sub-agent stays in the live view this long
 // A clone with nothing to do waits this long before it goes away, in case a teammate's answer is on its way.
@@ -2253,7 +2255,7 @@ export class Hub extends EventEmitter {
     const said = quoted ? { from: quoted.from, text: quoted.ticket !== undefined ? `#${quoted.ticket} ${quoted.title ?? ''}` : quoted.text } : quote
     const msgs = targets.map((a) => {
       const replying = said && this.replyTag(a, said, quoted)
-      return this.post({ kind: 'msg', from, to: a.name, text, ...group, ...routed, ...extra, ...(images.length && { images }), ...(re && { re }), ...(ch && { channel: ch }), ...carried, ...(replying && { replying }), queued: !held, held })
+      return this.post({ kind: 'msg', from, to: a.name, text, ...group, ...routed, ...extra, ...(images.length && { images }), ...(re && { re }), ...((ch || channel !== undefined) && { channel: ch }), ...carried, ...(replying && { replying }), queued: !held, held })
     })
     if (held) return `waiting for the user to approve this hand-off to ${targets.map((a) => `@${a.name}`).join(' ')}\n`
     const here = targets.map((a, i) => this.enqueue(a, msgs[i])).join('')
@@ -2852,6 +2854,60 @@ export class Hub extends EventEmitter {
     const current = this.agents.get(from)?.current
     const channel = current && this.feed.findLast((e) => e.id === current)?.channel
     return channel && this.channel(channel) ? channel : undefined
+  }
+
+  // A channel by its name (with or without the #), or else its id: a renamed one keeps its id, which a newer channel's
+  // name can be.
+  channelNamed(raw) {
+    const want = channelName(raw)
+    const list = this.space.channels
+    return list.find((c) => c.name === want) ?? list.find((c) => c.id === want)
+  }
+
+  // Has this agent's conversation had the channel's brief? It's given once (see briefed), and again once it's changed.
+  hasBrief(a, c) {
+    return this.convoOf(a).briefs?.[c.id] === briefHash(c.brief)
+  }
+
+  giveBrief(a, c) {
+    const convo = this.convoOf(a)
+    convo.briefs = { ...convo.briefs, [c.id]: briefHash(c.brief) }
+    this.saveConvos()
+  }
+
+  // `crew channels`: the channels, who's in each and its brief, which goes for every message there. An agent (`from`)
+  // has read those briefs now, and sees the channels it can't post in.
+  channelsText(from) {
+    const a = this.agents.get(from)
+    return `${this.space.channels.map((c) => {
+      if (a && c.brief) this.giveBrief(a, c)
+      const out = a && c.members?.length && !c.members.includes(this.baseOf(from)) ? " (you're not in it)" : ''
+      return `#${c.name.padEnd(20)} ${(c.members?.map((n) => `@${n}`).join(' ') || 'everyone').padEnd(24)} ${c.brief ? c.brief.replace(/\s+/g, ' ') : '(no brief)'}${out}`
+    }).join('\n')}\n`
+  }
+
+  // `crew post <channel> "…"`: an agent says something in the channel it picks, whichever one it's working in. It reads
+  // as anything else that agent says there, unread in that channel until you've seen it, and takes up nobody's turn. An
+  // @name hands it to that teammate there, by the rules of any hand-off. From your own terminal it goes as what you type
+  // in that channel does. Two things only Crew can see, so they're rules rather than a line in the agent's prompt: what
+  // it would say twice, and a brief it hasn't read.
+  postIn(from, [channel = '', ...words]) {
+    const text = words.join(' ').trim()
+    if (!channel.trim() || !text) throw new Error(POST_USAGE)
+    const c = this.channelNamed(channel)
+    if (!c) throw new Error(`there's no #${channelName(channel)} here: there's ${this.space.channels.map((x) => `#${x.name}`).join(', ')} (crew channels)`)
+    const a = this.agents.get(from)
+    if (!a) return this.send({ from, text, channel: c.id })
+    if (c.members?.length && !c.members.includes(this.baseOf(from))) throw new Error(`you're not in #${c.name}, so nothing was posted: it's for ${c.members.map((n) => `@${n}`).join(', ')}. Hand it to one of them, or ask the user to add you.`)
+    const handing = addressees('', text).length > 0
+    if (!handing && a.current && (this.channelFor(from) ?? GENERAL) === c.id) throw new Error(`not posted: you're working in #${c.name}, and your final message shows there by itself. Say it there.`)
+    if (c.brief && !this.hasBrief(a, c)) {
+      this.giveBrief(a, c)
+      throw new Error(`not posted yet. #${c.name}'s brief, for every message there: ${c.brief}\nPost it again, by that brief.`)
+    }
+    if (handing) return this.send({ from, text, channel: c.id })
+    this.post({ kind: 'reply', from, text: clip(text, REPLY_MAX), ...(c.id !== GENERAL && { channel: c.id }) })
+    return `posted in #${c.name}\n`
   }
 
   // A message's own bracket: what it is and who it's from.

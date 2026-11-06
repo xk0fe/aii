@@ -103,9 +103,8 @@ function agentIn(hub, raw) {
 
 // A channel of a workspace by its name (with or without #) or id.
 function channelIn(hub, raw) {
-  const want = channelName(raw)
-  const c = hub.space.channels.find((x) => x.name === want || x.id === want)
-  if (!c) throw new Error(`there's no #${want} in ${hub.space.name} (crew app channels lists them)`)
+  const c = hub.channelNamed(raw)
+  if (!c) throw new Error(`there's no #${channelName(raw)} in ${hub.space.name} (crew app channels lists them)`)
   return c
 }
 
@@ -196,7 +195,7 @@ export const TOOLS = {
     group: 'look', about: "this workspace's channels, who's in each and its brief", read: true, flags: { in: 'value' },
     plan: ({ crew, hub }, { flags }) => {
       const h = hubFor(crew, hub, flags)
-      return { run: () => `${h.space.channels.map((c) => `#${c.name.padEnd(20)} ${(c.members?.map((n) => `@${n}`).join(' ') || 'everyone').padEnd(24)} ${c.brief ? clip(c.brief.replace(/\s+/g, ' '), 100) : '(no brief)'}`).join('\n')}\n` }
+      return { run: () => h.channelsText() }
     },
   },
   workspaces: {

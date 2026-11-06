@@ -178,6 +178,8 @@ crew release [thing]        give it back (everything you hold, without a name)
 crew leases                 who has what
 crew note "..."             share context with the whole crew
 crew board [words]          the shared notes you haven't read (--all for every one, or words to search)
+crew channels               the channels here: who's in each, and its brief
+crew post <channel> "..."   say it in that channel (@name someone to hand it to them there)
 crew task                   the Tasks board: list, show, done, note, add (crew task help)
 crew app <what> ...         change CLIque itself: agents, channels, workspaces, computers (crew app help)
 `
@@ -237,6 +239,11 @@ async function cli([cmd, ...args]) {
     case 'note':
       if (!args.length) return stop('usage: crew note "text"', 2)
       return send(`/note?from=${from}`, { body: args.join(' ') })
+    case 'channels':
+      return send(`/channels?from=${from}`)
+    case 'post':
+      if (!args[0] || args.length < 2) return stop('usage: crew post <channel> "message" (the name alone: an unquoted # starts a shell comment)', 2)
+      return send(`/post?from=${from}`, { body: words(args) })
     case 'task':
     case 'bug':
       return send(`/task?from=${from}`, { body: words(args) })

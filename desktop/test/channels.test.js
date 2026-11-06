@@ -2,14 +2,17 @@
 // Crew.send, as the app sends. Run with `npm test`.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { BIN, WIN } from './helpers/platform.mjs'
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-channels-'))
 const { CONFIG } = await import('../core/hub.js')
 const { Crew } = await import('../core/crew.js')
 const { addChannel, editChannel, dropChannel, channelsIn, channelName, renameShared, forget, space } = await import('../core/workspaces.js')
+const { serve } = await import('../core/server.js')
 
 const REVIEW = 'Review only: never edit files. Numbered findings, most severe first.'
 fs.writeFileSync(CONFIG, JSON.stringify({
@@ -39,7 +42,7 @@ after(() => {
 function start() {
   quiet()
   typed = []
-  for (const a of crew.hubs.get('default').agents.values()) Object.assign(a, { status: 'idle', inbox: [], expect: null, steering: null, current: undefined })
+  for (const a of crew.hubs.get('default').agents.values()) Object.assign(a, { status: 'idle', inbox: [], expect: null, steering: null, current: undefined, holdUntil: 0 })
   return typed
 }
 // the agent took what it was typed: free again for the next one
@@ -314,4 +317,244 @@ test('a phone reading by plain name reads channels this computer never read in',
   assert.equal(hub.summary().unread, 1)
   hub.read({ june: r.ts })
   assert.equal(hub.summary().unread, 0)
+})
+
+// ---- crew post: an agent picks the channel -------------------------------------------------------------------------
+
+const replies = (hub) => hub.feed.filter((e) => e.kind === 'reply')
+// `crew post <words>` as the /post route hands it over
+const post = (hub, from, ...words) => hub.postIn(from, words)
+
+test('crew post: the agent picks a channel, it lands unread there, and takes up nobody\'s turn', () => {
+  start()
+  const hub = crew.hubs.get('default')
+  const iris = hub.agents.get('iris')
+  const asked = hub.post({ kind: 'msg', from: 'you', to: 'iris', text: 'write the release notes' })
+  Object.assign(iris, { status: 'working', current: asked.id })
+  hub.reads = { since: 0, agents: {} }
+  hub.channelsText('iris') // it has read #review's brief
+  const before = hub.summary().unread
+
+  assert.equal(post(hub, 'iris', 'review', 'the colours', 'are ready'), 'posted in #review\n')
+  const said = replies(hub).at(-1)
+  assert.deepEqual([said.from, said.text, said.channel, said.re], ['iris', 'the colours are ready', 'review', undefined])
+  // nobody was handed anything, and iris is still on what it was on
+  assert.deepEqual(typed, [])
+  for (const a of hub.agents.values()) assert.deepEqual(a.inbox, [])
+  assert.deepEqual([iris.status, iris.current], ['working', asked.id])
+  // unread in #review, and only there
+  assert.equal(hub.summary().unread, before + 1)
+  hub.read({ iris: said.ts }) // a plain name reads everywhere (a phone): see the test above
+  assert.equal(hub.summary().unread, before)
+  hub.reads = { since: 0, agents: {} }
+  hub.read({ 'iris#general': said.ts })
+  assert.equal(hub.readTo(said), 0)
+  hub.read({ 'iris#review': said.ts })
+  assert.equal(hub.readTo(said), said.ts)
+
+  // its final message still goes where it was asked, not where it posted
+  hub.onHook('iris', { hook_event_name: 'Stop', last_assistant_message: 'notes are in' })
+  const final = replies(hub).at(-1)
+  assert.deepEqual([final.text, final.re, final.channel], ['notes are in', asked.id, undefined])
+})
+
+test('crew post: a name finds its channel however it\'s written, and a renamed channel\'s old id doesn\'t shadow a newer name', () => {
+  start()
+  const hub = crew.hubs.get('default')
+  for (const name of ['review', '#review', 'Review', ' #REVIEW ']) assert.equal(hub.channelNamed(name)?.id, 'review', name)
+  assert.equal(hub.channelNamed('ios-release')?.id, 'ios', 'by its name')
+  assert.equal(hub.channelNamed('#iOS Release')?.id, 'ios', 'as channel names are made')
+  assert.equal(hub.channelNamed('ios')?.id, 'ios', 'by its id')
+  assert.equal(hub.channelNamed('nope'), undefined)
+  // #review renamed #audit keeps the id "review", and a new #review gets "review-2"
+  const channels = [{ id: 'general', name: 'general' }, { id: 'review', name: 'audit' }, { id: 'review-2', name: 'review' }]
+  assert.equal(hub.channelNamed.call({ space: { channels } }, 'review').id, 'review-2')
+  assert.equal(hub.channelNamed.call({ space: { channels } }, 'audit').id, 'review')
+})
+
+test('crew post to #general from a channel stays in #general, with or without an @name', () => {
+  start()
+  const hub = crew.hubs.get('default')
+  const june = hub.agents.get('june')
+  june.current = hub.post({ kind: 'msg', from: 'you', to: 'june', text: 'review the api', channel: 'review' }).id
+  assert.equal(post(hub, 'june', 'general', 'api review is under way'), 'posted in #general\n')
+  assert.equal(replies(hub).at(-1).channel, undefined)
+  assert.equal(post(hub, 'june', '#general', '@iris does the login screen need this?'), 'sent to @iris\n')
+  const m = msgs().at(-1)
+  assert.deepEqual([m.to, m.channel], ['iris', undefined], 'not the channel june is working in')
+  assert.doesNotMatch(typed.at(-1)[1], /\[in #/)
+  // a hand-off that names no channel still goes in the one the agent's working in
+  done('iris')
+  hub.send({ from: 'june', to: 'iris', text: 'and on the settings screen?' })
+  assert.equal(msgs().at(-1).channel, 'review')
+})
+
+test('crew post with an @name hands it to them in that channel, with its brief, and what comes of it stays there', () => {
+  start()
+  const hub = crew.hubs.get('default')
+  hub.newConvo(hub.agents.get('iris'))
+  hub.channelsText('june')
+  assert.equal(post(hub, 'june', 'review', '@iris please check the colours'), 'sent to @iris\n')
+  const m = msgs().at(-1)
+  assert.deepEqual([m.from, m.to, m.channel, m.text], ['june', 'iris', 'review', '@iris please check the colours'])
+  assert.equal(typed.at(-1)[1], `[in #review. Channel brief, for every message in #review: ${REVIEW}] [from @june: it's yours now, no need to report back] @iris please check the colours`)
+  hub.onHook('iris', { hook_event_name: 'UserPromptSubmit', prompt: typed.at(-1)[1] })
+  hub.onHook('iris', { hook_event_name: 'Stop', last_assistant_message: 'they look right' })
+  const answer = replies(hub).at(-1)
+  assert.deepEqual([answer.from, answer.re, answer.channel], ['iris', m.id, 'review'])
+  // the rules of any hand-off hold: a name that isn't there, or yourself, and nothing goes out
+  const n = hub.feed.length
+  assert.throws(() => post(hub, 'june', 'review', '@ghost take a look'), /no agent named "ghost"/)
+  assert.throws(() => post(hub, 'june', 'review', '@june note to self'), /that's you/)
+  assert.equal(hub.feed.length, n)
+  // an @name in code isn't one, and @you isn't an agent: both are just said
+  assert.equal(post(hub, 'june', 'review', 'see `@iris` in the config, @you'), 'posted in #review\n')
+  assert.equal(replies(hub).at(-1).text, 'see `@iris` in the config, @you')
+})
+
+test('crew post with Autopilot off: a hand-off waits for your OK, a plain post needs none', () => {
+  start()
+  const hub = crew.hubs.get('default')
+  hub.space.autopilot = false
+  hub.channelsText('june')
+  try {
+    assert.equal(post(hub, 'june', 'review', 'the api looks fine'), 'posted in #review\n')
+    assert.match(post(hub, 'june', 'review', '@iris look at this'), /waiting for the user to approve/)
+    assert.equal(msgs().at(-1).held, true)
+    assert.deepEqual(typed, [])
+    hub.drop(msgs().at(-1).id)
+  } finally {
+    hub.space.autopilot = true
+  }
+})
+
+test('crew post: a channel it isn\'t in, one that isn\'t there, and nothing to say are turned down, and nothing goes out', () => {
+  start()
+  const hub = crew.hubs.get('default')
+  const n = hub.feed.length
+  assert.throws(() => post(hub, 'iris', 'ios-release', 'hello'), /you're not in #ios-release, so nothing was posted: it's for @milo, @june/)
+  assert.throws(() => post(hub, 'iris', 'ios-release', '@milo hello'), /you're not in #ios-release/)
+  assert.throws(() => post(hub, 'iris', 'nope', 'hello'), /there's no #nope here: there's #general, #review, #ios-release \(crew channels\)/)
+  // what a shell leaves of `crew post #review "hi"`, an old crew, or no words at all
+  assert.throws(() => post(hub, 'iris'), /usage: crew post <channel> "message" \(the name alone/)
+  assert.throws(() => post(hub, 'iris', 'review'), /usage: crew post/)
+  assert.throws(() => post(hub, 'iris', 'review', '   '), /usage: crew post/)
+  assert.equal(hub.feed.length, n)
+  // one of its members can, and so can its clones
+  assert.equal(post(hub, 'milo', 'ios-release', 'build 12 is up'), 'posted in #ios-release\n')
+  assert.equal(replies(hub).at(-1).channel, 'ios')
+  hub.agents.set('milo.2', { ...hub.agents.get('milo'), name: 'milo.2', cloneOf: 'milo' })
+  try {
+    assert.equal(post(hub, 'milo.2', 'ios-release', 'build 13 is up'), 'posted in #ios-release\n')
+  } finally {
+    hub.agents.delete('milo.2')
+  }
+})
+
+test('crew post: an agent is given a channel\'s brief before it says anything there, once per conversation', () => {
+  start()
+  const hub = crew.hubs.get('default')
+  const iris = hub.agents.get('iris')
+  hub.newConvo(iris)
+  const n = hub.feed.length
+  const refused = new RegExp(`not posted yet\\. #review's brief, for every message there: ${REVIEW}\\nPost it again, by that brief\\.`)
+  assert.throws(() => post(hub, 'iris', 'review', 'looks fine'), refused)
+  assert.equal(hub.feed.length, n, 'nothing said yet')
+  assert.equal(post(hub, 'iris', 'review', '1. looks fine'), 'posted in #review\n')
+  // it has the brief now, so a message from there only names it
+  hub.send({ from: 'you', to: 'iris', text: 'and the icons?', mentions: false, channel: 'review' })
+  assert.equal(typed.at(-1)[1], '[in #review] and the icons?')
+  done('iris')
+  iris.current = undefined
+  // a hand-off in that channel goes by it too; a new conversation hasn't read it
+  hub.newConvo(hub.agents.get('june'))
+  assert.throws(() => post(hub, 'june', 'review', '@iris have a look'), refused)
+  assert.equal(post(hub, 'june', 'review', '@iris 1. have a look'), 'sent to @iris\n')
+  done('iris')
+  iris.current = undefined
+  // a message there gives it as well
+  hub.newConvo(iris)
+  hub.giveBrief(iris, hub.channel('review'))
+  assert.equal(post(hub, 'iris', 'review', '2. looks fine'), 'posted in #review\n')
+  // a changed brief is another brief
+  crew.channelAction('edit', 'review', { brief: 'Be short.' }, 'default')
+  try {
+    assert.throws(() => post(hub, 'iris', 'review', 'looks fine'), /#review's brief, for every message there: Be short\./)
+    assert.equal(post(hub, 'iris', 'review', 'fine'), 'posted in #review\n')
+  } finally {
+    crew.channelAction('edit', 'review', { brief: REVIEW }, 'default')
+  }
+  // no brief, nothing to wait for
+  hub.newConvo(iris)
+  assert.equal(post(hub, 'iris', 'general', 'hello'), 'posted in #general\n')
+  // crew channels shows it whole, which counts
+  hub.channelsText('iris')
+  assert.equal(post(hub, 'iris', 'review', '3. looks fine'), 'posted in #review\n')
+})
+
+test('crew post in the channel it\'s working in: its final message goes there by itself, so it isn\'t said twice', () => {
+  start()
+  const hub = crew.hubs.get('default')
+  const [iris, june] = [hub.agents.get('iris'), hub.agents.get('june')]
+  hub.channelsText('june')
+  june.current = hub.post({ kind: 'msg', from: 'you', to: 'june', text: 'review the api', channel: 'review' }).id
+  const n = hub.feed.length
+  assert.throws(() => post(hub, 'june', 'review', 'it looks fine'), /not posted: you're working in #review, and your final message shows there by itself\. Say it there\./)
+  iris.current = hub.post({ kind: 'msg', from: 'you', to: 'iris', text: 'say hi' }).id
+  assert.throws(() => post(hub, 'iris', 'general', 'hi'), /not posted: you're working in #general/)
+  assert.equal(hub.feed.length, n + 1, 'only the message to iris')
+  // an @name there is a hand-off, not its answer
+  iris.current = undefined
+  assert.equal(post(hub, 'june', 'review', '@iris look at the colours'), 'sent to @iris\n')
+  assert.equal(msgs().at(-1).channel, 'review')
+  // not working on anything: nothing to say it twice
+  june.current = undefined
+  assert.equal(post(hub, 'june', 'review', 'it looks fine'), 'posted in #review\n')
+})
+
+test('crew post from your own terminal goes as what you type in that channel does', () => {
+  start()
+  const hub = crew.hubs.get('default')
+  assert.equal(post(hub, 'you', 'ios-release', 'ui/ux designer: the login screen'), 'sent to @june\n') // iris fits, but isn't in it
+  const m = msgs().at(-1)
+  assert.deepEqual([m.from, m.to, m.channel, m.auto], ['you', 'june', 'ios', true])
+  assert.equal(post(hub, 'you', 'review', '@iris check the colours'), 'sent to @iris\n')
+  assert.equal(msgs().at(-1).channel, 'review')
+})
+
+test('crew channels lists them, with each whole brief, and says which ones an agent isn\'t in', () => {
+  const hub = crew.hubs.get('default')
+  const rows = (from) => hub.channelsText(from).split('\n')
+  assert.match(rows('june')[0], /^#general +everyone +\(no brief\)$/)
+  assert.match(rows('june')[1], new RegExp(`^#review +everyone +${REVIEW}$`))
+  assert.match(rows('june')[2], /^#ios-release +@milo @june +\(no brief\)$/)
+  assert.match(rows('iris')[2], /^#ios-release +@milo @june +\(no brief\) \(you're not in it\)$/)
+  assert.match(rows('you')[2], /^#ios-release +@milo @june +\(no brief\)$/)
+})
+
+test('crew post and crew channels, as an agent runs them, land in its workspace', async () => {
+  const hub = crew.hubs.get('default')
+  start()
+  const server = await serve({ token: 'tok', hubFor: (id) => crew.hubs.get(id) })
+  const home = fs.mkdtempSync(path.join(process.env.CREW_HOME, 'cli-'))
+  fs.writeFileSync(path.join(home, 'url'), `http://127.0.0.1:${server.address().port}`)
+  fs.writeFileSync(path.join(home, 'token'), 'tok')
+  const env = { ...process.env, CREW_HOME: home, CREW_AGENT: 'june', CREW_WORKSPACE: 'default' }
+  const run = (file, args) => new Promise((resolve) => execFile(file, args, { env }, (e, stdout, stderr) => resolve({ code: e?.code ?? 0, stdout, stderr })))
+  const tricky = 'it\'s "done" & $HOME\nsecond line'
+  const clis = [['crew.mjs', (...a) => run(process.execPath, [path.join(BIN, 'crew.mjs'), 'crew', ...a])], ...(WIN ? [] : [['bin/crew', (...a) => run(path.join(BIN, 'crew'), a)]])]
+  try {
+    for (const [what, cli] of clis) {
+      hub.newConvo(hub.agents.get('june'))
+      assert.match((await cli('post', '#Review', tricky)).stdout, /^not posted yet\. #review's brief/, what) // printed, as any answer is
+      assert.equal((await cli('post', '#Review', tricky)).stdout, 'posted in #review\n', what)
+      assert.deepEqual([replies(hub).at(-1).from, replies(hub).at(-1).text, replies(hub).at(-1).channel], ['june', tricky, 'review'], what)
+      assert.match((await cli('channels')).stdout, /^#ios-release +@milo @june/m, what)
+      const usage = await cli('post')
+      assert.equal(usage.code, 2, what)
+      assert.match(usage.stderr, /usage: crew post <channel>/, what)
+    }
+  } finally {
+    server.close()
+  }
 })

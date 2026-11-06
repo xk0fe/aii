@@ -28,6 +28,9 @@ export function serve(to) {
     release: (q, body) => hub.give({ from: q.from || 'you', words: body.split('\0').slice(0, -1) }),
     leases: () => hub.leasesText(),
     note: (q, body) => hub.note(q.from || 'you', body),
+    channels: (q) => hub.channelsText(q.from || 'you'),
+    // `crew post <channel> "…"`: the words NUL-separated, so a channel's name needs no escaping and any text survives intact
+    post: (q, body) => hub.postIn(q.from || 'you', body.split('\0').slice(0, -1)),
     who: () => hub.who(),
     // `crew board [words]`: the words NUL-separated (none from a `crew` older than that: everything, as it was)
     board: (q, body) => hub.board(q.from || 'you', body.split('\0').slice(0, -1)),
