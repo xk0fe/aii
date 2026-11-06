@@ -91,6 +91,7 @@ An agent pack is a `.crew` file holding one or more agents: name, area, instruct
   - `crew ask <name> "question"` when it needs something back, and `crew answer "…"` to answer one (see [Right of way](#right-of-way-when-agents-need-each-other));
   - `crew send <name> "task"` to hand off work, or `crew send ada,milo "task"` for several recipients;
   - `crew note "fact"` to share what it learned;
+  - `crew post <channel> "message"` to say something in a channel it picks, whichever one it's working in, and `crew channels` to see them. It lands unread in that channel and takes up nobody's turn. An `@name` in it hands it to that teammate there. An agent can't post in a channel it isn't in, is given a channel's brief before its first post there, and doesn't need to post in the channel it's working in, where its final message goes anyway;
   - `crew who` to see the crew;
   - `crew board` to read the shared notes;
   - `crew task …` to work the Tasks board (see below);
@@ -184,6 +185,8 @@ crew ask <name> "..."     ask a teammate and wait for its answer (it reaches the
 crew answer [@name] "..." answer a question you were asked, right away, and carry on
 crew wait                 keep waiting for the answers to what you asked
 crew send <name> "..."    hand work to a teammate for good: nothing comes back
+crew channels             the channels here: who's in each, and its brief
+crew post <channel> "..." say it in that channel (@name someone to hand it to them there)
 crew lease <thing> "..."  take the simulator, a device or a port before using it (waits if a teammate has it)
 crew release [thing]      give it back
 crew task decline <n> "why"   a task that isn't yours goes to the next owner by area
