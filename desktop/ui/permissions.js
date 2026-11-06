@@ -94,6 +94,7 @@ function finish() {
 function next() {
   at++
   asking = false
+  void call('raise').catch(() => {}) // Allow lowered it, for macOS's question
   if (current()) draw()
   else finish()
 }
@@ -124,7 +125,8 @@ async function act(what) {
   }
   if (what === 'skip') {
     await call('skip', s.id).catch(() => {})
-    return next()
+    if (current() === s) next() // (it may have come through and moved on while that was saved)
+    return
   }
   if (what === 'open') return void call('open', s.id).catch(() => {})
   if (what === 'ask') {
@@ -145,7 +147,8 @@ async function act(what) {
 
 box.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]')
-  if (b && !b.disabled) act(b.dataset.act)
+  // a double-click's second press lands on whatever the next step put under the pointer
+  if (b && !b.disabled && e.detail < 2) act(b.dataset.act)
 })
 // the app itself, picked up like a file: main.js starts the drag the operating system carries
 box.addEventListener('dragstart', (e) => {

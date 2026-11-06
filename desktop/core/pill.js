@@ -99,7 +99,7 @@ export function bounds(a, pill, size, wa, pad = 12) {
 // page's pointer, and given its chat's side when you let go. overlay: an Electron BrowserWindow (or anything
 // with getBounds/setBounds/setSize/getPosition/setPosition/setAlwaysOnTop and webContents.send); screen: Electron's
 // screen. hatch(point): the hatch on the screen at a point (no point: the screen with a notch, else the main one), or
-// null where there's none to dock to. onDock(docked): the pill was left docked, or pulled out, by a drag.
+// null where there's none to dock to. onDock(point): a drag left the pill docked at that point, or pulled it out (null).
 export function pillWindow(overlay, screen, { hatch = () => null, onDock = () => {} } = {}) {
   const wa0 = screen.getPrimaryDisplay().workArea
   const state = {
@@ -109,6 +109,7 @@ export function pillWindow(overlay, screen, { hatch = () => null, onDock = () =>
     drag: null,
     dock: null, // the hatch it's docked in
   }
+  const told = (wasDocked) => wasDocked !== Boolean(state.dock) && onDock(state.dock && { x: Math.round(state.dock.x + state.dock.width / 2), y: state.dock.y })
   const placeNow = () => (state.dock ? { side: 'hatch', align: 'center', hatch: { width: state.dock.width, height: state.dock.height, real: state.dock.real } } : state.place)
   const rect = () => {
     const b = overlay.getBounds()
@@ -175,11 +176,17 @@ export function pillWindow(overlay, screen, { hatch = () => null, onDock = () =>
       overlay.setBounds(b)
       // the window moved under a drag: the rest of the drag carries on from here
       if (d && !state.dock) Object.assign(d, { from: [b.x, b.y], at: d.last, under: false })
+      if (state.settleNext && !d) {
+        state.settleNext = false
+        settle()
+      }
     },
     // The page's pointer, in screen coordinates: 'start', 'move', 'end'. Letting go without moving isn't a drop.
     drag(phase, x, y) {
-      if (phase === 'start') state.drag = { from: overlay.getPosition(), at: [x, y], last: [x, y], moved: false, under: false, wasDocked: Boolean(state.dock) }
-      else if (phase === 'move' && state.drag) {
+      if (phase === 'start') {
+        state.settleNext = false
+        state.drag = { from: overlay.getPosition(), at: [x, y], last: [x, y], moved: false, under: false, wasDocked: Boolean(state.dock) }
+      } else if (phase === 'move' && state.drag) {
         const d = state.drag
         d.moved = true
         d.last = [x, y]
@@ -192,20 +199,27 @@ export function pillWindow(overlay, screen, { hatch = () => null, onDock = () =>
         }
         if (!d.under) overlay.setPosition(Math.round(d.from[0] + x - d.at[0]), Math.round(d.from[1] + y - d.at[1]))
       } else if (phase === 'end' && state.drag) {
-        const { moved, wasDocked } = state.drag
+        const { moved, wasDocked, under, last } = state.drag
         state.drag = null
-        if (moved && !state.dock) settle()
-        if (wasDocked !== Boolean(state.dock)) onDock(Boolean(state.dock))
+        // let go in the same moment it was pulled out, before the page has laid out the pill it now is: where it was let
+        // go, once it has
+        if (moved && !state.dock && under) {
+          state.at = { px: last[0], py: last[1], fx: 0.5, fy: 0.5 }
+          state.settleNext = true
+        } else if (moved && !state.dock) settle()
+        told(wasDocked)
       }
     },
-    // Back in the hatch as Crew starts, where you left it.
-    dock() {
-      const h = hatch(null)
+    // Back in the hatch as Crew starts, where you left it (the point onDock was told).
+    dock(point = null) {
+      const h = hatch(point)
       if (h) dockIn(h)
     },
     // A drag that will never end (the page reloaded, the window was hidden).
     cancelDrag() {
+      const d = state.drag
       state.drag = null
+      if (d) told(d.wasDocked) // it stays where the drag had got to, so that's what next launch should find
     },
     // The screens changed (a display came or went, the Dock or menu bar moved): back on screen, the side
     // re-picked for where it is now, no tucking in.

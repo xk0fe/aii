@@ -78,9 +78,10 @@ for (const handle of [$('.pill'), $('.panel header')]) {
       crew.drag('move', ev.screenX, ev.screenY)
     }
     const end = (ev) => {
-      handle.removeEventListener('pointermove', move)
-      handle.removeEventListener('pointerup', end)
-      handle.removeEventListener('pointercancel', end)
+      const source = onMark ? window : handle
+      source.removeEventListener('pointermove', move)
+      source.removeEventListener('pointerup', end)
+      source.removeEventListener('pointercancel', end)
       handle.removeEventListener('lostpointercapture', end)
       document.body.classList.remove('dragging')
       if (!dragging) return
@@ -88,9 +89,11 @@ for (const handle of [$('.pill'), $('.panel header')]) {
       justDragged = true // the click that ends a drag isn't a click
       setTimeout(() => (justDragged = false))
     }
-    handle.addEventListener('pointermove', move)
-    handle.addEventListener('pointerup', end)
-    handle.addEventListener('pointercancel', end)
+    // (from the mark the pointer isn't captured yet, and a quick flick can leave the band before the first move)
+    const source = onMark ? window : handle
+    source.addEventListener('pointermove', move)
+    source.addEventListener('pointerup', end)
+    source.addEventListener('pointercancel', end)
     handle.addEventListener('lostpointercapture', end) // the window went away mid-drag
   })
 }

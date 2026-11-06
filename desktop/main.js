@@ -40,6 +40,7 @@ let pill // the floating pill's window placement (core/pill.js)
 let notches = [] // where the screens' notches are (core/hatch.js)
 let permissions // what macOS allows this app (core/permissions.js)
 let permWin // the permissions flow, while it's up (ui/permissions.js)
+let permPoint // the screen it came up on, as a point on it
 let afterPermissions = null // what comes next once it's gone: on a first launch, the dashboard
 let trayHiddenAt = 0
 let quitting = false
@@ -121,7 +122,7 @@ async function start() {
   await remote.start()
   nativeTheme.themeSource = crew.config.data.theme // every window + the popover's material
   if (MAC) {
-    notches = await readNotches()
+    notches = (await readNotches()) ?? notches
     permissions = newPermissions()
   }
 
@@ -234,6 +235,7 @@ app.on('before-quit', (e) => {
   if (quitting || !crew) return
   const live = [...crew.hubs.values()].reduce((n, h) => n + h.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'parked'].includes(a.status)).length, 0)
   const s = live > 1 ? 's' : ''
+  if (live) lowerHatch() // its dialog is coming, right under the docked chat
   const answer = !live ? 1
     : crew.outlives
       ? dialog.showMessageBoxSync({
@@ -252,7 +254,10 @@ app.on('before-quit', (e) => {
           defaultId: 0,
           cancelId: 1,
         })]
-  if (answer === 2) return e.preventDefault()
+  if (answer === 2) {
+    raiseHatch()
+    return e.preventDefault()
+  }
   quitting = true
   if (answer === 1) crew.stop()
   else crew.detach()
@@ -313,6 +318,7 @@ function createTray() {
     ...(MAC ? { vibrancy: 'popover', visualEffectState: 'active', backgroundColor: '#00000000' } : { backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1c1f' : '#f9f9fb' }),
   })
   keepOpen(trayWin)
+  if (MAC) trayWin.setAlwaysOnTop(true, 'pop-up-menu') // a menu, over the chat docked in the hatch
   trayWin.on('blur', () => {
     trayWin.hide()
     trayHiddenAt = Date.now()
@@ -394,12 +400,13 @@ function createOverlay() {
   // anywhere (core/pill.js), the hatch included (a Mac's: the notch at the top of the screen), where it stays next time.
   pill = pillWindow(overlay, screen, {
     hatch: MAC ? hatchAt : () => null,
-    onDock: (docked) => {
-      crew.config.data.pillInHatch = docked
+    onDock: (at) => {
+      crew.config.data.pillInHatch = at ?? false
       saveConfig()
     },
   })
-  if (crew.config.data.pillInHatch) pill.dock()
+  const at = crew.config.data.pillInHatch
+  if (at) pill.dock(Number.isFinite(at.x) && Number.isFinite(at.y) ? at : null)
   overlay.webContents.on('did-finish-load', () => {
     pill.cancelDrag() // a reload mid-drag never says "let go"
     overlay.webContents.send('place', pill.place)
@@ -408,8 +415,9 @@ function createOverlay() {
   // a display came or went, or the Dock or menu bar moved: bring the pill back on screen and re-pick the side
   for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) {
     screen.on(ev, async () => {
-      if (MAC) notches = await readNotches() // a new scale, or a laptop opened: the notch moved in points
+      if (MAC) notches = (await readNotches()) ?? notches // a new scale, or a laptop opened: the notch moved in points
       pill.resettle()
+      if (permWin) placePermissions(permWin.getBounds())
     })
   }
   overlay.once('ready-to-show', () => dashOnScreen() || overlay.showInactive())
@@ -419,6 +427,28 @@ function createOverlay() {
 function hatchAt(point) {
   const display = point ? screen.getDisplayNearestPoint(point) : screen.getAllDisplays().find((d) => hatchOn(d, notches).real) ?? screen.getPrimaryDisplay()
   return hatchOn(display, notches)
+}
+
+// Over the menu bar is also over dialogs: a macOS alert is a window at a lower level than the hatch (measured: 8 against
+// 25), right where the chat and the flow hang, so anything that puts one up lowers them while it's there. Lowered, the top
+// of them goes under the menu bar for a moment.
+function hatchLevel(level) {
+  if (pill?.docked) overlay.setAlwaysOnTop(true, level)
+  permWin?.setAlwaysOnTop(true, level)
+}
+const lowerHatch = () => hatchLevel('floating')
+const raiseHatch = () => hatchLevel('status')
+// macOS's question about the microphone is one of those, whether the flow or the chat's mic button asks.
+const asksMacOS = {
+  getMediaAccessStatus: (media) => systemPreferences.getMediaAccessStatus(media),
+  askForMediaAccess: async (media) => {
+    lowerHatch()
+    try {
+      return await systemPreferences.askForMediaAccess(media)
+    } finally {
+      raiseHatch()
+    }
+  },
 }
 
 // For a setting nobody's waiting on: a config.json that can't be written says so itself (core/config.js).
@@ -438,7 +468,7 @@ function newPermissions() {
     info = fs.readFileSync(path.join(process.resourcesPath, '..', 'Info.plist'), 'utf8')
   } catch {}
   return new Permissions({
-    systemPreferences,
+    systemPreferences: asksMacOS,
     openUrl: (url) => shell.openExternal(url),
     notify: () => new Notification({ title: PRODUCT_NAME, body: 'Like this, when one of your agents needs you.' }).show(),
     bundleId: bundleIdIn(info, APP_ID),
@@ -447,14 +477,20 @@ function newPermissions() {
   })
 }
 
+const hangingFromHatch = ({ width, height }) => {
+  const h = hatchAt(permPoint)
+  return { x: Math.round(h.x + h.width / 2 - width / 2), y: h.y, width, height }
+}
+const placePermissions = (size) => permWin.setBounds(hangingFromHatch(size))
+
 // Comes out of the hatch, above everything including the menu bar, on every Space and over full-screen apps; it asks
 // one thing at a time and goes away by itself. all: from the ⋯ menu, what you said not now to as well.
 function openPermissions({ all = false, then = null } = {}) {
-  if (permWin) return
+  if (permWin) return permWin.showInactive()
   afterPermissions = then
-  const h = hatchAt(null)
+  permPoint = screen.getCursorScreenPoint() // the screen you're at, which may not be the one with the notch
   permWin = page('permissions.html', {
-    x: Math.round(h.x + h.width / 2 - 228), y: h.y, width: 456, height: 200, frame: false, transparent: true, resizable: false, hasShadow: false, skipTaskbar: true,
+    ...hangingFromHatch({ width: 456, height: 200 }), frame: false, transparent: true, resizable: false, hasShadow: false, skipTaskbar: true,
     fullscreenable: false, minimizable: false, maximizable: false, alwaysOnTop: true,
     acceptFirstMouse: true, // the first press works from another app, System Settings above all
     enableLargerThanScreen: true, // or macOS pushes it back below the menu bar, out of the hatch
@@ -540,10 +576,14 @@ const actions = {
   permissions: async (op, arg) => {
     if (!permissions) throw new Error('Only a Mac asks for these.')
     if (op === 'list') {
-      const h = hatchAt(null)
+      const h = hatchAt(permPoint)
       return { missing: await permissions.missing({ all: Boolean(arg) }), hatch: { width: h.width, height: h.height } }
     }
     if (op === 'done') return void permWin?.close()
+    // Allow may put up macOS's question, which stays until it's answered and can't be seen coming down: the flow stays
+    // lowered until it moves on
+    if (op === 'raise') return void raiseHatch()
+    if (op === 'ask') lowerHatch()
     if (!['look', 'ask', 'open', 'skip'].includes(op)) throw new Error(`No such step: ${op}`)
     return permissions[op](arg)
   },
@@ -767,11 +807,7 @@ function wire() {
   // (The menu bar popover asks on every state push; it's resized only when that changes its size.)
   ipcMain.on('fit', (e, width, height, focus, inside) => {
     const win = BrowserWindow.fromWebContents(e.sender)
-    if (win && win === permWin) {
-      // hanging from the hatch, however tall what it's asking is
-      const h = hatchAt(null)
-      return win.setBounds({ x: Math.round(h.x + h.width / 2 - width / 2), y: h.y, width, height })
-    }
+    if (win && win === permWin) return placePermissions({ width, height }) // however tall what it's asking is
     if (win !== overlay) {
       if (!win) return
       const size = [width, Math.min(height, screen.getDisplayMatching(win.getBounds()).workArea.height - 20)]
@@ -836,7 +872,7 @@ function wireVoice() {
   const shipped = path.join(process.resourcesPath, 'voice', process.platform === 'win32' ? 'crew-voice.exe' : 'crew-voice')
   const voice = new Voice({ root: dir, binary: fs.existsSync(shipped) ? shipped : undefined, mayAskPermission })
   const send = (event) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('voice', event))
-  Object.assign(actions, voiceActions({ voice, systemPreferences, shell, send }))
+  Object.assign(actions, voiceActions({ voice, systemPreferences: MAC ? asksMacOS : systemPreferences, shell, send }))
   const audio = voiceAudio(voice)
   ipcMain.on('voice-audio', (e, id, samples) => audio(e.sender, id, samples))
   app.on('will-quit', () => voice.cancel())

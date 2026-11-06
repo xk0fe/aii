@@ -15,7 +15,7 @@ var screens = $.NSScreen.screens, main = screens.objectAtIndex(0).frame.size.hei
 for (var i = 0; i < screens.count; i++) {
   var s = screens.objectAtIndex(i), f = s.frame, l = s.auxiliaryTopLeftArea, r = s.auxiliaryTopRightArea
   if (l.size.width > 0 && r.size.width > 0) out.push({ x: f.origin.x, y: main - f.origin.y - f.size.height, width: f.size.width, height: f.size.height,
-    notch: { x: l.origin.x + l.size.width - f.origin.x, width: r.origin.x - l.origin.x - l.size.width, height: l.size.height } })
+    notch: { x: l.size.width, width: r.origin.x - l.origin.x - l.size.width, height: l.size.height } })
 }
 JSON.stringify(out)`
 
@@ -24,13 +24,14 @@ const osascript = (script) =>
     execFile('osascript', ['-l', 'JavaScript', '-e', script], { timeout: 1500 }, (e, out) => (e ? reject(e) : resolve(String(out))))
   })
 
-// The notches on the screens right now; none when that can't be told (every screen then gets a drawn hatch). Never throws.
+// The notches on the screens right now; null when that can't be told, so one slow moment doesn't lose what's known (with
+// nothing known, every screen gets a drawn hatch). Never throws.
 export async function readNotches({ run = osascript } = {}) {
   try {
     const list = JSON.parse(await run(ASK))
-    return Array.isArray(list) ? list : []
+    return Array.isArray(list) ? list : null
   } catch {
-    return []
+    return null
   }
 }
 

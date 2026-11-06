@@ -114,7 +114,7 @@ test('a microphone a profile restricts is left alone: no switch of yours would c
   assert.equal(await perms.look('microphone'), 'unknown')
 })
 
-test('notifications: never asked until listed, then whether it\'s allowed; asked and still not listed points at Settings', async () => {
+test('notifications: never asked until listed, then whether it\'s allowed; asked and still not listed is left alone', async () => {
   assert.equal(notificationState(prefs(ALLOWED), ID), 'granted')
   assert.equal(notificationState(prefs((ALLOWED & ~(1 << 25)) >>> 0), ID), 'off')
   assert.equal(notificationState(prefs(ALLOWED | 0), ID), 'granted', 'written as a negative number, the same bits')
@@ -123,9 +123,10 @@ test('notifications: never asked until listed, then whether it\'s allowed; asked
   assert.equal(notificationState(`<dict><string>${ID}</string></dict>`, ID), 'unknown', 'listed, with no flags to read')
   const { perms, calls, answers } = make()
   assert.equal(await perms.look('notifications'), 'ask')
-  assert.equal(await perms.ask('notifications'), 'off')
+  assert.equal(await perms.ask('notifications'), 'unknown', 'no switch to send you to: a list this build never joined')
   assert.equal(calls.notified, 1, 'showing one is how macOS comes to ask')
   assert.equal(answers.notifications, 'asked')
+  assert.ok(!(await perms.missing({ all: true })).some((m) => m.id === 'notifications'), 'and it stops asking')
 })
 
 test('another app\'s entry never answers for this one', () => {

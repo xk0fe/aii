@@ -354,17 +354,59 @@ test('opening the chat in the hatch keeps it on the notch: the chat hangs below,
 
 test('what you did is told once, when you let go: docked, or pulled out, never for a drag that ends where it began', () => {
   const said = []
-  const s = docked({ onDock: (on) => said.push(on) })
+  const s = docked({ onDock: (at) => said.push(at) })
   s.go([1000, 200], [CX, 20])
   assert.deepEqual(said, [], 'still holding it')
   s.end()
-  assert.deepEqual(said, [true])
+  const at = { x: 758, y: 0 }
+  assert.deepEqual(said, [at], 'told where, so next launch finds the same screen')
   s.go([CX, 20], [CX + 30, 40])
   s.end()
-  assert.deepEqual(said, [true], 'it never came out')
+  assert.deepEqual(said, [at], 'it never came out')
   s.go([CX, 20], [CX, 400])
   s.end()
-  assert.deepEqual(said, [true, false])
+  assert.deepEqual(said, [at, null])
+})
+
+test('a drag cut short (the window hid, the page reloaded) still tells what it did: the pill stays where it got to', () => {
+  const said = []
+  const s = docked({ onDock: (at) => said.push(at) })
+  s.go([1000, 200], [CX, 20])
+  s.p.cancelDrag()
+  assert.equal(s.p.place.side, 'hatch')
+  assert.deepEqual(said, [{ x: 758, y: 0 }])
+  s.go([CX, 20], [CX, 400])
+  s.p.cancelDrag()
+  assert.notEqual(s.p.place.side, 'hatch')
+  assert.deepEqual(said.at(-1), null)
+  s.p.cancelDrag() // nothing under way: nothing to tell
+  assert.equal(said.length, 2)
+})
+
+test('pulled out and let go in the same moment, before the page lays it out: it lands where you let go, not at the notch', () => {
+  const s = docked()
+  s.go([1000, 200], [CX, 20])
+  s.end()
+  const pending = []
+  s.win.webContents.send = (ch, place) => ch === 'place' && pending.push(place)
+  s.go([CX, 20], [1200, 600])
+  s.end()
+  assert.equal(pending.length, 1, 'the page has not laid out the flat pill yet')
+  s.win.webContents.send = (ch, place) => ch === 'place' && ((s.page.place = place), s.page.fit())
+  s.page.place = pending[0]
+  s.page.fit()
+  const r = s.rect()
+  assert.equal(s.p.place.side, 'left', 'with the side for that part of the screen')
+  // upright there, around the edge it had against that side, as any pill dropped on this side of the screen turns
+  assert.ok(Math.abs(r.y + r.height / 2 - 600) <= 1, `level with where it was let go, got ${JSON.stringify(r)}`)
+  assert.ok(Math.abs(r.x + r.width - (1200 + PILL.long / 2)) <= 1, `at the flat pill's right edge, got ${JSON.stringify(r)}`)
+})
+
+test('docked on a monitor, it comes back on that monitor, not on the laptop with the notch', () => {
+  const asked = []
+  const s = setup([NOTCHED.workArea], { hatch: (point) => (asked.push(point), SCREEN_TOP) })
+  s.p.dock({ x: 2472, y: -100 })
+  assert.deepEqual(asked, [{ x: 2472, y: -100 }])
 })
 
 test('it starts in the hatch where you left it, and a screen change keeps it docked (the notch re-read, the same side)', () => {
@@ -396,8 +438,8 @@ test('the hatch catches near the notch, not along the rest of the top edge', () 
   assert.ok(inHatch(SCREEN_TOP, CX, 32 + 45, 36), 'though one docked holds on a little longer')
 })
 
-test('the notches come from NSScreen; when that can\'t be asked, every screen gets a drawn hatch', async () => {
+test('the notches come from NSScreen; when that can\'t be asked it says so, so what was known stays known', async () => {
   assert.deepEqual(await readNotches({ run: async () => JSON.stringify([NOTCH]) }), [NOTCH])
-  assert.deepEqual(await readNotches({ run: async () => { throw new Error('no osascript') } }), [])
-  assert.deepEqual(await readNotches({ run: async () => 'not json' }), [])
+  assert.equal(await readNotches({ run: async () => { throw new Error('no osascript') } }), null)
+  assert.equal(await readNotches({ run: async () => 'not json' }), null)
 })

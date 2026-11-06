@@ -70,7 +70,9 @@ export class Permissions {
     }
     if (id === 'notifications') {
       const state = notificationState(await this.prefs(), this.bundleId)
-      return state === 'ask' && this.answers()[id] === 'asked' ? 'off' : state // asked already, and still not listed
+      // asked and still not listed: macOS isn't going to list this build (one it won't trust, say), so there's no switch
+      // to send you to, and nothing more to ask
+      return state === 'ask' && this.answers()[id] === 'asked' ? 'unknown' : state
     }
     if (id === 'localNetwork') {
       if (!['asked', 'granted'].includes(this.answers()[id])) return 'ask'
