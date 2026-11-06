@@ -16,6 +16,8 @@ import { Remote } from './core/remote.js'
 import { readPack } from './core/pack.js'
 import { Voice, voiceActions, voiceAudio } from './core/voice.js'
 import { pillWindow } from './core/pill.js'
+import { readNotches, hatchOn } from './core/hatch.js'
+import { Permissions, appBundle, bundleIdIn } from './core/permissions.js'
 import { Setup, withSetup, hasAgents } from './core/setup.js'
 import { addProvider, removeProvider, checkProvider, keepProvidersInUse } from './core/providers.js'
 // The app's name and id (core/appid.js), which packaging uses too: on Windows notifications carry the id, and it must
@@ -35,6 +37,10 @@ let crew, remote, tray, trayWin, overlay, dash
 let phoneCodes = Promise.resolve() // phones('code') one at a time: the code made last is the one asked for last
 let dashPage = 0 // the dashboard's page: a new one on each load, and when it closes
 let pill // the floating pill's window placement (core/pill.js)
+let notches = [] // where the screens' notches are (core/hatch.js)
+let permissions // what macOS allows this app (core/permissions.js)
+let permWin // the permissions flow, while it's up (ui/permissions.js)
+let afterPermissions = null // what comes next once it's gone: on a first launch, the dashboard
 let trayHiddenAt = 0
 let quitting = false
 let started = false // Crew is up: its windows exist, so a second launch or a .crew file can show them
@@ -114,6 +120,10 @@ async function start() {
   remote = new Remote(crew)
   await remote.start()
   nativeTheme.themeSource = crew.config.data.theme // every window + the popover's material
+  if (MAC) {
+    notches = await readNotches()
+    permissions = newPermissions()
+  }
 
   setMenu()
   createTray()
@@ -139,8 +149,11 @@ async function start() {
     logLine('config', `couldn't note the providers in use: ${e.message}`) // the picker counts them anyway
   }
   // A first run: no workspace or no agents yet, so Crew opens on its dashboard, which says what to set up, asks for the
-  // first workspace, or invites the first agent
-  if (!crew.screen || !hasAgents(crew.config.data)) openDashboard()
+  // first workspace, or invites the first agent. What macOS still has to allow comes first, up in the hatch.
+  const firstRun = !crew.screen || !hasAgents(crew.config.data)
+  const missing = (await permissions?.missing().catch((e) => (logLine('permissions', e?.stack ?? String(e)), []))) ?? []
+  if (missing.length) openPermissions({ then: firstRun ? openDashboard : null })
+  else if (firstRun) openDashboard()
 }
 
 // Crew couldn't start (its terminal host, say): say so and quit, rather than run on with no icon and no window, holding
@@ -370,6 +383,7 @@ function createOverlay() {
     width: 78, height: 140, frame: false, transparent: true, resizable: false, hasShadow: false, skipTaskbar: true,
     fullscreenable: false, minimizable: false, maximizable: false, alwaysOnTop: true,
     acceptFirstMouse: true, // the first press on the pill drags it (or opens the chat), even from another app
+    enableLargerThanScreen: true, // or macOS pushes it back below the menu bar, out of the hatch
   })
   keepOpen(overlay)
   overlay.setAlwaysOnTop(true, 'floating')
@@ -377,16 +391,83 @@ function createOverlay() {
   const wa = screen.getPrimaryDisplay().workArea
   overlay.setPosition(wa.x + wa.width - 78, Math.round(wa.y + wa.height / 2 - 70))
   // Its chat opens on the side of the pill away from the part of the screen it's in, and it can be dragged
-  // anywhere (core/pill.js).
-  pill = pillWindow(overlay, screen)
+  // anywhere (core/pill.js), the hatch included (a Mac's: the notch at the top of the screen), where it stays next time.
+  pill = pillWindow(overlay, screen, {
+    hatch: MAC ? hatchAt : () => null,
+    onDock: (docked) => {
+      crew.config.data.pillInHatch = docked
+      saveConfig()
+    },
+  })
+  if (crew.config.data.pillInHatch) pill.dock()
   overlay.webContents.on('did-finish-load', () => {
     pill.cancelDrag() // a reload mid-drag never says "let go"
     overlay.webContents.send('place', pill.place)
   })
   overlay.on('hide', () => pill.cancelDrag())
   // a display came or went, or the Dock or menu bar moved: bring the pill back on screen and re-pick the side
-  for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(ev, () => pill.resettle())
+  for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) {
+    screen.on(ev, async () => {
+      if (MAC) notches = await readNotches() // a new scale, or a laptop opened: the notch moved in points
+      pill.resettle()
+    })
+  }
   overlay.once('ready-to-show', () => dashOnScreen() || overlay.showInactive())
+}
+
+// The hatch on the screen at a point; no point: the one with a notch if there is one, else the main screen's.
+function hatchAt(point) {
+  const display = point ? screen.getDisplayNearestPoint(point) : screen.getAllDisplays().find((d) => hatchOn(d, notches).real) ?? screen.getPrimaryDisplay()
+  return hatchOn(display, notches)
+}
+
+// For a setting nobody's waiting on: a config.json that can't be written says so itself (core/config.js).
+function saveConfig() {
+  try {
+    crew.config.save()
+  } catch (e) {
+    logLine('config', e.message)
+  }
+}
+
+// ---- the permissions flow (core/permissions.js, ui/permissions.js) ---------------------------------------------
+
+function newPermissions() {
+  let info = null
+  try {
+    info = fs.readFileSync(path.join(process.resourcesPath, '..', 'Info.plist'), 'utf8')
+  } catch {}
+  return new Permissions({
+    systemPreferences,
+    openUrl: (url) => shell.openExternal(url),
+    notify: () => new Notification({ title: PRODUCT_NAME, body: 'Like this, when one of your agents needs you.' }).show(),
+    bundleId: bundleIdIn(info, APP_ID),
+    answers: () => (crew.config.data.permissions ??= {}),
+    save: saveConfig,
+  })
+}
+
+// Comes out of the hatch, above everything including the menu bar, on every Space and over full-screen apps; it asks
+// one thing at a time and goes away by itself. all: from the ⋯ menu, what you said not now to as well.
+function openPermissions({ all = false, then = null } = {}) {
+  if (permWin) return
+  afterPermissions = then
+  const h = hatchAt(null)
+  permWin = page('permissions.html', {
+    x: Math.round(h.x + h.width / 2 - 228), y: h.y, width: 456, height: 200, frame: false, transparent: true, resizable: false, hasShadow: false, skipTaskbar: true,
+    fullscreenable: false, minimizable: false, maximizable: false, alwaysOnTop: true,
+    acceptFirstMouse: true, // the first press works from another app, System Settings above all
+    enableLargerThanScreen: true, // or macOS pushes it back below the menu bar, out of the hatch
+  }, all ? { all: '1' } : {})
+  permWin.setAlwaysOnTop(true, 'status')
+  permWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
+  permWin.once('ready-to-show', () => permWin.showInactive())
+  permWin.on('closed', () => {
+    permWin = null
+    const next = afterPermissions
+    afterPermissions = null
+    if (!quitting && !overlay.isDestroyed()) next?.()
+  })
 }
 
 // The dashboard and the floating chat are two sizes of the same thing, so only one is on screen at a time:
@@ -454,6 +535,19 @@ function showDock() {
 // so an agent on another computer (iris@workstation) is handled there. What the UI does lands in the workspace on screen.
 const actions = {
   state: () => withSetup(crew.snapshot(), crew.config.data, setup.status),
+  // The permissions flow: permissions('list', all) what's missing and the hatch to fit, 'look' / 'ask' / 'open' / 'skip'
+  // one of them, 'done' puts it away. openPermissions: "Permissions…" in the ⋯ menu.
+  permissions: async (op, arg) => {
+    if (!permissions) throw new Error('Only a Mac asks for these.')
+    if (op === 'list') {
+      const h = hatchAt(null)
+      return { missing: await permissions.missing({ all: Boolean(arg) }), hatch: { width: h.width, height: h.height } }
+    }
+    if (op === 'done') return void permWin?.close()
+    if (!['look', 'ask', 'open', 'skip'].includes(op)) throw new Error(`No such step: ${op}`)
+    return permissions[op](arg)
+  },
+  openPermissions: () => openPermissions({ all: true }),
   // The first-run screen and Add provider… (ui/setup.js): setup('check') looks again, setup('provider', id) says what
   // GLM or Ollama needs, setup('add' | 'remove', id) offers it in the model picker or stops.
   setup: async (op, id) => {
@@ -663,11 +757,21 @@ function wire() {
   // Dragging the pill (or the chat by its header): the page reports the pointer, letting go settles it.
   ipcMain.on('drag', (e, phase, x, y) => BrowserWindow.fromWebContents(e.sender) === overlay && pill.drag(phase, x, y))
   ipcMain.on('input', (_e, name, data) => crew.input(name, data))
+  // Full Disk Access takes the app as a dragged file: an .app dropped on its list adds it.
+  ipcMain.on('drag-app', (e) => {
+    const file = appBundle(app.getPath('exe'))
+    if (file) e.sender.startDrag({ file, icon: nativeImage.createFromPath(path.join(dir, 'assets', 'icon.png')).resize({ width: 48, height: 48 }) })
+  })
 
   // Windows size themselves to their content; the overlay is placed so its pill stays put (core/pill.js).
   // (The menu bar popover asks on every state push; it's resized only when that changes its size.)
   ipcMain.on('fit', (e, width, height, focus, inside) => {
     const win = BrowserWindow.fromWebContents(e.sender)
+    if (win && win === permWin) {
+      // hanging from the hatch, however tall what it's asking is
+      const h = hatchAt(null)
+      return win.setBounds({ x: Math.round(h.x + h.width / 2 - width / 2), y: h.y, width, height })
+    }
     if (win !== overlay) {
       if (!win) return
       const size = [width, Math.min(height, screen.getDisplayMatching(win.getBounds()).workArea.height - 20)]

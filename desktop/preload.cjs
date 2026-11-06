@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('crew', {
   // the chat goes on.
   drag: (phase, x, y) => ipcRenderer.send('drag', phase, x, y),
   onPlace: listen('place'),
+  // The permissions flow: this app, as a file being dragged, into a list in System Settings.
+  dragApp: () => ipcRenderer.send('drag-app'),
   onState: listen('state'),
   onPty: listen('pty'),
   onFocus: listen('focus'),

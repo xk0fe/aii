@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:">
+  <title>CLIque</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    /* What CLIque needs macOS to allow, one thing at a time, coming out of the hatch at the top of the screen (the notch,
+       core/hatch.js). One black shape with the screen's edge, its shoulders curving into it. */
+    html, body { background: transparent; overflow: hidden; }
+    .wrap { display: inline-block; padding: 0 18px 18px; }
+    .hatch { position: relative; width: 420px; padding: calc(var(--notch-h, 28px) + 6px) 28px 22px; border-radius: 0 0 24px 24px; background: #000; text-align: center; box-shadow: 0 16px 28px -14px rgba(0, 0, 0, .75); animation: hatch-down var(--t-move) var(--out); }
+    @keyframes hatch-down { from { transform: translateY(-100%); } }
+    .close { position: absolute; top: 6px; right: 10px; width: 24px; height: 24px; padding: 5px; border: 0; border-radius: var(--r-control); background: none; color: var(--fg3); cursor: pointer; transition: background var(--t-quick), color var(--t-quick); }
+    .close:hover { background: var(--fill); color: var(--fg); }
+    .close svg { display: block; width: 100%; height: 100%; }
+    /* how far along: one dash each */
+    .steps { display: flex; justify-content: center; gap: 5px; height: 5px; margin-bottom: 12px; }
+    .steps i { width: 20px; border-radius: 3px; background: var(--track); transition: background var(--t-move) var(--out); }
+    .steps i.on { background: var(--fg); }
+    .who { display: block; height: 56px; line-height: 0; margin-bottom: 8px; }
+    .step.enter { animation: step-in var(--t-move) var(--out); }
+    @keyframes step-in { from { opacity: 0; transform: translateY(6px); } }
+    h1 { margin: 0; font: 600 19px/24px var(--font-brand); letter-spacing: .1px; text-wrap: balance; }
+    p { margin: 5px auto 0; max-width: 340px; color: var(--fg2); font-size: 13px; line-height: 18px; text-wrap: pretty; }
+    .acts { display: flex; justify-content: center; gap: 8px; margin-top: 16px; }
+    .acts .btn { min-width: 124px; } /* the same width whatever it says: Allow, Waiting…, Open Settings */
+    /* me, to drag into the list: the app itself, picked up like a file */
+    .me { display: flex; align-items: center; gap: 10px; height: 52px; margin-top: 14px; padding: 0 14px 0 10px; border-radius: var(--r-window); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); cursor: grab; text-align: left; transition: background var(--t-quick), transform var(--t-quick) var(--out); }
+    .me:hover { background: var(--surface-2); transform: translateY(-1px); }
+    .me:active { cursor: grabbing; }
+    .me img { width: 34px; height: 34px; -webkit-user-drag: none; pointer-events: none; }
+    .me b { flex: 1; font-size: 14px; font-weight: 600; }
+    .me small { color: var(--fg3); font-size: 12px; }
+    .done { padding: 2px 0 6px; }
+  </style>
+</head>
+<body class="hatch-look">
+  <div class="wrap"><section class="hatch hatch-shoulders" role="dialog" aria-label="What CLIque needs macOS to allow"></section></div>
+  <script src="avatar.js"></script>
+  <script src="common.js"></script>
+  <script src="brand.js"></script>
+  <script src="permissions.js"></script>
+</body>
+</html>

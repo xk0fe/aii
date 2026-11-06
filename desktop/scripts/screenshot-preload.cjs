@@ -631,6 +631,13 @@ window.crew = {
   dev: QUERY.get('dev') === '1',
   call: async (action, ...args) => {
     if (action === 'state') return state
+    // the permissions flow: ?fixture=<a step>:<its state> shows that one first (ui/permissions.js)
+    if (action === 'permissions') {
+      const [id, state] = (FIXTURE ?? 'notifications:ask').split(':')
+      if (args[0] === 'list') return { missing: id === 'none' ? [] : [{ id, state }, { id: 'done', state: 'ask' }, { id: 'more', state: 'ask' }].slice(0, 4), hatch: { width: 185, height: 32 } }
+      if (args[0] === 'look') return state
+      return undefined
+    }
     if (action === 'savers') {
       Object.assign(state.savers.on, args[0])
       emit()
@@ -737,6 +744,7 @@ window.crew = {
   input: () => {},
   fit: (width, height, focus, pill) => (window.__crewFit = { width, height, pill }),
   drag: () => {},
+  dragApp: () => {},
   onPlace: (fn) => listeners.place.push(fn),
   onState: (fn) => listeners.state.push(fn),
   onPty: () => {},

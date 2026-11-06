@@ -29,6 +29,34 @@ export function broadcastTargets({ interfaces = os.networkInterfaces(), port = D
   return [...out, '255.255.255.255'].map((address) => ({ address, port }))
 }
 
+// Is macOS letting this app onto the local network? -> 'granted', 'blocked' or 'unknown' (no network to tell by). The
+// same tell as Discovery's below, once. The first time it's asked, this send is what makes macOS put up its question, so
+// nothing should call it before you've been told why (core/permissions.js).
+export function probeLocalNetwork({ targets = () => broadcastTargets(), createSocket = () => dgram.createSocket({ type: 'udp4' }) } = {}) {
+  return new Promise((resolve) => {
+    const socket = createSocket()
+    const finish = (answer) => {
+      try {
+        socket.close()
+      } catch {}
+      resolve(answer)
+    }
+    socket.on('error', () => finish('unknown'))
+    socket.bind(0, async () => {
+      try {
+        socket.setBroadcast(true)
+        const list = targets()
+        const results = await Promise.all(list.map((t) => new Promise((done) => socket.send(Buffer.from('{}'), t.port, t.address, (e) => done({ t, e })))))
+        if (results.length < 2) return finish('unknown') // only the limited broadcast: no network of its own to send from
+        const blocked = results.find((r) => r.t.address === '255.255.255.255')?.e?.code === 'EHOSTUNREACH'
+        finish(blocked ? 'blocked' : 'granted')
+      } catch {
+        finish('unknown')
+      }
+    })
+  })
+}
+
 // beacon() -> what to say about this computer now: { name, agents, port, fingerprint }. Emits 'change' when a computer
 // appears, goes, or says something new, and 'blocked' (true/false) when macOS starts or stops keeping it off the network.
 export class Discovery extends EventEmitter {

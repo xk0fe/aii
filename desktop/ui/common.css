@@ -159,6 +159,33 @@ html[data-os=win] {
   }
 }
 
+/* The hatch: what comes out of the notch at the top of the screen (the docked chat, the permissions flow). Black whatever
+   the theme, so it reads as the screen's own edge. The dark values again, since a media query can't be switched on for
+   one window, and with what :root derives from them, which would otherwise arrive already worked out in the light theme. */
+.hatch-look {
+  color-scheme: dark;
+  --bg: #000; --fg: #EDEDED; --fg2: #A0A0A0; --fg3: #6E6E6E;
+  --line: rgba(255, 255, 255, .1); --line-strong: rgba(255, 255, 255, .16);
+  --fill: rgba(255, 255, 255, .08); --fill-hover: rgba(255, 255, 255, .13); --selected: rgba(255, 255, 255, .1); --track: rgba(255, 255, 255, .12);
+  --seg-on: rgba(255, 255, 255, .14); --btn: var(--fill); --btn-hover: var(--fill-hover); --bubble: var(--fill); --bubble-me: var(--fill);
+  --surface: #161616; --surface-2: #1C1C1C; --panel: #000; --card: #161616; --float: #1F1F1F; --field: #161616; --side: #000;
+  --tip: #EDEDED; --tip-fg: #1C1C1C; --accent: #EDEDED; --on-accent: #161616; --link: var(--accent); --code-bg: var(--fill);
+  --working: #A8A8A8; --working-ink: #BDBDBD; --needs: #D9327F; --needs-ink: #FF7AC0; --needs-tint: rgba(255, 122, 192, .13);
+  --waiting: var(--needs); --waiting-ink: var(--needs-ink); --danger: #F97066; --rec: var(--danger);
+  --blocked: var(--fg3); --blocked-ink: var(--fg2); --idle: var(--fg3); --starting: var(--fg2); --yolo: var(--fg2); --yolo-ink: var(--fg2); --fast: var(--fg2); --fast-ink: var(--fg2);
+  --bug: var(--fg2); --bug-ink: var(--danger); --task: var(--fg2); --feature: var(--fg2); --ctx-calm: var(--fg3); --ctx-warm: var(--needs); --ctx-hot: var(--danger);
+  --ring: color-mix(in srgb, var(--accent) 55%, transparent); --focus-ring: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  --brand-ink: #FF7AC0; --room-thread: rgba(255, 122, 192, .30); --patch-mix: 20%; --thread-mix: 55%;
+  --row-hover: color-mix(in srgb, #fff 5%, var(--side)); --row-on: color-mix(in srgb, #fff 8%, var(--side));
+  --shadow-sm: none; --shadow-lg: 0 8px 24px rgba(0, 0, 0, .48), 0 0 0 1px var(--line-strong); --shadow-float: var(--shadow-lg);
+  color: var(--fg);
+}
+.hatch-look .av-acc { fill: #4E4C56; }
+.hatch-look .av-acc-line { stroke: #4E4C56; }
+/* its shoulders: the curves where the black meets the top of the screen, on each side of whatever carries them */
+.hatch-shoulders::before { content: ''; position: absolute; top: 0; left: -10px; right: -10px; height: 10px; pointer-events: none;
+  background: radial-gradient(circle at 0 100%, transparent 9.5px, #000 10px) left top / 10px 10px no-repeat, radial-gradient(circle at 100% 100%, transparent 9.5px, #000 10px) right top / 10px 10px no-repeat; }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {

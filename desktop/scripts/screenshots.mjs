@@ -140,7 +140,54 @@ async function tap(win, at) {
   win.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(at.x), y: Math.round(at.y), button: 'left', clickCount: 1 })
 }
 
+// The top of a MacBook's screen behind the hatch shots: a menu bar and the notch, which is really a hole in the screen so
+// it's drawn over what's underneath. What's in the window is centered on it, as main.js places it.
+const SCREEN_TOP = `html::before { content: ''; position: fixed; inset: 0 0 auto 0; height: 33px; background: rgba(255, 255, 255, .28); }
+  html::after { content: ''; position: fixed; top: 0; left: 50%; width: 185px; height: 32px; margin-left: -92.5px; background: #000; border-radius: 0 0 9px 9px; z-index: 99; pointer-events: none; outline: 1px dashed rgba(255, 90, 170, var(--notch-guide, 0)); }
+  .wrap { position: absolute !important; left: 50%; top: 0; transform: translateX(-50%); }`
+
 const SHOTS = {
+  // Dragged to the notch: the band around it, then the chat hanging from it (it's black in both themes).
+  async hatch(theme) {
+    const win = await open('overlay.html', { theme, width: 900, height: 110, backdrop: 'desktop' })
+    await win.webContents.insertCSS(SCREEN_TOP)
+    await sleep(300)
+    await js(win, "window.__crewEmit('place', { side: 'hatch', align: 'center', hatch: { width: 185, height: 32, real: true } })")
+    await sleep(600)
+    await save(win, `hatch-${theme}`)
+    win.setContentSize(900, 680)
+    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await sleep(800)
+    await save(win, `hatch-chat-${theme}`)
+    win.destroy()
+  },
+  // The way in: a flat pill reaches the notch and becomes part of it, then the chat drops out of it.
+  async 'hatch-dock'() {
+    const win = await open('overlay.html', { theme: 'dark', width: 900, height: 680, backdrop: 'desktop' })
+    await win.webContents.insertCSS(SCREEN_TOP)
+    await js(win, "window.__crewEmit('place', { side: 'below', align: 'center' })")
+    await sleep(500)
+    await record(win, 'hatch-dock', {
+      clip: { x: 0, y: 0, width: 900, height: 680 }, ms: 2600, width: 600,
+      during: async () => {
+        await sleep(500)
+        await js(win, "window.__crewEmit('place', { side: 'hatch', align: 'center', hatch: { width: 185, height: 32, real: true } })")
+        await sleep(900)
+        await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+      },
+    })
+    win.destroy()
+  },
+  // What's missing, one at a time, out of the hatch: macOS hasn't asked, it's a switch now, and the one that's dragged.
+  async permissions(theme) {
+    for (const step of ['notifications:ask', 'microphone:ask', 'localNetwork:off', 'fullDisk:off']) {
+      const win = await open('permissions.html', { theme, width: 900, height: 420, backdrop: 'desktop', fixture: step })
+      await win.webContents.insertCSS(SCREEN_TOP)
+      await sleep(700)
+      await save(win, `permissions-${step.replace(':', '-')}-${theme}`)
+      win.destroy()
+    }
+  },
   // The README's cover (scripts/cover.html): one picture, with see-through rounded corners.
   async cover(theme) {
     if (theme !== 'light') return

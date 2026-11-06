@@ -2,13 +2,17 @@
 // left the chat opens to its right, on the right to its left, at the top below it, at the bottom above it (the
 // pill lies flat at the top and bottom, like the Dock). The pill itself never moves when the
 // chat opens or closes; the chat lines up with it so it stays on screen.
+// Dragged to the hatch (the notch at the top of the screen, core/hatch.js) it docks there: it catches the moment the
+// pointer is close, while you're still holding it, and pulling it away lets go. Its side is then 'hatch'.
 // No Electron in here: rectangles are { x, y, width, height } in screen coordinates, and pillWindow() is handed
 // the window and screen it works with.
+import { inHatch } from './hatch.js'
 
 export const PANEL = { width: 390, height: 580, gap: 8 } // the chat panel, as ui/overlay.html draws it
 const SNAP = 40 // dropped this close to an edge, the pill tucks in against it
 const MARGIN = 8 // ...this far from it
 const STICKY = 0.05 // near a diagonal, the side it already has wins by this much
+const LET_GO = 36 // docked, the pointer goes this much further than what caught it before the pill comes away
 
 // The chat's side ('left' | 'right' | 'above' | 'below', relative to the pill) and how the chat lines up with
 // the pill along it ('start' | 'center' | 'end'), for a pill at `rect` on a screen whose work area is `wa`.
@@ -93,15 +97,19 @@ export function bounds(a, pill, size, wa, pad = 12) {
 
 // The floating pill's window: sized around what the page draws, placed so the pill stays put, dragged by the
 // page's pointer, and given its chat's side when you let go. overlay: an Electron BrowserWindow (or anything
-// with getBounds/setBounds/setSize/getPosition/setPosition and webContents.send); screen: Electron's screen.
-export function pillWindow(overlay, screen) {
+// with getBounds/setBounds/setSize/getPosition/setPosition/setAlwaysOnTop and webContents.send); screen: Electron's
+// screen. hatch(point): the hatch on the screen at a point (no point: the screen with a notch, else the main one), or
+// null where there's none to dock to. onDock(docked): the pill was left docked, or pulled out, by a drag.
+export function pillWindow(overlay, screen, { hatch = () => null, onDock = () => {} } = {}) {
   const wa0 = screen.getPrimaryDisplay().workArea
   const state = {
     place: { side: 'left', align: 'center' }, // it starts by the right edge, its chat opening to the left
     at: { px: wa0.x + wa0.width - 10, py: wa0.y + wa0.height / 2, fx: 1, fy: 0.5 },
     inside: null, // where the page says the pill sits inside the window
     drag: null,
+    dock: null, // the hatch it's docked in
   }
+  const placeNow = () => (state.dock ? { side: 'hatch', align: 'center', hatch: { width: state.dock.width, height: state.dock.height, real: state.dock.real } } : state.place)
   const rect = () => {
     const b = overlay.getBounds()
     const p = state.inside ?? { x: 12, y: 12, width: b.width - 24, height: b.height - 24 }
@@ -110,10 +118,29 @@ export function pillWindow(overlay, screen) {
   // the screen the pill is on: where it's held, not where the window happens to reach
   const areaAt = (a) => screen.getDisplayNearestPoint({ x: Math.round(a.px), y: Math.round(a.py) }).workArea
 
+  // Into the hatch: held by the top middle of the pill, up over the menu bar, where only a window above it can go.
+  function dockIn(h) {
+    state.dock = h
+    state.at = { px: h.x + h.width / 2, py: h.y, fx: 0.5, fy: 0 }
+    overlay.setAlwaysOnTop?.(true, 'status')
+    overlay.webContents.send('place', placeNow())
+  }
+
+  // Pulled out mid-drag: a flat pill again, its middle under the pointer as soon as the page has laid it out.
+  function pullOut() {
+    state.dock = null
+    state.place = { side: 'below', align: 'center' }
+    state.drag.under = true
+    overlay.setAlwaysOnTop?.(true, 'floating')
+    overlay.webContents.send('place', state.place)
+  }
+
   // Let go (or the screens changed): the chat's side follows the part of the screen the pill is in. A new side
   // re-lays out the page, whose next fit puts the window around the pill; otherwise the pill just settles
-  // (tucking in against an edge it was dropped close to).
+  // (tucking in against an edge it was dropped close to). Docked, it stays docked: on the same screen, or the nearest
+  // one if that went away, where the notch may be another size.
   function settle({ snap = true } = {}) {
+    if (state.dock) return dockIn(hatch({ x: state.dock.x + state.dock.width / 2, y: state.dock.y }) ?? state.dock)
     let r = rect()
     const wa = screen.getDisplayNearestPoint({ x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }).workArea
     // a pill left off screen (a display went away, the Dock came up) comes back onto it first
@@ -130,28 +157,51 @@ export function pillWindow(overlay, screen) {
 
   return {
     get place() {
-      return state.place
+      return placeNow()
+    },
+    get docked() {
+      return Boolean(state.dock)
     },
     rect,
     // The page's size and where the pill sits in it (relative to the window).
     fit(width, height, inside) {
-      // mid-drag the pill stays under the pointer, wherever that is; otherwise where it's held
-      const r = state.drag && rect()
-      const hold = r ? { px: r.x, py: r.y, fx: 0, fy: 0 } : state.at
+      const d = state.drag
+      // docked, it's held at the hatch whatever the pointer does; mid-drag the pill stays under the pointer, wherever
+      // that is; otherwise where it's held
+      const r = d && rect()
+      const hold = state.dock || !d ? state.at : d.under ? { px: d.last[0], py: d.last[1], fx: 0.5, fy: 0.5 } : { px: r.x, py: r.y, fx: 0, fy: 0 }
       if (inside) state.inside = inside
-      overlay.setBounds(bounds(hold, state.inside ?? { x: 12, y: 12, width: width - 24, height: height - 24 }, { width, height }, areaAt(hold)))
+      const b = bounds(hold, state.inside ?? { x: 12, y: 12, width: width - 24, height: height - 24 }, { width, height }, state.dock?.area ?? areaAt(hold))
+      overlay.setBounds(b)
+      // the window moved under a drag: the rest of the drag carries on from here
+      if (d && !state.dock) Object.assign(d, { from: [b.x, b.y], at: d.last, under: false })
     },
     // The page's pointer, in screen coordinates: 'start', 'move', 'end'. Letting go without moving isn't a drop.
     drag(phase, x, y) {
-      if (phase === 'start') state.drag = { from: overlay.getPosition(), at: [x, y], moved: false }
+      if (phase === 'start') state.drag = { from: overlay.getPosition(), at: [x, y], last: [x, y], moved: false, under: false, wasDocked: Boolean(state.dock) }
       else if (phase === 'move' && state.drag) {
-        state.drag.moved = true
-        overlay.setPosition(Math.round(state.drag.from[0] + x - state.drag.at[0]), Math.round(state.drag.from[1] + y - state.drag.at[1]))
+        const d = state.drag
+        d.moved = true
+        d.last = [x, y]
+        if (state.dock) {
+          if (inHatch(state.dock, x, y, LET_GO)) return
+          pullOut()
+        } else {
+          const h = hatch({ x: Math.round(x), y: Math.round(y) })
+          if (h && inHatch(h, x, y)) return dockIn(h)
+        }
+        if (!d.under) overlay.setPosition(Math.round(d.from[0] + x - d.at[0]), Math.round(d.from[1] + y - d.at[1]))
       } else if (phase === 'end' && state.drag) {
-        const { moved } = state.drag
+        const { moved, wasDocked } = state.drag
         state.drag = null
-        if (moved) settle()
+        if (moved && !state.dock) settle()
+        if (wasDocked !== Boolean(state.dock)) onDock(Boolean(state.dock))
       }
+    },
+    // Back in the hatch as Crew starts, where you left it.
+    dock() {
+      const h = hatch(null)
+      if (h) dockIn(h)
     },
     // A drag that will never end (the page reloaded, the window was hidden).
     cancelDrag() {
