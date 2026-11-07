@@ -70,6 +70,7 @@ afterEach(() => {
 after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const ready = (hub, name) => {
+  hub.restart(name) // agents rest until there's work: this one's up
   const a = hub.agents.get(name)
   a.status = 'idle'
   a.holdUntil = 0
@@ -100,7 +101,7 @@ test('Crew quits mid-turn; the next one picks the agent up: the reply threads, a
 
   const next = crew([{ name: 'ada', tag: run, pid: 4242 }])
   assert.ok(!next.runner.starts.includes('ada'), "ada isn't started again: he kept working")
-  assert.ok(next.runner.starts.includes('june'), "june's CLI ended with the old Crew, so it starts (resuming)")
+  assert.ok(next.runner.starts.includes('june'), "june's CLI ended with the old Crew, and an answer waits for it, so it starts (resuming)")
   assert.ok(next.hub.feed.some((e) => e.kind === 'event' && /picked up @ada where it was/.test(e.text)))
   const reply = next.hub.feed.findLast((e) => e.kind === 'reply' && e.from === 'ada')
   assert.match(reply.text, /Option C is built/)
@@ -128,10 +129,10 @@ test('clones come back too; a terminal whose agent was removed meanwhile is stop
   assert.equal(clone.cloneOf, 'ada')
   assert.equal(clone.status, 'working')
   assert.equal(clone.area, 'mobile app', "it wears its original's settings")
-  // iris isn't in the crew any more, and june's terminal isn't the one Crew knew: both stop, june starts afresh
+  // iris isn't in the crew any more, and june's terminal isn't the one Crew knew: both stop, june rests until there's work
   assert.deepEqual(runner.stops.sort(), ['iris', 'june'])
-  assert.ok(runner.starts.includes('june'))
-  assert.ok(!runner.starts.includes('ada') && !runner.starts.includes('ada.2'))
+  assert.equal(hub.agents.get('june').status, 'resting')
+  assert.deepEqual(runner.starts, [])
 })
 
 test("an agent whose CLI ended while Crew was closed still gets what was queued for it, and a clone's goes to its original", () => {

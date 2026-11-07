@@ -219,7 +219,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 // ends them too.
 app.on('before-quit', (e) => {
   if (quitting || !crew) return
-  const live = [...crew.hubs.values()].reduce((n, h) => n + h.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'parked'].includes(a.status)).length, 0)
+  const live = [...crew.hubs.values()].reduce((n, h) => n + h.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'parked', 'resting'].includes(a.status)).length, 0)
   const s = live > 1 ? 's' : ''
   const answer = !live ? 1
     : crew.outlives

@@ -202,7 +202,7 @@ function poseOf(agent, { ask } = {}) {
   if (agent.status === 'waiting') return ask === 'question' ? 'question' : 'sign'
   if (agent.status === 'working') return agent.waitingOn?.length ? 'mug' : 'laptop'
   if (agent.status === 'starting') return 'pop'
-  if (agent.status === 'idle') return 'mug'
+  if (agent.status === 'idle' || agent.status === 'resting') return 'mug'
   return undefined
 }
 // Where each body's right side sits around paw height (100x100 box), so a paw can reach the stick of a sign.

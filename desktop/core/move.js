@@ -273,6 +273,7 @@ export function moveEnd(hub, token, done) {
     a.moving = false
     if (m.working) a.inbox.unshift(crewPrompt(a, `[crew] You were stopped for a move to another computer that didn't go through, so you're still here, in ${real(expand(a.cwd))}. Anything you had running in your terminal was stopped. Check where things stand, then carry on.`))
     if (m.running) hub.launch(a)
+    else hub.pump(a) // what came for it meanwhile
     return hub.changed()
   }
   hub.forgetCalls(m.name, `moved to another computer before it answered: ask @${done.name}@${done.to} again`)

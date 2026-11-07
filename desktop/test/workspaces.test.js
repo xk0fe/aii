@@ -253,6 +253,9 @@ test("agents start where they work in their workspace, and say which workspace t
   t.after(() => delete process.env.CREW_WORKSPACE)
   home.start('http://127.0.0.1:1')
   ws.start('http://127.0.0.1:1')
+  assert.equal(runner.live.size, 0, 'nobody starts with the app')
+  for (const n of ['iris', 'june']) home.restart(n)
+  for (const n of ['ada', 'june', 'milo']) ws.restart(n)
   assert.deepEqual([...runner.live.keys()].sort(), ['iris', 'june', 'storefront/ada', 'storefront/june', 'storefront/milo'])
   const at = (n) => runner.live.get(n)
   assert.equal(at('june').cwd, OWN)
@@ -270,7 +273,9 @@ test('a parked workspace starts nothing, and its terminals are its own', () => {
   crew({ agents: [{ name: 'june', area: 'backend', cwd: tmp }], workspaces: [{ id: 'storefront', folder: tmp, members: { june: {} }, parked: true }] })
   ws.start('http://127.0.0.1:1')
   assert.equal(runner.live.size, 0)
+  assert.throws(() => ws.restart('june'), /asleep/)
   home.start('http://127.0.0.1:1')
+  home.restart('june')
   assert.deepEqual([...runner.live.keys()], ['june'])
   runner.live.set('storefront/june', {})
   ws.agents.get('june').status = 'idle'
@@ -382,6 +387,7 @@ test("a workspace gone from config.json stops its agents; a hub's settings are i
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-ws-folder-'))
   crew({ agents: [{ name: 'june', area: 'backend' }], workspaces: [{ id: 'storefront', folder: tmp, members: { june: {} }, autofix: true }] })
   ws.start('http://127.0.0.1:1')
+  ws.restart('june')
   assert.ok(runner.running('storefront/june'))
   assert.equal(ws.snapshot().tasks.autofix, true)
   assert.equal(home.snapshot().tasks.autofix, false)
@@ -832,10 +838,12 @@ test("what the app does lands in the workspace on screen: its agents, edits, new
   }
 })
 
-test('parking a workspace stops its agents and keeps their conversations; opening it starts them again, resuming', () => {
+test('parking a workspace stops its agents and keeps their conversations; opened, each resumes once it has work', () => {
   ws.update('ada', { off: true })
   ws.start('http://127.0.0.1:1')
   ws.saveSession('june', 'sess-storefront')
+  ws.restart('june')
+  ws.restart('milo')
   assert.ok(runner.running('storefront/june') && runner.running('storefront/milo'))
   ws.agents.get('june').status = 'working'
   ws.space.parked = true
@@ -849,15 +857,17 @@ test('parking a workspace stops its agents and keeps their conversations; openin
   assert.equal(shown.parked, true)
   assert.deepEqual(shown.agents.map((a) => [a.name, a.status]), [['june', 'parked'], ['ada', 'off'], ['milo', 'parked']])
   assert.deepEqual([ws.summary().on, ws.summary().working], [2, 0])
-  // by hand in config.json too: opened, its agents start, picking their conversations back up
+  // by hand in config.json too: opened, its agents rest until there's work for them
   const raw = saved()
   delete raw.workspaces[0].parked
   fs.writeFileSync(CONFIG, JSON.stringify(raw))
   config.load()
   assert.equal(ws.parked, false)
-  assert.ok(runner.running('storefront/june') && runner.running('storefront/milo'))
+  assert.deepEqual(ws.snapshot().agents.map((a) => [a.name, a.status]), [['june', 'resting'], ['ada', 'off'], ['milo', 'resting']])
+  assert.ok(!runner.running('storefront/june') && !runner.running('storefront/milo'))
+  ws.send({ to: 'june', text: 'are you there?' })
   assert.ok(runner.live.get('storefront/june').args.includes('sess-storefront'), 'resumes its conversation')
-  assert.match(ws.feed.at(-1).text, /^woke up: @june and @milo pick up where they left off/)
+  assert.ok(!runner.running('storefront/milo'), 'only the one with work starts')
   assert.ok(!runner.running('storefront/ada'), 'one that was off stays off')
 })
 

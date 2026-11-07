@@ -167,8 +167,8 @@ export class Crew extends EventEmitter {
     return this.screen
   }
 
-  // Each workspace's agents start unless it's parked; those still at work from before Crew restarted carry on either way
-  // (still running: a workspace taken out of config.json and put back has had its stopped).
+  // Each workspace's agents rest until there's work for them; those still at work from before Crew restarted carry on
+  // whether it's parked or not (still running: a workspace taken out of config.json and put back has had its stopped).
   startWorkspace(hub, survivors = this.runner.survivors ?? []) {
     const own = survivors.filter((s) => hub.runner.own(s.name) && this.runner.running(s.name)).map((s) => ({ ...s, name: hub.runner.own(s.name) }))
     hub.start(this.url, { survivors: own })
@@ -375,7 +375,7 @@ export class Crew extends EventEmitter {
         this.say(`${e.message}, so agents stop when CLIque quits this time`)
       }
     }
-    if (this.runner.replaced) this.say('the terminal host was from another CLIque version, so its agents started again, resuming their conversations')
+    if (this.runner.replaced) this.say('the terminal host was from another CLIque version, so its agents stopped: each picks up its conversation once it has work')
     this.url = `http://127.0.0.1:${server.address().port}`
     for (const hub of this.hubs.values()) this.startWorkspace(hub, survivors)
     this.config.watch() // (a hub does too, but there may be none yet)
@@ -803,7 +803,7 @@ export class Crew extends EventEmitter {
     // who it waits on and who waits on it: names and the questions' feed ids, as this computer writes them
     const waits = (list) => list?.map((w) => ({ ...w, name: q(w.name), id: w.id && q(w.id) }))
     return {
-      ...a, name: q(a.name), seed: a.name, home: l.slug, homeName: l.name, status: l.peer ? a.status : 'away', images: a.images?.map((p) => this.fetchImage(l, p)),
+      ...a, name: q(a.name), seed: a.name, home: l.slug, homeName: l.name, status: l.peer ? a.status : 'away', ...(!l.peer && a.status === 'resting' && { rested: true }), images: a.images?.map((p) => this.fetchImage(l, p)),
       ticket: a.ticket == null ? null : q(String(a.ticket)), ...(a.cloneOf && { cloneOf: q(a.cloneOf) }), waitingOn: waits(a.waitingOn), owes: waits(a.owes),
     }
   }
@@ -900,8 +900,8 @@ export class Crew extends EventEmitter {
   // here: the workspace it was sent in, whatever's on screen by the time it goes.
   // opts.channel: the channel it's said in (its id); Auto picks from that channel's members.
   async send(to, text, images = [], { fresh = false, re, channel } = {}, here = this.here) {
-    // asleep (put to sleep while on screen, or watched from a phone): what you send wakes it, and its agents pick up
-    // their conversations; the message waits for them to start
+    // asleep (put to sleep while on screen, or watched from a phone): what you send wakes it, and the agent it's for
+    // picks up its conversation; the message waits for it to start
     if (here.space?.parked) this.workspaceAction('open', here.ws)
     const quoted = re ? this.snapshot(here).feed.find((e) => e.id === re) : undefined
     const quote = quoted && { from: quoted.from, text: quoted.ticket !== undefined ? `#${String(quoted.ticket).split('@')[0]} ${quoted.title ?? ''}` : quoted.text }
@@ -912,7 +912,7 @@ export class Crew extends EventEmitter {
     if (!names.length) {
       // agents, not their clones; one here that can clone itself counts as free
       const members = here.channel(channel)?.members
-      const ready = this.snapshot(here).agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status) && (!members || members.includes(a.name)))
+      const ready = this.snapshot(here).agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status) && (a.home || here.workable(here.agents.get(a.name))) && (!members || members.includes(a.name)))
       const best = here.pick(text, ready.map((a) => (a.home ? a : { ...a, ...here.lineup(here.agents.get(a.name)), ...here.warmth(here.agents.get(a.name)) })))
       if (!best) throw new Error(members ? `nobody in #${here.channel(channel).name} is on to take it: turn one on, or @name someone` : 'no agents to send to')
       names = [best.name]

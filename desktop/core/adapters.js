@@ -132,6 +132,11 @@ export const TRUST = {
   codex: { ask: /Trustthisfolder\?.{0,400}1\.Trustandcontinue/, yes: 'Trustandcontinue', no: 'Quit', pointer: '›' },
 }
 
+// Claude Code, picking up a long conversation whose cache has gone cold on a plan where that costs a good part of its
+// usage limit: "Resume this conversation? … Resuming it will use about 12% of your 5-hour usage limit". Whatever is typed
+// while it's up is lost, and Enter picks an answer.
+export const RESUME_ASK = { claude: /Resumethisconversation\?/ }
+
 export const adapters = {
   claude(a, { resume, session, attachments, platform = process.platform, bin, checks }) {
     const where = { platform, bin }

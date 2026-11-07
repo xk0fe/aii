@@ -251,7 +251,7 @@
     .tv-show.idle { opacity: .55; }
     .tv-show.idle:hover { opacity: 1; }
     .tv-show [data-show=needs] .n.some { color: var(--needs-ink); }
-    .terms { position: relative; flex: 1; min-height: 0; padding: 20px var(--gx, 24px) var(--gx, 24px); display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); grid-auto-rows: minmax(250px, 1fr); overflow-y: auto; }
+    .terms { position: relative; flex: 1; min-height: 0; padding: 20px var(--gx, 24px) var(--gx, 24px); display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); grid-auto-rows: minmax(250px, 1fr); overflow-y: auto; }
     .terms.focus { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); overflow: hidden; }
     .terms.focus .tile:not(.on) { display: none; }
     .terms .tile.filtered { display: none; }
@@ -623,6 +623,15 @@
     .terms-view.docked .tile-acts { top: 8px; }
     .terms-view.docked .tile.on:not(:hover) .tile-acts:not(:focus-within) { opacity: 0; pointer-events: none; } /* over the output: only while the pointer's there */
     .terms-view.docked .term { padding-top: 10px; }
+    /* an agent that's resting has no terminal yet: the dock keeps its place, so nothing moves when it starts */
+    .dock-rest { display: none; }
+    .terms-view.docked.resting .terms { display: none; }
+    .terms-view.docked.resting .dock-rest { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px 32px 40px; text-align: center; border-radius: 0 0 var(--r-window) var(--r-window); background: #1a1a1a; color: #A0A0A0; box-shadow: 0 0 0 1px rgba(0, 0, 0, .06); }
+    .dock-rest h3 { margin: 6px 0 0; color: #EDEDED; font: 600 15px/1.3 var(--ui); }
+    .dock-rest p { margin: 0 0 8px; max-width: 280px; font: 400 13px/1.45 var(--ui); text-wrap: balance; }
+    .dock-rest .btn { background: rgba(255, 255, 255, .1); color: #EDEDED; }
+    .dock-rest .btn:hover { background: rgba(255, 255, 255, .16); }
+    .dock-rest .btn svg { color: inherit; }
   </style>
 </head>
 <body>
@@ -640,7 +649,7 @@
       <div class="side-nav">
         <button class="nv" data-place="crew" title="Every agent as a card: turn them on and off, edit, compare (⌘2)"><span class="nv-icon"></span><span>Agents</span><i class="nv-n"></i></button>
         <button class="nv" data-place="tasks" title="Tasks: to do, in progress, review, done (⌘3)"><span class="nv-icon"></span><span>Tasks</span><i class="nv-n"></i></button>
-        <button class="nv" data-place="terminals" title="Every agent's terminal (⌘4)"><span class="nv-icon"></span><span>Terminals</span><i class="nv-n"></i></button>
+        <button class="nv" data-place="terminals" title="The terminals running now (⌘4)"><span class="nv-icon"></span><span>Terminals</span><i class="nv-n"></i></button>
       </div>
       <div class="side-sec chan-sec">
         <span class="sec-label">Channels</span>
@@ -671,6 +680,7 @@
         <div class="terms-view hidden">
           <div class="dock-bar"></div>
           <div class="terms"></div>
+          <div class="dock-rest"></div>
         </div>
         <div class="collection hidden"></div>
         <div class="tasks-view hidden"></div>
