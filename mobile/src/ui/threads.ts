@@ -32,7 +32,8 @@ export function withThreadCards(shown: FeedEntry[], feed: FeedEntry[], byId: Map
     if (done.has(key)) continue
     done.add(key)
     const all = lines.get(key) ?? [e]
-    const hidden = all.filter((x) => inThread(x) && !x.echo)
+    const onlyIn = all.filter(inThread)
+    const hidden = onlyIn.some((x) => !x.echo) ? onlyIn.filter((x) => !x.echo) : onlyIn
     const people = [...new Set(all.flatMap((x) => [x.from, x.to]).filter((n): n is string => Boolean(n) && n !== 'you').map(family))]
     const opener = family(e.from)
     // someone's question that came out to you, with nobody saying anything to it since
@@ -64,7 +65,8 @@ export function threadLines(feed: FeedEntry[], id: string) {
   const key = keyOf(id, byId)
   const all = feed.filter((e) => !e.answers && (e.thread ? keyOf(e.thread, byId) === key : byId.get(e.id)?.id === key && e.id === key))
   const root = byId.get(key) ?? null
-  const rows = all.filter((e) => !e.echo)
+  // (Crew stepping in is the computer's to explain: it has no words of its own to show here)
+  const rows = all.filter((e) => !e.echo && e.kind !== 'rule')
   const echoes = new Map<string, FeedEntry[]>()
   for (const e of all) {
     if (!e.echo) continue

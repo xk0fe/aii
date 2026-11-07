@@ -806,7 +806,7 @@ export class Crew extends EventEmitter {
     const waits = (list) => list?.map((w) => ({ ...w, name: q(w.name), id: w.id && q(w.id) }))
     return {
       ...a, name: q(a.name), seed: a.name, home: l.slug, homeName: l.name, status: l.peer ? a.status : 'away', ...(!l.peer && a.status === 'resting' && { rested: true }), images: a.images?.map((p) => this.fetchImage(l, p)),
-      ticket: a.ticket == null ? null : q(String(a.ticket)), ...(a.cloneOf && { cloneOf: q(a.cloneOf) }), waitingOn: waits(a.waitingOn), owes: waits(a.owes),
+      ticket: a.ticket == null ? null : q(String(a.ticket)), ...(a.cloneOf && { cloneOf: q(a.cloneOf) }), ...(a.thread && { thread: q(a.thread) }), waitingOn: waits(a.waitingOn), owes: waits(a.owes),
     }
   }
 
@@ -910,6 +910,7 @@ export class Crew extends EventEmitter {
     const idThere = (slug) => (id) => (slug ? (id?.endsWith(`@${slug}`) ? id.slice(0, -slug.length - 1) : undefined) : id && !id.includes('@') ? id : undefined)
     const unq = (slug) => (name) => (slug && String(name).endsWith(`@${slug}`) ? String(name).slice(0, -slug.length - 1) : name)
     let names = addressees(to, text).map((n) => this.resolve(n, here))
+    if (thread && !names.length) throw new Error('nobody left in this thread to send it to: @name someone')
     const auto = !names.length && { auto: true } // nobody named: Auto picks, and the chat says Auto picked them
     if (!names.length) {
       // agents, not their clones; one here that can clone itself counts as free

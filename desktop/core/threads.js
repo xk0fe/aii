@@ -24,6 +24,8 @@ export function threadFields(entry, parent) {
   if (!TALK.has(entry.kind)) return {}
   if (entry.thread) return { thread: entry.thread }
   if (!parent) return {}
+  // said in another channel than what led to it (crew post): it's that channel's, as a line of its own
+  if ('channel' in entry && (entry.channel ?? null) !== (parent.channel ?? null)) return {}
   const answersYou = entry.kind === 'reply' && !inThread(parent) && (parent.from === 'you' || (parent.kind === 'ask' && parent.to === 'you'))
   const out = entry.from === 'you' || entry.kind === 'ask' || entry.held || answersYou
   return { thread: parent.thread ?? parent.id, ...(out && { out: true }) }
@@ -53,15 +55,21 @@ export function gistOf(text, from) {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), GIST_MAX - 40))}…`
 }
 
-// A reply that only repeats a hand-off its author sent in the same turn, answering the same message. (Not an answer to a
-// teammate's question: that's what the teammate is waiting for, whatever else was sent.)
+// A reply that only says it sent a hand-off ("I've told Joseph"): a few words, right after sending it, answering the same
+// message. Anything longer may be a report in its own right, so it stays a line of its own. So does one that asks
+// something, and an answer to a teammate's question: that's what the teammate is waiting for.
+const ECHO_WORDS = 60
+const ECHO_WITHIN = 120000
+const BAD_NEWS = /\b(fail\w*|errors?|block\w*|broke\w*|couldn['’]t|can['’]t|cannot|not (yet|verified|tested|checked))\b/i
 export function echoOf(entry, parent, sent) {
-  if (entry.kind !== 'reply' || entry.out || !entry.re || parent?.ask) return null
-  return sent?.id ?? null
+  if (entry.kind !== 'reply' || entry.out || !entry.re || parent?.ask || !sent) return null
+  if (entry.ts - sent.ts > ECHO_WITHIN || asksSomething(entry.text) || BAD_NEWS.test(entry.text)) return null
+  return String(entry.text ?? '').trim().split(/\s+/).length <= ECHO_WORDS ? sent.id : null
 }
 
 // Lines from before threads, stamped when they're read back, oldest first. What a thread's addressee last said there
-// comes out to the channel, since those threads ended long ago and nothing will ask it for a closing line. In place.
+// comes out to the channel, and so does the last report in it, since those threads ended long ago and nothing will ask for
+// a closing line. In place.
 export function stampAll(feed) {
   const byId = new Map()
   const sent = new Map() // `${from}|${re}` -> the latest hand-off of that agent answering that message
@@ -82,25 +90,52 @@ export function stampAll(feed) {
   for (const [id, rows] of stamped) {
     const root = byId.get(id)
     if (root?.from !== 'you' || !root.to) continue
-    const last = rows.findLast((e) => e.kind === 'reply' && familyOf(e.from) === familyOf(root.to) && !e.empty)
-    if (last && !last.out) (last.out = true), delete last.echo
+    const said = (e) => e.kind === 'reply' && !e.empty
+    for (const last of [rows.findLast((e) => said(e) && familyOf(e.from) === familyOf(root.to)), rows.findLast(said)]) if (last && !last.out) (last.out = true), delete last.echo
   }
   return feed
 }
 
 // The lines a client gets, oldest first: the channel's last `rows` and the threads' last `inside`, so a long thread
-// doesn't push the channel's history out of view.
+// doesn't push the channel's history out of view. Every thread keeps its last few, so a long one next to it can't take
+// away its card.
+const THREAD_LEAST = 3
 export function forClients(feed, { rows = 200, inside = 200 } = {}) {
   const out = []
   let inChannel = 0
   let hidden = 0
-  for (let i = feed.length - 1; i >= 0 && (inChannel < rows || hidden < inside); i--) {
+  const each = new Map()
+  for (let i = feed.length - 1; i >= 0 && inChannel < rows + 1; i--) {
     const e = feed[i]
     if (inThread(e)) {
-      if (hidden++ < inside) out.push(e)
+      const n = each.get(e.thread) ?? 0
+      each.set(e.thread, n + 1)
+      if (hidden++ < inside || n < THREAD_LEAST) out.push(e)
     } else if (inChannel++ < rows) out.push(e)
   }
   return out.reverse()
+}
+
+// What a thread's addressee is told when it's asked for a closing line: what was said since its last message. Each
+// agent's last reply whole (it may be the only report there is), the rest in a line, the newest kept if it runs long.
+const DIGEST_MAX = 6000
+const DIGEST_REPLY = 1500
+export function threadDigest(rows) {
+  const lastOf = new Map()
+  for (const e of rows) if (e.kind === 'reply' && !e.empty) lastOf.set(familyOf(e.from), e)
+  const whole = new Set(lastOf.values())
+  const lines = rows.filter((e) => e.kind !== 'rule' && !e.echo && e.text).map((e) => {
+    const who = `@${e.from}${e.to && e.kind === 'msg' ? ` to @${e.to}` : ''}`
+    return `${who}: ${whole.has(e) ? String(e.text).slice(0, DIGEST_REPLY) : (e.gist ?? gistOf(e.text, e.from))}`
+  })
+  const kept = []
+  let size = 0
+  for (const line of lines.reverse()) {
+    if (kept.length && size + line.length > DIGEST_MAX) break
+    size += line.length
+    kept.unshift(line)
+  }
+  return kept.join('\n')
 }
 
 // A reply that ends by asking something.

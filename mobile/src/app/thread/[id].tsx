@@ -43,7 +43,8 @@ export default function ThreadScreen() {
     })
   }
   const people = [...new Set(rows.flatMap((e) => [e.from, e.to]).filter((n): n is string => Boolean(n) && n !== 'you').map(familyOf))]
-  const target = !root ? '' : root.from === 'you' ? (root.to ?? '') : root.from
+  // who it goes to: whoever you asked, or whoever started it, or (what it hung off has gone from the chat) the last to speak
+  const target = root ? (root.from === 'you' ? (root.to ?? '') : root.from) : (rows.findLast((e) => e.from !== 'you')?.from ?? '')
   const offline = client && link.status === 'offline' ? offlineText(link, client.macName) : ''
   const disabled = !client ? 'Pair with your computer to send' : offline ? `Can't send: ${client.macName} is offline` : link.status === 'connecting' || !state ? `Connecting to ${client.macName}…` : null
 
@@ -144,7 +145,7 @@ export default function ThreadScreen() {
         contentContainerStyle={styles.listInner}
       />
       <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom }}>
-        {client ? (
+        {client && target ? (
           <Composer
             t={t}
             background={t.page}

@@ -1180,12 +1180,12 @@ const feedView = (feed, agents, open, limit, drafts = new Map(), { reads, divide
   }
   const line = '<div class="new-line" aria-label="New replies"><span>New</span></div>'
   const day = (e, prev) => (prev && sameDay(prev.ts, e.ts) ? '' : `<div class="day-line"><span>${esc(dayLabel(e.ts))}</span></div>`)
-  return { items, html: () => items.map((e, i) => day(e, items[i - 1]) + ((e.ids ?? [e.id]).includes(divider) ? line : '') + feedItem(e, items[i - 1], ctx)).join('') }
+  return { items, as, html: () => items.map((e, i) => day(e, items[i - 1]) + ((e.ids ?? [e.id]).includes(divider) ? line : '') + feedItem(e, items[i - 1], ctx)).join('') }
 }
 
 // ---- threads (core/threads.js): what agents say to each other, under the message that led to it ---------------------
-// The channel shows a thread as one card, where its first line would be. `threadSeen(id)`: how many lines of it you'd
-// seen when you last had it open (it has news once there are more); undefined if you never have.
+// The channel shows a thread as one card, where its first line would be. `threadSeen(id)`: how far you'd read when you last
+// had it open (the time of its newest line: it has news once there's a newer one); undefined if you never have.
 const threadKey = (id, as) => as[id]?.id ?? id
 const busyOn = (a) => a.status === 'working' || a.status === 'waiting'
 function withThreadCards(list, feed, as, agents, threadSeen) {
@@ -1207,7 +1207,8 @@ function withThreadCards(list, feed, as, agents, threadSeen) {
     if (done.has(key)) continue
     done.add(key)
     const all = lines.get(key) ?? [e]
-    const hidden = all.filter((x) => inThread(x) && !x.echo)
+    const onlyIn = all.filter(inThread)
+    const hidden = onlyIn.filter((x) => !x.echo).length ? onlyIn.filter((x) => !x.echo) : onlyIn
     const people = [...new Set(all.flatMap((x) => [x.from, x.to]).filter((n) => n && n !== 'you').map(familyOf))]
     const opener = familyOf(e.from)
     // someone's question that came out to you, with nobody saying anything to it since
@@ -1218,7 +1219,7 @@ function withThreadCards(list, feed, as, agents, threadSeen) {
     out.push({
       kind: 'thread', id: `t-${key}`, thread: key, from: opener, ts: e.ts, channel: e.channel, opener, others: people.filter((n) => n !== opener), n: hidden.length,
       span: (all.at(-1)?.ts ?? e.ts) - e.ts, asking: asking?.from, working: working.length > 0, latest,
-      fresh: had !== undefined && hidden.length > had,
+      fresh: had !== undefined && (latest?.ts ?? 0) > had,
       sig: `${hidden.length}|${asking?.id ?? ''}|${working.map((a) => a.name)}|${latest?.id ?? ''}|${had ?? ''}`,
     })
   }
@@ -1282,16 +1283,20 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
   let lines = []
   let pinned = true
   let sending = false
+  let shownIn = null // the workspace of what's open: another's has none of its threads
+  const drafts = new Map() // thread -> what you'd typed there, for when you come back to it
   const open = new Set()
   const agents = () => state?.agents ?? []
   const mentions = mountMentions(ta, { agents, box: el.querySelector('.input'), heading: () => 'Mention: they get it too' })
-  const target = () => (!root ? '' : root.from === 'you' ? root.to : root.from)
+  // who it goes to: whoever you asked, or whoever started it, or (what it hung off has gone from the chat) the last to speak
+  const target = () => (root ? (root.from === 'you' ? root.to : root.from) : (lines.findLast((e) => e.from !== 'you' && e.kind !== 'rule')?.from ?? ''))
   const atEnd = () => list.scrollHeight - list.scrollTop - list.clientHeight < 40
   list.addEventListener('scroll', () => (pinned = atEnd()), { passive: true })
   const rowsOf = (s) => {
     const { as } = mergeSends(s.feed)
-    const all = s.feed.filter((e) => !e.answers && ((e.thread && threadKey(e.thread, as) === key) || as[e.id]?.id === key))
-    return { as, all, root: as[key] ?? s.feed.find((e) => e.id === key) ?? null }
+    // (a send to several agents is one message: its first copy)
+    const all = s.feed.filter((e) => !e.answers && as[e.id]?.id === e.id && e.id !== key && e.thread && threadKey(e.thread, as) === key)
+    return { as, all, root: as[key] ?? null }
   }
   const rowHTML = (e, echoes) => {
     const byName = Object.fromEntries(agents().map((a) => [a.name, a]))
@@ -1308,7 +1313,8 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const line = e.gist ?? snippet(e.text)
     const whole = e.from === 'you' || open.has(e.id)
     const more = e.from !== 'you' && (line !== String(e.text ?? '').trim() || echoes.length)
-    const body = whole ? `<div class="tr-full bubble open">${md(e.text)}</div>${echoes.map((x) => `<div class="tr-echo"><span>Also said</span><div class="bubble open">${md(x.text)}</div></div>`).join('')}` : `<div class="tr-line">${esc(line)}</div>`
+    const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
+    const body = whole ? `${pics}<div class="tr-full bubble open">${md(e.text)}</div>${echoes.map((x) => `<div class="tr-echo"><span>Also said</span><div class="bubble open">${md(x.text)}</div></div>`).join('')}` : `${pics}<div class="tr-line">${esc(line)}</div>`
     return `<div class="thread-row${more ? ' opens' : ''}${whole ? ' open' : ''}" id="tr-${esc(e.id)}" data-row="${esc(e.id)}"${more ? ` tabindex="0" role="button" aria-expanded="${whole}"` : ''}>${face}<div class="tr-main">${head}${body}</div><span class="tr-chev">${more ? ICONS.chevron : ''}</span></div>`
   }
   const draw = (force = false) => {
@@ -1317,7 +1323,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     root = first
     const shown = all.filter((e) => !e.echo)
     const echoes = (id) => all.filter((e) => e.echo === id)
-    lines = root && !all.includes(root) ? [root, ...shown] : shown
+    lines = root ? [root, ...shown] : shown
     const hidden = all.filter((e) => inThread(e) && !e.echo).length
     const people = [...new Set(lines.flatMap((e) => [e.from, e.to]).filter((n) => n && n !== 'you').map(familyOf))]
     const subText = `${plural(hidden, 'message')}${people.length ? ` · ${nameList(people)}` : ''}`
@@ -1325,7 +1331,8 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const who = target()
     const hintText = who ? `Reply to ${familyOf(who)}, in the thread` : 'Reply in the thread'
     if (ta.placeholder !== hintText) ta.placeholder = hintText
-    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id)]), agents().map((a) => [a.name, a.avatar]).length])
+    reply.classList.toggle('hidden', !who)
+    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length]), agents().map((a) => [a.name, a.avatar]).length])
     if (next !== drawn || force) {
       drawn = next
       const top = list.scrollTop
@@ -1333,9 +1340,10 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
       if (pinned) list.scrollTop = list.scrollHeight
       else list.scrollTop = top
     }
-    const ws = state.workspace?.id ?? state.workspace
-    if (threadReads.all(ws)[key] !== hidden) {
-      threadReads.set(ws, key, hidden)
+    // read while it's on screen: the floating chat closed with a thread open has read nothing
+    const newest = all.at(-1)?.ts ?? 0
+    if (el.offsetParent && (threadReads.all(shownIn)[key] ?? -1) < newest) {
+      threadReads.set(shownIn, key, newest)
       onSeen?.()
     }
   }
@@ -1348,22 +1356,25 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
       if (!same) {
         open.clear()
         drawn = ''
-        ta.value = ''
+        ta.value = drafts.get(key) ?? ''
         hint.textContent = ''
         hint.classList.remove('error')
-        send.disabled = true
+        send.disabled = !ta.value.trim()
         ta.style.height = ''
         pinned = true
       }
       el.classList.remove('hidden')
-      if (at) open.add(at)
+      // a line that only repeats a hand-off is shown under that hand-off
+      const landing = at && (state?.feed ?? []).find((e) => e.id === at)
+      const row = landing?.echo ?? at
+      if (row) open.add(row)
       draw(true)
-      if (at) {
+      if (row) {
         pinned = false
-        const row = document.getElementById(`tr-${at}`)
-        row?.scrollIntoView({ block: 'center' })
-        row?.classList.remove('flash')
-        if (row) (void row.offsetWidth, row.classList.add('flash'))
+        const line = document.getElementById(`tr-${row}`)
+        line?.scrollIntoView({ block: 'center' })
+        line?.classList.remove('flash')
+        if (line) (void line.offsetWidth, line.classList.add('flash'))
       }
       if (!same) ta.focus({ preventScroll: true })
     },
@@ -1380,6 +1391,9 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     id: () => key,
     render(next) {
       state = next
+      const ws = next.workspace?.id ?? next.workspace
+      if (key && shownIn !== ws) api.close() // another workspace on screen: this thread isn't there
+      shownIn = ws
       draw()
     },
   }
@@ -1390,6 +1404,8 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
       ev.preventDefault()
       return crew.call('openUrl', link.href)
     }
+    const pic = ev.target.closest('[data-open]')
+    if (pic) return crew.call('openFile', pic.dataset.open)
     const who = ev.target.closest('[data-agent]')
     if (who) return onAgent?.(who.dataset.agent)
     const card = ev.target.closest('[data-card]')
@@ -1415,7 +1431,10 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     try {
       const last = lines.at(-1) ?? root
       const channel = root?.channel
-      await crew.call('send', target(), text, [], { ...(last && { re: last.id }), thread: key, ...(channel && { channel }) })
+      const who = target()
+      if (!who) throw new Error('nobody left in this thread to send it to')
+      await crew.call('send', who, text, [], { ...(last && { re: last.id }), thread: key, ...(channel && { channel }) })
+      drafts.delete(key)
       ta.value = ''
       ta.style.height = ''
       pinned = true
@@ -1431,6 +1450,8 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     ta.style.height = 'auto'
     ta.style.height = `${ta.scrollHeight}px`
     send.disabled = !ta.value.trim()
+    if (ta.value) drafts.set(key, ta.value)
+    else drafts.delete(key)
     if (hint.classList.contains('error')) (hint.textContent = ''), hint.classList.remove('error')
   })
   ta.addEventListener('keydown', (e) => {
@@ -1445,6 +1466,16 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     e.preventDefault()
     ta.focus()
   })
+  // A file dropped on a thread stays out of the chat's own message box, hidden under it in the floating chat.
+  for (const type of ['dragover', 'drop']) {
+    el.addEventListener(type, (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (type !== 'drop') return
+      hint.textContent = "A thread can't take images yet: send it in the chat"
+      hint.classList.add('error')
+    })
+  }
   // Esc closes it, before anything behind it hears (the floating chat closes on Esc too), unless a mention list is up
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !key || e.isComposing || e.defaultPrevented) return
@@ -1855,8 +1886,8 @@ function typingParts(agents, asks = new Map(), { all = false, crew = agents, que
     const busy = waiting || a.status === 'working' || starting
     const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : starting ? 'starting up to take it…' : busy ? (a.activity ? activityWords(a.activity) : 'working…') : 'free, its sub-agents are still working'
     const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : busy ? '<span class="typing"><i></i><i></i><i></i></span>' : ''
-    const inThreadNow = !card && a.status === 'working' && threads?.has(a.thread) ? ` data-thread="${esc(a.thread)}"` : ''
-    return [`<div class="typing-row ${a.status}"${inThreadNow} ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
+    const inThreadNow = !card && a.status === 'working' && threads?.(a.thread)
+    return [`<div class="typing-row ${a.status}"${inThreadNow ? ` data-thread="${esc(inThreadNow)}"` : ''} ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : inThreadNow ? 'Open the thread it’s working in' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
     <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${owedChip(a, someone)}${end}</div>`, subTree(a, many ? 2 : 4)]
   })
   const waitingLeft = rest.filter((a) => a.status === 'waiting').length
@@ -2091,8 +2122,11 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
   const jump = (id) => {
     let target = lineOf(id)
     // a line in a thread: the thread, there
-    const threaded = !target && !convo && last?.feed.find((e) => e.id === id && inThread(e))
-    if (threaded) return onThread?.(threaded.thread, id)
+    const threaded = !target && last?.feed.find((e) => e.id === id && inThread(e))
+    if (threaded && onThread) {
+      if (convo) onLeave?.()
+      return onThread(threaded.thread, id)
+    }
     // a quote, a "replied" link or an Answer pointing outside this conversation, or into another channel: the channel
     // it was said in, if that shows it
     const home = !target && (!convo || onLeave) && homeOf(id)
@@ -2491,7 +2525,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       // in a channel, the agents at work on something said there
       const atWork = convo ? agents.filter((a) => familyOf(a.name) === convo) : channel ? agents.filter((a) => (channels.some((c) => c.id === a.channel) ? a.channel : 'general') === channel) : agents
       const hasCard = new Set(view.items.filter((e) => e.kind === 'thread').map((e) => e.thread))
-      const busy = words.length ? [] : typingParts(atWork, asks, { all: typingAll, crew: agents, queue: !inline, cards: inline, threads: hasCard })
+      const busy = words.length ? [] : typingParts(atWork, asks, { all: typingAll, crew: agents, queue: !inline, cards: inline, threads: (id) => (id && hasCard.has(threadKey(id, view.as)) ? threadKey(id, view.as) : null) })
       let added = false
       if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}:${!convo && !words.length && (!channel || channel === 'general') ? welcome?.() ?? '' : ''}` // the empty-feed hint shows only when nobody's busy
       if (next !== key) {

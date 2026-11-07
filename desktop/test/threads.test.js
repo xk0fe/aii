@@ -244,7 +244,8 @@ test('an agent that is off, or a workspace put to sleep, gets no prompt: its las
   const typed = runner.typed.length
   quiet()
   assert.equal(runner.typed.length, typed)
-  assert.equal(inThread(later), false, 'its latest word, moved into the channel')
+  assert.equal(inThread(later), true, 'its old word is out of date')
+  assert.equal(inThread(hub.feed.find((e) => e.text === 'Fixed.')), false, "the thread's last report comes out")
 })
 
 test("a question at the end of a teammate's reply comes out if nobody takes it up", () => {
@@ -322,7 +323,7 @@ test('lines from before threads are stamped when read back; the agent you asked 
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
   const shown = hub.feed.filter((e) => !inThread(e)).map((e) => e.id)
-  assert.deepEqual(shown, ['a', 'c', 'e', 'g'])
+  assert.deepEqual(shown, ['a', 'c', 'e', 'f', 'g'], "the agent you asked, and the thread's last report")
   assert.equal(hub.feed.find((e) => e.id === 'd').thread, 'a')
   assert.equal(hub.openThreads.size, 0, 'old threads are over: nobody is asked anything after a restart')
 })
@@ -348,6 +349,226 @@ test('a thread line is told by its first sentence, in the words its agent used',
   const long = gistOf(`${'word '.repeat(100)}end.`)
   assert.ok(long.length <= 241)
   assert.ok(long.endsWith('…'))
+})
+
+// ---- what a closer look at the closing line found --------------------------------------------------------------------
+const prompts = () => runner.typed.filter((t) => /gone quiet/.test(t.text))
+
+test('asked for a closing line, it is told what was said since its last message, each last report whole', () => {
+  ask()
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Run the migration.' }))
+  turn('joseph', 'Migration 42 FAILED: the column already exists.\n\nI stopped there.')
+  quiet()
+  const { text } = prompts()[0]
+  assert.match(text, /Migration 42 FAILED/)
+  assert.match(text, /I stopped there/)
+  assert.doesNotMatch(text, /Run the migration/, 'what it said itself, before its last message, it knows')
+})
+
+test("a closing prompt is no message of yours: a restart can't turn it into your request again", async () => {
+  const root = ask('deploy to prod')
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Deploy.' }))
+  turn('joseph', 'Deployed.')
+  const jeff = hub.agents.get('jeff')
+  Object.assign(jeff, { status: 'working', current: 'something-else' })
+  quiet()
+  assert.equal(jeff.inbox.length, 1)
+  const queued = jeff.inbox[0]
+  assert.notEqual(queued.id, root.id)
+  assert.equal(queued.closes, root.id)
+  assert.equal(queued.closeRe, root.id)
+  assert.equal(hub.feed.some((e) => e.id === queued.id), false)
+  jeff.status = 'idle'
+})
+
+test('its reply answers your message, wherever the prompt came from, and only a turn with words posts anything', () => {
+  const root = ask()
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix it.' }))
+  turn('joseph', 'Fixed.')
+  quiet()
+  const rows = hub.feed.length
+  hub.onHook('jeff', { hook_event_name: 'UserPromptSubmit', prompt: runner.typed.at(-1).text })
+  hub.onHook('jeff', { hook_event_name: 'Stop', last_assistant_message: '' })
+  assert.equal(hub.feed.length, rows, 'nothing said: no line')
+  assert.equal(inThread(hub.feed.find((e) => e.text === 'On it.')), false)
+  assert.equal(hub.feed.find((e) => e.text === 'On it.').re, root.id)
+})
+
+test('with nobody to ask, the report comes out: off, stopped or asked a moment ago', async () => {
+  for (const nobody of [(a) => (a.off = true), (a) => (a.status = 'stopped')]) {
+    await done()
+    fresh()
+    ask()
+    turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix it.' }))
+    const report = turn('joseph', 'Failed: no access.')
+    nobody(hub.agents.get('jeff'))
+    const typed = runner.typed.length
+    quiet()
+    assert.equal(runner.typed.length, typed)
+    assert.equal(hub.agents.get('jeff').inbox.length, 0)
+    assert.equal(inThread(report), false)
+  }
+})
+
+test('a question comes out whenever the minute ticks over', async () => {
+  for (const phase of [1000, 15000, 30000, 44000, 45000, 59000]) {
+    await done()
+    fresh()
+    ask()
+    turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix it.' }))
+    const asked = turn('joseph', 'Should I go ahead?')
+    for (let t = phase; t < 200000; t += 60000) hub.threadTick(asked.ts + t)
+    assert.equal(inThread(asked), false, `first tick ${phase} ms after`)
+    assert.equal(asked.asks, true)
+  }
+})
+
+test('a question brought out arrives now, at the end of the chat, and counts as new', () => {
+  ask()
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix it.' }))
+  const asked = turn('joseph', 'Should I go ahead?')
+  const said = hub.post({ kind: 'reply', from: 'david', text: 'Unrelated.' })
+  hub.read({ joseph: Date.now() + 5000 })
+  const at = Date.now() + 90000
+  hub.threadTick(at)
+  assert.equal(hub.feed.at(-1), asked)
+  assert.ok(hub.feed.indexOf(said) < hub.feed.indexOf(asked))
+  assert.equal(asked.ts, at)
+})
+
+test('a question between teammates stays between them, and so does one whoever it answers is still working on', () => {
+  ask()
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix it.' }))
+  const q = hub.post({ kind: 'msg', from: 'jeff', to: 'joseph', text: 'Which one?', ask: true, re: hub.feed.at(-1).id })
+  const between = hub.post({ kind: 'reply', from: 'joseph', text: 'This one, or that one?', re: q.id })
+  hub.threadTick(between.ts + 90000)
+  assert.equal(inThread(between), true)
+  const hand = hub.post({ kind: 'msg', from: 'jeff', to: 'david', text: 'Look at this.', re: between.id })
+  const reply = hub.post({ kind: 'reply', from: 'david', text: 'Should I fix it?', re: hand.id })
+  hub.agents.get('jeff').status = 'working'
+  hub.threadTick(reply.ts + 90000)
+  assert.equal(inThread(reply), true)
+  hub.agents.get('jeff').status = 'idle'
+})
+
+test('only a few words right after a hand-off are an echo: a report stays a line of its own, and one that asks can come out', () => {
+  ask()
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix it.' }))
+  const long = turn('joseph', `The migration failed. ${'detail '.repeat(80)}`, () => hub.send({ from: 'joseph', to: 'david', text: 'FYI.' }))
+  assert.equal(long.echo, undefined)
+  hub.agents.get('david').status = 'working'
+  const asks = turn('joseph', 'Told David. Should I roll back?', () => hub.send({ from: 'joseph', to: 'david', text: 'FYI 2.' }))
+  assert.equal(asks.echo, undefined)
+  hub.agents.get('david').status = 'idle'
+})
+
+test('nobody calls a thread over while its hand-offs are being read, or typed in and not yet taken', () => {
+  const root = ask()
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'A.' }))
+  const a = hub.feed.at(-1)
+  const joseph = hub.agents.get('joseph')
+  const rows = hub.feed.filter((e) => e.thread === root.id)
+  assert.equal(hub.threadBusy(root.id, rows), true, 'typed in, not yet taken')
+  Object.assign(joseph, { expect: null, inbox: [], serving: [a], status: 'working', current: 'something-else' })
+  assert.equal(hub.threadBusy(root.id, rows), true, 'in the turn')
+  Object.assign(joseph, { serving: [], status: 'idle', current: null })
+  assert.equal(hub.threadBusy(root.id, rows), false)
+})
+
+test("hand-offs from two threads aren't read as one turn", () => {
+  const one = ask('first')
+  const two = ask('second')
+  const david = hub.agents.get('david')
+  david.status = 'working'
+  const a = hub.post({ kind: 'msg', from: 'jeff', to: 'david', text: 'A.', re: one.id, queued: true })
+  const b = hub.post({ kind: 'msg', from: 'jeff', to: 'david', text: 'B.', re: two.id, queued: true })
+  david.inbox.push(a, b)
+  assert.deepEqual(hub.peek(david).map((m) => m.id), [a.id])
+  david.inbox.length = 0
+  david.status = 'idle'
+})
+
+test("a slash command's output is the channel's, not the last thread's", () => {
+  ask()
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix it.' }))
+  turn('joseph', 'Fixed.')
+  hub.onHook('joseph', { hook_event_name: 'UserPromptSubmit', prompt: '/review' })
+  hub.onHook('joseph', { hook_event_name: 'Stop', last_assistant_message: 'Looks fine.' })
+  assert.equal(inThread(hub.feed.at(-1)), false)
+  assert.equal(hub.feed.at(-1).text, 'Looks fine.')
+})
+
+test('you carrying on from an agent\'s line in the channel is who it answers: that agent is asked', () => {
+  const said = hub.post({ kind: 'reply', from: 'jeff', text: 'The build is red.' })
+  hub.send({ to: 'jeff', text: 'fix it', re: said.id })
+  const mine = hub.feed.at(-1)
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix the build.' }))
+  turn('joseph', 'Fixed.')
+  quiet()
+  assert.equal(prompts().at(-1).n, 'jeff')
+  const closing = turn('jeff', 'The build is green.')
+  assert.equal(closing.re, mine.id)
+  assert.equal(inThread(closing), false)
+})
+
+test('you talking in the thread after the report: nobody is asked, and nothing is brought out', () => {
+  const root = ask()
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix it.' }))
+  turn('joseph', 'Fixed.')
+  hub.send({ to: 'david', text: 'and the docs?', re: root.id, thread: root.id })
+  const reply = turn('david', 'Docs too.')
+  quiet()
+  assert.equal(prompts().length, 0)
+  assert.equal(inThread(reply), true)
+})
+
+test('posting into another channel is that channel\'s line, not a thread of what the agent was on', () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'jeff' }, { name: 'david' }], workspaces: undefined }))
+  const root = ask()
+  const line = hub.post({ kind: 'msg', from: 'jeff', to: 'joseph', text: 'See #review.', re: root.id, channel: 'review' })
+  assert.equal(line.thread, undefined)
+  assert.equal(inThread(line), false)
+})
+
+test("Crew stepping in, mid-thread, is in that thread's channel", () => {
+  const root = hub.post({ kind: 'msg', from: 'you', to: 'jeff', text: 'x', channel: 'review' })
+  hub.agents.get('jeff').status = 'working'
+  hub.agents.get('jeff').current = root.id
+  const rule = hub.post({ kind: 'rule', rule: 'loop', from: 'jeff', to: 'david' })
+  assert.equal(rule.thread, root.id)
+  assert.equal(rule.channel, 'review')
+  hub.agents.get('jeff').status = 'idle'
+})
+
+test('after a restart a thread that was going carries on; one long over shows its last report; one already asked is left', () => {
+  const now = Date.now()
+  const line = (id, extra) => ({ id, kind: 'msg', from: 'jeff', to: 'joseph', text: 'x', ...extra })
+  hub.feed.push(
+    line('a', { from: 'you', to: 'jeff', ts: now - 1000 }),
+    line('a1', { re: 'a', thread: 'a', ts: now - 500 }),
+    line('b', { from: 'you', to: 'jeff', ts: now - 9e6 }),
+    { id: 'b1', kind: 'reply', from: 'joseph', text: 'old report', re: 'b', thread: 'b', ts: now - 8e6 },
+    line('c', { from: 'you', to: 'jeff', ts: now - 1000, closed: now }),
+    line('c1', { re: 'c', thread: 'c', ts: now - 500 }),
+  )
+  hub.resumeThreads(now)
+  assert.equal(hub.openThreads.has('a'), true)
+  assert.equal(hub.openThreads.has('b'), false)
+  assert.equal(hub.feed.find((e) => e.id === 'b1').out, true)
+  assert.equal(hub.openThreads.has('c'), false)
+})
+
+test('a long thread next to another leaves it its card, and long lines in one don\'t push the other out', () => {
+  const lines = [{ id: 'r', kind: 'msg', from: 'you', to: 'a', ts: 0 }, { id: 'old', kind: 'msg', from: 'a', to: 'b', thread: 'r', ts: 1 }]
+  for (let i = 0; i < 300; i++) lines.push({ id: `n${i}`, kind: 'msg', from: 'c', to: 'd', thread: 'z', ts: 2 + i })
+  assert.equal(forClients(lines).some((e) => e.id === 'old'), true)
+  const big = 'x'.repeat(16000)
+  const feed = []
+  for (let i = 0; i < 251; i++) feed.push({ id: `c${i}`, kind: 'reply', from: 'a', text: big })
+  for (let i = 0; i < 140; i++) feed.push({ id: `t${i}`, kind: 'msg', from: 'a', thread: 'c0', text: big })
+  const kept = keepFeed(feed)
+  assert.ok(kept.filter((e) => !inThread(e)).length > 100)
+  assert.ok(kept.filter(inThread).length > 100)
 })
 
 test('unread counts only what the channel shows', () => {

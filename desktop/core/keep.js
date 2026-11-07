@@ -69,28 +69,38 @@ export async function replaceFileAsync(file, text) {
   }
 }
 
-// What's kept of a feed (oldest first): the newest lines, up to `keep` of the channel's, `inside` of the threads' and
-// `bytes` in all, with no gaps in the channel (once one of its lines is left out, so is everything older, except what's
-// needed; a thread past its share just loses its oldest lines), and every older line `needed` says is still in use.
+// What's kept of a feed (oldest first): the newest lines, up to `keep` of the channel's and `inside` of the threads', and
+// up to `bytes` of each, with no gaps in the channel (once one of its lines is left out, so is everything older, except
+// what's needed), and every older line `needed` says is still in use.
 // The newest line always stays, however long. -> a new array, in the same order.
 export function keepFeed(feed, { keep = FEED_KEEP, inside = THREAD_KEEP, bytes = FEED_BYTES, needed = () => false, size = lineSize } = {}) {
   const out = []
   let n = 0
   let hidden = 0
   let total = 0
+  let totalIn = 0
   let full = false
   for (let i = feed.length - 1; i >= 0; i--) {
     const e = feed[i]
-    if (!full) {
+    const threaded = inThread(e)
+    if (threaded) {
+      // a thread past its share just loses its oldest lines
       const s = size(e)
-      const threaded = inThread(e)
-      if (out.length && total + s > bytes) full = true
-      else if (threaded ? hidden < inside : n < keep || !out.length) {
-        threaded ? hidden++ : n++
+      if (!full && hidden < inside && (!out.length || totalIn + s <= bytes)) {
+        hidden++
+        totalIn += s
+        out.push(e)
+        continue
+      }
+    } else if (!full) {
+      const s = size(e)
+      if (out.length && (n >= keep || total + s > bytes)) full = true
+      else {
+        n++
         total += s
         out.push(e)
         continue
-      } else if (!threaded) full = true
+      }
     }
     if (needed(e)) out.push(e)
   }

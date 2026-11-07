@@ -196,8 +196,9 @@ test('a card turns berry for a question brought out to you, until someone says s
 test('a dot only when more was said in a thread you have opened', () => {
   const { root } = handoffs()
   assert.doesNotMatch(threaded(hub.feed).html, /tc-news/)
-  assert.doesNotMatch(threaded(hub.feed, [], { threadSeen: () => 2 }).html, /tc-news/)
-  assert.match(threaded(hub.feed, [], { threadSeen: (id) => (id === root.id ? 1 : undefined) }).html, /tc-news/)
+  const newest = hub.feed.filter((e) => e.thread === root.id && inThread(e)).at(-1).ts
+  assert.doesNotMatch(threaded(hub.feed, [], { threadSeen: () => newest }).html, /tc-news/)
+  assert.match(threaded(hub.feed, [], { threadSeen: (id) => (id === root.id ? newest - 1 : undefined) }).html, /tc-news/)
 })
 
 test('one send to several agents has one card, under the message it shows as', () => {
