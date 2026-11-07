@@ -622,6 +622,7 @@ $('.side-more').addEventListener('click', (e) => {
     '-',
     { label: 'Computers…', icon: ICONS.computers, act: 'computers', hint: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : '' },
     { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
+    ...(ON_WINDOWS ? [] : [{ label: 'Permissions…', icon: ICONS.shield, act: 'permissions' }]),
     '-',
     { head: 'Theme' },
     ...THEME_CHOICES.map(([id, label, icon, note]) => ({ label, icon: ICONS[icon], act: `theme:${id}`, hint: theme === id ? '✓' : note })),
@@ -632,6 +633,7 @@ $('.side-more').addEventListener('click', (e) => {
     if (act === 'tools') openTools()
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
+    if (act === 'permissions') crew.call('openPermissions').catch((err) => oops('Couldn’t open that', err))
     if (act.startsWith('theme:')) crew.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
     if (act === 'config') crew.call('config')
   })

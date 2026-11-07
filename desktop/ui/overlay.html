@@ -94,6 +94,31 @@
     .dots .clone-no { position: absolute; right: -4px; bottom: -2px; margin: 0; height: 13px; min-width: 13px; padding: 0 3px; font-size: 8.5px; color: var(--fg); background: var(--card); box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgba(0, 0, 0, .18); }
     @keyframes clone-pop { from { opacity: 0; transform: translateY(-75%) scale(.3); } }
     @keyframes clone-pop-x { from { opacity: 0; transform: translateX(-75%) scale(.3); } }
+
+    /* ---- in the hatch: dragged to the notch at the top of the screen (core/pill.js), it becomes part of it. A black
+       band around the notch, the mark on its left and the crew on its right; the chat hangs from it, one black shape. */
+    /* as wide as it wants to be, not as the window happens to be: the window is fitted around this */
+    [data-side=hatch] .wrap { flex-direction: column-reverse; gap: 0; width: max-content; padding: 0 12px 10px; }
+    [data-side=hatch].open .wrap { align-items: stretch; padding-bottom: 18px; }
+    [data-side=hatch] .sheet { box-shadow: none; }
+    [data-side=hatch] .pill { display: grid; grid-template-columns: minmax(46px, 1fr) var(--notch-w, 120px) minmax(46px, 1fr); align-items: center; gap: 0; width: max-content; height: var(--notch-h, 28px); padding: 0 6px; border-radius: 0 0 12px 12px; animation: hatch-in var(--t-move) var(--out); }
+    /* open, the band and the chat are one width, whichever needs more: the band says how wide (at least the chat's width),
+       and the chat's own text has no say */
+    [data-side=hatch].open .pill { min-width: 400px; border-radius: 0; }
+    [data-side=hatch].open .panel { width: 0; min-width: 100%; }
+    @keyframes hatch-in { from { transform: translateY(-100%); } }
+    [data-side=hatch] .home { grid-column: 1; justify-self: start; width: 32px; height: 22px; padding: 2px; }
+    [data-side=hatch] .home-badge { top: 3px; left: 28px; right: auto; transform: scale(.78); }
+    [data-side=hatch] .dots { grid-column: 3; justify-self: end; flex-direction: row; gap: 3px; }
+    [data-side=hatch] .dots .face { transform-origin: 50% 20%; }
+    /* over the creature's own corner rather than the one before it, small enough to leave its face showing */
+    [data-side=hatch] .dots .unread-badge { left: auto; right: -5px; top: -4px; transform: scale(.78); }
+    [data-side=hatch] .dots .face.clone { margin: 0 0 0 -3px; animation-name: clone-pop-x; }
+    [data-side=hatch] .more-faces { width: 26px; height: 20px; margin: 0 0 0 2px; }
+    [data-side=hatch] .panel { --from: translate(0, -10px); transform-origin: 50% 0; border-radius: 0 0 22px 22px; box-shadow: 0 16px 28px -14px rgba(0, 0, 0, .75); }
+    /* the chat is already wide open: the band stays calm, and the one who needs you wiggles in it */
+    [data-side=hatch].open .pill::after { display: none; }
+    [data-side=hatch] .panel .compose { padding-bottom: 6px; }
   </style>
 </head>
 <body>
