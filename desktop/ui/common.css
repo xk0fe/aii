@@ -1320,3 +1320,65 @@ dialog::backdrop { background: rgba(0, 0, 0, .28); animation: fade-in var(--t-mo
 .scene .say { position: absolute; padding: 8px 12px; border-radius: var(--r-card); border-bottom-left-radius: var(--r-tag); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); font-size: 13px; line-height: 18px; white-space: nowrap; }
 .wordmark { display: inline-block; flex: none; line-height: 0; }
 .wordmark svg { display: block; overflow: visible; }
+
+/* ---- threads: what agents say to each other, one card in the channel (core/threads.js) ---- */
+.thread-card {
+  all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  width: fit-content; min-width: min(360px, calc(100% - var(--gut, 24px) - var(--gut-gap, 8px))); max-width: min(620px, calc(100% - var(--gut, 24px) - var(--gut-gap, 8px))); margin-left: calc(var(--gut, 24px) + var(--gut-gap, 8px));
+  padding: 8px 10px; border-radius: var(--r-card); box-shadow: inset 0 0 0 1px var(--line-strong); background: var(--surface-2); transition: background var(--t-quick);
+}
+.thread-card:hover { background: var(--fill); }
+.thread-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.tc-faces { display: flex; align-items: center; }
+.tc-faces .av + .av { margin-left: -6px; }
+.tc-text { min-width: 0; display: grid; gap: 1px; }
+.tc-title { font-size: 13px; line-height: 18px; color: var(--fg2); }
+.tc-title b { font-weight: 600; color: var(--fg); }
+.tc-sub { display: flex; align-items: center; gap: 6px; min-height: 17px; font-size: 12px; line-height: 17px; color: var(--fg2); font-variant-numeric: tabular-nums; }
+.tc-sub .typing { flex: none; }
+.tc-latest { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-latest b { font-weight: 600; color: var(--fg); }
+.tc-asks { font-weight: 600; color: var(--needs-ink); }
+.thread-card.asks { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--needs) 62%, transparent); background: var(--needs-tint); }
+.tc-news { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.tc-chev { display: grid; width: 14px; height: 14px; color: var(--fg3); }
+.tc-chev svg { width: 14px; height: 14px; }
+.item .tag.asks { color: var(--needs-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--needs) 50%, transparent); }
+
+.thread-pane { --lights-w: 0px; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface); animation: thread-in var(--t-move) var(--out); }
+.thread-pane.hidden { display: none; }
+@keyframes thread-in { from { opacity: 0; transform: translateX(14px); } }
+.thread-top { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--line); }
+.thread-glyph { flex: none; display: grid; width: 16px; height: 16px; color: var(--fg3); }
+.thread-glyph svg { width: 16px; height: 16px; }
+.thread-title { flex: none; font: 500 15px/1 var(--font-brand); }
+.thread-sub { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg2); }
+.thread-x { flex: none; width: 28px; height: 28px; padding: 0; }
+.thread-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 8px 8px; display: flex; flex-direction: column; }
+.thread-row { display: flex; gap: 8px; padding: 8px; border-radius: var(--r-card); font-size: 13px; line-height: 1.45; }
+.thread-row.opens, .thread-row.card { cursor: pointer; }
+.thread-row.opens:hover, .thread-row.card:hover { background: var(--fill); }
+.tr-chev { flex: none; align-self: center; display: grid; width: 12px; height: 12px; color: var(--fg3); opacity: .7; transition: transform var(--t-quick) var(--out); }
+.tr-chev svg { width: 12px; height: 12px; }
+.thread-row.open .tr-chev { transform: rotate(90deg); align-self: flex-start; margin-top: 3px; }
+.thread-row:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.thread-row.flash { animation: flash 1.2s var(--out); }
+.thread-row .face { flex: none; width: 22px; height: 22px; line-height: 0; cursor: pointer; }
+.thread-row .you-av { flex: none; width: 22px; height: 22px; border-radius: 7px; font-size: 8px; line-height: 22px; }
+.tr-main { flex: 1; min-width: 0; }
+.tr-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; color: var(--fg); font-weight: 600; }
+.tr-head .who { color: var(--fg); cursor: pointer; }
+.tr-head .who:hover { text-decoration: underline; text-underline-offset: 2px; }
+.tr-head .to { font-weight: 400; color: var(--fg2); }
+.tr-head .to .who { color: var(--fg2); font-weight: 500; }
+.tr-head .tag { align-self: center; height: 16px; padding: 0 4px; border-radius: var(--r-tag); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 11px; font-weight: 500; color: var(--fg2); }
+.tr-head time { margin-left: auto; padding-left: 8px; font-size: 12px; font-weight: 400; color: var(--fg3); font-variant-numeric: tabular-nums; }
+.tr-line { color: var(--fg2); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.thread-row.card .tr-line { color: var(--needs-ink); }
+.tr-full { margin-top: 2px; }
+.tr-full.bubble, .tr-echo .bubble { background: none; padding: 0; border-radius: 0; font-size: 13px; max-height: none; }
+.tr-echo { margin-top: 8px; padding-left: 10px; box-shadow: inset 1px 0 0 var(--line-strong); color: var(--fg2); }
+.tr-echo > span { display: block; font-size: 12px; color: var(--fg3); }
+.thread-reply { flex: none; padding: 6px 12px 12px; }
+.thread-reply textarea { max-height: 140px; }
+@media (prefers-reduced-motion: reduce) { .thread-pane { animation: none; } }

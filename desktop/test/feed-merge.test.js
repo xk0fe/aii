@@ -9,8 +9,8 @@ import path from 'node:path'
 import vm from 'node:vm'
 const A = path.resolve(import.meta.dirname, '..')
 const ctx = vm.createContext({ crew: {}, avatarHTML: () => '', agentColor: () => '', CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
-vm.runInContext(fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8') + ';globalThis.__x = { feedView }', ctx)
-const { feedView } = ctx.__x
+vm.runInContext(fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8') + ';globalThis.__x = { feedView, inThread, isUnread }', ctx)
+const { feedView, inThread, isUnread } = ctx.__x
 
 process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-feed-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
@@ -127,4 +127,92 @@ test('older entries with cc but no sendId are never merged', () => {
   const t = Date.now()
   const legacy = ['ada', 'june'].map((to, i) => ({ id: 'l' + i, kind: 'msg', from: 'you', to, cc: ['ada', 'june'], text: 'x', ts: t }))
   assert.equal(render(legacy).shown.length, 2)
+})
+
+// ---- threads (core/threads.js): the hub stamps every line, the channel draws the ones that are its own ----------------
+const threaded = (feed, agents = [], extra = {}) => {
+  const view = feedView(feed, agents, new Set(), 200, new Map(), { threads: true, ...extra })
+  return { shown: view.items, html: view.items.length ? view.html() : '' }
+}
+const handoffs = () => {
+  hub.space.autopilot = true
+  hub.send({ to: 'ada', text: 'fix the totals' })
+  const root = hub.feed.at(-1)
+  const one = hub.post({ kind: 'msg', from: 'ada', to: 'june', text: 'Fix the totals.\n\nMore detail.', re: root.id })
+  const two = hub.post({ kind: 'reply', from: 'june', text: 'Fixed the totals.', re: one.id })
+  const answer = hub.post({ kind: 'reply', from: 'ada', text: 'June fixed it.', re: root.id })
+  return { root, one, two, answer }
+}
+
+test('in a channel a thread is one card, where its first line would be; a conversation shows every line', () => {
+  const { root, answer } = handoffs()
+  const { shown, html } = threaded(hub.feed)
+  assert.deepEqual(host(shown.map((e) => e.id)), [root.id, `t-${root.id}`, answer.id])
+  assert.match(html, /class="thread-card/)
+  assert.match(html, new RegExp(`data-thread="${root.id}"`))
+  assert.match(html, /ada<\/b> opened a thread with <b>june/)
+  assert.match(html, /2 messages/)
+  assert.doesNotMatch(html, /Fixed the totals/)
+  assert.equal(render(hub.feed).shown.length, 4, 'with threads off (a conversation, a search), every line')
+})
+
+test('your message says who replied to you, not what went on in the thread', () => {
+  const { root, answer } = handoffs()
+  const { html } = threaded(hub.feed)
+  const mine = html.slice(html.indexOf(`id="m-${root.id}"`), html.indexOf('thread-card'))
+  assert.match(mine, new RegExp(`data-jump="${answer.id}"`))
+  assert.match(mine, /@ada/)
+  assert.doesNotMatch(mine, /@june/)
+})
+
+test('a reply that repeats a hand-off is not counted, and only what the channel shows is unread', () => {
+  const { root, one } = handoffs()
+  const echo = hub.post({ kind: 'reply', from: 'ada', text: 'I told June.', re: one.id, thread: root.id, echo: one.id })
+  assert.equal(inThread(echo), true)
+  assert.match(threaded(hub.feed).html, /2 messages/)
+  const reads = { since: 0, agents: {} }
+  assert.equal(isUnread(hub.feed.find((e) => e.text === 'Fixed the totals.'), reads), false)
+  assert.equal(isUnread(hub.feed.find((e) => e.text === 'June fixed it.'), reads), true)
+})
+
+test('a card says when someone is at work in its thread, with its latest line', () => {
+  const { root } = handoffs()
+  const { html } = threaded(hub.feed, [{ name: 'june', status: 'working', thread: root.id }])
+  assert.match(html, /class="typing"/)
+  assert.match(html, /Fixed the totals\./)
+})
+
+test('a card turns berry for a question brought out to you, until someone says something to its agent', () => {
+  const { root, one } = handoffs()
+  const asked = hub.post({ kind: 'reply', from: 'june', text: 'Should I ship it?', re: one.id, thread: root.id, out: true, asks: true })
+  const { html } = threaded(hub.feed)
+  assert.match(html, /thread-card asks/)
+  assert.match(html, /june is asking you something/)
+  assert.match(html, /class="tag asks"/)
+  hub.post({ kind: 'msg', from: 'ada', to: 'june', text: 'Yes.', re: asked.id, thread: root.id })
+  assert.doesNotMatch(threaded(hub.feed).html, /thread-card asks/)
+})
+
+test('a dot only when more was said in a thread you have opened', () => {
+  const { root } = handoffs()
+  assert.doesNotMatch(threaded(hub.feed).html, /tc-news/)
+  assert.doesNotMatch(threaded(hub.feed, [], { threadSeen: () => 2 }).html, /tc-news/)
+  assert.match(threaded(hub.feed, [], { threadSeen: (id) => (id === root.id ? 1 : undefined) }).html, /tc-news/)
+})
+
+test('one send to several agents has one card, under the message it shows as', () => {
+  hub.space.autopilot = true
+  hub.send({ to: 'ada', text: '@june both of you' })
+  const [first, second] = msgs()
+  hub.post({ kind: 'msg', from: 'ada', to: 'iris', text: 'Yours.', re: first.id })
+  hub.post({ kind: 'msg', from: 'june', to: 'iris', text: 'Mine.', re: second.id })
+  const { shown } = threaded(hub.feed)
+  assert.deepEqual(host(shown.map((e) => e.kind)), ['msg', 'thread'])
+  assert.equal(shown[1].thread, first.id)
+  assert.equal(shown[1].n, 2)
+})
+
+test('lines with no stamps (an older computer, linked) stay lines', () => {
+  const feed = [{ id: 'a', kind: 'msg', from: 'you', to: 'ada', text: 'x', ts: 1 }, { id: 'b', kind: 'msg', from: 'ada', to: 'june', text: 'y', re: 'a', ts: 2 }]
+  assert.deepEqual(host(threaded(feed).shown.map((e) => e.id)), ['a', 'b'])
 })

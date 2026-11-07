@@ -20,11 +20,14 @@
 // days: Hub.saveStats, Hub.saveSpend), run/groups/* (one small file per CLI launch, gone when it ends), moving/ (a day).
 import fs from 'node:fs'
 import path from 'node:path'
+import { inThread } from './threads.js'
 
 // The chat shows its last 200 lines; the 100 before them are what those reply to and quote. A line is a few hundred
 // bytes and a reply at most 16000 characters, so the count is what usually binds. The size binds when lines are long
 // (pasted logs, plans), and keeps Crew's start quick: feed.jsonl is read whole then.
 export const FEED_KEEP = 300
+// Threads (core/threads.js) count apart from the channel: one long one mustn't push the channel's history out.
+export const THREAD_KEEP = 600
 export const FEED_BYTES = 2 * 1024 * 1024
 // `crew board` shows the last 200 notes. A note is one line, usually under 300 bytes.
 export const BOARD_KEEP = 200
@@ -66,25 +69,28 @@ export async function replaceFileAsync(file, text) {
   }
 }
 
-// What's kept of a feed (oldest first): the newest lines, up to `keep` of them and `bytes` in all, with no gaps (once
-// one is left out, so is everything older, except what's needed), and every older line `needed` says is still in use.
+// What's kept of a feed (oldest first): the newest lines, up to `keep` of the channel's, `inside` of the threads' and
+// `bytes` in all, with no gaps in the channel (once one of its lines is left out, so is everything older, except what's
+// needed; a thread past its share just loses its oldest lines), and every older line `needed` says is still in use.
 // The newest line always stays, however long. -> a new array, in the same order.
-export function keepFeed(feed, { keep = FEED_KEEP, bytes = FEED_BYTES, needed = () => false, size = lineSize } = {}) {
+export function keepFeed(feed, { keep = FEED_KEEP, inside = THREAD_KEEP, bytes = FEED_BYTES, needed = () => false, size = lineSize } = {}) {
   const out = []
   let n = 0
+  let hidden = 0
   let total = 0
   let full = false
   for (let i = feed.length - 1; i >= 0; i--) {
     const e = feed[i]
     if (!full) {
       const s = size(e)
-      if (n && (n >= keep || total + s > bytes)) full = true
-      else {
-        n++
+      const threaded = inThread(e)
+      if (out.length && total + s > bytes) full = true
+      else if (threaded ? hidden < inside : n < keep || !out.length) {
+        threaded ? hidden++ : n++
         total += s
         out.push(e)
         continue
-      }
+      } else if (!threaded) full = true
     }
     if (needed(e)) out.push(e)
   }

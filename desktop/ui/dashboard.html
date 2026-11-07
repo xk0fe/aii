@@ -605,6 +605,14 @@
        what kind of view it is (Live, Mirror…), and a way to put it away. */
     .stage { --dock-w: clamp(340px, 46%, 660px); }
     .stage.docked .chat { right: var(--dock-w); }
+    /* a thread, open beside the channel; in a narrow window, over it */
+    .stage { --thread-w: clamp(340px, 42%, 560px); }
+    .stage.threaded .chat { right: var(--thread-w); }
+    .stage > .thread { left: auto; width: var(--thread-w); box-shadow: inset 1px 0 0 var(--line); }
+    @media (max-width: 980px) {
+      .stage.threaded .chat { right: 0; }
+      .stage > .thread { left: 0; width: auto; z-index: 3; box-shadow: none; }
+    }
     .terms-view.docked { left: auto; width: var(--dock-w); padding: 10px 10px 10px 0; }
     .dock-bar { display: none; }
     .terms-view.docked .dock-bar { flex: none; display: flex; align-items: center; gap: 4px; height: 42px; padding: 0 6px 0 8px; border-radius: var(--r-window) var(--r-window) 0 0; background: #1a1a1a; color: #EDEDED; box-shadow: 0 0 0 1px rgba(0, 0, 0, .06); }
@@ -677,6 +685,7 @@
           <div class="feed"></div>
           <div class="compose"></div>
         </aside>
+        <aside class="thread"></aside>
         <div class="terms-view hidden">
           <div class="dock-bar"></div>
           <div class="terms"></div>

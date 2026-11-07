@@ -110,6 +110,7 @@ It's `Crew.snapshot(hub)` for the watched workspace, minus what a phone mustn't 
 - **`providers`:** `{ id: { label } }`.
 - **`roster` and `theme`:** dropped.
 - **Everything else as is:** `feed`, `reads`, `usage`, `spend`, `tasks`, `workspaces`, `workspace`, `parked`, `autopilot`.
+- **Threads, on `feed` entries (optional):** `thread` (the id of the line the thread hangs off; none: the line is the channel's), `out` (a line of a thread that shows in the channel too), `gist` (what a thread shows for it, its agent's own first sentence), `echo` (the hand-off this reply only repeats), `asks` (a question nobody took up in the thread, brought out to you). A line with `thread` and no `out` is only in the thread. An older phone ignores them and shows every line, as before. `agents[].thread`: the thread of what it's working on. `send`'s options take `thread`: said in that thread's reply box, it stays there.
 - **`channels`:** the workspace's channels, #general first: `[{ id, name, brief?, members? }]` (no `members`: everyone in the workspace). A feed entry said in a channel other than #general carries `channel` (its id; one whose channel was deleted shows in #general), an agent working on something said in a channel carries `channel` too, and `reads.channels` is `{ channel: { name: ts } }`, read marks per channel (`reads.agents` is #general's). A Mac from before this sends no `channels`: the phone then shows one chat for everything, and what it sends goes to #general.
 
 ## Sync

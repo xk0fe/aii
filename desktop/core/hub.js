@@ -12,6 +12,7 @@ import { resolveCommand, withTools } from './launch.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, quickTriagePrompt, readTriage, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
+import { asksSomething, echoOf, familyOf as familyName, forClients, gistOf, inThread, nothingNew, stampAll, threadFields } from './threads.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
 import { ROOT, GENERAL, channelName, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
@@ -165,6 +166,8 @@ export class Hub extends EventEmitter {
     this.asks = new Map() // feed id of an open question -> { resolve, name, cli, input }
     // Right of way (see question): what each `crew ask` is still owed, and which agent edits which file.
     this.calls = new Map() // id (the question's feed id) -> { id, msg, from, to, parent, at, hold, remote }
+    this.openThreads = new Map() // thread id -> when something was last said in it, until it goes quiet (threadTick)
+    this.threadsClosed = new Map() // thread id -> when its addressee was last asked for a closing line
     // A file, or a simulator, is one thing whichever workspace's agent uses it: every workspace's hub shares these, and
     // each entry says whose workspace (ws) its holder works in (see hubOf).
     this.locks = locks ?? { files: new Map(), held: new Map(), waits: [] }
@@ -280,6 +283,7 @@ export class Hub extends EventEmitter {
     this.stallTimer = setInterval(() => {
       this.checkStalls()
       this.restIdle().catch(() => {})
+      this.threadTick()
     }, STALL_CHECK)
     this.stallTimer.unref?.()
     // the agents' logs don't say which workspace they worked in: one workspace counts what came before (the first to
@@ -414,7 +418,7 @@ export class Hub extends EventEmitter {
       on: agents.filter((a) => !a.off).length,
       working: live.filter((a) => [a, ...this.clonesOf(a)].some((x) => x.status === 'working')).length,
       waiting: live.flatMap((a) => [a, ...this.clonesOf(a)]).filter(needs).length,
-      unread: this.feed.slice(-200).filter((e) => e.kind === 'reply' && e.from !== 'you' && e.ts > this.readTo(e)).length,
+      unread: forClients(this.feed).filter((e) => e.kind === 'reply' && e.from !== 'you' && !inThread(e) && e.ts > this.readTo(e)).length,
       faces: agents.filter((a) => !a.off).slice(0, 4).map((a) => ({ name: a.name, avatar: a.avatar, status: this.parked ? 'parked' : a.status })),
       // who's waiting on you there, so another workspace can say so
       needs: live.flatMap((a) => [a, ...this.clonesOf(a)]).filter(needs).slice(0, 4).map((x) => ({ name: x.name, avatar: x.avatar ?? (x.cloneOf && this.agents.get(x.cloneOf)?.avatar), activity: x.activity })),
@@ -1785,6 +1789,15 @@ export class Hub extends EventEmitter {
           hold(a, 600)
           return this.setStatus(a, 'idle')
         }
+        // asked for a thread's closing line, and its last message already said it all: that one comes out instead
+        const closing = (a.serving ?? []).find((m) => m.closes)
+        if (closing && nothingNew(e.last_assistant_message)) {
+          this.bringOut(closing.closes, a.name)
+          a.serving = []
+          a.replyDue = false
+          hold(a, 600)
+          return this.setStatus(a, 'idle')
+        }
         // one turn can answer several messages that came in together: the reply threads to the first, and the rest
         const also = (a.serving ?? []).slice(1).map((m) => m.id)
         // A turn can also end without a word (Codex does, after a task that was all tool calls). It was asked
@@ -2315,7 +2328,7 @@ export class Hub extends EventEmitter {
   // ({ from, text }): the same for a message that lives on another computer, which can only be quoted.
   // From a linked computer, `ask` is a question asked there (its id there: the answer goes back with it), and
   // `answers` the answer to one asked here.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false }) {
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread }) {
     text = String(text ?? '').trim()
     images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -2384,7 +2397,7 @@ export class Hub extends EventEmitter {
     const said = quoted ? { from: quoted.from, text: quoted.ticket !== undefined ? `#${quoted.ticket} ${quoted.title ?? ''}` : quoted.text } : quote
     const msgs = targets.map((a) => {
       const replying = said && this.replyTag(a, said, quoted)
-      return this.post({ kind: 'msg', from, to: a.name, text, ...group, ...routed, ...extra, ...(images.length && { images }), ...(re && { re }), ...((ch || channel !== undefined) && { channel: ch }), ...carried, ...(replying && { replying }), queued: !held, held })
+      return this.post({ kind: 'msg', from, to: a.name, text, ...group, ...routed, ...extra, ...(images.length && { images }), ...(re && { re }), ...(thread && { thread }), ...((ch || channel !== undefined) && { channel: ch }), ...carried, ...(replying && { replying }), queued: !held, held })
     })
     if (held) return `waiting for the user to approve this hand-off to ${targets.map((a) => `@${a.name}`).join(' ')}\n`
     const here = targets.map((a, i) => this.enqueue(a, msgs[i])).join('')
@@ -3584,12 +3597,22 @@ export class Hub extends EventEmitter {
   // ---- feed + snapshots --------------------------------------------------
 
   post(entry) {
+    const parent = entry.re ? this.feed.findLast((x) => x.id === entry.re) : undefined
     // What follows from a message is in its channel: an agent's reply to it, its question about it, a hand-off it led to.
-    if (!('channel' in entry) && entry.re) {
-      const channel = this.feed.findLast((x) => x.id === entry.re)?.channel
-      if (channel) entry = { ...entry, channel }
+    if (!('channel' in entry) && parent?.channel) entry = { ...entry, channel: parent.channel }
+    // A note, or Crew stepping in, in the middle of a turn on something threaded: that thread's too.
+    if ((entry.kind === 'note' || entry.kind === 'rule') && !entry.thread && !entry.re) {
+      const a = this.agents.get(entry.from)
+      const on = a?.status === 'working' && a.current ? this.feed.findLast((x) => x.id === a.current) : null
+      if (on) entry = { ...entry, thread: on.thread ?? on.id }
     }
-    const e = { id: randomUUID().slice(0, 8), ts: Date.now(), ...entry }
+    const e = { id: randomUUID().slice(0, 8), ts: Date.now(), ...entry, ...threadFields(entry, parent) }
+    if (e.thread) {
+      if (e.text) e.gist = gistOf(e.text, e.from)
+      const echo = echoOf(e, parent, e.kind === 'reply' ? this.feed.findLast((x) => x.kind === 'msg' && x.from === e.from && x.re === e.re && !x.answers) : null)
+      if (echo) e.echo = echo
+      this.openThreads.set(e.thread, e.ts)
+    }
     this.feed.push(e)
     this.trimFeed()
     this.save(e)
@@ -3624,6 +3647,83 @@ export class Hub extends EventEmitter {
     for (const id of this.asks.keys()) ids.add(id)
     for (const m of this.moves?.values() ?? []) for (const id of m.ids) ids.add(id)
     return (e) => ids.has(e.id) || (e.kind === 'ask' && !e.answer) || Boolean(e.queued || e.held)
+  }
+
+  // ---- threads (core/threads.js) -------------------------------------------------------------------------------
+
+  // The thread a line is in, or the one hanging off it.
+  threadOf(id) {
+    const e = this.feed.findLast((x) => x.id === id)
+    return e ? (e.thread ?? e.id) : undefined
+  }
+
+  // Once a minute, for the threads something was said in since they last went quiet: a question nobody took up comes out
+  // to you, and a thread that's over gets its last word in the channel.
+  threadTick(now = Date.now()) {
+    for (const [id, at] of this.openThreads) {
+      const rows = this.feed.filter((e) => e.thread === id && !e.answers)
+      if (!rows.length) {
+        this.openThreads.delete(id)
+        continue
+      }
+      this.liftQuestions(rows, now)
+      if (now - at < THREAD_QUIET || this.threadBusy(id, rows)) continue
+      this.openThreads.delete(id)
+      this.closeThread(id, rows, now)
+    }
+  }
+
+  // Anyone still on it: someone working on one of its messages or with one queued, a question between agents waiting for
+  // its answer, or something only you can settle (a hand-off waiting for your OK, a question card).
+  threadBusy(id, rows) {
+    const ids = new Set([id, ...rows.map((e) => e.id)])
+    for (const a of this.agents.values()) {
+      if ((a.inbox ?? []).some((m) => ids.has(m.id) || m.closes === id)) return true
+      const on = a.current && ids.has(a.current)
+      if (on && (a.status === 'working' || a.status === 'waiting' || a.status === 'starting' || a.background > 0)) return true
+    }
+    for (const c of this.calls.values()) if (c.msg?.id && ids.has(c.msg.id)) return true
+    return rows.some((e) => (e.held && !e.dropped) || (e.kind === 'ask' && !e.answer))
+  }
+
+  // An agent's reply that ends by asking something, with nobody taking it up for a while. The team usually sorts these
+  // out by itself; when it doesn't, you need to see it.
+  liftQuestions(rows, now) {
+    const lastBy = new Map()
+    for (const e of rows) if (e.kind === 'reply') lastBy.set(familyName(e.from), e)
+    for (const [who, e] of lastBy) {
+      if (e.out || e.echo || !asksSomething(e.text) || now - e.ts < THREAD_QUESTION_WAIT) continue
+      if (rows.slice(rows.indexOf(e) + 1).some((x) => familyName(x.from) === who || familyName(x.to) === who)) continue
+      const a = this.agents.get(e.from)
+      if (a?.status === 'working' || a?.inbox?.length) continue
+      this.amend(e, { out: true, asks: true })
+    }
+  }
+
+  // A thread that went quiet. If the agent you asked had the last word, that comes out to the channel. If teammates said
+  // more after it, its last report may be out of date, so it's asked for one closing line (a reply to your message, which
+  // the channel shows by itself). You talking in the thread, or a question waiting for you, means you've got it already.
+  closeThread(id, rows, now = Date.now()) {
+    const root = this.feed.findLast((e) => e.id === id)
+    if (root?.from !== 'you' || !root.to) return
+    const last = rows.findLast((e) => e.kind !== 'rule')
+    if (!last || last.out || last.from === 'you') return
+    if (rows.some((e, i) => e.asks && !rows.slice(i + 1).some((x) => familyName(x.to) === familyName(e.from)))) return
+    const answeredYou = this.feed.findLast((e) => e.id === last.re)
+    if (answeredYou?.from === 'you' && !answeredYou.out) return
+    const owner = this.agents.get(root.to) ?? this.agents.get(this.baseOf(root.to))
+    if (familyName(last.from) === familyName(root.to) && last.kind === 'reply') return this.bringOut(id, last.from)
+    const wasAsked = this.threadsClosed.get(id)
+    if (!owner || owner.off || this.parked || !this.workable(owner) || (wasAsked && now - wasAsked < THREAD_ASK_AGAIN)) return this.bringOut(id, root.to)
+    this.threadsClosed.set(id, now)
+    this.queue(owner, { ...crewPrompt(owner, CLOSE_THREAD, root.id), closes: id })
+    this.pump(owner)
+  }
+
+  // What the agent you asked last said in a thread, into the channel.
+  bringOut(id, name) {
+    const e = this.feed.findLast((x) => x.thread === id && x.kind === 'reply' && familyName(x.from) === familyName(name) && !x.empty)
+    if (e && !e.out) this.amend(e, { out: true })
   }
 
   // A later change to a feed entry (a question's answer), saved after it so it survives a restart.
@@ -3867,8 +3967,10 @@ export class Hub extends EventEmitter {
         holds: this.holdsOf(a.name),
         // the channel of what it's working on (none: #general's), so a channel shows who's at work there
         channel: (a.status === 'working' || a.status === 'waiting') ? this.channelFor(a.name) : undefined,
+        // the thread of what it's working on, if that has one, so the line saying who's at work can open it
+        thread: (a.status === 'working' || a.status === 'waiting') && a.current ? this.threadOf(a.current) : undefined,
       })),
-      feed: withOpenAsks(this.feed.slice(-200), this.asks),
+      feed: withOpenAsks(forClients(this.feed), this.asks),
       channels: this.space.channels,
       reads: this.reads,
       spend: this.spendNow(),
@@ -3944,6 +4046,13 @@ const hold = (a, ms) => {
 }
 
 // A prompt from Crew itself, queued like a message (it isn't one: it's not in the chat). See move.js.
+// A thread counts as over this long after its last line, with nobody still on it.
+const THREAD_QUIET = 45000
+// How long a question at the end of an agent's reply waits for a teammate before it's brought out to you.
+const THREAD_QUESTION_WAIT = 75000
+// How soon a thread's addressee may be asked for a closing line again, however much more gets said.
+const THREAD_ASK_AGAIN = 10 * 60000
+const CLOSE_THREAD = "[crew] The thread your request led to has gone quiet. Tell the user where it ended, in one or two sentences: what's done, what isn't, and anything they have to do. Don't start anything new or message anyone. If your last message to them already says all that, reply with just: nothing new"
 const crewPrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, crew: true, queued: true })
 
 // The last time anyone but Crew did something with a task: added it, started it, wrote a note, moved it.
@@ -4110,6 +4219,7 @@ function loadFeed(file, keep = new Set()) {
   // An unanswered question's hook ended with the last run: the agent isn't waiting on it any more. (An agent tool's
   // agent was told to wait for a message: lost says to tell it, see toolsLost.)
   for (const e of all) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true, ...(e.ask?.app && { lost: true, at: Date.now() }) }
+  stampAll(all)
   const feed = keepFeed(all.filter((e) => !e.gone), { needed: (e) => keep.has(e.id) })
   const bytes = Buffer.byteLength(text)
   const at = rewriteAt(feed.length, feed.reduce((n, e) => n + lineSize(e), 0))
