@@ -145,7 +145,7 @@ export default function AgentSheet() {
         </Text>
         <View style={[styles.group, styles.list, { backgroundColor: t.surface }]}>
           <SwitchRow t={t} title="On" detail={a.on ? 'It takes messages and tasks' : 'Off: its conversation waits'} value={value('on', a.on)} onChange={(v) => void run('on', () => client.power(a.name, v), v)} disabled={Boolean(offline)} />
-          <SwitchRow t={t} title="YOLO" detail="Skips every permission prompt" value={value('yolo', Boolean(a.yolo))} onChange={(v) => void run('yolo', () => client.setModes(a.name, { yolo: v }), v)} disabled={Boolean(offline)} last={a.fast === undefined} />
+          {a.system ? null : <SwitchRow t={t} title="YOLO" detail="Skips every permission prompt" value={value('yolo', Boolean(a.yolo))} onChange={(v) => void run('yolo', () => client.setModes(a.name, { yolo: v }), v)} disabled={Boolean(offline)} last={a.fast === undefined} />}
           {a.fast !== undefined ? <SwitchRow t={t} title="Fast" detail="The faster, pricier service tier" value={value('fast', Boolean(a.fast))} onChange={(v) => void run('fast', () => client.setModes(a.name, { fast: v }), v)} disabled={Boolean(offline)} last /> : null}
         </View>
 

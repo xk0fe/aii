@@ -44,9 +44,13 @@ export const ottoHello = (alone) =>
     ? "Hi, I'm Otto. There's nobody else here yet, so tell me what you're working on and I'll suggest who to bring in."
     : "Hi, I'm Otto. Tell me what you need and I'll get it to the right person. You can still @name anyone to talk to them directly."
 
-// Who he is in a workspace, from what's been chosen for him there. `taken`: a name someone already has there (an agent you
-// named otto before he came along keeps it).
+// Who he is in a workspace, from what's been chosen for him there. `taken`: the names he can't have. An agent you named
+// otto before he came along keeps it, and he goes by the next free name: for good, so nothing of his or yours changes hands
+// if your otto leaves later (that name is kept with his choices).
 export function ottoIn(chosen, taken) {
-  const kept = Object.fromEntries(Object.entries(chosen && typeof chosen === 'object' ? chosen : {}).filter(([k]) => OTTO_CHOICES.has(k)))
-  return { ...kept, name: taken.has(OTTO) ? `${OTTO}-2` : OTTO, area: OTTO_AREA, prompt: OTTO_PROMPT, avatar: OTTO_AVATAR, system: true, shared: false }
+  const mine = chosen && typeof chosen === 'object' && !Array.isArray(chosen) ? chosen : {}
+  const kept = Object.fromEntries(Object.entries(mine).filter(([k]) => OTTO_CHOICES.has(k)))
+  let name = typeof mine.name === 'string' && mine.name && !taken.has(mine.name) ? mine.name : OTTO
+  for (let n = 2; taken.has(name); n++) name = `${OTTO}-${n}`
+  return { ...kept, name, area: OTTO_AREA, prompt: OTTO_PROMPT, avatar: OTTO_AVATAR, system: true, shared: false }
 }

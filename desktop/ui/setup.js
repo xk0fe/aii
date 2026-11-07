@@ -85,7 +85,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
       }
     }
     // no agents anywhere: none here, none of yours (the roster), none in another workspace
-    const none = !state.agents?.length && !state.roster?.length && !state.workspaces?.some((w) => w.agents > 0)
+    const none = !state.agents?.some((a) => !a.system) && !state.roster?.length && !state.workspaces?.some((w) => w.agents > 0)
     if (!status()?.checked) return { say: 'One moment…', title: 'Looking for Claude Code and Codex', lead: '', primary: ['check', 'Checking…'], more: [['close', 'Close']] }
     // (Not now, with nothing else to show: on to the workspace, and it says what's missing when an agent starts)
     if (!status().ready && !(noWorkspace() && dismissed)) {

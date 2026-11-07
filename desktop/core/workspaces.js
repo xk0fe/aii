@@ -104,7 +104,8 @@ export function space(config, id) {
   // its own agents, unless one has a name a member has (or another of its own has) already
   const owned = named(own.agents).filter((a) => !taken.has(a.name) && taken.add(a.name))
   // Otto (core/otto.js), in every workspace of this computer's. `of`: one shown from a linked computer has that one's.
-  const otto = own.of || !ottoOn() ? null : ottoIn(own.system, taken)
+  // (not the name of anyone on your roster either, who may join this workspace yet)
+  const otto = own.of || !ottoOn() ? null : ottoIn(own.system, new Set([...taken, ...named(config.agents).map((a) => a.name)]))
   if (otto) taken.add(otto.name)
   const isMember = (name) => joined.some((a) => a.name === name)
   const entry = (name) => (members[name] && typeof members[name] === 'object' ? members[name] : {})
@@ -119,7 +120,7 @@ export function space(config, id) {
   ]
 
   // (what's chosen for Otto is kept on the workspace: there's no more to him in the file)
-  const def = (name) => (name === otto?.name ? (own.system = own.system && typeof own.system === 'object' ? own.system : {}) : [...joined, ...owned].find((a) => a.name === name))
+  const def = (name) => (name === otto?.name ? (own.system = own.system && typeof own.system === 'object' && !Array.isArray(own.system) ? own.system : {}) : [...joined, ...owned].find((a) => a.name === name))
   return {
     id,
     name: own.name || own.id,

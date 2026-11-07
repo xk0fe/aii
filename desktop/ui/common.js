@@ -342,6 +342,7 @@ function flipped(name, mode, actual) {
 
 // YOLO and Fast as chips that toggle in place. Modes that are off only show up when you hover the row.
 function modeChips(a) {
+  if (a.system) return '' // Otto has a shell for crew and nothing else: nothing to skip asking about
   const turn = (on) => `Click to turn ${on ? 'off' : 'on'}`
   const yolo = flipped(a.name, 'yolo', Boolean(a.yolo))
   const yoloTip = a.pending ? 'Restarts with the new YOLO setting as soon as it is free' : `YOLO ${yolo ? 'on' : 'off'}: skip every permission prompt. ${turn(yolo)}`
@@ -2667,7 +2668,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
   }
   const pickTo = (at) => {
     const otto = ottoOf(agents)
-    const on = agents.filter((a) => a.on && (!a.cloneOf || a.name === target) && (!a.system || a.name === target))
+    const on = agents.filter((a) => a.on && (!a.cloneOf || a.name === target) && !a.system)
     popMenu(at, [
       otto ? { label: displayName(otto), icon: avatarHTML(otto, { size: 18, mood: 'still' }), act: 'auto', hint: 'runs the crew' } : { label: 'Auto', icon: ICONS.sparkles, act: 'auto', hint: 'picks by area' },
       { label: 'Task', icon: ICONS.task, act: 'task', hint: 'adds to the board' },

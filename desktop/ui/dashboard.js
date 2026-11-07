@@ -218,7 +218,7 @@ function chatHead() {
   const who = `Everyone in ${wsLabel(state.workspace)}`
   const folder = state.workspace?.folder
   const brief = c.brief.split('\n').find((l) => l.trim())?.trim()
-  const sub = brief ? esc(brief) : c.id === 'general' ? `${esc(who)} · ${folder ? esc(tildePath(folder)) : 'Auto picks who answers'}` : c.members ? esc(nameList(members.map((a) => a.seed ?? a.name))) : esc(who)
+  const sub = brief ? esc(brief) : c.id === 'general' ? `${esc(who)} · ${folder ? esc(tildePath(folder)) : ottoOf(state.agents) ? `${esc(displayName(ottoOf(state.agents)))} gets it to the right agent` : 'Auto picks who answers'}` : c.members ? esc(nameList(members.map((a) => a.seed ?? a.name))) : esc(who)
   const tip = c.brief || (folder ? `Its agents work in ${folder}, unless one has a folder of its own here` : 'Each agent works in its own folder')
   return [headTitle({ glyph: '#', title: esc(c.name), sub, tip }),
     `${needs.length ? `<button class="mh-needs" data-head="needs" title="${esc(`${needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick for the oldest`)}">${needs.length} waiting on you${DOWN}</button>` : ''}
@@ -405,9 +405,10 @@ function drawChannelSheet({ list = true } = {}) {
   segmented($c('.ch-who-seg'), (b) => (b.dataset.chAll === '1') === d.everyone)
   $c('[data-ch-count]').textContent = d.everyone ? '' : `${members.length} of ${agents.length}`
   $c('.ch-crew').classList.toggle('hidden', d.everyone)
+  const picks = ottoOf(state.agents) ? `${displayName(ottoOf(state.agents))} hands work` : 'Auto picks'
   $c('[data-ch-note]').textContent = d.everyone
-    ? 'Auto picks from everyone in the workspace, as in #general.'
-    : 'Auto picks only from these agents. An @mention still reaches anyone.'
+    ? `${picks} ${ottoOf(state.agents) ? 'to' : 'from'} everyone in the workspace, as in #general.`
+    : `${picks} ${ottoOf(state.agents) ? 'only to' : 'only from'} these agents. An @mention still reaches anyone.`
   if (list) {
     $c('.ch-crew').innerHTML = agents.map((a) => {
       const on = d.members.has(a.name)
@@ -1064,7 +1065,7 @@ function drawBlank() {
   $('.blank').classList.toggle('hidden', place !== 'terminals' || on > 0)
   const parked = state.parked && state.agents.some((a) => a.on)
   const resting = state.agents.some((a) => a.on && a.status === 'resting')
-  $('.blank h1').textContent = parked ? `${state.workspace.name} is asleep` : resting ? 'Nobody is at work right now' : state.agents.length ? 'All agents are off' : 'No agents yet'
+  $('.blank h1').textContent = parked ? `${state.workspace.name} is asleep` : resting ? 'Nobody is at work right now' : state.agents.some((a) => !a.system) ? 'All agents are off' : 'No agents yet'
   $('.blank .lead').textContent = parked ? 'Send a message to wake it: each agent picks up its conversation.' : resting ? 'A terminal shows here once its agent has work. A message starts it, and it picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
   $('.blank .acts').classList.toggle('hidden', state.agents.some((a) => !a.system)) // Add your first agent, only when there's none
 }
@@ -1256,7 +1257,7 @@ function dmRow(a, { selected = false, clones = [], needs = 0, drag = false }) {
   const end = needs ? `<i class="need-badge" title="${esc(`${needs} waiting on you`)}">${needs}</i>`
     : unread ? `<i class="dm-new" title="${esc(plural(unread, 'new reply', 'new replies'))}">${unread > 9 ? '9+' : unread}</i>`
     : `<span class="dm-word">${esc(doingWord(a))}</span>`
-  return `<div class="dm ${a.on ? a.status : 'off'}${selected ? ' on' : ''}${needs ? ' needs' : ''}${unread ? ' fresh' : ''}" data-agent="${esc(a.name)}" role="button" tabindex="0" ${drag ? 'draggable="true"' : ''} title="${esc(tip)}" style="--c:${agentColor(a)}">
+  return `<div class="dm ${a.on ? a.status : 'off'}${selected ? ' on' : ''}${needs ? ' needs' : ''}${unread ? ' fresh' : ''}" data-agent="${esc(a.name)}" role="button" tabindex="0" ${drag && !a.system ? 'draggable="true"' : ''} title="${esc(tip)}" style="--c:${agentColor(a)}">
     <span class="dm-av">${avatarHTML(a, { size: 26 })}</span>
     <span class="dm-name"><b>${esc(a.seed ?? a.name)}</b>${a.yolo ? '<i class="mark-yolo" title="YOLO: skips every permission prompt">YOLO</i>' : ''}${clones.length ? `<span class="dm-clones">+${clones.length}</span>` : ''}</span>
     <span class="dm-end">${end}</span>
@@ -1414,11 +1415,11 @@ function agentMenu(name, at) {
     { label: 'Open terminal', icon: ICONS.terminal, act: 'terminal', disabled: !terms.has(name) && a.status !== 'resting' },
     { label: 'Edit…', icon: ICONS.edit, act: 'edit' },
     { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a.on || a.freshPending },
-    ...(places.length ? ['-', ...places.map((g) => ({ label: `Move to ${g.name}`, icon: g.here ? ICONS.desktop : ICONS.laptop, act: `move:${g.key}`, disabled: !g.online, hint: g.online ? '' : 'offline' }))] : []),
+    ...(places.length && !a.system ? ['-', ...places.map((g) => ({ label: `Move to ${g.name}`, icon: g.here ? ICONS.desktop : ICONS.laptop, act: `move:${g.key}`, disabled: !g.online, hint: g.online ? '' : 'offline' }))] : []),
     ...(joins.length ? ['-', ...joins.map((w) => ({ label: `Add to ${w.name}`, icon: wsTile(w, { size: 16 }), act: `join:${w.id}`, hint: w.parked ? 'asleep' : '' }))] : []),
     '-',
     { label: a.on ? 'Turn off' : 'Turn on', icon: ICONS.power, act: 'power' },
-    { label: leave ? `Take out of ${ws.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
+    ...(a.system ? [] : [{ label: leave ? `Take out of ${ws.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true }]),
     ...(leave ? [{ label: 'Remove from your crew…', icon: ICONS.trash, act: 'forget', danger: true }] : []),
   ], async (act) => {
     const who = a.seed ?? a.name
@@ -1869,7 +1870,7 @@ function linkHTML(l) {
       ${l.agents.length ? `<ul class="lk-agents">${l.agents.map((a) => `
         <li class="${a.hidden ? 'unused' : ''}">${avatarHTML(a, { size: 30, mood: 'still' })}
           <span class="who"><b>${esc(a.seed)}</b><small>${esc(a.area || 'no area')}</small></span>
-          ${l.online ? `<button class="btn sm lk-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
+          ${l.online && !a.system ? `<button class="btn sm lk-move" data-move="${esc(a.name)}" title="Run it on another computer, with its conversation, instructions, look and work experience">${ICONS.move}Move to…</button>` : ''}
           <label class="use"><input type="checkbox" class="switch" data-use="${esc(a.name)}" ${a.hidden ? '' : 'checked'}>Use</label>
         </li>`).join('')}</ul>` : `<p>${l.online ? 'No agents there yet.' : 'Its agents show here once it\'s back.'}</p>`}
       <div class="lk-row"><span title="Move one with its Move to…, or drag it onto a computer in the sidebar">${l.agents.length > 1 ? `Using ${used} of ${l.agents.length}` : ''}</span>
@@ -2205,6 +2206,7 @@ let moving = null // { name, home, folder, check }
 
 async function moveSheet(name, home) {
   const a = state.agents.find((x) => x.name === name)
+  if (a?.system) return // Otto comes with every workspace, and stays where he is
   const groups = crewGroups(state)
   const from = groups.find((g) => g.key === (a?.home ?? ''))
   const to = groups.find((g) => g.key === home)
@@ -2405,6 +2407,6 @@ document.addEventListener('drop', async (e) => {
 
 booted = true
 ready.then(() => {
-  showPlace(state.agents.some((a) => !a.system) ? place : 'crew')
+  showPlace(state.agents.length ? place : 'crew')
   handleFocus(new URLSearchParams(location.search).get('focus'))
 })

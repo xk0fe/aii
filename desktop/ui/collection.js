@@ -169,7 +169,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     needsByName = new Map(needs.map((n) => [n.agent.name, n]))
     asksByName = askTypes(state)
     drawHead()
-    const none = !roster().length
+    const none = !roster().some((a) => !a.system) // (every workspace has Otto: this is about who you've brought in)
     root.classList.toggle('empty', none)
     empty.classList.toggle('hidden', !none)
     if (none) drawEmpty()
@@ -437,6 +437,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
 
   // A .crew file with these agents: their definitions, looks and reference images (not their folders or chats).
   async function exportAgents(names) {
+    names = names.filter((n) => !agentNamed(n)?.system) // he comes with every workspace: he isn't yours to pack
+    if (!names.length) return null
     try {
       return await crew.call('exportAgents', names)
     } catch (err) {

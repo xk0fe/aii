@@ -192,6 +192,7 @@ const gist = (text, max = 160) => {
 export async function moveOut(hub, name) {
   const a = hub.agents.get(name)
   if (!a) throw new Error(`no agent named "${name}"`)
+  if (a.system) throw new Error(`${name} comes with every workspace, so it stays here`)
   if (a.moving) throw new Error(`@${name} is already moving`)
   const working = a.status === 'working' || a.status === 'waiting'
   const running = hub.runner.running(name)
@@ -481,6 +482,7 @@ export function folders(hub, like) {
   if (like !== undefined && like !== null) add(like, 'same folder as now')
   const users = new Map()
   for (const a of hub.agents.values()) {
+    if (a.system) continue // his folder is his own
     const full = folderInfo(a.cwd).path
     users.set(full, [...(users.get(full) ?? []), a.name])
   }

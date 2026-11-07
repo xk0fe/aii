@@ -204,7 +204,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
   const rules = (items) => items.filter((it, i, all) => it !== '-' || (i > 0 && i < all.length - 1 && all[i - 1] !== '-'))
   const NOBODY = '<i class="tk-nobody">?</i>'
   const ownerItems = (current) => rules([
-    ...state.agents.filter((a) => !a.cloneOf && (a.on || a.name === current)).map((a) => ({ value: a.name, label: a.home ? `${a.seed}@${a.home}` : a.name, hint: a.area, icon: avatarHTML(a, { size: 16, mood: 'still' }), on: a.name === current })),
+    ...state.agents.filter((a) => !a.cloneOf && !a.system && (a.on || a.name === current)).map((a) => ({ value: a.name, label: a.home ? `${a.seed}@${a.home}` : a.name, hint: a.area, icon: avatarHTML(a, { size: 16, mood: 'still' }), on: a.name === current })),
     '-',
     { value: '', label: 'Nobody', icon: NOBODY, on: !current },
   ])
@@ -235,7 +235,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     const el = openPop(anchor, `
       <div class="tk-flow-pop" data-flow-pop aria-label="Workflow">
         <label class="tk-flow-row"><span><b>Triage</b><small>An agent that makes what you add clear (steps, priority, kind), gives it to the right agent and spots duplicates. Without one, tasks go to whoever's area they match.</small></span>
-          <select data-triage><option value="">Nobody</option>${state.agents.filter((a) => !a.home && !a.cloneOf).map((a) => `<option value="${esc(a.name)}" ${state.tasks.triage === a.name ? 'selected' : ''}>${esc(a.name)}${a.on ? '' : ' (off)'}</option>`).join('')}</select></label>
+          <select data-triage><option value="">Nobody</option>${state.agents.filter((a) => !a.home && !a.cloneOf && !a.system).map((a) => `<option value="${esc(a.name)}" ${state.tasks.triage === a.name ? 'selected' : ''}>${esc(a.name)}${a.on ? '' : ' (off)'}</option>`).join('')}</select></label>
         <label class="tk-flow-row"><span><b>Auto-start</b><small>A task goes to its owner as soon as it has one, in a fresh conversation. Off: you start each one.</small></span>
           <input type="checkbox" class="switch sm" data-autofix ${state.tasks.autofix ? 'checked' : ''}></label>
       </div>`, { cls: 'wide tk-flow', form: true })

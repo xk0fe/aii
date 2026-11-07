@@ -129,11 +129,11 @@ export default function ChannelSheet() {
             <Press onPress={() => (tap(), setMembers(null))} style={[styles.row, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }]} accessibilityRole="button" accessibilityState={{ selected: !members }}>
               <View style={styles.rowText}>
                 <Text style={[styles.rowTitle, { color: t.fg }]}>Everyone</Text>
-                <Text style={[styles.rowDetail, { color: t.fg2 }]}>Auto picks from the whole crew</Text>
+                <Text style={[styles.rowDetail, { color: t.fg2 }]}>The whole crew</Text>
               </View>
               <Check t={t} on={!members} />
             </Press>
-            {d.agents.map((a, i) => {
+            {d.agents.filter((a) => !a.system).map((a, i) => {
               const on = Boolean(members?.includes(a.name))
               return (
                 <Press key={a.name} onPress={() => toggle(a.name)} style={[styles.row, i < d.agents.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }]} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={`${displayName(a.name).base}${a.area ? `, ${a.area}` : ''}`}>
@@ -153,7 +153,7 @@ export default function ChannelSheet() {
           </>
         )}
       </View>
-      {general ? null : <Text style={[styles.note, { color: t.fg2 }]}>Auto picks only from who's in it. You can still @name anyone.</Text>}
+      {general ? null : <Text style={[styles.note, { color: t.fg2 }]}>Work goes only to who's in it. You can still @name anyone.</Text>}
 
       <Text style={[styles.error, { color: offline ? t.waitingInk : t.danger }]}>{offline ? `${offline}: changes wait until it's back` : error || ' '}</Text>
       <Button t={t} kind="primary" title={c ? 'Save' : 'Create channel'} onPress={save} busy={busy} disabled={!client || Boolean(offline) || !changed || (!general && !clean)} />

@@ -910,10 +910,9 @@ export class Crew extends EventEmitter {
     let names = addressees(to, text).map((n) => this.resolve(n, here))
     // nobody named: it goes to Otto (core/otto.js), who gets it to whoever should do it. With him off, Auto picks.
     if (!names.length) {
-      const up = (a) => a.system && a.on && !['stopped', 'off', 'away'].includes(a.status) && (a.home || here.workable(here.agents.get(a.name)))
-      const crew = this.snapshot(here).agents
-      const otto = crew.find((a) => up(a) && !a.home) ?? crew.find(up)
-      if (otto) names = [otto.name]
+      const there = here.ottoReady() ? null : this.snapshot(here).agents.find((a) => a.system && a.home && a.on && !a.nearLimit && !['stopped', 'off', 'away', 'waiting'].includes(a.status))
+      const otto = here.ottoReady() ? here.otto().name : there?.name
+      if (otto) names = [otto]
     }
     const auto = !names.length && { auto: true } // Auto picks, and the chat says Auto picked them
     if (!names.length) {
@@ -1176,7 +1175,7 @@ export class Crew extends EventEmitter {
   async moveAgent(name, home, folder) {
     home ??= ''
     const here = this.here
-    if (here.agents.get(name)?.system) throw new Error(`${name} comes with every workspace, so it stays here`)
+    if (this.snapshot(here).agents.find((a) => a.name === name)?.system) throw new Error(`${String(name).split('@')[0]} comes with every workspace, so it stays where it is`)
     const ws = here.ws
     const src = this.where(name)
     const from = src.l?.slug ?? ''
@@ -1263,7 +1262,7 @@ export class Crew extends EventEmitter {
       const q = this.qualifier(l)
       return {
         slug: l.slug, name: l.name, online: Boolean(l.peer), saved: Boolean(l.code), status: l.client?.status, spaces: Object.keys(l.spaces ?? {}),
-        agents: this.agentsOn(l).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)) })),
+        agents: this.agentsOn(l).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)), ...(a.system && { system: true }) })),
         usage: this.linkedUsage(l),
       }
     })
