@@ -512,12 +512,16 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   function drawCard() {
     const d = draft
     const live = agentNamed(editing)
+    // Otto comes with every workspace (core/otto.js): you pick his brain, and the rest is who he is
+    const sys = Boolean(live?.system)
+    card.classList.toggle('ed-system', sys)
+    if (sys && (tab === 'instructions' || tab === 'look')) tab = 'setup'
     card.innerHTML = `
       <aside class="ed-id">
         <div class="ed-top"><span class="pd-state"></span></div>
-        <button class="ed-av felt" data-tab="look" title="Change its look">${patchSVG(256, 220, { r: 10, inset: 6, dash: '5 3.5' })}<span class="pd-av"></span><i class="ed-av-edit">${ICONS.palette}</i></button>
-        <input class="pd-name" data-k="name" value="${esc(d.name)}" placeholder="Name" spellcheck="false" autocomplete="off" aria-label="Name">
-        <textarea class="pd-area" data-k="area" rows="2" placeholder="What does it own? e.g. Checkout: the cart, payments and coupons" aria-label="Area of work">${esc(d.area)}</textarea>
+        <button class="ed-av felt" ${sys ? 'disabled' : 'data-tab="look" title="Change its look"'}>${patchSVG(256, 220, { r: 10, inset: 6, dash: '5 3.5' })}<span class="pd-av"></span><i class="ed-av-edit">${ICONS.palette}</i></button>
+        <input class="pd-name" data-k="name" value="${esc(d.name)}" placeholder="Name" spellcheck="false" autocomplete="off" aria-label="Name" ${sys ? 'readonly' : ''}>
+        <textarea class="pd-area" data-k="area" rows="2" placeholder="What does it own? e.g. Checkout: the cart, payments and coupons" aria-label="Area of work" ${sys ? 'readonly' : ''}>${esc(d.area)}</textarea>
         <div class="ed-facts"></div>
         <span class="grow"></span>
         ${live ? `<div class="ed-id-acts">
@@ -527,17 +531,18 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       </aside>
       <div class="ed-main">
         <header class="ed-head">
-          <div class="seg ed-tabs" role="tablist">${TABS.map((t) => `<button role="tab" data-tab="${t.id}" ${t.id === 'stats' && !live ? 'disabled' : ''}>${t.icon}<span>${t.label}</span></button>`).join('')}</div>
+          <div class="seg ed-tabs" role="tablist">${TABS.filter((t) => !sys || t.id === 'setup' || t.id === 'stats').map((t) => `<button role="tab" data-tab="${t.id}" ${t.id === 'stats' && !live ? 'disabled' : ''}>${t.icon}<span>${t.label}</span></button>`).join('')}</div>
           <button class="icon sheet-x ed-close" data-act="back" title="Close (Esc)" aria-label="Close">${ICONS.close}</button>
         </header>
         <div class="ed-panes">
           <section class="ed-pane" data-pane="setup">
             <h4 class="section-label">Brain</h4>
             <div class="ed-list group-list brain"></div>
-            <h4 class="section-label">Where it works</h4>
-            <div class="ed-list group-list where"></div>
-            <h4 class="section-label">Behaviour</h4>
-            <div class="ed-list group-list behave"></div>
+            ${sys ? '<p class="ed-sys-note">Otto comes with every workspace and works in an empty folder of his own, so he hands work on and can\'t touch your code. Turn him off and Auto picks by area instead.</p>' : ''}
+            <h4 class="section-label not-sys">Where it works</h4>
+            <div class="ed-list group-list where not-sys"></div>
+            <h4 class="section-label not-sys">Behaviour</h4>
+            <div class="ed-list group-list behave not-sys"></div>
             <div class="ed-adv group-list ${advOpen ? 'open' : ''}">
               <button class="ed-adv-head" data-act="advanced" aria-expanded="${advOpen}"><i class="ed-adv-chev">${ICONS.chevron}</i><b>Advanced</b><span class="ed-adv-sum"></span></button>
               <div class="ed-adv-body"><div class="limit"></div><div class="flags"></div></div>
@@ -757,8 +762,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const flags = String(draft.args ?? '').split(/\s+/).filter((t) => t.startsWith('-')).length || (String(draft.args ?? '').trim() ? 1 : 0)
     host.textContent = [
       limit ? `${tokenCount(limit)} context, then ${draft.onContextLimit === 'notify' ? 'a heads-up' : 'a new conversation'}` : `Full ${win ? `${tokenCount(win)} ` : ''}context`,
-      n ? `up to ${plural(n, 'clone')}` : 'no clones',
-      flags ? plural(flags, 'extra flag') : 'no extra flags',
+      ...(agentNamed(editing)?.system ? [] : [n ? `up to ${plural(n, 'clone')}` : 'no clones', flags ? plural(flags, 'extra flag') : 'no extra flags']),
     ].join(' · ')
   }
 
@@ -1075,7 +1079,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   function moreMenu(anchor) {
     const a = agentNamed(editing)
     const shared = Boolean(a?.shared)
-    popMenu(anchor, [
+    popMenu(anchor, a?.system ? [{ label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a.on || a.freshPending, hint: a.freshPending ? 'when it’s free' : '' }] : [
       { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a?.on || a.freshPending, hint: a?.freshPending ? 'when it’s free' : a?.convo?.context ? `${a.convo.context.pct}% full` : '' },
       { label: 'Export…', icon: ICONS.export, act: 'export', hint: '.crew file' },
       { label: 'Move to another computer…', icon: ICONS.move, act: 'move', disabled: !linkedHere(state.computers ?? {}).some((l) => l.online) && !draft.home },

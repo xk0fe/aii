@@ -404,6 +404,26 @@ const SAVER_STATE = {
   },
 }
 SAVER_STATE.week = SAVER_STATE.all
+// ?fixture=otto: Otto (core/otto.js) in the crew. What you send goes to him, and he gets it to whoever should do it.
+if (FIXTURE === 'otto') {
+  const at = (m) => now - m * min
+  FEED.length = 0
+  FEED.push(
+    { id: 'o1', kind: 'reply', from: 'otto', text: "Hi, I'm Otto. Tell me what you need and I'll get it to the right person. You can still @name anyone to talk to them directly.", ts: at(48) },
+    { id: 'o2', kind: 'msg', from: 'you', to: 'otto', text: "who's on what right now?", ts: at(31) },
+    { id: 'o3', kind: 'reply', from: 'otto', text: "Ada's on the orders API and Theo's running checkout tests. Everyone else is free.", re: 'o2', ts: at(30.8) },
+    { id: 'o4', kind: 'msg', from: 'you', to: 'otto', text: 'The empty cart looks sad. Can someone give it some life?', ts: at(12) },
+    { id: 'o5', kind: 'msg', from: 'otto', to: 'Iris', text: 'The empty cart looks sad, and the user wants it to have some life. Redraw it, and agree a line for it with June.', re: 'o4', ts: at(11.8) },
+    { id: 'o6', kind: 'reply', from: 'otto', text: "Iris has it, and June's writing a line for it.", re: 'o4', ts: at(11.7) },
+    { id: 'o7', kind: 'msg', from: 'you', to: 'June', text: 'and put the coupon change in the release notes', ts: at(3) },
+    { id: 'o8', kind: 'reply', from: 'June', text: 'Added under "Checkout".', re: 'o7', ts: at(2) },
+  )
+  for (const a of AGENTS) Object.assign(a, { status: a.name === 'Iris' ? 'working' : 'idle', activity: a.name === 'Iris' ? 'Edit ui/empty-cart.svg' : '', since: at(9), subs: [] })
+  AGENTS.unshift({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: '~/.crew/workspaces/storefront/otto', prompt: '', images: [], name: 'otto', system: true, shared: false, status: 'idle', since: at(2), provider: 'claude', model: 'sonnet', effort: 'low',
+    area: 'Runs the crew: takes what you ask and gets it to the right teammate', avatar: { body: 'mochi', color: '#3B3944', eyes: 'googly', mouth: 'none', hat: 'none', cheeks: false }, stats: stats(14, 14, 9, 21, 22, 11, 0, 2, [1, 2, 0, 3, 2, 1, 5]) })
+  for (const r of Object.keys(READS)) delete READS[r]
+  Object.assign(READS, { since: now })
+}
 const state = { savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
 
 // Workspaces, as Crew.workspaces() reports them. Storefront has everyone; Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the crew, Storefront

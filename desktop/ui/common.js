@@ -1080,6 +1080,9 @@ const mergeSends = (feed) => {
   return { shown, as }
 }
 
+// Otto (core/otto.js), when he can take what you send: everyone's chat goes to him. Otherwise Auto picks.
+const ottoOf = (agents) => agents?.find((a) => a.system && a.on && !['stopped', 'off', 'away'].includes(a.status))
+
 // ---- conversations: the chat with one agent --------------------------------------------------------------
 // Pick an agent (its face or name in the feed, its creature on the To line or in the pill) and the chat becomes
 // your conversation with it. Everything you send there goes to it, plus anyone you @mention. The target the
@@ -2655,16 +2658,18 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     `<button class="chip ${cls} ${target === to ? 'on' : ''}" data-to="${esc(to)}" aria-pressed="${target === to}" aria-label="${esc(tipText)}" data-tip="${esc(tipText)}" data-sub="${esc(sub)}"${c ? ` style="--c:${c}"` : ''}>${inner}</button>`
   // To: whoever it's aimed at now; a click lists Auto, Task and everyone who's on
   const picker = () => {
-    const a = isConvo(target) && agents.find((x) => x.name === target)
+    const otto = target === 'auto' && ottoOf(agents)
+    const a = otto || (isConvo(target) && agents.find((x) => x.name === target))
     const face = a ? avatarHTML(a, { size: 18, mood: 'still' }) : `<span class="to-icon">${ICONS[target === 'task' ? 'task' : 'sparkles']}</span>`
     const label = a ? nameHTML(a) : target === 'task' ? 'Tasks' : isConvo(target) ? esc(nameOf(target)) : 'Auto'
-    const sub = a ? statusText(a) : target === 'task' ? 'adds it to the Tasks board, @name assigns it' : channel?.members ? `picks from #${channel.name}'s ${plural(channel.members.length, 'member')} by area` : 'picks by area, prefers whoever is free'
+    const sub = otto ? 'gets it to the right teammate. @name goes straight to them' : a ? statusText(a) : target === 'task' ? 'adds it to the Tasks board, @name assigns it' : channel?.members ? `picks from #${channel.name}'s ${plural(channel.members.length, 'member')} by area` : 'picks by area, prefers whoever is free'
     return `<button class="to-pick ${target === 'task' ? 'task' : ''}" data-pick-to aria-haspopup="menu" data-tip="${esc(a ? displayName(a) : target === 'task' ? 'Task' : 'Auto')}" data-sub="${esc(sub)}"${a ? ` style="--c:${agentColor(a)}"` : ''}><span class="to-label">To</span>${face}<b>${label}</b>${ICONS.chevron}</button>`
   }
   const pickTo = (at) => {
-    const on = agents.filter((a) => a.on && (!a.cloneOf || a.name === target))
+    const otto = ottoOf(agents)
+    const on = agents.filter((a) => a.on && (!a.cloneOf || a.name === target) && (!a.system || a.name === target))
     popMenu(at, [
-      { label: 'Auto', icon: ICONS.sparkles, act: 'auto', hint: 'picks by area' },
+      otto ? { label: displayName(otto), icon: avatarHTML(otto, { size: 18, mood: 'still' }), act: 'auto', hint: 'runs the crew' } : { label: 'Auto', icon: ICONS.sparkles, act: 'auto', hint: 'picks by area' },
       { label: 'Task', icon: ICONS.task, act: 'task', hint: 'adds to the board' },
       ...(on.length ? ['-', { head: 'Send to' }] : []),
       ...on.map((a) => ({ label: displayName(a), icon: avatarHTML(a, { size: 18, mood: 'still' }), act: a.name, hint: `${statusText(a)}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}` })),
@@ -2705,6 +2710,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     ta.placeholder = task ? (isConvo(target) ? `Add a task for ${short(familyOf(target))}… @name gives it to someone else` : 'Add a task… @name assigns it')
       : off ? `${who} is off. Turn it on to message it`
       : reply ? `Reply to ${isConvo(target) ? who : listed(reply.to)}…`
+      : target === 'auto' && ottoOf(agents) ? (fresh ? `New conversation with ${displayName(ottoOf(agents))}…` : channel ? `Message #${channel.name}` : 'Message the crew')
       : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : channel ? `Message #${channel.name}, Auto picks who…` : 'Message the crew, Auto picks who…')
       : fresh ? `New conversation with ${who}…` : `Message ${who}…`
     if (target !== told) onTarget?.((told = target))

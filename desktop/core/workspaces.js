@@ -26,6 +26,7 @@
 // files stay in CREW_HOME itself and its terminals go by the agent's name alone, because agents outlive Crew in the
 // terminal host and moving them under a running one isn't worth the risk. Nothing else treats it differently.
 // No Electron in here.
+import { ottoIn, ottoOn } from './otto.js'
 import path from 'node:path'
 
 export const ROOT = 'default'
@@ -102,10 +103,14 @@ export function space(config, id) {
   const taken = new Set(joined.map((a) => a.name))
   // its own agents, unless one has a name a member has (or another of its own has) already
   const owned = named(own.agents).filter((a) => !taken.has(a.name) && taken.add(a.name))
+  // Otto (core/otto.js), in every workspace of this computer's. `of`: one shown from a linked computer has that one's.
+  const otto = own.of || !ottoOn() ? null : ottoIn(own.system, taken)
+  if (otto) taken.add(otto.name)
   const isMember = (name) => joined.some((a) => a.name === name)
   const entry = (name) => (members[name] && typeof members[name] === 'object' ? members[name] : {})
 
   const agents = [
+    ...(otto ? [otto] : []),
     ...joined.map(({ off, ...who }) => {
       const m = entry(who.name)
       return { ...who, cwd: m.folder || own.folder || who.cwd, ...(m.off && { off: true }), shared: true }
@@ -113,7 +118,8 @@ export function space(config, id) {
     ...owned.map((a) => ({ ...a, cwd: a.cwd || own.folder, shared: false })),
   ]
 
-  const def = (name) => [...joined, ...owned].find((a) => a.name === name)
+  // (what's chosen for Otto is kept on the workspace: there's no more to him in the file)
+  const def = (name) => (name === otto?.name ? (own.system = own.system && typeof own.system === 'object' ? own.system : {}) : [...joined, ...owned].find((a) => a.name === name))
   return {
     id,
     name: own.name || own.id,
@@ -155,6 +161,7 @@ export function space(config, id) {
     },
     // one of its own agents goes; a shared one only leaves (see forget for taking it off the roster)
     remove(name) {
+      if (name === otto?.name) return
       if (isMember(name)) delete members[name]
       else own.agents = named(own.agents).filter((a) => a.name !== name)
       renameInChannels(own, name, null)

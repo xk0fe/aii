@@ -42,6 +42,7 @@ export type Agent = {
   homeName?: string
   nearLimit?: boolean
   channel?: string // the channel of what it's working on, while working or waiting (none: #general)
+  system?: boolean // Otto (desktop/core/otto.js): comes with every workspace, and what you send without naming anyone goes to him
 }
 
 // A channel of the workspace: #general (id 'general', everyone) first, then the ones you made. Its brief is what its

@@ -11,6 +11,9 @@ import path from 'node:path'
 // The token savers (core/savers.js) are off unless a test turns them on (savers.test.js): the suite pins down how the
 // crew works without them, and quick triage would otherwise call the real Claude Code.
 process.env.CREW_SAVERS ??= 'off'
+// Otto (core/otto.js) is in every workspace unless a test turns him on (otto.test.js): the suite pins down who's in a crew,
+// and who a message goes to, around him.
+process.env.CREW_OTTO ??= 'off'
 
 if (process.platform === 'win32') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-clis-'))

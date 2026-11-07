@@ -365,3 +365,9 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .pd-dirty::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .sheet-foot.dirty .pd-dirty { opacity: 1; }
 .pc-state .ctx { margin-left: 6px; }
+
+/* ---- Otto's sheet (core/otto.js): his brain is yours to pick, and the rest is who he is ---- */
+.ed-system .not-sys, .ed-system .flags, .ed-system .clones-row, .ed-system .ed-av-edit { display: none; }
+.ed-system .ed-av { cursor: default; }
+.ed-system .pd-name[readonly], .ed-system .pd-area[readonly] { box-shadow: none; background: none; cursor: default; resize: none; }
+.ed-sys-note { margin: 12px 0 0; max-width: 62ch; font-size: 13px; line-height: 1.45; color: var(--fg2); }

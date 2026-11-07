@@ -373,7 +373,7 @@ const tokensIn = (text) => Math.ceil(String(text).trim().length / 4) // about: a
 function channelSheet(id) {
   const c = id ? channelsNow().find((x) => x.id === id) : null
   if (id && !c) return
-  const agents = state.agents.filter((a) => !a.cloneOf)
+  const agents = state.agents.filter((a) => !a.cloneOf && !a.system) // (Otto is in every channel)
   // ws: the workspace it's for, whichever is on screen by the time it's saved. Only some: you pick them.
   chDraft = { ws: state.workspace?.id, id: c?.id ?? null, name: c?.name ?? '', brief: c?.brief ?? '', everyone: !c?.members, members: new Set(c?.members ?? []) }
   const general = c?.id === 'general'
@@ -392,7 +392,7 @@ function channelSheet(id) {
 // list: the agents too (typing the name or the brief leaves them be)
 function drawChannelSheet({ list = true } = {}) {
   const d = chDraft
-  const agents = state.agents.filter((a) => !a.cloneOf)
+  const agents = state.agents.filter((a) => !a.cloneOf && !a.system)
   const name = channelName(d.name)
   const general = d.id === 'general'
   const tokens = tokensIn(d.brief)
@@ -487,7 +487,7 @@ function openMembers(at) {
 function drawMembers() {
   const w = state.workspace
   if (!w) return
-  const here = state.agents.filter((a) => !a.cloneOf)
+  const here = state.agents.filter((a) => !a.cloneOf && !a.system) // (Otto comes with it: he's not yours to choose)
   const others = (state.roster ?? []).filter((r) => !here.some((a) => a.name === r.name))
   const row = (a, end) => `<div class="mp-row" data-agent="${esc(a.name)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span class="mp-who"><b>${esc(a.seed ?? a.name)}</b><small>${esc(a.area || (a.status ? upFirst(statusText(a)) : ''))}</small></span>${end}</div>`
   const take = (a) => (a.shared ? `<button class="btn sm plain mp-take" data-mp-take="${esc(a.name)}" title="${esc(`Take ${a.name} out of ${w.name}: it stays in your crew and your other workspaces`)}">Take out</button>` : '<span class="mp-only" title="Made for this workspace: it works only here">only here</span>')
@@ -529,10 +529,11 @@ membersPop.addEventListener('click', async (e) => {
 function welcomeHTML() {
   const w = state.workspace
   if (!w) return '' // the very first run: the setup screen asks for one
-  const here = state.agents.filter((a) => !a.cloneOf)
+  const here = state.agents.filter((a) => !a.cloneOf && !a.system)
+  const otto = ottoOf(state.agents)
   const step = (done, act, title, sub) => `<button class="wl-step ${done ? 'done' : ''}" data-welcome="${act}"><i class="pick ${done ? 'on' : ''}">${ICONS.check}</i><span><b>${esc(title)}</b><small>${esc(sub)}</small></span><i class="wl-go">${ICONS.chevron}</i></button>`
   return `<div class="welcome empty-state">${wsTile(w, { size: 64 })}<h2 class="display">Welcome to ${esc(w.name)}</h2>
-    <p class="lead">Everyone here sees what's said in #general. Ask for something and Auto picks who answers, or @name someone. Make a channel (+ by Channels) for work with rules of its own.</p>
+    <p class="lead">Everyone here sees what's said in #general. Ask for something and ${otto ? `${esc(displayName(otto))} gets it to the right agent` : 'Auto picks who answers'}, or @name someone. Make a channel (+ by Channels) for work with rules of its own.</p>
     <div class="wl-steps">
       ${step(here.length > 0, 'members', here.length ? `${plural(here.length, 'agent')} work${here.length > 1 ? '' : 's'} here` : 'Choose who works here', 'Agents from your crew, or new ones just for this workspace')}
       ${step(Boolean(w.folder), 'settings', w.folder ? `They work in ${tildePath(w.folder)}` : 'Pick its folder', 'Where its agents work, unless one has a folder of its own')}
@@ -1065,7 +1066,7 @@ function drawBlank() {
   const resting = state.agents.some((a) => a.on && a.status === 'resting')
   $('.blank h1').textContent = parked ? `${state.workspace.name} is asleep` : resting ? 'Nobody is at work right now' : state.agents.length ? 'All agents are off' : 'No agents yet'
   $('.blank .lead').textContent = parked ? 'Send a message to wake it: each agent picks up its conversation.' : resting ? 'A terminal shows here once its agent has work. A message starts it, and it picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
-  $('.blank .acts').classList.toggle('hidden', state.agents.length > 0) // Add your first agent, only when there's none
+  $('.blank .acts').classList.toggle('hidden', state.agents.some((a) => !a.system)) // Add your first agent, only when there's none
 }
 
 // The grid shows every terminal, the busy ones (working, starting or waiting on you), or the ones waiting on you; each
@@ -2404,6 +2405,6 @@ document.addEventListener('drop', async (e) => {
 
 booted = true
 ready.then(() => {
-  showPlace(state.agents.length ? place : 'crew')
+  showPlace(state.agents.some((a) => !a.system) ? place : 'crew')
   handleFocus(new URLSearchParams(location.search).get('focus'))
 })

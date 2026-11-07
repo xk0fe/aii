@@ -5,10 +5,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
+import { OTTO_CHOICES, ottoHello } from './otto.js'
 import { adapters, ASK_WAIT, RESUME_ASK, TRUST } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt, quickAsk } from './promptgen.js'
-import { resolveCommand, withTools } from './launch.js'
+import { pathKey, resolveCommand, which, withTools } from './launch.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, quickTriagePrompt, readTriage, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
@@ -67,7 +68,7 @@ export const openConfig = (also) => new Config(CONFIG, DEFAULTS, {
     also?.(data)
   },
 })
-const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared']
+const AGENT_KEYS = ['system', 'area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared']
 const RESERVED = new Set(['you', 'any', 'crew'])
 // an unquoted # starts a comment in the shell, and `crew post` is all that arrives
 const POST_USAGE = 'usage: crew post <channel> "message" (the name alone: an unquoted # starts a shell comment)'
@@ -277,6 +278,7 @@ export class Hub extends EventEmitter {
       if (a?.status === 'working') this.steer(a)
     }
     this.cfg.watch()
+    this.greet()
     this.stallTimer = setInterval(() => {
       this.checkStalls()
       this.restIdle().catch(() => {})
@@ -307,8 +309,9 @@ export class Hub extends EventEmitter {
   apply() {
     const before = new Map([...this.agents].map(([n, a]) => [n, [this.launchKey(a), a.contextLimit, a.onContextLimit]]))
     this.providers = providersFrom(this.config, this.cfg.discovered)
-    this.space = space(this.config, this.ws) ?? space({ workspaces: [{ id: this.ws }] }, this.ws) // no agents once it's gone from config.json
+    this.space = space(this.config, this.ws) ?? space({ workspaces: [{ id: this.ws, of: 'gone' }] }, this.ws) // no agents once it's gone from config.json
     const list = this.space.agents
+    for (const c of list) if (c.system) this.dressOtto(c)
     const names = new Set(list.map((c) => c.name))
     for (const [name, a] of this.agents) {
       if (a.cloneOf || names.has(name)) continue // clones follow their original, below
@@ -366,6 +369,7 @@ export class Hub extends EventEmitter {
   unpark() {
     if (!this.parked) return
     this.parked = false
+    this.greet()
     for (const a of [...this.agents.values()].filter((x) => !x.off && !x.cloneOf && !this.runner.running(x.name))) {
       this.standBy(a)
       this.startWaiting(a)
@@ -425,6 +429,48 @@ export class Hub extends EventEmitter {
     this.cfg.save()
   }
 
+  // ---- Otto (core/otto.js) -----------------------------------------------------------------------------------------
+
+  // His folder and, the first time, his brain: what the crew here runs on, or else whichever CLI this computer has. On
+  // the first he picks, a mid-size model at low effort: he talks and hands on, and he's the one you wait for each time.
+  dressOtto(c) {
+    c.cwd = this.at('otto')
+    fs.mkdirSync(c.cwd, { recursive: true })
+    c.args = this.ottoFlags(c)
+    if (c.provider || c.cli) return
+    const ready = (id) => {
+      const p = this.providers[id]
+      return p && !p.missing?.length && which(p.cli ?? id, process.env[pathKey(process.env)])
+    }
+    const crew = this.space.agents.filter((a) => !a.system).map((a) => a.provider ?? a.cli ?? 'claude')
+    const id = [...crew, 'claude', 'codex'].find(ready) ?? 'claude'
+    const brain = { provider: id, ...(id === 'claude' && { model: 'sonnet' }), ...(this.providers[id]?.efforts?.includes('low') && { effort: 'low' }) }
+    for (const [k, v] of Object.entries(brain)) this.space.set(c.name, k, v)
+    Object.assign(c, brain, { args: this.ottoFlags({ ...c, ...brain }) })
+  }
+
+  // On Claude Code he has a shell for `crew` and nothing else: no file tools, no sub-agents, none of your tool servers. So
+  // he can't quietly edit something, and every message of his costs less, with far fewer tool definitions to keep in its
+  // cache. (Codex has no such switch: there it's his empty folder and his instructions.)
+  ottoFlags(c) {
+    if ((this.providers[c.provider ?? c.cli ?? 'claude']?.cli ?? 'claude') !== 'claude') return []
+    return ['--tools', process.platform === 'win32' ? 'Bash,PowerShell' : 'Bash', '--strict-mcp-config']
+  }
+
+  otto() {
+    return [...this.agents.values()].find((a) => a.system) ?? null
+  }
+
+  // He says hello once, in a workspace that was going before he came along. It costs no tokens: nothing's running yet.
+  greet() {
+    const a = this.otto()
+    if (!a || a.off || this.parked || this.space.def(a.name).greeted) return
+    this.space.def(a.name).greeted = true
+    this.cfg.save()
+    // (a new workspace's chat has its welcome, which introduces him)
+    if (this.feed.length) this.post({ kind: 'reply', from: a.name, text: ottoHello(!this.space.agents.some((x) => !x.system)) })
+  }
+
   // The hubs of the other workspaces, for what's kept about a shared agent in each (Crew sets this).
   others() {
     return []
@@ -456,6 +502,7 @@ export class Hub extends EventEmitter {
   // everywhere: a shared agent off the roster and out of every workspace (Agents, or a move that didn't go through,
   // core/move.js).
   removeAgent(name, { everywhere = false } = {}) {
+    if (this.agents.get(name)?.system) throw new Error(`${name} comes with every workspace, so it can't be removed. You can turn it off`)
     const kept = everywhere ? this.keptBy(name) : [this]
     if (everywhere) forget(this.config, name)
     else this.space.remove(name)
@@ -485,7 +532,8 @@ export class Hub extends EventEmitter {
     const { name, ...fields } = clean(patch)
     for (const n of names) {
       if (!this.space.has(n)) continue
-      for (const [k, v] of Object.entries(fields)) this.space.set(n, k, v)
+      const otto = this.agents.get(n)?.system
+      for (const [k, v] of Object.entries(fields)) if (!otto || OTTO_CHOICES.has(k)) this.space.set(n, k, v)
       if ('provider' in fields) this.space.set(n, 'cli', undefined)
     }
     this.saveConfig()
@@ -494,6 +542,7 @@ export class Hub extends EventEmitter {
   // A shared agent's new name is its name in every workspace; one of a workspace's own is renamed there.
   rename(from, to) {
     if (!this.space.has(from)) throw new Error(`no agent named "${from}"`)
+    if (this.agents.get(from)?.system) throw new Error(`${from} comes with every workspace, and keeps its name`)
     const shared = this.space.shared(from)
     to = this.freeName(to, shared ? (n) => this.agents.has(n) || sharedNames(this.config, from).has(n) : undefined)
     const kept = shared ? this.keptBy(from) : [this]
@@ -683,6 +732,7 @@ export class Hub extends EventEmitter {
     if (!a.trust.ask.test(flat(a.boot))) return
     clearTimeout(a.readyTimer)
     Object.assign(a, { trustAsk: true, trustAt: Date.now() })
+    if (a.system) return this.pickTrust(a, true, null) // Otto's own empty folder: nothing there to ask you about
     this.trustCard(a)
   }
 
@@ -895,7 +945,8 @@ export class Hub extends EventEmitter {
 
   // Every agent with its clones right after it.
   ordered() {
-    return [...this.agents.values()].filter((a) => !a.cloneOf).flatMap((a) => [a, ...this.clonesOf(a)])
+    const all = [...this.agents.values()].filter((a) => !a.cloneOf)
+    return [...all.filter((a) => a.system), ...all.filter((a) => !a.system)].flatMap((a) => [a, ...this.clonesOf(a)])
   }
 
   // The agent a name belongs to: a clone's original, or the agent itself. A clone that went away still names its
@@ -906,6 +957,7 @@ export class Hub extends EventEmitter {
   }
 
   maxClones(a) {
+    if (a?.system) return 0
     return Math.min(Math.max(0, Math.floor(Number(a?.clones) || 0)), MAX_CLONES)
   }
 
@@ -1162,6 +1214,7 @@ export class Hub extends EventEmitter {
   // with busyCheck on, crew busy, or nothing at all when it works alone (no teammate in this workspace, no clones of its
   // own, no linked computer's). Decided at launch: it's in the system prompt, and a new one rewrites the whole cache.
   checksFor(a) {
+    if (a.system) return 'none' // he doesn't build anything
     if (!this.savers.busyCheck) return 'full'
     const base = (a.cloneOf && this.agents.get(a.cloneOf)) || a
     const alone = !a.cloneOf && !this.maxClones(base) && ![...this.agents.values()].some((x) => !x.cloneOf && x.name !== base.name) && !(this.directory?.() ?? []).length
@@ -2866,7 +2919,7 @@ export class Hub extends EventEmitter {
   // finds the organiser even though none of its words are in "admin work, assistant, organiser".
   route(text, from, channel) {
     const members = this.channel(channel)?.members
-    const ready = [...this.agents.values()].filter((a) => !a.cloneOf && a.name !== this.baseOf(from) && (this.runner.running(a.name) || a.status === 'resting') && this.workable(a) && (!members || members.includes(a.name)))
+    const ready = [...this.agents.values()].filter((a) => !a.cloneOf && !a.system && a.name !== this.baseOf(from) && (this.runner.running(a.name) || a.status === 'resting') && this.workable(a) && (!members || members.includes(a.name)))
     const best = this.pick(text, ready.map((a) => ({ ...this.lineup(a), ...this.warmth(a) })))
     return best && this.agents.get(best.name)
   }
@@ -3014,7 +3067,7 @@ export class Hub extends EventEmitter {
     const a = this.agents.get(from)
     return `${this.space.channels.map((c) => {
       if (a && c.brief) this.giveBrief(a, c)
-      const out = a && c.members?.length && !c.members.includes(this.baseOf(from)) ? " (you're not in it)" : ''
+      const out = a && !a.system && c.members?.length && !c.members.includes(this.baseOf(from)) ? " (you're not in it)" : ''
       return `#${c.name.padEnd(20)} ${(c.members?.map((n) => `@${n}`).join(' ') || 'everyone').padEnd(24)} ${c.brief ? c.brief.replace(/\s+/g, ' ') : '(no brief)'}${out}`
     }).join('\n')}\n`
   }
@@ -3031,7 +3084,7 @@ export class Hub extends EventEmitter {
     if (!c) throw new Error(`there's no #${channelName(channel)} here: there's ${this.space.channels.map((x) => `#${x.name}`).join(', ')} (crew channels)`)
     const a = this.agents.get(from)
     if (!a) return this.send({ from, text, channel: c.id })
-    if (c.members?.length && !c.members.includes(this.baseOf(from))) throw new Error(`you're not in #${c.name}, so nothing was posted: it's for ${c.members.map((n) => `@${n}`).join(', ')}. Hand it to one of them, or ask the user to add you.`)
+    if (c.members?.length && !c.members.includes(this.baseOf(from)) && !this.agents.get(from)?.system) throw new Error(`you're not in #${c.name}, so nothing was posted: it's for ${c.members.map((n) => `@${n}`).join(', ')}. Hand it to one of them, or ask the user to add you.`)
     const handing = addressees('', text).length > 0
     if (!handing && a.current && (this.channelFor(from) ?? GENERAL) === c.id) throw new Error(`not posted: you're working in #${c.name}, and your final message shows there by itself. Say it there.`)
     if (c.brief && !this.hasBrief(a, c)) {
@@ -3112,7 +3165,7 @@ export class Hub extends EventEmitter {
 
   // Everyone who can own a task: agents here that are on, and the ones on linked computers.
   teammates() {
-    const here = [...this.agents.values()].filter((a) => !a.off && !a.cloneOf).map((a) => this.lineup(a))
+    const here = [...this.agents.values()].filter((a) => !a.off && !a.cloneOf && !a.system).map((a) => this.lineup(a))
     return [...here, ...(this.directory?.() ?? []).filter((a) => a.on && !a.cloneOf).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.queue ?? 0, nearLimit: Boolean(a.nearLimit) }))]
   }
 
@@ -3847,7 +3900,7 @@ export class Hub extends EventEmitter {
         Object.values(this.providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault }]),
       ),
       agents: this.ordered().map((a) => ({
-        name: a.name, area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
+        name: a.name, ...(a.system && { system: true }), area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
         tier: a.tier, fast: this.providerOf(a)?.fastByDefault === undefined ? undefined : a.tier ? a.tier === 'fast' : this.providerOf(a).fastByDefault,
         args: (a.args ?? []).join(' '), avatar: a.avatar, status: this.parked && !a.off && a.status === 'off' ? 'parked' : a.status, since: a.since, activity: a.activity,
         queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a), nearLimit: this.nearLimit(this.providerOf(a)?.id),
