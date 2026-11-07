@@ -214,6 +214,7 @@ export class Hub extends EventEmitter {
     this.cfg.off('problem', this.onProblem)
     this.runner.dispose?.()
     clearInterval(this.stallTimer)
+    clearInterval(this.threadTimer)
     if (this.statsTimer) this.saveStats()
     if (this.ticketsTimer) this.tickets.save()
     this.saveConvos(true)
@@ -283,9 +284,10 @@ export class Hub extends EventEmitter {
     this.stallTimer = setInterval(() => {
       this.checkStalls()
       this.restIdle().catch(() => {})
-      this.threadTick()
     }, STALL_CHECK)
     this.stallTimer.unref?.()
+    this.threadTimer = setInterval(() => this.threadTick(), THREAD_LOOK)
+    this.threadTimer.unref?.()
     // the agents' logs don't say which workspace they worked in: one workspace counts what came before (the first to
     // start on a computer where none has yet)
     if (!this.spend.lookedBack && !this.others().some((h) => h.spend.lookedBack || h.lookingBack)) {
@@ -3613,6 +3615,8 @@ export class Hub extends EventEmitter {
     const e = { id: randomUUID().slice(0, 8), ts: Date.now(), ...entry, ...threadFields(entry, parent) }
     if (e.thread) {
       if (e.text) e.gist = gistOf(e.text, e.from)
+      // when the turn it ends began: what it says can't take in anything said after that
+      if (e.kind === 'reply' && this.agents.get(e.from)?.turnBegan) e.began = this.agents.get(e.from).turnBegan
       // (a hand-off of this turn: one from an earlier turn on the same message isn't what this reply is about)
       const began = this.agents.get(e.from)?.turnBegan ?? 0
       const echo = echoOf(e, parent, e.kind === 'reply' ? this.feed.findLast((x) => x.kind === 'msg' && x.from === e.from && x.re === e.re && !x.answers && x.ts >= began) : null)
@@ -3677,8 +3681,8 @@ export class Hub extends EventEmitter {
     }
   }
 
-  // Once a minute, for the threads something was said in since they last went quiet: a question nobody took up comes out
-  // to you, and a thread that's over gets its last word in the channel.
+  // Every few seconds, for the threads something was said in since they last went quiet: a question nobody took up comes
+  // out to you, and a thread that's over gets its last word in the channel.
   threadTick(now = Date.now()) {
     for (const [id, at] of this.openThreads) {
       const rows = this.feed.filter((e) => e.thread === id && !e.answers)
@@ -3743,25 +3747,29 @@ export class Hub extends EventEmitter {
     const said = rows.filter((e) => e.kind !== 'rule' && !e.echo)
     const you = rows.findLast((e) => e.from === 'you') ?? (root?.from === 'you' ? root : null)
     if (!you || (you !== root && inThread(you))) return
-    const last = said.at(-1)
-    if (!last || last.out || last.from === 'you') return
+    if (!said.length || said.at(-1).from === 'you') return
     if (rows.some((e, i) => e.asks && !rows.slice(i + 1).some((x) => familyName(x.to) === familyName(e.from)))) return
-    const whose = this.baseOf(you.to)
-    if (last.kind === 'reply' && familyName(last.from) === familyName(you.to)) return this.bringOut(id, last.from)
-    const owner = this.agents.get(you.to) ?? this.agents.get(whose)
+    const family = familyName(you.to)
+    const mine = said.findLast((e) => e.kind === 'reply' && familyName(e.from) === family)
+    // What teammates said that its last word can't have taken in: since that turn began, however soon after it landed. A
+    // quick teammate's report can land before "June has it", and that line knows nothing of it.
+    const since = mine?.began ?? mine?.ts ?? 0
+    const unseen = said.filter((e) => inThread(e) && familyName(e.from) !== family && e.ts >= since)
+    if (!unseen.length) return mine && this.bringOut(id, mine.from)
+    const owner = this.agents.get(you.to) ?? this.agents.get(this.baseOf(you.to))
     const asked = root?.closed ?? 0
     const up = owner && !owner.off && !this.parked && !owner.moving && owner.status !== 'stopped' && owner.status !== 'away' && this.workable(owner)
     if (!up || now - asked < THREAD_ASK_AGAIN) return this.bringOut(id)
     if (root) this.amend(root, { closed: now })
-    const mine = said.findLastIndex((e) => e.kind === 'reply' && familyName(e.from) === familyName(owner.name))
-    this.queue(owner, { ...crewPrompt(owner, CLOSE_THREAD(threadDigest(said.slice(mine + 1)))), closes: id, closeRe: you.id, ...(you.channel && { channel: you.channel }) })
+    this.queue(owner, { ...crewPrompt(owner, CLOSE_THREAD(threadDigest(unseen))), closes: id, closeRe: you.id, ...(you.channel && { channel: you.channel }) })
     this.pump(owner)
   }
 
   // What a thread comes to, into the channel: what `name` last said in it, or else the last report anyone gave.
   bringOut(id, name, { quietly = false } = {}) {
     const said = (x) => x.thread === id && x.kind === 'reply' && !x.empty
-    const e = (name && this.feed.findLast((x) => said(x) && familyName(x.from) === familyName(name))) || this.feed.findLast(said)
+    // (nobody named: the last report not in the channel yet)
+    const e = name ? this.feed.findLast((x) => said(x) && familyName(x.from) === familyName(name)) : this.feed.findLast((x) => said(x) && !x.out)
     if (!e || e.out) return
     if (quietly) this.amend(e, { out: true })
     else this.surface(e, { out: true })
@@ -4088,8 +4096,10 @@ const hold = (a, ms) => {
 
 // A prompt from Crew itself, queued like a message (it isn't one: it's not in the chat). See move.js.
 // A thread counts as over this long after its last line, with nobody still on it. A question at the end of an agent's reply
-// waits as long for a teammate to take it up, before it's brought out to you.
-const THREAD_QUIET = 60000
+// waits as long for a teammate to take it up, before it's brought out to you. Short, because you're waiting: whoever is
+// still at work or has a message queued keeps the thread going however long that takes (threadBusy).
+const THREAD_QUIET = 20000
+const THREAD_LOOK = 10000
 // How soon a thread's addressee may be asked for a closing line again, however much more gets said.
 const THREAD_ASK_AGAIN = 10 * 60000
 // A thread that was going when CLIque closed, back open within this long, carries on where it was.

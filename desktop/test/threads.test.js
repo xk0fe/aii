@@ -156,8 +156,9 @@ test('a thread that goes quiet with the agent you asked speaking last brings tha
   turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix the tables.' }))
   const joseph = turn('joseph', 'Fixed.')
   // Joseph finished: Jeff hears it, and says where things stand, to Joseph's message: not a reply to you
-  hub.post({ kind: 'msg', from: 'joseph', to: 'jeff', text: 'Tables done.', re: joseph.id })
-  const last = hub.post({ kind: 'reply', from: 'jeff', text: 'The tables are done.', re: hub.feed.at(-1).id })
+  hub.post({ kind: 'msg', from: 'joseph', to: 'jeff', text: 'Tables done.', re: joseph.id, ts: Date.now() - 1000 })
+  hub.agents.get('jeff').turnBegan = Date.now() + 5
+  const last = hub.post({ kind: 'reply', from: 'jeff', text: 'The tables are done.', re: hub.feed.at(-1).id, ts: Date.now() + 6 })
   assert.equal(inThread(last), true)
   const typed = runner.typed.length
   quiet()
@@ -252,7 +253,7 @@ test("a question at the end of a teammate's reply comes out if nobody takes it u
   ask()
   turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix the tables.' }))
   const asked = turn('joseph', 'Nothing has changed yet. Should I go ahead?')
-  hub.threadTick(asked.ts + 30000)
+  hub.threadTick(asked.ts + 10000)
   assert.equal(inThread(asked), true, 'the team gets a moment to sort it out')
   hub.threadTick(asked.ts + 90000)
   assert.equal(inThread(asked), false)
@@ -379,6 +380,49 @@ test("a closing prompt is no message of yours: a restart can't turn it into your
   assert.equal(queued.closeRe, root.id)
   assert.equal(hub.feed.some((e) => e.id === queued.id), false)
   jeff.status = 'idle'
+})
+
+test("a quick teammate's report that lands before \"June has it\" isn't lost: that line knows nothing of it", () => {
+  const root = ask()
+  const jeff = hub.agents.get('jeff')
+  hub.onHook('jeff', { hook_event_name: 'UserPromptSubmit', prompt: runner.typed.at(-1).text })
+  hub.send({ from: 'jeff', to: 'joseph', text: 'Write the poem.' })
+  // joseph is done before jeff's own turn is over
+  const report = turn('joseph', 'Soft paws on the windowsill.')
+  hub.onHook('jeff', { hook_event_name: 'Stop', last_assistant_message: 'Joseph has it.' })
+  const said = hub.feed.findLast((e) => e.from === 'jeff' && e.kind === 'reply')
+  assert.equal(said.out, true)
+  assert.equal(hub.feed.at(-1), said, "jeff's line landed last")
+  jeff.holdUntil = 0
+  quiet()
+  assert.match(prompts().at(-1)?.text ?? jeff.inbox[0]?.text ?? '', /Soft paws on the windowsill/, 'jeff is told, and writes the closing line')
+  assert.equal(inThread(report), true)
+  assert.equal(root.closed > 0, true)
+})
+
+test('with nobody to ask, that report comes out, not the line that came after it', () => {
+  ask()
+  const jeff = hub.agents.get('jeff')
+  hub.onHook('jeff', { hook_event_name: 'UserPromptSubmit', prompt: runner.typed.at(-1).text })
+  hub.send({ from: 'jeff', to: 'joseph', text: 'Write it.' })
+  const report = turn('joseph', 'Written.')
+  hub.onHook('jeff', { hook_event_name: 'Stop', last_assistant_message: 'Joseph has it.' })
+  jeff.off = true
+  quiet()
+  assert.equal(inThread(report), false)
+})
+
+test('its own report, taking in what teammates said before its turn began, is the last word', () => {
+  ask()
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Fix it.' }))
+  turn('joseph', 'Fixed.')
+  const jeff = hub.agents.get('jeff')
+  jeff.turnBegan = Date.now() + 1000
+  const last = hub.post({ kind: 'reply', from: 'jeff', text: 'All fixed.', re: hub.feed.at(-1).id, ts: Date.now() + 2000 })
+  const typed = runner.typed.length
+  hub.threadTick(last.ts + 60000)
+  assert.equal(runner.typed.length, typed)
+  assert.equal(inThread(last), false)
 })
 
 test('its reply answers your message, wherever the prompt came from, and only a turn with words posts anything', () => {
