@@ -237,14 +237,14 @@ export const TOOLS = {
       return {
         title: 'Add an agent',
         code: [`@${name}${area ? ` · ${area}` : ''}`, [brain.label, flags.model, effort, cwd].filter(Boolean).join(' · '), flags.yolo && 'YOLO: runs every command without asking'].filter(Boolean).join('\n'),
-        detail: `${where[0].toUpperCase()}${where.slice(1)}, and ${flags.off ? 'starts off' : 'starts right away'}.${prompt ? ` Instructions: ${clip(prompt)}` : ''}`,
+        detail: `${where[0].toUpperCase()}${where.slice(1)}, and ${flags.off ? 'starts off' : 'starts when it gets work'}.${prompt ? ` Instructions: ${clip(prompt)}` : ''}`,
         say: `Can I add a new agent, @${name}${area ? `, for ${clip(area, 60)}` : ''}?`,
         risky: Boolean(flags.yolo),
         hub,
         did: `added a new agent, @${name}${inWs(hub, mine)}`,
         run: () => {
           const made = hub.addAgent({ name, area, prompt, provider: brain.id, model: flags.model, effort, cwd, shared, off: flags.off, yolo: flags.yolo })
-          return `added @${made}${hub !== mine ? ` in ${hub.space.name}` : ''}${flags.off ? `, off (crew app agent on ${made} starts it)` : ', starting now'}`
+          return `added @${made}${hub !== mine ? ` in ${hub.space.name}` : ''}${flags.off ? `, off (crew app agent on ${made} turns it on)` : ', ready for work'}`
         },
       }
     },
@@ -427,7 +427,7 @@ export const TOOLS = {
       return {
         title: 'Add a workspace',
         code: [`${flags.icon ? `${flags.icon} ` : ''}${name}`, folder].filter(Boolean).join('\n'),
-        detail: members.length ? `${members.map((n) => `@${n}`).join(', ')} work${members.length === 1 ? 's' : ''} there, and start${members.length === 1 ? 's' : ''} right away.` : 'No agents in it yet.',
+        detail: members.length ? `${members.map((n) => `@${n}`).join(', ')} work${members.length === 1 ? 's' : ''} there.` : 'No agents in it yet.',
         say: `Can I make a workspace called ${name}?`,
         risky: yolo.length > 0, // a YOLO agent starting work somewhere new
         did: `made the ${name} workspace`,
@@ -505,7 +505,7 @@ export const TOOLS = {
     },
   },
   'workspace wake': {
-    group: 'workspaces', what: 'workspace', about: 'wake a workspace that is asleep: its agents start again', use: '<name>',
+    group: 'workspaces', what: 'workspace', about: 'wake a workspace that is asleep: its agents take work again', use: '<name>',
     plan: ({ crew }, { name: raw }) => {
       const w = workspaceNamed(crew, raw)
       if (!w.parked) throw new Error(`${w.name} is awake already`)

@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { adapters, ASK_WAIT, TRUST } from './adapters.js'
+import { adapters, ASK_WAIT, RESUME_ASK, TRUST } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt, quickAsk } from './promptgen.js'
 import { resolveCommand, withTools } from './launch.js'
@@ -39,7 +39,7 @@ const RUNTIME = 'runtime.json'
 // How far back the first look through the agents' logs goes for what their work cost (Hub.lookBack, core/backfill.js).
 const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
-  'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks',
+  'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'promptAt', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks',
   'trustAsk', 'trustAt']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
@@ -122,6 +122,15 @@ const STALL_MINUTES = 10
 const BOARD_FIRST = 20
 const NOTE_MAX = 800
 const STALL_CHECK = 60000
+// An agent with nothing to do gives up its terminal after this long (restMinutes in config.json, 0 to keep them up).
+// That costs no tokens: a resumed conversation reads the cache as the running one would have (measured 2026-11-06 on
+// Claude Code 2.1.319 and Codex 0.166, across rests, new commits, new teammates and edited instructions files).
+const REST_MINUTES = 10
+// What a CLI itself keeps going once it has taken a prompt: it goes when the CLI goes (see leftRunning).
+const HELPER = /^(caffeinate|codex-code-mode-host|conhost|OpenConsole)(\.exe)?$/i
+// A CLI that doesn't say when it's up (Codex) but hasn't drawn anything yet is given this long before it counts as ready
+// anyway: what's typed before its trust question shows answers that question.
+const READY_MAX = 30000
 const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
 )
@@ -240,8 +249,8 @@ export class Hub extends EventEmitter {
   }
 
   // survivors: terminals still running from before Crew restarted ([{ name, tag, pid }], from the terminal host). Their
-  // agents carry on where they are instead of starting again. The rest start, unless config.json says the workspace is
-  // parked: then they wait until it's opened.
+  // agents carry on where they are. The rest are resting: no terminal until there's work for them (see pump), and what
+  // was still queued for them wakes them now. A parked workspace's wait until it's opened.
   start(url, { survivors = [] } = {}) {
     this.url = url
     const park = (this.parked = this.space.parked)
@@ -254,7 +263,13 @@ export class Hub extends EventEmitter {
     const adopted = this.adopt(survivors)
     this.replaySpool()
     this.sweepStale()
-    if (!park) for (const a of this.agents.values()) if (!a.off && !adopted.has(a.name)) this.launch(a)
+    if (!park) {
+      for (const a of [...this.agents.values()]) {
+        if (a.off || adopted.has(a.name)) continue
+        if (a.cloneOf) this.dismiss(a.name) // its terminal wasn't the one Crew knew: what it had goes back to its original
+        else this.standBy(a)
+      }
+    }
     this.toolsLost()
     for (const name of adopted) {
       const a = this.agents.get(name)
@@ -262,7 +277,10 @@ export class Hub extends EventEmitter {
       if (a?.status === 'working') this.steer(a)
     }
     this.cfg.watch()
-    this.stallTimer = setInterval(() => this.checkStalls(), STALL_CHECK)
+    this.stallTimer = setInterval(() => {
+      this.checkStalls()
+      this.restIdle().catch(() => {})
+    }, STALL_CHECK)
     this.stallTimer.unref?.()
     // the agents' logs don't say which workspace they worked in: one workspace counts what came before (the first to
     // start on a computer where none has yet)
@@ -312,8 +330,10 @@ export class Hub extends EventEmitter {
       if (a.off && a.status !== 'off') {
         this.runner.stop(a.name)
         this.setStatus(a, 'off')
-      } else if (!a.off && a.status === 'off' && this.url && (!this.parked || this.carryOn.delete(a.name))) {
-        this.launch(a)
+      } else if (!a.off && a.status === 'off' && this.url && (!this.parked || this.carryOn.has(a.name))) {
+        // on again, or new: it rests until there's work for it. One renamed while it ran carries on under its new name.
+        if (this.carryOn.delete(a.name)) this.launch(a)
+        else this.standBy(a)
         this.startWaiting(a)
       }
     }
@@ -341,16 +361,15 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
-  // Opened: its agents that are on start, each picking up its conversation.
+  // Opened: its agents that are on rest, and each picks up its conversation once there's work for it. What waited for
+  // them while it was parked wakes them now.
   unpark() {
     if (!this.parked) return
     this.parked = false
-    const starting = [...this.agents.values()].filter((a) => !a.off && !a.cloneOf && !this.runner.running(a.name))
-    for (const a of starting) {
-      this.launch(a)
+    for (const a of [...this.agents.values()].filter((x) => !x.off && !x.cloneOf && !this.runner.running(x.name))) {
+      this.standBy(a)
       this.startWaiting(a)
     }
-    if (starting.length) this.post({ kind: 'event', from: 'crew', text: `woke up: ${atNames(starting.map((a) => a.name))} pick${starting.length === 1 ? 's' : ''} up where ${starting.length === 1 ? 'it' : 'they'} left off` })
     this.changed()
   }
 
@@ -362,8 +381,8 @@ export class Hub extends EventEmitter {
     this.parked = true
     // the agents first, so what their clones had queued waits with them instead of being typed into a terminal that's
     // about to stop
-    const stopping = running
-    for (const a of stopping) {
+    const stopping = running.filter((a) => a.status !== 'resting')
+    for (const a of running) {
       this.forgetAsks(a.name)
       this.forgetCalls(a.name, 'its workspace was parked before it answered')
       // what it leaves running is stopped as always, without a line each: parking stops everything on purpose
@@ -603,7 +622,8 @@ export class Hub extends EventEmitter {
     const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session, attachments: ATTACHMENTS, bin: this.bin, checks: a.checks })
     a.sessionId = resume ?? session // the conversation this process runs (see onStatusLine)
     this.stopPick(a, { stale: true })
-    Object.assign(a, { readyAfter, trust, trustAsk: false, trustNo: false, boot: '' }) // see onOutput
+    Object.assign(a, { readyAfter, trust, trustAsk: false, trustNo: false, boot: '', upAt: 0, resumeAsk: null, promptAt: 0 }) // see onOutput
+    a.resumeWatch = resume && RESUME_ASK[provider.cli] ? { ask: RESUME_ASK[provider.cli], screen: '' } : null
     a.resumed = Boolean(resume)
     if (!resume) this.newConvo(a)
     try {
@@ -641,7 +661,12 @@ export class Hub extends EventEmitter {
   // A CLI that doesn't say when it's up (Codex) counts as ready this long after it starts.
   readyIn(a) {
     clearTimeout(a.readyTimer)
-    if (a.readyAfter) a.readyTimer = setTimeout(() => a.status === 'starting' && this.setStatus(a, 'idle'), a.readyAfter)
+    if (!a.readyAfter) return
+    a.readyTimer = setTimeout(() => {
+      if (a.status !== 'starting') return
+      if (a.trust && !flat(a.boot) && Date.now() - a.launchedAt < READY_MAX) return this.readyIn(a) // nothing on its screen yet
+      this.setStatus(a, 'idle')
+    }, a.readyAfter)
   }
 
   // The first time a CLI runs in a folder it asks whether you trust it, YOLO or not, and nothing typed reaches its
@@ -651,6 +676,7 @@ export class Hub extends EventEmitter {
   // queue meanwhile. While it's up the screen is still read: answering from the chat picks by what's selected there.
   onOutput(name, data) {
     const a = this.agents.get(name)
+    if (a?.resumeWatch) this.watchResume(a, data)
     if (!a?.trust) return
     a.boot = (a.boot + data).slice(-6000)
     if (a.trustAsk) return a.trustPick && this.pickSoon(a)
@@ -658,6 +684,32 @@ export class Hub extends EventEmitter {
     clearTimeout(a.readyTimer)
     Object.assign(a, { trustAsk: true, trustAt: Date.now() })
     this.trustCard(a)
+  }
+
+  // Until it has taken its first prompt, a CLI picking up a conversation can ask whether to (RESUME_ASK). It's about your
+  // usage limit, so it's yours to answer: in its terminal, and what's queued waits. A message that went in just before
+  // the question showed was lost to it, so it goes back in the queue.
+  watchResume(a, data) {
+    const watch = a.resumeWatch
+    watch.screen = (watch.screen + data).slice(-6000)
+    if (a.resumeAsk || !watch.ask.test(flat(watch.screen))) return
+    a.resumeAsk = true
+    clearTimeout(a.timer)
+    if (a.expect) {
+      clearTimeout(a.ack)
+      this.unbrief(a, a.expect.msgs)
+      for (const m of [...a.expect.msgs].reverse()) (a.inbox.unshift(m), (m.queued = true))
+      a.expect = null
+    }
+    const share = flat(watch.screen).match(/about(\d+)%of/)?.[1]
+    this.needsYou(a, `asks before resuming its long conversation: it would use ${share ? `about ${share}%` : 'a good part'} of your 5-hour limit. Answer in its terminal: messages wait until then`)
+  }
+
+  // Answered in its terminal: on it goes, and what's queued goes in.
+  resumeAnswered(a) {
+    Object.assign(a, { resumeAsk: null, resumeWatch: null })
+    hold(a, 1500)
+    this.setStatus(a, a.upAt ? 'idle' : 'starting')
   }
 
   // Its trust question as a card in the chat, like a permission prompt's: Trust or Don't trust there answers it in
@@ -761,6 +813,71 @@ export class Hub extends EventEmitter {
     const a = this.agents.get(name)
     if (a && this.parked && !this.runner.running(name)) throw new Error(`${this.space.name} is asleep: send a message there to wake it`)
     if (a) this.launch(a, fresh)
+  }
+
+  // ---- resting: no terminal while there's nothing to do -------------------------------------------------
+  // An agent that's on doesn't need its CLI running to be there: a message, a task or a teammate's question starts it
+  // (pump) and it picks up its conversation. So nobody starts with the app, and one that has been idle gives its terminal
+  // up. Unlike off, resting takes work: you see a free agent.
+
+  // On, with nothing to do yet: it rests. One that couldn't start says why now, as it would have at launch, rather than
+  // when the first message finds out.
+  standBy(a) {
+    if (this.canStart(a)) this.setStatus(a, 'resting')
+    else this.launch(a)
+  }
+
+  canStart(a) {
+    const provider = this.providerOf(a)
+    return Boolean(adapters[provider?.cli]) && !provider.missing.length && fs.existsSync(expand(a.cwd))
+  }
+
+  // Can Auto give it work? Not one on its way to another computer, nor one resting that couldn't start.
+  workable(a) {
+    return !a.moving && (a.status !== 'resting' || this.canStart(a))
+  }
+
+  // Nothing it's doing, waiting for or looking after would end with its CLI. You typing in its terminal counts as doing.
+  mayRest(a, now, after) {
+    if (a.cloneOf || a.off || a.moving || a.status !== 'idle' || !this.runner.running(a.name)) return false
+    if (a.inbox.length || a.background || a.retrying || a.freshPending || a.relaunch || a.steering || a.expect || a.resumeAsk) return false
+    if (this.clonesOf(a).length || [...(a.subs?.values() ?? [])].some((x) => !x.ended)) return false
+    if (this.asking(a.name) || this.owed(a) || this.holdsOf(a.name).length) return false
+    return now - Math.max(a.since, a.typedAt ?? 0, a.hookAt ?? 0) >= after
+  }
+
+  // Each minute: those with nothing to do rest, unless stopping them would end something they started. Without a list of
+  // what's running (it couldn't be read) nobody can tell, so nobody rests.
+  async restIdle(now = Date.now()) {
+    const after = Number(this.config.restMinutes ?? REST_MINUTES) * 60000
+    if (!(after > 0) || this.parked) return
+    if (![...this.agents.values()].some((a) => this.mayRest(a, now, after))) return
+    const procs = await processes({ maxAge: TREE_CHECK / 2 })
+    if (!procs.length) return
+    for (const a of this.agents.values()) if (this.mayRest(a, now, after) && !this.leftRunning(a, procs)) this.rest(a)
+  }
+
+  // Would stopping its CLI end something it started: the dev server it left behind with &, or a command its CLI still
+  // holds on to (Codex runs them as its own children, with no shell around them)? So: anything under the CLI that started
+  // since its first prompt (give or take the second process times are rounded to), bar its known helpers. What came up
+  // before that is its tool servers, and whatever those start. On Windows the CLI itself is under a wrapper that came up
+  // before its first prompt too, so everything is looked through. Something else of the CLI's own only keeps the agent up,
+  // which does no harm; stopping a dev server would.
+  leftRunning(a, procs) {
+    const run = this.runs.get(a.run)
+    if (!run) return false
+    if (this.strays(procs, readGroups(run.file), readSpans(run.file)).length) return true
+    if (!a.promptAt) return false
+    const since = a.promptAt / 1000 + 1
+    const going = (pid) => procs.some((p) => p.ppid === pid && (p.start > since ? !HELPER.test(p.name) || going(p.pid) : process.platform === 'win32' && going(p.pid)))
+    return going(run.pid)
+  }
+
+  rest(a) {
+    const run = this.runs.get(a.run)
+    if (run) run.quiet = true
+    this.runner.stop(a.name)
+    this.setStatus(a, 'resting')
   }
 
   // ---- clones: one agent on several tasks at once ---------------------------------------------------
@@ -900,7 +1017,7 @@ export class Hub extends EventEmitter {
   // How an agent looks to routing: free when it, a clone of it, or a clone it could start can take work now.
   lineup(a) {
     const family = [a, ...this.clonesOf(a)]
-    const room = family.some((x) => x.status === 'idle' && !x.inbox.length) || (this.maxClones(a) > family.length - 1 && this.runner.running(a.name))
+    const room = family.some((x) => (x.status === 'idle' || x.status === 'resting') && !x.inbox.length) || (this.maxClones(a) > family.length - 1 && this.runner.running(a.name))
     return { name: a.name, area: a.area, status: room ? 'idle' : a.status, queue: room ? 0 : family.reduce((n, x) => n + x.inbox.length, 0), nearLimit: this.nearLimit(this.providerOf(a)?.id) }
   }
 
@@ -922,10 +1039,11 @@ export class Hub extends EventEmitter {
       a.freshPending = true
       return this.changed()
     }
-    // parked: the next time it starts, it starts fresh
-    if (this.parked && !this.runner.running(name)) {
+    // parked or resting: the next time it starts, it starts fresh
+    if ((this.parked || a.status === 'resting') && !this.runner.running(name)) {
       this.saveSession(name, null)
       this.newConvo(a)
+      if (a.status === 'resting') this.post({ kind: 'event', from: name, text: 'starts a new conversation with its next message', fresh: true })
       return this.changed()
     }
     this.startFresh(a)
@@ -1178,7 +1296,7 @@ export class Hub extends EventEmitter {
     a.freshWhy = ` (it passed its ${tokenCount(limit)} context limit)`
     a.freshLimit = true
     if (a.status === 'idle') return this.freshWhenDone(a)
-    this.post({ kind: 'event', from: a.name, text: `${passed}, so it starts a new conversation when it finishes this task` })
+    this.post({ kind: 'event', from: a.name, text: `${passed}, so it starts a new conversation ${a.status === 'resting' ? 'with its next message' : 'when it finishes this task'}` })
     this.changed()
   }
 
@@ -1490,11 +1608,7 @@ export class Hub extends EventEmitter {
     if (!groups.size) return
     // the CLI was there until a moment ago (Windows: what it started meanwhile is still its own)
     if (run.pid) for (const span of spans.get(run.pid) ?? []) span[1] = Math.max(span[1], Date.now() / 1000)
-    const procs = await processes()
-    const keep = new Set(tree(procs, process.pid).map((p) => p.pid))
-    for (const r of this.runs.values()) if (r.pid) for (const p of tree(procs, r.pid)) keep.add(p.pid)
-    for (const g of exempt(procs, process.pid)) groups.delete(g), spans.delete(g)
-    const left = leftovers(procs, groups, keep, spans)
+    const left = this.strays(await processes(), groups, spans)
     if (!left.length) return
     stopProcesses(left)
     // Windows starts a console host for a console program that has no console: that program's window, not something
@@ -1502,6 +1616,14 @@ export class Hub extends EventEmitter {
     const said = left.filter((p) => !/^(conhost|OpenConsole)$/i.test(p.name))
     const n = said.length
     if (!run.quiet && n) this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(said)}), so CLIque stopped ${n === 1 ? 'it' : 'them'}` })
+  }
+
+  // What's in these groups that isn't Crew's or part of a running CLI's own tree.
+  strays(procs, groups, spans) {
+    const keep = new Set(tree(procs, process.pid).map((p) => p.pid))
+    for (const r of this.runs.values()) if (r.pid) for (const p of tree(procs, r.pid)) keep.add(p.pid)
+    for (const g of exempt(procs, process.pid)) groups.delete(g), spans.delete(g)
+    return leftovers(procs, groups, keep, spans)
   }
 
   // Launches that ended while Crew wasn't there to see it (it quit, or crashed): swept now.
@@ -1535,6 +1657,7 @@ export class Hub extends EventEmitter {
   onHook(name, e) {
     const a = this.agents.get(name)
     if (!a) return
+    if (a.status === 'resting' && !this.runner.running(name)) return // the last word of the CLI it just gave up
     a.hookAt = Date.now()
     this.noteGroups(a)
     // when its conversation last went to the API (its cache lasts from then: see coldFor). A sub-agent's steps don't count.
@@ -1559,15 +1682,20 @@ export class Hub extends EventEmitter {
           return
         }
         if (e.source === 'clear') {
-          // /clear typed in its terminal
+          // /clear typed in its terminal. The new session has no prompt yet, so it can't be resumed: stopped before it
+          // has one, this agent starts a new conversation rather than go back to the one you cleared.
+          this.saveSession(name, null)
           this.newConvo(a)
           this.post({ kind: 'event', from: name, text: 'started a new conversation (/clear)', fresh: true })
           return this.setStatus(a, 'idle')
         }
+        a.upAt = Date.now()
         if (a.status !== 'starting') return
         hold(a, 2000) // the prompt box isn't ready the moment the session starts
         return this.setStatus(a, 'idle')
       case 'UserPromptSubmit': {
+        a.resumeWatch = null // it's taking prompts: no question about resuming comes now
+        a.promptAt ||= Date.now()
         // a "continue" Crew owes it after an API error: this prompt (Crew's, or anything you typed) takes its place
         clearTimeout(a.retryTimer)
         a.retrying = false
@@ -2027,7 +2155,7 @@ export class Hub extends EventEmitter {
     }
     if (status === 'idle' && a.freshPending) return this.freshWhenDone(a)
     if (status === 'idle' && a.relaunch) return this.launch(a)
-    if (status === 'idle') this.pump(a)
+    if (status === 'idle' || status === 'resting') this.pump(a)
     if (status === 'working') this.steer(a)
     this.changed()
   }
@@ -2160,6 +2288,7 @@ export class Hub extends EventEmitter {
     if (typed(data)) this.stopPick(a, { by: 'terminal' }) // you're answering its trust question yourself
     hold(a, 3000)
     this.runner.write(name, data)
+    if (a.resumeAsk && (data.includes('\r') || data === '\x1b')) return this.resumeAnswered(a)
     if (a.trustAsk && data.includes('\r')) return this.trustAnswered(a)
     if (a.status === 'waiting' && data === '\r') this.setStatus(a, 'working')
     // Esc / Ctrl+C interrupt Claude without a Stop hook, so assume idle unless a hook says otherwise.
@@ -2301,7 +2430,7 @@ export class Hub extends EventEmitter {
     const to = this.placeFor(a, msg)
     if (to !== a) this.amend(msg, { to: to.name })
     this.queue(to, msg)
-    const busy = to.status !== 'idle' || to.inbox.length > 1
+    const busy = (to.status !== 'idle' && to.status !== 'resting') || to.inbox.length > 1
     const starting = to.status === 'starting'
     this.pump(to)
     this.steer(to) // a question or an answer for a busy agent goes into the turn it's in
@@ -2737,15 +2866,17 @@ export class Hub extends EventEmitter {
   // finds the organiser even though none of its words are in "admin work, assistant, organiser".
   route(text, from, channel) {
     const members = this.channel(channel)?.members
-    const ready = [...this.agents.values()].filter((a) => !a.cloneOf && a.name !== this.baseOf(from) && this.runner.running(a.name) && (!members || members.includes(a.name)))
+    const ready = [...this.agents.values()].filter((a) => !a.cloneOf && a.name !== this.baseOf(from) && (this.runner.running(a.name) || a.status === 'resting') && this.workable(a) && (!members || members.includes(a.name)))
     const best = this.pick(text, ready.map((a) => ({ ...this.lineup(a), ...this.warmth(a) })))
     return best && this.agents.get(best.name)
   }
 
   // Deliver the next queued message once the agent is idle and nothing asked to hold off (e.g. you typing in its terminal).
+  // A resting agent starts for it, and takes it once it's up.
   pump(a) {
     clearTimeout(a.timer)
-    if (a.status !== 'idle' || !this.runner.running(a.name)) return
+    const resting = a.status === 'resting'
+    if (a.resumeAsk || (resting ? a.moving || this.agents.get(a.name) !== a : a.status !== 'idle' || !this.runner.running(a.name))) return
     if (a.cloneOf && !a.inbox.length) this.takeOver(a) // a clone with nothing of its own takes what waits for its original
     if (!a.inbox.length) return a.cloneOf && this.linger(a)
     // past its context limit, and free while it waited on what it left running: its next task is the moment for
@@ -2765,6 +2896,7 @@ export class Hub extends EventEmitter {
     const cold = this.coldFor(a, this.peek(a))
     if (cold && this.savers.coldStart) return this.coldStart(a, cold)
     if (cold && a.coldSeen !== a.inbox[0].id) (a.coldSeen = a.inbox[0].id), this.ledger.add('coldStart', false, { n: 1, tokens: cold.recache })
+    if (resting) return this.launch(a)
     // Still drawing: starting up, or finishing a turn under a hook's spinner. Text typed now can be dropped, or read
     // together with its Enter, which the CLI then takes as part of the text.
     if (a.settleFor !== a.inbox[0].id) Object.assign(a, { settleFor: a.inbox[0].id, settleFrom: Date.now() })
@@ -2783,6 +2915,7 @@ export class Hub extends EventEmitter {
     const head = msgs.length < 2 ? '' : msg.answers ? `[${msgs.length} answers to your questions came in]` : `[${msgs.length} hand-offs came in while you were busy, oldest first. Take them together, in this one turn.]`
     const text = [note, head, ...msgs.map((m) => this.framed(a, m))].filter(Boolean).join('\n\n')
     this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
+    a.promptAt ||= Date.now()
     // Matched against the prompt the agent reports, even if it shows up late. Only the words count:
     // Claude Code turns attached image paths into "[Image #1]" and moves them around.
     a.expect = { id: msg.id, text, msgs }
@@ -3070,11 +3203,11 @@ export class Hub extends EventEmitter {
       if (s?.told) continue
       const w = family.find((x) => this.convos[x.name]?.ticket === t.id)
       if (!w) {
-        if (family.some((x) => x.status !== 'idle') || now - Math.max(word, base.since) < after) continue
+        if (family.some((x) => x.status !== 'idle' && x.status !== 'resting') || now - Math.max(word, base.since) < after) continue
         this.tellStalled(t, base, `isn't on #${t.id} any more, but it's still in progress. Start it again or move it`)
         continue
       }
-      if (w.status !== 'idle' || !this.runner.running(w.name) || w.retrying || w.freshPending || w.relaunch || this.owed(w)) continue
+      if ((w.status === 'idle' ? !this.runner.running(w.name) : w.status !== 'resting') || w.retrying || w.freshPending || w.relaunch || this.owed(w)) continue
       const idle = now - Math.max(w.since, word)
       if (idle < after * (w.background ? 3 : 1)) continue
       const mins = Math.round(idle / 60000)
@@ -3405,7 +3538,7 @@ export class Hub extends EventEmitter {
       const extra = [files.length && `editing ${files.slice(0, 3).join(', ')}${files.length > 3 ? ` and ${files.length - 3} more` : ''}`, holds.length && `has ${holds.join(', ')}`, a.cloneOf && `a clone of ${a.cloneOf}`].filter(Boolean)
       return `${a.name.padEnd(16)} ${this.onNow(a)}${extra.length ? ` · ${extra.join(' · ')}` : ''}`
     })
-    for (const a of this.directory?.() ?? []) if (a.on) rows.push(`${a.name.padEnd(16)} ${a.status === 'idle' ? 'free' : a.status}${a.ticket ? ` · on #${a.ticket}` : ''}`)
+    for (const a of this.directory?.() ?? []) if (a.on) rows.push(`${a.name.padEnd(16)} ${a.status === 'idle' || a.status === 'resting' ? 'free' : a.status}${a.ticket ? ` · on #${a.ticket}` : ''}`)
     return rows.length ? `${rows.join('\n')}\n` : '(nobody else in the crew right now)\n'
   }
 
@@ -3436,7 +3569,7 @@ export class Hub extends EventEmitter {
       const queue = a.inbox.length ? `, ${a.inbox.length} queued` : ''
       const waits = this.blockedOn(a.name)
       const holds = this.holdsOf(a.name)
-      const status = (waits.length ? `waiting on ${waits.map((n) => `@${n}`).join(' ')}` : a.status) + queue + (holds.length ? `, has ${holds.join(', ')}` : '')
+      const status = (waits.length ? `waiting on ${waits.map((n) => `@${n}`).join(' ')}` : a.status === 'resting' ? 'idle' : a.status) + queue + (holds.length ? `, has ${holds.join(', ')}` : '')
       if (a.off) return `${a.name.padEnd(16)} off`
       if (a.cloneOf) return `${a.name.padEnd(16)} ${status.padEnd(20)} ${''.padEnd(22)} a clone of ${a.cloneOf}, on a task of its own`
       const brain = [this.providerOf(a)?.label, a.model, a.effort].filter(Boolean).join(' ')
@@ -3587,7 +3720,7 @@ export class Hub extends EventEmitter {
     const write = () => {
       const agents = {}
       for (const a of this.agents.values()) {
-        if (a.status === 'off' && !a.inbox.length) continue
+        if ((a.status === 'off' || a.status === 'resting') && !a.inbox.length) continue
         const s = {}
         for (const k of KEEP) if (a[k] !== undefined) s[k] = a[k]
         agents[a.name] = { ...s, inbox: a.inbox, serving: a.serving ?? [], expect: a.expect ?? null, steering: a.steering ? { text: a.steering.text, msgs: a.steering.msgs, at: a.steering.at } : null }
@@ -4132,7 +4265,7 @@ export function addressees(to, text) {
 // warm (warmRoute): a tie that's left goes to the one cheaper to wake (Hub.warmth's `wake`), when both say.
 export function bestFor(text, agents, { warm = false } = {}) {
   const score = areaScore(text)
-  const free = (a) => Number(a.status === 'idle' && !a.queue)
+  const free = (a) => Number((a.status === 'idle' || a.status === 'resting') && !a.queue)
   const near = (a) => Number(Boolean(a.nearLimit))
   const cheap = (x, y) => (warm && x.wake !== undefined && y.wake !== undefined ? x.wake - y.wake : 0)
   return [...agents].sort((x, y) => score(y) - score(x) || near(x) - near(y) || free(y) - free(x) || x.queue - y.queue || cheap(x, y))[0]

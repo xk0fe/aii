@@ -66,7 +66,8 @@ export function phoneState(s) {
     parked, autopilot, feed, reads, usage, spend, tasks, workspace, workspaces,
     // the workspace's channels, #general first: each with its brief and who's in it (no members: everyone)
     channels: (s.channels ?? []).map(({ id, name, brief, members }) => ({ id, name, ...(brief && { brief }), ...(members && { members }) })),
-    agents: s.agents.map(({ prompt, args, images, cwd, ...a }) => a),
+    // resting is free to a phone, which has no terminal to miss: older phones don't know the word
+    agents: s.agents.map(({ prompt, args, images, cwd, ...a }) => (a.status === 'resting' ? { ...a, status: 'idle' } : a)),
     providers: Object.fromEntries(Object.entries(s.providers).map(([id, p]) => [id, { label: p.label }])),
     // this computer first, then the linked ones
     computers: [s.computers.me, ...s.computers.links].map(({ slug, name, online = true }) => ({ slug, name, online })),

@@ -108,7 +108,7 @@
     if (!a.on) return 'Off'
     if (a.status === 'away') return `Offline${where(a)}`
     if (a.status === 'parked') return 'Parked'
-    if (a.status !== 'idle') return 'Stopped'
+    if (a.status !== 'idle' && a.status !== 'resting') return 'Stopped'
     return `Idle${where(a)}` // its sub-agents are the count beside it
   }
   // its creature, with how many of its replies you haven't read (as on the dashboard's rows)
@@ -164,10 +164,10 @@
   // "June is idle, with 1 helper at work · Noor is off", or with many, "5 idle · 4 off · the Laptop is offline"
   const together = (names, one, many) => (!names.length ? '' : names.length === 1 ? `${names[0]} ${one}` : `${names.slice(0, -1).join(', ')} and ${names.at(-1)} ${many}`)
   function restText(rest) {
-    const free = rest.filter((a) => a.on && a.status === 'idle')
+    const free = rest.filter((a) => a.on && (a.status === 'idle' || a.status === 'resting'))
     const away = rest.filter((a) => a.on && a.status === 'away')
     const parked = rest.filter((a) => a.on && a.status === 'parked')
-    const stopped = rest.filter((a) => a.on && !['idle', 'away', 'parked'].includes(a.status))
+    const stopped = rest.filter((a) => a.on && !['idle', 'resting', 'away', 'parked'].includes(a.status))
     const off = rest.filter((a) => !a.on)
     const computers = [...new Set(away.map((a) => a.homeName ?? a.home))].map(theOf)
     const offline = computers.length ? `${together(computers, 'is', 'are')} offline` : ''

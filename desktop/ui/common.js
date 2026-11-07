@@ -288,7 +288,7 @@ function ago(ts) {
 const blockedOn = (a) => (a.status === 'working' && a.waitingOn?.length ? a.waitingOn : null)
 const waitText = (on) => `waiting on @${on[0].name}${on.length > 1 ? ` +${on.length - 1}` : ''} · ${ago(on[0].since)}`
 // Its status as a class (dots, status words): 'blocked' while it waits on a teammate, else its status.
-const statusClass = (a) => (blockedOn(a) ? 'blocked' : a.status)
+const statusClass = (a) => (blockedOn(a) ? 'blocked' : a.status === 'resting' ? 'idle' : a.status)
 
 function statusText(a) {
   if (blockedOn(a)) return waitText(a.waitingOn)
@@ -296,6 +296,7 @@ function statusText(a) {
     case 'working': return `working · ${ago(a.since)}`
     case 'waiting': return 'needs you'
     case 'idle': return 'idle'
+    case 'resting': return 'resting: it starts when it gets work'
     case 'starting': return Date.now() - a.since > 15000 ? 'starting… check its terminal' : 'starting…'
     case 'off': return 'off'
     case 'parked': return 'asleep'
@@ -314,6 +315,7 @@ function statusWord(a, ask) {
     case 'working': return 'Working'
     case 'waiting': return ask === 'question' ? 'Has a question' : ask === 'plan' ? 'Has a plan for you' : ask ? 'Needs your OK' : 'Needs you'
     case 'idle': return 'Idle'
+    case 'resting': return 'Resting'
     case 'starting': return 'Starting…'
     case 'parked': return 'Asleep'
     case 'away': return 'Unreachable'

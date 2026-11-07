@@ -219,7 +219,15 @@ fs.mkdirSync(path.join(miniHome, 'code', 'app'), { recursive: true })
 const workstation = computer('Workstation', port + 2, [], { you: miniHome, joins: true })
 
 // The CLI has started (its SessionStart hook), its terminal has gone quiet and it is free: messages go in right away.
-const ready = (c, name) => c.run(`((a, proc) => (crew.here.onHook(${JSON.stringify(name)}, { hook_event_name: 'SessionStart', source: 'startup' }), a.holdUntil = 0, proc && (proc.lastOutput = 0), crew.here.pump(a), a.status))(crew.here.agents.get(${JSON.stringify(name)}), crew.runner.procs.get(${JSON.stringify(name)}))`)
+// (agents rest until there's work: one that's resting is started first, and has drawn its first screen)
+const ready = async (c, name) => {
+  if ((await c.run(`crew.here.agents.get(${JSON.stringify(name)}).status`)) === 'resting') {
+    await c.run(`(crew.here.restart(${JSON.stringify(name)}), 1)`)
+    await launched(c, name)
+    await sleep(200)
+  }
+  return c.run(`((a, proc) => (crew.here.onHook(${JSON.stringify(name)}, { hook_event_name: 'SessionStart', source: 'startup' }), a.holdUntil = 0, proc && (proc.lastOutput = 0), crew.here.pump(a), a.status))(crew.here.agents.get(${JSON.stringify(name)}), crew.runner.procs.get(${JSON.stringify(name)}))`)
+}
 const feedOf = (c) => c.run(`crew.here.feed`)
 
 before(async () => {
@@ -318,10 +326,11 @@ test('a free Codex agent moves from here to a linked computer: its next message 
   await ready(laptop, 'dev')
   assert.deepEqual(await laptop.run(`crew.moveAgent('dev', 'studio-mac', ${JSON.stringify(work.studio)})`), { name: 'dev@studio-mac', conversation: 'moved' })
   assert.equal(fs.readFileSync(path.join(studio.codex, 'sessions', rel), 'utf8'), '{"type":"session_meta"}\n')
-  assert.match(await launched(studio, 'dev'), new RegExp(`launch resume ${id} -c tui.resume_cwd="current"`))
+  assert.equal(await studio.run(`crew.here.agents.get('dev').status`), 'resting', 'nothing to do yet: no terminal')
   assert.match(await studio.run(`crew.here.convos.dev.note`), /^\[crew\] Since your last message you moved from computer "Laptop" to "Studio Mac" \(your folder here is .*\); processes you started on Laptop didn't come along\.$/)
   assert.equal(await studio.run(`crew.here.agents.get('dev').inbox.length`), 0, 'no turn spent on telling it')
   await studio.run(`crew.here.send({ to: 'dev', text: 'hello there' })`)
+  assert.match(await launched(studio, 'dev'), new RegExp(`launch resume ${id} -c tui.resume_cwd="current"`))
   await ready(studio, 'dev')
   assert.match(await until(() => studio.read('typed-dev.log').includes('hello there') && studio.read('typed-dev.log')), /\[crew\] Since your last message you moved from computer "Laptop"[^]*\n\nhello there/)
   assert.equal(await studio.run(`crew.here.convos.dev.note`), undefined, 'only once')

@@ -71,7 +71,7 @@ const NAV_ICON = { crew: markSVG('0 4 24 18'), tasks: ICONS.task, terminals: ICO
 for (const b of document.querySelectorAll('.nv .nv-icon')) b.outerHTML = NAV_ICON[b.closest('.nv').dataset.place]
 // Terminals' header: which terminals (with how many), and the grid or one big one
 $('.heads').insertAdjacentHTML('beforeend', pageHead({
-  id: 'terminals', glyph: ICONS.terminal, title: 'Terminals', sub: 'Every agent’s terminal, live',
+  id: 'terminals', glyph: ICONS.terminal, title: 'Terminals', sub: 'The terminals running now, live',
   tools: `<div class="seg tv-show" data-show><button data-show="all" title="Every terminal">All <i class="n"></i></button><button data-show="busy" title="The ones working, starting or waiting on you">Busy <i class="n"></i></button><button data-show="needs" title="The ones waiting on you">Needs you <i class="n"></i></button></div>
     <div class="seg icons tv-layout" data-layout><button data-layout="grid" title="Every terminal side by side" aria-label="Grid">${ICONS.grid}</button><button data-layout="focus" title="One terminal, big" aria-label="Focus">${ICONS.focus}</button></div>`,
 }))
@@ -95,7 +95,8 @@ for (const el of document.querySelectorAll('[title]')) el.title = keysIn(el.titl
 // ---- what's open ----------------------------------------------------------------------------------------------
 
 // The agent whose conversation is open (an agent, for a clone's), and its terminal in the dock: the one picked there,
-// else the one the conversation is with, else its first clone's. Off agents have no terminal: no dock.
+// else the one the conversation is with, else its first clone's. Off agents have no terminal: no dock. A resting one has
+// none yet: the dock keeps its place, and says so.
 const dmAgent = () => (isConvo(composer.target()) ? state.agents.find((a) => a.name === familyOf(composer.target())) ?? state.agents.find((a) => a.name === composer.target()) : null)
 const family = (name) => [...terms.keys()].filter((n) => familyOf(n) === familyOf(name))
 function dockName() {
@@ -104,7 +105,11 @@ function dockName() {
   return [dockPick, composer.target(), familyOf(composer.target())].find((n) => n && fam.includes(n)) ?? fam[0] ?? null
 }
 const dockOn = () => store.get('crew.dock') !== '0'
-const docked = () => place === 'dm' && dockOn() && Boolean(dockName())
+const restingHere = () => {
+  const a = place === 'dm' ? dmAgent() : null
+  return a?.status === 'resting' && !family(a.name).length ? a : null
+}
+const docked = () => place === 'dm' && dockOn() && Boolean(dockName() || restingHere())
 
 // Open a place, or the conversation the composer's aimed at ('dm'). Views that are hidden skip their redraws: the one
 // coming into view catches up first, still hidden.
@@ -226,7 +231,7 @@ function dmHead(a) {
   const clones = clonesOf(state.agents, a).filter((c) => c.on)
   const helpers = runningSubs(a).length
   const meta = [a.area, brainWords(a, state.providers, { short: true }), clones.length ? plural(clones.length, 'clone') : helpers ? plural(helpers, 'helper') : ''].filter(Boolean)
-  const canDock = family(a.name).length > 0
+  const canDock = family(a.name).length > 0 || a.status === 'resting'
   return [headTitle({ glyph: avatarHTML(a, { size: 28 }), title: nameHTML({ ...a, cloneOf: null }), sub: esc(meta.join(' · ')), tip: [statusText(a), brainLabel(a, state.providers)].join('\n') }),
     `${modeChips(a)}
       <label class="mh-power" title="${esc(a.on ? 'On: turn it off (it stays off after restarts)' : 'Off: turn it on (it picks up its session)')}">${powerSwitch(a)}<span>${a.on ? 'On' : 'Off'}</span></label>
@@ -576,6 +581,12 @@ const closeSearch = (opts) => msearch.close(opts)
 
 function drawDock() {
   const bar = $('.dock-bar')
+  const resting = docked() && restingHere()
+  $('.terms-view').classList.toggle('resting', Boolean(resting))
+  morph($('.dock-rest'), resting ? restPanel(resting) : '')
+  if (resting) return morph(bar, `<div class="dock-tabs" role="tablist"><button class="dock-tab" role="tab" aria-selected="true" tabindex="-1">${avatarHTML(resting, { size: 18, mood: 'still' })}<span>${esc(resting.seed ?? resting.name)}</span></button></div>
+    <span class="grow"></span><span class="t-badge" data-mode="resting" title="Its terminal isn't running. A message starts it.">Resting</span>
+    <button class="icon" data-dock-act="close" title="Put the terminal away">${ICONS.close}</button>`)
   const name = docked() && dockName()
   const t = name && terms.get(name)
   if (!t?.agent) return morph(bar, '')
@@ -606,6 +617,15 @@ $('.dock-bar').addEventListener('click', (e) => {
     store.set('crew.layout', layout)
     goPlace('terminals')
   }
+})
+
+// In the dock while nothing runs: who, why, and the one thing there is to do about it.
+const restPanel = (a) => `${avatarHTML(a, { size: 72, pose: 'mug' })}<h3>${esc(displayName(a))} is resting</h3>
+  <p>Its terminal isn't running. A message starts it, and it picks up its conversation.</p>
+  <button class="btn" data-rest-start="${esc(a.name)}">${ICONS.terminal}<span>Start its terminal</span></button>`
+$('.dock-rest').addEventListener('click', (e) => {
+  const name = e.target.closest('[data-rest-start]')?.dataset.restStart
+  if (name) crew.call('restart', name).catch((err) => oops(`Couldn't start ${name}'s terminal`, err))
 })
 
 // Everything the titlebar used to carry, at the sidebar's foot: Autopilot, Computers, the CLIs and the theme (and,
@@ -1017,10 +1037,10 @@ function freshen() {
 }
 
 // Show an agent's terminal: your conversation with it, its terminal docked beside it. One that's off has no terminal:
-// its conversation, with its switch in the header.
+// its conversation, with its switch in the header. One that's resting has the dock's way to start it.
 function select(name) {
   if (!terms.has(name) && !state.agents.some((a) => a.name === name)) name = familyOf(name) // a clone that has gone: its original
-  openDM(name, { terminal: terms.has(name) })
+  openDM(name, { terminal: terms.has(name) || state.agents.find((a) => a.name === name)?.status === 'resting' })
   terms.get(dockName())?.term.focus()
 }
 
@@ -1029,6 +1049,9 @@ function edit(name) {
   collection.open(state.agents.find((a) => a.name === name)?.cloneOf ?? name)
 }
 
+// On, and running: a parked or resting agent has no terminal, and starts when there's work for it.
+const hasTerminal = (a) => a.on && !a.rested && a.status !== 'parked' && a.status !== 'resting'
+
 function setLayout(next) {
   layout = next
   store.set('crew.layout', layout)
@@ -1036,11 +1059,12 @@ function setLayout(next) {
 }
 
 function drawBlank() {
-  const on = state.agents.filter((a) => a.on && a.status !== 'parked').length
+  const on = state.agents.filter(hasTerminal).length
   $('.blank').classList.toggle('hidden', place !== 'terminals' || on > 0)
   const parked = state.parked && state.agents.some((a) => a.on)
-  $('.blank h1').textContent = parked ? `${state.workspace.name} is asleep` : state.agents.length ? 'All agents are off' : 'No agents yet'
-  $('.blank .lead').textContent = parked ? 'Send a message to wake it: each agent picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
+  const resting = state.agents.some((a) => a.on && a.status === 'resting')
+  $('.blank h1').textContent = parked ? `${state.workspace.name} is asleep` : resting ? 'Nobody is at work right now' : state.agents.length ? 'All agents are off' : 'No agents yet'
+  $('.blank .lead').textContent = parked ? 'Send a message to wake it: each agent picks up its conversation.' : resting ? 'A terminal shows here once its agent has work. A message starts it, and it picks up its conversation.' : state.agents.length ? 'Turn one on in Agents: it picks up its last session.' : 'Make your first one in Agents.'
   $('.blank .acts').classList.toggle('hidden', state.agents.length > 0) // Add your first agent, only when there's none
 }
 
@@ -1215,6 +1239,7 @@ function doingWord(a) {
     }
     case 'waiting': return 'needs you'
     case 'idle': return runningSubs(a).length ? 'helpers at work' : 'free'
+    case 'resting': return 'free'
     case 'starting': return 'starting'
     case 'away': return 'offline'
     case 'parked': return 'asleep'
@@ -1385,7 +1410,7 @@ function agentMenu(name, at) {
   popMenu(at, [
     { head: a.seed ?? a.name },
     { label: 'Message', icon: ICONS.reply, act: 'message', disabled: !a.on },
-    { label: 'Open terminal', icon: ICONS.terminal, act: 'terminal', disabled: !terms.has(name) },
+    { label: 'Open terminal', icon: ICONS.terminal, act: 'terminal', disabled: !terms.has(name) && a.status !== 'resting' },
     { label: 'Edit…', icon: ICONS.edit, act: 'edit' },
     { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a.on || a.freshPending },
     ...(places.length ? ['-', ...places.map((g) => ({ label: `Move to ${g.name}`, icon: g.here ? ICONS.desktop : ICONS.laptop, act: `move:${g.key}`, disabled: !g.online, hint: g.online ? '' : 'offline' }))] : []),
@@ -1576,9 +1601,9 @@ const ready = live((next) => {
   if (saversDialog.open) drawSavers()
   if (toolsDialog.open) drawTools()
   drawFoot(state)
-  // Terminals only for agents that are on (and not parked); the sidebar lists everyone so off agents are one click from
-  // coming back.
-  const on = state.agents.filter((a) => a.on && a.status !== 'parked')
+  // Terminals only for agents that have one running; the sidebar lists everyone so off agents are one click from coming
+  // back.
+  const on = state.agents.filter(hasTerminal)
   const names = new Set(on.map((a) => a.name))
   for (const [name, t] of terms) {
     if (names.has(name)) continue

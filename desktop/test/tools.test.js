@@ -239,15 +239,15 @@ test('only an agent can ask: your own terminal gets what runs without asking, an
 test("agents: one added where the agent works is that workspace's own (--crew: one of yours everywhere); edit, on and off, remove", async () => {
   fresh(shop())
   mode('auto')
-  assert.equal(await app('iris', ['agent', 'add', 'Bob', '--area', 'QA for checkout', '--model', 'sonnet', '--folder', FOLDER, '--off'], { hub: shop() }), 'added @bob, off (crew app agent on bob starts it)\n')
+  assert.equal(await app('iris', ['agent', 'add', 'Bob', '--area', 'QA for checkout', '--model', 'sonnet', '--folder', FOLDER, '--off'], { hub: shop() }), 'added @bob, off (crew app agent on bob turns it on)\n')
   const sf = () => data().workspaces.find((w) => w.id === 'storefront')
   assert.deepEqual(sf().agents.find((a) => a.name === 'bob'), { name: 'bob', area: 'QA for checkout', provider: 'claude', model: 'sonnet', cwd: FOLDER, off: true })
   assert.equal(data().agents.some((a) => a.name === 'bob'), false)
-  assert.equal(await app('iris', ['agent', 'add', 'cleo', '--area', 'docs', '--brain', 'Codex', '--effort', 'low', '--crew'], { hub: shop() }), 'added @cleo, starting now\n')
+  assert.equal(await app('iris', ['agent', 'add', 'cleo', '--area', 'docs', '--brain', 'Codex', '--effort', 'low', '--crew'], { hub: shop() }), 'added @cleo, ready for work\n')
   assert.deepEqual(data().agents.find((a) => a.name === 'cleo'), { name: 'cleo', area: 'docs', provider: 'codex', effort: 'low' }, 'who it is; whether it\'s on is each workspace\'s')
   assert.deepEqual(sf().members.cleo, {})
   // from Home, into Storefront
-  assert.equal(await app('june', ['agent', 'add', 'dot', '--in', 'storefront']), 'added @dot in Storefront, starting now\n')
+  assert.equal(await app('june', ['agent', 'add', 'dot', '--in', 'storefront']), 'added @dot in Storefront, ready for work\n')
   assert.ok(sf().agents.some((a) => a.name === 'dot'))
 
   assert.equal(await app('iris', ['agent', 'on', 'bob'], { hub: shop() }), '@bob is on\n')

@@ -171,8 +171,27 @@ test('Codex already sits on "Trust and continue": Trust in the chat is just Ente
   mock.timers.tick(0)
   assert.deepEqual(runner.keys, ['\r'])
   assert.equal(rex.status, 'starting')
+  runner.draw('rex', '› ')
   mock.timers.tick(3000)
   assert.deepEqual(runner.typed, ['draw the cover'])
+})
+
+test("woken by a message, Codex isn't typed into before it has drawn anything: its trust question may be still to come", () => {
+  const rex = launch('rex')
+  hub.send({ to: 'rex', text: 'draw the cover' })
+  mock.timers.tick(3000)
+  assert.deepEqual(runner.typed, [], 'nothing on its screen yet')
+  assert.equal(rex.status, 'starting')
+  mock.timers.tick(3000)
+  runner.draw('rex', CODEX_TRUST)
+  assert.deepEqual(runner.typed, [], 'the question came late, and the message waits for it')
+  assert.ok(card('rex'))
+})
+
+test('a Codex that draws nothing at all still counts as ready after a while', () => {
+  const rex = launch('rex')
+  mock.timers.tick(36000)
+  assert.equal(rex.status, 'idle')
 })
 
 test("Don't trust: it moves to Quit and presses Enter there", () => {
