@@ -529,6 +529,15 @@ function channelAction(op, id, arg = {}) {
 
 // The workspace actions, enough for the shots: switch (one asleep wakes, as in Crew), open, park, make one.
 function workspaceAction(op, id, arg) {
+  // a new one (?fixture=first-run makes the first): on screen, with Q and nobody else yet
+  if (op === 'create') {
+    const made = { id: String(arg.name).toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: arg.name, color: arg.color || null, icon: null, folder: here(String(arg.folder ?? '').replace(/^~/, '/Users/you')), parked: false, members: [], agents: 0, on: 0, working: 0, waiting: 0, unread: 0, faces: [], needs: [] }
+    WORKSPACES.push(made)
+    for (const x of WORKSPACES) x.current = x === made
+    Object.assign(state, { workspace: made, parked: false, feed: [], agents: [newAgent({ name: 'q', system: true, area: 'Runs the crew: takes what you ask and gets it to the right teammate', model: 'sonnet', effort: 'low', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true } })] })
+    emit()
+    return { state }
+  }
   const w = WORKSPACES.find((x) => x.id === id)
   if (op === 'switch') (w.parked = false), window.__crewShow(id)
   if (op === 'open') (w.parked = false), window.__crewShow(state.workspace.id)
@@ -573,6 +582,8 @@ function workspaceAction(op, id, arg) {
   return { id, state }
 }
 const emit = () => setTimeout(() => window.__crewEmit('state', state), 30)
+// an agent just made (addAgent, a new workspace's Q): idle, nothing done yet
+const newAgent = (fields) => ({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: state.workspace?.folder ?? '', prompt: '', images: [], status: 'idle', since: Date.now(), provider: 'claude', model: '', effort: '', area: '', stats: stats(0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0, 0, 0, 0, 0]), ...fields })
 let nextTask = Math.max(...TICKETS.map((x) => x.id)) + 1
 // The crew's names are capitalized (Ada), while the pages match a typed @name in lower case (@ada): find one either way.
 const named = (n) => state.agents.find((a) => a.name.toLowerCase() === String(n ?? '').replace(/^@/, '').toLowerCase())
@@ -774,6 +785,12 @@ window.crew = {
       emit()
     }
     if (action === 'workspace') return workspaceAction(...args)
+    if (action === 'addAgent') {
+      const name = String(args[0].name).toLowerCase()
+      state.agents.push(newAgent({ ...args[0], name, shared: false }))
+      emit()
+      return name
+    }
     if (action === 'channel') return channelAction(...args)
     // moving an agent to another computer: its folders there, then the move itself
     if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? []).map(([path, label]) => ({ path, label }))

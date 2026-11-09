@@ -1,7 +1,7 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: a channel (#general or one you made), one agent's conversation with its terminal docked beside it,
 // Agents, Tasks or Terminals.
-/* global shownName, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
+/* global shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -49,8 +49,34 @@ const collection = mountCollection($('.collection'), {
 })
 const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onTerminal: (name) => select(name) })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next), onMembers: (at) => openMembers(at) })
-// first run: Claude Code and Codex, what to install or sign in to, then the first agent (ui/setup.js)
-const setup = mountSetup({ onAdd: () => addAgent(), onWorkspace: () => workspaces.create(), onComputers: () => openComputers() })
+// A new install's first run: Q makes its first workspace and crew with you, then shows you around (ui/setup.js). After
+// that, the setup screen: Claude Code and Codex, what to install or sign in to, then the first agent.
+const setup = mountSetup({ onAdd: () => addAgent(), onWorkspace: () => workspaces.create(), onComputers: () => openComputers(), onMade: (next) => switched(next), onTour: () => startTour() })
+
+// Q's tour of the app (ui/tour.js): where a first run ends, and in the ⋯ menu any time.
+const Q_LOOK = { avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true } } // (core/system-agent.js)
+const TOUR = [
+  { at: '.stage .chat', before: () => goPlace('chat'), say: 'This is #general, the workspace’s chat. Everyone here reads it. When agents talk among themselves, it goes into a thread under your message, so this stays short.' },
+  { at: '.compose', say: 'What you write goes to me, and I hand it on. Pick someone in To, or type @name, to talk to them directly.' },
+  { at: '.roster', say: 'Your agents. Each one has its own conversation with you, and the dot shows who’s working and who needs you.' },
+  { at: '.side-nav [data-place="crew"]', say: 'Agents: everyone’s card, with their brain, their look and a switch to turn them on and off.' },
+  { at: '.side-nav [data-place="tasks"]', say: 'Tasks: a board for bigger work. An agent takes a task and reports back when it’s done.' },
+  { at: '.side-nav [data-place="terminals"]', say: 'Every agent is a real Claude Code or Codex in a terminal. Watch one work, or type into it.' },
+  { at: '.chan-sec', say: 'Channels keep one topic, with its own crew and its own rules.' },
+  { at: '.rail', say: 'Each project is a workspace. Add another here, or link another computer and share its crew.' },
+  { say: 'That’s the tour. Tell me what we’re working on.' },
+]
+const tour = mountTour({
+  steps: () => TOUR,
+  who: () => state?.agents?.find((a) => a.system) ?? Q_LOOK,
+  onEnd: (done) => {
+    store.set('crew.firstRun', 'done')
+    if (done) composer.focus()
+  },
+})
+function startTour() {
+  if (state?.workspace && !tour.isOn()) tour.start()
+}
 
 // Where you are: 'chat' (the channel open, see setChannel), 'dm' (the conversation the composer is aimed at), 'crew' (Agents, the cards),
 // 'tasks' or 'terminals'. The terminals are laid out as a grid or one big one.
@@ -658,6 +684,7 @@ $('.side-more').addEventListener('click', (e) => {
     '-',
     { label: 'Computers…', icon: ICONS.computers, act: 'computers', hint: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : '' },
     { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
+    ...(state.workspace ? [{ label: 'Take the tour', icon: ICONS.sparkles, act: 'tour', hint: 'Q shows you around' }] : []),
     ...(ON_WINDOWS ? [] : [{ label: 'Permissions…', icon: ICONS.shield, act: 'permissions' }]),
     '-',
     { head: 'Theme' },
@@ -669,6 +696,7 @@ $('.side-more').addEventListener('click', (e) => {
     if (act === 'tools') openTools()
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
+    if (act === 'tour') startTour()
     if (act === 'permissions') crew.call('openPermissions').catch((err) => oops('Couldn’t open that', err))
     if (act.startsWith('theme:')) crew.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
     if (act === 'config') crew.call('config')
