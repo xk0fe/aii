@@ -24,6 +24,7 @@ import { Creature } from '@/ui/creature'
 import { Deck } from '@/ui/deck'
 import { Drawer } from '@/ui/drawer'
 import { FeedItem, type FeedCtx } from '@/ui/feed'
+import { withThreadCards } from '@/ui/threads'
 import { displayName, plural, rowLine } from '@/ui/format'
 import { useAppActive, useNow } from '@/ui/hooks'
 import { Icon } from '@/ui/icon'
@@ -376,8 +377,10 @@ export default function ChatScreen() {
   const { items, byId } = useMemo(() => {
     const merged = mergeSends((state?.feed ?? []).filter((e) => !(e as FeedEntry & { answers?: unknown }).answers))
     const shown = here ? merged.shown.filter((e) => inConvo(e, here.name)) : chan ? merged.shown.filter((e) => channelOf(e, d.channels ?? undefined) === chan) : merged.shown
-    return { items: shown.slice(-200).reverse(), byId: merged.byId }
-  }, [state?.feed, here, chan, d.channels])
+    // in a channel, each thread is one card; a conversation with one agent shows all of its lines
+    const rows = here ? shown : withThreadCards(shown, state?.feed ?? [], merged.byId, [...d.byName.values()])
+    return { items: rows.slice(-200).reverse(), byId: merged.byId }
+  }, [state?.feed, here, chan, d.channels, d.byName])
   const unread = useMemo(() => new Set(items.filter((e) => isUnread(e, state?.reads)).map((e) => e.id)), [items, state?.reads])
   // where you are: a place's list starts fresh at its latest, and its draft stays with it
   const place = here ? `${space}@${here.name}` : `${space}#${chan ?? ''}`
@@ -455,6 +458,7 @@ export default function ChatScreen() {
     onResized: follow.onResized,
     onFace: (name) => talkTo(name),
     onAsk: (id) => router.push({ pathname: '/ask/[id]', params: { id } }),
+    onThread: (id) => router.push({ pathname: '/thread/[id]', params: { id } }),
     onHeld: (id, how) => void (how === 'approve' ? client?.approve(id) : client?.drop(id))?.catch(() => {}),
     onLong: (e) => {
       const text = e.ticket !== undefined && !e.text ? `#${String(e.ticket).split('@')[0]} ${e.title ?? ''}` : (e.text ?? '')

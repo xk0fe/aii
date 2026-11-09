@@ -13,11 +13,11 @@ import { AskSummary, askVerb } from './ask'
 import { agentColor } from './avatar'
 import { nameInk } from './color'
 import { Creature } from './creature'
-import { clock, dayLabel, displayName, sameDay } from './format'
+import { clock, dayLabel, displayName, plural, sameDay } from './format'
 import { Icon } from './icon'
 import { Markdown } from './markdown'
 import { stacks } from './stack'
-import { Button, Press } from './parts'
+import { Button, Faces, Press } from './parts'
 import { fonts, type Theme } from './theme'
 
 export type FeedCtx = {
@@ -31,6 +31,7 @@ export type FeedCtx = {
   onResized: (by: number) => void // a row you opened or closed changed height by this much
   onFace: (name: string) => void
   onAsk: (id: string) => void
+  onThread: (id: string) => void
   onHeld: (id: string, how: 'approve' | 'drop') => void
   onLong: (e: FeedEntry) => void // copy, share, talk to
   canAct: boolean
@@ -310,8 +311,56 @@ export const FeedItem = memo(function FeedItem({ e, prev, c }: { e: FeedEntry; p
   )
 })
 
+// A thread: what agents said to each other about something, as one card. Its faces, who's in it, and how it's going.
+function ThreadRow({ e, c }: { e: FeedEntry; c: FeedCtx }) {
+  const t = c.t
+  const card = e.card
+  if (!card) return null
+  const say = (n: string) => displayName(n).base
+  const asks = Boolean(card.asking)
+  const names = card.others.map(say)
+  const others = names.length > 3 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} others` : names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]
+  const sub = asks ? `${say(family(card.asking))} is asking you something` : card.working && card.latest ? `${say(family(card.latestFrom))}: ${card.latest}` : `${plural(card.n, 'message')}${card.span >= 60000 ? ` · ${spanOf(card.span)}` : ''}`
+  return (
+    <View style={styles.threadRow}>
+      <Press
+        onPress={() => c.onThread(e.thread as string)}
+        style={[styles.threadCard, { backgroundColor: asks ? t.needsTint : t.fill, borderColor: asks ? t.waiting : t.line }]}
+        accessibilityRole="button"
+        accessibilityLabel={`${say(card.opener)}'s thread. ${sub}. Open it`}
+      >
+        <Faces faces={[card.opener, ...card.others].map((n) => someone(n, c.byName))} size={22} max={4} />
+        <View style={styles.threadText}>
+          <Text style={[styles.threadTitle, { color: t.fg2 }]} numberOfLines={2}>
+            <Text style={{ color: t.fg, fontWeight: '600' }}>{say(card.opener)}</Text>
+            {others ? (
+              <>
+                {' opened a thread with '}
+                <Text style={{ color: t.fg, fontWeight: '600' }}>{others}</Text>
+              </>
+            ) : (
+              "'s thread"
+            )}
+          </Text>
+          <Text style={[styles.threadSub, { color: asks ? t.waitingInk : t.fg2, fontWeight: asks ? '600' : '400' }]} numberOfLines={1}>
+            {sub}
+          </Text>
+        </View>
+        <Icon name="right" size={14} color={t.fg3} />
+      </Press>
+    </View>
+  )
+}
+
+const family = (name?: string) => familyOf(name ?? '')
+const spanOf = (ms: number) => {
+  const m = Math.round(ms / 60000)
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`
+}
+
 function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean; quote: boolean }) {
   const t = c.t
+  if (e.kind === 'thread') return <ThreadRow e={e} c={c} />
   if (e.kind === 'task' || e.kind === 'bug') return <TaskLine e={e} c={c} />
   if (e.kind === 'rule') return <RuleLine e={e} c={c} />
   if (e.kind === 'event')
@@ -381,7 +430,7 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
     )
   if (e.kind === 'reply')
     return (
-      <Row e={e} c={c} cont={cont} quote={quote} face={<Face e={e} c={c} />} head={<Name name={e.from} c={c} />}>
+      <Row e={e} c={c} cont={cont} quote={quote} face={<Face e={e} c={c} />} head={<><Name name={e.from} c={c} />{e.asks ? <Text style={{ color: t.waitingInk }}> · asks you</Text> : null}</>}>
         <Body e={e} c={c} />
         {e.subs?.length ? (
           <Text style={[styles.subs, { color: t.fg3 }]}>
@@ -419,6 +468,11 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
 const TEXT = 16.5
 
 const styles = StyleSheet.create({
+  threadRow: { paddingHorizontal: 12, paddingLeft: 60, marginTop: 10 },
+  threadCard: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
+  threadText: { flex: 1, minWidth: 0 },
+  threadTitle: { fontSize: 14, lineHeight: 19 },
+  threadSub: { fontSize: 13, lineHeight: 18 },
   row: { flexDirection: 'row', gap: 10, paddingHorizontal: 12, marginTop: 14 },
   cont: { marginTop: 5 },
   gutter: { width: 38, alignItems: 'center', paddingTop: 1 },

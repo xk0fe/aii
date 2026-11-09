@@ -334,7 +334,7 @@ class Session {
         // said in a channel (its id): Auto picks among its members, and its agents get its brief
         const channel = opts?.channel == null ? undefined : String(opts.channel)
         if (channel !== undefined && !h.channel(channel)) throw new Error('that channel is gone: it was deleted on the computer')
-        return crew.send(to ?? '', text, attached(images), { fresh: Boolean(opts?.fresh), re: opts?.re, ...(channel !== undefined && { channel }) }, h)
+        return crew.send(to ?? '', text, attached(images), { fresh: Boolean(opts?.fresh), re: opts?.re, ...(channel !== undefined && { channel }), ...(typeof opts?.thread === 'string' && { thread: opts.thread }) }, h)
       },
       // a channel made, changed or deleted: channelAction's, minus the snapshot it hands back (the watch sends it)
       channel: (ws, op, id, arg) => {

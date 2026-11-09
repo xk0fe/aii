@@ -1,6 +1,7 @@
 // One crew across your computers: this computer's hub plus every linked computer's agents, merged into one
 // list (agents elsewhere are name@computer), with each action routed to the computer the agent lives on.
 // No Electron in here: main.js owns windows and dialogs and talks to this.
+import { forClients } from './threads.js'
 import { EventEmitter } from 'node:events'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -744,7 +745,7 @@ export class Crew extends EventEmitter {
       for (const a of st.agents) agents.push(this.linkedAgent(l, a, q))
       for (const e of st.feed) {
         feed.push({
-          ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && q(e.re), images: e.images?.map((p) => this.fetchImage(l, p)),
+          ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && q(e.re), ...(e.thread && { thread: q(e.thread) }), ...(e.echo && { echo: q(e.echo) }), images: e.images?.map((p) => this.fetchImage(l, p)),
           ...(e.ticket !== undefined && { ticket: q(String(e.ticket)) }), ...((e.act === 'fixing' || e.act === 'triaged') && e.text && { text: q(e.text) }),
           ...(e.also && { also: e.also.map(q) }), ...(e.reply && { reply: q(e.reply) }), ...(e.line && { line: e.line.map(q) }),
           ...(e.answered && { answered: { ...e.answered, by: q(e.answered.by), ...(e.answered.reply && { reply: q(e.answered.reply) }) } }),
@@ -760,9 +761,10 @@ export class Crew extends EventEmitter {
     }
     feed.sort((x, y) => x.ts - y.ts)
     const hidden = new Set(this.settings.hidden ?? [])
-    // the last 200 entries, plus any question still waiting for an answer from before them
-    const recent = feed.slice(-200)
-    const open = feed.slice(0, -200).filter((e) => e.kind === 'ask' && !e.answer)
+    // the last 200 entries of the channel and of the threads, plus any question still waiting for an answer from before them
+    const recent = forClients(feed)
+    const kept = new Set(recent)
+    const open = feed.filter((e) => e.kind === 'ask' && !e.answer && !kept.has(e))
     const workspaces = this.workspaces()
     return {
       ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.cloneOf ?? a.name)), feed: [...open, ...recent], computers: this.computers(),
@@ -804,7 +806,7 @@ export class Crew extends EventEmitter {
     const waits = (list) => list?.map((w) => ({ ...w, name: q(w.name), id: w.id && q(w.id) }))
     return {
       ...a, name: q(a.name), seed: a.name, home: l.slug, homeName: l.name, status: l.peer ? a.status : 'away', ...(!l.peer && a.status === 'resting' && { rested: true }), images: a.images?.map((p) => this.fetchImage(l, p)),
-      ticket: a.ticket == null ? null : q(String(a.ticket)), ...(a.cloneOf && { cloneOf: q(a.cloneOf) }), waitingOn: waits(a.waitingOn), owes: waits(a.owes),
+      ticket: a.ticket == null ? null : q(String(a.ticket)), ...(a.cloneOf && { cloneOf: q(a.cloneOf) }), ...(a.thread && { thread: q(a.thread) }), waitingOn: waits(a.waitingOn), owes: waits(a.owes),
     }
   }
 
@@ -899,7 +901,7 @@ export class Crew extends EventEmitter {
   // shown here: on this computer, or id@computer). Each computer links what it has and quotes the rest.
   // here: the workspace it was sent in, whatever's on screen by the time it goes.
   // opts.channel: the channel it's said in (its id); Auto picks from that channel's members.
-  async send(to, text, images = [], { fresh = false, re, channel } = {}, here = this.here) {
+  async send(to, text, images = [], { fresh = false, re, channel, thread } = {}, here = this.here) {
     // asleep (put to sleep while on screen, or watched from a phone): what you send wakes it, and the agent it's for
     // picks up its conversation; the message waits for it to start
     if (here.space?.parked) this.workspaceAction('open', here.ws)
@@ -908,6 +910,7 @@ export class Crew extends EventEmitter {
     const idThere = (slug) => (id) => (slug ? (id?.endsWith(`@${slug}`) ? id.slice(0, -slug.length - 1) : undefined) : id && !id.includes('@') ? id : undefined)
     const unq = (slug) => (name) => (slug && String(name).endsWith(`@${slug}`) ? String(name).slice(0, -slug.length - 1) : name)
     let names = addressees(to, text).map((n) => this.resolve(n, here))
+    if (thread && !names.length) throw new Error('nobody left in this thread to send it to: @name someone')
     const auto = !names.length && { auto: true } // nobody named: Auto picks, and the chat says Auto picked them
     if (!names.length) {
       // agents, not their clones; one here that can clone itself counts as free
@@ -922,7 +925,9 @@ export class Crew extends EventEmitter {
     const away = c ? { channel: c.id, channelName: c.name, ...(c.brief && { brief: c.brief }) } : {}
     const out = []
     for (const [home, bases] of this.group(names)) {
-      const reply = quoted ? { re: idThere(home)(re), quote: { ...quote, from: unq(home)(quote.from) } } : {}
+      // said in a thread's reply box: it stays in that thread, wherever that lives
+      const inside = thread && idThere(home)(thread)
+      const reply = { ...(quoted && { re: idThere(home)(re), quote: { ...quote, from: unq(home)(quote.from) } }), ...(inside && { thread: inside }) }
       if (!home) out.push(await here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...auto, ...reply, ...(channel !== undefined && { channel }) }))
       else {
         const l = this.link(home)
