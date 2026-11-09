@@ -8,6 +8,7 @@
 // Looking (crew app agents, workspaces, …) never asks. This isn't a sandbox: an agent runs as you and could edit
 // config.json itself. It's the way an agent asks before it changes your app, and the way you say yes or no.
 // Crew.tool runs them: core/crew.js. No Electron in here.
+import { SYSTEM_AGENT_CHOICES } from './system-agent.js'
 import path from 'node:path'
 import { GENERAL, channelName, checkLook, named, sharedNames, workspacesIn } from './workspaces.js'
 import { isOffered } from './providers.js'
@@ -59,6 +60,15 @@ const usage = (key) => `crew app ${key}${TOOLS[key].use ? ` ${TOOLS[key].use}` :
 
 // "ada, milo" or "@ada @milo" -> ['ada', 'milo']
 const names = (v) => [...new Set(String(v ?? '').split(/[\s,]+/).map((n) => n.replace(/^@/, '').trim().toLowerCase()).filter(Boolean))]
+// Who a channel is for, as named. Q's in every channel, so naming him adds nothing: a channel only he was in would have
+// nobody to work in it.
+const membersOf = (hub, list) => {
+  const given = names(list).map((n) => agentIn(hub, n))
+  const them = given.filter((n) => !hub.agents.get(n)?.system)
+  if (given.length && !them.length) throw new Error(`@${given[0]} is in every channel already: name who else it's for`)
+  return them
+}
+
 const clip = (s, n = 300) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : String(s))
 const lowerFirst = (s) => String(s).charAt(0).toLowerCase() + String(s).slice(1)
 
@@ -277,6 +287,7 @@ export const TOOLS = {
       if (flags.yolo) patch.yolo = true
       if (flags['no-yolo']) patch.yolo = false
       const changed = Object.keys(FIELD_NAMES).filter((k) => k in patch && JSON.stringify(patch[k] || undefined) !== JSON.stringify(a[k] || undefined))
+      if (a.system && changed.some((k) => !SYSTEM_AGENT_CHOICES.has(k))) throw new Error(`@${name} comes with every workspace: only its brain, model and effort can change`)
       const was = { ...a, provider: hub.providers[a.provider ?? a.cli ?? 'claude']?.label }
       const now = { ...patch, provider: brain.label }
       if (!changed.length) throw new Error(`nothing to change: say what, e.g. ${usage('agent edit')}`)
@@ -311,6 +322,7 @@ export const TOOLS = {
     plan: ({ crew, hub: mine }, { name: raw, flags }) => {
       const hub = hubFor(crew, mine, flags)
       const name = agentIn(hub, raw)
+      if (hub.agents.get(name)?.system) throw new Error(`@${name} comes with every workspace, so it can't be removed. Turn it off with: crew app agent off ${name}`)
       const shared = hub.space.shared(name)
       const leaves = shared && !flags.everywhere
       return {
@@ -337,7 +349,7 @@ export const TOOLS = {
       const name = channelName(raw)
       if (!name) throw new Error('give the channel a name')
       if (hub.space.channels.some((c) => c.name === name)) throw new Error(`there's a #${name} already`)
-      const members = names(flags.members).map((n) => agentIn(hub, n))
+      const members = membersOf(hub, flags.members)
       const brief = String(flags.brief ?? '').trim()
       return {
         title: `Add a channel${inWs(hub, mine)}`,
@@ -376,7 +388,7 @@ export const TOOLS = {
       if (flags.members !== undefined) {
         if (c.id === GENERAL) throw new Error('everyone is in #general')
         const everyone = ['everyone', 'all', '*'].includes(String(flags.members).trim().toLowerCase())
-        patch.members = everyone ? [] : names(flags.members).map((n) => agentIn(hub, n))
+        patch.members = everyone ? [] : membersOf(hub, flags.members)
         lines.push(`members: ${patch.members.length ? patch.members.map((n) => `@${n}`).join(', ') : 'everyone'}`)
       }
       if (!lines.length) throw new Error(`nothing to change: say what, e.g. ${usage('channel edit')}`)

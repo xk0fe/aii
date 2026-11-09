@@ -11,6 +11,9 @@ import path from 'node:path'
 // The token savers (core/savers.js) are off unless a test turns them on (savers.test.js): the suite pins down how the
 // crew works without them, and quick triage would otherwise call the real Claude Code.
 process.env.CREW_SAVERS ??= 'off'
+// Q, the system agent (core/system-agent.js), is in every workspace unless this is off. The suite pins down who's in a
+// crew, and who a message goes to, without him; system-agent.test.js turns him on.
+process.env.CREW_SYSTEM_AGENT ??= 'off'
 
 if (process.platform === 'win32') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-clis-'))

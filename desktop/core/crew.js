@@ -910,12 +910,18 @@ export class Crew extends EventEmitter {
     const idThere = (slug) => (id) => (slug ? (id?.endsWith(`@${slug}`) ? id.slice(0, -slug.length - 1) : undefined) : id && !id.includes('@') ? id : undefined)
     const unq = (slug) => (name) => (slug && String(name).endsWith(`@${slug}`) ? String(name).slice(0, -slug.length - 1) : name)
     let names = addressees(to, text).map((n) => this.resolve(n, here))
+    // nobody named: it goes to Q (core/system-agent.js), who gets it to whoever should do it. With Q off, Auto picks.
+    if (!names.length) {
+      const there = here.systemAgentReady() ? null : this.snapshot(here).agents.find((a) => a.system && a.home && a.on && !a.nearLimit && !['stopped', 'off', 'away', 'waiting'].includes(a.status))
+      const sys = here.systemAgentReady() ? here.systemAgent().name : there?.name
+      if (sys) names = [sys]
+    }
     if (thread && !names.length) throw new Error('nobody left in this thread to send it to: @name someone')
     const auto = !names.length && { auto: true } // nobody named: Auto picks, and the chat says Auto picked them
     if (!names.length) {
       // agents, not their clones; one here that can clone itself counts as free
       const members = here.channel(channel)?.members
-      const ready = this.snapshot(here).agents.filter((a) => a.on && !a.cloneOf && !['stopped', 'off', 'away'].includes(a.status) && (a.home || here.workable(here.agents.get(a.name))) && (!members || members.includes(a.name)))
+      const ready = this.snapshot(here).agents.filter((a) => a.on && !a.cloneOf && !a.system && !['stopped', 'off', 'away'].includes(a.status) && (a.home || here.workable(here.agents.get(a.name))) && (!members || members.includes(a.name)))
       const best = here.pick(text, ready.map((a) => (a.home ? a : { ...a, ...here.lineup(here.agents.get(a.name)), ...here.warmth(here.agents.get(a.name)) })))
       if (!best) throw new Error(members ? `nobody in #${here.channel(channel).name} is on to take it: turn one on, or @name someone` : 'no agents to send to')
       names = [best.name]
@@ -1174,6 +1180,7 @@ export class Crew extends EventEmitter {
   async moveAgent(name, home, folder) {
     home ??= ''
     const here = this.here
+    if (this.snapshot(here).agents.find((a) => a.name === name)?.system) throw new Error(`${String(name).split('@')[0]} comes with every workspace, so it stays where it is`)
     const ws = here.ws
     const src = this.where(name)
     const from = src.l?.slug ?? ''
@@ -1260,7 +1267,7 @@ export class Crew extends EventEmitter {
       const q = this.qualifier(l)
       return {
         slug: l.slug, name: l.name, online: Boolean(l.peer), saved: Boolean(l.code), status: l.client?.status, spaces: Object.keys(l.spaces ?? {}),
-        agents: this.agentsOn(l).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)) })),
+        agents: this.agentsOn(l).map((a) => ({ name: q(a.name), seed: a.name, area: a.area, avatar: a.avatar, status: a.status, on: a.on, hidden: hidden.has(q(a.name)), ...(a.system && { system: true }) })),
         usage: this.linkedUsage(l),
       }
     })

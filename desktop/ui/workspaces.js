@@ -2,7 +2,7 @@
 // Discord's servers), which says which needs you and switches; the name at the top of the sidebar, whose menu has
 // what you do with the one on screen; the sheet that makes a workspace or changes one; and the banner over a parked
 // one. The dashboard does the switching itself (onSwitch), so it can animate it.
-/* global crew, esc, plural, morph, markSVG, popMenu, shortPath, tildePath, pathField, pathParts, keys, oops, errorLine, ICONS, COLORS, wsTile, wsColor, wsStatus, wsLabel, joinable, joinItem, computerIcon, elsewhere, hasWorkspaces, faceStack, avatarHTML, agentColor, bounce */
+/* global shownName, crew, esc, plural, morph, markSVG, popMenu, shortPath, tildePath, pathField, pathParts, keys, oops, errorLine, ICONS, COLORS, wsTile, wsColor, wsStatus, wsLabel, joinable, joinItem, computerIcon, elsewhere, hasWorkspaces, faceStack, avatarHTML, agentColor, bounce */
 
 const WS_COLORS = ['blue', 'sky', 'teal', 'mint', 'lime', 'yellow', 'orange', 'peach', 'red', 'pink', 'lilac', 'purple']
 const WS_ICONS = ['⛳', '🚀', '🎮', '📱', '🛒', '🎨', '🧪', '📚', '🏡', '💼', '🌱', '⚡', '🔧', '🌍']
@@ -305,7 +305,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       const tip = own ? `Works in ${esc(own)} here. Click to change` : "Give it a folder of its own here, instead of the workspace's"
       return `<li class="ws-agent ${on ? 'in' : ''}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}">
         <span class="ws-av">${avatarHTML(a, { size: 30, mood: on ? undefined : 'still' })}</span>
-        <span class="who"><b>${esc(a.name)}</b><small>${esc(a.area || 'no area')}</small></span>
+        <span class="who"><b>${esc(shownName(a.name))}</b><small>${esc(a.area || 'no area')}</small></span>
         ${on ? `<button type="button" class="ws-own ${own ? 'set' : ''}" data-ws-own="${esc(a.name)}" title="${tip}">${ICONS.folder}<span>${own ? esc(tilde(own)) : 'Own folder'}</span></button>` : ''}
         <input type="checkbox" class="switch sm" data-ws-member="${esc(a.name)}" ${on ? 'checked' : ''} aria-label="${esc(a.name)} works here">
       </li>`

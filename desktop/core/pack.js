@@ -12,7 +12,8 @@ const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
 const expand = (dir) => (dir ? dir.replace(/^~(?=[\\/]|$)/, os.homedir()) : os.homedir()) // ~/code, or ~\code on Windows
 
 export function packAgents(hub, names, { stats = false } = {}) {
-  const agents = names.map((name) => {
+  // (Q comes with every workspace: he isn't yours to pack)
+  const agents = names.filter((name) => !hub.agents?.get(name)?.system).map((name) => {
     const c = space(hub.config, hub.ws ?? ROOT)?.agents.find((a) => a.name === name) // as it is in its workspace (its folder there)
     if (!c) throw new Error(`no agent named "${name}"`)
     return {

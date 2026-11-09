@@ -1,6 +1,7 @@
 // The first-run screen (ui/setup.js), driven through its states with a tiny stand-in for the page: when it comes up
 // by itself and when it doesn't, the way out of every state, the ⋯ menu's version of it, Escape, and Add provider…'s
-// Remove. (scripts/ has the Electron interaction test that clicks through the real page.)
+// Remove. And the first run itself, Q's conversation, once the page has what it needs for it (saved: what's kept in
+// localStorage). (scripts/ has the Electron interaction test that clicks through the real page.)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -9,19 +10,30 @@ import vm from 'node:vm'
 
 const A = path.resolve(import.meta.dirname, '..')
 
-function page({ layers = null } = {}) {
+function page({ layers = null, saved = null, answers = () => undefined } = {}) {
   const made = []
   const keys = []
   const calls = []
   const node = (tag) => {
-    const el = { tag, hidden: false, open: false, style: {}, html: '', on: {}, setAttribute() {}, addEventListener(type, fn) { this.on[type] = fn }, querySelector: () => ({ focus() {} }), showModal() { this.open = true }, close() { this.open = false } }
+    const el = { tag, hidden: false, open: false, style: {}, html: '', on: {}, classList: { add() {}, remove() {} }, setAttribute() {}, addEventListener(type, fn) { this.on[type] = fn }, querySelector: () => ({ focus() {}, getBoundingClientRect: () => ({ top: 40, height: 64 }), style: { setProperty() {} } }), getAnimations: () => [], showModal() { this.open = true }, close() { this.open = false } }
     made.push(el)
     return el
+  }
+  // what a first run needs of the page: the kept step, the wordmark's fold, the motion setting, its icons and paths
+  const firstRun = saved && {
+    store: { get: (k) => saved.get(k) ?? null, set: (k, v) => saved.set(k, v) },
+    foldHTML: () => '<div class="fold"></div>',
+    matchMedia: () => ({ matches: false }),
+    innerHeight: 800,
+    ICONS: { folder: '', plus: '', check: '' },
+    tildePath: (p) => p,
+    pathParts: (p) => String(p).split('/').filter(Boolean),
   }
   const ctx = vm.createContext({
     document: { createElement: node, body: { append() {} }, querySelector: (sel) => (sel.includes('.menu') ? layers?.() ?? null : null) },
     addEventListener: (type, fn) => type === 'keydown' && keys.push(fn),
-    crew: { call: async (...args) => (calls.push(args), args[1] === 'provider' ? { id: args[2], key: false, running: false } : undefined) },
+    crew: { call: async (...args) => (calls.push(args), answers(args) ?? (args[1] === 'provider' ? { id: args[2], key: false, running: false } : undefined)) },
+    ...firstRun,
     esc: (s) => String(s ?? ''),
     morph: (el, html) => (el.html = html),
     avatarHTML: () => '<i class="av"></i>',
@@ -33,14 +45,15 @@ function page({ layers = null } = {}) {
     clearTimeout,
   })
   vm.runInContext(`${fs.readFileSync(path.join(A, 'ui/setup.js'), 'utf8')};globalThis.__mount = mountSetup`, ctx)
-  const screen = ctx.__mount({ onAdd: () => calls.push(['onAdd']), onWorkspace: () => calls.push(['onWorkspace']), onComputers: () => calls.push(['onComputers']) })
+  const screen = ctx.__mount({ onAdd: () => calls.push(['onAdd']), onWorkspace: () => calls.push(['onWorkspace']), onComputers: () => calls.push(['onComputers']), onMade: (next) => calls.push(['onMade', next]), onTour: () => calls.push(['onTour']) })
   const [view, sheet] = made
   const escape = (prevented = false) => keys.forEach((fn) => fn({ key: 'Escape', defaultPrevented: prevented }))
   // a click on one of its buttons, as the page's own handler sees it
-  const press = (el, dataset) => el.on.click({ target: { closest: () => ({ dataset }) } })
+  const press = (el, dataset) => el.on.click({ target: { closest: () => ({ dataset, classList: { add() {} } }) } })
   const buttons = () => [...view.html.matchAll(/data-act="(\w+)"[^>]*>([^<]*)</g)].map((m) => m[2])
-  const title = () => view.html.match(/<h1 class="display">([^<]*)</)?.[1]
-  return { screen, view, sheet, escape, press, buttons, title, calls }
+  const title = () => view.html.match(/<h1 class="display"[^>]*>([^<]*)</)?.[1]
+  const step = () => view.html.match(/<div class="fr[^"]*" data-step="(\w+)"/)?.[1]
+  return { screen, view, sheet, escape, press, buttons, title, calls, step }
 }
 
 const cli = (id, state) => ({ id, name: id === 'claude' ? 'Claude Code' : 'Codex', state, how: state === 'ready' ? null : { command: `${id} install`, page: 'https://example.com' } })
@@ -128,6 +141,17 @@ test('from the ⋯ menu with agents elsewhere (another workspace, your roster), 
   assert.deepEqual(p.buttons(), ['Done', 'Check again', 'Add a provider…'])
 })
 
+test('Q thinks while it looks, then says his line; his line keeps its place, so the dots going don’t start it over', () => {
+  const p = page()
+  p.screen.render(state({ setup: { checked: false, clis: [] }, roster: [{ name: 'Ada' }] }))
+  p.screen.open()
+  // a morph matches children by place: the line's bubble comes right after Q, empty while he thinks, the dots after it
+  assert.match(p.view.html, /<span class="su-who q"[^>]*><i class="av"><\/i><\/span>\s*<p class="su-say" data-name="" hidden><\/p><span class="su-think/)
+  p.screen.render(state({ setup: setup('ready'), roster: [{ name: 'Ada' }] }))
+  assert.match(p.view.html, /<span class="su-who q"[^>]*><i class="av"><\/i><\/span>\s*<p class="su-say" data-name="We’re all set\."[^>]*><span style="--i:0">We’re<\/span> <span style="--i:1">all<\/span> <span style="--i:2">set\.<\/span><\/p>\s*<\/div>/)
+  assert.doesNotMatch(p.view.html, /su-think/, 'done thinking')
+})
+
 test('Escape that another layer took (the agent’s sheet, a menu) leaves the screen where it is', () => {
   let layer = null
   const p = page({ layers: () => layer })
@@ -154,4 +178,123 @@ test('Add provider…: Add for GLM and Ollama; Remove only for what Add put ther
   assert.match(p.sheet.html, /data-add="glm"/)
   assert.match(p.sheet.html, /data-add="local"/)
   assert.deepEqual(p.calls.filter((c) => c[1] === 'provider').map((c) => c[2]), ['glm', 'local'], 'what each needs is looked at')
+})
+
+// ---- the first run ---------------------------------------------------------------------------------------------------
+
+const settle = (ms = 220) => new Promise((r) => setTimeout(r, ms)) // past a scene's change (go: 170ms)
+const fresh = (extra) => state({ workspace: null, setup: setup('ready'), ...extra })
+
+test('a new install opens with the first run: the name, then + New agent, which makes Q', async () => {
+  const saved = new Map()
+  const p = page({ saved })
+  p.screen.render(fresh())
+  assert.equal(p.view.hidden, false)
+  assert.equal(p.step(), 'title')
+  assert.match(p.view.html, /class="fold"/)
+  p.view.on.pointerdown() // a click skips the title
+  assert.equal(p.step(), 'meet')
+  assert.match(p.view.html, /data-fr="new"/)
+  p.press(p.view, { fr: 'new' })
+  await settle()
+  assert.equal(p.step(), 'hello')
+  assert.match(p.view.html, /class="fr-q pop"/, 'he pops out of it')
+  assert.match(p.view.html, /Hi,<\/span> <span[^>]*>I’m<\/span> <span[^>]*>Q,/)
+  assert.equal(saved.get('crew.firstRun'), 'hello', 'kept, so a quit picks up here')
+  p.press(p.view, { fr: 'hi' })
+  await settle()
+  assert.equal(p.step(), 'role')
+  p.press(p.view, { fr: 'role' })
+  await settle()
+  assert.equal(p.step(), 'workspace', 'Claude Code is ready: no need to ask for it')
+})
+
+test('an install that already has a workspace never sees it', () => {
+  const saved = new Map()
+  const p = page({ saved })
+  p.screen.render(state({ setup: setup('ready') }))
+  assert.equal(saved.get('crew.firstRun'), 'done')
+  assert.equal(p.step(), undefined)
+  assert.equal(p.view.hidden, true)
+})
+
+test('with neither Claude Code nor Codex, Q asks for one, and goes on by himself once the check finds it', async () => {
+  const saved = new Map([['crew.firstRun', 'role']])
+  const p = page({ saved })
+  p.screen.render(fresh({ setup: setup('missing') }))
+  p.press(p.view, { fr: 'role' })
+  await settle()
+  assert.equal(p.step(), 'cli')
+  assert.match(p.view.html, /Claude Code[\s\S]*Not installed/)
+  assert.match(p.view.html, /data-act="check"/)
+  p.screen.render(fresh({ setup: setup('ready') }))
+  assert.match(p.view.html, /Found<\/span> <span[^>]*>Claude/)
+  await settle(2200)
+  assert.equal(p.step(), 'workspace')
+})
+
+test('the workspace is made with the folder you picked, and the first run stays up for its crew', async () => {
+  const saved = new Map([['crew.firstRun', 'workspace']])
+  const made = state({ workspace: { id: 'shop', name: 'Shop' }, setup: setup('ready') })
+  const p = page({ saved, answers: ([what, op]) => (what === 'pickFolder' ? '/Users/you/code/shop' : what === 'folderInfo' ? { exists: true, path: '/Users/you/code/shop' } : what === 'workspace' && op === 'create' ? { state: made } : undefined) })
+  p.screen.render(fresh())
+  assert.equal(p.step(), 'workspace')
+  assert.match(p.view.html, /data-fr="make" disabled/, 'nothing to make until there is a folder')
+  p.press(p.view, { fr: 'pick' })
+  await settle(0)
+  assert.match(p.view.html, /value="Shop"/, 'named after its folder')
+  p.press(p.view, { fr: 'make' })
+  await settle()
+  const create = p.calls.find(([w, op]) => w === 'workspace' && op === 'create')
+  assert.equal(create[3].folder, '/Users/you/code/shop')
+  assert.equal(create[3].name, 'Shop')
+  assert.ok(p.calls.some(([w]) => w === 'onMade'), 'the dashboard goes to it')
+  p.screen.render(made) // the state that brings it
+  assert.equal(p.step(), 'crew')
+  assert.equal(saved.get('crew.firstRun'), 'crew')
+  assert.equal(p.view.hidden, false)
+})
+
+test('the crew picked joins on whichever of Claude Code and Codex is ready, and Q welcomes them', async () => {
+  const saved = new Map([['crew.firstRun', 'crew']])
+  const p = page({ saved })
+  const here = (agents) => state({ setup: setup('missing', 'ready'), agents })
+  p.screen.render(here([]))
+  assert.match(p.view.html, /data-fr="bring" disabled/)
+  p.press(p.view, { frPick: 'Ada' })
+  p.press(p.view, { frPick: 'Iris' })
+  assert.match(p.view.html, /Bring in all 2/)
+  assert.match(p.view.html, /data-name="mate-ada"/, 'picked ones stand beside Q')
+  p.press(p.view, { fr: 'bring' })
+  await settle()
+  const added = p.calls.filter(([w]) => w === 'addAgent').map(([, f]) => f)
+  assert.deepEqual(added.map((f) => [f.name, f.provider]), [['Ada', 'codex'], ['Iris', 'codex']])
+  p.screen.render(here([{ name: 'ada', area: 'Builder' }, { name: 'iris', area: 'Designer' }, { name: 'q', system: true }]))
+  assert.equal(p.step(), 'ready')
+  assert.match(p.view.html, /Welcome,<\/span> <span[^>]*>Ada<\/span> <span[^>]*>and<\/span> <span[^>]*>Iris\./)
+  p.press(p.view, { fr: 'tour' })
+  assert.equal(saved.get('crew.firstRun'), 'tour')
+  assert.ok(p.calls.some(([w]) => w === 'onTour'))
+  assert.equal(p.view.hidden, true, 'and the dashboard is there for it')
+})
+
+test('Skip leaves the first run for the setup screen, for good', () => {
+  const saved = new Map()
+  const p = page({ saved })
+  p.screen.render(fresh())
+  p.press(p.view, { fr: 'skip' })
+  assert.equal(saved.get('crew.firstRun'), 'done')
+  assert.equal(p.step(), undefined)
+  assert.equal(p.title(), 'Make your first workspace')
+})
+
+test('a tour the first run ended with, quit before it began, begins once the dashboard is back', async () => {
+  const saved = new Map([['crew.firstRun', 'tour']])
+  const p = page({ saved })
+  p.screen.render(state({ setup: setup('ready') }))
+  await settle(400)
+  assert.equal(p.calls.filter(([w]) => w === 'onTour').length, 1)
+  p.screen.render(state({ setup: setup('ready') }))
+  await settle(400)
+  assert.equal(p.calls.filter(([w]) => w === 'onTour').length, 1, 'once')
 })

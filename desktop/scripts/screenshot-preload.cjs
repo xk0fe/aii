@@ -439,6 +439,27 @@ if (FIXTURE === 'threads') {
   for (const r of Object.keys(READS)) delete READS[r]
   Object.assign(READS, { since: now })
 }
+// ?fixture=q: Q, the system agent (core/system-agent.js), in the crew. What you send goes to him, and he gets it to
+// whoever should do it.
+if (FIXTURE === 'q') {
+  const at = (m) => now - m * min
+  FEED.length = 0
+  FEED.push(
+    { id: 'o1', kind: 'reply', from: 'q', text: "Hi, I'm Q, the queue in CLIque. Tell me what you need and I'll get it to the right person. You can still @name anyone to talk to them directly.", ts: at(48) },
+    { id: 'o2', kind: 'msg', from: 'you', to: 'q', text: "who's on what right now?", ts: at(31) },
+    { id: 'o3', kind: 'reply', from: 'q', text: "Ada's on the orders API and Theo's running checkout tests. Everyone else is free.", re: 'o2', ts: at(30.8) },
+    { id: 'o4', kind: 'msg', from: 'you', to: 'q', text: 'The empty cart looks sad. Can someone give it some life?', ts: at(12) },
+    { id: 'o5', kind: 'msg', from: 'q', to: 'Iris', text: 'The empty cart looks sad, and the user wants it to have some life. Redraw it, and agree a line for it with June.', re: 'o4', ts: at(11.8) },
+    { id: 'o6', kind: 'reply', from: 'q', text: "Iris has it, and June's writing a line for it.", re: 'o4', ts: at(11.7) },
+    { id: 'o7', kind: 'msg', from: 'you', to: 'June', text: 'and put the coupon change in the release notes', ts: at(3) },
+    { id: 'o8', kind: 'reply', from: 'June', text: 'Added under "Checkout".', re: 'o7', ts: at(2) },
+  )
+  for (const a of AGENTS) Object.assign(a, { status: a.name === 'Iris' ? 'working' : 'idle', activity: a.name === 'Iris' ? 'Edit ui/empty-cart.svg' : '', since: at(9), subs: [] })
+  AGENTS.unshift({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: '~/.crew/workspaces/storefront/q', prompt: '', images: [], name: 'q', system: true, shared: false, status: 'idle', since: at(2), provider: 'claude', model: 'sonnet', effort: 'low',
+    area: 'Runs the crew: takes what you ask and gets it to the right teammate', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, stats: stats(14, 14, 9, 21, 22, 11, 0, 2, [1, 2, 0, 3, 2, 1, 5]) })
+  for (const r of Object.keys(READS)) delete READS[r]
+  Object.assign(READS, { since: now })
+}
 const state = { savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
 
 // Workspaces, as Crew.workspaces() reports them. Storefront has everyone; Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the crew, Storefront
@@ -483,6 +504,13 @@ if (FIXTURE === 'workspaces') {
   WORKSPACES.splice(2) // the usual crew has Storefront and Docs site
   show('storefront')
 }
+// ?fixture=first-run: a new install, with Claude Code and Codex ready and no workspace yet: the first-run screen
+// (ui/setup.js), where the name folds together and Q says hello.
+if (FIXTURE === 'first-run') {
+  WORKSPACES.length = 0
+  Object.assign(state, { workspace: null, agents: [], feed: [], roster: [] })
+  state.setup = { checked: true, ready: true, clis: [{ id: 'claude', name: 'Claude Code', state: 'ready', version: '2.4.0' }, { id: 'codex', name: 'Codex', state: 'ready', version: '0.80.0' }], git: null }
+}
 window.__crewShow = show
 // The channels' sheet and menu, as Crew.channelAction does them.
 function channelAction(op, id, arg = {}) {
@@ -501,6 +529,15 @@ function channelAction(op, id, arg = {}) {
 
 // The workspace actions, enough for the shots: switch (one asleep wakes, as in Crew), open, park, make one.
 function workspaceAction(op, id, arg) {
+  // a new one (?fixture=first-run makes the first): on screen, with Q and nobody else yet
+  if (op === 'create') {
+    const made = { id: String(arg.name).toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: arg.name, color: arg.color || null, icon: null, folder: here(String(arg.folder ?? '').replace(/^~/, '/Users/you')), parked: false, members: [], agents: 0, on: 0, working: 0, waiting: 0, unread: 0, faces: [], needs: [] }
+    WORKSPACES.push(made)
+    for (const x of WORKSPACES) x.current = x === made
+    Object.assign(state, { workspace: made, parked: false, feed: [], agents: [newAgent({ name: 'q', system: true, area: 'Runs the crew: takes what you ask and gets it to the right teammate', model: 'sonnet', effort: 'low', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true } })] })
+    emit()
+    return { state }
+  }
   const w = WORKSPACES.find((x) => x.id === id)
   if (op === 'switch') (w.parked = false), window.__crewShow(id)
   if (op === 'open') (w.parked = false), window.__crewShow(state.workspace.id)
@@ -545,6 +582,8 @@ function workspaceAction(op, id, arg) {
   return { id, state }
 }
 const emit = () => setTimeout(() => window.__crewEmit('state', state), 30)
+// an agent just made (addAgent, a new workspace's Q): idle, nothing done yet
+const newAgent = (fields) => ({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: state.workspace?.folder ?? '', prompt: '', images: [], status: 'idle', since: Date.now(), provider: 'claude', model: '', effort: '', area: '', stats: stats(0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0, 0, 0, 0, 0]), ...fields })
 let nextTask = Math.max(...TICKETS.map((x) => x.id)) + 1
 // The crew's names are capitalized (Ada), while the pages match a typed @name in lower case (@ada): find one either way.
 const named = (n) => state.agents.find((a) => a.name.toLowerCase() === String(n ?? '').replace(/^@/, '').toLowerCase())
@@ -746,6 +785,12 @@ window.crew = {
       emit()
     }
     if (action === 'workspace') return workspaceAction(...args)
+    if (action === 'addAgent') {
+      const name = String(args[0].name).toLowerCase()
+      state.agents.push(newAgent({ ...args[0], name, shared: false }))
+      emit()
+      return name
+    }
     if (action === 'channel') return channelAction(...args)
     // moving an agent to another computer: its folders there, then the move itself
     if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? []).map(([path, label]) => ({ path, label }))

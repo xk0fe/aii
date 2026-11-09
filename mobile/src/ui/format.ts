@@ -69,10 +69,12 @@ export function rowLine(a: Agent, now = Date.now()): { text: string; kind: strin
   return { text: statusText(a, now), kind: a.status }
 }
 
-// Rex@workstation → Rex (and "workstation" apart); Ada.2 → Ada 2
+// Rex@workstation → Rex (and "workstation" apart); Ada.2 → Ada 2. A one-letter name reads as an initial, so it's shown
+// as a capital: q is Q, the system agent (desktop/core/system-agent.js).
 export function displayName(name: string) {
   const [base, home] = String(name).split('@')
-  return { base: base.replace(/\.(\d+)$/, ' $1'), home: home ?? '' }
+  const shown = base.length === 1 ? base.toUpperCase() : base
+  return { base: shown.replace(/\.(\d+)$/, ' $1'), home: home ?? '' }
 }
 
 const cap = (s: string) => s.replace(/^./, (c) => c.toUpperCase())

@@ -5,10 +5,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
+import { SYSTEM_AGENT, SYSTEM_AGENT_CHOICES, systemAgentHello } from './system-agent.js'
 import { adapters, ASK_WAIT, RESUME_ASK, TRUST } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt, quickAsk } from './promptgen.js'
-import { resolveCommand, withTools } from './launch.js'
+import { pathKey, resolveCommand, which, withTools } from './launch.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, quickTriagePrompt, readTriage, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
@@ -68,7 +69,7 @@ export const openConfig = (also) => new Config(CONFIG, DEFAULTS, {
     also?.(data)
   },
 })
-const AGENT_KEYS = ['area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared']
+const AGENT_KEYS = ['system', 'area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared']
 const RESERVED = new Set(['you', 'any', 'crew'])
 // an unquoted # starts a comment in the shell, and `crew post` is all that arrives
 const POST_USAGE = 'usage: crew post <channel> "message" (the name alone: an unquoted # starts a shell comment)'
@@ -281,6 +282,7 @@ export class Hub extends EventEmitter {
     }
     this.cfg.watch()
     this.resumeThreads()
+    this.greet()
     this.stallTimer = setInterval(() => {
       this.checkStalls()
       this.restIdle().catch(() => {})
@@ -313,8 +315,9 @@ export class Hub extends EventEmitter {
   apply() {
     const before = new Map([...this.agents].map(([n, a]) => [n, [this.launchKey(a), a.contextLimit, a.onContextLimit]]))
     this.providers = providersFrom(this.config, this.cfg.discovered)
-    this.space = space(this.config, this.ws) ?? space({ workspaces: [{ id: this.ws }] }, this.ws) // no agents once it's gone from config.json
+    this.space = space(this.config, this.ws) ?? space({ workspaces: [{ id: this.ws, of: 'gone' }] }, this.ws) // no agents once it's gone from config.json
     const list = this.space.agents
+    for (const c of list) if (c.system) this.dressSystemAgent(c)
     const names = new Set(list.map((c) => c.name))
     for (const [name, a] of this.agents) {
       if (a.cloneOf || names.has(name)) continue // clones follow their original, below
@@ -372,6 +375,7 @@ export class Hub extends EventEmitter {
   unpark() {
     if (!this.parked) return
     this.parked = false
+    this.greet()
     for (const a of [...this.agents.values()].filter((x) => !x.off && !x.cloneOf && !this.runner.running(x.name))) {
       this.standBy(a)
       this.startWaiting(a)
@@ -410,8 +414,9 @@ export class Hub extends EventEmitter {
   // read (as its chat counts them), and a few faces.
   // An agent counts as working while it or any of its clones does; each one waiting on you counts.
   summary() {
-    const agents = this.ordered().filter((a) => !a.cloneOf)
-    const live = agents.filter((a) => !a.off && (!this.parked || this.runner.running(a.name)))
+    const all = this.ordered().filter((a) => !a.cloneOf)
+    const agents = all.filter((a) => !a.system) // who you've put here: every workspace has Q
+    const live = all.filter((a) => !a.off && (!this.parked || this.runner.running(a.name)))
     // an agent tool's card still up needs you, even once its agent has carried on with other work
     const carded = new Set([...this.asks.values()].filter((q) => q.plan).map((q) => q.name))
     const needs = (x) => x.status === 'waiting' || carded.has(x.name)
@@ -429,6 +434,95 @@ export class Hub extends EventEmitter {
 
   saveConfig() {
     this.cfg.save()
+  }
+
+  // ---- Q, the system agent (core/system-agent.js) ------------------------------------------------------------------
+
+  // His folder and, the first time, his brain: what the crew here runs on, or else whichever CLI this computer has. On
+  // the first he picks, a mid-size model at low effort: he talks and hands on, and he's the one you wait for each time.
+  dressSystemAgent(c) {
+    c.cwd = this.at(SYSTEM_AGENT)
+    try {
+      fs.mkdirSync(c.cwd, { recursive: true })
+    } catch {
+      c.cwd = os.tmpdir() // something else has that name there: an empty folder is all he needs
+    }
+    c.args = this.systemAgentFlags(c)
+    const mine = this.space.def(c.name)
+    if (mine.name !== c.name) {
+      mine.name = c.name
+      // new under this name: anything kept here for an agent that had it before him isn't his
+      if (this.sessions[c.name]) this.saveSession(c.name, null)
+      delete this.stats[c.name]
+    }
+    if (c.provider || c.cli) return
+    const ready = (id) => {
+      const p = this.providers[id]
+      return p && !p.missing?.length && path.isAbsolute(which(p.cli ?? id, process.env[pathKey(process.env)] ?? ''))
+    }
+    const crew = this.space.agents.filter((a) => !a.system).map((a) => a.provider ?? a.cli ?? 'claude')
+    const found = [...crew, 'claude', 'codex'].find(ready)
+    const id = found ?? 'claude'
+    const brain = { provider: id, ...(id === 'claude' && { model: 'sonnet' }), ...(this.providers[id]?.efforts?.includes('low') && { effort: 'low' }) }
+    // (no CLI found yet: nothing's decided, so he looks again next time)
+    if (found) for (const [k, v] of Object.entries(brain)) this.space.set(c.name, k, v)
+    Object.assign(c, brain, { args: this.systemAgentFlags({ ...c, ...brain }) })
+  }
+
+  // On Claude Code he has a shell for `crew` and nothing else: no file tools, no sub-agents, none of your tool servers. So
+  // he can't quietly edit something, and every message of his costs less, with far fewer tool definitions to keep in its
+  // cache. (Codex has no such switch: there it's his empty folder and his instructions.)
+  systemAgentFlags(c) {
+    if ((this.providers[c.provider ?? c.cli ?? 'claude']?.cli ?? 'claude') !== 'claude') return []
+    return ['--tools', process.platform === 'win32' ? 'Bash,PowerShell' : 'Bash', '--strict-mcp-config']
+  }
+
+  systemAgent() {
+    return [...this.agents.values()].find((a) => a.system) ?? null
+  }
+
+  // Whether what you send without naming anyone should go to him now. Not while he can't take it soon: asking you something
+  // in his terminal, stuck starting, or with his account at its limit. Auto picks then, as it does with him off.
+  systemAgentReady(now = Date.now()) {
+    const a = this.systemAgent()
+    if (!a || a.off || a.moving || a.resumeAsk || (a.trustAsk && !a.trustPick)) return false
+    if (a.status === 'stopped' || a.status === 'away' || a.status === 'waiting' || a.status === 'off') return false
+    if (a.status === 'starting' && now - a.since > SYSTEM_AGENT_START_MAX) return false
+    if (a.status === 'resting' && !this.canStart(a)) return false
+    return !this.nearLimit(this.providerOf(a)?.id)
+  }
+
+  // He can't take what's waiting for him (his CLI won't start, he was turned off, he's stuck): your messages go to whoever
+  // Auto would have picked, instead of sitting in his queue while a teammate is free.
+  systemAgentHandOver(a) {
+    const moved = []
+    for (const m of a.inbox.filter((x) => x.from === 'you' && !x.crew)) {
+      const to = this.route(m.text, 'you', m.channel)
+      if (!to || to === a) continue
+      a.inbox.splice(a.inbox.indexOf(m), 1)
+      this.amend(m, { to: to.name, auto: true, queued: true })
+      moved.push(to.name)
+      this.enqueue(to, m)
+    }
+    if (moved.length) this.post({ kind: 'event', from: a.name, text: `couldn't take what you sent, so it went to ${[...new Set(moved)].map((n) => `@${n}`).join(' ')}` })
+  }
+
+  // He says hello once, in a workspace that was going before he came along. It costs no tokens, and it's no news that needs
+  // a badge: nothing's running yet. (A new workspace's chat has its welcome, which introduces him.)
+  greet() {
+    const a = this.systemAgent()
+    if (!a || a.off || this.parked || this.space.def(a.name).greeted) return
+    const going = this.feed.some((e) => (e.kind === 'msg' || e.kind === 'reply') && e.from !== a.name)
+    const said = this.feed.some((e) => e.from === a.name)
+    this.space.def(a.name).greeted = true
+    try {
+      this.cfg.save()
+    } catch {
+      return // settings that can't be read: nothing to keep it in, so he says it another time
+    }
+    if (!going || said) return
+    const hi = this.post({ kind: 'reply', from: a.name, text: systemAgentHello(!this.space.agents.some((x) => !x.system)) })
+    this.read({ [a.name]: hi.ts })
   }
 
   // The hubs of the other workspaces, for what's kept about a shared agent in each (Crew sets this).
@@ -462,6 +556,7 @@ export class Hub extends EventEmitter {
   // everywhere: a shared agent off the roster and out of every workspace (Agents, or a move that didn't go through,
   // core/move.js).
   removeAgent(name, { everywhere = false } = {}) {
+    if (this.agents.get(name)?.system) throw new Error(`${name} comes with every workspace, so it can't be removed. You can turn it off`)
     const kept = everywhere ? this.keptBy(name) : [this]
     if (everywhere) forget(this.config, name)
     else this.space.remove(name)
@@ -491,7 +586,9 @@ export class Hub extends EventEmitter {
     const { name, ...fields } = clean(patch)
     for (const n of names) {
       if (!this.space.has(n)) continue
-      for (const [k, v] of Object.entries(fields)) this.space.set(n, k, v)
+      const sys = this.agents.get(n)?.system
+      for (const [k, v] of Object.entries(fields)) if (!sys || SYSTEM_AGENT_CHOICES.has(k)) this.space.set(n, k, v)
+      if (sys && 'provider' in fields && !('model' in fields)) this.space.set(n, 'model', undefined) // one brain's model is nothing to another
       if ('provider' in fields) this.space.set(n, 'cli', undefined)
     }
     this.saveConfig()
@@ -500,6 +597,7 @@ export class Hub extends EventEmitter {
   // A shared agent's new name is its name in every workspace; one of a workspace's own is renamed there.
   rename(from, to) {
     if (!this.space.has(from)) throw new Error(`no agent named "${from}"`)
+    if (this.agents.get(from)?.system) throw new Error(`${from} comes with every workspace, and keeps its name`)
     const shared = this.space.shared(from)
     to = this.freeName(to, shared ? (n) => this.agents.has(n) || sharedNames(this.config, from).has(n) : undefined)
     const kept = shared ? this.keptBy(from) : [this]
@@ -721,6 +819,7 @@ export class Hub extends EventEmitter {
   // Its trust question as a card in the chat, like a permission prompt's: Trust or Don't trust there answers it in
   // its terminal for you (pickTrust), and answering in the terminal itself closes the card.
   trustCard(a) {
+    if (a.system) return this.pickTrust(a, true, null) // Q's own empty folder: nothing there to ask you about
     const cli = this.providerOf(a)?.cli ?? 'claude'
     const folder = String(a.cwd ?? '')
     const base = path.basename(expand(folder)) || folder
@@ -901,7 +1000,8 @@ export class Hub extends EventEmitter {
 
   // Every agent with its clones right after it.
   ordered() {
-    return [...this.agents.values()].filter((a) => !a.cloneOf).flatMap((a) => [a, ...this.clonesOf(a)])
+    const all = [...this.agents.values()].filter((a) => !a.cloneOf)
+    return [...all.filter((a) => a.system), ...all.filter((a) => !a.system)].flatMap((a) => [a, ...this.clonesOf(a)])
   }
 
   // The agent a name belongs to: a clone's original, or the agent itself. A clone that went away still names its
@@ -912,6 +1012,7 @@ export class Hub extends EventEmitter {
   }
 
   maxClones(a) {
+    if (a?.system) return 0
     return Math.min(Math.max(0, Math.floor(Number(a?.clones) || 0)), MAX_CLONES)
   }
 
@@ -1141,7 +1242,8 @@ export class Hub extends EventEmitter {
   // back, or a reply to something it said there. Those never start a new conversation.
   followsOn(a, m) {
     const c = this.convos[a.name]
-    if (m.crew || m.fresh || m.answers || m.ask || (m.from === 'you' && !m.auto)) return true
+    // (what goes to Q wasn't meant for his conversation in particular: he can start afresh like any Auto pick)
+    if (m.crew || m.fresh || m.answers || m.ask || (m.from === 'you' && !m.auto && !a.system)) return true
     if (m.ticket !== undefined && m.ticket === c?.ticket) return true
     const re = m.re && this.feed.findLast((e) => e.id === m.re)
     return Boolean(re && re.ts >= (c?.since ?? 0) && (re.from === a.name || re.to === a.name))
@@ -1168,9 +1270,10 @@ export class Hub extends EventEmitter {
   // with busyCheck on, crew busy, or nothing at all when it works alone (no teammate in this workspace, no clones of its
   // own, no linked computer's). Decided at launch: it's in the system prompt, and a new one rewrites the whole cache.
   checksFor(a) {
+    if (a.system) return 'none' // he doesn't build anything
     if (!this.savers.busyCheck) return 'full'
     const base = (a.cloneOf && this.agents.get(a.cloneOf)) || a
-    const alone = !a.cloneOf && !this.maxClones(base) && ![...this.agents.values()].some((x) => !x.cloneOf && x.name !== base.name) && !(this.directory?.() ?? []).length
+    const alone = !a.cloneOf && !this.maxClones(base) && ![...this.agents.values()].some((x) => !x.cloneOf && !x.system && x.name !== base.name) && !(this.directory?.() ?? []).some((x) => !x.system)
     return alone ? 'none' : 'busy'
   }
 
@@ -2154,6 +2257,7 @@ export class Hub extends EventEmitter {
       if (a.status === 'waiting') this.record(a.name, { waitMs: spent })
       Object.assign(a, { status, since: Date.now() })
     }
+    if (a.system && (status === 'stopped' || status === 'off')) this.systemAgentHandOver(a)
     // Its turn is over, whichever way it ended: the files it edited are free again, and whoever asked it something
     // this turn hears that no answer is coming (a Stop has settled those already). Turned off, it won't get to the
     // questions in its queue either, so their askers hear that now rather than wait. (A clone's queue goes back to
@@ -2361,6 +2465,15 @@ export class Hub extends EventEmitter {
     if (away.length && !names.length) return this.relay(from, away, text, images, awayExtra)
     const targets = names.length ? this.recipients(names, from) : [this.route(text, from, ch)]
     if (!targets[0]) throw new Error('no agents to send to')
+    // Q hands on inside the channel it came from, as Auto picks from its members, and what you attached goes along
+    const sender = this.agents.get(from)
+    if (sender?.system) {
+      const room = this.channel(ch)
+      const outside = room?.members?.length ? targets.find((x) => !room.members.includes(this.baseOf(x.name))) : null
+      if (outside) throw new Error(`not sent: #${room.name} is for ${room.members.map((n) => `@${n}`).join(' ')}, and @${outside.name} isn't in it. Hand it to one of them, or tell the user nobody there fits`)
+      const asked = [...(sender.serving ?? []), this.feed.findLast((e) => e.id === sender.current)]
+      if (!images.length) images = [...new Set(asked.flatMap((m) => m?.images ?? []))]
+    }
     // nobody named: the crew picked who takes it (here, or in Crew.send for you), and the chat says so rather than that
     // you chose them
     const routed = (auto || !names.length) && { auto: true }
@@ -2373,7 +2486,7 @@ export class Hub extends EventEmitter {
       throw new Error(`@${call.from} is waiting for your answer to "${gist(call.text, 80)}". Don't hand it back: put what you'd send it in your answer. Your final message goes back to @${call.from} by itself.${targets.length > 1 ? ' (nothing was sent)' : ''}`)
     }
 
-    const held = from !== 'you' && !this.space.autopilot
+    const held = from !== 'you' && !this.space.autopilot && !this.agents.get(from)?.system // (you asked Q: his hand-off is your request going on)
     if (ask) {
       const msg = this.post({ kind: 'msg', from, to: targets[0].name, text, ask: true, ...(images.length && { images }), ...(ch && { channel: ch }), ...carried, queued: !held, held })
       this.open({ id: msg.id, msg, from, text, back: ask })
@@ -2384,8 +2497,7 @@ export class Hub extends EventEmitter {
     // agent's final message shows in the chat by itself. New work for it goes with `crew send <name> --new`.
     // Only a teammate named in `to` (not one @mentioned in the text, nor Auto's pick), and not when its hand-off asked
     // something (a question the old way, by crew send: the answer goes back to it).
-    const sender = !newWork && this.agents.get(from)
-    const handers = new Set((sender?.serving ?? []).filter((m) => m.from !== 'you' && !m.ask && !m.answers && !m.crew && !/\?\s*$/m.test(m.text ?? '')).map((m) => this.baseOf(m.from)))
+    const handers = new Set((newWork ? [] : sender?.serving ?? []).filter((m) => m.from !== 'you' && !m.ask && !m.answers && !m.crew && !/\?\s*$/m.test(m.text ?? '')).map((m) => this.baseOf(m.from)))
     const named = new Set(addressees(to, '').map((n) => this.baseOf(local(n) ?? n)))
     const back = targets.find((t) => handers.has(this.baseOf(t.name)) && named.has(this.baseOf(t.name)))
     if (back) {
@@ -2504,7 +2616,7 @@ export class Hub extends EventEmitter {
     // the same question again (a retry after a "hasn't answered yet"): wait on the one already asked
     const same = [...this.calls.values()].find((c) => c.from === from && this.baseOf(this.ownerOf(c)) === target.name && squash(c.text) === squash(text))
     if (same) return this.hold([same], hold, closed)
-    const held = from !== 'you' && !this.space.autopilot
+    const held = from !== 'you' && !this.space.autopilot && !this.agents.get(from)?.system // (you asked Q: his hand-off is your request going on)
     const msg = this.post({ kind: 'msg', from, to: target.name, text, ask: true, ...(images.length && { images }), ...(asker?.current && { re: asker.current }), queued: !held, held })
     const call = this.open({ id: msg.id, msg, from, text, parent: this.workingOn(asker) })
     if (asker) this.record(from, { handoffs: 1 })
@@ -2883,9 +2995,10 @@ export class Hub extends EventEmitter {
   // finds the organiser even though none of its words are in "admin work, assistant, organiser".
   route(text, from, channel) {
     const members = this.channel(channel)?.members
-    const ready = [...this.agents.values()].filter((a) => !a.cloneOf && a.name !== this.baseOf(from) && (this.runner.running(a.name) || a.status === 'resting') && this.workable(a) && (!members || members.includes(a.name)))
+    const ready = [...this.agents.values()].filter((a) => !a.cloneOf && !a.system && a.name !== this.baseOf(from) && (this.runner.running(a.name) || a.status === 'resting') && this.workable(a) && (!members || members.includes(a.name)))
     const best = this.pick(text, ready.map((a) => ({ ...this.lineup(a), ...this.warmth(a) })))
-    return best && this.agents.get(best.name)
+    // (nobody else here: Q, unless it's Q asking)
+    return best ? this.agents.get(best.name) : !this.systemAgent() || this.baseOf(from) === this.systemAgent().name || !this.systemAgentReady() ? undefined : this.systemAgent()
   }
 
   // Deliver the next queued message once the agent is idle and nothing asked to hold off (e.g. you typing in its terminal).
@@ -3033,7 +3146,7 @@ export class Hub extends EventEmitter {
     const a = this.agents.get(from)
     return `${this.space.channels.map((c) => {
       if (a && c.brief) this.giveBrief(a, c)
-      const out = a && c.members?.length && !c.members.includes(this.baseOf(from)) ? " (you're not in it)" : ''
+      const out = a && !a.system && c.members?.length && !c.members.includes(this.baseOf(from)) ? " (you're not in it)" : ''
       return `#${c.name.padEnd(20)} ${(c.members?.map((n) => `@${n}`).join(' ') || 'everyone').padEnd(24)} ${c.brief ? c.brief.replace(/\s+/g, ' ') : '(no brief)'}${out}`
     }).join('\n')}\n`
   }
@@ -3050,7 +3163,7 @@ export class Hub extends EventEmitter {
     if (!c) throw new Error(`there's no #${channelName(channel)} here: there's ${this.space.channels.map((x) => `#${x.name}`).join(', ')} (crew channels)`)
     const a = this.agents.get(from)
     if (!a) return this.send({ from, text, channel: c.id })
-    if (c.members?.length && !c.members.includes(this.baseOf(from))) throw new Error(`you're not in #${c.name}, so nothing was posted: it's for ${c.members.map((n) => `@${n}`).join(', ')}. Hand it to one of them, or ask the user to add you.`)
+    if (c.members?.length && !c.members.includes(this.baseOf(from)) && !this.agents.get(from)?.system) throw new Error(`you're not in #${c.name}, so nothing was posted: it's for ${c.members.map((n) => `@${n}`).join(', ')}. Hand it to one of them, or ask the user to add you.`)
     const handing = addressees('', text).length > 0
     if (!handing && a.current && (this.channelFor(from) ?? GENERAL) === c.id) throw new Error(`not posted: you're working in #${c.name}, and your final message shows there by itself. Say it there.`)
     if (c.brief && !this.hasBrief(a, c)) {
@@ -3131,8 +3244,8 @@ export class Hub extends EventEmitter {
 
   // Everyone who can own a task: agents here that are on, and the ones on linked computers.
   teammates() {
-    const here = [...this.agents.values()].filter((a) => !a.off && !a.cloneOf).map((a) => this.lineup(a))
-    return [...here, ...(this.directory?.() ?? []).filter((a) => a.on && !a.cloneOf).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.queue ?? 0, nearLimit: Boolean(a.nearLimit) }))]
+    const here = [...this.agents.values()].filter((a) => !a.off && !a.cloneOf && !a.system).map((a) => this.lineup(a))
+    return [...here, ...(this.directory?.() ?? []).filter((a) => a.on && !a.cloneOf && !a.system).map((a) => ({ name: a.name, area: a.area, status: a.status, queue: a.queue ?? 0, nearLimit: Boolean(a.nearLimit) }))]
   }
 
   // A task goes to its owner in a fresh conversation with just this task in it. If the owner is still in the
@@ -3184,6 +3297,7 @@ export class Hub extends EventEmitter {
   // who's on: one that's off never picks it up, and the task just sits there. You can, and the task waits for it.
   taskOwner(name, by, t) {
     const owner = this.agentName(name)
+    this.notSystemAgent(owner)
     if (by === 'you' || this.isOn(owner)) return owner
     throw new Error(`@${owner} is turned off, so it can't take ${t ? `#${t.id}` : 'this task'}. Give it to a teammate who's on (crew who), or leave out --owner for the user to decide`)
   }
@@ -3203,6 +3317,8 @@ export class Hub extends EventEmitter {
   // any more, it's yours to look at: one line in the chat and a notification.
 
   checkStalls(now = Date.now()) {
+    const sys = this.systemAgent()
+    if (sys?.inbox.length && (sys.resumeAsk || (sys.status === 'starting' && now - sys.since > SYSTEM_AGENT_START_MAX))) this.systemAgentHandOver(sys)
     const after = Number(this.config.stallMinutes ?? STALL_MINUTES) * 60000
     if (!(after > 0)) return
     for (const t of this.tickets.open()) {
@@ -3485,7 +3601,14 @@ export class Hub extends EventEmitter {
     return `${said}\n${out}`
   }
 
+  // Q hands work on, so a task can't be his.
+  notSystemAgent(name) {
+    const who = this.agents.get(name) ?? (this.directory?.() ?? []).find((a) => a.name === name)
+    if (who?.system) throw new Error(`${name} hands work on rather than doing it, so it can't take a task. Give it to a teammate`)
+  }
+
   setTaskSettings({ triage, autofix }) {
+    if (triage) this.notSystemAgent(triage)
     if (triage !== undefined) this.space.triage = triage || undefined
     if (autofix !== undefined) this.space.autofix = Boolean(autofix) || undefined
     this.saveConfig()
@@ -3996,7 +4119,7 @@ export class Hub extends EventEmitter {
         Object.values(this.providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault }]),
       ),
       agents: this.ordered().map((a) => ({
-        name: a.name, area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
+        name: a.name, ...(a.system && { system: true }), area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
         tier: a.tier, fast: this.providerOf(a)?.fastByDefault === undefined ? undefined : a.tier ? a.tier === 'fast' : this.providerOf(a).fastByDefault,
         args: (a.args ?? []).join(' '), avatar: a.avatar, status: this.parked && !a.off && a.status === 'off' ? 'parked' : a.status, since: a.since, activity: a.activity,
         queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a), nearLimit: this.nearLimit(this.providerOf(a)?.id),
@@ -4105,6 +4228,8 @@ const THREAD_ASK_AGAIN = 10 * 60000
 // A thread that was going when CLIque closed, back open within this long, carries on where it was.
 const THREAD_RESUME = 60 * 60000
 const CLOSE_THREAD = (said) => `[crew] The thread your request led to has gone quiet.${said ? ` What was said since your last message:\n\n${said}\n\n` : ' '}Tell the user where it ended, in one or two sentences: what's done, what isn't, and anything they have to do. If something failed or wasn't checked, say that first. Don't start anything new or message anyone. If your last message to them already says all that, reply with just: nothing new`
+// How long Q may take starting up before what you send stops waiting for him.
+const SYSTEM_AGENT_START_MAX = 90000
 const crewPrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, crew: true, queued: true })
 
 // The last time anyone but Crew did something with a task: added it, started it, wrote a note, moved it.
