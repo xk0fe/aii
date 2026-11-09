@@ -530,7 +530,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
           <button class="btn sm na-roll" data-act="shuffle">${ICONS.dice}<span>Another look</span></button>
         </div>
         <h2 class="na-line">Who’s joining?</h2>
-        <input class="na-name" data-k="name" value="${esc(d.name)}" placeholder="Its name" maxlength="40" spellcheck="false" autocomplete="off" aria-label="Name">
+        <label class="na-handle" title="Its name is how you call it: write @ and its name in any message"><span aria-hidden="true">@</span><input class="na-name" data-k="name" value="${esc(d.name)}" placeholder="name" maxlength="40" spellcheck="false" autocomplete="off" aria-label="Name"></label>
         <input class="na-area" data-k="area" value="${esc(d.area)}" placeholder="What does it do? Drafts, checks facts, builds screens…" autocomplete="off" aria-label="What it does">
         <div class="na-setup">
           <div class="ed-list group-list brain" aria-label="Its brain"></div>
@@ -953,8 +953,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     syncSave()
   }
 
-  // On, YOLO and Fast as plain switch rows. Fast stays in its place for brains other than Codex, just unavailable,
-  // so nothing moves when you change the provider.
+  // On, YOLO and Fast as plain switch rows, each only where the brain picked has it: Fast is Codex's, so it shows for a
+  // Codex brain and isn't there (rather than greyed out) for any other. Every brain can run YOLO today.
   function drawBehaviour() {
     const d = draft
     const p = providerOf(d.provider)
@@ -964,7 +964,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     card.querySelector('.behave').innerHTML =
       (stage ? '' : switchRow('On', onHint(), `<input type="checkbox" class="switch" data-k="on" ${d.on ? 'checked' : ''}>`)) +
       switchRow('YOLO', stage ? 'No permission prompts' : 'Skips every permission prompt', `<input type="checkbox" class="switch" data-k="yolo" ${d.yolo ? 'checked' : ''}>`, 'yolo') +
-      switchRow('Fast', fastKnown ? `Codex's fast service tier${d.tier ? '' : ', as in your config'}` : 'Codex only', `<input type="checkbox" class="switch" data-fast-tier ${fastOn ? 'checked' : ''} ${fastKnown ? '' : 'disabled'}>`, `fast ${fastKnown ? '' : 'dim'}`, fastKnown ? '' : 'Only Codex has a fast service tier')
+      (fastKnown ? switchRow('Fast', stage ? 'Codex’s fast tier' : `Codex's fast service tier${d.tier ? '' : ', as in your config'}`, `<input type="checkbox" class="switch" data-fast-tier ${fastOn ? 'checked' : ''}>`, 'fast') : '')
   }
   const onHint = () => `Stays ${draft.on ? 'on' : 'off'} after restarts`
 

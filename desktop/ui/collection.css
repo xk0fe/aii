@@ -395,10 +395,10 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .na-go.btn { height: 48px; min-width: 210px; max-width: 100%; padding: 0 28px; border-radius: 14px; font: 600 18px/1.15 var(--font-brand); white-space: normal; overflow-wrap: anywhere; transition: background .15s, color .15s, opacity .2s; }
 .na-more { margin-top: 8px; }
 /* its brain (provider and model, effort) and how it works (YOLO, Fast): the sheet's own rows, here because they're
-   part of who it is. YOLO and Fast sit side by side; Fast keeps its place for brains without it. */
+   part of who it is. YOLO and Fast sit side by side; a brain without Fast has YOLO alone, across the row. */
 .na-setup { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 440px; margin-top: 12px; text-align: left; }
 .na-setup .ed-row { grid-template-columns: 64px minmax(0, 1fr); min-height: 42px; padding: 6px 10px 6px 14px; }
-.na-modes { display: grid; grid-template-columns: 1fr 1fr; }
+.na-modes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
 .na-modes > .ed-row.sw { grid-template-columns: minmax(0, 1fr) auto; }
 .na-modes > * + * { box-shadow: inset 1px 0 0 var(--line); }
 .na .na-stage { height: 168px; }
@@ -422,3 +422,12 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 @media (prefers-reduced-motion: reduce) {
   .na-line, .na-av { animation: none; transition: none; }
 }
+
+/* its name, written as you'll call it: an @ before it, hugging what's typed, both in the middle of the field */
+.na-handle { display: flex; justify-content: center; align-items: center; gap: 1px; width: 100%; max-width: 440px; height: 44px; margin-top: 12px; padding: 0 12px; border-radius: var(--r-control); background: var(--fill); color: var(--fg); font: 600 26px/44px var(--font-brand); cursor: text; transition: background var(--t-quick); }
+.na-handle:hover { background: var(--fill-hover); }
+.na-handle:focus-within { background: var(--field); box-shadow: var(--focus-ring); }
+.na-handle > span { flex: none; color: var(--fg3); }
+.na-handle:focus-within > span, .na-handle:has(.na-name:not(:placeholder-shown)) > span { color: var(--brand-ink); }
+.na .na-handle .na-name, .na .na-handle .na-name:is(:hover, :focus) { field-sizing: content; width: auto; min-width: 1ch; max-width: calc(100% - 1.2ch); height: auto; margin: 0; padding: 0; border-radius: 0; background: none; box-shadow: none; font: inherit; text-align: left; }
+@media (max-height: 720px) { .na-handle { height: 40px; margin-top: 8px; font-size: 22px; line-height: 40px; } }
