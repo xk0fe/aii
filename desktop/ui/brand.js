@@ -133,30 +133,31 @@ function foldHTML(size = 40) {
 // Who matters most right now, for a strip too small for everyone: needing you, then working, starting, free, off.
 const ROOM_RANK = { waiting: 0, working: 1, starting: 2, idle: 3 }
 
-// The mini crew strip, for the menu bar's popover: the room in small, the crew on its floor (plain creatures at this
-// size, hopping while they work, wiggling when they need you, asleep when off). A click opens one (data-open). A crew
-// too big for it shows the ones that matter most right now, in your order, and how many more on a little card of
-// its own at the end (never on the felt itself).
+// The stage's light, wherever the creatures stand with nothing behind them (the first run, an empty Agents view, an
+// empty Tasks board): three soft glows in their colours, and a shadow to stand on. No card, no felt: felt is for the
+// creatures themselves and their patches.
+const glowBedHTML = () => '<span class="glowbed" aria-hidden="true"><i class="sky"></i><i class="pink"></i><i class="lime"></i><b></b></span>'
+
+// Everyone in a row, for the menu bar's popover (plain creatures at this size, hopping while they work, wiggling
+// when they need you, asleep when off). A click opens one (data-open). A clique too big for it shows the ones that
+// matter most right now, in your order, and how many more at the end.
 function stripHTML(agents, width = 318) {
   const fit = Math.max(1, Math.floor((width - 16) / 40))
   const keep = agents.length <= fit ? null : new Set([...agents].sort((x, y) => (ROOM_RANK[x.on ? x.status : 'off'] ?? 4) - (ROOM_RANK[y.on ? y.status : 'off'] ?? 4)).slice(0, fit - 1).map((a) => a.name))
   const cast = keep ? agents.filter((a) => keep.has(a.name)) : agents
   const more = agents.length - cast.length
   const who = (a) => `<button class="strip-who" data-open="${esc(a.name)}" title="${esc(a.seed ?? a.name)}">${avatarHTML(a, { size: 36 })}${a.on && a.status === 'waiting' ? '<i class="dot waiting"></i>' : ''}</button>`
-  return `<div class="strip">${roomFeltHTML(16)}<div class="strip-crew">${cast.map(who).join('')}${more ? `<button class="strip-more" data-act="dashboard" title="Everyone, in the dashboard">+${more}</button>` : ''}</div></div>`
+  return `<div class="strip"><div class="strip-crew">${cast.map(who).join('')}${more ? `<button class="strip-more" data-act="dashboard" title="Everyone, in the dashboard">+${more}</button>` : ''}</div></div>`
 }
-// An empty room with one creature popping up and dashed spots where the rest of the crew will stand: the empty
-// Crew view. And the crew waiting with their mugs: the empty Tasks board.
-function firstRoomHTML(w = 440, h = 196) {
+// Someone new popping up on the stage: the empty Agents view. And everyone waiting with their mugs: the empty Tasks
+// board.
+function firstRoomHTML(w = 440, h = 176) {
   // the blue one from the app's icon: the pink one is Q (core/system-agent.js), and this is someone new
   const first = { name: 'New', avatar: { body: 'blob', color: 'sky', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, status: 'starting', on: true }
-  return `<div class="scene" style="width:${w}px;height:${h}px">${roomFeltHTML(56)}
-    <span class="spot" style="left:52px"></span><span class="spot" style="left:136px"></span><span class="spot" style="left:${w - 116}px"></span>
-    <span class="scene-who" style="left:${w / 2 - 56}px;top:${h - 122}px">${avatarHTML(first, { size: 112, mood: 'starting', pose: 'pop' })}</span>
-    <span class="say" style="left:${w / 2 + 40}px;top:44px">Hi! Who should I be?</span></div>`
+  return `<div class="scene" style="width:${w}px;height:${h}px">${glowBedHTML()}<span class="scene-who" style="left:${w / 2 - 64}px;top:${h - 140}px">${avatarHTML(first, { size: 128, mood: 'starting', pose: 'pop' })}</span></div>`
 }
 function mugsRoomHTML(agents, w = 360, h = 168) {
   const three = agents.slice(0, 3)
   const gap = (w - 56 - three.length * 96) / Math.max(1, three.length - 1)
-  return `<div class="scene" style="width:${w}px;height:${h}px">${roomFeltHTML(48)}${three.map((a, i) => `<span class="scene-who" style="left:${Math.round(28 + i * (96 + gap))}px;top:${h - 108}px">${avatarHTML({ ...a, status: 'idle', on: true }, { size: 96, mood: 'idle', pose: 'mug' })}</span>`).join('')}</div>`
+  return `<div class="scene" style="width:${w}px;height:${h}px">${glowBedHTML()}${three.map((a, i) => `<span class="scene-who" style="left:${Math.round(28 + i * (96 + gap))}px;top:${h - 108}px">${avatarHTML({ ...a, status: 'idle', on: true }, { size: 96, mood: 'idle', pose: 'mug' })}</span>`).join('')}</div>`
 }

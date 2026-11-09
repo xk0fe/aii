@@ -3,7 +3,7 @@
 // or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, a few facts), everything you can set on the right, in four
 // tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
-/* global shownName, pageHead, markSVG, powerSwitch, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
+/* global glowBedHTML, reduceMotion, DUR, EASE, shownName, pageHead, markSVG, powerSwitch, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -68,6 +68,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   let advOpen = false // the Setup tab's Advanced fold
   let modelTyping = false // the Model row is a text field (a model the menu doesn't list)
   let reopen = null // name to open once it shows up in state (after add/rename)
+  let stage = false // a new agent opens as a stage (drawStage), until More settings turns it into the sheet
+  let bringing = false // Bring in was pressed: it's being added, and lands once it shows up in state
 
   const modeNow = () => mode ?? (state.agents.length > 9 ? 'tiles' : 'cards')
   const agentNamed = (name) => state.agents.find((a) => a.name === name)
@@ -468,6 +470,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar(), contextLimit: '', onContextLimit: 'fresh', clones: '', shared: '' }
     if (home !== undefined && !a) draft.home = home
     editing = a ? a.name : ':new'
+    stage = !a && !force
+    bringing = false
     tab = at ?? (a ? store.get('crew.edTab') || 'setup' : 'setup')
     if (!a && tab === 'stats') tab = 'setup'
     if (selecting) setSelecting(false)
@@ -485,7 +489,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     // under the sheet) until it closes
     list.inert = true
     if (opening && !card.contains(document.activeElement)) card.focus({ preventScroll: true })
-    if (!a) setTimeout(() => card.querySelector('.pd-name')?.focus(), 250)
+    if (!a) setTimeout(() => card.querySelector('.na-name, .pd-name')?.focus(), 250)
   }
 
   function close(force = false) {
@@ -511,7 +515,92 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
 
   const dirty = () => (original ? JSON.stringify(draft) !== JSON.stringify(original) : Boolean(draft?.name.trim()))
 
+  // ---- a new agent: the stage -----------------------------------------------------------
+  // Someone new stands on the glow, big, and one line asks who it is: a name, what it does, Bring in. A click on it
+  // (or Another look) gives it another look. Everything else it could be set to waits behind More settings, which
+  // turns the stage into the sheet below with what's been typed kept. Pushes from the app never redraw it, so what
+  // you're typing stays put.
+  function drawStage() {
+    const d = draft
+    card.innerHTML = `
+      <div class="na">
+        <button class="icon sheet-x" data-act="back" title="Close (Esc)" aria-label="Close">${ICONS.close}</button>
+        <div class="na-stage">${glowBedHTML()}
+          <button class="na-av" data-act="shuffle" title="Another look" aria-label="Another look"></button>
+          <button class="btn sm na-roll" data-act="shuffle">${ICONS.dice}<span>Another look</span></button>
+        </div>
+        <h2 class="na-line">Who’s joining?</h2>
+        <input class="na-name" data-k="name" value="${esc(d.name)}" placeholder="Its name" maxlength="40" spellcheck="false" autocomplete="off" aria-label="Name">
+        <input class="na-area" data-k="area" value="${esc(d.area)}" placeholder="What does it do? Drafts, checks facts, builds screens…" autocomplete="off" aria-label="What it does">
+        <p class="pd-msg na-msg" role="alert"></p>
+        <button class="btn lg brand-btn na-go" data-act="bring"></button>
+        <button class="btn plain na-more" data-act="settings" title="Its model, folder, computer and the rest">More settings</button>
+      </div>`
+    drawStageAvatar('starting')
+    syncStage()
+  }
+
+  // how: 'starting' as it arrives, 'pop' for another look, 'cheer' once it's in
+  function drawStageAvatar(how) {
+    const host = card.querySelector('.na-av')
+    if (!host) return
+    host.innerHTML = avatarHTML({ name: 'new', avatar: draft.avatar }, { size: 160, mood: how === 'starting' ? 'starting' : 'idle' })
+    if (how !== 'starting') bounce(host.querySelector('.av'), how)
+  }
+
+  function syncStage() {
+    const go = card.querySelector('.na-go')
+    if (!go) return
+    const name = draft.name.trim()
+    go.textContent = name ? `Bring in ${name}` : 'Bring in'
+    go.disabled = !name || bringing
+  }
+
+  // More settings: the same draft, in the full sheet.
+  function stageToSheet() {
+    stage = false
+    drawCard()
+    if (!reduceMotion()) card.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: DUR.move, easing: EASE.out })
+    card.querySelector('.pd-name')?.focus({ preventScroll: true })
+  }
+
+  // It's in: it cheers, the stage closes, and it travels to its card here (or its row in the sidebar, from another
+  // view), as the first run's stage is carried into the app (ui/setup.js carry). Without motion, or with nowhere to
+  // go, the stage simply closes.
+  function land(name) {
+    bringing = false
+    if (!card.querySelector('.na-av') || reduceMotion()) return void close(true)
+    drawStageAvatar('cheer')
+    const av = card.querySelector('.na-av .av')
+    const spot = () => [`.col-grid .pcard[data-name="${CSS.escape(name)}"] .av`, `.side [data-agent="${CSS.escape(name)}"] .dm-av`].map((q) => document.querySelector(q)).find((el) => el?.getClientRects().length)
+    setTimeout(() => {
+      if (editing !== ':new' || !stage) return // closed meanwhile
+      const from = av.getBoundingClientRect()
+      const to = spot()
+      const end = to?.getBoundingClientRect()
+      if (!from.width || !end?.width) return void close(true)
+      const layer = Object.assign(document.createElement('div'), { className: 'fr-carry' })
+      const el = Object.assign(document.createElement('span'), { className: 'fr-carried', innerHTML: av.outerHTML })
+      el.style.transform = `translate(${from.left}px, ${from.top}px)`
+      layer.append(el)
+      document.body.append(layer)
+      av.style.visibility = 'hidden'
+      to.style.visibility = 'hidden'
+      close(true)
+      requestAnimationFrame(() => requestAnimationFrame(() => (el.style.transform = `translate(${end.left}px, ${end.top}px) scale(${end.width / from.width})`)))
+      setTimeout(() => {
+        to.style.visibility = ''
+        const there = spot() // the grid may have redrawn while it travelled
+        if (there) there.style.visibility = ''
+        layer.remove()
+        bounce(there?.matches('.av') ? there : there?.querySelector('.av'), 'pop')
+      }, 760)
+    }, 460)
+  }
+
   function drawCard() {
+    card.classList.toggle('ed-stage', stage)
+    if (stage) return drawStage()
     const d = draft
     const live = agentNamed(editing)
     // Q comes with every workspace (core/system-agent.js): you pick his brain, and the rest is who he is
@@ -944,6 +1033,11 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     }
     const k = e.target.dataset.k
     if (!k) return
+    if (stage) {
+      draft[k] = e.target.value
+      card.querySelector('.pd-msg').textContent = ''
+      return syncStage()
+    }
     draft[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value
     if (k === 'model') drawEffortOnly()
     if (k === 'name') card.querySelector('.ed-pane[data-pane=look] .ed-pane-head p').textContent = `Every option shows ${draft.name || 'it'} wearing it.`
@@ -966,6 +1060,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     if (modelTyping && e.target.dataset.k === 'model') doneTyping()
   })
   card.addEventListener('keydown', (e) => {
+    // on the stage, Enter in either field brings it in
+    if (stage && e.key === 'Enter' && e.target.dataset.k && !e.isComposing) return void (e.preventDefault(), save())
     if (!modelTyping || e.target.dataset.k !== 'model') return
     if (e.key === 'Enter') e.preventDefault()
     else if (e.key === 'Escape') (e.preventDefault(), (draft.model = typedFrom))
@@ -987,6 +1083,17 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   })
 
   card.addEventListener('click', async (e) => {
+    if (stage) {
+      const act = e.target.closest('[data-act]')?.dataset.act
+      if (act === 'back') close()
+      if (act === 'settings' && !bringing) stageToSheet()
+      if (act === 'bring') save()
+      if (act === 'shuffle' && !bringing) {
+        draft.avatar = randomAvatar()
+        drawStageAvatar('pop')
+      }
+      return
+    }
     // a tab, or the creature (Look); not the sheet itself, which carries the open tab's name too
     const t = e.target.closest('button[data-tab]')
     if (t && !t.disabled) return setTab(t.dataset.tab)
@@ -1135,14 +1242,16 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
 
   async function save() {
     doneTyping() // a model being typed counts as typed
-    if (!dirty()) return
+    if (!dirty() || bringing) return
     const msg = card.querySelector('.pd-msg')
     msg.textContent = ''
     try {
       if (!original) {
         const { on, ...fields } = draft
+        if (stage) (bringing = true), syncStage()
         reopen = await crew.call('addAgent', { ...fields, off: !on }) // a name@computer when it runs elsewhere
         store.set('crew.yolo', draft.yolo ? '1' : '0')
+        if (bringing && agentNamed(reopen)) landReopen() // it showed up before the answer did
       } else {
         const patch = {}
         for (const k of FIELDS) if (JSON.stringify(draft[k]) !== JSON.stringify(original[k])) patch[k] = draft[k]
@@ -1154,7 +1263,16 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       }
     } catch (err) {
       msg.textContent = errorLine(err)
+      bringing = false
+      if (stage) syncStage()
     }
+  }
+
+  // The agent the stage just added is in state: off it goes (land).
+  function landReopen() {
+    const name = reopen
+    reopen = null
+    land(name)
   }
 
   document.addEventListener('keydown', (e) => {
@@ -1174,7 +1292,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       state = next
       if (shown) drawGrid()
       else (stale = true), celebrate(grid, state.agents)
-      if (reopen && agentNamed(reopen)) {
+      if (reopen && bringing && agentNamed(reopen)) landReopen()
+      else if (reopen && agentNamed(reopen)) {
         const name = reopen
         reopen = null
         open(name, { at: tab, force: true })
@@ -1185,7 +1304,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
         sheet.classList.remove('open')
         list.inert = false
         if (card.contains(document.activeElement)) document.activeElement.blur()
-      } else if (editing) {
+      } else if (editing && !stage) {
         drawState()
         drawFacts()
         drawExperience()

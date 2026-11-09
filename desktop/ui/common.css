@@ -7,7 +7,7 @@
 :root {
   color-scheme: light dark;
   /* type: the platform's own face for everything you read, the brand face for names, headlines and the wordmark */
-  --t-caption: 11px; --t-small: 12px; --t-body: 13px; --t-emph: 15px; --t-section: 20px; --t-page: 28px;
+  --t-caption: 11px; --t-small: 12px; --t-body: 13px; --t-emph: 15px; --t-section: 20px; --t-page: 28px; --t-stage: 44px; --t-title: 64px; /* (the last two: only where a creature has the whole view) */
   --font-brand: "Fredoka", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
   /* shape: tags 4, controls 6, cards, rows and inputs 10, windows, sheets and popovers 14 */
   --r-tag: 4px; --r-control: 6px; --r-card: 10px; --r-window: 14px;
@@ -1314,10 +1314,20 @@ dialog::backdrop { background: rgba(0, 0, 0, .28); animation: fade-in var(--t-mo
 .felt { --patch: color-mix(in srgb, var(--c) var(--patch-mix), var(--surface)); --thread: color-mix(in srgb, var(--c) var(--thread-mix), var(--surface)); }
 .felt > .patch { position: absolute; inset: 0; }
 .scene { position: relative; flex: none; }
-.scene .room-felt { border-radius: var(--r-window); }
 .scene-who { position: absolute; line-height: 0; }
-.scene .spot { position: absolute; bottom: 22px; width: 64px; height: 14px; border-radius: 50%; border: 1.5px dashed var(--room-thread); }
-.scene .say { position: absolute; padding: 8px 12px; border-radius: var(--r-card); border-bottom-left-radius: var(--r-tag); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); font-size: 13px; line-height: 18px; white-space: nowrap; }
+/* the stage's light (brand.js glowBedHTML): glows in the creatures' colours behind them, and a shadow under them */
+.glowbed { position: absolute; inset: 0; pointer-events: none; }
+.glowbed i { position: absolute; border-radius: 50%; filter: blur(38px); opacity: .2; }
+.glowbed .pink { left: 30%; bottom: -8%; width: 40%; height: 84%; background: #ff45a8; }
+.glowbed .sky { left: 2%; bottom: 4%; width: 38%; height: 66%; background: #3db8ff; }
+.glowbed .lime { right: 2%; bottom: -2%; width: 36%; height: 62%; background: #72d63a; }
+.glowbed b { position: absolute; left: 16%; right: 16%; bottom: 4px; height: 24px; border-radius: 50%; background: radial-gradient(closest-side, rgba(60, 30, 50, .16), rgba(60, 30, 50, 0)); }
+@media (prefers-color-scheme: dark) {
+  .glowbed i { opacity: .3; }
+  .glowbed b { background: radial-gradient(closest-side, rgba(0, 0, 0, .5), rgba(0, 0, 0, 0)); }
+}
+/* a full view with nothing in it yet says one thing, at the stage's size */
+.empty-state > h1.display { font-size: 40px; line-height: 46px; }
 .wordmark { display: inline-block; flex: none; line-height: 0; }
 .wordmark svg { display: block; overflow: visible; }
 
