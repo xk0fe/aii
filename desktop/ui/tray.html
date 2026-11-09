@@ -32,12 +32,12 @@
     .empty { color: var(--fg2); padding: 18px 10px 20px; text-align: center; line-height: 1.45; }
     .t-label { display: flex; align-items: center; height: 26px; padding: 6px 6px 2px; font-size: 12px; font-weight: 500; color: var(--fg2); }
     .t-label.amber { color: var(--needs-ink); }
-    /* the mini crew strip: the room in small, everyone on its floor */
-    .strip { position: relative; height: 60px; margin: 0 0 6px; }
+    /* everyone, in a row */
+    .strip { position: relative; height: 50px; margin: 0 0 4px; }
     .strip-crew { position: absolute; left: 0; right: 0; bottom: 8px; display: flex; justify-content: space-around; align-items: flex-end; padding: 0 8px; }
     .strip-who { all: unset; position: relative; line-height: 0; cursor: pointer; border-radius: var(--r-control); }
     .strip-who:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-    .strip-who > .dot { position: absolute; right: 0; top: 2px; box-shadow: 0 0 0 2px var(--room-wall); }
+    .strip-who > .dot { position: absolute; right: 0; top: 2px; }
     .strip-more { all: unset; align-self: center; height: 22px; padding: 0 7px; border-radius: var(--r-control); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); font-size: 12px; line-height: 22px; font-weight: 500; color: var(--fg2); cursor: pointer; }
     .strip-more:hover { color: var(--fg); }
 
