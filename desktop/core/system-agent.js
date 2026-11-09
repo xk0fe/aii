@@ -21,7 +21,7 @@ export const systemAgentOn = () => process.env.CREW_SYSTEM_AGENT !== 'off'
 // The pink one at the front of the app's icon, who also greets you on the first-run screen (ui/setup.js).
 export const SYSTEM_AGENT_AVATAR = { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }
 
-export const SYSTEM_AGENT_AREA = 'Runs the crew: takes what you ask and gets it to the right teammate'
+export const SYSTEM_AGENT_AREA = 'Runs the clique: takes what you ask and gets it to the right teammate'
 
 // What you can choose for him. The rest is who he is.
 export const SYSTEM_AGENT_CHOICES = new Set(['off', 'provider', 'cli', 'model', 'effort', 'tier', 'contextLimit', 'onContextLimit'])

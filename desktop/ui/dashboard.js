@@ -51,7 +51,8 @@ const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onTerminal: (n
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next), onMembers: (at) => openMembers(at) })
 // A new install's first run: Q makes its first workspace and crew with you, then shows you around (ui/setup.js). After
 // that, the setup screen: Claude Code and Codex, what to install or sign in to, then the first agent.
-const setup = mountSetup({ onAdd: () => addAgent(), onWorkspace: () => workspaces.create(), onComputers: () => openComputers(), onMade: (next) => switched(next), onTour: () => startTour() })
+// (onMade: the first run made its workspace. It comes in under the stage with no slide, whose parts would show over it.)
+const setup = mountSetup({ onAdd: () => addAgent(), onWorkspace: () => workspaces.create(), onComputers: () => openComputers(), onMade: async (next) => (push ??= await ready)(next), onTour: () => startTour(), onLand: () => landed() })
 
 // Q's tour of the app (ui/tour.js): where a first run ends, and in the ⋯ menu any time.
 const Q_LOOK = { avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true } } // (core/system-agent.js)
@@ -62,8 +63,8 @@ const TOUR = [
   { at: '.side-nav [data-place="crew"]', say: 'Agents: everyone’s card, with their brain, their look and a switch to turn them on and off.' },
   { at: '.side-nav [data-place="tasks"]', say: 'Tasks: a board for bigger work. An agent takes a task and reports back when it’s done.' },
   { at: '.side-nav [data-place="terminals"]', say: 'Every agent is a real Claude Code or Codex in a terminal. Watch one work, or type into it.' },
-  { at: '.chan-sec', say: 'Channels keep one topic, with its own crew and its own rules.' },
-  { at: '.rail', say: 'Each project is a workspace. Add another here, or link another computer and share its crew.' },
+  { at: '.chan-sec', say: 'Channels keep one topic, with its own clique and its own rules.' },
+  { at: '.rail', say: 'Each project is a workspace. Add another here, or link another computer and share its clique.' },
   { say: 'That’s the tour. Tell me what we’re working on.' },
 ]
 const tour = mountTour({
@@ -74,6 +75,11 @@ const tour = mountTour({
     if (done) composer.focus()
   },
 })
+// The first run is over, and its stage has been carried into the sidebar: #general, with what to ask first.
+function landed() {
+  goPlace('chat')
+  composer.focus()
+}
 function startTour() {
   if (state?.workspace && !tour.isOn()) tour.start()
 }
@@ -439,9 +445,9 @@ function drawChannelSheet({ list = true } = {}) {
   $c('[data-ch-cost]').textContent = tokens ? `about ${plural(tokens, 'token')}, once per conversation` : ''
   const members = d.everyone ? agents : agents.filter((a) => d.members.has(a.name))
   $c('[data-ch-sub]').innerHTML = general
-    ? `${faceStack(agents, 6)}<span>Everyone in ${esc(state.workspace?.name ?? 'your crew')}. Messages from a phone or the floating chat land here.</span>`
+    ? `${faceStack(agents, 6)}<span>Everyone in ${esc(state.workspace?.name ?? 'your clique')}. Messages from a phone or the floating chat land here.</span>`
     : name && name !== d.name.trim() ? `<span>It will be #${esc(name)}</span>`
-    : members.length ? `${faceStack(members, 6)}<span>${d.everyone ? `Everyone in ${esc(state.workspace?.name ?? 'your crew')}` : plural(members.length, 'agent')}</span>` : '<span>Nobody in it yet</span>'
+    : members.length ? `${faceStack(members, 6)}<span>${d.everyone ? `Everyone in ${esc(state.workspace?.name ?? 'your clique')}` : plural(members.length, 'agent')}</span>` : '<span>Nobody in it yet</span>'
   segmented($c('.ch-who-seg'), (b) => (b.dataset.chAll === '1') === d.everyone)
   $c('[data-ch-count]').textContent = d.everyone ? '' : `${members.length} of ${agents.length}`
   $c('.ch-crew').classList.toggle('hidden', d.everyone)
@@ -531,12 +537,12 @@ function drawMembers() {
   const here = state.agents.filter((a) => !a.cloneOf && !a.system) // (Q comes with it: he's not yours to choose)
   const others = (state.roster ?? []).filter((r) => !here.some((a) => a.name === r.name))
   const row = (a, end) => `<div class="mp-row" data-agent="${esc(a.name)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span class="mp-who"><b>${esc(a.seed ?? a.name)}</b><small>${esc(a.area || (a.status ? upFirst(statusText(a)) : ''))}</small></span>${end}</div>`
-  const take = (a) => (a.shared ? `<button class="btn sm plain mp-take" data-mp-take="${esc(a.name)}" title="${esc(`Take ${a.name} out of ${w.name}: it stays in your crew and your other workspaces`)}">Take out</button>` : '<span class="mp-only" title="Made for this workspace: it works only here">only here</span>')
+  const take = (a) => (a.shared ? `<button class="btn sm plain mp-take" data-mp-take="${esc(a.name)}" title="${esc(`Take ${a.name} out of ${w.name}: it stays in your clique and your other workspaces`)}">Take out</button>` : '<span class="mp-only" title="Made for this workspace: it works only here">only here</span>')
   morph(membersPop, `<header class="mp-head"><b>Who works here</b><span>${here.length}</span></header>
-    <p class="mp-lead">${esc(w.name)}'s agents${w.folder ? `, in ${esc(tildePath(w.folder))}` : ''}. One from your crew works here in a conversation of its own.</p>
+    <p class="mp-lead">${esc(w.name)}'s agents${w.folder ? `, in ${esc(tildePath(w.folder))}` : ''}. One from your clique works here in a conversation of its own.</p>
     <div class="mp-body">
       ${here.length ? here.map((a) => row(a, take(a))).join('') : `<p class="mp-lead">Nobody yet.</p>`}
-      ${others.length ? `<div class="mp-sec section-label">From your crew</div>${others.map((r) => row({ ...r, status: '' }, `<button class="btn sm mp-add" data-mp-add="${esc(r.name)}">Add</button>`)).join('')}` : ''}
+      ${others.length ? `<div class="mp-sec section-label">From your clique</div>${others.map((r) => row({ ...r, status: '' }, `<button class="btn sm mp-add" data-mp-add="${esc(r.name)}">Add</button>`)).join('')}` : ''}
     </div>
     <footer class="mp-foot"><button class="btn" data-mp-new>${ICONS.plus}<span>New agent for ${esc(w.name)}</span></button><span class="grow"></span><button class="btn plain" data-mp-agents>All agents</button></footer>`)
 }
@@ -553,7 +559,7 @@ membersPop.addEventListener('click', async (e) => {
     }
     if (out) {
       const a = state.agents.find((x) => x.name === out)
-      if (busy(a) ? !confirm(`${out} is in the middle of something in ${w.name}. Take it out anyway? It stops working here, and starts a fresh conversation if it comes back.`) : !confirm(`Take ${out} out of ${w.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your crew and your other workspaces.`)) return
+      if (busy(a) ? !confirm(`${out} is in the middle of something in ${w.name}. Take it out anyway? It stops working here, and starts a fresh conversation if it comes back.`) : !confirm(`Take ${out} out of ${w.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your clique and your other workspaces.`)) return
       await crew.call('workspace', 'members', w.id, { remove: [out] })
     }
   } catch (err) {
@@ -565,27 +571,27 @@ membersPop.addEventListener('click', async (e) => {
   if (row) (membersPop.hidePopover(), openDM(row.dataset.agent), composer.focus())
 })
 
-// ---- an empty #general: its first steps, like Discord's welcome to a new server ------------------------------------
-// Who works here, its folder (a workspace of your own), and the first message; each a click away, ticked once done.
+// ---- an empty #general: what to do first -------------------------------------------------------------------------------
+// One question at display size and three things to ask, for the kind of work this workspace was made for (ui/setup.js
+// WORK; a click writes one in the message box). Under them, quietly: who works here and where, each a click away.
 function welcomeHTML() {
   const w = state.workspace
   if (!w) return '' // the very first run: the setup screen asks for one
   const here = state.agents.filter((a) => !a.cloneOf && !a.system)
   const sys = systemAgentOf(state.agents)
-  const step = (done, act, title, sub) => `<button class="wl-step ${done ? 'done' : ''}" data-welcome="${act}"><i class="pick ${done ? 'on' : ''}">${ICONS.check}</i><span><b>${esc(title)}</b><small>${esc(sub)}</small></span><i class="wl-go">${ICONS.chevron}</i></button>`
-  return `<div class="welcome empty-state">${wsTile(w, { size: 64 })}<h2 class="display">Welcome to ${esc(w.name)}</h2>
-    <p class="lead">Everyone here sees what's said in #general. Ask for something and ${sys ? `${esc(displayName(sys))} gets it to the right agent` : 'Auto picks who answers'}, or @name someone. Make a channel (+ by Channels) for work with rules of its own.</p>
-    <div class="wl-steps">
-      ${step(here.length > 0, 'members', here.length ? `${plural(here.length, 'agent')} work${here.length > 1 ? '' : 's'} here` : 'Choose who works here', 'Agents from your crew, or new ones just for this workspace')}
-      ${step(Boolean(w.folder), 'settings', w.folder ? `They work in ${tildePath(w.folder)}` : 'Pick its folder', 'Where its agents work, unless one has a folder of its own')}
-      ${step(false, 'message', 'Send the first message', here.length ? `${nameList(here.map((a) => a.seed ?? a.name))} ${here.length > 2 ? 'all see' : here.length > 1 ? 'both see' : 'sees'} it` : 'Once someone works here')}
-    </div></div>`
+  const starters = sys || here.length ? setup.starters(store.get(`crew.work.${w.id}`)) : []
+  const who = here.length ? `${plural(here.length, 'agent')} work${here.length > 1 ? '' : 's'} here` : 'Choose who works here'
+  return `<div class="welcome empty-state">${sys ? `<span class="wl-q">${avatarHTML(sys, { size: 96, mood: 'idle' })}</span>` : wsTile(w, { size: 64 })}
+    <h2 class="display wl-ask">${starters.length ? 'What should we do first?' : `Welcome to ${esc(w.name)}`}</h2>
+    ${starters.length ? `<div class="wl-starters">${starters.map((s) => `<button type="button" class="wl-start" data-welcome-say="${esc(s)}">${esc(s)}</button>`).join('')}</div>` : ''}
+    <p class="wl-meta"><button type="button" data-welcome="members">${esc(who)}</button><span>·</span><button type="button" data-welcome="settings">${w.folder ? esc(tildePath(w.folder)) : 'Pick its folder'}</button></p></div>`
 }
 $('.feed').addEventListener('click', (e) => {
   const act = e.target.closest('[data-welcome]')?.dataset.welcome
   if (act === 'members') openMembers(e.target.closest('[data-welcome]'))
   if (act === 'settings') workspaces.settings()
-  if (act === 'message') composer.focus()
+  const say = e.target.closest('[data-welcome-say]')?.dataset.welcomeSay
+  if (say) composer.setText(say)
 })
 
 // What's waiting on you, oldest first: a question goes to its card in its channel, an agent asking in its terminal to
@@ -1312,7 +1318,7 @@ function dmRow(a, { selected = false, clones = [], needs = 0, drag = false }) {
 function dmParts(state, { folds = new Set(), selected, filter = '', drag = false } = {}) {
   const q = filter.trim().toLowerCase()
   const match = (a) => !q || `${a.seed ?? a.name} ${a.area ?? ''}`.toLowerCase().includes(q)
-  const groups = crewGroups(state)
+  const groups = crewGroups(state).map((g) => ({ ...g, agents: g.agents.filter((a) => !a.system) })) // (Q has a row of his own, above them)
   const headed = grouped(groups)
   const needs = new Map()
   for (const n of needsYou(state)) needs.set(familyOf(n.agent.name), (needs.get(familyOf(n.agent.name)) ?? 0) + 1)
@@ -1331,6 +1337,48 @@ function dmParts(state, { folds = new Set(), selected, filter = '', drag = false
   return parts.length ? parts : [`<div class="roster-none">${q ? `No one matches “${esc(filter.trim())}”` : 'No agents yet'}</div>`]
 }
 
+// ---- what each new thing is, the first time it shows -----------------------------------------------------------------
+// After a first run (ui/setup.js sets crew.hints), in place of a tour up front: a line beside the first thread, the
+// first question and the first card, each once, and gone at the next click, key or scroll. One at a time. Each sits
+// where there's room for it: beside its thing, on its top right corner, or under it.
+const HINTS = [
+  { key: 'thread', at: '.stage .feed .thread-card', where: 'right', say: 'That’s a thread. The clique talks in there, so this stays short.' },
+  { key: 'ask', at: '.stage .feed .ask-card:not(.done)', where: 'corner', say: 'Someone needs you. Answer here, and they carry on.' },
+  { key: 'cards', at: '.cards .pcard[data-name]', where: 'under', say: 'Everyone’s card. Click one to change its job, its brain or its look.' },
+]
+let hintEl = null
+function hints() {
+  if (hintEl || store.get('crew.hints') !== 'on' || setup.isOpen() || tour.isOn() || document.querySelector('dialog[open], .ed-layer.open, [popover]:popover-open')) return
+  const visible = (el) => { const r = el?.getBoundingClientRect(); return r && r.width > 4 && r.height > 4 && r.top > 60 && r.bottom < innerHeight - 20 ? r : null }
+  for (const h of HINTS) {
+    if (store.get(`crew.hint.${h.key}`)) continue
+    const r = visible(document.querySelector(h.at))
+    if (!r) continue
+    store.set(`crew.hint.${h.key}`, '1')
+    if (HINTS.every((x) => store.get(`crew.hint.${x.key}`))) store.set('crew.hints', 'done')
+    hintEl = Object.assign(document.createElement('p'), { className: 'hint-tip', textContent: h.say })
+    hintEl.setAttribute('role', 'status')
+    document.body.append(hintEl)
+    const w = hintEl.offsetWidth
+    const ht = hintEl.offsetHeight
+    const where = h.where === 'right' && r.right + 16 + w > innerWidth - 16 ? 'under' : h.where
+    const [x, y] = where === 'right' ? [r.right + 16, r.top + (r.height - ht) / 2] : where === 'corner' ? [r.right - w - 16, r.top - ht / 2] : [r.left + 16, r.bottom - 10]
+    Object.assign(hintEl.style, { left: `${Math.round(Math.min(Math.max(x, 16), innerWidth - w - 16))}px`, top: `${Math.round(Math.min(Math.max(y, 64), innerHeight - ht - 16))}px` })
+    const put = () => {
+      const el = hintEl
+      if (!el) return
+      hintEl = null
+      clearTimeout(timer)
+      for (const type of ['pointerdown', 'keydown', 'wheel']) removeEventListener(type, put, true)
+      el.classList.add('leaving')
+      setTimeout(() => el.remove(), 200)
+    }
+    const timer = setTimeout(put, 12000)
+    setTimeout(() => { for (const type of ['pointerdown', 'keydown', 'wheel']) addEventListener(type, put, true) }, 600)
+    return
+  }
+}
+
 // Not while you're dragging a row: a redraw would drop the drop targets (and could replace the row you hold).
 let rosterStale = false
 function drawRoster() {
@@ -1338,10 +1386,17 @@ function drawRoster() {
   rosterStale = false
   const open = place === 'dm' ? dmAgent()?.name : null
   morph($('.roster'), dmParts(state, { folds, selected: open, filter: find, drag: true }))
+  // Q, who runs the clique: by himself above it
+  const sys = state.agents.find((a) => a.system && !a.cloneOf)
+  const q = find.trim().toLowerCase()
+  const found = sys && (!q || `${shownName(sys.seed ?? sys.name)} ${sys.area ?? ''}`.toLowerCase().includes(q))
+  morph($('.q-row'), found ? dmRow(sys, { selected: sys.name === open, needs: needsYou(state).filter((n) => familyOf(n.agent.name) === sys.name).length }) : '')
+  if (q && found) $('.roster .roster-none')?.remove() // (someone matches: him)
+  requestAnimationFrame(hints)
   const count = state.agents.filter((a) => !a.cloneOf).length
   $('[data-find]').placeholder = count > 1 ? `Find among ${count} agents` : 'Find an agent'
   if (dragging) document.querySelector(`.roster .dm[data-agent="${CSS.escape(dragging.name)}"]`)?.classList.add('dragging')
-  if (cursor) document.querySelector(`.roster .dm[data-agent="${CSS.escape(cursor)}"]`)?.classList.add('cursor')
+  if (cursor) document.querySelector(`:is(.q-row, .roster) .dm[data-agent="${CSS.escape(cursor)}"]`)?.classList.add('cursor')
 }
 let cursor = null // the search's marked match, kept across redraws
 
@@ -1375,11 +1430,11 @@ findBox.addEventListener('input', () => {
 })
 findBox.addEventListener('blur', () => {
   cursor = null
-  document.querySelector('.roster .dm.cursor')?.classList.remove('cursor')
+  document.querySelector(':is(.q-row, .roster) .dm.cursor')?.classList.remove('cursor')
   if (!findBox.value) stopFind()
 })
 findBox.addEventListener('keydown', (e) => {
-  const rows = [...document.querySelectorAll('.roster .dm')]
+  const rows = [...document.querySelectorAll(':is(.q-row, .roster) .dm')]
   const at = rows.findIndex((r) => r.classList.contains('cursor'))
   if (e.key === 'Escape') {
     e.preventDefault()
@@ -1404,7 +1459,7 @@ findBox.addEventListener('keydown', (e) => {
 })
 
 // A click opens your conversation with it; a double-click, with its terminal beside it.
-$('.roster').addEventListener('click', (e) => {
+for (const list of [$('.roster'), $('.q-row')]) list.addEventListener('click', (e) => {
   const fold = e.target.closest('[data-fold]')
   if (fold) return toggleFold(fold.dataset.fold)
   const row = e.target.closest('.dm')
@@ -1412,11 +1467,11 @@ $('.roster').addEventListener('click', (e) => {
   openDM(row.dataset.agent)
   composer.focus()
 })
-$('.roster').addEventListener('dblclick', (e) => {
+for (const list of [$('.roster'), $('.q-row')]) list.addEventListener('dblclick', (e) => {
   const row = e.target.closest('.dm')
   if (row && terms.has(row.dataset.agent)) select(row.dataset.agent)
 })
-$('.roster').addEventListener('keydown', (e) => {
+for (const list of [$('.roster'), $('.q-row')]) list.addEventListener('keydown', (e) => {
   const row = e.target.closest('.dm')
   if (!row || (e.key !== 'Enter' && e.key !== ' ')) return
   e.preventDefault()
@@ -1463,7 +1518,7 @@ function agentMenu(name, at) {
     '-',
     { label: a.on ? 'Turn off' : 'Turn on', icon: ICONS.power, act: 'power' },
     ...(a.system ? [] : [{ label: leave ? `Take out of ${ws.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true }]),
-    ...(leave ? [{ label: 'Remove from your crew…', icon: ICONS.trash, act: 'forget', danger: true }] : []),
+    ...(leave ? [{ label: 'Remove from your clique…', icon: ICONS.trash, act: 'forget', danger: true }] : []),
   ], async (act) => {
     const who = a.seed ?? a.name
     const doing = { fresh: `Couldn't start a new conversation for ${who}`, power: `Couldn't turn ${who} ${a.on ? 'off' : 'on'}`, remove: `Couldn't remove ${who}` }[act] ?? (act.startsWith('join:') ? `Couldn't add ${who} to that workspace` : `Couldn't do that for ${who}`)
@@ -1486,17 +1541,17 @@ function agentMenu(name, at) {
         toast(`${name} joins ${w.name}${w.folder ? `, working in ${shortPath(w.folder)}` : ''}`)
       }
       const sure = act === 'remove' && confirm(leave
-        ? `Take ${name} out of ${ws.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your crew and your other workspaces.`
+        ? `Take ${name} out of ${ws.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your clique and your other workspaces.`
         : `Remove ${name}? It's only in ${ws.name}, so it's gone for good. Its session stops (the transcript stays with the CLI).`)
       if (sure) await crew.call('removeAgent', name)
-      if (act === 'forget' && confirm(`Remove ${a.seed ?? a.name} from your crew? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) await crew.call('removeAgent', name, { everywhere: true })
+      if (act === 'forget' && confirm(`Remove ${a.seed ?? a.name} from your clique? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) await crew.call('removeAgent', name, { everywhere: true })
     } catch (err) {
       oops(doing, err)
     }
   })
 }
 document.addEventListener('contextmenu', (e) => {
-  const el = e.target.closest('.roster .dm, .pcard[data-name], .tile-head, .dock-tab, .page-head[data-for=chat] .ph-glyph .av, .page-head[data-for=chat] .ph-name')
+  const el = e.target.closest('.roster .dm, .q-row .dm, .pcard[data-name], .tile-head, .dock-tab, .page-head[data-for=chat] .ph-glyph .av, .page-head[data-for=chat] .ph-name')
   if (!el) return
   e.preventDefault()
   agentMenu(el.dataset.agent ?? el.dataset.name ?? el.dataset.dock ?? el.closest('.tile')?.dataset.name ?? dmAgent()?.name, { x: e.clientX, y: e.clientY })
@@ -1818,7 +1873,7 @@ function linkingHTML({ me, pairing }, view) {
   const failed = stage === 'failed'
   // Both screens ask the same: check the code, and Link on both. Neither links alone.
   const check = stage === 'confirm' || stage === 'ask'
-  const line = done ? `<b>${them}</b>'s agents are part of your crew now.`
+  const line = done ? `<b>${them}</b>'s agents are part of your clique now.`
     : failed ? (LINK_FAILS[p.error]?.(them) ?? esc(upFirst(String(p.error ?? 'it didn\'t link'))))
     : stage === 'asking' ? `Asking <b>${them}</b>…`
     : check && p.theyAgreed ? `<b>${them}</b> clicked Link. If it shows the same code, click <b>Link</b> here too.`

@@ -24,7 +24,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     morph(button, on
       ? `<span class="ws-names"><b>${esc(w.name)}</b>${w.ownerName ? `<small class="ws-host ${w.ownerOnline ? '' : 'off'}">${computerIcon(w.ownerName)}<span>on ${esc(w.ownerName)}${w.ownerOnline ? '' : ' · offline'}</span></small>` : ''}</span><span class="ws-chev">${ICONS.chevron}</span>`
       : `<span class="ws-mark">${markSVG('0 6 24 16')}</span><b>${esc(PRODUCT_NAME)}</b><span class="ws-chev">${ICONS.chevron}</span>`)
-    button.title = on ? `${w.ownerName ? `${w.name}, hosted on ${w.ownerName}${w.ownerOnline ? '' : ' (offline)'}` : w.name}${w.folder ? `, in ${tildePath(w.folder)}` : ''}: who works here, settings, a new workspace` : 'Workspaces: a crew, chat and tasks per project'
+    button.title = on ? `${w.ownerName ? `${w.name}, hosted on ${w.ownerName}${w.ownerOnline ? '' : ' (offline)'}` : w.name}${w.folder ? `, in ${tildePath(w.folder)}` : ''}: who works here, settings, a new workspace` : 'Workspaces: a clique, chat and tasks per project'
     // the workspace's color tints the sidebar, so you always know where you are
     const color = on ? wsColor(w) : null
     document.body.classList.toggle('ws-tint', Boolean(color))
@@ -425,7 +425,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
   async function remove(w = before) {
     const own = (w.agents ?? 0) - (w.members?.length ?? 0)
     if (w.ownerName && !confirm(`Hide ${w.name} on this computer?\n\nIt's hosted on ${w.ownerName}, and stays there with its chat, tasks and agents. Any of your agents you added to it stop here. Show it again from the workspace menu, under On your other computers.`)) return
-    if (!w.ownerName && !confirm(`Remove ${w.name}?\n\nIts agents stop and it leaves the switcher.${own > 0 ? ` ${plural(own, 'agent')} of its own ${own > 1 ? 'go' : 'goes'} with it.` : ''} Your shared agents stay in your crew.\n\nIts chat, notes and tasks are kept on disk: a workspace made again with the same name picks them back up.`)) return
+    if (!w.ownerName && !confirm(`Remove ${w.name}?\n\nIts agents stop and it leaves the switcher.${own > 0 ? ` ${plural(own, 'agent')} of its own ${own > 1 ? 'go' : 'goes'} with it.` : ''} Your shared agents stay in your clique.\n\nIts chat, notes and tasks are kept on disk: a workspace made again with the same name picks them back up.`)) return
     try {
       await crew.call('workspace', 'remove', w.id)
       if (dialog.open) dialog.close()

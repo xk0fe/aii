@@ -67,7 +67,7 @@ test('his job and personality come from the app, not from config.json', () => {
   const hub = hubWith()
   const a = hub.systemAgent()
   assert.equal(a.prompt, SYSTEM_AGENT_PROMPT)
-  assert.match(a.area, /Runs the crew/)
+  assert.match(a.area, /Runs the clique/)
   assert.deepEqual(a.avatar, SYSTEM_AGENT_AVATAR) // the pink one from the app's icon
   const w = hub.config.workspaces.find((x) => x.id === hub.ws)
   assert.equal(w.system.prompt, undefined)
@@ -108,7 +108,7 @@ test('you can pick his brain or turn him off, and nothing else about him changes
   assert.equal(a.model, 'haiku')
   assert.equal(a.effort, 'medium')
   assert.equal(a.prompt, SYSTEM_AGENT_PROMPT)
-  assert.match(a.area, /Runs the crew/)
+  assert.match(a.area, /Runs the clique/)
   assert.equal(a.cwd, hub.at('q'))
   assert.notEqual(a.yolo, true)
   assert.equal(hub.maxClones(a), 0)
