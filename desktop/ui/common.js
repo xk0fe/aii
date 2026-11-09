@@ -3230,8 +3230,9 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     replyTo,
     stopReply,
     focus: () => ta.focus(),
-    // something to send, written for you (a first message to pick): yours to change, or to send as it is
+    // something to send, written for you (a first message to pick) into an empty box: yours to change, or to send as it is
     setText(text) {
+      if (ta.value.trim()) return ta.focus() // (not over what you've started writing)
       ta.value = text
       ta.dispatchEvent(new Event('input', { bubbles: true }))
       ta.focus()

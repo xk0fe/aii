@@ -601,7 +601,8 @@
     .wl-meta button:hover { color: var(--fg); text-decoration: underline; }
     /* Q's row: by himself above the clique, the same size as everyone, his word in the brand's colour while he's at it */
     .q-row { flex: none; padding: 10px 8px 0; }
-    .q-row:empty { display: none; }
+    .q-row:empty, .q-row.hidden { display: none; }
+    .side.fr-carrying .dm-av { visibility: hidden; } /* (the first run's creatures are on their way to these: ui/setup.js carry) */
     .q-row .dm.working .dm-word, .q-row .dm.starting .dm-word { color: #FF7AC0; }
     /* what a new thing is, the first time it shows (dashboard.js hints): a small note of Q's on it, in the brand face */
     .hint-tip { position: fixed; z-index: 45; max-width: 280px; margin: 0; padding: 8px 14px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--brand), 0 12px 30px -12px rgba(204, 34, 119, .45); color: var(--brand-ink); font: 500 15px/20px var(--font-brand); pointer-events: none; animation: hint-in .4s var(--out) both; }
