@@ -910,11 +910,11 @@ export class Crew extends EventEmitter {
     const idThere = (slug) => (id) => (slug ? (id?.endsWith(`@${slug}`) ? id.slice(0, -slug.length - 1) : undefined) : id && !id.includes('@') ? id : undefined)
     const unq = (slug) => (name) => (slug && String(name).endsWith(`@${slug}`) ? String(name).slice(0, -slug.length - 1) : name)
     let names = addressees(to, text).map((n) => this.resolve(n, here))
-    // nobody named: it goes to Otto (core/otto.js), who gets it to whoever should do it. With him off, Auto picks.
+    // nobody named: it goes to Q (core/system-agent.js), who gets it to whoever should do it. With Q off, Auto picks.
     if (!names.length) {
-      const there = here.ottoReady() ? null : this.snapshot(here).agents.find((a) => a.system && a.home && a.on && !a.nearLimit && !['stopped', 'off', 'away', 'waiting'].includes(a.status))
-      const otto = here.ottoReady() ? here.otto().name : there?.name
-      if (otto) names = [otto]
+      const there = here.systemAgentReady() ? null : this.snapshot(here).agents.find((a) => a.system && a.home && a.on && !a.nearLimit && !['stopped', 'off', 'away', 'waiting'].includes(a.status))
+      const sys = here.systemAgentReady() ? here.systemAgent().name : there?.name
+      if (sys) names = [sys]
     }
     if (thread && !names.length) throw new Error('nobody left in this thread to send it to: @name someone')
     const auto = !names.length && { auto: true } // nobody named: Auto picks, and the chat says Auto picked them

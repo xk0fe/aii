@@ -82,6 +82,52 @@ function redrawWordmarks() {
   for (const el of document.querySelectorAll('.wordmark.stale')) el.outerHTML = wordmarkHTML(Number(el.dataset.size), { stitch: el.dataset.stitch === '1' })
 }
 
+// The first-run fold (ui/setup.js): the name's own story, "CLI agent queue" becoming CLI queue becoming CLIque, before
+// Q (the queue in it, core/system-agent.js) pops up to say hello. The letters the name keeps wear the wordmark's inks
+// from the start and the rest are faint. Those fall away, the kept ones glide to where the wordmark's own letters sit
+// (the same advances, so they land exactly), and the felt wordmark is sewn on over them. Only transform and opacity
+// move (setup.css), and it plays once, when it's put on the page: a morph drawing the same html leaves it be.
+const FOLD_FROM = 'CLI agent queue'
+const FOLD_KEPT = [0, 1, 2, 10, 11, 12] // C, L, I and q, u, e: the wordmark's letters, in order
+function foldHTML(size = 40) {
+  const font = `700 ${size}px Fredoka`
+  const h = Math.ceil(size * 1.06)
+  if (!(document.fonts?.check?.(font) ?? true)) {
+    const redraw = () => {
+      for (const el of document.querySelectorAll('.fold.stale')) el.outerHTML = foldHTML(Number(el.dataset.size))
+    }
+    document.fonts.load(font).then(redraw, () => {})
+    return `<div class="fold stale" data-size="${size}" style="height:${h}px" role="img" aria-label="${esc(PRODUCT_NAME)}"></div>`
+  }
+  wordmarkCtx ??= document.createElement('canvas').getContext('2d')
+  wordmarkCtx.font = font
+  // where each letter's drawn and how wide the whole is, as wordmarkHTML spaces them
+  const advance = (s) => {
+    const xs = []
+    let x = 0
+    for (const l of s) {
+      xs.push(x + size * 0.04)
+      x += wordmarkCtx.measureText(l).width - size * 0.02
+    }
+    return { xs, w: Math.ceil(x + size * 0.08) }
+  }
+  const from = advance(FOLD_FROM)
+  const to = advance(PRODUCT_NAME)
+  const shift = (from.w - to.w) / 2 // the wordmark sits in the middle of where the words were
+  const base = +(size * 0.8).toFixed(1)
+  const letter = (l, x, attrs) => `<text x="${x.toFixed(1)}" y="${base}" font-family="Fredoka" font-weight="700" font-size="${size}" ${attrs}>${esc(l)}</text>`
+  const kept = new Map(FOLD_KEPT.map((at, i) => [at, i]))
+  let dropped = 0
+  const letters = [...FOLD_FROM].map((l, at) => {
+    if (l === ' ') return ''
+    if (!kept.has(at)) return letter(l, from.xs[at], `class="fold-drop" style="--i:${dropped++}"`)
+    const i = kept.get(at)
+    const x = shift + to.xs[i]
+    return letter(l, x, `class="fold-keep" style="--dx:${(from.xs[at] - x).toFixed(1)}px;fill:${WORDMARK_INKS[i % WORDMARK_INKS.length]}"`)
+  })
+  return `<div class="fold" style="width:${from.w}px;height:${h}px" role="img" aria-label="${esc(PRODUCT_NAME)}"><svg class="fold-words" width="${from.w}" height="${h}" viewBox="0 0 ${from.w} ${h}" aria-hidden="true">${letters.join('')}</svg><span class="fold-mark" style="left:${shift.toFixed(1)}px">${wordmarkHTML(size)}</span></div>`
+}
+
 // Who matters most right now, for a strip too small for everyone: needing you, then working, starting, free, off.
 const ROOM_RANK = { waiting: 0, working: 1, starting: 2, idle: 3 }
 
@@ -100,7 +146,8 @@ function stripHTML(agents, width = 318) {
 // An empty room with one creature popping up and dashed spots where the rest of the crew will stand: the empty
 // Crew view. And the crew waiting with their mugs: the empty Tasks board.
 function firstRoomHTML(w = 440, h = 196) {
-  const first = { name: 'New', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, status: 'starting', on: true }
+  // the blue one from the app's icon: the pink one is Q (core/system-agent.js), and this is someone new
+  const first = { name: 'New', avatar: { body: 'blob', color: 'sky', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, status: 'starting', on: true }
   return `<div class="scene" style="width:${w}px;height:${h}px">${roomFeltHTML(56)}
     <span class="spot" style="left:52px"></span><span class="spot" style="left:136px"></span><span class="spot" style="left:${w - 116}px"></span>
     <span class="scene-who" style="left:${w / 2 - 56}px;top:${h - 122}px">${avatarHTML(first, { size: 112, mood: 'starting', pose: 'pop' })}</span>

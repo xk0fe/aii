@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { OTTO_CHOICES, ottoHello } from './otto.js'
+import { SYSTEM_AGENT, SYSTEM_AGENT_CHOICES, systemAgentHello } from './system-agent.js'
 import { adapters, ASK_WAIT, RESUME_ASK, TRUST } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt, quickAsk } from './promptgen.js'
@@ -317,7 +317,7 @@ export class Hub extends EventEmitter {
     this.providers = providersFrom(this.config, this.cfg.discovered)
     this.space = space(this.config, this.ws) ?? space({ workspaces: [{ id: this.ws, of: 'gone' }] }, this.ws) // no agents once it's gone from config.json
     const list = this.space.agents
-    for (const c of list) if (c.system) this.dressOtto(c)
+    for (const c of list) if (c.system) this.dressSystemAgent(c)
     const names = new Set(list.map((c) => c.name))
     for (const [name, a] of this.agents) {
       if (a.cloneOf || names.has(name)) continue // clones follow their original, below
@@ -415,7 +415,7 @@ export class Hub extends EventEmitter {
   // An agent counts as working while it or any of its clones does; each one waiting on you counts.
   summary() {
     const all = this.ordered().filter((a) => !a.cloneOf)
-    const agents = all.filter((a) => !a.system) // who you've put here: every workspace has Otto
+    const agents = all.filter((a) => !a.system) // who you've put here: every workspace has Q
     const live = all.filter((a) => !a.off && (!this.parked || this.runner.running(a.name)))
     // an agent tool's card still up needs you, even once its agent has carried on with other work
     const carded = new Set([...this.asks.values()].filter((q) => q.plan).map((q) => q.name))
@@ -436,18 +436,18 @@ export class Hub extends EventEmitter {
     this.cfg.save()
   }
 
-  // ---- Otto (core/otto.js) -----------------------------------------------------------------------------------------
+  // ---- Q, the system agent (core/system-agent.js) ------------------------------------------------------------------
 
   // His folder and, the first time, his brain: what the crew here runs on, or else whichever CLI this computer has. On
   // the first he picks, a mid-size model at low effort: he talks and hands on, and he's the one you wait for each time.
-  dressOtto(c) {
-    c.cwd = this.at('otto')
+  dressSystemAgent(c) {
+    c.cwd = this.at(SYSTEM_AGENT)
     try {
       fs.mkdirSync(c.cwd, { recursive: true })
     } catch {
       c.cwd = os.tmpdir() // something else has that name there: an empty folder is all he needs
     }
-    c.args = this.ottoFlags(c)
+    c.args = this.systemAgentFlags(c)
     const mine = this.space.def(c.name)
     if (mine.name !== c.name) {
       mine.name = c.name
@@ -466,35 +466,35 @@ export class Hub extends EventEmitter {
     const brain = { provider: id, ...(id === 'claude' && { model: 'sonnet' }), ...(this.providers[id]?.efforts?.includes('low') && { effort: 'low' }) }
     // (no CLI found yet: nothing's decided, so he looks again next time)
     if (found) for (const [k, v] of Object.entries(brain)) this.space.set(c.name, k, v)
-    Object.assign(c, brain, { args: this.ottoFlags({ ...c, ...brain }) })
+    Object.assign(c, brain, { args: this.systemAgentFlags({ ...c, ...brain }) })
   }
 
   // On Claude Code he has a shell for `crew` and nothing else: no file tools, no sub-agents, none of your tool servers. So
   // he can't quietly edit something, and every message of his costs less, with far fewer tool definitions to keep in its
   // cache. (Codex has no such switch: there it's his empty folder and his instructions.)
-  ottoFlags(c) {
+  systemAgentFlags(c) {
     if ((this.providers[c.provider ?? c.cli ?? 'claude']?.cli ?? 'claude') !== 'claude') return []
     return ['--tools', process.platform === 'win32' ? 'Bash,PowerShell' : 'Bash', '--strict-mcp-config']
   }
 
-  otto() {
+  systemAgent() {
     return [...this.agents.values()].find((a) => a.system) ?? null
   }
 
   // Whether what you send without naming anyone should go to him now. Not while he can't take it soon: asking you something
   // in his terminal, stuck starting, or with his account at its limit. Auto picks then, as it does with him off.
-  ottoReady(now = Date.now()) {
-    const a = this.otto()
+  systemAgentReady(now = Date.now()) {
+    const a = this.systemAgent()
     if (!a || a.off || a.moving || a.resumeAsk || (a.trustAsk && !a.trustPick)) return false
     if (a.status === 'stopped' || a.status === 'away' || a.status === 'waiting' || a.status === 'off') return false
-    if (a.status === 'starting' && now - a.since > OTTO_START_MAX) return false
+    if (a.status === 'starting' && now - a.since > SYSTEM_AGENT_START_MAX) return false
     if (a.status === 'resting' && !this.canStart(a)) return false
     return !this.nearLimit(this.providerOf(a)?.id)
   }
 
   // He can't take what's waiting for him (his CLI won't start, he was turned off, he's stuck): your messages go to whoever
   // Auto would have picked, instead of sitting in his queue while a teammate is free.
-  ottoHandOver(a) {
+  systemAgentHandOver(a) {
     const moved = []
     for (const m of a.inbox.filter((x) => x.from === 'you' && !x.crew)) {
       const to = this.route(m.text, 'you', m.channel)
@@ -510,7 +510,7 @@ export class Hub extends EventEmitter {
   // He says hello once, in a workspace that was going before he came along. It costs no tokens, and it's no news that needs
   // a badge: nothing's running yet. (A new workspace's chat has its welcome, which introduces him.)
   greet() {
-    const a = this.otto()
+    const a = this.systemAgent()
     if (!a || a.off || this.parked || this.space.def(a.name).greeted) return
     const going = this.feed.some((e) => (e.kind === 'msg' || e.kind === 'reply') && e.from !== a.name)
     const said = this.feed.some((e) => e.from === a.name)
@@ -521,7 +521,7 @@ export class Hub extends EventEmitter {
       return // settings that can't be read: nothing to keep it in, so he says it another time
     }
     if (!going || said) return
-    const hi = this.post({ kind: 'reply', from: a.name, text: ottoHello(!this.space.agents.some((x) => !x.system)) })
+    const hi = this.post({ kind: 'reply', from: a.name, text: systemAgentHello(!this.space.agents.some((x) => !x.system)) })
     this.read({ [a.name]: hi.ts })
   }
 
@@ -586,9 +586,9 @@ export class Hub extends EventEmitter {
     const { name, ...fields } = clean(patch)
     for (const n of names) {
       if (!this.space.has(n)) continue
-      const otto = this.agents.get(n)?.system
-      for (const [k, v] of Object.entries(fields)) if (!otto || OTTO_CHOICES.has(k)) this.space.set(n, k, v)
-      if (otto && 'provider' in fields && !('model' in fields)) this.space.set(n, 'model', undefined) // one brain's model is nothing to another
+      const sys = this.agents.get(n)?.system
+      for (const [k, v] of Object.entries(fields)) if (!sys || SYSTEM_AGENT_CHOICES.has(k)) this.space.set(n, k, v)
+      if (sys && 'provider' in fields && !('model' in fields)) this.space.set(n, 'model', undefined) // one brain's model is nothing to another
       if ('provider' in fields) this.space.set(n, 'cli', undefined)
     }
     this.saveConfig()
@@ -819,7 +819,7 @@ export class Hub extends EventEmitter {
   // Its trust question as a card in the chat, like a permission prompt's: Trust or Don't trust there answers it in
   // its terminal for you (pickTrust), and answering in the terminal itself closes the card.
   trustCard(a) {
-    if (a.system) return this.pickTrust(a, true, null) // Otto's own empty folder: nothing there to ask you about
+    if (a.system) return this.pickTrust(a, true, null) // Q's own empty folder: nothing there to ask you about
     const cli = this.providerOf(a)?.cli ?? 'claude'
     const folder = String(a.cwd ?? '')
     const base = path.basename(expand(folder)) || folder
@@ -1242,7 +1242,7 @@ export class Hub extends EventEmitter {
   // back, or a reply to something it said there. Those never start a new conversation.
   followsOn(a, m) {
     const c = this.convos[a.name]
-    // (what goes to Otto wasn't meant for his conversation in particular: he can start afresh like any Auto pick)
+    // (what goes to Q wasn't meant for his conversation in particular: he can start afresh like any Auto pick)
     if (m.crew || m.fresh || m.answers || m.ask || (m.from === 'you' && !m.auto && !a.system)) return true
     if (m.ticket !== undefined && m.ticket === c?.ticket) return true
     const re = m.re && this.feed.findLast((e) => e.id === m.re)
@@ -2257,7 +2257,7 @@ export class Hub extends EventEmitter {
       if (a.status === 'waiting') this.record(a.name, { waitMs: spent })
       Object.assign(a, { status, since: Date.now() })
     }
-    if (a.system && (status === 'stopped' || status === 'off')) this.ottoHandOver(a)
+    if (a.system && (status === 'stopped' || status === 'off')) this.systemAgentHandOver(a)
     // Its turn is over, whichever way it ended: the files it edited are free again, and whoever asked it something
     // this turn hears that no answer is coming (a Stop has settled those already). Turned off, it won't get to the
     // questions in its queue either, so their askers hear that now rather than wait. (A clone's queue goes back to
@@ -2465,7 +2465,7 @@ export class Hub extends EventEmitter {
     if (away.length && !names.length) return this.relay(from, away, text, images, awayExtra)
     const targets = names.length ? this.recipients(names, from) : [this.route(text, from, ch)]
     if (!targets[0]) throw new Error('no agents to send to')
-    // Otto hands on inside the channel it came from, as Auto picks from its members, and what you attached goes along
+    // Q hands on inside the channel it came from, as Auto picks from its members, and what you attached goes along
     const sender = this.agents.get(from)
     if (sender?.system) {
       const room = this.channel(ch)
@@ -2486,7 +2486,7 @@ export class Hub extends EventEmitter {
       throw new Error(`@${call.from} is waiting for your answer to "${gist(call.text, 80)}". Don't hand it back: put what you'd send it in your answer. Your final message goes back to @${call.from} by itself.${targets.length > 1 ? ' (nothing was sent)' : ''}`)
     }
 
-    const held = from !== 'you' && !this.space.autopilot && !this.agents.get(from)?.system // (you asked Otto: his hand-off is your request going on)
+    const held = from !== 'you' && !this.space.autopilot && !this.agents.get(from)?.system // (you asked Q: his hand-off is your request going on)
     if (ask) {
       const msg = this.post({ kind: 'msg', from, to: targets[0].name, text, ask: true, ...(images.length && { images }), ...(ch && { channel: ch }), ...carried, queued: !held, held })
       this.open({ id: msg.id, msg, from, text, back: ask })
@@ -2616,7 +2616,7 @@ export class Hub extends EventEmitter {
     // the same question again (a retry after a "hasn't answered yet"): wait on the one already asked
     const same = [...this.calls.values()].find((c) => c.from === from && this.baseOf(this.ownerOf(c)) === target.name && squash(c.text) === squash(text))
     if (same) return this.hold([same], hold, closed)
-    const held = from !== 'you' && !this.space.autopilot && !this.agents.get(from)?.system // (you asked Otto: his hand-off is your request going on)
+    const held = from !== 'you' && !this.space.autopilot && !this.agents.get(from)?.system // (you asked Q: his hand-off is your request going on)
     const msg = this.post({ kind: 'msg', from, to: target.name, text, ask: true, ...(images.length && { images }), ...(asker?.current && { re: asker.current }), queued: !held, held })
     const call = this.open({ id: msg.id, msg, from, text, parent: this.workingOn(asker) })
     if (asker) this.record(from, { handoffs: 1 })
@@ -2997,8 +2997,8 @@ export class Hub extends EventEmitter {
     const members = this.channel(channel)?.members
     const ready = [...this.agents.values()].filter((a) => !a.cloneOf && !a.system && a.name !== this.baseOf(from) && (this.runner.running(a.name) || a.status === 'resting') && this.workable(a) && (!members || members.includes(a.name)))
     const best = this.pick(text, ready.map((a) => ({ ...this.lineup(a), ...this.warmth(a) })))
-    // (nobody else here: Otto, unless it's Otto asking)
-    return best ? this.agents.get(best.name) : !this.otto() || this.baseOf(from) === this.otto().name || !this.ottoReady() ? undefined : this.otto()
+    // (nobody else here: Q, unless it's Q asking)
+    return best ? this.agents.get(best.name) : !this.systemAgent() || this.baseOf(from) === this.systemAgent().name || !this.systemAgentReady() ? undefined : this.systemAgent()
   }
 
   // Deliver the next queued message once the agent is idle and nothing asked to hold off (e.g. you typing in its terminal).
@@ -3297,7 +3297,7 @@ export class Hub extends EventEmitter {
   // who's on: one that's off never picks it up, and the task just sits there. You can, and the task waits for it.
   taskOwner(name, by, t) {
     const owner = this.agentName(name)
-    this.notOtto(owner)
+    this.notSystemAgent(owner)
     if (by === 'you' || this.isOn(owner)) return owner
     throw new Error(`@${owner} is turned off, so it can't take ${t ? `#${t.id}` : 'this task'}. Give it to a teammate who's on (crew who), or leave out --owner for the user to decide`)
   }
@@ -3317,8 +3317,8 @@ export class Hub extends EventEmitter {
   // any more, it's yours to look at: one line in the chat and a notification.
 
   checkStalls(now = Date.now()) {
-    const otto = this.otto()
-    if (otto?.inbox.length && (otto.resumeAsk || (otto.status === 'starting' && now - otto.since > OTTO_START_MAX))) this.ottoHandOver(otto)
+    const sys = this.systemAgent()
+    if (sys?.inbox.length && (sys.resumeAsk || (sys.status === 'starting' && now - sys.since > SYSTEM_AGENT_START_MAX))) this.systemAgentHandOver(sys)
     const after = Number(this.config.stallMinutes ?? STALL_MINUTES) * 60000
     if (!(after > 0)) return
     for (const t of this.tickets.open()) {
@@ -3601,14 +3601,14 @@ export class Hub extends EventEmitter {
     return `${said}\n${out}`
   }
 
-  // Otto hands work on, so a task can't be his.
-  notOtto(name) {
+  // Q hands work on, so a task can't be his.
+  notSystemAgent(name) {
     const who = this.agents.get(name) ?? (this.directory?.() ?? []).find((a) => a.name === name)
     if (who?.system) throw new Error(`${name} hands work on rather than doing it, so it can't take a task. Give it to a teammate`)
   }
 
   setTaskSettings({ triage, autofix }) {
-    if (triage) this.notOtto(triage)
+    if (triage) this.notSystemAgent(triage)
     if (triage !== undefined) this.space.triage = triage || undefined
     if (autofix !== undefined) this.space.autofix = Boolean(autofix) || undefined
     this.saveConfig()
@@ -4228,8 +4228,8 @@ const THREAD_ASK_AGAIN = 10 * 60000
 // A thread that was going when CLIque closed, back open within this long, carries on where it was.
 const THREAD_RESUME = 60 * 60000
 const CLOSE_THREAD = (said) => `[crew] The thread your request led to has gone quiet.${said ? ` What was said since your last message:\n\n${said}\n\n` : ' '}Tell the user where it ended, in one or two sentences: what's done, what isn't, and anything they have to do. If something failed or wasn't checked, say that first. Don't start anything new or message anyone. If your last message to them already says all that, reply with just: nothing new`
-// How long Otto may take starting up before what you send stops waiting for him.
-const OTTO_START_MAX = 90000
+// How long Q may take starting up before what you send stops waiting for him.
+const SYSTEM_AGENT_START_MAX = 90000
 const crewPrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, crew: true, queued: true })
 
 // The last time anyone but Crew did something with a task: added it, started it, wrote a note, moved it.

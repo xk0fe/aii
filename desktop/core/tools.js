@@ -8,7 +8,7 @@
 // Looking (crew app agents, workspaces, …) never asks. This isn't a sandbox: an agent runs as you and could edit
 // config.json itself. It's the way an agent asks before it changes your app, and the way you say yes or no.
 // Crew.tool runs them: core/crew.js. No Electron in here.
-import { OTTO_CHOICES } from './otto.js'
+import { SYSTEM_AGENT_CHOICES } from './system-agent.js'
 import path from 'node:path'
 import { GENERAL, channelName, checkLook, named, sharedNames, workspacesIn } from './workspaces.js'
 import { isOffered } from './providers.js'
@@ -60,7 +60,7 @@ const usage = (key) => `crew app ${key}${TOOLS[key].use ? ` ${TOOLS[key].use}` :
 
 // "ada, milo" or "@ada @milo" -> ['ada', 'milo']
 const names = (v) => [...new Set(String(v ?? '').split(/[\s,]+/).map((n) => n.replace(/^@/, '').trim().toLowerCase()).filter(Boolean))]
-// Who a channel is for, as named. Otto's in every channel, so naming him adds nothing: a channel only he was in would have
+// Who a channel is for, as named. Q's in every channel, so naming him adds nothing: a channel only he was in would have
 // nobody to work in it.
 const membersOf = (hub, list) => {
   const given = names(list).map((n) => agentIn(hub, n))
@@ -287,7 +287,7 @@ export const TOOLS = {
       if (flags.yolo) patch.yolo = true
       if (flags['no-yolo']) patch.yolo = false
       const changed = Object.keys(FIELD_NAMES).filter((k) => k in patch && JSON.stringify(patch[k] || undefined) !== JSON.stringify(a[k] || undefined))
-      if (a.system && changed.some((k) => !OTTO_CHOICES.has(k))) throw new Error(`@${name} comes with every workspace: only its brain, model and effort can change`)
+      if (a.system && changed.some((k) => !SYSTEM_AGENT_CHOICES.has(k))) throw new Error(`@${name} comes with every workspace: only its brain, model and effort can change`)
       const was = { ...a, provider: hub.providers[a.provider ?? a.cli ?? 'claude']?.label }
       const now = { ...patch, provider: brain.label }
       if (!changed.length) throw new Error(`nothing to change: say what, e.g. ${usage('agent edit')}`)

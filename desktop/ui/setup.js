@@ -3,7 +3,7 @@
 // to paste and Check again; once one is, the crew invites you to make its first agent. "Claude Code and Codex…" in the
 // ⋯ menu shows the same screen any time. Add provider… (here, and in the model picker) adds GLM or Ollama, which the
 // picker offers only once added (state.providers[id].added, core/providers.js).
-/* global crew, esc, morph, avatarHTML, oops, errorLine, ON_WINDOWS, roomFeltHTML, PRODUCT_NAME */
+/* global crew, esc, morph, avatarHTML, oops, errorLine, ON_WINDOWS, roomFeltHTML, foldHTML, PRODUCT_NAME */
 
 let setupScreen = null // the dashboard's, once mounted: the model picker (ui/collection.js) opens Add provider… with it
 function openAddProvider() {
@@ -91,7 +91,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     if (!status().ready && !(noWorkspace() && dismissed)) {
       const signIn = status().clis.some((c) => c.state === 'signin')
       return {
-        say: signIn ? 'Almost there! Can you sign me in?' : 'Hi! I just need Claude Code or Codex.',
+        say: signIn ? 'Almost there! Can you sign me in?' : 'Hi, I’m Q. I just need Claude Code or Codex.',
         title: 'Let’s get your crew ready',
         lead: 'Your crew works through Claude Code or Codex, with your own account. Set up either one, then check again.',
         primary: ['check', checking ? 'Checking…' : 'Check again'],
@@ -100,7 +100,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     }
     if (noWorkspace()) {
       return {
-        say: 'Hi! What are we working on?',
+        say: 'Hi, I’m Q. What are we working on?',
         title: 'Make your first workspace',
         lead: 'A workspace is a project: its folder, the agents who work on it, and its own chat and tasks. Make one for each thing you work on.',
         primary: ['workspace', 'Create a workspace'],
@@ -111,7 +111,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     }
     if (none) {
       return {
-        say: 'Hi! Who should I be?',
+        say: 'Who should we bring in?',
         title: 'Let’s build your crew',
         lead: 'Each agent is a teammate with a job, a model and a creature of its own. Start with one; you can add more any time.',
         primary: ['add', 'Add your first agent'],
@@ -133,13 +133,16 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     if (!open) return
     const w = words()
     const s = status()?.checked ? status() : { clis: [], git: null }
-    const creature = { name: 'New', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, status: 'starting' }
+    // Q, the pink one from the app's icon (core/system-agent.js): he greets you here, before there's a workspace for him
+    const q = { name: 'Q', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, status: 'starting' }
     const off = (act) => act === 'check' && (checking || !status()?.checked)
     const btn = ([act, label], cls) => `<button type="button" class="btn lg ${cls}" data-act="${act}" ${off(act) ? 'disabled' : ''}>${esc(label)}</button>`
+    // a first run (no workspace yet) opens with the name folding together, and then Q pops up (brand.js foldHTML)
+    const fold = noWorkspace() && !state.settingsBroken && typeof foldHTML === 'function' ? foldHTML(40) : ''
     // the empty-state column (common.css .empty-state): the room for its art, the headline, one line, then the list
-    morph(view, `<div class="empty-state su-col">
+    morph(view, `<div class="empty-state su-col">${fold}
       <div class="su-scene">${typeof roomFeltHTML === 'function' ? roomFeltHTML(52) : ''}<span class="su-spot" style="left:52px"></span><span class="su-spot" style="left:128px"></span><span class="su-spot" style="right:56px"></span>
-        <span class="su-who">${avatarHTML(creature, { size: 96, mood: 'starting', pose: 'pop' })}</span><span class="su-say">${esc(w.say)}</span></div>
+        <span class="su-who">${avatarHTML(q, { size: 96, mood: 'starting', pose: 'pop' })}</span><span class="su-say">${esc(w.say)}</span></div>
       <h1 class="display">${esc(w.title)}</h1>
       <p class="lead">${esc(w.lead)}</p>
       ${w.bare || !w.primary ? '' : `<div class="group-list su-list">${s.clis.map(cliRow).join('')}${s.git ? gitRow(s.git) : ''}</div>`}

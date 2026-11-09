@@ -43,7 +43,7 @@ export type Agent = {
   nearLimit?: boolean
   channel?: string // the channel of what it's working on, while working or waiting (none: #general)
   thread?: string // the thread of what it's working on, if that has one
-  system?: boolean // Otto (desktop/core/otto.js): comes with every workspace, and what you send without naming anyone goes to him
+  system?: boolean // Q (desktop/core/system-agent.js): comes with every workspace, and what you send without naming anyone goes to him
 }
 
 // A channel of the workspace: #general (id 'general', everyone) first, then the ones you made. Its brief is what its

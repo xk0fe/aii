@@ -19,6 +19,28 @@
 .su-spot { position: absolute; bottom: 18px; width: 56px; height: 12px; border-radius: 50%; border: 1.5px dashed var(--room-thread); }
 .su-say { position: absolute; left: calc(50% + 36px); top: 36px; max-width: calc(50% - 46px); padding: 8px 12px; border-radius: 10px; border-bottom-left-radius: 4px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); font-size: 13px; line-height: 18px; text-align: left; }
 
+/* A first run's fold (brand.js foldHTML), over the room: "CLI agent queue" folds into the wordmark, then Q pops up and
+   speaks. About 2.8s, once, as it's put on the page; the buttons work from the start. Each piece rests on its last
+   frame, so without the motion (reduce) it's the wordmark and Q, still. */
+.fold { position: relative; flex: none; max-width: 100%; margin: 0 auto 8px; }
+.fold-words, .fold-mark { position: absolute; top: 0; left: 0; line-height: 0; }
+.fold-words { overflow: visible; animation: fold-in .4s var(--out) both; }
+.fold-drop { fill: var(--fg3); opacity: 0; animation: fold-drop .24s var(--in) calc(1s + var(--i) * 12ms) both; /* gone before the rest move */ }
+.fold-keep { opacity: 0; animation: fold-glide .55s var(--move) 1.38s both, fold-out .3s linear 2.02s both; }
+.fold-mark { animation: fold-felt .35s var(--out) 1.92s both; }
+.fold + .su-scene .su-who { animation: fold-q .5s var(--spring) 2.15s both; }
+.fold + .su-scene .su-who .av-in { animation-delay: 2.15s; } /* his own hop, as he lands */
+.fold + .su-scene .su-say { animation: fold-in .25s var(--out) 2.5s both; }
+@keyframes fold-in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes fold-drop { from { opacity: 1; } to { opacity: 0; transform: translateY(10px); } }
+@keyframes fold-glide { from { transform: translateX(var(--dx)); } }
+@keyframes fold-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes fold-felt { from { opacity: 0; } }
+@keyframes fold-q { from { opacity: 0; transform: translateY(18px) scale(.7); } }
+@media (prefers-reduced-motion: reduce) {
+  .fold *, .fold + .su-scene * { animation: none !important; }
+}
+
 /* Claude Code, Codex (and Git for Windows): one row each on common.css .group-list, its status on the right, what to
    do under it. On the page's background the card is the surface, not the grey a list in a sheet sits on. */
 .su-list { width: 100%; margin-top: 24px; background: var(--surface); color: var(--fg); text-align: left; }

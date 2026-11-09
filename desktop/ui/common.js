@@ -342,7 +342,7 @@ function flipped(name, mode, actual) {
 
 // YOLO and Fast as chips that toggle in place. Modes that are off only show up when you hover the row.
 function modeChips(a) {
-  if (a.system) return '' // Otto has a shell for crew and nothing else: nothing to skip asking about
+  if (a.system) return '' // Q's shell runs crew and asks about the rest: no YOLO for him
   const turn = (on) => `Click to turn ${on ? 'off' : 'on'}`
   const yolo = flipped(a.name, 'yolo', Boolean(a.yolo))
   const yoloTip = a.pending ? 'Restarts with the new YOLO setting as soon as it is free' : `YOLO ${yolo ? 'on' : 'off'}: skip every permission prompt. ${turn(yolo)}`
@@ -361,10 +361,12 @@ function powerSwitch(a) {
 // An agent's name; one on another computer carries its computer: Rex@workstation. A clone is its original's name
 // with its number: Theo ②.
 const nameHTML = (a) => `${esc(plainName(a))}${cloneTag(a)}${a.home ? `<span class="at" title="runs on ${esc(a.homeName)}">@${esc(a.home)}</span>` : ''}`
-const plainName = (a) => (a.cloneOf ? a.cloneOf.split('@')[0] : a.home ? a.seed : a.name)
+// A one-letter name reads as an initial, so it's shown as a capital: q is Q (core/system-agent.js). @q stays as typed.
+const shownName = (n) => (String(n).length === 1 ? String(n).toUpperCase() : String(n))
+const plainName = (a) => shownName(a.cloneOf ? a.cloneOf.split('@')[0] : a.home ? a.seed : a.name)
 const cloneTag = (a) => (a.cloneOf ? `<span class="clone-no" title="Clone ${a.clone} of ${esc(a.cloneOf)}: it took a task while ${esc(plainName(a))} was busy">${a.clone}</span>` : '')
 // In plain text (tooltips, the ribbon): "Theo 2".
-const displayName = (a) => (a.cloneOf ? `${plainName(a)} ${a.clone}` : a.name)
+const displayName = (a) => (a.cloneOf ? `${plainName(a)} ${a.clone}` : shownName(a.name))
 
 // ---- clones: an agent busy with one task takes the next on a clone of itself (core/hub.js) -----------
 
@@ -616,7 +618,7 @@ function crewRow(a, { selected = false, drag = false, clones = [], clonesOpen = 
   return `<div class="crow ${a.on ? a.status : 'off'} ${selected ? 'on' : ''}" data-agent="${esc(a.name)}" ${drag ? 'draggable="true"' : ''} style="--c:${agentColor(a)}" title="${esc(tip)}">
     <span class="crow-av">${avatarHTML(a, { size: 32 })}${shoulderDot(a)}${unreadBadge(a.unread)}</span>
     <span class="crow-main">
-      <span class="crow-top"><b>${esc(a.seed ?? a.name)}</b>${modeMarks(a)}<span class="crow-brain" title="${esc(brainLabel(a, providers))}">${esc(brainWords(a, providers, { short: true }))}</span></span>
+      <span class="crow-top"><b>${esc(shownName(a.seed ?? a.name))}</b>${modeMarks(a)}<span class="crow-brain" title="${esc(brainLabel(a, providers))}">${esc(brainWords(a, providers, { short: true }))}</span></span>
       <span class="crow-line ${line.cls}">${cloneCount(a, clones, clonesOpen)}<span class="crow-what">${esc(line.text)}</span>${helpers ? `<span class="crow-meta" title="${esc(`${plural(runningSubs(a).length, 'sub-agent')} working:\n${subsTip(runningSubs(a))}`)}">${helpers}</span>` : ''}</span>
     </span>
     <span class="crow-end">${a.queue && a.on ? `<i class="crow-queue" title="${plural(a.queue, 'message')} queued">${a.queue}</i>` : ''}${later ? `<i class="crow-later" title="${esc(later)}">${a.freshPending ? ICONS.fresh : ICONS.restart}</i>` : ''}</span>
@@ -1083,8 +1085,8 @@ const mergeSends = (feed) => {
   return { shown, as }
 }
 
-// Otto (core/otto.js), when he can take what you send: everyone's chat goes to him. Otherwise Auto picks.
-const ottoOf = (agents) => agents?.find((a) => a.system && a.on && !['stopped', 'off', 'away'].includes(a.status))
+// Q (core/system-agent.js), when he can take what you send: everyone's chat goes to him. Otherwise Auto picks.
+const systemAgentOf = (agents) => agents?.find((a) => a.system && a.on && !['stopped', 'off', 'away'].includes(a.status))
 
 // ---- conversations: the chat with one agent --------------------------------------------------------------
 // Pick an agent (its face or name in the feed, its creature on the To line or in the pill) and the chat becomes
@@ -1305,7 +1307,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
   const rowHTML = (e, echoes) => {
     const byName = Object.fromEntries(agents().map((a) => [a.name, a]))
     const agent = (n) => byName[n] ?? cloneGhost(n, byName) ?? { name: n }
-    const name = (n) => (n === 'you' ? 'You' : `<span class="who" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">${esc(agent(n).seed ?? displayName(agent(n)))}</span>`)
+    const name = (n) => (n === 'you' ? 'You' : `<span class="who" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">${esc(shownName(agent(n).seed ?? displayName(agent(n))))}</span>`)
     const time = new Date(e.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     if (e.kind === 'rule') return ruleLine(e, name, time)
     const face = e.from === 'you' ? YOU_FACE : `<span class="face" data-agent="${esc(e.from)}">${avatarHTML(agent(e.from), { size: 22, mood: 'still' })}</span>`
@@ -1560,7 +1562,7 @@ function feedItem(e, prev, ctx) {
   const label = (n) => {
     if (agent(n).cloneOf) return nameHTML(agent(n))
     const [base, home] = String(n).split('@')
-    return `${esc(base)}${home ? `<span class="at">@${esc(home)}</span>` : ''}`
+    return `${esc(shownName(base))}${home ? `<span class="at">@${esc(home)}</span>` : ''}`
   }
   const name = (n) => (n === 'you' ? 'You' : `<span class="who${here(n)}" data-agent="${esc(n)}" style="--c:${agentColor(agent(n))}">${label(n)}</span>`)
   const time = new Date(e.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -2984,18 +2986,18 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     `<button class="chip ${cls} ${target === to ? 'on' : ''}" data-to="${esc(to)}" aria-pressed="${target === to}" aria-label="${esc(tipText)}" data-tip="${esc(tipText)}" data-sub="${esc(sub)}"${c ? ` style="--c:${c}"` : ''}>${inner}</button>`
   // To: whoever it's aimed at now; a click lists Auto, Task and everyone who's on
   const picker = () => {
-    const otto = target === 'auto' && ottoOf(agents)
-    const a = otto || (isConvo(target) && agents.find((x) => x.name === target))
+    const sys = target === 'auto' && systemAgentOf(agents)
+    const a = sys || (isConvo(target) && agents.find((x) => x.name === target))
     const face = a ? avatarHTML(a, { size: 18, mood: 'still' }) : `<span class="to-icon">${ICONS[target === 'task' ? 'task' : 'sparkles']}</span>`
     const label = a ? nameHTML(a) : target === 'task' ? 'Tasks' : isConvo(target) ? esc(nameOf(target)) : 'Auto'
-    const sub = otto ? 'gets it to the right teammate. @name goes straight to them' : a ? statusText(a) : target === 'task' ? 'adds it to the Tasks board, @name assigns it' : channel?.members ? `picks from #${channel.name}'s ${plural(channel.members.length, 'member')} by area` : 'picks by area, prefers whoever is free'
+    const sub = sys ? 'gets it to the right teammate. @name goes straight to them' : a ? statusText(a) : target === 'task' ? 'adds it to the Tasks board, @name assigns it' : channel?.members ? `picks from #${channel.name}'s ${plural(channel.members.length, 'member')} by area` : 'picks by area, prefers whoever is free'
     return `<button class="to-pick ${target === 'task' ? 'task' : ''}" data-pick-to aria-haspopup="menu" data-tip="${esc(a ? displayName(a) : target === 'task' ? 'Task' : 'Auto')}" data-sub="${esc(sub)}"${a ? ` style="--c:${agentColor(a)}"` : ''}><span class="to-label">To</span>${face}<b>${label}</b>${ICONS.chevron}</button>`
   }
   const pickTo = (at) => {
-    const otto = ottoOf(agents)
+    const sys = systemAgentOf(agents)
     const on = agents.filter((a) => a.on && (!a.cloneOf || a.name === target) && !a.system)
     popMenu(at, [
-      otto ? { label: displayName(otto), icon: avatarHTML(otto, { size: 18, mood: 'still' }), act: 'auto', hint: 'runs the crew' } : { label: 'Auto', icon: ICONS.sparkles, act: 'auto', hint: 'picks by area' },
+      sys ? { label: displayName(sys), icon: avatarHTML(sys, { size: 18, mood: 'still' }), act: 'auto', hint: 'runs the crew' } : { label: 'Auto', icon: ICONS.sparkles, act: 'auto', hint: 'picks by area' },
       { label: 'Task', icon: ICONS.task, act: 'task', hint: 'adds to the board' },
       ...(on.length ? ['-', { head: 'Send to' }] : []),
       ...on.map((a) => ({ label: displayName(a), icon: avatarHTML(a, { size: 18, mood: 'still' }), act: a.name, hint: `${statusText(a)}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}` })),
@@ -3036,7 +3038,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     ta.placeholder = task ? (isConvo(target) ? `Add a task for ${short(familyOf(target))}… @name gives it to someone else` : 'Add a task… @name assigns it')
       : off ? `${who} is off. Turn it on to message it`
       : reply ? `Reply to ${isConvo(target) ? who : listed(reply.to)}…`
-      : target === 'auto' && ottoOf(agents) ? (fresh ? `New conversation with ${displayName(ottoOf(agents))}…` : channel ? `Message #${channel.name}` : 'Message the crew')
+      : target === 'auto' && systemAgentOf(agents) ? (fresh ? `New conversation with ${displayName(systemAgentOf(agents))}…` : channel ? `Message #${channel.name}` : 'Message the crew')
       : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : channel ? `Message #${channel.name}, Auto picks who…` : 'Message the crew, Auto picks who…')
       : fresh ? `New conversation with ${who}…` : `Message ${who}…`
     if (target !== told) onTarget?.((told = target))
