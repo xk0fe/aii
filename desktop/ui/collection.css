@@ -371,3 +371,30 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .ed-system .ed-av { cursor: default; }
 .ed-system .pd-name[readonly], .ed-system .pd-area[readonly] { box-shadow: none; background: none; cursor: default; resize: none; }
 .ed-sys-note { margin: 12px 0 0; max-width: 62ch; font-size: 13px; line-height: 1.45; color: var(--fg2); }
+
+/* ---- a new agent: the stage (collection.js drawStage) ---- */
+/* Someone new on the glow, one line, a name, what it does, Bring in. The same layer as the sheet, narrower and one
+   column; every row keeps its height (the error's line included), so nothing moves as you type. */
+.ed.ed-stage { display: block; width: min(600px, calc(100vw - 56px)); height: auto; max-height: calc(100vh - 48px); overflow: hidden auto; }
+.na { position: relative; display: flex; flex-direction: column; align-items: center; padding: 28px 48px 24px; text-align: center; }
+.na-stage { position: relative; flex: none; width: 400px; max-width: 100%; height: 196px; }
+.na-av { all: unset; position: absolute; left: 50%; bottom: 14px; translate: -50% 0; line-height: 0; border-radius: 50%; cursor: pointer; transform-origin: 50% 100%; transition: transform var(--t-quick) var(--out); }
+.na-av:hover { transform: translateY(-4px); }
+.na-av:active { transform: scale(.96); }
+.na-av:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.na-roll { position: absolute; left: calc(50% + 92px); bottom: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.na-roll:hover { background: var(--surface-2); }
+.na-line { margin: 14px 0 0; color: var(--fg); font: 600 40px/46px var(--font-brand); letter-spacing: -.01em; animation: na-in .5s var(--out) .08s both; }
+.na-name, .na-area { width: 100%; max-width: 440px; border: 0; border-radius: var(--r-control); outline: 0; background: var(--fill); color: var(--fg); text-align: center; user-select: text; transition: background var(--t-quick), box-shadow var(--t-quick); }
+.na-name { height: 48px; margin-top: 16px; padding: 0 12px; font: 600 28px/48px var(--font-brand); }
+.na-area { height: 34px; margin-top: 6px; padding: 0 12px; font-size: 15px; }
+.na-name::placeholder, .na-area::placeholder { color: var(--fg3); }
+.na-name:hover, .na-area:hover { background: var(--fill-hover); }
+.na-name:focus, .na-area:focus { background: var(--field); box-shadow: var(--focus-ring); }
+.na-msg { flex: none; width: 100%; min-height: 36px; margin: 6px 0 0; overflow: visible; color: var(--danger); font-size: 12.5px; line-height: 18px; white-space: normal; text-overflow: clip; }
+.na-go.btn { height: 48px; min-width: 210px; max-width: 100%; padding: 0 28px; border-radius: 14px; font: 600 18px/1.15 var(--font-brand); white-space: normal; overflow-wrap: anywhere; transition: background .15s, color .15s, opacity .2s; }
+.na-more { margin-top: 8px; }
+@keyframes na-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) {
+  .na-line, .na-av { animation: none; transition: none; }
+}
