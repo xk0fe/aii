@@ -532,11 +532,16 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
         <h2 class="na-line">Who’s joining?</h2>
         <input class="na-name" data-k="name" value="${esc(d.name)}" placeholder="Its name" maxlength="40" spellcheck="false" autocomplete="off" aria-label="Name">
         <input class="na-area" data-k="area" value="${esc(d.area)}" placeholder="What does it do? Drafts, checks facts, builds screens…" autocomplete="off" aria-label="What it does">
+        <div class="na-setup">
+          <div class="ed-list group-list brain" aria-label="Its brain"></div>
+          <div class="ed-list group-list behave na-modes" aria-label="How it works"></div>
+        </div>
         <p class="pd-msg na-msg" role="alert"></p>
         <button class="btn lg brand-btn na-go" data-act="bring"></button>
-        <button class="btn plain na-more" data-act="settings" title="Its model, folder, computer and the rest">More settings</button>
+        <button class="btn plain na-more" data-act="settings" title="Its folder, computer, instructions and the rest">More settings</button>
       </div>`
     drawStageAvatar('starting')
+    drawBrain() // which brain it runs on is part of who it is: picked here, not behind More settings (and YOLO, Fast)
     syncStage()
   }
 
@@ -544,7 +549,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   function drawStageAvatar(how) {
     const host = card.querySelector('.na-av')
     if (!host) return
-    host.innerHTML = avatarHTML({ name: 'new', avatar: draft.avatar }, { size: 160, mood: how === 'starting' ? 'starting' : 'idle' })
+    host.innerHTML = avatarHTML({ name: 'new', avatar: draft.avatar }, { size: 140, mood: how === 'starting' ? 'starting' : 'idle' })
     if (how !== 'starting') bounce(host.querySelector('.av'), how)
   }
 
@@ -955,9 +960,10 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const p = providerOf(d.provider)
     const fastKnown = p.fastByDefault !== undefined
     const fastOn = fastKnown && (d.tier ? d.tier === 'fast' : p.fastByDefault)
+    // (the stage for a new agent leaves On out: it starts on, and More settings has the switch)
     card.querySelector('.behave').innerHTML =
-      switchRow('On', onHint(), `<input type="checkbox" class="switch" data-k="on" ${d.on ? 'checked' : ''}>`) +
-      switchRow('YOLO', 'Skips every permission prompt', `<input type="checkbox" class="switch" data-k="yolo" ${d.yolo ? 'checked' : ''}>`, 'yolo') +
+      (stage ? '' : switchRow('On', onHint(), `<input type="checkbox" class="switch" data-k="on" ${d.on ? 'checked' : ''}>`)) +
+      switchRow('YOLO', stage ? 'No permission prompts' : 'Skips every permission prompt', `<input type="checkbox" class="switch" data-k="yolo" ${d.yolo ? 'checked' : ''}>`, 'yolo') +
       switchRow('Fast', fastKnown ? `Codex's fast service tier${d.tier ? '' : ', as in your config'}` : 'Codex only', `<input type="checkbox" class="switch" data-fast-tier ${fastOn ? 'checked' : ''} ${fastKnown ? '' : 'disabled'}>`, `fast ${fastKnown ? '' : 'dim'}`, fastKnown ? '' : 'Only Codex has a fast service tier')
   }
   const onHint = () => `Stays ${draft.on ? 'on' : 'off'} after restarts`
@@ -1033,15 +1039,15 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     }
     const k = e.target.dataset.k
     if (!k) return
-    if (stage) {
+    if (stage && (k === 'name' || k === 'area')) {
       draft[k] = e.target.value
       card.querySelector('.pd-msg').textContent = ''
       return syncStage()
     }
     draft[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value
     if (k === 'model') drawEffortOnly()
-    if (k === 'name') card.querySelector('.ed-pane[data-pane=look] .ed-pane-head p').textContent = `Every option shows ${draft.name || 'it'} wearing it.`
-    if (k === 'on') card.querySelector('[data-k=on]').closest('.ed-row').querySelector('small').textContent = onHint()
+    if (k === 'name' && !stage) card.querySelector('.ed-pane[data-pane=look] .ed-pane-head p').textContent = `Every option shows ${draft.name || 'it'} wearing it.`
+    if (k === 'on' && !stage) card.querySelector('[data-k=on]').closest('.ed-row').querySelector('small').textContent = onHint()
     syncSave()
   })
 
@@ -1061,7 +1067,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   })
   card.addEventListener('keydown', (e) => {
     // on the stage, Enter in either field brings it in
-    if (stage && e.key === 'Enter' && e.target.dataset.k && !e.isComposing) return void (e.preventDefault(), save())
+    if (stage && e.key === 'Enter' && ['name', 'area'].includes(e.target.dataset.k) && !e.isComposing) return void (e.preventDefault(), save())
     if (!modelTyping || e.target.dataset.k !== 'model') return
     if (e.key === 'Enter') e.preventDefault()
     else if (e.key === 'Escape') (e.preventDefault(), (draft.model = typedFrom))
@@ -1092,7 +1098,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
         draft.avatar = randomAvatar()
         drawStageAvatar('pop')
       }
-      return
+      if (['back', 'settings', 'bring', 'shuffle'].includes(act)) return
+      // (its brain and its switches are the sheet's own controls: handled below, as there)
     }
     // a tab, or the creature (Look); not the sheet itself, which carries the open tab's name too
     const t = e.target.closest('button[data-tab]')
