@@ -603,12 +603,10 @@
     .q-row { flex: none; padding: 10px 8px 0; }
     .q-row:empty { display: none; }
     .q-row .dm.working .dm-word, .q-row .dm.starting .dm-word { color: #FF7AC0; }
-    /* what a new thing is, the first time it shows (dashboard.js hints): a line beside it, in the brand face */
-    .hint-tip { position: fixed; z-index: 45; max-width: 300px; margin: 0; color: var(--brand-ink); font: 500 16px/22px var(--font-brand); pointer-events: none; animation: hint-in .4s var(--out) both; }
-    .hint-tip::before { content: ''; position: absolute; left: -36px; top: 11px; width: 26px; height: 2px; border-radius: 1px; background: var(--brand); }
-    .hint-tip.below::before { left: 0; top: -8px; width: 2px; height: 0; }
+    /* what a new thing is, the first time it shows (dashboard.js hints): a small note of Q's on it, in the brand face */
+    .hint-tip { position: fixed; z-index: 45; max-width: 280px; margin: 0; padding: 8px 14px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--brand), 0 12px 30px -12px rgba(204, 34, 119, .45); color: var(--brand-ink); font: 500 15px/20px var(--font-brand); pointer-events: none; animation: hint-in .4s var(--out) both; }
     .hint-tip.leaving { opacity: 0; transition: opacity var(--t-leave) var(--in); }
-    @keyframes hint-in { from { opacity: 0; filter: blur(6px); transform: translateX(-8px); } }
+    @keyframes hint-in { from { opacity: 0; filter: blur(6px); transform: translateY(6px) scale(.96); } }
     @media (prefers-reduced-motion: reduce) { .hint-tip { animation: none; } }
 
     /* ---- an agent's terminal, docked beside your conversation with it ----

@@ -1338,11 +1338,12 @@ function dmParts(state, { folds = new Set(), selected, filter = '', drag = false
 
 // ---- what each new thing is, the first time it shows -----------------------------------------------------------------
 // After a first run (ui/setup.js sets crew.hints), in place of a tour up front: a line beside the first thread, the
-// first question and the first card, each once, and gone at the next click, key or scroll. One at a time.
+// first question and the first card, each once, and gone at the next click, key or scroll. One at a time. Each sits
+// where there's room for it: beside its thing, on its top right corner, or under it.
 const HINTS = [
-  { key: 'thread', at: '.stage .feed .thread-card', say: 'That’s a thread. The clique talks in there, so this stays short.' },
-  { key: 'ask', at: '.stage .feed .ask-card:not(.done)', say: 'Someone needs you. Answer here, and they carry on.' },
-  { key: 'cards', at: '.cards .pcard[data-name]', say: 'Everyone’s card. Click one to change its job, its brain or its look.' },
+  { key: 'thread', at: '.stage .feed .thread-card', where: 'right', say: 'That’s a thread. The clique talks in there, so this stays short.' },
+  { key: 'ask', at: '.stage .feed .ask-card:not(.done)', where: 'corner', say: 'Someone needs you. Answer here, and they carry on.' },
+  { key: 'cards', at: '.cards .pcard[data-name]', where: 'under', say: 'Everyone’s card. Click one to change its job, its brain or its look.' },
 ]
 let hintEl = null
 function hints() {
@@ -1358,9 +1359,10 @@ function hints() {
     hintEl.setAttribute('role', 'status')
     document.body.append(hintEl)
     const w = hintEl.offsetWidth
-    const right = r.right + 44 + w < innerWidth - 16
-    hintEl.classList.toggle('below', !right)
-    Object.assign(hintEl.style, right ? { left: `${Math.round(r.right + 44)}px`, top: `${Math.round(r.top + Math.min(r.height / 2, 28) - 12)}px` } : { left: `${Math.round(Math.min(Math.max(r.left + 8, 16), innerWidth - w - 16))}px`, top: `${Math.round(r.bottom + 14)}px` })
+    const ht = hintEl.offsetHeight
+    const where = h.where === 'right' && r.right + 16 + w > innerWidth - 16 ? 'under' : h.where
+    const [x, y] = where === 'right' ? [r.right + 16, r.top + (r.height - ht) / 2] : where === 'corner' ? [r.right - w - 16, r.top - ht / 2] : [r.left + 16, r.bottom - 10]
+    Object.assign(hintEl.style, { left: `${Math.round(Math.min(Math.max(x, 16), innerWidth - w - 16))}px`, top: `${Math.round(Math.min(Math.max(y, 64), innerHeight - ht - 16))}px` })
     const put = () => {
       const el = hintEl
       if (!el) return
