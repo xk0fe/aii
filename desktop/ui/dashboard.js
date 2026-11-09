@@ -51,7 +51,8 @@ const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onTerminal: (n
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next), onMembers: (at) => openMembers(at) })
 // A new install's first run: Q makes its first workspace and crew with you, then shows you around (ui/setup.js). After
 // that, the setup screen: Claude Code and Codex, what to install or sign in to, then the first agent.
-const setup = mountSetup({ onAdd: () => addAgent(), onWorkspace: () => workspaces.create(), onComputers: () => openComputers(), onMade: (next) => switched(next), onTour: () => startTour(), onLand: () => landed() })
+// (onMade: the first run made its workspace. It comes in under the stage with no slide, whose parts would show over it.)
+const setup = mountSetup({ onAdd: () => addAgent(), onWorkspace: () => workspaces.create(), onComputers: () => openComputers(), onMade: async (next) => (push ??= await ready)(next), onTour: () => startTour(), onLand: () => landed() })
 
 // Q's tour of the app (ui/tour.js): where a first run ends, and in the ⋯ menu any time.
 const Q_LOOK = { avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true } } // (core/system-agent.js)
