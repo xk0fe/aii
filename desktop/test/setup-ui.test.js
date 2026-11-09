@@ -72,7 +72,7 @@ test('it comes up by itself only once the check says nothing here can run an age
   assert.equal(p.view.hidden, true, 'a linked computer lends its agents (even before it connects)')
   p.screen.render(state({ setup: setup('missing', 'signin') }))
   assert.equal(p.view.hidden, false)
-  assert.equal(p.title(), 'Let’s get your crew ready')
+  assert.equal(p.title(), 'Let’s get your clique ready')
   assert.deepEqual(p.buttons(), ['Check again', 'Not now', 'Add a provider…'])
 })
 
@@ -81,7 +81,7 @@ test('once one is ready it invites the first agent, and there is still a way out
   p.screen.render(state({ setup: setup('missing') }))
   p.screen.render(state({ setup: setup('ready') }))
   assert.equal(p.view.hidden, false, 'stays up to say so')
-  assert.equal(p.title(), 'Let’s build your crew')
+  assert.equal(p.title(), 'Let’s build your clique')
   assert.deepEqual(p.buttons(), ['Add your first agent', 'Check again', 'Not now', 'Add a provider…'])
   p.press(p.view, { act: 'add' })
   assert.deepEqual([p.view.hidden, p.calls.some((c) => c[0] === 'onAdd')], [true, true], 'Add your first agent: the new agent’s sheet')
@@ -94,7 +94,7 @@ test('no workspace yet: there is nothing else to show, so it stays, and asks for
   assert.equal(p.view.hidden, false)
   assert.equal(p.title(), 'Looking for Claude Code and Codex')
   p.screen.render(none({ setup: setup('missing') }))
-  assert.equal(p.title(), 'Let’s get your crew ready')
+  assert.equal(p.title(), 'Let’s get your clique ready')
   // Not now, with nothing behind it: on to the workspace
   p.press(p.view, { act: 'close' })
   assert.equal(p.view.hidden, false)

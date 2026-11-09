@@ -31,7 +31,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   // the header: in the dashboard's row of place headers (common.js pageHead), like every place's
   headIn.insertAdjacentHTML('beforeend', pageHead({
     id: 'crew', glyph: markSVG('0 4 24 18'), title: 'Agents',
-    tools: `<div class="seg icons" data-mode-switch><button data-mode="cards" title="Cards" aria-label="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards" aria-label="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the crew" aria-label="Stats">${ICONS.table}</button></div>
+    tools: `<div class="seg icons" data-mode-switch><button data-mode="cards" title="Cards" aria-label="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards" aria-label="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the clique" aria-label="Stats">${ICONS.table}</button></div>
       <button class="icon" data-act="more" title="New agent, select, export, import" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`,
   }))
   const head = headIn.lastElementChild
@@ -222,7 +222,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       ? `${firstRoomHTML()}<h1 class="display">Who works on ${esc(ws.name)}?</h1>
         <p class="lead">Pick teammates for it in its settings, or make an agent only it needs. Everyone keeps their own creature.</p>
         <div class="acts"><button class="btn primary lg" data-act="new">Add an agent</button><button class="btn lg" data-act="ws-settings">Workspace settings</button></div>`
-      : `${firstRoomHTML()}<h1 class="display">Let’s build your crew</h1>
+      : `${firstRoomHTML()}<h1 class="display">Let’s build your clique</h1>
         <p class="lead">Each agent is a teammate with a job, a model and a creature of its own. Start with one; you can add more any time.</p>
         <div class="acts"><button class="btn primary lg" data-act="new">Add your first agent</button><button class="btn lg" data-act="import">Import agents</button></div>`
   }
@@ -265,7 +265,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       '-',
       { label: selecting ? 'Done selecting' : 'Select…', icon: ICONS.task, act: 'select', disabled: !selecting && modeNow() === 'stats', hint: !selecting && modeNow() === 'stats' ? 'in the card views' : 'change several at once' },
       '-',
-      { label: 'Export the crew…', icon: ICONS.export, act: 'export', disabled: !out.length, hint: out.length ? `${plural(out.length, 'agent')} · .crew` : '' },
+      { label: 'Export the clique…', icon: ICONS.export, act: 'export', disabled: !out.length, hint: out.length ? `${plural(out.length, 'agent')} · .crew` : '' },
       { label: 'Import…', icon: ICONS.import, act: 'import', hint: 'or drop a .crew file' },
     ], (act) => {
       if (act === 'new') open(null)
@@ -306,8 +306,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     { key: 'waits', label: 'Needs you', better: 'low', show: (s) => s.waits, tip: (s) => `waited ${duration(s.waitMs)} on you in total` },
     { key: 'avgQueueMs', label: 'Queue wait', better: 'low', show: (s) => duration(s.avgQueueMs), has: (s) => s.fromYou + s.fromTeam > 0, tip: () => 'how long messages wait before it is free (busy agents wait longer)' },
   ]
-  const BEST = `<i class="best" title="best in the crew">${ICONS.crown}</i>`
-  const SLOW = `<i class="slow" title="slowest in the crew">${ICONS.snail}</i>`
+  const BEST = `<i class="best" title="best in the clique">${ICONS.crown}</i>`
+  const SLOW = `<i class="slow" title="slowest in the clique">${ICONS.snail}</i>`
 
   // best in a column, and slowest (for the "lower is better" timing columns)
   function standouts(metric) {
@@ -336,7 +336,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const sparkMax = Math.max(1, ...roster().flatMap((a) => a.stats.days.map((d) => d.tasks)))
     // morph, not innerHTML: rows animate in once, and bars glide to new values instead of redrawing
     const sp = spendLine(state.spend)
-    morph($('.col-stats'), `${sp ? `<p class="stats-spend" title="${esc(spendTip(state.spend))}">The crew: <b>${sp}</b> · last 7 days ${money(state.spend.week)} · 30 days ${money(state.spend.month)}</p>` : ''}<table class="stats-table"><thead><tr><th>Agent</th>${COLUMNS.map((m) => `<th data-sort="${m.key}" class="${m.key === sortBy ? 'on' : ''}" title="${{ high: 'more is better', low: 'less is better' }[m.better] ?? ''}">${m.label}</th>`).join('')}<th>14 days</th></tr></thead><tbody>${
+    morph($('.col-stats'), `${sp ? `<p class="stats-spend" title="${esc(spendTip(state.spend))}">The clique: <b>${sp}</b> · last 7 days ${money(state.spend.week)} · 30 days ${money(state.spend.month)}</p>` : ''}<table class="stats-table"><thead><tr><th>Agent</th>${COLUMNS.map((m) => `<th data-sort="${m.key}" class="${m.key === sortBy ? 'on' : ''}" title="${{ high: 'more is better', low: 'less is better' }[m.better] ?? ''}">${m.label}</th>`).join('')}<th>14 days</th></tr></thead><tbody>${
       rows.map((a) => `<tr data-name="${esc(a.name)}" class="${a.on ? '' : 'off'}" style="--c:${colorOf(avatarOf(a))}">
         <td class="who" title="${esc(a.area)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span><b>${nameHTML(a)}</b><small title="last active">${!a.stats.last ? 'No work yet' : Date.now() - a.stats.last < 60000 ? 'Active just now' : `Active ${ago(a.stats.last)} ago`}</small></span></td>
         ${COLUMNS.map((m) => {
@@ -442,7 +442,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     try {
       return await crew.call('exportAgents', names)
     } catch (err) {
-      oops(`Couldn't export ${names.length === 1 ? names[0].split('@')[0] : 'the crew'}`, err)
+      oops(`Couldn't export ${names.length === 1 ? names[0].split('@')[0] : 'the clique'}`, err)
     }
   }
 
@@ -551,7 +551,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
             </div>
           </section>
           <section class="ed-pane" data-pane="instructions">
-            <div class="ed-pane-head"><p>Its system prompt, on top of the crew basics: what it owns, its bar, when to hand off.</p><button class="btn" data-act="write" title="Its own brain drafts them from its name and area">${ICONS.sparkles}<span>Write it</span></button></div>
+            <div class="ed-pane-head"><p>Its system prompt, on top of the clique basics: what it owns, its bar, when to hand off.</p><button class="btn" data-act="write" title="Its own brain drafts them from its name and area">${ICONS.sparkles}<span>Write it</span></button></div>
             <textarea class="pd-prompt" data-k="prompt" placeholder="Leave it empty, or press Write it for a first draft from the name and area." aria-label="Instructions">${esc(d.prompt)}</textarea>
             <div class="refs"><div class="thumbs refs-thumbs"></div><button type="button" class="btn" data-ref title="Mockups, brand guides, screenshots: paste or drop them on the instructions too">${ICONS.plus}<span>Reference image</span></button></div>
           </section>
@@ -564,7 +564,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
         <footer class="sheet-foot">
           <span class="pd-msg"></span><span class="grow"></span><span class="pd-dirty">Unsaved changes</span>
           <button class="btn" data-act="back">Cancel</button>
-          <button class="btn primary" data-act="save" title="Save (${keys('⌘S')})">${live ? 'Save' : 'Add to crew'}</button>
+          <button class="btn primary" data-act="save" title="Save (${keys('⌘S')})">${live ? 'Save' : 'Add to the clique'}</button>
         </footer>
       </div>`
     drawTab()
@@ -893,8 +893,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const ws = state.workspace
     const lives = !ws ? ''
       : live
-        ? row('Lives in', `<span class="ed-pc">${wsTile(ws, { size: 18 })}<b>${live.shared ? 'Your crew' : `${esc(ws.name)} only`}</b></span>`, { note: live.shared ? 'the same agent in every workspace it works in' : `only ${esc(ws.name)} has it` })
-        : row('Lives in', choices('shared', choice('', `${esc(ws.name)} only`) + choice('1', 'Your whole crew'), { fill: false }), { note: d.shared ? `joins your crew, and works here in ${esc(ws.name)}` : `only ${esc(ws.name)} has it` })
+        ? row('Lives in', `<span class="ed-pc">${wsTile(ws, { size: 18 })}<b>${live.shared ? 'Your clique' : `${esc(ws.name)} only`}</b></span>`, { note: live.shared ? 'the same agent in every workspace it works in' : `only ${esc(ws.name)} has it` })
+        : row('Lives in', choices('shared', choice('', `${esc(ws.name)} only`) + choice('1', 'Your whole clique'), { fill: false }), { note: d.shared ? `joins your clique, and works here in ${esc(ws.name)}` : `only ${esc(ws.name)} has it` })
     const folder = ws?.folder ? tildePath(ws.folder) : ''
     const where = card.querySelector('.where')
     where.innerHTML = lives +
@@ -1087,18 +1087,18 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       { label: 'Move to another computer…', icon: ICONS.move, act: 'move', disabled: !linkedHere(state.computers ?? {}).some((l) => l.online) && !draft.home },
       '-',
       { label: shared ? `Take out of ${state.workspace.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
-      ...(shared ? [{ label: 'Remove from your crew…', icon: ICONS.trash, act: 'forget', danger: true }] : []),
+      ...(shared ? [{ label: 'Remove from your clique…', icon: ICONS.trash, act: 'forget', danger: true }] : []),
     ], async (act) => {
       if (act === 'fresh') freshStart()
       if (act === 'export') exportAgents([editing])
       if (act === 'move') moveMenu(anchor)
       if (act === 'remove' && confirm(shared
-        ? `Take ${draft.name || editing} out of ${state.workspace.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your crew and your other workspaces.`
+        ? `Take ${draft.name || editing} out of ${state.workspace.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your clique and your other workspaces.`
         : `Remove ${draft.name || editing}? It's only in ${state.workspace.name}, so it's gone for good. Its session stops (the transcript stays with the CLI).`)) {
         await crew.call('removeAgent', editing)
         close(true)
       }
-      if (act === 'forget' && confirm(`Remove ${draft.name || editing} from your crew? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) {
+      if (act === 'forget' && confirm(`Remove ${draft.name || editing} from your clique? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) {
         await crew.call('removeAgent', editing, { everywhere: true })
         close(true)
       }

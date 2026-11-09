@@ -127,7 +127,7 @@ test('what the look back found goes into the stats once, and the live count only
   near(hub.tickets.get(7).spent.cost, 3.5)
   assert.ok(hub.spend.lookedBack.at)
   assert.equal(hub.lookingBack, false)
-  assert.match(hub.feed.findLast((e) => e.kind === 'event').text, /added up what the crew's work cost before CLIque counted it: \$4\.50 at API prices and 29k Codex tokens over the last 30 days/)
+  assert.match(hub.feed.findLast((e) => e.kind === 'event').text, /added up what the clique's work cost before CLIque counted it: \$4\.50 at API prices and 29k Codex tokens over the last 30 days/)
   // the live count: s-noor was counted by the look back, so its next report is a baseline, and only growth counts
   hub.agents.get('noor').run = 'run-1'
   line('noor', 's-noor', 3.9)

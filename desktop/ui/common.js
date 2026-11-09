@@ -567,7 +567,7 @@ function commandWords(cmd) {
   if (own) {
     const [, verb, what] = own
     const who = what.split('@')[0] || 'a teammate'
-    return { ask: `Asking ${who}`, send: `Handing work to ${who}`, lease: `Booking the ${what || 'shared thing'}`, note: 'Leaving a note for the crew', board: "Reading the crew's notes" }[verb]
+    return { ask: `Asking ${who}`, send: `Handing work to ${who}`, lease: `Booking the ${what || 'shared thing'}`, note: 'Leaving a note for the clique', board: "Reading the clique's notes" }[verb]
   }
   if (/^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b/.test(c)) return 'Running the tests'
   const script = c.match(/^(?:(?:npm|pnpm|yarn|bun)\s+run|npx|pnpx|bunx)\s+(.+)/)
@@ -2997,7 +2997,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     const sys = systemAgentOf(agents)
     const on = agents.filter((a) => a.on && (!a.cloneOf || a.name === target) && !a.system)
     popMenu(at, [
-      sys ? { label: displayName(sys), icon: avatarHTML(sys, { size: 18, mood: 'still' }), act: 'auto', hint: 'runs the crew' } : { label: 'Auto', icon: ICONS.sparkles, act: 'auto', hint: 'picks by area' },
+      sys ? { label: displayName(sys), icon: avatarHTML(sys, { size: 18, mood: 'still' }), act: 'auto', hint: 'runs the clique' } : { label: 'Auto', icon: ICONS.sparkles, act: 'auto', hint: 'picks by area' },
       { label: 'Task', icon: ICONS.task, act: 'task', hint: 'adds to the board' },
       ...(on.length ? ['-', { head: 'Send to' }] : []),
       ...on.map((a) => ({ label: displayName(a), icon: avatarHTML(a, { size: 18, mood: 'still' }), act: a.name, hint: `${statusText(a)}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}` })),
@@ -3038,8 +3038,8 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     ta.placeholder = task ? (isConvo(target) ? `Add a task for ${short(familyOf(target))}… @name gives it to someone else` : 'Add a task… @name assigns it')
       : off ? `${who} is off. Turn it on to message it`
       : reply ? `Reply to ${isConvo(target) ? who : listed(reply.to)}…`
-      : target === 'auto' && systemAgentOf(agents) ? (fresh ? `New conversation with ${displayName(systemAgentOf(agents))}…` : channel ? `Message #${channel.name}` : 'Message the crew')
-      : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : channel ? `Message #${channel.name}, Auto picks who…` : 'Message the crew, Auto picks who…')
+      : target === 'auto' && systemAgentOf(agents) ? (fresh ? `New conversation with ${displayName(systemAgentOf(agents))}…` : channel ? `Message #${channel.name}` : 'Message the clique')
+      : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : channel ? `Message #${channel.name}, Auto picks who…` : 'Message the clique, Auto picks who…')
       : fresh ? `New conversation with ${who}…` : `Message ${who}…`
     if (target !== told) onTarget?.((told = target))
   }

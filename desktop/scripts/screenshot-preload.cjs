@@ -456,7 +456,7 @@ if (FIXTURE === 'q') {
   )
   for (const a of AGENTS) Object.assign(a, { status: a.name === 'Iris' ? 'working' : 'idle', activity: a.name === 'Iris' ? 'Edit ui/empty-cart.svg' : '', since: at(9), subs: [] })
   AGENTS.unshift({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: '~/.crew/workspaces/storefront/q', prompt: '', images: [], name: 'q', system: true, shared: false, status: 'idle', since: at(2), provider: 'claude', model: 'sonnet', effort: 'low',
-    area: 'Runs the crew: takes what you ask and gets it to the right teammate', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, stats: stats(14, 14, 9, 21, 22, 11, 0, 2, [1, 2, 0, 3, 2, 1, 5]) })
+    area: 'Runs the clique: takes what you ask and gets it to the right teammate', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, stats: stats(14, 14, 9, 21, 22, 11, 0, 2, [1, 2, 0, 3, 2, 1, 5]) })
   for (const r of Object.keys(READS)) delete READS[r]
   Object.assign(READS, { since: now })
 }
@@ -534,7 +534,7 @@ function workspaceAction(op, id, arg) {
     const made = { id: String(arg.name).toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: arg.name, color: arg.color || null, icon: null, folder: here(String(arg.folder ?? '').replace(/^~/, '/Users/you')), parked: false, members: [], agents: 0, on: 0, working: 0, waiting: 0, unread: 0, faces: [], needs: [] }
     WORKSPACES.push(made)
     for (const x of WORKSPACES) x.current = x === made
-    Object.assign(state, { workspace: made, parked: false, feed: [], agents: [newAgent({ name: 'q', system: true, area: 'Runs the crew: takes what you ask and gets it to the right teammate', model: 'sonnet', effort: 'low', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true } })] })
+    Object.assign(state, { workspace: made, parked: false, feed: [], agents: [newAgent({ name: 'q', system: true, area: 'Runs the clique: takes what you ask and gets it to the right teammate', model: 'sonnet', effort: 'low', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true } })] })
     emit()
     return { state }
   }

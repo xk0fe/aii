@@ -1640,7 +1640,7 @@ export class Hub extends EventEmitter {
     this.tickets.save()
     if (cost >= 0.005 || tokens) {
       const what = [cost >= 0.005 && `$${cost < 10 ? cost.toFixed(2) : Math.round(cost).toLocaleString('en-US')} at API prices`, tokens && `${tokenCount(tokens)} Codex tokens`].filter(Boolean).join(' and ')
-      this.post({ kind: 'event', from: 'crew', text: `added up what the crew's work cost before CLIque counted it: ${what} over the last ${LOOK_BACK_DAYS} days` })
+      this.post({ kind: 'event', from: 'crew', text: `added up what the clique's work cost before CLIque counted it: ${what} over the last ${LOOK_BACK_DAYS} days` })
     }
     this.changed()
     return { cost, tokens }

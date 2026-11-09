@@ -108,7 +108,7 @@ app.whenReady().then(() => primary && start().catch(failedToStart))
 
 async function start() {
   app.dock?.hide()
-  app.setAboutPanelOptions?.({ applicationName: PRODUCT_NAME, iconPath: path.join(dir, 'assets', 'icon.png'), credits: 'Your crew of AI agents, side by side.' })
+  app.setAboutPanelOptions?.({ applicationName: PRODUCT_NAME, iconPath: path.join(dir, 'assets', 'icon.png'), credits: 'Your clique of AI agents, side by side.' })
 
   // The agents' terminals live in the terminal host (core/ptyhost.js), run by this same binary as Node, so they keep
   // working while Crew quits or relaunches with new code.

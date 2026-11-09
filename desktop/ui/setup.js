@@ -468,8 +468,8 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
       const signIn = status().clis.some((c) => c.state === 'signin')
       return {
         say: signIn ? 'Almost there! Can you sign me in?' : 'Hi, I’m Q. I just need Claude Code or Codex.',
-        title: 'Let’s get your crew ready',
-        lead: 'Your crew works through Claude Code or Codex, with your own account. Set up either one, then check again.',
+        title: 'Let’s get your clique ready',
+        lead: 'Your clique works through Claude Code or Codex, with your own account. Set up either one, then check again.',
         primary: ['check', checking ? 'Checking…' : 'Check again'],
         more: [['close', 'Not now']],
       }
@@ -488,7 +488,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     if (none) {
       return {
         say: 'Who should we bring in?',
-        title: 'Let’s build your crew',
+        title: 'Let’s build your clique',
         lead: 'Each agent is a teammate with a job, a model and a creature of its own. Start with one; you can add more any time.',
         primary: ['add', 'Add your first agent'],
         more: [['check', checking ? 'Checking…' : 'Check again'], ['close', 'Not now']],
@@ -497,7 +497,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     return {
       say: 'We’re all set.',
       title: 'Claude Code and Codex',
-      lead: 'What your crew runs on, on this computer.',
+      lead: 'What your clique runs on, on this computer.',
       primary: ['close', 'Done'],
       more: [['check', checking ? 'Checking…' : 'Check again']],
     }

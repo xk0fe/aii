@@ -63,7 +63,7 @@ const TOUR = [
   { at: '.side-nav [data-place="tasks"]', say: 'Tasks: a board for bigger work. An agent takes a task and reports back when it’s done.' },
   { at: '.side-nav [data-place="terminals"]', say: 'Every agent is a real Claude Code or Codex in a terminal. Watch one work, or type into it.' },
   { at: '.chan-sec', say: 'Channels keep one topic, with its own crew and its own rules.' },
-  { at: '.rail', say: 'Each project is a workspace. Add another here, or link another computer and share its crew.' },
+  { at: '.rail', say: 'Each project is a workspace. Add another here, or link another computer and share its clique.' },
   { say: 'That’s the tour. Tell me what we’re working on.' },
 ]
 const tour = mountTour({
@@ -444,9 +444,9 @@ function drawChannelSheet({ list = true } = {}) {
   $c('[data-ch-cost]').textContent = tokens ? `about ${plural(tokens, 'token')}, once per conversation` : ''
   const members = d.everyone ? agents : agents.filter((a) => d.members.has(a.name))
   $c('[data-ch-sub]').innerHTML = general
-    ? `${faceStack(agents, 6)}<span>Everyone in ${esc(state.workspace?.name ?? 'your crew')}. Messages from a phone or the floating chat land here.</span>`
+    ? `${faceStack(agents, 6)}<span>Everyone in ${esc(state.workspace?.name ?? 'your clique')}. Messages from a phone or the floating chat land here.</span>`
     : name && name !== d.name.trim() ? `<span>It will be #${esc(name)}</span>`
-    : members.length ? `${faceStack(members, 6)}<span>${d.everyone ? `Everyone in ${esc(state.workspace?.name ?? 'your crew')}` : plural(members.length, 'agent')}</span>` : '<span>Nobody in it yet</span>'
+    : members.length ? `${faceStack(members, 6)}<span>${d.everyone ? `Everyone in ${esc(state.workspace?.name ?? 'your clique')}` : plural(members.length, 'agent')}</span>` : '<span>Nobody in it yet</span>'
   segmented($c('.ch-who-seg'), (b) => (b.dataset.chAll === '1') === d.everyone)
   $c('[data-ch-count]').textContent = d.everyone ? '' : `${members.length} of ${agents.length}`
   $c('.ch-crew').classList.toggle('hidden', d.everyone)
@@ -536,12 +536,12 @@ function drawMembers() {
   const here = state.agents.filter((a) => !a.cloneOf && !a.system) // (Q comes with it: he's not yours to choose)
   const others = (state.roster ?? []).filter((r) => !here.some((a) => a.name === r.name))
   const row = (a, end) => `<div class="mp-row" data-agent="${esc(a.name)}">${avatarHTML(a, { size: 30, mood: 'still' })}<span class="mp-who"><b>${esc(a.seed ?? a.name)}</b><small>${esc(a.area || (a.status ? upFirst(statusText(a)) : ''))}</small></span>${end}</div>`
-  const take = (a) => (a.shared ? `<button class="btn sm plain mp-take" data-mp-take="${esc(a.name)}" title="${esc(`Take ${a.name} out of ${w.name}: it stays in your crew and your other workspaces`)}">Take out</button>` : '<span class="mp-only" title="Made for this workspace: it works only here">only here</span>')
+  const take = (a) => (a.shared ? `<button class="btn sm plain mp-take" data-mp-take="${esc(a.name)}" title="${esc(`Take ${a.name} out of ${w.name}: it stays in your clique and your other workspaces`)}">Take out</button>` : '<span class="mp-only" title="Made for this workspace: it works only here">only here</span>')
   morph(membersPop, `<header class="mp-head"><b>Who works here</b><span>${here.length}</span></header>
-    <p class="mp-lead">${esc(w.name)}'s agents${w.folder ? `, in ${esc(tildePath(w.folder))}` : ''}. One from your crew works here in a conversation of its own.</p>
+    <p class="mp-lead">${esc(w.name)}'s agents${w.folder ? `, in ${esc(tildePath(w.folder))}` : ''}. One from your clique works here in a conversation of its own.</p>
     <div class="mp-body">
       ${here.length ? here.map((a) => row(a, take(a))).join('') : `<p class="mp-lead">Nobody yet.</p>`}
-      ${others.length ? `<div class="mp-sec section-label">From your crew</div>${others.map((r) => row({ ...r, status: '' }, `<button class="btn sm mp-add" data-mp-add="${esc(r.name)}">Add</button>`)).join('')}` : ''}
+      ${others.length ? `<div class="mp-sec section-label">From your clique</div>${others.map((r) => row({ ...r, status: '' }, `<button class="btn sm mp-add" data-mp-add="${esc(r.name)}">Add</button>`)).join('')}` : ''}
     </div>
     <footer class="mp-foot"><button class="btn" data-mp-new>${ICONS.plus}<span>New agent for ${esc(w.name)}</span></button><span class="grow"></span><button class="btn plain" data-mp-agents>All agents</button></footer>`)
 }
@@ -558,7 +558,7 @@ membersPop.addEventListener('click', async (e) => {
     }
     if (out) {
       const a = state.agents.find((x) => x.name === out)
-      if (busy(a) ? !confirm(`${out} is in the middle of something in ${w.name}. Take it out anyway? It stops working here, and starts a fresh conversation if it comes back.`) : !confirm(`Take ${out} out of ${w.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your crew and your other workspaces.`)) return
+      if (busy(a) ? !confirm(`${out} is in the middle of something in ${w.name}. Take it out anyway? It stops working here, and starts a fresh conversation if it comes back.`) : !confirm(`Take ${out} out of ${w.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your clique and your other workspaces.`)) return
       await crew.call('workspace', 'members', w.id, { remove: [out] })
     }
   } catch (err) {
@@ -1512,7 +1512,7 @@ function agentMenu(name, at) {
     '-',
     { label: a.on ? 'Turn off' : 'Turn on', icon: ICONS.power, act: 'power' },
     ...(a.system ? [] : [{ label: leave ? `Take out of ${ws.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true }]),
-    ...(leave ? [{ label: 'Remove from your crew…', icon: ICONS.trash, act: 'forget', danger: true }] : []),
+    ...(leave ? [{ label: 'Remove from your clique…', icon: ICONS.trash, act: 'forget', danger: true }] : []),
   ], async (act) => {
     const who = a.seed ?? a.name
     const doing = { fresh: `Couldn't start a new conversation for ${who}`, power: `Couldn't turn ${who} ${a.on ? 'off' : 'on'}`, remove: `Couldn't remove ${who}` }[act] ?? (act.startsWith('join:') ? `Couldn't add ${who} to that workspace` : `Couldn't do that for ${who}`)
@@ -1535,10 +1535,10 @@ function agentMenu(name, at) {
         toast(`${name} joins ${w.name}${w.folder ? `, working in ${shortPath(w.folder)}` : ''}`)
       }
       const sure = act === 'remove' && confirm(leave
-        ? `Take ${name} out of ${ws.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your crew and your other workspaces.`
+        ? `Take ${name} out of ${ws.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your clique and your other workspaces.`
         : `Remove ${name}? It's only in ${ws.name}, so it's gone for good. Its session stops (the transcript stays with the CLI).`)
       if (sure) await crew.call('removeAgent', name)
-      if (act === 'forget' && confirm(`Remove ${a.seed ?? a.name} from your crew? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) await crew.call('removeAgent', name, { everywhere: true })
+      if (act === 'forget' && confirm(`Remove ${a.seed ?? a.name} from your clique? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) await crew.call('removeAgent', name, { everywhere: true })
     } catch (err) {
       oops(doing, err)
     }
@@ -1867,7 +1867,7 @@ function linkingHTML({ me, pairing }, view) {
   const failed = stage === 'failed'
   // Both screens ask the same: check the code, and Link on both. Neither links alone.
   const check = stage === 'confirm' || stage === 'ask'
-  const line = done ? `<b>${them}</b>'s agents are part of your crew now.`
+  const line = done ? `<b>${them}</b>'s agents are part of your clique now.`
     : failed ? (LINK_FAILS[p.error]?.(them) ?? esc(upFirst(String(p.error ?? 'it didn\'t link'))))
     : stage === 'asking' ? `Asking <b>${them}</b>…`
     : check && p.theyAgreed ? `<b>${them}</b> clicked Link. If it shows the same code, click <b>Link</b> here too.`
