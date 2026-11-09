@@ -3230,6 +3230,13 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     replyTo,
     stopReply,
     focus: () => ta.focus(),
+    // something to send, written for you (a first message to pick): yours to change, or to send as it is
+    setText(text) {
+      ta.value = text
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+      ta.focus()
+      ta.setSelectionRange(text.length, text.length)
+    },
     // true when it stopped a dictation (so Esc can stop that first, and close things on the next press)
     stopVoice: () => Boolean(voice?.busy() && (voice.stop(), true)),
   }
