@@ -3,7 +3,7 @@
 // to paste and Check again; once one is, the crew invites you to make its first agent. "Claude Code and Codex…" in the
 // ⋯ menu shows the same screen any time. Add provider… (here, and in the model picker) adds GLM or Ollama, which the
 // picker offers only once added (state.providers[id].added, core/providers.js).
-/* global crew, esc, morph, avatarHTML, oops, errorLine, ON_WINDOWS, roomFeltHTML, foldHTML, PRODUCT_NAME */
+/* global crew, esc, morph, avatarHTML, oops, errorLine, ON_WINDOWS, foldHTML, PRODUCT_NAME */
 
 let setupScreen = null // the dashboard's, once mounted: the model picker (ui/collection.js) opens Add provider… with it
 function openAddProvider() {
@@ -25,6 +25,39 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   let copiedTimer = 0
   let checks = {} // Add provider…: what GLM and Ollama need, as last looked at
   let sheetError = ''
+
+  // A first run (no workspace yet) opens like a short film (setup.css): the name folds together, the crew from the
+  // app's icon pops up under it, the words come into focus, and Q says his first line. It plays once, and a click or a
+  // key skips to its end. introAt: when it began. Each part's delay is fixed the first time it's drawn, since a redraw
+  // that moved a running animation would make it jump; whatever's drawn after that (Q's next line, the list a check
+  // brings) just comes in.
+  const INTRO_MS = 4600
+  let introAt = null
+  let introOver = false
+  let fontAsked = false
+  const delays = new Map()
+  const after = (key, ms) => {
+    if (!delays.has(key)) delays.set(key, introAt === null ? 0 : Math.max(0, Math.round(ms - (performance.now() - introAt))))
+    return delays.get(key)
+  }
+  function begin() {
+    delays.clear()
+    introAt = performance.now()
+    introOver = matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!introOver) setTimeout(() => ((introOver = true), draw()), INTRO_MS)
+  }
+  function skip() {
+    if (introAt === null || introOver) return
+    introOver = true
+    introAt = -Infinity // anything drawn from now on comes in at once
+    for (const a of view.getAnimations({ subtree: true })) if (a.effect?.getComputedTiming().iterations !== Infinity) a.finish()
+    draw()
+  }
+
+  // The crew from the app's icon: Q in front (core/system-agent.js), the blue one and the green one behind him.
+  const Q = { name: 'Q', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, status: 'idle' }
+  const BLUE = { name: 'Blue', avatar: { body: 'blob', color: 'sky', eyes: 'sparkle', mouth: 'none', hat: 'none', cheeks: true }, status: 'idle' }
+  const GREEN = { name: 'Green', avatar: { body: 'blob', color: 'lime', eyes: 'happy', mouth: 'none', hat: 'none', cheeks: true }, status: 'idle' }
 
   const status = () => state?.setup
   const rowOf = (id) => status()?.clis?.find((c) => c.id === id)
@@ -133,21 +166,42 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     if (!open) return
     const w = words()
     const s = status()?.checked ? status() : { clis: [], git: null }
-    // Q, the pink one from the app's icon (core/system-agent.js): he greets you here, before there's a workspace for him
-    const q = { name: 'Q', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, status: 'starting' }
     const off = (act) => act === 'check' && (checking || !status()?.checked)
     const btn = ([act, label], cls) => `<button type="button" class="btn lg ${cls}" data-act="${act}" ${off(act) ? 'disabled' : ''}>${esc(label)}</button>`
-    // a first run (no workspace yet) opens with the name folding together, and then Q pops up (brand.js foldHTML)
-    const fold = noWorkspace() && !state.settingsBroken && typeof foldHTML === 'function' ? foldHTML(40) : ''
-    // the empty-state column (common.css .empty-state): the room for its art, the headline, one line, then the list
-    morph(view, `<div class="empty-state su-col">${fold}
-      <div class="su-scene">${typeof roomFeltHTML === 'function' ? roomFeltHTML(52) : ''}<span class="su-spot" style="left:52px"></span><span class="su-spot" style="left:128px"></span><span class="su-spot" style="right:56px"></span>
-        <span class="su-who">${avatarHTML(q, { size: 96, mood: 'starting', pose: 'pop' })}</span><span class="su-say">${esc(w.say)}</span></div>
-      <h1 class="display">${esc(w.title)}</h1>
-      <p class="lead">${esc(w.lead)}</p>
-      ${w.bare || !w.primary ? '' : `<div class="group-list su-list">${s.clis.map(cliRow).join('')}${s.git ? gitRow(s.git) : ''}</div>`}
-      <div class="acts">${w.primary ? btn(w.primary, 'brand-btn su-primary') : ''}${w.more.map((b) => btn(b, '')).join('')}</div>
-      ${w.bare || !w.primary ? '' : '<p class="su-more">Want other models? <button type="button" class="su-link" data-act="providers">Add a provider…</button></p>'}
+    // a first run opens with the name folding together (brand.js foldHTML), and the rest comes after it
+    const named = noWorkspace() && !state.settingsBroken && typeof foldHTML === 'function'
+    // (it starts once the brand face is in, so the fold and the rest keep time: a frame or so, hidden till then)
+    if (named && introAt === null) {
+      if (fontAsked || (document.fonts?.check?.('700 56px Fredoka') ?? true)) begin()
+      else (fontAsked = true), document.fonts.load('700 56px Fredoka').then(draw, draw)
+    }
+    const intro = introAt !== null && !introOver
+    const at = (key, ms) => `--at:${after(key, ms)}ms`
+    // Q thinks (typing dots) while the app looks for Claude Code and Codex, then says his line, word by word. A new
+    // line is a new bubble (data-name), so it's said afresh; the same line is left be. The line's bubble keeps its place
+    // (empty while he thinks) and the dots come after it: a morph matches children by place, so the dots going away
+    // mustn't move the line, which would start it over.
+    const line = status()?.checked ? w.say : ''
+    const sayAt = line ? after(`say:${line}`, 3400) : 0
+    const said = line ? `<p class="su-say" data-name="${esc(line)}" style="--at:${sayAt}ms">${line.split(' ').map((x, i) => `<span style="--i:${i}">${esc(x)}</span>`).join(' ')}</p>` : '<p class="su-say" data-name="" hidden></p>'
+    const think = !line || (intro && sayAt > 0) ? `<span class="su-think${line ? ' over' : ''}" style="${at('think', 2800)};--off:${Math.max(0, sayAt - 140)}ms" aria-hidden="true"><i style="--n:0"></i><i style="--n:1"></i><i style="--n:2"></i></span>` : ''
+    const list = w.bare || !w.primary ? '' : `<div class="group-list su-list" style="${at('list', 2600)}">${s.clis.map(cliRow).join('')}${s.git ? gitRow(s.git) : ''}</div>`
+    // the empty-state column (common.css .empty-state): the stage for its art, the headline, one line, then the list
+    morph(view, `<div class="empty-state su-col${intro ? ' intro' : ''}${named && introAt === null ? ' waiting' : ''}">
+      <div class="su-stage${named ? ' named' : ''}">
+        <span class="su-glow sky" style="${at('glow-sky', 200)}"></span><span class="su-glow pink" style="${at('glow-pink', 0)}"></span><span class="su-glow lime" style="${at('glow-lime', 350)}"></span>
+        ${named ? foldHTML(56) : ''}
+        <span class="su-floor" style="${at('floor', 2100)}"></span>
+        <span class="su-who blue" style="${at('blue', 2260)}">${avatarHTML(BLUE, { size: 100, mood: 'idle' })}</span>
+        <span class="su-who green" style="${at('green', 2340)}">${avatarHTML(GREEN, { size: 88, mood: 'idle' })}</span>
+        <span class="su-who q" style="${at('q', 2150)}">${avatarHTML(Q, { size: 128, mood: 'idle' })}</span>
+        ${said}${think}
+      </div>
+      <h1 class="display" style="${at('h1', 2350)}">${esc(w.title)}</h1>
+      <p class="lead" style="${at('lead', 2450)}">${esc(w.lead)}</p>
+      ${list}
+      <div class="acts" style="${at('acts', 2550)}">${w.primary ? btn(w.primary, 'brand-btn su-primary') : ''}${w.more.map((b) => btn(b, '')).join('')}</div>
+      ${w.bare || !w.primary ? '' : `<p class="su-more" style="${at('more', 2650)}">Want other models? <button type="button" class="su-link" data-act="providers">Add a provider…</button></p>`}
     </div>`)
   }
 
@@ -185,6 +239,9 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     draw()
   }
 
+  // the opening is skipped by the first click or key: pointerdown, so the click it starts lands on what's there after
+  view.addEventListener('pointerdown', skip, true)
+  addEventListener('keydown', () => !view.hidden && skip(), true)
   view.addEventListener('click', (e) => {
     const b = e.target.closest('button')
     if (!b) return

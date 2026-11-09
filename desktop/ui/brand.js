@@ -83,10 +83,10 @@ function redrawWordmarks() {
 }
 
 // The first-run fold (ui/setup.js): the name's own story, "CLI agent queue" becoming CLI queue becoming CLIque, before
-// Q (the queue in it, core/system-agent.js) pops up to say hello. The letters the name keeps wear the wordmark's inks
-// from the start and the rest are faint. Those fall away, the kept ones glide to where the wordmark's own letters sit
-// (the same advances, so they land exactly), and the felt wordmark is sewn on over them. Only transform and opacity
-// move (setup.css), and it plays once, when it's put on the page: a morph drawing the same html leaves it be.
+// Q (the queue in it, core/system-agent.js) pops up to say hello. The words come into focus one by one; the letters the
+// name keeps wear the wordmark's inks from the start and the rest are faint. Those blur away, the kept ones glide to
+// where the wordmark's own letters sit (the same advances, so they land exactly), and the felt wordmark is sewn on over
+// them (setup.css). It plays once, when it's put on the page: a morph drawing the same html leaves it be.
 const FOLD_FROM = 'CLI agent queue'
 const FOLD_KEPT = [0, 1, 2, 10, 11, 12] // C, L, I and q, u, e: the wordmark's letters, in order
 function foldHTML(size = 40) {
@@ -118,14 +118,16 @@ function foldHTML(size = 40) {
   const letter = (l, x, attrs) => `<text x="${x.toFixed(1)}" y="${base}" font-family="Fredoka" font-weight="700" font-size="${size}" ${attrs}>${esc(l)}</text>`
   const kept = new Map(FOLD_KEPT.map((at, i) => [at, i]))
   let dropped = 0
-  const letters = [...FOLD_FROM].map((l, at) => {
-    if (l === ' ') return ''
-    if (!kept.has(at)) return letter(l, from.xs[at], `class="fold-drop" style="--i:${dropped++}"`)
+  const words = [[]]
+  ;[...FOLD_FROM].forEach((l, at) => {
+    if (l === ' ') return void words.push([])
+    if (!kept.has(at)) return void words.at(-1).push(letter(l, from.xs[at], `class="fold-drop" style="--i:${dropped++}"`))
     const i = kept.get(at)
     const x = shift + to.xs[i]
-    return letter(l, x, `class="fold-keep" style="--dx:${(from.xs[at] - x).toFixed(1)}px;fill:${WORDMARK_INKS[i % WORDMARK_INKS.length]}"`)
+    words.at(-1).push(letter(l, x, `class="fold-keep" style="--dx:${(from.xs[at] - x).toFixed(1)}px;fill:${WORDMARK_INKS[i % WORDMARK_INKS.length]}"`))
   })
-  return `<div class="fold" style="width:${from.w}px;height:${h}px" role="img" aria-label="${esc(PRODUCT_NAME)}"><svg class="fold-words" width="${from.w}" height="${h}" viewBox="0 0 ${from.w} ${h}" aria-hidden="true">${letters.join('')}</svg><span class="fold-mark" style="left:${shift.toFixed(1)}px">${wordmarkHTML(size)}</span></div>`
+  const letters = words.map((w, i) => `<g class="fold-word" style="--w:${i}">${w.join('')}</g>`).join('')
+  return `<div class="fold" style="width:${from.w}px;height:${h}px" role="img" aria-label="${esc(PRODUCT_NAME)}"><svg class="fold-words" width="${from.w}" height="${h}" viewBox="0 0 ${from.w} ${h}" aria-hidden="true">${letters}</svg><span class="fold-mark" style="left:${shift.toFixed(1)}px">${wordmarkHTML(size)}</span></div>`
 }
 
 // Who matters most right now, for a strip too small for everyone: needing you, then working, starting, free, off.

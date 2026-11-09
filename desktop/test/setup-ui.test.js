@@ -39,7 +39,7 @@ function page({ layers = null } = {}) {
   // a click on one of its buttons, as the page's own handler sees it
   const press = (el, dataset) => el.on.click({ target: { closest: () => ({ dataset }) } })
   const buttons = () => [...view.html.matchAll(/data-act="(\w+)"[^>]*>([^<]*)</g)].map((m) => m[2])
-  const title = () => view.html.match(/<h1 class="display">([^<]*)</)?.[1]
+  const title = () => view.html.match(/<h1 class="display"[^>]*>([^<]*)</)?.[1]
   return { screen, view, sheet, escape, press, buttons, title, calls }
 }
 
@@ -126,6 +126,17 @@ test('from the ⋯ menu with agents elsewhere (another workspace, your roster), 
   p.screen.open()
   assert.equal(p.title(), 'Claude Code and Codex')
   assert.deepEqual(p.buttons(), ['Done', 'Check again', 'Add a provider…'])
+})
+
+test('Q thinks while it looks, then says his line; his line keeps its place, so the dots going don’t start it over', () => {
+  const p = page()
+  p.screen.render(state({ setup: { checked: false, clis: [] }, roster: [{ name: 'Ada' }] }))
+  p.screen.open()
+  // a morph matches children by place: the line's bubble comes right after Q, empty while he thinks, the dots after it
+  assert.match(p.view.html, /<span class="su-who q"[^>]*><i class="av"><\/i><\/span>\s*<p class="su-say" data-name="" hidden><\/p><span class="su-think/)
+  p.screen.render(state({ setup: setup('ready'), roster: [{ name: 'Ada' }] }))
+  assert.match(p.view.html, /<span class="su-who q"[^>]*><i class="av"><\/i><\/span>\s*<p class="su-say" data-name="We’re all set\."[^>]*><span style="--i:0">We’re<\/span> <span style="--i:1">all<\/span> <span style="--i:2">set\.<\/span><\/p>\s*<\/div>/)
+  assert.doesNotMatch(p.view.html, /su-think/, 'done thinking')
 })
 
 test('Escape that another layer took (the agent’s sheet, a menu) leaves the screen where it is', () => {
