@@ -6,6 +6,7 @@ import type { Agent, ChannelEdit, FeedEntry, Reply, SendOpts, State, Workspace }
 import type { CrewLink } from '@/state/types'
 
 import { makeDemo, type Space } from './fixture'
+import { inThread } from '@/ui/threads'
 
 const familyOf = (name: string) => name.replace(/\.\d+(?=@|$)/, '')
 // read marks are kept per channel, as on the computer (hub.readTo): #general's in `agents`, the others' in `channels`
@@ -28,7 +29,7 @@ function summary(sp: Space, current: string): Workspace {
     on: agents.filter((a) => a.on).length,
     working: live.filter((a) => family(a).some((x) => x.status === 'working')).length,
     waiting: live.flatMap(family).filter((x) => x.status === 'waiting').length,
-    unread: s.feed.filter((e) => e.kind === 'reply' && e.from !== 'you' && e.ts > read(e)).length,
+    unread: s.feed.filter((e) => e.kind === 'reply' && e.from !== 'you' && !inThread(e) && e.ts > read(e)).length,
     faces: agents.filter((a) => a.on).slice(0, 4).map((a) => ({ name: a.name, avatar: a.avatar, status: sp.parked ? 'parked' : a.status })),
     needs: live.flatMap(family).filter((x) => x.status === 'waiting').slice(0, 4).map((x) => ({ name: x.name, avatar: x.avatar, activity: x.activity })),
   }
@@ -116,8 +117,9 @@ export class DemoClient implements CrewLink {
     const n = this.said.get(name) ?? 0
     this.said.set(name, n + 1)
     // said where what it answers was said (hub.post inherits the channel through re)
-    const channel = this.space(id).state.feed.find((x) => x.id === re)?.channel
-    this.post(id, { kind: 'reply', from: name, to: 'you', re, text: text ?? lines[n % lines.length], ...(channel && { channel }) })
+    const parent = this.space(id).state.feed.find((x) => x.id === re)
+    const channel = parent?.channel
+    this.post(id, { kind: 'reply', from: name, to: 'you', re, text: text ?? lines[n % lines.length], ...(channel && { channel }), ...(parent?.thread && { thread: parent.thread }) })
   }
 
   async watch(ws: string) {
@@ -145,7 +147,7 @@ export class DemoClient implements CrewLink {
     const pick = names.length ? names : [(pool.find((a) => a.on && a.status === 'idle') ?? pool.find((a) => a.on))?.name].filter(Boolean) as string[]
     if (!pick.length) throw new Error(ch?.members ? `nobody in #${ch.name} is on to take it: turn one on, or @name someone` : 'no agents to send to')
     const group = pick.length > 1 ? { cc: pick, sendId: `s${Date.now()}` } : {}
-    const sent = pick.map((n) => this.post(id, { kind: 'msg', from: 'you', to: n, text, ...group, ...(!names.length && { auto: true }), ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }), ...(ch && { channel: ch.id }) }))
+    const sent = pick.map((n) => this.post(id, { kind: 'msg', from: 'you', to: n, text, ...group, ...(!names.length && { auto: true }), ...(opts.thread && { thread: opts.thread }), ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }), ...(ch && { channel: ch.id }) }))
     this.emit()
     pick.forEach((n, i) => {
       const was = agents.find((a) => a.name === n)

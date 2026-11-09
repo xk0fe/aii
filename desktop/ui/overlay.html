@@ -40,6 +40,9 @@
     .panel header.in-convo { padding-left: 9px; }
     .panel header.in-convo .brand, .panel header.in-convo .sums, .panel header.in-convo > .grow { display: none; }
     .panel header .convo-head { flex: 1; }
+    /* a thread, over the chat, under the panel's header */
+    .panel { position: relative; }
+    .panel > .thread { position: absolute; inset: 48px 0 0; z-index: 3; }
     .panel .feed { flex: 1; }
     .panel .compose { flex: none; }
 
@@ -131,6 +134,7 @@
       </header>
       <div class="feed"></div>
       <div class="compose"></div>
+      <div class="thread"></div>
     </section>
     <aside class="pill sheet">
       <button class="home" title="CLIque"></button><span class="home-badge"></span>

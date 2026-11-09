@@ -404,6 +404,41 @@ const SAVER_STATE = {
   },
 }
 SAVER_STATE.week = SAVER_STATE.all
+// ?fixture=threads: what agents say to each other, in threads under the message that led to it (core/threads.js). One
+// finished (Ada had the last word), one still going (June's at work on it), and one whose question came out to you.
+if (FIXTURE === 'threads') {
+  FEED.length = 0
+  const at = (m) => now - m * min
+  const gist = (text) => text.split('\n')[0].split(/(?<=[.!?])\s/)[0]
+  const say = (thread, id, m, from, to, text, re, extra = {}) => ({ id, kind: 'msg', from, to, text, ts: at(m), re, thread, gist: gist(text), ...extra })
+  const said = (thread, id, m, from, text, re, extra = {}) => ({ id, kind: 'reply', from, text, ts: at(m), re, thread, gist: gist(text), ...extra })
+  FEED.push(
+    { id: 'c0', kind: 'msg', from: 'you', to: 'Ada', text: 'The coupon field should show the discount before you apply it. Can you get that done?', ts: at(58) },
+    say('c0', 'c1', 57.8, 'Ada', 'Milo', 'Build the coupon preview in the checkout form. Show the discount as soon as the code is valid, and keep the Apply button where it is.', 'c0'),
+    say('c0', 'c2', 57.8, 'Ada', 'Theo', 'Cover the preview with tests once Milo has it: valid, expired and stacked codes.', 'c0'),
+    said('c0', 'c3', 57.6, 'Ada', "Milo's building the preview and Theo's testing it, and I'm adding the endpoint behind it. None of it is verified yet.", 'c0', { out: true }),
+    say('c0', 'c4', 49, 'Ada', 'Milo', 'The endpoint is in: GET /api/coupons/preview returns the amount and the reason.\n\nIt rate-limits per cart, so debounce the lookups.', 'c1'),
+    said('c0', 'c5', 48.8, 'Ada', "I've told Milo the endpoint is in and that it rate-limits per cart.", 'c1', { echo: 'c4' }),
+    say('c0', 'c6', 41, 'Milo', 'Theo', 'Preview is in the form on feat/coupon-preview, ready to test.', 'c2'),
+    said('c0', 'c7', 40.8, 'Milo', "I've handed the branch to Theo.", 'c2', { echo: 'c6' }),
+    say('c0', 'c8', 33, 'Theo', 'Milo', 'Two failures: stacked codes show the wrong total in the preview.', 'c6'),
+    say('c0', 'c9', 27, 'Milo', 'Theo', 'Fixed: stacked codes now apply in order, same as the cart.', 'c8'),
+    say('c0', 'c10', 22, 'Theo', 'Ada', 'All 38 checkout tests pass on feat/coupon-preview.', 'c9'),
+    said('c0', 'c11', 21, 'Ada', "The coupon preview is done and all 38 checkout tests pass. It's on a branch, and nothing's merged yet.", 'c0', { out: true }),
+    { id: 'd0', kind: 'msg', from: 'you', to: 'Rex', text: 'Can the deploy move to Friday?', ts: at(19) },
+    say('d0', 'd1', 18.8, REX, 'Theo', 'Is anything in the release blocked on the coupon work?', 'd0', { ask: true }),
+    said('d0', 'd2', 18.4, 'Theo', 'Nothing blocks it.', 'd1'),
+    said('d0', 'd3', 17, REX, 'Friday works, but the migration has to go first, and that means ten minutes of read-only checkout. Should I run it tonight?', 'd0', { out: true, asks: true }),
+    { id: 'e0', kind: 'msg', from: 'you', to: 'Iris', text: 'The empty cart looks sad. Can you and June give it some life?', ts: at(9) },
+    say('e0', 'e1', 8.7, 'Iris', 'June', 'Write the empty cart copy: one warm line and a way back to the shop.', 'e0'),
+    said('e0', 'e2', 8.5, 'Iris', "I'm redrawing the empty cart, and June is writing its line.", 'e0', { out: true }),
+    say('e0', 'e3', 2, 'June', 'Iris', 'First pass is in the doc: three lines to pick from.', 'e1'),
+  )
+  for (const a of AGENTS) Object.assign(a, { status: 'idle', activity: '', since: now - 30 * min, subs: [] })
+  Object.assign(AGENTS.find((a) => a.name === 'June'), { status: 'working', activity: 'Edit docs/empty-cart.md', since: at(1), thread: 'e0' })
+  for (const r of Object.keys(READS)) delete READS[r]
+  Object.assign(READS, { since: now })
+}
 // ?fixture=otto: Otto (core/otto.js) in the crew. What you send goes to him, and he gets it to whoever should do it.
 if (FIXTURE === 'otto') {
   const at = (m) => now - m * min
@@ -680,7 +715,7 @@ window.crew = {
       const names = String(to || 'Ada').split(',').filter(Boolean).map((n) => named(n)?.name ?? n)
       const group = names.length > 1 && { cc: names, sendId: `s${Date.now()}` }
       const channel = opts.channel && opts.channel !== 'general' ? opts.channel : opts.re ? state.feed.find((e) => e.id === opts.re)?.channel : undefined
-      for (const n of names) state.feed.push({ id: `u${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text, ts: Date.now(), ...group, ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }), ...(channel && { channel }) })
+      for (const n of names) state.feed.push({ id: `u${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text, ts: Date.now(), ...group, ...(opts.thread && { thread: opts.thread, gist: text }), ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }), ...(channel && { channel }) })
       emit()
       return `sent to ${names.map((n) => `@${n}`).join(' ')}\n`
     }

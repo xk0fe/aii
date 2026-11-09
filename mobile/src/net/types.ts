@@ -42,6 +42,7 @@ export type Agent = {
   homeName?: string
   nearLimit?: boolean
   channel?: string // the channel of what it's working on, while working or waiting (none: #general)
+  thread?: string // the thread of what it's working on, if that has one
   system?: boolean // Otto (desktop/core/otto.js): comes with every workspace, and what you send without naming anyone goes to him
 }
 
@@ -49,7 +50,7 @@ export type Agent = {
 // agents are told with their first message there; members are who's in it (none: everyone).
 export type Channel = { id: string; name: string; brief?: string; members?: string[] }
 // what's said in a channel goes with its id (none: #general); a channel's change (members: null is everyone again)
-export type SendOpts = { fresh?: boolean; re?: string; channel?: string }
+export type SendOpts = { fresh?: boolean; re?: string; channel?: string; thread?: string }
 export type ChannelEdit = { name?: string; brief?: string; members?: string[] | null }
 
 // app: an agent tool (crew app, desktop/core/tools.js), a change to CLIque itself, answered only in the chat; say: its own words
@@ -75,6 +76,9 @@ export type Answer = {
 
 // What `answer` takes (hub.js decide): a permission or a plan, a question's answers, or "in its terminal instead".
 export type Reply = { allow: boolean; always?: number; note?: string } | { answers: Record<string, string | string[]> } | { terminal: true }
+
+// A thread, as one card in the chat.
+export type ThreadCard = { opener: string; others: string[]; n: number; span: number; asking?: string; working: boolean; latest?: string; latestFrom?: string }
 
 export type FeedEntry = {
   id: string
@@ -109,6 +113,13 @@ export type FeedEntry = {
   thing?: string
   line?: string[]
   via?: string
+  answers?: string // an answer that went back to the teammate who asked: the reply already says it
+  thread?: string // the thread this line is in (the id of the line it hangs off); no thread: the channel
+  out?: boolean // this line of a thread shows in the channel too
+  gist?: string // the line a thread shows for it: its agent's own first sentence
+  echo?: string // the hand-off this reply only repeats
+  asks?: boolean // an agent's question nobody took up in the thread, brought out to you
+  card?: ThreadCard // kind 'thread': what the chat shows for a whole thread (ui/threads.ts), never from the computer
   alert?: boolean
   empty?: boolean
   count?: number

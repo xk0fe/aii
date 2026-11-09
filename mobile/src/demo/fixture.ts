@@ -78,6 +78,10 @@ export function makeDemo(now = Date.now()): Space[] {
   const storefront: FeedEntry[] = [
     { id: 'f1', kind: 'msg', from: 'you', to: 'Ada', text: 'Totals look wrong when there are three items in the cart. Can you look?', ts: t(31) },
     { id: 'f2', kind: 'ask', from: 'Ada', to: 'you', cli: 'claude', re: 'f1', ts: t(27), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm test', always: [] }, answer: { by: 'you', allow: true, always: 'Always allow npm test', at: t(26.5) } },
+    { id: 'g1', kind: 'msg', from: 'Ada', to: 'Theo', re: 'f1', thread: 'f1', gist: 'Can you reproduce the wrong total with three items?', text: 'Can you reproduce the wrong total with three items? I think it rounds per line.', ts: t(26) },
+    { id: 'g2', kind: 'msg', from: 'Theo', to: 'Ada', re: 'g1', thread: 'f1', gist: 'Reproduced: three items at $3.33 come to $9.98.', text: 'Reproduced: three items at $3.33 come to $9.98. `cart.spec.ts` now fails on it.', ts: t(21) },
+    { id: 'g3', kind: 'msg', from: 'Ada', to: 'Theo', re: 'g2', thread: 'f1', gist: 'Fixed: it rounds once, on the total.', text: 'Fixed: it rounds once, on the total. Can you run the spec again?', ts: t(15) },
+    { id: 'g4', kind: 'reply', from: 'Theo', re: 'g3', thread: 'f1', gist: 'The spec passes, and so do the other 47.', text: 'The spec passes, and so do the other 47.', ts: t(13) },
     { id: 'f3', kind: 'task', type: 'bug', act: 'fixed', from: 'Ada', ticket: 4, title: 'Totals round wrong with 3 items', text: 'Rounding happened per line; now once on the total.', ts: t(12) },
     { id: 'f4', kind: 'msg', from: 'you', to: 'Theo', text: 'Can you run the checkout tests on Chrome and Safari?', ts: t(11), channel: 'ship' },
     { id: 'f5', kind: 'msg', from: 'you', to: 'Milo', text: 'Dark mode for the settings page, please.', ts: t(10) },

@@ -5,6 +5,8 @@ import type { Agent, Channel, FeedEntry, State } from '@/net/types'
 
 import { EMPTY, session } from './session'
 
+import { inThread } from '@/ui/threads'
+
 export const useSession = () => useSyncExternalStore(session.subscribe, session.getSnapshot)
 export const useClient = () => useSyncExternalStore(session.subscribe, () => session.client)
 
@@ -22,7 +24,7 @@ export const familyOf = (name: string) => String(name ?? '').replace(/\.\d+(?=@|
 // Read marks are kept per channel on the Mac: #general's in `agents`, the others' in `channels`.
 export const readTo = (e: FeedEntry, reads: State['reads']) =>
   Math.max(reads?.since ?? 0, (e.channel && e.channel !== 'general' ? reads?.channels?.[e.channel] : reads?.agents)?.[e.from] ?? 0)
-export const isUnread = (e: FeedEntry, reads: State['reads']) => e.kind === 'reply' && e.from !== 'you' && Boolean(reads) && e.ts > readTo(e, reads)
+export const isUnread = (e: FeedEntry, reads: State['reads']) => e.kind === 'reply' && e.from !== 'you' && !inThread(e) && Boolean(reads) && e.ts > readTo(e, reads)
 
 export const isOpenAsk = (e: FeedEntry) => e.kind === 'ask' && !e.answer && typeof e.ask === 'object'
 

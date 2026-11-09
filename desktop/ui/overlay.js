@@ -11,7 +11,12 @@ $('[data-act=close]').innerHTML = ICONS.close
 // Your conversation with one agent takes the header's left side: back to everyone, and who it's with.
 const everyone = () => (composer.setTarget('auto'), composer.focus())
 const head = mountConvoHead($('.panel header .convo-head'), { onBack: everyone, onTerminal: (name) => crew.call('dashboard', name) })
-const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => crew.call('dashboard', name), onConvo: (name) => (composer.setTarget(name), composer.focus()), onLeave: () => composer.setTarget('auto'), onReply: (e) => composer.replyTo(e) })
+const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => crew.call('dashboard', name), onConvo: (name) => (composer.setTarget(name), composer.focus()), onLeave: () => composer.setTarget('auto'), onReply: (e) => composer.replyTo(e), onThread: (id, at) => (threadPane.render(state), threadPane.open(id, at)) })
+const threadPane = mountThread($('.panel > .thread'), {
+  onSeen: () => feed.refresh(),
+  onAgent: (name) => (threadPane.close(), composer.setTarget(familyOf(name)), composer.focus()),
+  onCard: (id) => (threadPane.close(), feed.jump(id)),
+})
 const composer = mountComposer($('.compose'), { dropZone: $('.panel'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to)) })
 let size = ''
 
@@ -174,6 +179,7 @@ live((next) => {
   morph($('.home-badge'), fresh ? `<span class="unread-badge">${fresh > 9 ? '9+' : fresh}</span>` : '')
   head.render(state)
   feed.render(state)
+  threadPane.render(state)
   composer.render(state)
   fit()
 })

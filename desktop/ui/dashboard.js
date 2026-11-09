@@ -24,9 +24,22 @@ const feed = mountFeed($('.feed'), {
   onChannel: (id) => setChannel(id, { go: false }),
   onTicket: (key) => openTask(key),
   onReply: (e) => composer.replyTo(e),
+  onThread: (id, at) => openThread(id, at),
   onFound: () => closeSearch({ keep: true }),
   welcome: () => welcomeHTML(),
 })
+// A thread, beside the channel it's in. It closes when you go anywhere else.
+const threadPane = mountThread($('.stage > .thread'), {
+  onClose: () => $('.stage').classList.remove('threaded'),
+  onSeen: () => feed.refresh(),
+  onAgent: (name) => openDM(familyOf(name)),
+  onCard: (id) => (threadPane.close(), feed.jump(id)),
+})
+function openThread(id, at) {
+  threadPane.render(state)
+  $('.stage').classList.add('threaded')
+  threadPane.open(id, at)
+}
 const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to), onDictate: () => place === 'chat' || place === 'dm' || goPlace('chat') })
 const collection = mountCollection($('.collection'), {
   headIn: $('.heads'),
@@ -118,6 +131,7 @@ function showPlace(next) {
   const moved = next !== place
   if (moved) (openMenu?.close(), document.querySelector('.use-pop:popover-open')?.hidePopover()) // a menu from the last place doesn't float over this one
   if (moved) closeSearch()
+  if (moved && next !== 'chat') threadPane.close()
   place = next
   store.set('crew.place', next)
   if (place === 'dm') lastDm = dmAgent()?.name ?? lastDm
@@ -270,7 +284,7 @@ const chanKey = () => `crew.channel.${state.workspace?.id}`
 function syncChannel() {
   const kept = store.get(chanKey())
   const next = channelsNow().some((c) => c.id === kept) ? kept : 'general'
-  if (next !== chan && booted) closeSearch() // the search was the last channel's
+  if (next !== chan && booted) (closeSearch(), threadPane.close()) // the search and the thread were the last channel's
   chan = next
   feed.setChannel(chan)
   composer.setChannel({ ...openChannel(), ws: state.workspace?.id }) // each workspace's channels keep their own drafts
@@ -1216,6 +1230,7 @@ function workspaceChanged(next) {
   terms.clear()
   selected = null
   composer.stopReply() // the message it answered is in the other workspace's chat
+  threadPane.close()
   if (channelDialog.open) channelDialog.close() // a channel's sheet was the last workspace's
   openMenu?.close() // a menu or the list of who works here was about the last one
   if (membersPop.matches(':popover-open')) membersPop.hidePopover()
@@ -1626,6 +1641,7 @@ const ready = live((next) => {
   })
   if (!terms.has(selected)) selected = on[0]?.name ?? null
   feed.render(state)
+  threadPane.render(state)
   composer.render(state) // first: it may move the conversation (a clone gone, an agent moved), which redraws the place
   showPlace(place) // the dock (a terminal that came or went), the header, the sidebar, the filters' counts
   followRename()

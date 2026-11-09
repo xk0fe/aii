@@ -176,6 +176,8 @@ function carried(e, { names, tasks, lines, images, moving }) {
   if (e.ticket !== undefined) out.ticket = tasks(e.ticket)
   if ((e.act === 'fixing' || e.act === 'triaged') && e.text) out.text = names(e.text)
   if (e.re && !moving.has(e.re)) out.re = lines(e.re)
+  if (e.thread && !moving.has(e.thread)) out.thread = lines(e.thread)
+  if (e.echo && !moving.has(e.echo)) out.echo = lines(e.echo)
   if (e.images) out.images = e.images.map((p) => images.get(p) ?? p)
   return out
 }
@@ -282,7 +284,8 @@ export function moveEnd(hub, token, done) {
   delete hub.convos[m.name]
   hub.saveConvos()
   hub.feed = hub.feed.filter((e) => !m.ids.has(e.id))
-  for (const e of hub.feed) if (m.ids.has(e.re)) e.re = `${e.re}@${done.to}` // replies to its lines point there
+  // replies to its lines point there, and so do the threads they're in
+  for (const e of hub.feed) for (const k of ['re', 'thread', 'echo']) if (m.ids.has(e[k])) e[k] = `${e[k]}@${done.to}`
   hub.renameRefs(m.name, `${done.name}@${done.to}`)
   hub.rewriteFeed()
   hub.changed()
