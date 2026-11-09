@@ -63,7 +63,7 @@ const TOUR = [
   { at: '.side-nav [data-place="crew"]', say: 'Agents: everyone’s card, with their brain, their look and a switch to turn them on and off.' },
   { at: '.side-nav [data-place="tasks"]', say: 'Tasks: a board for bigger work. An agent takes a task and reports back when it’s done.' },
   { at: '.side-nav [data-place="terminals"]', say: 'Every agent is a real Claude Code or Codex in a terminal. Watch one work, or type into it.' },
-  { at: '.chan-sec', say: 'Channels keep one topic, with its own crew and its own rules.' },
+  { at: '.chan-sec', say: 'Channels keep one topic, with its own clique and its own rules.' },
   { at: '.rail', say: 'Each project is a workspace. Add another here, or link another computer and share its clique.' },
   { say: 'That’s the tour. Tell me what we’re working on.' },
 ]
@@ -1348,7 +1348,7 @@ const HINTS = [
 ]
 let hintEl = null
 function hints() {
-  if (hintEl || store.get('crew.hints') !== 'on' || setup.firstRun() || tour.isOn()) return
+  if (hintEl || store.get('crew.hints') !== 'on' || setup.isOpen() || tour.isOn() || document.querySelector('dialog[open], .ed-layer.open, [popover]:popover-open')) return
   const visible = (el) => { const r = el?.getBoundingClientRect(); return r && r.width > 4 && r.height > 4 && r.top > 60 && r.bottom < innerHeight - 20 ? r : null }
   for (const h of HINTS) {
     if (store.get(`crew.hint.${h.key}`)) continue
@@ -1388,12 +1388,15 @@ function drawRoster() {
   morph($('.roster'), dmParts(state, { folds, selected: open, filter: find, drag: true }))
   // Q, who runs the clique: by himself above it
   const sys = state.agents.find((a) => a.system && !a.cloneOf)
-  morph($('.q-row'), sys ? dmRow(sys, { selected: sys.name === open, needs: needsYou(state).filter((n) => familyOf(n.agent.name) === sys.name).length }) : '')
+  const q = find.trim().toLowerCase()
+  const found = sys && (!q || `${shownName(sys.seed ?? sys.name)} ${sys.area ?? ''}`.toLowerCase().includes(q))
+  morph($('.q-row'), found ? dmRow(sys, { selected: sys.name === open, needs: needsYou(state).filter((n) => familyOf(n.agent.name) === sys.name).length }) : '')
+  if (q && found) $('.roster .roster-none')?.remove() // (someone matches: him)
   requestAnimationFrame(hints)
   const count = state.agents.filter((a) => !a.cloneOf).length
   $('[data-find]').placeholder = count > 1 ? `Find among ${count} agents` : 'Find an agent'
   if (dragging) document.querySelector(`.roster .dm[data-agent="${CSS.escape(dragging.name)}"]`)?.classList.add('dragging')
-  if (cursor) document.querySelector(`.roster .dm[data-agent="${CSS.escape(cursor)}"]`)?.classList.add('cursor')
+  if (cursor) document.querySelector(`:is(.q-row, .roster) .dm[data-agent="${CSS.escape(cursor)}"]`)?.classList.add('cursor')
 }
 let cursor = null // the search's marked match, kept across redraws
 
@@ -1427,11 +1430,11 @@ findBox.addEventListener('input', () => {
 })
 findBox.addEventListener('blur', () => {
   cursor = null
-  document.querySelector('.roster .dm.cursor')?.classList.remove('cursor')
+  document.querySelector(':is(.q-row, .roster) .dm.cursor')?.classList.remove('cursor')
   if (!findBox.value) stopFind()
 })
 findBox.addEventListener('keydown', (e) => {
-  const rows = [...document.querySelectorAll('.roster .dm')]
+  const rows = [...document.querySelectorAll(':is(.q-row, .roster) .dm')]
   const at = rows.findIndex((r) => r.classList.contains('cursor'))
   if (e.key === 'Escape') {
     e.preventDefault()

@@ -140,9 +140,11 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   const next = () => (fr?.step === 'hello' ? go('role') : fr?.step === 'role' ? go('work') : undefined)
 
   function finish(how) {
+    if (fr?.landing) return // (on its way already: the states that come in meanwhile don't start it again)
     store.set(KEY, how === 'tour' ? 'tour' : 'done')
     clearTimeout(fr?.timer)
     const land = how === 'land' && state?.workspace
+    if (land && fr) fr.landing = true
     if (land) store.set('crew.hints', 'on') // the app says what each new thing is, the first time it shows (dashboard.js)
     if (land) onLand() // the app is put on #general under the stage, before the stage is carried into it
     const after = () => {
@@ -158,11 +160,14 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   // Without motion, or with nowhere to go, it's simply put away.
   function carry(done) {
     const figs = typeof view.querySelectorAll === 'function' && !quiet() ? [...view.querySelectorAll('.fr-fig:not([hidden]):not(.out)')] : []
+    const side = document.querySelector('.side')
+    const list = document.querySelector('.side .roster')?.getBoundingClientRect()
     const moves = figs.map((f) => {
       const av = f.querySelector('.av')
       const to = document.querySelector(`.side [data-agent="${CSS.escape(f.dataset.agent)}"] .dm-av`)
       const from = av?.getBoundingClientRect()
       const end = to?.getBoundingClientRect()
+      if (end && list && to.closest('.roster') && (end.top < list.top || end.bottom > list.bottom)) return null // scrolled out of the list
       return from?.width && end?.width ? { av, to, from, end, size: parseFloat(av.style.getPropertyValue('--size')) || from.width } : null
     }).filter(Boolean)
     if (!moves.length) return done()
@@ -171,11 +176,11 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
       const el = Object.assign(document.createElement('span'), { className: 'fr-carried', innerHTML: m.av.outerHTML })
       el.style.transform = `translate(${m.from.left}px, ${m.from.top}px) scale(${m.from.width / m.size})`
       m.el = el
-      m.to.style.visibility = 'hidden'
       m.av.style.visibility = 'hidden'
       layer.append(el)
     }
     document.body.append(layer)
+    side?.classList.add('fr-carrying') // their rows wait empty (a class on the sidebar: a redraw of the rows keeps it)
     view.classList.add('fr-away')
     requestAnimationFrame(() => requestAnimationFrame(() => {
       moves.forEach((m, i) => {
@@ -184,7 +189,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
       })
     }))
     setTimeout(() => {
-      for (const m of moves) m.to.style.visibility = ''
+      side?.classList.remove('fr-carrying')
       layer.remove()
       view.classList.remove('fr-away')
       done()
@@ -211,27 +216,32 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     fr.error = ''
     if (!fr.name?.trim()) fr.name = cap((pathParts(dir).pop() ?? '').replace(/[-_]+/g, ' '))
     draw()
-    view.querySelector('[data-fr-name]')?.focus({ preventScroll: true })
+    const box = view.querySelector('[data-fr-name]')
+    if (box && 'value' in box) box.value = fr.name ?? '' // (a field you've typed in keeps what it shows through a redraw)
+    box?.focus({ preventScroll: true })
   }
   const pickFolder = async () => setFolder(await crew.call('pickFolder').catch(() => null))
 
   async function makeWorkspace() {
     if (!fr?.folder || fr.busy) return
     const name = (fr.name ?? '').trim() || 'My project'
+    const run = fr
     Object.assign(fr, { busy: true, error: '' })
     draw()
     try {
       // its agents start there: a folder that isn't there would only stop them
       const where = await crew.call('folderInfo', '', fr.folder)
       if (where && !where.exists) throw new Error(`There's no folder ${tildePath(where.path)}`)
+      if (fr !== run) return
       store.set(KEY, 'crew') // first: the state that brings the new workspace mustn't end the first run
       const { state: made } = await crew.call('workspace', 'create', null, { name, color: '', icon: '', folder: fr.folder, members: [], folders: {} })
       if (made?.workspace?.id) store.set(`crew.work.${made.workspace.id}`, workOf(fr.work).id) // what #general offers to ask first
       go('crew', { made: name })
       onMade(made)
     } catch (x) {
+      if (fr !== run) return
       store.set(KEY, 'workspace')
-      if (fr) Object.assign(fr, { busy: false, error: errorLine(x) }), draw()
+      Object.assign(fr, { busy: false, error: errorLine(x) }), draw()
     }
   }
 
@@ -243,19 +253,21 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   // the app.
   async function bringCrew() {
     if (!fr || fr.busy) return
+    const run = fr
     Object.assign(fr, { busy: true, error: '' })
     draw()
     const provider = ready('claude') || !ready('codex') ? 'claude' : 'codex'
     try {
       for (const p of picked()) {
+        if (fr !== run) return
         if (joined(p)) continue // in already (a second try)
         await crew.call('addAgent', { name: p.name, area: p.area, provider, avatar: p.avatar, off: false })
       }
-      fr.bringing = true
+      if (fr !== run) return
       draw()
-      setTimeout(() => fr && finish('land'), 420) // the rows they travel to are in the sidebar by then
+      setTimeout(() => fr === run && finish('land'), 420) // the rows they travel to are in the sidebar by then
     } catch (x) {
-      if (fr) Object.assign(fr, { busy: false, error: errorLine(x) }), draw()
+      if (fr === run) Object.assign(fr, { busy: false, error: errorLine(x) }), draw()
     }
   }
 
@@ -302,7 +314,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
         line: w.for ? `Here’s a clique for *${w.for}.*` : 'Here’s your *clique.*',
         ctl: `<div class="fr-card">
           <p class="err fr-err">${esc(fr.error ?? '')}</p>
-          <div class="fr-acts"><button type="button" class="btn lg brand-btn fr-go" data-fr="bring" ${fr.busy ? 'disabled' : ''}>${fr.busy ? 'Bringing them in…' : `Start with ${COUNT[Math.min(n, 4)]}`}</button></div>
+          <div class="fr-acts"><button type="button" class="btn lg brand-btn fr-go" data-fr="bring" ${fr.busy ? 'disabled' : ''}>${fr.busy ? 'Bringing them in…' : `Start with ${COUNT[n] ?? `these ${n}`}`}</button></div>
           <p class="fr-alt">Click anyone to leave them out, or <button type="button" class="su-link" data-fr="own">make your own…</button></p></div>`,
       }
     }
@@ -320,9 +332,16 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     return `<p class="fr-line" data-name="${esc(line)}" style="--at:${at}ms">${words.join(' ')}</p>`
   }
 
+  // The app under the stage: there, but not for the keyboard or a click, while the first run is up.
+  const under = (on) => {
+    const app = document.querySelector('main')
+    if (app && app.inert !== on) app.inert = on
+  }
+
   function drawFirstRun() {
     view.hidden = false
     view.classList.add('fr-on')
+    under(true)
     const s = fr.step
     const at = FIRST.indexOf(s)
     // the scene changes once a check finds Claude Code or Codex: Q says so, then goes on by himself
@@ -364,7 +383,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
         ${at >= 2 ? lineHTML(line, sayAt) : '<p class="fr-line" data-name="" hidden></p>'}${at >= 2 && !line ? THINK : ''}
         ${ctl ? `<div class="fr-ctl" data-name="ctl-${s}" style="--at:${then}ms">${ctl}</div>` : ''}
       </div>
-      <button type="button" class="fr-skip" data-fr="skip">Skip</button>
+      <button type="button" class="fr-skip" data-fr="skip" ${fr.busy ? 'disabled' : ''}>Skip</button>
     </div>`)
     // the name starts in the middle of the window and rises to where it's drawn: how far, measured once it's there
     if (s === 'title' && fr.rise === undefined) {
@@ -381,7 +400,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     if (act === 'make') return void makeWorkspace()
     if (act === 'own') return onAdd() // the agent sheet, over this screen
     if (act === 'bring') return void bringCrew()
-    if (act === 'skip') return finish('done')
+    if (act === 'skip') return fr?.busy ? undefined : finish('done')
   }
   // the kind of work: it's marked, then he moves on
   function pickWork(id) {
@@ -506,6 +525,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   function draw() {
     if (fr) return drawFirstRun()
     view.classList.remove('fr-on')
+    under(false)
     const open = manual || (shown && !dismissed) || noWorkspace()
     view.hidden = !open
     if (!open) return
@@ -696,6 +716,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
       if (!fr) firstRunFrom(next)
       if (fr) {
         // its workspace came another way (a linked computer's) while it asked for one: on to the end
+        if (fr.landing) return drawSheet()
         if (next.workspace && FIRST.indexOf(fr.step) < FIRST.indexOf('crew') && store.get(KEY) !== 'crew') return finish('land'), drawSheet()
         draw()
         return drawSheet()

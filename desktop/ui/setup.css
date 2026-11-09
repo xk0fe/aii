@@ -120,7 +120,23 @@ button.fr-fig.mate:hover:not(:disabled) .fr-av { transform: translateY(-5px); }
 .fr-err { margin: 0; color: var(--danger); font-size: 12px; text-align: center; }
 .fr-err:empty { display: none; }
 .fr-skip { position: fixed; top: 10px; right: 14px; z-index: 2; padding: 6px 10px; border: 0; border-radius: 8px; background: none; color: var(--fg3); font: inherit; font-size: 13px; cursor: pointer; }
-.fr-skip:hover { background: var(--fill-hover); color: var(--fg); }
+.fr-skip:hover:not(:disabled) { background: var(--fill-hover); color: var(--fg); }
+.fr-skip:disabled { opacity: .4; cursor: default; }
+html[data-os=win] .fr-skip { right: 150px; } /* (clear of Windows' own window buttons) */
+/* a short or narrow window: the same stage, smaller, so the one thing to do is never under the fold */
+@media (max-height: 720px), (max-width: 1080px) {
+  .fr { padding-top: 22px; }
+  .fr-stage { height: 214px; margin-top: 0; }
+  .fr-row { transform: scale(.78); transform-origin: 50% 100%; gap: 6px; }
+  .fr-stage .su-floor { bottom: 34px; }
+  .fr-talk { gap: 16px; margin-top: 10px; }
+  .fr-line { font-size: 32px; }
+  .fr-role { height: 44px; padding: 0 20px; font-size: 17px; }
+  .fr-roles { gap: 8px; }
+  .fr-folder, .fr-choose { min-height: 60px; }
+  .fr-card { gap: 10px; }
+  .fr-new { height: 68px; font-size: 24px; }
+}
 /* the stage, carried into the app: each creature travels from where it stood to its row in the sidebar */
 .fr-carry { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
 .fr-carried { position: absolute; left: 0; top: 0; line-height: 0; transform-origin: 0 0; transition: transform .72s var(--move); }
