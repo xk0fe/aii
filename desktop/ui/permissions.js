@@ -30,7 +30,7 @@ const WORDS = {
     off: `Turn on ${PRODUCT_NAME} in the Local Network list, so your other computers and your phone can reach it.`,
   },
   fullDisk: {
-    title: 'Can I come into your folders?',
+    title: 'Can I open your folders?',
     off: 'Drag me into the Full Disk Access list, so macOS doesn’t stop your agents to ask when they open Documents, Desktop or Downloads.',
     drag: true,
   },
