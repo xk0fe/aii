@@ -1,6 +1,6 @@
 // Makes the site's icons from the app icon, and the link-preview picture (og.png) from the site itself:
 //   assets/favicon.ico (16, 32, 48), assets/icon-192.png (rounded, for browsers), assets/apple-touch-icon.png (180,
-//   full bleed: iOS rounds it), assets/og.png (1200 x 630: the icon, the wordmark, the headline and the Crew room).
+//   full bleed: iOS rounds it), assets/og.png (1200 x 630: the icon, the wordmark, the headline and the CLIque room).
 //
 //   desktop/node_modules/.bin/electron site/tools/icons.mjs [--icon icon-1024.png]
 //

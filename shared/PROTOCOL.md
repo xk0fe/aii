@@ -6,14 +6,14 @@ The phone is a **device**, not a computer. It has no agents, never shows up unde
 
 ## Transport
 
-The Mac listens for phones on TCP port **7788** (`"phonePort"` in `~/.crew/link/link.json` changes it), as a plain WebSocket. Everything after the handshake is encrypted end to end, so the same frames can later travel through a relay without changing.
+The Mac listens for phones on TCP port **7788** (`"phonePort"` in `~/.clique/link/link.json` changes it), as a plain WebSocket. Everything after the handshake is encrypted end to end, so the same frames can later travel through a relay without changing.
 
 - **Text frames:** only the two handshake messages, as JSON.
 - **Binary frames:** everything after the handshake, encrypted.
 
 ## Keys and encodings
 
-- **The Mac's key:** one X25519 key pair for phones, **M**, plus a stable random id, `macId` (16 bytes). Both live in `~/.crew/link/phones.json` (mode 0600), with the paired devices.
+- **The Mac's key:** one X25519 key pair for phones, **M**, plus a stable random id, `macId` (16 bytes). Both live in `~/.clique/link/phones.json` (mode 0600), with the paired devices.
 - **A phone's key:** an X25519 key pair **D** for each Mac it pairs with, kept in the platform's secure storage.
 - **Encoding:** keys are their raw 32 bytes. Bytes travel as base64url without padding, called **b64** below.
 
@@ -22,7 +22,7 @@ The Mac listens for phones on TCP port **7788** (`"phonePort"` in `~/.crew/link/
 The Mac shows a pairing code as a QR code, and as text to copy:
 
 ```
-crewphone1.<b64(UTF-8 JSON)>
+cliquephone1.<b64(UTF-8 JSON)>
 { "v": 1, "id": macId, "n": "Mac mini", "k": b64(M.pub), "s": b64(secret), "h": ["192.168.1.20", "100.101.102.103"], "p": 7788 }
 ```
 
@@ -39,7 +39,7 @@ crewphone1.<b64(UTF-8 JSON)>
 3. **Both sides derive the keys:**
    ```
    ikm    = DH(E, M) ‖ DH(D, M) ‖ DH(E, F) ‖ (pairing ? s : nothing)
-   okm    = HKDF-SHA256(ikm, salt = "crew-phone-v1", info = "keys" ‖ E.pub ‖ D.pub ‖ M.pub ‖ F.pub, 64 bytes)
+   okm    = HKDF-SHA256(ikm, salt = "clique-phone-v1", info = "keys" ‖ E.pub ‖ D.pub ‖ M.pub ‖ F.pub, 64 bytes)
    kPhone = okm[0..32]     phone → Mac
    kMac   = okm[32..64]    Mac → phone
    ```
@@ -103,7 +103,7 @@ Anything else is refused with `"<name>" isn't available on a phone`.
 
 ### The state a phone gets
 
-It's `Crew.snapshot(hub)` for the watched workspace, minus what a phone mustn't have or doesn't need:
+It's `Clique.snapshot(hub)` for the watched workspace, minus what a phone mustn't have or doesn't need:
 
 - **`computers`:** just `[{ slug, name, online }]`, this Mac first (agents with no `home` are its), then its linked computers. A snapshot's `computers.me.code` is the CLIque Link pairing code, with its secret key, and must never reach a phone.
 - **`agents`:** without `prompt`, `args`, `images` or `cwd`.
@@ -132,5 +132,5 @@ patch = {
 ## Later, not in version 1
 
 - **A relay:** the same frames, routed by `macId`.
-- **Push for Android (FCM):** sealed with a per-device push key, `HKDF(DH(D, M), salt "crew-phone-v1", info "push")`.
+- **Push for Android (FCM):** sealed with a per-device push key, `HKDF(DH(D, M), salt "clique-phone-v1", info "push")`.
 - **Live Activity and Live Update payloads.**

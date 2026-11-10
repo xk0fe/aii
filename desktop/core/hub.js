@@ -16,11 +16,12 @@ import { callResult } from './transcript.js'
 import { asksSomething, echoOf, familyOf as familyName, forClients, gistOf, inThread, nothingNew, stampAll, threadDigest, threadFields } from './threads.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
+import { HOME, movedPath, movedImages } from './home.js'
 import { ROOT, GENERAL, channelName, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
 
-export const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
+export { HOME } // ~/.clique (core/home.js)
 export const CONFIG = path.join(HOME, 'config.json')
 export const ATTACHMENTS = path.join(HOME, 'attachments')
 const localDay = (t = Date.now()) => new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 10)
@@ -30,12 +31,12 @@ const at = (file) => path.join(HOME, file)
 // Where each agent's CLI writes down the process groups of the commands it runs, a file per launch (core/procs.js), in
 // its workspace's folder.
 const GROUPS = path.join('run', 'groups')
-// How often an agent's process tree is looked at for groups bin/crew-sh doesn't see (Codex, the CLI's own children).
+// How often an agent's process tree is looked at for groups bin/clique-sh doesn't see (Codex, the CLI's own children).
 const TREE_CHECK = 15000
-// Hook events an agent's CLI couldn't deliver while Crew was closed (adapters.js), replayed when it's back. In the
+// Hook events an agent's CLI couldn't deliver while CLIque was closed (adapters.js), replayed when it's back. In the
 // agent's workspace's folder.
 const SPOOL = 'spool'
-// What Crew remembers of each agent at work, so it can pick them up after a restart while their terminals carried on in
+// What CLIque remembers of each agent at work, so it can pick them up after a restart while their terminals carried on in
 // the terminal host (core/ptyhost.js): saved as things change, read back by adopt(). In the workspace's folder.
 const RUNTIME = 'runtime.json'
 // How far back the first look through the agents' logs goes for what their work cost (Hub.lookBack, core/backfill.js).
@@ -70,9 +71,9 @@ export const openConfig = (also) => new Config(CONFIG, DEFAULTS, {
   },
 })
 const AGENT_KEYS = ['system', 'area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared']
-const RESERVED = new Set(['you', 'any', 'crew'])
-// an unquoted # starts a comment in the shell, and `crew post` is all that arrives
-const POST_USAGE = 'usage: crew post <channel> "message" (the name alone: an unquoted # starts a shell comment)'
+const RESERVED = new Set(['you', 'any', 'clique', 'crew']) // (crew: what the app called itself in chats before its rename)
+// an unquoted # starts a comment in the shell, and `clique post` is all that arrives
+const POST_USAGE = 'usage: clique post <channel> "message" (the name alone: an unquoted # starts a shell comment)'
 const SUB_TOOLS = new Set(['Agent', 'Task']) // Claude Code's sub-agent tool ("Task" in older versions)
 const SUB_LINGER = 6000 // a finished sub-agent stays in the live view this long
 // A clone with nothing to do waits this long before it goes away, in case a teammate's answer is on its way.
@@ -84,13 +85,13 @@ const SETTLE_QUIET = 700
 const SETTLE_MAX = 20000
 // Enter again until the CLI reports the prompt, then call for help: about three minutes in all.
 const PICKUP_WAITS = [2500, 3000, 5000, 10000, 20000, 30000, 60000, 60000]
-// How long `crew ask` holds on for the answer before the asker carries on (the answer then comes as a message).
+// How long `clique ask` holds on for the answer before the asker carries on (the answer then comes as a message).
 // Under Claude Code's two minutes for a shell command, so the command ends on its own terms.
 export const ASK_HOLD = 100000
 // A file an agent edits is its own until its turn ends. One it hasn't touched for this long is free again, in case
 // a turn's end went unreported.
 const LEASE_STALE = 30 * 60000
-// A turn an API error cut short: the errors that pass, which Crew answers with "continue", and how long it waits
+// A turn an API error cut short: the errors that pass, which CLIque answers with "continue", and how long it waits
 // before each try. After the last one it calls you.
 const PASSING_ERRORS = new Set(['server_error', 'overloaded', 'unknown', 'max_output_tokens'])
 const API_RETRY = [20000, 60000, 180000]
@@ -114,12 +115,12 @@ const PACE_WARN = 0.25
 // What the chat shows for a turn that answered a message without a word (see Stop).
 const NO_WORDS = 'Finished without a final message. Its terminal shows what it did.'
 // Asked before a new conversation that the context limit starts (see freshWhenDone).
-const WRAP_UP = "[crew] Your conversation passed its context limit, so a new one starts after this reply. If your task isn't finished, write down where it stands for your next conversation: the worktree and branch, what's done, what's left, and anything you had running. Under 80 words. If it's all finished, reply with just: done"
+const WRAP_UP = "[clique] Your conversation passed its context limit, so a new one starts after this reply. If your task isn't finished, write down where it stands for your next conversation: the worktree and branch, what's done, what's left, and anything you had running. Under 80 words. If it's all finished, reply with just: done"
 // A task in progress counts as stalled once the agent on it has been idle this long (stallMinutes in config.json, 0 for
 // never) with no word on the task. Three times as long when it left something running in the background, which calls
 // it back when it's done. Looked at once a minute.
 const STALL_MINUTES = 10
-// boardNew: a conversation's first `crew board` shows this many of the newest notes, and a note is kept to this many
+// boardNew: a conversation's first `clique board` shows this many of the newest notes, and a note is kept to this many
 // characters (one decision, interface or gotcha).
 const BOARD_FIRST = 20
 const NOTE_MAX = 800
@@ -137,7 +138,7 @@ const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
 )
 
-// One workspace's crew (core/workspaces.js): its agents as they work there, its chat, notes and tasks. Crew runs one
+// One workspace's clique (core/workspaces.js): its agents as they work there, its chat, notes and tasks. CLIque runs one
 // per workspace, all on the one config.json (config) and local server (token).
 export class Hub extends EventEmitter {
   agents = new Map() // name -> agent; clones too (iris.2), with cloneOf: 'iris'
@@ -165,20 +166,20 @@ export class Hub extends EventEmitter {
     this.sizes = new WeakMap()
     this.feedFile = { lines, bytes, at: rewriteAt(feed.length, feed.reduce((n, e) => n + this.sizeOf(e), 0)) }
     this.asks = new Map() // feed id of an open question -> { resolve, name, cli, input }
-    // Right of way (see question): what each `crew ask` is still owed, and which agent edits which file.
+    // Right of way (see question): what each `clique ask` is still owed, and which agent edits which file.
     this.calls = new Map() // id (the question's feed id) -> { id, msg, from, to, parent, at, hold, remote }
     this.openThreads = new Map() // thread id -> when something was last said in it, until it goes quiet (threadTick)
     // A file, or a simulator, is one thing whichever workspace's agent uses it: every workspace's hub shares these, and
     // each entry says whose workspace (ws) its holder works in (see hubOf).
     this.locks = locks ?? { files: new Map(), held: new Map(), waits: [] }
     this.leases = this.locks.files // absolute path (see fileKey) -> { name, ws, at }
-    this.held = this.locks.held // a thing only one agent can use at a time (crew lease), lowercased -> { thing, name, ws, why, at }
-    this.leaseWaits = this.locks.waits // `crew lease`s waiting for a thing someone else has: { key, from, ws, thing, why, resolve }
+    this.held = this.locks.held // a thing only one agent can use at a time (clique lease), lowercased -> { thing, name, ws, why, at }
+    this.leaseWaits = this.locks.waits // `clique lease`s waiting for a thing someone else has: { key, from, ws, thing, why, resolve }
     this.runs = new Map() // launch id -> { name, file, pid, at }: each CLI process and the file of groups it started
     this.turnedAway = new Set() // "who:file" told this turn that a file is taken, so the chat says it once
     this.saving = Promise.resolve() // feed.jsonl appends, one after another (an answer must land after its card)
     this.tickets = new Tickets(this.at('tickets.json'))
-    this.stalls = new Map() // task id -> { at, told }: Crew reminded its agent at `at`, or (told) called you
+    this.stalls = new Map() // task id -> { at, told }: CLIque reminded its agent at `at`, or (told) called you
     // Each agent's current conversation: when it started, tasks in it, compactions, and how full it is.
     this.convos = readJSON(this.at('conversations.json')) ?? {}
     // Unread replies: up to when you've read each agent's. A first run starts from now, so old history isn't "new".
@@ -195,13 +196,13 @@ export class Hub extends EventEmitter {
     this.ledger = new Ledger(this.at('savers.json'))
     this.fellBack = new Set() // tasks quick triage handed to the triage agent after all
     this.useRunner(runner)
-    // the only hub (no Crew around it): its config.json has this workspace, and what's wrong with the file is said here
+    // the only hub (no CLIque around it): its config.json has this workspace, and what's wrong with the file is said here
     this.cfg = config ?? openConfig((data) => {
       if (space(data, workspace)) return
       data.workspaces = [{ id: workspace, name: 'Workspace', members: {} }, ...(Array.isArray(data.workspaces) ? data.workspaces : [])]
     })
     this.onConfig = () => this.apply()
-    this.onProblem = (text) => this.post({ kind: 'event', from: 'crew', text })
+    this.onProblem = (text) => this.post({ kind: 'event', from: 'clique', text })
     this.cfg.on('change', this.onConfig)
     if (!config) this.cfg.on('problem', this.onProblem)
     if (!this.cfg.tried) this.cfg.load()
@@ -239,12 +240,12 @@ export class Hub extends EventEmitter {
     return this.cfg.data
   }
 
-  // Which token savers are on (core/savers.js): config.json's `savers`, or CREW_SAVERS for a benchmark run.
+  // Which token savers are on (core/savers.js): config.json's `savers`, or CLIQUE_SAVERS for a benchmark run.
   get savers() {
     return saversFrom(this.config)
   }
 
-  // The terminals: in this process (core/runner.js), or in the terminal host, where they outlive Crew (core/ptyclient.js).
+  // The terminals: in this process (core/runner.js), or in the terminal host, where they outlive CLIque (core/ptyclient.js).
   useRunner(runner) {
     this.runner = runner
     runner.on('exit', (name, code, ms) => this.onExit(name, code, ms))
@@ -252,14 +253,14 @@ export class Hub extends EventEmitter {
     runner.on('ended', (name, run) => this.sweep(run))
   }
 
-  // survivors: terminals still running from before Crew restarted ([{ name, tag, pid }], from the terminal host). Their
+  // survivors: terminals still running from before CLIque restarted ([{ name, tag, pid }], from the terminal host). Their
   // agents carry on where they are. The rest are resting: no terminal until there's work for them (see pump), and what
   // was still queued for them wakes them now. A parked workspace's wait until it's opened.
   start(url, { survivors = [] } = {}) {
     this.url = url
     const park = (this.parked = this.space.parked)
     this.startedAt = Date.now()
-    // where agents' hooks and `crew` find Crew: every workspace's, told apart by the X-Crew-Workspace header
+    // where agents' hooks and `clique` find CLIque: every workspace's, told apart by the X-Clique-Workspace header
     fs.writeFileSync(at('url'), url)
     fs.writeFileSync(at('token'), this.token)
     fs.chmodSync(at('token'), 0o600)
@@ -270,7 +271,7 @@ export class Hub extends EventEmitter {
     if (!park) {
       for (const a of [...this.agents.values()]) {
         if (a.off || adopted.has(a.name)) continue
-        if (a.cloneOf) this.dismiss(a.name) // its terminal wasn't the one Crew knew: what it had goes back to its original
+        if (a.cloneOf) this.dismiss(a.name) // its terminal wasn't the one CLIque knew: what it had goes back to its original
         else this.standBy(a)
       }
     }
@@ -406,7 +407,7 @@ export class Hub extends EventEmitter {
       if (run) run.quiet = true
       this.dismiss(c.name)
     }
-    if (stopping.length) this.post({ kind: 'event', from: 'crew', text: `went to sleep: ${atNames(stopping.map((a) => a.name))} stopped, and pick up their conversations when it wakes` })
+    if (stopping.length) this.post({ kind: 'event', from: 'clique', text: `went to sleep: ${atNames(stopping.map((a) => a.name))} stopped, and pick up their conversations when it wakes` })
     this.changed()
   }
 
@@ -438,7 +439,7 @@ export class Hub extends EventEmitter {
 
   // ---- Q, the system agent (core/system-agent.js) ------------------------------------------------------------------
 
-  // His folder and, the first time, his brain: what the crew here runs on, or else whichever CLI this computer has. On
+  // His folder and, the first time, his brain: what the clique here runs on, or else whichever CLI this computer has. On
   // the first he picks, a mid-size model at low effort: he talks and hands on, and he's the one you wait for each time.
   dressSystemAgent(c) {
     c.cwd = this.at(SYSTEM_AGENT)
@@ -460,8 +461,8 @@ export class Hub extends EventEmitter {
       const p = this.providers[id]
       return p && !p.missing?.length && path.isAbsolute(which(p.cli ?? id, process.env[pathKey(process.env)] ?? ''))
     }
-    const crew = this.space.agents.filter((a) => !a.system).map((a) => a.provider ?? a.cli ?? 'claude')
-    const found = [...crew, 'claude', 'codex'].find(ready)
+    const clique = this.space.agents.filter((a) => !a.system).map((a) => a.provider ?? a.cli ?? 'claude')
+    const found = [...clique, 'claude', 'codex'].find(ready)
     const id = found ?? 'claude'
     const brain = { provider: id, ...(id === 'claude' && { model: 'sonnet' }), ...(this.providers[id]?.efforts?.includes('low') && { effort: 'low' }) }
     // (no CLI found yet: nothing's decided, so he looks again next time)
@@ -469,7 +470,7 @@ export class Hub extends EventEmitter {
     Object.assign(c, brain, { args: this.systemAgentFlags({ ...c, ...brain }) })
   }
 
-  // On Claude Code he has a shell for `crew` and nothing else: no file tools, no sub-agents, none of your tool servers. So
+  // On Claude Code he has a shell for `clique` and nothing else: no file tools, no sub-agents, none of your tool servers. So
   // he can't quietly edit something, and every message of his costs less, with far fewer tool definitions to keep in its
   // cache. (Codex has no such switch: there it's his empty folder and his instructions.)
   systemAgentFlags(c) {
@@ -496,7 +497,7 @@ export class Hub extends EventEmitter {
   // Auto would have picked, instead of sitting in his queue while a teammate is free.
   systemAgentHandOver(a) {
     const moved = []
-    for (const m of a.inbox.filter((x) => x.from === 'you' && !x.crew)) {
+    for (const m of a.inbox.filter((x) => x.from === 'you' && !x.clique)) {
       const to = this.route(m.text, 'you', m.channel)
       if (!to || to === a) continue
       a.inbox.splice(a.inbox.indexOf(m), 1)
@@ -525,7 +526,7 @@ export class Hub extends EventEmitter {
     this.read({ [a.name]: hi.ts })
   }
 
-  // The hubs of the other workspaces, for what's kept about a shared agent in each (Crew sets this).
+  // The hubs of the other workspaces, for what's kept about a shared agent in each (CLIque sets this).
   others() {
     return []
   }
@@ -735,15 +736,15 @@ export class Hub extends EventEmitter {
       if (!fs.existsSync(cwd)) throw new Error(`folder not found: ${cwd}`)
       const run = randomUUID().slice(0, 8)
       const groups = this.at(GROUPS, `${a.name}.${run}`)
-      // Crew's tools first on PATH (on Windows under the name Windows gave PATH, so there's one), and Crew's own runtime
-      // for them (bin/crew.mjs): never ELECTRON_RUN_AS_NODE itself, which would make every Electron app the agent starts
+      // CLIque's tools first on PATH (on Windows under the name Windows gave PATH, so there's one), and CLIque's own runtime
+      // for them (bin/clique.mjs): never ELECTRON_RUN_AS_NODE itself, which would make every Electron app the agent starts
       // run as Node.
       const env = {
-        ...expandEnv(provider.env), ...extraEnv, ...withTools(process.env, this.bin), CREW_NODE: process.execPath, CREW_AGENT: a.name, CREW_URL: this.url, CREW_TOKEN: this.token, CREW_HOME: HOME,
-        CREW_GROUPS: groups, ...(provider.cli === 'claude' && shellPrefix(this.bin)),
-        // which workspace its hooks and `crew` talk to: empty for the default (as for agents started before workspaces),
-        // whatever Crew itself was started with
-        CREW_WORKSPACE: this.ws === ROOT ? '' : this.ws, // ROOT's files are in CREW_HOME itself, where its hooks' spool is (core/adapters.js)
+        ...expandEnv(provider.env), ...extraEnv, ...withTools(process.env, this.bin), CLIQUE_NODE: process.execPath, CLIQUE_AGENT: a.name, CLIQUE_URL: this.url, CLIQUE_TOKEN: this.token, CLIQUE_HOME: HOME,
+        CLIQUE_GROUPS: groups, ...(provider.cli === 'claude' && shellPrefix(this.bin)),
+        // which workspace its hooks and `clique` talk to: empty for the default (as for agents started before workspaces),
+        // whatever CLIque itself was started with
+        CLIQUE_WORKSPACE: this.ws === ROOT ? '' : this.ws, // ROOT's files are in CLIQUE_HOME itself, where its hooks' spool is (core/adapters.js)
       }
       // the program itself on Windows, through the .cmd npm installs it as (core/launch.js)
       const command = resolveCommand(file, [...args, ...(provider.args ?? []), ...(a.args ?? [])], { ...process.env, ...env })
@@ -775,7 +776,7 @@ export class Hub extends EventEmitter {
 
   // The first time a CLI runs in a folder it asks whether you trust it, YOLO or not, and nothing typed reaches its
   // prompt until that's answered: Codex would take the Enter after the first message as "Trust and continue" and lose
-  // the message, and Claude Code doesn't even say it started. So until it's up and has taken its first prompt, Crew
+  // the message, and Claude Code doesn't even say it started. So until it's up and has taken its first prompt, CLIque
   // watches its screen for that question and hands it to you, as a card in the chat (trustCard). Messages wait in its
   // queue meanwhile. While it's up the screen is still read: answering from the chat picks by what's selected there.
   onOutput(name, data) {
@@ -856,7 +857,7 @@ export class Hub extends EventEmitter {
     a.trustPick.timer = setTimeout(() => this.stepTrust(a), Math.max(0, (a.trustAt ?? 0) + TRUST_SETTLE - Date.now()))
   }
 
-  // Its screen changed while Crew is picking: look again once it has settled, but no later than PICK_WAIT after the last
+  // Its screen changed while CLIque is picking: look again once it has settled, but no later than PICK_WAIT after the last
   // key (a CLI can keep drawing for a while: Codex animates its title for half a minute after it starts). Before the
   // first look, TRUST_SETTLE stands.
   pickSoon(a) {
@@ -1131,7 +1132,7 @@ export class Hub extends EventEmitter {
   // ---- conversations: starting fresh, and how full the current one is ------------------------------
 
   // A new conversation for an agent, so a new task doesn't share its context with the last ten. Its
-  // instructions, folder and the crew's notes stay; the old conversation stays in the CLI's history.
+  // instructions, folder and the clique's notes stay; the old conversation stays in the CLI's history.
   // A busy agent finishes what it's doing first.
   freshStart(name) {
     const a = this.agents.get(name)
@@ -1164,12 +1165,12 @@ export class Hub extends EventEmitter {
     this.post({ kind: 'event', from: a.name, text: `started a new conversation${why}${carry ? `, and picks up where it left off: ${gist(carry.text, 160)}` : ''}`, fresh: true })
     this.launch(a, true)
     // where it left off, in its own words: the first thing in the new conversation, threaded to the task it was on
-    if (carry) a.inbox.unshift(crewPrompt(a, `[crew] Your last conversation passed its context limit, so this is a new one. You hadn't finished. Where you left off, in your own words:\n\n${carry.text}\n\nCheck where things stand, then carry on.`, carry.for))
+    if (carry) a.inbox.unshift(cliquePrompt(a, `[clique] Your last conversation passed its context limit, so this is a new one. You hadn't finished. Where you left off, in your own words:\n\n${carry.text}\n\nCheck where things stand, then carry on.`, carry.for))
   }
 
   // A new conversation once the agent is free. One you asked for starts right away. One for its context limit
   // can't take the end of a turn on trust: a turn also ends while the agent waits on what it started in the
-  // background (a build, a server, a sub-agent), and a restart then drops the task half-way. So Crew waits for those
+  // background (a build, a server, a sub-agent), and a restart then drops the task half-way. So CLIque waits for those
   // (or for its next task), asks the agent where things stand, and the new conversation starts from its answer.
   freshWhenDone(a) {
     if (!a.freshLimit || a.wrapNote !== undefined) return this.startFresh(a)
@@ -1188,12 +1189,12 @@ export class Hub extends EventEmitter {
   askWrapUp(a) {
     a.wrapUp = true
     a.wrapFor = a.current
-    a.inbox.unshift({ ...crewPrompt(a, WRAP_UP), wrapUp: true })
+    a.inbox.unshift({ ...cliquePrompt(a, WRAP_UP), wrapUp: true })
     this.pump(a)
     this.changed()
   }
 
-  // ---- token savers: what the crew does to keep its agents from spending tokens they don't need to (core/savers.js) ----
+  // ---- token savers: what the clique does to keep its agents from spending tokens they don't need to (core/savers.js) ----
 
   // How long this agent's cache lasts after its last request: Claude Code's is an hour on a subscription and 5 minutes on
   // an API key, which its transcript says (the kind of its last cache write). Codex doesn't say: an hour, as it held in
@@ -1238,19 +1239,19 @@ export class Hub extends EventEmitter {
   }
 
   // A message that belongs in the conversation it finds: one you sent this agent yourself (in its chat, or by name: Auto's
-  // picks don't count), an answer to its question, a teammate's question, Crew's own prompt, the task it was on sent
+  // picks don't count), an answer to its question, a teammate's question, CLIque's own prompt, the task it was on sent
   // back, or a reply to something it said there. Those never start a new conversation.
   followsOn(a, m) {
     const c = this.convos[a.name]
     // (what goes to Q wasn't meant for his conversation in particular: he can start afresh like any Auto pick)
-    if (m.crew || m.fresh || m.answers || m.ask || (m.from === 'you' && !m.auto && !a.system)) return true
+    if (m.clique || m.fresh || m.answers || m.ask || (m.from === 'you' && !m.auto && !a.system)) return true
     if (m.ticket !== undefined && m.ticket === c?.ticket) return true
     const re = m.re && this.feed.findLast((e) => e.id === m.re)
     return Boolean(re && re.ts >= (c?.since ?? 0) && (re.from === a.name || re.to === a.name))
   }
 
   // A new conversation instead of a cold one, and on top of the message, a note of where the last one stood, from what
-  // Crew already has: the task it was on and the last thing it said. Nothing for the agent to write first.
+  // CLIque already has: the task it was on and the last thing it said. Nothing for the agent to write first.
   coldStart(a, { used, idle, recache }) {
     const c = this.convos[a.name]
     const t = typeof c.ticket === 'number' && this.tickets.all.find((x) => x.id === c.ticket)
@@ -1259,7 +1260,7 @@ export class Hub extends EventEmitter {
     a.freshFor = a.inbox[0].id
     this.startFresh(a, `: the last one had sat idle ${spanOf(idle)}, and picking it back up would have re-read its ${tokenCount(used)} tokens`)
     this.convoOf(a).note = [
-      `[crew] This is a new conversation. Your last one sat idle ${spanOf(idle)}, so CLIque started fresh rather than have you re-read all of it.`,
+      `[clique] This is a new conversation. Your last one sat idle ${spanOf(idle)}, so CLIque started fresh rather than have you re-read all of it.`,
       t && `You were on #${t.id} "${t.title}".`,
       said && `The last thing you said in it: "${gist(said.text, 400)}"`,
     ].filter(Boolean).join(' ')
@@ -1267,7 +1268,7 @@ export class Hub extends EventEmitter {
   }
 
   // What the agent is told to check before it builds something (adapters.js): the board, PRs and branches, as before;
-  // with busyCheck on, crew busy, or nothing at all when it works alone (no teammate in this workspace, no clones of its
+  // with busyCheck on, clique busy, or nothing at all when it works alone (no teammate in this workspace, no clones of its
   // own, no linked computer's). Decided at launch: it's in the system prompt, and a new one rewrites the whole cache.
   checksFor(a) {
     if (a.system) return 'none' // he doesn't build anything
@@ -1288,8 +1289,8 @@ export class Hub extends EventEmitter {
   }
 
   // quickTriage: a new task triaged in one short call to the triage agent's provider, on its small model, with the open
-  // tasks and the crew written into the prompt (tickets.js), instead of a turn in the triage agent's own long
-  // conversation. What it decides goes through `crew task triage` or `crew task dup`, as the agent's would. If the call
+  // tasks and the clique written into the prompt (tickets.js), instead of a turn in the triage agent's own long
+  // conversation. What it decides goes through `clique task triage` or `clique task dup`, as the agent's would. If the call
   // fails or what it says doesn't hold (an owner who's off, a task that isn't there), the triage agent gets it as before.
   async quickTriage(t, name) {
     const a = this.agents.get(name)
@@ -1321,13 +1322,13 @@ export class Hub extends EventEmitter {
     } catch {
       this.fellBack.delete(t.id)
       const owner = ownerFor(`${t.title} ${t.body}`, this.teammates())
-      if (owner) this.tickets.edit(t.id, { owner: owner.name }, 'crew')
-      this.post({ kind: 'event', from: 'crew', text: owner ? `couldn't triage #${t.id}, so it goes to @${owner.name}, whose area it is` : `couldn't triage #${t.id}: it waits in To do for you` })
+      if (owner) this.tickets.edit(t.id, { owner: owner.name }, 'clique')
+      this.post({ kind: 'event', from: 'clique', text: owner ? `couldn't triage #${t.id}, so it goes to @${owner.name}, whose area it is` : `couldn't triage #${t.id}: it waits in To do for you` })
       if (owner && this.space.autofix) this.autoDispatch(t)
     }
   }
 
-  // What a quick call cost: the triage agent's spend and the crew's, and the task's it was about (not whatever the triage
+  // What a quick call cost: the triage agent's spend and the clique's, and the task's it was about (not whatever the triage
   // agent's own conversation is on, as addSpend would have it).
   quickSpend(a, t, r) {
     const cost = r?.cost > 0 ? r.cost : 0
@@ -1382,7 +1383,7 @@ export class Hub extends EventEmitter {
 
   // An agent's own context limit (contextLimit, in tokens), for a model whose window is bigger than you want
   // it to use: once its conversation passes the limit, it starts a new one as soon as it's free (the default),
-  // or Crew just tells you (onContextLimit: 'notify'). Once per conversation; it re-arms if the conversation
+  // or CLIque just tells you (onContextLimit: 'notify'). Once per conversation; it re-arms if the conversation
   // shrinks back under the limit (the CLI compacted it).
   checkLimit(a) {
     const c = this.convoOf(a)
@@ -1439,8 +1440,8 @@ export class Hub extends EventEmitter {
   // The account is yours, not a workspace's: whichever workspace's agent reports it, it's said once, where you are
   // (aboutAccount), and its notification belongs to no workspace.
 
-  // A line in the chat about your accounts. Crew puts it in the workspace on screen; on its own, a hub keeps it. A
-  // window's line takes the place of the one before it, wherever that is (Crew looks in every workspace).
+  // A line in the chat about your accounts. CLIque puts it in the workspace on screen; on its own, a hub keeps it. A
+  // window's line takes the place of the one before it, wherever that is (CLIque looks in every workspace).
   aboutAccount(entry) {
     this.unsayLimit(entry.limit)
     this.post(entry)
@@ -1462,7 +1463,7 @@ export class Hub extends EventEmitter {
     this.saveUsage()
     if (JSON.stringify([this.liveUsage(id), u.credits]) === before) return
     this.changed()
-    this.emit('usage') // the account's, not this workspace's: Crew tells linked computers through the default's state
+    this.emit('usage') // the account's, not this workspace's: CLIque tells linked computers through the default's state
   }
 
   liveUsage(id) {
@@ -1496,7 +1497,7 @@ export class Hub extends EventEmitter {
     const when = resetsWhen(w.resetsAt)
     const out = runsOut && `At this pace it runs out ${resetsWhen(runsOut)}, before it resets ${when}`
     const limit = { account: id, label, window: w.id, name: limitName(w), pct: w.pct, resetsAt: w.resetsAt, ...(runsOut && { runsOut }) }
-    this.aboutAccount({ kind: 'event', from: 'crew', text: out ? `${at}. ${out}` : `${at}, resets ${when}`, limit, ...((level >= 95 || runsOut) && { alert: true }) })
+    this.aboutAccount({ kind: 'event', from: 'clique', text: out ? `${at}. ${out}` : `${at}, resets ${when}`, limit, ...((level >= 95 || runsOut) && { alert: true }) })
     const routing = w.pct >= NEAR_LIMIT ? ' Until then, new work goes to agents on other providers when they cover the same area.' : ''
     if (crossed) this.emit('notice', { title: at, body: `${out ? `${out}.` : `It resets ${when}.`}${routing}`, focus: '', account: true })
     else this.emit('notice', { title: `At this pace, ${label}'s ${limitName(w)} runs out ${resetsWhen(runsOut)}`, body: `It's at ${w.pct}% and resets ${when}.${routing}`, focus: '', account: true })
@@ -1535,7 +1536,7 @@ export class Hub extends EventEmitter {
   // time on the API; Codex's log has the tokens it has used. Those are running totals: what grew since the last report
   // goes to the agent (a clone's to its original), the task its conversation is on, and the hour. Totals are kept per
   // CLI process (its launch), where they only grow or start over from zero. A process's first report is measured against
-  // what its session last said (a resumed session can pick its total up again), and a resumed session Crew has never
+  // what its session last said (a resumed session can pick its total up again), and a resumed session CLIque has never
   // seen only counts from here on. So nothing is counted twice.
 
   countSpend(a, session, now) {
@@ -1545,7 +1546,7 @@ export class Hub extends EventEmitter {
     const minus = (x, y) => Object.fromEntries(Object.keys(x).map((k) => [k, x[k] - (y[k] ?? 0)]))
     const seen = this.spend.runs[run]
     const before = !seen && session ? this.spend.sessions[session] : null
-    // a session already under way when Crew started counts from here on while the look back covers what came before
+    // a session already under way when CLIque started counts from here on while the look back covers what came before
     const unseen = a.resumed || (this.lookingBack && !(a.launchedAt >= this.startedAt)) ? null : now
     // a session the look back counted (baseline) counts from its next report on
     const sinceBefore = before && (before.baseline ? null : less(now, before) ? now : minus(now, before))
@@ -1592,8 +1593,8 @@ export class Hub extends EventEmitter {
     this.spendTimer.unref?.()
   }
 
-  // The first time Crew counts spend, it looks back through the agents' logs for the last LOOK_BACK_DAYS (core/backfill.js,
-  // in a worker thread), up to when it started counting: when this Crew started, or the first hour live counting ever
+  // The first time CLIque counts spend, it looks back through the agents' logs for the last LOOK_BACK_DAYS (core/backfill.js,
+  // in a worker thread), up to when it started counting: when this CLIque started, or the first hour live counting ever
   // saw. Sessions it counted are a baseline from then on, so the live count only adds what comes after.
   lookBack() {
     const counted = Object.entries(this.spend.hours).filter(([, h]) => h.some((v) => v > 0)).map(([d, h]) => new Date(`${d}T${String(h.findIndex((v) => v > 0)).padStart(2, '0')}:00`).getTime())
@@ -1611,7 +1612,7 @@ export class Hub extends EventEmitter {
     worker.once('error', () => (this.lookingBack = false))
   }
 
-  // What the look back found, added to each agent's days, the crew's hours and the tasks. -> { cost, tokens }
+  // What the look back found, added to each agent's days, the clique's hours and the tasks. -> { cost, tokens }
   mergeLookBack({ agents, hours, tickets, sessions }, until) {
     let cost = 0
     let tokens = 0
@@ -1640,13 +1641,13 @@ export class Hub extends EventEmitter {
     this.tickets.save()
     if (cost >= 0.005 || tokens) {
       const what = [cost >= 0.005 && `$${cost < 10 ? cost.toFixed(2) : Math.round(cost).toLocaleString('en-US')} at API prices`, tokens && `${tokenCount(tokens)} Codex tokens`].filter(Boolean).join(' and ')
-      this.post({ kind: 'event', from: 'crew', text: `added up what the clique's work cost before CLIque counted it: ${what} over the last ${LOOK_BACK_DAYS} days` })
+      this.post({ kind: 'event', from: 'clique', text: `added up what the clique's work cost before CLIque counted it: ${what} over the last ${LOOK_BACK_DAYS} days` })
     }
     this.changed()
     return { cost, tokens }
   }
 
-  // The crew's spend for the dashboard: today, and what it usually is by this time of day (on the days the crew spent
+  // The clique's spend for the dashboard: today, and what it usually is by this time of day (on the days the clique spent
   // anything, over the last four weeks); the last 7 and 30 days, and the 7 before.
   spendNow() {
     const day = (n) => localDay(Date.now() - n * 864e5)
@@ -1688,11 +1689,11 @@ export class Hub extends EventEmitter {
   }
 
   // ---- what an agent leaves running ---------------------------------------------------------------------
-  // Each launch writes down its process groups (core/procs.js): bin/crew-sh adds every command Claude Code runs, and
+  // Each launch writes down its process groups (core/procs.js): bin/clique-sh adds every command Claude Code runs, and
   // noteGroups what turns up in the CLI's process tree. When the CLI ends (it exits, is turned off, or restarts for a new
   // conversation), whatever is still in those groups is stopped: the dev server it started with &, the simulator helpers.
 
-  // Groups bin/crew-sh doesn't see: what the CLI starts itself, and every command of a CLI without a shell prefix (Codex).
+  // Groups bin/clique-sh doesn't see: what the CLI starts itself, and every command of a CLI without a shell prefix (Codex).
   noteGroups(a) {
     const run = this.runs.get(a.run)
     if (run && !run.pid) run.pid = this.runner.pid?.(a.name) // the terminal host says it a moment after the start
@@ -1705,8 +1706,8 @@ export class Hub extends EventEmitter {
     })
   }
 
-  // A CLI is gone: what's left in its groups is stopped, with one line in the chat saying what. Crew itself, and what
-  // other agents run, are never touched (Crew started from an agent's terminal sits in one of its groups).
+  // A CLI is gone: what's left in its groups is stopped, with one line in the chat saying what. CLIque itself, and what
+  // other agents run, are never touched (CLIque started from an agent's terminal sits in one of its groups).
   async sweep(id) {
     const run = this.runs.get(id)
     if (!run) return
@@ -1727,7 +1728,7 @@ export class Hub extends EventEmitter {
     if (!run.quiet && n) this.post({ kind: 'event', from: run.name, text: `left ${n === 1 ? 'a process' : `${n} processes`} running (${summary(said)}), so CLIque stopped ${n === 1 ? 'it' : 'them'}` })
   }
 
-  // What's in these groups that isn't Crew's or part of a running CLI's own tree.
+  // What's in these groups that isn't CLIque's or part of a running CLI's own tree.
   strays(procs, groups, spans) {
     const keep = new Set(tree(procs, process.pid).map((p) => p.pid))
     for (const r of this.runs.values()) if (r.pid) for (const p of tree(procs, r.pid)) keep.add(p.pid)
@@ -1735,7 +1736,7 @@ export class Hub extends EventEmitter {
     return leftovers(procs, groups, keep, spans)
   }
 
-  // Launches that ended while Crew wasn't there to see it (it quit, or crashed): swept now.
+  // Launches that ended while CLIque wasn't there to see it (it quit, or crashed): swept now.
   sweepStale() {
     let files = []
     try {
@@ -1785,7 +1786,7 @@ export class Hub extends EventEmitter {
           // The CLI summarized the conversation to make room: older details are now fuzzy.
           this.convoOf(a).compactions += 1
           delete this.convoOf(a).briefs // summarized with the rest: each channel's brief comes again with its next message
-          delete this.convoOf(a).boardSeen // and the notes it had read: crew board shows the newest again
+          delete this.convoOf(a).boardSeen // and the notes it had read: clique board shows the newest again
           this.saveConvos()
           this.post({ kind: 'event', from: name, text: 'ran out of room and compacted its conversation (older details are summarized now)' })
           return
@@ -1805,7 +1806,7 @@ export class Hub extends EventEmitter {
       case 'UserPromptSubmit': {
         a.resumeWatch = null // it's taking prompts: no question about resuming comes now
         a.promptAt ||= Date.now()
-        // a "continue" Crew owes it after an API error: this prompt (Crew's, or anything you typed) takes its place
+        // a "continue" CLIque owes it after an API error: this prompt (CLIque's, or anything you typed) takes its place
         clearTimeout(a.retryTimer)
         a.retrying = false
         const again = Boolean(a.expect?.again) && samePrompt(e.prompt, a.expect.text)
@@ -1818,7 +1819,7 @@ export class Hub extends EventEmitter {
           if (a.status !== 'working') (a.activity = ''), (a.turnStart = Date.now())
           return this.setStatus(a, 'working')
         }
-        // A question or an answer Crew typed into the turn it's in (steer): it's part of this turn now. (A turn that
+        // A question or an answer CLIque typed into the turn it's in (steer): it's part of this turn now. (A turn that
         // ended before it got there starts with it instead, as any other turn does.)
         if (a.steering && samePrompt(e.prompt, a.steering.text)) {
           const { msgs } = a.steering
@@ -1887,7 +1888,7 @@ export class Hub extends EventEmitter {
         const subs = this.subsThisTurn(a, e.background_tasks)
         // what it left running in the background (a build, a server, a sub-agent): it's called back when they finish
         a.background = Array.isArray(e.background_tasks) ? e.background_tasks.filter((t) => t?.status === 'running' || t?.status === 'pending').length : 0
-        // its answer to where things stand, before a new conversation (see freshWhenDone): for Crew, not the chat
+        // its answer to where things stand, before a new conversation (see freshWhenDone): for CLIque, not the chat
         if ((a.serving ?? []).some((m) => m.wrapUp)) {
           a.wrapNote = String(e.last_assistant_message ?? '')
           a.serving = []
@@ -1925,7 +1926,7 @@ export class Hub extends EventEmitter {
   }
 
   // A turn an API error cut short (Claude Code's StopFailure, in place of Stop). A dropped connection or a busy
-  // server passes: Crew types "continue" for it, as you would, waiting longer each time. A usage limit, a login or
+  // server passes: CLIque types "continue" for it, as you would, waiting longer each time. A usage limit, a login or
   // a billing problem doesn't, so that one is for you. Its turn isn't over meanwhile: nothing else is typed in.
   apiError(a, e) {
     a.activity = ''
@@ -1960,7 +1961,7 @@ export class Hub extends EventEmitter {
 
   // ---- sub-agents: Claude Code's Agent tool ------------------------------------------------------
   // An agent can hand parts of its work to sub-agents, several at once, and they may keep running after its turn
-  // ends (in the background). Its hooks tell Crew: PreToolUse for Agent says what one is for, SubagentStart and
+  // ends (in the background). Its hooks tell CLIque: PreToolUse for Agent says what one is for, SubagentStart and
   // SubagentStop bracket it (agent_id), and each tool the sub-agent uses arrives with that agent_id. Each agent
   // keeps a.subs: agent_id -> { id, type, description, started, ended, tools, activity, result }.
 
@@ -2038,7 +2039,7 @@ export class Hub extends EventEmitter {
   // Claude keeps its own dialog up meanwhile, so either place works: the first answer wins, and answering in
   // the terminal cancels the hook (`closed`). Codex waits on the hook instead, so its card can hand the
   // question back to the terminal (and typing there does too). Agents on other computers answer through
-  // core/crew.js, by the card's id; so would a phone.
+  // core/clique.js, by the card's id; so would a phone.
   ask(name, payload, closed) {
     const a = this.agents.get(name)
     if (!a) return ''
@@ -2100,7 +2101,7 @@ export class Hub extends EventEmitter {
   // Claude Code can settle a question without anyone answering it: its built-in safety check turns a risky command
   // down after two minutes and the agent carries on, but the hook waiting on the card is never cancelled, and no hook
   // says so. Its transcript does: the call gets its result. So while one of its own questions is up (a sub-agent's
-  // lives in another file), Crew looks there every few seconds, and the card closes once the call has a result.
+  // lives in another file), CLIque looks there every few seconds, and the card closes once the call has a result.
   watchAsk(id, file) {
     const q = this.asks.get(id)
     if (q.cli !== 'claude' || q.input.agent_id || !file) return
@@ -2142,9 +2143,9 @@ export class Hub extends EventEmitter {
   }
 
   // ---- agent tools (core/tools.js): a change to CLIque that waits for your OK -----------------------------------
-  // `crew app …` asking first is a card like a permission prompt's, in the chat where the agent is working. Its
+  // `clique app …` asking first is a card like a permission prompt's, in the chat where the agent is working. Its
   // command waits for your answer, up to `hold`, and prints what came of it. Past that the agent carries on, the card
-  // stays up, and what you decide comes to it as a message. What asks and what doesn't is Crew.tool's (core/crew.js),
+  // stays up, and what you decide comes to it as a message. What asks and what doesn't is Clique.tool's (core/clique.js),
   // which sets appTool.
   appTool() {
     throw new Error("this CLIque can't change itself for agents")
@@ -2152,13 +2153,13 @@ export class Hub extends EventEmitter {
 
   toolAsk(from, plan, closed, hold = ASK_HOLD) {
     const a = this.agents.get(from)
-    const ask = { type: 'permission', tool: 'crew app', app: true, title: plan.title, ...(plan.code && { code: plan.code }), ...(plan.detail && { detail: plan.detail }), say: plan.say, always: [], alert: plan.alert }
-    const e = this.post({ kind: 'ask', from, to: 'you', ask, cli: 'crew', ...(a.current && { re: a.current }) })
+    const ask = { type: 'permission', tool: 'clique app', app: true, title: plan.title, ...(plan.code && { code: plan.code }), ...(plan.detail && { detail: plan.detail }), say: plan.say, always: [], alert: plan.alert }
+    const e = this.post({ kind: 'ask', from, to: 'you', ask, cli: 'clique', ...(a.current && { re: a.current }) })
     this.record(from, { waits: 1 })
     this.emit('alert', a, ask.alert)
     this.setStatus(a, 'waiting')
     return new Promise((resolve) => {
-      const q = { name: from, cli: 'crew', input: {}, entry: e, plan, held: true }
+      const q = { name: from, cli: 'clique', input: {}, entry: e, plan, held: true }
       // The command lets go: with what came of it, with where things stand, or with nothing (it was closed, or the
       // agent went away). -> whether it was still waiting
       q.resolve = (text) => {
@@ -2208,7 +2209,7 @@ export class Hub extends EventEmitter {
     if (q.resolve(`${text}\n`)) return
     const a = this.agents.get(q.name) ?? this.agents.get(this.baseOf(q.name))
     if (!a) return
-    this.queue(a, crewPrompt(a, `[crew] You asked to ${q.plan.title.charAt(0).toLowerCase()}${q.plan.title.slice(1)} (crew app). ${text}`, q.entry.id))
+    this.queue(a, cliquePrompt(a, `[clique] You asked to ${q.plan.title.charAt(0).toLowerCase()}${q.plan.title.slice(1)} (clique app). ${text}`, q.entry.id))
     this.pump(a)
   }
 
@@ -2230,7 +2231,7 @@ export class Hub extends EventEmitter {
       const a = this.agents.get(e.from) ?? this.agents.get(this.baseOf(e.from))
       if (!a) continue
       const title = String(e.ask?.title ?? 'change CLIque')
-      this.queue(a, crewPrompt(a, `[crew] CLIque restarted before the user answered when you asked to ${title.charAt(0).toLowerCase()}${title.slice(1)} (crew app), so it wasn't made. If it's still needed, ask again.`, e.id))
+      this.queue(a, cliquePrompt(a, `[clique] CLIque restarted before the user answered when you asked to ${title.charAt(0).toLowerCase()}${title.slice(1)} (clique app), so it wasn't made. If it's still needed, ask again.`, e.id))
       this.pump(a)
     }
   }
@@ -2266,7 +2267,7 @@ export class Hub extends EventEmitter {
       this.release(a.name)
       if (status !== 'idle' || !a.background) this.letGo(a.name) // what it left running may still be using a lease
       if (a.steering && status === 'idle' && !a.freshPending && !a.relaunch) {
-        // what Crew typed mid-turn wasn't taken in yet: give the CLI a moment to start a turn with it (see unsteer)
+        // what CLIque typed mid-turn wasn't taken in yet: give the CLI a moment to start a turn with it (see unsteer)
         hold(a, 5000)
         clearTimeout(a.steerTimer)
         a.steerTimer = setTimeout(() => this.unsteer(a), 5000)
@@ -2283,9 +2284,9 @@ export class Hub extends EventEmitter {
 
   // Questions and answers don't wait for the end of a turn. A busy agent gets them typed into the turn it's in: its
   // CLI takes them in at its next step (Claude Code and Codex both do, between two tool calls), so a teammate waiting
-  // on its answer waits seconds rather than the rest of a task. It answers with `crew answer` and carries on.
+  // on its answer waits seconds rather than the rest of a task. It answers with `clique answer` and carries on.
   // Never while a dialog is up in its terminal (a permission prompt), while you're typing there, or while the last
-  // thing Crew typed hasn't been taken in yet; then as soon as that clears.
+  // thing CLIque typed hasn't been taken in yet; then as soon as that clears.
   steer(a) {
     if (a.status !== 'working' || !this.runner.running(a.name) || a.expect || a.steering || a.retrying || this.asking(a.name)) return
     const msgs = a.inbox.filter((m) => m.ask || m.answers)
@@ -2313,7 +2314,7 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
-  // The turn ended before its CLI took in what Crew typed into it. If the CLI doesn't start a turn with it by itself
+  // The turn ended before its CLI took in what CLIque typed into it. If the CLI doesn't start a turn with it by itself
   // in a few seconds, it goes back to the front of the queue and in as the next prompt.
   unsteer(a) {
     clearTimeout(a.steerTimer)
@@ -2428,8 +2429,8 @@ export class Hub extends EventEmitter {
 
   // Who gets a message: the `to` field (a name, several names, or "any") plus every @name in the text.
   // Explicit recipients skip routing. All of them are checked before anything is posted, so one unknown,
-  // turned-off or self recipient rejects the whole send rather than reaching half the crew.
-  // Names on another computer (iris@workstation) go to `relay`, which main.js wires to Crew Link; `mentions: false`
+  // turned-off or self recipient rejects the whole send rather than reaching half the clique.
+  // Names on another computer (iris@workstation) go to `relay`, which main.js wires to CLIque Link; `mentions: false`
   // means `to` is final (the message was already addressed on another computer).
   // `fresh`: deliver into a new conversation (started when it's this message's turn). `ticket`: the bug it's about.
   // `re`: the message you're replying to (a feed id here); the copy links to it, so the feed threads it. `quote`
@@ -2438,7 +2439,7 @@ export class Hub extends EventEmitter {
   // `answers` the answer to one asked here.
   send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread }) {
     text = String(text ?? '').trim()
-    images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
+    images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
     if (!text) throw new Error('nothing to send')
     if (answers) {
@@ -2474,7 +2475,7 @@ export class Hub extends EventEmitter {
       const asked = [...(sender.serving ?? []), this.feed.findLast((e) => e.id === sender.current)]
       if (!images.length) images = [...new Set(asked.flatMap((m) => m?.images ?? []))]
     }
-    // nobody named: the crew picked who takes it (here, or in Crew.send for you), and the chat says so rather than that
+    // nobody named: the clique picked who takes it (here, or in Clique.send for you), and the chat says so rather than that
     // you chose them
     const routed = (auto || !names.length) && { auto: true }
     // Work can't go back to a teammate that's waiting on your answer: your final message goes back to it by itself.
@@ -2494,15 +2495,15 @@ export class Hub extends EventEmitter {
       return `asked @${targets[0].name}\n`
     }
     // noReportBack: a report to the teammate whose hand-off this agent is on. That teammate needs nothing back, and the
-    // agent's final message shows in the chat by itself. New work for it goes with `crew send <name> --new`.
+    // agent's final message shows in the chat by itself. New work for it goes with `clique send <name> --new`.
     // Only a teammate named in `to` (not one @mentioned in the text, nor Auto's pick), and not when its hand-off asked
-    // something (a question the old way, by crew send: the answer goes back to it).
-    const handers = new Set((newWork ? [] : sender?.serving ?? []).filter((m) => m.from !== 'you' && !m.ask && !m.answers && !m.crew && !/\?\s*$/m.test(m.text ?? '')).map((m) => this.baseOf(m.from)))
+    // something (a question the old way, by clique send: the answer goes back to it).
+    const handers = new Set((newWork ? [] : sender?.serving ?? []).filter((m) => m.from !== 'you' && !m.ask && !m.answers && !m.clique && !/\?\s*$/m.test(m.text ?? '')).map((m) => this.baseOf(m.from)))
     const named = new Set(addressees(to, '').map((n) => this.baseOf(local(n) ?? n)))
     const back = targets.find((t) => handers.has(this.baseOf(t.name)) && named.has(this.baseOf(t.name)))
     if (back) {
       this.ledger.add('noReportBack', this.savers.noReportBack, { n: 1, tokens: this.warmth(back).wake })
-      if (this.savers.noReportBack) throw new Error(`not sent: @${back.name} handed you this and needs nothing back. Your final message shows in the chat by itself. If this is new work for @${back.name}, send it with: crew send ${back.name} --new "…"${targets.length > 1 ? ' (nothing was sent)' : ''}`)
+      if (this.savers.noReportBack) throw new Error(`not sent: @${back.name} handed you this and needs nothing back. Your final message shows in the chat by itself. If this is new work for @${back.name}, send it with: clique send ${back.name} --new "…"${targets.length > 1 ? ' (nothing was sent)' : ''}`)
     }
     const quoted = replyTo ? this.feed.find((e) => e.id === replyTo) : undefined
     const re = quoted?.id ?? this.agents.get(from)?.current // a hand-off points at the request that led to it
@@ -2536,10 +2537,10 @@ export class Hub extends EventEmitter {
     const list = (xs) => xs.map((n) => `@${n}`).join(', ')
     const after = names.length > 1 ? ' (nothing was sent)' : ''
     const unknown = names.filter((n) => !this.agents.has(n))
-    if (unknown.length) throw new Error(`no agent named ${unknown.map((n) => `"${n}"`).join(', ')} (try: crew who)${after}`)
+    if (unknown.length) throw new Error(`no agent named ${unknown.map((n) => `"${n}"`).join(', ')} (try: clique who)${after}`)
     // an agent and its clones are one agent
     const me = names.find((n) => this.baseOf(n) === this.baseOf(from))
-    if (me) throw new Error(`${names.length > 1 ? `@${me} is you, leave yourself off` : "that's you, pick a teammate (crew who)"}${me === from ? '' : ` (@${me} and @${from} are the same agent)`}${after}`)
+    if (me) throw new Error(`${names.length > 1 ? `@${me} is you, leave yourself off` : "that's you, pick a teammate (clique who)"}${me === from ? '' : ` (@${me} and @${from} are the same agent)`}${after}`)
     const off = names.filter((n) => this.agents.get(n).off)
     if (off.length) throw new Error(`${list(off)} ${off.length > 1 ? 'are' : 'is'} turned off, turn ${off.length > 1 ? 'them' : 'it'} on first${after}`)
     const moving = names.filter((n) => this.agents.get(n).moving)
@@ -2587,11 +2588,11 @@ export class Hub extends EventEmitter {
   }
 
   // ---- right of way: questions that come back, and who goes first -------------------------------------------
-  // Agents that need each other can stall a crew: two of them each waiting for the other, an answer that never finds
-  // its way back, work handed back and forth, two editors in one file. Crew settles these by rule instead of leaving
+  // Agents that need each other can stall a clique: two of them each waiting for the other, an answer that never finds
+  // its way back, work handed back and forth, two editors in one file. CLIque settles these by rule instead of leaving
   // the agents to sort it out between them:
-  // - `crew ask` holds the asker's shell until the answer comes. The question reaches the teammate even mid-task (it's
-  //   typed into the turn it's in, see steer), and its `crew answer`, or else its final message, comes straight back
+  // - `clique ask` holds the asker's shell until the answer comes. The question reaches the teammate even mid-task (it's
+  //   typed into the turn it's in, see steer), and its `clique answer`, or else its final message, comes straight back
   //   into the asker's turn (or into the turn it's in by then, if it gave up waiting). Nobody has to remember to
   //   reply, and nobody polls.
   // - Whoever is being waited on never waits on its waiter: an ask that would close a loop is refused on the spot.
@@ -2599,13 +2600,13 @@ export class Hub extends EventEmitter {
   // - Answers go in first, then questions, then the rest; hand-offs that piled up go in together, in one turn.
   // - One file, one editor (lease).
 
-  // `crew ask <name> "…"`. Resolves with the answer, or after `hold` ms with where things stand.
+  // `clique ask <name> "…"`. Resolves with the answer, or after `hold` ms with where things stand.
   async question({ from = 'you', to, text, images = [], closed, hold = ASK_HOLD }) {
     text = String(text ?? '').trim()
-    images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
-    if (!text) throw new Error('usage: crew ask <name> "what you need"')
+    images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
+    if (!text) throw new Error('usage: clique ask <name> "what you need"')
     const named = addressees(to, '')
-    if (named.length > 1) throw new Error('ask one teammate at a time: crew ask <name> "…"')
+    if (named.length > 1) throw new Error('ask one teammate at a time: clique ask <name> "…"')
     const local = (n) => [n, this.baseOf(n)].find((x) => this.agents.has(x))
     const name = named.length ? (named[0].includes('@') ? named[0] : (local(named[0]) ?? this.elsewhere?.(named[0]) ?? named[0])) : this.route(text, from, this.channelFor(from))?.name
     if (!name) throw new Error('no agents to ask')
@@ -2639,7 +2640,7 @@ export class Hub extends EventEmitter {
       throw e
     }
     if (!/^asked /.test(out)) {
-      // a computer on an older Crew took it as a hand-off: no answer will come back by itself
+      // a computer on an older CLIque took it as a hand-off: no answer will come back by itself
       this.calls.delete(call.id)
       return `${out}(its computer runs an older CLIque, so this went as a hand-off: the answer won't come back by itself)\n`
     }
@@ -2715,7 +2716,7 @@ export class Hub extends EventEmitter {
     return null
   }
 
-  // The teammates `name` is stuck waiting on right now: whoever owes an answer to a `crew ask` of its that's still
+  // The teammates `name` is stuck waiting on right now: whoever owes an answer to a `clique ask` of its that's still
   // holding on. An agent on a linked computer: as its computer reports it.
   blockedOn(name) {
     if (this.agents.has(name)) return [...this.calls.values()].filter((c) => c.from === name && c.hold).map((c) => this.ownerOf(c))
@@ -2753,10 +2754,10 @@ export class Hub extends EventEmitter {
       const where = !b ? '' : b.serving?.includes(c.msg) ? "it's on it now" : b.steering?.msgs.includes(c.msg) ? 'it gets your question at its next step' : at === 0 ? (b.status === 'idle' ? "it's about to start on it" : 'your question is next, once it finishes what it is doing') : at > 0 ? `${at} message${at > 1 ? 's' : ''} ahead of yours` : ''
       return `@${to} hasn't answered yet${where ? ` (${where})` : ''}.`
     })
-    return `${lines.join('\n')}\nDon't ask again. Carry on with other work and the answer comes to you as a message, or wait more with: crew wait\n`
+    return `${lines.join('\n')}\nDon't ask again. Carry on with other work and the answer comes to you as a message, or wait more with: clique wait\n`
   }
 
-  // `crew wait`: hold on for the answers to the questions you asked. One that came in while you were busy (queued
+  // `clique wait`: hold on for the answers to the questions you asked. One that came in while you were busy (queued
   // for your next turn) is handed over right here instead.
   wait({ from = 'you', closed, hold = ASK_HOLD } = {}) {
     const a = this.agents.get(from)
@@ -2771,15 +2772,15 @@ export class Hub extends EventEmitter {
     }
     const open = [...this.calls.values()].filter((c) => c.from === from)
     if (!open.length) return 'Nothing to wait for: every question you asked has been answered.\n'
-    for (const c of open) this.mayWait(from, this.ownerOf(c)) // the same rule as crew ask: never wait on your waiter
+    for (const c of open) this.mayWait(from, this.ownerOf(c)) // the same rule as clique ask: never wait on your waiter
     return this.hold(open, hold, closed)
   }
 
-  // `crew answer [@name] "…"`: answer a question you were asked, right away, without ending what you're doing (the
+  // `clique answer [@name] "…"`: answer a question you were asked, right away, without ending what you're doing (the
   // oldest still open, or the one from `to`). It shows in the chat as your reply to it, and the asker has it now.
   answerNow({ from, to, text }) {
     text = String(text ?? '').trim()
-    if (!text) throw new Error('usage: crew answer "your answer"')
+    if (!text) throw new Error('usage: clique answer "your answer"')
     const a = this.agents.get(from)
     const asked = (to ? [to] : []).map((n) => String(n).replace(/^@/, '').toLowerCase())
     const all = (a?.serving ?? []).filter((m) => m.ask && this.calls.has(m.id))
@@ -2789,7 +2790,7 @@ export class Hub extends EventEmitter {
     const reply = this.post({ kind: 'reply', from, text: clip(text, REPLY_MAX), re: m.id })
     this.respond(this.calls.get(m.id), { by: from, text, reply })
     const left = all.length - 1
-    return `@${m.from} has your answer.${left ? ` ${left} more question${left > 1 ? 's' : ''} waiting: crew answer "@name" "…"` : ''}\n`
+    return `@${m.from} has your answer.${left ? ` ${left} more question${left > 1 ? 's' : ''} waiting: clique answer "@name" "…"` : ''}\n`
   }
 
   // An agent's turn is over: the questions it was answering get its final message (or why there isn't one). One it
@@ -2805,7 +2806,7 @@ export class Hub extends EventEmitter {
     }
   }
 
-  // A question's answer, whichever way it comes: back into the asker's `crew ask` if that's still waiting, else to the
+  // A question's answer, whichever way it comes: back into the asker's `clique ask` if that's still waiting, else to the
   // asker as its next message (ahead of anything else in its queue), or back to its computer if it's on another.
   respond(call, { by, text, reply, why }) {
     this.calls.delete(call.id)
@@ -2828,7 +2829,7 @@ export class Hub extends EventEmitter {
     })
   }
 
-  // Crew stepping in, as a line in the chat: who was stopped from what, and why. The same one twice in a row (an
+  // CLIque stepping in, as a line in the chat: who was stopped from what, and why. The same one twice in a row (an
   // agent trying again) shows once.
   ruling(rule, from, to, extra = {}) {
     const last = this.feed.findLast((e) => e.kind === 'rule')
@@ -2842,7 +2843,7 @@ export class Hub extends EventEmitter {
   // each other. An agent answering the holder's question may edit its files: the holder is waiting on it, not
   // editing. The answer is the PreToolUse hook's output: '' lets the edit through.
   // An agent in another workspace holds files and things too: two workspaces in one folder, or a shared agent at work in
-  // both, still edit a file one at a time. It can't be asked (crew ask stays in a workspace), so it's named with its
+  // both, still edit a file one at a time. It can't be asked (clique ask stays in a workspace), so it's named with its
   // workspace.
   lease(name, e) {
     const a = this.agents.get(name)
@@ -2861,8 +2862,8 @@ export class Hub extends EventEmitter {
         this.ruling('file', name, holder.name, { file: short, ...(away && { in: away }) })
       }
       const reason = away
-        ? `${short} is being edited by ${holder.name} in your ${away} workspace right now, and Crew lets one agent edit a file at a time, whichever workspace it works in. Leave it be and do the rest of your work: the file is free again once ${holder.name} there finishes its turn.`
-        : `${short} is being edited by @${holder.name} right now, and Crew lets one agent edit a file at a time. Leave it to @${holder.name} and do the rest of your work: the file is free again once @${holder.name} finishes its turn. If you need a change in it, crew ask ${holder.name}.`
+        ? `${short} is being edited by ${holder.name} in your ${away} workspace right now, and CLIque lets one agent edit a file at a time, whichever workspace it works in. Leave it be and do the rest of your work: the file is free again once ${holder.name} there finishes its turn.`
+        : `${short} is being edited by @${holder.name} right now, and CLIque lets one agent edit a file at a time. Leave it to @${holder.name} and do the rest of your work: the file is free again once @${holder.name} finishes its turn. If you need a change in it, clique ask ${holder.name}.`
       return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } })
     }
     for (const key of files.keys()) {
@@ -2874,7 +2875,7 @@ export class Hub extends EventEmitter {
     return ''
   }
 
-  // The hub of the workspace a lease's holder works in. Crew sets this, to find any workspace's; on its own, a hub knows
+  // The hub of the workspace a lease's holder works in. CLIque sets this, to find any workspace's; on its own, a hub knows
   // only itself.
   hubOf(ws) {
     return ws === this.ws ? this : null
@@ -2899,14 +2900,14 @@ export class Hub extends EventEmitter {
   }
 
   // One user at a time, for things that aren't files: a simulator, a device, a dev server's port, an API that rate-limits
-  // the whole office. `crew lease <thing>` takes it before using it; someone else has it, and it waits for it like
-  // `crew ask` waits for an answer, then says who has it. It's the holder's until it gives it back (`crew release`), its
+  // the whole office. `clique lease <thing>` takes it before using it; someone else has it, and it waits for it like
+  // `clique ask` waits for an answer, then says who has it. It's the holder's until it gives it back (`clique release`), its
   // turn ends with nothing of its left running in the background, or its CLI stops. An agent answering the holder's
   // question may use it: the holder is waiting on it, not using it. From your own terminal it's yours until you release it.
   async claim({ from = 'you', words = [], closed, hold = ASK_HOLD }) {
     const [thing = '', ...why] = words.map((w) => String(w).trim())
     const key = leaseKey(thing)
-    if (!key) throw new Error('usage: crew lease <thing> ["what for"], e.g. crew lease simulator "QA pass for #12"')
+    if (!key) throw new Error('usage: clique lease <thing> ["what for"], e.g. clique lease simulator "QA pass for #12"')
     if (from !== 'you' && !this.agents.has(from)) throw new Error(`no agent named "${from}"`)
     const held = this.held.get(key)
     const there = held && (held.name === 'you' ? this : this.hubOf(held.ws ?? this.ws))
@@ -2936,7 +2937,7 @@ export class Hub extends EventEmitter {
     if (again) thing = was.thing // as it was first written
     this.held.set(key, { thing, name, ws: this.ws, why: why ? why.slice(0, 200) : (again ? was.why : ''), at: again ? was.at : Date.now() })
     this.changed()
-    const until = name === 'you' ? 'until you crew release it' : `until your turn ends with nothing left running, or you crew release ${thing}`
+    const until = name === 'you' ? 'until you clique release it' : `until your turn ends with nothing left running, or you clique release ${thing}`
     return `${again ? 'Still yours' : 'Yours now'}: ${thing}, ${until}.\n`
   }
 
@@ -2951,10 +2952,10 @@ export class Hub extends EventEmitter {
     const mins = Math.max(1, Math.round((Date.now() - h.at) / 60000))
     const away = h.name !== 'you' && (h.ws ?? this.ws) !== this.ws && (this.hubOf(h.ws)?.space.name ?? h.ws)
     const who = h.name === 'you' ? 'the user' : away ? `${h.name} (in your ${away} workspace)` : `@${h.name}`
-    return `${h.thing} is still ${who}'s (${mins} min${h.why ? `: ${h.why}` : ''}). Don't use it meanwhile: carry on with other work and try again later${h.name === 'you' || away ? '' : `, or crew ask ${h.name}`}.\n`
+    return `${h.thing} is still ${who}'s (${mins} min${h.why ? `: ${h.why}` : ''}). Don't use it meanwhile: carry on with other work and try again later${h.name === 'you' || away ? '' : `, or clique ask ${h.name}`}.\n`
   }
 
-  // `crew release [thing]`: one thing, or everything it holds.
+  // `clique release [thing]`: one thing, or everything it holds.
   give({ from = 'you', words = [] }) {
     const thing = words.join(' ').trim()
     const keys = (thing ? [leaseKey(thing)] : [...this.held.keys()]).filter((k) => this.held.get(k) && this.mine(this.held.get(k), from))
@@ -2982,7 +2983,7 @@ export class Hub extends EventEmitter {
     return [...this.held.values()].filter((h) => this.mine(h, name) && this.stillHolds(h)).map((h) => h.thing)
   }
 
-  // `crew leases`: who has what, in every workspace.
+  // `clique leases`: who has what, in every workspace.
   leasesText() {
     const now = [...this.held.values()].filter((h) => (h.name === 'you' ? this : this.hubOf(h.ws ?? this.ws))?.stillHolds(h))
     if (!now.length) return 'Nothing is leased right now.\n'
@@ -2991,7 +2992,7 @@ export class Hub extends EventEmitter {
   }
 
   // Best agent for an un-addressed task: area match first, then whoever is free, then the shortest queue.
-  // An area matches on shared words and on shared intents (see INTENTS), so "keep the crew in working order"
+  // An area matches on shared words and on shared intents (see INTENTS), so "keep the clique in working order"
   // finds the organiser even though none of its words are in "admin work, assistant, organiser".
   route(text, from, channel) {
     const members = this.channel(channel)?.members
@@ -3039,7 +3040,7 @@ export class Hub extends EventEmitter {
     const [msg] = msgs
     for (const m of msgs) m.queued = false
     if (msg.ticket !== undefined && !msg.triage) (this.convoOf(a).ticket = msg.ticket), this.saveConvos() // this conversation is about that bug now
-    // A line Crew owes the agent (it moved to this computer while free) goes on top of the next message it gets.
+    // A line CLIque owes the agent (it moved to this computer while free) goes on top of the next message it gets.
     const note = this.convos[a.name]?.note
     if (note) delete this.convos[a.name].note, this.saveConvos()
     const head = msgs.length < 2 ? '' : msg.answers ? `[${msgs.length} answers to your questions came in]` : `[${msgs.length} hand-offs came in while you were busy, oldest first. Take them together, in this one turn.]`
@@ -3049,8 +3050,8 @@ export class Hub extends EventEmitter {
     // Matched against the prompt the agent reports, even if it shows up late. Only the words count:
     // Claude Code turns attached image paths into "[Image #1]" and moves them around.
     a.expect = { id: msg.id, text, msgs }
-    // (Crew's own prompts, like "you were moved here", aren't messages anyone sent it)
-    for (const m of msgs) if (!m.crew) this.record(a.name, { [m.from === 'you' ? 'fromYou' : 'fromTeam']: 1, delivered: 1, queuedMs: Date.now() - m.ts })
+    // (CLIque's own prompts, like "you were moved here", aren't messages anyone sent it)
+    for (const m of msgs) if (!m.clique) this.record(a.name, { [m.from === 'you' ? 'fromYou' : 'fromTeam']: 1, delivered: 1, queuedMs: Date.now() - m.ts })
     this.awaitPickup(a)
     this.setStatus(a, 'working')
   }
@@ -3067,7 +3068,7 @@ export class Hub extends EventEmitter {
 
   // What nextUp would take, left in the queue.
   peek(a) {
-    const kind = (m) => (m.answers ? 'answer' : !m.ask && !m.fresh && m.ticket === undefined && m.from !== 'you' && !m.crew ? 'handoff' : null)
+    const kind = (m) => (m.answers ? 'answer' : !m.ask && !m.fresh && m.ticket === undefined && m.from !== 'you' && !m.clique ? 'handoff' : null)
     const k = kind(a.inbox[0])
     // ...and only from one channel at a time: what comes of them goes back to the channel each was said in
     const where = a.inbox[0].channel
@@ -3089,7 +3090,7 @@ export class Hub extends EventEmitter {
   // message from there (and again once it's changed), after that just its name. #general without a brief: nothing, as
   // before there were channels. Called as the message goes in, so the conversation counts the brief as given.
   briefed(a, m) {
-    // one said on another computer comes with its name and brief (Crew.send); one of this workspace's, as it is now
+    // one said on another computer comes with its name and brief (Clique.send); one of this workspace's, as it is now
     const c = (m.channelName && { id: m.channel, name: m.channelName, brief: m.brief ?? '' }) || (this.channel(m.channel) ?? this.channel(GENERAL))
     const convo = this.convoOf(a)
     const had = convo.briefs?.[c.id]
@@ -3140,7 +3141,7 @@ export class Hub extends EventEmitter {
     this.saveConvos()
   }
 
-  // `crew channels`: the channels, who's in each and its brief, which goes for every message there. An agent (`from`)
+  // `clique channels`: the channels, who's in each and its brief, which goes for every message there. An agent (`from`)
   // has read those briefs now, and sees the channels it can't post in.
   channelsText(from) {
     const a = this.agents.get(from)
@@ -3151,16 +3152,16 @@ export class Hub extends EventEmitter {
     }).join('\n')}\n`
   }
 
-  // `crew post <channel> "…"`: an agent says something in the channel it picks, whichever one it's working in. It reads
+  // `clique post <channel> "…"`: an agent says something in the channel it picks, whichever one it's working in. It reads
   // as anything else that agent says there, unread in that channel until you've seen it, and takes up nobody's turn. An
   // @name hands it to that teammate there, by the rules of any hand-off. From your own terminal it goes as what you type
-  // in that channel does. Two things only Crew can see, so they're rules rather than a line in the agent's prompt: what
+  // in that channel does. Two things only CLIque can see, so they're rules rather than a line in the agent's prompt: what
   // it would say twice, and a brief it hasn't read.
   postIn(from, [channel = '', ...words]) {
     const text = words.join(' ').trim()
     if (!channel.trim() || !text) throw new Error(POST_USAGE)
     const c = this.channelNamed(channel)
-    if (!c) throw new Error(`there's no #${channelName(channel)} here: there's ${this.space.channels.map((x) => `#${x.name}`).join(', ')} (crew channels)`)
+    if (!c) throw new Error(`there's no #${channelName(channel)} here: there's ${this.space.channels.map((x) => `#${x.name}`).join(', ')} (clique channels)`)
     const a = this.agents.get(from)
     if (!a) return this.send({ from, text, channel: c.id })
     if (c.members?.length && !c.members.includes(this.baseOf(from)) && !this.agents.get(from)?.system) throw new Error(`you're not in #${c.name}, so nothing was posted: it's for ${c.members.map((n) => `@${n}`).join(', ')}. Hand it to one of them, or ask the user to add you.`)
@@ -3177,7 +3178,7 @@ export class Hub extends EventEmitter {
 
   // A message's own bracket: what it is and who it's from.
   tagged(a, m, busy) {
-    if (m.ask && busy) return `[question from @${m.from}, who is waiting on your answer. Answer it now with crew answer "…", then carry on with what you were doing] ${m.text}`
+    if (m.ask && busy) return `[question from @${m.from}, who is waiting on your answer. Answer it now with clique answer "…", then carry on with what you were doing] ${m.text}`
     if (m.ask) return `[question from @${m.from}, who is waiting on your answer: your final message is the answer, and goes back to @${m.from} by itself] ${m.text}`
     const others = (m.cc ?? []).filter((n) => this.baseOf(n) !== this.baseOf(a.name))
     const leads = others.length && this.baseOf(m.cc[0]) === this.baseOf(a.name)
@@ -3208,7 +3209,7 @@ export class Hub extends EventEmitter {
   // picked one, makes it clear and assigns it; otherwise it goes to whoever's area it matches. With Auto-start
   // on, the owner gets it right away, in a fresh conversation. `owner` (an @name you typed) skips all that.
   fileTask({ text, images = [], by = 'you', kind = 'task', owner }) {
-    images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
+    images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!String(text ?? '').trim() && images.length) text = 'See the screenshot'
     owner = owner ? this.taskOwner(owner, by) : null
     const t = this.tickets.add({ text, images, by, kind: KINDS.includes(kind) ? kind : 'task', owner })
@@ -3221,7 +3222,7 @@ export class Hub extends EventEmitter {
     const triage = this.triager()
     if (!triage) {
       const owner = ownerFor(`${t.title} ${t.body}`, this.teammates())
-      if (owner) this.tickets.edit(t.id, { owner: owner.name }, 'crew')
+      if (owner) this.tickets.edit(t.id, { owner: owner.name }, 'clique')
     }
     this.postTask(t, by, 'filed')
     if (triage && this.savers.quickTriage && !t.images.length) this.quickTriage(t, triage)
@@ -3252,7 +3253,7 @@ export class Hub extends EventEmitter {
   // conversation where it worked on this task, "send back" goes there, with everything it already tried.
   // quiet: no line in the chat for it (a bulk Start posts one for all of them).
   async dispatch(id, opts) {
-    const { to, note, quiet } = opts ?? {} // over Crew Link a missing argument arrives as null
+    const { to, note, quiet } = opts ?? {} // over CLIque Link a missing argument arrives as null
     const t = this.tickets.get(id)
     const owner = this.agentName(to || t.owner || ownerFor(`${t.title} ${t.body}`, this.teammates().filter((a) => !t.declined?.includes(this.baseOf(a.name))))?.name)
     if (!owner) throw new Error(`who should fix #${t.id}? Pick an owner first`)
@@ -3283,8 +3284,8 @@ export class Hub extends EventEmitter {
 
   autoDispatch(t) {
     // An owner that's off: the task waits for it, and starts once it's back on (startWaiting).
-    if (t.owner && !this.isOn(t.owner)) return void this.post({ kind: 'event', from: 'crew', text: `#${t.id} waits for @${t.owner}, who is turned off: it starts once @${t.owner} is back on` })
-    this.dispatch(t.id).catch((e) => this.post({ kind: 'event', from: 'crew', text: `couldn't send #${t.id} on: ${e.message}` }))
+    if (t.owner && !this.isOn(t.owner)) return void this.post({ kind: 'event', from: 'clique', text: `#${t.id} waits for @${t.owner}, who is turned off: it starts once @${t.owner} is back on` })
+    this.dispatch(t.id).catch((e) => this.post({ kind: 'event', from: 'clique', text: `couldn't send #${t.id} on: ${e.message}` }))
   }
 
   // An agent just came back on: with Auto-start, the tasks that waited for it start now, each in a new conversation.
@@ -3293,13 +3294,13 @@ export class Hub extends EventEmitter {
     for (const t of this.tickets.open()) if (t.status === 'new' && t.owner === a.name) this.autoDispatch(t)
   }
 
-  // An owner for a task. An agent giving a task away (triage, `crew task add --owner`) can only give it to a teammate
+  // An owner for a task. An agent giving a task away (triage, `clique task add --owner`) can only give it to a teammate
   // who's on: one that's off never picks it up, and the task just sits there. You can, and the task waits for it.
   taskOwner(name, by, t) {
     const owner = this.agentName(name)
     this.notSystemAgent(owner)
     if (by === 'you' || this.isOn(owner)) return owner
-    throw new Error(`@${owner} is turned off, so it can't take ${t ? `#${t.id}` : 'this task'}. Give it to a teammate who's on (crew who), or leave out --owner for the user to decide`)
+    throw new Error(`@${owner} is turned off, so it can't take ${t ? `#${t.id}` : 'this task'}. Give it to a teammate who's on (clique who), or leave out --owner for the user to decide`)
   }
 
   // Is this agent switched on? One here, or name@computer as its computer reports it.
@@ -3312,7 +3313,7 @@ export class Hub extends EventEmitter {
   // ---- stalled tasks: in progress, and nobody on them --------------------------------------------------
   // A task can sit In progress while its agent does nothing: its turn ended on "I'll take the screenshots once it
   // settles", or the conversation moved on, and nothing calls it back. Once the agent on it has been idle a while with
-  // nothing lined up, nothing it's waiting on and no word on the task, Crew reminds it once: carry on, or say what's in
+  // nothing lined up, nothing it's waiting on and no word on the task, CLIque reminds it once: carry on, or say what's in
   // the way. If it stops again without finishing, its last reply asked you something, or no conversation is on the task
   // any more, it's yours to look at: one line in the chat and a notification.
 
@@ -3358,8 +3359,8 @@ export class Hub extends EventEmitter {
     this.stalls.set(t.id, { at: Date.now() })
     this.post({ kind: 'event', from: w.name, text: `stopped on #${t.id} ${mins} min ago without finishing it, so CLIque reminded it` })
     const handed = this.feed.findLast((e) => e.kind === 'msg' && e.ticket === t.id) // its reply threads to the task
-    const text = `[crew] Task #${t.id} "${t.title}" is still in progress, and your turn ended ${mins} min ago without finishing it. If it's done, run: crew task done ${t.id} "what you did, how you checked". If something is in the way (an answer, a decision, access), say what with crew task note ${t.id} "…" and stop. Otherwise carry on with it now.`
-    this.queue(w, crewPrompt(w, text, handed?.id))
+    const text = `[clique] Task #${t.id} "${t.title}" is still in progress, and your turn ended ${mins} min ago without finishing it. If it's done, run: clique task done ${t.id} "what you did, how you checked". If something is in the way (an answer, a decision, access), say what with clique task note ${t.id} "…" and stop. Otherwise carry on with it now.`
+    this.queue(w, cliquePrompt(w, text, handed?.id))
     this.pump(w)
   }
 
@@ -3380,7 +3381,7 @@ export class Hub extends EventEmitter {
     if (there.includes(name)) return name
     const found = this.elsewhere?.(name)
     if (found) return found
-    throw new Error(`no agent named "${name}" (try: crew who)`)
+    throw new Error(`no agent named "${name}" (try: clique who)`)
   }
 
   // One line in the feed for what happened to a task (`type` is its kind: bug, feature, task). A task filed for
@@ -3389,7 +3390,7 @@ export class Hub extends EventEmitter {
     this.post({ kind: 'task', type: t.kind, from, ticket: t.id, title: t.title, act, ...(text && { text }), ...(act === 'filed' && t.owner && { owner: t.owner }) })
   }
 
-  // `crew task ...` (or `crew bug ...`) from an agent or your terminal. args are the words after it.
+  // `clique task ...` (or `clique bug ...`) from an agent or your terminal. args are the words after it.
   taskCommand(from, args) {
     let [op = 'help', ...rest] = args
     op = { fixed: 'done', report: 'add' }[op] ?? op // the names from when it was the Bugs board
@@ -3410,7 +3411,7 @@ export class Hub extends EventEmitter {
     const withId = ['show', 'done', 'note', 'triage', 'dup', 'decline'].includes(op)
     const { id: ref, host } = withId ? split(words[0]) : { id: '', host: null }
     const original = op === 'dup' ? split(words[1]) : null
-    if (original && !original.id) throw new Error('usage: crew task dup <n> <original>')
+    if (original && !original.id) throw new Error('usage: clique task dup <n> <original>')
     if (original && original.host !== host) throw new Error('both tasks must be on the same computer')
     if (host) {
       // the same command on the computer the task lives on, with the numbers as it knows them
@@ -3443,7 +3444,7 @@ export class Hub extends EventEmitter {
         return `#${t.id}: ${t.kind}, ${t.owner ? `for @${t.owner}` : 'unassigned'}${this.space.autofix && t.owner ? ', sent to them' : ''}\n`
       }
       case 'done': {
-        if (!text) throw new Error(`usage: crew task done ${ref} "what you did, how you checked"`)
+        if (!text) throw new Error(`usage: clique task done ${ref} "what you did, how you checked"`)
         if (t.status === 'done') throw new Error(`#${t.id} is already closed${t.dupOf ? ` (same as #${t.dupOf})` : ''}`)
         const bug = t.kind === 'bug'
         Object.assign(t, { fix: text, fixer: by })
@@ -3457,7 +3458,7 @@ export class Hub extends EventEmitter {
         this.postTask(t, from, 'note', text)
         return `noted on #${t.id}\n`
       case 'decline':
-        if (!text) throw new Error(`usage: crew task decline ${ref} "why it isn't yours"`)
+        if (!text) throw new Error(`usage: clique task decline ${ref} "why it isn't yours"`)
         return this.decline(t, by, text)
       case 'dup': {
         const original = this.tickets.dup(t.id, words[1], by)
@@ -3469,7 +3470,7 @@ export class Hub extends EventEmitter {
     }
   }
 
-  // `crew task decline <n> "why"`: its owner can't or shouldn't do it. A task never sits with an owner that said no: it
+  // `clique task decline <n> "why"`: its owner can't or shouldn't do it. A task never sits with an owner that said no: it
   // goes straight to the next agent whose area it matches (never back to one that declined it), and on to it in a new
   // conversation if it was under way or Auto-start is on. With no one left, it goes back to To do, unassigned, and
   // you hear about it.
@@ -3480,8 +3481,8 @@ export class Hub extends EventEmitter {
     this.tickets.note(t.id, by, `declined: ${why}`)
     const next = ownerFor(`${t.title} ${t.body}`, this.teammates().filter((a) => !t.declined.includes(this.baseOf(a.name))))
     const started = t.status === 'fixing'
-    if (started) this.tickets.move(t.id, 'new', 'crew', `back to To do: @${by} declined it`)
-    this.tickets.edit(t.id, { owner: next?.name ?? '' }, 'crew')
+    if (started) this.tickets.move(t.id, 'new', 'clique', `back to To do: @${by} declined it`)
+    this.tickets.edit(t.id, { owner: next?.name ?? '' }, 'clique')
     this.ruling('decline', by, next?.name ?? null, { ticket: t.id, title: t.title, text: why })
     if (!next) {
       this.emit('notice', { title: `#${t.id} needs an owner`, body: `@${by} declined it: ${why}`, focus: `task:${t.id}` })
@@ -3500,7 +3501,7 @@ export class Hub extends EventEmitter {
     switch (op) {
       case 'edit':
         if (arg.owner) arg = { ...arg, owner: this.agentName(arg.owner) }
-        if (arg.images) arg = { ...arg, images: arg.images.filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep)) }
+        if (arg.images) arg = { ...arg, images: arg.images.map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep)) }
         return void this.tickets.edit(t.id, arg, 'you')
       case 'note':
         this.tickets.note(t.id, 'you', arg)
@@ -3622,16 +3623,16 @@ export class Hub extends EventEmitter {
     const when = new Date().toISOString().slice(0, 16).replace('T', ' ')
     const file = this.at('board.md')
     fs.appendFileSync(file, `- **${from}** (${when}): ${text.replace(/\s*\n\s*/g, ' ')}\n`)
-    // the last BOARD_KEEP notes are what `crew board` shows: past BOARD_MAX, only they're kept (core/keep.js)
+    // the last BOARD_KEEP notes are what `clique board` shows: past BOARD_MAX, only they're kept (core/keep.js)
     try {
       if (fs.statSync(file).size > BOARD_MAX) replaceFile(file, keepLines(fs.readFileSync(file, 'utf8')))
     } catch {} // the note is in: it's kept whole next time
     const channel = this.channelFor(from)
     this.post({ kind: 'note', from, text, ...(channel && { channel }) })
-    return 'shared with the crew\n'
+    return 'shared with the clique\n'
   }
 
-  // `crew board`: the shared notes. Words search them, --all shows every one. Otherwise, with boardNew on, an agent sees
+  // `clique board`: the shared notes. Words search them, --all shows every one. Otherwise, with boardNew on, an agent sees
   // only the notes added since its conversation last looked (its first look: the last BOARD_FIRST), and how many older
   // ones there are; off, the last BOARD_KEEP as before. You, in a terminal, always see them all. Where each conversation
   // has read up to is kept either way, so the ledger can say what showing only the new ones leaves out.
@@ -3657,7 +3658,7 @@ export class Hub extends EventEmitter {
     const at = c.boardSeen ? notes.findLastIndex((n) => briefHash(n) === c.boardSeen) : -1
     const fresh = at >= 0 ? notes.slice(at + 1) : notes.slice(-BOARD_FIRST)
     const older = notes.length - fresh.length
-    const more = older ? `${older} older: crew board --all, or crew board <words> to search` : ''
+    const more = older ? `${older} older: clique board --all, or clique board <words> to search` : ''
     const short = at < 0 ? `${fresh.join('\n')}\n${more ? `(the last ${fresh.length} notes; ${more})\n` : ''}`
       : fresh.length ? `${fresh.join('\n')}\n(${fresh.length} new since you last looked${more ? `; ${more}` : ''})\n`
       : `(nothing new on the board since you last looked${more ? `; ${more}` : ''})\n`
@@ -3668,7 +3669,7 @@ export class Hub extends EventEmitter {
     return on ? short : full
   }
 
-  // `crew busy`: what each teammate is on right now, one line each, so an agent can tell whether someone is already
+  // `clique busy`: what each teammate is on right now, one line each, so an agent can tell whether someone is already
   // building what it's about to build: its message or task, the files it's editing, what it has leased.
   busy(from = 'you') {
     this.ledger.add('busyCheck', this.savers.busyCheck, { n: 1 })
@@ -3681,7 +3682,7 @@ export class Hub extends EventEmitter {
       return `${a.name.padEnd(16)} ${this.onNow(a)}${extra.length ? ` · ${extra.join(' · ')}` : ''}`
     })
     for (const a of this.directory?.() ?? []) if (a.on) rows.push(`${a.name.padEnd(16)} ${a.status === 'idle' || a.status === 'resting' ? 'free' : a.status}${a.ticket ? ` · on #${a.ticket}` : ''}`)
-    return rows.length ? `${rows.join('\n')}\n` : '(nobody else in the crew right now)\n'
+    return rows.length ? `${rows.join('\n')}\n` : '(nobody else in the clique right now)\n'
   }
 
   // What an agent is on, in a few words: its task, or the message it's answering.
@@ -3695,7 +3696,7 @@ export class Hub extends EventEmitter {
     return `${a.status === 'waiting' ? 'waiting for the user, on' : 'working on'} ${what}`
   }
 
-  // Who `crew ask` of `a`'s is holding on for right now. [{ name, since, id, text }]
+  // Who `clique ask` of `a`'s is holding on for right now. [{ name, since, id, text }]
   waitingOn(a) {
     return [...this.calls.values()].filter((c) => c.from === a.name && c.hold).map((c) => ({ name: this.ownerOf(c), since: c.at, id: c.msg?.id ?? null, text: gist(c.text) }))
   }
@@ -3718,7 +3719,7 @@ export class Hub extends EventEmitter {
       const clones = this.maxClones(a) ? ` (clones itself when busy, up to ${this.maxClones(a)})` : ''
       return `${a.name.padEnd(16)} ${status.padEnd(20)} ${brain.padEnd(22)} ${a.area ?? ''}${clones}`
     })
-    // teammates on your other computers (Crew Link), addressed as name@computer
+    // teammates on your other computers (CLIque Link), addressed as name@computer
     for (const a of this.directory?.() ?? []) rows.push(`${a.name.padEnd(16)} ${(a.on ? a.status : 'off').padEnd(20)} ${''.padEnd(22)} ${a.area ?? ''}`)
     return rows.join('\n') + '\n'
   }
@@ -3729,7 +3730,7 @@ export class Hub extends EventEmitter {
     const parent = entry.re ? this.feed.findLast((x) => x.id === entry.re) : undefined
     // What follows from a message is in its channel: an agent's reply to it, its question about it, a hand-off it led to.
     if (!('channel' in entry) && parent?.channel) entry = { ...entry, channel: parent.channel }
-    // A note, or Crew stepping in, in the middle of a turn on something threaded: that thread's too.
+    // A note, or CLIque stepping in, in the middle of a turn on something threaded: that thread's too.
     if ((entry.kind === 'note' || entry.kind === 'rule') && !entry.thread && !entry.re) {
       const a = this.agents.get(entry.from)
       const on = a?.status === 'working' && a.current ? this.feed.findLast((x) => x.id === a.current) : null
@@ -3768,7 +3769,7 @@ export class Hub extends EventEmitter {
   }
 
   // The lines the chat can't let go of yet, however old: a question waiting for your answer, a message still queued
-  // or held for its agent, one an agent is answering, what a teammate's `crew ask` is about, and an agent's lines on
+  // or held for its agent, one an agent is answering, what a teammate's `clique ask` is about, and an agent's lines on
   // their way to another computer (core/move.js). -> (entry) => whether it's needed
   neededLines(keep = []) {
     const ids = new Set(keep)
@@ -3884,7 +3885,7 @@ export class Hub extends EventEmitter {
     const up = owner && !owner.off && !this.parked && !owner.moving && owner.status !== 'stopped' && owner.status !== 'away' && this.workable(owner)
     if (!up || now - asked < THREAD_ASK_AGAIN) return this.bringOut(id)
     if (root) this.amend(root, { closed: now })
-    this.queue(owner, { ...crewPrompt(owner, CLOSE_THREAD(threadDigest(unseen))), closes: id, closeRe: you.id, ...(you.channel && { channel: you.channel }) })
+    this.queue(owner, { ...cliquePrompt(owner, CLOSE_THREAD(threadDigest(unseen))), closes: id, closeRe: you.id, ...(you.channel && { channel: you.channel }) })
     this.pump(owner)
   }
 
@@ -3981,11 +3982,11 @@ export class Hub extends EventEmitter {
     if (this.keepRuntime) this.saveRuntime()
   }
 
-  // ---- outliving Crew: picking agents up again after a restart ----------------------------------------------
-  // With the terminal host, quitting Crew leaves the agents' CLIs running. What Crew knew about them (what each is
+  // ---- outliving CLIque: picking agents up again after a restart ----------------------------------------------
+  // With the terminal host, quitting CLIque leaves the agents' CLIs running. What CLIque knew about them (what each is
   // answering, its queue, its clones, questions between them, who holds which file) is saved as it changes, and read
-  // back when Crew starts again and finds their terminals still there. Hook events they sent meanwhile were spooled
-  // (adapters.js) and replay in order, so a reply finished while Crew was closed still lands in the chat, threaded.
+  // back when CLIque starts again and finds their terminals still there. Hook events they sent meanwhile were spooled
+  // (adapters.js) and replay in order, so a reply finished while CLIque was closed still lands in the chat, threaded.
 
   saveRuntime(now = false) {
     clearTimeout(this.runtimeTimer)
@@ -4009,7 +4010,7 @@ export class Hub extends EventEmitter {
 
   // The terminals that survived, matched with what was saved about them. Returns the names picked up. Any other terminal
   // (its agent was removed or turned off meanwhile, or nothing is known about it) is stopped. Queues of agents whose CLI
-  // ended while Crew was closed still go to them once they start again.
+  // ended while CLIque was closed still go to them once they start again.
   adopt(survivors) {
     const saved = readJSON(this.at(RUNTIME)) ?? {}
     // kept up to date only with the terminal host; otherwise it was written on quit, and read once is enough (a crash
@@ -4035,10 +4036,12 @@ export class Hub extends EventEmitter {
         continue
       }
       for (const k of KEEP) if (s[k] !== undefined) a[k] = s[k]
-      a.inbox = (s.inbox ?? []).map(live)
-      a.serving = (s.serving ?? []).map(live)
-      a.expect = s.expect ? { ...s.expect, msgs: s.expect.msgs.map(live) } : null
-      a.steering = s.steering ? { ...s.steering, msgs: s.steering.msgs.map(live) } : null
+      // (a note of the app's own, queued before its rename, and images written down before its folder moved)
+      const mine = (m) => live(movedImages(m.crew && !m.clique ? { ...m, clique: m.crew } : m))
+      a.inbox = (s.inbox ?? []).map(mine)
+      a.serving = (s.serving ?? []).map(mine)
+      a.expect = s.expect ? { ...s.expect, msgs: s.expect.msgs.map(mine) } : null
+      a.steering = s.steering ? { ...s.steering, msgs: s.steering.msgs.map(mine) } : null
       Object.assign(a, { subs: new Map(), subPending: [] })
       this.runs.set(p.tag, { name, file: this.at(GROUPS, `${name}.${p.tag}`), pid: p.pid, at: 0 })
       adopted.add(name)
@@ -4058,18 +4061,18 @@ export class Hub extends EventEmitter {
       const a = this.agents.get(name) ?? this.agents.get(s.cloneOf)
       if (!a || a.off) continue
       for (const m of s.inbox.map(live)) {
-        if (m.to !== a.name && !m.crew) this.amend(m, { to: a.name }) // a clone's, gone: its original takes it
+        if (m.to !== a.name && !m.clique) this.amend(m, { to: a.name }) // a clone's, gone: its original takes it
         this.queue(a, m)
       }
     }
     for (const c of saved.calls ?? []) this.calls.set(c.id, { ...c, msg: c.msg ? this.feed.find((e) => e.id === c.msg) : undefined, hold: null })
     for (const [file, l] of saved.leases ?? []) if (adopted.has(l.name)) this.leases.set(file, { ...l, ws: this.ws })
     for (const [k, h] of saved.held ?? []) if (h.name === 'you' || adopted.has(h.name)) this.held.set(k, { ...h, ws: this.ws })
-    if (adopted.size) this.post({ kind: 'event', from: 'crew', text: `picked up ${atNames([...adopted])} where ${adopted.size === 1 ? 'it was' : 'they were'}: ${adopted.size === 1 ? 'it' : 'they'} kept working while CLIque was closed` })
+    if (adopted.size) this.post({ kind: 'event', from: 'clique', text: `picked up ${atNames([...adopted])} where ${adopted.size === 1 ? 'it was' : 'they were'}: ${adopted.size === 1 ? 'it' : 'they'} kept working while CLIque was closed` })
     return adopted
   }
 
-  // What agents' hooks couldn't tell Crew while it was closed, in the order it happened: an agent's <name>.jsonl.1
+  // What agents' hooks couldn't tell CLIque while it was closed, in the order it happened: an agent's <name>.jsonl.1
   // (what came before its spool filled up: SPOOL_MAX, core/keep.js), then one a hook was moving there when it was cut
   // short (<name>.jsonl.<its pid>), then its <name>.jsonl.
   replaySpool() {
@@ -4133,9 +4136,9 @@ export class Hub extends EventEmitter {
         clones: this.maxClones(a), ...(a.cloneOf && { cloneOf: a.cloneOf, clone: a.clone, avatar: { seed: a.avatar?.seed ?? a.cloneOf, ...a.avatar } }),
         // its sub-agents: the running ones, and ones that just finished
         subs: [...(a.subs?.values() ?? [])].filter((x) => !x.ended || Date.now() - x.ended < SUB_LINGER).map(({ id, type, description, started, ended, tools, activity }) => ({ id, type, description, started, ended, tools, activity })),
-        // right of way: the teammates its `crew ask` is waiting on right now, and who's owed an answer by it
+        // right of way: the teammates its `clique ask` is waiting on right now, and who's owed an answer by it
         waitingOn: this.waitingOn(a), owes: this.owes(a),
-        // what it has leased (crew lease): the simulator, a port
+        // what it has leased (clique lease): the simulator, a port
         holds: this.holdsOf(a.name),
         // the channel of what it's working on (none: #general's), so a channel shows who's at work there
         channel: (a.status === 'working' || a.status === 'waiting') ? this.channelFor(a.name) : undefined,
@@ -4217,7 +4220,7 @@ const hold = (a, ms) => {
   a.holdUntil = Math.max(a.holdUntil, Date.now() + ms)
 }
 
-// A prompt from Crew itself, queued like a message (it isn't one: it's not in the chat). See move.js.
+// A prompt from CLIque itself, queued like a message (it isn't one: it's not in the chat). See move.js.
 // A thread counts as over this long after its last line, with nobody still on it. A question at the end of an agent's reply
 // waits as long for a teammate to take it up, before it's brought out to you. Short, because you're waiting: whoever is
 // still at work or has a message queued keeps the thread going however long that takes (threadBusy).
@@ -4227,36 +4230,36 @@ const THREAD_LOOK = 10000
 const THREAD_ASK_AGAIN = 10 * 60000
 // A thread that was going when CLIque closed, back open within this long, carries on where it was.
 const THREAD_RESUME = 60 * 60000
-const CLOSE_THREAD = (said) => `[crew] The thread your request led to has gone quiet.${said ? ` What was said since your last message:\n\n${said}\n\n` : ' '}Tell the user where it ended, in one or two sentences: what's done, what isn't, and anything they have to do. If something failed or wasn't checked, say that first. Don't start anything new or message anyone. If your last message to them already says all that, reply with just: nothing new`
+const CLOSE_THREAD = (said) => `[clique] The thread your request led to has gone quiet.${said ? ` What was said since your last message:\n\n${said}\n\n` : ' '}Tell the user where it ended, in one or two sentences: what's done, what isn't, and anything they have to do. If something failed or wasn't checked, say that first. Don't start anything new or message anyone. If your last message to them already says all that, reply with just: nothing new`
 // How long Q may take starting up before what you send stops waiting for him.
 const SYSTEM_AGENT_START_MAX = 90000
-const crewPrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, crew: true, queued: true })
+const cliquePrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, clique: true, queued: true })
 
-// The last time anyone but Crew did something with a task: added it, started it, wrote a note, moved it.
-const lastWord = (t) => t.log.findLast((l) => l.by !== 'crew')?.ts ?? t.created
+// The last time anyone but CLIque did something with a task: added it, started it, wrote a note, moved it.
+const lastWord = (t) => t.log.findLast((l) => l.by !== 'clique')?.ts ?? t.created
 
-// What `crew lease` calls a thing, however it's written: "iOS  Simulator" and "ios simulator" are one.
+// What `clique lease` calls a thing, however it's written: "iOS  Simulator" and "ios simulator" are one.
 const leaseKey = (thing) => String(thing ?? '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 60)
 
-// Claude Code runs every command through bin/crew-sh, which writes down its process group (see Hub.sweep). Your own
-// prefix, if you have one, still runs after it (unless it's crew-sh itself: Crew started from an agent's terminal).
+// Claude Code runs every command through bin/clique-sh, which writes down its process group (see Hub.sweep). Your own
+// prefix, if you have one, still runs after it (unless it's clique-sh itself: CLIque started from an agent's terminal).
 // Claude Code (2.1.316) shell-quotes the prefix, spaces and all, but takes whatever follows its last " -" as options for
 // it, so in a folder with " -" in its name there's none, and the agent's process tree alone says what it leaves running.
-// Its docs promise only "<prefix> '<command>'" (env-vars: CLAUDE_CODE_SHELL_PREFIX), so on Windows, where Crew's
-// folder is under C:\Users\<you> and often has spaces, the prefix is the bare name crew-sh: Git Bash finds it on the
-// agent's PATH, in bin\win32-<arch> (core/launch.js withTools), where copies of crew-sh and crew-sh.cmd sit, and an
-// MCP server's start finds crew-sh.cmd there. CREW_BASH is the Git Bash Claude Code runs commands with, for
-// crew-sh.cmd. There crew-sh is tried once first (prefixWorks), with the agent's PATH: if Git Bash won't find it or run
+// Its docs promise only "<prefix> '<command>'" (env-vars: CLAUDE_CODE_SHELL_PREFIX), so on Windows, where CLIque's
+// folder is under C:\Users\<you> and often has spaces, the prefix is the bare name clique-sh: Git Bash finds it on the
+// agent's PATH, in bin\win32-<arch> (core/launch.js withTools), where copies of clique-sh and clique-sh.cmd sit, and an
+// MCP server's start finds clique-sh.cmd there. CLIQUE_BASH is the Git Bash Claude Code runs commands with, for
+// clique-sh.cmd. There clique-sh is tried once first (prefixWorks), with the agent's PATH: if Git Bash won't find it or run
 // it right, commands run without it instead of failing.
 export const shellPrefix = (bin, env = process.env, platform = process.platform, works = prefixWorks) => {
   const win = platform === 'win32'
-  const sh = win ? 'crew-sh' : path.posix.join(bin, 'crew-sh')
+  const sh = win ? 'clique-sh' : path.posix.join(bin, 'clique-sh')
   if (sh.includes(' -')) return {}
   const bash = win ? gitBash(env) : null
   if (win && !works(sh, bash, withTools(env, bin, { platform }))) return {}
   const yours = env.CLAUDE_CODE_SHELL_PREFIX
-  const again = yours && /^crew-sh(\.cmd)?$/i.test(path.posix.basename(yours.replaceAll('\\', '/')))
-  return { CLAUDE_CODE_SHELL_PREFIX: sh, ...(yours && !again && { CREW_SHELL_PREFIX: yours }), ...(win && { CREW_BASH: bash }) }
+  const again = yours && /^clique-sh(\.cmd)?$/i.test(path.posix.basename(yours.replaceAll('\\', '/')))
+  return { CLAUDE_CODE_SHELL_PREFIX: sh, ...(yours && !again && { CLIQUE_SHELL_PREFIX: yours }), ...(win && { CLIQUE_BASH: bash }) }
 }
 
 // Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.
@@ -4335,9 +4338,9 @@ function editedFiles({ tool_name: tool = '', tool_input: input } = {}, cwd) {
   if (!input || typeof input !== 'object') return new Map()
   const named = input.file_path ?? input.notebook_path
   const strings = Object.values(input).flatMap((v) => (typeof v === 'string' ? [v] : Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []))
-  // a patch counts when it's apply_patch's own input, or a shell command that runs apply_patch (not a `crew ask` that
+  // a patch counts when it's apply_patch's own input, or a shell command that runs apply_patch (not a `clique ask` that
   // quotes one, say)
-  const patch = tool === 'apply_patch' || strings.some((x) => /(^|[\s;&|(])apply_patch\b/.test(x) && !/^\s*crew\s/.test(x))
+  const patch = tool === 'apply_patch' || strings.some((x) => /(^|[\s;&|(])apply_patch\b/.test(x) && !/^\s*clique\s/.test(x))
   const patched = (x) => [...x.matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)].map((m) => m[1].trim())
   const paths = typeof named === 'string' ? [named] : patch ? strings.flatMap(patched) : []
   return new Map(paths.filter(Boolean).map((p) => filePath(p, cwd)).map((file) => [fileKey(file), file]))
@@ -4389,7 +4392,10 @@ function loadFeed(file, keep = new Set()) {
       Object.assign(byId.get(amend) ?? {}, patch)
       continue
     }
-    const entry = { ...e, queued: false, held: false }
+    // (what the app said in the chat before its rename, it said as "crew")
+    if (e.from === 'crew') e.from = 'clique'
+    if (e.cli === 'crew') e.cli = 'clique'
+    const entry = { ...movedImages(e), queued: false, held: false }
     all.push(entry)
     byId.set(entry.id, entry)
   }
@@ -4410,7 +4416,7 @@ function loadFeed(file, keep = new Set()) {
   return { feed, lines: feed.length, bytes: Buffer.byteLength(kept) }
 }
 
-// The ids of the feed lines that what Crew saved about its agents at work (runtime.json, see saveRuntime) points at:
+// The ids of the feed lines that what CLIque saved about its agents at work (runtime.json, see saveRuntime) points at:
 // what each is answering, its queue, what a teammate's question is about.
 function runtimeIds(saved) {
   const ids = new Set()
@@ -4518,7 +4524,7 @@ const tokens = (s) =>
 // phrases are matched as written. A fixed list, so it only knows the intents spelled out here.
 const INTENTS = {
   coordination: {
-    stems: ['organi', 'orchestrat', 'coordinat', 'delegat', 'dispatch', 'triag', 'assign', 'reassign', 'prioriti', 'admin', 'assistant', 'crew', 'roster', 'handoff'],
+    stems: ['organi', 'orchestrat', 'coordinat', 'delegat', 'dispatch', 'triag', 'assign', 'reassign', 'prioriti', 'admin', 'assistant', 'clique', 'roster', 'handoff'],
     phrases: ['hand off', 'hand-off', 'working order', 'multiple agents', 'several agents', 'other agents', 'all agents', 'which agent', 'who should', 'who does what', 'split the work'],
   },
 }
@@ -4535,7 +4541,7 @@ const intents = (s) => {
 
 // Who a message is addressed to: `to` (one name, "ada,june", "ada june", or "any"/empty) plus every
 // bare @name in the text, wherever it is. The text itself is left as written. Not addresses: @words glued to
-// something (someone@example.com, @types/node, @ada's), code in backticks, and @any/@you/@crew.
+// something (someone@example.com, @types/node, @ada's), code in backticks, and @any/@you/@clique.
 // Names are case-insensitive and come back lowercase, without duplicates, in the order they appear.
 // An agent on another computer is name@computer: "@iris@workstation" in text, or "iris@workstation" in `to`.
 export function addressees(to, text) {

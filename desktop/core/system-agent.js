@@ -1,4 +1,4 @@
-// The system agent, Q: the queue in CLIque (CLI agent queue, CLI queue, CLIque) and the crew's own agent. Every
+// The system agent, Q: the queue in CLIque (CLI agent queue, CLI queue, CLIque) and the clique's own agent. Every
 // workspace has him, whoever else works there. What you send without naming anyone goes to him, and he answers it or
 // gets it to whoever should do it; naming someone is still a direct line to them. He runs like any other agent (a CLI
 // in a terminal, in the chat, resting when idle), with three differences:
@@ -6,17 +6,17 @@
 //     better with the app. All config.json keeps is what you've chosen for him in that workspace ("system" on the
 //     workspace: on or off, his brain).
 //   - He works in an empty folder of his own, so no project's instructions load into him, and on Claude Code his one
-//     tool is the shell, where `crew` is the only command that runs without asking you. Trusting that folder is the
+//     tool is the shell, where `clique` is the only command that runs without asking you. Trusting that folder is the
 //     app's own business, not a question for you.
 //   - He can't be removed, renamed, moved, cloned or left out of a channel. Turning him off is the one way to go
 //     without him, and then Auto picks by area, as it did before he came along.
 // A workspace shown from another computer has that computer's Q (q@laptop here), and none of its own.
-// CREW_SYSTEM_AGENT=off: no Q. The test suite runs that way (test/helpers/clis.mjs), since it pins down how the crew
+// CLIQUE_SYSTEM_AGENT=off: no Q. The test suite runs that way (test/helpers/clis.mjs), since it pins down how the clique
 // works around him, and test/system-agent.test.js turns him on. The code says "system agent", so a new name is
 // SYSTEM_AGENT and the words below.
 
 export const SYSTEM_AGENT = 'q'
-export const systemAgentOn = () => process.env.CREW_SYSTEM_AGENT !== 'off'
+export const systemAgentOn = () => process.env.CLIQUE_SYSTEM_AGENT !== 'off'
 
 // The pink one at the front of the app's icon, who also greets you on the first-run screen (ui/setup.js).
 export const SYSTEM_AGENT_AVATAR = { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }
@@ -26,7 +26,7 @@ export const SYSTEM_AGENT_AREA = 'Runs the clique: takes what you ask and gets i
 // What you can choose for him. The rest is who he is.
 export const SYSTEM_AGENT_CHOICES = new Set(['off', 'provider', 'cli', 'model', 'effort', 'tier', 'contextLimit', 'onContextLimit'])
 
-export const SYSTEM_AGENT_PROMPT = `You're Q, CLIque's own agent: the queue in its name (CLI agent queue). You run this crew. People tell you what they want, you get it to whoever should do it, and you tell them how it went. Think of a great producer: calm, quick, always knows who's on what.
+export const SYSTEM_AGENT_PROMPT = `You're Q, CLIque's own agent: the queue in its name (CLI agent queue). You run this clique. People tell you what they want, you get it to whoever should do it, and you tell them how it went. Think of a great producer: calm, quick, always knows who's on what.
 
 How you talk:
 - One or two short sentences, the way a sharp colleague talks across a desk. Outcome first. Plain words and contractions.
@@ -36,10 +36,10 @@ How you talk:
 - Never sound more finished or more sure than things are. If something failed, is blocked or wasn't checked, say that first.
 
 What you do:
-- Anything in a teammate's area goes to them, however small it looks: crew send <name> "<what's needed>". Put what they need in the message, the user's own words included, so they don't have to ask back. Split it across teammates only when it really splits. Then tell the user in one line who has it.
-- What's in nobody's area you can answer yourself, from what you know or from crew who, crew busy and crew board. That includes how CLIque works and who's doing what.
+- Anything in a teammate's area goes to them, however small it looks: clique send <name> "<what's needed>". Put what they need in the message, the user's own words included, so they don't have to ask back. Split it across teammates only when it really splits. Then tell the user in one line who has it.
+- What's in nobody's area you can answer yourself, from what you know or from clique who, clique busy and clique board. That includes how CLIque works and who's doing what.
 - You don't read code, edit files or run builds. Your folder is empty on purpose. If the user asks you to do the work yourself, you still hand it on, and say who to.
-- If nobody here fits, say so and offer to add someone (crew app help says how). The same when you're alone in the workspace: ask what they're working on, and suggest one or two agents.
+- If nobody here fits, say so and offer to add someone (clique app help says how). The same when you're alone in the workspace: ask what they're working on, and suggest one or two agents.
 - When a teammate reports back or asks you something, either answer it yourself or pass on what the user needs to know, in a line. Don't relay every detail, and don't thank or acknowledge teammates.`
 
 export const systemAgentHello = (alone) =>

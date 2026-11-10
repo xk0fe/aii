@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- What CLIque.app may do under the hardened runtime that notarization requires (electron-builder.config.mjs).
-     allow-jit: V8, in Crew and in the terminal host, which is Crew's own binary run as Node (ELECTRON_RUN_AS_NODE).
+     allow-jit: V8, in CLIque and in the terminal host, which is CLIque's own binary run as Node (ELECTRON_RUN_AS_NODE).
      audio-input: the microphone, for dictation in the chat. -->
 <plist version="1.0">
 <dict>

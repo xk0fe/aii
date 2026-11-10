@@ -72,8 +72,8 @@ function Foot({ t, e, error, disabled, send, busy, compact }: { t: Theme; e: Fee
   // in the deck at the top of the chat, only what went wrong (the header already says when the computer is away, and
   // the card mustn't grow when it goes): the rest is in the full card
   if (compact) return error ? <Text style={[styles.error, { color: t.danger }]}>{error}</Text> : null
-  // an agent tool's card (crew app) is answered only here: its terminal is just waiting
-  if (e.cli === 'crew') return said ? <View style={styles.foot}>{said}</View> : null
+  // an agent tool's card (clique app) is answered only here: its terminal is just waiting
+  if (e.cli === 'clique') return said ? <View style={styles.foot}>{said}</View> : null
   const handOver = e.cli === 'codex' && !(typeof e.ask === 'object' && e.ask?.type === 'permission' && e.ask.trust)
   if (!said && !handOver) return null
   return (

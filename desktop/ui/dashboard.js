@@ -1,7 +1,7 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: a channel (#general or one you made), one agent's conversation with its terminal docked beside it,
 // Agents, Tasks or Terminals.
-/* global shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, crew, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, crewGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
+/* global shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -49,7 +49,7 @@ const collection = mountCollection($('.collection'), {
 })
 const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onTerminal: (name) => select(name) })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next), onMembers: (at) => openMembers(at) })
-// A new install's first run: Q makes its first workspace and crew with you, then shows you around (ui/setup.js). After
+// A new install's first run: Q makes its first workspace and clique with you, then shows you around (ui/setup.js). After
 // that, the setup screen: Claude Code and Codex, what to install or sign in to, then the first agent.
 // (onMade: the first run made its workspace. It comes in under the stage with no slide, whose parts would show over it.)
 const setup = mountSetup({ onAdd: () => addAgent(), onWorkspace: () => workspaces.create(), onComputers: () => openComputers(), onMade: async (next) => (push ??= await ready)(next), onTour: () => startTour(), onLand: () => landed() })
@@ -60,7 +60,7 @@ const TOUR = [
   { at: '.stage .chat', before: () => goPlace('chat'), say: 'This is #general, the workspace’s chat. Everyone here reads it. When agents talk among themselves, it goes into a thread under your message, so this stays short.' },
   { at: '.compose', say: 'What you write goes to me, and I hand it on. Pick someone in To, or type @name, to talk to them directly.' },
   { at: '.roster', say: 'Your agents. Each one has its own conversation with you, and the dot shows who’s working and who needs you.' },
-  { at: '.side-nav [data-place="crew"]', say: 'Agents: everyone’s card, with their brain, their look and a switch to turn them on and off.' },
+  { at: '.side-nav [data-place="clique"]', say: 'Agents: everyone’s card, with their brain, their look and a switch to turn them on and off.' },
   { at: '.side-nav [data-place="tasks"]', say: 'Tasks: a board for bigger work. An agent takes a task and reports back when it’s done.' },
   { at: '.side-nav [data-place="terminals"]', say: 'Every agent is a real Claude Code or Codex in a terminal. Watch one work, or type into it.' },
   { at: '.chan-sec', say: 'Channels keep one topic, with its own clique and its own rules.' },
@@ -71,7 +71,7 @@ const tour = mountTour({
   steps: () => TOUR,
   who: () => state?.agents?.find((a) => a.system) ?? Q_LOOK,
   onEnd: (done) => {
-    store.set('crew.firstRun', 'done')
+    store.set('clique.firstRun', 'done')
     if (done) composer.focus()
   },
 })
@@ -84,12 +84,12 @@ function startTour() {
   if (state?.workspace && !tour.isOn()) tour.start()
 }
 
-// Where you are: 'chat' (the channel open, see setChannel), 'dm' (the conversation the composer is aimed at), 'crew' (Agents, the cards),
+// Where you are: 'chat' (the channel open, see setChannel), 'dm' (the conversation the composer is aimed at), 'clique' (Agents, the cards),
 // 'tasks' or 'terminals'. The terminals are laid out as a grid or one big one.
-const PLACES = ['chat', 'crew', 'tasks', 'terminals']
-let place = store.get('crew.place') === 'dm' || PLACES.includes(store.get('crew.place')) ? store.get('crew.place') : 'chat'
-let layout = store.get('crew.layout') === 'focus' ? 'focus' : 'grid'
-let show = ['busy', 'needs'].includes(store.get('crew.show')) ? store.get('crew.show') : 'all' // the grid: every terminal, the busy ones, or the ones waiting on you
+const PLACES = ['chat', 'clique', 'tasks', 'terminals']
+let place = store.get('clique.place') === 'dm' || PLACES.includes(store.get('clique.place')) ? store.get('clique.place') : 'chat'
+let layout = store.get('clique.layout') === 'focus' ? 'focus' : 'grid'
+let show = ['busy', 'needs'].includes(store.get('clique.show')) ? store.get('clique.show') : 'all' // the grid: every terminal, the busy ones, or the ones waiting on you
 let lastDm = null // the agent whose conversation was open last, and when you left it (an agent renamed or gone)
 let left = null
 let selected = null // the terminal picked in Terminals
@@ -98,7 +98,7 @@ let state = { agents: [], providers: {}, feed: [] }
 // the roster's folds: computers you folded away
 const folds = new Set((() => {
   try {
-    return JSON.parse(store.get('crew.folds') || '[]')
+    return JSON.parse(store.get('clique.folds') || '[]')
   } catch {
     return []
   }
@@ -112,7 +112,7 @@ else if (isConvo(composer.target()) && place !== 'dm') composer.setTarget('auto'
 $('.blank .blank-mark').outerHTML = ICONS.mark
 // Windows has no traffic lights: the app's mark sits at the sidebar's top instead
 if (ON_WINDOWS) $('.side-top').innerHTML = `<span class="app-mark" aria-hidden="true">${markSVG('0 4 24 18')}</span>`
-const NAV_ICON = { crew: markSVG('0 4 24 18'), tasks: ICONS.task, terminals: ICONS.terminal }
+const NAV_ICON = { clique: markSVG('0 4 24 18'), tasks: ICONS.task, terminals: ICONS.terminal }
 for (const b of document.querySelectorAll('.nv .nv-icon')) b.outerHTML = NAV_ICON[b.closest('.nv').dataset.place]
 // Terminals' header: which terminals (with how many), and the grid or one big one
 $('.heads').insertAdjacentHTML('beforeend', pageHead({
@@ -149,7 +149,7 @@ function dockName() {
   const fam = family(composer.target())
   return [dockPick, composer.target(), familyOf(composer.target())].find((n) => n && fam.includes(n)) ?? fam[0] ?? null
 }
-const dockOn = () => store.get('crew.dock') !== '0'
+const dockOn = () => store.get('clique.dock') !== '0'
 const restingHere = () => {
   const a = place === 'dm' ? dmAgent() : null
   return a?.status === 'resting' && !family(a.name).length ? a : null
@@ -165,13 +165,13 @@ function showPlace(next) {
   if (moved) closeSearch()
   if (moved && next !== 'chat') threadPane.close()
   place = next
-  store.set('crew.place', next)
+  store.set('clique.place', next)
   if (place === 'dm') lastDm = dmAgent()?.name ?? lastDm
   const dock = docked()
-  collection.setVisible(place === 'crew')
+  collection.setVisible(place === 'clique')
   tasks.setVisible(place === 'tasks')
   $('.chat').classList.toggle('hidden', place !== 'chat' && place !== 'dm')
-  $('.collection').classList.toggle('hidden', place !== 'crew')
+  $('.collection').classList.toggle('hidden', place !== 'clique')
   $('.tasks-view').classList.toggle('hidden', place !== 'tasks')
   $('.terms-view').classList.toggle('hidden', place !== 'terminals' && !dock)
   $('.terms-view').classList.toggle('docked', dock)
@@ -233,7 +233,7 @@ function followRename() {
 
 // Your conversation with an agent. terminal: with its terminal docked beside it (and that one picked, for a clone).
 function openDM(name, { terminal = false } = {}) {
-  if (terminal) store.set('crew.dock', '1')
+  if (terminal) store.set('clique.dock', '1')
   if (composer.target() !== name) composer.setTarget(name)
   else showPlace('dm')
   if (terminal && terms.has(name)) {
@@ -297,7 +297,7 @@ chatHeadEl.addEventListener('click', (e) => {
   if (act === 'channel') return channelMenu(openChannel().id, b)
   if (!a) return
   if (act === 'terminal') {
-    store.set('crew.dock', docked() ? '0' : '1')
+    store.set('clique.dock', docked() ? '0' : '1')
     showPlace('dm')
   }
   if (act === 'profile') edit(a.name)
@@ -311,7 +311,7 @@ chatHeadEl.addEventListener('click', (e) => {
 let chan = 'general' // the channel open in the chat
 const channelsNow = () => state.channels ?? [{ id: 'general', name: 'general', brief: '' }]
 const openChannel = () => channelsNow().find((c) => c.id === chan) ?? channelsNow()[0]
-const chanKey = () => `crew.channel.${state.workspace?.id}`
+const chanKey = () => `clique.channel.${state.workspace?.id}`
 // The workspace's channel, as it was left (one that's gone: #general), told to the chat and the composer.
 function syncChannel() {
   const kept = store.get(chanKey())
@@ -371,7 +371,7 @@ function channelMenu(id, at) {
 async function removeChannel(c, ws = state.workspace?.id) {
   if (!confirm(`Delete #${c.name}? Its messages stay, in #general. Agents stop getting its brief.`)) return
   try {
-    const { state: next } = await crew.call('channel', 'remove', c.id, null, ws)
+    const { state: next } = await clique.call('channel', 'remove', c.id, null, ws)
     ;(push ??= await ready)(next)
     if (chan === c.id) setChannel('general')
   } catch (err) {
@@ -401,7 +401,7 @@ channelDialog.innerHTML = `
     <section class="ws-sec" data-ch-sec="members">
       <h4 class="section-label"><span>Who's in it</span><small class="ws-count" data-ch-count></small></h4>
       <div class="seg fill ch-who-seg" role="radiogroup" aria-label="Who's in it"><button type="button" data-ch-all="1" role="radio">Everyone here</button><button type="button" data-ch-all="0" role="radio">Only some agents</button></div>
-      <ul class="ws-crew ch-crew"></ul>
+      <ul class="ws-clique ch-clique"></ul>
       <p class="ws-note" data-ch-note></p>
     </section>
   </div>
@@ -450,13 +450,13 @@ function drawChannelSheet({ list = true } = {}) {
     : members.length ? `${faceStack(members, 6)}<span>${d.everyone ? `Everyone in ${esc(state.workspace?.name ?? 'your clique')}` : plural(members.length, 'agent')}</span>` : '<span>Nobody in it yet</span>'
   segmented($c('.ch-who-seg'), (b) => (b.dataset.chAll === '1') === d.everyone)
   $c('[data-ch-count]').textContent = d.everyone ? '' : `${members.length} of ${agents.length}`
-  $c('.ch-crew').classList.toggle('hidden', d.everyone)
+  $c('.ch-clique').classList.toggle('hidden', d.everyone)
   const picks = systemAgentOf(state.agents) ? `${displayName(systemAgentOf(state.agents))} hands work` : 'Auto picks'
   $c('[data-ch-note]').textContent = d.everyone
     ? `${picks} ${systemAgentOf(state.agents) ? 'to' : 'from'} everyone in the workspace, as in #general.`
     : `${picks} ${systemAgentOf(state.agents) ? 'only to' : 'only from'} these agents. An @mention still reaches anyone.`
   if (list) {
-    $c('.ch-crew').innerHTML = agents.map((a) => {
+    $c('.ch-clique').innerHTML = agents.map((a) => {
       const on = d.members.has(a.name)
       return `<li class="ws-agent ${on ? 'in' : ''}" style="--c:${agentColor(a)}"><span class="ws-av">${avatarHTML(a, { size: 30, mood: on ? undefined : 'still' })}</span>
         <span class="who"><b>${esc(displayName(a))}</b><small>${esc(a.area || 'no area')}</small></span>
@@ -502,7 +502,7 @@ async function saveChannel() {
   const patch = { brief: d.brief.trim(), ...(d.id !== 'general' && { name: d.name, members: d.everyone ? [] : [...d.members] }) }
   if (d.id !== 'general' && !d.everyone && !d.members.size) return void ($c('[data-ch-err]').textContent = 'Pick at least one agent, or let everyone in')
   try {
-    const { id, state: next } = await crew.call('channel', d.id ? 'edit' : 'create', d.id, patch, d.ws)
+    const { id, state: next } = await clique.call('channel', d.id ? 'edit' : 'create', d.id, patch, d.ws)
     channelDialog.close()
     ;(push ??= await ready)(next)
     if (!d.id) setChannel(id) // a new one opens; an edited one stays where you are
@@ -512,7 +512,7 @@ async function saveChannel() {
 }
 
 // ---- who works here: the workspace's agents, from #general's faces, the workspace's menu or its welcome -----------------
-// Its agents (one shared with your other workspaces can be taken out of this one), the rest of your crew (bring one
+// Its agents (one shared with your other workspaces can be taken out of this one), the rest of your clique (bring one
 // in: it starts here in a conversation of its own), and a new agent.
 const membersPop = $('.members-pop')
 let membersAt = null
@@ -554,19 +554,19 @@ membersPop.addEventListener('click', async (e) => {
   const out = e.target.closest('[data-mp-take]')?.dataset.mpTake
   try {
     if (add) {
-      await crew.call('workspace', 'members', w.id, { add: [add] })
+      await clique.call('workspace', 'members', w.id, { add: [add] })
       toast(`${add} joins ${w.name}${w.folder ? `, working in ${shortPath(w.folder)}` : ''}`)
     }
     if (out) {
       const a = state.agents.find((x) => x.name === out)
       if (busy(a) ? !confirm(`${out} is in the middle of something in ${w.name}. Take it out anyway? It stops working here, and starts a fresh conversation if it comes back.`) : !confirm(`Take ${out} out of ${w.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your clique and your other workspaces.`)) return
-      await crew.call('workspace', 'members', w.id, { remove: [out] })
+      await clique.call('workspace', 'members', w.id, { remove: [out] })
     }
   } catch (err) {
     oops(add ? `Couldn't add ${add} to ${w.name}` : `Couldn't take ${out} out of ${w.name}`, err)
   }
   if (e.target.closest('[data-mp-new]')) (membersPop.hidePopover(), addAgent())
-  if (e.target.closest('[data-mp-agents]')) (membersPop.hidePopover(), goPlace('crew'))
+  if (e.target.closest('[data-mp-agents]')) (membersPop.hidePopover(), goPlace('clique'))
   const row = !add && !out && e.target.closest('.mp-row:not(:has([data-mp-add]))')
   if (row) (membersPop.hidePopover(), openDM(row.dataset.agent), composer.focus())
 })
@@ -579,7 +579,7 @@ function welcomeHTML() {
   if (!w) return '' // the very first run: the setup screen asks for one
   const here = state.agents.filter((a) => !a.cloneOf && !a.system)
   const sys = systemAgentOf(state.agents)
-  const starters = sys || here.length ? setup.starters(store.get(`crew.work.${w.id}`)) : []
+  const starters = sys || here.length ? setup.starters(store.get(`clique.work.${w.id}`)) : []
   const who = here.length ? `${plural(here.length, 'agent')} work${here.length > 1 ? '' : 's'} here` : 'Choose who works here'
   return `<div class="welcome empty-state">${sys ? `<span class="wl-q">${avatarHTML(sys, { size: 96, mood: 'idle' })}</span>` : wsTile(w, { size: 64 })}
     <h2 class="display wl-ask">${starters.length ? 'What should we do first?' : `Welcome to ${esc(w.name)}`}</h2>
@@ -656,13 +656,13 @@ $('.dock-bar').addEventListener('click', (e) => {
   }
   const act = e.target.closest('[data-dock-act]')?.dataset.dockAct
   if (act === 'close') {
-    store.set('crew.dock', '0')
+    store.set('clique.dock', '0')
     showPlace('dm')
   }
   if (act === 'expand') {
     selected = dockName()
     layout = 'focus'
-    store.set('crew.layout', layout)
+    store.set('clique.layout', layout)
     goPlace('terminals')
   }
 })
@@ -673,7 +673,7 @@ const restPanel = (a) => `${avatarHTML(a, { size: 72, pose: 'mug' })}<h3>${esc(d
   <button class="btn" data-rest-start="${esc(a.name)}">${ICONS.terminal}<span>Start its terminal</span></button>`
 $('.dock-rest').addEventListener('click', (e) => {
   const name = e.target.closest('[data-rest-start]')?.dataset.restStart
-  if (name) crew.call('restart', name).catch((err) => oops(`Couldn't start ${name}'s terminal`, err))
+  if (name) clique.call('restart', name).catch((err) => oops(`Couldn't start ${name}'s terminal`, err))
 })
 
 // Everything the titlebar used to carry, at the sidebar's foot: Autopilot, Computers, the CLIs and the theme (and,
@@ -695,17 +695,17 @@ $('.side-more').addEventListener('click', (e) => {
     '-',
     { head: 'Theme' },
     ...THEME_CHOICES.map(([id, label, icon, note]) => ({ label, icon: ICONS[icon], act: `theme:${id}`, hint: theme === id ? '✓' : note })),
-    ...(crew.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
+    ...(clique.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
   ], (act) => {
-    if (act === 'autopilot') crew.call('autopilot', !state.autopilot).catch((err) => oops("Couldn't change Autopilot", err))
+    if (act === 'autopilot') clique.call('autopilot', !state.autopilot).catch((err) => oops("Couldn't change Autopilot", err))
     if (act === 'savers') openSavers()
     if (act === 'tools') openTools()
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
     if (act === 'tour') startTour()
-    if (act === 'permissions') crew.call('openPermissions').catch((err) => oops('Couldn’t open that', err))
-    if (act.startsWith('theme:')) crew.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
-    if (act === 'config') crew.call('config')
+    if (act === 'permissions') clique.call('openPermissions').catch((err) => oops('Couldn’t open that', err))
+    if (act.startsWith('theme:')) clique.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
+    if (act === 'config') clique.call('config')
   })
 })
 
@@ -721,7 +721,7 @@ const tok = (n) => `${tokenCount(Math.round(n ?? 0))} tokens`
 const SAVER_COUNTS = {
   coldStart: [(c) => `Started fresh ${times(c.n)} instead of re-reading ${tok(c.tokens)}`, (c) => `${plural(c.n, 'cold conversation')} picked back up, re-reading ${tok(c.tokens)}`],
   boardNew: [(c) => `Left ${tok(c.tokens)} of notes already read out of ${plural(c.n, 'board read')}`, (c) => `${plural(c.n, 'board read')} could have left out ${tok(c.tokens)}`],
-  busyCheck: [(c) => `crew busy was run ${times(c.n)}`, (c) => `crew busy was run ${times(c.n)}`],
+  busyCheck: [(c) => `clique busy was run ${times(c.n)}`, (c) => `clique busy was run ${times(c.n)}`],
   quickTriage: [
     (c) => `${plural(c.n, 'task')} triaged${c.cost ? `, ${money(c.cost / c.n)} each` : c.tokens ? `, ${tok(c.tokens / c.n)} each` : ''}${c.failed ? ` (${c.failed} by the triage agent after all)` : ''}`,
     (c) => `${plural(c.n || 0, 'triage turn')}${c.cost && c.n ? `, ${money(c.cost / c.n)} each` : c.tokens && c.n ? `, ${tok(c.tokens / c.n)} each` : ''}`,
@@ -764,7 +764,7 @@ function drawSavers(force = false) {
     </label>`).join(''))
   morph(saversDialog.querySelector('.sv-modes'), drawSaverModes())
   for (const sw of saversDialog.querySelectorAll('[data-sv]')) sw.checked = Boolean(on[sw.dataset.sv]) // a property morph leaves be
-  saversDialog.querySelector('.sv-forced').textContent = forced ? 'CREW_SAVERS is set, so it decides which are on.' : ''
+  saversDialog.querySelector('.sv-forced').textContent = forced ? 'CLIQUE_SAVERS is set, so it decides which are on.' : ''
 }
 function openSavers() {
   saversDialog.querySelector('[data-sv-err]').textContent = ''
@@ -775,7 +775,7 @@ saversDialog.addEventListener('change', (e) => {
   const sw = e.target.closest('[data-sv]')
   if (!sw) return
   saversDialog.querySelector('[data-sv-err]').textContent = ''
-  crew.call('savers', { [sw.dataset.sv]: sw.checked }).catch((x) => {
+  clique.call('savers', { [sw.dataset.sv]: sw.checked }).catch((x) => {
     sw.checked = !sw.checked
     saversDialog.querySelector('[data-sv-err]').textContent = errorLine(x)
   })
@@ -784,7 +784,7 @@ saversDialog.addEventListener('click', (e) => {
   if (e.target.closest('[data-close]') || e.target === saversDialog) saversDialog.close()
 })
 
-// ---- agent tools (core/tools.js): what agents may change in CLIque with `crew app`, and whether they ask first ----
+// ---- agent tools (core/tools.js): what agents may change in CLIque with `clique app`, and whether they ask first ----
 
 const toolsDialog = $('#tools')
 toolsDialog.querySelector('.h-icon').innerHTML = ICONS.mark
@@ -828,7 +828,7 @@ toolsDialog.addEventListener('click', (e) => {
   state.tools = pick.dataset.tl // shown now; the state that follows says it for good
   toolsDialog.querySelector('[data-tl-err]').textContent = ''
   drawTools()
-  crew.call('tools', pick.dataset.tl).catch((x) => {
+  clique.call('tools', pick.dataset.tl).catch((x) => {
     state.tools = was
     drawTools()
     toolsDialog.querySelector('[data-tl-err]').textContent = errorLine(x)
@@ -855,10 +855,10 @@ function createTile(name, before = null) {
   term.attachCustomKeyEventHandler((e) => {
     if (ON_WINDOWS && !windowsTerminalKey(term, e)) return false
     if (e.type !== 'keydown' || e.key !== 'Enter' || !e.shiftKey) return true
-    crew.input(name, '\x1b\r')
+    clique.input(name, '\x1b\r')
     return false
   })
-  term.onData((data) => crew.input(name, data))
+  term.onData((data) => clique.input(name, data))
 
   const t = { tile, head: tile.querySelector('.tile-head'), acts: tile.querySelector('.tile-acts'), term, fit, ready: false, replaying: false }
   terms.set(name, t)
@@ -880,7 +880,7 @@ function dropTile(t) {
 
 // A terminal out of sight replays once it comes into view. xterm keeps each character's width as it draws a row, but
 // in a hidden terminal every character measures 0 wide and nothing is kept, so it lays the window out again for every
-// character of every row. Replaying a workspace's terminals while you were in #crew (every switch) held the window for
+// character of every row. Replaying a workspace's terminals while you were in #clique (every switch) held the window for
 // seconds.
 const shownTerm = new IntersectionObserver((seen) => {
   for (const e of seen) {
@@ -891,14 +891,14 @@ const shownTerm = new IntersectionObserver((seen) => {
 
 // On Windows, Ctrl is the terminal's own key (Ctrl+C stops what the agent runs), so copy and paste go as in Windows
 // Terminal: Ctrl+C copies when there's a selection, Ctrl+Shift+C always, Ctrl+V and Ctrl+Shift+V paste (the page's paste,
-// which xterm types in). Ctrl+1–4 and Ctrl+Alt+S/C stay Crew's (a Mac's ⌘ keys never reach the terminal); the other
+// which xterm types in). Ctrl+1–4 and Ctrl+Alt+S/C stay CLIque's (a Mac's ⌘ keys never reach the terminal); the other
 // Ctrl keys go to the agent. false: xterm leaves the key alone.
 function windowsTerminalKey(term, e) {
   if (e.type !== 'keydown' || !e.ctrlKey || e.metaKey || e.getModifierState('AltGraph')) return true
   const key = e.key.toLowerCase()
   if (key === 'c' && !e.altKey && (e.shiftKey || term.hasSelection())) {
     e.preventDefault()
-    if (term.hasSelection()) crew.call('copy', term.getSelection()).catch(() => {})
+    if (term.hasSelection()) clique.call('copy', term.getSelection()).catch(() => {})
     if (!e.shiftKey) term.clearSelection()
     return false
   }
@@ -928,7 +928,7 @@ function quietSelection(term) {
 // Live chunks that arrive before this are already in the buffer. Again after an agent's computer comes back.
 function replay(t) {
   const name = t.tile.dataset.name
-  // out of sight (in #crew, or Focus showing another one): shownTerm replays it when it shows
+  // out of sight (in #clique, or Focus showing another one): shownTerm replays it when it shows
   t.waiting = !t.tile.querySelector('.term').offsetWidth
   if (t.waiting) return void (t.ready = false)
   const done = () => {
@@ -939,7 +939,7 @@ function replay(t) {
   t.ready = false
   t.replaying = true
   drawTile(t)
-  crew.call('buffer', name).then(({ data, cols, rows }) => {
+  clique.call('buffer', name).then(({ data, cols, rows }) => {
     t.term.reset()
     t.term.resize(cols, rows)
     t.term.write(data, () => {
@@ -953,11 +953,11 @@ function resize(name) {
   const t = terms.get(name)
   if (!t || !t.tile.offsetWidth) return
   t.fit.fit()
-  crew.call('resize', name, t.term.cols, t.term.rows).catch(() => {})
+  clique.call('resize', name, t.term.cols, t.term.rows).catch(() => {})
   drawTile(t)
 }
 
-// The badge in each terminal's header says what you're looking at. These aren't terminal apps: Crew runs the
+// The badge in each terminal's header says what you're looking at. These aren't terminal apps: CLIque runs the
 // agent's CLI in a pseudo-terminal and draws its output with xterm.js, replaying what it printed before the view
 // opened. So it says whether that's live (typing goes straight to the agent), streamed from another computer, still
 // being redrawn, or frozen (its computer is unreachable, or the process exited); its tooltip says it in full.
@@ -988,7 +988,7 @@ function drawTile(t) {
   morph(t.acts, tileActs(a))
 }
 
-crew.onPty((name, data) => {
+clique.onPty((name, data) => {
   const t = terms.get(name)
   if (t?.ready) t.term.write(data)
 })
@@ -1050,15 +1050,15 @@ $('.terms').addEventListener('click', (e) => {
   if (act === 'answer') answerTile(name)
   else if (act === 'restart') {
     terms.get(name).term.reset()
-    crew.call('restart', name)
-  } else if (act === 'fresh') crew.call('freshStart', name).catch((err) => oops(`Couldn't start a new conversation for ${displayName(terms.get(name)?.agent ?? { name })}`, err))
-  else if (act === 'off') crew.call('update', name, { off: true })
+    clique.call('restart', name)
+  } else if (act === 'fresh') clique.call('freshStart', name).catch((err) => oops(`Couldn't start a new conversation for ${displayName(terms.get(name)?.agent ?? { name })}`, err))
+  else if (act === 'off') clique.call('update', name, { off: true })
   else if (act === 'dismiss') {
     const a = terms.get(name)?.agent
     if (a && (a.status === 'working' || a.status === 'waiting') && !confirm(`${displayName(a)} is in the middle of something. Send it away anyway?`)) return
-    crew.call('dismiss', name).catch((err) => oops(`Couldn't send ${a ? displayName(a) : name} away`, err))
+    clique.call('dismiss', name).catch((err) => oops(`Couldn't send ${a ? displayName(a) : name} away`, err))
   }
-  else if (act === 'markIdle') crew.call('markIdle', name)
+  else if (act === 'markIdle') clique.call('markIdle', name)
   else if (act === 'edit') edit(name)
   else if (!act && place === 'terminals') highlight((selected = name))
 })
@@ -1104,7 +1104,7 @@ const hasTerminal = (a) => a.on && !a.rested && a.status !== 'parked' && a.statu
 
 function setLayout(next) {
   layout = next
-  store.set('crew.layout', layout)
+  store.set('clique.layout', layout)
   showPlace('terminals')
 }
 
@@ -1168,7 +1168,7 @@ $('[data-show]').addEventListener('click', (e) => {
   const b = e.target.closest('[data-show]')
   if (!b?.dataset.show) return
   show = b.dataset.show
-  store.set('crew.show', show)
+  store.set('clique.show', show)
   if (layout === 'focus') return setLayout('grid')
   drawShow()
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
@@ -1176,7 +1176,7 @@ $('[data-show]').addEventListener('click', (e) => {
 // ⌘1 the channel, ⌘2 Agents, ⌘3 Tasks, ⌘4 Terminals; ⌘F searches the messages in a channel and a conversation (elsewhere it
 // finds an agent), ⌘K finds an agent, ⌘N makes one (Ctrl on Windows, where Ctrl+F and Ctrl+N typed in a terminal are
 // the agent's: windowsTerminalKey)
-const KEYS = { 1: 'chat', 2: 'crew', 3: 'tasks', 4: 'terminals' }
+const KEYS = { 1: 'chat', 2: 'clique', 3: 'tasks', 4: 'terminals' }
 document.addEventListener('keydown', (e) => {
   if (!commandKey(e)) return
   if (document.querySelector('.ed-layer.open, dialog[open]')) return // the agent's sheet or a dialog is in front
@@ -1211,10 +1211,10 @@ document.addEventListener('keydown', (e) => {
   switchTo(w.id)
 }, true)
 
-// ---- workspaces: switching, with the crew sliding over to the next one ----------------------------
+// ---- workspaces: switching, with the clique sliding over to the next one ----------------------------
 
 // The new workspace renders inside a view transition, from the state the switch answers with; the side it slides in
-// from is where it sits in the switcher. One that's asleep wakes (Crew does that), the one on screen too.
+// from is where it sits in the switcher. One that's asleep wakes (CLIque does that), the one on screen too.
 let push = null
 async function switchTo(id) {
   const list = state.workspaces ?? []
@@ -1225,7 +1225,7 @@ async function switchTo(id) {
   if (unsaved && !confirm(`Discard your changes to ${unsaved}?`)) return
   const go = async () => {
     try {
-      const { state: next } = await crew.call('workspace', 'switch', id)
+      const { state: next } = await clique.call('workspace', 'switch', id)
       ;(push ??= await ready)(next)
     } catch (err) {
       oops(`Couldn't switch to ${list[to]?.name ?? 'that workspace'}`, err)
@@ -1233,7 +1233,7 @@ async function switchTo(id) {
   }
   slide(to < from ? -1 : 1, go)
 }
-// A workspace the sheet just made: already on screen in Crew, now here too.
+// A workspace the sheet just made: already on screen in CLIque, now here too.
 function switched(next) {
   slide(1, async () => (push ??= await ready)(next))
   setTimeout(() => {
@@ -1318,7 +1318,7 @@ function dmRow(a, { selected = false, clones = [], needs = 0, drag = false }) {
 function dmParts(state, { folds = new Set(), selected, filter = '', drag = false } = {}) {
   const q = filter.trim().toLowerCase()
   const match = (a) => !q || `${a.seed ?? a.name} ${a.area ?? ''}`.toLowerCase().includes(q)
-  const groups = crewGroups(state).map((g) => ({ ...g, agents: g.agents.filter((a) => !a.system) })) // (Q has a row of his own, above them)
+  const groups = cliqueGroups(state).map((g) => ({ ...g, agents: g.agents.filter((a) => !a.system) })) // (Q has a row of his own, above them)
   const headed = grouped(groups)
   const needs = new Map()
   for (const n of needsYou(state)) needs.set(familyOf(n.agent.name), (needs.get(familyOf(n.agent.name)) ?? 0) + 1)
@@ -1338,7 +1338,7 @@ function dmParts(state, { folds = new Set(), selected, filter = '', drag = false
 }
 
 // ---- what each new thing is, the first time it shows -----------------------------------------------------------------
-// After a first run (ui/setup.js sets crew.hints), in place of a tour up front: a line beside the first thread, the
+// After a first run (ui/setup.js sets clique.hints), in place of a tour up front: a line beside the first thread, the
 // first question and the first card, each once, and gone at the next click, key or scroll. One at a time. Each sits
 // where there's room for it: beside its thing, on its top right corner, or under it.
 const HINTS = [
@@ -1348,14 +1348,14 @@ const HINTS = [
 ]
 let hintEl = null
 function hints() {
-  if (hintEl || store.get('crew.hints') !== 'on' || setup.isOpen() || tour.isOn() || document.querySelector('dialog[open], .ed-layer.open, [popover]:popover-open')) return
+  if (hintEl || store.get('clique.hints') !== 'on' || setup.isOpen() || tour.isOn() || document.querySelector('dialog[open], .ed-layer.open, [popover]:popover-open')) return
   const visible = (el) => { const r = el?.getBoundingClientRect(); return r && r.width > 4 && r.height > 4 && r.top > 60 && r.bottom < innerHeight - 20 ? r : null }
   for (const h of HINTS) {
-    if (store.get(`crew.hint.${h.key}`)) continue
+    if (store.get(`clique.hint.${h.key}`)) continue
     const r = visible(document.querySelector(h.at))
     if (!r) continue
-    store.set(`crew.hint.${h.key}`, '1')
-    if (HINTS.every((x) => store.get(`crew.hint.${x.key}`))) store.set('crew.hints', 'done')
+    store.set(`clique.hint.${h.key}`, '1')
+    if (HINTS.every((x) => store.get(`clique.hint.${x.key}`))) store.set('clique.hints', 'done')
     hintEl = Object.assign(document.createElement('p'), { className: 'hint-tip', textContent: h.say })
     hintEl.setAttribute('role', 'status')
     document.body.append(hintEl)
@@ -1402,7 +1402,7 @@ let cursor = null // the search's marked match, kept across redraws
 
 function toggleFold(key) {
   folds.has(key) ? folds.delete(key) : folds.add(key)
-  store.set('crew.folds', JSON.stringify([...folds]))
+  store.set('clique.folds', JSON.stringify([...folds]))
   // the rows under it glide up or down to make room, and what it opens fades in (never a height animated)
   glide(() => $('.roster').querySelectorAll('.cg-label, .cgroup-body > *'), () => drawRoster(), { appear: true })
 }
@@ -1497,12 +1497,12 @@ function agentMenu(name, at) {
       if (act === 'message') (openDM(name), composer.focus())
       if (act === 'terminal') select(name)
       if (act === 'edit') edit(name)
-      if (act === 'dismiss' && (!busy(a) || confirm(`${displayName(a)} is in the middle of something. Send it away anyway?`))) crew.call('dismiss', name).catch((err) => oops(`Couldn't send ${displayName(a)} away`, err))
+      if (act === 'dismiss' && (!busy(a) || confirm(`${displayName(a)} is in the middle of something. Send it away anyway?`))) clique.call('dismiss', name).catch((err) => oops(`Couldn't send ${displayName(a)} away`, err))
     })
   }
   const here = a.home ?? ''
-  const places = crewGroups(state).filter((g) => g.key !== here)
-  // one of your shared agents can join your other workspaces, and leave this one (or leave your crew altogether);
+  const places = cliqueGroups(state).filter((g) => g.key !== here)
+  // one of your shared agents can join your other workspaces, and leave this one (or leave your clique altogether);
   // a workspace's own agent is only here
   const ws = state.workspace
   const joins = a.shared && !a.home ? (state.workspaces ?? []).filter((w) => w.id !== ws?.id && !w.members?.some((m) => m.name === name)) : []
@@ -1529,22 +1529,22 @@ function agentMenu(name, at) {
       }
       if (act === 'terminal') select(name)
       if (act === 'edit') edit(name)
-      if (act === 'fresh') await crew.call('freshStart', name)
+      if (act === 'fresh') await clique.call('freshStart', name)
       if (act.startsWith('move:')) moveSheet(name, act.slice(5))
       if (act === 'power') {
         if (a.on && busy(a) && !confirm(`${a.seed ?? a.name} is in the middle of something. Turn it off anyway?`)) return
-        await crew.call('update', name, { off: a.on })
+        await clique.call('update', name, { off: a.on })
       }
       if (act.startsWith('join:')) {
         const w = state.workspaces.find((x) => x.id === act.slice(5))
-        await crew.call('workspace', 'members', w.id, { add: [name] })
+        await clique.call('workspace', 'members', w.id, { add: [name] })
         toast(`${name} joins ${w.name}${w.folder ? `, working in ${shortPath(w.folder)}` : ''}`)
       }
       const sure = act === 'remove' && confirm(leave
         ? `Take ${name} out of ${ws.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your clique and your other workspaces.`
         : `Remove ${name}? It's only in ${ws.name}, so it's gone for good. Its session stops (the transcript stays with the CLI).`)
-      if (sure) await crew.call('removeAgent', name)
-      if (act === 'forget' && confirm(`Remove ${a.seed ?? a.name} from your clique? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) await crew.call('removeAgent', name, { everywhere: true })
+      if (sure) await clique.call('removeAgent', name)
+      if (act === 'forget' && confirm(`Remove ${a.seed ?? a.name} from your clique? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) await clique.call('removeAgent', name, { everywhere: true })
     } catch (err) {
       oops(doing, err)
     }
@@ -1565,9 +1565,9 @@ roster.addEventListener('dragstart', (e) => {
   dragging = row && state.agents.find((a) => a.name === row.dataset.agent)
   if (!dragging) return
   e.dataTransfer.effectAllowed = 'move'
-  e.dataTransfer.setData('application/x-crew-agent', dragging.name)
+  e.dataTransfer.setData('application/x-clique-agent', dragging.name)
   row.classList.add('dragging')
-  const online = new Map(crewGroups(state).map((g) => [g.key, g.online]))
+  const online = new Map(cliqueGroups(state).map((g) => [g.key, g.online]))
   for (const g of roster.querySelectorAll('.cgroup')) g.classList.toggle('drop-ok', g.dataset.home !== (dragging.home ?? '') && online.get(g.dataset.home))
 })
 roster.addEventListener('dragover', (e) => {
@@ -1688,7 +1688,7 @@ function openTask(key) {
   goPlace('tasks')
   tasks.open(key)
 }
-crew.onFocus(handleFocus)
+clique.onFocus(handleFocus)
 
 // ---- render ----------------------------------------------------------------
 
@@ -1745,7 +1745,7 @@ function drawNav() {
   el.title = badge.review ? `${badge.review} waiting for your review` : badge.open ? `${badge.open} open` : ''
 }
 
-// ---- Computers (Crew Link) -------------------------------------------------------
+// ---- Computers (CLIque Link) -------------------------------------------------------
 // One list of your computers, this one first; under it Nearby: the computers on this network with Computers open too
 // (core/discover.js), to link with a click and a code checked on both screens. Linking (either way) and Link with a code
 // take the sheet over, the way Add a phone does, and hand back to the list with the new computer's agents unfolded.
@@ -1757,7 +1757,7 @@ let linkErr = '' // Link with a code's, kept across redraws until the next try
 // what's unfolded: each linked computer's agents; the Link with a code view; "Copied" for a moment
 const linkOpen = { computers: new Set(), code: false, copied: false, detailsCopied: false }
 let copiedTimer = null
-let discoverTick = null // Computers says it's open every minute, so a page that went away stops discovery (core/crew.js)
+let discoverTick = null // Computers says it's open every minute, so a page that went away stops discovery (core/clique.js)
 let handing = null // the computer a finished linking is handing over to the list
 let codeTyped = '' // what's in Link with a code's box, kept while something else takes the sheet over (one asking)
 
@@ -1801,7 +1801,7 @@ function linkHanded(slug) {
   handing = null
   fresh = slug
   linkOpen.computers.add(slug)
-  crew.call('link', 'pairDone').catch(() => {})
+  clique.call('link', 'pairDone').catch(() => {})
   requestAnimationFrame(() => linkDialog.querySelector(`[data-computer="${CSS.escape(slug)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
 }
 
@@ -1911,7 +1911,7 @@ function codeHTML({ me }) {
       <div class="lk-or"><span>or</span></div>
       <section class="well lk-code">
         <b>The other computer's code</b>
-        <div class="code-in"><textarea class="field" data-link-code rows="2" placeholder="crew1.…" spellcheck="false" aria-label="The other computer's code"></textarea><button class="btn primary" data-link-connect>Link</button></div>
+        <div class="code-in"><textarea class="field" data-link-code rows="2" placeholder="clique1.…" spellcheck="false" aria-label="The other computer's code"></textarea><button class="btn primary" data-link-connect>Link</button></div>
         <p class="err" data-link-err>${esc(linkErr)}</p>
       </section>
     </div>
@@ -1923,7 +1923,7 @@ function codeHTML({ me }) {
 }
 
 // Why this computer can't share, in words. A port another app has is the usual one, and there's no setting for the port
-// on screen (it's in Crew's settings file), so it says what you can do instead.
+// on screen (it's in CLIque's settings file), so it says what you can do instead.
 const sharingError = (error) => (/port \d+ is in use/.test(error)
   ? `Another app is using the port ${PRODUCT_NAME} Link listens on, so this computer can't share right now. Quit that app and reopen Computers.`
   : errorReason(error) || `${PRODUCT_NAME} couldn't start sharing this computer. Close Computers and open it again.`)
@@ -1978,7 +1978,7 @@ function linkHTML(l) {
   </section>`
 }
 
-// ---- Phones (core/phones.js): the Crew app on your phone, paired with a code it scans ----------------------------
+// ---- Phones (core/phones.js): the CLIque app on your phone, paired with a code it scans ----------------------------
 // Add a phone turns the dialog into the pairing view: one big code to scan, and nothing to keep an eye on. A code ends
 // after ten minutes, so the view asks for a new one a minute before (the QR just changes), until a phone pairs with it
 // or the view closes, which ends it.
@@ -2021,7 +2021,7 @@ async function phoneAction(t) {
   if (t.closest('[data-phone-add]')) return openPairing()
   const remove = t.closest('[data-phone-remove]')?.dataset.phoneRemove
   const phone = remove && state.computers.phones.devices.find((d) => d.id === remove)
-  if (phone && confirm(`Remove ${phone.name}? It can't reach ${THIS_COMPUTER} any more, until you pair it again.`)) await crew.call('phones', 'revoke', remove)
+  if (phone && confirm(`Remove ${phone.name}? It can't reach ${THIS_COMPUTER} any more, until you pair it again.`)) await clique.call('phones', 'revoke', remove)
 }
 
 // The QR card: as big as the window leaves room for, high in the dialog so the phone looks straight at it. The code's
@@ -2057,7 +2057,7 @@ function drawPairing(phones) {
     view.phone = { id: paired.id, name: paired.name }
     phoneFresh = paired.id
     clearInterval(pairTick)
-    crew.call('phones', 'cancel').catch(() => {}) // its code is used up; one renewed just as it paired ends here
+    clique.call('phones', 'cancel').catch(() => {}) // its code is used up; one renewed just as it paired ends here
     setTimeout(() => phonePair === view && closePairing(), 1800)
   }
   linkDialog.classList.toggle('pairing', Boolean(view))
@@ -2091,12 +2091,12 @@ function pairCode() {
 
 async function makeCode(view) {
   try {
-    const made = await crew.call('phones', 'code')
+    const made = await clique.call('phones', 'code')
     if (phonePair === view && !view.phone) {
       const left = made.expires - Date.now()
       Object.assign(view, made, { err: '', renewAt: made.expires - Math.min(60000, left / 6) })
     } else if (!phonePair || phonePair === view) {
-      crew.call('phones', 'cancel').catch(() => {}) // the view closed, or a phone paired, while this one was being made
+      clique.call('phones', 'cancel').catch(() => {}) // the view closed, or a phone paired, while this one was being made
     }
   } catch (x) {
     if (phonePair === view) Object.assign(view, { code: null, qr: null, err: errorLine(x, `${PRODUCT_NAME} couldn't make a code for your phone. Try again.`), renewAt: Infinity })
@@ -2112,7 +2112,7 @@ function closePairing() {
   if (!view) return
   phonePair = null
   clearInterval(pairTick)
-  if (!view.phone) crew.call('phones', 'cancel').catch(() => {})
+  if (!view.phone) clique.call('phones', 'cancel').catch(() => {})
   drawComputers(state)
   if (!linkDialog.open) return
   linkDialog.classList.add('back')
@@ -2130,7 +2130,7 @@ async function pairAction(t) {
     // a code to paste on the phone has a few minutes in it: one that's renewed soon is renewed first
     if (view.renewAt - Date.now() < 4 * 60000) await pairCode()
     if (phonePair !== view || !view.code) return
-    await crew.call('copy', view.code)
+    await clique.call('copy', view.code)
     view.copied = true
     drawComputers(state)
     clearTimeout(view.copiedTimer)
@@ -2159,7 +2159,7 @@ function openComputers() {
   drawComputers(state)
   linkDialog.showModal()
   // Nearby: this computer says who it is on the network while the sheet is open, and lists the others doing the same
-  const discover = () => crew.call('link', 'discover', true).catch((x) => crew.call('log', `discover: ${x.message}`))
+  const discover = () => clique.call('link', 'discover', true).catch((x) => clique.call('log', `discover: ${x.message}`))
   discover()
   clearInterval(discoverTick)
   discoverTick = setInterval(discover, 60000)
@@ -2169,8 +2169,8 @@ function openComputers() {
 // this computer is told no, and one this computer is asking is cancelled.
 function linkBack() {
   const p = state.computers?.pairing
-  if (p?.in) return crew.call('link', ...(p.in.stage === 'ask' ? ['pairAnswer', p.in.id, false] : ['pairDone']))
-  if (p?.out) return crew.call('link', ['linked', 'failed'].includes(p.out.stage) ? 'pairDone' : 'pairCancel')
+  if (p?.in) return clique.call('link', ...(p.in.stage === 'ask' ? ['pairAnswer', p.in.id, false] : ['pairDone']))
+  if (p?.out) return clique.call('link', ['linked', 'failed'].includes(p.out.stage) ? 'pairDone' : 'pairCancel')
   linkOpen.code = false
   linkErr = ''
   codeTyped = ''
@@ -2198,27 +2198,27 @@ linkDialog.addEventListener('click', async (e) => {
   try {
     // nearby: Link, and the linking view's buttons
     const pair = t.closest('[data-pair]')?.dataset.pair
-    if (pair) await crew.call('link', 'pair', pair)
-    if (t.closest('[data-pair-retry]')) await crew.call('link', 'pair', state.computers.pairing.out.id)
+    if (pair) await clique.call('link', 'pair', pair)
+    if (t.closest('[data-pair-retry]')) await clique.call('link', 'pair', state.computers.pairing.out.id)
     if (t.closest('[data-pair-cancel], [data-pair-back], [data-pair-no]')) await linkBack()
-    if (t.closest('[data-pair-yes]')) await crew.call('link', 'pairAnswer', state.computers.pairing.in.id, true)
-    if (t.closest('[data-pair-confirm]')) await crew.call('link', 'pairConfirm')
-    if (t.closest('[data-pair-done]')) handing ? linkHanded(handing) : await crew.call('link', 'pairDone')
-    if (t.closest('[data-local-network]')) await crew.call('link', 'localNetwork')
+    if (t.closest('[data-pair-yes]')) await clique.call('link', 'pairAnswer', state.computers.pairing.in.id, true)
+    if (t.closest('[data-pair-confirm]')) await clique.call('link', 'pairConfirm')
+    if (t.closest('[data-pair-done]')) handing ? linkHanded(handing) : await clique.call('link', 'pairDone')
+    if (t.closest('[data-local-network]')) await clique.call('link', 'localNetwork')
     if (t.closest('[data-link-copy]')) {
-      await crew.call('copy', await crew.call('link', 'code'))
+      await clique.call('copy', await clique.call('link', 'code'))
       linkOpen.copied = true
       drawComputers(state)
       clearTimeout(copiedTimer)
       copiedTimer = setTimeout(() => ((linkOpen.copied = false), drawComputers(state)), 1800)
     }
     if (t.closest('[data-link-details-copy]')) {
-      await crew.call('copy', connectionDetails(state.computers.me))
+      await clique.call('copy', connectionDetails(state.computers.me))
       linkOpen.detailsCopied = true
       drawComputers(state)
       setTimeout(() => ((linkOpen.detailsCopied = false), drawComputers(state)), 1800)
     }
-    if (t.closest('[data-link-reset]') && confirm('Make a new code? Computers using the current one are disconnected until they link again with the new one.')) await crew.call('link', 'reset')
+    if (t.closest('[data-link-reset]') && confirm('Make a new code? Computers using the current one are disconnected until they link again with the new one.')) await clique.call('link', 'reset')
     if (t.closest('[data-link-connect]')) {
       const code = linkDialog.querySelector('[data-link-code]').value.trim()
       if (!code) return fail('Paste the code from the other computer first')
@@ -2227,7 +2227,7 @@ linkDialog.addEventListener('click', async (e) => {
       btn.textContent = 'Linking…'
       linkErr = ''
       try {
-        fresh = await crew.call('link', 'connect', code)
+        fresh = await clique.call('link', 'connect', code)
         codeTyped = ''
         linkOpen.computers.add(fresh) // its agents unfolded, to pick from
         linkOpen.code = false
@@ -2240,15 +2240,15 @@ linkDialog.addEventListener('click', async (e) => {
       }
     }
     const forget = t.closest('[data-forget]')?.dataset.forget
-    if (forget && confirm(`Forget ${linked(forget)?.name}? Its agents disappear from here (they keep running there). Link it again any time.`)) await crew.call('link', 'forget', forget)
+    if (forget && confirm(`Forget ${linked(forget)?.name}? Its agents disappear from here (they keep running there). Link it again any time.`)) await clique.call('link', 'forget', forget)
     const all = t.closest('[data-use-all]')?.dataset.useAll
     const none = t.closest('[data-use-none]')?.dataset.useNone
-    if (all || none) await crew.call('link', 'hide', linked(all || none).agents.map((a) => a.name), Boolean(none))
+    if (all || none) await clique.call('link', 'hide', linked(all || none).agents.map((a) => a.name), Boolean(none))
     const move = t.closest('[data-move]')
     if (move) {
       const name = move.dataset.move
       const from = state.agents.find((a) => a.name === name)?.home ?? ''
-      const places = crewGroups(state).filter((g) => g.key !== from)
+      const places = cliqueGroups(state).filter((g) => g.key !== from)
       popMenu(move, [{ head: 'Move to' }, ...places.map((g) => ({ label: g.name, icon: g.here ? ICONS.desktop : ICONS.laptop, act: g.key || ':here', disabled: !g.online, hint: g.here ? THIS_COMPUTER : g.online ? '' : 'offline' }))], (home) => {
         linkDialog.close()
         moveSheet(name, home === ':here' ? '' : home)
@@ -2264,11 +2264,11 @@ linkDialog.addEventListener('change', async (e) => {
   // said before the redraw below puts the switch back the way it was
   const what = 'linkShare' in d ? `Couldn't ${e.target.checked ? 'start' : 'stop'} sharing ${THIS_COMPUTER}` : 'meName' in d ? `Couldn't rename ${THIS_COMPUTER}` : "Couldn't change which agents you use"
   try {
-    if ('linkShare' in d) await crew.call('link', 'share', e.target.checked)
-    if (d.use) await crew.call('link', 'hide', [d.use], !e.target.checked)
+    if ('linkShare' in d) await clique.call('link', 'share', e.target.checked)
+    if (d.use) await clique.call('link', 'hide', [d.use], !e.target.checked)
     if ('meName' in d) {
       const name = e.target.value.trim()
-      if (name && name !== state.computers.me.name && confirm(`Rename this computer to "${name}"? Linked computers reconnect, and see its agents as name@${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.`)) await crew.call('link', 'rename', name)
+      if (name && name !== state.computers.me.name && confirm(`Rename this computer to "${name}"? Linked computers reconnect, and see its agents as name@${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.`)) await clique.call('link', 'rename', name)
       else e.target.value = state.computers.me.name
     }
   } catch (x) {
@@ -2292,7 +2292,7 @@ linkDialog.addEventListener('close', () => {
   discoverTick = null
   linkOpen.code = false
   codeTyped = ''
-  crew.call('link', 'discover', false).catch(() => {})
+  clique.call('link', 'discover', false).catch(() => {})
 })
 
 // ---- moving an agent to another computer ------------------------------------------
@@ -2306,7 +2306,7 @@ let moving = null // { name, home, folder, check }
 async function moveSheet(name, home) {
   const a = state.agents.find((x) => x.name === name)
   if (a?.system) return // Q comes with every workspace, and stays where he is
-  const groups = crewGroups(state)
+  const groups = cliqueGroups(state)
   const from = groups.find((g) => g.key === (a?.home ?? ''))
   const to = groups.find((g) => g.key === home)
   if (!a || !to || !from || from.key === to.key) return
@@ -2339,7 +2339,7 @@ async function moveSheet(name, home) {
   go.textContent = `Move to ${to.name}`
   moveDialog.showModal()
   checkFolder()
-  crew.call('folders', home, name).then((list) => {
+  clique.call('folders', home, name).then((list) => {
     if (moving?.name !== name) return
     // each one by its folder's name, with who works there (or "same folder as now") beside it
     const short = (f) => (f.label === 'home folder' ? 'Home' : pathParts(f.path).pop() || f.path)
@@ -2358,7 +2358,7 @@ function checkFolder() {
   box.textContent = ''
   checkTimer = setTimeout(async () => {
     try {
-      const info = await crew.call('folderInfo', moving.home, moving.folder)
+      const info = await clique.call('folderInfo', moving.home, moving.folder)
       if (seq !== moving?.seq) return
       moving.check = info
       // a suggestion is the same folder whichever way it's written (~/code/app or /Users/you/code/app)
@@ -2386,7 +2386,7 @@ moveDialog.addEventListener('click', async (e) => {
     return checkFolder()
   }
   if (e.target.closest('[data-mv-pick]')) {
-    const dir = await crew.call('pickFolder', moving.home).catch(() => null)
+    const dir = await clique.call('pickFolder', moving.home).catch(() => null)
     if (dir) (moving.folder = moveDialog.querySelector('[data-mv-folder]').value = dir), checkFolder()
     return
   }
@@ -2399,11 +2399,11 @@ moveDialog.addEventListener('click', async (e) => {
   err.textContent = ''
   const m = moving // closing the sheet (or opening another) mustn't lose this one's result
   try {
-    const res = await crew.call('moveAgent', m.name, m.home, m.folder)
+    const res = await clique.call('moveAgent', m.name, m.home, m.folder)
     // where it went is in view: its computer unfolds, and its row is the selected one
-    if (folds.delete(`group:${m.home}`)) store.set('crew.folds', JSON.stringify([...folds]))
+    if (folds.delete(`group:${m.home}`)) store.set('clique.folds', JSON.stringify([...folds]))
     if (res?.name) selected = res.name
-    const to = crewGroups(state).find((g) => g.key === m.home)?.name ?? 'there'
+    const to = cliqueGroups(state).find((g) => g.key === m.home)?.name ?? 'there'
     const who = state.agents.find((a) => a.name === m.name)?.seed ?? m.name.split('@')[0]
     if (moving === m) moveDialog.close()
     toast(res?.conversation === 'fresh'
@@ -2421,20 +2421,20 @@ moveDialog.addEventListener('close', () => (moving = null))
 // A note at the bottom of the window for things that happened out of view (notify, in common.js).
 const toast = (text, warn = false) => notify(text, { warn })
 
-// ---- import: a .crew file, picked or dropped ------------------------------------------
+// ---- import: a .clique file, picked or dropped ------------------------------------------
 
 const importDialog = $('#import')
 let pending = null // { file, pack, agents }
 
 async function importPack(dropped) {
   try {
-    const opened = await crew.call('openPack', dropped)
+    const opened = await clique.call('openPack', dropped)
     if (!opened) return
     pending = opened
     drawImport()
     importDialog.showModal()
   } catch (x) {
-    oops(`Couldn't open ${dropped?.name ?? 'that file'}`, x, `Pick a .crew file someone exported from ${PRODUCT_NAME}.`)
+    oops(`Couldn't open ${dropped?.name ?? 'that file'}`, x, `Pick a .clique file someone exported from ${PRODUCT_NAME}.`)
   }
 }
 
@@ -2474,7 +2474,7 @@ importDialog.addEventListener('change', async (e) => {
   if (e.target.matches('[data-home]')) {
     const row = e.target.closest('.imp')
     const box = row.querySelector('[data-name]')
-    box.value = await crew.call('freeName', pending.agents[row.dataset.i].seed, e.target.value).catch(() => box.value)
+    box.value = await clique.call('freeName', pending.agents[row.dataset.i].seed, e.target.value).catch(() => box.value)
   }
 })
 importDialog.addEventListener('click', async (e) => {
@@ -2484,20 +2484,20 @@ importDialog.addEventListener('click', async (e) => {
     .filter((r) => r.querySelector('[data-take]').checked)
     .map((r) => ({ index: Number(r.dataset.i), name: r.querySelector('[data-name]').value.trim(), folder: r.querySelector('[data-folder]').value.trim() || undefined, home: r.querySelector('[data-home]')?.value || '' }))
   try {
-    const added = await crew.call('importAgents', pending.pack, choices)
+    const added = await clique.call('importAgents', pending.pack, choices)
     importDialog.close()
-    goPlace('crew')
+    goPlace('clique')
     if (added.length === 1) collection.open(added[0])
   } catch (x) {
     importDialog.querySelector('[data-import-err]').textContent = errorLine(x)
   }
 })
 
-crew.onImport(importPack)
-// A .crew file dropped anywhere on the window (image drop zones only take images).
+clique.onImport(importPack)
+// A .clique file dropped anywhere on the window (image drop zones only take images).
 document.addEventListener('dragover', (e) => [...e.dataTransfer.items].some((i) => i.kind === 'file') && e.preventDefault())
 document.addEventListener('drop', async (e) => {
-  const file = [...e.dataTransfer.files].find((f) => f.name.endsWith('.crew'))
+  const file = [...e.dataTransfer.files].find((f) => /\.(clique|crew)$/i.test(f.name)) // (.crew: a pack from before the app's rename)
   if (!file) return
   e.preventDefault()
   e.stopPropagation()
@@ -2506,6 +2506,6 @@ document.addEventListener('drop', async (e) => {
 
 booted = true
 ready.then(() => {
-  showPlace(state.agents.length ? place : 'crew')
+  showPlace(state.agents.length ? place : 'clique')
   handleFocus(new URLSearchParams(location.search).get('focus'))
 })

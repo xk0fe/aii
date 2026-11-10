@@ -1,8 +1,8 @@
-// Can this computer run an agent? For Claude Code and Codex: whether each is installed (found the way Crew starts it,
-// core/launch.js), its version, and whether it's signed in; on Windows also Claude Code's oldest version Crew works
+// Can this computer run an agent? For Claude Code and Codex: whether each is installed (found the way CLIque starts it,
+// core/launch.js), its version, and whether it's signed in; on Windows also Claude Code's oldest version CLIque works
 // with, and Git for Windows. The first-run screen and "Claude Code and Codex…" show it (ui/setup.js).
 //
-// Asked in the background when Crew starts, kept, and asked again when you press Check again: nothing waits for it.
+// Asked in the background when CLIque starts, kept, and asked again when you press Check again: nothing waits for it.
 // Nothing here signs in or writes Claude Code's or Codex's files:
 // - Claude Code: signed in when its config says so (an account, or a key, in .claude.json or .config.json, or a
 //   credentials file beside it), or your environment or its settings hold a key. When the config is there but says
@@ -21,8 +21,8 @@ import { resolveCommand } from './launch.js'
 import { gitBash } from './procs.js'
 import { markOffered } from './providers.js'
 
-// Crew's hooks on Windows name a program and its arguments, which Claude Code starts without a shell from 2.1.139 on
-// (core/adapters.js claudeHook, bin/crew.mjs).
+// CLIque's hooks on Windows name a program and its arguments, which Claude Code starts without a shell from 2.1.139 on
+// (core/adapters.js claudeHook, bin/clique.mjs).
 export const CLAUDE_ON_WINDOWS = '2.1.139'
 const AUTH_STATUS = '2.1.41' // the first Claude Code with `claude auth status`; before it, those words were a prompt
 const TIMEOUT = 15000 // a program Windows is scanning for the first time can take its time
@@ -125,7 +125,7 @@ async function cli(id, ctx) {
 // Codex runs with a home folder of its own here (see the top).
 async function asked(id, cmd, args, { env, run, timeout }) {
   if (id !== 'codex') return run(cmd.file, [...cmd.args, ...args], { env, timeout })
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-codex-'))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-codex-'))
   try {
     return await run(cmd.file, [...cmd.args, ...args], { env: { ...env, CODEX_HOME: home }, timeout })
   } finally {
@@ -184,12 +184,12 @@ export async function detect({ env = process.env, platform = process.platform, h
   const ctx = { env, platform, home, run, timeout, launch: files, files: { ...disk, ...files }, paths: platform === 'win32' ? path.win32 : path.posix }
   const clis = await Promise.all(['claude', 'codex'].map((id) => cli(id, ctx).catch(() => entry(id, 'broken', platform))))
   // Recommended rather than needed: Claude Code runs its commands in Git Bash when Git for Windows is there, and in
-  // PowerShell when it isn't (and Crew's crew-sh runs only in Git Bash: core/hub.js shellPrefix).
+  // PowerShell when it isn't (and CLIque's clique-sh runs only in Git Bash: core/hub.js shellPrefix).
   const git = platform === 'win32' ? { id: 'git', name: STEPS.git.name, state: gitBash(env, (f) => ctx.files.isFile(f)) ? 'ready' : 'missing', how: { page: STEPS.git.page } } : null
   return { checked: true, at: Date.now(), platform, clis, git, ready: clis.some((c) => c.state === 'ready') }
 }
 
-// The check, kept: Crew asks once as it starts, and again when you press Check again. A check asked for while one runs
+// The check, kept: CLIque asks once as it starts, and again when you press Check again. A check asked for while one runs
 // waits for it and then looks again, so what it says is never older than the asking.
 export class Setup {
   status = { checked: false, checking: false, ready: false, clis: [], git: null }
@@ -220,7 +220,7 @@ export class Setup {
   }
 
   // macOS and Linux: your login shell's environment again (as main.js reads it once at start), for a CLI installed, or
-  // a key set, since Crew started. -> whether anything changed.
+  // a key set, since CLIque started. -> whether anything changed.
   async refresh() {
     if (this.platform === 'win32') return false
     return adoptEnv(this.env, await this.shell(this.env.SHELL || '/bin/zsh'), { home: os.homedir() })
@@ -230,17 +230,17 @@ export class Setup {
 // A snapshot for the pages: the check as it is (state.setup), and which providers the model picker offers.
 export const withSetup = (state, config, status) => ({ ...state, providers: markOffered(state.providers, config), setup: status })
 
-// Any agents in config.json yet (yours, or a workspace's own)? With none, Crew opens on its dashboard.
+// Any agents in config.json yet (yours, or a workspace's own)? With none, CLIque opens on its dashboard.
 export const hasAgents = (config) =>
   [config.agents, ...(Array.isArray(config.workspaces) ? config.workspaces.map((w) => w?.agents) : [])].some((list) => Array.isArray(list) && list.length > 0)
 
 // Your login shell's environment, as main.js reads it at start (loadShellEnv). null when it can't be read.
 export function loginEnv(shell) {
   return new Promise((resolve) => {
-    execFile(shell, ['-ilc', 'printf "\\n__CREW__\\n"; env -0'], { encoding: 'utf8', timeout: TIMEOUT, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
-      if (err || !String(out).includes('\n__CREW__\n')) return resolve(null)
+    execFile(shell, ['-ilc', 'printf "\\n__CLIQUE__\\n"; env -0'], { encoding: 'utf8', timeout: TIMEOUT, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
+      if (err || !String(out).includes('\n__CLIQUE__\n')) return resolve(null)
       const env = {}
-      for (const pair of String(out).split('\n__CREW__\n')[1].split('\0')) {
+      for (const pair of String(out).split('\n__CLIQUE__\n')[1].split('\0')) {
         const i = pair.indexOf('=')
         if (i > 0) env[pair.slice(0, i)] = pair.slice(i + 1)
       }

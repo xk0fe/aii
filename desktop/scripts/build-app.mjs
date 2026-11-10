@@ -3,8 +3,6 @@
 // on the next launch. (The app people install comes from npm run dist: scripts/dist.mjs.)
 //   npm start      opens the launcher, building it first if it's missing or out of date
 //   npm run app    rebuilds it
-// Before the rename it was dist/Crew.app. That one is left alone (it may be the copy that's running); once it's quit,
-// delete it, and put the new one in the Dock in its place.
 // On Windows there's no launcher to build: npm start runs the app from this folder, as npm run dev does.
 import { packager } from '@electron/packager'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -31,8 +29,8 @@ if (!(open && current)) await build()
 if (open) execFileSync('open', [app])
 
 async function build() {
-const shim = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-app-'))
-fs.writeFileSync(path.join(shim, 'package.json'), JSON.stringify({ name: 'crew', productName: PRODUCT_NAME, version: pkg.version, type: 'module', main: 'main.js' }, null, 2))
+const shim = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-app-'))
+fs.writeFileSync(path.join(shim, 'package.json'), JSON.stringify({ name: 'clique', productName: PRODUCT_NAME, version: pkg.version, type: 'module', main: 'main.js' }, null, 2))
 fs.writeFileSync(path.join(shim, 'main.js'), `// ${PRODUCT_NAME}.app launcher: runs the app from its source folder.\nimport ${JSON.stringify(pathToFileURL(path.join(root, 'main.js')).href)}\n`)
 
 const [built] = await packager({
@@ -44,10 +42,10 @@ const [built] = await packager({
   appBundleId: `${APP_ID}.dev`,
   appCategoryType: 'public.app-category.developer-tools',
   icon: path.join(root, 'assets', 'icon.icns'),
-  // .crew agent packs open in the app from Finder or Mail; the two descriptions are what macOS shows when it first
+  // .clique agent packs open in the app from Finder or Mail; the two descriptions are what macOS shows when it first
   // asks for the microphone (and, before macOS 26, speech recognition) for dictation
   extendInfo: {
-    CFBundleDocumentTypes: [{ CFBundleTypeName: `${PRODUCT_NAME} agents`, CFBundleTypeExtensions: ['crew'], CFBundleTypeRole: 'Viewer', LSHandlerRank: 'Owner' }],
+    CFBundleDocumentTypes: [{ CFBundleTypeName: `${PRODUCT_NAME} agents`, CFBundleTypeExtensions: ['clique', 'crew'], CFBundleTypeRole: 'Viewer', LSHandlerRank: 'Owner' }],
     NSMicrophoneUsageDescription: `${PRODUCT_NAME} listens while you dictate a message to your agents.`,
     NSSpeechRecognitionUsageDescription: `${PRODUCT_NAME} turns what you say into text, on this Mac.`,
     // what macOS says when it asks to let it onto the local network (other computers, phones, finding them nearby);

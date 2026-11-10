@@ -1,4 +1,4 @@
-// Crew on your phone (shared/PROTOCOL.md): where phones connect. A plain WebSocket on PORT, listening only while a phone
+// CLIque on your phone (shared/PROTOCOL.md): where phones connect. A plain WebSocket on PORT, listening only while a phone
 // is paired or a pairing code is open for one. Each connection starts with a handshake that proves both sides hold their
 // keys (and, when pairing, the code's secret), and everything after it is encrypted end to end, so the same frames can
 // later go through a relay. A phone then watches one workspace of its own choosing (its state, then patches), makes the
@@ -11,10 +11,10 @@ import path from 'node:path'
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { WebSocketServer, WebSocket } from 'ws'
 import { ATTACHMENTS, saveImage } from './hub.js'
-import { CACHE, LINK_DIR } from './crew.js'
+import { CACHE, LINK_DIR } from './clique.js'
 import { keyPair, privateKey, publicKey } from './phones.js'
-import { VERSION, PORT, SALT, CLOSE, CALLS, TASK_OPS, CHANNEL_OPS, b64, unb64, utf8, concat, keyInfo, nonce } from 'crew-shared/protocol.js'
-import { diff } from 'crew-shared/sync.js'
+import { VERSION, PORT, SALT, CLOSE, CALLS, TASK_OPS, CHANNEL_OPS, b64, unb64, utf8, concat, keyInfo, nonce } from 'clique-shared/protocol.js'
+import { diff } from 'clique-shared/sync.js'
 
 const TRIES = 5 // failed handshakes from one address within a minute, before it waits a minute (CLOSE.tooMany)
 const WAIT = 60000
@@ -38,7 +38,7 @@ export function macKeys({ m, f, e, d, secret }) {
 }
 
 // A frame: ChaCha20-Poly1305 with its direction's key and counter, the tag after the ciphertext. Not node:crypto's:
-// Electron's BoringSSL has no ChaCha20-Poly1305 ("Unknown cipher" in Crew, though not under plain Node or in the tests).
+// Electron's BoringSSL has no ChaCha20-Poly1305 ("Unknown cipher" in CLIque, though not under plain Node or in the tests).
 export function seal(key, counter, text) {
   return Buffer.from(chacha20poly1305(key, nonce(counter)).encrypt(utf8(text)))
 }
@@ -56,8 +56,8 @@ const unpack = (s) => JSON.parse(s, (_, x) => (x && typeof x === 'object' && typ
 
 // ---- what a phone sees ---------------------------------------------------------------------------------------
 
-// A workspace's snapshot (Crew.snapshot) as a phone gets it (PROTOCOL.md, "The state a phone gets"). Only what's named
-// here goes, so nothing added to a snapshot later reaches a phone by accident. Never Crew Link's pairing code
+// A workspace's snapshot (Clique.snapshot) as a phone gets it (PROTOCOL.md, "The state a phone gets"). Only what's named
+// here goes, so nothing added to a snapshot later reaches a phone by accident. Never CLIque Link's pairing code
 // (computers.me.code holds its secret key) or an agent's instructions; nor the agents' own folders, flags and reference
 // images, or the agent editor's lists, which a phone doesn't show.
 export function phoneState(s) {
@@ -84,7 +84,7 @@ const real = (p) => {
 }
 const inside = (file, ...dirs) => dirs.some((dir) => real(dir) && file.startsWith(real(dir) + path.sep))
 
-// An image from the chat or a task: only from Crew's attachments, or its cache of linked computers' images.
+// An image from the chat or a task: only from CLIque's attachments, or its cache of linked computers' images.
 function image(file) {
   const at = real(file)
   if (!at) throw new Error('that image is gone')
@@ -92,7 +92,7 @@ function image(file) {
   return new Uint8Array(fs.readFileSync(at))
 }
 
-// Images a phone sends along: only ones it saved here (saveImage). Crew sends a linked computer whatever file it's
+// Images a phone sends along: only ones it saved here (saveImage). CLIque sends a linked computer whatever file it's
 // given, so anything else could carry any file of yours there, and back to the phone through the cache.
 function attached(images) {
   return [].concat(images ?? []).map((p) => {
@@ -116,24 +116,24 @@ export class Remote {
   greeting = new Map() // address -> its connections still in the handshake
   fails = new Map() // address -> { times, until }: handshakes that failed in the last minute
 
-  // crew: the Crew (core/crew.js), whose phones (core/phones.js) are the ones that may connect.
-  constructor(crew) {
-    this.crew = crew
-    this.phones = crew.phones
+  // clique: the CLIque (core/clique.js), whose phones (core/phones.js) are the ones that may connect.
+  constructor(clique) {
+    this.clique = clique
+    this.phones = clique.phones
     const on = (from, event, fn) => (from.on(event, fn), () => from.off(event, fn))
     this.unhook = [
       on(this.phones, 'change', () => this.sync()),
-      on(crew, 'state', () => this.sessions.forEach((s) => s.changed())),
-      on(crew, 'terminal', (ws, name, data) => this.sessions.forEach((s) => s.output(ws, name, data))),
-      on(crew, 'alert', (name, text, ws) => this.tell({ t: 'alert', ws, name, text })),
+      on(clique, 'state', () => this.sessions.forEach((s) => s.changed())),
+      on(clique, 'terminal', (ws, name, data) => this.sessions.forEach((s) => s.output(ws, name, data))),
+      on(clique, 'alert', (name, text, ws) => this.tell({ t: 'alert', ws, name, text })),
       // your accounts' limits are no workspace's: those come without one
-      on(crew, 'notice', ({ title, body, focus, workspace }) => this.tell({ t: 'notice', ws: workspace, title, body, focus })),
+      on(clique, 'notice', ({ title, body, focus, workspace }) => this.tell({ t: 'notice', ws: workspace, title, body, focus })),
     ]
   }
 
   // "phonePort" in link.json, else the protocol's
   get port() {
-    return Number(this.crew.settings.phonePort) || PORT
+    return Number(this.clique.settings.phonePort) || PORT
   }
 
   start() {
@@ -162,7 +162,7 @@ export class Remote {
   // would be an uncaught one.
   async listen() {
     const port = this.port
-    const server = http.createServer((_, res) => res.writeHead(426).end('Crew speaks WebSocket to phones\n'))
+    const server = http.createServer((_, res) => res.writeHead(426).end('CLIque speaks WebSocket to phones\n'))
     try {
       await new Promise((resolve, reject) => {
         server.once('error', reject)
@@ -180,7 +180,7 @@ export class Remote {
   }
 
   close() {
-    for (const ws of this.wss?.clients ?? []) end(ws, 1001, 'Crew stopped listening for phones')
+    for (const ws of this.wss?.clients ?? []) end(ws, 1001, 'CLIque stopped listening for phones')
     this.wss?.close()
     this.server?.close()
     this.server = this.wss = null
@@ -283,7 +283,7 @@ class Session {
   out = new Map() // their output waiting to go
 
   constructor(remote, ws, device, keys, hi) {
-    Object.assign(this, { remote, crew: remote.crew, ws, device, keys })
+    Object.assign(this, { remote, clique: remote.clique, ws, device, keys })
     const gone = remote.phones.connected(device, () => end(ws, CLOSE.notPaired, 'unpaired'), hi)
     ws.on('message', (raw, binary) => this.receive(raw, binary))
     ws.on('close', () => {
@@ -292,14 +292,14 @@ class Session {
       remote.sessions.delete(this)
       gone()
     })
-    this.send({ t: 'ready', mac: { id: remote.phones.macId, name: this.crew.me.name }, device: { id: device.id } })
+    this.send({ t: 'ready', mac: { id: remote.phones.macId, name: this.clique.me.name }, device: { id: device.id } })
   }
 
   send(msg) {
     if (this.ws.readyState === WebSocket.OPEN) this.ws.send(seal(this.keys.kMac, this.sent++, pack(msg)))
   }
 
-  // Only while the connection is open: once it's closing (the phone unpaired, a frame that didn't open, Crew stopping
+  // Only while the connection is open: once it's closing (the phone unpaired, a frame that didn't open, CLIque stopping
   // to listen), nothing more it sends is done.
   async receive(raw, binary) {
     if (this.ws.readyState !== WebSocket.OPEN) return
@@ -320,21 +320,21 @@ class Session {
 
   // What a phone may ask (CALLS), each in the workspace it names. It's you: what it sends is yours in the chat.
   call(name, args) {
-    const crew = this.crew
+    const clique = this.clique
     const hub = (ws) => {
-      const h = crew.hubs.get(ws)
-      if (!h) throw new Error(`${crew.me.name} has no workspace "${ws}"`)
+      const h = clique.hubs.get(ws)
+      if (!h) throw new Error(`${clique.me.name} has no workspace "${ws}"`)
       return h
     }
     const calls = {
       // none named (a phone that hasn't picked one yet): the one on this computer's screen, if there's any
-      watch: (ws) => this.watch(ws ? hub(ws) : crew.screen),
+      watch: (ws) => this.watch(ws ? hub(ws) : clique.screen),
       send: (ws, to, text, images, opts) => {
         const h = hub(ws)
         // said in a channel (its id): Auto picks among its members, and its agents get its brief
         const channel = opts?.channel == null ? undefined : String(opts.channel)
         if (channel !== undefined && !h.channel(channel)) throw new Error('that channel is gone: it was deleted on the computer')
-        return crew.send(to ?? '', text, attached(images), { fresh: Boolean(opts?.fresh), re: opts?.re, ...(channel !== undefined && { channel }), ...(typeof opts?.thread === 'string' && { thread: opts.thread }) }, h)
+        return clique.send(to ?? '', text, attached(images), { fresh: Boolean(opts?.fresh), re: opts?.re, ...(channel !== undefined && { channel }), ...(typeof opts?.thread === 'string' && { thread: opts.thread }) }, h)
       },
       // a channel made, changed or deleted: channelAction's, minus the snapshot it hands back (the watch sends it)
       channel: (ws, op, id, arg) => {
@@ -346,28 +346,28 @@ class Session {
           ...(typeof a.brief === 'string' && { brief: a.brief }),
           ...('members' in a && { members: Array.isArray(a.members) ? a.members.map(String) : null }),
         }
-        return { id: crew.channelAction(op, op === 'create' ? null : String(id ?? ''), clean, ws).id }
+        return { id: clique.channelAction(op, op === 'create' ? null : String(id ?? ''), clean, ws).id }
       },
-      answer: (ws, id, reply) => crew.feedAction(id, 'answer', [reply ?? {}], hub(ws)),
-      approve: (ws, id) => crew.feedAction(id, 'approve', [], hub(ws)),
-      drop: (ws, id) => crew.feedAction(id, 'drop', [], hub(ws)),
+      answer: (ws, id, reply) => clique.feedAction(id, 'answer', [reply ?? {}], hub(ws)),
+      approve: (ws, id) => clique.feedAction(id, 'approve', [], hub(ws)),
+      drop: (ws, id) => clique.feedAction(id, 'drop', [], hub(ws)),
       read: (ws, seen) => hub(ws).read(seen),
       task: (ws, op, key, arg) => {
         if (!TASK_OPS.includes(op)) throw new Error(`"${op}" isn't a task action on a phone`)
-        return crew.ticket(op, key, arg?.images ? { ...arg, images: attached(arg.images) } : arg, hub(ws))
+        return clique.ticket(op, key, arg?.images ? { ...arg, images: attached(arg.images) } : arg, hub(ws))
       },
-      power: (ws, name, on) => crew.update(name, { off: !on }, hub(ws)),
-      set: (ws, name, { yolo, fast } = {}) => crew.update(name, { ...(yolo !== undefined && { yolo: Boolean(yolo) }), ...(fast !== undefined && { tier: fast ? 'fast' : 'default' }) }, hub(ws)),
-      freshStart: (ws, name) => crew.at(name, 'freshStart', [], hub(ws)),
-      restart: (ws, name) => crew.at(name, 'restart', [], hub(ws)),
-      markIdle: (ws, name) => crew.at(name, 'markIdle', [], hub(ws)),
+      power: (ws, name, on) => clique.update(name, { off: !on }, hub(ws)),
+      set: (ws, name, { yolo, fast } = {}) => clique.update(name, { ...(yolo !== undefined && { yolo: Boolean(yolo) }), ...(fast !== undefined && { tier: fast ? 'fast' : 'default' }) }, hub(ws)),
+      freshStart: (ws, name) => clique.at(name, 'freshStart', [], hub(ws)),
+      restart: (ws, name) => clique.at(name, 'restart', [], hub(ws)),
+      markIdle: (ws, name) => clique.at(name, 'markIdle', [], hub(ws)),
       image: (file) => image(file),
       saveImage: (name, type, bytes) => {
         if (!(bytes instanceof Uint8Array)) throw new Error('send the image as bytes')
         return saveImage(String(name ?? ''), type, bytes)
       },
       terminal: (ws, name, on) => this.terminal(hub(ws), String(name), on),
-      input: (ws, name, data) => crew.input(name, String(data ?? ''), hub(ws)),
+      input: (ws, name, data) => clique.input(name, String(data ?? ''), hub(ws)),
     }
     if (!CALLS.includes(name) || !Object.hasOwn(calls, name)) throw new Error(`"${name}" isn't available on a phone`)
     return calls[name](...args)
@@ -375,7 +375,7 @@ class Session {
 
   // As it is now, as JSON goes: what's kept here is what the phone has, untouched by the hubs changing theirs in place.
   view(hub) {
-    return JSON.parse(JSON.stringify(phoneState(this.crew.snapshot(hub))))
+    return JSON.parse(JSON.stringify(phoneState(this.clique.snapshot(hub))))
   }
 
   watch(hub) {
@@ -392,10 +392,10 @@ class Session {
 
   patch() {
     this.patchTimer = null
-    const hub = this.crew.hubs.get(this.watching) ?? null
+    const hub = this.clique.hubs.get(this.watching) ?? null
     // its workspace is gone, or there's a first one now: it gets the one on this computer's screen, whole
-    if (!hub && (this.watching !== null || this.crew.screen)) {
-      const { ws, state } = this.watch(this.crew.screen)
+    if (!hub && (this.watching !== null || this.clique.screen)) {
+      const { ws, state } = this.watch(this.clique.screen)
       return this.send({ t: 'state', ws, v: this.v, state })
     }
     const next = this.view(hub)
@@ -413,7 +413,7 @@ class Session {
     this.out.delete(key)
     if (!on) return this.terms.delete(key), null
     this.terms.set(key, asked)
-    const buffer = await this.crew.at(name, 'buffer', [], hub)
+    const buffer = await this.clique.at(name, 'buffer', [], hub)
     // only now (what came before is in the buffer), and only if it wasn't turned off, or asked for again, meanwhile
     if (this.terms.get(key) === asked) this.terms.set(key, true)
     return buffer

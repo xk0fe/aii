@@ -1,6 +1,6 @@
-// The first time a CLI runs in a folder it asks whether you trust it. Crew hands that question to you instead of
+// The first time a CLI runs in a folder it asks whether you trust it. CLIque hands that question to you instead of
 // typing a message into it, as a card in the chat, and delivers once you've answered, there or in its terminal.
-// Screens as Claude Code 2.1.300 / 2.1.318 and Codex 0.162 draw them (trimmed). Real Hub, fake runner and clock, throwaway CREW_HOME. Run with `npm test`.
+// Screens as Claude Code 2.1.300 / 2.1.318 and Codex 0.162 draw them (trimmed). Real Hub, fake runner and clock, throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -8,9 +8,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-trust-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-trust-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 class FakeRunner extends EventEmitter {
   live = new Set()
@@ -40,7 +40,7 @@ const UP = '\x1b[A'
 let hub, runner, alerts
 beforeEach(() => {
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   const cwd = os.tmpdir()
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'rex', area: 'art', provider: 'codex', cwd }, { name: 'june', area: 'backend', cwd }] }))
   runner = new FakeRunner()
@@ -95,7 +95,7 @@ test('Claude Code asks to trust its folder: it says so, and starts when you answ
   hub.input('june', '\r')
   assert.equal(june.status, 'starting')
   hub.onHook('june', { hook_event_name: 'SessionStart', source: 'startup' })
-  mock.timers.tick(3000) // you just typed there: Crew holds off for three seconds, as always
+  mock.timers.tick(3000) // you just typed there: CLIque holds off for three seconds, as always
   assert.deepEqual(runner.typed, ['fix the 500s'])
 })
 

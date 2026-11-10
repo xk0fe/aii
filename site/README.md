@@ -14,7 +14,7 @@ page, `privacy.html`, `support.html` and a 404 page, in light and dark (followin
 | `src/` | the pages' words (`index.html`, `support.html`, `404.html`) |
 | `build.mjs` | makes the site in `_site/` from all of the above |
 | `assets/` | styles, the Fredoka font (and its licence), icons, the link-preview picture, screenshots |
-| `creatures/` | the demo crew as SVGs, drawn by the app's own avatar code |
+| `creatures/` | the demo clique as SVGs, drawn by the app's own avatar code |
 | `tools/` | `creatures.mjs` redraws the creatures, `icons.mjs` the icons and `og.png` |
 
 ## See it on your computer
@@ -106,16 +106,16 @@ the site. Any button can go back to "Coming soon" the same way.
 
 ## Pictures to replace with real screenshots
 
-Until the app looks like the approved design, the screenshots are the design's renders with the demo crew. Replace
-each file with a real screenshot of the same thing (demo crew and the Storefront workspace only, nothing personal),
+Until the app looks like the approved design, the screenshots are the design's renders with the demo clique. Replace
+each file with a real screenshot of the same thing (demo clique and the Storefront workspace only, nothing personal),
 at the same size, as WebP (`cwebp -q 82`). If a size changes, change the `width` and `height` in `src/index.html`.
 
 | File in `assets/shots/` | Shows | Size |
 |---|---|---|
-| `crew-light.webp`, `crew-dark.webp` (+ `-800` halves) | the Mac app, Crew tab: the room, the cards, the chat | 1600 × 978 (a 1440 × 880 window) |
+| `clique-light.webp`, `clique-dark.webp` (+ `-800` halves) | the Mac app, CLIque tab: the room, the cards, the chat | 1600 × 978 (a 1440 × 880 window) |
 | `needs-you-light.webp`, `needs-you-dark.webp` | the Needs you panel: Milo's "Can I run npm run build?", Iris's question | 782 × 822 |
-| `computers-light.webp`, `computers-dark.webp` (+ `-800`) | the Mac (Studio) and the PC (Workstation) showing the same crew | 1600 × 1067 |
-| `phone-crew-light.webp`, `phone-crew-dark.webp` | the phone app's Crew tab | 600 × 1301 |
+| `computers-light.webp`, `computers-dark.webp` (+ `-800`) | the Mac (Studio) and the PC (Workstation) showing the same clique | 1600 × 1067 |
+| `phone-clique-light.webp`, `phone-clique-dark.webp` | the phone app's CLIque tab | 600 × 1301 |
 | `phone-ask-light.webp`, `phone-ask-dark.webp` | the phone app's Needs you tab | 600 × 1301 |
 
 Also drawn from the design for now:
@@ -130,5 +130,5 @@ Also drawn from the design for now:
 Change `PRODUCT` in `config.mjs`: every page, title, the wordmark (drawn letter by letter in Fredoka, as written, in
 the creatures' colours) and `privacy.html` follow. Then redraw `og.png` (it shows the wordmark) with `tools/icons.mjs`.
 `privacy.md` itself says "CLIque" for anyone pasting it into a store form: replace the word there too, and in the
-`replace` that `build.mjs` gives it. The headline's "working as a crew" is the ordinary word and stays. (`og.png` still
+`replace` that `build.mjs` gives it. The headline's "working as a clique" is the ordinary word and stays. (`og.png` still
 shows the wordmark from before the rename to CLIque until it's redrawn.)

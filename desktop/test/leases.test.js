@@ -1,4 +1,4 @@
-// Things only one agent can use at a time (crew lease), and what an agent leaves running, stopped once its CLI is gone.
+// Things only one agent can use at a time (clique lease), and what an agent leaves running, stopped once its CLI is gone.
 // The leases run against the real Hub with a fake runner; the sweeps against real processes, on macOS and Windows
 // alike, and Windows' way of telling what's left (no process groups there) also on made-up process lists, so it's
 // checked on any computer. Run with `npm test`.
@@ -11,7 +11,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { WIN, BIN, SH, program, alive, gone } from './helpers/platform.mjs'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-leases-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-leases-'))
 const { Hub, CONFIG, shellPrefix, filePath, fileKey } = await import('../core/hub.js')
 const { Runner } = await import('../core/runner.js')
 const { withTools, pathKey } = await import('../core/launch.js')
@@ -29,7 +29,7 @@ class FakeRunner extends EventEmitter {
 
 let hub, runner
 beforeEach(() => {
-  for (const f of ['feed.jsonl', 'sessions.json', 'conversations.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['feed.jsonl', 'sessions.json', 'conversations.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'theo', area: 'QA' }, { name: 'noor', area: 'mobile app' }, { name: 'iris', area: 'design' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: BIN })
@@ -40,7 +40,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const claim = (from, words, hold = 100000) => hub.claim({ from, words, hold })
 const stop = (name, extra = {}) => hub.onHook(name, { hook_event_name: 'Stop', last_assistant_message: 'done', ...extra })
@@ -65,10 +65,10 @@ test('one agent on the simulator at a time: the next one waits, and gets it when
 
 test('taken past the wait: it says who has it and what for, and not to touch it', async () => {
   await claim('theo', ['simulator', 'QA pass'])
-  assert.match(await claim('noor', ['simulator'], 30), /^simulator is still @theo's \(1 min: QA pass\)\. Don't use it meanwhile[\s\S]*crew ask theo/)
+  assert.match(await claim('noor', ['simulator'], 30), /^simulator is still @theo's \(1 min: QA pass\)\. Don't use it meanwhile[\s\S]*clique ask theo/)
 })
 
-test('something left running in the background keeps the lease; crew release gives it back', async () => {
+test('something left running in the background keeps the lease; clique release gives it back', async () => {
   await claim('theo', ['metro:8081', 'dev server for QA'])
   stop('theo', { background_tasks: [{ id: 'b1', type: 'bash', status: 'running' }] })
   assert.match(await claim('noor', ['metro:8081'], 30), /still @theo's/)
@@ -80,7 +80,7 @@ test('something left running in the background keeps the lease; crew release giv
 
 test('the holder waiting on you: you may use it for its question', async () => {
   await claim('theo', ['simulator'])
-  hub.open({ id: 'q1', from: 'theo', to: 'iris', text: 'does the card look right?', hold: {} }) // her crew ask, holding on
+  hub.open({ id: 'q1', from: 'theo', to: 'iris', text: 'does the card look right?', hold: {} }) // her clique ask, holding on
   assert.match(await claim('iris', ['simulator']), /@theo has simulator, but it's waiting on you/)
 })
 
@@ -92,7 +92,7 @@ test('yours from your terminal until you let go; an agent that stops lets go of 
   hub.setStatus(hub.agents.get('noor'), 'stopped')
   assert.deepEqual(hub.holdsOf('noor'), [])
   assert.match(hub.give({ from: 'you', words: ['Android  device'] }), /released android device/)
-  await assert.rejects(hub.claim({ from: 'noor', words: [] }), /usage: crew lease/)
+  await assert.rejects(hub.claim({ from: 'noor', words: [] }), /usage: clique lease/)
 })
 
 // ---- one file, however it's written ----------------------------------------------------------------------
@@ -100,7 +100,7 @@ test('yours from your terminal until you let go; an agent that stops lets go of 
 const edit = (name, file_path) => hub.lease(name, { hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { file_path, old_string: 'a', new_string: 'b' } })
 
 test('a file an agent names another way is still the one leased', () => {
-  const dir = path.join(os.tmpdir(), 'crew-leases-app')
+  const dir = path.join(os.tmpdir(), 'clique-leases-app')
   assert.equal(edit('theo', path.join(dir, 'src', 'Board.tsx')), '')
   const other = path.join(dir, 'src', '..', 'src', '.', 'Board.tsx')
   assert.match(JSON.parse(edit('noor', other)).hookSpecificOutput.permissionDecisionReason, /^Board\.tsx is being edited by @theo/)
@@ -144,7 +144,7 @@ function detached(cmd, env = {}) {
 // job that would end it along with its parent, which keeps its parent's id.
 const LEAVES = program(`const c = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 300000)'], { detached: ${WIN}, stdio: 'ignore', windowsHide: true }); c.unref(); console.log(c.pid)`)
 const leaveOne = () => detached([LEAVES.file, ...LEAVES.args])
-const groupsFile = (name) => path.join(process.env.CREW_HOME, 'run', 'groups', name)
+const groupsFile = (name) => path.join(process.env.CLIQUE_HOME, 'run', 'groups', name)
 
 test("ps's elapsed times; only members of a group that's still the one written down count", () => {
   assert.equal(seconds('05'), 5)
@@ -176,14 +176,14 @@ test('a CLI that ends: what its commands left in their groups is stopped, with o
   assert.ok(!fs.existsSync(groupsFile('noor.0000beef')))
 })
 
-test('bin/crew-sh writes down each command\'s group and runs it as the shell would; Crew sweeps it later', { skip: !SH && 'no Git Bash here' }, async () => {
+test('bin/clique-sh writes down each command\'s group and runs it as the shell would; CLIque sweeps it later', { skip: !SH && 'no Git Bash here' }, async () => {
   const file = groupsFile('theo.0000cafe')
-  // Git Bash numbers its processes its own way: the sleep's Windows id is what Crew can stop
+  // Git Bash numbers its processes its own way: the sleep's Windows id is what CLIque can stop
   const pid = WIN ? 'read -r w < /proc/$!/winpid; echo $w' : 'echo $!'
-  const { leader, out } = await detached([SH, path.join(BIN, 'crew-sh'), `echo "$((40 + 2))"; sleep 300 >/dev/null 2>&1 & ${pid}`], { CREW_GROUPS: file, SHELL: '/bin/sh' })
+  const { leader, out } = await detached([SH, path.join(BIN, 'clique-sh'), `echo "$((40 + 2))"; sleep 300 >/dev/null 2>&1 & ${pid}`], { CLIQUE_GROUPS: file, SHELL: '/bin/sh' })
   const [answer, left] = out.split('\n')
   assert.equal(answer, '42', 'the command ran, in a shell')
-  // On Windows $! is the shell Git Bash forked for it, whose Windows id crew-sh writes down; that one starts sleep.exe
+  // On Windows $! is the shell Git Bash forked for it, whose Windows id clique-sh writes down; that one starts sleep.exe
   // and goes, and the sleep is its child, found by the parent it had
   const written = fs.readFileSync(file, 'utf8')
   const procs = WIN ? await processes() : []
@@ -191,7 +191,7 @@ test('bin/crew-sh writes down each command\'s group and runs it as the shell wou
   const seen = () => JSON.stringify({ leader, left, sleep, written, procs: procs.filter((p) => /bash|sleep/i.test(p.name)) })
   if (WIN) assert.ok(readSpans(file).has(Number(left)) && sleep, `on Windows also what it left in its group, by its Windows id: ${seen()}`)
   else assert.deepEqual([...readGroups(file).keys()], [leader])
-  // Crew wasn't running when the CLI ended: the next start sweeps it
+  // CLIque wasn't running when the CLI ended: the next start sweeps it
   hub.sweepStale()
   // the sweep lists every process first: PowerShell on Windows, seconds when the computer is busy
   assert.ok(await gone(sleep, WIN ? 30000 : 8000), seen())
@@ -254,14 +254,14 @@ test("Windows: what's left is what descends from the agent's processes, while th
   const p = (pid, ppid, start) => ({ pid, ppid, start, name: `p${pid}` })
   const procs = [
     p(4, 0, 0),
-    p(510, 500, t + 0.5), // 500 (a command's shell, written down by crew-sh) is gone: an orphan of it
+    p(510, 500, t + 0.5), // 500 (a command's shell, written down by clique-sh) is gone: an orphan of it
     p(520, 510, t + 1), // and its child, through a parent that's still there
     p(530, 500, t + 600), // a child of whoever got 500 next, long after the agent's was last seen
     p(600, 1, t - 0.4), // a CLI written down a moment after it started, still running
     p(610, 600, t + 20),
     p(700, 1, t + 200), // 700 handed out again: not the one written down
     p(710, 700, t + 201),
-    p(820, 810, t + 4), // a dev server whose shell (810) went: crew-sh wrote 810 down at the end
+    p(820, 810, t + 4), // a dev server whose shell (810) went: clique-sh wrote 810 down at the end
     p(900, 1, t - 50),
     p(910, 900, t + 2), // a child of an unrelated process
     p(950, 510, t + 3), // kept: another agent's, say
@@ -274,7 +274,7 @@ test("Windows: what's left is what descends from the agent's processes, while th
 })
 
 test("Windows: the agent's processes as written down, and what to add after a look", () => {
-  const file = path.join(process.env.CREW_HOME, 'spans')
+  const file = path.join(process.env.CLIQUE_HOME, 'spans')
   fs.writeFileSync(file, '600 1000\n610 1005 1010\n610 1005 1040\n610 1900 1950\n1 1000\nnot a line\n')
   assert.deepEqual([...readSpans(file)], [[600, [[1000, 1000]]], [610, [[1005, 1040], [1900, 1950]]]])
   assert.deepEqual([...readGroups(file)], [[600, 1000], [610, 1005]], 'the same file, read the Unix way')
@@ -284,7 +284,7 @@ test("Windows: the agent's processes as written down, and what to add after a lo
   assert.equal(noteworthy(unix, 600, new Map([[600, 1000]])), '620 1100.1\n', 'elsewhere, as before: groups not written down yet')
 })
 
-test("Windows: Crew's own parents are never swept (Crew started from an agent's terminal)", () => {
+test("Windows: CLIque's own parents are never swept (CLIque started from an agent's terminal)", () => {
   const procs = [{ pid: 800, ppid: 4, start: 1 }, { pid: 850, ppid: 800, start: 2 }, { pid: 900, ppid: 850, start: 3 }, { pid: 860, ppid: 850, start: 2.5 }]
   assert.deepEqual(exempt(procs, 900), [850, 800])
   assert.deepEqual(exempt(procs.map((p) => ({ ...p, pgid: 850 })), 900), [850], 'elsewhere: its group')
@@ -300,48 +300,48 @@ test('Windows: Git Bash is found where Claude Code finds it', () => {
   assert.equal(gitBash({ PATH: 'C:\\Windows\\System32' }, at('C:\\Windows\\System32\\bash.exe')), null, "WSL's bash isn't it")
 })
 
-test("the shell prefix: quoted by Claude Code itself, by name from the agent's PATH on Windows, never crew-sh twice", () => {
-  assert.deepEqual(shellPrefix('/Applications/My Apps/Crew.app/bin', {}, 'darwin'), { CLAUDE_CODE_SHELL_PREFIX: '/Applications/My Apps/Crew.app/bin/crew-sh' })
-  assert.deepEqual(shellPrefix('/Users/jean -luc/crew/bin', {}, 'darwin'), {}, 'Claude Code would take "-luc/crew/bin/crew-sh" for options')
-  assert.deepEqual(shellPrefix('/crew/bin', { CLAUDE_CODE_SHELL_PREFIX: '/usr/local/bin/audit' }, 'darwin'), { CLAUDE_CODE_SHELL_PREFIX: '/crew/bin/crew-sh', CREW_SHELL_PREFIX: '/usr/local/bin/audit' })
-  assert.deepEqual(shellPrefix('/crew/bin', { CLAUDE_CODE_SHELL_PREFIX: '/old/crew/bin/crew-sh' }, 'darwin'), { CLAUDE_CODE_SHELL_PREFIX: '/crew/bin/crew-sh' })
+test("the shell prefix: quoted by Claude Code itself, by name from the agent's PATH on Windows, never clique-sh twice", () => {
+  assert.deepEqual(shellPrefix('/Applications/My Apps/CLIque.app/bin', {}, 'darwin'), { CLAUDE_CODE_SHELL_PREFIX: '/Applications/My Apps/CLIque.app/bin/clique-sh' })
+  assert.deepEqual(shellPrefix('/Users/jean -luc/clique/bin', {}, 'darwin'), {}, 'Claude Code would take "-luc/clique/bin/clique-sh" for options')
+  assert.deepEqual(shellPrefix('/clique/bin', { CLAUDE_CODE_SHELL_PREFIX: '/usr/local/bin/audit' }, 'darwin'), { CLAUDE_CODE_SHELL_PREFIX: '/clique/bin/clique-sh', CLIQUE_SHELL_PREFIX: '/usr/local/bin/audit' })
+  assert.deepEqual(shellPrefix('/clique/bin', { CLAUDE_CODE_SHELL_PREFIX: '/old/clique/bin/clique-sh' }, 'darwin'), { CLAUDE_CODE_SHELL_PREFIX: '/clique/bin/clique-sh' })
   const tried = []
   const works = (sh, bash, extra) => (tried.push([sh, bash, extra]), true)
   // a Git Bash that's there on any computer (this Node, standing in for it)
   const bash = process.execPath
-  const env = { CLAUDE_CODE_SHELL_PREFIX: 'C:\\Users\\me\\.crew\\bin\\crew-sh.cmd', CLAUDE_CODE_GIT_BASH_PATH: bash }
-  const bin = 'C:\\Users\\Jean -Luc\\AppData\\Local\\Programs\\Crew\\resources\\app.asar.unpacked\\bin'
+  const env = { CLAUDE_CODE_SHELL_PREFIX: 'C:\\Users\\me\\.clique\\bin\\clique-sh.cmd', CLAUDE_CODE_GIT_BASH_PATH: bash }
+  const bin = 'C:\\Users\\Jean -Luc\\AppData\\Local\\Programs\\CLIque\\resources\\app.asar.unpacked\\bin'
   const win = shellPrefix(bin, { ...env, Path: 'C:\\Windows' }, 'win32', works)
-  assert.equal(win.CLAUDE_CODE_SHELL_PREFIX, 'crew-sh', 'no path to quote, spaces and " -" and all: Git Bash finds it on PATH')
-  assert.ok(!('CREW_SHELL_PREFIX' in win), "Crew started from an agent's terminal: crew-sh doesn't run itself")
-  assert.equal(win.CREW_BASH, bash)
+  assert.equal(win.CLAUDE_CODE_SHELL_PREFIX, 'clique-sh', 'no path to quote, spaces and " -" and all: Git Bash finds it on PATH')
+  assert.ok(!('CLIQUE_SHELL_PREFIX' in win), "CLIque started from an agent's terminal: clique-sh doesn't run itself")
+  assert.equal(win.CLIQUE_BASH, bash)
   const tools = `${bin}\\win32-${process.arch === 'arm64' ? 'arm64' : 'x64'}`
-  assert.deepEqual(tried, [['crew-sh', bash, { Path: `${tools};C:\\Windows` }]], "tried in Git Bash first, with the agent's PATH")
-  assert.deepEqual(shellPrefix('C:\\Crew\\bin', env, 'win32', () => false), {}, "if Git Bash won't run it, commands run without it")
+  assert.deepEqual(tried, [['clique-sh', bash, { Path: `${tools};C:\\Windows` }]], "tried in Git Bash first, with the agent's PATH")
+  assert.deepEqual(shellPrefix('C:\\CLIque\\bin', env, 'win32', () => false), {}, "if Git Bash won't run it, commands run without it")
   for (const arch of ['x64', 'arm64']) {
     const dir = path.join(BIN, `win32-${arch}`)
-    assert.ok(fs.existsSync(path.join(dir, 'crew-sh')), `bin/win32-${arch}/crew-sh: what Git Bash finds on the agent's PATH`)
-    assert.ok(fs.existsSync(path.join(dir, 'crew-sh.cmd')), 'what Claude Code finds for an MCP server on Windows, beside crew-sh')
-    assert.match(fs.readFileSync(path.join(dir, 'crew-sh.cmd'), 'utf8'), /\r\n"%bash%" "%~dp0crew-sh" %\*\r\n/)
+    assert.ok(fs.existsSync(path.join(dir, 'clique-sh')), `bin/win32-${arch}/clique-sh: what Git Bash finds on the agent's PATH`)
+    assert.ok(fs.existsSync(path.join(dir, 'clique-sh.cmd')), 'what Claude Code finds for an MCP server on Windows, beside clique-sh')
+    assert.match(fs.readFileSync(path.join(dir, 'clique-sh.cmd'), 'utf8'), /\r\n"%bash%" "%~dp0clique-sh" %\*\r\n/)
   }
 })
 
-test('crew-sh is tried in the shell that will run it, as Claude Code runs it, before agents get it', { skip: !SH && 'no Git Bash here' }, () => {
+test('clique-sh is tried in the shell that will run it, as Claude Code runs it, before agents get it', { skip: !SH && 'no Git Bash here' }, () => {
   // Windows: by name, from the agent's PATH; macOS: where it is
-  const sh = WIN ? 'crew-sh' : path.join(BIN, 'crew-sh')
+  const sh = WIN ? 'clique-sh' : path.join(BIN, 'clique-sh')
   const agent = WIN ? withTools(process.env, BIN) : {}
   assert.equal(prefixWorks(sh, SH, agent), true)
-  assert.equal(prefixWorks(path.join(BIN, 'no-such-crew-sh'), SH, agent), false)
+  assert.equal(prefixWorks(path.join(BIN, 'no-such-clique-sh'), SH, agent), false)
   assert.equal(prefixWorks(sh, null, agent), false, 'no Git Bash, no prefix')
   if (WIN) assert.equal(prefixWorks(sh, SH, { [pathKey()]: 'C:\\Windows\\System32' }), false, "not on the agent's PATH: no prefix")
 })
 
-test('bin/crew-sh on Windows still runs the command, with its exit code, when it can\'t say what it was', { skip: WIN }, async () => {
+test('bin/clique-sh on Windows still runs the command, with its exit code, when it can\'t say what it was', { skip: WIN }, async () => {
   // Git Bash's /proc isn't here: only the running part of the Windows way can be checked
-  const file = path.join(process.env.CREW_HOME, 'win-groups')
+  const file = path.join(process.env.CLIQUE_HOME, 'win-groups')
   const { execFile } = await import('node:child_process')
   const run = (cmd) => new Promise((resolve) => {
-    execFile('/bin/sh', [path.join(BIN, 'crew-sh'), cmd], { env: { ...process.env, OS: 'Windows_NT', CREW_GROUPS: file, CLAUDE_CODE_SHELL: '/bin/sh' } }, (e, out) => resolve({ code: e?.code ?? 0, out }))
+    execFile('/bin/sh', [path.join(BIN, 'clique-sh'), cmd], { env: { ...process.env, OS: 'Windows_NT', CLIQUE_GROUPS: file, CLAUDE_CODE_SHELL: '/bin/sh' } }, (e, out) => resolve({ code: e?.code ?? 0, out }))
   })
   assert.deepEqual(await run('echo "$((40 + 2))"'), { code: 0, out: '42\n' })
   assert.equal((await run('exit 7')).code, 7)

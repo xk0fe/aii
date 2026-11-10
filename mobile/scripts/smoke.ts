@@ -1,8 +1,8 @@
 // The phone app's network layer against a real Mac, from a terminal: pair with a code (or reconnect with a pairing
 // saved by an earlier run), print what the phone would see, send a message, and print the patches that follow.
 //
-//   npx tsx scripts/smoke.ts crewphone1.…                    pair, print, send a hello, watch for 8 s
-//   npx tsx scripts/smoke.ts                                  reconnect with the saved pairing (.crew-smoke.json)
+//   npx tsx scripts/smoke.ts cliquephone1.…                    pair, print, send a hello, watch for 8 s
+//   npx tsx scripts/smoke.ts                                  reconnect with the saved pairing (.clique-smoke.json)
 //   options: --to <name>  --text "…"  --no-send  --ws <workspace>  --wait <seconds>  --save <file>  --answer <id>:allow|deny
 //
 // Needs Node 22 or later (its built-in WebSocket).
@@ -10,7 +10,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 
-import { CrewClient, type Deps, type Target } from '../src/net/client'
+import { CliqueClient, type Deps, type Target } from '../src/net/client'
 import { parsePairCode } from '../src/net/pairing'
 import { b64, unb64 } from '../src/net/shared'
 import type { MacRecord, State } from '../src/net/types'
@@ -21,8 +21,8 @@ const opt = (name: string) => {
   return i >= 0 ? args[i + 1] : undefined
 }
 const flag = (name: string) => args.includes(`--${name}`)
-const code = args.find((a) => a.startsWith('crewphone1.'))
-const file = opt('save') ?? '.crew-smoke.json'
+const code = args.find((a) => a.startsWith('cliquephone1.'))
+const file = opt('save') ?? '.clique-smoke.json'
 const wait = Number(opt('wait') ?? 8) * 1000
 
 const WS = (globalThis as { WebSocket?: Deps['WebSocket'] }).WebSocket
@@ -36,7 +36,7 @@ const device = { name: `${os.hostname().split('.')[0]} (smoke test)`, platform: 
 function target(): Target {
   if (code) return { kind: 'pair', code: parsePairCode(code), secret: new Uint8Array(crypto.randomBytes(32)) }
   if (!fs.existsSync(file)) {
-    console.error(`No code given and no saved pairing in ${file}.\nUsage: npx tsx scripts/smoke.ts crewphone1.…`)
+    console.error(`No code given and no saved pairing in ${file}.\nUsage: npx tsx scripts/smoke.ts cliquephone1.…`)
     process.exit(1)
   }
   const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as { mac: MacRecord; secret: string }
@@ -44,7 +44,7 @@ function target(): Target {
 }
 
 const t = target()
-const client = new CrewClient(t, deps, device, {
+const client = new CliqueClient(t, deps, device, {
   onPaired: ({ mac }) => {
     fs.writeFileSync(file, JSON.stringify({ mac, secret: b64(t.secret) }, null, 2), { mode: 0o600 })
     console.log(`paired with ${mac.name} (mac ${mac.id}, this device ${mac.deviceId}); saved to ${file}`)

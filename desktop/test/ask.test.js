@@ -1,6 +1,6 @@
 // Agents' questions answered in the chat: the PermissionRequest payloads Claude Code 2.1 and Codex 0.160
 // actually send (recorded from real sessions), the cards they become, and the decisions your answers turn
-// into. Fake runner, throwaway CREW_HOME, a real local HTTP server for the /ask route. Run with `npm test`.
+// into. Fake runner, throwaway CLIQUE_HOME, a real local HTTP server for the /ask route. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -9,10 +9,10 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-ask-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-ask-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { serve } = await import('../core/server.js')
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 class FakeRunner extends EventEmitter {
   running = () => true
@@ -194,7 +194,7 @@ test('the /ask route holds the hook open until you answer, and notices when the 
   const server = await serve(hub)
   const { port } = server.address()
   const post = (body) => {
-    const req = http.request({ port, method: 'POST', path: '/ask/june', headers: { 'x-crew': hub.token } })
+    const req = http.request({ port, method: 'POST', path: '/ask/june', headers: { 'x-clique': hub.token } })
     const res = new Promise((resolve) => req.on('response', (r) => { let b = ''; r.on('data', (c) => (b += c)); r.on('end', () => resolve(b)) }))
     req.on('error', () => {})
     req.end(JSON.stringify(body))
@@ -271,7 +271,7 @@ test("Claude's permission notification is dropped even when it beats the card", 
 test('a question waiting for hours stays answerable after 200 newer entries', { timeout: 5000 }, async () => {
   const waiting = hub.ask('june', BASH)
   const id = card().id
-  for (let i = 0; i < 320; i++) hub.post({ kind: 'event', from: 'crew', text: `busy ${i}` })
+  for (let i = 0; i < 320; i++) hub.post({ kind: 'event', from: 'clique', text: `busy ${i}` })
   assert.ok(hub.snapshot().feed.some((e) => e.id === id), 'still on screen')
   hub.answer(id, { allow: true })
   assert.equal(decision(await waiting).behavior, 'allow')
@@ -280,7 +280,7 @@ test('a question waiting for hours stays answerable after 200 newer entries', { 
 test('the hook prints nothing on an HTTP error and always ends before the agent would kill it', { timeout: 5000 }, async () => {
   const { adapters, ASK_WAIT } = await import('../core/adapters.js')
   const settingsOf = (platform) => {
-    const claude = adapters.claude({ name: 'june' }, { session: 'x', attachments: '/tmp', platform, bin: platform === 'win32' ? 'C:\\Crew\\bin' : '/crew/bin' })
+    const claude = adapters.claude({ name: 'june' }, { session: 'x', attachments: '/tmp', platform, bin: platform === 'win32' ? 'C:\\CLIque\\bin' : '/clique/bin' })
     return JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
   }
   const settings = settingsOf('darwin')
@@ -294,10 +294,10 @@ test('the hook prints nothing on an HTTP error and always ends before the agent 
   const codex = adapters.codex({ name: 'rex' }, { platform: 'darwin' }).args.find((a) => a.startsWith('hooks.PermissionRequest='))
   assert.match(codex, /curl -sf -m 1790 /)
   assert.match(codex, /timeout=1800/)
-  // Windows: crew-hook.exe gives up as curl does, 10 s before each CLI would kill it
+  // Windows: clique-hook.exe gives up as curl does, 10 s before each CLI would kill it
   const win = settingsOf('win32').hooks.PermissionRequest[0].hooks[0]
   assert.deepEqual([win.args, win.timeout], [['ask', '86390'], ASK_WAIT.claude])
   const winCodex = adapters.codex({ name: 'rex' }, { platform: 'win32' }).args.find((a) => a.startsWith('hooks.PermissionRequest='))
-  assert.match(winCodex, /crew-hook ask 1790/)
+  assert.match(winCodex, /clique-hook ask 1790/)
   assert.match(winCodex, /timeout=1800/)
 })

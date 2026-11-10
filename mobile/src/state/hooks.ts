@@ -1,4 +1,4 @@
-// Screens read the session and the live crew through these (useSyncExternalStore: no effects, no copies).
+// Screens read the session and the live clique through these (useSyncExternalStore: no effects, no copies).
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 
 import type { Agent, Channel, FeedEntry, State } from '@/net/types'
@@ -10,7 +10,7 @@ import { inThread } from '@/ui/threads'
 export const useSession = () => useSyncExternalStore(session.subscribe, session.getSnapshot)
 export const useClient = () => useSyncExternalStore(session.subscribe, () => session.client)
 
-export function useCrew() {
+export function useClique() {
   const client = useClient()
   const subscribe = useCallback((fn: () => void) => client?.subscribe(fn) ?? (() => {}), [client])
   const snap = useSyncExternalStore(subscribe, () => client?.getSnapshot() ?? EMPTY)

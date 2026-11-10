@@ -1,6 +1,6 @@
 // The chat, one entry at a time, as Slack and Discord set it: every message, yours too, is a row with a face in the
 // gutter, the name and time on top and the words beside it, with no bubbles. Messages in a row from one sender stack
-// under one face; crew events are a quiet line with an icon in the gutter. A reply right under what it answers doesn't
+// under one face; clique events are a quiet line with an icon in the gutter. A reply right under what it answers doesn't
 // quote it again. What the agents say to each other stays out of the way: a few lines, with the rest a tap away. A line
 // marks where each day starts. Long-press a message to copy or share it.
 import { memo, useRef, useState, type ReactNode } from 'react'
@@ -37,7 +37,7 @@ export type FeedCtx = {
   canAct: boolean
 }
 
-// A clone, or someone no longer in the crew, still gets a face: its original's, or one from its name.
+// A clone, or someone no longer in the clique, still gets a face: its original's, or one from its name.
 export const someone = (name: string, byName: Map<string, Agent>): Agent => byName.get(name) ?? byName.get(familyOf(name)) ?? ({ name, status: 'idle', on: true } as Agent)
 
 const ink = (name: string, c: FeedCtx) => (name === 'you' ? c.t.fg : nameInk(agentColor(someone(name, c.byName)), c.t.fg))
@@ -121,7 +121,7 @@ function Face({ e, c }: { e: FeedEntry; c: FeedCtx }) {
   )
 }
 
-// Yours: a plain disc, so the creatures stay the crew's.
+// Yours: a plain disc, so the creatures stay the clique's.
 function YouFace({ t }: { t: Theme }) {
   return (
     <View style={[styles.you, { backgroundColor: t.fill }]} accessibilityLabel="You">
@@ -134,7 +134,7 @@ function YouFace({ t }: { t: Theme }) {
 const unfolded = new Set<string>()
 
 // What agents say to each other: a few lines, plain, with the rest a tap away, so what's for you stands out. (On an
-// average crew's chat these are almost half the messages, and they run to hundreds of characters each.)
+// average clique's chat these are almost half the messages, and they run to hundreds of characters each.)
 function Between({ e, c, tone }: { e: FeedEntry; c: FeedCtx; tone?: 'dropped' }) {
   const t = c.t
   const text = e.text ?? ''
@@ -198,7 +198,7 @@ function AskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
   )
 }
 
-// A quiet line: events, tasks, Crew's right-of-way rules. An icon in the gutter, the words beside it.
+// A quiet line: events, tasks, CLIque's right-of-way rules. An icon in the gutter, the words beside it.
 function Quiet({ c, icon = 'handoff', tint, children }: { c: FeedCtx; icon?: Parameters<typeof Icon>[0]['name']; tint?: string; children: ReactNode }) {
   return (
     <View style={[styles.row, styles.sys]}>
@@ -367,12 +367,12 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
     return (
       <Quiet c={c} icon={e.fresh ? 'fresh' : 'handoff'}>
         <Text style={[styles.sysText, { color: t.fg2 }]}>
-          {e.from && e.from !== 'crew' ? (
+          {e.from && e.from !== 'clique' ? (
             <>
               <Name name={e.from} c={c} />{' '}
             </>
           ) : null}
-          {e.from === 'crew' && e.text ? e.text.charAt(0).toUpperCase() + e.text.slice(1) : e.text}
+          {e.from === 'clique' && e.text ? e.text.charAt(0).toUpperCase() + e.text.slice(1) : e.text}
         </Text>
       </Quiet>
     )
@@ -439,7 +439,7 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
         ) : null}
       </Row>
     )
-  // a hand-off between agents, or a teammate's question (crew ask)
+  // a hand-off between agents, or a teammate's question (clique ask)
   const head =
     e.ask === true ? (
       <>

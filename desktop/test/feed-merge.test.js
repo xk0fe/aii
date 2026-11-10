@@ -1,5 +1,5 @@
 // Multi-recipient sends from the real Hub, rendered through ui/common.js's feedView: the copies of one send
-// (same sendId) show once, addressed to everyone. Fake runner, throwaway CREW_HOME. Run with `npm test`.
+// (same sendId) show once, addressed to everyone. Fake runner, throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -8,24 +8,24 @@ import os from 'node:os'
 import path from 'node:path'
 import vm from 'node:vm'
 const A = path.resolve(import.meta.dirname, '..')
-const ctx = vm.createContext({ crew: {}, avatarHTML: () => '', agentColor: () => '', CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
+const ctx = vm.createContext({ clique: {}, avatarHTML: () => '', agentColor: () => '', CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
 vm.runInContext(fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8') + ';globalThis.__x = { feedView, inThread, isUnread }', ctx)
 const { feedView, inThread, isUnread } = ctx.__x
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-feed-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-feed-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
-const CREW = ['june', 'ada', 'iris', 'abe'].map((name) => ({ name, area: name }))
+const CLIQUE = ['june', 'ada', 'iris', 'abe'].map((name) => ({ name, area: name }))
 class FakeRunner extends EventEmitter { on_ = new Set(); running = (n) => this.on_.has(n); submit() {}; write() {}; stop() {}; start() {} }
 let hub
 beforeEach(() => {
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: false, agents: CREW }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: false, agents: CLIQUE }))
   const r = new FakeRunner()
   hub = new Hub(r, { bin: '/nonexistent' })
   for (const a of hub.agents.values()) (r.on_.add(a.name), (a.status = 'working'))
   hub.feed.length = 0
 })
 afterEach(() => { for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer); clearTimeout(hub.statsTimer) })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const msgs = () => hub.feed.filter((m) => m.kind === 'msg')
 const render = (feed, { open = new Set(), limit = 200 } = {}) => {

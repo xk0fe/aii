@@ -1,11 +1,11 @@
 // The phones paired with this Mac (shared/PROTOCOL.md): this Mac's key and id for them, each paired phone, the pairing
-// code that's open, and which phones are connected right now. Kept in phones.json in the Crew Link folder, readable only
+// code that's open, and which phones are connected right now. Kept in phones.json in the CLIque Link folder, readable only
 // by you. A phone is a device, not a computer: it has no agents, and only core/remote.js talks to it.
 import { EventEmitter } from 'node:events'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { PAIR_TTL, b64, makePairCode, unb64 } from 'crew-shared/protocol.js'
+import { PAIR_TTL, b64, makePairCode, unb64 } from 'clique-shared/protocol.js'
 
 // X25519 keys as their raw 32 bytes, which node:crypto takes wrapped in DER (as shared/make-vectors.mjs does).
 const PKCS8 = Buffer.from('302e020100300506032b656e04220420', 'hex')

@@ -1,6 +1,6 @@
 // What a Claude Code transcript (one JSON object per line) says about a tool call the agent asked permission for:
 // its result, once it has one. Claude Code can settle a request without anyone answering it (its safety check turns
-// a risky command down after two minutes), and no hook tells Crew; the transcript does.
+// a risky command down after two minutes), and no hook tells CLIque; the transcript does.
 import fs from 'node:fs'
 
 const BEFORE = 512 * 1024 // how far back from where the file ended when it asked to look for the call itself

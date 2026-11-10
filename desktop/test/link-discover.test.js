@@ -1,6 +1,6 @@
 // Finding computers nearby and linking one with a code checked on both screens (core/discover.js, core/link.js
 // pairing): the beacons, macOS keeping the app off the network, the handshake (its code the same on both sides, and
-// only with the computer the beacon named), and two real Crews in their own processes finding each other and linking
+// only with the computer the beacon named), and two real Cliques in their own processes finding each other and linking
 // from the sheet's actions. Beacons go over loopback here, to each other's port, as broadcasts can't in a test.
 // Run with `npm test`.
 import { test, after } from 'node:test'
@@ -72,7 +72,7 @@ test('a beacon reusing a listed computer\'s id with another certificate is a com
   assert.deepEqual(d.list().map((f) => f.fingerprint), ['REAL'], 'a goodbye only takes off the one it names')
 })
 
-test('another copy of Crew on this computer (the same certificate) isn\'t listed', async () => {
+test('another copy of CLIque on this computer (the same certificate) isn\'t listed', async () => {
   const [a, b] = pair(['Studio', 'Studio (dev)'], ['AA', 'AA'])
   await Promise.all([a.start(), b.start()])
   try {
@@ -107,7 +107,7 @@ test('macOS refusing 255.255.255.255 at once means Local Network is off for the 
 
 // ---- the handshake ----------------------------------------------------------------------------------
 
-const tmp = (n) => fs.mkdtempSync(path.join(os.tmpdir(), `crew-pair-${n}-`))
+const tmp = (n) => fs.mkdtempSync(path.join(os.tmpdir(), `clique-pair-${n}-`))
 const hostId = identity(tmp('host'))
 const clientId = identity(tmp('client'))
 const otherId = identity(tmp('other'))
@@ -194,14 +194,14 @@ test('cancelling on the asking computer takes the question off the other one', a
   }
 })
 
-// ---- two real Crews ---------------------------------------------------------------------------------
+// ---- two real Cliques ---------------------------------------------------------------------------------
 
 function computer(name, linkPort, discoverPort, peerPort, agents) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-discover-test-'))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-discover-test-'))
   fs.mkdirSync(path.join(home, 'link'))
   fs.writeFileSync(path.join(home, 'link', 'link.json'), JSON.stringify({ name, port: linkPort, discoverPort, discoverTo: [`127.0.0.1:${discoverPort}`, `127.0.0.1:${peerPort}`] }))
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ agents: agents.map((a) => ({ off: true, ...a })) }))
-  const p = spawn(process.execPath, [fileURLToPath(new URL('./helpers/computer.mjs', import.meta.url))], { env: { ...process.env, CREW_HOME: home, NAME: name }, stdio: ['pipe', 'pipe', 'inherit'] })
+  const p = spawn(process.execPath, [fileURLToPath(new URL('./helpers/computer.mjs', import.meta.url))], { env: { ...process.env, CLIQUE_HOME: home, NAME: name }, stdio: ['pipe', 'pipe', 'inherit'] })
   const waiting = new Map()
   let seq = 0
   let ready
@@ -229,74 +229,74 @@ function computer(name, linkPort, discoverPort, peerPort, agents) {
 const studio = computer('Studio', base + 20, base + 30, base + 31, [{ name: 'iris', area: 'design' }])
 const mini = computer('Mac mini', base + 21, base + 31, base + 30, [{ name: 'rex', area: 'backend' }, { name: 'noor', area: 'docs' }])
 after(() => (studio.stop(), mini.stop()))
-const view = (c) => c.run('crew.snapshot().computers')
+const view = (c) => c.run('clique.snapshot().computers')
 
 test('both with Computers open: each lists the other; Link, the same code on both, Link on both, and they\'re linked', async () => {
   await Promise.all([studio.up, mini.up])
   assert.equal((await view(studio)).nearby, null, 'nothing is looked for while the sheet is closed')
-  await studio.run('crew.discover(true)')
-  await mini.run('crew.discover(true)')
+  await studio.run('clique.discover(true)')
+  await mini.run('clique.discover(true)')
   const found = await until(async () => (await view(studio)).nearby?.find((n) => n.name === 'Mac mini'))
   assert.equal(found.agents, 2)
   await until(async () => (await view(mini)).nearby?.some((n) => n.name === 'Studio'))
-  const names = async (c) => (await c.run('crew.snapshot().agents.map((a) => a.name)')).sort()
+  const names = async (c) => (await c.run('clique.snapshot().agents.map((a) => a.name)')).sort()
 
   // asked, said yes there, then cancelled here: nothing links, and the Mac mini says so
-  await studio.run(`crew.pairWith(${JSON.stringify(found.id)})`)
+  await studio.run(`clique.pairWith(${JSON.stringify(found.id)})`)
   const asking = await until(async () => (await view(studio)).pairing?.out?.stage === 'confirm' && (await view(studio)).pairing.out)
   const asked = await until(async () => (await view(mini)).pairing?.in)
   assert.equal(asked.stage, 'ask')
   assert.equal(asked.name, 'Studio')
   assert.equal(asked.sas, asking.sas, 'the code on the Mac mini is the code on the Studio')
-  await assert.rejects(mini.run(`crew.pairWith((crew.snapshot().computers.nearby[0]).id)`), /linking with/, 'one linking at a time')
-  await mini.run(`crew.pairAnswer(${JSON.stringify(asked.id)}, true)`)
+  await assert.rejects(mini.run(`clique.pairWith((clique.snapshot().computers.nearby[0]).id)`), /linking with/, 'one linking at a time')
+  await mini.run(`clique.pairAnswer(${JSON.stringify(asked.id)}, true)`)
   const agreed = await until(async () => (await view(studio)).pairing?.out?.theyAgreed && (await view(studio)).pairing.out)
   assert.equal(agreed.stage, 'confirm', 'a yes there doesn\'t link: the code has to be checked here too')
   assert.ok(!('code' in agreed), 'the link code (its key) never reaches the page')
-  await studio.run('crew.pairCancel()')
+  await studio.run('clique.pairCancel()')
   const cancelled = await until(async () => (await view(mini)).pairing?.in?.stage === 'failed' && (await view(mini)).pairing.in, 8000)
   assert.equal(cancelled.error, 'cancelled')
   assert.deepEqual(await names(studio), ['iris'], 'nothing linked')
-  await mini.run('crew.pairDone()')
+  await mini.run('clique.pairDone()')
 
   // again: Link here first (waiting for the Mac mini), then Link there
-  await studio.run(`crew.pairWith(${JSON.stringify(found.id)})`)
+  await studio.run(`clique.pairWith(${JSON.stringify(found.id)})`)
   await until(async () => (await view(studio)).pairing?.out?.stage === 'confirm')
-  await studio.run('crew.pairConfirm()')
+  await studio.run('clique.pairConfirm()')
   assert.equal((await view(studio)).pairing.out.stage, 'waiting')
   const again = await until(async () => (await view(mini)).pairing?.in?.stage === 'ask' && (await view(mini)).pairing.in)
-  await mini.run(`crew.pairAnswer(${JSON.stringify(again.id)}, true)`)
+  await mini.run(`clique.pairAnswer(${JSON.stringify(again.id)}, true)`)
   const linked = await until(async () => (await view(studio)).pairing?.out?.stage === 'linked' && (await view(studio)).pairing.out)
   assert.equal(linked.slug, 'mac-mini')
   assert.equal((await until(async () => (await view(mini)).pairing?.in?.stage === 'linked' && (await view(mini)).pairing.in)).slug, 'studio')
   // each one's workspace shows up on the other, as that computer's
-  const hosted = (c) => c.run('crew.workspaces().filter((w) => w.owner).map((w) => w.ownerName)')
+  const hosted = (c) => c.run('clique.workspaces().filter((w) => w.owner).map((w) => w.ownerName)')
   await until(async () => (await hosted(studio)).length === 1 && (await hosted(mini)).length === 1)
   assert.deepEqual(await hosted(studio), ['Mac mini'])
   assert.deepEqual(await hosted(mini), ['Studio'])
   assert.equal((await view(studio)).nearby.length, 0, 'a linked computer leaves Nearby: it\'s under Linked')
-  assert.equal(await mini.run('crew.settings.share'), true, 'the Mac mini keeps sharing, so the Studio comes back after a restart')
-  assert.equal((await studio.run('crew.settings.peers')).length, 1, 'the Studio saved its code, as if pasted')
-  await studio.run('crew.pairDone()')
-  await mini.run('crew.pairDone()')
+  assert.equal(await mini.run('clique.settings.share'), true, 'the Mac mini keeps sharing, so the Studio comes back after a restart')
+  assert.equal((await studio.run('clique.settings.peers')).length, 1, 'the Studio saved its code, as if pasted')
+  await studio.run('clique.pairDone()')
+  await mini.run('clique.pairDone()')
   assert.equal((await view(studio)).pairing, null)
 
   // the Mac mini stops letting computers link with its code, Computers still open: the Studio is let go, and stays out
-  await mini.run('crew.share(false)')
+  await mini.run('clique.share(false)')
   const off = await until(async () => (await view(studio)).links.find((l) => l.slug === 'mac-mini' && !l.online))
   await until(async () => /stopped letting/.test((await view(studio)).links.find((l) => l.slug === 'mac-mini').status?.error ?? ''), 8000)
   assert.ok(off)
-  await mini.run('crew.share(true)')
+  await mini.run('clique.share(true)')
   await until(async () => (await view(studio)).links.find((l) => l.slug === 'mac-mini')?.online, 10000)
 
-  await studio.run('crew.discover(false)')
+  await studio.run('clique.discover(false)')
   assert.equal((await view(studio)).nearby, null)
 })
 
 test("a link port that's taken is an answer, not a crash", async () => {
   const blocker = net.createServer()
   await new Promise((r) => blocker.listen(0, '0.0.0.0', r))
-  const { cert, key } = identity(fs.mkdtempSync(path.join(os.tmpdir(), 'crew-link-port-')))
+  const { cert, key } = identity(fs.mkdtempSync(path.join(os.tmpdir(), 'clique-link-port-')))
   const host = new LinkHost({ key: 'k', cert, keyPem: key, name: 'Test', handle: () => {} })
   let crashed = null
   const watch = (e) => (crashed = e)

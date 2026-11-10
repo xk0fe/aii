@@ -1,5 +1,5 @@
 // Floating pill on the screen edge; click it (or press the hotkey) for the chat panel.
-/* global wordmarkHTML, PRODUCT_NAME, crew, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, crewSummary, celebrate, ICONS, wsTile, wsLabel, elsewhere, hasWorkspaces */
+/* global wordmarkHTML, PRODUCT_NAME, clique, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, cliqueSummary, celebrate, ICONS, wsTile, wsLabel, elsewhere, hasWorkspaces */
 
 const $ = (s) => document.querySelector(s)
 $('.home').innerHTML = markSVG('0 6 24 16', { split: true }) // its buddies hop while anyone works
@@ -10,8 +10,8 @@ $('[data-act=close]').innerHTML = ICONS.close
 
 // Your conversation with one agent takes the header's left side: back to everyone, and who it's with.
 const everyone = () => (composer.setTarget('auto'), composer.focus())
-const head = mountConvoHead($('.panel header .convo-head'), { onBack: everyone, onTerminal: (name) => crew.call('dashboard', name) })
-const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => crew.call('dashboard', name), onConvo: (name) => (composer.setTarget(name), composer.focus()), onLeave: () => composer.setTarget('auto'), onReply: (e) => composer.replyTo(e), onThread: (id, at) => (threadPane.render(state), threadPane.open(id, at)) })
+const head = mountConvoHead($('.panel header .convo-head'), { onBack: everyone, onTerminal: (name) => clique.call('dashboard', name) })
+const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => clique.call('dashboard', name), onConvo: (name) => (composer.setTarget(name), composer.focus()), onLeave: () => composer.setTarget('auto'), onReply: (e) => composer.replyTo(e), onThread: (id, at) => (threadPane.render(state), threadPane.open(id, at)) })
 const threadPane = mountThread($('.panel > .thread'), {
   onSeen: () => feed.refresh(),
   onAgent: (name) => (threadPane.close(), composer.setTarget(familyOf(name)), composer.focus()),
@@ -29,12 +29,12 @@ function fit(focus = false) {
   const next = `${Math.ceil(r.width)}x${Math.ceil(r.height)}@${Object.values(pill)}`
   if (next === size && !focus) return
   size = next
-  crew.fit(Math.ceil(r.width), Math.ceil(r.height), focus, pill)
+  clique.fit(Math.ceil(r.width), Math.ceil(r.height), focus, pill)
 }
 
 // Which side of the pill the chat goes on, from main.js (core/pill.js): by the left edge it opens to the right,
 // at the top below, and so on. At the top and bottom the pill lies flat.
-crew.onPlace(({ side, align, hatch }) => {
+clique.onPlace(({ side, align, hatch }) => {
   const body = document.body
   const moved = body.dataset.side && body.dataset.side !== side
   body.dataset.side = side
@@ -78,9 +78,9 @@ for (const handle of [$('.pill'), $('.panel header')]) {
         dragging = true
         if (onMark) handle.setPointerCapture(e.pointerId)
         document.body.classList.add('dragging')
-        crew.drag('start', x0, y0)
+        clique.drag('start', x0, y0)
       }
-      crew.drag('move', ev.screenX, ev.screenY)
+      clique.drag('move', ev.screenX, ev.screenY)
     }
     const end = (ev) => {
       const source = onMark ? window : handle
@@ -90,7 +90,7 @@ for (const handle of [$('.pill'), $('.panel header')]) {
       handle.removeEventListener('lostpointercapture', end)
       document.body.classList.remove('dragging')
       if (!dragging) return
-      crew.drag('end', ev.screenX, ev.screenY)
+      clique.drag('end', ev.screenX, ev.screenY)
       justDragged = true // the click that ends a drag isn't a click
       setTimeout(() => (justDragged = false))
     }
@@ -119,9 +119,9 @@ $('.pill').addEventListener('click', (e) => {
   if (inHatch() && !justDragged && !e.target.closest('button, .face')) setOpen(!document.body.classList.contains('open'))
 })
 $('[data-act=close]').addEventListener('click', () => setOpen(false))
-$('[data-act=dashboard]').addEventListener('click', () => crew.call('dashboard'))
+$('[data-act=dashboard]').addEventListener('click', () => clique.call('dashboard'))
 document.addEventListener('keydown', (e) => e.key === 'Escape' && !composer.stopVoice() && setOpen(false))
-crew.onToggle((opts = {}) => {
+clique.onToggle((opts = {}) => {
   const open = opts.open ?? !document.body.classList.contains('open')
   setOpen(open, opts.focus ?? open)
 })
@@ -143,7 +143,7 @@ const HATCH_FACES = 4 // beside the notch, over the menu bar's own items: a few,
 
 function drawPill() {
   const on = state.agents.filter((a) => a.on)
-  // A big crew doesn't fit along a screen edge: the pill keeps the ones that need a look (waiting on you, new
+  // A big clique doesn't fit along a screen edge: the pill keeps the ones that need a look (waiting on you, new
   // replies, at work) in their usual order, and the rest become "+N", which opens the chat.
   const flat = ['above', 'below'].includes(document.body.dataset.side)
   const room = inHatch() ? HATCH_FACES : Math.max(4, Math.min(14, Math.floor(((flat ? screen.availWidth : screen.availHeight) * 0.72 - 90) / 32)))
@@ -173,7 +173,7 @@ live((next) => {
   morph($('.panel header .brand'), hasWorkspaces(state) ? `${wsTile(state.workspace, { size: 20 })}<b>${esc(wsLabel(state.workspace))}</b>` : wordmarkHTML(20))
   drawPill()
   celebrate($('.dots'), state.agents)
-  morph($('.sums'), crewSummary(state))
+  morph($('.sums'), cliqueSummary(state))
   // the mark in the pill counts every reply you haven't read
   const fresh = state.agents.reduce((n, a) => n + a.unread, 0)
   morph($('.home-badge'), fresh ? `<span class="unread-badge">${fresh > 9 ? '9+' : fresh}</span>` : '')

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/images/cover.webp" alt="CLIque: your AI agents, working as a crew. Seven felt creatures in their room: two at laptops, one holding up an OK? sign, one asking a question, one with a mug, one popping up, one asleep">
+  <img src="docs/images/cover.webp" alt="CLIque: your AI agents, working as a clique. Seven felt creatures in their room: two at laptops, one holding up an OK? sign, one asking a question, one with a mug, one popping up, one asleep">
 </p>
 
-<h3 align="center">Your AI coding agents, working as a crew.</h3>
+<h3 align="center">Your AI coding agents, working as a clique.</h3>
 
 <p align="center">
   CLIque runs a team of Claude Code and Codex agents side by side on your Mac or Windows PC.<br>
@@ -10,18 +10,18 @@
 </p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/crew-dark.webp">
-  <img src="docs/images/crew-light.webp" alt="The Crew view: every agent's card with its job, model and what it's doing, beside the sidebar's channels and conversations">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/clique-dark.webp">
+  <img src="docs/images/clique-light.webp" alt="The Agents view: every agent's card with its job, model and what it's doing, beside the sidebar's channels and conversations">
 </picture>
 
 ## Why CLIque
 
-- **A crew instead of one prompt.** Each agent has a name, a job, its own instructions and a felt creature for a face. Give work to whoever's free instead of waiting for one agent to finish.
+- **A clique instead of one prompt.** Each agent has a name, a job, its own instructions and a felt creature for a face. Give work to whoever's free instead of waiting for one agent to finish.
 - **One chat for everything.** `@mention` anyone, or let CLIque pick who fits. Permission prompts and questions come to you in the chat, in plain words.
 - **They work together.** Agents hand off tasks, ask each other questions mid-task, and never edit the same file at once.
 - **Nothing is lost.** Quit CLIque and your agents keep working. Open it again and they're right where they were.
-- **Every computer, one crew.** Link your Macs and PCs, and keep an eye on everything from your phone.
-- **It watches the bill.** Usage limits, what each task costs, and token savers that cut what the crew spends.
+- **Every computer, one clique.** Link your Macs and PCs, and keep an eye on everything from your phone.
+- **It watches the bill.** Usage limits, what each task costs, and token savers that cut what the clique spends.
 
 It runs Claude Code and Codex. GLM and local models (through Ollama) work too, and you can add other providers.
 
@@ -50,11 +50,11 @@ On a Mac, the first `npm start` builds `CLIque.app` and opens it. `npm run dist`
 
 </details>
 
-## Meet your crew
+## Meet your clique
 
 Every agent gets a card: what it does, which model it runs on, and what it's busy with. Each creature acts it out. It types at a little laptop while it works, holds a mug while it's free, and holds up an "OK?" sign when it needs your permission. Switch one off and it falls asleep in black and white, ready to pick its conversation back up.
 
-<p align="center"><img src="docs/images/crew-switch.webp" alt="Turning June and Rex off from their cards: each falls asleep in black and white and wakes up again, and no card moves" width="1000"></p>
+<p align="center"><img src="docs/images/clique-switch.webp" alt="Turning June and Rex off from their cards: each falls asleep in black and white and wakes up again, and no card moves" width="1000"></p>
 
 Click a card to set the agent's job, model and folder, and to write its instructions, or let it draft them for itself from its name and job.
 
@@ -62,7 +62,7 @@ Click a card to set the agent's job, model and folder, and to write its instruct
 
 ## One chat, one conversation per agent
 
-<img src="docs/images/mentions.webp" alt="Typing @ opens the crew; arrow keys and Enter pick an agent" width="400" align="right">
+<img src="docs/images/mentions.webp" alt="Typing @ opens the clique; arrow keys and Enter pick an agent" width="400" align="right">
 
 Everyone talks in **#general**. Write a message and CLIque gives it to the agent whose job fits and who's free, or type `@` and pick. Mention several agents and each gets one copy, knowing who else has it.
 
@@ -112,15 +112,15 @@ Every agent has its own terminal. See them all side by side, or open one and typ
   &nbsp;
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/tray-dark.webp">
-    <img src="docs/images/tray-light.webp" alt="The crew in the menu bar: a little felt strip with everyone, who needs you, and who's at work" width="300">
+    <img src="docs/images/tray-light.webp" alt="The clique in the menu bar: a little felt strip with everyone, who needs you, and who's at work" width="300">
   </picture>
 </p>
 
-- **The pill** sits on the edge of your screen with the crew inside, hopping while they work. Click it or press `⌥⇧Space` (Alt+Shift+Space on Windows) to open the chat from any app.
+- **The pill** sits on the edge of your screen with the clique inside, hopping while they work. Click it or press `⌥⇧Space` (Alt+Shift+Space on Windows) to open the chat from any app.
 - **The menu bar** (the taskbar on Windows) shows who's working and who needs you, with a switch for each agent.
 - **Your phone.** Pair the CLIque phone app with a QR code to chat and answer your agents' questions away from your desk, encrypted end to end.
 
-## A crew per project
+## A clique per project
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/workspaces-dark.webp">
@@ -129,16 +129,16 @@ Every agent has its own terminal. See them all side by side, or open one and typ
 
 Give each project a workspace: its folder, the agents who work on it, and its own chat, channels and tasks. Your agents are the same everywhere; pick who works where. Every workspace runs at once, and an orange count tells you when another one needs you. Jump between them with `⌃1`–`⌃9`, and put one to sleep when you're not on it.
 
-<p align="center"><img src="docs/images/workspaces-switch.webp" alt="Switching from Docs site to Storefront and back: the crew slides over" width="1000"></p>
+<p align="center"><img src="docs/images/workspaces-switch.webp" alt="Switching from Docs site to Storefront and back: the clique slides over" width="1000"></p>
 
-## All your computers, one crew
+## All your computers, one clique
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/computers-dark.webp">
   <img src="docs/images/computers-light.webp" alt="Computers: Studio, Workstation and a laptop linked, a Mac mini nearby to link, and an iPhone and a Pixel paired">
 </picture>
 
-Open **Computers** on two of your machines and they find each other. Click **Link**, check the code is the same on both screens, and each one's workspaces show up on the other. Add agents from both to a workspace and they work as one crew. Chat with any of them and watch its terminal from either side. Drag an agent to another computer and its conversation goes with it.
+Open **Computers** on two of your machines and they find each other. Click **Link**, check the code is the same on both screens, and each one's workspaces show up on the other. Add agents from both to a workspace and they work as one clique. Chat with any of them and watch its terminal from either side. Drag an agent to another computer and its conversation goes with it.
 
 A workspace belongs to the computer that made it. It shows up on your other computers on its own, and they can add agents of their own. Two workspaces with the same name on different computers stay separate.
 
@@ -146,20 +146,20 @@ A workspace belongs to the computer that made it. It shows up on your other comp
 
 - **Usage limits** for your Claude and Codex accounts, with the pace they're heading at and a heads-up before you run out.
 - **What it costs**, per agent and per task.
-- **Token savers**: six switches that cut what a crew spends, such as starting fresh after a long break and showing agents only the notes they haven't read. Each one measures what it saved.
+- **Token savers**: six switches that cut what a clique spends, such as starting fresh after a long break and showing agents only the notes they haven't read. Each one measures what it saved.
 
 ## How agents talk to each other
 
-Agents pass work around with a small `crew` command:
+Agents pass work around with a small `clique` command:
 
 ```sh
-crew ask ada "which port is staging on?"     # ask a teammate and wait for the answer
-crew answer "4000"                           # answer one, even in the middle of a task
-crew send milo "fix the coupon field"        # hand work to a teammate for good
-crew note "API runs on port 4000"            # tell the whole crew something
-crew post ship "1.2 is out"                  # say something in the channel it picks
-crew who                                     # see who's around
-crew task list                               # pick up work from the Tasks board
+clique ask ada "which port is staging on?"     # ask a teammate and wait for the answer
+clique answer "4000"                           # answer one, even in the middle of a task
+clique send milo "fix the coupon field"        # hand work to a teammate for good
+clique note "API runs on port 4000"            # tell the whole clique something
+clique post ship "1.2 is out"                  # say something in the channel it picks
+clique who                                     # see who's around
+clique task list                               # pick up work from the Tasks board
 ```
 
 A question reaches a teammate even mid-task, so the answer comes back in seconds. CLIque also decides who goes first when agents need each other, so they never wait on each other in circles, and the chat says so in one quiet line.
@@ -170,10 +170,10 @@ Prefer to approve every hand-off? Turn Autopilot off.
 
 ## Share agents
 
-Export one agent or a few as a `.crew` file and send it to a friend. They get the names, jobs, instructions and looks. Your folders and history stay with you.
+Export one agent or a few as a `.clique` file and send it to a friend. They get the names, jobs, instructions and looks. Your folders and history stay with you.
 
 ## More
 
-- **[The full guide](docs/guide.md)** covers every setting, the files CLIque keeps in `~/.crew`, and how it works inside.
+- **[The full guide](docs/guide.md)** covers every setting, the files CLIque keeps in `~/.clique`, and how it works inside.
 - **The code:** the desktop app is in `desktop/`, the phone app in `mobile/`, and the protocol they share in `shared/`.
-- **The pictures:** `npm run shots` renders every screen with a made-up crew.
+- **The pictures:** `npm run shots` renders every screen with a made-up clique.

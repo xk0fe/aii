@@ -1,5 +1,5 @@
-// crew-voice for Windows: on-device dictation for CLIque's chat. Nothing leaves the PC.
-// The same helper as native/crew-voice.swift, speaking the same protocol, so core/voice.js and the chat can't tell them apart.
+// clique-voice for Windows: on-device dictation for CLIque's chat. Nothing leaves the PC.
+// The same helper as native/clique-voice.swift, speaking the same protocol, so core/voice.js and the chat can't tell them apart.
 //
 // stdin:  16 kHz mono Float32 PCM (little-endian), streamed while you talk. Closing stdin means "stop".
 // stdout: one JSON object per line
@@ -14,16 +14,16 @@
 //
 // Windows' own dictation (Windows.Media.SpeechRecognition) sends your voice to Microsoft, so this runs OpenAI's Whisper
 // on the CPU instead, through whisper.cpp (Whisper.net), with the multilingual base model shipped next to it:
-// models/ggml-base-q5_1.bin (or CREW_VOICE_MODEL=<file>). Whisper doesn't stream: while you talk it reads again what
+// models/ggml-base-q5_1.bin (or CLIQUE_VOICE_MODEL=<file>). Whisper doesn't stream: while you talk it reads again what
 // you said since the last pause about once a second (the words still changing), and a pause settles them.
 //
 // --locale=<id> picks the language (en-US, en_US or en; default: Windows' display language).
 // --may-ask-permission is accepted and ignored: the microphone belongs to the chat window, and Windows asks for it there.
-// CREW_VOICE_DEBUG=1 writes how long each reading took to stderr.
+// CLIQUE_VOICE_DEBUG=1 writes how long each reading took to stderr.
 //
 // Build: npm run voice -- win (scripts/build-voice.mjs: dotnet publish for win-x64 and win-arm64, plus the model) into
 //        dist/voice/win-<arch>/; -r osx-arm64 by hand to try it on a Mac. Check it: node native/windows/smoke.mjs <exe>
-// Try it (on a Mac): say -o /tmp/s.wav --data-format=LEF32@16000 "hello crew" && tail -c +4097 /tmp/s.wav | <out>/crew-voice
+// Try it (on a Mac): say -o /tmp/s.wav --data-format=LEF32@16000 "hello clique" && tail -c +4097 /tmp/s.wav | <out>/clique-voice
 using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
@@ -48,7 +48,7 @@ audio.Listen(); // from the start: words said while the model loads aren't lost
 
 try {
   var (id, code) = WantedLanguage(args.FirstOrDefault((a) => a.StartsWith("--locale="))?["--locale=".Length..] ?? "");
-  var model = Environment.GetEnvironmentVariable("CREW_VOICE_MODEL") is { Length: > 0 } m ? m : Path.Combine(AppContext.BaseDirectory, "models", ModelFile);
+  var model = Environment.GetEnvironmentVariable("CLIQUE_VOICE_MODEL") is { Length: > 0 } m ? m : Path.Combine(AppContext.BaseDirectory, "models", ModelFile);
   if (!File.Exists(model)) throw new Failure($"Voice input's speech model is missing ({model}). Reinstall CLIque to get it back");
   using var factory = WhisperFactory.FromPath(model, new WhisperFactoryOptions { UseGpu = false }); // the CPU: what every PC has
   await using var whisper = factory.CreateBuilder()
@@ -249,7 +249,7 @@ partial class Program {
   const int AudioContext = 768; // Whisper's encoder positions: 50 a second, so 15.36 s
   const int MaxRead = 14 * Rate; // the longest piece one reading takes, inside AudioContext
   const string ModelFile = "ggml-base-q5_1.bin";
-  static readonly bool Debug = Environment.GetEnvironmentVariable("CREW_VOICE_DEBUG") == "1";
+  static readonly bool Debug = Environment.GetEnvironmentVariable("CLIQUE_VOICE_DEBUG") == "1";
 
   static readonly Lazy<HashSet<string>> Supported = new(() => [.. WhisperFactory.GetSupportedLanguages()]);
 
@@ -331,7 +331,7 @@ sealed class Audio {
   }
 }
 
-// One JSON object per line, whole lines only, even from two threads; nobody reading any more (Crew quit) is fine.
+// One JSON object per line, whole lines only, even from two threads; nobody reading any more (CLIque quit) is fine.
 static class Out {
   static readonly Stream stdout = Console.OpenStandardOutput();
   static readonly object gate = new();

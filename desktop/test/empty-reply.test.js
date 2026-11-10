@@ -1,6 +1,6 @@
 // A turn that ends without a word (Codex 0.162 sends last_assistant_message: null after a task that was all tool
 // calls): the chat still shows that the agent finished, threaded to what it answered. Real Hub, fake runner,
-// throwaway CREW_HOME. Run with `npm test`.
+// throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-empty-reply-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-empty-reply-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 
 class FakeRunner extends EventEmitter {
@@ -23,7 +23,7 @@ class FakeRunner extends EventEmitter {
 
 let hub, runner
 beforeEach(() => {
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'rex', area: 'art', provider: 'codex' }, { name: 'noor', area: 'client' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -34,7 +34,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const hook = (name, e) => hub.onHook(name, e)
 const replies = (name) => hub.feed.filter((e) => e.kind === 'reply' && e.from === name)

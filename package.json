@@ -1,5 +1,5 @@
 {
-  "name": "crew-monorepo",
+  "name": "clique-monorepo",
   "private": true,
   "license": "UNLICENSED",
   "description": "CLIque: the desktop app for macOS and Windows (desktop/), the phone app (mobile/) and what they share (shared/)",

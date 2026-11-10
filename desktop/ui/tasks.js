@@ -1,8 +1,8 @@
-// The Tasks board: work for the crew (bugs, features, chores) as To do → In progress → Review → Done.
+// The Tasks board: work for the clique (bugs, features, chores) as To do → In progress → Review → Done.
 // Add one with New task or a column's + (or from the chat). Starting one hands it to its owner in a fresh
 // conversation, so tasks don't pile into one long context; you review what comes back. Board or list, filtered by
-// kind, owner or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via crew.call('task').
-/* global pageHead, mountSearch, notify, oops, reduceMotion, PRODUCT_NAME, ownerIn, mountMentions, mountInk, crew, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine */
+// kind, owner or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via clique.call('task').
+/* global pageHead, mountSearch, notify, oops, reduceMotion, PRODUCT_NAME, ownerIn, mountMentions, mountInk, clique, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine */
 
 const STATUS = [
   { id: 'new', label: 'To do' },
@@ -101,8 +101,8 @@ function mountTasks(root, { headIn = root, onTerminal }) {
   const addGo = $('.tk-add-go')
   let state = null
   let tickets = []
-  let mode = store.get('crew.tasks.view') === 'list' ? 'list' : 'board'
-  let doneOpen = store.get('crew.tasks.done') === '1'
+  let mode = store.get('clique.tasks.view') === 'list' ? 'list' : 'board'
+  let doneOpen = store.get('clique.tasks.done') === '1'
   let addKind = 'task'
   const filter = { q: '', kind: '', owner: '' }
   let selected = null // the open task's key
@@ -122,11 +122,11 @@ function mountTasks(root, { headIn = root, onTerminal }) {
   // Who is on a task right now: its owner, or the clone of it that took the task.
   const worker = (t) => (t.fixer ? (state.agents.find((a) => (a.name === t.fixer || a.cloneOf === t.fixer) && String(a.ticket) === t.key) ?? agent(t.fixer)) : null)
   const ticket = (key) => tickets.find((t) => t.key === key)
-  const who = (n) => (n === 'you' ? 'You' : n === 'crew' ? PRODUCT_NAME : `@${esc(n)}`)
+  const who = (n) => (n === 'you' ? 'You' : n === 'clique' ? PRODUCT_NAME : `@${esc(n)}`)
   // what went wrong goes to the window's note at the bottom (common.js notify), like everywhere else
   const call = async (...args) => {
     try {
-      return await crew.call('task', ...args)
+      return await clique.call('task', ...args)
     } catch (e) {
       notify(errorLine(e), { warn: true })
       throw e
@@ -240,8 +240,8 @@ function mountTasks(root, { headIn = root, onTerminal }) {
           <input type="checkbox" class="switch sm" data-autofix ${state.tasks.autofix ? 'checked' : ''}></label>
       </div>`, { cls: 'wide tk-flow', form: true })
     el.addEventListener('change', (e) => {
-      if ('triage' in e.target.dataset) crew.call('taskSettings', { triage: e.target.value || null })
-      if ('autofix' in e.target.dataset) crew.call('taskSettings', { autofix: e.target.checked })
+      if ('triage' in e.target.dataset) clique.call('taskSettings', { triage: e.target.value || null })
+      if ('autofix' in e.target.dataset) clique.call('taskSettings', { autofix: e.target.checked })
     })
   }
 
@@ -340,7 +340,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     const start = composeAt === 'fixing'
     addGo.disabled = true
     try {
-      const out = (await crew.call('task', 'file', null, { text, images, kind: addKind, ...(owner && { owner }) })).trim()
+      const out = (await clique.call('task', 'file', null, { text, images, kind: addKind, ...(owner && { owner }) })).trim()
       const id = out.match(/#(\d+)/)?.[1] ?? null
       fresh = id
       add.value = ''
@@ -349,7 +349,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
       if (start && id && /is triaging it/.test(out)) notify(`${out.charAt(0).toUpperCase() + out.slice(1)}. It starts once it has an owner`)
       else if (start && id) {
         // In progress's +: it goes to its owner (the @name, or whoever's area it is) now, in a new conversation
-        const went = await crew.call('task', 'dispatch', id).then(() => true, (e) => (oops(`Couldn't start #${id}`, e), false))
+        const went = await clique.call('task', 'dispatch', id).then(() => true, (e) => (oops(`Couldn't start #${id}`, e), false))
         if (went) notify(`#${id} went to ${owner ? `@${owner}` : 'its owner'}, in a new conversation`)
       } else notify(out.charAt(0).toUpperCase() + out.slice(1))
     } catch (e) {
@@ -457,7 +457,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     const keep = lane && drafted()
     closeComposer()
     mode = m
-    store.set('crew.tasks.view', m)
+    store.set('clique.tasks.view', m)
     first = true // no slide-in animation across the switch
     draw()
     if (keep) openComposer(lane)
@@ -504,7 +504,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
   function live(t) {
     const a = worker(t)
     if (!a || !a.on) return { cls: 'off', text: a?.status === 'away' ? 'unreachable' : 'off' }
-    if (t.stalled && a.status !== 'working') return { cls: 'waiting', text: 'stalled, have a look' } // Crew called you about it
+    if (t.stalled && a.status !== 'working') return { cls: 'waiting', text: 'stalled, have a look' } // CLIque called you about it
     if (String(a.ticket) === t.key) {
       if (a.status === 'working') return { cls: 'working', text: a.activity || `on it · ${ago(a.since)}`, since: ago(a.since), shimmer: Boolean(a.activity) }
       if (a.status === 'waiting') return { cls: 'waiting', text: 'needs you' }
@@ -661,11 +661,11 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     drawBulk()
     const shown = Object.values(by).flat().length
     const none = !tickets.length
-    // nothing yet: the board's columns stay (so nothing jumps when the first task lands), and the crew waits with mugs
-    const crewNow = state.agents.filter((a) => !a.cloneOf)
+    // nothing yet: the board's columns stay (so nothing jumps when the first task lands), and the clique waits with mugs
+    const cliqueNow = state.agents.filter((a) => !a.cloneOf)
     // (common.css .empty-state); some, but none that match: what's narrowing it, and a way back to all of them
     const narrowed = filter.kind || filter.owner
-    morph($('.tk-empty'), none ? `<div class="empty-state">${crewNow.length ? mugsRoomHTML(crewNow.filter((a) => a.on).concat(crewNow.filter((a) => !a.on))) : ''}<h1 class="display">${crewNow.length ? 'We’re all here. What should we work on?' : 'Nothing to work on yet'}</h1><p class="lead">Add a task, or just ask in the chat: whoever’s free picks it up.</p><div class="acts"><button class="btn primary lg" data-add-to="new">${ICONS.plus}New task</button></div></div>`
+    morph($('.tk-empty'), none ? `<div class="empty-state">${cliqueNow.length ? mugsRoomHTML(cliqueNow.filter((a) => a.on).concat(cliqueNow.filter((a) => !a.on))) : ''}<h1 class="display">${cliqueNow.length ? 'We’re all here. What should we work on?' : 'Nothing to work on yet'}</h1><p class="lead">Add a task, or just ask in the chat: whoever’s free picks it up.</p><div class="acts"><button class="btn primary lg" data-add-to="new">${ICONS.plus}New task</button></div></div>`
       : !shown ? `<div class="empty-state small">${narrowed ? TK_FUNNEL : ICONS.search}<b>No tasks match</b><span>${narrowed && filter.q ? 'Nothing has those words with these filters on.' : narrowed ? 'Nothing open or done fits these filters.' : 'No task has those words.'}</span><div class="acts"><button class="btn" data-filter="clear:1">${narrowed ? 'Clear filters' : 'Clear the search'}</button></div></div>` : '')
     $('.tk-body').classList.toggle('empty', none || !shown)
     if (mode === 'board') drawBoard(by)
@@ -802,7 +802,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
   root.addEventListener('dragstart', (e) => {
     const card = e.target.closest?.('.tc, .tr')
     if (!card) return
-    e.dataTransfer.setData('text/crew-task', card.dataset.name)
+    e.dataTransfer.setData('text/clique-task', card.dataset.name)
     e.dataTransfer.effectAllowed = 'move'
     requestAnimationFrame(() => card.classList.add('dragging'))
     root.classList.add('dragging-task')
@@ -814,13 +814,13 @@ function mountTasks(root, { headIn = root, onTerminal }) {
   })
   function dropZone(el, status) {
     el.addEventListener('dragover', (e) => {
-      if (!e.dataTransfer.types.includes('text/crew-task')) return
+      if (!e.dataTransfer.types.includes('text/clique-task')) return
       e.preventDefault()
       el.classList.add('over')
     })
     el.addEventListener('dragleave', (e) => el.contains(e.relatedTarget) || el.classList.remove('over'))
     el.addEventListener('drop', (e) => {
-      const key = e.dataTransfer.getData('text/crew-task')
+      const key = e.dataTransfer.getData('text/clique-task')
       el.classList.remove('over')
       if (!key) return
       e.preventDefault()
@@ -847,7 +847,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     if (m && t) return pick(t, m.dataset.menu, m)
     const act = e.target.closest('[data-act]')?.dataset.act
     if (act === 'more') return void ((showAllDone = true), draw())
-    if (act === 'fold-done') return void ((doneOpen = !doneOpen), store.set('crew.tasks.done', doneOpen ? '1' : '0'), draw())
+    if (act === 'fold-done') return void ((doneOpen = !doneOpen), store.set('clique.tasks.done', doneOpen ? '1' : '0'), draw())
     if (act === 'pick-lane') {
       const lane = e.target.closest('[data-lane]').dataset.lane
       return pickAll(shownIn(lane, grouped()[lane]).map((x) => x.key))
@@ -865,7 +865,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     }
     if (e.target.closest('.tk-face') && t?.status === 'fixing') return onTerminal(worker(t)?.name ?? t.fixer)
     // a folded Done lane opens when you click it
-    if (e.target.closest('.done-folded [data-lane=done]')) return void ((doneOpen = true), store.set('crew.tasks.done', '1'), draw())
+    if (e.target.closest('.done-folded [data-lane=done]')) return void ((doneOpen = true), store.set('clique.tasks.done', '1'), draw())
     if (t) open(t.key)
   })
 
@@ -947,9 +947,9 @@ function mountTasks(root, { headIn = root, onTerminal }) {
 
   function logHTML(t) {
     return [...t.log].reverse().map((l) => {
-      const a = l.by === 'you' || l.by === 'crew' ? null : agent(l.by)
+      const a = l.by === 'you' || l.by === 'clique' ? null : agent(l.by)
       return `<li class="${l.kind === 'note' ? 'note' : ''}">
-        <span class="lg-face">${a ? avatarHTML(a, { size: 22, mood: 'still' }) : `<i class="lg-you">${l.by === 'crew' ? '✦' : 'you'}</i>`}</span>
+        <span class="lg-face">${a ? avatarHTML(a, { size: 22, mood: 'still' }) : `<i class="lg-you">${l.by === 'clique' ? '✦' : 'you'}</i>`}</span>
         <div class="lg-body"><span class="lg-who">${who(l.by)}</span> ${l.kind === 'note' ? 'noted' : esc(l.text)}<time title="${esc(new Date(l.ts).toLocaleString())}">${esc(ago(l.ts))}</time>${l.kind === 'note' ? `<div class="lg-note">${md(l.text)}</div>` : ''}</div>
       </li>`
     }).join('')

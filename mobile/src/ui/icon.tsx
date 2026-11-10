@@ -36,7 +36,7 @@ const ICONS = {
   dash: ['minus', 'remove'],
   yield: ['hand.raised', 'front_hand'],
   note: ['note.text', 'sticky_note_2'],
-  crew: ['person.2', 'group'],
+  clique: ['person.2', 'group'],
   chat: ['bubble.left.and.bubble.right', 'forum'],
   bell: ['bell.badge', 'notifications'],
   settings: ['gearshape', 'settings'],

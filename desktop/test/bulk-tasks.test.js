@@ -1,6 +1,6 @@
-// Bulk actions on the Tasks board, against the real Hub with a fake runner in a throwaway CREW_HOME: many tasks
+// Bulk actions on the Tasks board, against the real Hub with a fake runner in a throwaway CLIQUE_HOME: many tasks
 // changed in one write with one line in the chat, Start handing each to its owner in a new conversation, Clear Done,
-// and a bulk action split by the computer each task lives on (an older Crew gets them one at a time). Run with
+// and a bulk action split by the computer each task lives on (an older CLIque gets them one at a time). Run with
 // `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,11 +9,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-bulk-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-bulk-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
-const { Crew } = await import('../core/crew.js')
+const { Clique } = await import('../core/clique.js')
 
-const CREW = [
+const CLIQUE = [
   { name: 'ada', area: 'game client: controls, input, pause menu, UI screens' },
   { name: 'june', area: 'backend api, servers, leaderboards' },
 ]
@@ -31,8 +31,8 @@ class FakeRunner extends EventEmitter {
 
 let hub, runner
 beforeEach(() => {
-  for (const f of ['tickets.json', 'conversations.json', 'sessions.json', 'feed.jsonl']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW }))
+  for (const f of ['tickets.json', 'conversations.json', 'sessions.json', 'feed.jsonl']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CLIQUE }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
   for (const a of hub.agents.values()) (runner.live.add(a.name), (a.status = 'idle'))
@@ -42,7 +42,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 // A task on the board, with its owner and where it stands: its number.
 const add = (text, { owner, status = 'new', kind = 'task', on = hub } = {}) => {
@@ -57,7 +57,7 @@ const linesAfter = (n) => hub.feed.slice(n).filter((e) => e.kind === 'task')
 
 // How many times tickets.json is written while fn runs.
 async function writesDuring(fn) {
-  const file = path.join(process.env.CREW_HOME, 'tickets.json')
+  const file = path.join(process.env.CLIQUE_HOME, 'tickets.json')
   const real = fs.writeFileSync
   let n = 0
   fs.writeFileSync = (f, ...rest) => ((f === file && n++), real.call(fs, f, ...rest))
@@ -106,7 +106,7 @@ test('bulk Start hands each owned task to its owner in a new conversation, with 
 })
 
 test('a task Start can not hand on is left in To do, and the answer says why', async () => {
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [CREW[0], { ...CREW[1], off: true }] }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [CLIQUE[0], { ...CLIQUE[1], off: true }] }))
   hub.loadConfig()
   const ok = add('Pause menu overlaps', { owner: 'ada' })
   const off = add('Leaderboard is slow', { owner: 'june' })
@@ -145,24 +145,24 @@ test('delete takes the picked tasks; Clear Done takes every done task, picked or
   assert.equal(await hub.bulk('clear', []), 'nothing to change\n')
 })
 
-test('a bulk action goes to each computer with its own tasks; an older Crew gets them one at a time', async () => {
-  const crew = new Crew({ bin: '/nonexistent', computerName: 'Studio' })
-  const here = add('Pause menu overlaps', { owner: 'ada', on: crew.hubs.get('default') })
+test('a bulk action goes to each computer with its own tasks; an older CLIque gets them one at a time', async () => {
+  const clique = new Clique({ bin: '/nonexistent', computerName: 'Studio' })
+  const here = add('Pause menu overlaps', { owner: 'ada', on: clique.hubs.get('default') })
   const calls = []
   // what a call for a workspace is on the wire: 'in' its key
   const inWs = (handle) => ({ call: async (_in, [, fn, args]) => handle(fn, args) })
-  crew.links.set('laptop', { slug: 'laptop', name: 'Laptop', peer: { call: async (_in, [, fn, args]) => (calls.push([fn, args]), fn === 'bulk' ? `closed ${args[1].length} tasks\n` : undefined) } })
-  crew.links.set('old', {
+  clique.links.set('laptop', { slug: 'laptop', name: 'Laptop', peer: { call: async (_in, [, fn, args]) => (calls.push([fn, args]), fn === 'bulk' ? `closed ${args[1].length} tasks\n` : undefined) } })
+  clique.links.set('old', {
     slug: 'old', name: 'Old Mac',
     peer: inWs(async (fn, args) => {
       calls.push([fn, args])
-      if (fn === 'bulk') throw new Error('"bulk" isn\'t available over Crew Link')
+      if (fn === 'bulk') throw new Error('"bulk" isn\'t available over CLIque Link')
     }),
   })
-  crew.links.set('gone', { slug: 'gone', name: 'Gone', peer: null })
-  const out = await crew.ticket('bulk', null, { op: 'close', keys: [`${here}@studio`, '7@laptop', '8@laptop', '3@old', '4@old', '5@gone'] })
+  clique.links.set('gone', { slug: 'gone', name: 'Gone', peer: null })
+  const out = await clique.ticket('bulk', null, { op: 'close', keys: [`${here}@studio`, '7@laptop', '8@laptop', '3@old', '4@old', '5@gone'] })
   assert.equal(out, "closed 1 task\non Laptop: closed 2 tasks\non Old Mac: 2 of 2 done one at a time (it runs an older CLIque)\n1 on Gone left as they were: it's unreachable right now\n")
-  assert.equal(crew.hubs.get('default').tickets.all.find((t) => t.id === here).status, 'done')
+  assert.equal(clique.hubs.get('default').tickets.all.find((t) => t.id === here).status, 'done')
   assert.deepEqual(calls, [
     ['bulk', ['close', ['7', '8'], undefined]],
     ['bulk', ['close', ['3', '4'], undefined]],
@@ -171,7 +171,7 @@ test('a bulk action goes to each computer with its own tasks; an older Crew gets
   ])
   // an owner, as the other computer names it: ours with @this-computer, its own bare
   calls.length = 0
-  await crew.ticket('bulk', null, { op: 'owner', keys: ['7@laptop'], arg: 'ada' })
-  await crew.ticket('bulk', null, { op: 'owner', keys: ['7@laptop'], arg: 'ann@laptop' })
+  await clique.ticket('bulk', null, { op: 'owner', keys: ['7@laptop'], arg: 'ada' })
+  await clique.ticket('bulk', null, { op: 'owner', keys: ['7@laptop'], arg: 'ann@laptop' })
   assert.deepEqual(calls.map(([, args]) => args[2]), ['ada@studio', 'ann'])
 })

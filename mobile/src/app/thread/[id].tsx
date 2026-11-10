@@ -8,7 +8,7 @@ import { KeyboardStickyView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import type { FeedEntry } from '@/net/types'
-import { familyOf, useCrew, useDerived } from '@/state/hooks'
+import { familyOf, useClique, useDerived } from '@/state/hooks'
 import { Composer } from '@/ui/composer'
 import { Creature } from '@/ui/creature'
 import { someone } from '@/ui/feed'
@@ -26,7 +26,7 @@ export default function ThreadScreen() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
-  const { client, link, state, ws } = useCrew()
+  const { client, link, state, ws } = useClique()
   const d = useDerived(state)
   const { root, rows, echoes, hidden } = useMemo(() => threadLines(state?.feed ?? [], String(id)), [state?.feed, id])
   const [open, setOpen] = useState<Set<string>>(() => new Set())

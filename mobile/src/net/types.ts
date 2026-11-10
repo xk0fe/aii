@@ -1,4 +1,4 @@
-// What a phone's state looks like (PROTOCOL.md, "The state a phone gets"): Crew.snapshot() for one workspace, minus
+// What a phone's state looks like (PROTOCOL.md, "The state a phone gets"): Clique.snapshot() for one workspace, minus
 // what a phone mustn't have. Fields are optional where the Mac leaves them out.
 
 export type Avatar = { body?: string; color?: string; eyes?: string; mouth?: string; hat?: string; cheeks?: boolean; seed?: string }
@@ -53,7 +53,7 @@ export type Channel = { id: string; name: string; brief?: string; members?: stri
 export type SendOpts = { fresh?: boolean; re?: string; channel?: string; thread?: string }
 export type ChannelEdit = { name?: string; brief?: string; members?: string[] | null }
 
-// app: an agent tool (crew app, desktop/core/tools.js), a change to CLIque itself, answered only in the chat; say: its own words
+// app: an agent tool (clique app, desktop/core/tools.js), a change to CLIque itself, answered only in the chat; say: its own words
 export type PermissionAsk = { type: 'permission'; tool?: string; title?: string; code?: string; detail?: string; always?: { i: number; label: string }[]; alert?: string; app?: boolean; say?: string; trust?: boolean }
 export type Question = { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string }[] }
 export type QuestionAsk = { type: 'question'; questions: Question[]; alert?: string }
@@ -92,7 +92,7 @@ export type FeedEntry = {
   text?: string
   re?: string
   also?: string[]
-  ask?: Ask | true // a card (kind 'ask'), or a teammate's `crew ask` (a msg)
+  ask?: Ask | true // a card (kind 'ask'), or a teammate's `clique ask` (a msg)
   answer?: Answer
   answered?: { by: string; at: number; reply?: string; why?: string }
   cli?: string

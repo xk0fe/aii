@@ -1,5 +1,5 @@
 // Token savers (core/savers.js): each one with it on, and with it off, where the ledger says what it would have done.
-// Real Hub, fake runner and clock, throwaway CREW_HOME, a stand-in for quick triage's call. CREW_SAVERS picks which are
+// Real Hub, fake runner and clock, throwaway CLIQUE_HOME, a stand-in for quick triage's call. CLIQUE_SAVERS picks which are
 // on in each test (the rest of the suite runs with them all off). Run with `npm test`.
 import { test, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-savers-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-savers-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { serve } = await import('../core/server.js')
 const { adapters } = await import('../core/adapters.js')
@@ -28,33 +28,33 @@ class FakeRunner extends EventEmitter {
 }
 
 const HOUR = 3600000
-const CREW = [
+const CLIQUE = [
   { name: 'june', area: 'backend api, servers' },
   { name: 'kit', area: 'backend api, servers', provider: 'codex' },
   { name: 'iris', area: 'design, ui screens' },
   { name: 'abe', area: 'organiser, triage, admin' },
 ]
 let hub, runner
-const setup = (agents = CREW, extra = {}) => {
+const setup = (agents = CLIQUE, extra = {}) => {
   mock.timers.reset()
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'board.md', 'tickets.json', 'savers.json', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'board.md', 'tickets.json', 'savers.json', 'stats.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents, ...extra }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
   hub.url = 'http://127.0.0.1:1' // launches go through the fake runner
   for (const a of hub.agents.values()) (runner.live.add(a.name), (a.status = 'idle'))
 }
-const on = (ids) => (process.env.CREW_SAVERS = ids)
+const on = (ids) => (process.env.CLIQUE_SAVERS = ids)
 beforeEach(() => setup())
 afterEach(() => {
   mock.timers.reset()
   for (const a of hub.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'steerTimer']) clearTimeout(a[t])
   for (const t of ['statsTimer', 'convoTimer', 'ticketsTimer', 'readsTimer']) clearTimeout(hub[t])
   clearTimeout(hub.ledger.timer)
-  process.env.CREW_SAVERS = 'off'
+  process.env.CLIQUE_SAVERS = 'off'
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 const ledger = (id) => hub.ledger.data.days[today()]?.[id] ?? {}
@@ -70,18 +70,18 @@ const conversation = (name, used, ago, { ticket, said = 'Should I migrate the te
   if (said) hub.feed.push({ id: `r-${name}`, ts: Date.now() - ago, kind: 'reply', from: name, text: said })
 }
 
-test('which savers are on: all of them unless config.json or CREW_SAVERS says otherwise', () => {
+test('which savers are on: all of them unless config.json or CLIQUE_SAVERS says otherwise', () => {
   const all = Object.fromEntries(SAVER_IDS.map((id) => [id, true]))
   assert.deepEqual(saversFrom({}, {}), all)
   assert.deepEqual(saversFrom({ savers: false }, {}), Object.fromEntries(SAVER_IDS.map((id) => [id, false])))
   assert.equal(saversFrom({ savers: { coldStart: false } }, {}).coldStart, false)
   assert.equal(saversFrom({ savers: { coldStart: false } }, {}).boardNew, true)
-  // a benchmark run's CREW_SAVERS wins over config.json
-  assert.deepEqual(saversFrom({ savers: false }, { CREW_SAVERS: 'on' }), all)
-  const two = saversFrom({}, { CREW_SAVERS: 'coldStart,boardNew' })
+  // a benchmark run's CLIQUE_SAVERS wins over config.json
+  assert.deepEqual(saversFrom({ savers: false }, { CLIQUE_SAVERS: 'on' }), all)
+  const two = saversFrom({}, { CLIQUE_SAVERS: 'coldStart,boardNew' })
   assert.deepEqual(SAVER_IDS.filter((id) => two[id]), ['coldStart', 'boardNew'])
   assert.equal(modeOf(two), 'coldStart+boardNew')
-  assert.equal(modeOf(saversFrom({}, { CREW_SAVERS: 'off' })), 'none')
+  assert.equal(modeOf(saversFrom({}, { CLIQUE_SAVERS: 'off' })), 'none')
 })
 
 test("spend is filed under the savers that were on, so cost per turn compares with them on and off", () => {
@@ -94,7 +94,7 @@ test("spend is filed under the savers that were on, so cost per turn compares wi
   assert.deepEqual({ cost: modes.none.cost, turns: modes.none.turns, tools: modes.none.tools }, { cost: 0.5, turns: 1, tools: 4 })
   assert.equal(modes[SAVER_IDS.join('+')].cost, 0.2)
   hub.ledger.save(true)
-  assert.equal(JSON.parse(fs.readFileSync(path.join(process.env.CREW_HOME, 'savers.json'), 'utf8')).modes.none.turns, 1)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(process.env.CLIQUE_HOME, 'savers.json'), 'utf8')).modes.none.turns, 1)
 })
 
 // ---- 1. coldStart ----
@@ -109,7 +109,7 @@ test('coldStart: a message to a big conversation gone cold starts a new one, wit
   assert.deepEqual(typedTo('june'), []) // nothing typed into the old one
   up('june')
   const [text] = typedTo('june')
-  assert.match(text, /^\[crew\] This is a new conversation\. Your last one sat idle 2 hours, so CLIque started fresh rather than have you re-read all of it\. The last thing you said in it: "Should I migrate the tests too\?"\n\n\[from @abe: it's yours now, no need to report back\] add rate limiting to the api$/)
+  assert.match(text, /^\[clique\] This is a new conversation\. Your last one sat idle 2 hours, so CLIque started fresh rather than have you re-read all of it\. The last thing you said in it: "Should I migrate the tests too\?"\n\n\[from @abe: it's yours now, no need to report back\] add rate limiting to the api$/)
   assert.deepEqual(ledger('coldStart').on, { n: 1, tokens: 460000 }) // a 1-hour cache write costs 2x
 })
 
@@ -143,7 +143,7 @@ test('coldStart leaves a conversation alone when what comes in follows on from i
   setup()
   on('coldStart')
   conversation('june', 230000, 2 * HOUR)
-  hub.convos.june.note = '[crew] You were moved to this computer.'
+  hub.convos.june.note = '[clique] You were moved to this computer.'
   hub.send({ from: 'abe', to: 'june', text: 'one' })
   // a follow-up that goes in with a new hand-off, in the same turn
   conversation('kit', 230000, 2 * HOUR)
@@ -175,7 +175,7 @@ test("coldStart: what Auto picks for you isn't a follow-up", () => {
 test('coldStart measures by what a cache write costs: 5-minute caches (an API key) at 1.25x, Codex at 1x', () => {
   on('coldStart')
   // Claude Code on an API key: its transcript's last cache write was a 5-minute one, so 96k is where restarting pays
-  const transcript = path.join(process.env.CREW_HOME, 'june.jsonl')
+  const transcript = path.join(process.env.CLIQUE_HOME, 'june.jsonl')
   fs.writeFileSync(transcript, `${JSON.stringify({ message: { usage: { cache_creation: { ephemeral_5m_input_tokens: 900, ephemeral_1h_input_tokens: 0 } } } })}\n`)
   hub.agents.get('june').transcript = { id: 'june-session', path: transcript }
   conversation('june', 90000, 2 * HOUR)
@@ -202,10 +202,10 @@ test("boardNew: an agent's first look shows the newest 20, then only what's new 
   const first = hub.board('june')
   assert.equal(first.split('\n').filter((l) => l.startsWith('- ')).length, 20)
   assert.match(first, /note 6: [\s\S]*note 25: /)
-  assert.match(first, /\(the last 20 notes; 5 older: crew board --all, or crew board <words> to search\)\n$/)
+  assert.match(first, /\(the last 20 notes; 5 older: clique board --all, or clique board <words> to search\)\n$/)
   hub.note('abe', 'deploys are frozen until Friday')
   const next = hub.board('june')
-  assert.match(next, /^- \*\*abe\*\* \(.+\): deploys are frozen until Friday\n\(1 new since you last looked; 25 older: crew board --all/)
+  assert.match(next, /^- \*\*abe\*\* \(.+\): deploys are frozen until Friday\n\(1 new since you last looked; 25 older: clique board --all/)
   assert.match(hub.board('june'), /^\(nothing new on the board since you last looked; 26 older/)
   // another agent, and a new conversation, start from the newest 20 again
   assert.match(hub.board('kit'), /\(the last 20 notes; 6 older/)
@@ -239,14 +239,14 @@ test('boardNew off: the whole board every time, and the ledger counts what showi
 test('boardNew keeps a note to one decision or gotcha: an agent\'s long one is turned away, yours never are', () => {
   on('boardNew')
   assert.throws(() => hub.note('iris', 'x'.repeat(900)), /not shared: a note is one decision, interface or gotcha, and this one is 900 characters \(keep it under 800\)\. Put the details in a file in the repo/)
-  assert.equal(hub.note('you', 'x'.repeat(900)), 'shared with the crew\n')
+  assert.equal(hub.note('you', 'x'.repeat(900)), 'shared with the clique\n')
   on('off')
-  assert.equal(hub.note('iris', 'x'.repeat(900)), 'shared with the crew\n')
+  assert.equal(hub.note('iris', 'x'.repeat(900)), 'shared with the clique\n')
 })
 
 // ---- 3. busyCheck ----
 
-test('crew busy says what each teammate is on: the task or message, the files it edits, what it has leased', () => {
+test('clique busy says what each teammate is on: the task or message, the files it edits, what it has leased', () => {
   on('busyCheck')
   hub.send({ to: 'iris', text: 'redo the login screen, the new mockups are in figma' })
   take('iris')
@@ -260,7 +260,7 @@ test('crew busy says what each teammate is on: the task or message, the files it
   assert.doesNotMatch(out, /june|abe/)
   assert.deepEqual(ledger('busyCheck').on, { n: 1 })
   setup([{ name: 'june' }])
-  assert.equal(hub.busy('june'), '(nobody else in the crew right now)\n')
+  assert.equal(hub.busy('june'), '(nobody else in the clique right now)\n')
 })
 
 test('busyCheck: what an agent checks before it builds is decided at launch, and nothing when it works alone', () => {
@@ -268,13 +268,13 @@ test('busyCheck: what an agent checks before it builds is decided at launch, and
     const args = adapters.claude({ name: 'june', area: 'backend' }, { session: 's', attachments: '/a', platform: 'darwin', bin: '/b', checks }).args
     return args[args.indexOf('--append-system-prompt') + 1]
   }
-  assert.match(prompt('full'), /Before you build something, check that nobody is building it already: crew board, open PRs/)
-  assert.match(prompt('busy'), /Before you build something, run crew busy to see what your teammates are on/)
+  assert.match(prompt('full'), /Before you build something, check that nobody is building it already: clique board, open PRs/)
+  assert.match(prompt('busy'), /Before you build something, run clique busy to see what your teammates are on/)
   assert.doesNotMatch(prompt('none'), /Before you build something/)
   assert.match(prompt('none'), /One builder per piece of work:\n- Work in your folder/)
-  for (const p of ['full', 'busy', 'none'].map(prompt)) assert.match(p, /crew busy {17}what each teammate is working on right now\n {2}crew board \[words\] {8}read the shared notes, or search them/)
+  for (const p of ['full', 'busy', 'none'].map(prompt)) assert.match(p, /clique busy {17}what each teammate is working on right now\n {2}clique board \[words\] {8}read the shared notes, or search them/)
   const codex = adapters.codex({ name: 'kit' }, { checks: 'busy', platform: 'darwin' }).args.find((x) => x.startsWith('developer_instructions='))
-  assert.match(codex, /run crew busy/)
+  assert.match(codex, /run clique busy/)
 
   on('busyCheck')
   assert.equal(hub.checksFor(hub.agents.get('june')), 'busy')
@@ -370,7 +370,7 @@ test("quickTriage: when the call fails or its answer doesn't hold, the triage ag
 test('quickTriage: a task with a screenshot goes to the triage agent, and one nobody can triage goes by area', async () => {
   on('quickTriage')
   const calls = triageWith('{"dup": 1}')
-  hub.fileTask({ kind: 'bug', text: 'look at this', images: [path.join(process.env.CREW_HOME, 'attachments', 'x.png')] })
+  hub.fileTask({ kind: 'bug', text: 'look at this', images: [path.join(process.env.CLIQUE_HOME, 'attachments', 'x.png')] })
   await settle()
   assert.equal(calls.length, 0)
   assert.match(typedTo('abe').at(-1), /^\[bug #1 to triage\]/)
@@ -383,7 +383,7 @@ test('quickTriage: a task with a screenshot goes to the triage agent, and one no
   hub.agents.get('abe').off = true
   await settle()
   assert.equal(hub.tickets.get(1).owner, 'june')
-  assert.match(events('crew').at(-1), /^couldn't triage #1, so it goes to @june, whose area it is/)
+  assert.match(events('clique').at(-1), /^couldn't triage #1, so it goes to @june, whose area it is/)
 })
 
 test("quickTriage off: the triage agent's turn, as before, and what it cost goes in the ledger", async () => {
@@ -443,7 +443,7 @@ const handOff = () => {
 test("noReportBack: an agent can't report back to the teammate whose hand-off it's on, but can ask it, or give it new work", () => {
   on('noReportBack')
   handOff()
-  assert.throws(() => hub.send({ from: 'june', to: 'iris', text: 'done: the endpoint is in, tests pass' }), /^Error: not sent: @iris handed you this and needs nothing back\. Your final message shows in the chat by itself\. If this is new work for @iris, send it with: crew send iris --new "…"$/)
+  assert.throws(() => hub.send({ from: 'june', to: 'iris', text: 'done: the endpoint is in, tests pass' }), /^Error: not sent: @iris handed you this and needs nothing back\. Your final message shows in the chat by itself\. If this is new work for @iris, send it with: clique send iris --new "…"$/)
   assert.throws(() => hub.send({ from: 'june', to: 'iris,abe', text: 'done' }), /\(nothing was sent\)$/)
   assert.equal(hub.feed.filter((e) => e.kind === 'msg' && e.from === 'june').length, 0)
   assert.match(hub.send({ from: 'june', to: 'iris', text: 'now the screen can call it: wire up the button', newWork: true }), /@iris/)
@@ -452,7 +452,7 @@ test("noReportBack: an agent can't report back to the teammate whose hand-off it
   // naming the teammate in the text isn't sending it a report
   assert.match(hub.send({ from: 'june', to: 'abe', text: 'deploy it so @iris can try it' }), /@abe/)
   assert.equal(ledger('noReportBack').on.n, 2)
-  // a hand-off that asked something (the old way, by crew send) gets its answer back
+  // a hand-off that asked something (the old way, by clique send) gets its answer back
   setup()
   on('noReportBack')
   hub.send({ from: 'iris', to: 'june', text: 'what does the login endpoint return?' })
@@ -467,13 +467,13 @@ test('noReportBack off: the report goes, and the ledger counts it', () => {
   assert.equal(ledger('noReportBack').off.n, 1)
 })
 
-test('`crew send <name> --new "…"` says it is new work', async () => {
+test('`clique send <name> --new "…"` says it is new work', async () => {
   mock.timers.reset() // a real server
   on('noReportBack')
   handOff()
   const server = await serve(hub)
   const post = (route, body) => new Promise((resolve, reject) => {
-    const req = http.request({ port: server.address().port, method: 'POST', path: route, headers: { 'x-crew': hub.token } }, (res) => {
+    const req = http.request({ port: server.address().port, method: 'POST', path: route, headers: { 'x-clique': hub.token } }, (res) => {
       let out = ''
       res.on('data', (c) => (out += c))
       res.on('end', () => resolve({ status: res.statusCode, out }))
@@ -486,10 +486,10 @@ test('`crew send <name> --new "…"` says it is new work', async () => {
     const ok = await post('/send?from=june&to=iris', '--new wire up the button')
     assert.equal(ok.status, 200)
     assert.equal(hub.feed.findLast((e) => e.kind === 'msg' && e.from === 'june').text, 'wire up the button')
-    // crew board's words, and crew busy
+    // clique board's words, and clique busy
     hub.note('iris', 'the endpoint is POST /login')
     assert.match((await post('/board?from=june', 'login\0')).out, /1 note mentioning login/)
-    assert.equal((await post('/board', '')).out.split('\n').filter(Boolean).length, 1) // an older crew: everything
+    assert.equal((await post('/board', '')).out.split('\n').filter(Boolean).length, 1) // an older clique: everything
     assert.match((await post('/busy?from=june', '')).out, /^iris /m)
   } finally {
     server.close()

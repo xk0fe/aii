@@ -1,4 +1,4 @@
-// Crew's look on the phone, light and dark, following the system: the calm v1 tokens (neutral greys, one accent for
+// CLIque's look on the phone, light and dark, following the system: the calm v1 tokens (neutral greys, one accent for
 // selection and links, status colours only where status is the message) and the v2 brand layer on top (Berry for
 // primary buttons and brand moments, Fredoka for display type, felt for the creatures' patches).
 // The values are the design's (mock/tokens.css, phone section, and mock/brand-v2.css).

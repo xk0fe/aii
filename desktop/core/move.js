@@ -2,8 +2,8 @@
 // written everything down) and hands over its definition, its CLI session files (Claude Code's transcript, Codex's
 // session log), its queued messages, its conversation's numbers and its own lines in the chat. The computer it
 // moves to puts the files where its CLI looks for them, resumes the conversation and tells the agent what
-// happened. core/crew.js runs the steps, passing everything through the computer you clicked on (the two needn't
-// be linked to each other), file by file in chunks: a long transcript is bigger than one Crew Link message.
+// happened. core/clique.js runs the steps, passing everything through the computer you clicked on (the two needn't
+// be linked to each other), file by file in chunks: a long transcript is bigger than one CLIque Link message.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -13,7 +13,7 @@ import { packAgents, unpackAgents } from './pack.js'
 import { expandEnv } from './providers.js'
 import { codexLog } from './context.js'
 
-export const CHUNK = 8 * 1024 * 1024 // bytes per Crew Link message: its limit is 32 MB, and bytes travel as base64
+export const CHUNK = 8 * 1024 * 1024 // bytes per CLIque Link message: its limit is 32 MB, and bytes travel as base64
 export const MAX_CONVERSATION = 256 * 1024 * 1024 // a bigger one stays behind, and the agent starts fresh
 const MAX_IMAGES = 64 * 1024 * 1024 // images in the lines and messages that go along
 const STAGING = path.join(HOME, 'moving') // what arrives, until it's put in place
@@ -149,7 +149,7 @@ export function repoint(text, was, root, sep = path.sep) {
 }
 const quote = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-// The separator in a folder from a computer that didn't say (an older Crew, so a Mac's).
+// The separator in a folder from a computer that didn't say (an older CLIque, so a Mac's).
 const sepOf = (dir) => (/^[a-zA-Z]:\\|^\\\\/.test(String(dir)) ? '\\' : '/')
 
 // ---- names, as the other computer writes them ---------------------------------------------------------
@@ -158,7 +158,7 @@ const sepOf = (dir) => (/^[a-zA-Z]:\\|^\\\\/.test(String(dir)) ? '\\' : '/')
 // its new name, the others it leaves behind as name@from, and the ones that live on `to` (name@to) bare.
 // The same goes for task numbers (`numbers`: 12 there is 12@from here) and the ids of lines in the chat.
 export const requalify = ({ from, to, old, name, numbers = false }) => (n) => {
-  if (n === undefined || n === null || n === 'you' || n === 'crew') return n
+  if (n === undefined || n === null || n === 'you' || n === 'clique') return n
   const s = String(n)
   const at = s.lastIndexOf('@')
   if (at < 0) return old !== undefined && s === old ? name : `${s}@${from}`
@@ -168,7 +168,7 @@ export const requalify = ({ from, to, old, name, numbers = false }) => (n) => {
 }
 
 // A line of the chat, as the computer it moves to keeps it. A reply that points at a line staying behind points
-// at it there (core/crew.js reads id@computer like name@computer).
+// at it there (core/clique.js reads id@computer like name@computer).
 function carried(e, { names, tasks, lines, images, moving }) {
   const out = { ...e, from: names(e.from) }
   if (e.to !== undefined) out.to = names(e.to)
@@ -274,7 +274,7 @@ export function moveEnd(hub, token, done) {
   if (!done) {
     if (!a) return
     a.moving = false
-    if (m.working) a.inbox.unshift(crewPrompt(a, `[crew] You were stopped for a move to another computer that didn't go through, so you're still here, in ${real(expand(a.cwd))}. Anything you had running in your terminal was stopped. Check where things stand, then carry on.`))
+    if (m.working) a.inbox.unshift(cliquePrompt(a, `[clique] You were stopped for a move to another computer that didn't go through, so you're still here, in ${real(expand(a.cwd))}. Anything you had running in your terminal was stopped. Check where things stand, then carry on.`))
     if (m.running) hub.launch(a)
     else hub.pump(a) // what came for it meanwhile
     return hub.changed()
@@ -291,8 +291,8 @@ export function moveEnd(hub, token, done) {
   hub.changed()
 }
 
-// A prompt from Crew itself, queued like a message (it isn't one: it's not in the chat).
-const crewPrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, crew: true, queued: true })
+// A prompt from CLIque itself, queued like a message (it isn't one: it's not in the chat).
+const cliquePrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, clique: true, queued: true })
 
 // ---- the computer it moves to ------------------------------------------------------------------------
 
@@ -334,7 +334,7 @@ function sweep() {
 
 // The agent arrives: added under `name`, working in `folder`, its conversation resumed when its files came whole.
 // from: { slug, name } of the computer it left; here: this computer's name. -> { name, conversation, reason? }
-// shared: one of your shared agents: it joins this computer's crew too, or (join) this computer's crew has it already and it rejoins this workspace.
+// shared: one of your shared agents: it joins this computer's clique too, or (join) this computer's clique has it already and it rejoins this workspace.
 export function moveIn(hub, token, out, { name, folder, on, from, shared, join }, here) {
   const dir = staging(token)
   const staged = (i) => path.join(dir, String(i))
@@ -401,8 +401,8 @@ export function moveIn(hub, token, out, { name, folder, on, from, shared, join }
       const folderNote = `your folder here is ${cwd}${out.cwd && out.cwd !== cwd ? ` (it was ${out.cwd} on ${there})` : ''}`
       if (out.working) {
         const what = out.current?.text ? ` while working on: "${out.current.text}"` : ' while working'
-        a.inbox.unshift(crewPrompt(a, `[crew] You were moved from computer "${there}" to "${here}"${what}. Your conversation came with you, but anything that was running on ${there} (dev servers, simulators, builds, background shells, watchers) did not, and ${folderNote}, which may be a different checkout. Check where things stand, then carry on.`, out.current?.id))
-      } else hub.convoOf(a).note = `[crew] Since your last message you moved from computer "${there}" to "${here}" (${folderNote}); processes you started on ${there} didn't come along.`
+        a.inbox.unshift(cliquePrompt(a, `[clique] You were moved from computer "${there}" to "${here}"${what}. Your conversation came with you, but anything that was running on ${there} (dev servers, simulators, builds, background shells, watchers) did not, and ${folderNote}, which may be a different checkout. Check where things stand, then carry on.`, out.current?.id))
+      } else hub.convoOf(a).note = `[clique] Since your last message you moved from computer "${there}" to "${here}" (${folderNote}); processes you started on ${there} didn't come along.`
       hub.saveConvos()
       hub.post({ kind: 'event', from: added, text: `${moved}, with its conversation${out.working ? ', and picks up where it left off' : ''}` })
     } else {
@@ -417,7 +417,7 @@ export function moveIn(hub, token, out, { name, folder, on, from, shared, join }
     return { name: added, conversation, ...(reason && { reason }) }
   } catch (e) {
     if (added) {
-      // one that joined leaves this workspace again; one made here goes, from the crew too if it joined that
+      // one that joined leaves this workspace again; one made here goes, from the clique too if it joined that
       hub.removeAgent(added, { everywhere: Boolean(shared) && !join })
       hub.feed = hub.feed.filter((x) => !out.feed.some((y) => y.id === x.id))
       hub.rewriteFeed()

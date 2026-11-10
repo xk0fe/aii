@@ -6,7 +6,7 @@ import { EventEmitter } from 'node:events'
 import { Permissions, PERMISSIONS, notificationState, appBundle, bundleIdIn } from '../core/permissions.js'
 import { probeLocalNetwork } from '../core/discover.js'
 
-const ID = 'com.greengrass.crew'
+const ID = 'com.greengrass.clique'
 const prefs = (flags) => `<plist><dict><key>apps</key><array><dict><key>bundle-id</key><string>other.app</string><key>flags</key><integer>0</integer></dict><dict><key>bundle-id</key><string>${ID}</string><key>flags</key><integer>${flags}</integer></dict></array></dict></plist>`
 const ALLOWED = 2449481734 // Discord's on this Mac, as the file has it
 
@@ -130,7 +130,7 @@ test('notifications: never asked until listed, then whether it\'s allowed; asked
 })
 
 test('another app\'s entry never answers for this one', () => {
-  assert.equal(notificationState(prefs(ALLOWED).replace(ID, 'com.greengrass.crew.dev'), ID), 'ask')
+  assert.equal(notificationState(prefs(ALLOWED).replace(ID, 'com.greengrass.clique.dev'), ID), 'ask')
 })
 
 test('Full Disk Access: a folder only it opens tells; on a Mac without those folders it\'s left alone', async () => {
@@ -164,7 +164,7 @@ test('what goes in the list is the .app folder itself, and the id comes from its
   assert.equal(appBundle('/Applications/CLIque.app/Contents/MacOS/CLIque'), '/Applications/CLIque.app')
   assert.equal(appBundle('/a b/dist/CLIque.app/Contents/MacOS/CLIque'), '/a b/dist/CLIque.app')
   assert.equal(appBundle('/usr/local/bin/electron'), null)
-  assert.equal(bundleIdIn('<key>CFBundleIdentifier</key>\n\t<string>com.greengrass.crew.dev</string>', ID), 'com.greengrass.crew.dev')
+  assert.equal(bundleIdIn('<key>CFBundleIdentifier</key>\n\t<string>com.greengrass.clique.dev</string>', ID), 'com.greengrass.clique.dev')
   assert.equal(bundleIdIn(null, ID), ID)
 })
 

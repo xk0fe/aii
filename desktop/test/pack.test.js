@@ -1,4 +1,4 @@
-// Agent packs (.crew files), against a stand-in hub: what travels, what doesn't, and what a pack can't change.
+// Agent packs (.clique files), against a stand-in hub: what travels, what doesn't, and what a pack can't change.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -7,7 +7,7 @@ import path from 'node:path'
 import { packAgents, readPack, unpackAgents } from '../core/pack.js'
 
 function fakeHub(agents, providers = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-pack-test-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-pack-test-'))
   return {
     dir,
     config: { agents, providers, workspaces: [{ id: 'default', members: Object.fromEntries(agents.map((a) => [a.name, {}])) }] },
@@ -43,7 +43,7 @@ test('a pack carries the definition, look, images and custom providers, not fold
 })
 
 test('importing: chosen name and folder, starts off, never overrides your providers', () => {
-  const pack = readPack(JSON.stringify({ crew: 1, agents: [{ name: 'iris', area: 'design', provider: 'mine', images: [{ type: 'image/png', data: Buffer.from('x').toString('base64') }] }], providers: { mine: { label: 'Theirs' } } }))
+  const pack = readPack(JSON.stringify({ clique: 1, agents: [{ name: 'iris', area: 'design', provider: 'mine', images: [{ type: 'image/png', data: Buffer.from('x').toString('base64') }] }], providers: { mine: { label: 'Theirs' } } }))
   const dst = fakeHub([], { mine: { label: 'Mine' } })
   assert.deepEqual(unpackAgents(dst, pack, [{ index: 0, name: 'iris-2', folder: '~/work', on: false }]), ['iris-2'])
   const [added] = dst.added

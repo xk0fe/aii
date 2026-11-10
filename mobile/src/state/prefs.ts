@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react'
 
 export type Prefs = { channels: Record<string, string> }
 
-const KEY = 'crew.prefs'
+const KEY = 'clique.prefs'
 const OPTS: SecureStore.SecureStoreOptions = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK }
 let prefs: Prefs = { channels: {} }
 let changed = false // a choice made before the saved ones were read wins

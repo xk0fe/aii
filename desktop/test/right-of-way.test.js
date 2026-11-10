@@ -1,6 +1,6 @@
-// Right of way: `crew ask` and its answer coming back, who goes first when agents need each other (no waiting in
+// Right of way: `clique ask` and its answer coming back, who goes first when agents need each other (no waiting in
 // circles, no handing work back), the order a queue is taken in, one editor per file, and a declined task finding
-// its next owner. Real Hub, fake runner and clock, throwaway CREW_HOME. `npm test`.
+// its next owner. Real Hub, fake runner and clock, throwaway CLIQUE_HOME. `npm test`.
 import { test as nodeTest, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-right-of-way-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-right-of-way-'))
 const { Hub, CONFIG, ASK_HOLD } = await import('../core/hub.js')
 const { moveOut, moveEnd } = await import('../core/move.js')
 // An asker left waiting forever is exactly the kind of bug these look for: it fails the test instead of hanging it.
@@ -25,10 +25,10 @@ class FakeRunner extends EventEmitter {
   write = (name, data) => this.writes.push({ name, data })
 }
 
-const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-right-of-way-app-'))
+const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-right-of-way-app-'))
 let hub, runner
 const setup = (agents, extra = {}) => {
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json', 'tickets.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json', 'tickets.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents, ...extra }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -52,7 +52,7 @@ afterEach(async () => {
   await hub.saving
 })
 after(() => {
-  fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 })
+  fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 })
   fs.rmSync(DIR, { recursive: true, force: true, maxRetries: 10 })
 })
 
@@ -75,9 +75,9 @@ const peek = async (p) => {
   return out
 }
 
-// ---- crew ask: the answer comes back ----
+// ---- clique ask: the answer comes back ----
 
-const MIDTURN = '[question from @noor, who is waiting on your answer. Answer it now with crew answer "…", then carry on with what you were doing]'
+const MIDTURN = '[question from @noor, who is waiting on your answer. Answer it now with clique answer "…", then carry on with what you were doing]'
 // a permission prompt up in its terminal: nothing can be typed into it until you answer
 const dialog = (n) => {
   hub.ask(n, { tool_name: 'Bash', tool_input: { command: 'npm test' } })
@@ -85,7 +85,7 @@ const dialog = (n) => {
 }
 
 test('a free teammate gets the question as its next prompt, and its final message comes straight back into the asker\'s wait', async () => {
-  busy('noor') // mid-turn, running `crew ask` in its shell
+  busy('noor') // mid-turn, running `clique ask` in its shell
   const asked = hub.question({ from: 'noor', to: 'theo', text: 'which build did you test?' })
   assert.equal(typedInto('theo')[0], '[question from @noor, who is waiting on your answer: your final message is the answer, and goes back to @noor by itself] which build did you test?')
   assert.deepEqual(view('noor').waitingOn.map((w) => w.name), ['theo'])
@@ -105,7 +105,7 @@ test('a free teammate gets the question as its next prompt, and its final messag
   assert.deepEqual(view('theo').owes, [])
 })
 
-test('a busy teammate gets the question in the turn it\'s in, answers with crew answer and carries on', async () => {
+test('a busy teammate gets the question in the turn it\'s in, answers with clique answer and carries on', async () => {
   busy('noor')
   busy('theo') // in the middle of a long QA pass
   const asked = hub.question({ from: 'noor', to: 'theo', text: 'which build did you test?' })
@@ -127,7 +127,7 @@ test('a busy teammate gets the question in the turn it\'s in, answers with crew 
   assert.equal(agent('noor').inbox.length, 0)
 })
 
-test('...and without crew answer, the final message of its turn is the answer', async () => {
+test('...and without clique answer, the final message of its turn is the answer', async () => {
   busy('noor')
   busy('theo')
   const asked = hub.question({ from: 'noor', to: 'theo', text: 'which build?' })
@@ -136,7 +136,7 @@ test('...and without crew answer, the final message of its turn is the answer', 
   assert.equal(await asked, '@theo answered:\n\nQA pass done on build 412.\n')
 })
 
-test('crew answer @name picks which question, when several are waiting', async () => {
+test('clique answer @name picks which question, when several are waiting', async () => {
   busy('theo')
   busy('noor')
   busy('eli')
@@ -144,7 +144,7 @@ test('crew answer @name picks which question, when several are waiting', async (
   pickUp('theo')
   const fromEstee = hub.question({ from: 'eli', to: 'theo', text: 'is #5 verified?' })
   pickUp('theo')
-  assert.equal(hub.answerNow({ from: 'theo', to: '@eli', text: 'Yes, on 402 and 420pt.' }), '@eli has your answer. 1 more question waiting: crew answer "@name" "…"\n', 'quoted, for PowerShell')
+  assert.equal(hub.answerNow({ from: 'theo', to: '@eli', text: 'Yes, on 402 and 420pt.' }), '@eli has your answer. 1 more question waiting: clique answer "@name" "…"\n', 'quoted, for PowerShell')
   assert.match(await fromEstee, /Yes, on 402/)
   assert.equal(await peek(fromLevi), 'pending')
   assert.throws(() => hub.answerNow({ from: 'theo', to: 'iris', text: 'hi' }), /@iris hasn't asked you anything that's still open/)
@@ -214,7 +214,7 @@ test('an answer that takes longer comes to the asker anyway: into the turn it\'s
   mock.timers.tick(ASK_HOLD)
   const told = await asked
   assert.match(told, /^@theo hasn't answered yet \(your question is next, once it finishes what it is doing\)\./)
-  assert.match(told, /Don't ask again\. Carry on with other work and the answer comes to you as a message, or wait more with: crew wait/)
+  assert.match(told, /Don't ask again\. Carry on with other work and the answer comes to you as a message, or wait more with: clique wait/)
   assert.deepEqual(view('noor').waitingOn, [], 'not stuck waiting any more')
   hub.answer(id, { allow: true })
   pickUp('theo')
@@ -234,7 +234,7 @@ test('an answer that takes longer comes to the asker anyway: into the turn it\'s
   assert.equal(typedInto('noor').at(-1), '[answer from @eli to your question "board updated?"] Yes.')
 })
 
-test('a retried question waits on the one already asked instead of asking twice; crew wait waits some more', async () => {
+test('a retried question waits on the one already asked instead of asking twice; clique wait waits some more', async () => {
   busy('theo')
   busy('noor')
   const first = hub.question({ from: 'noor', to: 'theo', text: 'which build?' })
@@ -250,7 +250,7 @@ test('a retried question waits on the one already asked instead of asking twice;
   assert.match(await more, /Build 412/)
 })
 
-test('crew wait with nothing asked says so', () => {
+test('clique wait with nothing asked says so', () => {
   assert.equal(hub.wait({ from: 'noor' }), 'Nothing to wait for: every question you asked has been answered.\n')
 })
 
@@ -404,7 +404,7 @@ test('the first agent to edit a file holds it until its turn ends; anyone else i
   const no = denied(edit('theo', 'src/Board.tsx'))
   assert.equal(no.hookEventName, 'PreToolUse')
   assert.equal(no.permissionDecision, 'deny')
-  assert.equal(no.permissionDecisionReason, 'Board.tsx is being edited by @noor right now, and Crew lets one agent edit a file at a time. Leave it to @noor and do the rest of your work: the file is free again once @noor finishes its turn. If you need a change in it, crew ask noor.')
+  assert.equal(no.permissionDecisionReason, 'Board.tsx is being edited by @noor right now, and CLIque lets one agent edit a file at a time. Leave it to @noor and do the rest of your work: the file is free again once @noor finishes its turn. If you need a change in it, clique ask noor.')
   assert.equal(edit('theo', 'src/Other.tsx'), '', 'other files are fine')
   denied(edit('theo', 'src/Board.tsx'))
   assert.deepEqual(rules().map((r) => [r.rule, r.from, r.to, r.file]), [['file', 'theo', 'noor', 'Board.tsx']], 'said once')
@@ -478,7 +478,7 @@ test('a question for an agent on a linked computer is waited on here, and answer
   await Promise.resolve()
   assert.deepEqual(relayed.map((r) => [r.from, r.names, r.text]), [['noor', ['iris@workstation'], 'which palette?']])
   assert.deepEqual(view('noor').waitingOn.map((w) => w.name), ['iris@workstation'])
-  // the answer arrives over Crew Link
+  // the answer arrives over CLIque Link
   assert.equal(hub.send({ from: 'iris@workstation', to: 'noor', text: 'Pastel, from the brand guide.', mentions: false, answers: relayed[0].extra.ask }), 'answered\n')
   assert.equal(await asked, '@iris@workstation answered:\n\nPastel, from the brand guide.\n')
 })
@@ -548,7 +548,7 @@ test('a question put aside while its owner asks a teammate: answered when the ow
   assert.equal(await asked, "@theo answered:\n\n(@theo was turned off, so it can't answer.)\n")
 })
 
-test('the Enter Crew presses again for a question it typed mid-turn never sends what you\'re typing there', () => {
+test('the Enter CLIque presses again for a question it typed mid-turn never sends what you\'re typing there', () => {
   busy('noor')
   busy('theo')
   hub.question({ from: 'noor', to: 'theo', text: 'which build?' })
@@ -584,7 +584,7 @@ test('an answer for another computer is tried again while that computer can\'t b
   assert.deepEqual(tries, ['c0ffee', 'c0ffee', 'c0ffee'])
 })
 
-test('crew wait never waits on its waiter either', async () => {
+test('clique wait never waits on its waiter either', async () => {
   busy('noor')
   busy('theo')
   const asked = hub.question({ from: 'noor', to: 'theo', text: 'which build?' })
@@ -594,12 +594,12 @@ test('crew wait never waits on its waiter either', async () => {
   assert.throws(() => hub.wait({ from: 'noor' }), /@theo is waiting for your answer, so it can't answer you until you answer/)
 })
 
-test('one file, one editor: a crew ask that quotes a patch isn\'t an edit; a shell command running apply_patch is', () => {
+test('one file, one editor: a clique ask that quotes a patch isn\'t an edit; a shell command running apply_patch is', () => {
   busy('noor')
   busy('theo')
   edit('noor', 'src/Board.tsx')
   const patch = '*** Begin Patch\n*** Update File: src/Board.tsx\n@@\n-a\n+b\n*** End Patch'
-  assert.equal(hub.lease('theo', { tool_name: 'Bash', tool_input: { command: `crew ask noor "can you apply this?\n${patch}"` } }), '')
+  assert.equal(hub.lease('theo', { tool_name: 'Bash', tool_input: { command: `clique ask noor "can you apply this?\n${patch}"` } }), '')
   assert.match(denied(hub.lease('theo', { tool_name: 'Bash', tool_input: { command: `apply_patch <<'EOF'\n${patch}\nEOF` } })).permissionDecisionReason, /^Board\.tsx is being edited by @noor/)
 })
 

@@ -1,5 +1,5 @@
 // Where a usage window is heading at this pace (Side A's forecast, without a weekly rhythm), and the heads-up when one
-// runs out before it resets. Against the real Hub with a fake runner in a throwaway CREW_HOME. Run with `npm test`.
+// runs out before it resets. Against the real Hub with a fake runner in a throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-pace-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-pace-'))
 const { Hub, CONFIG, paceOf } = await import('../core/hub.js')
 const MIN = 60000
 const HOUR = 60 * MIN
@@ -53,7 +53,7 @@ class FakeRunner extends EventEmitter {
 }
 let hub, notices
 beforeEach(() => {
-  for (const f of ['feed.jsonl', 'usage.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['feed.jsonl', 'usage.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'noor' }] }))
   hub = new Hub(new FakeRunner(), { bin: '/nonexistent' })
   notices = []
@@ -61,7 +61,7 @@ beforeEach(() => {
 })
 // (and its writes to feed.jsonl land before the next test starts the file over)
 afterEach(() => (clearTimeout(hub.usageTimer), hub.saving))
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 // the chat's lines about a window running out before it resets
 const paceLines = () => hub.feed.filter((e) => e.kind === 'event' && e.limit?.runsOut)

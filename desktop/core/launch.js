@@ -1,21 +1,21 @@
-// How an agent's CLI is found and started on each platform, and where agents find `crew`.
+// How an agent's CLI is found and started on each platform, and where agents find `clique`.
 //
 // macOS and Linux: the first file of that name on PATH that can run. Windows: the first program of that name on PATH,
 // tried with each PATHEXT extension the way cmd.exe tries them, where a .cmd is seen through to what it runs. npm, pnpm
 // and yarn install `claude` and `codex` as .cmd shims, and nothing can start a .cmd without cmd.exe, which would garble
-// the arguments Crew passes: it reads & | > % " in them its own way and cuts an argument at its first newline (the
+// the arguments CLIque passes: it reads & | > % " in them its own way and cuts an argument at its first newline (the
 // --settings JSON, the -c hooks and the system prompt have all of those).
 import fs from 'node:fs'
 import path from 'node:path'
 
 const WIN = 'win32'
 const PATHEXT = '.COM;.EXE;.BAT;.CMD' // cmd.exe's own, when PATHEXT isn't set
-// Of PATHEXT, what Crew can start: a program, or a batch file it sees through (a .js or .vbs would need its file type's
+// Of PATHEXT, what CLIque can start: a program, or a batch file it sees through (a .js or .vbs would need its file type's
 // program, which only cmd.exe and Explorer look up).
 const STARTABLE = new Set(['.com', '.exe', '.bat', '.cmd'])
 const BATCH = /\.(cmd|bat)$/i
 
-// Where each CLI's own Windows installers put it, for when Crew started before it was installed and its PATH doesn't
+// Where each CLI's own Windows installers put it, for when CLIque started before it was installed and its PATH doesn't
 // have it yet: Claude Code's installer, WinGet, npm; Codex's installer, WinGet, npm.
 const INSTALLED = {
   claude: ['%USERPROFILE%\\.local\\bin\\claude.exe', '%LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\claude.exe', '%APPDATA%\\npm\\claude.cmd'],
@@ -118,7 +118,7 @@ function lastCommand(line) {
 }
 
 // cmd + args -> { file, args } to hand to a pty or execFile: on Windows a program (never a batch file) with the
-// arguments its shim puts first. Throws on Windows when there's nothing to run, or only a batch file Crew can't see
+// arguments its shim puts first. Throws on Windows when there's nothing to run, or only a batch file CLIque can't see
 // through.
 export function resolveCommand(cmd, args = [], env = process.env, { platform = process.platform, files = disk } = {}) {
   let file = which(cmd, env[pathKey(env, platform)] ?? '', { platform, env, files })
@@ -142,17 +142,17 @@ export function resolveCommand(cmd, args = [], env = process.env, { platform = p
   return { file, args }
 }
 
-// Where agents find `crew`, and the status line and hooks their CLIs run: bin/ (sh scripts) on macOS and Linux, and
-// bin/win32-<arch> on Windows (crew.exe, crew-status.exe, crew-hook.exe: native/crew-shim.c, which run bin/crew.mjs;
+// Where agents find `clique`, and the status line and hooks their CLIs run: bin/ (sh scripts) on macOS and Linux, and
+// bin/win32-<arch> on Windows (clique.exe, clique-status.exe, clique-hook.exe: native/clique-shim.c, which run bin/clique.mjs;
 // and the sh scripts again, for Git Bash: scripts/build-shims.mjs).
 export const toolsDir = (bin, { platform = process.platform, arch = process.arch } = {}) =>
   platform === WIN ? path.win32.join(bin, `win32-${arch === 'arm64' ? 'arm64' : 'x64'}`) : bin
 
-// The PATH an agent gets: Crew's tools first, then yours. On Windows that folder holds bin/crew and bin/crew-status
+// The PATH an agent gets: CLIque's tools first, then yours. On Windows that folder holds bin/clique and bin/clique-status
 // too (copies), for Git Bash (Claude Code's Bash tool), which takes the name as it is before trying .exe: handing
-// `crew note "/api is v2"` to a Windows program, Git Bash would rewrite /api as a path into its own folder. PowerShell
+// `clique note "/api is v2"` to a Windows program, Git Bash would rewrite /api as a path into its own folder. PowerShell
 // takes a name with a PATHEXT extension before the bare one in a folder, and cmd only those, so they get the .exe files.
-// Claude Code's shell prefix is found there by name too: crew-sh, and crew-sh.cmd for MCP servers (core/hub.js).
+// Claude Code's shell prefix is found there by name too: clique-sh, and clique-sh.cmd for MCP servers (core/hub.js).
 export function withTools(env, bin, { platform = process.platform, arch = process.arch } = {}) {
   const key = pathKey(env, platform)
   return { [key]: `${toolsDir(bin, { platform, arch })}${platform === WIN ? ';' : ':'}${env[key] ?? ''}` }

@@ -24,9 +24,9 @@ developers), which keeps it out of the Families programme.
 > Code or Codex) on the user's own computer. The phone pairs straight with that computer over the local network or
 > Tailscale. There is no account, no sign-in and no server of ours.
 >
-> To review without a computer: on the first screen, tap "Try the demo crew". It opens a made-up crew that lives only
+> To review without a computer: on the first screen, tap "Try the demo clique". It opens a made-up clique that lives only
 > on the phone and answers like a real one. Things to try: in Needs you, tap Allow for Milo's command, or tap one of
-> Iris's answers; in Chat, send a message; in the Crew tab, tap an agent and switch YOLO or On. Computers › Leave the demo goes
+> Iris's answers; in Chat, send a message; in the Clique tab, tap an agent and switch YOLO or On. Computers › Leave the demo goes
 > back to the first screen.
 >
 > Permissions: the camera, only to scan the pairing QR code the desktop app shows (pasting the code works too); the
@@ -35,13 +35,13 @@ developers), which keeps it out of the Families programme.
 > Encryption: the phone and the computer encrypt their messages with standard algorithms (X25519, HKDF-SHA256,
 > ChaCha20-Poly1305).
 
-- Sign-in required: No. Demo account: not needed (the demo crew).
+- Sign-in required: No. Demo account: not needed (the demo clique).
 - Contact: `<name, phone, email of the person App Review can reach>`
 
 ## Google Play: App access
 
 "All or some functionality is restricted": real use needs CLIque on the user's computer. Instructions: "On the first
-screen, tap Try the demo crew. Everything in the app works with the made-up crew, with no account or computer."
+screen, tap Try the demo clique. Everything in the app works with the made-up clique, with no account or computer."
 
 ## Other Play declarations
 

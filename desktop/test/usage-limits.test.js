@@ -1,6 +1,6 @@
 // An account's usage limits, from Claude Code's status line: reading them (and nothing that isn't a number), keeping
 // the newest per provider until each window resets, saying once when a window passes 80% and 95% (one line per window), and routing new
-// work to agents on other providers among equal area matches. Real Hub, fake runner and clock, throwaway CREW_HOME.
+// work to agents on other providers among equal area matches. Real Hub, fake runner and clock, throwaway CLIQUE_HOME.
 // Run with `npm test`.
 import { test, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-usage-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-usage-'))
 const { Hub, CONFIG, bestFor, ownerFor } = await import('../core/hub.js')
 const { limitsFrom } = await import('../core/context.js')
 
@@ -23,7 +23,7 @@ class FakeRunner extends EventEmitter {
 }
 
 const HOUR = 3600000
-const CREW = [
+const CLIQUE = [
   { name: 'june', area: 'backend api, servers' },
   { name: 'ada', area: 'backend api, servers', provider: 'codex' },
   { name: 'iris', area: 'design, illustrations' },
@@ -40,8 +40,8 @@ beforeEach(() => {
   mock.timers.reset()
   now = Date.UTC(2026, 9, 14, 12, 0)
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now })
-  for (const f of ['usage.json', 'feed.jsonl', 'conversations.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW }))
+  for (const f of ['usage.json', 'feed.jsonl', 'conversations.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CLIQUE }))
   runner = new FakeRunner()
   newHub()
 })
@@ -52,7 +52,7 @@ afterEach(() => {
   clearTimeout(hub.convoTimer)
   clearTimeout(hub.usageTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 // A status line from `name` with its context and the account's windows: { five_hour: [pct, hours until it resets] }
 const line = (windows) => ({
@@ -66,7 +66,7 @@ const usage = (id = 'claude') => {
   return u && { ...u, windows: u.windows.map(({ pace, ...w }) => w) }
 }
 // the chat's lines about the limits, one per window (the pace forecast in them has its own tests)
-const said = () => hub.feed.filter((e) => e.kind === 'event' && e.from === 'crew' && e.limit).map((e) => e.text)
+const said = () => hub.feed.filter((e) => e.kind === 'event' && e.from === 'clique' && e.limit).map((e) => e.text)
 
 test('limits come out of the status line as numbers, each with when it resets', () => {
   const resets = (now + 2 * HOUR) / 1000
@@ -109,7 +109,7 @@ test("the newest reading is the provider's, shown until each window resets, and 
   assert.deepEqual(usage().windows.map((w) => [w.id, w.pct]), [['seven_day', 62]])
 })
 
-test("Crew's line in the terminal footer adds the 5-hour number", () => {
+test("CLIque's line in the terminal footer adds the 5-hour number", () => {
   assert.match(report('june', { five_hour: [42, 2], seven_day: [61, 50] }), /5h limit 42%/)
   hub.usage = {}
   assert.doesNotMatch(report('june', { seven_day: [61, 50] }), /5h limit/)
@@ -132,7 +132,7 @@ test('passing 80% and 95% is said once each per window, and a new window starts 
   // the window's line says it again: one line, the newest, at the bottom
   assert.equal(said().length, 1)
   assert.match(said()[0], /Claude is at 96% of its 5-hour limit/)
-  assert.equal(hub.feed.filter((e) => e.from === 'crew' && e.text === said()[0]).at(-1).alert, true, '95% stands out in the chat')
+  assert.equal(hub.feed.filter((e) => e.from === 'clique' && e.text === said()[0]).at(-1).alert, true, '95% stands out in the chat')
   assert.equal(notices.length, 2)
   assert.match(notices[1].body, /other providers/)
   // the window resets: the next one is watched afresh, with a line of its own

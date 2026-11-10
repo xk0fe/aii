@@ -1,18 +1,18 @@
-// Preload for scripts/screenshots.mjs: a fake window.crew with a made-up crew, so every view can be rendered and
-// captured without starting any agents or touching ~/.crew. The crew is the neutral demo one: seven agents building a
+// Preload for scripts/screenshots.mjs: a fake window.clique with a made-up clique, so every view can be rendered and
+// captured without starting any agents or touching ~/.clique. The clique is the neutral demo one: seven agents building a
 // small online shop (Storefront), on two computers, with two phones paired.
 const now = Date.now()
 const min = 60000
 // Every window starts on everyone's chat: the composer's target is the conversation it shows, and windows in one
 // run share localStorage, so one shot's conversation would otherwise open in the next.
 try {
-  localStorage.removeItem('crew.target')
+  localStorage.removeItem('clique.target')
 } catch {}
 const day = 24 * 60 * min
 
 // ?fixture=big | row | clones | workspaces picks one of the variations below. ?platform=win32: the pages as Windows
 // shows them (Ctrl for ⌘, "this PC", paths with drive letters, the titlebar with room for the window buttons), rendered
-// on a Mac. ?dev=1: as when Crew runs from source (npm run dev), with the developer's extras.
+// on a Mac. ?dev=1: as when CLIque runs from source (npm run dev), with the developer's extras.
 const QUERY = new URLSearchParams(location.search)
 const FIXTURE = QUERY.get('fixture')
 const BIG = FIXTURE === 'big'
@@ -43,7 +43,7 @@ const AGENTS = [
   { name: 'Iris', area: 'Product designer', provider: 'claude', model: 'opus', effort: 'high', status: 'waiting', since: now - 5 * min, stats: stats(11, 9, 96, 523, 214, 4, 6, 22, [0, 0, 1, 0, 2, 1, 0, 0, 3, 1, 0, 2, 1, 0]), avatar: { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true } },
   { name: 'Theo', area: 'Tester', provider: 'codex', model: '', effort: 'high', clones: 2, status: 'working', since: now - 12 * min, activity: 'Bash: npm test -- checkout', stats: stats(17, 12, 141, 488, 160, 2, 0, 140, [0, 1, 2, 0, 1, 3, 0, 2, 1, 2, 0, 1, 3, 1]), avatar: { body: 'frog', color: 'lime', eyes: 'googly', mouth: 'grin', hat: 'none', cheeks: false } },
   { name: 'June', area: 'Writer, docs and release notes', provider: 'codex', model: '', effort: 'medium', fast: false, status: 'idle', since: now - 30 * min, stats: stats(26, 14, 120, 210, 300, 21, 1, 30, [3, 1, 2, 2, 4, 1, 0, 3, 2, 1, 2, 3, 1, 1]), avatar: { body: 'bunny', color: 'peach', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true } },
-  // Rex and Noor run on the linked computer: their terminals are mirrors streamed over Crew Link
+  // Rex and Noor run on the linked computer: their terminals are mirrors streamed over CLIque Link
   { name: REX, seed: 'Rex', home: LINK.slug, homeName: LINK.name, area: 'Ops, builds and deploys', provider: 'claude', model: 'sonnet', effort: 'medium', fast: true, status: 'starting', since: now - 2000, stats: stats(9, 5, 70, 300, 120, 1, 1, 20, [0, 1, 0, 2, 1, 0, 1, 0, 2, 1, 0, 1, 0, 0]), avatar: { body: 'mochi', color: 'yellow', eyes: 'dot', mouth: 'smile', hat: 'headphones', cheeks: true } },
   { name: NOOR, seed: 'Noor', home: LINK.slug, homeName: LINK.name, area: 'Reviewer', provider: 'codex', model: '', effort: 'high', status: 'off', on: false, stats: stats(4, 4, 18, 270, 40, 0, 1, 12, [0, 0, 0, 1, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0]), avatar: { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false } },
 ].map((a) => ({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: '~/Projects/storefront', prompt: '', images: [], ...a }))
@@ -86,7 +86,7 @@ AGENTS[0].subs = [
 Object.assign(AGENTS[0], { contextLimit: 250000, onContextLimit: 'fresh' })
 AGENTS[0].convo.context = { used: 160000, size: 250000, window: 1000000, limit: 250000, pct: 64 }
 
-// ?fixture=big: a crew of 24 on three computers (Workstation linked and online, the Laptop asleep), for checking
+// ?fixture=big: a clique of 24 on three computers (Workstation linked and online, the Laptop asleep), for checking
 // how every view holds up with many agents.
 if (BIG) {
   const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -123,13 +123,13 @@ if (BIG) {
     })
   }
   const big = (n) => AGENTS.find((a) => a.seed === n || a.name === n)
-  // Kai finished its turn while a sub-agent keeps working in the background; Bo has booked staging (crew lease)
+  // Kai finished its turn while a sub-agent keeps working in the background; Bo has booked staging (clique lease)
   big('Kai').subs = [{ id: 's3', type: 'Plan', description: 'Draft the release checklist', started: now - 95000, ended: null, tools: 4, activity: 'Read · docs/release.md' }]
   big('Bo').holds = ['staging']
 }
 
 // A made-up shop page for the tasks that come with a screenshot: the cart, empty.
-const SHOT = require('path').join(require('os').tmpdir(), 'crew-shots-empty-cart.svg')
+const SHOT = require('path').join(require('os').tmpdir(), 'clique-shots-empty-cart.svg')
 require('fs').writeFileSync(SHOT, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200"><rect width="320" height="200" fill="#f6f6f8"/><rect width="320" height="30" fill="#fff"/><rect y="30" width="320" height="1" fill="#e2e2e8"/><rect x="14" y="10" width="56" height="10" rx="5" fill="#2fd3a6"/><rect x="176" y="12" width="30" height="6" rx="3" fill="#d6d6de"/><rect x="214" y="12" width="30" height="6" rx="3" fill="#d6d6de"/><rect x="252" y="12" width="30" height="6" rx="3" fill="#d6d6de"/><path d="M292 10h3l2.5 9h8l2-6.5h-11.5" fill="none" stroke="#6e6e78" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M140 50h8l7 28h24l6-20h-34" fill="none" stroke="#b8b8c2" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="158" cy="86" r="3.5" fill="#b8b8c2"/><circle cx="176" cy="86" r="3.5" fill="#b8b8c2"/><text x="160" y="108" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#3a3a42" text-anchor="middle">Your cart is empty</text><rect x="120" y="116" width="80" height="18" rx="9" fill="#2f6bff"/><text x="160" y="128.5" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#fff" text-anchor="middle">Keep shopping</text><g fill="#fff" stroke="#e2e2e8"><rect x="34" y="148" width="72" height="40" rx="6"/><rect x="124" y="148" width="72" height="40" rx="6"/><rect x="214" y="148" width="72" height="40" rx="6"/></g><rect x="40" y="154" width="22" height="22" rx="4" fill="#ffd9c7"/><rect x="130" y="154" width="22" height="22" rx="4" fill="#cdeefe"/><rect x="220" y="154" width="22" height="22" rx="4" fill="#e7dcff"/><g fill="#d6d6de"><rect x="68" y="157" width="30" height="5" rx="2.5"/><rect x="68" y="166" width="20" height="5" rx="2.5"/><rect x="158" y="157" width="30" height="5" rx="2.5"/><rect x="158" y="166" width="20" height="5" rx="2.5"/><rect x="248" y="157" width="30" height="5" rx="2.5"/><rect x="248" y="166" width="20" height="5" rx="2.5"/></g></svg>`)
 
 const log = (...entries) => entries.map(([m, by, text, kind]) => ({ ts: now - m * min, by, text, ...(kind && { kind }) }))
@@ -191,7 +191,7 @@ const FEED = [
   { id: 'f7', kind: 'ask', from: 'Milo', to: 'you', cli: 'claude', re: 'f2', ts: t(2), ask: { type: 'permission', tool: 'Bash', title: 'Run a command', code: 'npm run build', detail: 'Build the app to check the settings page', alert: 'wants to run a command',
     always: [{ i: 0, label: 'Always allow Bash(npm run build:*)' }, { i: 1, label: 'Allow all edits this session' }] } },
 ]
-// Channels: #review, whose brief keeps its agents reviewing, and #checkout-launch for three of the crew. Milo's review
+// Channels: #review, whose brief keeps its agents reviewing, and #checkout-launch for three of the clique. Milo's review
 // in #review is unread; Theo answered in #checkout-launch and Ada handed on what came of it, which stays there.
 const CHANNELS = [
   { id: 'general', name: 'general', brief: '' },
@@ -238,7 +238,7 @@ const TERM = [
   `${ESC}38;5;209m✻${ESC}0m Fixing the totals… ${ESC}2m(esc to interrupt)${ESC}0m`,
 ].join('\r\n')
 
-// Linked computers, as Crew.computers() reports them: what each one runs.
+// Linked computers, as Clique.computers() reports them: what each one runs.
 const linked = (slug, name, online) => ({
   spaces: ['storefront'],
   slug, name, online, saved: true, status: online ? { address: LINK.address } : { error: 'unreachable, it reconnects on its own' },
@@ -255,30 +255,30 @@ const PHONES = {
 }
 const TAILNET = `${HERE.slug}.example-tailnet.ts.net`
 const COMPUTERS = {
-  me: { name: HERE.name, slug: HERE.slug, sharing: true, share: true, agents: AGENTS.filter((a) => !a.home && !a.cloneOf).length, port: 7787, code: `crew1.${Buffer.from(JSON.stringify({ name: HERE.name })).toString('base64url')}.k3y`, hosts: [{ address: HERE.address, via: 'Wi-Fi' }, { address: TAILNET, via: 'Tailscale' }] },
+  me: { name: HERE.name, slug: HERE.slug, sharing: true, share: true, agents: AGENTS.filter((a) => !a.home && !a.cloneOf).length, port: 7787, code: `clique1.${Buffer.from(JSON.stringify({ name: HERE.name })).toString('base64url')}.k3y`, hosts: [{ address: HERE.address, via: 'Wi-Fi' }, { address: TAILNET, via: 'Tailscale' }] },
   links: [linked(LINK.slug, LINK.name, true), ...(BIG ? [linked('laptop', 'Laptop', false)] : [])],
   phones: PHONES,
   nearby: null, // while Computers is open: the computers on this network with it open too (linkAction 'discover')
   pairing: null,
 }
-// Nearby, as Crew.nearbyView() reports it: a Mac mini with Computers open. window.__crewNearby replaces it ([] for none).
+// Nearby, as Clique.nearbyView() reports it: a Mac mini with Computers open. window.__cliqueNearby replaces it ([] for none).
 const NEARBY = [{ id: 'n1', name: 'Mac mini', platform: 'darwin', agents: 5 }]
-// Crew Link from the Computers sheet, acted out: Nearby while it's open, linking one (asking, the code, Link on both
-// sides, then linked; or window.__crewPairEnd's way of failing: 'declined', 'blocked'…), answering one asking
-// (window.__crewAsk() starts one).
+// CLIque Link from the Computers sheet, acted out: Nearby while it's open, linking one (asking, the code, Link on both
+// sides, then linked; or window.__cliquePairEnd's way of failing: 'declined', 'blocked'…), answering one asking
+// (window.__cliqueAsk() starts one).
 function linkAction(op, ...args) {
   const later = (ms, fn) => setTimeout(() => (fn(), emit()), ms)
-  if (op === 'discover') COMPUTERS.nearby = args[0] ? (window.__crewNearby ?? NEARBY) : null
+  if (op === 'discover') COMPUTERS.nearby = args[0] ? (window.__cliqueNearby ?? NEARBY) : null
   if (op === 'discover' && !args[0]) COMPUTERS.pairing = null
   if (op === 'pair') {
     const n = COMPUTERS.nearby?.find((x) => x.id === args[0])
     const out = { id: n.id, name: n.name, stage: 'asking' }
     COMPUTERS.pairing = { out, in: null }
-    later(window.__crewPairDelay ?? 500, () => COMPUTERS.pairing?.out === out && Object.assign(out, window.__crewPairEnd ? { stage: 'failed', error: window.__crewPairEnd } : { stage: 'confirm', sas: '4827' }))
+    later(window.__cliquePairDelay ?? 500, () => COMPUTERS.pairing?.out === out && Object.assign(out, window.__cliquePairEnd ? { stage: 'failed', error: window.__cliquePairEnd } : { stage: 'confirm', sas: '4827' }))
   }
   if (op === 'pairConfirm') {
     const out = COMPUTERS.pairing?.out
-    out.stage = 'waiting' // until the Mac mini says yes too (window.__crewTheyAgree() does)
+    out.stage = 'waiting' // until the Mac mini says yes too (window.__cliqueTheyAgree() does)
     if (out.theyAgreed) later(300, () => Object.assign(out, { stage: 'linked', slug: 'mac-mini' }))
   }
   if (op === 'pairCancel' || op === 'pairDone') COMPUTERS.pairing = null
@@ -291,26 +291,26 @@ function linkAction(op, ...args) {
     }
   }
   if (op === 'code') return COMPUTERS.me.code
-  if (op === 'localNetwork') window.__crewOpenedLocalNetwork = (window.__crewOpenedLocalNetwork ?? 0) + 1
+  if (op === 'localNetwork') window.__cliqueOpenedLocalNetwork = (window.__cliqueOpenedLocalNetwork ?? 0) + 1
   emit()
 }
 // the Mac mini clicking Link on its side: linked if this side did already, or said on screen if not
-window.__crewTheyAgree = () => {
+window.__cliqueTheyAgree = () => {
   const out = COMPUTERS.pairing?.out
   if (out.stage === 'waiting') Object.assign(out, { stage: 'linked', slug: 'mac-mini' })
   else out.theyAgreed = true
   emit()
 }
-window.__crewAsk = (name = 'Laptop') => {
+window.__cliqueAsk = (name = 'Laptop') => {
   COMPUTERS.pairing = { out: null, in: { id: 'r1', name, sas: '0519', stage: 'ask' } }
   emit()
 }
 // A pairing code for a phone, with made-up keys (a new secret each time), as a QR code the way main.js draws it (qrSvg).
-// window.__crewPhoneTTL makes codes end sooner than ten minutes, to watch the pairing view renew them.
+// window.__cliquePhoneTTL makes codes end sooner than ten minutes, to watch the pairing view renew them.
 let codes = 0
 function phoneCode() {
   const bytes = (n, seed) => Buffer.from(Array.from({ length: n }, (_, i) => (i * 53 + seed) & 255)).toString('base64url')
-  const code = 'crewphone1.' + Buffer.from(JSON.stringify({ v: 1, id: bytes(16, 1), n: HERE.name, k: bytes(32, 2), s: bytes(32, 3 + codes++), h: [HERE.address, TAILNET], p: 7788 })).toString('base64url')
+  const code = 'cliquephone1.' + Buffer.from(JSON.stringify({ v: 1, id: bytes(16, 1), n: HERE.name, k: bytes(32, 2), s: bytes(32, 3 + codes++), h: [HERE.address, TAILNET], p: 7788 })).toString('base64url')
   const qr = require('qrcode-generator')(0, 'M')
   qr.addData(code)
   qr.make()
@@ -325,7 +325,7 @@ function phoneCode() {
       x += run
     }
   }
-  const expires = Date.now() + (window.__crewPhoneTTL ?? 10 * min)
+  const expires = Date.now() + (window.__cliquePhoneTTL ?? 10 * min)
   PHONES.pairing = { expires }
   return { code, expires, qr: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>` }
 }
@@ -339,12 +339,12 @@ const FOLDERS = {
 const HOMES = { '': HOME, [LINK.slug]: LINK.home, laptop: '/Users/you' }
 
 // ?fixture=row: right of way (core/hub.js question). June asked Ada something and waits on her answer, which goes
-// ahead of her queue; when Ada tried to ask June back, Crew had her answer first. Earlier: Milo's question came back
+// ahead of her queue; when Ada tried to ask June back, CLIque had her answer first. Earlier: Milo's question came back
 // answered, three hand-offs for Milo went in as one turn, Iris left a file to Milo, who was editing it, and a
 // declined task went straight to its next owner.
 if (FIXTURE === 'row') {
   const agent = (n) => AGENTS.find((a) => a.name === n)
-  Object.assign(agent('June'), { status: 'working', since: t(1.4), activity: 'Bash · crew ask Ada', waitingOn: [{ name: 'Ada', since: t(0.8), id: 'q1', text: 'Which coupon codes can stack in 1.2?' }] })
+  Object.assign(agent('June'), { status: 'working', since: t(1.4), activity: 'Bash · clique ask Ada', waitingOn: [{ name: 'Ada', since: t(0.8), id: 'q1', text: 'Which coupon codes can stack in 1.2?' }] })
   Object.assign(agent('Ada'), { owes: [{ name: 'June', since: t(0.8), id: 'q1', waiting: true }] })
   Object.assign(agent('Milo'), { status: 'working', since: t(4), activity: 'Edit src/pages/Settings.tsx' })
   Object.assign(agent('Iris'), { status: 'idle', since: t(20), activity: '' })
@@ -373,7 +373,7 @@ const USAGE = {
   claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 64, resetsAt: now + 140 * min, pace: { projected: 128, runsOut: now + 66 * min } }, { id: 'seven_day', pct: 38, resetsAt: now + 3.2 * day, pace: { projected: 71, runsOut: null } }] },
   codex: { label: 'Codex', at: now, windows: [{ id: 'seven_day', pct: 5, resetsAt: now + 5.5 * day, pace: { projected: 23, runsOut: null } }], credits: { unlimited: false, balance: 12000 } },
 }
-// The linked computers' own accounts, which their agents run on (Crew.linkedUsage): Workstation's Claude well into its
+// The linked computers' own accounts, which their agents run on (Clique.linkedUsage): Workstation's Claude well into its
 // week and its Codex barely used; the asleep Laptop's last word.
 COMPUTERS.links[0].usage = {
   claude: { label: 'Claude', at: now, windows: [{ id: 'five_hour', pct: 18, resetsAt: now + 4 * 60 * min, pace: { projected: 40, runsOut: null } }, { id: 'seven_day', pct: 81, resetsAt: now + 1.4 * day, pace: { projected: 96, runsOut: null } }] },
@@ -382,7 +382,7 @@ COMPUTERS.links[0].usage = {
 if (BIG) COMPUTERS.links[1].usage = { claude: { label: 'Claude', at: now - 3 * 60 * min, windows: [{ id: 'seven_day', pct: 12, resetsAt: now + 6 * day }] } }
 // what the work on a task cost so far
 for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [5, { cost: 1.31, tokens: 0, added: 42, removed: 18 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }], [3, { cost: 0.86, tokens: 0, added: 21, removed: 4 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })
-// the crew's spend: today against what's usual by now, and the last week and month
+// the clique's spend: today against what's usual by now, and the last week and month
 const SPEND = { today: 14.2, usual: 12.8, week: 96, weekBefore: 88, month: 340 }
 // The token savers (core/savers.js, which is ESM: required as one), all on but No reports back, and what they counted
 // over a couple of weeks, some of it with them all off first
@@ -439,7 +439,7 @@ if (FIXTURE === 'threads') {
   for (const r of Object.keys(READS)) delete READS[r]
   Object.assign(READS, { since: now })
 }
-// ?fixture=q: Q, the system agent (core/system-agent.js), in the crew. What you send goes to him, and he gets it to
+// ?fixture=q: Q, the system agent (core/system-agent.js), in the clique. What you send goes to him, and he gets it to
 // whoever should do it.
 if (FIXTURE === 'q') {
   const at = (m) => now - m * min
@@ -455,15 +455,15 @@ if (FIXTURE === 'q') {
     { id: 'o8', kind: 'reply', from: 'June', text: 'Added under "Checkout".', re: 'o7', ts: at(2) },
   )
   for (const a of AGENTS) Object.assign(a, { status: a.name === 'Iris' ? 'working' : 'idle', activity: a.name === 'Iris' ? 'Edit ui/empty-cart.svg' : '', since: at(9), subs: [] })
-  AGENTS.unshift({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: '~/.crew/workspaces/storefront/q', prompt: '', images: [], name: 'q', system: true, shared: false, status: 'idle', since: at(2), provider: 'claude', model: 'sonnet', effort: 'low',
+  AGENTS.unshift({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: '~/.clique/workspaces/storefront/q', prompt: '', images: [], name: 'q', system: true, shared: false, status: 'idle', since: at(2), provider: 'claude', model: 'sonnet', effort: 'low',
     area: 'Runs the clique: takes what you ask and gets it to the right teammate', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, stats: stats(14, 14, 9, 21, 22, 11, 0, 2, [1, 2, 0, 3, 2, 1, 5]) })
   for (const r of Object.keys(READS)) delete READS[r]
   Object.assign(READS, { since: now })
 }
 const state = { savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
 
-// Workspaces, as Crew.workspaces() reports them. Storefront has everyone; Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the crew, Storefront
-// in the background with two of its crew needing you and a reply you haven't read, and Research parked.
+// Workspaces, as Clique.workspaces() reports them. Storefront has everyone; Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the clique, Storefront
+// in the background with two of its clique needing you and a reply you haven't read, and Research parked.
 const LOCAL = AGENTS.filter((a) => !a.home && !a.cloneOf)
 const faces = (names) => names.map((n) => AGENTS.find((a) => a.name === n)).map((a) => ({ name: a.name, avatar: a.avatar, status: a.status }))
 const WORKSPACES = [
@@ -487,7 +487,7 @@ const show = (id) => {
 }
 state.workspaces = WORKSPACES
 state.roster = LOCAL.map((a) => ({ name: a.name, area: a.area, avatar: a.avatar, cwd: here(`/Users/you/Projects/${a.name === 'June' ? 'docs-site' : 'storefront'}`) }))
-// Linked computers' workspaces, as Crew.remoteWorkspaces() reports them. They show up here on their own (showTheirs):
+// Linked computers' workspaces, as Clique.remoteWorkspaces() reports them. They show up here on their own (showTheirs):
 // the linked computer's Storefront (so there are two Storefronts on the rail, told apart by its computer's mark) and the
 // Laptop's Notes (the Laptop is off, so it's dimmed). Its API you hid, so the menu offers to show it again.
 const REMOTE = [
@@ -501,7 +501,7 @@ if (FIXTURE === 'workspaces') {
   state.remoteWorkspaces = REMOTE
   show('docs')
 } else {
-  WORKSPACES.splice(2) // the usual crew has Storefront and Docs site
+  WORKSPACES.splice(2) // the usual clique has Storefront and Docs site
   show('storefront')
 }
 // ?fixture=first-run: a new install, with Claude Code and Codex ready and no workspace yet: the first-run screen
@@ -511,8 +511,8 @@ if (FIXTURE === 'first-run') {
   Object.assign(state, { workspace: null, agents: [], feed: [], roster: [] })
   state.setup = { checked: true, ready: true, clis: [{ id: 'claude', name: 'Claude Code', state: 'ready', version: '2.4.0' }, { id: 'codex', name: 'Codex', state: 'ready', version: '0.80.0' }], git: null }
 }
-window.__crewShow = show
-// The channels' sheet and menu, as Crew.channelAction does them.
+window.__cliqueShow = show
+// The channels' sheet and menu, as Clique.channelAction does them.
 function channelAction(op, id, arg = {}) {
   const slug = (n) => String(n ?? '').toLowerCase().replace(/^#+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
   if (op === 'create') {
@@ -527,7 +527,7 @@ function channelAction(op, id, arg = {}) {
   return { id, state }
 }
 
-// The workspace actions, enough for the shots: switch (one asleep wakes, as in Crew), open, park, make one.
+// The workspace actions, enough for the shots: switch (one asleep wakes, as in CLIque), open, park, make one.
 function workspaceAction(op, id, arg) {
   // a new one (?fixture=first-run makes the first): on screen, with Q and nobody else yet
   if (op === 'create') {
@@ -539,9 +539,9 @@ function workspaceAction(op, id, arg) {
     return { state }
   }
   const w = WORKSPACES.find((x) => x.id === id)
-  if (op === 'switch') (w.parked = false), window.__crewShow(id)
-  if (op === 'open') (w.parked = false), window.__crewShow(state.workspace.id)
-  if (op === 'park') (w.parked = true), window.__crewShow(state.workspace.id)
+  if (op === 'switch') (w.parked = false), window.__cliqueShow(id)
+  if (op === 'open') (w.parked = false), window.__cliqueShow(state.workspace.id)
+  if (op === 'park') (w.parked = true), window.__cliqueShow(state.workspace.id)
   if (op === 'order') {
     const at = (x) => (arg.includes(x.id) ? arg.indexOf(x.id) : arg.length)
     WORKSPACES.sort((a, b) => at(a) - at(b))
@@ -551,15 +551,15 @@ function workspaceAction(op, id, arg) {
     for (const name of arg.add ?? []) if (!w.members.some((m) => m.name === name)) w.members.push({ name, folder: '' })
     w.members = w.members.filter((m) => !(arg.remove ?? []).includes(m.name))
     Object.assign(w, { agents: w.members.length, on: w.members.length, faces: faces(w.members.map((m) => m.name)) })
-    if (w.current) window.__crewShow(id)
+    if (w.current) window.__cliqueShow(id)
   }
   if (op === 'edit' && w) Object.assign(w, arg)
   if (op === 'remove') {
     WORKSPACES.splice(WORKSPACES.indexOf(w), 1)
     for (const r of REMOTE) if (r.joined === id) r.joined = null
-    if (w.current) window.__crewShow(WORKSPACES[0].id)
+    if (w.current) window.__cliqueShow(WORKSPACES[0].id)
   }
-  // a linked computer's workspace, here too (Crew.workspaceAction join): its copy, or a new one while its owner is on
+  // a linked computer's workspace, here too (Clique.workspaceAction join): its copy, or a new one while its owner is on
   if (op === 'join') {
     const r = REMOTE.find((x) => x.key === id)
     if (!r) throw new Error('no such workspace on your linked computers')
@@ -569,23 +569,23 @@ function workspaceAction(op, id, arg) {
       WORKSPACES.push(joined(r, r.joined, []))
     }
     id = r.joined
-    window.__crewShow(id)
+    window.__cliqueShow(id)
   }
   if (op === 'create') {
     id = String(arg.name).toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    // this computer's own go before linked computers' ones, as Crew.workspaceAction create puts them
+    // this computer's own go before linked computers' ones, as Clique.workspaceAction create puts them
     const at = WORKSPACES.findIndex((x) => x.owner)
     WORKSPACES.splice(at >= 0 ? at : WORKSPACES.length, 0, { id, name: arg.name, color: arg.color || null, icon: arg.icon || null, folder: arg.folder || null, parked: false, members: (arg.members ?? []).map((name) => ({ name, folder: '' })), agents: arg.members?.length ?? 0, on: arg.members?.length ?? 0, working: 0, waiting: 0, unread: 0, faces: faces(arg.members ?? []) })
-    window.__crewShow(id)
+    window.__cliqueShow(id)
   }
   emit()
   return { id, state }
 }
-const emit = () => setTimeout(() => window.__crewEmit('state', state), 30)
+const emit = () => setTimeout(() => window.__cliqueEmit('state', state), 30)
 // an agent just made (addAgent, a new workspace's Q): idle, nothing done yet
 const newAgent = (fields) => ({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: state.workspace?.folder ?? '', prompt: '', images: [], status: 'idle', since: Date.now(), provider: 'claude', model: '', effort: '', area: '', stats: stats(0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0, 0, 0, 0, 0]), ...fields })
 let nextTask = Math.max(...TICKETS.map((x) => x.id)) + 1
-// The crew's names are capitalized (Ada), while the pages match a typed @name in lower case (@ada): find one either way.
+// The clique's names are capitalized (Ada), while the pages match a typed @name in lower case (@ada): find one either way.
 const named = (n) => state.agents.find((a) => a.name.toLowerCase() === String(n ?? '').replace(/^@/, '').toLowerCase())
 const MENTION = /(^|[^\w.@/'-])@([\w-]+(?:@[\w-]+)?)/g
 
@@ -696,10 +696,10 @@ function voiceCall(action) {
     setTimeout(() => emit({ type: 'done', text: SPOKEN.join(' ') }), 250)
   }
 }
-window.__crewFit = null
-window.__crewEmit = (channel, ...args) => listeners[channel]?.forEach((fn) => fn(...args))
-window.__crewState = state
-window.crew = {
+window.__cliqueFit = null
+window.__cliqueEmit = (channel, ...args) => listeners[channel]?.forEach((fn) => fn(...args))
+window.__cliqueState = state
+window.clique = {
   platform: PLATFORM,
   home: HOME,
   dev: QUERY.get('dev') === '1',
@@ -727,7 +727,7 @@ window.crew = {
     // is who it's for when no one's picked; Auto goes to Ada.
     if (action === 'send') {
       const [picked, text, , opts = {}] = args
-      if (state.workspace.parked) workspaceAction('open', state.workspace.id) // what you send wakes it, as in Crew
+      if (state.workspace.parked) workspaceAction('open', state.workspace.id) // what you send wakes it, as in CLIque
       const to = picked || [...new Set([...String(text).matchAll(MENTION)].map((m) => named(m[2])?.name).filter(Boolean))].join(',')
       // a busy agent that can clone itself: a clone takes it (sendAction)
       if (to && !to.includes(',') && !opts.re && named(to)?.clones) return sendAction(to, text)
@@ -748,8 +748,8 @@ window.crew = {
       emit()
       return undefined
     }
-    // window.__crewBufferDelay holds the replay back, so its ribbon can be captured
-    if (action === 'buffer') return new Promise((r) => setTimeout(() => r({ data: TERM, cols: 100, rows: 30 }), window.__crewBufferDelay ?? 0))
+    // window.__cliqueBufferDelay holds the replay back, so its ribbon can be captured
+    if (action === 'buffer') return new Promise((r) => setTimeout(() => r({ data: TERM, cols: 100, rows: 30 }), window.__cliqueBufferDelay ?? 0))
     if (action === 'answer') {
       const [id, reply] = args
       const e = state.feed.find((x) => x.id === id)
@@ -757,7 +757,7 @@ window.crew = {
       e.answer = reply.terminal ? { by: 'terminal', handedOver: true } : reply.answers ? { by: 'you', answers: Object.fromEntries(Object.entries(reply.answers).map(([k, v]) => [k, [].concat(v).join(', ')])) } : { by: 'you', allow: Boolean(reply.allow), ...(always && { always }), ...(reply.note && { note: reply.note }) }
       const a = state.agents.find((x) => x.name === e.from)
       if (a && !reply.terminal) Object.assign(a, { status: 'working', since: Date.now() })
-      setTimeout(() => window.__crewEmit('state', state), 30)
+      setTimeout(() => window.__cliqueEmit('state', state), 30)
       return undefined
     }
     if (action.startsWith('voice')) return voiceCall(action)
@@ -768,7 +768,7 @@ window.crew = {
         if ('tier' in patch) a.fast = patch.tier === 'fast'
         if ('off' in patch) Object.assign(a, { on: !patch.off, status: patch.off ? 'off' : 'starting', since: Date.now() })
       }
-      setTimeout(() => window.__crewEmit('state', state), 30)
+      setTimeout(() => window.__cliqueEmit('state', state), 30)
     }
     if (action === 'task') return taskAction(...args)
     if (action === 'link') return linkAction(...args)
@@ -776,9 +776,9 @@ window.crew = {
     if (action === 'phones') {
       const [op, id] = args
       if (op === 'code') {
-        // window.__crewPhoneError: this computer can't listen for phones (a port that's taken)
-        const fail = window.__crewPhoneError
-        return new Promise((resolve, reject) => setTimeout(() => (fail ? reject(new Error(fail)) : resolve(phoneCode())), window.__crewPhoneDelay ?? 0))
+        // window.__cliquePhoneError: this computer can't listen for phones (a port that's taken)
+        const fail = window.__cliquePhoneError
+        return new Promise((resolve, reject) => setTimeout(() => (fail ? reject(new Error(fail)) : resolve(phoneCode())), window.__cliquePhoneDelay ?? 0))
       }
       if (op === 'cancel') PHONES.pairing = null
       if (op === 'revoke') PHONES.devices = PHONES.devices.filter((d) => d.id !== id)
@@ -822,7 +822,7 @@ window.crew = {
     return undefined
   },
   input: () => {},
-  fit: (width, height, focus, pill) => (window.__crewFit = { width, height, pill }),
+  fit: (width, height, focus, pill) => (window.__cliqueFit = { width, height, pill }),
   drag: () => {},
   dragApp: () => {},
   onPlace: (fn) => listeners.place.push(fn),

@@ -1,6 +1,6 @@
 // Resting: an agent that's on has no terminal until there's work for it, and gives its terminal up once it has been idle
-// and its cache has gone cold. Against the real Hub (and Crew.send, as the app sends) with a fake runner in a throwaway
-// CREW_HOME. Run with `npm test`.
+// and its cache has gone cold. Against the real Hub (and Clique.send, as the app sends) with a fake runner in a throwaway
+// CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -9,14 +9,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-rest-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-rest-'))
 if (process.platform !== 'win32') process.env.PATH = '/usr/bin:/bin' // no codex to discover once a hub starts
 const { Hub, CONFIG } = await import('../core/hub.js')
-const { Crew } = await import('../core/crew.js')
+const { Clique } = await import('../core/clique.js')
 const { phoneState } = await import('../core/remote.js')
 const { moveEnd } = await import('../core/move.js')
-const at = (f) => path.join(process.env.CREW_HOME, f)
-const FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-rest-folder-'))
+const at = (f) => path.join(process.env.CLIQUE_HOME, f)
+const FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-rest-folder-'))
 
 class FakeRunner extends EventEmitter {
   live = new Map()
@@ -32,9 +32,9 @@ class FakeRunner extends EventEmitter {
   quietFor = () => Infinity
 }
 
-const CREW = () => [{ name: 'ada', area: 'mobile app', cwd: FOLDER }, { name: 'june', area: 'backend api', cwd: FOLDER }, { name: 'uma', area: 'analytics', cwd: FOLDER, off: true }]
+const CLIQUE = () => [{ name: 'ada', area: 'mobile app', cwd: FOLDER }, { name: 'june', area: 'backend api', cwd: FOLDER }, { name: 'uma', area: 'analytics', cwd: FOLDER, off: true }]
 let hub, runner
-const config = (extra = {}) => fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW(), ...extra }))
+const config = (extra = {}) => fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CLIQUE(), ...extra }))
 
 beforeEach(() => {
   for (const f of ['tickets.json', 'conversations.json', 'sessions.json', 'feed.jsonl', 'runtime.json']) fs.rmSync(at(f), { force: true })
@@ -51,7 +51,7 @@ afterEach(() => {
   fs.unwatchFile(CONFIG)
 })
 after(() => {
-  fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 })
+  fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 })
   fs.rmSync(FOLDER, { recursive: true, force: true, maxRetries: 10 })
 })
 
@@ -100,12 +100,12 @@ test("a teammate's question wakes it too", async () => {
   assert.match(await asking, /hasn't answered yet/)
 })
 
-test('Auto counts a resting agent as free, in Crew.send as the app sends', async () => {
-  const crew = new Crew({ bin: '/nonexistent', computerName: 'Studio' })
-  const h = crew.hubs.get('default')
-  Object.assign(crew.runner, { running: () => false, start() {}, submit() {}, write() {}, stop() {}, pid() {} })
+test('Auto counts a resting agent as free, in Clique.send as the app sends', async () => {
+  const clique = new Clique({ bin: '/nonexistent', computerName: 'Studio' })
+  const h = clique.hubs.get('default')
+  Object.assign(clique.runner, { running: () => false, start() {}, submit() {}, write() {}, stop() {}, pid() {} })
   for (const a of h.agents.values()) if (!a.off) a.status = 'resting'
-  await crew.send(undefined, 'the backend api is slow')
+  await clique.send(undefined, 'the backend api is slow')
   assert.equal(h.feed.findLast((e) => e.kind === 'msg').to, 'june')
   for (const a of h.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer), clearTimeout(a.readyTimer)
   clearTimeout(h.statsTimer)
@@ -113,7 +113,7 @@ test('Auto counts a resting agent as free, in Crew.send as the app sends', async
   h.cfg.off('change', h.onConfig)
 })
 
-test("an agent's crew send with no name picks a resting teammate", () => {
+test("an agent's clique send with no name picks a resting teammate", () => {
   free('june')
   hub.send({ from: 'june', text: 'the mobile app needs a look' })
   assert.equal(hub.feed.findLast((e) => e.kind === 'msg').to, 'ada')
@@ -456,7 +456,7 @@ test("a resting agent whose folder went away isn't Auto's pick", () => {
   a.cwd = cwd
 })
 
-test('a clone whose terminal was not the one Crew knew goes, and its original can rest', () => {
+test('a clone whose terminal was not the one CLIque knew goes, and its original can rest', () => {
   clearInterval(hub.stallTimer)
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'ada', area: 'app', cwd: FOLDER, clones: 2 }] }))
   fs.writeFileSync(at('runtime.json'), JSON.stringify({ agents: { 'ada.2': { run: 'known', status: 'idle', cloneOf: 'ada', clone: 2, inbox: [] } } }))
@@ -496,7 +496,7 @@ test('a phone sees a resting agent as idle: older phones would call it stopped',
   assert.deepEqual(phoneState(s).agents.map((a) => a.status), ['idle', 'idle', 'off'])
 })
 
-test('crew who says free or idle, never a word that sounds unavailable', () => {
+test('clique who says free or idle, never a word that sounds unavailable', () => {
   free('june')
   assert.doesNotMatch(hub.who('june'), /resting/)
 })

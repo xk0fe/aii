@@ -1,6 +1,6 @@
 <!doctype html>
-<!-- The README cover: the wordmark, one line in the brand face, and the crew in its felt room acting out what each one
-     is doing (the app's own CSS, avatar.js and brand.js, with the demo crew). Rendered by `npm run shots -- cover`
+<!-- The README cover: the wordmark, one line in the brand face, and the clique in its felt room acting out what each one
+     is doing (the app's own CSS, avatar.js and brand.js, with the demo clique). Rendered by `npm run shots -- cover`
      at 1280×640. -->
 <html>
 <head>
@@ -17,8 +17,8 @@
     .room { position: absolute; left: 64px; right: 64px; top: 362px; height: 216px; }
     .room-felt { position: absolute; inset: 0; border-radius: 18px; overflow: hidden; }
     .room-felt > span { position: absolute; left: 0; right: 0; }
-    .crew { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; justify-content: space-around; align-items: flex-end; padding: 0 16px; }
-    .crew > span { line-height: 0; }
+    .clique { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; justify-content: space-around; align-items: flex-end; padding: 0 16px; }
+    .clique > span { line-height: 0; }
     .names { position: absolute; left: 64px; right: 64px; top: 590px; display: flex; justify-content: space-around; padding: 0 16px; }
     .names span { width: 120px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 500 17px/22px var(--font-brand); color: #6B6B6B; }
     .names .dot { width: 9px; height: 9px; }
@@ -30,7 +30,7 @@
   <div class="cover">
     <span class="wm" id="wm"></span>
     <span class="free">Free. Bring your own Claude or Codex account.</span>
-    <h1>Your AI agents,<br>working as a <em>crew</em></h1>
+    <h1>Your AI agents,<br>working as a <em>clique</em></h1>
     <p class="lead">Claude Code and Codex agents with names, jobs and one chat for all of them. They split the work, and ask when they need you.</p>
     <div class="room" id="room"></div>
     <div class="names" id="names"></div>
@@ -39,8 +39,8 @@
   <script src="../ui/common.js"></script>
   <script src="../ui/brand.js"></script>
   <script>
-    // the demo crew (screenshot-preload.cjs), each in the pose its status gives it
-    const crew = [
+    // the demo clique (screenshot-preload.cjs), each in the pose its status gives it
+    const clique = [
       ['Ada', 'working', { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false }],
       ['Milo', 'waiting', { body: 'cat', color: 'sky', eyes: 'happy', mouth: 'cat', hat: 'party', cheeks: true }, 'permission'],
       ['Iris', 'waiting', { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true }, 'question'],
@@ -50,8 +50,8 @@
       ['Noor', 'off', { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false }],
     ].map(([name, status, avatar, ask]) => ({ name, status, avatar, ask, on: status !== 'off' }))
     document.getElementById('wm').innerHTML = wordmarkHTML(64)
-    document.getElementById('room').innerHTML = `${roomFeltHTML(58)}<div class="crew">${crew.map((a) => `<span>${avatarHTML(a, { size: 120, pose: poseOf(a, { ask: a.ask }) })}</span>`).join('')}</div>`
-    document.getElementById('names').innerHTML = crew.map((a) => `<span>${a.status === 'working' || a.status === 'waiting' ? `<i class="dot ${a.status === 'waiting' ? 'needs' : 'working'}"></i>` : ''}${a.name}</span>`).join('')
+    document.getElementById('room').innerHTML = `${roomFeltHTML(58)}<div class="clique">${clique.map((a) => `<span>${avatarHTML(a, { size: 120, pose: poseOf(a, { ask: a.ask }) })}</span>`).join('')}</div>`
+    document.getElementById('names').innerHTML = clique.map((a) => `<span>${a.status === 'working' || a.status === 'waiting' ? `<i class="dot ${a.status === 'waiting' ? 'needs' : 'working'}"></i>` : ''}${a.name}</span>`).join('')
     // two of them talking: Milo asks, Theo reports
     const room = document.getElementById('room')
     room.insertAdjacentHTML('beforeend', '<span class="bubble-say" style="left:236px;top:16px">Can I run <code>npm run build</code>?</span><span class="bubble-say" style="left:575px;top:26px">All 48 checkout tests pass</span>')

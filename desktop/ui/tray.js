@@ -1,5 +1,5 @@
 // Menu bar popover: what needs you first, who's at work, the accounts' limits, and the way into everything else.
-/* global activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, crew, live, morph, esc, celebrate, markSVG, store, ICONS,
+/* global activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, clique, live, morph, esc, celebrate, markSVG, store, ICONS,
    needsYou, needText, usageTip, usageByComputer, computerIcon, THIS_COMPUTER, paceWarning, resetsText, runningSubs, subsTip, clonesOf, displayName, statusText, blockedOn, ago,
    plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys, wordmarkHTML, stripHTML, PRODUCT_NAME */
 // Everything here is local: classic scripts share one global scope with common.js and avatar.js.
@@ -44,7 +44,7 @@
     ctx.fillText(text, x, y + r * 0.08)
   }
   // -> a PNG data URL for each size
-  window.crewTrayIcon = ({ count = 0, tone = '' } = {}, sizes = [16, 20, 24, 32]) => sizes.map((px) => {
+  window.cliqueTrayIcon = ({ count = 0, tone = '' } = {}, sizes = [16, 20, 24, 32]) => sizes.map((px) => {
     const canvas = Object.assign(document.createElement('canvas'), { width: px, height: px })
     const ctx = canvas.getContext('2d')
     // the mark is 24 wide and about 9.5 tall: as wide as the icon, sitting a little low like a creature on the taskbar
@@ -64,26 +64,26 @@
     return canvas.toDataURL('image/png')
   })
   // The taskbar button's overlay, while someone needs you: the badge alone, 16px (Windows draws it in the corner).
-  window.crewBadge = (count) => {
+  window.cliqueBadge = (count) => {
     const canvas = Object.assign(document.createElement('canvas'), { width: 32, height: 32 })
     badge(canvas.getContext('2d'), 32, count, 'need', { x: 16, y: 16, r: 15 })
     return canvas.toDataURL('image/png')
   }
 
   // An agent in the dashboard: its terminal, with the chat on it, where a question it asked waits for your answer.
-  const openAgent = (name) => crew.call('dashboard', name)
+  const openAgent = (name) => clique.call('dashboard', name)
 
   // Lists you opened past their first few ('needs', 'work') and the quiet line's rows ('rest'): the popover remembers.
   const unfolded = new Set((() => {
     try {
-      return JSON.parse(store.get('crew.tray.open') || '[]')
+      return JSON.parse(store.get('clique.tray.open') || '[]')
     } catch {
       return []
     }
   })())
   const toggle = (key) => {
     unfolded.has(key) ? unfolded.delete(key) : unfolded.add(key)
-    store.set('crew.tray.open', JSON.stringify([...unfolded]))
+    store.set('clique.tray.open', JSON.stringify([...unfolded]))
   }
   let state = null
 
@@ -198,7 +198,7 @@
   }
 
   // Short lists show whole. Longer ones show their first few and a "+N more" line that opens the rest: up to four that need
-  // you, and fewer at work the more need you, so a big crew keeps the popover a glance tall.
+  // you, and fewer at work the more need you, so a big clique keeps the popover a glance tall.
   const capOf = (list, cap, key) => (list.length <= cap + 1 || unfolded.has(key) ? list.length : cap)
   function capped(list, cap, key, row) {
     if (list.length <= cap + 1) return list.map(row)
@@ -251,11 +251,11 @@
       { label: 'New workspace…', icon: ICONS.plus, act: ':new' },
       ...(joinable(state).length ? ['-', { head: 'On your other computers' }, ...joinable(state).map(joinItem)] : []),
     ], async (id) => {
-      if (id === ':new') return crew.call('dashboard', ':workspace')
-      if (id.startsWith('join:')) return crew.call('workspace', 'join', id.slice('join:'.length)).catch((err) => oops("Couldn't show that workspace", err))
+      if (id === ':new') return clique.call('dashboard', ':workspace')
+      if (id.startsWith('join:')) return clique.call('workspace', 'join', id.slice('join:'.length)).catch((err) => oops("Couldn't show that workspace", err))
       const w = list.find((x) => x.id === id)
-      if (w.parked) await crew.call('workspace', 'open', id)
-      await crew.call('workspace', 'switch', id)
+      if (w.parked) await clique.call('workspace', 'open', id)
+      await clique.call('workspace', 'switch', id)
     })
   })
 
@@ -270,8 +270,8 @@
     settingsMenu = popMenu(btn, [
       { head: 'Theme' },
       ...[['system', `Match ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light'], ['dark', 'Dark']].map(([id, text]) => ({ label: text, act: `theme:${id}`, icon: id === theme ? ICONS.check : undefined })),
-      ...(crew.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
-    ], (act) => (act === 'config' ? crew.call('config') : crew.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
+      ...(clique.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
+    ], (act) => (act === 'config' ? clique.call('config') : clique.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
   }
 
   // an agent's clones, each a click from its terminal
@@ -291,15 +291,15 @@
       return draw()
     }
     const away = e.target.closest('[data-away-ws]')
-    if (away) return crew.call('workspace', 'switch', away.dataset.awayWs).then(() => crew.call('dashboard', away.dataset.awayAgent))
+    if (away) return clique.call('workspace', 'switch', away.dataset.awayWs).then(() => clique.call('dashboard', away.dataset.awayAgent))
     const row = e.target.closest('[data-open]')
     if (row) return openAgent(row.dataset.open)
     const act = e.target.closest('[data-act]')?.dataset.act
-    if (act === 'add') crew.call('dashboard', ':add')
+    if (act === 'add') clique.call('dashboard', ':add')
     else if (act === 'settings') settings(e.target.closest('[data-act]'))
-    else if (act) crew.call(act) // dashboard, quit
+    else if (act) clique.call(act) // dashboard, quit
   })
-  $('.autopilot .switch').addEventListener('change', (e) => crew.call('autopilot', e.target.checked).catch((err) => oops('Couldn’t change autopilot', err)))
+  $('.autopilot .switch').addEventListener('change', (e) => clique.call('autopilot', e.target.checked).catch((err) => oops('Couldn’t change autopilot', err)))
 
   // The window is hidden, not closed, between clicks on the menu bar icon: replay the entrance on each open. The class
   // goes once it's played, so a row that turns up later doesn't play it again.
@@ -314,7 +314,7 @@
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && opened())
   opened()
 
-  // The popover grows with the crew up to most of the screen, then the lists scroll inside it.
+  // The popover grows with the clique up to most of the screen, then the lists scroll inside it.
   function draw() {
     const ws = hasWorkspaces(state)
     $('header .brand').classList.toggle('hidden', ws)
@@ -325,9 +325,9 @@
       $('.ws-switch').title = ['Switch workspaces', ...away.who.map((w) => `${wsLabel(w)}: ${wsStatus(w)}`)].join('\n')
     }
     document.documentElement.style.setProperty('--max', `${Math.max(260, Math.min(620, screen.availHeight - 330))}px`)
-    // the mini crew strip: everyone at a glance, at the top
-    const crewNow = state.agents.filter((a) => !a.cloneOf)
-    morph($('.t-strip'), crewNow.length ? stripHTML(crewNow, 318) : '')
+    // the mini clique strip: everyone at a glance, at the top
+    const cliqueNow = state.agents.filter((a) => !a.cloneOf)
+    morph($('.t-strip'), cliqueNow.length ? stripHTML(cliqueNow, 318) : '')
     drawLists()
     // a bar per account; with a linked computer that reports its own, each computer's under its name
     const machines = usageByComputer(state)
@@ -337,7 +337,7 @@
     $('.autopilot').classList.toggle('hidden', !ws) // it's a workspace's
     $('.autopilot .switch').checked = state.autopilot
     $('.autopilot').title = state.autopilot ? 'Autopilot is on: agents hand work to each other without asking you first' : 'Autopilot is off: each hand-off waits in the chat for your Send it'
-    crew.fit(340, Math.ceil(document.body.getBoundingClientRect().height)) // rounded up, or the page scrolls by a fraction
+    clique.fit(340, Math.ceil(document.body.getBoundingClientRect().height)) // rounded up, or the page scrolls by a fraction
   }
 
   live((next) => {

@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import vm from 'node:vm'
 const A = path.resolve(import.meta.dirname, '..')
-const ctx = vm.createContext({ crew: {}, CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
+const ctx = vm.createContext({ clique: {}, CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
 vm.runInContext(fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8') + ';globalThis.__x = { insertAt, pathRefs, pathOf }', ctx)
 const { insertAt, pathRefs, pathOf } = ctx.__x
 const put = (value, start, end, text) => ({ ...insertAt(value, start, end, text) })
@@ -30,8 +30,8 @@ test('a selection is replaced', () => {
 
 test('no way to tell where a file is: no path', () => {
   assert.equal(pathOf({}), '')
-  ctx.crew.pathOf = () => { throw new TypeError('not a File') }
+  ctx.clique.pathOf = () => { throw new TypeError('not a File') }
   assert.equal(pathOf({}), '')
-  ctx.crew.pathOf = () => '/Users/me/src'
+  ctx.clique.pathOf = () => '/Users/me/src'
   assert.equal(pathOf({}), '/Users/me/src')
 })

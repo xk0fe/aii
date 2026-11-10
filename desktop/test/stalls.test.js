@@ -1,5 +1,5 @@
 // Stalled tasks: a task In progress whose agent stopped without finishing it gets one reminder, and then you hear
-// about it. Against the real Hub with a fake runner in a throwaway CREW_HOME. Run with `npm test`.
+// about it. Against the real Hub with a fake runner in a throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-stalls-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-stalls-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 
 class FakeRunner extends EventEmitter {
@@ -22,7 +22,7 @@ class FakeRunner extends EventEmitter {
 
 let hub, runner, notices
 beforeEach(() => {
-  for (const f of ['tickets.json', 'conversations.json', 'sessions.json', 'feed.jsonl']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['tickets.json', 'conversations.json', 'sessions.json', 'feed.jsonl']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'ada', area: 'game client, UI' }, { name: 'june', area: 'backend api' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -35,7 +35,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const MIN = 60000
 const later = (min) => Date.now() + min * MIN
@@ -67,7 +67,7 @@ test('an agent that stops on its task gets one reminder, then you hear about it'
   assert.equal(events(/reminded/).length, 0, 'five minutes idle is nothing yet')
   hub.checkStalls(later(11))
   assert.equal(events(/stopped on #1 11 min ago without finishing it, so CLIque reminded it/).length, 1)
-  assert.match(lastTyped('ada'), /\[crew\] Task #1 "Round complete card with Buddy" is still in progress[\s\S]*crew task done 1 [\s\S]*crew task note 1/)
+  assert.match(lastTyped('ada'), /\[clique\] Task #1 "Round complete card with Buddy" is still in progress[\s\S]*clique task done 1 [\s\S]*clique task note 1/)
   assert.equal(ada.status, 'working')
   hub.checkStalls(later(30))
   assert.equal(events(/reminded/).length, 1, 'once')

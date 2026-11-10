@@ -1,4 +1,4 @@
-// Agent packs: agents as a portable .crew file. Everything that defines an agent travels (area, instructions,
+// Agent packs: agents as a portable .clique file. Everything that defines an agent travels (area, instructions,
 // reference images, brain, flags, look, and any custom provider it needs); nothing that belongs to one machine
 // does (folder paths, sessions). Work experience only travels when an agent moves between your own computers.
 import fs from 'node:fs'
@@ -44,7 +44,7 @@ export function packAgents(hub, names, { stats = false } = {}) {
   const providers = Object.fromEntries(
     [...new Set(agents.map((a) => a.provider))].filter((id) => !BUILT_IN[id] && hub.config.providers?.[id]).map((id) => [id, hub.config.providers[id]]),
   )
-  return JSON.parse(JSON.stringify({ crew: 1, exported: new Date().toISOString(), agents, ...(Object.keys(providers).length && { providers }) }))
+  return JSON.parse(JSON.stringify({ clique: 1, exported: new Date().toISOString(), agents, ...(Object.keys(providers).length && { providers }) }))
 }
 
 export function readPack(text) {
@@ -54,7 +54,8 @@ export function readPack(text) {
   } catch {
     throw new Error("that file isn't a CLIque agent pack")
   }
-  if (pack?.crew !== 1 || !Array.isArray(pack.agents)) throw new Error("that file isn't a CLIque agent pack")
+  // (crew: 1 is a pack exported before the app's rename, as a .crew file)
+  if ((pack?.clique ?? pack?.crew) !== 1 || !Array.isArray(pack.agents)) throw new Error("that file isn't a CLIque agent pack")
   return pack
 }
 

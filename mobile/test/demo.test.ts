@@ -1,4 +1,4 @@
-// The demo crew (App Review and the store screenshots use it) and what the stores read from the app's config.
+// The demo clique (App Review and the store screenshots use it) and what the stores read from the app's config.
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -6,7 +6,7 @@ import path from 'node:path'
 import { DemoClient } from '@/demo/client'
 import { makeDemo } from '@/demo/fixture'
 
-// What must never be in the app: words from the owner's own crew, projects and machines. Kept as hashes (sha256, first
+// What must never be in the app: words from the owner's own clique, projects and machines. Kept as hashes (sha256, first
 // 16 hex) so this test doesn't spell out what it guards against. A home folder other than /Users/you is caught as is.
 const PRIVATE_WORDS = new Set(['625fe74cad4600b5', '5f27745723634f6e', '297581d6cd198a6e', 'b2c7973471405840', '5df28406c7453eab', '304104ef7d0d3194', '7ee8118150e0ce02', '07d046d5fac12b3f', '01b51c659dc0dcda', '4697c20f8a70fcad', '6bb1742da95106fc', '2e0b8d61fa2a6959', 'dea7cd279319a43d', 'ee425df98582637b', '67e5a3025bc013d0'])
 const hash = (w: string) => crypto.createHash('sha256').update(w).digest('hex').slice(0, 16)
@@ -14,10 +14,10 @@ const privateIn = (text: string) =>
   /\/Users\/(?!you\b)/.test(text) || (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).some((w) => PRIVATE_WORDS.has(hash(w)))
 const PRIVATE = { test: privateIn }
 
-describe('the demo crew', () => {
+describe('the demo clique', () => {
   const [store, docs] = makeDemo(1_800_000_000_000)
 
-  test('is the neutral crew of design/DEMO-CREW.md', () => {
+  test('is the neutral clique of design/DEMO-CLIQUE.md', () => {
     expect(store.name).toBe('Storefront')
     expect(docs.name).toBe('Docs site')
     const who = Object.fromEntries(store.state.agents.map((a) => [a.seed ?? a.name, [a.area, a.provider, a.model ?? '', a.effort, a.on ? a.status : 'off', a.home ?? 'studio']]))
@@ -129,8 +129,8 @@ describe('the store build', () => {
     expect(c).toMatchObject({ name: APP_NAME, version: '1.0.0', ios: { bundleIdentifier: APP_ID, buildNumber: '1' }, android: { package: APP_ID, versionCode: 1 } })
   })
   test('your own Apple team still gets an iOS id of its own; the Android package never moves', () => {
-    const c = load({ CREW_BUNDLE_ID: 'com.you.crew', CREW_APPLE_TEAM: 'ABCDE12345' })
-    expect(c.ios).toMatchObject({ bundleIdentifier: 'com.you.crew', appleTeamId: 'ABCDE12345' })
+    const c = load({ CLIQUE_BUNDLE_ID: 'com.you.clique', CLIQUE_APPLE_TEAM: 'ABCDE12345' })
+    expect(c.ios).toMatchObject({ bundleIdentifier: 'com.you.clique', appleTeamId: 'ABCDE12345' })
     expect(c.android.package).toBe(require('../src/brand').APP_ID)
   })
   test('asks for the camera only, tracks nothing, and says why it needs the local network', () => {

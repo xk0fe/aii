@@ -7,7 +7,7 @@ import { Alert, StyleSheet, Text, TextInput, View } from 'react-native'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 
 import { openChannel } from '@/state/convo'
-import { GENERAL, useCrew, useDerived } from '@/state/hooks'
+import { GENERAL, useClique, useDerived } from '@/state/hooks'
 import { agentColor } from '@/ui/avatar'
 import { nameInk } from '@/ui/color'
 import { Creature } from '@/ui/creature'
@@ -28,7 +28,7 @@ function Check({ t, on }: { t: Theme; on: boolean }) {
 export default function ChannelSheet() {
   const t = useTheme()
   const { id } = useLocalSearchParams<{ id?: string }>()
-  const { client, link, state, ws: watching, shown } = useCrew()
+  const { client, link, state, ws: watching, shown } = useClique()
   const ws = shown ?? watching // the workspace `state` is of
   const d = useDerived(state)
   const c = id ? d.channels?.find((x) => x.id === id) : undefined
@@ -129,7 +129,7 @@ export default function ChannelSheet() {
             <Press onPress={() => (tap(), setMembers(null))} style={[styles.row, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }]} accessibilityRole="button" accessibilityState={{ selected: !members }}>
               <View style={styles.rowText}>
                 <Text style={[styles.rowTitle, { color: t.fg }]}>Everyone</Text>
-                <Text style={[styles.rowDetail, { color: t.fg2 }]}>The whole crew</Text>
+                <Text style={[styles.rowDetail, { color: t.fg2 }]}>The whole clique</Text>
               </View>
               <Check t={t} on={!members} />
             </Press>

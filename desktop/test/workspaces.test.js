@@ -1,6 +1,6 @@
 // Workspaces: what config.json says each one is made of, a hub per workspace with its own chat, notes, tasks and
 // conversations, shared agents edited from any of them, and agents' requests reaching their own workspace's hub.
-// Real Hubs on one config and one fake runner, a throwaway CREW_HOME. Run with `npm test`.
+// Real Hubs on one config and one fake runner, a throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -11,11 +11,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WIN } from './helpers/platform.mjs'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-workspaces-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-workspaces-'))
 // no codex to discover once a hub starts; on Windows the agents' CLIs are found on PATH before they start, and the
 // stand-in codex there (test/helpers/clis.mjs) can't run, which is as good
 if (process.platform !== 'win32') process.env.PATH = '/usr/bin:/bin'
-const HOME = process.env.CREW_HOME
+const HOME = process.env.CLIQUE_HOME
 const { Hub, CONFIG, openConfig, fileKey, filePath } = await import('../core/hub.js')
 const { ROOT, dirOf, space, workspacesIn, forget, renameShared, sharedNames, settle } = await import('../core/workspaces.js')
 const { Scoped } = await import('../core/runner.js')
@@ -35,7 +35,7 @@ class FakeRunner extends EventEmitter {
 }
 
 // folders to work in
-const FOLDERS = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-workspaces-folders-'))
+const FOLDERS = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-workspaces-folders-'))
 const [OWN, API, APP] = ['own', 'api', 'app'].map((d) => path.join(FOLDERS, d))
 for (const d of [OWN, API, APP]) fs.mkdirSync(d)
 const storefront = () => ({
@@ -49,14 +49,14 @@ const roster = () => [{ name: 'june', area: 'backend', cwd: OWN }, { name: 'ada'
 const home_ = () => ({ id: ROOT, name: 'Home', members: { june: { folder: OWN }, ada: { off: true }, iris: {} } })
 
 let runner, config, hubs, home, ws
-// A Crew's hubs on config.json as `raw` says, picking up what the workspaces kept from before.
-function crew(raw = { layout: 2, autopilot: true, agents: roster(), workspaces: [storefront(), home_()] }) {
+// A CLIque's hubs on config.json as `raw` says, picking up what the workspaces kept from before.
+function clique(raw = { layout: 2, autopilot: true, agents: roster(), workspaces: [storefront(), home_()] }) {
   fs.writeFileSync(CONFIG, JSON.stringify(raw))
   runner = new FakeRunner()
   config = openConfig()
   config.load()
   hubs = new Map()
-  const locks = { files: new Map(), held: new Map(), waits: [] } // as Crew shares them
+  const locks = { files: new Map(), held: new Map(), waits: [] } // as CLIque shares them
   for (const id of workspacesIn(config.data).map((w) => w.id)) {
     const hub = new Hub(new Scoped(runner, id), { bin: BIN, workspace: id, config, token: 'tok', locks })
     hub.others = () => [...hubs.values()].filter((h) => h !== hub)
@@ -69,7 +69,7 @@ function crew(raw = { layout: 2, autopilot: true, agents: roster(), workspaces: 
 const saved = () => JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
 beforeEach(() => {
   for (const dir of [HOME, dirOf(HOME, 'storefront')]) for (const f of ['feed.jsonl', 'board.md', 'tickets.json', 'sessions.json', 'conversations.json', 'stats.json', 'spend.json']) fs.rmSync(path.join(dir, f), { force: true })
-  crew()
+  clique()
 })
 afterEach(() => {
   for (const h of hubs.values()) {
@@ -86,7 +86,7 @@ after(() => {
 
 // ---- what config.json says ------------------------------------------------------------------------------
 
-test("config.json as an older Crew left it: its one workspace becomes an entry like any other, its agents where they worked", () => {
+test("config.json as an older CLIque left it: its one workspace becomes an entry like any other, its agents where they worked", () => {
   const old = {
     autopilot: false, triage: 'iris', name: 'Studio', icon: '🏡', parked: true, autofix: true, channels: [{ id: 'review', name: 'review' }], channelsGone: ['old'],
     agents: [{ name: 'june', area: 'backend', cwd: OWN }, { name: 'ada', area: 'app', off: true }, { name: 'iris', area: 'design' }],
@@ -131,8 +131,8 @@ test("converting keeps where a shared agent works everywhere: in a workspace wit
   assert.equal(space(old, ROOT).agents.find((a) => a.name === 'june').cwd, undefined, 'cleared: the home folder')
 })
 
-test('a hand-edited config.json that makes no sense: Crew still starts', async () => {
-  const c = await crewApp({ agents: { june: {} }, workspaces: 'nope' })
+test('a hand-edited config.json that makes no sense: CLIque still starts', async () => {
+  const c = await cliqueApp({ agents: { june: {} }, workspaces: 'nope' })
   try {
     assert.deepEqual(c.snapshot().roster, [])
     assert.equal(c.screen, null)
@@ -146,7 +146,7 @@ test('a new install, or one with nothing yet, has no workspace: you make the fir
   settle(fresh)
   assert.deepEqual(fresh.workspaces, undefined)
   assert.equal(fresh.layout, 2)
-  // an older one with no agents left can still have a chat in CREW_HOME
+  // an older one with no agents left can still have a chat in CLIQUE_HOME
   const chat = { agents: [] }
   settle(chat, { hadFiles: true })
   assert.deepEqual(chat.workspaces.map((w) => [w.id, w.name]), [[ROOT, 'Home']])
@@ -230,7 +230,7 @@ test("each workspace's chat, notes, tasks and conversations are its own, in its 
   assert.equal(JSON.parse(fs.readFileSync(path.join(HOME, 'sessions.json'), 'utf8')).june, 'sess-default')
   assert.equal(JSON.parse(fs.readFileSync(path.join(shopDir, 'sessions.json'), 'utf8')).june, 'sess-storefront')
   // and it all comes back
-  crew(saved())
+  clique(saved())
   assert.equal(home.sessions.june, 'sess-default')
   assert.equal(ws.sessions.june, 'sess-storefront')
   assert.deepEqual(ws.tickets.all.map((t) => t.title), ['rate limits'])
@@ -249,8 +249,8 @@ test('each workspace counts what its work cost, in its own folder', () => {
 })
 
 test("agents start where they work in their workspace, and say which workspace they're in", (t) => {
-  process.env.CREW_WORKSPACE = 'storefront' // Crew itself started from a storefront agent's terminal
-  t.after(() => delete process.env.CREW_WORKSPACE)
+  process.env.CLIQUE_WORKSPACE = 'storefront' // CLIque itself started from a storefront agent's terminal
+  t.after(() => delete process.env.CLIQUE_WORKSPACE)
   home.start('http://127.0.0.1:1')
   ws.start('http://127.0.0.1:1')
   assert.equal(runner.live.size, 0, 'nobody starts with the app')
@@ -261,16 +261,16 @@ test("agents start where they work in their workspace, and say which workspace t
   assert.equal(at('june').cwd, OWN)
   assert.equal(at('storefront/june').cwd, API)
   assert.equal(at('storefront/ada').cwd, APP)
-  assert.equal(at('june').env.CREW_WORKSPACE, '', "the default: as agents started before workspaces, whatever Crew's own is")
-  assert.equal(at('storefront/june').env.CREW_WORKSPACE, 'storefront')
-  assert.equal(at('storefront/milo').env.CREW_GROUPS.startsWith(path.join(HOME, 'workspaces', 'storefront', 'run', 'groups') + path.sep), true)
-  assert.equal(at('june').env.CREW_AGENT, 'june')
-  assert.equal(at('storefront/june').env.CREW_AGENT, 'june', 'its name, without the workspace')
+  assert.equal(at('june').env.CLIQUE_WORKSPACE, '', "the default: as agents started before workspaces, whatever CLIque's own is")
+  assert.equal(at('storefront/june').env.CLIQUE_WORKSPACE, 'storefront')
+  assert.equal(at('storefront/milo').env.CLIQUE_GROUPS.startsWith(path.join(HOME, 'workspaces', 'storefront', 'run', 'groups') + path.sep), true)
+  assert.equal(at('june').env.CLIQUE_AGENT, 'june')
+  assert.equal(at('storefront/june').env.CLIQUE_AGENT, 'june', 'its name, without the workspace')
 })
 
 test('a parked workspace starts nothing, and its terminals are its own', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-ws-folder-'))
-  crew({ agents: [{ name: 'june', area: 'backend', cwd: tmp }], workspaces: [{ id: 'storefront', folder: tmp, members: { june: {} }, parked: true }] })
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-ws-folder-'))
+  clique({ agents: [{ name: 'june', area: 'backend', cwd: tmp }], workspaces: [{ id: 'storefront', folder: tmp, members: { june: {} }, parked: true }] })
   ws.start('http://127.0.0.1:1')
   assert.equal(runner.live.size, 0)
   assert.throws(() => ws.restart('june'), /asleep/)
@@ -358,9 +358,9 @@ test('an agent out of a workspace: its own one is gone, a shared one only leaves
 })
 
 test('a shared agent renamed while it works in a parked workspace carries on there under its new name', () => {
-  crew({ autopilot: true, agents: roster(), workspaces: [{ ...storefront(), parked: true }] })
+  clique({ autopilot: true, agents: roster(), workspaces: [{ ...storefront(), parked: true }] })
   ws.start('http://127.0.0.1:1')
-  runner.live.set('storefront/june', {}) // it outlived the last Crew
+  runner.live.set('storefront/june', {}) // it outlived the last CLIque
   ws.agents.get('june').status = 'idle'
   home.update('june', { name: 'jo' })
   assert.ok(!runner.running('storefront/june'))
@@ -384,8 +384,8 @@ test('renaming a shared agent from any workspace renames it in all of them, with
 })
 
 test("a workspace gone from config.json stops its agents; a hub's settings are its workspace's", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-ws-folder-'))
-  crew({ agents: [{ name: 'june', area: 'backend' }], workspaces: [{ id: 'storefront', folder: tmp, members: { june: {} }, autofix: true }] })
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-ws-folder-'))
+  clique({ agents: [{ name: 'june', area: 'backend' }], workspaces: [{ id: 'storefront', folder: tmp, members: { june: {} }, autofix: true }] })
   ws.start('http://127.0.0.1:1')
   ws.restart('june')
   assert.ok(runner.running('storefront/june'))
@@ -403,25 +403,25 @@ test("a workspace gone from config.json stops its agents; a hub's settings are i
 
 // ---- agents' requests reach their own workspace -----------------------------------------------------------
 
-test("`crew` and the hooks say which workspace they're from, and land there", async () => {
+test("`clique` and the hooks say which workspace they're from, and land there", async () => {
   const server = await serve({ token: 'tok', hubFor: (id) => hubs.get(id) })
   fs.writeFileSync(path.join(HOME, 'url'), `http://127.0.0.1:${server.address().port}`)
   fs.writeFileSync(path.join(HOME, 'token'), 'tok')
-  // as agents run them: bin/crew and sh hooks on macOS; crew.exe, and crew-hook.exe started with no shell, on Windows,
-  // both running bin/crew.mjs with CREW_NODE (core/launch.js, core/adapters.js)
+  // as agents run them: bin/clique and sh hooks on macOS; clique.exe, and clique-hook.exe started with no shell, on Windows,
+  // both running bin/clique.mjs with CLIQUE_NODE (core/launch.js, core/adapters.js)
   const run = (file, args, env, input = '') =>
-    new Promise((resolve, reject) => execFile(file, args, { env: { ...process.env, CREW_HOME: HOME, CREW_NODE: process.execPath, ...env } }, (e, out) => (e ? reject(e) : resolve(out))).stdin.end(input))
-  const crewCli = (env, ...args) => (WIN ? run(path.join(toolsDir(BIN), 'crew.exe'), args, env) : run(path.join(BIN, 'crew'), args, env))
-  assert.equal(await crewCli({ CREW_AGENT: 'june', CREW_WORKSPACE: 'storefront' }, 'note', 'storefront runs on pnpm'), 'shared with the crew\n')
-  assert.equal(await crewCli({ CREW_AGENT: 'june', CREW_WORKSPACE: '' }, 'note', 'the default runs on npm'), 'shared with the crew\n')
+    new Promise((resolve, reject) => execFile(file, args, { env: { ...process.env, CLIQUE_HOME: HOME, CLIQUE_NODE: process.execPath, ...env } }, (e, out) => (e ? reject(e) : resolve(out))).stdin.end(input))
+  const cliqueCli = (env, ...args) => (WIN ? run(path.join(toolsDir(BIN), 'clique.exe'), args, env) : run(path.join(BIN, 'clique'), args, env))
+  assert.equal(await cliqueCli({ CLIQUE_AGENT: 'june', CLIQUE_WORKSPACE: 'storefront' }, 'note', 'storefront runs on pnpm'), 'shared with the clique\n')
+  assert.equal(await cliqueCli({ CLIQUE_AGENT: 'june', CLIQUE_WORKSPACE: '' }, 'note', 'the default runs on npm'), 'shared with the clique\n')
   assert.match(ws.board(), /pnpm/)
   assert.doesNotMatch(ws.board(), /on npm/)
   assert.match(home.board(), /on npm/)
-  assert.doesNotMatch(await crewCli({ CREW_WORKSPACE: 'storefront' }, 'who'), /\bgal\b/, 'only who is in storefront')
-  assert.match(await crewCli({ CREW_WORKSPACE: 'gone' }, 'who'), /no workspace "gone"/)
-  // a hook: to the hub while Crew is there, to storefront's spool while it isn't, and replayed in storefront
+  assert.doesNotMatch(await cliqueCli({ CLIQUE_WORKSPACE: 'storefront' }, 'who'), /\bgal\b/, 'only who is in storefront')
+  assert.match(await cliqueCli({ CLIQUE_WORKSPACE: 'gone' }, 'who'), /no workspace "gone"/)
+  // a hook: to the hub while CLIque is there, to storefront's spool while it isn't, and replayed in storefront
   const hook = JSON.parse(adapters.claude({ name: 'milo' }, { session: 's', attachments: os.tmpdir(), bin: BIN }).args.find((x) => x.startsWith('{"permissions"'))).hooks.UserPromptSubmit[0].hooks[0]
-  const env = { CREW_AGENT: 'milo', CREW_WORKSPACE: 'storefront' }
+  const env = { CLIQUE_AGENT: 'milo', CLIQUE_WORKSPACE: 'storefront' }
   const runHook = (input) => (WIN ? run(hook.command, hook.args, env, input) : run('/bin/sh', ['-c', hook.command], env, input))
   await runHook(JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'write the docs' }))
   assert.equal(ws.agents.get('milo').status, 'working')
@@ -435,10 +435,10 @@ test("`crew` and the hooks say which workspace they're from, and land there", as
   assert.ok(!home.feed.some((e) => e.text === 'docs written'))
 })
 
-test('Crew keeps a hub for each workspace in config.json: open ones run, parked ones wait', async () => {
-  const { Crew } = await import('../core/crew.js')
+test('CLIque keeps a hub for each workspace in config.json: open ones run, parked ones wait', async () => {
+  const { Clique } = await import('../core/clique.js')
   fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'june', area: 'backend', off: true }], workspaces: [{ id: 'storefront', folder: API, members: { june: {} }, parked: true }] }))
-  const c = new Crew({ bin: BIN, computerName: 'test' })
+  const c = new Clique({ bin: BIN, computerName: 'test' })
   await c.start()
   try {
     assert.deepEqual([...c.hubs.keys()], [ROOT, 'storefront'])
@@ -455,7 +455,7 @@ test('Crew keeps a hub for each workspace in config.json: open ones run, parked 
     assert.deepEqual([...c.hubs.keys()], [ROOT, 'side'])
     assert.equal(c.hubs.get('side').parked, false)
     // its agents talk to it through the one server
-    const res = await fetch(`${c.hubs.get(ROOT).url}/who`, { headers: { 'x-crew': c.token, 'x-crew-workspace': 'side' } })
+    const res = await fetch(`${c.hubs.get(ROOT).url}/who`, { headers: { 'x-clique': c.token, 'x-clique-workspace': 'side' } })
     assert.match(await res.text(), /june/)
     // your accounts' usage limits are one record, whichever workspace's agent reported them
     assert.equal(c.hubs.get('side').usage, c.hubs.get(ROOT).usage)
@@ -471,9 +471,9 @@ test('Crew keeps a hub for each workspace in config.json: open ones run, parked 
 })
 
 test("a config.json that can't be read: said once, in the chat on screen once there is one, and nothing saves over it", async () => {
-  const { Crew } = await import('../core/crew.js')
+  const { Clique } = await import('../core/clique.js')
   fs.writeFileSync(CONFIG, '{ "agents": [ oops')
-  const c = new Crew({ bin: BIN, computerName: 'test' })
+  const c = new Clique({ bin: BIN, computerName: 'test' })
   try {
     assert.equal(c.config.broken, true)
     assert.equal(c.screen, null, 'what the file says is not known, so no workspace')
@@ -492,10 +492,10 @@ test("a config.json that can't be read: said once, in the chat on screen once th
 })
 
 test("nothing saves over a config.json that can't be read: not a theme, not a provider, not a change made just after it went bad", async () => {
-  const { Crew } = await import('../core/crew.js')
+  const { Clique } = await import('../core/clique.js')
   const { addProvider } = await import('../core/providers.js')
   fs.writeFileSync(CONFIG, '{ "agents": [ oops')
-  const c = new Crew({ bin: BIN, computerName: 'test' })
+  const c = new Clique({ bin: BIN, computerName: 'test' })
   const same = () => assert.match(fs.readFileSync(CONFIG, 'utf8'), /oops/, 'as it was')
   try {
     assert.throws(() => c.setTheme('light'), /can't read its settings/)
@@ -534,7 +534,7 @@ test('images: the sweep leaves what your agents, and the files of a removed work
     return file
   }
   const [loose, ref, chat] = ['2020-01-01-loose.png', '2020-01-01-ref.png', '2020-01-01-chat.png'].map(old)
-  const c = await crewApp({ layout: 2, agents: [{ name: 'june', images: [ref] }], workspaces: [{ id: 'shop', name: 'Shop', members: {} }, { id: 'side', name: 'Side', members: {} }] })
+  const c = await cliqueApp({ layout: 2, agents: [{ name: 'june', images: [ref] }], workspaces: [{ id: 'shop', name: 'Shop', members: {} }, { id: 'side', name: 'Side', members: {} }] })
   try {
     fs.writeFileSync(path.join(HOME, 'workspaces', 'shop', 'feed.jsonl'), `${JSON.stringify({ id: 'm1', ts: 1, kind: 'msg', from: 'you', to: 'june', text: 'look', images: [chat] })}\n`)
     c.workspaceAction('remove', 'shop')
@@ -554,7 +554,7 @@ test('images: the sweep leaves what your agents, and the files of a removed work
 })
 
 test('removing or renaming a shared agent leaves alone another workspace\'s own agent of that name', () => {
-  crew({ layout: 2, agents: [{ name: 'ada', area: 'app' }], workspaces: [{ id: 'storefront', members: { ada: {} } }, { id: ROOT, name: 'Home', members: {}, agents: [{ name: 'ada', area: 'its own' }] }] })
+  clique({ layout: 2, agents: [{ name: 'ada', area: 'app' }], workspaces: [{ id: 'storefront', members: { ada: {} } }, { id: ROOT, name: 'Home', members: {}, agents: [{ name: 'ada', area: 'its own' }] }] })
   home.saveSession('ada', 'home-own-ada')
   home.tickets.add({ title: 'its task', by: 'you', owner: 'ada' })
   ws.saveSession('ada', 'shared-ada')
@@ -570,20 +570,20 @@ test('removing or renaming a shared agent leaves alone another workspace\'s own 
 })
 
 test('the triage agent gone from a workspace: nobody is said to be triaging', () => {
-  crew({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), triage: 'june' }, home_()] })
+  clique({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), triage: 'june' }, home_()] })
   assert.equal(ws.snapshot().tasks.triage, 'june')
   ws.removeAgent('june')
   assert.equal(saved().workspaces[0].triage, undefined)
-  crew({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), triage: 'milo' }, home_()] })
+  clique({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), triage: 'milo' }, home_()] })
   ws.removeAgent('milo')
   assert.equal(saved().workspaces[0].triage, undefined)
-  crew({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), triage: 'june' }, home_()] })
+  clique({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), triage: 'june' }, home_()] })
   ws.removeAgent('june', { everywhere: true })
   assert.equal(saved().workspaces[0].triage, undefined)
 })
 
 test('a workspace made again by its name has its files back; nothing else takes them', async () => {
-  const c = await crewApp({ layout: 2, agents: [], workspaces: [{ id: ROOT, name: 'Дом', members: {} }, { id: 'docsy', name: 'Site', members: {} }, { id: 'keep', name: 'Keep', members: {} }] })
+  const c = await cliqueApp({ layout: 2, agents: [], workspaces: [{ id: ROOT, name: 'Дом', members: {} }, { id: 'docsy', name: 'Site', members: {} }, { id: 'keep', name: 'Keep', members: {} }] })
   const gone = () => saved().workspacesGone ?? {}
   try {
     c.workspaceAction('remove', ROOT)
@@ -603,7 +603,7 @@ test('a workspace made again by its name has its files back; nothing else takes 
 })
 
 test('moving a workspace on the rail leaves the one on screen on screen', async () => {
-  const c = await crewApp({ layout: 2, agents: [], workspaces: [{ id: 'first', name: 'First', members: {} }, { id: 'second', name: 'Second', members: {} }] })
+  const c = await cliqueApp({ layout: 2, agents: [], workspaces: [{ id: 'first', name: 'First', members: {} }, { id: 'second', name: 'Second', members: {} }] })
   try {
     assert.equal(c.current, 'first', "on screen as the first: nothing says so in config.json")
     c.workspaceAction('order', null, ['second', 'first'])
@@ -614,13 +614,13 @@ test('moving a workspace on the rail leaves the one on screen on screen', async 
   }
 })
 
-test("`crew` in a terminal of your own goes to the one on screen; a late hook of a removed workspace's agent lands nowhere", async () => {
-  const { Crew } = await import('../core/crew.js')
+test("`clique` in a terminal of your own goes to the one on screen; a late hook of a removed workspace's agent lands nowhere", async () => {
+  const { Clique } = await import('../core/clique.js')
   fs.writeFileSync(CONFIG, JSON.stringify({ layout: 2, agents: [], workspaces: [{ id: 'docs', name: 'Docs', members: {}, agents: [{ name: 'ada', area: 'docs', off: true }] }] }))
-  const c = new Crew({ bin: BIN, computerName: 'test' })
+  const c = new Clique({ bin: BIN, computerName: 'test' })
   await c.start()
   try {
-    const noHeader = (route, init) => fetch(`${c.url}/${route}`, { headers: { 'x-crew': c.token }, ...init })
+    const noHeader = (route, init) => fetch(`${c.url}/${route}`, { headers: { 'x-clique': c.token }, ...init })
     assert.match(await (await noHeader('who')).text(), /ada/)
     const late = await noHeader('hook/ada', { method: 'POST', body: JSON.stringify({ hook_event_name: 'Stop' }) })
     assert.equal(late.status, 404)
@@ -632,14 +632,14 @@ test("`crew` in a terminal of your own goes to the one on screen; a late hook of
 })
 
 test("no workspace at all: the app gets an empty state, and anything that needs one says so", async () => {
-  const { Crew } = await import('../core/crew.js')
+  const { Clique } = await import('../core/clique.js')
   fs.writeFileSync(CONFIG, JSON.stringify({ agents: [] }))
-  const c = new Crew({ bin: BIN, computerName: 'test' })
+  const c = new Clique({ bin: BIN, computerName: 'test' })
   await c.start()
   try {
     assert.equal(c.screen, null)
-    // `crew` in a terminal of your own: nowhere to go yet, then the one on screen
-    const who = () => fetch(`${c.url}/who`, { headers: { 'x-crew': c.token } })
+    // `clique` in a terminal of your own: nowhere to go yet, then the one on screen
+    const who = () => fetch(`${c.url}/who`, { headers: { 'x-clique': c.token } })
     assert.equal((await who()).status, 404)
     assert.match(await (await who()).text(), /no workspace yet/)
     const s = c.snapshot()
@@ -672,9 +672,9 @@ test("no workspace at all: the app gets an empty state, and anything that needs 
 })
 
 test("terminals still running for a workspace that's gone from config.json are stopped, and the chat says so", async () => {
-  const { Crew } = await import('../core/crew.js')
+  const { Clique } = await import('../core/clique.js')
   fs.writeFileSync(CONFIG, JSON.stringify({ agents: [{ name: 'june', area: 'backend', off: true }] }))
-  const c = new Crew({ bin: BIN, computerName: 'test' })
+  const c = new Clique({ bin: BIN, computerName: 'test' })
   const killed = []
   const proc = (name) => ({ p: { pid: 1, kill: () => killed.push(name), onExit: (fn) => fn() } })
   c.runner.procs.set('old/milo', proc('old/milo'))
@@ -692,11 +692,11 @@ test("terminals still running for a workspace that's gone from config.json are s
 
 // ---- workspaces from the app: making, switching, parking -----------------------------------------------
 
-// A Crew on config.json as `raw` says, not started: workspaces are made and switched without any agent running.
-async function crewApp(raw) {
-  const { Crew } = await import('../core/crew.js')
+// A CLIque on config.json as `raw` says, not started: workspaces are made and switched without any agent running.
+async function cliqueApp(raw) {
+  const { Clique } = await import('../core/clique.js')
   fs.writeFileSync(CONFIG, JSON.stringify(raw))
-  const c = new Crew({ bin: BIN, computerName: 'test' })
+  const c = new Clique({ bin: BIN, computerName: 'test' })
   clearTimeout(c.changeTimer)
   return c
 }
@@ -705,11 +705,11 @@ const quit = (c) => {
   for (const h of c.hubs.values()) h.dispose()
 }
 
-test('a workspace made in the app: its look, folder and crew, then on screen; renamed, and removed with its files kept', async () => {
-  const c = await crewApp({ agents: roster() })
+test('a workspace made in the app: its look, folder and clique, then on screen; renamed, and removed with its files kept', async () => {
+  const c = await cliqueApp({ agents: roster() })
   const own = (id) => saved().workspaces.find((w) => w.id === id)
   try {
-    assert.deepEqual(c.workspaces().map((w) => [w.id, w.name, w.current]), [[ROOT, 'Home', true]], 'an older Crew left one: a workspace like any other')
+    assert.deepEqual(c.workspaces().map((w) => [w.id, w.name, w.current]), [[ROOT, 'Home', true]], 'an older CLIque left one: a workspace like any other')
     const { id, state } = c.workspaceAction('create', null, { name: 'Storefront app', color: 'teal', icon: '🛒', folder: API, members: ['june', 'nobody'] })
     assert.equal(id, 'storefront-app')
     assert.deepEqual(own(id), { id: 'storefront-app', name: 'Storefront app', members: { june: {} }, color: 'teal', icon: '🛒', folder: API })
@@ -738,7 +738,7 @@ test('a workspace made in the app: its look, folder and crew, then on screen; re
     assert.equal(c.here, c.hubs.get(ROOT))
     assert.equal(fs.readFileSync(path.join(HOME, 'workspaces', 'storefront-app', 'board.md'), 'utf8'), 'kept', 'its files stay, for if it comes back')
     assert.throws(() => c.workspaceAction('switch', 'nope'), /no such workspace/)
-    // the one an older Crew left goes like any other, and made again by that name it has its files back
+    // the one an older CLIque left goes like any other, and made again by that name it has its files back
     fs.writeFileSync(path.join(HOME, 'board.md'), 'kept too')
     c.workspaceAction('remove', ROOT)
     assert.deepEqual(c.workspaces().map((w) => w.id), ['storefront-app-2'])
@@ -759,7 +759,7 @@ test('a workspace made in the app: its look, folder and crew, then on screen; re
 })
 
 test('a workspace asleep wakes when you go to it, and when you send it a message: no Open to press', async () => {
-  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), parked: true }, home_()] })
+  const c = await cliqueApp({ layout: 2, agents: roster(), workspaces: [{ ...storefront(), parked: true }, home_()] })
   try {
     c.workspaceAction('switch', 'storefront')
     assert.equal(saved().workspaces[0].parked, undefined, 'going there woke it (and left nothing behind in config.json)')
@@ -780,7 +780,7 @@ test('a workspace asleep wakes when you go to it, and when you send it a message
 })
 
 test('the order workspaces are listed in: changed from the app, any of them first, the ones not named after the rest', async () => {
-  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
+  const c = await cliqueApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
   try {
     c.workspaceAction('create', null, { name: 'Docs' })
     c.workspaceAction('create', null, { name: 'Lab' })
@@ -797,7 +797,7 @@ test('the order workspaces are listed in: changed from the app, any of them firs
 })
 
 test("who works in a workspace: shared agents join and leave from the app, each with a folder of its own there or the workspace's", async () => {
-  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
+  const c = await cliqueApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
   try {
     c.workspaceAction('members', 'storefront', { add: ['iris', 'nobody'], remove: ['ada'], folders: { iris: APP, june: '' } })
     assert.deepEqual(saved().workspaces[0].members, { june: {}, iris: { folder: APP } })
@@ -815,7 +815,7 @@ test("who works in a workspace: shared agents join and leave from the app, each 
 })
 
 test("what the app does lands in the workspace on screen: its agents, edits, new agents and tasks; a linked computer's agents show in the workspace it has too", async () => {
-  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()], current: 'storefront' })
+  const c = await cliqueApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()], current: 'storefront' })
   try {
     assert.equal(c.here, c.hubs.get('storefront'))
     assert.deepEqual(c.snapshot().agents.map((a) => a.name), ['june', 'ada', 'milo'])
@@ -885,7 +885,7 @@ test('the switcher counts every workspace: who works, who needs you, and replies
 })
 
 test("a parked workspace's agents don't start behind its back: restart refuses, a new conversation waits for it to open", () => {
-  crew({ autopilot: true, agents: roster(), workspaces: [{ ...storefront(), parked: true }] })
+  clique({ autopilot: true, agents: roster(), workspaces: [{ ...storefront(), parked: true }] })
   ws.start('http://127.0.0.1:1')
   ws.saveSession('june', 'sess-storefront')
   assert.throws(() => ws.restart('june'), /asleep: send a message there to wake it/)
@@ -895,7 +895,7 @@ test("a parked workspace's agents don't start behind its back: restart refuses, 
 })
 
 test("made with members' own folders, they start there the first time; a shared agent can't take an own agent's name there", async () => {
-  const c = await crewApp({ layout: 2, agents: [...roster(), { name: 'milo', area: 'shared docs' }], workspaces: [storefront(), home_()] })
+  const c = await cliqueApp({ layout: 2, agents: [...roster(), { name: 'milo', area: 'shared docs' }], workspaces: [storefront(), home_()] })
   try {
     let pushed = null
     c.on('state', (s) => (pushed = s))
@@ -912,7 +912,7 @@ test("made with members' own folders, they start there the first time; a shared 
 })
 
 test("your accounts' limits: said once, where you are, whichever workspace's agent reports them; the pace counts every workspace's readings", async () => {
-  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()], current: ROOT })
+  const c = await cliqueApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()], current: ROOT })
   try {
     const notices = []
     c.on('notice', (n) => notices.push(n))
@@ -952,7 +952,7 @@ test('a file is edited by one agent at a time, whichever workspace it works in; 
   const no = JSON.parse(ws.lease('milo', edit(file))).hookSpecificOutput
   assert.equal(no.permissionDecision, 'deny')
   assert.match(no.permissionDecisionReason, /edited by june in your Home workspace/)
-  assert.doesNotMatch(no.permissionDecisionReason, /crew ask/, "it can't ask an agent in another workspace")
+  assert.doesNotMatch(no.permissionDecisionReason, /clique ask/, "it can't ask an agent in another workspace")
   assert.match(ws.feed.at(-1).file, /rates\.js/)
   assert.equal(ws.feed.at(-1).in, 'Home')
   assert.ok(ws.lease('june', edit(file)), "Storefront's june is another agent: turned away too")
@@ -962,7 +962,7 @@ test('a file is edited by one agent at a time, whichever workspace it works in; 
   assert.equal(home.leases.get(fileKey(filePath(file, API))).ws, 'storefront', 'one record: Home sees Storefront has it')
 })
 
-test('crew lease: one simulator for every workspace; it goes to whoever waits for it, in any of them', async () => {
+test('clique lease: one simulator for every workspace; it goes to whoever waits for it, in any of them', async () => {
   atWork(home, 'iris')
   atWork(ws, 'milo')
   assert.match(await home.claim({ from: 'iris', words: ['simulator', 'QA pass'] }), /Yours now: simulator/)
@@ -988,14 +988,14 @@ test('a lease of yours is saved with the workspace you took it in, whichever tha
   ws.give({ from: 'you', words: ['android device'] })
 })
 
-test('a linked computer: its terminals show in their own workspace, typing reaches the right one, and an older Crew is told to update', async () => {
-  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()], current: 'storefront' })
+test('a linked computer: its terminals show in their own workspace, typing reaches the right one, and an older CLIque is told to update', async () => {
+  const c = await cliqueApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()], current: 'storefront' })
   try {
     const { EventEmitter: Emitter } = await import('node:events')
     const peer = Object.assign(new Emitter(), { name: 'Laptop', push() {}, input() {}, close() {} })
     peer.call = async (fn) => {
       if (fn === 'state') return { agents: [], feed: [], tasks: { tickets: [] }, providers: {} }
-      throw new Error(`"${fn}" isn't available over Crew Link`) // an older Crew: no workspaces
+      throw new Error(`"${fn}" isn't available over CLIque Link`) // an older CLIque: no workspaces
     }
     const l = c.attach(peer)
     await new Promise((r) => setTimeout(r, 10))
@@ -1004,8 +1004,8 @@ test('a linked computer: its terminals show in their own workspace, typing reach
     c.on('pty', (n, d) => pty.push([n, d]))
     const key = c.keyOf('storefront')
     peer.emit('pty', `${key}/milo`, 'storefront output')
-    peer.emit('pty', 'storefront/milo', 'by bare id') // an older Crew's way: no workspace here has that key
-    peer.emit('pty', 'ann', 'no workspace') // an older Crew's other way: nothing here
+    peer.emit('pty', 'storefront/milo', 'by bare id') // an older CLIque's way: no workspace here has that key
+    peer.emit('pty', 'ann', 'no workspace') // an older CLIque's other way: nothing here
     assert.deepEqual(pty, [['milo@laptop', 'storefront output']])
     const typed = []
     for (const [id, h] of c.hubs) h.input = (n, d) => typed.push([id, n, d])
@@ -1020,7 +1020,7 @@ test('a linked computer: its terminals show in their own workspace, typing reach
 })
 
 test("a linked computer's own workspaces show up here on their own, as its; hidden ones stay hidden; one it drops goes", async () => {
-  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
+  const c = await cliqueApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
   try {
     const { EventEmitter: Emitter } = await import('node:events')
     const pushed = []
@@ -1033,7 +1033,7 @@ test("a linked computer's own workspaces show up here on their own, as its; hidd
     peer.call = async (fn) => {
       if (fn === 'state') return { agents: [], feed: [], tasks: { tickets: [] }, providers: {} }
       if (fn === 'workspaces') return theirs
-      throw new Error(`"${fn}" isn't available over Crew Link`)
+      throw new Error(`"${fn}" isn't available over CLIque Link`)
     }
     const before = c.current
     const l = c.attach(peer)
@@ -1103,7 +1103,7 @@ test("a linked computer's own workspaces show up here on their own, as its; hidd
 })
 
 test("a connection that loses to another doesn't take the winner's workspaces with it", async () => {
-  const c = await crewApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
+  const c = await cliqueApp({ layout: 2, agents: roster(), workspaces: [storefront(), home_()] })
   try {
     const { EventEmitter: Emitter } = await import('node:events')
     const answers = []

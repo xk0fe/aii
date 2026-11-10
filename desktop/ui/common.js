@@ -1,12 +1,12 @@
 // Shared rendering for the three views. Plain functions and template strings; views re-render on every state push.
-/* global crew, avatarHTML, avatarOf, agentColor, mountVoice */
+/* global clique, avatarHTML, avatarOf, agentColor, mountVoice */
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 // ---- this computer: a Mac or a Windows PC (preload.cjs says which) ---------------------------------------------------
 // Its keys (⌘ or Ctrl), its words (this Mac, this PC) and how its paths are written. The page's <html> says it too
 // (data-os="mac" or "win"), for the CSS: the fonts, and room for Windows' window buttons in the dashboard's titlebar.
-const ON_WINDOWS = window.crew?.platform === 'win32'
+const ON_WINDOWS = window.clique?.platform === 'win32'
 document.documentElement.dataset.os = ON_WINDOWS ? 'win' : 'mac'
 const THIS_COMPUTER = ON_WINDOWS ? 'this PC' : 'this Mac'
 const upFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -22,7 +22,7 @@ function keys(mac) {
 }
 // Every shortcut in a hint, as this computer writes them: "Find an agent (⌘F)" is "Find an agent (Ctrl+F)" on Windows.
 const keysIn = (text) => (ON_WINDOWS ? String(text).replace(/[⌃⌥⇧⌘]+[^\s),]+/g, keys) : String(text))
-// The key Crew's shortcuts go with: ⌘ on a Mac, Ctrl on Windows (not AltGr, which is Ctrl+Alt there and types letters).
+// The key CLIque's shortcuts go with: ⌘ on a Mac, Ctrl on Windows (not AltGr, which is Ctrl+Alt there and types letters).
 const commandKey = (e) => (ON_WINDOWS ? e.ctrlKey && !e.metaKey && !e.getModifierState?.('AltGraph') : e.metaKey && !e.ctrlKey)
 // The workspaces' key: ⌃ on a Mac, Alt on Windows.
 const workspaceKey = (e) => (ON_WINDOWS ? e.altKey && !e.ctrlKey && !e.metaKey && !e.getModifierState?.('AltGraph') : e.ctrlKey && !e.metaKey && !e.altKey)
@@ -33,11 +33,11 @@ const workspaceKey = (e) => (ON_WINDOWS ? e.altKey && !e.ctrlKey && !e.metaKey &
 const HOME_DIR = /^(?:\/Users\/(?!Shared(?:\/|$))[^/]+|\/home\/[^/]+|[A-Za-z]:[\\/]Users[\\/](?!(?:Public|Default|All Users)(?:[\\/]|$))[^\\/]+)(?=[\\/]|$)/i
 function tildePath(p) {
   const s = String(p ?? '')
-  const home = window.crew?.home || null
+  const home = window.clique?.home || null
   const inHome = home && (ON_WINDOWS ? s.toLowerCase().startsWith(home.toLowerCase()) : s.startsWith(home)) && (s.length === home.length || /[\\/]/.test(s[home.length]))
   return inHome ? `~${s.slice(home.length)}` : s.replace(HOME_DIR, '~')
 }
-// The same in a field you type in. On Windows it stays written out: Crew reads ~ only as ~/ (~/code/app), and
+// The same in a field you type in. On Windows it stays written out: CLIque reads ~ only as ~/ (~/code/app), and
 // C:\Users\you\code\app is what Windows writes.
 const pathField = (p) => (ON_WINDOWS ? String(p ?? '') : tildePath(p))
 // A path's folders, split on either separator when it's written the Windows way.
@@ -46,7 +46,7 @@ const pathParts = (p) => String(p ?? '').split(/^[A-Za-z]:|\\/.test(String(p ?? 
 const svg = (paths, attrs = '') =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${attrs}>${paths}</svg>`
 
-// Crew's mark: three little mochis in a huddle. Eyes are evenodd holes, so the same shape works as the
+// CLIque's mark: three little mochis in a huddle. Eyes are evenodd holes, so the same shape works as the
 // menu bar template icon; each buddy is its own path (.m0 .m1 .m2) so CSS can make them hop in turn.
 // split: each buddy in an <svg> of its own (in a span), stacked into the same picture, so a hop is a transform on an
 // HTML element, which the compositor can play (the pill's buddies hop for as long as anyone works).
@@ -96,7 +96,7 @@ const ICONS = {
   reply: svg('<path d="M9.5 14.5 4 9l5.5-5.5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5V20"/>'),
   subs: svg('<circle cx="5.5" cy="5.5" r="2.5"/><circle cx="18.5" cy="11" r="2.5"/><circle cx="18.5" cy="19" r="2.5"/><path d="M5.5 8v7a4 4 0 0 0 4 4H16M5.5 11H16"/>'),
   thread: svg('<path d="M5 4v6.5A3.5 3.5 0 0 0 8.5 14H19M15 10l4 4-4 4"/>'),
-  // right of way: the yield sign, for Crew deciding who goes first
+  // right of way: the yield sign, for CLIque deciding who goes first
   yield: svg('<path d="M4.6 5h14.8a1.1 1.1 0 0 1 .95 1.66l-7.4 12.5a1.1 1.1 0 0 1-1.9 0L3.65 6.66A1.1 1.1 0 0 1 4.6 5z"/><path d="M8.6 8.4h6.8L12 14.2z" fill="currentColor" stroke="none" opacity=".35"/>'),
   arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>', 'stroke-width="2.2"'),
   undo: svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', 'stroke-width="2.4"'),
@@ -278,13 +278,22 @@ const store = {
   get: (k) => { try { return localStorage.getItem(k) } catch { return null } },
   set: (k, v) => { try { localStorage.setItem(k, v) } catch {} },
 }
+// What a window remembers was kept under crew.… before the app's rename: carried over to clique.…, once.
+try {
+  if (!localStorage.getItem('clique.carried')) {
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith('crew.') && localStorage.getItem(`clique.${k.slice(5)}`) === null) localStorage.setItem(`clique.${k.slice(5)}`, localStorage.getItem(k) === 'crew' ? 'clique' : localStorage.getItem(k)) // (a place or a step named crew is named clique now)
+    }
+    localStorage.setItem('clique.carried', '1')
+  }
+} catch {}
 
 function ago(ts) {
   const s = (Date.now() - ts) / 1000
   return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
 }
 
-// An agent whose `crew ask` is waiting on a teammate's answer (core/hub.js question): it isn't working, it's waiting.
+// An agent whose `clique ask` is waiting on a teammate's answer (core/hub.js question): it isn't working, it's waiting.
 const blockedOn = (a) => (a.status === 'working' && a.waitingOn?.length ? a.waitingOn : null)
 const waitText = (on) => `waiting on @${on[0].name}${on.length > 1 ? ` +${on.length - 1}` : ''} · ${ago(on[0].since)}`
 // Its status as a class (dots, status words): 'blocked' while it waits on a teammate, else its status.
@@ -342,7 +351,7 @@ function flipped(name, mode, actual) {
 
 // YOLO and Fast as chips that toggle in place. Modes that are off only show up when you hover the row.
 function modeChips(a) {
-  if (a.system) return '' // Q's shell runs crew and asks about the rest: no YOLO for him
+  if (a.system) return '' // Q's shell runs clique and asks about the rest: no YOLO for him
   const turn = (on) => `Click to turn ${on ? 'off' : 'on'}`
   const yolo = flipped(a.name, 'yolo', Boolean(a.yolo))
   const yoloTip = a.pending ? 'Restarts with the new YOLO setting as soon as it is free' : `YOLO ${yolo ? 'on' : 'off'}: skip every permission prompt. ${turn(yolo)}`
@@ -395,7 +404,7 @@ const SPEND_NOTE = 'Priced as Claude Code prices it in /cost (API rates). On a s
 // What an agent's work has cost: "$87" for Claude, "3.4M tokens" for Codex (which reports tokens, not money).
 const spentText = (s, { short = false } = {}) => (s.cost >= 0.005 ? money(s.cost) : s.tokens ? `${tokenCount(s.tokens)} ${short ? 'tok' : 'tokens'}` : '')
 const linesText = (s) => (s.linesAdded || s.linesRemoved ? `+${s.linesAdded.toLocaleString('en-US')} −${s.linesRemoved.toLocaleString('en-US')} lines` : '')
-// The crew's spend today against what it usually is by this time of day: "$42 today · 18% over usual by now".
+// The clique's spend today against what it usually is by this time of day: "$42 today · 18% over usual by now".
 function spendLine(sp) {
   if (!sp || !(sp.today >= 0.005 || sp.week >= 0.005)) return ''
   const usual = sp.usual >= 0.005 ? Math.round(((sp.today - sp.usual) / sp.usual) * 100) : null
@@ -465,7 +474,7 @@ function usageChip(state) {
 }
 
 // The account an agent runs on: its provider's on its own computer. An agent on a linked computer runs on that
-// computer's account, which reports its limits to us with the rest of that computer's state (Crew.linkedUsage).
+// computer's account, which reports its limits to us with the rest of that computer's state (Clique.linkedUsage).
 function usageOf(a, state) {
   const all = a.home ? state.computers?.links?.find((l) => l.slug === a.home)?.usage : state.usage
   const u = all?.[a.provider]
@@ -512,7 +521,7 @@ const subsChip = (a) => {
   return subs.length ? `<span class="subs-chip" title="${esc(`${plural(subs.length, 'sub-agent')} working:\n${subsTip(subs)}`)}">${ICONS.subs}${subs.length}</span>` : ''
 }
 
-// ---- the crew roster: the sidebar and the menu bar ------------------------------------------------------
+// ---- the clique roster: the sidebar and the menu bar ------------------------------------------------------
 // Agents grouped by the computer they run on (once there's more than one), each group in your own order, so a
 // row never jumps when an agent changes status. Agents that are off fold into one line at the end of their group.
 // Every row is one glance: the creature (it hops while working, wiggles with a "!" when it needs you, sleeps
@@ -521,7 +530,7 @@ const subsChip = (a) => {
 
 // [{ key, name, here, online, agents, clones }], this computer first, then linked ones in the order they were
 // linked. Clones aren't agents of their own: they go under their agent's row.
-function crewGroups(state) {
+function cliqueGroups(state) {
   const c = state.computers ?? { me: {}, links: [] }
   const group = (key, name, online, here = false) => ({ key, name, here, online, agents: [], clones: [] })
   const groups = new Map([['', group('', c.me?.name || 'This computer', true, true)]])
@@ -560,10 +569,10 @@ const urlHost = (url) => {
     return ''
   }
 }
-// crew's own commands (core/adapters.js), then package scripts by their name, then the command itself
+// clique's own commands (core/adapters.js), then package scripts by their name, then the command itself
 function commandWords(cmd) {
   const c = String(cmd).replace(/^(?:cd\s+\S+\s*&&\s*)+/, '').trim()
-  const own = c.match(/^crew\s+(ask|send|lease|note|board)\b\s*([\w@.-]*)/)
+  const own = c.match(/^clique\s+(ask|send|lease|note|board)\b\s*([\w@.-]*)/)
   if (own) {
     const [, verb, what] = own
     const who = what.split('@')[0] || 'a teammate'
@@ -595,10 +604,10 @@ function activityWords(text) {
 }
 
 // Modes that are on, as marks beside the name: YOLO, a quiet tag (Fast is a word in its model line). And what it
-// has leased (crew lease), so you can see who's on the simulator.
+// has leased (clique lease), so you can see who's on the simulator.
 const modeMarks = (a) =>
   (a.yolo ? '<i class="mark-yolo" title="YOLO: skips every permission prompt">YOLO</i>' : '') +
-  (a.holds?.length ? `<i class="mark-holds" title="${esc(`Has ${a.holds.join(', ')} (crew lease): nobody else uses it until it's done`)}">${esc(a.holds.join(', '))}</i>` : '')
+  (a.holds?.length ? `<i class="mark-holds" title="${esc(`Has ${a.holds.join(', ')} (clique lease): nobody else uses it until it's done`)}">${esc(a.holds.join(', '))}</i>` : '')
 
 // Its clones at work, as their little faces and how many: click to show or fold their rows under it.
 function cloneCount(a, clones, open) {
@@ -610,7 +619,7 @@ function cloneCount(a, clones, open) {
 // The dot on a creature's shoulder: only where status is the message (working, needing you).
 const shoulderDot = (a) => (a.on && a.status === 'waiting' ? '<i class="dot needs"></i>' : a.on && a.status === 'working' && !blockedOn(a) ? '<i class="dot working"></i>' : '')
 
-function crewRow(a, { selected = false, drag = false, clones = [], clonesOpen = false, ask, providers } = {}) {
+function cliqueRow(a, { selected = false, drag = false, clones = [], clonesOpen = false, ask, providers } = {}) {
   const line = rowLine(a, ask)
   const later = a.freshPending ? 'new conversation when free' : a.pending ? 'restarts when free' : ''
   const tip = [`${a.name}${a.area ? ` · ${a.area}` : ''}`, statusText(a), later, a.queue ? `${a.queue} queued` : ''].filter(Boolean).join('\n')
@@ -649,7 +658,7 @@ function rosterHTML(state, opts) {
 function rosterParts(state, { folds = new Set(), selected, filter = '', drag = false } = {}) {
   const q = filter.trim().toLowerCase()
   const match = (a) => !q || `${a.name} ${a.area ?? ''}`.toLowerCase().includes(q)
-  const groups = crewGroups(state)
+  const groups = cliqueGroups(state)
   const headed = grouped(groups)
   const asks = askTypes(state)
   const providers = state.providers ?? {}
@@ -670,7 +679,7 @@ function rosterParts(state, { folds = new Set(), selected, filter = '', drag = f
     // its clones fold into a count on its row (and unfold on a click, or when one of them is the one you picked)
     const brood = (a) => g.clones.filter((c) => c.cloneOf === a.name)
     const clonesOpen = (a) => Boolean(q) || folds.has(`clones:${a.name}`) || brood(a).some((c) => c.name === selected)
-    const row = (a, extra = {}) => crewRow(a, { selected: a.name === selected, drag: drag && headed, ask: asks.get(a.name), providers, ...extra })
+    const row = (a, extra = {}) => cliqueRow(a, { selected: a.name === selected, drag: drag && headed, ask: asks.get(a.name), providers, ...extra })
     const rows = on.flatMap((a) => [
       row(a, { clones: brood(a), clonesOpen: clonesOpen(a) }),
       ...(clonesOpen(a) ? brood(a).map((c) => cloneRow(c, { selected: c.name === selected })) : []),
@@ -700,7 +709,7 @@ const unreadBadge = (n) => (n ? `<span class="unread-badge" title="${plural(n, '
 
 // "2 working · 1 needs you" as little pills, for the headers of every view.
 // unread: also count new replies (the dashboard's wide titlebar; narrow headers have the pill's badge instead)
-function crewSummary(state, { unread = false } = {}) {
+function cliqueSummary(state, { unread = false } = {}) {
   const on = state.agents.filter((a) => a.on) // clones too: each one working counts
   const agents = on.filter((a) => !a.cloneOf).length
   const blocked = on.filter((a) => blockedOn(a)).length
@@ -738,7 +747,7 @@ function needText({ agent, ask }) {
   return q.code ? `Wants to run ${q.code.split('\n')[0]}` : `Wants to use ${q.title ?? 'a tool'}`
 }
 
-// ---- workspaces: each project the crew works on, with its own chat, tasks and agents (core/workspaces.js) ----------
+// ---- workspaces: each project the clique works on, with its own chat, tasks and agents (core/workspaces.js) ----------
 
 // A workspace's color: one of the creatures' (avatar.js), or any CSS color.
 const wsColor = (w) => (w?.color ? COLORS[w.color] ?? w.color : null)
@@ -1250,7 +1259,7 @@ function threadCard(t, ctx) {
 // How far you've read each thread, per workspace: only ones you've opened (the newest 200). Kept in this window's
 // storage, which the floating chat shares.
 const threadReads = {
-  key: (ws) => `crew.threads.${ws ?? ''}`,
+  key: (ws) => `clique.threads.${ws ?? ''}`,
   all(ws) {
     try {
       return JSON.parse(store.get(threadReads.key(ws)) ?? '{}')
@@ -1408,10 +1417,10 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const link = ev.target.closest('a[href]')
     if (link) {
       ev.preventDefault()
-      return crew.call('openUrl', link.href)
+      return clique.call('openUrl', link.href)
     }
     const pic = ev.target.closest('[data-open]')
-    if (pic) return crew.call('openFile', pic.dataset.open)
+    if (pic) return clique.call('openFile', pic.dataset.open)
     const who = ev.target.closest('[data-agent]')
     if (who) return onAgent?.(who.dataset.agent)
     const card = ev.target.closest('[data-card]')
@@ -1439,7 +1448,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
       const channel = root?.channel
       const who = target()
       if (!who) throw new Error('nobody left in this thread to send it to')
-      await crew.call('send', who, text, [], { ...(last && { re: last.id }), thread: key, ...(channel && { channel }) })
+      await clique.call('send', who, text, [], { ...(last && { re: last.id }), thread: key, ...(channel && { channel }) })
       drafts.delete(key)
       ta.value = ''
       ta.style.height = ''
@@ -1579,7 +1588,7 @@ function feedItem(e, prev, ctx) {
   const quote = orig ? `<button class="quote" data-jump="${orig.id}" style="--qc:${tint(orig.from)}" title="Jump to the message this answers">${ICONS.reply}<b>${orig.from === 'you' ? 'You' : label(orig.from)}</b><span>${esc(quoted)}</span></button>` : ''
   // ...and a message you sent links forward to the agents' replies.
   const answers = repliesTo[e.id] ?? []
-  // a teammate's question (crew ask) says who answered and how long it took, or why no answer came
+  // a teammate's question (clique ask) says who answered and how long it took, or why no answer came
   const done = e.ask && e.answered
   const replied = done
     ? `<button class="replied answered${done.why ? ' none' : ''}" ${done.reply ? `data-jump="${done.reply}"` : ''} title="${done.reply ? 'Jump to the answer' : ''}">${done.why ? ICONS.dash : ICONS.check}<span>@${at(done.by)} ${done.why ? esc(done.why) : `answered in ${duration(done.at - e.ts)}`}</span></button>`
@@ -1603,7 +1612,7 @@ function feedItem(e, prev, ctx) {
   const said = (cls, capHTML, rest = '', body = bubble, withTools = true) =>
     `<div class="item said ${cls}${cont}${fresh ? ' unread' : ''}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"${seen}><span class="face${here(e.from)}" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: ctx.face, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div>${withTools ? tools : ''}</div>`
 
-  // sent to the crew with nobody named: Auto chose who took it, not you
+  // sent to the clique with nobody named: Auto chose who took it, not you
   const toLine = (names) => `${e.auto ? 'Auto picked' : 'to'} ${names.map(who).join(' ')}`
   const toWhom = (names) => (ctx.here && names.every((n) => familyOf(n) === familyOf(ctx.here)) ? '' : `<span class="to">${toLine(names)}</span>`)
   const mine = (cls, body) => `<div class="item said mine ${cls}${cont}" id="m-${e.id}" title="${time}"><span class="face">${cont ? '' : YOU_FACE}</span><div class="stack">${cap(`<span class="you">You</span>${toWhom(e.cc ?? [e.to])}`)}${body}${replied}</div>${withTools(cls)}</div>`
@@ -1645,8 +1654,8 @@ function feedItem(e, prev, ctx) {
   return said(`handoff ${e.dropped ? 'dropped' : ''}`, `${name(e.from)}<span class="via" title="handed off to">${ICONS.arrow}</span>${name(e.to)}`, actions)
 }
 
-// ---- right of way (core/hub.js question, lease, decline): Crew deciding who goes first ----------------------------
-// One quiet line in the chat each time Crew steps in, saying who was stopped from what and why. Hover it for the rule.
+// ---- right of way (core/hub.js question, lease, decline): CLIque deciding who goes first ----------------------------
+// One quiet line in the chat each time CLIque steps in, saying who was stopped from what and why. Hover it for the rule.
 const RULES = {
   loop: {
     text: (e, who) => {
@@ -1665,7 +1674,7 @@ const RULES = {
   },
   lease: {
     text: (e, who) => `${who(e.from)} waited for <b class="rule-file">${esc(e.thing)}</b>: ${who(e.to)}${e.in ? ` in ${esc(e.in)}` : ''} is using it`,
-    tip: "Right of way: one agent uses a simulator, a device or a port at a time (crew lease). It's free again once the agent using it gives it back or finishes its turn.",
+    tip: "Right of way: one agent uses a simulator, a device or a port at a time (clique lease). It's free again once the agent using it gives it back or finishes its turn.",
   },
   decline: {
     text: (e, who) => `<b>#${esc(String(e.ticket).split('@')[0])}</b> ${e.to ? `went to ${who(e.to)}: ${who(e.from)} declined it` : `is back on To do: ${who(e.from)} declined it, and no one else's area fits`}` + (e.text ? `<span class="rule-why">“${esc(snippet(e.text))}”</span>` : ''),
@@ -1676,7 +1685,7 @@ const RULES = {
 // One look for all of them, like a group chat's system lines: an icon where the faces go, the words beside it, wrapping
 // under themselves. The icon says what it's about (by the hub's words, so lines from before say it too), berry when it
 // needs you. Agents go by their plain names; CLIque's own lines have its mark and start with a capital (they used to
-// follow "@crew").
+// follow "@clique").
 const EVENT_ICONS = [
   [/^(exited|quit\b|failed to start|can't start)|still running for a workspace|left (a|\d+) process/, 'power'],
   [/^woke up/, 'sun'],
@@ -1689,22 +1698,22 @@ const EVENT_ICONS = [
   [/another app already uses it/, 'keyboard'],
   [/terminal/, 'terminal'],
 ]
-const eventIcon = (e) => (e.limit ? 'gauge' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'crew' ? 'mark' : null))
+const eventIcon = (e) => (e.limit ? 'gauge' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'clique' ? 'mark' : null))
 // "Rex", "Rex and Noor", "Rex, Noor and Ada", "Rex, Noor and 3 others" (names as HTML)
 const andList = (list) => (list.length > 3 ? `${list.slice(0, 2).join(', ')} and ${list.length - 2} others` : list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0] ?? '')
 
-// name(n): an agent's name as the chat shows it; known(n): whether n is one of the crew (an @name in the words). A linked
-// computer's line (its id ends in @that-computer, see Crew.snapshot) names its own agents: its @ada is ada@that-computer
+// name(n): an agent's name as the chat shows it; known(n): whether n is one of the clique (an @name in the words). A linked
+// computer's line (its id ends in @that-computer, see Clique.snapshot) names its own agents: its @ada is ada@that-computer
 // here, and its @ada@this-computer is our ada.
 function eventLine(e, name, time, known) {
   const icon = eventIcon(e)
   const there = String(e.id).split('@')[1]
   const whose = (n) => (!there ? n : !n.includes('@') ? `${n}@${there}` : known(n) ? n : n.split('@')[0])
-  const words = e.from === 'crew' ? e.text.charAt(0).toUpperCase() + e.text.slice(1) : e.text
+  const words = e.from === 'clique' ? e.text.charAt(0).toUpperCase() + e.text.slice(1) : e.text
   const text = esc(words)
     .replace(/@([\w-]+(?:\.\d+)?(?:@[\w-]+)?)/g, (m, n) => (known(whose(n)) ? name(whose(n)) : m))
     .replace(/ \((code \d+)\)$/, ' <span class="ev-quiet">($1)</span>')
-  const who = e.from === 'crew' ? '' : `${andList((e.group ?? [e.from]).map(name))} `
+  const who = e.from === 'clique' ? '' : `${andList((e.group ?? [e.from]).map(name))} `
   const body = e.limit ? limitLine(e.limit) : `${who}${text}`
   return `<div class="event${e.alert ? ' alert' : ''}" id="m-${e.id}" title="${time}"><span class="ev-icon">${icon ? ICONS[icon] : '<i class="ev-dot"></i>'}</span><div class="ev-text">${body}</div></div>`
 }
@@ -1725,7 +1734,7 @@ function sameEvents(list) {
   const out = []
   for (const e of list) {
     const last = out.at(-1)
-    const joins = e.kind === 'event' && last?.kind === 'event' && !e.fresh && !last.fresh && !e.limit && !last.limit && e.from !== 'crew' && last.from !== 'crew' &&
+    const joins = e.kind === 'event' && last?.kind === 'event' && !e.fresh && !last.fresh && !e.limit && !last.limit && e.from !== 'clique' && last.from !== 'clique' &&
       e.text === last.text && !e.alert === !last.alert && e.channel === last.channel && e.ts - (last.until ?? last.ts) < 60000 && !(last.group ?? [last.from]).includes(e.from)
     if (joins) out[out.length - 1] = { ...last, group: [...(last.group ?? [last.from]), e.from], ids: [...(last.ids ?? [last.id]), e.id], until: e.ts }
     else out.push(e)
@@ -1746,7 +1755,7 @@ function ruleLine(e, who, time) {
 function askCard(e, draft = {}, { queue = false } = {}) {
   const q = e.ask ?? {}
   const name = esc(String(e.from).split('@')[0].replace(/\.(\d+)$/, ' $1')) // a clone, Theo.2: "Theo 2"
-  // an agent tool (crew app, core/tools.js) is about CLIque itself: its mark, not a tool's shield
+  // an agent tool (clique app, core/tools.js) is about CLIque itself: its mark, not a tool's shield
   const icon = q.app ? ICONS.mark : ICONS[{ permission: 'shield', question: 'ask', plan: 'plan' }[q.type] ?? 'ask']
   if (e.answer) return `<div class="ask-card done" data-ask="${e.id}">${askSummary(q, e.answer)}</div>`
   const code = q.code ? `<pre class="ask-code"><code>${esc(q.code)}</code></pre>` : ''
@@ -1860,7 +1869,7 @@ function askSummary(q, a) {
 // Who's on it right now, under the last message: one slim line per busy agent with what it's doing, and an
 // orange Answer button when it needs you. asks: agent -> its open question's id, so the line can point at the
 // card instead of the terminal.
-// With a big crew the line would push the chat off screen, so it shows the agents waiting on you first, then
+// With a big clique the line would push the chat off screen, so it shows the agents waiting on you first, then
 // who's working, up to three, and folds the rest into one line of faces (click it for all of them).
 const TYPING_ROWS = 3
 function typingHTML(agents, asks, opts) {
@@ -1868,12 +1877,12 @@ function typingHTML(agents, asks, opts) {
 }
 
 // The same, in parts for morph(): each row, and each one's sub-agents, a part of its own.
-// crew: everyone, to draw the teammates a line mentions (the one an agent is waiting on, the ones waiting on it).
-// queue: the chat has a Needs you queue, so agents waiting on you are there instead, and with a busy crew only the
+// clique: everyone, to draw the teammates a line mentions (the one an agent is waiting on, the ones waiting on it).
+// queue: the chat has a Needs you queue, so agents waiting on you are there instead, and with a busy clique only the
 // first few at work show (the roster has everyone).
 // cards: questions are cards in the conversation, answered there (the dashboard), so an agent waiting on one of them
 // has no line of its own; one asking in its terminal still has.
-function typingParts(agents, asks = new Map(), { all = false, crew = agents, queue = false, cards = false, threads = null } = {}) {
+function typingParts(agents, asks = new Map(), { all = false, clique = agents, queue = false, cards = false, threads = null } = {}) {
   const active = agents.filter((a) => a.on && (a.status === 'working' || a.status === 'waiting' || a.subs?.length || (a.cloneOf && a.status === 'starting'))) // a new clone shows up right away
     .filter((a) => !queue || a.status !== 'waiting')
     .filter((a) => !cards || a.status !== 'waiting' || !asks.get(a.name))
@@ -1881,7 +1890,7 @@ function typingParts(agents, asks = new Map(), { all = false, crew = agents, que
   const many = ordered.length > TYPING_ROWS + 1
   const shown = many && !all ? ordered.slice(0, TYPING_ROWS) : ordered
   const rest = many && !all ? ordered.slice(TYPING_ROWS) : []
-  const byName = Object.fromEntries(crew.map((x) => [x.name, x]))
+  const byName = Object.fromEntries(clique.map((x) => [x.name, x]))
   const someone = (n) => byName[n] ?? cloneGhost(n, byName) ?? { name: n }
   const rows = shown.flatMap((a) => {
     const on = blockedOn(a)
@@ -1904,7 +1913,7 @@ function typingParts(agents, asks = new Map(), { all = false, crew = agents, que
   return [...rows, more].filter(Boolean)
 }
 
-// An agent waiting on a teammate's answer (its `crew ask`): who it's waiting on, what it asked, and for how long. It
+// An agent waiting on a teammate's answer (its `clique ask`): who it's waiting on, what it asked, and for how long. It
 // rests instead of hopping, in the calm color of waiting rather than the orange of "needs you". Click for its question.
 function waitRow(a, on, someone) {
   const w = on[0]
@@ -1994,7 +2003,7 @@ function markWords(root, words) {
 // onFound: a search result was clicked, so the search is over and the chat shows that message where it was.
 // welcome(): what everyone's chat shows while it has no messages at all (the dashboard's first steps), or nothing.
 // onChannel(id): a jump to a message in another channel (the dashboard opens that channel).
-function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply, onThread, onTicket = (key) => crew.call('dashboard', `task:${key}`), onFound, welcome, limit = 200, inline = false, face = 28 } = {}) {
+function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply, onThread, onTicket = (key) => clique.call('dashboard', `task:${key}`), onFound, welcome, limit = 200, inline = false, face = 28 } = {}) {
   const open = new Set()
   const seen = new Set()
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
@@ -2069,7 +2078,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     ;(open?.querySelector('.ask-card :is(button, input):not(:disabled)') ?? open?.querySelector('button') ?? queue.querySelector('.nq-go'))?.focus({ preventScroll: true })
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) queue.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.02)' }, { transform: 'scale(1)' }], { duration: DUR.move + 100, easing: EASE.out })
   }
-  document.addEventListener('crew:needs', (ev) => {
+  document.addEventListener('clique:needs', (ev) => {
     if (!el.isConnected) return
     const name = ev.detail?.name
     showNeeds(name ? [...(inline ? shown : queued).values()].find((e) => e.kind === 'ask' && !e.answer && e.from === name)?.id : null)
@@ -2165,7 +2174,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     const link = ev.target.closest('a[href]')
     if (link) {
       ev.preventDefault()
-      return crew.call('openUrl', link.href)
+      return clique.call('openUrl', link.href)
     }
     const opener = ev.target.closest('[data-needs-open]')
     if (opener) return showNeeds(opener.dataset.needsOpen)
@@ -2209,17 +2218,17 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     // conversation with it
     const agent = ev.target.closest('[data-agent]')
     if (agent && agent.closest('.typing-list')) return onAgent?.(agent.dataset.agent)
-    // (the crew itself, in its notices, isn't anyone to talk to). The one you're talking to, clicked again, lets
+    // (the clique itself, in its notices, isn't anyone to talk to). The one you're talking to, clicked again, lets
     // go of it: back to everyone's.
     if (agent && agent.dataset.agent === talkingTo) return onLeave?.()
     if (agent) return !last?.agents.some((a) => a.name === familyOf(agent.dataset.agent) || a.name === agent.dataset.agent) || onConvo?.(agent.dataset.agent)
     const act = ev.target.closest('[data-act]')
-    if (act) return crew.call(act.dataset.act, act.dataset.id)
+    if (act) return clique.call(act.dataset.act, act.dataset.id)
     const pic = ev.target.closest('[data-open]')
-    if (pic) return crew.call('openFile', pic.dataset.open)
+    if (pic) return clique.call('openFile', pic.dataset.open)
     const copy = ev.target.closest('[data-copy]')
     if (copy) {
-      crew.call('copy', copy.nextElementSibling.textContent)
+      clique.call('copy', copy.nextElementSibling.textContent)
       copy.innerHTML = ICONS.check
       copy.classList.add('done')
       return setTimeout(() => {
@@ -2248,7 +2257,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     card.classList.add('sending')
     card.querySelector('.ask-error').textContent = ''
     try {
-      await crew.call('answer', id, reply)
+      await clique.call('answer', id, reply)
       drafts.delete(id)
     } catch (err) {
       const now = el.querySelector(`[data-ask="${CSS.escape(id)}"]`) ?? card // it may have been re-rendered meanwhile
@@ -2347,7 +2356,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     const seenUpTo = {}
     // each reply is read in its own channel: 'ada#review', 'ada#general'
     for (const v of onScreen.values()) seenUpTo[`${v.from}#${v.channel || 'general'}`] = Math.max(seenUpTo[`${v.from}#${v.channel || 'general'}`] ?? 0, v.ts)
-    crew.call('read', seenUpTo, last?.workspace).catch(() => {})
+    clique.call('read', seenUpTo, last?.workspace).catch(() => {})
   }
   const soon = () => {
     clearTimeout(readTimer)
@@ -2531,7 +2540,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       // in a channel, the agents at work on something said there
       const atWork = convo ? agents.filter((a) => familyOf(a.name) === convo) : channel ? agents.filter((a) => (channels.some((c) => c.id === a.channel) ? a.channel : 'general') === channel) : agents
       const hasCard = new Set(view.items.filter((e) => e.kind === 'thread').map((e) => e.thread))
-      const busy = words.length ? [] : typingParts(atWork, asks, { all: typingAll, crew: agents, queue: !inline, cards: inline, threads: (id) => (id && hasCard.has(threadKey(id, view.as)) ? threadKey(id, view.as) : null) })
+      const busy = words.length ? [] : typingParts(atWork, asks, { all: typingAll, clique: agents, queue: !inline, cards: inline, threads: (id) => (id && hasCard.has(threadKey(id, view.as)) ? threadKey(id, view.as) : null) })
       let added = false
       if (!view.items.length) next += busy.length ? ':busy' : `:empty:${agents.find((a) => a.name === talkingTo)?.on}:${!convo && !words.length && (!channel || channel === 'general') ? welcome?.() ?? '' : ''}` // the empty-feed hint shows only when nobody's busy
       if (next !== key) {
@@ -2588,7 +2597,7 @@ function fileURL(p) {
 // Where a dropped file or folder is on disk ('' when it isn't one, or the page has no way to tell).
 const pathOf = (file) => {
   try {
-    return (file && crew.pathOf?.(file)) || ''
+    return (file && clique.pathOf?.(file)) || ''
   } catch {
     return ''
   }
@@ -2605,7 +2614,7 @@ function insertAt(value, start, end, text) {
 const isImage = (f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)
 
 // Images for a prompt: paste them, drop them, or pick them with the button. Each is saved under
-// ~/.crew/attachments and reaches the agent as a file path it can open. A folder dropped in isn't attached:
+// ~/.clique/attachments and reaches the agent as a file path it can open. A folder dropped in isn't attached:
 // onPaths gets its path, for the message to point at.
 function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) {
   let paths = []
@@ -2621,7 +2630,7 @@ function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) 
     if (files.length && !images.length) return onError?.(`Only PNG, JPEG, GIF and WebP images${onPaths ? ', or folders' : ''}`)
     for (const f of images) {
       try {
-        paths.push(await crew.call('saveImage', f.name, f.type, new Uint8Array(await f.arrayBuffer())))
+        paths.push(await clique.call('saveImage', f.name, f.type, new Uint8Array(await f.arrayBuffer())))
       } catch (e) {
         onError?.(errorLine(e))
       }
@@ -2668,7 +2677,7 @@ function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) 
       return draw()
     }
     const pic = e.target.closest('[data-open]')
-    if (pic) crew.call('openFile', pic.dataset.open)
+    if (pic) clique.call('openFile', pic.dataset.open)
   })
   draw(false)
   return {
@@ -2680,7 +2689,7 @@ function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) 
   }
 }
 
-// @mentions, like Slack or Discord: type @ and the crew pops up, filtered as you type (name first, then area).
+// @mentions, like Slack or Discord: type @ and the clique pops up, filtered as you type (name first, then area).
 // ↑↓ move, Enter or Tab picks, Esc closes; a click picks too. Picking writes the agent's full name (rex@workstation
 // for one on another computer) and a space. Agents that are off are listed but can't be picked: a message to one
 // would be refused. field: the textarea. box: what the list lines up with. place: 'above' or 'below' it.
@@ -2793,9 +2802,9 @@ function mountMentions(field, { agents, box = field, place = 'above', heading = 
 }
 
 // What counts as an @mention: the hub's rule (addressees in core/hub.js), so the box colors exactly what will be
-// delivered. Not one: @words glued to something (a@b.com, @types/node, @milo's), code in backticks, @you/@any/@crew.
+// delivered. Not one: @words glued to something (a@b.com, @types/node, @milo's), code in backticks, @you/@any/@clique.
 const MENTION = /(?<![\w.@/'-])@([\w-]+(?:@[\w-]+)?)(?![\w@/'-]|\.\w)/g
-const NOT_NAMES = new Set(['you', 'any', 'crew', 'auto'])
+const NOT_NAMES = new Set(['you', 'any', 'clique', 'auto'])
 // code spans blanked out, same length, so positions still line up with the text
 const proseOf = (text) => String(text).replace(/```[\s\S]*?```/g, (m) => ' '.repeat(m.length)).replace(/`[^`\n]*`/g, (m) => ' '.repeat(m.length))
 // @iris is the Iris here, or the only Iris on a linked computer (as the hub resolves it)
@@ -2810,7 +2819,7 @@ function mentioned(name, agents) {
 
 // Mentions in color, right in the message box. A textarea can't color part of its text, so a copy of the text
 // sits under it (same font, padding and wrapping) with each @mention painted in its agent's color, and the
-// textarea's own letters are transparent (the caret and selection stay). A name nobody on the crew has gets a red
+// textarea's own letters are transparent (the caret and selection stay). A name nobody on the clique has gets a red
 // underline and one that's off an amber one, since the hub would refuse the send; the name still being typed
 // stays plain. strict(): whether unknown names matter here (a task's @owner doesn't refuse anything).
 function mountInk(field, { agents, strict = () => true }) {
@@ -2834,14 +2843,14 @@ function mountInk(field, { agents, strict = () => true }) {
   const paint = ({ quiet = false } = {}) => {
     const text = field.value
     const caret = document.activeElement === field ? field.selectionEnd : -1
-    const crew = agents()
+    const clique = agents()
     let html = ''
     let last = 0
     for (const m of proseOf(text).matchAll(MENTION)) {
       if (NOT_NAMES.has(m[1].toLowerCase())) continue
       const end = m.index + m[0].length
-      const a = mentioned(m[1], crew)
-      const cls = a ? (a.on ? 'ok' : 'off') : end !== caret && strict() && crew.length ? 'unknown' : ''
+      const a = mentioned(m[1], clique)
+      const cls = a ? (a.on ? 'ok' : 'off') : end !== caret && strict() && clique.length ? 'unknown' : ''
       if (!cls) continue
       html += `${esc(text.slice(last, m.index))}<span class="mention ${cls}"${a ? ` style="--c:${agentColor(a)}"` : ''}>${esc(text.slice(m.index, end))}</span>`
       last = end
@@ -2891,10 +2900,10 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
   const tip = el.querySelector('.rail-tip')
   const freshBtn = el.querySelector('.fresh-toggle')
   // Task mode lasts while you're adding tasks, not across launches: Auto again next time.
-  let target = store.get('crew.target') || 'auto'
+  let target = store.get('clique.target') || 'auto'
   if (target === 'task' || target === 'bug') target = 'auto'
   // New conversation: the task starts with a clean slate instead of joining everything the agent did before.
-  let fresh = store.get('crew.fresh') === '1'
+  let fresh = store.get('clique.fresh') === '1'
   let agents = []
   let feed = []
   let channel = null // the channel it says things in: { id, name, members, ws } (the dashboard's); null: #general, as before
@@ -3094,7 +3103,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     if (draftKey(name) !== draftKey(target)) swapDraft(name, carry)
     target = name
     // Task is a mode of everyone's chat: next time it opens on everyone's
-    store.set('crew.target', name === 'task' ? 'auto' : name)
+    store.set('clique.target', name === 'task' ? 'auto' : name)
     draw()
   }
   const submit = async () => {
@@ -3114,16 +3123,16 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
         // in a conversation, a task is for that agent unless it @names someone else
         const { owner, text: what } = ownerIn(text.replace(TASK_PREFIX, ''), agents.filter((a) => !a.cloneOf))
         const forWhom = owner ?? (talking ? familyOf(target) : null)
-        say((await crew.call('task', 'file', null, { text: what, images, kind, ...(forWhom && { owner: forWhom }) })).trim())
+        say((await clique.call('task', 'file', null, { text: what, images, kind, ...(forWhom && { owner: forWhom }) })).trim())
       }
       else {
-        say((await crew.call('send', reply && !talking ? reply.to.join(',') : to, text, images, { fresh, ...(reply && { re: reply.id }), ...(!talking && channel && { channel: channel.id }) })).trim().split('\n').join(' · '))
+        say((await clique.call('send', reply && !talking ? reply.to.join(',') : to, text, images, { fresh, ...(reply && { re: reply.id }), ...(!talking && channel && { channel: channel.id }) })).trim().split('\n').join(' · '))
         // New conversation is for one message: what you send next goes on in that conversation, as a reply. In an
         // agent's conversation it does anyway, so the quote just goes.
         if (draftKey(target) !== sentFrom) drafts.delete(sentFrom)
         else if (talking) reply = null
         else if (fresh || reply) follow = { at: sentAt, to: reply?.to ?? (to ? [to] : null) }
-        if (fresh) (fresh = false), store.set('crew.fresh', '0')
+        if (fresh) (fresh = false), store.set('clique.fresh', '0')
         draw()
       }
       if (draftKey(target) !== sentFrom) return void drafts.delete(sentFrom)
@@ -3182,13 +3191,13 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
   })
   freshBtn.addEventListener('click', () => {
     fresh = !fresh
-    store.set('crew.fresh', fresh ? '1' : '0')
+    store.set('clique.fresh', fresh ? '1' : '0')
     draw()
     ta.focus()
   })
   // mentions in their agent's color as you type
   const ink = mountInk(ta, { agents: () => agents, strict: () => !el.classList.contains('task-mode') })
-  // @name opens the crew list; in task mode a mention assigns the task
+  // @name opens the clique list; in task mode a mention assigns the task
   const mentions = mountMentions(ta, { agents: () => agents, box: el.querySelector('.input'), heading: () => (el.classList.contains('task-mode') ? 'Assign to' : 'Mention: they get it too') })
   ta.addEventListener('keydown', (e) => {
     if (voice?.key(e)) return
@@ -3200,7 +3209,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
   })
   send.addEventListener('click', submit)
   // Dictation (ui/voice.js): the mic button fills in the message as you talk.
-  const voice = typeof mountVoice === 'function' && crew.onVoice ? mountVoice({ composer: el, textarea: ta, button: el.querySelector('.mic'), changed: autosize, submit, reveal: onDictate }) : null
+  const voice = typeof mountVoice === 'function' && clique.onVoice ? mountVoice({ composer: el, textarea: ta, button: el.querySelector('.mic'), changed: autosize, submit, reveal: onDictate }) : null
   if (!voice) el.querySelector('.mic').remove()
   draw()
 
@@ -3267,7 +3276,7 @@ function notify(text, { warn = false, detail = '' } = {}) {
     el.addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-toast-copy]')
       if (!btn) return
-      await crew.call('copy', el.detail).catch(() => {})
+      await clique.call('copy', el.detail).catch(() => {})
       btn.textContent = 'Copied'
     })
   }
@@ -3277,7 +3286,7 @@ function notify(text, { warn = false, detail = '' } = {}) {
   fade(detail ? 9000 : warn ? 7000 : 4200)
 }
 
-// What an error from main.js says, as a sentence for the screen, or '' when it's for a bug report. The ones Crew throws
+// What an error from main.js says, as a sentence for the screen, or '' when it's for a bug report. The ones CLIque throws
 // on purpose say why ("Workstation is unreachable right now", "\"iris\" already exists"); a crash or a file system error
 // (ENOENT, "Cannot read properties of undefined", an unknown action) doesn't mean anything to you. Node's error codes
 // are named one by one: a computer called EMILY-PC is unreachable for a reason you can read. So are the network's own
@@ -3287,21 +3296,21 @@ const TECHNICAL = new RegExp(String.raw`\b(?:${ERROR_CODES}|[A-Z][a-zA-Z]*Error|
 function errorReason(err) {
   const text = String(err?.message ?? err ?? '').replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '').trim()
   if (!text || TECHNICAL.test(text)) return ''
-  const plain = text.replace(/\s*\((?:try: )?crew \w[^)]*\)/g, '') // the CLI's hints, for agents
+  const plain = text.replace(/\s*\((?:try: )?clique \w[^)]*\)/g, '') // the CLI's hints, for agents
   return `${plain.charAt(0).toUpperCase()}${plain.slice(1)}${/[.!?]$/.test(plain) ? '' : '.'}`
 }
 // Something you asked for didn't work: what (e.g. "Couldn't park Website"), then why, or what to do when the reason is a
-// technical one. The error itself is behind Copy details, and in Crew's log (main.js) when it's technical.
+// technical one. The error itself is behind Copy details, and in CLIque's log (main.js) when it's technical.
 function oops(what, err, todo = 'Try again in a moment.') {
   const raw = String(err?.message ?? err ?? '')
   const why = errorReason(err)
-  if (!why && raw) crew.call('log', `${what}: ${raw}`).catch(() => {})
+  if (!why && raw) clique.call('log', `${what}: ${raw}`).catch(() => {})
   notify(`${what}. ${why || todo}`, { warn: true, detail: raw })
 }
 // The same for a line shown in place, under what didn't work (a sheet's error line): the reason, or else what to do.
 function errorLine(err, todo = 'Something went wrong. Try again in a moment.') {
   const why = errorReason(err)
-  if (!why) crew.call('log', String(err?.message ?? err ?? '')).catch(() => {})
+  if (!why) clique.call('log', String(err?.message ?? err ?? '')).catch(() => {})
   return why || todo
 }
 
@@ -3314,7 +3323,7 @@ document.addEventListener('click', (e) => {
   const [name, mode] = chip.dataset.yolo ? [chip.dataset.yolo, 'yolo'] : [chip.dataset.fast, 'fast']
   chip.setAttribute('aria-pressed', String(on))
   flips.set(`${name}:${mode}`, { on, at: Date.now() })
-  crew.call('update', name, mode === 'yolo' ? { yolo: on } : { tier: on ? 'fast' : 'default' }).catch((err) => {
+  clique.call('update', name, mode === 'yolo' ? { yolo: on } : { tier: on ? 'fast' : 'default' }).catch((err) => {
     flips.delete(`${name}:${mode}`)
     chip.setAttribute('aria-pressed', String(!on))
     oops(`Couldn't change ${name.split('@')[0]}`, err)
@@ -3327,7 +3336,7 @@ document.addEventListener('change', (e) => {
     e.target.checked = true
     return
   }
-  crew.call('update', power, { off: !e.target.checked })
+  clique.call('update', power, { off: !e.target.checked })
 })
 
 // Theme button: Auto (follow the system's) → Light → Dark. Saved in config.json, applied to every window.
@@ -3336,7 +3345,7 @@ const NEXT_THEME = { system: 'light', light: 'dark', dark: 'system' }
 function themeButton(btn) {
   let theme = 'system'
   let drawn = false
-  btn.addEventListener('click', () => crew.call('theme', NEXT_THEME[theme]).catch((err) => oops('Couldn’t change the theme', err)))
+  btn.addEventListener('click', () => clique.call('theme', NEXT_THEME[theme]).catch((err) => oops('Couldn’t change the theme', err)))
   return (next) => {
     if (drawn && (next ?? 'system') === theme) return // every state push asks; redrawn only when it changes
     drawn = true
@@ -3418,9 +3427,9 @@ async function live(render) {
     for (const a of s.agents) a.unread = n[a.name] ?? 0
     return s
   }
-  let state = counted(await crew.call('state'))
+  let state = counted(await clique.call('state'))
   render(state)
-  crew.onState((next) => render((state = counted(next))))
+  clique.onState((next) => render((state = counted(next))))
   setInterval(() => render(state), 15000)
   return (next) => render((state = counted(next)))
 }

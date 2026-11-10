@@ -17,7 +17,7 @@ import { fonts, type Theme } from './theme'
 
 type Props = {
   t: Theme
-  agents: Agent[] // the crew, without clones
+  agents: Agent[] // the clique, without clones
   convo: string | null
   channel?: Channel | null // the channel it's said in (none: the Mac has no channels)
   place: string // where it's said (workspace and channel, or agent): each place keeps its own draft
@@ -61,7 +61,7 @@ export function Composer({ t, agents, convo, channel, place, disabled, backgroun
         .map((x) => x.a)
     : []
   const target = convo ? agents.find((a) => a.name === convo) : null
-  const placeholder = disabled ?? (target ? `Message ${displayName(target.name).base}` : channel ? `Message #${channel.name}` : 'Message the crew')
+  const placeholder = disabled ?? (target ? `Message ${displayName(target.name).base}` : channel ? `Message #${channel.name}` : 'Message the clique')
 
   // @ at the cursor, with a space before it after a word: the picker opens on it
   const startMention = () => {

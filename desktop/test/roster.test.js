@@ -1,14 +1,14 @@
-// The crew roster (sidebar and menu bar) and the chat's "who's on it" line, from ui/common.js: agents grouped by
-// computer in your own order, off agents folded, search, and a big crew folded down to a few rows. Run with `npm test`.
+// The clique roster (sidebar and menu bar) and the chat's "who's on it" line, from ui/common.js: agents grouped by
+// computer in your own order, off agents folded, search, and a big clique folded down to a few rows. Run with `npm test`.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import vm from 'node:vm'
 const A = path.resolve(import.meta.dirname, '..')
-const ctx = vm.createContext({ crew: {}, avatarHTML: (a) => `<av:${a.name}>`, agentColor: () => '#888', avatarOf: (a) => a, CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
-vm.runInContext(fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8') + ';globalThis.__x = { rosterHTML, crewGroups, grouped, typingHTML }', ctx)
-const { rosterHTML, crewGroups, grouped, typingHTML } = ctx.__x
+const ctx = vm.createContext({ clique: {}, avatarHTML: (a) => `<av:${a.name}>`, agentColor: () => '#888', avatarOf: (a) => a, CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
+vm.runInContext(fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8') + ';globalThis.__x = { rosterHTML, cliqueGroups, grouped, typingHTML }', ctx)
+const { rosterHTML, cliqueGroups, grouped, typingHTML } = ctx.__x
 
 const agent = (name, extra = {}) => ({ name, area: `${name}'s area`, on: true, status: 'idle', since: Date.now(), activity: '', queue: 0, subs: [], ...extra })
 const remote = (seed, home, homeName, extra) => agent(`${seed}@${home}`, { seed, home, homeName, ...extra })
@@ -19,7 +19,7 @@ const state = (agents, links = []) => ({ workspace: { id: 'shop', name: 'Shop' }
 
 test('one computer: no group headers, agents in config order', () => {
   const s = state([agent('june'), agent('ada', { status: 'working' }), agent('iris')])
-  assert.equal(grouped(crewGroups(s)), false)
+  assert.equal(grouped(cliqueGroups(s)), false)
   const html = rosterHTML(s)
   assert.deepEqual(heads(html), [])
   assert.deepEqual(rows(html), ['june', 'ada', 'iris'])
@@ -67,7 +67,7 @@ test('search matches names and areas, and shows through folds', () => {
   assert.match(rosterHTML(s, { filter: 'zzz' }), /No one matches/)
 })
 
-test("who's on it: a big crew shows three rows, the ones waiting on you first, and folds the rest", () => {
+test("who's on it: a big clique shows three rows, the ones waiting on you first, and folds the rest", () => {
   const agents = ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => agent(n, { status: 'working', activity: `doing ${n}` }))
   agents[4].status = 'waiting'
   const html = typingHTML(agents)

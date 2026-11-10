@@ -1,0 +1,78 @@
+#!/bin/sh
+# clique: talk to the clique from inside an agent or from any terminal while the app is running.
+# (an agent started before the app's rename has these as CREW_*: they still count)
+CLIQUE_HOME=${CLIQUE_HOME:-$CREW_HOME}; CLIQUE_URL=${CLIQUE_URL:-$CREW_URL}; CLIQUE_TOKEN=${CLIQUE_TOKEN:-$CREW_TOKEN}; CLIQUE_AGENT=${CLIQUE_AGENT:-$CREW_AGENT}; CLIQUE_WORKSPACE=${CLIQUE_WORKSPACE:-$CREW_WORKSPACE}
+DIR=${CLIQUE_HOME:-$HOME/.clique}; [ -d "$DIR" ] || [ ! -d "$HOME/.crew" ] || DIR=$HOME/.crew
+# what CLIque wrote when it started comes first: an agent can outlive the CLIque that started it (core/ptyhost.js)
+URL=$(cat "$DIR/url" 2>/dev/null); URL=${URL:-$CLIQUE_URL}
+TOKEN=$(cat "$DIR/token" 2>/dev/null); TOKEN=${TOKEN:-$CLIQUE_TOKEN}
+FROM=${CLIQUE_AGENT:-you}
+[ -n "$URL" ] || { echo "CLIque is not running" >&2; exit 1; }
+
+# CLIQUE_WORKSPACE: which workspace this agent works in (none: its files are in CLIQUE_HOME itself)
+call() { curl -sS -m "${WAIT:-5}" -H "X-Clique: $TOKEN" -H "X-Clique-Workspace: ${CLIQUE_WORKSPACE:-}" "$@" || echo "CLIque is not running" >&2; }
+
+cmd=$1
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  who) call "$URL/who" ;;
+  board) printf '%s\0' "$@" | call --data-binary @- "$URL/board?from=$FROM" ;;
+  busy) call "$URL/busy?from=$FROM" ;;
+  send)
+    to=$1
+    [ $# -gt 0 ] && shift
+    [ -n "$to" ] && [ $# -gt 0 ] || { echo 'usage: clique send <name|any> [--new] "task"' >&2; exit 2; }
+    printf '%s' "$*" | call --data-binary @- "$URL/send?from=$FROM&to=$to" ;;
+  ask)
+    # held open until the answer comes; CLIque lets go after 100s with where things stand
+    to=$1
+    [ $# -gt 0 ] && shift
+    [ -n "$to" ] && [ $# -gt 0 ] || { echo 'usage: clique ask <name|any> "question"' >&2; exit 2; }
+    printf '%s' "$*" | WAIT=110 call --data-binary @- "$URL/question?from=$FROM&to=$to" ;;
+  wait) WAIT=110 call -X POST "$URL/wait?from=$FROM" ;;
+  answer)
+    # clique answer "…" answers the question you were asked; clique answer "@name" "…" picks whose (quoted: PowerShell reads a bare @name as splatting)
+    to=
+    case "$1" in @*) to=${1#@}; shift ;; esac
+    [ $# -gt 0 ] || { echo 'usage: clique answer ["@name"] "your answer"' >&2; exit 2; }
+    printf '%s' "$*" | call --data-binary @- "$URL/answer?from=$FROM&to=$to" ;;
+  lease)
+    # held open while a teammate has it; CLIque lets go after 100s with who has it
+    [ -n "$1" ] || { echo 'usage: clique lease <thing> ["what for"]' >&2; exit 2; }
+    printf '%s\0' "$@" | WAIT=110 call --data-binary @- "$URL/claim?from=$FROM" ;;
+  release) printf '%s\0' "$@" | call --data-binary @- "$URL/release?from=$FROM" ;;
+  leases) call "$URL/leases" ;;
+  note)
+    [ $# -gt 0 ] || { echo 'usage: clique note "text"' >&2; exit 2; }
+    printf '%s' "$*" | call --data-binary @- "$URL/note?from=$FROM" ;;
+  channels) call "$URL/channels?from=$FROM" ;;
+  post)
+    # each word NUL-terminated, so a channel's name and any text arrive as typed
+    [ -n "$1" ] && [ $# -gt 1 ] || { echo 'usage: clique post <channel> "message" (the name alone: an unquoted # starts a shell comment)' >&2; exit 2; }
+    printf '%s\0' "$@" | call --data-binary @- "$URL/post?from=$FROM" ;;
+  task|bug)
+    # each word NUL-terminated, so quotes, newlines and flags arrive as typed
+    printf '%s\0' "$@" | call --data-binary @- "$URL/task?from=$FROM" ;;
+  app)
+    # clique app <what> ...: change CLIque itself (clique app help). Held open while the user is asked; CLIque lets go after 100s
+    printf '%s\0' "$@" | WAIT=110 call --data-binary @- "$URL/app?from=$FROM" ;;
+  *)
+    cat <<'EOF'
+clique who                    agents, their areas and status
+clique ask <name|any> "..."   ask an agent and wait for its answer (its final message)
+clique wait                   keep waiting for the answers to what you asked
+clique answer ["@name"] "..." answer a question you were asked, right away, and carry on
+clique send <name|any> "..."  hand a task to an agent for good (queued until it is free)
+clique busy                   what each teammate is working on right now
+clique lease <thing> ["..."]  take something only one agent can use at a time (a simulator, a port), waiting if it's taken
+clique release [thing]        give it back (everything you hold, without a name)
+clique leases                 who has what
+clique note "..."             share context with the whole clique
+clique board [words]          the shared notes you haven't read (--all for every one, or words to search)
+clique channels               the channels here: who's in each, and its brief
+clique post <channel> "..."   say it in that channel (@name someone to hand it to them there)
+clique task                   the Tasks board: list, show, done, note, add (clique task help)
+clique app <what> ...         change CLIque itself: agents, channels, workspaces, computers (clique app help)
+EOF
+    ;;
+esac
