@@ -614,6 +614,7 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
   overflow-x: hidden; overflow-y: auto; padding: 16px 14px 14px; display: flex; flex-direction: column; gap: 14px; user-select: text;
   /* messages soften into the edges instead of being cut off by a hard line */
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 10px), transparent);
+  container-type: inline-size; /* 100cqw is the feed's width, for what has to stay inside it (.msg-tools) */
 }
 .feed-list { display: contents; }
 .feed .empty { margin: auto; max-width: 280px; } /* .empty-state.small, in the middle of the chat */
@@ -903,8 +904,9 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .rule-why { margin-left: 5px; color: var(--fg2); }
 .fresh-ev { display: flex; align-items: center; gap: 8px; margin: 2px 0; color: var(--fg2); font-size: 12px; }
 .fresh-ev::before, .fresh-ev::after { content: ''; flex: 1; height: 1px; background: var(--line); }
-.fresh-ev span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.fresh-ev svg { width: 13px; height: 13px; color: var(--fg2); }
+.fresh-ev::before, .fresh-ev::after { min-width: 12px; }
+.fresh-ev span { min-width: 0; text-align: center; text-wrap: balance; overflow-wrap: anywhere; } /* in a narrow chat it wraps */
+.fresh-ev svg { width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; color: var(--fg2); }
 
 /* tasks in the feed: one tappable line each, the kind in its icon's color */
 /* a task changing hands: one quiet line, the colour only on its icon */
@@ -1013,6 +1015,12 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .msg-tools { position: absolute; top: -12px; right: 2px; z-index: 3; display: flex; gap: 2px; padding: 2px; border-radius: var(--r-control); background: var(--float); box-shadow: var(--shadow-float); opacity: 0; translate: 0 3px; pointer-events: none; transition: opacity .15s, translate .2s var(--out); }
 .item:hover > .msg-tools, .msg-tools:focus-within { opacity: 1; translate: 0 0; pointer-events: auto; }
 .item.me > .msg-tools { top: auto; bottom: 2px; right: calc(100% + 8px); }
+/* Beside a wide bubble in a narrow chat there's no room for it: it would hang out of the feed and be cut off. So its
+   box runs from the feed's left edge (100cqw is the feed's width) to the bubble and the button sits at the bubble's
+   end of it; when even that is too narrow, the box keeps its width from the feed's edge, over the bubble's corner. */
+.feed .item.me > .msg-tools { left: calc(100% - 100cqw); min-width: max-content; justify-content: flex-end; padding: 0; background: none; box-shadow: none; }
+.feed .item.me > .msg-tools .msg-tool { height: 28px; padding: 0 10px 0 8px; border-radius: var(--r-control); background: var(--float); box-shadow: var(--shadow-float); }
+.feed .item.me > .msg-tools .msg-tool:hover { background: linear-gradient(var(--btn), var(--btn)), var(--float); }
 .item.me > .msg-tools::after { content: ''; position: absolute; left: 100%; top: 0; bottom: 0; width: 10px; } /* a bridge, so the way over to it keeps the hover */
 .msg-tool { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border: 0; border-radius: var(--r-tag); background: none; color: var(--fg2); font-size: 12px; font-weight: 500; cursor: pointer; transition: background .15s, color .15s; }
 .msg-tool:hover { background: var(--btn); color: var(--fg); }
@@ -1041,10 +1049,11 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .day-line::before, .day-line::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .day-line span { font-size: 12px; font-weight: 500; color: var(--fg2); }
 /* Scrolled up: a way back down, round, or a pill counting what came in meanwhile. It sticks to the feed's bottom edge
-   and takes no space (the negative margin cancels the feed's gap), so showing or hiding it moves nothing. */
-.feed-latest { position: sticky; bottom: 0; z-index: 3; align-self: center; height: 0; margin-top: -14px; }
+   and takes no space (the negative margin cancels the feed's gap), so showing or hiding it moves nothing. It sits in
+   the right corner, where lines end: in the middle it lay over the words you were reading. */
+.feed-latest { position: sticky; bottom: 0; z-index: 3; align-self: flex-end; height: 0; margin-top: -14px; }
 .feed-latest button {
-  position: absolute; left: 0; bottom: 14px; translate: -50% 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 32px; height: 32px; padding: 0 12px 0 9px;
+  position: absolute; right: 0; bottom: -6px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 32px; height: 32px; padding: 0 12px 0 9px;
   border: 0; border-radius: 16px; background: var(--float); color: var(--fg); font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer;
   box-shadow: var(--shadow-float);
   opacity: 0; scale: .85; visibility: hidden; transition: opacity var(--t-leave) var(--in), scale var(--t-leave) var(--in), visibility 0s var(--t-leave);
@@ -1368,7 +1377,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .28); animation: fade-in var(--t-mo
 .thread-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 .tc-faces { display: flex; align-items: center; }
 .tc-faces .av + .av { margin-left: -6px; }
-.tc-text { min-width: 0; display: grid; gap: 1px; }
+.tc-text { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; } /* (an auto column is as wide as the latest line, which never wraps) */
 .tc-title { font-size: 13px; line-height: 18px; color: var(--fg2); }
 .tc-title b { font-weight: 600; color: var(--fg); }
 .tc-sub { display: flex; align-items: center; gap: 6px; min-height: 17px; font-size: 12px; line-height: 17px; color: var(--fg2); font-variant-numeric: tabular-nums; }
