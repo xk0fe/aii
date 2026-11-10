@@ -1,5 +1,5 @@
 // Your conversation with one agent: which feed entries ui/common.js's inConvo keeps, and what feedView shows with
-// it, on entries made by the real Hub (fake runner, throwaway CREW_HOME). Run with `npm test`.
+// it, on entries made by the real Hub (fake runner, throwaway CLIQUE_HOME). Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -8,24 +8,24 @@ import os from 'node:os'
 import path from 'node:path'
 import vm from 'node:vm'
 const A = path.resolve(import.meta.dirname, '..')
-const ctx = vm.createContext({ crew: {}, avatarHTML: () => '', agentColor: () => '', CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
+const ctx = vm.createContext({ clique: {}, avatarHTML: () => '', agentColor: () => '', CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
 vm.runInContext(fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8') + ';globalThis.__x = { feedView, inConvo, familyOf, isConvo }', ctx)
 const { feedView, inConvo, familyOf, isConvo } = ctx.__x
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-convo-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-convo-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
-const CREW = ['june', 'ada', 'iris'].map((name) => ({ name, area: name })).concat({ name: 'rex', area: 'art', clones: 2 })
+const CLIQUE = ['june', 'ada', 'iris'].map((name) => ({ name, area: name })).concat({ name: 'rex', area: 'art', clones: 2 })
 class FakeRunner extends EventEmitter { on_ = new Set(); running = (n) => this.on_.has(n); submit() {}; write() {}; stop() {}; start(n) { this.on_.add(n) } }
 let hub
 beforeEach(() => {
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CLIQUE }))
   const r = new FakeRunner()
   hub = new Hub(r, { bin: '/nonexistent' })
   for (const a of hub.agents.values()) (r.on_.add(a.name), (a.status = 'idle'))
   hub.feed.length = 0
 })
 afterEach(() => { for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer), clearTimeout(a.linger); clearTimeout(hub.statsTimer); clearTimeout(hub.convoTimer) })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const agents = () => [...hub.agents.values()].map((a) => ({ name: a.name, cloneOf: a.cloneOf, clone: a.clone }))
 // (the vm's arrays come from another realm, so copy them into this one for deepEqual)
@@ -42,7 +42,7 @@ test('only "auto" and "task" are everyone\'s chat', () => {
   assert.equal(familyOf('iris@workstation'), 'iris@workstation')
 })
 
-test('what you and it say, and its hand-offs either way; not the rest of the crew', () => {
+test('what you and it say, and its hand-offs either way; not the rest of the clique', () => {
   hub.send({ to: 'june', text: 'fix the payload' })
   hub.send({ to: 'ada', text: 'polish the menu' })
   hub.send({ from: 'june', to: 'iris', text: 'check the quote styling' })
@@ -52,7 +52,7 @@ test('what you and it say, and its hand-offs either way; not the rest of the cre
   hub.post({ kind: 'ask', from: 'june', to: 'you', ask: { type: 'permission', title: 'Run a command' } })
   hub.post({ kind: 'note', from: 'iris', text: '@june cuts the release tomorrow' })
   hub.post({ kind: 'event', from: 'june', text: 'started a new conversation', fresh: true })
-  hub.post({ kind: 'event', from: 'crew', text: 'config.json: oops' })
+  hub.post({ kind: 'event', from: 'clique', text: 'config.json: oops' })
   assert.deepEqual(texts('june'), ['fix the payload', 'check the quote styling', 'API shape?', 'done', undefined, 'started a new conversation'])
   assert.deepEqual(texts('ada'), ['polish the menu', 'API shape?', 'menu done'])
   assert.deepEqual(texts('iris'), ['check the quote styling', '@june cuts the release tomorrow'])
@@ -80,7 +80,7 @@ test('a message a clone took stays in its agent\'s conversation', () => {
 test('its tasks: what it did, and what went to it', () => {
   hub.post({ kind: 'task', type: 'bug', act: 'filed', from: 'you', ticket: 7, title: 'Coins reset' })
   hub.post({ kind: 'task', type: 'bug', act: 'triaged', from: 'iris', ticket: 7, title: 'Coins reset', text: 'june' })
-  hub.post({ kind: 'task', type: 'bug', act: 'fixing', from: 'crew', ticket: 7, title: 'Coins reset', text: 'june' })
+  hub.post({ kind: 'task', type: 'bug', act: 'fixing', from: 'clique', ticket: 7, title: 'Coins reset', text: 'june' })
   hub.post({ kind: 'task', type: 'bug', act: 'fixed', from: 'june', ticket: 7, title: 'Coins reset', text: 'debounced it' })
   hub.post({ kind: 'task', type: 'bug', act: 'fixed', from: 'ada', ticket: 5, title: 'Double jump', text: 'fixed' })
   assert.deepEqual(shown('june').map((e) => `${e.act} #${e.ticket}`), ['triaged #7', 'fixing #7', 'fixed #7'])

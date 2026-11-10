@@ -1,7 +1,7 @@
-// What hand-offs between your agents cost, from your own history: ~/.crew/feed.jsonl and ~/.crew/stats.json.
-// Nothing is sent anywhere and no agent runs; it only reads the timestamps Crew already keeps.
+// What hand-offs between your agents cost, from your own history: ~/.clique/feed.jsonl and ~/.clique/stats.json.
+// Nothing is sent anywhere and no agent runs; it only reads the timestamps CLIque already keeps.
 //
-//   node scripts/handoffs.mjs [crew home] [--json]
+//   node scripts/handoffs.mjs [clique home] [--json]
 //
 // It finds every question an agent asked a teammate the old way (a hand-off the teammate answered by sending
 // something back), and measures:
@@ -17,7 +17,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 const args = process.argv.slice(2)
-const home = args.find((a) => !a.startsWith('--')) ?? (process.env.CREW_HOME || path.join(os.homedir(), '.crew'))
+const home = args.find((a) => !a.startsWith('--')) ?? (process.env.CLIQUE_HOME || path.join(os.homedir(), '.clique'))
 const json = args.includes('--json')
 const read = (f) => fs.readFileSync(path.join(home, f), 'utf8')
 
@@ -44,13 +44,13 @@ try {
 } catch {}
 
 const base = (n) => String(n ?? '').replace(/\.\d+(?=@|$)/, '')
-const isAgent = (n) => n && n !== 'you' && n !== 'crew'
+const isAgent = (n) => n && n !== 'you' && n !== 'clique'
 const replyTo = new Map()
 for (const r of feed) if (r.kind === 'reply' && r.re && !replyTo.has(r.re)) replyTo.set(r.re, r)
 // when the turn an agent was in at `ts` started: the end of its previous turn (or `after`, if later)
 const replies = feed.filter((e) => e.kind === 'reply' && isAgent(e.from))
 const turnAt = (who, ts, after) => Math.max(after, replies.filter((r) => base(r.from) === base(who) && r.ts < ts).at(-1)?.ts ?? 0)
-const HOLD = 100000 // how long `crew ask` holds on for the answer in the asker's turn
+const HOLD = 100000 // how long `clique ask` holds on for the answer in the asker's turn
 
 // seconds between tool calls while at work, per agent
 const step = (who) => {
@@ -74,7 +74,7 @@ for (const h of handoffs) {
   const seen = turnAt(h.to, back.ts, h.ts) // the teammate started the turn in which it answered
   const answer = back.ts - seen
   // with right of way: seen at the teammate's next step, answered as fast as before, and straight into the
-  // asker's `crew ask` if it's still holding on, else into its turn at its next step
+  // asker's `clique ask` if it's still holding on, else into its turn at its next step
   const now = (step(h.to) ?? 30000) + answer
   questions.push({
     from: base(h.from), to: base(h.to),

@@ -1,0 +1,38 @@
+#!/bin/sh
+# Claude Code runs each command an agent gives it through this (CLAUDE_CODE_SHELL_PREFIX), as the leader of the command's
+# own process group, with the command as one argument. Writing the group down lets CLIque find what the command leaves
+# running (a dev server started with &, a simulator helper) once the agent is done (core/procs.js). Then the command
+# runs as it would have: in your shell, or through your own prefix if you have one.
+#
+# On Windows Claude Code runs commands with Git Bash, whose process ids and groups only it knows about, and CLIque needs
+# the Windows ids. So there this writes down its own, runs the command, and then writes down the Windows id of whatever
+# is still in its group (what the command started with &), because the shells in between are gone by the time CLIque
+# looks. No subshells there: each one costs Git Bash a slow fork. MCP servers, which Claude Code starts through the
+# prefix without a shell, come in through clique-sh.cmd.
+# (an agent started before the app's rename has these as CREW_*: they still count)
+CLIQUE_GROUPS=${CLIQUE_GROUPS:-$CREW_GROUPS}; CLIQUE_SHELL_PREFIX=${CLIQUE_SHELL_PREFIX:-$CREW_SHELL_PREFIX}
+if [ "$OS" = Windows_NT ]; then
+  now=${EPOCHSECONDS:-$(date +%s)}
+  read -r me 2>/dev/null < "/proc/$$/winpid"
+  [ -n "$CLIQUE_GROUPS" ] && [ -n "$me" ] && echo "$me $now" >> "$CLIQUE_GROUPS" 2>/dev/null
+  if [ -n "$CLIQUE_SHELL_PREFIX" ]; then
+    "$CLIQUE_SHELL_PREFIX" "$@"
+  elif [ $# -gt 1 ]; then
+    "$@"
+  else
+    "${CLAUDE_CODE_SHELL:-/usr/bin/bash}" -c "$1"
+  fi
+  code=$?
+  if [ -n "$CLIQUE_GROUPS" ] && read -r group 2>/dev/null < "/proc/$$/pgid"; then
+    end=${EPOCHSECONDS:-$(date +%s)}
+    for p in /proc/[0-9]*; do
+      g= w=
+      read -r g 2>/dev/null < "$p/pgid" && [ "$g" = "$group" ] && read -r w 2>/dev/null < "$p/winpid" && echo "$w $now $end"
+    done >> "$CLIQUE_GROUPS" 2>/dev/null
+  fi
+  exit $code
+fi
+[ -n "$CLIQUE_GROUPS" ] && echo "$$ $(date +%s)" >> "$CLIQUE_GROUPS" 2>/dev/null
+[ -n "$CLIQUE_SHELL_PREFIX" ] && exec "$CLIQUE_SHELL_PREFIX" "$@"
+[ $# -gt 1 ] && exec "$@"
+exec "${CLAUDE_CODE_SHELL:-${SHELL:-/bin/sh}}" -c "$1"

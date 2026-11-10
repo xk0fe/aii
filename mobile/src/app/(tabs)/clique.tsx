@@ -1,4 +1,4 @@
-// The crew: one row per agent, grouped by the computer it runs on, under one line that says how things are. The rows
+// The clique: one row per agent, grouped by the computer it runs on, under one line that says how things are. The rows
 // keep the Mac's order: a status change never moves a row.
 import { router, useIsFocused } from 'expo-router'
 import { memo, useMemo } from 'react'
@@ -6,7 +6,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import type { Agent, State } from '@/net/types'
-import { useCrew, useDerived } from '@/state/hooks'
+import { useClique, useDerived } from '@/state/hooks'
 import { Creature, MotionContext } from '@/ui/creature'
 import { ago, brainLine, displayName, plural, statusWord, type AskKind } from '@/ui/format'
 import { useAppActive, useNow } from '@/ui/hooks'
@@ -56,10 +56,10 @@ const Row = memo(function Row({ t, a, kind, helpers, clones, providers, now, fir
   )
 })
 
-export default function CrewScreen() {
+export default function CliqueScreen() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
-  const { client, state } = useCrew()
+  const { client, state } = useClique()
   const d = useDerived(state)
   const now = useNow(30000)
   const focused = useIsFocused()
@@ -90,7 +90,7 @@ export default function CrewScreen() {
   return (
     <MotionContext.Provider value={moving}>
       <View style={{ flex: 1, backgroundColor: t.bg }}>
-        <TabHead t={t} title="Crew" sub={state ? head.title : ''} />
+        <TabHead t={t} title="Clique" sub={state ? head.title : ''} />
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
           {sections.map((s) => (
             <View key={s.slug || 'here'}>

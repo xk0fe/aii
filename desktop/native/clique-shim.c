@@ -1,12 +1,12 @@
-// `crew`, `crew-status` and `crew-hook` on Windows (bin/win32-<arch>/*.exe): this one program under three names. It
-// runs bin/crew.mjs, one folder up from it, with Crew's own runtime, as `crew.mjs <its name> <its arguments>`, passing
+// `clique`, `clique-status` and `clique-hook` on Windows (bin/win32-<arch>/*.exe): this one program under three names. It
+// runs bin/clique.mjs, one folder up from it, with CLIque's own runtime, as `clique.mjs <its name> <its arguments>`, passing
 // the arguments exactly as it got them. A program, because anything can start one with every argument intact (Claude
-// Code's hooks start crew-hook.exe with no shell at all; Codex's go through PowerShell or cmd), where cmd.exe would
+// Code's hooks start clique-hook.exe with no shell at all; Codex's go through PowerShell or cmd), where cmd.exe would
 // cut a .cmd's argument at its first newline and read & | % " in it its own way, and PowerShell runs a .ps1 before
-// anything else of the name, or refuses to under the default execution policy. (Git Bash runs the copies of bin/crew
-// and bin/crew-status in the same folder: core/launch.js withTools.)
+// anything else of the name, or refuses to under the default execution policy. (Git Bash runs the copies of bin/clique
+// and bin/clique-status in the same folder: core/launch.js withTools.)
 //
-// Crew's runtime is its own Electron binary run as Node: CREW_NODE says where it is (core/hub.js sets it for every
+// CLIque's runtime is its own Electron binary run as Node: CLIQUE_NODE says where it is (core/hub.js sets it for every
 // agent), or else node.exe on PATH. ELECTRON_RUN_AS_NODE=1 is set here, for that one process: in the agent's own
 // environment it would turn every Electron app the agent starts into Node.
 //
@@ -65,7 +65,7 @@ static HANDLE std_handle(DWORD which) {
 }
 
 // Ctrl+C (or the console closing) ends the child, then this program with its exit code. The child never hears it
-// itself: a GUI program given its handles, as Crew's Electron binary is here, doesn't attach to the console. (A routine,
+// itself: a GUI program given its handles, as CLIque's Electron binary is here, doesn't attach to the console. (A routine,
 // not SetConsoleCtrlHandler(NULL, TRUE), which the child would inherit.)
 static BOOL WINAPI end_child(DWORD event) {
   (void)event;
@@ -97,10 +97,10 @@ int main(void) {
   static wchar_t self[MAX_LINE], script[MAX_LINE], runtime[MAX_LINE], line[MAX_LINE], name[MAX_PATH];
 
   DWORD n = GetModuleFileNameW(NULL, self, MAX_LINE);
-  if (!n || n >= MAX_LINE) return say("crew: can't tell where this program is\n"), 1;
+  if (!n || n >= MAX_LINE) return say("clique: can't tell where this program is\n"), 1;
   wchar_t *slash = self + n;
   while (slash > self && *slash != L'\\' && *slash != L'/') slash--;
-  if (lstrlenW(slash + 1) >= MAX_PATH) return say("crew: this program's name is too long\n"), 1;
+  if (lstrlenW(slash + 1) >= MAX_PATH) return say("clique: this program's name is too long\n"), 1;
   lstrcpyW(name, slash + 1);
   for (wchar_t *dot = name + lstrlenW(name); dot > name; dot--) {
     if (*dot == L'.') {
@@ -109,12 +109,14 @@ int main(void) {
     }
   }
   slash[1] = 0;
-  if (!append(self, L"..\\crew.mjs") || !GetFullPathNameW(self, MAX_LINE, script, NULL)) return say("crew: can't find crew.mjs\n"), 1;
+  if (!append(self, L"..\\clique.mjs") || !GetFullPathNameW(self, MAX_LINE, script, NULL)) return say("clique: can't find clique.mjs\n"), 1;
 
-  DWORD got = GetEnvironmentVariableW(L"CREW_NODE", runtime, MAX_LINE);
+  DWORD got = GetEnvironmentVariableW(L"CLIQUE_NODE", runtime, MAX_LINE);
+  // (an agent started before the app's rename was given it as CREW_NODE)
+  if (!got) got = GetEnvironmentVariableW(L"CREW_NODE", runtime, MAX_LINE);
   if (!got || got >= MAX_LINE) {
     if (!SearchPathW(NULL, L"node.exe", NULL, MAX_LINE, runtime, NULL)) {
-      return say("crew: CREW_NODE isn't set (Crew sets it for its agents) and there's no node.exe on PATH\n"), 1;
+      return say("clique: CLIQUE_NODE isn't set (CLIque sets it for its agents) and there's no node.exe on PATH\n"), 1;
     }
   }
 
@@ -122,7 +124,7 @@ int main(void) {
   line[0] = 0;
   if (!(append(line, L"\"") && append(line, runtime) && append(line, L"\" \"") && append(line, script) && append(line, L"\" ") &&
         append(line, name) && append(line, L" ") && append(line, after_program(GetCommandLineW())))) {
-    return say("crew: the command line is too long\n"), 1;
+    return say("clique: the command line is too long\n"), 1;
   }
 
   SetEnvironmentVariableW(L"ELECTRON_RUN_AS_NODE", L"1");
@@ -130,7 +132,7 @@ int main(void) {
 
   STARTUPINFOEXW si = {0};
   si.StartupInfo.cb = sizeof si;
-  // Crew's Electron binary is a GUI program: it has no handles unless given these, and without FORCEOFFFEEDBACK
+  // CLIque's Electron binary is a GUI program: it has no handles unless given these, and without FORCEOFFFEEDBACK
   // Windows shows the busy cursor for every start (each hook, each status line) until it opens a window it never opens.
   si.StartupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_FORCEOFFFEEDBACK;
   si.StartupInfo.hStdInput = std_handle(STD_INPUT_HANDLE);
@@ -148,7 +150,7 @@ int main(void) {
     started = CreateProcessW(runtime, line, NULL, NULL, TRUE, 0, NULL, NULL, &si.StartupInfo, &pi);
   }
   if (!started) {
-    say_code("crew: can't start Crew's runtime, CREW_NODE (Windows error ", GetLastError());
+    say_code("clique: can't start CLIque's runtime, CLIQUE_NODE (Windows error ", GetLastError());
     return 1;
   }
   child = pi.hProcess;

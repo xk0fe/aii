@@ -1,5 +1,5 @@
-// Routing and delivery, against a fake runner in a throwaway CREW_HOME: no terminals, no real agents,
-// nothing reaches a running crew app. Run with `npm test`.
+// Routing and delivery, against a fake runner in a throwaway CLIQUE_HOME: no terminals, no real agents,
+// nothing reaches a running clique app. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -7,10 +7,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-test-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-test-'))
 const { Hub, addressees, CONFIG } = await import('../core/hub.js')
 
-const CREW = [
+const CLIQUE = [
   { name: 'june', area: 'Senior Backend SWE' },
   { name: 'ada', area: 'client programmer' },
   { name: 'iris', area: 'ui/ux designer' },
@@ -31,7 +31,7 @@ class FakeRunner extends EventEmitter {
 
 let hub, runner
 beforeEach(() => {
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CLIQUE }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
   // everyone that's on is running and busy, so messages queue instead of being typed in
@@ -41,7 +41,7 @@ beforeEach(() => {
     a.status = 'working'
   }
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 afterEach(() => {
   for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer)
   clearTimeout(hub.statsTimer)
@@ -98,7 +98,7 @@ test('hand-offs wait for approval when autopilot is off, and approve still deliv
 })
 
 test('attachments outside the attachments folder are dropped; an image alone gets default text', () => {
-  hub.send({ to: 'iris', text: '', images: ['/etc/passwd', path.join(process.env.CREW_HOME, 'attachments', 'a.png')] })
+  hub.send({ to: 'iris', text: '', images: ['/etc/passwd', path.join(process.env.CLIQUE_HOME, 'attachments', 'a.png')] })
   assert.equal(inbox('iris')[0].text, 'Have a look at this image.')
   assert.equal(inbox('iris')[0].images.length, 1)
 })
@@ -183,7 +183,7 @@ test('each recipient is told who else has it and who leads: the first named owns
 })
 
 test('one unknown name, anywhere in the text, rejects the whole send: no partial delivery', () => {
-  assert.throws(() => hub.send({ text: '@ada @nobody @ghost do it' }), /no agent named "nobody", "ghost" \(try: crew who\) \(nothing was sent\)/)
+  assert.throws(() => hub.send({ text: '@ada @nobody @ghost do it' }), /no agent named "nobody", "ghost" \(try: clique who\) \(nothing was sent\)/)
   assert.throws(() => hub.send({ to: 'ada', text: 'fix it, then tell @rex' }), /no agent named "rex"/)
   assert.deepEqual(queued(), {})
   assert.deepEqual(sent(), [])
@@ -213,7 +213,7 @@ test('autopilot off holds one hand-off per recipient', () => {
 test('emails, package paths, possessives and code are not addresses', () => {
   hub.send({ to: 'june', text: "bump @types/node, mail ops@example.com, see @ada's PR and `@iris`, ```\n@abe\n```" })
   assert.deepEqual(queued(), { june: 1 })
-  assert.deepEqual(addressees(undefined, '(@ada), @June. @any @you @crew'), ['ada', 'june'])
+  assert.deepEqual(addressees(undefined, '(@ada), @June. @any @you @clique'), ['ada', 'june'])
   assert.deepEqual(addressees('any', 'no one named'), [])
   assert.deepEqual(addressees('ada, june', ''), ['ada', 'june'])
 })
@@ -232,7 +232,7 @@ test('organising and coordinating requests go to the organiser', () => {
     'organise the agents for the playtest',
     'can someone orchestrate multiple agents on these bugs',
     'delegate these tickets',
-    'coordinate the crew and keep it in working order',
+    'coordinate the clique and keep it in working order',
     'triage the bug reports and assign them',
     'who should take the leaderboard bug?',
   ])

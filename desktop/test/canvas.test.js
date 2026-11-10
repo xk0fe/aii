@@ -6,7 +6,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 
 const A = path.resolve(import.meta.dirname, '..')
-const ctx = vm.createContext({ crew: {}, avatarHTML: () => '', agentColor: () => '', CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
+const ctx = vm.createContext({ clique: {}, avatarHTML: () => '', agentColor: () => '', CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
 vm.runInContext(fs.readFileSync(path.join(A, 'ui/canvas.js'), 'utf8') + '\n' + fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8') + ';globalThis.__x = { md, snippet, canvasBoard, cvParse }', ctx)
 const { md, snippet, canvasBoard, cvParse } = ctx.__x
 const count = (s, re) => (s.match(re) || []).length

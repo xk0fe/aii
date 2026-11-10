@@ -1,6 +1,6 @@
 // Canvases: a board an agent draws in the chat instead of a wall of text (ui/canvas.js draws it by hand). A canvas is a
 // message whose text holds a ```canvas block, so it's kept, synced, searched and shown on every client like any other
-// message, and one that can't draw it shows the lines as code. `crew canvas` makes one and changes one that's there
+// message, and one that can't draw it shows the lines as code. `clique canvas` makes one and changes one that's there
 // (Hub.canvas): a teammate's lines go onto the same board, and the message says who drew on it.
 
 export const CANVAS_LINES = 60 // the most one canvas holds
@@ -29,11 +29,11 @@ export const typedLines = (words) =>
 export const CANVAS_HELP = `A canvas is a hand-drawn board in the chat. Draw one when a picture says it better than a paragraph: how something
 flows, numbers side by side, what's checked and what isn't. Every line is one piece, and there are no coordinates.
 
-crew canvas new "<line>" "<line>" ...        draw one where you're working; prints its id
-crew canvas show [id]                        the canvases in the chat, or one's lines, numbered
-crew canvas add <id> "<line>" ...            add lines to a canvas, yours or a teammate's
-crew canvas set <id> <n> "<line>"            write line n again
-crew canvas cut <id> <n>                     take line n out
+clique canvas new "<line>" "<line>" ...        draw one where you're working; prints its id
+clique canvas show [id]                        the canvases in the chat, or one's lines, numbered
+clique canvas add <id> "<line>" ...            add lines to a canvas, yours or a teammate's
+clique canvas set <id> <n> "<line>"            write line n again
+clique canvas cut <id> <n>                     take line n out
 
 Lines:
   title: How checkout works                  the heading (start with one)

@@ -14,7 +14,7 @@ export function parsePairCode(input: string): PairCode {
   // the next line, up to a line that has something else after it. Whatever comes after the code ("Scan this…", a word
   // on a line of its own) can look like more of it, so the longest version that reads as a code wins.
   const lines = text.slice(at).split(/\r?\n/).map((l) => l.trim())
-  const first = lines[0].match(/^crewphone1\.[A-Za-z0-9_-]+/)?.[0] ?? ''
+  const first = lines[0].match(/^cliquephone1\.[A-Za-z0-9_-]+/)?.[0] ?? ''
   const more: string[] = []
   for (let i = 1, whole = first === lines[0]; whole && i < lines.length; i++) {
     const run = lines[i].match(/^[A-Za-z0-9_-]+/)?.[0] ?? ''

@@ -1,11 +1,11 @@
 // The terminal host: a small process of its own that owns the agents' pseudo-terminals, so they keep working while
-// Crew quits, crashes or relaunches with new code. Crew connects over a Unix socket in CREW_HOME/run (core/ptyclient.js),
+// CLIque quits, crashes or relaunches with new code. CLIque connects over a Unix socket in CLIQUE_HOME/run (core/ptyclient.js),
 // or a named pipe on Windows, starts and stops terminals, types into them and gets their output; while nobody is
 // connected the terminals carry on and their output is kept, so whoever connects next can redraw them. It knows nothing
-// about agents, and changes rarely: once it's running, newer Crews keep using it. It quits once it has no terminals and
+// about agents, and changes rarely: once it's running, newer Cliques keep using it. It quits once it has no terminals and
 // nobody has connected for a minute.
 //
-//   node core/ptyhost.js            (Crew runs it with its own Electron binary, as Node: ELECTRON_RUN_AS_NODE=1)
+//   node core/ptyhost.js            (CLIque runs it with its own Electron binary, as Node: ELECTRON_RUN_AS_NODE=1)
 //
 // Messages are JSON, one per line. In: hello { token, protocol }, start { name, file, args, cwd, env, cols, rows, tag },
 // stop { name }, write { name, data }, resize { name, cols, rows }, quit. Out: hello { protocol, pid, procs, gone },
@@ -20,18 +20,21 @@ import pty from 'node-pty'
 
 export const PROTOCOL = 1
 const WIN = process.platform === 'win32'
-const HOME = process.env.CREW_HOME || path.join(os.homedir(), '.crew')
+// ~/.clique, or an older install's folder while the app hasn't moved it (as core/home.js has it: this file is copied
+// and run on its own, so it imports nothing of the app's)
+const at = (name) => path.join(os.homedir(), name)
+const HOME = process.env.CLIQUE_HOME || process.env.CREW_HOME || (!fs.existsSync(at('.clique')) && fs.existsSync(at('.crew')) ? at('.crew') : at('.clique'))
 export const RUN = path.join(HOME, 'run')
 export const SOCKET = path.join(RUN, 'pty.sock')
 export const TOKEN = path.join(RUN, 'pty.token')
 // Windows has no Unix sockets here: the host listens on a named pipe, and says which in this file, with its token.
 // The pipe is named afresh each time a host starts, so nobody else on the computer can take the name first and be
-// the one Crew tells everything to; the file is in your own folder, where only you can write.
+// the one CLIque tells everything to; the file is in your own folder, where only you can write.
 export const PIPE = path.join(RUN, 'pty.pipe')
 // There while a host is listening.
 export const ADDRESS = WIN ? PIPE : SOCKET
 export const LOG = path.join(RUN, 'ptyhost.log')
-const LOG_CAP = 1024 * 1024 // the host's own lines stop there; Crew starts the log afresh before it starts a host
+const LOG_CAP = 1024 * 1024 // the host's own lines stop there; CLIque starts the log afresh before it starts a host
 const SCROLLBACK = 256 * 1024 // as much as core/runner.js keeps
 const IDLE = 60000
 
@@ -52,8 +55,8 @@ export function address() {
   }
 }
 
-// A named pipe nobody can guess: \\.\pipe\crew-pty-<32 hex digits>.
-export const pipeName = (bytes = crypto.randomBytes(16)) => `\\\\.\\pipe\\crew-pty-${bytes.toString('hex')}`
+// A named pipe nobody can guess: \\.\pipe\clique-pty-<32 hex digits>.
+export const pipeName = (bytes = crypto.randomBytes(16)) => `\\\\.\\pipe\\clique-pty-${bytes.toString('hex')}`
 
 const procs = new Map() // name -> { p, tag, chunks, size, startedAt, lastOutput, cols, rows }
 const gone = [] // terminals that ended while nobody was connected: { name, tag, code, ms }
@@ -83,7 +86,7 @@ function main() {
   // why it went, in its log: nothing there after "listening" means it crashed outside JavaScript
   process.on('exit', (code) => log(`terminal host ${process.pid} exits (${code})`))
   const listen = () => {
-    // macOS: the token before the socket, so a Crew that finds the socket reads this host's token with it, not the last
+    // macOS: the token before the socket, so a CLIque that finds the socket reads this host's token with it, not the last
     // host's (it was turned away, and ran its agents without a host, when it came in between)
     if (!WIN) {
       const tmp = `${TOKEN}.${process.pid}`
@@ -92,7 +95,7 @@ function main() {
     }
     server.listen(here, () => {
       if (WIN) {
-        // the pipe and its token at once, so Crew never reads one host's pipe with another's token
+        // the pipe and its token at once, so CLIque never reads one host's pipe with another's token
         const tmp = `${PIPE}.${process.pid}`
         fs.writeFileSync(tmp, JSON.stringify({ pipe: here, token, pid: process.pid }) + '\n', { mode: 0o600 })
         fs.renameSync(tmp, PIPE)
@@ -140,9 +143,9 @@ function welcome(sock, token) {
           return sock.destroy()
         }
         ok = true
-        // one Crew at a time: a newer one takes over
+        // one CLIque at a time: a newer one takes over
         if (client && client !== sock) {
-          log('terminal host: a newer Crew connected, so the one before is let go')
+          log('terminal host: a newer CLIque connected, so the one before is let go')
           client.destroy()
         }
         client = sock
@@ -178,7 +181,7 @@ function handle(m) {
       }
       return
     case 'quit':
-      return quit('Crew asked it to')
+      return quit('CLIque asked it to')
   }
 }
 
@@ -220,7 +223,7 @@ function start({ name, file, args = [], cwd, env = {}, cols = 120, rows = 36, ta
 }
 
 // Once per terminal: on Windows a second kill closes its pseudoconsole a second time, which takes the whole host
-// down, every agent's terminal with it (Crew's "stop, then start again" did it to every restart).
+// down, every agent's terminal with it (CLIque's "stop, then start again" did it to every restart).
 function kill(x) {
   if (!x || x.killed) return
   x.killed = true
@@ -241,7 +244,7 @@ function send(m) {
   if (client && !client.destroyed) client.write(JSON.stringify(m) + '\n')
 }
 
-// Nothing to keep and nobody here: go after a while, in case Crew is just relaunching.
+// Nothing to keep and nobody here: go after a while, in case CLIque is just relaunching.
 function idle() {
   clearTimeout(idleTimer)
   if (procs.size || client) return

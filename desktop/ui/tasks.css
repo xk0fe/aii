@@ -84,7 +84,7 @@
 .tk-empty { display: none; }
 .tk-body.empty .tk-empty { display: grid; position: absolute; inset: 0; place-items: center; pointer-events: none; z-index: 1; }
 .tk-body.empty .tk-board .lane-list, .tk-body.empty .tk-list { opacity: 0; }
-/* nothing yet: the crew waits with their mugs in a little felt room, and says so (common.css .empty-state); none that
+/* nothing yet: the clique waits with their mugs in a little felt room, and says so (common.css .empty-state); none that
    match: a small one, on the page's own ground over the empty columns */
 .tk-empty > .empty-state { pointer-events: auto; }
 .tk-empty > .empty-state.small { min-width: 300px; border-radius: var(--r-window); background: var(--bg); }

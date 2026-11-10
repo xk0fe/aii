@@ -1,6 +1,6 @@
 // First run (core/setup.js): whether Claude Code and Codex are installed, their versions, whether they're signed in,
 // and on Windows Claude Code's version floor and Git for Windows. Fake CLIs on a PATH of their own (a script on macOS,
-// an npm-style .cmd on Windows, which Crew sees through), and Windows itself simulated with made-up files. Nothing
+// an npm-style .cmd on Windows, which CLIque sees through), and Windows itself simulated with made-up files. Nothing
 // here looks at your own ~/.claude or ~/.codex: every check gets a home and environment of its own.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -16,7 +16,7 @@ const OS = WIN ? 'win32' : 'darwin'
 
 // A folder for one test: bin/ (the only thing on PATH) and home/ (where Claude Code and Codex keep their files).
 function place() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-setup-'))
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-setup-'))
   const bin = path.join(root, 'bin')
   const home = path.join(root, 'home')
   fs.mkdirSync(bin)
@@ -238,7 +238,7 @@ test('Windows: claude.cmd from npm is found by PATHEXT and seen through to what 
   assert.equal(row(s, 'codex').how.command, STEPS.codex.install.win32)
 })
 
-test(`Windows: a Claude Code older than ${CLAUDE_ON_WINDOWS} says Update needed (Crew's hooks need it); ${CLAUDE_ON_WINDOWS} itself is ready`, async () => {
+test(`Windows: a Claude Code older than ${CLAUDE_ON_WINDOWS} says Update needed (CLIque's hooks need it); ${CLAUDE_ON_WINDOWS} itself is ready`, async () => {
   const exe = 'C:\\Users\\ada\\.local\\bin\\claude.exe'
   const old = await winLook(windows({ [exe]: '' }, { 'claude.exe --version': '2.1.100 (Claude Code)' }))
   assert.deepEqual([row(old, 'claude').state, row(old, 'claude').version, row(old, 'claude').needs, row(old, 'claude').how.command], ['update', '2.1.100', CLAUDE_ON_WINDOWS, 'claude update'])
@@ -266,7 +266,7 @@ test('Windows: Codex from its own installer is found where that puts it; an empt
   const broken = await winLook(windows({ [`${NPM}\\codex.exe`]: '' }))
   assert.equal(row(broken, 'codex').state, 'broken')
   const batch = await winLook(windows({ [`${NPM}\\claude.bat`]: '@echo hi\r\n' }))
-  assert.equal(row(batch, 'claude').state, 'broken', 'a batch file Crew can’t see through')
+  assert.equal(row(batch, 'claude').state, 'broken', 'a batch file CLIque can’t see through')
 })
 
 // ---- the check, kept --------------------------------------------------------------------------------------------
@@ -307,8 +307,8 @@ test('a check that fails leaves what it said before, and never throws', async ()
   assert.deepEqual([s.checked, s.ready, s.checking], [true, true, false])
 })
 
-test('macOS: Check again takes in what your login shell has now (new PATH folders, a key you set), keeping what Crew had', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-setup-home-'))
+test('macOS: Check again takes in what your login shell has now (new PATH folders, a key you set), keeping what CLIque had', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-setup-home-'))
   const env = { PATH: '/usr/bin:/bin', ZAI_API_KEY: 'mine', SHELL: '/bin/zsh' }
   assert.equal(adoptEnv(env, { PATH: '/opt/homebrew/bin:/usr/bin', ZAI_API_KEY: 'theirs', NEW_KEY: 'x' }, { home }), true)
   assert.deepEqual([env.PATH, env.ZAI_API_KEY, env.NEW_KEY], ['/usr/bin:/bin:/opt/homebrew/bin', 'mine', 'x'])

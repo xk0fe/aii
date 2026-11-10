@@ -1,5 +1,5 @@
 // Delivery: typing a message into an agent's terminal so that it really gets submitted, even on a loaded Mac where
-// the CLI stalls. Real Hub and Runner, fake pty and clock, throwaway CREW_HOME. `npm test`.
+// the CLI stalls. Real Hub and Runner, fake pty and clock, throwaway CLIQUE_HOME. `npm test`.
 import { test, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-delivery-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-delivery-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { Runner } = await import('../core/runner.js')
 
@@ -27,7 +27,7 @@ class FakeRunner extends EventEmitter {
 let hub, runner
 beforeEach(() => {
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'noor', area: 'client code' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -41,7 +41,7 @@ afterEach(async () => {
   clearTimeout(hub.convoTimer)
   await hub.saving // feed.jsonl is appended in the background: let it land before the next test, or the cleanup, clears it
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const noor = () => hub.agents.get('noor')
 const enters = () => runner.writes.filter((w) => w.data === '\r').length
@@ -90,7 +90,7 @@ const wait = (ms) => {
   for (let t = 0; t < ms; t += 500) mock.timers.tick(500)
 }
 
-test('Enter is pressed again for minutes, and only then does Crew call for help', () => {
+test('Enter is pressed again for minutes, and only then does CLIque call for help', () => {
   hub.send({ to: 'noor', text: 'fix the header' })
   wait(20000) // the old code gave up here
   assert.equal(alerts().length, 0)

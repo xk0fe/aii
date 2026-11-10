@@ -1,6 +1,6 @@
 // An agent's own context limit: past it, a new conversation when the agent is free (or just a heads-up), and the
 // gauges measured against the limit. Before the new conversation the agent says where things stand, and an
-// unfinished task carries over. Real Hub, fake runner and clock, throwaway CREW_HOME. Run with `npm test`.
+// unfinished task carries over. Real Hub, fake runner and clock, throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-limit-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-limit-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { againstLimit } = await import('../core/context.js')
 
@@ -27,7 +27,7 @@ let hub, runner
 const setup = (agents) => {
   mock.timers.reset()
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -41,13 +41,13 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 // Claude Code's status line with a 1M window and `used` tokens in it
 const report = (name, used) => hub.onStatusLine(name, { context_window: { context_window_size: 1000000, used_percentage: used / 10000, current_usage: { input_tokens: used } } })
 const view = (name) => hub.snapshot().agents.find((a) => a.name === name)
 const events = (name) => hub.feed.filter((e) => e.kind === 'event' && e.from === name).map((e) => e.text)
-// Crew asks where things stand, and the agent answers (a turn of its own)
+// CLIque asks where things stand, and the agent answers (a turn of its own)
 const asked = () => runner.submitted.at(-1)?.includes('passed its context limit, so a new one starts after this reply')
 const answer = (name, text) => {
   hub.onHook(name, { hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
@@ -78,7 +78,7 @@ test('past the limit while free: it says it was done, then a new conversation', 
   assert.equal(hub.agents.get('june').status, 'starting')
   assert.match(events('june').at(-1), /started a new conversation \(it passed its 250k context limit\)$/)
   assert.equal(hub.feed.at(-1).fresh, true)
-  assert.equal(hub.feed.filter((e) => e.kind === 'reply').length, 0) // its answer is for Crew, not the chat
+  assert.equal(hub.feed.filter((e) => e.kind === 'reply').length, 0) // its answer is for CLIque, not the chat
   assert.equal(hub.agents.get('june').inbox.length, 0)
 })
 
@@ -112,7 +112,7 @@ test('an unfinished task carries over: where it left off is the first thing in t
   assert.deepEqual(runner.starts, ['june'])
   assert.match(events('june').at(-1), /started a new conversation \(it passed its 250k context limit\), and picks up where it left off: Not finished\. Worktree bga-payload/)
   up('june')
-  assert.match(runner.submitted.at(-1), /^\[crew\] Your last conversation passed its context limit[\s\S]*branch fix\/payload[\s\S]*open the PR\.\n\nCheck where things stand, then carry on\.$/)
+  assert.match(runner.submitted.at(-1), /^\[clique\] Your last conversation passed its context limit[\s\S]*branch fix\/payload[\s\S]*open the PR\.\n\nCheck where things stand, then carry on\.$/)
   // its reply threads to the task it was on
   hub.onHook('june', { hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
   hub.onHook('june', { hook_event_name: 'Stop', last_assistant_message: 'PR is open.' })

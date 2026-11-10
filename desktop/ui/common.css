@@ -1,4 +1,4 @@
-/* Shared look for all views. Light by default, dark when the system is dark or Crew's theme says so
+/* Shared look for all views. Light by default, dark when the system is dark or CLIque's theme says so
    (main.js sets nativeTheme.themeSource, which drives prefers-color-scheme in every window).
    Calm by rule: ink and neutral greys for everything (selection, switches, links, primary buttons), and one colour,
    Berry, which means "needs you": a question, an OK, a review, the badge that counts them. Red is only for errors.
@@ -369,7 +369,7 @@ textarea:focus-visible, input:not([type=checkbox]):focus-visible { outline: none
 
 /* text an agent is working on (it used to shimmer; motion is only for what needs you) */
 .shimmer { color: var(--fg2); }
-/* ---- the crew roster (rosterHTML in common.js): the dashboard sidebar and the menu bar ----
+/* ---- the clique roster (rosterHTML in common.js): the dashboard sidebar and the menu bar ----
    Groups per computer, one row per agent: its creature (a dot on its shoulder while it works or needs you), its
    name and YOLO, its model on the right, then one line of what it's doing and its helpers. Rows have a fixed height
    and their switches float over the row's end on hover, so nothing ever shifts. Backgrounds are solid, never
@@ -608,7 +608,7 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 @keyframes burst { 0% { transform: translate(0, 0) scale(.4) rotate(0); opacity: 1; } 100% { transform: translate(var(--x), var(--y)) scale(1) rotate(var(--r)); opacity: 0; } }
 
 /* ---- feed ----
-   A group chat: agents on the left beside their creature, you on the right in blue, crew events centered and
+   A group chat: agents on the left beside their creature, you on the right in blue, clique events centered and
    quiet. Messages in a row from one sender stack under one face and name. */
 .feed {
   overflow-x: hidden; overflow-y: auto; padding: 16px 14px 14px; display: flex; flex-direction: column; gap: 14px; user-select: text;
@@ -668,7 +668,7 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 }
 /* an agent's words sit beside its face with no bubble, like a calm group chat; yours are on a quiet fill */
 .item.said .stack > .bubble { background: none; padding: 0; border-radius: 0; }
-/* a turn that ended without a word: Crew's line, not the agent's */
+/* a turn that ended without a word: CLIque's line, not the agent's */
 .bubble.wordless { color: var(--fg2); font-style: italic; }
 /* your messages: on a quiet fill, in the text colour */
 .me .bubble { background: var(--bubble-me); color: var(--fg); }
@@ -892,7 +892,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .ask-mark.no { color: var(--fg2); background: none; }
 .ask-answer { display: flex; align-items: center; gap: 7px; flex-basis: 100%; }
 /* a new conversation: a soft rule across the feed */
-/* right of way: Crew deciding who goes first, as one quiet line (hover it for the rule) */
+/* right of way: CLIque deciding who goes first, as one quiet line (hover it for the rule) */
 .rule-ev { align-self: stretch; display: grid; grid-template-columns: var(--gut, 24px) minmax(0, 1fr); column-gap: var(--gut-gap, 8px); align-items: start; padding: 2px 10px 2px 0; border-radius: var(--r-control); font-size: 12.5px; line-height: 18px; color: var(--fg2); cursor: help; }
 .rule-ev.link { cursor: pointer; transition: background .15s; }
 .rule-ev.link:hover { background: var(--btn); }
@@ -948,7 +948,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .sub-more { min-height: 22px; }
 .tr-go { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 8px; border-radius: var(--r-control); font-size: 12px; font-weight: 500; color: var(--needs-ink); background: var(--needs-tint); }
 .tr-go svg { width: 11px; height: 11px; }
-/* waiting on a teammate's answer (crew ask): who, what it asked, how long. Calm indigo, not "needs you" orange */
+/* waiting on a teammate's answer (clique ask): who, what it asked, how long. Calm indigo, not "needs you" orange */
 .typing-row.blocked .tr-wait { display: flex; align-items: center; gap: 6px; font: 13px var(--ui); color: var(--fg2); }
 .tr-wait > span:first-child { flex: none; }
 .tr-on { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px 0 2px; border-radius: var(--r-control); line-height: 0; background: var(--fill); }
@@ -1090,7 +1090,7 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .mn-item.off { opacity: .45; cursor: default; }
 
 /* ---- composer ----
-   Who it's for on one line (names, or just faces once the crew outgrows the line), then the message box with its
+   Who it's for on one line (names, or just faces once the clique outgrows the line), then the message box with its
    tools underneath, so the text gets the whole width. */
 .composer { position: relative; padding: 8px 12px 12px; }
 .chips { position: relative; display: flex; align-items: center; gap: 4px; height: 30px; margin: 0 -2px 8px; padding: 0 2px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
@@ -1112,7 +1112,7 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 @keyframes chip-on { 40% { transform: scale(1.08); } }
 .chip[data-to=auto] { --c: var(--accent); }
 .chip.task-chip { --c: var(--task); }
-/* a big crew: faces only, every chip one size, so picking one never moves the rest; a bigger one also folds
+/* a big clique: faces only, every chip one size, so picking one never moves the rest; a bigger one also folds
    Auto and Task down to their icons */
 .chips.compact { gap: 2px; }
 .chips.compact .chip.agent, .chips.tight .chip { width: 28px; padding: 0; justify-content: center; }
@@ -1323,13 +1323,13 @@ dialog::backdrop { background: rgba(0, 0, 0, .28); animation: fade-in var(--t-mo
 .chips.to-line .chip.task-chip:not(.on) { box-shadow: none; }
 .chips.to-line .chip.task-chip > svg { margin: 0; }
 
-/* a long menu (the To picker with a big crew) scrolls instead of running off the window */
+/* a long menu (the To picker with a big clique) scrolls instead of running off the window */
 .menu { max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; }
 /* the feed scrolls a message into view below the Needs you queue, never under it */
 .feed { scroll-padding-top: calc(var(--needs-h, 0px) + 12px); }
 .crow-line .crow-clones { margin-right: 6px; vertical-align: -3px; }
 
-/* ---- brand surfaces (brand.js): felt, only for the creatures' patches, the Crew room, empty states and the
+/* ---- brand surfaces (brand.js): felt, only for the creatures' patches, the CLIque room, empty states and the
    wordmark. Never on controls; text never sits on it. ---- */
 .room-felt { position: absolute; inset: 0; border-radius: var(--r-window); overflow: hidden; }
 .room-felt > span { position: absolute; left: 0; right: 0; }

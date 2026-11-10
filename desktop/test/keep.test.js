@@ -1,6 +1,6 @@
-// What Crew keeps of the files that would otherwise grow forever in CREW_HOME (core/keep.js): the chat's feed.jsonl,
-// the shared notes, the hooks' spool, the terminal host's log, and images nothing needs any more. Real Hub and Crew
-// with a fake runner in a throwaway CREW_HOME; the hooks as the CLIs run them. Run with `npm test`.
+// What CLIque keeps of the files that would otherwise grow forever in CLIQUE_HOME (core/keep.js): the chat's feed.jsonl,
+// the shared notes, the hooks' spool, the terminal host's log, and images nothing needs any more. Real Hub and CLIque
+// with a fake runner in a throwaway CLIQUE_HOME; the hooks as the CLIs run them. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -11,14 +11,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WIN } from './helpers/platform.mjs'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-keep-'))
-const HOME = process.env.CREW_HOME
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-keep-'))
+const HOME = process.env.CLIQUE_HOME
 const { Hub, CONFIG, ATTACHMENTS } = await import('../core/hub.js')
 const { keepFeed, keepLines, sweepFiles, FEED_KEEP, FEED_BYTES, BOARD_KEEP, BOARD_MAX, SPOOL_MAX, ATTACHMENT_DAYS, CACHE_DAYS } = await import('../core/keep.js')
 const { note } = await import('../core/ptyclient.js')
 const { adapters } = await import('../core/adapters.js')
-const { Crew, CACHE } = await import('../core/crew.js')
-const CREW_MJS = fileURLToPath(new URL('../bin/crew.mjs', import.meta.url))
+const { Clique, CACHE } = await import('../core/clique.js')
+const CLIQUE_MJS = fileURLToPath(new URL('../bin/clique.mjs', import.meta.url))
 after(() => fs.rmSync(HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 class FakeRunner extends EventEmitter {
@@ -64,7 +64,7 @@ test("feed.jsonl is written anew once it holds twice what's kept, and an open ca
   hub.send({ to: 'milo', text: 'Can you sketch the empty cart?' })
   const queued = hub.feed.at(-1)
   assert.ok(queued.queued)
-  for (let i = 0; i < 2 * FEED_KEEP + 50; i++) hub.post({ kind: 'event', from: 'crew', text: `line ${i}` })
+  for (let i = 0; i < 2 * FEED_KEEP + 50; i++) hub.post({ kind: 'event', from: 'clique', text: `line ${i}` })
   assert.equal(hub.feed.length, FEED_KEEP + 2)
   assert.deepEqual(hub.feed.slice(0, 2), [card, queued], 'still in the chat, in their place')
   await hub.saving
@@ -75,7 +75,7 @@ test("feed.jsonl is written anew once it holds twice what's kept, and an open ca
 
   // answered, the card is history like any other line: the next time it's written anew, it's left out
   hub.amend(card, { answer: { by: 'you', allow: true } })
-  for (let i = 0; i < 2 * FEED_KEEP; i++) hub.post({ kind: 'event', from: 'crew', text: `more ${i}` })
+  for (let i = 0; i < 2 * FEED_KEEP; i++) hub.post({ kind: 'event', from: 'clique', text: `more ${i}` })
   await hub.saving
   assert.ok(!hub.feed.includes(card))
   assert.ok(!fileLines().some((e) => e.id === card.id || e.amend === card.id))
@@ -87,7 +87,7 @@ test('a chat with more lines in use than it keeps is written anew now and then, 
   const rewrite = hub.rewriteFeed.bind(hub)
   hub.rewriteFeed = (keep) => (rewrites++, rewrite(keep))
   for (let i = 0; i < 2 * FEED_KEEP + 100; i++) hub.send({ to: 'milo', text: `queued ${i}` }) // all still waiting for milo
-  for (let i = 0; i < FEED_KEEP; i++) hub.post({ kind: 'event', from: 'crew', text: `line ${i}` })
+  for (let i = 0; i < FEED_KEEP; i++) hub.post({ kind: 'event', from: 'clique', text: `line ${i}` })
   assert.equal(hub.feed.filter((e) => e.queued).length, 2 * FEED_KEEP + 100)
   assert.ok(rewrites <= 4, `written anew ${rewrites} times`)
   await hub.saving
@@ -107,10 +107,10 @@ test("the chat keeps no more than its size: long lines push older ones out soone
 
 test("a restart reads back what's kept: an old file is written anew, and lines the agents at work still need stay", async () => {
   // a feed.jsonl from before there was a limit: 3000 lines, and an answer to one of the first
-  const old = Array.from({ length: 3000 }, (_, i) => JSON.stringify({ id: `e${i}`, ts: i, kind: 'event', from: 'crew', text: `line ${i}` }))
+  const old = Array.from({ length: 3000 }, (_, i) => JSON.stringify({ id: `e${i}`, ts: i, kind: 'event', from: 'clique', text: `line ${i}` }))
   old.push(JSON.stringify({ amend: 'e5', answer: { by: 'you' } }))
   fs.writeFileSync(at('feed.jsonl'), old.join('\n') + '\n')
-  // what Crew saved about an agent at work: the message it's answering and one in its queue, from long ago
+  // what CLIque saved about an agent at work: the message it's answering and one in its queue, from long ago
   fs.writeFileSync(at('runtime.json'), JSON.stringify({ agents: { ada: { current: 'e3', inbox: [{ id: 'e4' }] } }, calls: [{ id: 'q', msg: 'e5' }] }))
   open()
   assert.equal(hub.feed.length, FEED_KEEP + 3)
@@ -126,7 +126,7 @@ test("a restart reads back what's kept: an old file is written anew, and lines t
 })
 
 test('lines that arrive with an agent moving in, older than the chat here, stay only if it still needs them', async () => {
-  for (let i = 0; i < FEED_KEEP; i++) hub.post({ kind: 'event', from: 'crew', text: `here ${i}` })
+  for (let i = 0; i < FEED_KEEP; i++) hub.post({ kind: 'event', from: 'clique', text: `here ${i}` })
   const lines = [
     { id: 'm1', ts: 1, kind: 'msg', from: 'you', to: 'noor', text: 'what it was answering' },
     { id: 'm2', ts: 2, kind: 'reply', from: 'noor', text: 'an old reply' },
@@ -140,7 +140,7 @@ test('lines that arrive with an agent moving in, older than the chat here, stay 
 
 // ---- the shared notes -----------------------------------------------------------------------------------------------
 
-test('the shared notes keep the last ones `crew board` shows, and never pass their size', () => {
+test('the shared notes keep the last ones `clique board` shows, and never pass their size', () => {
   const words = 'the checkout tests need a seeded cart; run npm run seed first '.repeat(3)
   let biggest = 0
   for (let i = 0; i < 1500; i++) {
@@ -156,7 +156,7 @@ test('the shared notes keep the last ones `crew board` shows, and never pass the
   assert.equal(keepLines(`${'x'.repeat(10)}\n${'y'.repeat(10)}\n`, { max: 30 }), `${'y'.repeat(10)}\n`, 'half the size, the newest always')
 })
 
-// ---- the spool, while Crew is closed --------------------------------------------------------------------------------
+// ---- the spool, while CLIque is closed --------------------------------------------------------------------------------
 
 function run(file, args, { env, input = '' }) {
   return new Promise((resolve) => {
@@ -170,7 +170,7 @@ const event = (text) => `${JSON.stringify({ hook_event_name: 'Stop', last_assist
 
 async function spoolFills(hookRun) {
   const dir = fs.mkdtempSync(path.join(HOME, 'spool-home-'))
-  fs.writeFileSync(path.join(dir, 'url'), 'http://127.0.0.1:9') // nothing answers: Crew is closed
+  fs.writeFileSync(path.join(dir, 'url'), 'http://127.0.0.1:9') // nothing answers: CLIque is closed
   const spool = path.join(dir, 'spool', 'ada.jsonl')
   fs.mkdirSync(path.dirname(spool), { recursive: true })
   fs.writeFileSync(spool, 'x'.repeat(SPOOL_MAX - 10) + '\n')
@@ -198,16 +198,16 @@ async function spoolFills(hookRun) {
   assert.deepEqual(fs.readdirSync(path.dirname(spool)).sort(), ['ada.jsonl', 'ada.jsonl.1'], 'nothing left aside')
 }
 
-test("crew-hook (Windows' hooks) starts the spool afresh past its size, keeping the one before", () =>
-  spoolFills((dir, input) => run(process.execPath, [CREW_MJS, 'crew-hook', 'hook'], { env: { ...process.env, CREW_HOME: dir, CREW_AGENT: 'ada', CREW_WORKSPACE: '' }, input })))
+test("clique-hook (Windows' hooks) starts the spool afresh past its size, keeping the one before", () =>
+  spoolFills((dir, input) => run(process.execPath, [CLIQUE_MJS, 'clique-hook', 'hook'], { env: { ...process.env, CLIQUE_HOME: dir, CLIQUE_AGENT: 'ada', CLIQUE_WORKSPACE: '' }, input })))
 
-test('the sh hooks (macOS) start the spool afresh past its size, as crew-hook does', { skip: WIN && 'Windows runs crew-hook.exe' }, () => {
+test('the sh hooks (macOS) start the spool afresh past its size, as clique-hook does', { skip: WIN && 'Windows runs clique-hook.exe' }, () => {
   const settings = JSON.parse(adapters.claude({ name: 'ada' }, { session: 's', attachments: '/tmp', platform: 'darwin' }).args.find((x) => x.startsWith('{"permissions"')))
   const hook = settings.hooks.Stop[0].hooks[0].command
-  return spoolFills((dir, input) => run('/bin/sh', ['-c', hook], { env: { PATH: '/usr/bin:/bin', HOME: dir, CREW_HOME: dir, CREW_AGENT: 'ada', CREW_WORKSPACE: '' }, input }))
+  return spoolFills((dir, input) => run('/bin/sh', ['-c', hook], { env: { PATH: '/usr/bin:/bin', HOME: dir, CLIQUE_HOME: dir, CLIQUE_AGENT: 'ada', CLIQUE_WORKSPACE: '' }, input }))
 })
 
-test("Crew back replays an agent's full spool before its newer one, and one a hook was moving aside, and removes them", () => {
+test("CLIque back replays an agent's full spool before its newer one, and one a hook was moving aside, and removes them", () => {
   fs.mkdirSync(at('spool'), { recursive: true })
   fs.writeFileSync(at('spool/ada.jsonl'), event('second'))
   fs.writeFileSync(at('spool/ada.jsonl.1'), event('first'))
@@ -223,7 +223,7 @@ test("Crew back replays an agent's full spool before its newer one, and one a ho
 
 // ---- the terminal host's log ----------------------------------------------------------------------------------------
 
-test("Crew's lines in the terminal host's log stop once it's full", () => {
+test("CLIque's lines in the terminal host's log stop once it's full", () => {
   const file = path.join(fs.mkdtempSync(path.join(HOME, 'log-')), 'ptyhost.log')
   note('first', file, 40)
   note('second', file, 40)
@@ -251,10 +251,10 @@ test('images: attachments nothing refers to go after a while, so do old copies o
   const onTask = make(path.join(ATTACHMENTS, 'task.png'), old)
   const cached = make(path.join(CACHE, 'workstation', 'old.png'), CACHE_DAYS + 1)
   const recent = make(path.join(CACHE, 'workstation', 'recent.png'), 2)
-  const crew = new Crew({ bin: '/nonexistent', computerName: 'Studio' })
-  crew.hubs.get('default').post({ kind: 'msg', from: 'you', to: 'ada', text: 'look', images: [inChat] })
-  crew.hubs.get('default').tickets.add({ title: 'Empty cart state', images: [onTask] })
-  assert.deepEqual(crew.sweepImages(now), { attachments: 1, cache: 1 })
+  const clique = new Clique({ bin: '/nonexistent', computerName: 'Studio' })
+  clique.hubs.get('default').post({ kind: 'msg', from: 'you', to: 'ada', text: 'look', images: [inChat] })
+  clique.hubs.get('default').tickets.add({ title: 'Empty cart state', images: [onTask] })
+  assert.deepEqual(clique.sweepImages(now), { attachments: 1, cache: 1 })
   assert.deepEqual([loose, fresh, inChat, onTask, cached, recent].map((f) => fs.existsSync(f)), [false, true, true, true, false, true])
   assert.equal(sweepFiles(path.join(HOME, 'no-such-folder'), { days: 1 }), 0)
 })

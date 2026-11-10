@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const assets = path.join(root, 'assets')
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-icon-'))
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-icon-'))
 app.setPath('userData', path.join(tmp, 'userdata'))
 
 const SIDE = 1024 // the artwork, full bleed

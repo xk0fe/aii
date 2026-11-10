@@ -8,7 +8,7 @@ import { b64, CLOSE, diff, makePairCode, pack, unb64, unpack, VERSION } from '@/
 import type { State } from '@/net/types'
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0))
-// What a computer with no workspace sends (Crew.blank, core/crew.js).
+// What a computer with no workspace sends (Clique.blank, core/clique.js).
 const NO_WORKSPACE = { workspace: null, workspaces: [], agents: [], feed: [] } as unknown as State
 
 // ---- the network ----

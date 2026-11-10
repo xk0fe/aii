@@ -1,5 +1,5 @@
 // Threads: what agents say to each other stays out of the channel, the agent you asked answers you there, and a thread
-// that goes quiet gets its last word. Real Hub, fake runner, throwaway CREW_HOME. Run with `npm test`.
+// that goes quiet gets its last word. Real Hub, fake runner, throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -7,9 +7,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-threads-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-threads-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
-const { Crew } = await import('../core/crew.js')
+const { Clique } = await import('../core/clique.js')
 const { gistOf, inThread, forClients, stampAll } = await import('../core/threads.js')
 const { keepFeed } = await import('../core/keep.js')
 
@@ -34,7 +34,7 @@ const done = () => {
   return hub.saving
 }
 const fresh = (config = {}) => {
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'reads.json', 'runtime.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'reads.json', 'runtime.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'jeff', area: 'lead' }, { name: 'joseph', area: 'backend' }, { name: 'david', area: 'frontend' }], ...config }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -42,7 +42,7 @@ const fresh = (config = {}) => {
 }
 beforeEach(() => fresh())
 afterEach(() => done())
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 // the agent takes what it was last given, does `then` in that turn, and finishes saying `text`
 const turn = (name, text, then = () => {}) => {
@@ -320,7 +320,7 @@ test('lines from before threads are stamped when read back; the agent you asked 
     { id: 'f', kind: 'reply', from: 'david', text: 'Nothing to do.', re: 'e' },
     { id: 'g', kind: 'event', from: 'jeff', text: 'exited' },
   ]
-  fs.writeFileSync(path.join(process.env.CREW_HOME, 'feed.jsonl'), old.map((e) => JSON.stringify({ ...e, ts: 1 })).join('\n') + '\n')
+  fs.writeFileSync(path.join(process.env.CLIQUE_HOME, 'feed.jsonl'), old.map((e) => JSON.stringify({ ...e, ts: 1 })).join('\n') + '\n')
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
   const shown = hub.feed.filter((e) => !inThread(e)).map((e) => e.id)
@@ -574,7 +574,7 @@ test('posting into another channel is that channel\'s line, not a thread of what
   assert.equal(inThread(line), false)
 })
 
-test("Crew stepping in, mid-thread, is in that thread's channel", () => {
+test("CLIque stepping in, mid-thread, is in that thread's channel", () => {
   const root = hub.post({ kind: 'msg', from: 'you', to: 'jeff', text: 'x', channel: 'review' })
   hub.agents.get('jeff').status = 'working'
   hub.agents.get('jeff').current = root.id
@@ -633,21 +633,21 @@ test('an agent at work says which thread it is working in', () => {
 test('through the send the app and phones use: a reply box message goes in its thread, and the client sees the stamps', async () => {
   await done()
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'jeff', area: 'lead' }, { name: 'joseph', area: 'backend' }] }))
-  const crew = new Crew({ bin: '/nonexistent', computerName: 'Studio' })
-  Object.assign(crew.runner, { running: () => true, submit() {}, write() {} })
-  const here = crew.hubs.values().next().value
+  const clique = new Clique({ bin: '/nonexistent', computerName: 'Studio' })
+  Object.assign(clique.runner, { running: () => true, submit() {}, write() {} })
+  const here = clique.hubs.values().next().value
   for (const a of here.agents.values()) a.status = 'working' // busy: messages queue
-  await crew.send('jeff', 'fix it', [], {}, here)
+  await clique.send('jeff', 'fix it', [], {}, here)
   const root = here.feed.at(-1)
   const hand = here.post({ kind: 'msg', from: 'jeff', to: 'joseph', text: 'Fix it.', re: root.id })
-  await crew.send('joseph', 'and the docs', [], { re: hand.id, thread: root.id }, here)
+  await clique.send('joseph', 'and the docs', [], { re: hand.id, thread: root.id }, here)
   const mine = here.feed.at(-1)
   assert.equal(mine.thread, root.id)
   assert.equal(mine.re, hand.id)
-  const seen = crew.snapshot(here).feed
+  const seen = clique.snapshot(here).feed
   assert.equal(seen.find((e) => e.id === mine.id).thread, root.id)
   assert.equal(inThread(seen.find((e) => e.id === hand.id)), true)
-  for (const h of crew.hubs.values()) {
+  for (const h of clique.hubs.values()) {
     for (const a of h.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer)
     clearTimeout(h.statsTimer)
     clearTimeout(h.convoTimer)

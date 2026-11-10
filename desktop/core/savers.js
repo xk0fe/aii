@@ -1,9 +1,9 @@
-// Token savers: changes to how the crew works that cut what its agents' CLIs spend. Each one can be switched on or off
-// (config.json `savers`, or CREW_SAVERS for a benchmark run) and each one is measured. On, the ledger counts what it did
+// Token savers: changes to how the clique works that cut what its agents' CLIs spend. Each one can be switched on or off
+// (config.json `savers`, or CLIQUE_SAVERS for a benchmark run) and each one is measured. On, the ledger counts what it did
 // and what that kept from being spent; off, what it would have done. And every turn's spend is filed under the savers
 // that were on at the time, so cost per turn can be compared with them on and off. No Electron in here.
 //
-// The numbers behind them (2026-11-03, the long-session benchmark and real crews): a new conversation costs about
+// The numbers behind them (2026-11-03, the long-session benchmark and real cliques): a new conversation costs about
 // 100-120k weighted tokens to find its way around again; Claude Code's cache lasts an hour for a subscription (5 minutes
 // on an API key); a cache write costs 2x (1 hour) or 1.25x (5 minutes) an input token, a cache read 0.1x.
 import fs from 'node:fs'
@@ -17,12 +17,12 @@ export const SAVERS = [
   {
     id: 'boardNew',
     label: "Show only the notes an agent hasn't read",
-    about: 'crew board shows only the notes added since that conversation last looked, and a note is kept to one decision or gotcha.',
+    about: 'clique board shows only the notes added since that conversation last looked, and a note is kept to one decision or gotcha.',
   },
   {
     id: 'busyCheck',
     label: 'One quick check before building',
-    about: 'Agents run crew busy before building, instead of reading the board and listing PRs and branches. An agent working alone skips it.',
+    about: 'Agents run clique busy before building, instead of reading the board and listing PRs and branches. An agent working alone skips it.',
   },
   {
     id: 'quickTriage',
@@ -43,9 +43,9 @@ export const SAVERS = [
 export const SAVER_IDS = SAVERS.map((s) => s.id)
 
 // Which savers are on. config.json `savers`: true or false for all of them, or { id: true|false } (one left out is on).
-// CREW_SAVERS, for a benchmark run, wins: "on", "off", or the ids that are on ("coldStart,boardNew").
+// CLIQUE_SAVERS, for a benchmark run, wins: "on", "off", or the ids that are on ("coldStart,boardNew").
 export function saversFrom(config, env = process.env) {
-  const forced = String(env.CREW_SAVERS ?? '').trim()
+  const forced = String(env.CLIQUE_SAVERS ?? '').trim()
   if (forced) {
     const ids = forced === 'on' ? SAVER_IDS : forced === 'off' ? [] : forced.split(/[\s,+]+/)
     return Object.fromEntries(SAVER_IDS.map((id) => [id, ids.includes(id)]))
@@ -87,7 +87,7 @@ export class Ledger {
     this.save()
   }
 
-  // What the crew's work cost, under the savers that were on: { cost, tokens, turns, tasks, tools }.
+  // What the clique's work cost, under the savers that were on: { cost, tokens, turns, tasks, tools }.
   spend(mode, counts) {
     const m = (this.data.modes[mode] ??= { since: Date.now() })
     let any = false

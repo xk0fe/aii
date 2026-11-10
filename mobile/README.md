@@ -6,10 +6,10 @@ It talks to CLIque on your computer (a Mac or a Windows PC) directly, over your 
 
 ## What's in it
 
-- **Pair:** on the computer, open **Computers** in CLIque and choose **Add a phone**, then point the phone at the QR code it shows (or paste the code). The camera keeps looking by itself: a code that didn't get through is tried again after a few seconds, one the computer turned away isn't. Or **Try the demo crew** (the first screen always offers it; App Review uses it).
+- **Pair:** on the computer, open **Computers** in CLIque and choose **Add a phone**, then point the phone at the QR code it shows (or paste the code). The camera keeps looking by itself: a code that didn't get through is tried again after a few seconds, one the computer turned away isn't. Or **Try the demo clique** (the first screen always offers it; App Review uses it).
 - **Chat:** as in Discord and Slack. The chat is one channel of the workspace (#general and the ones you made), or your conversation with one agent, which spans the channels and says where each message was said. Under it, a swipe from the left edge or ☰ away, is the list: the workspaces as a rail (tap one to switch; a pill marks the one you're in, a badge who's waiting on you elsewhere), then the workspace's channels (what's new and who's waiting on you in each, + for a new one) and a direct conversation with each agent (what it's doing, what's new from it), and at the foot the computer and how it's reached. Every message, yours too, is a row: a face in the gutter, the name and time, the words beside it, no bubbles. A channel opens on its brief (what its agents are told with their first message there); tapping its name at the top opens its sheet: name, brief, who's in it (Auto picks only from them), Edit and Delete. Agents write Markdown: headings, nested and numbered lists, checklists, tables, code blocks with Copy. What agents say to each other is folded to three lines, with the rest behind **Show more**, and a line marks where each day starts. Long-press a message to copy or share it. Near the latest message the chat follows what comes in; scrolled back, what you're reading stays put, a round button above the message box leads down and counts what's new, and sending always takes you down. Type `@`, or press the **@** in the box, to bring someone in. Replies you've seen are marked read on the computer too, each in its own channel; a half-written message stays where you wrote it, and the phone opens the channel it was last in.
 - **Needs you:** permission prompts, an agent's own questions and plans. They fold into one line at the top of the chat (tap it to answer) and fill the Needs you tab (with a badge), where the creature asks in its own words ("Can I run npm run build?") above thumb-sized buttons; the answer goes back as `answer(ws, id, reply)`, exactly what `Hub.answer` takes.
-- **Crew:** the list, grouped by computer, under one line that says how things are. Tap anyone for on/off, YOLO, Fast, New conversation, Restart and Mark idle.
+- **CLIque:** the list, grouped by computer, under one line that says how things are. Tap anyone for on/off, YOLO, Fast, New conversation, Restart and Mark idle.
 - **Workspaces:** the phone watches one workspace at a time, its own choice. In the chat they're the rail of its list; on the other tabs the workspace's tile, at the top right, switches.
 - **Computers:** the computers you've paired, how each is reached (Wi-Fi or Tailscale, never an address), and Remove.
 - **Offline:** the last state stays on screen, the top says "Studio unreachable since 14:02", and sending waits with the reason in the message box. It reconnects by itself (with backoff, and right away when the app comes back to the front).
@@ -36,9 +36,9 @@ npx expo run:ios          # builds the app (ios/ is generated, not committed) an
 npx expo run:android      # same for Android
 ```
 
-Then pick **Try the demo crew**, or open `crew://demo` (`xcrun simctl openurl booted crew://demo`).
+Then pick **Try the demo clique**, or open `clique://demo` (`xcrun simctl openurl booted clique://demo`).
 
-On an iPhone: `npx expo run:ios --device` with your phone plugged in. A bundle id belongs to one Apple team, so signing with your own team (a free Personal Team works) needs an id of your own: `CREW_BUNDLE_ID=com.you.crew CREW_APPLE_TEAM=<your team id> npx expo run:ios --device --configuration Release` (Release carries its JavaScript, so it runs without the dev server; a free team's build stops opening after 7 days, until you build it again). The phone has to reach the Mac on port 7788 (the same Wi-Fi, or Tailscale on both); iOS asks once for local network access.
+On an iPhone: `npx expo run:ios --device` with your phone plugged in. A bundle id belongs to one Apple team, so signing with your own team (a free Personal Team works) needs an id of your own: `CLIQUE_BUNDLE_ID=com.you.clique CLIQUE_APPLE_TEAM=<your team id> npx expo run:ios --device --configuration Release` (Release carries its JavaScript, so it runs without the dev server; a free team's build stops opening after 7 days, until you build it again). The phone has to reach the Mac on port 7788 (the same Wi-Fi, or Tailscale on both); iOS asks once for local network access.
 
 `ios/` and `android/` are generated from `app.config.js` by `npx expo prebuild` (Continuous Native Generation) and are gitignored: change native settings in `app.config.js`, never in those folders. The name and the store id are in `src/brand.js` (one line each to change).
 
@@ -50,7 +50,7 @@ src/
   net/      the connection, runtime-agnostic (no React): crypto.ts (X25519, HKDF-SHA256, ChaCha20-Poly1305 with @noble),
             client.ts (every address at once, handshake, calls, watch + patches, reconnecting), pairing.ts, types.ts
   state/    session.ts (paired computers, the one in use, its connection), storage.ts and prefs.ts (expo-secure-store), hooks.ts
-  demo/     the neutral demo crew (design/DEMO-CREW.md) in two workspaces, answering like a computer would
+  demo/     the neutral demo clique (design/DEMO-CLIQUE.md) in two workspaces, answering like a computer would
   ui/       the creatures (avatar.ts specs and poses, creature.tsx, felt.ts: the felt edge as geometry), who needs you and the headline
             (room.ts), the chat's place against its latest message (latest.ts), felt surfaces, the ask cards, feed, Markdown (md.ts parses, markdown.tsx draws), composer, theme
             tokens (v1 calm + v2 Berry and Fredoka)
@@ -59,7 +59,7 @@ assets/     the icon layers, the splash, the felt textures, Fredoka (OFL)
 store/      the store listing drafts, privacy answers, review notes and screenshots
 scripts/smoke.ts   the network layer against a real computer, from a terminal
 test/              Jest: the test vectors, the client against a fake computer, pairing, the words, following the latest message, the
-                   Markdown agents write, the demo crew and the store config
+                   Markdown agents write, the demo clique and the store config
 ```
 
 ## Check it
@@ -79,8 +79,8 @@ rating, export compliance, review notes) is drafted in [`store/`](store/README.m
 And against a real computer running CLIque, with a code from **Computers › Add a phone**:
 
 ```sh
-npx tsx scripts/smoke.ts crewphone1.…            # pair, print the state, send a hello, print the patches that follow
-npx tsx scripts/smoke.ts --no-send --wait 30     # reconnect with the pairing it saved (.crew-smoke.json)
+npx tsx scripts/smoke.ts cliquephone1.…            # pair, print the state, send a hello, print the patches that follow
+npx tsx scripts/smoke.ts --no-send --wait 30     # reconnect with the pairing it saved (.clique-smoke.json)
 ```
 
 Options: `--to <name>`, `--text "…"`, `--ws <workspace>`, `--answer <card id>:allow|deny`, `--save <file>`, `--verbose`.

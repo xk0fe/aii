@@ -21,8 +21,8 @@ const opt = (name) => args.flatMap((a, i) => (a === name ? [args[i + 1]] : []))
 const avatarFile = opt('--avatar')[0] ?? path.join(repo, 'desktop/ui/avatar.js')
 const cssFiles = opt('--css').length ? opt('--css') : [path.join(repo, 'desktop/ui/common.css')]
 
-// The demo crew (design/DEMO-CREW.md) as the site shows them, each acting out its status.
-const CREW = [
+// The demo clique (design/DEMO-CLIQUE.md) as the site shows them, each acting out its status.
+const CLIQUE = [
   { name: 'Ada', status: 'working', avatar: { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false } },
   { name: 'Milo', status: 'needs', ask: 'ok', avatar: { body: 'cat', color: 'sky', eyes: 'happy', mouth: 'cat', hat: 'party', cheeks: true } },
   { name: 'Iris', status: 'needs', ask: 'question', avatar: { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true } },
@@ -34,7 +34,7 @@ const CREW = [
 const MOOD = { working: 'working', needs: 'waiting', idle: 'idle', starting: 'starting', off: 'sleep' }
 const POSE = { working: 'laptop', idle: 'mug', starting: 'pop', off: 'sleep' }
 const poseOf = (a) => (a.status === 'needs' ? (a.ask === 'question' ? 'question' : 'sign') : POSE[a.status])
-const JOBS = CREW.map((a) => ({ file: a.name.toLowerCase(), agent: { name: a.name, avatar: a.avatar, status: a.status }, mood: MOOD[a.status], pose: poseOf(a) }))
+const JOBS = CLIQUE.map((a) => ({ file: a.name.toLowerCase(), agent: { name: a.name, avatar: a.avatar, status: a.status }, mood: MOOD[a.status], pose: poseOf(a) }))
 
 // Runs in the page: one creature, flattened to SVG markup in the 100 x 100 box. Returns { body, defs, box }.
 function flatten(root, id) {

@@ -1,13 +1,13 @@
-// Agent tools: what an agent can change about CLIque itself, by running `crew app …` in its shell (bin/crew, the /app
+// Agent tools: what an agent can change about CLIque itself, by running `clique app …` in its shell (bin/clique, the /app
 // route in core/server.js). Adding an agent, a channel or a workspace, linking a computer: what you'd do in the app,
 // done by an agent you asked to. How far they go is yours to say ("tools" in config.json, the Agent tools sheet):
 //   off    agents can't use them
 //   ask    every change waits for your OK: a card in the chat, like a permission prompt's (the default)
 //   auto   changes go through right away and say so in the chat. What can't be undone (removing), what lets another
 //          computer in (linking) and a YOLO agent still ask.
-// Looking (crew app agents, workspaces, …) never asks. This isn't a sandbox: an agent runs as you and could edit
+// Looking (clique app agents, workspaces, …) never asks. This isn't a sandbox: an agent runs as you and could edit
 // config.json itself. It's the way an agent asks before it changes your app, and the way you say yes or no.
-// Crew.tool runs them: core/crew.js. No Electron in here.
+// Clique.tool runs them: core/clique.js. No Electron in here.
 import { SYSTEM_AGENT_CHOICES } from './system-agent.js'
 import path from 'node:path'
 import { GENERAL, channelName, checkLook, named, sharedNames, workspacesIn } from './workspaces.js'
@@ -20,16 +20,16 @@ export const toolMode = (config) => (MODES.includes(config?.tools) ? config.tool
 
 // ---- reading the words ----------------------------------------------------------------------------------------
 
-// `crew app <what> [words] [--flag value]`: which tool, the words naming what it's for, its flags. A flag's value is
-// the word after it (--area "QA for checkout") or after = (--area=QA); a switch (--crew) takes none.
+// `clique app <what> [words] [--flag value]`: which tool, the words naming what it's for, its flags. A flag's value is
+// the word after it (--area "QA for checkout") or after = (--area=QA); a switch (--clique) takes none.
 // -> { help: true } or { key, tool, name, flags }
 export function parse(words) {
   words = words.map(String)
-  while (words.length && !words[0].trim()) words.shift() // `crew app` alone sends one empty word
+  while (words.length && !words[0].trim()) words.shift() // `clique app` alone sends one empty word
   const [w0 = '', w1 = ''] = words.map((w) => w.trim().toLowerCase())
   if (!w0 || ['help', '--help', '-h'].includes(w0)) return { help: true }
   const key = Object.hasOwn(TOOLS, `${w0} ${w1}`) ? `${w0} ${w1}` : Object.hasOwn(TOOLS, w0) ? w0 : null
-  if (!key) throw new Error(`there's no crew app ${words.slice(0, 2).join(' ').trim()} (crew app help lists them)`)
+  if (!key) throw new Error(`there's no clique app ${words.slice(0, 2).join(' ').trim()} (clique app help lists them)`)
   const tool = TOOLS[key]
   const rest = words.slice(key.split(' ').length)
   const flags = {}
@@ -42,7 +42,7 @@ export function parse(words) {
     }
     const [, flag, inline] = m
     const kind = tool.flags?.[flag]
-    if (!kind) throw new Error(`crew app ${key} takes no --${flag}. Use: ${usage(key)}`)
+    if (!kind) throw new Error(`clique app ${key} takes no --${flag}. Use: ${usage(key)}`)
     if (kind === 'switch') flags[flag] = true
     else {
       const value = inline ?? rest[++i]
@@ -52,11 +52,11 @@ export function parse(words) {
   }
   const name = plain.join(' ').trim()
   if (tool.what && !name) throw new Error(`which ${tool.what}? Use: ${usage(key)}`)
-  if (!tool.what && name) throw new Error(`crew app ${key} takes no words. Use: ${usage(key)}`)
+  if (!tool.what && name) throw new Error(`clique app ${key} takes no words. Use: ${usage(key)}`)
   return { key, tool, name, flags }
 }
 
-const usage = (key) => `crew app ${key}${TOOLS[key].use ? ` ${TOOLS[key].use}` : ''}`
+const usage = (key) => `clique app ${key}${TOOLS[key].use ? ` ${TOOLS[key].use}` : ''}`
 
 // "ada, milo" or "@ada @milo" -> ['ada', 'milo']
 const names = (v) => [...new Set(String(v ?? '').split(/[\s,]+/).map((n) => n.replace(/^@/, '').trim().toLowerCase()).filter(Boolean))]
@@ -74,27 +74,27 @@ const lowerFirst = (s) => String(s).charAt(0).toLowerCase() + String(s).slice(1)
 
 // ---- what they're about -----------------------------------------------------------------------------------------
 
-// A workspace on this computer by its name (any case) or id. -> its entry in Crew.workspaces()
-function workspaceNamed(crew, raw) {
+// A workspace on this computer by its name (any case) or id. -> its entry in Clique.workspaces()
+function workspaceNamed(clique, raw) {
   const want = String(raw ?? '').trim()
-  const all = crew.workspaces()
+  const all = clique.workspaces()
   const byId = all.find((w) => w.id === want)
   if (byId) return byId
   const byName = all.filter((w) => w.name.toLowerCase() === want.toLowerCase())
-  if (byName.length > 1) throw new Error(`${byName.length} workspaces are called ${want}: give its id instead (crew app workspaces)`)
-  if (!byName.length) throw new Error(`there's no workspace called ${want} (crew app workspaces lists them)`)
+  if (byName.length > 1) throw new Error(`${byName.length} workspaces are called ${want}: give its id instead (clique app workspaces)`)
+  if (!byName.length) throw new Error(`there's no workspace called ${want} (clique app workspaces lists them)`)
   return byName[0]
 }
 
 // The hub a tool works in: the caller's workspace, or the one --in names.
-function hubFor(crew, hub, flags) {
+function hubFor(clique, hub, flags) {
   if (!flags.in) return hub
-  return crew.hubs.get(workspaceNamed(crew, flags.in).id)
+  return clique.hubs.get(workspaceNamed(clique, flags.in).id)
 }
 
 // A linked computer's workspace is changed on that computer: here it only shows.
-function notHosted(crew, w, what) {
-  const owner = crew.ownerOf(w.id)
+function notHosted(clique, w, what) {
+  const owner = clique.ownerOf(w.id)
   if (owner.owner) throw new Error(`${w.name} is ${owner.ownerName}'s workspace: its ${what} are changed on ${owner.ownerName}`)
 }
 
@@ -107,14 +107,14 @@ function agentIn(hub, raw) {
   if (name.includes('@')) throw new Error(`@${name} is on another computer: an agent there can change it`)
   const a = hub.agents.get(name)
   if (a?.cloneOf) throw new Error(`@${name} is a clone of @${a.cloneOf}: change @${a.cloneOf} instead`)
-  if (!hub.space.has(name)) throw new Error(`there's no agent called ${name} in ${hub.space.name} (crew who lists them)`)
+  if (!hub.space.has(name)) throw new Error(`there's no agent called ${name} in ${hub.space.name} (clique who lists them)`)
   return name
 }
 
 // A channel of a workspace by its name (with or without #) or id.
 function channelIn(hub, raw) {
   const c = hub.channelNamed(raw)
-  if (!c) throw new Error(`there's no #${channelName(raw)} in ${hub.space.name} (crew app channels lists them)`)
+  if (!c) throw new Error(`there's no #${channelName(raw)} in ${hub.space.name} (clique app channels lists them)`)
   return c
 }
 
@@ -123,7 +123,7 @@ function brainOf(hub, raw) {
   const want = String(raw ?? 'claude').trim().toLowerCase()
   const p = Object.values(hub.providers).find((x) => x.id.toLowerCase() === want || String(x.label).toLowerCase() === want)
   const offered = Object.values(hub.providers).filter((x) => isOffered(x.id, hub.config)).map((x) => x.id)
-  if (!p || !isOffered(p.id, hub.config)) throw new Error(`there's no brain called ${raw}: it's one of ${offered.join(', ')} (crew app brains)`)
+  if (!p || !isOffered(p.id, hub.config)) throw new Error(`there's no brain called ${raw}: it's one of ${offered.join(', ')} (clique app brains)`)
   if (p.missing?.length) throw new Error(`${p.label} needs ${p.missing.join(', ')} in your shell environment first`)
   return p
 }
@@ -147,16 +147,16 @@ function folderOf(raw) {
 }
 
 // Whether one of your shared agents runs YOLO.
-const yoloOf = (crew, name) => Boolean(named(crew.config.data.agents).find((a) => a.name === name)?.yolo)
+const yoloOf = (clique, name) => Boolean(named(clique.config.data.agents).find((a) => a.name === name)?.yolo)
 
 // Your shared agents, who can work in any workspace.
-const rosterOf = (crew) => named(crew.config.data.agents).map((a) => a.name)
+const rosterOf = (clique) => named(clique.config.data.agents).map((a) => a.name)
 
-function rosterNames(crew, raw) {
-  const roster = new Set(rosterOf(crew))
+function rosterNames(clique, raw) {
+  const roster = new Set(rosterOf(clique))
   const list = names(raw)
   const unknown = list.filter((n) => !roster.has(n))
-  if (unknown.length) throw new Error(`${unknown.map((n) => `@${n}`).join(', ')} ${unknown.length > 1 ? "aren't" : "isn't"} one of your agents (crew app agents lists them)`)
+  if (unknown.length) throw new Error(`${unknown.map((n) => `@${n}`).join(', ')} ${unknown.length > 1 ? "aren't" : "isn't"} one of your agents (clique app agents lists them)`)
   return list
 }
 
@@ -167,7 +167,7 @@ const FIELD_NAMES = { name: 'name', area: 'job', provider: 'brain', model: 'mode
 const shown = (k, v) => (v === undefined || v === '' ? '(none)' : k === 'yolo' ? (v ? 'on' : 'off') : k === 'prompt' ? clip(String(v).replace(/\s+/g, ' '), 80) : String(v))
 
 // ---- the tools ------------------------------------------------------------------------------------------------
-// Each one's plan({ crew, hub, from }, call) checks what it can now (a wrong name fails before anyone is asked) and
+// Each one's plan({ clique, hub, from }, call) checks what it can now (a wrong name fails before anyone is asked) and
 // says what the card shows: { title, code?, detail?, say, risky?, run }. run() makes the change and says what it did
 // (to the agent), and did is what the chat says it did when it went through without asking. A read tool's run() is
 // what it prints.
@@ -177,9 +177,9 @@ const AGENT_FLAGS = { area: 'value', brain: 'value', model: 'value', effort: 'va
 export const TOOLS = {
   agents: {
     group: 'look', about: 'your agents: their jobs, brains, and the workspaces each works in', read: true,
-    plan: ({ crew, hub }) => ({
+    plan: ({ clique, hub }) => ({
       run: () => {
-        const data = crew.config.data
+        const data = clique.config.data
         const rows = []
         for (const a of named(data.agents)) {
           const where = workspacesIn(data).filter((w) => !w.of && Object.hasOwn(w.members ?? {}, a.name)).map((w) => w.name || w.id)
@@ -203,15 +203,15 @@ export const TOOLS = {
   },
   channels: {
     group: 'look', about: "this workspace's channels, who's in each and its brief", read: true, flags: { in: 'value' },
-    plan: ({ crew, hub }, { flags }) => {
-      const h = hubFor(crew, hub, flags)
+    plan: ({ clique, hub }, { flags }) => {
+      const h = hubFor(clique, hub, flags)
       return { run: () => h.channelsText() }
     },
   },
   workspaces: {
     group: 'look', about: 'your workspaces: their folders, who works in each, which are asleep', read: true,
-    plan: ({ crew, hub }) => ({
-      run: () => `${crew.workspaces().map((w) => {
+    plan: ({ clique, hub }) => ({
+      run: () => `${clique.workspaces().map((w) => {
         const bits = [`id ${w.id}`, w.folder, w.ownerName && `hosted on ${w.ownerName}`, w.members?.length && w.members.map((m) => `@${m.name}`).join(' '), w.parked && 'asleep', w.id === hub.ws && "you're here"]
         return `${w.name.padEnd(20)} ${bits.filter(Boolean).join(' · ')}`
       }).join('\n')}\n`,
@@ -219,9 +219,9 @@ export const TOOLS = {
   },
   computers: {
     group: 'look', about: 'this computer and the computers linked to it', read: true,
-    plan: ({ crew }) => ({
+    plan: ({ clique }) => ({
       run: () => {
-        const c = crew.computers()
+        const c = clique.computers()
         const rows = [`${c.me.name.padEnd(20)} this computer${c.me.sharing ? ', letting computers link with its code' : ''}`]
         for (const l of c.links) rows.push(`${l.name.padEnd(20)} linked, ${l.online ? 'online' : 'offline'}`)
         return `${rows.join('\n')}\n`
@@ -230,20 +230,20 @@ export const TOOLS = {
   },
 
   'agent add': {
-    group: 'agents', what: 'name', about: "a new agent, the workspace's own; --crew makes it one of your agents, who can work in any workspace",
-    use: '<name> --area "<its job>" [--brain claude|codex|…] [--model <m>] [--effort <e>] [--folder <dir>] [--prompt "<instructions>"] [--crew] [--off] [--yolo] [--in <workspace>]',
-    flags: { ...AGENT_FLAGS, crew: 'switch', off: 'switch', yolo: 'switch' },
-    plan: ({ crew, hub: mine }, { name: raw, flags }) => {
-      const hub = hubFor(crew, mine, flags)
-      notHosted(crew, { id: hub.ws, name: hub.space.name }, 'agents')
-      const shared = Boolean(flags.crew)
+    group: 'agents', what: 'name', about: "a new agent, the workspace's own; --clique makes it one of your agents, who can work in any workspace",
+    use: '<name> --area "<its job>" [--brain claude|codex|…] [--model <m>] [--effort <e>] [--folder <dir>] [--prompt "<instructions>"] [--clique] [--off] [--yolo] [--in <workspace>]',
+    flags: { ...AGENT_FLAGS, clique: 'switch', off: 'switch', yolo: 'switch' },
+    plan: ({ clique, hub: mine }, { name: raw, flags }) => {
+      const hub = hubFor(clique, mine, flags)
+      notHosted(clique, { id: hub.ws, name: hub.space.name }, 'agents')
+      const shared = Boolean(flags.clique)
       const name = hub.freeName(raw, shared ? (n) => hub.agents.has(n) || sharedNames(hub.config, n).has(n) : undefined)
       const brain = brainOf(hub, flags.brain)
       const effort = effortOf(brain, flags.effort)
       const cwd = folderOf(flags.folder)
       const area = String(flags.area ?? '').trim()
       const prompt = String(flags.prompt ?? '').trim()
-      const where = shared ? `joins your crew and works in ${hub.space.name}` : `only ${hub.space.name} has it`
+      const where = shared ? `joins your clique and works in ${hub.space.name}` : `only ${hub.space.name} has it`
       return {
         title: 'Add an agent',
         code: [`@${name}${area ? ` · ${area}` : ''}`, [brain.label, flags.model, effort, cwd].filter(Boolean).join(' · '), flags.yolo && 'YOLO: runs every command without asking'].filter(Boolean).join('\n'),
@@ -254,7 +254,7 @@ export const TOOLS = {
         did: `added a new agent, @${name}${inWs(hub, mine)}`,
         run: () => {
           const made = hub.addAgent({ name, area, prompt, provider: brain.id, model: flags.model, effort, cwd, shared, off: flags.off, yolo: flags.yolo })
-          return `added @${made}${hub !== mine ? ` in ${hub.space.name}` : ''}${flags.off ? `, off (crew app agent on ${made} turns it on)` : ', ready for work'}`
+          return `added @${made}${hub !== mine ? ` in ${hub.space.name}` : ''}${flags.off ? `, off (clique app agent on ${made} turns it on)` : ', ready for work'}`
         },
       }
     },
@@ -263,8 +263,8 @@ export const TOOLS = {
     group: 'agents', what: 'agent', about: "change an agent's name, job, brain, folder or instructions",
     use: '<name> [--name <new>] [--area "…"] [--brain …] [--model …] [--effort …] [--folder <dir>] [--prompt "…"] [--yolo | --no-yolo] [--in <workspace>]',
     flags: { ...AGENT_FLAGS, name: 'value', yolo: 'switch', 'no-yolo': 'switch' },
-    plan: ({ crew, hub: mine }, { name: raw, flags }) => {
-      const hub = hubFor(crew, mine, flags)
+    plan: ({ clique, hub: mine }, { name: raw, flags }) => {
+      const hub = hubFor(clique, mine, flags)
       const name = agentIn(hub, raw)
       const a = hub.space.agents.find((x) => x.name === name)
       const patch = {}
@@ -319,10 +319,10 @@ export const TOOLS = {
   },
   'agent remove': {
     group: 'agents', what: 'agent', risky: true, about: 'take an agent out of a workspace; --everywhere takes one of your own agents out of CLIque', use: '<name> [--everywhere] [--in <workspace>]', flags: { in: 'value', everywhere: 'switch' },
-    plan: ({ crew, hub: mine }, { name: raw, flags }) => {
-      const hub = hubFor(crew, mine, flags)
+    plan: ({ clique, hub: mine }, { name: raw, flags }) => {
+      const hub = hubFor(clique, mine, flags)
       const name = agentIn(hub, raw)
-      if (hub.agents.get(name)?.system) throw new Error(`@${name} comes with every workspace, so it can't be removed. Turn it off with: crew app agent off ${name}`)
+      if (hub.agents.get(name)?.system) throw new Error(`@${name} comes with every workspace, so it can't be removed. Turn it off with: clique app agent off ${name}`)
       const shared = hub.space.shared(name)
       const leaves = shared && !flags.everywhere
       return {
@@ -343,9 +343,9 @@ export const TOOLS = {
   'channel add': {
     group: 'channels', what: 'name', about: 'a new channel. Its brief is what agents are told to do there; without --members everyone is in it',
     use: '<name> [--brief "<what agents do there>"] [--members a,b] [--in <workspace>]', flags: { brief: 'value', members: 'value', in: 'value' },
-    plan: ({ crew, hub: mine }, { name: raw, flags }) => {
-      const hub = hubFor(crew, mine, flags)
-      notHosted(crew, { id: hub.ws, name: hub.space.name }, 'channels')
+    plan: ({ clique, hub: mine }, { name: raw, flags }) => {
+      const hub = hubFor(clique, mine, flags)
+      notHosted(clique, { id: hub.ws, name: hub.space.name }, 'channels')
       const name = channelName(raw)
       if (!name) throw new Error('give the channel a name')
       if (hub.space.channels.some((c) => c.name === name)) throw new Error(`there's a #${name} already`)
@@ -359,7 +359,7 @@ export const TOOLS = {
         hub,
         did: `added the #${name} channel${inWs(hub, mine)}`,
         run: () => {
-          crew.channelAction('create', null, { name, brief, ...(members.length && { members }) }, hub.ws)
+          clique.channelAction('create', null, { name, brief, ...(members.length && { members }) }, hub.ws)
           return `added #${name}${hub !== mine ? ` in ${hub.space.name}` : ''}`
         },
       }
@@ -368,9 +368,9 @@ export const TOOLS = {
   'channel edit': {
     group: 'channels', what: 'channel', about: "change a channel's name, brief or members (--members everyone: all of them)",
     use: '<name> [--name <new>] [--brief "…"] [--members a,b | --members everyone] [--in <workspace>]', flags: { name: 'value', brief: 'value', members: 'value', in: 'value' },
-    plan: ({ crew, hub: mine }, { name: raw, flags }) => {
-      const hub = hubFor(crew, mine, flags)
-      notHosted(crew, { id: hub.ws, name: hub.space.name }, 'channels')
+    plan: ({ clique, hub: mine }, { name: raw, flags }) => {
+      const hub = hubFor(clique, mine, flags)
+      notHosted(clique, { id: hub.ws, name: hub.space.name }, 'channels')
       const c = channelIn(hub, raw)
       const patch = {}
       const lines = []
@@ -399,7 +399,7 @@ export const TOOLS = {
         hub,
         did: `changed #${c.name}${inWs(hub, mine)}`,
         run: () => {
-          crew.channelAction('edit', c.id, patch, hub.ws)
+          clique.channelAction('edit', c.id, patch, hub.ws)
           return `changed #${patch.name ?? c.name}`
         },
       }
@@ -407,9 +407,9 @@ export const TOOLS = {
   },
   'channel remove': {
     group: 'channels', what: 'channel', risky: true, about: 'remove a channel (its messages stay, under #general)', use: '<name> [--in <workspace>]', flags: { in: 'value' },
-    plan: ({ crew, hub: mine }, { name: raw, flags }) => {
-      const hub = hubFor(crew, mine, flags)
-      notHosted(crew, { id: hub.ws, name: hub.space.name }, 'channels')
+    plan: ({ clique, hub: mine }, { name: raw, flags }) => {
+      const hub = hubFor(clique, mine, flags)
+      notHosted(clique, { id: hub.ws, name: hub.space.name }, 'channels')
       const c = channelIn(hub, raw)
       if (c.id === GENERAL) throw new Error("#general can't be removed")
       return {
@@ -420,7 +420,7 @@ export const TOOLS = {
         hub,
         did: `removed #${c.name}${inWs(hub, mine)}`,
         run: () => {
-          crew.channelAction('remove', c.id, null, hub.ws)
+          clique.channelAction('remove', c.id, null, hub.ws)
           return `removed #${c.name}`
         },
       }
@@ -430,12 +430,12 @@ export const TOOLS = {
   'workspace add': {
     group: 'workspaces', what: 'name', about: 'a new workspace, with your agents who work in it. It opens in the background: the screen stays where it is',
     use: '<name> [--folder <dir>] [--members a,b] [--icon <emoji>] [--color <color>]', flags: { folder: 'value', members: 'value', icon: 'value', color: 'value' },
-    plan: ({ crew }, { name, flags }) => {
-      if (crew.workspaces().some((w) => w.name.toLowerCase() === name.toLowerCase())) throw new Error(`there's a workspace called ${name} already`)
+    plan: ({ clique }, { name, flags }) => {
+      if (clique.workspaces().some((w) => w.name.toLowerCase() === name.toLowerCase())) throw new Error(`there's a workspace called ${name} already`)
       const folder = folderOf(flags.folder)
-      const members = rosterNames(crew, flags.members)
+      const members = rosterNames(clique, flags.members)
       checkLook({ color: flags.color })
-      const yolo = members.filter((n) => yoloOf(crew, n))
+      const yolo = members.filter((n) => yoloOf(clique, n))
       return {
         title: 'Add a workspace',
         code: [`${flags.icon ? `${flags.icon} ` : ''}${name}`, folder].filter(Boolean).join('\n'),
@@ -444,7 +444,7 @@ export const TOOLS = {
         risky: yolo.length > 0, // a YOLO agent starting work somewhere new
         did: `made the ${name} workspace`,
         run: () => {
-          const { id } = crew.workspaceAction('create', null, { name, folder, members, icon: flags.icon, color: flags.color, show: false })
+          const { id } = clique.workspaceAction('create', null, { name, folder, members, icon: flags.icon, color: flags.color, show: false })
           return `made the workspace ${name} (id ${id})${members.length ? `: ${members.map((n) => `@${n}`).join(', ')} work${members.length === 1 ? 's' : ''} there` : ''}`
         },
       }
@@ -453,9 +453,9 @@ export const TOOLS = {
   'workspace edit': {
     group: 'workspaces', what: 'workspace', about: "change a workspace's name, folder, icon or color",
     use: '<name> [--name <new>] [--folder <dir>] [--icon <emoji>] [--color <color>]', flags: { name: 'value', folder: 'value', icon: 'value', color: 'value' },
-    plan: ({ crew }, { name: raw, flags }) => {
-      const w = workspaceNamed(crew, raw)
-      notHosted(crew, w, 'settings')
+    plan: ({ clique }, { name: raw, flags }) => {
+      const w = workspaceNamed(clique, raw)
+      notHosted(clique, w, 'settings')
       const patch = {}
       if (flags.name !== undefined) patch.name = String(flags.name).trim()
       if (flags.folder !== undefined) patch.folder = folderOf(flags.folder)
@@ -470,7 +470,7 @@ export const TOOLS = {
         say: `Can I change the ${w.name} workspace?`,
         did: `changed the ${w.name} workspace`,
         run: () => {
-          crew.workspaceAction('edit', w.id, patch)
+          clique.workspaceAction('edit', w.id, patch)
           return `changed ${patch.name || w.name}`
         },
       }
@@ -478,21 +478,21 @@ export const TOOLS = {
   },
   'workspace members': {
     group: 'workspaces', what: 'workspace', about: 'which of your agents work in a workspace', use: '<name> [--add a,b] [--remove a,b]', flags: { add: 'value', remove: 'value' },
-    plan: ({ crew }, { name: raw, flags }) => {
-      const w = workspaceNamed(crew, raw)
-      const add = rosterNames(crew, flags.add).filter((n) => !w.members.some((m) => m.name === n))
+    plan: ({ clique }, { name: raw, flags }) => {
+      const w = workspaceNamed(clique, raw)
+      const add = rosterNames(clique, flags.add).filter((n) => !w.members.some((m) => m.name === n))
       const remove = names(flags.remove).filter((n) => w.members.some((m) => m.name === n))
       if (!add.length && !remove.length) throw new Error(`nothing to change: ${flags.add || flags.remove ? `that's how ${w.name} is already` : `say who, e.g. ${usage('workspace members')}`}`)
       const lines = [add.length && `in: ${add.map((n) => `@${n}`).join(', ')}`, remove.length && `out: ${remove.map((n) => `@${n}`).join(', ')}`].filter(Boolean)
       return {
-        risky: add.some((n) => yoloOf(crew, n)), // a YOLO agent starting work somewhere new
+        risky: add.some((n) => yoloOf(clique, n)), // a YOLO agent starting work somewhere new
         title: `Change who works in ${w.name}`,
         code: lines.join('\n'),
         detail: remove.length ? 'Agents taken out stop there, and stay your agents everywhere else.' : '',
         say: `Can I change who works in ${w.name}?`,
         did: `changed who works in ${w.name}: ${lines.join(', ')}`,
         run: () => {
-          crew.workspaceAction('members', w.id, { add, remove })
+          clique.workspaceAction('members', w.id, { add, remove })
           return `${w.name}: ${lines.join(', ')}`
         },
       }
@@ -500,8 +500,8 @@ export const TOOLS = {
   },
   'workspace sleep': {
     group: 'workspaces', what: 'workspace', about: "put a workspace to sleep: its agents stop, and pick up where they left off when it wakes", use: '<name>',
-    plan: ({ crew, hub }, { name: raw }) => {
-      const w = workspaceNamed(crew, raw)
+    plan: ({ clique, hub }, { name: raw }) => {
+      const w = workspaceNamed(clique, raw)
       if (w.parked) throw new Error(`${w.name} is asleep already`)
       return {
         title: `Put ${w.name} to sleep`,
@@ -510,7 +510,7 @@ export const TOOLS = {
         say: `Can I put ${w.name} to sleep?`,
         did: `put ${w.name} to sleep`,
         run: () => {
-          crew.workspaceAction('park', w.id)
+          clique.workspaceAction('park', w.id)
           return `${w.name} is asleep`
         },
       }
@@ -518,8 +518,8 @@ export const TOOLS = {
   },
   'workspace wake': {
     group: 'workspaces', what: 'workspace', about: 'wake a workspace that is asleep: its agents take work again', use: '<name>',
-    plan: ({ crew }, { name: raw }) => {
-      const w = workspaceNamed(crew, raw)
+    plan: ({ clique }, { name: raw }) => {
+      const w = workspaceNamed(clique, raw)
       if (!w.parked) throw new Error(`${w.name} is awake already`)
       return {
         title: `Wake ${w.name}`,
@@ -527,7 +527,7 @@ export const TOOLS = {
         say: `Can I wake ${w.name}?`,
         did: `woke ${w.name}`,
         run: () => {
-          crew.workspaceAction('open', w.id)
+          clique.workspaceAction('open', w.id)
           return `${w.name} is awake`
         },
       }
@@ -535,10 +535,10 @@ export const TOOLS = {
   },
   'workspace remove': {
     group: 'workspaces', what: 'workspace', risky: true, about: 'remove a workspace (its chat, notes and tasks stay on disk)', use: '<name>',
-    plan: ({ crew, hub }, { name: raw }) => {
-      const w = workspaceNamed(crew, raw)
-      const owner = crew.ownerOf(w.id)
-      const own = (workspacesIn(crew.config.data).find((x) => x.id === w.id)?.agents ?? []).filter((a) => a?.name).length
+    plan: ({ clique, hub }, { name: raw }) => {
+      const w = workspaceNamed(clique, raw)
+      const owner = clique.ownerOf(w.id)
+      const own = (workspacesIn(clique.config.data).find((x) => x.id === w.id)?.agents ?? []).filter((a) => a?.name).length
       return {
         title: owner.owner ? `Hide ${w.name} on this computer` : `Remove ${w.name}`,
         code: w.name,
@@ -548,7 +548,7 @@ export const TOOLS = {
         say: owner.owner ? `Can I hide ${w.name} on this computer?` : `Can I remove the ${w.name} workspace?`,
         did: owner.owner ? `hid ${w.name}` : `removed the ${w.name} workspace`,
         run: () => {
-          crew.workspaceAction('remove', w.id)
+          clique.workspaceAction('remove', w.id)
           return owner.owner ? `${w.name} is hidden here` : `removed ${w.name}`
         },
       }
@@ -556,10 +556,10 @@ export const TOOLS = {
   },
 
   link: {
-    group: 'computers', what: 'code', risky: true, about: "link this computer with another, by the code the other one's Computers sheet shows (crew1.…)", use: '<code>',
-    plan: ({ crew }, { name: code }) => {
+    group: 'computers', what: 'code', risky: true, about: "link this computer with another, by the code the other one's Computers sheet shows (clique1.…)", use: '<code>',
+    plan: ({ clique }, { name: code }) => {
       const info = readCode(code)
-      const linked = [...crew.links.values()].find((l) => l.code === code.trim())
+      const linked = [...clique.links.values()].find((l) => l.code === code.trim())
       if (linked) throw new Error(`this computer is linked with ${linked.name ?? info.name} already`)
       return {
         title: `Link with ${info.name}`,
@@ -568,7 +568,7 @@ export const TOOLS = {
         say: `Can I link this computer with ${info.name}?`,
         did: `linked this computer with ${info.name}`,
         run: async () => {
-          await crew.connect(code)
+          await clique.connect(code)
           return `linked with ${info.name}`
         },
       }
@@ -576,10 +576,10 @@ export const TOOLS = {
   },
   unlink: {
     group: 'computers', what: 'computer', risky: true, about: 'unlink a linked computer', use: '<computer>',
-    plan: ({ crew }, { name: raw }) => {
+    plan: ({ clique }, { name: raw }) => {
       const want = String(raw).trim().toLowerCase()
-      const l = [...crew.links.values()].find((x) => x.slug === want || String(x.name ?? '').toLowerCase() === want)
-      if (!l) throw new Error(`this computer isn't linked with ${raw} (crew app computers lists them)`)
+      const l = [...clique.links.values()].find((x) => x.slug === want || String(x.name ?? '').toLowerCase() === want)
+      if (!l) throw new Error(`this computer isn't linked with ${raw} (clique app computers lists them)`)
       return {
         title: `Unlink ${l.name ?? l.slug}`,
         code: l.name ?? l.slug,
@@ -587,7 +587,7 @@ export const TOOLS = {
         say: `Can I unlink ${l.name ?? l.slug}?`,
         did: `unlinked ${l.name ?? l.slug}`,
         run: () => {
-          crew.forget(l.slug)
+          clique.forget(l.slug)
           return `unlinked ${l.name ?? l.slug}`
         },
       }
@@ -595,8 +595,8 @@ export const TOOLS = {
   },
 }
 
-function onOff({ crew, hub: mine }, { name: raw, flags }, on) {
-  const hub = hubFor(crew, mine, flags)
+function onOff({ clique, hub: mine }, { name: raw, flags }, on) {
+  const hub = hubFor(clique, mine, flags)
   const name = agentIn(hub, raw)
   const a = hub.space.agents.find((x) => x.name === name)
   if (Boolean(a.off) !== on) throw new Error(`@${name} is ${on ? 'on' : 'off'} already`)
@@ -622,13 +622,13 @@ const MODE_WORDS = {
   auto: 'Changes go through right away. Removing something, linking a computer, and starting or changing a YOLO agent still wait for the user to allow them.',
 }
 
-// `crew app help`, as things are now.
+// `clique app help`, as things are now.
 export function help(mode) {
   const line = (key) => `  ${usage(key)}\n      ${TOOLS[key].about}${TOOLS[key].risky ? ' (always asks the user first)' : ''}`
   const keys = Object.keys(TOOLS)
-  return `crew app: change CLIque itself, when the user asks you to. ${MODE_WORDS[mode]}
+  return `clique app: change CLIque itself, when the user asks you to. ${MODE_WORDS[mode]}
 To look (never asks):
-${keys.filter((k) => TOOLS[k].read).map((k) => `  crew app ${k.padEnd(12)} ${TOOLS[k].about}`).join('\n')}
+${keys.filter((k) => TOOLS[k].read).map((k) => `  clique app ${k.padEnd(12)} ${TOOLS[k].about}`).join('\n')}
 To change:
 ${keys.filter((k) => !TOOLS[k].read).map(line).join('\n')}
 Agents and channels are your workspace's unless you add --in <workspace>. Names are lowercase words (ada, ios-release).

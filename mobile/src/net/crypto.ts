@@ -18,7 +18,7 @@ export const dh = (secret: Bytes, pub: Bytes): Bytes => x25519.getSharedSecret(s
 
 export type Keys = { kPhone: Bytes; kMac: Bytes }
 
-// ikm = DH(E, M) ‖ DH(D, M) ‖ DH(E, F) ‖ (s when pairing); okm = HKDF(ikm, "crew-phone-v1", "keys" ‖ E ‖ D ‖ M ‖ F, 64)
+// ikm = DH(E, M) ‖ DH(D, M) ‖ DH(E, F) ‖ (s when pairing); okm = HKDF(ikm, "clique-phone-v1", "keys" ‖ E ‖ D ‖ M ‖ F, 64)
 export function phoneKeys({ e, d, m, f, secret }: { e: KeyPair; d: KeyPair; m: Bytes; f: Bytes; secret?: Bytes | null }): Keys {
   const ikm = concat(dh(e.secret, m), dh(d.secret, m), dh(e.secret, f), secret ?? new Uint8Array(0))
   return split(ikm, { e: e.public, d: d.public, m, f })

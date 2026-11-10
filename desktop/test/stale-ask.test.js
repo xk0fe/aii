@@ -1,6 +1,6 @@
 // A question Claude Code settles by itself: its safety check turns a risky command down two minutes after asking, the
 // agent carries on, and no hook says so. The card closes once the call has a result in the agent's transcript, or when
-// its turn ends. Lines as Claude Code 2.1.300 writes them (trimmed). Fake runner and clock, throwaway CREW_HOME.
+// its turn ends. Lines as Claude Code 2.1.300 writes them (trimmed). Fake runner and clock, throwaway CLIQUE_HOME.
 // Run with `npm test`.
 import { test, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,9 +9,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-stale-ask-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-stale-ask-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 class FakeRunner extends EventEmitter {
   running = () => true
@@ -33,12 +33,12 @@ const card = () => hub.feed.findLast((e) => e.kind === 'ask')
 
 beforeEach(() => {
   mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: Date.now() })
-  for (const f of ['feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'june', area: 'backend' }, { name: 'rex', area: 'art', provider: 'codex' }] }))
   hub = new Hub(new FakeRunner(), { bin: '/nonexistent' })
   for (const a of hub.agents.values()) a.status = 'working'
   june = hub.agents.get('june')
-  transcript = path.join(process.env.CREW_HOME, `t-${Math.random()}.jsonl`)
+  transcript = path.join(process.env.CLIQUE_HOME, `t-${Math.random()}.jsonl`)
   write({ type: 'user', message: { role: 'user', content: 'clear the junk folder' } }, use('toolu_018Dw'))
 })
 afterEach(() => {

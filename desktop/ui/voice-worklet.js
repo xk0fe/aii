@@ -2,7 +2,7 @@
 // each with its loudness for the mic button's meter. Runs on the audio thread (see ui/voice.js).
 const CHUNK = 800
 
-class CrewMic extends AudioWorkletProcessor {
+class CliqueMic extends AudioWorkletProcessor {
   buf = new Float32Array(CHUNK)
   n = 0
 
@@ -22,4 +22,4 @@ class CrewMic extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('crew-mic', CrewMic)
+registerProcessor('clique-mic', CliqueMic)

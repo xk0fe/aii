@@ -1,11 +1,11 @@
 import { NativeTabs } from 'expo-router/native-tabs'
 
-import { useCrew, useDerived } from '@/state/hooks'
+import { useClique, useDerived } from '@/state/hooks'
 import { themes, useTheme } from '@/ui/theme'
 
 export default function Tabs() {
   const t = useTheme()
-  const { state } = useCrew()
+  const { state } = useClique()
   const d = useDerived(state)
   const unread = [...d.unread.values()].reduce((n, x) => n + x, 0)
   return (
@@ -20,8 +20,8 @@ export default function Tabs() {
         <NativeTabs.Trigger.Icon sf={{ default: 'bell', selected: 'bell.fill' }} md="notifications" />
         {d.open.length ? <NativeTabs.Trigger.Badge>{String(d.open.length)}</NativeTabs.Trigger.Badge> : null}
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="crew">
-        <NativeTabs.Trigger.Label>Crew</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="clique">
+        <NativeTabs.Trigger.Label>Clique</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'person.2', selected: 'person.2.fill' }} md="group" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { executables, giveOwnUUID, giveOwnUUIDs, uuidsIn } from '../scripts/own-uuid.mjs'
 
 const ELECTRON = fileURLToPath(new URL('../node_modules/electron/dist/Electron.app', import.meta.url))
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'crew-uuid-test-'))
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'clique-uuid-test-'))
 
 // A small 64-bit Mach-O: a segment, then the UUID (when there is one), then some "code"
 function macho(uuid) {
@@ -57,14 +57,14 @@ test("a copied executable gets a UUID of its own: the same on every build, anoth
     fs.writeFileSync(file, macho(ELECTRONS))
     return { file, changed: giveOwnUUID(file, seed) }
   }
-  const one = build('com.greengrass.crew')
+  const one = build('com.greengrass.clique')
   assert.equal(one.changed.length, 1)
   assert.equal(one.changed[0].from, ELECTRONS)
   assert.notEqual(one.changed[0].to, ELECTRONS)
   assert.match(one.changed[0].to, /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/)
   assert.deepEqual(uuidsIn(fs.readFileSync(one.file)).map((s) => s.uuid), [one.changed[0].to], 'written where it was')
-  assert.equal(build('com.greengrass.crew').changed[0].to, one.changed[0].to, 'rebuilt, macOS still knows it')
-  assert.notEqual(build('com.greengrass.crew.dev').changed[0].to, one.changed[0].to, 'the dev launcher is an app of its own')
+  assert.equal(build('com.greengrass.clique').changed[0].to, one.changed[0].to, 'rebuilt, macOS still knows it')
+  assert.notEqual(build('com.greengrass.clique.dev').changed[0].to, one.changed[0].to, 'the dev launcher is an app of its own')
 
   // only those 16 bytes change
   const before = macho(ELECTRONS)
@@ -80,7 +80,7 @@ test('each architecture in a universal binary gets its own', () => {
   const dir = tmp()
   const file = path.join(dir, 'CLIque')
   fs.writeFileSync(file, fat(macho(ELECTRONS), macho('4C4C4410-5555-3144-A141-3B25E9C2D865')))
-  const changed = giveOwnUUID(file, 'com.greengrass.crew')
+  const changed = giveOwnUUID(file, 'com.greengrass.clique')
   assert.equal(changed.length, 2)
   const now = uuidsIn(fs.readFileSync(file)).map((s) => s.uuid)
   assert.deepEqual(now, changed.map((c) => c.to))
@@ -117,7 +117,7 @@ test("Electron's own executables, as the build gives them theirs", { skip: proce
   const stock = files.map(dwarfdump)
   assert.deepEqual(files.map((f) => uuidsIn(fs.readFileSync(f)).map((s) => s.uuid)), stock)
 
-  const changed = giveOwnUUIDs(app, 'com.greengrass.crew')
+  const changed = giveOwnUUIDs(app, 'com.greengrass.clique')
   const now = files.map(dwarfdump)
   assert.deepEqual(now, files.map((f) => changed.filter((c) => c.file === f).map((c) => c.to)))
   assert.equal(new Set([...stock.flat(), ...now.flat()]).size, stock.flat().length * 2, "none left with Electron's, none shared")

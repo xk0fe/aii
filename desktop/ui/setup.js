@@ -1,10 +1,10 @@
 // The first run, the setup screen and Add provider…. A new install opens with the first run: a conversation with Q
-// that makes its first workspace and crew (below). Whether Claude Code and Codex can run on this computer comes from
+// that makes its first workspace and clique (below). Whether Claude Code and Codex can run on this computer comes from
 // state.setup (core/setup.js): with neither ready, the screen shows what to install or sign in to, with the command to
-// paste and Check again; once one is, the crew invites you to make its first agent. "Claude Code and Codex…" in the ⋯
+// paste and Check again; once one is, the clique invites you to make its first agent. "Claude Code and Codex…" in the ⋯
 // menu shows the same screen any time. Add provider… (here, and in the model picker) adds GLM or Ollama, which the
 // picker offers only once added (state.providers[id].added, core/providers.js).
-/* global crew, esc, morph, avatarHTML, oops, errorLine, ON_WINDOWS, foldHTML, PRODUCT_NAME, store, ICONS, tildePath, pathParts */
+/* global clique, esc, morph, avatarHTML, oops, errorLine, ON_WINDOWS, foldHTML, PRODUCT_NAME, store, ICONS, tildePath, pathParts */
 
 let setupScreen = null // the dashboard's, once mounted: the model picker (ui/collection.js) opens Add provider… with it
 function openAddProvider() {
@@ -37,13 +37,13 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   //   work       what kind of work it is, which decides who he proposes (WORK)
   //   cli        Claude Code or Codex, when neither is here yet (he thinks while the app looks)
   //   workspace  where the work lives: its folder (chosen, or dropped on the window) and its name
-  //   crew       a clique for that work, standing beside him, each one switched in or out with a click
+  //   clique       a clique for that work, standing beside him, each one switched in or out with a click
   // Then the stage is carried into the app: everyone travels to their row in the sidebar (carry), and #general opens
-  // on what to do first (ui/dashboard.js welcomeHTML). Where it's got to is kept (crew.firstRun), so a quit picks up
+  // on what to do first (ui/dashboard.js welcomeHTML). Where it's got to is kept (clique.firstRun), so a quit picks up
   // there. An install that already has a workspace never sees it, and Skip leaves it for the screen below.
   // Hovering the name, in any scene after the first, says what a clique is.
-  const FIRST = ['title', 'meet', 'hello', 'role', 'work', 'cli', 'workspace', 'crew']
-  const KEY = 'crew.firstRun'
+  const FIRST = ['title', 'meet', 'hello', 'role', 'work', 'cli', 'workspace', 'clique']
+  const KEY = 'clique.firstRun'
   const TITLE_MS = 3350 // the fold, then the name rising
   const LINE_MS = { hello: 2300, role: 2500 } // how long each of his opening lines stays
   let fr = null // { step, pop, leaving, rise, timer, work, folder, name, made, out, busy, error, found }
@@ -56,37 +56,37 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   // A clique to start with, for each kind of work: four agents with a job each (area is what the agent itself is
   // told), and three things to ask first (ui/dashboard.js offers them in an empty #general).
   const WORK = [
-    { id: 'software', label: 'Software', for: 'software', crew: [
+    { id: 'software', label: 'Software', for: 'software', clique: [
       { name: 'Ada', job: 'Builds and fixes', area: 'Builder: features, fixes and refactors across the codebase', avatar: look('blob', 'mint', 'sparkle') },
       { name: 'Theo', job: 'Tests and reviews', area: 'Tester and reviewer: writes and runs the tests, and reviews changes before they land', avatar: look('frog', 'lime', 'googly', false) },
       { name: 'Iris', job: 'Designs the screens', area: 'Designer: UI and UX, layouts, styles and the words on screen', avatar: look('heart', 'lilac', 'happy') },
       { name: 'June', job: 'Writes the docs', area: 'Writer: docs, release notes and copy', avatar: look('bunny', 'peach', 'dot') },
     ], starters: ['Look around this project and tell me what you see', 'Find something small to fix, and fix it', 'Write a README for this project'] },
-    { id: 'design', label: 'Design', for: 'design', crew: [
+    { id: 'design', label: 'Design', for: 'design', clique: [
       { name: 'Iris', job: 'Explores directions', area: 'Explorer: sketches several directions for a screen or a flow before one is chosen', avatar: look('heart', 'lilac', 'happy') },
       { name: 'Milo', job: 'Builds the screens', area: 'Maker: turns the chosen direction into finished screens, components and assets', avatar: look('cat', 'sky', 'sparkle') },
       { name: 'June', job: 'Writes the words', area: 'Writer: labels, messages and every word on screen', avatar: look('bunny', 'peach', 'dot') },
       { name: 'Theo', job: 'Checks every detail', area: 'Checker: contrast, spacing, consistency and whether everyone can use it', avatar: look('frog', 'lime', 'googly', false) },
     ], starters: ['Look at what’s in this folder and tell me what you see', 'Show me two better versions of one screen', 'Check everything here for consistency'] },
-    { id: 'writing', label: 'Writing', for: 'writing', crew: [
+    { id: 'writing', label: 'Writing', for: 'writing', clique: [
       { name: 'Nora', job: 'Drafts', area: 'Drafter: writes first drafts from notes, outlines and what’s already in the folder', avatar: look('blob', 'mint', 'sparkle') },
       { name: 'Felix', job: 'Edits', area: 'Editor: tightens the writing, fixes structure and keeps one voice', avatar: look('frog', 'lime', 'googly', false) },
       { name: 'Maya', job: 'Checks the facts', area: 'Fact checker: verifies names, dates, numbers and quotes, and says what it could not confirm', avatar: look('heart', 'lilac', 'happy') },
       { name: 'Otis', job: 'Lays it out', area: 'Layout: formats the finished text, its headings, tables and files', avatar: look('bunny', 'peach', 'dot') },
     ], starters: ['Read the draft and tell me what’s missing', 'Tighten the first chapter', 'Check every name, date and number'] },
-    { id: 'research', label: 'Research', for: 'research', crew: [
+    { id: 'research', label: 'Research', for: 'research', clique: [
       { name: 'Vera', job: 'Finds the sources', area: 'Finder: looks for sources, data and prior work, and keeps where each came from', avatar: look('drop', 'sky', 'sparkle') },
       { name: 'Hugo', job: 'Reads and sums up', area: 'Reader: reads the sources closely and sums up what each one says', avatar: look('mochi', 'yellow', 'dot') },
       { name: 'Lena', job: 'Checks the numbers', area: 'Analyst: checks the numbers, runs the analysis and says how sure it is', avatar: look('cat', 'teal', 'happy') },
       { name: 'Emil', job: 'Writes it up', area: 'Writer: turns the findings into a clear report', avatar: look('bunny', 'peach', 'dot') },
     ], starters: ['What do we already know? Read this folder and tell me', 'Find the five best sources on this', 'What’s the weakest claim here?'] },
-    { id: 'marketing', label: 'Marketing', for: 'marketing', crew: [
+    { id: 'marketing', label: 'Marketing', for: 'marketing', clique: [
       { name: 'Zoe', job: 'Plans the launch', area: 'Planner: the audience, the message, the channels and the calendar', avatar: look('heart', 'red', 'sparkle') },
       { name: 'Remy', job: 'Writes the copy', area: 'Copywriter: headlines, posts, emails and landing pages', avatar: look('blob', 'orange', 'happy') },
       { name: 'Kai', job: 'Makes the visuals', area: 'Visuals: images, layouts and assets for each channel', avatar: look('cat', 'purple', 'sparkle') },
       { name: 'Bea', job: 'Tracks the results', area: 'Analyst: what to measure, the numbers and what they say to do next', avatar: look('mochi', 'yellow', 'dot') },
     ], starters: ['Draft a launch plan from what’s in this folder', 'Write three versions of the headline', 'Who is this for? Tell me what you’d guess'] },
-    { id: 'other', label: 'Something else', for: '', crew: [
+    { id: 'other', label: 'Something else', for: '', clique: [
       { name: 'Sam', job: 'Does the work', area: 'Maker: does the main work that’s asked for', avatar: look('blob', 'mint', 'sparkle') },
       { name: 'Robin', job: 'Looks things up', area: 'Finder: looks things up, in the folder and beyond it', avatar: look('drop', 'sky', 'googly', false) },
       { name: 'Alex', job: 'Checks it', area: 'Checker: reviews the work and says what’s wrong with it', avatar: look('heart', 'lilac', 'happy') },
@@ -108,10 +108,10 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
       if (next.settingsBroken) return // not a new install: the screen says what's wrong
       // a quit before he'd asked anything opens it again; after the workspace scene there'd be a workspace
       fr = { step: at < 4 ? 'title' : at > 6 ? 'workspace' : saved }
-    } else if (saved === 'crew') fr = { step: 'crew', made: next.workspace.name }
+    } else if (saved === 'clique') fr = { step: 'clique', made: next.workspace.name }
     else store.set(KEY, 'done') // an install from before the first run, or one whose workspace came from a linked computer
     if (!fr) return
-    fr.work = store.get('crew.firstWork') || null
+    fr.work = store.get('clique.firstWork') || null
     fr.out = new Set()
     if (fr.step === 'title') {
       if (quiet()) fr.step = 'meet'
@@ -145,7 +145,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     clearTimeout(fr?.timer)
     const land = how === 'land' && state?.workspace
     if (land && fr) fr.landing = true
-    if (land) store.set('crew.hints', 'on') // the app says what each new thing is, the first time it shows (dashboard.js)
+    if (land) store.set('clique.hints', 'on') // the app says what each new thing is, the first time it shows (dashboard.js)
     if (land) onLand() // the app is put on #general under the stage, before the stage is carried into it
     const after = () => {
       fr = null
@@ -220,7 +220,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     if (box && 'value' in box) box.value = fr.name ?? '' // (a field you've typed in keeps what it shows through a redraw)
     box?.focus({ preventScroll: true })
   }
-  const pickFolder = async () => setFolder(await crew.call('pickFolder').catch(() => null))
+  const pickFolder = async () => setFolder(await clique.call('pickFolder').catch(() => null))
 
   async function makeWorkspace() {
     if (!fr?.folder || fr.busy) return
@@ -230,13 +230,13 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     draw()
     try {
       // its agents start there: a folder that isn't there would only stop them
-      const where = await crew.call('folderInfo', '', fr.folder)
+      const where = await clique.call('folderInfo', '', fr.folder)
       if (where && !where.exists) throw new Error(`There's no folder ${tildePath(where.path)}`)
       if (fr !== run) return
-      store.set(KEY, 'crew') // first: the state that brings the new workspace mustn't end the first run
-      const { state: made } = await crew.call('workspace', 'create', null, { name, color: '', icon: '', folder: fr.folder, members: [], folders: {} })
-      if (made?.workspace?.id) store.set(`crew.work.${made.workspace.id}`, workOf(fr.work).id) // what #general offers to ask first
-      go('crew', { made: name })
+      store.set(KEY, 'clique') // first: the state that brings the new workspace mustn't end the first run
+      const { state: made } = await clique.call('workspace', 'create', null, { name, color: '', icon: '', folder: fr.folder, members: [], folders: {} })
+      if (made?.workspace?.id) store.set(`clique.work.${made.workspace.id}`, workOf(fr.work).id) // what #general offers to ask first
+      go('clique', { made: name })
       onMade(made)
     } catch (x) {
       if (fr !== run) return
@@ -245,13 +245,13 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     }
   }
 
-  const crewHere = () => (state?.agents ?? []).filter((a) => !a.system && !a.cloneOf)
-  const joined = (p) => crewHere().find((a) => (a.seed ?? a.name) === p.name.toLowerCase())
-  const picked = () => workOf(fr.work).crew.filter((p) => !fr.out.has(p.name))
+  const cliqueHere = () => (state?.agents ?? []).filter((a) => !a.system && !a.cloneOf)
+  const joined = (p) => cliqueHere().find((a) => (a.seed ?? a.name) === p.name.toLowerCase())
+  const picked = () => workOf(fr.work).clique.filter((p) => !fr.out.has(p.name))
 
   // The ones left standing join, on whichever of Claude Code and Codex is ready here; then the stage is carried into
   // the app.
-  async function bringCrew() {
+  async function bringClique() {
     if (!fr || fr.busy) return
     const run = fr
     Object.assign(fr, { busy: true, error: '' })
@@ -261,7 +261,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
       for (const p of picked()) {
         if (fr !== run) return
         if (joined(p)) continue // in already (a second try)
-        await crew.call('addAgent', { name: p.name, area: p.area, provider, avatar: p.avatar, off: false })
+        await clique.call('addAgent', { name: p.name, area: p.area, provider, avatar: p.avatar, off: false })
       }
       if (fr !== run) return
       draw()
@@ -307,9 +307,9 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
           <p class="fr-alt">Already have a clique on another computer? <button type="button" class="su-link" data-act="computers">Link it</button></p></div>`,
       }
     }
-    if (s === 'crew') {
+    if (s === 'clique') {
       const w = workOf(fr.work)
-      const n = picked().length + crewHere().filter((a) => !w.crew.some((p) => p.name.toLowerCase() === (a.seed ?? a.name))).length
+      const n = picked().length + cliqueHere().filter((a) => !w.clique.some((p) => p.name.toLowerCase() === (a.seed ?? a.name))).length
       return {
         line: w.for ? `Here’s a clique for *${w.for}.*` : 'Here’s your *clique.*',
         ctl: `<div class="fr-card">
@@ -352,16 +352,16 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     // who stands beside him: the clique for this work in the last scene (and your own, made from there), each a
     // switch; an empty place keeps its slot, so a morph leaves the others be
     const w = workOf(fr.work)
-    const own = crewHere().filter((a) => !w.crew.some((p) => p.name.toLowerCase() === (a.seed ?? a.name)))
+    const own = cliqueHere().filter((a) => !w.clique.some((p) => p.name.toLowerCase() === (a.seed ?? a.name)))
     const fig = (p, i) => {
-      if (!p || s !== 'crew') return `<span class="fr-fig" data-name="slot-${i}" hidden></span>`
+      if (!p || s !== 'clique') return `<span class="fr-fig" data-name="slot-${i}" hidden></span>`
       const off = fr.out.has(p.name) && !joined(p)
       return `<button type="button" class="fr-fig mate${off ? ' out' : ''}" data-name="mate-${esc(p.name.toLowerCase())}" data-agent="${esc(p.name.toLowerCase())}" data-fr-pick="${esc(p.name)}" aria-pressed="${!off}" style="--n:${i}" ${fr.busy ? 'disabled' : ''}>
         <span class="fr-av">${avatarHTML({ ...p, status: 'idle', on: true }, { size: 120, mood: 'idle' })}</span><span class="fr-who"><b>${esc(p.name)}</b><small>${esc(p.job)}</small></span></button>`
     }
     const mine = (a, i) => `<span class="fr-fig mate" data-name="mate-${esc(a.name)}" data-agent="${esc(a.name)}" style="--n:${i}"><span class="fr-av">${avatarHTML({ ...a, status: 'idle', on: true }, { size: 120, mood: 'idle' })}</span><span class="fr-who"><b>${esc(cap(a.seed ?? a.name))}</b><small>${esc(String(a.area ?? '').split(':')[0])}</small></span></span>`
     const q = at >= 2
-      ? `<span class="fr-fig q${fr.pop ? ' pop' : ''}${s === 'crew' ? ' small' : ''}" data-name="q-${fr.pop ? 'pop' : 'in'}" data-agent="q"><span class="fr-av">${avatarHTML(Q, { size: 200, mood: 'idle' })}</span><span class="fr-who"><b>Q</b><small>Runs the clique</small></span></span>`
+      ? `<span class="fr-fig q${fr.pop ? ' pop' : ''}${s === 'clique' ? ' small' : ''}" data-name="q-${fr.pop ? 'pop' : 'in'}" data-agent="q"><span class="fr-av">${avatarHTML(Q, { size: 200, mood: 'idle' })}</span><span class="fr-who"><b>Q</b><small>Runs the clique</small></span></span>`
       : '<span class="fr-fig" data-name="q-none" hidden></span>'
     // the felt flecks Q pops out with: a ring of them, each its own colour
     const burst = fr.pop ? `<span class="fr-burst" aria-hidden="true">${Array.from({ length: 16 }, (_, i) => {
@@ -376,7 +376,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
         <span class="su-glow sky"></span><span class="su-glow pink"></span><span class="su-glow lime"></span>
         <span class="su-floor${at < 2 ? ' later' : ''}"></span>
         ${s === 'meet' ? `<button type="button" class="fr-new" data-fr="new"><span class="fr-plus">${ICONS.plus}</span><span>New agent</span></button>` : '<span data-name="no-new" hidden></span>'}
-        <div class="fr-row">${ORDER.map((k, i) => (k === null ? q : fig(w.crew[k], i))).join('')}${s === 'crew' ? own.slice(0, 2).map((a, i) => mine(a, 5 + i)).join('') : ''}</div>
+        <div class="fr-row">${ORDER.map((k, i) => (k === null ? q : fig(w.clique[k], i))).join('')}${s === 'clique' ? own.slice(0, 2).map((a, i) => mine(a, 5 + i)).join('') : ''}</div>
         ${burst}
       </div>
       <div class="fr-talk">
@@ -399,14 +399,14 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     if (act === 'pick') return void pickFolder()
     if (act === 'make') return void makeWorkspace()
     if (act === 'own') return onAdd() // the agent sheet, over this screen
-    if (act === 'bring') return void bringCrew()
+    if (act === 'bring') return void bringClique()
     if (act === 'skip') return fr?.busy ? undefined : finish('done')
   }
   // the kind of work: it's marked, then he moves on
   function pickWork(id) {
     if (!fr || fr.step !== 'work' || fr.leaving) return
     fr.work = workOf(id).id
-    store.set('crew.firstWork', fr.work)
+    store.set('clique.firstWork', fr.work)
     draw()
     setTimeout(() => fr?.step === 'work' && go(needsCli() ? 'cli' : 'workspace'), quiet() ? 0 : 320)
   }
@@ -416,7 +416,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   const sayHTML = (line, cls, at = 0) => (line ? `<p class="${cls}" data-name="${esc(line)}" style="--at:${at}ms">${line.split(' ').map((x, i) => `<span style="--i:${i}">${esc(x)}</span>`).join(' ')}</p>` : `<p class="${cls}" data-name="" hidden></p>`)
   const THINK = '<span class="su-think" aria-hidden="true"><i style="--n:0"></i><i style="--n:1"></i><i style="--n:2"></i></span>'
 
-  // The crew from the app's icon: Q in front (core/system-agent.js), the blue one and the green one behind him.
+  // The clique from the app's icon: Q in front (core/system-agent.js), the blue one and the green one behind him.
   const Q = { name: 'Q', avatar: { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, status: 'idle' }
   const BLUE = { name: 'Blue', avatar: { body: 'blob', color: 'sky', eyes: 'sparkle', mouth: 'none', hat: 'none', cheeks: true }, status: 'idle' }
   const GREEN = { name: 'Green', avatar: { body: 'blob', color: 'lime', eyes: 'happy', mouth: 'none', hat: 'none', cheeks: true }, status: 'idle' }
@@ -561,7 +561,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     draw()
     const started = Date.now()
     try {
-      const next = await crew.call('setup', 'check')
+      const next = await clique.call('setup', 'check')
       await new Promise((r) => setTimeout(r, Math.max(0, 450 - (Date.now() - started)))) // long enough to see it looked
       if (next) state = { ...state, setup: next }
     } catch (err) {
@@ -575,7 +575,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   function copy(id) {
     const c = rowOf(id)
     if (!c?.how?.command) return
-    crew.call('copy', c.how.command).catch((err) => oops('Couldn’t copy that', err))
+    clique.call('copy', c.how.command).catch((err) => oops('Couldn’t copy that', err))
     copied = id
     clearTimeout(copiedTimer)
     copiedTimer = setTimeout(() => ((copied = ''), draw(), drawSheet()), 1600)
@@ -596,8 +596,8 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   view.addEventListener('drop', async (e) => {
     if (fr?.step !== 'workspace') return
     e.preventDefault()
-    const dir = crew.pathOf?.(e.dataTransfer?.files?.[0])
-    const where = dir && (await crew.call('folderInfo', '', dir).catch(() => null))
+    const dir = clique.pathOf?.(e.dataTransfer?.files?.[0])
+    const where = dir && (await clique.call('folderInfo', '', dir).catch(() => null))
     if (where?.exists) setFolder(where.path ?? dir)
     else if (fr) (fr.error = 'That isn’t a folder I can open'), draw()
   })
@@ -619,7 +619,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
       return draw()
     }
     if (b.dataset.copy) return copy(b.dataset.copy)
-    if (b.dataset.url) return void crew.call('openUrl', b.dataset.url).catch((err) => oops('Couldn’t open that page', err))
+    if (b.dataset.url) return void clique.call('openUrl', b.dataset.url).catch((err) => oops('Couldn’t open that page', err))
     const act = b.dataset.act
     if (act === 'check') check()
     if (act === 'close') close()
@@ -678,7 +678,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
   }
 
   async function lookAtProviders() {
-    const found = await Promise.all(PROVIDERS.map((p) => crew.call('setup', 'provider', p.id).catch(() => null)))
+    const found = await Promise.all(PROVIDERS.map((p) => clique.call('setup', 'provider', p.id).catch(() => null)))
     found.forEach((c, i) => (checks[PROVIDERS[i].id] = c ?? checks[PROVIDERS[i].id]))
     drawSheet()
   }
@@ -694,14 +694,14 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
     if (e.target === sheet) return sheet.close()
     const b = e.target.closest('button')
     if (!b) return
-    if (b.dataset.url) return void crew.call('openUrl', b.dataset.url).catch((err) => oops('Couldn’t open that page', err))
+    if (b.dataset.url) return void clique.call('openUrl', b.dataset.url).catch((err) => oops('Couldn’t open that page', err))
     if (b.dataset.act === 'done') return sheet.close()
     if (b.dataset.act === 'check') return check()
     const [op, id] = b.dataset.add ? ['add', b.dataset.add] : b.dataset.remove ? ['remove', b.dataset.remove] : []
     if (!op) return
     sheetError = ''
     try {
-      await crew.call('setup', op, id)
+      await clique.call('setup', op, id)
       // until the state that says so arrives
       state = { ...state, providers: { ...state.providers, [id]: { ...state.providers?.[id], added: op === 'add' } } }
     } catch (err) {
@@ -717,7 +717,7 @@ function mountSetup({ onAdd = () => {}, onWorkspace = () => {}, onComputers = ()
       if (fr) {
         // its workspace came another way (a linked computer's) while it asked for one: on to the end
         if (fr.landing) return drawSheet()
-        if (next.workspace && FIRST.indexOf(fr.step) < FIRST.indexOf('crew') && store.get(KEY) !== 'crew') return finish('land'), drawSheet()
+        if (next.workspace && FIRST.indexOf(fr.step) < FIRST.indexOf('clique') && store.get(KEY) !== 'clique') return finish('land'), drawSheet()
         draw()
         return drawSheet()
       }

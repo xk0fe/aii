@@ -1,4 +1,4 @@
-// `crew canvas` (Hub.canvas, core/canvas.js): an agent draws a board in the chat, and teammates draw on the same one.
+// `clique canvas` (Hub.canvas, core/canvas.js): an agent draws a board in the chat, and teammates draw on the same one.
 // Run with `npm test`.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -8,9 +8,9 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { BIN, WIN } from './helpers/platform.mjs'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-canvas-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-canvas-'))
 const { CONFIG } = await import('../core/hub.js')
-const { Crew } = await import('../core/crew.js')
+const { Clique } = await import('../core/clique.js')
 const { serve } = await import('../core/server.js')
 const { canvasLines, typedLines, withCanvas, asCanvas, canvasTitle, CANVAS_LINES } = await import('../core/canvas.js')
 
@@ -19,20 +19,20 @@ fs.writeFileSync(CONFIG, JSON.stringify({
   agents: [{ name: 'iris', area: 'evaluation' }, { name: 'theo', area: 'testing' }, { name: 'milo', area: 'ios app' }],
   channels: [{ id: 'evidence', name: 'evidence' }, { id: 'ios', name: 'ios-release', members: ['milo'] }],
 }))
-const crew = new Crew({ bin: '/nonexistent', computerName: 'Studio' })
-Object.assign(crew.runner, { running: () => true, quietFor: () => Infinity, submit() {}, write() {} })
-const hub = crew.hubs.get('default')
+const clique = new Clique({ bin: '/nonexistent', computerName: 'Studio' })
+Object.assign(clique.runner, { running: () => true, quietFor: () => Infinity, submit() {}, write() {} })
+const hub = clique.hubs.get('default')
 const quiet = () => {
   for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer), clearTimeout(a.steerTimer)
   for (const t of ['statsTimer', 'convoTimer', 'readsTimer', 'runtimeTimer', 'usageTimer', 'ticketsTimer', 'lookTimer']) clearTimeout(hub[t])
-  clearTimeout(crew.changeTimer)
+  clearTimeout(clique.changeTimer)
 }
 after(() => {
   quiet()
-  crew.config.close?.()
-  fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 })
+  clique.config.close?.()
+  fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 })
 })
-// `crew canvas <words>` as the /canvas route hands it over
+// `clique canvas <words>` as the /canvas route hands it over
 const canvas = (from, ...words) => hub.canvas(from, words)
 const idOf = (out) => /canvas (\w{8})/.exec(out)[1]
 const entry = (id) => hub.feed.find((e) => e.id === id)
@@ -48,7 +48,7 @@ test('a canvas is a block in a message: read, written back and titled', () => {
   assert.deepEqual(typedLines(['title: T', ' [a] -> [b] \n\nok: fine', '', '``` no: x ````']), ['title: T', '[a] -> [b]', 'ok: fine', "''' no: x '''"])
 })
 
-test('crew canvas new draws one where the agent is working, as a message of its own', () => {
+test('clique canvas new draws one where the agent is working, as a message of its own', () => {
   const asked = hub.post({ kind: 'msg', from: 'you', to: 'iris', text: 'how did v1 do?', channel: 'evidence' })
   hub.agents.get('iris').current = asked.id
   const out = canvas('iris', 'new', 'title: Candidate v1', 'bar: Green 0.67 {green}', 'bar: Tee 0.32 {pink}')
@@ -99,15 +99,15 @@ test('what can\'t be drawn is turned down, and nothing changes', () => {
   const id = idOf(canvas('iris', 'new', 'title: Only'))
   const feed = JSON.stringify(hub.feed)
   assert.equal(canvas('iris'), canvas('iris', 'help'))
-  assert.match(canvas('iris', 'help'), /crew canvas add <id>/)
-  assert.throws(() => canvas('iris', 'new'), /usage: crew canvas new/)
+  assert.match(canvas('iris', 'help'), /clique canvas add <id>/)
+  assert.throws(() => canvas('iris', 'new'), /usage: clique canvas new/)
   assert.throws(() => canvas('iris', 'new', ...Array.from({ length: CANVAS_LINES + 1 }, (_, i) => `ok: ${i}`)), /holds 60 lines at most/)
   assert.throws(() => canvas('you', 'new', '[a]'), /type a ```canvas block/)
-  assert.throws(() => canvas('iris', 'paint', id), /there's no crew canvas paint/)
+  assert.throws(() => canvas('iris', 'paint', id), /there's no clique canvas paint/)
   assert.throws(() => canvas('iris', 'add', 'nope1234', 'ok: x'), /there's no canvas nope1234 in the chat\. The ones there are:\n\w{8}  #/)
-  assert.throws(() => canvas('iris', 'add', id), /usage: crew canvas add/)
+  assert.throws(() => canvas('iris', 'add', id), /usage: clique canvas add/)
   assert.throws(() => canvas('iris', 'set', id, '7', 'ok: x'), /has lines 1 to 1:\n 1  title: Only/)
-  assert.throws(() => canvas('iris', 'set', id, '1'), /usage: crew canvas set/)
+  assert.throws(() => canvas('iris', 'set', id, '1'), /usage: clique canvas set/)
   assert.throws(() => canvas('iris', 'cut', id, '1'), /its only line/)
   assert.equal(JSON.stringify(hub.feed), feed)
 })
@@ -129,19 +129,19 @@ test('a changed canvas is still there after a restart', async () => {
   const id = idOf(canvas('iris', 'new', 'title: Kept', '[a] -> [b]'))
   canvas('theo', 'add', id, 'ok: kept')
   await hub.saving
-  const lines = fs.readFileSync(path.join(process.env.CREW_HOME, 'feed.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+  const lines = fs.readFileSync(path.join(process.env.CLIQUE_HOME, 'feed.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
   const amended = lines.findLast((l) => l.amend === id)
   assert.deepEqual(canvasLines(amended.text), ['title: Kept', '[a] -> [b]', 'ok: kept'])
   assert.deepEqual(amended.canvas.by, ['iris', 'iris', 'theo'])
 })
 
-test('crew canvas, as agents run it in a shell: the lines arrive as typed, and a teammate adds to it', async () => {
-  const server = await serve({ token: 'tok', hubFor: (id) => crew.hubs.get(id) })
-  const home = fs.mkdtempSync(path.join(process.env.CREW_HOME, 'cli-'))
+test('clique canvas, as agents run it in a shell: the lines arrive as typed, and a teammate adds to it', async () => {
+  const server = await serve({ token: 'tok', hubFor: (id) => clique.hubs.get(id) })
+  const home = fs.mkdtempSync(path.join(process.env.CLIQUE_HOME, 'cli-'))
   fs.writeFileSync(path.join(home, 'url'), `http://127.0.0.1:${server.address().port}`)
   fs.writeFileSync(path.join(home, 'token'), 'tok')
-  const run = (file, args, agent) => new Promise((resolve) => execFile(file, args, { env: { ...process.env, CREW_HOME: home, CREW_AGENT: agent, CREW_WORKSPACE: 'default' } }, (e, stdout, stderr) => resolve({ code: e?.code ?? 0, stdout, stderr })))
-  const clis = [['crew.mjs', (agent, ...a) => run(process.execPath, [path.join(BIN, 'crew.mjs'), 'crew', ...a], agent)], ...(WIN ? [] : [['bin/crew', (agent, ...a) => run(path.join(BIN, 'crew'), a, agent)]])]
+  const run = (file, args, agent) => new Promise((resolve) => execFile(file, args, { env: { ...process.env, CLIQUE_HOME: home, CLIQUE_AGENT: agent, CLIQUE_WORKSPACE: 'default' } }, (e, stdout, stderr) => resolve({ code: e?.code ?? 0, stdout, stderr })))
+  const clis = [['clique.mjs', (agent, ...a) => run(process.execPath, [path.join(BIN, 'clique.mjs'), 'clique', ...a], agent)], ...(WIN ? [] : [['bin/clique', (agent, ...a) => run(path.join(BIN, 'clique'), a, agent)]])]
   try {
     for (const [what, cli] of clis) {
       const row = '1: [it\'s "in"] -$HOME-> [out]{green} ==a & b== > c'
@@ -155,7 +155,7 @@ test('crew canvas, as agents run it in a shell: the lines arrive as typed, and a
       const bad = await cli('theo', 'canvas', 'cut', id, '9') // turned down: printed, as any answer is
       assert.match(bad.stderr + bad.stdout, /has lines 1 to 4/, what)
     }
-    assert.match((await clis[0][1]('theo', 'help')).stdout + (await clis[0][1]('theo')).stdout, /crew canvas +draw a board in the chat/)
+    assert.match((await clis[0][1]('theo', 'help')).stdout + (await clis[0][1]('theo')).stdout, /clique canvas +draw a board in the chat/)
   } finally {
     server.close()
   }

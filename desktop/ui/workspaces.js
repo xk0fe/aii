@@ -2,7 +2,7 @@
 // Discord's servers), which says which needs you and switches; the name at the top of the sidebar, whose menu has
 // what you do with the one on screen; the sheet that makes a workspace or changes one; and the banner over a parked
 // one. The dashboard does the switching itself (onSwitch), so it can animate it.
-/* global shownName, crew, esc, plural, morph, markSVG, popMenu, shortPath, tildePath, pathField, pathParts, keys, oops, errorLine, ICONS, COLORS, wsTile, wsColor, wsStatus, wsLabel, joinable, joinItem, computerIcon, elsewhere, hasWorkspaces, faceStack, avatarHTML, agentColor, bounce */
+/* global shownName, clique, esc, plural, morph, markSVG, popMenu, shortPath, tildePath, pathField, pathParts, keys, oops, errorLine, ICONS, COLORS, wsTile, wsColor, wsStatus, wsLabel, joinable, joinItem, computerIcon, elsewhere, hasWorkspaces, faceStack, avatarHTML, agentColor, bounce */
 
 const WS_COLORS = ['blue', 'sky', 'teal', 'mint', 'lime', 'yellow', 'orange', 'peach', 'red', 'pink', 'lilac', 'purple']
 const WS_ICONS = ['⛳', '🚀', '🎮', '📱', '🛒', '🎨', '🧪', '📚', '🏡', '💼', '🌱', '⚡', '🔧', '🌍']
@@ -78,7 +78,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
   async function join(key) {
     const r = (state.remoteWorkspaces ?? []).find((x) => x.key === key)
     try {
-      const { state: next } = await crew.call('workspace', 'join', key)
+      const { state: next } = await clique.call('workspace', 'join', key)
       onSwitched(next)
     } catch (err) {
       oops(`Couldn't show ${r ? `${r.name} · ${r.computerName}` : 'that workspace'}`, err)
@@ -89,7 +89,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     const busy = w.working + w.waiting
     if (busy && !confirm(`${plural(busy, 'agent')} in ${w.name} ${busy > 1 ? 'are' : 'is'} in the middle of something. Put it to sleep anyway? They stop now, and pick their conversations back up when it wakes.`)) return
     try {
-      await crew.call('workspace', 'park', w.id)
+      await clique.call('workspace', 'park', w.id)
     } catch (err) {
       oops(`Couldn't put ${w.name} to sleep`, err)
     }
@@ -151,7 +151,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     if (!el) return e.preventDefault()
     dragging = el.dataset.ws
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('application/x-crew-workspace', dragging)
+    e.dataTransfer.setData('application/x-clique-workspace', dragging)
     el.classList.add('dragging')
   })
   const target = (e) => {
@@ -179,7 +179,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     ids.splice(ids.indexOf(t.el.dataset.ws) + (t.after ? 1 : 0), 0, moving)
     endDrag()
     try {
-      await crew.call('workspace', 'order', null, ids)
+      await clique.call('workspace', 'order', null, ids)
     } catch (err) {
       oops("Couldn't move that workspace", err)
     }
@@ -239,10 +239,10 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
         <div class="mv-field field"><input data-ws-folder class="mono" placeholder="~/code/my-app" spellcheck="false" autocomplete="off"><button type="button" class="btn" data-ws-pick>Choose…</button></div>
         <p class="ws-note">Where its agents work, unless one has a folder of its own here.</p>
       </section>
-      <section class="ws-sec" data-sec="crew">
-        <h4 class="section-label"><span data-crew-title>Who works here</span><small class="ws-count"></small></h4>
-        <ul class="ws-crew"></ul>
-        <p class="ws-note" data-crew-note></p>
+      <section class="ws-sec" data-sec="clique">
+        <h4 class="section-label"><span data-clique-title>Who works here</span><small class="ws-count"></small></h4>
+        <ul class="ws-clique"></ul>
+        <p class="ws-note" data-clique-note></p>
       </section>
     </div>
     <p class="err" data-ws-err></p>
@@ -280,8 +280,8 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     return WS_COLORS.find((c) => !used.has(c)) ?? WS_COLORS[(state.workspaces?.length ?? 0) % WS_COLORS.length]
   }
 
-  // crew: the list of agents too (typing a name or a folder leaves it be)
-  function drawSheet({ crew: list = true } = {}) {
+  // clique: the list of agents too (typing a name or a folder leaves it be)
+  function drawSheet({ clique: list = true } = {}) {
     const look = { id: draft.id ?? 'new', name: draft.name || 'New workspace', color: draft.color, icon: draft.icon }
     $d('.ws-hero-tile').innerHTML = wsTile(look, { size: 58, cls: 'hero' })
     dialog.style.setProperty('--hero', wsColor(look) ?? 'var(--fg3)')
@@ -292,14 +292,14 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       WS_COLORS.map((c) => `<button type="button" class="ws-sw ${draft.color === c ? 'on' : ''}" data-ws-color="${c}" style="--w:${COLORS[c]}" title="${c}" role="radio" aria-checked="${draft.color === c}"></button>`).join('')
     $d('.ws-icons').innerHTML = `<button type="button" class="ws-ic letter ${draft.icon ? '' : 'on'}" data-ws-icon="" title="Its initial" role="radio" aria-checked="${!draft.icon}">${esc((draft.name.trim()[0] ?? 'A').toUpperCase())}</button>` +
       WS_ICONS.map((i) => `<button type="button" class="ws-ic ${draft.icon === i ? 'on' : ''}" data-ws-icon="${i}" role="radio" aria-checked="${draft.icon === i}">${i}</button>`).join('')
-    $d('[data-sec=crew]').classList.toggle('hidden', !roster.length)
+    $d('[data-sec=clique]').classList.toggle('hidden', !roster.length)
     $d('.ws-count').textContent = roster.length ? `${draft.members.size} of ${roster.length}` : ''
-    if (list) drawCrew(roster)
+    if (list) drawClique(roster)
   }
 
   // Who's in it (the switches), and a folder of its own there for any of them.
-  function drawCrew(roster) {
-    $d('.ws-crew').innerHTML = roster.map((a) => {
+  function drawClique(roster) {
+    $d('.ws-clique').innerHTML = roster.map((a) => {
       const on = draft.members.has(a.name)
       const own = draft.folders[a.name]
       const tip = own ? `Works in ${esc(own)} here. Click to change` : "Give it a folder of its own here, instead of the workspace's"
@@ -310,7 +310,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
         <input type="checkbox" class="switch sm" data-ws-member="${esc(a.name)}" ${on ? 'checked' : ''} aria-label="${esc(a.name)} works here">
       </li>`
     }).join('')
-    $d('[data-crew-note]').textContent = draft.id
+    $d('[data-clique-note]').textContent = draft.id
         ? 'Who an agent is (its job, brain and look) is the same in every workspace; where it works and whether it’s on is each workspace’s. Agents only this workspace needs: make them with New agent while you’re in it.'
         : 'Your agents bring who they are (job, brain, look) and start fresh conversations here. Agents only this workspace needs: make them with New agent once you’re in it.'
   }
@@ -318,11 +318,11 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
   dialog.addEventListener('input', (e) => {
     if (e.target.matches('[data-ws-name]')) {
       draft.name = e.target.value
-      drawSheet({ crew: false })
+      drawSheet({ clique: false })
     }
     if (e.target.matches('[data-ws-folder]')) {
       draft.folder = e.target.value
-      drawSheet({ crew: false })
+      drawSheet({ clique: false })
     }
   })
 
@@ -367,7 +367,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       return
     }
     if (t.closest('[data-ws-pick]')) {
-      const dir = await crew.call('pickFolder').catch(() => null)
+      const dir = await clique.call('pickFolder').catch(() => null)
       if (dir) {
         $d('[data-ws-folder]').value = tilde(dir)
         draft.folder = dir
@@ -396,10 +396,10 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     const look = { name: draft.name, color: draft.color, icon: draft.icon, folder: draft.folder }
     try {
       // its agents start there: a folder that isn't there would only stop them
-      const where = draft.folder.trim() ? await crew.call('folderInfo', '', draft.folder.trim()) : null
+      const where = draft.folder.trim() ? await clique.call('folderInfo', '', draft.folder.trim()) : null
       if (where && !where.exists) throw new Error(`There's no folder ${tildePath(where.path)}`)
       if (!draft.id) {
-        const { state: next } = await crew.call('workspace', 'create', null, { ...look, members: [...draft.members], folders: draft.folders })
+        const { state: next } = await clique.call('workspace', 'create', null, { ...look, members: [...draft.members], folders: draft.folders })
         dialog.close()
         onSwitched(next)
       } else {
@@ -407,12 +407,12 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
         // folders that changed, checked first: an agent can't start in one that isn't there
         const folders = Object.fromEntries([...draft.members].map((n) => [n, draft.folders[n] ?? '']).filter(([n, f]) => f !== (before.members.find((m) => m.name === n)?.folder ?? '')))
         for (const f of Object.values(folders).filter(Boolean)) {
-          const there = await crew.call('folderInfo', '', f)
+          const there = await clique.call('folderInfo', '', f)
           if (!there.exists) throw new Error(`There's no folder ${tilde(there.path)}`)
         }
-        await crew.call('workspace', 'edit', id, look)
+        await clique.call('workspace', 'edit', id, look)
         const was = new Set(before.members.map((m) => m.name))
-        await crew.call('workspace', 'members', id, { add: [...draft.members].filter((n) => !was.has(n)), remove: [...was].filter((n) => !draft.members.has(n)), folders })
+        await clique.call('workspace', 'members', id, { add: [...draft.members].filter((n) => !was.has(n)), remove: [...was].filter((n) => !draft.members.has(n)), folders })
         dialog.close()
       }
     } catch (x) {
@@ -427,7 +427,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     if (w.ownerName && !confirm(`Hide ${w.name} on this computer?\n\nIt's hosted on ${w.ownerName}, and stays there with its chat, tasks and agents. Any of your agents you added to it stop here. Show it again from the workspace menu, under On your other computers.`)) return
     if (!w.ownerName && !confirm(`Remove ${w.name}?\n\nIts agents stop and it leaves the switcher.${own > 0 ? ` ${plural(own, 'agent')} of its own ${own > 1 ? 'go' : 'goes'} with it.` : ''} Your shared agents stay in your clique.\n\nIts chat, notes and tasks are kept on disk: a workspace made again with the same name picks them back up.`)) return
     try {
-      await crew.call('workspace', 'remove', w.id)
+      await clique.call('workspace', 'remove', w.id)
       if (dialog.open) dialog.close()
     } catch (x) {
       if (dialog.open) $d('[data-ws-err]').textContent = errorLine(x)

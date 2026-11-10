@@ -165,7 +165,7 @@ jobs:
           for app in mac*/CLIque.app; do
             codesign --verify --deep --strict "$app"
             codesign -dv "$app" 2>&1 | grep -E 'Identifier|Authority|TeamIdentifier|flags'
-            test -x "$app/Contents/Resources/voice/crew-voice"
+            test -x "$app/Contents/Resources/voice/clique-voice"
             if xcrun stapler validate "$app" >/dev/null 2>&1; then
               spctl --assess --type execute -vv "$app"
             else
@@ -243,8 +243,8 @@ jobs:
           }
           $setup = Get-ChildItem CLIque-Setup-*-x64.exe | Select-Object -First 1
           Start-Process $setup.FullName -ArgumentList '/S' -Wait
-          $dir = "$env:LOCALAPPDATA\Programs\crew"
-          foreach ($f in 'CLIque.exe', 'resources\app.asar', 'resources\voice\crew-voice.exe', 'Uninstall CLIque.exe') {
+          $dir = "$env:LOCALAPPDATA\Programs\clique"
+          foreach ($f in 'CLIque.exe', 'resources\app.asar', 'resources\voice\clique-voice.exe', 'Uninstall CLIque.exe') {
             if (-not (Test-Path "$dir\$f")) { throw "the installed app has no $f" }
           }
           Start-Process "$dir\Uninstall CLIque.exe" -ArgumentList '/S' -Wait

@@ -1,10 +1,10 @@
-// What the token savers (core/savers.js) have counted, from your own ~/.crew: every workspace's savers.json. Nothing is
+// What the token savers (core/savers.js) have counted, from your own ~/.clique: every workspace's savers.json. Nothing is
 // sent anywhere and no agent runs.
 //
-//   node scripts/savers.mjs [crew home] [--days 7] [--json]
+//   node scripts/savers.mjs [clique home] [--days 7] [--json]
 //
 // For each saver: what it did with it on, and what it would have done with it off. Then cost per turn under each mix of
-// savers that was on, which is the comparison that counts: the same crew's work with them on and with them off.
+// savers that was on, which is the comparison that counts: the same clique's work with them on and with them off.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -13,7 +13,7 @@ import { Ledger, SAVERS, report } from '../core/savers.js'
 const args = process.argv.slice(2)
 const json = args.includes('--json')
 const days = Number(args[args.indexOf('--days') + 1]) || undefined
-const home = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--days') ?? (process.env.CREW_HOME || path.join(os.homedir(), '.crew'))
+const home = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--days') ?? (process.env.CLIQUE_HOME || path.join(os.homedir(), '.clique'))
 const spaces = path.join(home, 'workspaces')
 const dirs = [home, ...(fs.existsSync(spaces) ? fs.readdirSync(spaces).map((d) => path.join(spaces, d)) : [])]
 const ledgers = dirs.filter((d) => fs.existsSync(path.join(d, 'savers.json'))).map((d) => new Ledger(path.join(d, 'savers.json')))

@@ -70,7 +70,7 @@ function wordmark(fs_ = 36) {
 }
 
 // The creatures, once per page, as symbols the room and the sections <use>.
-const CREW = [
+const CLIQUE = [
   { id: 'ada', name: 'Ada', status: 'working' }, { id: 'milo', name: 'Milo', status: 'needs' },
   { id: 'iris', name: 'Iris', status: 'needs' }, { id: 'theo', name: 'Theo', status: 'working' },
   { id: 'june', name: 'June', status: 'idle' }, { id: 'rex', name: 'Rex', status: 'starting' },
@@ -95,19 +95,19 @@ const FELT = `<filter id="felt-grain" x="-2%" y="-2%" width="104%" height="104%"
 <feComposite in="dark" in2="edge" operator="in" result="d2"/><feComposite in="light" in2="edge" operator="in" result="l2"/>
 <feMerge><feMergeNode in="edge"/><feMergeNode in="d2"/><feMergeNode in="l2"/></feMerge>
 </filter>`
-// creatures: true for the whole crew, or a list of ids
-const defs = (creatures) => `<svg class="defs" width="0" height="0" aria-hidden="true" focusable="false"><defs>${FELT}${creatures ? sharedDefs + CREW.filter((a) => creatures === true || creatures.includes(a.id)).map((a) => creature(a.id)).join('') : ''}</defs></svg>`
+// creatures: true for the whole clique, or a list of ids
+const defs = (creatures) => `<svg class="defs" width="0" height="0" aria-hidden="true" focusable="false"><defs>${FELT}${creatures ? sharedDefs + CLIQUE.filter((a) => creatures === true || creatures.includes(a.id)).map((a) => creature(a.id)).join('') : ''}</defs></svg>`
 
-// ---- the Crew room: one felt surface (back wall, floor, a seam between), the crew acting out its status ------------
+// ---- the CLIque room: one felt surface (back wall, floor, a seam between), the clique acting out its status ------------
 // Three compositions of the same room, for wide screens, tablets and phones; each scales with its width.
 const SAY = { milo: 'Can I run <code>npm run build</code>?', theo: 'All 48 checkout tests pass' }
 const ROOMS = {
-  wide: { w: 1312, h: 340, floor: 104, names: true, crew: CREW.map((a, i) => ({ ...a, x: 28 + (i * (1312 - 56 - 184)) / 6, y: 132, size: 184 })), says: [['milo', 28, -34], ['theo', 64, -20]] },
-  medium: { w: 900, h: 250, floor: 92, names: true, crew: CREW.map((a, i) => ({ ...a, x: 12 + (i * (900 - 24 - 128)) / 6, y: 98, size: 128 })), says: [['milo', 20, -40]] },
+  wide: { w: 1312, h: 340, floor: 104, names: true, clique: CLIQUE.map((a, i) => ({ ...a, x: 28 + (i * (1312 - 56 - 184)) / 6, y: 132, size: 184 })), says: [['milo', 28, -34], ['theo', 64, -20]] },
+  medium: { w: 900, h: 250, floor: 92, names: true, clique: CLIQUE.map((a, i) => ({ ...a, x: 12 + (i * (900 - 24 - 128)) / 6, y: 98, size: 128 })), says: [['milo', 20, -40]] },
   narrow: {
     w: 360, h: 204, floor: 88, names: false, says: [],
-    crew: [['june', 50, 52, 72], ['rex', 144, 52, 72], ['noor', 238, 52, 72], ['ada', 6, 100, 96], ['theo', 88, 100, 96], ['milo', 170, 100, 96], ['iris', 258, 100, 96]]
-      .map(([id, x, y, size]) => ({ ...CREW.find((a) => a.id === id), x, y, size })),
+    clique: [['june', 50, 52, 72], ['rex', 144, 52, 72], ['noor', 238, 52, 72], ['ada', 6, 100, 96], ['theo', 88, 100, 96], ['milo', 170, 100, 96], ['iris', 258, 100, 96]]
+      .map(([id, x, y, size]) => ({ ...CLIQUE.find((a) => a.id === id), x, y, size })),
   },
 }
 const pct = (v, of) => `${+((v / of) * 100).toFixed(3)}%`
@@ -118,16 +118,16 @@ function room(kind) {
 <clipPath id="room-clip-${kind}"><rect x="1" y="1" width="${r.w - 2}" height="${r.h - 2}" rx="14"/></clipPath>
 <g clip-path="url(#room-clip-${kind})" filter="url(#felt-grain)"><rect width="${r.w}" height="${r.h}" class="wall"/><rect y="${fy}" width="${r.w}" height="${r.floor}" class="floor"/></g>
 <path d="M10 ${fy}H${r.w - 10}" class="thread"/><rect x="6" y="6" width="${r.w - 12}" height="${r.h - 12}" rx="10" class="thread"/>
-${r.crew.map((a) => `<use href="#cr-${a.id}" x="${+a.x.toFixed(2)}" y="${a.y}" width="${a.size}" height="${a.size}"/>`).join('')}
+${r.clique.map((a) => `<use href="#cr-${a.id}" x="${+a.x.toFixed(2)}" y="${a.y}" width="${a.size}" height="${a.size}"/>`).join('')}
 </svg>`
   const says = r.says.map(([id, dx, dy]) => {
-    const a = r.crew.find((c) => c.id === id)
+    const a = r.clique.find((c) => c.id === id)
     return `<p class="say" style="left:${pct(a.x + dx, r.w)};top:${pct(a.y + dy, r.h)}">${SAY[id]}</p>`
   }).join('')
-  const names = r.names ? `<div class="room-names" aria-hidden="true">${r.crew.map((a) => `<span style="left:${pct(a.x + a.size / 2, r.w)}">${a.status === 'needs' || a.status === 'working' ? `<i class="dot ${a.status}"></i>` : ''}${a.name}</span>`).join('')}</div>` : ''
+  const names = r.names ? `<div class="room-names" aria-hidden="true">${r.clique.map((a) => `<span style="left:${pct(a.x + a.size / 2, r.w)}">${a.status === 'needs' || a.status === 'working' ? `<i class="dot ${a.status}"></i>` : ''}${a.name}</span>`).join('')}</div>` : ''
   return `<div class="room-${kind}"><div class="room">${art}${says}</div>${names}</div>`
 }
-const ROOM_LABEL = 'The crew in its room: Ada and Theo are at their laptops, Milo holds up a sign asking if he can run npm run build, Iris has a question, June is having a coffee, Rex is just starting and Noor is asleep.'
+const ROOM_LABEL = 'The clique in its room: Ada and Theo are at their laptops, Milo holds up a sign asking if he can run npm run build, Iris has a question, June is having a coffee, Rex is just starting and Noor is asleep.'
 
 // ---- downloads ---------------------------------------------------------------------------------------------------
 const mb = (n) => `${Math.round(n / 1e6)} MB`
@@ -151,7 +151,7 @@ function page({ file, title, description, main, creatures = false }) {
   const social = `<meta property="og:type" content="website"><meta property="og:site_name" content="${esc(PRODUCT)}">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}">
 <meta property="og:image" content="${esc(absolute('og.png'))}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="${esc(`${PRODUCT}: the crew of felt creatures, at work`)}"><meta name="twitter:card" content="summary_large_image">
+<meta property="og:image:alt" content="${esc(`${PRODUCT}: the clique of felt creatures, at work`)}"><meta name="twitter:card" content="summary_large_image">
 ${SITE_URL ? `<meta property="og:url" content="${esc(absolute(file === 'index.html' ? './' : file))}"><link rel="canonical" href="${esc(absolute(file === 'index.html' ? './' : file))}">` : ''}`
   const html = `<!doctype html>
 <html lang="en">
@@ -231,7 +231,7 @@ for (const f of ['favicon.ico', 'apple-touch-icon.png', 'og.png']) {
 fs.writeFileSync(path.join(out, '.nojekyll'), '')
 if (DOMAIN) fs.writeFileSync(path.join(out, 'CNAME'), DOMAIN + '\n')
 
-page({ file: 'index.html', title: `${PRODUCT}: your AI agents, working as a crew`, description: DESCRIPTION, creatures: true, main: fill(read('src/index.html'), vars) })
+page({ file: 'index.html', title: `${PRODUCT}: your AI agents, working as a clique`, description: DESCRIPTION, creatures: true, main: fill(read('src/index.html'), vars) })
 page({ file: 'support.html', title: `Support · ${PRODUCT}`, description: `How to get help with ${PRODUCT}.`, main: fill(read('src/support.html'), vars) })
 page({ file: 'privacy.html', title: `Privacy · ${PRODUCT}`, description: `What ${PRODUCT} does with your data: it collects nothing, and your work stays on your own devices.`, main: `<article class="prose">${markdown(read('privacy.md').replace(/\bCLIque\b/g, PRODUCT))}</article>` })
 page({ file: '404.html', title: `Not found · ${PRODUCT}`, description: DESCRIPTION, creatures: ['noor'], main: fill(read('src/404.html'), vars) })
@@ -248,7 +248,7 @@ if (args.includes('--og')) {
   .og .room-names { display: none; }
 </style></head>
 <body>${defs(true)}<div class="og"><div class="og-head"><img src="assets/icon-192.png" alt="">${wordmark(84)}</div>
-<div class="og-head"><p>Your AI agents, working as a <span class="berry">crew</span></p></div>${room('wide')}</div></body></html>
+<div class="og-head"><p>Your AI agents, working as a <span class="berry">clique</span></p></div>${room('wide')}</div></body></html>
 `)
 }
 console.log(`built ${path.relative(process.cwd(), out) || out}: ${PRODUCT}, downloads ${release ? (version ? `from ${repo} ${release.tag_name}` : 'coming soon') : `→ ${repo} releases page (preview)`}`)

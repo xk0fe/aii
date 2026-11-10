@@ -1,9 +1,9 @@
-// What the screens talk to: a connection to a Mac (net/client.ts) or the demo crew (demo/client.ts), which behave
+// What the screens talk to: a connection to a Mac (net/client.ts) or the demo clique (demo/client.ts), which behave
 // the same.
 import type { Push, Snapshot } from '@/net/client'
 import type { ChannelEdit, Reply, SendOpts } from '@/net/types'
 
-export interface CrewLink {
+export interface CliqueLink {
   readonly macName: string
   readonly demo?: boolean
   subscribe(fn: () => void): () => void

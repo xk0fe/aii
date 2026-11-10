@@ -1,6 +1,6 @@
 // What an agent leaves running. Each shell command an agent runs is the leader of a process group of its own, and what
 // the command leaves behind (a dev server started with &, a simulator helper) stays in that group once the command is
-// done, even after its parent is gone. Crew notes the groups: bin/crew-sh writes down each command's for Claude Code,
+// done, even after its parent is gone. CLIque notes the groups: bin/clique-sh writes down each command's for Claude Code,
 // and the agent's process tree, looked at now and then, adds the rest for any CLI. When the agent's CLI ends, what's
 // still in its groups is stopped (Hub.sweep). No Electron in here.
 //
@@ -8,7 +8,7 @@
 // holds processes rather than groups, each with when it started and when it was last seen (pid start seen), and what's
 // left is whatever descends from one of them: its parents are followed up while they're its parents (an id handed out
 // again belongs to a process that started later than the child), and the id of the first one that's gone counts if it
-// was one of the agent's at the time (between its start and when it was last seen). bin/crew-sh, run by Git Bash there,
+// was one of the agent's at the time (between its start and when it was last seen). bin/clique-sh, run by Git Bash there,
 // also writes down what a command left in its group once the command is done, so a dev server started with & is found
 // even after the shells between it and the command are gone.
 import { execFile, execFileSync } from 'node:child_process'
@@ -61,7 +61,7 @@ function windowsProcesses(maxAge) {
   const args = ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(LIST, 'utf16le').toString('base64')]
   const at = Date.now()
   listingNow ??= new Promise((resolve) => {
-    // windowsHide: Crew has no console, and a console program it starts would flash one up otherwise
+    // windowsHide: CLIque has no console, and a console program it starts would flash one up otherwise
     execFile(ps, args, { windowsHide: true, maxBuffer: 16 * 1024 * 1024, timeout: 20000 }, (err, out) => {
       listingNow = null
       if (err && !out) return resolve([])
@@ -139,7 +139,7 @@ export function noteworthy(procs, pid, known, now = Date.now() / 1000) {
   return lines.join('')
 }
 
-// The groups bin/crew-sh wrote down, one "pgid unix-seconds" line per command. -> Map(pgid -> start)
+// The groups bin/clique-sh wrote down, one "pgid unix-seconds" line per command. -> Map(pgid -> start)
 export function readGroups(file) {
   const groups = new Map()
   for (const [pgid, start] of lines(file)) if (pgid > 1 && start > 0 && !(start >= groups.get(pgid))) groups.set(pgid, start)
@@ -171,7 +171,7 @@ function lines(file) {
 
 // The processes still in `groups`. A member counts only if it started after its group did, and only while the group's
 // leader is gone or is still the process that started the group: a number the system handed out again belongs to
-// someone else by then. `keep`: pids never to touch (Crew itself, other agents' CLIs and what runs under them).
+// someone else by then. `keep`: pids never to touch (CLIque itself, other agents' CLIs and what runs under them).
 // `spans` (readSpans): on Windows, which processes were the agent's when; groups' starts if not given.
 export function leftovers(procs, groups, keep = new Set(), spans) {
   if (procs.length && !procs.some((p) => p.pgid !== undefined)) return windowsLeftovers(procs, spans ?? new Map([...groups].map(([g, s]) => [g, [[s, s]]])), keep)
@@ -184,7 +184,7 @@ export function leftovers(procs, groups, keep = new Set(), spans) {
 }
 
 // Was the process numbered `pid` at time `t` one of the agent's? A start written down is a moment after the process
-// started (crew-sh has to start before it can say so), so 3 s of slack before, and 1 after the last time it was seen.
+// started (clique-sh has to start before it can say so), so 3 s of slack before, and 1 after the last time it was seen.
 const ours = (spans, pid, t) => (spans.get(pid) ?? []).some(([start, seen]) => t >= start - 3 && t <= seen + 1)
 
 function windowsLeftovers(procs, spans, keep) {
@@ -201,7 +201,7 @@ function windowsLeftovers(procs, spans, keep) {
   return procs.filter((p) => p.pid > 4 && !keep.has(p.pid) && theirs(p))
 }
 
-// The groups never to sweep, whoever wrote them down, because `pid` (Crew itself) is in them: Crew started from an
+// The groups never to sweep, whoever wrote them down, because `pid` (CLIque itself) is in them: CLIque started from an
 // agent's terminal is in one of its groups. On Windows, its parents.
 export function exempt(procs, pid) {
   const me = procs.find((p) => p.pid === pid)
@@ -255,10 +255,10 @@ export function gitBash(env = process.env, exists = fs.existsSync) {
   return found.find((f) => exists(f)) ?? null
 }
 
-// Windows: does Git Bash run crew-sh the way Claude Code will (bash -c "'crew-sh' 'command'", with `extra` in its
-// environment: the agent's PATH, { Path }, where it finds crew-sh by name), passing on the command's exit code and
-// writing down its Windows id? Asked once per Crew (it holds Crew up for as long as Git Bash takes to start). If not,
-// agents' commands run without crew-sh, rather than every one of them failing, and their process trees alone say what
+// Windows: does Git Bash run clique-sh the way Claude Code will (bash -c "'clique-sh' 'command'", with `extra` in its
+// environment: the agent's PATH, { Path }, where it finds clique-sh by name), passing on the command's exit code and
+// writing down its Windows id? Asked once per CLIque (it holds CLIque up for as long as Git Bash takes to start). If not,
+// agents' commands run without clique-sh, rather than every one of them failing, and their process trees alone say what
 // they leave running.
 const tried = new Map()
 export function prefixWorks(sh, bash, extra = {}) {
@@ -269,10 +269,10 @@ export function prefixWorks(sh, bash, extra = {}) {
 
 function tryPrefix(sh, bash, extra) {
   if (!bash) return false
-  const file = path.join(os.tmpdir(), `crew-sh-${process.pid}-${Date.now()}`)
+  const file = path.join(os.tmpdir(), `clique-sh-${process.pid}-${Date.now()}`)
   const quote = (s) => `'${s.replaceAll("'", "'\\''")}'`
   try {
-    execFileSync(bash, ['-c', `${quote(sh)} ${quote('exit 7')}`], { env: { ...process.env, ...extra, CREW_GROUPS: file }, stdio: 'ignore', windowsHide: true, timeout: 20000 })
+    execFileSync(bash, ['-c', `${quote(sh)} ${quote('exit 7')}`], { env: { ...process.env, ...extra, CLIQUE_GROUPS: file }, stdio: 'ignore', windowsHide: true, timeout: 20000 })
     return false
   } catch (e) {
     let text = ''
@@ -280,7 +280,7 @@ function tryPrefix(sh, bash, extra) {
       text = fs.readFileSync(file, 'utf8')
     } catch {}
     const ok = e.status === 7 && /^\d+ \d+\s*$/m.test(text)
-    if (!ok) console.warn(`crew-sh doesn't run in ${bash} (exit ${e.status ?? e.code}), so agents' commands run without it`)
+    if (!ok) console.warn(`clique-sh doesn't run in ${bash} (exit ${e.status ?? e.code}), so agents' commands run without it`)
     return ok
   } finally {
     fs.rmSync(file, { force: true })

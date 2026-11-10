@@ -1,5 +1,5 @@
 // Sub-agents (Claude Code's Agent tool), from the hook events Claude Code 2.1 sends: the payload shapes below are
-// the ones a real run produced. Real Hub, fake runner, throwaway CREW_HOME. Run with `npm test`.
+// the ones a real run produced. Real Hub, fake runner, throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-subs-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-subs-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 
 class FakeRunner extends EventEmitter {
@@ -21,7 +21,7 @@ class FakeRunner extends EventEmitter {
 
 let hub
 beforeEach(() => {
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'june', area: 'backend' }] }))
   hub = new Hub(new FakeRunner(), { bin: '/nonexistent' })
   for (const a of hub.agents.values()) (hub.runner.live.add(a.name), (a.status = 'idle'))
@@ -31,7 +31,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const hook = (e) => hub.onHook('june', e)
 const subs = () => hub.snapshot().agents[0].subs

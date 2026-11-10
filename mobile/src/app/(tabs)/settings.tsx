@@ -7,17 +7,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { APP_NAME } from '@/brand'
 import type { MacRecord } from '@/net/types'
-import { useCrew, useSession } from '@/state/hooks'
+import { useClique, useSession } from '@/state/hooks'
 import { DEMO, session } from '@/state/session'
 import { reachedOver, when } from '@/ui/format'
 import { useNow } from '@/ui/hooks'
 import { Icon } from '@/ui/icon'
-import { Button, CrewMark, Press, Wordmark } from '@/ui/parts'
+import { Button, CliqueMark, Press, Wordmark } from '@/ui/parts'
 import { offlineText, TabHead } from '@/ui/topbar'
 import { useTheme, type Theme } from '@/ui/theme'
 
 function ComputerCard({ t, mac, active }: { t: Theme; mac: MacRecord; active: boolean }) {
-  const { link, client } = useCrew()
+  const { link, client } = useClique()
   useNow(30000)
   const over = link.status === 'online' ? reachedOver(link.host) : ''
   const status = !active ? 'Not in use' : link.status === 'online' ? `Connected over ${over || 'your network'}` : link.status === 'offline' ? offlineText(link, mac.name).replace(`${mac.name} unreachable`, "Can't be reached") : 'Connecting…'
@@ -68,9 +68,9 @@ export default function SettingsScreen() {
         {demo ? (
           <View style={[styles.card, { backgroundColor: t.surface }]}>
             <View style={styles.cardHead}>
-              <CrewMark size={30} />
+              <CliqueMark size={30} />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.macName, { color: t.fg }]}>Demo crew</Text>
+                <Text style={[styles.macName, { color: t.fg }]}>Demo clique</Text>
                 <Text style={[styles.status, { color: t.fg2 }]}>Made up, and only on this phone</Text>
               </View>
               <Icon name="check" size={17} color={t.accent} weight="bold" />
@@ -83,7 +83,7 @@ export default function SettingsScreen() {
         <Button t={t} kind="primary" icon="scan" title={s.macs.length ? 'Pair another computer' : 'Pair with your computer'} onPress={() => router.push('/pair')} />
         {!demo ? (
           <Press onPress={() => session.startDemo()} style={styles.link} accessibilityRole="button">
-            <Text style={[styles.linkText, { color: t.accent }]}>Look around the demo crew</Text>
+            <Text style={[styles.linkText, { color: t.accent }]}>Look around the demo clique</Text>
           </Press>
         ) : null}
         <View style={styles.about} accessible accessibilityLabel={`${APP_NAME} for iPhone and Android, version ${Constants.expoConfig?.version ?? ''}`}>

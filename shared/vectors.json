@@ -16,26 +16,26 @@
         "f": "ac01b2209e86354fb853237b5de0f4fab13c7fcbf433a61c019369617fecf10b"
       },
       "secret": null,
-      "kPhone": "0699e10dbe0f6ef8abf6592fcd2c41714c4ed1ff1fa10adcde792898b40ec814",
-      "kMac": "8e4fe50a4f96f5f58b977b89d82e55eac464805f1c9aeae9d5be1d7d5c4929df",
+      "kPhone": "7e42cb0044181e0ffb203c13196b620f16c4fbfd1d2a4b24fd753630fdf49e9d",
+      "kMac": "9f277b0f79bf0044691ee8bf106793c2f44111983eeeef164cf60aa159adbdee",
       "frames": [
         {
           "from": "phone",
           "counter": 0,
           "plaintext": "{\"t\":\"hi\",\"name\":\"Pixel 9\",\"platform\":\"android\",\"app\":\"0.1.0\"}",
-          "sealed": "e0934191c9854d95e6daee9160ce1e7226339a38c723959af04bb9adb30bfbc54f80e6043e558dc09cceb2656c2c5caa9d4a23d375419e15ebd4b16df34dbbb6c99fb2854b9bb8ed6e53763f2e89"
+          "sealed": "9617b29981189c6f70ee0245d359341657bd6b4f007e29a3628b3b6a96c05aa5a9df4bcaf97e77cf8535588abb649814ae16987155e5dc35084137ae079186b5182983a35c177558b3d3461527c0"
         },
         {
           "from": "mac",
           "counter": 0,
           "plaintext": "{\"t\":\"ready\",\"mac\":{\"id\":\"mac-id\",\"name\":\"Mac mini\"},\"device\":{\"id\":\"device-id\"}}",
-          "sealed": "b12643f99cd7dce78f5525a0a3ecd4330ab2353eba2eff85e1c6447065cfaa2b7a221713b48e6fc31ddc6de7bc193c33bcef776e382419f6f683acbabd8a875300d0551acad34a3f7e32b09e2126e854c174033f84d480553912208996beab6fef"
+          "sealed": "98b0ecb316dbd2d6ea323c5833288ad0033cfb8a5082b0920706a0890c0c599ac848a7d25ef6e42a2322b68a006ff6fcd6648e9c37552168474b65cf499029531f3d128302f46074c48d9b88e4286ec3189062b640b8648a17a9f2cf0ccd4249fb"
         },
         {
           "from": "phone",
           "counter": 1,
           "plaintext": "{\"t\":\"call\",\"id\":1,\"name\":\"watch\",\"args\":[\"default\"]}",
-          "sealed": "aa041a01ef3f8dcbe2f10e73f4c8d020e0e00f6421595ed150a9c3838840cec539a0f07847395652a574c53f82ee69f3dd96c865e8844930a71a3ca26b50c5a86da4c501e3"
+          "sealed": "e4ce15f54a6bf38e7d339b0f87661c2d414f6b7f0e9b12ce928426e5810d15fab7b5aa722c48bd20ab393823f5a3ff8256c89547f9b6ceffc4567ab9c036673b30ec8fbf81"
         }
       ],
       "b64": {
@@ -57,26 +57,26 @@
         "f": "ac01b2209e86354fb853237b5de0f4fab13c7fcbf433a61c019369617fecf10b"
       },
       "secret": "0505050505050505050505050505050505050505050505050505050505050505",
-      "kPhone": "d716f0ae500fc6e4f63bfe3a210c0a360889e9b7473e85c30800df41b9fdd54b",
-      "kMac": "b5f8e53344ebc633840a450ef9f185a4afdae0994370c0586d898d7515b800a8",
+      "kPhone": "1aa396e082206dab19ff74c7b2b32cf508d768546959c2a9a455ac847d5dde5c",
+      "kMac": "cd916469a305c6abf8bf836d6a601a2ca7f66db1d53830e531dfc26d8329e913",
       "frames": [
         {
           "from": "phone",
           "counter": 0,
           "plaintext": "{\"t\":\"hi\",\"name\":\"Pixel 9\",\"platform\":\"android\",\"app\":\"0.1.0\"}",
-          "sealed": "cfe93dc77eb5ef25346ca8587ea597451d70fbce78158f08f40b7ffe46f9be81b5eb82c49450fe8ce39111618a32c8f9d620520da917aa2610f077bf2e4e705da3043fbfe2028cd3dfb3c459f45d"
+          "sealed": "fb7bde1d8c828d36a6af5dd439cba893874e7cae51e8428f36dc41dec01724f418a9f85621e9ecea0c41570bc1cfd6dd19bdbb27f3c2da2a73d08c62eae1094d8371d5d6376e748f9a3e9c014177"
         },
         {
           "from": "mac",
           "counter": 0,
           "plaintext": "{\"t\":\"ready\",\"mac\":{\"id\":\"mac-id\",\"name\":\"Mac mini\"},\"device\":{\"id\":\"device-id\"}}",
-          "sealed": "c11ee0e4c105ea06f4d69eec49e67754a4ebe1d9e8c1a47f9b6b16dabe742f74a3d0cf65df56727b7739b70ef7262702af0f75f7ab54e6f43a25e552ccc8f6b22ab77862f2ba0ddb71a347061008da2754116087aab9b0cc87b716445a87313b51"
+          "sealed": "e8a49aa253b584f3ebd04c2199e7bea762b2033693b7e6f2a026f33cc368d04865856024e349a8a5b0f887bab66cc4ef483eafec488991d967f7eaadc4c0bdacddab0efe7694fcad9427510217ffd101a4020c8143bdf5f2cb51d3d8c1a3bd4d53"
         },
         {
           "from": "phone",
           "counter": 1,
           "plaintext": "{\"t\":\"call\",\"id\":1,\"name\":\"watch\",\"args\":[\"default\"]}",
-          "sealed": "6d612836b87e55bab54470a538e6885febdf93e5d2b4e3379f2d328ee61e21babb044385dbb07c14584268b8f4116659a480a48c893419f6221bf942dfa4faf40815f21536"
+          "sealed": "0c996b6088734ec15c7dfb7ea2ef1dff692ae0d46f06d60bd683f5195340857f59e843b43212ac8cf49253bcb8053526cc1227668d4ea0cc9b51498853d7009bd5d20598ba"
         }
       ],
       "b64": {

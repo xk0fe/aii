@@ -14,7 +14,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useKeyboardHandler } from '
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import type { Agent, Channel, FeedEntry, Reply } from '@/net/types'
-import { channelOf, familyOf, GENERAL, isUnread, membersOf, useCrew, useDerived, type Derived } from '@/state/hooks'
+import { channelOf, familyOf, GENERAL, isUnread, membersOf, useClique, useDerived, type Derived } from '@/state/hooks'
 import { openChannel, openConvo, useConvo, usePickedChannel } from '@/state/convo'
 import { session } from '@/state/session'
 import { agentColor } from '@/ui/avatar'
@@ -156,7 +156,7 @@ function Working({ t, d, here, chan, now }: { t: Theme; d: Derived; here: string
 }
 
 // Who's at work and who needs you, in a few plain words, for the line under the workspace's name. Who needs you
-// counts the way the Crew tab does: an agent once, with its clones.
+// counts the way the CLIque tab does: an agent once, with its clones.
 function summary(t: Theme, d: Derived, parked: boolean) {
   if (parked) return <Text>Asleep</Text>
   const needing = needsOf(d.agents, d.open, [...d.byName.values()]).length
@@ -353,7 +353,7 @@ function useFollow(list: RefObject<FlatList<FeedEntry> | null>, place: string, i
 export default function ChatScreen() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
-  const { client, link, state, ws, shown, switching } = useCrew()
+  const { client, link, state, ws, shown, switching } = useClique()
   const d = useDerived(state)
   const convo = useConvo()
   // the workspace `state` is of: while switching, the one still on screen
@@ -488,7 +488,7 @@ export default function ChatScreen() {
     return (
       <View style={[styles.empty, { backgroundColor: t.page, paddingTop: insets.top }]}>
         <Text style={[styles.emptyTitle, { color: t.fg }]}>No computer yet</Text>
-        <Text style={[styles.emptyText, { color: t.fg2 }]}>Pair this phone with your computer, or look around the demo crew.</Text>
+        <Text style={[styles.emptyText, { color: t.fg2 }]}>Pair this phone with your computer, or look around the demo clique.</Text>
         <Button t={t} kind="primary" title="Pair with your computer" onPress={() => router.push('/pair')} />
       </View>
     )
@@ -588,7 +588,7 @@ export default function ChatScreen() {
             ) : (
             <View style={styles.listEmpty}>
               {here && state ? <Creature agent={here} size={64} /> : null}
-              <Text style={[styles.emptyText, { color: t.fg3 }]}>{!state ? (offline ? offline : `Connecting to ${client.macName}…`) : here ? `Nothing with ${displayName(here.name).base} yet. Say hi.` : 'Nothing here yet. Say hi to your crew.'}</Text>
+              <Text style={[styles.emptyText, { color: t.fg3 }]}>{!state ? (offline ? offline : `Connecting to ${client.macName}…`) : here ? `Nothing with ${displayName(here.name).base} yet. Say hi.` : 'Nothing here yet. Say hi to your clique.'}</Text>
             </View>
             )
           }

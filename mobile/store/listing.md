@@ -12,7 +12,7 @@ the icon; a rename changes it there and in this file. Copy rules: plain, short, 
 | App Store subtitle | 30 | Answer your agents anywhere (27) |
 | Google Play name | 30 | CLIque: coding agents (21) |
 | Google Play short description | 80 | See your coding agents at work and answer when they need you. (61) |
-| App Store promotional text | 170 | See who's working, allow a command, answer a question. Your crew keeps going while you're away from your desk. |
+| App Store promotional text | 170 | See who's working, allow a command, answer a question. Your clique keeps going while you're away from your desk. |
 
 "CLIque" alone is likely taken on the App Store (many apps there start with "Clique", none of them a developer tool),
 hence the tail. Check availability before Friday; another that keeps the name: "CLIque for your agents" (22). The name
@@ -25,11 +25,11 @@ the description is fine.
 CLIque on your phone keeps you close to the AI coding agents working on your computer.
 
 See who's busy and on what. When an agent wants to run a command or has a question, it asks you on your phone, in its
-own words, and you answer with one tap. Send a message to the whole crew or to one agent, from anywhere your phone can
+own words, and you answer with one tap. Send a message to the whole clique or to one agent, from anywhere your phone can
 reach your computer.
 
 What you can do
-- See your whole crew at a glance: who's at work, who's idle, who needs you.
+- See your whole clique at a glance: who's at work, who's idle, who needs you.
 - Allow or deny a command, or tell the agent what to do instead.
 - Answer an agent's questions and approve its plans.
 - Chat with everyone, or with one agent.
@@ -41,7 +41,7 @@ end to end between the two. There's no account, no server in between, and nothin
 
 You need CLIque on your computer, running Claude Code or Codex. CLIque is free. Bring your own Claude or Codex account.
 
-Not ready to pair? Try the demo crew: a made-up team that lives only on your phone.
+Not ready to pair? Try the demo clique: a made-up team that lives only on your phone.
 
 ## Keywords (App Store, 100 characters, comma separated)
 
@@ -66,9 +66,9 @@ coding,agents,ai,developer,programming,terminal,approve,remote,assistant,code,de
 
 ## Screenshots
 
-[`screenshots/iphone-6.9/`](screenshots/iphone-6.9/): iPhone 6.9" (1320 x 2868), light, from the demo crew, in this order:
+[`screenshots/iphone-6.9/`](screenshots/iphone-6.9/): iPhone 6.9" (1320 x 2868), light, from the demo clique, in this order:
 
-1. The crew: "2 of your crew need you"
+1. The clique: "2 of your clique need you"
 2. Needs you: Iris's question and Milo's command, in their own words
 3. Milo asks to run `npm run build`: Deny, Allow, Always allow
 4. The chat

@@ -140,7 +140,7 @@ export function ContextRing({ t, ctx, compacted, size = 15, ink, label = true }:
   )
 }
 
-// A workspace's tile: its icon (an emoji) or its initial, on its color; until there's one, the crew's mark.
+// A workspace's tile: its icon (an emoji) or its initial, on its color; until there's one, the clique's mark.
 export function WsTile({ t, ws, size = 28 }: { t: Theme; ws?: { name: string; color?: string | null; icon?: string | null; parked?: boolean; id?: string }; size?: number }) {
   const color = ws?.color ? (COLORS[ws.color] ?? ws.color) : null
   const initial = ([...String(ws?.name ?? '').trim()][0] ?? '?').toUpperCase()
@@ -149,7 +149,7 @@ export function WsTile({ t, ws, size = 28 }: { t: Theme; ws?: { name: string; co
     <View style={[styles.tile, { width: size, height: size, borderRadius: size * 0.3, backgroundColor: color ?? t.btn, opacity: ws?.parked ? 0.55 : 1 }, !color && { borderWidth: StyleSheet.hairlineWidth, borderColor: t.lineStrong }]}>
       {color ? <View style={[StyleSheet.absoluteFill, { borderRadius: size * 0.3, backgroundColor: 'rgba(255,255,255,0.18)', bottom: size * 0.5 }]} /> : null}
       {home ? (
-        <CrewMark size={size * 0.78} />
+        <CliqueMark size={size * 0.78} />
       ) : ws?.icon ? (
         <Text style={{ fontSize: size * 0.56, lineHeight: size * 0.72 }} allowFontScaling={false}>{ws.icon}</Text>
       ) : (
@@ -159,8 +159,8 @@ export function WsTile({ t, ws, size = 28 }: { t: Theme; ws?: { name: string; co
   )
 }
 
-// The crew's mark: three little buddies, as the Mac's menu bar has them.
-export function CrewMark({ size = 22 }: { size?: number }) {
+// The clique's mark: three little buddies, as the Mac's menu bar has them.
+export function CliqueMark({ size = 22 }: { size?: number }) {
   const s = size * 0.62
   return (
     <View style={{ width: size, height: size, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center' }}>

@@ -5,7 +5,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import type { Reply } from '@/net/types'
-import { useCrew, useDerived } from '@/state/hooks'
+import { useClique, useDerived } from '@/state/hooks'
 import { AskCard, AskSummary, askVerb } from '@/ui/ask'
 import { agentColor } from '@/ui/avatar'
 import { nameInk } from '@/ui/color'
@@ -19,7 +19,7 @@ import { useTheme } from '@/ui/theme'
 export default function AskSheet() {
   const t = useTheme()
   const { id } = useLocalSearchParams<{ id: string }>()
-  const { client, state, link } = useCrew()
+  const { client, state, link } = useClique()
   const d = useDerived(state)
   const { height } = useWindowDimensions()
   const insets = useSafeAreaInsets()

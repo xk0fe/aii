@@ -7,7 +7,7 @@ import { gitBash } from '../../core/procs.js'
 export const WIN = process.platform === 'win32'
 export const BIN = fileURLToPath(new URL('../../bin', import.meta.url))
 
-// The Electron npm installed, to run things the way Crew does (its BoringSSL, not Node's OpenSSL): Electron.app on
+// The Electron npm installed, to run things the way CLIque does (its BoringSSL, not Node's OpenSSL): Electron.app on
 // macOS, electron.exe on Windows. It may be missing (a failed download): tests that need it skip.
 export const ELECTRON = path.join(
   fileURLToPath(new URL('../../node_modules/electron/dist/', import.meta.url)),
@@ -17,7 +17,7 @@ export const ELECTRON = path.join(
 // A terminal program: Node running `js`.
 export const program = (js) => ({ file: process.execPath, args: ['-e', js] })
 
-// A shell for what has to be one (bin/crew-sh, the hooks): /bin/sh, or Git Bash on Windows, which is what Claude Code
+// A shell for what has to be one (bin/clique-sh, the hooks): /bin/sh, or Git Bash on Windows, which is what Claude Code
 // runs them with there. null when there's none.
 export const SH = WIN ? gitBash() : '/bin/sh'
 

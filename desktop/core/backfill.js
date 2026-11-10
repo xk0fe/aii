@@ -1,7 +1,7 @@
-// Spend from before Crew counted it: a one-time look back through the agents' own logs (Hub.lookBack), so the Stats view
-// starts with the last month instead of empty. Claude Code's transcripts name the agent that wrote them (Crew starts it
+// Spend from before CLIque counted it: a one-time look back through the agents' own logs (Hub.lookBack), so the Stats view
+// starts with the last month instead of empty. Claude Code's transcripts name the agent that wrote them (CLIque starts it
 // with --name) and say what each API response used; Claude Code's own /cost figure isn't kept, so they're priced here at
-// list prices. Codex's session logs carry the crew prompt, with the agent's name, and its token counts. A conversation
+// list prices. Codex's session logs carry the clique prompt, with the agent's name, and its token counts. A conversation
 // started for a task opens with the task's brief, so its spend goes to the task too. Runs in a worker thread: reading a
 // month of transcripts mustn't hold up the app. No Electron in here.
 import fs from 'node:fs'
@@ -32,22 +32,22 @@ export function costOf(usage, model) {
   return (dollars / 1e6) * (usage.speed === 'fast' ? 2 : 1)
 }
 
-// A task's brief opens its conversation: "[bug #12] …", with "crew task done 12" further down. A task that lives on
-// another computer reads "crew task done 12@laptop", and isn't this computer's #12.
+// A task's brief opens its conversation: "[bug #12] …", with "clique task done 12" further down. A task that lives on
+// another computer reads "clique task done 12@laptop", and isn't this computer's #12.
 export function taskOf(text) {
   const m = String(text ?? '').slice(0, 4000).match(/\[(?:bug|task|feature) #(\d+)\]/)
-  const ref = String(text ?? '').match(/crew task done (\S+)/)?.[1]
+  const ref = String(text ?? '').match(/clique task done (\S+)/)?.[1]
   return m && (!ref || ref === m[1]) ? Number(m[1]) : null
 }
 
 const localDay = (t) => new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 const base = (name) => String(name).replace(/\.\d+$/, '') // a clone's work is its original's
 
-// claude: Claude Code's projects folders; codex: Codex's sessions folder; names: the crew's agents; [since, until): the
+// claude: Claude Code's projects folders; codex: Codex's sessions folder; names: the clique's agents; [since, until): the
 // window to count, in ms. -> { agents: { name: { 'YYYY-MM-DD': { cost, tokens } } }, hours: { day: [24 costs] },
 // tickets: { id: { cost, tokens } }, sessions: [ids it counted] }
 export async function lookBack({ claude = [], codex = null, names = [], since, until }) {
-  const crew = new Set(names)
+  const clique = new Set(names)
   const out = { agents: {}, hours: {}, tickets: {}, sessions: [] }
   const add = (name, t, ticket, { cost = 0, tokens = 0 }) => {
     const day = localDay(t)
@@ -81,7 +81,7 @@ export async function lookBack({ claude = [], codex = null, names = [], since, u
   const transcripts = claude.flatMap(files)
   for (const file of transcripts.filter((f) => !f.includes(`${path.sep}subagents${path.sep}`))) {
     const name = head(file).match(/"agentName":"([^"]+)"/)?.[1]
-    if (name && crew.has(base(name))) owners.set(path.basename(file, '.jsonl'), { name: base(name), ticket: null, file })
+    if (name && clique.has(base(name))) owners.set(path.basename(file, '.jsonl'), { name: base(name), ticket: null, file })
   }
   for (const file of transcripts) {
     const parts = file.split(path.sep)
@@ -110,7 +110,7 @@ export async function lookBack({ claude = [], codex = null, names = [], since, u
     if (counted && sub < 0) out.sessions.push(path.basename(file, '.jsonl'))
   }
 
-  // Codex: the crew prompt names the agent; token counts are running totals (a total that drops started over)
+  // Codex: the clique prompt names the agent; token counts are running totals (a total that drops started over)
   for (const file of codex ? files(codex) : []) {
     if (!/one of several AI agents/.test(head(file, 256 * 1024))) continue
     let name = null
@@ -120,7 +120,7 @@ export async function lookBack({ claude = [], codex = null, names = [], since, u
     for await (const line of lines(file)) {
       if (!name && line.includes('"developer"')) {
         const who = JSON.stringify(json(line)?.payload ?? '').match(/You are \\"([a-z0-9.-]+)\\", one of several AI agents/)?.[1]
-        if (who) name = crew.has(base(who)) ? base(who) : ''
+        if (who) name = clique.has(base(who)) ? base(who) : ''
         continue
       }
       if (ticket === null && line.includes('"role":"user"')) ticket = taskOf(promptText(json(line)?.payload?.content))

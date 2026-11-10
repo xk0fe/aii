@@ -12,7 +12,7 @@ import { LinkHost, LinkClient, identity, makeCode, addresses, interfaceLabel, ta
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 test('a computer reachable on several addresses gets one connection, and keeps it', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-link-addresses-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-link-addresses-'))
   const id = identity(dir)
   const key = 'k'.repeat(32)
   const host = new LinkHost({ key, cert: id.cert, keyPem: id.key, name: 'Studio Mac', handle: async () => null })
@@ -99,9 +99,9 @@ test('Tailscale is asked through its CLI, or the one inside the app; off or miss
 const WIFI = { address: '192.168.1.31', via: 'Wi-Fi', iface: 'Wi-Fi' }
 const TS = { address: '100.90.1.2', via: 'Tailscale', iface: 'Tailscale' }
 const walls = [{ name: 'Domain', on: 'True' }, { name: 'Private', on: 'True' }, { name: 'Public', on: 'NotConfigured' }]
-const installer = { action: 'Allow', profile: 'Domain, Private' } // the rule Crew's installer adds
+const installer = { action: 'Allow', profile: 'Domain, Private' } // the rule CLIque's installer adds
 
-test('Windows Firewall: nothing to say on a private network, or with nothing known about Crew there', () => {
+test('Windows Firewall: nothing to say on a private network, or with nothing known about CLIque there', () => {
   assert.equal(reachWarning([WIFI, TS], { nets: [{ alias: 'Wi-Fi', category: 'Private' }, { alias: 'Tailscale', category: 'DomainAuthenticated' }], walls, rules: [installer] }), null)
   assert.equal(reachWarning([WIFI], { nets: [{ alias: 'Wi-Fi', category: 'Public' }], walls, rules: [] }), null, 'no rules found: Windows will ask')
   assert.equal(reachWarning([WIFI], { nets: { alias: 'Wi-Fi', category: 'Public' }, walls, rules: [installer, { action: 'Allow', profile: 'Public' }] }), null, 'you let it in on public networks too (and one network comes as an object, not a list)')

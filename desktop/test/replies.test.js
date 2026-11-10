@@ -1,4 +1,4 @@
-// Replying to a message from the chat, and what you've read: real Hub, fake runner, throwaway CREW_HOME.
+// Replying to a message from the chat, and what you've read: real Hub, fake runner, throwaway CLIQUE_HOME.
 // Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-replies-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-replies-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 
 class FakeRunner extends EventEmitter {
@@ -22,7 +22,7 @@ class FakeRunner extends EventEmitter {
 
 let hub, runner
 beforeEach(() => {
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'reads.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'reads.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'june', area: 'backend' }, { name: 'iris', area: 'design' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -33,7 +33,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.readsTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 // june answers whatever it was last handed
 const answer = (name, text) => {

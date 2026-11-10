@@ -1,5 +1,5 @@
 // Q: every workspace has him, what you send without naming anyone goes to him, and he can't be taken away. Real Hub and
-// Crew, fake terminals, throwaway CREW_HOME. Run with `npm test`.
+// CLIque, fake terminals, throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -7,10 +7,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-q-'))
-process.env.CREW_SYSTEM_AGENT = 'on'
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-q-'))
+process.env.CLIQUE_SYSTEM_AGENT = 'on'
 const { Hub, CONFIG } = await import('../core/hub.js')
-const { Crew } = await import('../core/crew.js')
+const { Clique } = await import('../core/clique.js')
 const { adapters } = await import('../core/adapters.js')
 const { SYSTEM_AGENT_PROMPT, SYSTEM_AGENT_AVATAR } = await import('../core/system-agent.js')
 const { space } = await import('../core/workspaces.js')
@@ -29,11 +29,11 @@ class FakeRunner extends EventEmitter {
   quietFor = () => Infinity
 }
 
-const CREW = [{ name: 'iris', area: 'product designer' }, { name: 'june', area: 'writer' }]
+const CLIQUE = [{ name: 'iris', area: 'product designer' }, { name: 'june', area: 'writer' }]
 let hubs = []
 const hubWith = (config) => {
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'reads.json', 'runtime.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW, ...config }))
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'reads.json', 'runtime.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CLIQUE, ...config }))
   const runner = new FakeRunner()
   const hub = new Hub(runner, { bin: '/nonexistent' })
   hubs.push(hub)
@@ -52,7 +52,7 @@ afterEach(async () => {
   for (const h of hubs) await tidy(h)
   hubs = []
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 const saved = () => JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
 
 test('every workspace has Q, first, with no entry on your roster', () => {
@@ -74,14 +74,14 @@ test('his job and personality come from the app, not from config.json', () => {
   assert.equal(w.system.area, undefined)
 })
 
-test('he works in an empty folder of his own, not where the crew works', () => {
+test('he works in an empty folder of his own, not where the clique works', () => {
   const hub = hubWith({ workspaces: undefined })
   const a = hub.systemAgent()
   assert.equal(a.cwd, hub.at('q'))
   assert.equal(fs.existsSync(a.cwd), true)
 })
 
-test('he runs on what the crew here runs on, a mid-size model at low effort, and keeps it', () => {
+test('he runs on what the clique here runs on, a mid-size model at low effort, and keeps it', () => {
   const hub = hubWith()
   assert.equal(hub.systemAgent().provider, 'claude')
   assert.equal(hub.systemAgent().model, 'sonnet')
@@ -90,7 +90,7 @@ test('he runs on what the crew here runs on, a mid-size model at low effort, and
   assert.equal(w.system.provider, 'claude')
 })
 
-test('on Claude Code he has a shell for crew and nothing else, whatever brain you pick', () => {
+test('on Claude Code he has a shell for clique and nothing else, whatever brain you pick', () => {
   const hub = hubWith()
   const flags = () => hub.systemAgent().args
   assert.equal(flags()[flags().indexOf('--tools') + 1], process.platform === 'win32' ? 'Bash,PowerShell' : 'Bash')
@@ -144,7 +144,7 @@ test('a workspace shown from another computer has that computer\'s Q, and none o
 test('Auto and triage never pick him: he does no work of his own', () => {
   const hub = hubWith()
   assert.equal(hub.route('write the release notes', 'you')?.name !== 'q', true)
-  assert.equal(hub.route('run the crew and get it to the right teammate', 'iris')?.name !== 'q', true)
+  assert.equal(hub.route('run the clique and get it to the right teammate', 'iris')?.name !== 'q', true)
 })
 
 test('he is in every channel, whoever its members are', () => {
@@ -156,15 +156,15 @@ test('he is in every channel, whoever its members are', () => {
   assert.match(hub.channelsText('iris'), /ship/)
 })
 
-test('the prompt he starts with has the crew basics and his instructions; he skips the checks before building', () => {
+test('the prompt he starts with has the clique basics and his instructions; he skips the checks before building', () => {
   const hub = hubWith()
   const a = hub.systemAgent()
   assert.equal(hub.checksFor(a), 'none')
   const launch = adapters.claude({ ...a }, { resume: false, session: 's', attachments: '/tmp', bin: '/nonexistent', checks: 'none' })
   const args = launch.args.join(' ')
   assert.match(args, /You are "q"/)
-  assert.match(args, /You run this crew/)
-  assert.match(args, /crew send <name>/)
+  assert.match(args, /You run this clique/)
+  assert.match(args, /clique send <name>/)
 })
 
 test("trusting his folder isn't a question for you", async () => {
@@ -243,54 +243,54 @@ test('turned off or asleep, he says nothing', () => {
   assert.equal(hub.feed.some((e) => e.from === 'q'), false)
 })
 
-// ---- through Crew.send, as the app and phones send ------------------------------------------------------------------
-const crewWith = (config) => {
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW, ...config }))
-  const crew = new Crew({ bin: '/nonexistent', computerName: 'Studio' })
-  Object.assign(crew.runner, { running: () => true, submit() {}, write() {} })
-  const hub = [...crew.hubs.values()][0]
+// ---- through Clique.send, as the app and phones send ------------------------------------------------------------------
+const cliqueWith = (config) => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CLIQUE, ...config }))
+  const clique = new Clique({ bin: '/nonexistent', computerName: 'Studio' })
+  Object.assign(clique.runner, { running: () => true, submit() {}, write() {} })
+  const hub = [...clique.hubs.values()][0]
   hubs.push(hub)
   for (const a of hub.agents.values()) a.status = 'working' // busy: messages queue
-  return { crew, hub }
+  return { clique, hub }
 }
 
 test('what you send naming nobody goes to him, and the chat says so', async () => {
-  const { crew, hub } = crewWith()
-  await crew.send(undefined, 'the empty cart looks sad', [], {}, hub)
+  const { clique, hub } = cliqueWith()
+  await clique.send(undefined, 'the empty cart looks sad', [], {}, hub)
   const m = hub.feed.at(-1)
   assert.equal(m.to, 'q')
   assert.equal(m.auto, undefined)
 })
 
 test('naming someone is a direct line: they get it, not him', async () => {
-  const { crew, hub } = crewWith()
-  await crew.send('iris', 'redraw it', [], {}, hub)
+  const { clique, hub } = cliqueWith()
+  await clique.send('iris', 'redraw it', [], {}, hub)
   assert.equal(hub.feed.at(-1).to, 'iris')
-  await crew.send(undefined, '@june write a line', [], {}, hub)
+  await clique.send(undefined, '@june write a line', [], {}, hub)
   assert.equal(hub.feed.at(-1).to, 'june')
 })
 
 test('with him off, Auto picks by area as it did before', async () => {
-  const { crew, hub } = crewWith()
+  const { clique, hub } = cliqueWith()
   hub.update('q', { off: true })
-  await crew.send(undefined, 'product designer needed for the cart', [], {}, hub)
+  await clique.send(undefined, 'product designer needed for the cart', [], {}, hub)
   const m = hub.feed.at(-1)
   assert.equal(m.to, 'iris')
   assert.equal(m.auto, true)
 })
 
 test('in a channel with members he still takes it', async () => {
-  const { crew, hub } = crewWith()
+  const { clique, hub } = cliqueWith()
   hub.config.workspaces.find((w) => w.id === hub.ws).channels = [{ id: 'ship', name: 'ship', members: ['iris'] }]
   hub.apply()
   for (const a of hub.agents.values()) a.status = 'working'
-  await crew.send(undefined, 'anything left to ship?', [], { channel: 'ship' }, hub)
+  await clique.send(undefined, 'anything left to ship?', [], { channel: 'ship' }, hub)
   assert.equal(hub.feed.at(-1).to, 'q')
 })
 
 test("he can't be moved to another computer", async () => {
-  const { crew, hub } = crewWith()
-  await assert.rejects(crew.moveAgent('q', 'laptop'), /stays where it is/)
+  const { clique, hub } = cliqueWith()
+  await assert.rejects(clique.moveAgent('q', 'laptop'), /stays where it is/)
 })
 
 test("he doesn't go out in an agent pack", () => {
@@ -299,9 +299,9 @@ test("he doesn't go out in an agent pack", () => {
   assert.deepEqual(pack.agents.map((a) => a.name), ['iris'])
 })
 
-test('a phone sees him as one of the crew, without his instructions', () => {
-  const { crew, hub } = crewWith()
-  const a = phoneState(crew.snapshot(hub)).agents[0]
+test('a phone sees him as one of the clique, without his instructions', () => {
+  const { clique, hub } = cliqueWith()
+  const a = phoneState(clique.snapshot(hub)).agents[0]
   assert.equal(a.name, 'q')
   assert.equal(a.system, true)
   assert.equal(a.prompt, undefined)
@@ -310,7 +310,7 @@ test('a phone sees him as one of the crew, without his instructions', () => {
 
 // ---- what a closer look found ----------------------------------------------------------------------------------------
 const withPath = (names, fn) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-path-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-path-'))
   for (const n of names) fs.writeFileSync(path.join(dir, n), '#!/bin/sh\n', { mode: 0o755 })
   const was = process.env.PATH
   process.env.PATH = dir
@@ -388,19 +388,19 @@ test("what he can't take soon doesn't go to him: asking in his terminal, stuck, 
 })
 
 test('with his account at its limit, what you send goes to a teammate, through the send the app uses', async () => {
-  const { crew, hub } = crewWith()
+  const { clique, hub } = cliqueWith()
   hub.nearLimit = (id) => id === 'claude'
   hub.agents.get('q').status = 'idle'
-  await crew.send(undefined, 'product designer needed', [], {}, hub)
+  await clique.send(undefined, 'product designer needed', [], {}, hub)
   assert.notEqual(hub.feed.at(-1).to, 'q')
 })
 
 test('a linked computer\'s Q is not yours to move either', async () => {
-  const { crew, hub } = crewWith()
-  const real = crew.snapshot.bind(crew)
-  crew.snapshot = (h) => ({ ...real(h), agents: [{ name: 'q@laptop', system: true, home: 'laptop' }] })
-  await assert.rejects(crew.moveAgent('q@laptop', ''), /stays where it is/)
-  crew.snapshot = real
+  const { clique, hub } = cliqueWith()
+  const real = clique.snapshot.bind(clique)
+  clique.snapshot = (h) => ({ ...real(h), agents: [{ name: 'q@laptop', system: true, home: 'laptop' }] })
+  await assert.rejects(clique.moveAgent('q@laptop', ''), /stays where it is/)
+  clique.snapshot = real
   void hub
 })
 
@@ -416,9 +416,9 @@ test('your q and q-2 both keep their names and he takes the next; he keeps his i
 })
 
 test("anything kept for an agent that had his name before him isn't his", () => {
-  fs.writeFileSync(path.join(process.env.CREW_HOME, 'sessions.json'), JSON.stringify({ q: { id: 'old', cli: 'claude' } }))
-  fs.writeFileSync(path.join(process.env.CREW_HOME, 'stats.json'), JSON.stringify({ q: { tasks: 50, days: {} } }))
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW }))
+  fs.writeFileSync(path.join(process.env.CLIQUE_HOME, 'sessions.json'), JSON.stringify({ q: { id: 'old', cli: 'claude' } }))
+  fs.writeFileSync(path.join(process.env.CLIQUE_HOME, 'stats.json'), JSON.stringify({ q: { tasks: 50, days: {} } }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CLIQUE }))
   const hub = new Hub(new FakeRunner(), { bin: '/nonexistent' })
   hubs.push(hub)
   assert.equal(hub.sessions.q, undefined)
@@ -436,12 +436,12 @@ test('with autopilot off his hand-off goes straight on: you asked him, and askin
 })
 
 test("a lone agent stays alone: he doesn't change its prompt, or its cache", () => {
-  const was = process.env.CREW_SAVERS
-  process.env.CREW_SAVERS = 'busyCheck'
+  const was = process.env.CLIQUE_SAVERS
+  process.env.CLIQUE_SAVERS = 'busyCheck'
   const hub = hubWith({ agents: [{ name: 'iris' }] })
   assert.equal(hub.savers.busyCheck, true)
   assert.equal(hub.checksFor(hub.agents.get('iris')), 'none')
-  process.env.CREW_SAVERS = was
+  process.env.CLIQUE_SAVERS = was
 })
 
 test('his conversation can start afresh after a long idle, like any Auto pick', () => {
@@ -495,9 +495,9 @@ test('a name kept from before he was called Q gives way to q, and what you chose
   assert.equal(space({ workspaces: [{ id: 'w', name: 'W', system: { name: 'q-2' } }] }, 'w').agents[0].name, 'q-2', 'his own spare name is kept')
 })
 
-test('`crew app` says what it can and can\'t do to him, before asking anyone', () => {
-  const { crew, hub } = crewWith()
-  const plan = (tool, name, flags = {}) => TOOLS[tool].plan({ crew, hub }, { name, flags })
+test('`clique app` says what it can and can\'t do to him, before asking anyone', () => {
+  const { clique, hub } = cliqueWith()
+  const plan = (tool, name, flags = {}) => TOOLS[tool].plan({ clique, hub }, { name, flags })
   assert.throws(() => plan('agent edit', 'q', { area: 'nothing' }), /only its brain, model and effort/)
   assert.throws(() => plan('agent edit', 'q', { prompt: 'be rude' }), /only its brain, model and effort/)
   assert.throws(() => plan('agent remove', 'q'), /can't be removed/)

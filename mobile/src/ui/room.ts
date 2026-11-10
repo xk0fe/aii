@@ -30,17 +30,17 @@ function wants(kind: AskKind, e?: FeedEntry) {
 
 export const andList = (xs: string[]) => (xs.length < 2 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`)
 
-// The headline and the line under it, in plain words: "2 of your crew need you" / "Milo wants to run a command and
+// The headline and the line under it, in plain words: "2 of your clique need you" / "Milo wants to run a command and
 // Iris has a question." Then "Everyone's busy", "2 at work", "All quiet".
 export function headline(agents: Agent[], open: FeedEntry[], parked = false, everyone: Agent[] = agents): { title: string; line: string } {
   if (!agents.length) return { title: 'No one here yet', line: `Add agents to this workspace in ${APP_NAME} on your computer.` }
-  if (parked) return { title: 'Asleep', line: 'This workspace is asleep. Send a message and its crew wakes up.' }
+  if (parked) return { title: 'Asleep', line: 'This workspace is asleep. Send a message and its clique wakes up.' }
   const needs = needsOf(agents, open, everyone)
   const byFrom = (a: Agent) => open.find((e) => family(e.from) === a.name)
   if (needs.length) {
     const said = needs.map(({ agent, kind }) => `${name(agent)} ${wants(kind, byFrom(agent))}`)
     const line = said.length > 3 ? `${said.slice(0, 2).join(', ')} and ${needs.length - 2} more are waiting.` : `${andList(said)}.`
-    return { title: needs.length === 1 ? `${name(needs[0].agent)} needs you` : `${needs.length} of your crew need you`, line }
+    return { title: needs.length === 1 ? `${name(needs[0].agent)} needs you` : `${needs.length} of your clique need you`, line }
   }
   const on = agents.filter((a) => a.on)
   const busy = on.filter((a) => a.status === 'working' && !a.waitingOn?.length)

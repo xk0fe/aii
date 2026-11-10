@@ -1,5 +1,5 @@
-// The app's one session: the paired Macs, which one is in use (or the demo crew), and its live connection. Screens
-// read it with useSession() / useCrew() (useSyncExternalStore), and act through its methods.
+// The app's one session: the paired Macs, which one is in use (or the demo clique), and its live connection. Screens
+// read it with useSession() / useClique() (useSyncExternalStore), and act through its methods.
 import Constants from 'expo-constants'
 import { getRandomBytes } from 'expo-crypto'
 import * as Device from 'expo-device'
@@ -7,13 +7,13 @@ import { AppState, Platform } from 'react-native'
 
 import { APP_NAME } from '@/brand'
 import { DemoClient } from '@/demo/client'
-import { CrewClient, type Deps, type Link, type Snapshot, type Try } from '@/net/client'
+import { CliqueClient, type Deps, type Link, type Snapshot, type Try } from '@/net/client'
 import { parsePairCode } from '@/net/pairing'
 import { CLOSE } from '@/net/shared'
 import type { MacRecord } from '@/net/types'
 
 import { forgetSecret, loadSaved, loadSecret, save, saveSecret } from './storage'
-import type { CrewLink } from './types'
+import type { CliqueLink } from './types'
 
 export const DEMO = 'demo'
 
@@ -26,7 +26,7 @@ export type SessionState = {
 const DEPS: Deps = {
   WebSocket: (globalThis as unknown as { WebSocket: Deps['WebSocket'] }).WebSocket,
   random: (n) => getRandomBytes(n),
-  log: __DEV__ ? (...a) => console.log('[crew]', ...a) : undefined,
+  log: __DEV__ ? (...a) => console.log('[clique]', ...a) : undefined,
 }
 
 const device = () => ({
@@ -70,8 +70,8 @@ function trouble(name: string, link: Offline) {
 export class Session {
   private s: SessionState = { loaded: false, macs: [], active: null }
   private listeners = new Set<() => void>()
-  client: CrewLink | null = null
-  private pairing: CrewClient | null = null
+  client: CliqueLink | null = null
+  private pairing: CliqueClient | null = null
   private unwatch: (() => void) | null = null
   private ready: Promise<void>
   private readable = false // what's saved was read; until then nothing is saved over it
@@ -128,7 +128,7 @@ export class Session {
 
   // The client in use. It remembers the workspace you watch per Mac, including when the Mac moves the phone to another
   // because the one it watched was removed.
-  private setClient(client: CrewLink | null) {
+  private setClient(client: CliqueLink | null) {
     this.unwatch?.()
     this.unwatch = null
     if (this.client && this.client !== client) this.client.stop()
@@ -152,7 +152,7 @@ export class Session {
     this.setClient(null)
     if (!mac || !secret) return false
     try {
-      const client = new CrewClient({ kind: 'mac', mac, secret }, this.deps, device())
+      const client = new CliqueClient({ kind: 'mac', mac, secret }, this.deps, device())
       client.start()
       this.setClient(client)
       return true
@@ -184,7 +184,7 @@ export class Session {
       let failed: Offline | null = null // the last round that didn't get through
       let late = false // past `timeout`, letting the round under way finish
       let over = false
-      const client = new CrewClient({ kind: 'pair', code, secret }, this.deps, device(), {
+      const client = new CliqueClient({ kind: 'pair', code, secret }, this.deps, device(), {
         onPaired: ({ mac }) => {
           paired = mac
         },
@@ -206,7 +206,7 @@ export class Session {
         })
       }
       const giveUp = () => {
-        // paired, but the crew never came: the code is used up, so it takes a new one
+        // paired, but the clique never came: the code is used up, so it takes a new one
         if (paired) return finish(new PairError(`${name} stopped answering`, 'Try again with a new code.', { fatal: true }))
         finish(failed ? trouble(name, failed) : new PairError(`Can't reach ${name}`, REACH))
       }
@@ -235,7 +235,7 @@ export class Session {
     return { done, cancel: () => cancel() }
   }
 
-  private async adopt(mac: MacRecord, secret: Uint8Array, client: CrewClient) {
+  private async adopt(mac: MacRecord, secret: Uint8Array, client: CliqueClient) {
     await saveSecret(mac.id, secret)
     this.readable = true // a fresh pairing is worth keeping even if the list couldn't be read before
     this.set({ macs: [...this.s.macs.filter((m) => m.id !== mac.id), mac], active: mac.id })

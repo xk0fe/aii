@@ -1,5 +1,5 @@
-<!-- crew-voice.exe: CLIque's dictation helper on Windows (Program.cs). A self-contained folder, no .NET install needed:
-       dotnet publish desktop/native/windows/CrewVoice -c Release -r win-x64 -o <out>     (or -r win-arm64)
+<!-- clique-voice.exe: CLIque's dictation helper on Windows (Program.cs). A self-contained folder, no .NET install needed:
+       dotnet publish desktop/native/windows/CliqueVoice -c Release -r win-x64 -o <out>     (or -r win-arm64)
      then put the speech model in <out>/models/ (see Program.cs). -->
 <Project Sdk="Microsoft.NET.Sdk">
 
@@ -8,8 +8,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>crew-voice</AssemblyName>
-    <RootNamespace>CrewVoice</RootNamespace>
+    <AssemblyName>clique-voice</AssemblyName>
+    <RootNamespace>CliqueVoice</RootNamespace>
     <Product>CLIque</Product>
     <Description>CLIque's on-device dictation</Description>
     <!-- language names ("Русский") come from the culture data -->
@@ -38,24 +38,24 @@
   </ItemGroup>
 
   <!-- Whisper.net's runtimes copy whisper.cpp for every platform they know into runtimes/; keep only this one's. -->
-  <Target Name="CrewVoiceOnlyThisPlatform" BeforeTargets="AssignTargetPaths" Condition="'$(RuntimeIdentifier)' != ''">
+  <Target Name="CliqueVoiceOnlyThisPlatform" BeforeTargets="AssignTargetPaths" Condition="'$(RuntimeIdentifier)' != ''">
     <PropertyGroup>
-      <_CrewPlatform>$(RuntimeIdentifier.Replace('osx-', 'macos-'))</_CrewPlatform>
+      <_CliquePlatform>$(RuntimeIdentifier.Replace('osx-', 'macos-'))</_CliquePlatform>
     </PropertyGroup>
     <ItemGroup>
-      <_CrewNative Include="@(None)" Condition="$([System.String]::Copy('%(None.TargetPath)').Replace('\', '/').StartsWith('runtimes/'))" />
-      <_CrewOther Include="@(_CrewNative)" Condition="!$([System.String]::Copy('%(_CrewNative.TargetPath)').Replace('\', '/').StartsWith('runtimes/$(_CrewPlatform)/')) And !$([System.String]::Copy('%(_CrewNative.TargetPath)').Replace('\', '/').StartsWith('runtimes/noavx/$(_CrewPlatform)/'))" />
-      <None Remove="@(_CrewOther)" />
+      <_CliqueNative Include="@(None)" Condition="$([System.String]::Copy('%(None.TargetPath)').Replace('\', '/').StartsWith('runtimes/'))" />
+      <_CliqueOther Include="@(_CliqueNative)" Condition="!$([System.String]::Copy('%(_CliqueNative.TargetPath)').Replace('\', '/').StartsWith('runtimes/$(_CliquePlatform)/')) And !$([System.String]::Copy('%(_CliqueNative.TargetPath)').Replace('\', '/').StartsWith('runtimes/noavx/$(_CliquePlatform)/'))" />
+      <None Remove="@(_CliqueOther)" />
       <None Remove="@(None)" Condition="'%(Filename)%(Extension)' == 'ggml-metal.metal' And !$(RuntimeIdentifier.StartsWith('osx-'))" />
     </ItemGroup>
   </Target>
 
   <!-- What a helper that never debugs, dumps or speaks HTTP/3 doesn't need from the .NET runtime (about 8 MB). -->
-  <Target Name="CrewVoiceSlim" AfterTargets="Publish" Condition="$(RuntimeIdentifier.StartsWith('win-'))">
+  <Target Name="CliqueVoiceSlim" AfterTargets="Publish" Condition="$(RuntimeIdentifier.StartsWith('win-'))">
     <ItemGroup>
-      <_CrewUnused Include="$(PublishDir)createdump.exe;$(PublishDir)mscordbi.dll;$(PublishDir)mscordaccore*.dll;$(PublishDir)Microsoft.DiaSymReader.Native.*.dll;$(PublishDir)msquic.dll" />
+      <_CliqueUnused Include="$(PublishDir)createdump.exe;$(PublishDir)mscordbi.dll;$(PublishDir)mscordaccore*.dll;$(PublishDir)Microsoft.DiaSymReader.Native.*.dll;$(PublishDir)msquic.dll" />
     </ItemGroup>
-    <Delete Files="@(_CrewUnused)" />
+    <Delete Files="@(_CliqueUnused)" />
   </Target>
 
 </Project>

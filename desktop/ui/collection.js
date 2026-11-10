@@ -1,9 +1,9 @@
-// The crew as a collection: one line saying how things are on top, then a card per agent, grouped by the computer
+// The clique as a collection: one line saying how things are on top, then a card per agent, grouped by the computer
 // each one runs on, in your order (turning one off or on never moves its card). Cards come big
-// or compact (compact by default once the crew outgrows a screen), or as a Stats table. Click a card to open its
+// or compact (compact by default once the clique outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, a few facts), everything you can set on the right, in four
 // tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
-/* global glowBedHTML, reduceMotion, DUR, EASE, shownName, pageHead, markSVG, powerSwitch, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, crew, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, crewGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
+/* global glowBedHTML, reduceMotion, DUR, EASE, shownName, pageHead, markSVG, powerSwitch, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, clique, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, cliqueGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -17,7 +17,7 @@ const limitPresets = (win) => {
   const under = LIMITS.filter((n) => !win || n < win)
   return under.length > 4 ? [100000, 250000, 400000, 600000].filter((n) => under.includes(n)) : under
 }
-// An agent's full name as the crew knows it: on another computer it carries that computer's name.
+// An agent's full name as the clique knows it: on another computer it carries that computer's name.
 const qualified = (name, home) => (home ? `${name}@${home}` : name)
 const TABS = [
   { id: 'setup', label: 'Setup', icon: ICONS.brain },
@@ -30,7 +30,7 @@ const atWork = (a) => (a?.status === 'working' && !a.waitingOn?.length) || a?.st
 function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, onWorkspace, onRenamed }) {
   // the header: in the dashboard's row of place headers (common.js pageHead), like every place's
   headIn.insertAdjacentHTML('beforeend', pageHead({
-    id: 'crew', glyph: markSVG('0 4 24 18'), title: 'Agents',
+    id: 'clique', glyph: markSVG('0 4 24 18'), title: 'Agents',
     tools: `<div class="seg icons" data-mode-switch><button data-mode="cards" title="Cards" aria-label="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards" aria-label="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the clique" aria-label="Stats">${ICONS.table}</button></div>
       <button class="icon" data-act="more" title="New agent, select, export, import" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`,
   }))
@@ -58,8 +58,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   let state = null
   let gridKey = ''
   let selecting = false
-  // cards, tiles (compact) or stats. Until you pick, compact once the crew is bigger than a screenful of cards.
-  let mode = store.get('crew.collection')
+  // cards, tiles (compact) or stats. Until you pick, compact once the clique is bigger than a screenful of cards.
+  let mode = store.get('clique.collection')
   let sortBy = 'tasks'
   let editing = null // agent name, or ':new'
   let original = null
@@ -73,7 +73,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
 
   const modeNow = () => mode ?? (state.agents.length > 9 ? 'tiles' : 'cards')
   const agentNamed = (name) => state.agents.find((a) => a.name === name)
-  const roster = () => state.agents.filter((a) => !a.cloneOf) // the crew's cards: agents, not their clones
+  const roster = () => state.agents.filter((a) => !a.cloneOf) // the clique's cards: agents, not their clones
   const providerOf = (id) => state.providers[id] ?? { label: id, models: [], efforts: [] }
   const effortsFor = (d) => providerOf(d.provider).modelEfforts?.[d.model] ?? providerOf(d.provider).efforts ?? []
 
@@ -166,7 +166,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const m = modeNow()
     root.classList.toggle('stats-mode', m === 'stats')
     segmented(head.querySelector('[data-mode-switch]'), (b) => b.dataset.mode === m)
-    const groups = crewGroups(state)
+    const groups = cliqueGroups(state)
     const needs = needsYou(state)
     needsByName = new Map(needs.map((n) => [n.agent.name, n]))
     asksByName = askTypes(state)
@@ -199,19 +199,19 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   }
 
   // The header: Agents, who they are and how many are on (what needs you is in the chat and beside each name in the
-  // sidebar: here it's the crew itself).
+  // sidebar: here it's the clique itself).
   function drawHead() {
-    const crewNow = roster()
+    const cliqueNow = roster()
     const ws = state.workspace
-    const on = crewNow.filter((a) => a.on).length
+    const on = cliqueNow.filter((a) => a.on).length
     const who = ws ? `Everyone in ${ws.name}` : ''
-    const line = crewNow.length ? `${who} · ${on} of ${crewNow.length} on` : 'Nobody yet' // parked: the banner under it says so
+    const line = cliqueNow.length ? `${who} · ${on} of ${cliqueNow.length} on` : 'Nobody yet' // parked: the banner under it says so
     const sub = head.querySelector('.ph-sub')
     if (sub.textContent !== line) sub.textContent = line
     sub.title = line
   }
 
-  // ---- no crew yet: one creature pops up in an empty room and asks who it should be ----
+  // ---- no clique yet: one creature pops up in an empty room and asks who it should be ----
 
   let emptyKey = ''
   function drawEmpty() {
@@ -258,8 +258,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     e.preventDefault()
     e.target.click()
   })
-  // ⋯ in the header: a new agent (also the dashed card, the sidebar's + and ⌘N or Ctrl+N), picking several agents, the whole crew
-  // as a .crew file, and bringing agents in from one.
+  // ⋯ in the header: a new agent (also the dashed card, the sidebar's + and ⌘N or Ctrl+N), picking several agents, the whole clique
+  // as a .clique file, and bringing agents in from one.
   function headMenu(anchor) {
     const out = roster().filter((a) => a.status !== 'away') // an asleep computer can't pack its agents
     popMenu(anchor, [
@@ -267,8 +267,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       '-',
       { label: selecting ? 'Done selecting' : 'Select…', icon: ICONS.task, act: 'select', disabled: !selecting && modeNow() === 'stats', hint: !selecting && modeNow() === 'stats' ? 'in the card views' : 'change several at once' },
       '-',
-      { label: 'Export the clique…', icon: ICONS.export, act: 'export', disabled: !out.length, hint: out.length ? `${plural(out.length, 'agent')} · .crew` : '' },
-      { label: 'Import…', icon: ICONS.import, act: 'import', hint: 'or drop a .crew file' },
+      { label: 'Export the clique…', icon: ICONS.export, act: 'export', disabled: !out.length, hint: out.length ? `${plural(out.length, 'agent')} · .clique` : '' },
+      { label: 'Import…', icon: ICONS.import, act: 'import', hint: 'or drop a .clique file' },
     ], (act) => {
       if (act === 'new') open(null)
       if (act === 'select') setSelecting(!selecting)
@@ -283,14 +283,14 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const m = e.target.closest('[data-mode]')?.dataset.mode
     if (m) {
       mode = m
-      store.set('crew.collection', m)
+      store.set('clique.collection', m)
       if (m === 'stats' && selecting) setSelecting(false)
       gridKey = ''
       drawGrid()
     }
   })
 
-  // ---- stats: compare the crew side by side ----------------------------------------
+  // ---- stats: compare the clique side by side ----------------------------------------
 
   // better: which direction wins ('none': no winner, just more first). has: whether an agent has data for it (no turns
   // yet means no average). table: false keeps it to the agent's own Stats tab (the table is wide enough as it is).
@@ -391,7 +391,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
         ${field('tier', 'Fast', '<option value="fast">Fast on</option><option value="default">Fast off</option>', 'Codex agents only')}
         ${field('power', 'Power', '<option value="1">Turn on</option><option value="0">Turn off</option>')}
       </div>
-      <button class="btn" data-act="export" title="Save the picked agents as a .crew file to share">${ICONS.export}<span>Export</span></button>
+      <button class="btn" data-act="export" title="Save the picked agents as a .clique file to share">${ICONS.export}<span>Export</span></button>
       <button class="btn primary" data-act="apply"></button>
       <button class="icon" data-act="done" title="Done selecting (Esc)" aria-label="Done selecting">${ICONS.close}</button>`
     drawBulkCount()
@@ -432,17 +432,17 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     if (v.power) patch.off = v.power === '0'
     if (!Object.keys(patch).length) return
     const names = [...picked]
-    await crew.call('update', names, patch)
+    await clique.call('update', names, patch)
     setSelecting(false)
     cheer(names)
   })
 
-  // A .crew file with these agents: their definitions, looks and reference images (not their folders or chats).
+  // A .clique file with these agents: their definitions, looks and reference images (not their folders or chats).
   async function exportAgents(names) {
     names = names.filter((n) => !agentNamed(n)?.system) // he comes with every workspace: he isn't yours to pack
     if (!names.length) return null
     try {
-      return await crew.call('exportAgents', names)
+      return await clique.call('exportAgents', names)
     } catch (err) {
       oops(`Couldn't export ${names.length === 1 ? names[0].split('@')[0] : 'the clique'}`, err)
     }
@@ -467,12 +467,12 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       : null
     draft = original
       ? structuredClone(original)
-      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('crew.yolo') === '1', on: true, avatar: randomAvatar(), contextLimit: '', onContextLimit: 'fresh', clones: '', shared: '' }
+      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('clique.yolo') === '1', on: true, avatar: randomAvatar(), contextLimit: '', onContextLimit: 'fresh', clones: '', shared: '' }
     if (home !== undefined && !a) draft.home = home
     editing = a ? a.name : ':new'
     stage = !a && !force
     bringing = false
-    tab = at ?? (a ? store.get('crew.edTab') || 'setup' : 'setup')
+    tab = at ?? (a ? store.get('clique.edTab') || 'setup' : 'setup')
     if (!a && tab === 'stats') tab = 'setup'
     if (selecting) setSelecting(false)
     // reopening after a save keeps the sheet as you left it: Advanced unfolded, scrolled where it was
@@ -695,7 +695,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   function setTab(next) {
     if (next === tab) return
     tab = next
-    if (editing !== ':new') store.set('crew.edTab', next)
+    if (editing !== ':new') store.set('clique.edTab', next)
     drawTab()
     if (next === 'instructions') card.querySelector('.pd-prompt')?.focus({ preventScroll: true })
   }
@@ -720,7 +720,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       (clones.length ? `<div class="ed-fact"><span>Clones</span><span class="ed-clone-faces">${clones.map((c) => `<button class="ed-clone ${c.status}" data-clone="${esc(c.name)}" title="${esc(`${displayName(c)}: ${c.activity && c.status === 'working' ? c.activity : statusText(c)}\nClick for its terminal`)}">${avatarHTML(c, { size: 24 })}${cloneTag(c)}</button>`).join('')}</span></div>` : ''))
   }
 
-  // Pokédex-style base stats: this agent against the busiest one in the crew.
+  // Pokédex-style base stats: this agent against the busiest one in the clique.
   function drawExperience() {
     const host = card.querySelector('.experience')
     const a = agentNamed(editing)
@@ -731,7 +731,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     }
     const s = a.stats
     const lv = levelOf(s)
-    // its level and its number in the crew live here, and only here
+    // its level and its number in the clique live here, and only here
     const no = roster().findIndex((x) => x.name === a.name)
     morph(host, `
       <div class="xp-big"><span class="lv">Lv ${lv.lv}</span><div class="grow"><i class="xpbar"><b style="width:${Math.round(lv.progress * 100)}%"></b></i><span class="h4-note">${no >= 0 ? `#${pad(no + 1)} · ` : ''}${lv.xp} XP · ${lv.toNext} to Lv ${lv.lv + 1}${s.first ? ` · working since ${new Date(s.first).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span></div></div>
@@ -1154,7 +1154,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     }
     if (act === 'pick') {
       try {
-        const dir = await crew.call('pickFolder', draft.home)
+        const dir = await clique.call('pickFolder', draft.home)
         if (dir) card.querySelector('[data-k=cwd]').value = draft.cwd = dir
         syncSave()
       } catch (err) {
@@ -1175,7 +1175,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   // A clean slate: the old conversation stays in its history. A busy agent finishes its task first.
   async function freshStart() {
     try {
-      await crew.call('freshStart', editing)
+      await clique.call('freshStart', editing)
       card.querySelector('.pd-msg').textContent = 'New conversation ✓'
     } catch (err) {
       card.querySelector('.pd-msg').textContent = errorLine(err)
@@ -1197,7 +1197,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const shared = Boolean(a?.shared)
     popMenu(anchor, a?.system ? [{ label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a.on || a.freshPending, hint: a.freshPending ? 'when it’s free' : '' }] : [
       { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a?.on || a.freshPending, hint: a?.freshPending ? 'when it’s free' : a?.convo?.context ? `${a.convo.context.pct}% full` : '' },
-      { label: 'Export…', icon: ICONS.export, act: 'export', hint: '.crew file' },
+      { label: 'Export…', icon: ICONS.export, act: 'export', hint: '.clique file' },
       { label: 'Move to another computer…', icon: ICONS.move, act: 'move', disabled: !linkedHere(state.computers ?? {}).some((l) => l.online) && !draft.home },
       '-',
       { label: shared ? `Take out of ${state.workspace.name}…` : 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
@@ -1209,11 +1209,11 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       if (act === 'remove' && confirm(shared
         ? `Take ${draft.name || editing} out of ${state.workspace.name}? It stops working here, and starts a fresh conversation if it comes back. It stays in your clique and your other workspaces.`
         : `Remove ${draft.name || editing}? It's only in ${state.workspace.name}, so it's gone for good. Its session stops (the transcript stays with the CLI).`)) {
-        await crew.call('removeAgent', editing)
+        await clique.call('removeAgent', editing)
         close(true)
       }
       if (act === 'forget' && confirm(`Remove ${draft.name || editing} from your clique? It stops and leaves every workspace it's in, for good. Its transcripts stay with the CLI.`)) {
-        await crew.call('removeAgent', editing, { everywhere: true })
+        await clique.call('removeAgent', editing, { everywhere: true })
         close(true)
       }
     })
@@ -1234,7 +1234,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     msg.textContent = ''
     try {
       const { name, area, provider, model, cwd } = draft
-      box.value = draft.prompt = await crew.call('draftPrompt', { name: slug(name), area, provider, model, cwd, home: draft.home })
+      box.value = draft.prompt = await clique.call('draftPrompt', { name: slug(name), area, provider, model, cwd, home: draft.home })
       syncSave()
       msg.textContent = 'Drafted ✓ (review it, then Save)'
     } catch (err) {
@@ -1256,15 +1256,15 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       if (!original) {
         const { on, ...fields } = draft
         if (stage) (bringing = true), syncStage()
-        reopen = await crew.call('addAgent', { ...fields, off: !on }) // a name@computer when it runs elsewhere
-        store.set('crew.yolo', draft.yolo ? '1' : '0')
+        reopen = await clique.call('addAgent', { ...fields, off: !on }) // a name@computer when it runs elsewhere
+        store.set('clique.yolo', draft.yolo ? '1' : '0')
         if (bringing && agentNamed(reopen)) landReopen() // it showed up before the answer did
       } else {
         const patch = {}
         for (const k of FIELDS) if (JSON.stringify(draft[k]) !== JSON.stringify(original[k])) patch[k] = draft[k]
         if (draft.on !== original.on) patch.off = !draft.on
         if (JSON.stringify(draft.avatar) !== JSON.stringify(original.avatar)) patch.avatar = draft.avatar
-        if (Object.keys(patch).length) await crew.call('update', editing, patch)
+        if (Object.keys(patch).length) await clique.call('update', editing, patch)
         reopen = 'name' in patch ? qualified(slug(draft.name), draft.home) : editing
         if ('name' in patch) onRenamed?.(editing, reopen)
       }

@@ -1,4 +1,4 @@
-// Agent tools: `crew app …`, an agent changing CLIque itself. Off, ask first (a card in the chat, the agent's command
+// Agent tools: `clique app …`, an agent changing CLIque itself. Off, ask first (a card in the chat, the agent's command
 // waiting on your answer) or automatic (what can't be undone still asks). Run with `npm test`.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -6,78 +6,78 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-tools-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-tools-'))
 const { CONFIG } = await import('../core/hub.js')
-const { Crew } = await import('../core/crew.js')
+const { Clique } = await import('../core/clique.js')
 const { serve } = await import('../core/server.js')
 const { parse, help, TOOLS } = await import('../core/tools.js')
 const { makeCode } = await import('../core/link.js')
 
-const FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-tools-folder-'))
+const FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-tools-folder-'))
 fs.writeFileSync(CONFIG, JSON.stringify({
   autopilot: true,
   agents: [{ name: 'iris', area: 'ui/ux designer' }, { name: 'june', area: 'Senior Backend SWE', provider: 'codex' }, { name: 'milo', area: 'ios app' }],
   workspaces: [{ id: 'storefront', name: 'Storefront', folder: FOLDER, members: { iris: {} }, agents: [{ name: 'kit', area: 'checkout' }] }],
 }))
 
-const crew = new Crew({ bin: '/nonexistent', computerName: 'Studio' })
-Object.assign(crew.runner, { running: () => true, quietFor: () => Infinity, submit() {}, write() {} })
+const clique = new Clique({ bin: '/nonexistent', computerName: 'Studio' })
+Object.assign(clique.runner, { running: () => true, quietFor: () => Infinity, submit() {}, write() {} })
 const quiet = () => {
-  for (const hub of crew.hubs.values()) {
+  for (const hub of clique.hubs.values()) {
     for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer), clearTimeout(a.steerTimer)
     for (const t of ['statsTimer', 'convoTimer', 'readsTimer', 'runtimeTimer', 'usageTimer', 'ticketsTimer', 'lookTimer']) clearTimeout(hub[t])
   }
-  clearTimeout(crew.changeTimer)
+  clearTimeout(clique.changeTimer)
 }
 after(() => {
   quiet()
-  fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 })
+  fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 })
   fs.rmSync(FOLDER, { recursive: true, force: true })
 })
 
-const home = () => crew.hubs.get('default')
-const shop = () => crew.hubs.get('storefront')
+const home = () => clique.hubs.get('default')
+const shop = () => clique.hubs.get('storefront')
 const data = () => JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
 const homeOf = () => data().workspaces.find((w) => w.id === 'default')
-// `crew app <words>` from an agent, as the /app route hands it over
-const app = (from, line, { hub = home(), hold } = {}) => crew.tool(hub, from, line, undefined, { hold })
+// `clique app <words>` from an agent, as the /app route hands it over
+const app = (from, line, { hub = home(), hold } = {}) => clique.tool(hub, from, line, undefined, { hold })
 const asks = (hub = home()) => hub.feed.filter((e) => e.kind === 'ask' && !e.answer)
 const lastAsk = (hub = home()) => asks(hub).at(-1)
 const settled = () => new Promise((r) => setImmediate(r))
-const mode = (m) => crew.setTools(m)
+const mode = (m) => clique.setTools(m)
 const fresh = (hub = home()) => {
   for (const a of hub.agents.values()) Object.assign(a, { status: 'idle', inbox: [], current: undefined })
 }
 
-test('crew app help: every tool, with how changes go right now; words read the way an agent types them', () => {
-  for (const m of ['off', 'ask', 'auto']) assert.match(help(m), /crew app channel add <name>/)
+test('clique app help: every tool, with how changes go right now; words read the way an agent types them', () => {
+  for (const m of ['off', 'ask', 'auto']) assert.match(help(m), /clique app channel add <name>/)
   assert.match(help('ask'), /waits for the user to allow it/)
   assert.match(help('auto'), /go through right away\. Removing something, linking a computer, and starting or changing a YOLO agent still wait/)
   assert.match(help('off'), /turned them off/)
-  for (const key of Object.keys(TOOLS)) assert.ok(help('ask').includes(`crew app ${key}`), key)
+  for (const key of Object.keys(TOOLS)) assert.ok(help('ask').includes(`clique app ${key}`), key)
 
   assert.deepEqual(parse(['']), { help: true })
   assert.deepEqual(parse(['help']), { help: true })
   const c = parse(['channel', 'add', 'Design', 'Review', '--brief', 'look, don\'t touch', '--members=iris,june'])
   assert.deepEqual([c.key, c.name, c.flags], ['channel add', 'Design Review', { brief: "look, don't touch", members: 'iris,june' }])
-  assert.deepEqual(parse(['agent', 'add', 'bob', '--crew', '--area', 'qa']).flags, { crew: true, area: 'qa' })
-  assert.throws(() => parse(['channel', 'paint']), /there's no crew app channel paint \(crew app help lists them\)/)
-  assert.throws(() => parse(['channel', 'add', 'x', '--colour', 'red']), /crew app channel add takes no --colour\. Use: crew app channel add <name>/)
+  assert.deepEqual(parse(['agent', 'add', 'bob', '--clique', '--area', 'qa']).flags, { clique: true, area: 'qa' })
+  assert.throws(() => parse(['channel', 'paint']), /there's no clique app channel paint \(clique app help lists them\)/)
+  assert.throws(() => parse(['channel', 'add', 'x', '--colour', 'red']), /clique app channel add takes no --colour\. Use: clique app channel add <name>/)
   assert.throws(() => parse(['channel', 'add', 'x', '--brief']), /--brief needs a value/)
-  assert.throws(() => parse(['channel', 'add']), /which name\? Use: crew app channel add/)
-  assert.throws(() => parse(['workspaces', 'all']), /crew app workspaces takes no words/)
+  assert.throws(() => parse(['channel', 'add']), /which name\? Use: clique app channel add/)
+  assert.throws(() => parse(['workspaces', 'all']), /clique app workspaces takes no words/)
 })
 
 test("off: agents can't change anything (help still says so); ask first is the default and isn't written down", async () => {
-  assert.equal(crew.snapshot().tools, 'ask')
+  assert.equal(clique.snapshot().tools, 'ask')
   assert.equal('tools' in data(), false)
   mode('off')
   assert.equal(data().tools, 'off')
-  assert.equal(crew.snapshot().tools, 'off')
+  assert.equal(clique.snapshot().tools, 'off')
   await assert.rejects(app('iris', ['channel', 'add', 'design']), /Agent tools are off: the user turned them off/)
   await assert.rejects(app('iris', ['workspaces']), /Agent tools are off/)
   assert.match(await app('iris', ['help']), /turned them off/)
-  assert.throws(() => crew.setTools('yes'), /agent tools are off, ask, auto, not yes/)
+  assert.throws(() => clique.setTools('yes'), /agent tools are off, ask, auto, not yes/)
   mode('ask')
   assert.equal('tools' in data(), false)
   assert.equal(asks().length, 0)
@@ -95,7 +95,7 @@ test('looking never asks: agents, brains, channels, workspaces, computers', asyn
   assert.match(spaces, /^Home +id default · @iris @june @milo$/m)
   assert.match(spaces, new RegExp(`^Storefront +id storefront · ${FOLDER} · @iris · you're here$`, 'm'))
   assert.match(await app('iris', ['computers']), /^Studio +this computer$/m)
-  assert.doesNotMatch(await app('iris', ['computers']), /crew1\./, "never this computer's link code")
+  assert.doesNotMatch(await app('iris', ['computers']), /clique1\./, "never this computer's link code")
   assert.equal(asks().length + asks(shop()).length, 0)
 })
 
@@ -106,8 +106,8 @@ test('ask first: a card where the agent is working; allowed, the change is made 
   await settled()
   const e = lastAsk()
   assert.equal(e.from, 'iris')
-  assert.equal(e.cli, 'crew')
-  assert.deepEqual(e.ask, { type: 'permission', tool: 'crew app', app: true, title: 'Add a channel', code: '#design\nPixels only: no backend changes.', detail: 'For @iris, @june', say: 'Can I add a #design channel?', always: [], alert: 'wants to add a channel' })
+  assert.equal(e.cli, 'clique')
+  assert.deepEqual(e.ask, { type: 'permission', tool: 'clique app', app: true, title: 'Add a channel', code: '#design\nPixels only: no backend changes.', detail: 'For @iris, @june', say: 'Can I add a #design channel?', always: [], alert: 'wants to add a channel' })
   assert.equal(iris.status, 'waiting')
   assert.equal(homeOf().channels, undefined, 'nothing changes until you say yes')
   await home().answer(e.id, { allow: true })
@@ -135,7 +135,7 @@ test("checked before you're asked: a wrong name, brain, folder or member fails a
   const no = (line, re, opts) => assert.rejects(app('iris', line, opts), re)
   await no(['channel', 'add', 'design'], /there's a #design already/)
   await no(['channel', 'add', '!!'], /give the channel a name/)
-  await no(['channel', 'add', 'x', '--members', 'nobody'], /there's no agent called nobody in Home \(crew who lists them\)/)
+  await no(['channel', 'add', 'x', '--members', 'nobody'], /there's no agent called nobody in Home \(clique who lists them\)/)
   await no(['channel', 'remove', 'general'], /#general can't be removed/)
   await no(['channel', 'edit', 'nope', '--brief', 'x'], /there's no #nope in Home/)
   await no(['agent', 'add', 'June'], /"june" already exists/)
@@ -154,7 +154,7 @@ test("checked before you're asked: a wrong name, brain, folder or member fails a
   await no(['workspace', 'members', 'Home', '--add', 'june'], /that's how Home is already/)
   await no(['workspace', 'members', 'Storefront', '--add', 'iris'], /nothing to change: that's how Storefront is already/)
   await no(['workspace', 'wake', 'Storefront'], /Storefront is awake already/)
-  await no(['channel', 'add', 'x', '--in', 'Attic'], /there's no workspace called Attic \(crew app workspaces lists them\)/)
+  await no(['channel', 'add', 'x', '--in', 'Attic'], /there's no workspace called Attic \(clique app workspaces lists them\)/)
   await no(['link', 'hello'], /that's not a CLIque pairing code/)
   await no(['unlink', 'laptop'], /this computer isn't linked with laptop/)
   assert.equal(asks().length, 0)
@@ -172,8 +172,8 @@ test("its command stops waiting: the card stays up (even past its turn), and wha
   assert.equal(lastAsk()?.id, e.id, 'still up')
   await home().answer(e.id, { allow: true })
   assert.equal(homeOf().channels.find((c) => c.id === 'design').brief, 'Pixels and copy')
-  const told = iris.inbox.find((m) => m.crew)
-  assert.equal(told.text, '[crew] You asked to change #design (crew app). The user allowed it: changed #design.')
+  const told = iris.inbox.find((m) => m.clique)
+  assert.equal(told.text, '[clique] You asked to change #design (clique app). The user allowed it: changed #design.')
   assert.equal(told.id, e.id, 'its reply goes where the card was')
 })
 
@@ -187,7 +187,7 @@ test("an agent that restarts lets go of its command, and its card stays up; one 
   const card = lastAsk()
   assert.equal(card?.ask.title, 'Add a channel', 'still up for you')
   await home().answer(card.id, { allow: false })
-  assert.equal(iris.inbox.at(-1).text, "[crew] You asked to add a channel (crew app). The user said no.")
+  assert.equal(iris.inbox.at(-1).text, "[clique] You asked to add a channel (clique app). The user said no.")
   iris.inbox = []
   const out1 = app('iris', ['channel', 'add', 'later'])
   await settled()
@@ -195,7 +195,7 @@ test("an agent that restarts lets go of its command, and its card stays up; one 
   assert.equal(await out1, '')
   assert.equal(asks().length, 0)
   const closed = new AbortController()
-  const out2 = crew.tool(home(), 'iris', ['channel', 'add', 'later'], closed.signal)
+  const out2 = clique.tool(home(), 'iris', ['channel', 'add', 'later'], closed.signal)
   await settled()
   closed.abort()
   assert.equal(await out2, '')
@@ -236,14 +236,14 @@ test('only an agent can ask: your own terminal gets what runs without asking, an
   mode('ask')
 })
 
-test("agents: one added where the agent works is that workspace's own (--crew: one of yours everywhere); edit, on and off, remove", async () => {
+test("agents: one added where the agent works is that workspace's own (--clique: one of yours everywhere); edit, on and off, remove", async () => {
   fresh(shop())
   mode('auto')
-  assert.equal(await app('iris', ['agent', 'add', 'Bob', '--area', 'QA for checkout', '--model', 'sonnet', '--folder', FOLDER, '--off'], { hub: shop() }), 'added @bob, off (crew app agent on bob turns it on)\n')
+  assert.equal(await app('iris', ['agent', 'add', 'Bob', '--area', 'QA for checkout', '--model', 'sonnet', '--folder', FOLDER, '--off'], { hub: shop() }), 'added @bob, off (clique app agent on bob turns it on)\n')
   const sf = () => data().workspaces.find((w) => w.id === 'storefront')
   assert.deepEqual(sf().agents.find((a) => a.name === 'bob'), { name: 'bob', area: 'QA for checkout', provider: 'claude', model: 'sonnet', cwd: FOLDER, off: true })
   assert.equal(data().agents.some((a) => a.name === 'bob'), false)
-  assert.equal(await app('iris', ['agent', 'add', 'cleo', '--area', 'docs', '--brain', 'Codex', '--effort', 'low', '--crew'], { hub: shop() }), 'added @cleo, ready for work\n')
+  assert.equal(await app('iris', ['agent', 'add', 'cleo', '--area', 'docs', '--brain', 'Codex', '--effort', 'low', '--clique'], { hub: shop() }), 'added @cleo, ready for work\n')
   assert.deepEqual(data().agents.find((a) => a.name === 'cleo'), { name: 'cleo', area: 'docs', provider: 'codex', effort: 'low' }, 'who it is; whether it\'s on is each workspace\'s')
   assert.deepEqual(sf().members.cleo, {})
   // from Home, into Storefront
@@ -282,7 +282,7 @@ test("workspaces: one an agent makes opens without taking over your screen; who 
   const lab = () => data().workspaces.find((w) => w.id === 'lab')
   assert.deepEqual(lab(), { id: 'lab', name: 'Lab', members: { june: {}, milo: {} }, icon: '🧪', folder: FOLDER })
   assert.equal(data().current, current, 'the screen stays where it was')
-  assert.ok(crew.hubs.has('lab'))
+  assert.ok(clique.hubs.has('lab'))
   assert.equal(await app('iris', ['workspace', 'members', 'lab', '--add', 'iris', '--remove', 'milo']), 'Lab: in: @iris, out: @milo\n')
   assert.deepEqual(Object.keys(lab().members), ['june', 'iris'])
   assert.equal(await app('iris', ['workspace', 'edit', 'Lab', '--name', 'Lab 2']), 'changed Lab 2\n')
@@ -303,7 +303,7 @@ test('linking: a code always asks, and says whose computer it is; allowed, it li
   mode('auto')
   const code = makeCode({ name: 'Mac mini', port: 7787, key: 'k', fingerprint: 'f', hosts: ['192.168.0.9'] })
   const linked = []
-  crew.connect = async (c) => (linked.push(c), 'mac-mini')
+  clique.connect = async (c) => (linked.push(c), 'mac-mini')
   const out = app('iris', ['link', code])
   await settled()
   const e = lastAsk()
@@ -313,7 +313,7 @@ test('linking: a code always asks, and says whose computer it is; allowed, it li
   assert.equal(await out, 'The user allowed it: linked with Mac mini.\n')
   assert.deepEqual(linked, [code])
   // a link that doesn't come through: allowed, and the agent hears why
-  crew.connect = async () => {
+  clique.connect = async () => {
     throw new Error("couldn't reach Mac mini yet, it keeps trying")
   }
   const again = app('iris', ['link', code])
@@ -322,43 +322,43 @@ test('linking: a code always asks, and says whose computer it is; allowed, it li
   await home().answer(e2.id, { allow: true })
   assert.equal(await again, "The user allowed it, but it didn't work: couldn't reach Mac mini yet, it keeps trying\n")
   assert.equal(e2.answer.failed, "couldn't reach Mac mini yet, it keeps trying")
-  delete crew.connect
+  delete clique.connect
   mode('ask')
 })
 
-test("over CLIque's own server: the /app route, in the agent's workspace (the X-Crew-Workspace header)", async () => {
+test("over CLIque's own server: the /app route, in the agent's workspace (the X-Clique-Workspace header)", async () => {
   mode('auto')
-  const server = await serve({ token: crew.token, hubFor: (id) => crew.hubs.get(id) })
+  const server = await serve({ token: clique.token, hubFor: (id) => clique.hubs.get(id) })
   const url = `http://127.0.0.1:${server.address().port}`
-  const call = (words, ws = '') => fetch(`${url}/app?from=iris`, { method: 'POST', headers: { 'X-Crew': crew.token, 'X-Crew-Workspace': ws }, body: words.map((w) => `${w}\0`).join('') }).then(async (r) => [r.status, await r.text()])
+  const call = (words, ws = '') => fetch(`${url}/app?from=iris`, { method: 'POST', headers: { 'X-Clique': clique.token, 'X-Clique-Workspace': ws }, body: words.map((w) => `${w}\0`).join('') }).then(async (r) => [r.status, await r.text()])
   assert.deepEqual(await call(['channel', 'add', 'ship it']), [200, 'added #ship-it\n'])
   assert.deepEqual(await call(['channel', 'add', 'ship it']), [400, "there's a #ship-it already\n"])
   assert.deepEqual(await call(['channel', 'add', 'pixels'], 'storefront'), [200, 'added #pixels\n'])
   assert.ok(data().workspaces.find((w) => w.id === 'storefront').channels.some((c) => c.id === 'pixels'))
   const [status, text] = await call([''])
   assert.equal(status, 200)
-  assert.match(text, /^crew app: change CLIque itself/)
+  assert.match(text, /^clique app: change CLIque itself/)
   server.close()
   mode('ask')
 })
 
 test("a broken config.json: looking still works, changing doesn't (it would save over the file)", async () => {
-  crew.config.broken = true
-  crew.config.data.tools = 'auto'
+  clique.config.broken = true
+  clique.config.data.tools = 'auto'
   await assert.rejects(app('iris', ['channel', 'add', 'nope']), /can't read its settings \(config\.json\) right now/)
   assert.match(await app('iris', ['channels']), /#general/)
-  crew.config.broken = false
-  delete crew.config.data.tools
+  clique.config.broken = false
+  delete clique.config.data.tools
 })
 
 test('a look that can\'t be set changes nothing, not even in memory (a later save would write it)', async () => {
   mode('auto')
-  const before = JSON.stringify(crew.config.data.workspaces)
+  const before = JSON.stringify(clique.config.data.workspaces)
   await assert.rejects(app('iris', ['workspace', 'add', 'Lab', '--color', 'light blue']), /"light blue" isn't a color/)
   await assert.rejects(app('iris', ['workspace', 'edit', 'Storefront', '--name', 'Shop', '--color', 'sky-blue']), /"sky-blue" isn't a color/)
-  assert.equal(JSON.stringify(crew.config.data.workspaces), before)
-  assert.throws(() => crew.workspaceAction('edit', 'storefront', { name: 'Shop', color: 'no such' }), /isn't a color/)
-  assert.equal(JSON.stringify(crew.config.data.workspaces), before, "the app's own edit too")
+  assert.equal(JSON.stringify(clique.config.data.workspaces), before)
+  assert.throws(() => clique.workspaceAction('edit', 'storefront', { name: 'Shop', color: 'no such' }), /isn't a color/)
+  assert.equal(JSON.stringify(clique.config.data.workspaces), before, "the app's own edit too")
   assert.equal(asks().length, 0)
   mode('ask')
 })
@@ -368,7 +368,7 @@ test('automatic: anything that starts a YOLO agent, points it somewhere new or t
   cfg.agents.push({ name: 'rex', area: 'scripts', yolo: true })
   cfg.workspaces.find((w) => w.id === 'default').members.rex = { off: true }
   fs.writeFileSync(CONFIG, JSON.stringify(cfg))
-  crew.config.load()
+  clique.config.load()
   fresh()
   mode('auto')
   const asked = async (line, title) => {
@@ -407,9 +407,9 @@ test("checked again when you answer: config.json unreadable, tools turned off, o
   fresh()
   const out = app('iris', ['channel', 'add', 'late'])
   await settled()
-  crew.config.broken = true
+  clique.config.broken = true
   await home().answer(lastAsk().id, { allow: true })
-  crew.config.broken = false
+  clique.config.broken = false
   assert.equal(await out, "The user allowed it, but it didn't work: CLIque can't read its settings (config.json) right now, so it changes nothing until it can\n")
   assert.equal(homeOf().channels.some((c) => c.id === 'late'), false)
 
@@ -419,7 +419,7 @@ test("checked again when you answer: config.json unreadable, tools turned off, o
   const out2 = app('iris', ['agent', 'add', 'tmpbot', '--in', 'Temp'])
   await settled()
   const card = lastAsk()
-  crew.workspaceAction('remove', 'temp')
+  clique.workspaceAction('remove', 'temp')
   await home().answer(card.id, { allow: true })
   assert.equal(await out2, "The user allowed it, but it didn't work: Temp isn't there any more\n")
 })
@@ -434,7 +434,7 @@ test('turning agent tools off closes the cards still up, and their agents hear n
   assert.equal(asks().length, 2)
   mode('off')
   assert.equal(await held, "The user turned agent tools off, so it wasn't made.\n")
-  assert.equal(home().agents.get('june').inbox.at(-1).text, "[crew] You asked to add a channel (crew app). The user turned agent tools off, so it wasn't made.")
+  assert.equal(home().agents.get('june').inbox.at(-1).text, "[clique] You asked to add a channel (clique app). The user turned agent tools off, so it wasn't made.")
   assert.equal(asks().length, 0)
   assert.notEqual(iris.status, 'waiting')
   mode('ask')
@@ -457,22 +457,22 @@ test("an agent renamed while its card is up still hears what you decided; a clon
   const card = lastAsk()
   home().update(['milo'], { name: 'mila' })
   await home().answer(card.id, { allow: false, note: 'later' })
-  assert.equal(home().agents.get('mila').inbox.at(-1).text, '[crew] You asked to add a channel (crew app). The user said no: later')
+  assert.equal(home().agents.get('mila').inbox.at(-1).text, '[clique] You asked to add a channel (clique app). The user said no: later')
 })
 
 test('CLIque restarting with a card up: the card closes, and its agent hears nothing was made', async () => {
   const { Hub } = await import('../core/hub.js')
   const hub = home()
-  const e = hub.post({ kind: 'ask', from: 'iris', to: 'you', cli: 'crew', ask: { type: 'permission', app: true, title: 'Add a channel', code: '#x' } })
+  const e = hub.post({ kind: 'ask', from: 'iris', to: 'you', cli: 'clique', ask: { type: 'permission', app: true, title: 'Add a channel', code: '#x' } })
   quiet()
   await hub.saving
   // as the next start reads it
-  const fresh2 = new Hub(hub.runner, { bin: '/nonexistent', workspace: 'default', config: crew.config, token: 't', usage: {}, samples: {}, locks: { files: new Map(), held: new Map(), waits: [] } })
+  const fresh2 = new Hub(hub.runner, { bin: '/nonexistent', workspace: 'default', config: clique.config, token: 't', usage: {}, samples: {}, locks: { files: new Map(), held: new Map(), waits: [] } })
   const loaded = fresh2.feed.find((x) => x.id === e.id)
   assert.deepEqual([loaded.answer.stale, loaded.answer.lost], [true, true])
   fresh2.agents.get('iris').inbox = []
   fresh2.toolsLost()
-  assert.equal(fresh2.agents.get('iris').inbox.at(-1).text, "[crew] CLIque restarted before the user answered when you asked to add a channel (crew app), so it wasn't made. If it's still needed, ask again.")
+  assert.equal(fresh2.agents.get('iris').inbox.at(-1).text, "[clique] CLIque restarted before the user answered when you asked to add a channel (clique app), so it wasn't made. If it's still needed, ask again.")
   assert.equal(fresh2.feed.find((x) => x.id === e.id).answer.lost, undefined, 'told once')
   fresh2.dispose?.()
 })

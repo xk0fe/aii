@@ -1,5 +1,5 @@
-// Pairing: point the camera at the code Crew on the Mac shows (Computers › Add a phone), or paste it, and the phone and
-// the Mac swap keys. Or look around the demo crew first.
+// Pairing: point the camera at the code CLIque on the Mac shows (Computers › Add a phone), or paste it, and the phone and
+// the Mac swap keys. Or look around the demo clique first.
 //
 // The camera is the screen and it never needs a button: after a try that didn't work it keeps looking, and a code it
 // has just tried waits (a few seconds, a minute after "too many tries", for the whole visit when it can't work) before
@@ -31,7 +31,7 @@ const BUDDIES = [
 ]
 const PERCH = 58 // how far the buddies stand above the viewfinder; their feet tuck behind its edge
 
-// The crew, sitting on the viewfinder's edge: they hop while pairing, and one of them frets when it didn't work.
+// The clique, sitting on the viewfinder's edge: they hop while pairing, and one of them frets when it didn't work.
 function Buddies({ busy, trouble }: { busy: boolean; trouble: boolean }) {
   return (
     <View pointerEvents="none" style={styles.buddies}>
@@ -218,7 +218,7 @@ export default function Pair() {
     const text = await Clipboard.getStringAsync().catch(() => '')
     if (text) {
       setCode(text.trim())
-      if (text.includes('crewphone1.')) void pair(text)
+      if (text.includes('cliquephone1.')) void pair(text)
     }
   }
   const demo = () => {
@@ -265,7 +265,7 @@ export default function Pair() {
                   setCode(v)
                   setError(null)
                 }}
-                placeholder="crewphone1.…"
+                placeholder="cliquephone1.…"
                 placeholderTextColor={t.fg3}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -288,7 +288,7 @@ export default function Pair() {
 
       <View style={styles.more}>
         {/* the way in without a computer (and App Review's): always on this first screen */}
-        <Button t={t} icon="crew" title="Try the demo crew" onPress={demo} disabled={Boolean(busy)} accessibilityHint="A made-up crew that lives only on this phone" />
+        <Button t={t} icon="clique" title="Try the demo clique" onPress={demo} disabled={Boolean(busy)} accessibilityHint="A made-up clique that lives only on this phone" />
         <Quiet t={t} icon={pasting ? 'scan' : 'paste'} title={pasting ? 'Scan instead' : 'Paste the code instead'} onPress={mode} disabled={Boolean(busy)} />
       </View>
     </KeyboardAwareScrollView>

@@ -1,4 +1,4 @@
-// crew-voice: on-device dictation for CLIque's chat. Nothing leaves the Mac.
+// clique-voice: on-device dictation for CLIque's chat. Nothing leaves the Mac.
 //
 // stdin:  16 kHz mono Float32 PCM (little-endian), streamed while you talk. Closing stdin means "stop".
 // stdout: one JSON object per line
@@ -18,8 +18,8 @@
 //
 // --locale=<id> picks the language (default: the system's).
 //
-// Build: swiftc -O -parse-as-library native/crew-voice.swift -o dist/crew-voice   (core/voice.js does this)
-// Try it: say -o /tmp/s.wav --data-format=LEF32@16000 "hello crew" && tail -c +4097 /tmp/s.wav | dist/crew-voice
+// Build: swiftc -O -parse-as-library native/clique-voice.swift -o dist/clique-voice   (core/voice.js does this)
+// Try it: say -o /tmp/s.wav --data-format=LEF32@16000 "hello clique" && tail -c +4097 /tmp/s.wav | dist/clique-voice
 @preconcurrency import AVFoundation
 import Foundation
 import Speech
@@ -32,7 +32,7 @@ func emit(_ object: [String: Any]) {
   guard var data = try? JSONSerialization.data(withJSONObject: object) else { return }
   data.append(0x0A)
   lock.lock()
-  try? output.write(contentsOf: data) // nobody reading any more (Crew quit): don't crash over it
+  try? output.write(contentsOf: data) // nobody reading any more (CLIque quit): don't crash over it
   lock.unlock()
 }
 
@@ -225,7 +225,7 @@ func recognize(_ locale: Locale) async throws {
 }
 
 @main
-struct CrewVoice {
+struct CliqueVoice {
   static func main() async {
     signal(SIGPIPE, SIG_IGN)
     if CommandLine.arguments.contains("--locales") {

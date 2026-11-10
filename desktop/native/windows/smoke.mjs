@@ -1,7 +1,7 @@
-// Does a built crew-voice hear speech? A sentence spoken by the computer's own text-to-speech is streamed in through
+// Does a built clique-voice hear speech? A sentence spoken by the computer's own text-to-speech is streamed in through
 // core/voice.js, 100 ms at a time the way the chat sends the microphone, and has to come back as text; then silence has
 // to come back as nothing. CI runs it on Windows after the build; it works with the Mac helper too.
-//   node native/windows/smoke.mjs dist/voice/win-x64/crew-voice.exe
+//   node native/windows/smoke.mjs dist/voice/win-x64/clique-voice.exe
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -10,7 +10,7 @@ import { Voice } from '../../core/voice.js'
 
 const binary = path.resolve(process.argv[2] ?? '')
 if (!fs.existsSync(binary)) throw new Error(`no helper at ${binary}`)
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-voice-smoke-'))
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-voice-smoke-'))
 const SENTENCE = 'Hey June, please hand the release notes to Ada.'
 
 // 16 kHz mono samples of `text`, from Windows' System.Speech or macOS's say; null when there's no voice to speak it

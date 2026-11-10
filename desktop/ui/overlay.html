@@ -46,7 +46,7 @@
     .panel .feed { flex: 1; }
     .panel .compose { flex: none; }
 
-    /* The pill: the crew as little creatures on the screen edge. */
+    /* The pill: the clique as little creatures on the screen edge. */
     .pill { width: 52px; border-radius: 26px; padding: 8px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: grab; touch-action: none; transition: box-shadow .3s; }
     .dragging .pill, .dragging .panel header { cursor: grabbing; }
     /* at the top or bottom of the screen the pill lies flat, like the Dock */
@@ -78,7 +78,7 @@
     .pill::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--needs) 75%, transparent), 0 0 0 5px color-mix(in srgb, var(--needs) 16%, transparent); }
     .alert .pill::after { animation: pill-alert 2s ease-in-out infinite; }
     @keyframes pill-alert { 50% { opacity: 1; } }
-    /* the crew lives in the pill: one little creature per agent, hopping while it works, magnified like the Dock */
+    /* the clique lives in the pill: one little creature per agent, hopping while it works, magnified like the Dock */
     .dots { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     /* creatures magnify away from the screen edge */
     .dots .face { position: relative; cursor: pointer; line-height: 0; transition: transform var(--t-quick) var(--out); transform-origin: 70% 50%; --orbit-ring: var(--panel); --dot: 6px; }
@@ -99,7 +99,7 @@
     @keyframes clone-pop-x { from { opacity: 0; transform: translateX(-75%) scale(.3); } }
 
     /* ---- in the hatch: dragged to the notch at the top of the screen (core/pill.js), it becomes part of it. A black
-       band around the notch, the mark on its left and the crew on its right; the chat hangs from it, one black shape. */
+       band around the notch, the mark on its left and the clique on its right; the chat hangs from it, one black shape. */
     /* as wide as it wants to be, not as the window happens to be: the window is fitted around this */
     [data-side=hatch] .wrap { flex-direction: column-reverse; gap: 0; width: max-content; padding: 0 12px 10px; }
     [data-side=hatch].open .wrap { align-items: stretch; padding-bottom: 18px; }

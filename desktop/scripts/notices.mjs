@@ -1,10 +1,10 @@
-// Writes THIRD_PARTY_NOTICES.txt: the open source software that ships inside Crew, each with its license as it came,
-// for electron-builder to put in the app next to Crew's own LICENSE (electron-builder.config.mjs extraResources).
+// Writes THIRD_PARTY_NOTICES.txt: the open source software that ships inside CLIque, each with its license as it came,
+// for electron-builder to put in the app next to CLIque's own LICENSE (electron-builder.config.mjs extraResources).
 //   node scripts/notices.mjs           after changing dependencies, Electron, the Windows tools or dictation helper,
 //                                      or a font in ui/; commit what it writes (test/notices.test.js checks it's current)
 // It reads what's installed: the app's production dependencies in node_modules; for Windows' dictation helper
-// (native/windows/CrewVoice) the NuGet packages it's built from, in the NuGet cache (NUGET_PACKAGES, or ~/.nuget/packages:
-// build it once with `node scripts/build-voice.mjs win`); for Windows' crew.exe and co. (native/crew-shim.c, built with
+// (native/windows/CliqueVoice) the NuGet packages it's built from, in the NuGet cache (NUGET_PACKAGES, or ~/.nuget/packages:
+// build it once with `node scripts/build-voice.mjs win`); for Windows' clique.exe and co. (native/clique-shim.c, built with
 // Zig: scripts/build-shims.mjs) Zig's own license and that of the MinGW-w64 startup code it links in. A font in ui/
 // needs its license file beside it (OFL.txt, or LICENSE). The same inputs always give the same file.
 import { execFileSync } from 'node:child_process'
@@ -27,11 +27,11 @@ const NO_FILE = {
   'qrcode-generator': { file: 'dist/qrcode.js', copyright: /Copyright \(c\) 2009 Kazuhiko Arase/ },
 }
 
-// What isn't in the app though it's a dependency: Crew's own crew-shared, and node-addon-api, which only builds node-pty
+// What isn't in the app though it's a dependency: CLIque's own clique-shared, and node-addon-api, which only builds node-pty
 // (electron-builder.config.mjs leaves it out).
-export const NOT_SHIPPED = new Set(['crew-shared', 'node-addon-api'])
+export const NOT_SHIPPED = new Set(['clique-shared', 'node-addon-api'])
 
-// What runs Crew, Electron, then the app's production dependencies as installed, with what they depend on in turn.
+// What runs CLIque, Electron, then the app's production dependencies as installed, with what they depend on in turn.
 // -> [{ name, version, dir, license, url }]
 export function shipped(dir = root) {
   const out = new Map()
@@ -127,7 +127,7 @@ function ptySections() {
 // model (scripts/build-voice.mjs).
 function voiceSections() {
   const nuget = process.env.NUGET_PACKAGES || path.join(os.homedir(), '.nuget', 'packages')
-  const project = fs.readFileSync(path.join(root, 'native', 'windows', 'CrewVoice', 'CrewVoice.csproj'), 'utf8')
+  const project = fs.readFileSync(path.join(root, 'native', 'windows', 'CliqueVoice', 'CliqueVoice.csproj'), 'utf8')
   const ref = (name) => project.match(new RegExp(`Include="${name.replace(/\./g, '\\.')}" Version="([^"]+)"`))?.[1]
   const net = project.match(/<TargetFramework>net(\d+)\.\d+<\/TargetFramework>/)?.[1]
   const runtimes = path.join(nuget, 'microsoft.netcore.app.runtime.win-x64')
@@ -143,7 +143,7 @@ function voiceSections() {
   ]
 }
 
-// Windows' crew.exe, crew-status.exe and crew-hook.exe: Crew's own code, built with Zig, which links in its compiler-rt
+// Windows' clique.exe, clique-status.exe and clique-hook.exe: CLIque's own code, built with Zig, which links in its compiler-rt
 // and the MinGW-w64 runtime's startup code.
 function shimSections() {
   let env
@@ -158,7 +158,7 @@ function shimSections() {
   const zigLicense = [path.join(path.dirname(field('zig_exe')), 'LICENSE'), path.join(lib, '..', 'LICENSE'), path.join(lib, '..', '..', 'LICENSE')].find((f) => fs.existsSync(f))
   const mingw = path.join(lib, 'libc', 'mingw', 'COPYING')
   if (!zigLicense || !fs.existsSync(mingw)) throw new Error(`Zig's license or MinGW-w64's isn't where it was (${lib})`)
-  const about = "CLIque's crew.exe, crew-status.exe and crew-hook.exe for Windows are built with Zig, and contain parts of it."
+  const about = "CLIque's clique.exe, clique-status.exe and clique-hook.exe for Windows are built with Zig, and contain parts of it."
   return [
     section({ title: `Zig ${version} (compiler-rt)`, url: 'https://ziglang.org', license: 'MIT', about, texts: [read(zigLicense)] }),
     section({ title: 'MinGW-w64 runtime', url: 'https://www.mingw-w64.org', license: 'ZPL-2.1', about: 'Startup code in the same Windows tools, from the MinGW-w64 runtime that comes with Zig.', texts: [read(mingw)] }),

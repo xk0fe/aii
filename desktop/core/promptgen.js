@@ -9,7 +9,7 @@ import { resolveCommand } from './launch.js'
 
 const ask = ({ name, area }, teammates) => `Write the system prompt for an AI coding agent called "${name}".
 Its area of work: ${area || 'general software work'}.
-It works in a crew of agents running side by side in terminals, each owning an area. Teammates: ${teammates || 'none yet'}.
+It works in a clique of agents running side by side in terminals, each owning an area. Teammates: ${teammates || 'none yet'}.
 
 Write it in second person ("You are..."). Cover:
 - who it is and exactly what it owns, and what it leaves to teammates
@@ -37,7 +37,7 @@ export async function generatePrompt(agent, provider, teammates) {
   const prompt = ask(agent, teammates)
 
   if (provider.cli === 'codex') {
-    const out = path.join(os.tmpdir(), `crew-prompt-${process.pid}-${Date.now()}.txt`)
+    const out = path.join(os.tmpdir(), `clique-prompt-${process.pid}-${Date.now()}.txt`)
     await run('codex', ['exec', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only', '-o', out,
       ...(agent.model ? ['-m', agent.model] : []), '-c', 'model_reasoning_effort="low"', ...(provider.args ?? []), prompt], { cwd, env })
     const text = fs.readFileSync(out, 'utf8')
@@ -47,12 +47,12 @@ export async function generatePrompt(agent, provider, teammates) {
   return tidy(await run('claude', ['-p', prompt, '--tools', '', '--no-session-persistence', ...(agent.model ? ['--model', agent.model] : [])], { cwd, env }))
 }
 
-// One short headless call for a small job Crew does itself (quick triage, core/savers.js): no tools, no MCP servers,
+// One short headless call for a small job CLIque does itself (quick triage, core/savers.js): no tools, no MCP servers,
 // nothing kept, in an empty folder so no project's instructions come along. Claude on its small model (haiku, or what
 // the provider maps it to); Codex on the model given, or its own, at low effort.
 // -> { text, cost (USD at API prices, Claude), tokens (all the call read and wrote) }
 export async function quickAsk(provider, { prompt, model, timeout = 90000 }) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-quick-'))
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-quick-'))
   const env = cleanEnv({ ...process.env, ...expandEnv(provider.env) })
   try {
     if (provider.cli === 'codex') {
