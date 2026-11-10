@@ -5,7 +5,7 @@ import { b64, makePairCode, utf8 } from '@/net/shared'
 const key = new Uint8Array(32).fill(7)
 const secret = new Uint8Array(32).fill(9)
 const good = makePairCode({ id: 'mac-id', name: 'Studio', key, secret, hosts: ['192.168.1.20', '100.101.102.103', 'studio.tail1234.ts.net'], port: 7788 })
-const raw = (json: unknown) => `crewphone1.${b64(utf8(JSON.stringify(json)))}`
+const raw = (json: unknown) => `cliquephone1.${b64(utf8(JSON.stringify(json)))}`
 
 test('reads a good code', () => {
   const c = parsePairCode(good)
@@ -26,10 +26,10 @@ test('finds the code inside what was pasted, even wrapped onto several lines', (
 test.each([
   ['nothing', '', 'paste the code'],
   ['spaces', '   \n ', 'paste the code'],
-  ['another kind of code', 'crew1.eyJuYW1lIjoiU3R1ZGlvIE1hYyJ9.k3y', "not a CLIque phone code"],
+  ['another kind of code', 'clique1.eyJuYW1lIjoiU3R1ZGlvIE1hYyJ9.k3y', "not a CLIque phone code"],
   ['a web address', 'https://example.com', "not a CLIque phone code"],
-  ['not base64', 'crewphone1.!!!!', "not a CLIque phone code"],
-  ['not JSON', `crewphone1.${b64(utf8('hello'))}`, "not a CLIque phone code"],
+  ['not base64', 'cliquephone1.!!!!', "not a CLIque phone code"],
+  ['not JSON', `cliquephone1.${b64(utf8('hello'))}`, "not a CLIque phone code"],
   ['another version', raw({ v: 2, id: 'x', n: 'Mac', k: b64(key), s: b64(secret), h: ['1.2.3.4'], p: 7788 }), 'different CLIque version'],
   ['a short key', raw({ v: 1, id: 'x', n: 'Mac', k: b64(key.slice(0, 16)), s: b64(secret), h: ['1.2.3.4'], p: 7788 }), "not a CLIque phone code"],
   ['no secret', raw({ v: 1, id: 'x', n: 'Mac', k: b64(key), h: ['1.2.3.4'], p: 7788 }), "not a CLIque phone code"],

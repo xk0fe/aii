@@ -1815,7 +1815,7 @@ Zig 0.16.0 (compiler-rt)
 https://ziglang.org
 License: MIT
 
-CLIque's crew.exe, crew-status.exe and crew-hook.exe for Windows are built with Zig, and contain
+CLIque's clique.exe, clique-status.exe and clique-hook.exe for Windows are built with Zig, and contain
 parts of it.
 
 The MIT License (Expat)

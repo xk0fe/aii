@@ -1,4 +1,4 @@
-// One crew across your computers: this computer's hub plus every linked computer's agents, merged into one
+// One clique across your computers: this computer's hub plus every linked computer's agents, merged into one
 // list (agents elsewhere are name@computer), with each action routed to the computer the agent lives on.
 // No Electron in here: main.js owns windows and dialogs and talks to this.
 import { forClients } from './threads.js'
@@ -26,7 +26,7 @@ export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
 const SETTINGS = path.join(LINK_DIR, 'link.json')
 const DISCOVER_FOR = 150000 // Computers open, as the dashboard last said: it says so every minute
-// Images nothing needs any more go this long after Crew starts (sweepImages), once its workspaces have read their chats.
+// Images nothing needs any more go this long after CLIque starts (sweepImages), once its workspaces have read their chats.
 const SWEEP_AFTER = 60000
 // What a linked computer may ask with no workspace (see serve).
 const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'readImage', 'moveWrite', 'moveDrop', 'folderInfo'])
@@ -39,16 +39,16 @@ const readJSON = (file) => {
   }
 }
 
-export class Crew extends EventEmitter {
+export class Clique extends EventEmitter {
   links = new Map() // computer slug -> { slug, name, peer, client, state, toHost, fetching }
 
-  // host: run the agents' terminals in the terminal host, where they outlive Crew ({ file, env }: how to run it as
+  // host: run the agents' terminals in the terminal host, where they outlive CLIque ({ file, env }: how to run it as
   // Node, core/ptyclient.js). Without it they live in this process and stop with it.
   constructor({ bin, computerName, host }) {
     super()
     // { share, port, key, name, peers: [codes], hidden: [agent names] }
     this.settings = readJSON(SETTINGS) ?? {}
-    if (this.settings.remote) this.settings.peers = [this.settings.remote] // from when a link replaced this crew
+    if (this.settings.remote) this.settings.peers = [this.settings.remote] // from when a link replaced this clique
     delete this.settings.remote
     this.me = { name: this.settings.name || computerName, slug: slug(this.settings.name || computerName) }
     // the phones paired with this computer; main.js serves them (core/remote.js)
@@ -69,11 +69,11 @@ export class Crew extends EventEmitter {
     this.config.load()
   }
 
-  // Crew's own word about this computer (a shortcut that's taken, a terminal host that's gone), in the chat on screen. It
+  // CLIque's own word about this computer (a shortcut that's taken, a terminal host that's gone), in the chat on screen. It
   // waits for a workspace when there's none yet.
   say(text) {
     const hub = this.screen
-    if (hub) hub.post({ kind: 'event', from: 'crew', text })
+    if (hub) hub.post({ kind: 'event', from: 'clique', text })
     else (this.unsaid ??= []).push(text)
   }
 
@@ -94,7 +94,7 @@ export class Crew extends EventEmitter {
     hub.relay = (from, names, text, images, extra) => this.relay(from, names, text, images, extra, hub)
     hub.relayTask = (host, from, args) => this.linkCall(this.link(host), 'task', [`${from}@${this.me.slug}`, args], hub.ws)
     hub.self = this.me.slug
-    hub.appTool = (from, words, closed) => this.tool(hub, from, words, closed) // `crew app …`
+    hub.appTool = (from, words, closed) => this.tool(hub, from, words, closed) // `clique app …`
     hub.directory = () => this.linkedAgents(hub)
     hub.elsewhere = (name) => {
       const there = hub.directory().filter((a) => a.seed === name)
@@ -168,7 +168,7 @@ export class Crew extends EventEmitter {
     return this.screen
   }
 
-  // Each workspace's agents rest until there's work for them; those still at work from before Crew restarted carry on
+  // Each workspace's agents rest until there's work for them; those still at work from before CLIque restarted carry on
   // whether it's parked or not (still running: a workspace taken out of config.json and put back has had its stopped).
   startWorkspace(hub, survivors = this.runner.survivors ?? []) {
     const own = survivors.filter((s) => hub.runner.own(s.name) && this.runner.running(s.name)).map((s) => ({ ...s, name: hub.runner.own(s.name) }))
@@ -277,7 +277,7 @@ export class Crew extends EventEmitter {
     if (!Object.hasOwn(ops, op)) throw new Error(`unknown workspace action "${op}"`)
     ops[op]()
     this.config.save()
-    // parked by hand while Crew was closed, and still running what carried on: park stops those too
+    // parked by hand while CLIque was closed, and still running what carried on: park stops those too
     if (op === 'park') this.hubs.get(id)?.park()
     // the last of yours out of a linked computer's workspace it has removed since, or you left one that was on screen
     // when it did: that one goes now
@@ -311,7 +311,7 @@ export class Crew extends EventEmitter {
     return { id, state }
   }
 
-  // ---- agent tools (core/tools.js): `crew app …` from an agent's shell -------------------------------------------
+  // ---- agent tools (core/tools.js): `clique app …` from an agent's shell -------------------------------------------
   // hub: the workspace it came from. Looking runs as it is. A change runs right away in Automatic, unless it's one that
   // always asks; otherwise it waits for your OK on a card in that workspace's chat. Only an agent can ask: anything
   // else (your own terminal, or a caller saying it's no agent) gets only what runs without asking.
@@ -321,7 +321,7 @@ export class Crew extends EventEmitter {
     const mode = toolMode(this.config.data)
     if (call.help) return toolHelp(mode)
     if (mode === 'off') throw new Error(offText())
-    const plan = call.tool.plan({ crew: this, hub, from }, call)
+    const plan = call.tool.plan({ clique: this, hub, from }, call)
     if (call.tool.read) return plan.run()
     // Checked again when it runs, which may be a while after the card went up: tools turned off since, config.json that
     // can't be read (what's in memory isn't what's on disk, and saving would overwrite it), or the workspace it was for
@@ -370,7 +370,7 @@ export class Crew extends EventEmitter {
       try {
         survivors = await this.runner.connect()
       } catch (e) {
-        // no terminal host: the agents run in here, as before, and stop when Crew quits
+        // no terminal host: the agents run in here, as before, and stop when CLIque quits
         this.runner = new Runner()
         for (const hub of this.hubs.values()) hub.useRunner(new Scoped(this.runner, hub.ws))
         this.say(`${e.message}, so agents stop when CLIque quits this time`)
@@ -395,7 +395,7 @@ export class Crew extends EventEmitter {
       for (const [name, data] of out) {
         const shown = this.screen?.runner.own(name)
         if (shown) this.emit('pty', shown, data)
-        const [ws, base] = Crew.split(name)
+        const [ws, base] = Clique.split(name)
         this.pushSpace(ws, 'pty', `${this.keyOf(ws)}/${base}`, data)
         this.emit('terminal', ws, base, data)
       }
@@ -457,7 +457,7 @@ export class Crew extends EventEmitter {
   }
 
   // Quitting, agents and all ("Stop agents and quit"), or with agents kept running in the terminal host (detach): the
-  // next Crew picks them up.
+  // next CLIque picks them up.
   stop() {
     this.close()
     if (this.runner.quit) this.runner.quit()
@@ -488,7 +488,7 @@ export class Crew extends EventEmitter {
     }
   }
 
-  // Do the agents keep working once Crew quits?
+  // Do the agents keep working once CLIque quits?
   get outlives() {
     return Boolean(this.runner.detach)
   }
@@ -504,16 +504,16 @@ export class Crew extends EventEmitter {
     this.changeTimer = setTimeout(() => this.emit('state', this.snapshot()), 40)
   }
 
-  // ---- Crew Link and workspaces ------------------------------------------------------------------
+  // ---- CLIque Link and workspaces ------------------------------------------------------------------
   // A workspace belongs to the computer that made it, and shows up on the computers linked with it (showTheirs). Where
-  // two computers have the one workspace, its crew is both computers' agents, each working in that computer's folder.
+  // two computers have the one workspace, its clique is both computers' agents, each working in that computer's folder.
   // A linked computer gets what's about this computer ('state': computerState) and, once it has said it knows about
   // workspaces (aware, see attach), each workspace's state, terminals and alerts ('ws', key/name for the others). Calls
   // for a workspace go through 'in'.
 
-  // A workspace's key on Crew Link: the computer it belongs to and its id there (owner:id). One made here is this
+  // A workspace's key on CLIque Link: the computer it belongs to and its id there (owner:id). One made here is this
   // computer's; one joined from a linked computer keeps its owner's ("of" in config.json). Two computers' workspaces
-  // are one crew only when their keys match, so the same name or id on two computers stays two workspaces.
+  // are one clique only when their keys match, so the same name or id on two computers stays two workspaces.
   keyOf(id) {
     const of = workspacesIn(this.config.data).find((w) => w.id === id)?.of
     return of && typeof of.computer === 'string' && typeof of.id === 'string' ? `${of.computer}:${of.id}` : `${this.me.slug}:${id}`
@@ -556,7 +556,7 @@ export class Crew extends EventEmitter {
   }
 
   // What's about this computer rather than any workspace, as a linked computer gets it: its accounts' usage, and who's on
-  // its roster. A computer on an older Crew reads this as the crew of its default workspace: an empty one.
+  // its roster. A computer on an older CLIque reads this as the clique of its default workspace: an empty one.
   computerState() {
     const hub = this.screen ?? this.hubs.values().next().value
     return { agents: [], feed: [], tasks: { tickets: [] }, providers: {}, usage: hub?.usageNow() ?? {}, roster: this.sharedNames() }
@@ -577,7 +577,7 @@ export class Crew extends EventEmitter {
 
   // name as it crosses the link (key/name) -> [this computer's workspace or null, name].
   fromWire(n) {
-    const [key, base] = Crew.split(n)
+    const [key, base] = Clique.split(n)
     return [this.localOf(key), base]
   }
 
@@ -682,7 +682,7 @@ export class Crew extends EventEmitter {
     try {
       return await l.peer.call('in', [this.keyOf(ws), fn, args])
     } catch (e) {
-      if (/isn't available over Crew Link/.test(e.message) && /"in"/.test(e.message)) throw new Error(`${l.name} runs an older CLIque, without workspaces: update it to work with its agents here`)
+      if (/isn't available over CLIque Link/.test(e.message) && /"in"/.test(e.message)) throw new Error(`${l.name} runs an older CLIque, without workspaces: update it to work with its agents here`)
       throw e
     }
   }
@@ -707,12 +707,12 @@ export class Crew extends EventEmitter {
     return l.spaces?.[ws]
   }
 
-  // ---- the merged crew -------------------------------------------------------------------------
+  // ---- the merged clique -------------------------------------------------------------------------
 
   // Names from a linked computer, as seen here: theirs get @computer, ours come back bare.
   qualifier(l) {
     return (n) => {
-      if (!n || n === 'you' || n === 'crew') return n
+      if (!n || n === 'you' || n === 'clique') return n
       const at = n.indexOf('@')
       if (at < 0) return `${n}@${l.slug}`
       return n.slice(at + 1) === this.me.slug ? n.slice(0, at) : n
@@ -779,12 +779,12 @@ export class Crew extends EventEmitter {
     }
   }
 
-  // The token savers for the sheet: which are on (CREW_SAVERS, when it's set, decides and the switches can't), what each
+  // The token savers for the sheet: which are on (CLIQUE_SAVERS, when it's set, decides and the switches can't), what each
   // is for, and what each has counted in every workspace: in all, and over the last 7 days.
   saversState() {
     const ledgers = [...this.hubs.values()].map((h) => h.ledger)
     return {
-      on: saversFrom(this.config.data), forced: Boolean(String(process.env.CREW_SAVERS ?? '').trim()),
+      on: saversFrom(this.config.data), forced: Boolean(String(process.env.CLIQUE_SAVERS ?? '').trim()),
       list: SAVERS.map(({ id, label, about }) => ({ id, label, about })),
       all: report(ledgers), week: report(ledgers, { days: 7 }),
     }
@@ -810,7 +810,7 @@ export class Crew extends EventEmitter {
     }
   }
 
-  // Just the linked computers' agents in a workspace, for its hub (crew who, names, who's on): without building the
+  // Just the linked computers' agents in a workspace, for its hub (clique who, names, who's on): without building the
   // whole snapshot, and nothing at all without links.
   linkedAgents(hub) {
     if (!this.links.size) return []
@@ -847,7 +847,7 @@ export class Crew extends EventEmitter {
     const agents = this.snapshot(here).agents
     if (name.includes('@')) {
       const { l, base } = this.where(name)
-      if (l && !this.linkedState(l, here.ws)?.agents.some((a) => a.name === base)) throw new Error(`no agent named "${name}" (try: crew who)`)
+      if (l && !this.linkedState(l, here.ws)?.agents.some((a) => a.name === base)) throw new Error(`no agent named "${name}" (try: clique who)`)
       return l ? name : base
     }
     if (here.agents.has(name)) return name
@@ -855,7 +855,7 @@ export class Crew extends EventEmitter {
     const there = agents.filter((a) => a.home && a.seed === name)
     if (there.length === 1) return there[0].name
     if (there.length > 1) throw new Error(`which ${name}? ${there.map((a) => `@${a.name}`).join(' or ')}`)
-    throw new Error(`no agent named "${name}" (try: crew who)`)
+    throw new Error(`no agent named "${name}" (try: clique who)`)
   }
 
   // Images are files on the computer an agent lives on: fetched on demand into a cache for display here,
@@ -943,7 +943,7 @@ export class Crew extends EventEmitter {
     return out.join('')
   }
 
-  // A local agent's `crew send` (or a bug sent to its fixer) to agents on other computers, in its workspace there.
+  // A local agent's `clique send` (or a bug sent to its fixer) to agents on other computers, in its workspace there.
   async relay(from, names, text, images, extra = {}, hub = this.here) {
     const out = []
     for (const [home, bases] of this.group(names)) {
@@ -993,7 +993,7 @@ export class Crew extends EventEmitter {
   }
 
   // A bulk action on the Tasks board ({ op, keys, arg }, see Hub.bulk): each computer gets its own tasks in one call.
-  // One on an older Crew, without bulk actions, gets them one at a time; one that can't be reached is left out.
+  // One on an older CLIque, without bulk actions, gets them one at a time; one that can't be reached is left out.
   async bulkTickets({ op, keys = [], arg } = {}, here = this.here) {
     const groups = new Map() // computer ('' for this one) -> its task numbers
     for (const key of keys.map(String)) {
@@ -1017,14 +1017,14 @@ export class Crew extends EventEmitter {
       try {
         out.push(`on ${l.name}: ${await this.linkCall(l, 'bulk', [op, ids, there], here.ws)}`)
       } catch (e) {
-        if (!/isn't available over Crew Link/.test(e.message)) throw e
+        if (!/isn't available over CLIque Link/.test(e.message)) throw e
         out.push(await this.oneByOne(l, op, ids, there, here.ws))
       }
     }
     return out.join('')
   }
 
-  // A bulk action as single-task calls, for a computer on an older Crew.
+  // A bulk action as single-task calls, for a computer on an older CLIque.
   async oneByOne(l, op, ids, arg, ws) {
     const [fn, value] = { start: ['dispatch'], close: ['accept'], move: arg === 'done' ? ['accept'] : ['move', arg], owner: ['edit', { owner: arg }], priority: ['edit', { severity: arg }], remove: ['remove'], clear: ['remove'] }[op] ?? []
     if (!fn) throw new Error(`unknown bulk action "${op}"`)
@@ -1060,21 +1060,21 @@ export class Crew extends EventEmitter {
   // ---- what linked computers may ask of this one -----------------------------------------------
 
   // h: the hub it's for ('in' says which, and this computer's app and moves pass the one on screen). What's for no
-  // workspace needs none; a call without one otherwise is a computer on an older Crew, asking for its default workspace.
+  // workspace needs none; a call without one otherwise is a computer on an older CLIque, asking for its default workspace.
   serve(fn, args, h) {
     if (!h && !COMPUTER_CALLS.has(fn)) throw new Error(`${this.me.name} runs a newer CLIque, where every workspace is its own: update this computer's to work with its agents`)
     const allowed = {
-      // the same call, for one of this computer's workspaces (not on an older Crew); and which ones it has
+      // the same call, for one of this computer's workspaces (not on an older CLIque); and which ones it has
       in: (key, call, rest) => {
         const there = this.hubs.get(this.localOf(String(key)))
         if (!there) throw new Error(`${this.me.name} has no workspace "${key}"`)
         if (call === 'in') throw new Error('one workspace at a time')
         return this.serve(call, rest ?? [], there)
       },
-      // an older Crew matched workspaces by id: it gets none (see keyOf)
+      // an older CLIque matched workspaces by id: it gets none (see keyOf)
       spaces: () => [],
       // not while config.json can't be read: what's in memory then isn't its workspaces, and an empty list would make
-      // linked computers drop theirs (it says so as an older Crew would, and they keep what they have)
+      // linked computers drop theirs (it says so as an older CLIque would, and they keep what they have)
       workspaces: () => {
         if (this.config.broken) throw new Error(`${this.me.name} can't read its settings right now`)
         return this.spaceList()
@@ -1121,7 +1121,7 @@ export class Crew extends EventEmitter {
       folderInfo: (dir) => folderInfo(dir),
       folders: (like) => folders(h, like),
     }
-    if (!Object.hasOwn(allowed, fn)) throw new Error(`"${fn}" isn't available over Crew Link`)
+    if (!Object.hasOwn(allowed, fn)) throw new Error(`"${fn}" isn't available over CLIque Link`)
     return allowed[fn](...args)
   }
 
@@ -1131,7 +1131,7 @@ export class Crew extends EventEmitter {
     const here = this.here
     const packs = []
     for (const [home, bases] of this.group(names)) packs.push(home ? await this.linkCall(this.link(home), 'exportAgents', [bases, opts], here.ws) : packAgents(here, bases, opts))
-    return { crew: 1, exported: new Date().toISOString(), agents: packs.flatMap((p) => p.agents), providers: Object.assign({}, ...packs.map((p) => p.providers)) }
+    return { clique: 1, exported: new Date().toISOString(), agents: packs.flatMap((p) => p.agents), providers: Object.assign({}, ...packs.map((p) => p.providers)) }
   }
 
   // Every name in use on a computer (home '' = this one), to suggest free ones.
@@ -1176,7 +1176,7 @@ export class Crew extends EventEmitter {
   // CLI's session files go along and it resumes there (core/move.js). Everything passes through this computer, so
   // the two needn't be linked to each other. -> { name, conversation: 'moved' | 'fresh', reason? }
   // It moves to the same workspace on the other computer: one of the workspace's own agents is its own there too, one of
-  // your shared agents joins that computer's crew and leaves only this workspace here.
+  // your shared agents joins that computer's clique and leaves only this workspace here.
   async moveAgent(name, home, folder) {
     home ??= ''
     const here = this.here
@@ -1191,13 +1191,13 @@ export class Crew extends EventEmitter {
     folder = String(folder ?? '').trim() || agent.cwd || '~'
     const on = (h, fn, ...args) => (h ? this.linkCall(this.link(h), fn, args, ws) : this.serve(fn, args, here))
     const label = (h) => (h ? this.links.get(h)?.name ?? h : this.me.name)
-    // one of your shared agents that the other computer's crew has already (it was there before) rejoins it there,
+    // one of your shared agents that the other computer's clique has already (it was there before) rejoins it there,
     // rather than arriving as a copy under another name
     const shared = Boolean(agent.shared)
     const l = home && this.links.get(home)
-    const crewThere = new Set(l ? l.state?.roster ?? [] : this.sharedNames())
+    const cliqueThere = new Set(l ? l.state?.roster ?? [] : this.sharedNames())
     const inThere = new Set(l ? (l.spaces?.[ws]?.agents ?? []).map((a) => a.name) : here.agents.keys())
-    const join = shared && crewThere.has(src.base) && !inThere.has(src.base)
+    const join = shared && cliqueThere.has(src.base) && !inThere.has(src.base)
     const move = { from: from || this.me.slug, to: home || this.me.slug, old: src.base, name: join ? src.base : this.freeName(src.base, home) }
     // a running agent needs its folder there
     const there = await on(home, 'folderInfo', folder)
@@ -1224,7 +1224,7 @@ export class Crew extends EventEmitter {
     try {
       await on(from, 'moveEnd', out.token, { to: move.to, name: res.name })
     } catch (e) {
-      here.post({ kind: 'event', from: 'crew', text: `${src.base} moved to ${label(home)}, but ${label(from)} still has it (${e.message}): remove it there` })
+      here.post({ kind: 'event', from: 'clique', text: `${src.base} moved to ${label(home)}, but ${label(from)} still has it (${e.message}): remove it there` })
     }
     this.tellMoved({ ...move, name: res.name }, [from, home], ws)
     return { name: home ? `${res.name}@${home}` : res.name, conversation: res.conversation, ...(res.reason && { reason: res.reason }) }
@@ -1638,7 +1638,7 @@ export class Crew extends EventEmitter {
       this.changed()
     }, () => {})
     // Does it know workspaces by owner (keyOf)? Then it gets ours (and asks the same of us, so we get its). An older
-    // Crew doesn't answer 'workspaces', and shares nothing with this one.
+    // CLIque doesn't answer 'workspaces', and shares nothing with this one.
     peer.call('workspaces').then((list) => {
       if (l.peer !== peer) return
       l.aware = true
@@ -1646,7 +1646,7 @@ export class Crew extends EventEmitter {
     }, () => {
       if (l.peer !== peer) return // a connection that lost to another one
       l.aware = false
-      l.spaces = {} // a computer back on an older Crew: what it had of workspaces is gone
+      l.spaces = {} // a computer back on an older CLIque: what it had of workspaces is gone
       this.changed()
     })
     this.changed()
@@ -1662,7 +1662,7 @@ export class Crew extends EventEmitter {
     this.settings.hidden = (this.settings.hidden ?? []).filter((n) => !n.endsWith(`@${home}`))
     this.saveSettings()
     // its workspaces go with it, as when it removes one: the ones you've made yours stay (and say it's offline). Also
-    // for a computer known only by its workspaces here (renamed since, or gone before this Crew started).
+    // for a computer known only by its workspaces here (renamed since, or gone before this CLIque started).
     this.knownSpaces.delete(home)
     const data = this.config.data
     const gone = this.config.broken ? [] : workspacesIn(data).filter((w) => w.of?.computer === home && this.untouched(w))

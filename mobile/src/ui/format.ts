@@ -99,11 +99,11 @@ const urlHost = (url: string) => {
 function commandWords(cmd: string) {
   const c = String(cmd).replace(/^(?:cd\s+\S+\s*&&\s*)+/, '').trim()
   if (!c) return 'Running a command'
-  const own = c.match(/^crew\s+(ask|send|lease|note|board)\b\s*([\w@.-]*)/)
+  const own = c.match(/^clique\s+(ask|send|lease|note|board)\b\s*([\w@.-]*)/)
   if (own) {
     const [, verb, what] = own
     const who = what.split('@')[0] || 'a teammate'
-    return ({ ask: `Asking ${who}`, send: `Handing work to ${who}`, lease: `Booking the ${what || 'shared thing'}`, note: 'Leaving a note for the crew', board: "Reading the crew's notes" } as Record<string, string>)[verb]
+    return ({ ask: `Asking ${who}`, send: `Handing work to ${who}`, lease: `Booking the ${what || 'shared thing'}`, note: 'Leaving a note for the clique', board: "Reading the clique's notes" } as Record<string, string>)[verb]
   }
   if (/^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b/.test(c)) return 'Running the tests'
   const script = c.match(/^(?:(?:npm|pnpm|yarn|bun)\s+run|npx|pnpx|bunx)\s+(.+)/)
@@ -206,7 +206,7 @@ export function voiceOf(ask: unknown): Said {
     return [{ text: (qs[0]?.question ?? 'I have a question.') + (qs.length > 1 ? ` And ${qs.length - 1} more.` : '') }]
   }
   if (q.type === 'plan') return [{ text: "Here's my plan. Can I go ahead?" }]
-  if (q.say) return [{ text: q.say }] // an agent tool (crew app) asks in its own words: "Can I add a #design channel?"
+  if (q.say) return [{ text: q.say }] // an agent tool (clique app) asks in its own words: "Can I add a #design channel?"
   const first = String(q.code ?? '').split('\n')[0].trim()
   const shell = /^(bash|powershell|shell|exec_command|local_shell|unified_exec)$/i.test(q.tool ?? '') || (!q.tool && first)
   const reason = reasonOf(ask)

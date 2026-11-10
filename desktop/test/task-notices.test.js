@@ -1,6 +1,6 @@
 // Claude Code's own prompts: when a command or sub-agent an agent left running in the background finishes, Claude
 // Code submits a <task-notification> by itself. It isn't a message from you, nor a new task, and the agent's reply
-// still answers what it was asked. Real Hub, fake runner, throwaway CREW_HOME. Run with `npm test`.
+// still answers what it was asked. Real Hub, fake runner, throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-notices-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-notices-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 
 class FakeRunner extends EventEmitter {
@@ -23,7 +23,7 @@ class FakeRunner extends EventEmitter {
 
 let hub, runner, dev
 beforeEach(() => {
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'dev', area: 'everything' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -35,7 +35,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const hook = (e) => hub.onHook('dev', e)
 const notice = (id = 'b86mb6m67') =>
@@ -74,7 +74,7 @@ test('a notice after the turn ended: the agent is busy again, on the same task',
   assert.equal(hub.stats.dev.turns, 2)
 })
 
-test("a notice that beats Crew's message to the prompt doesn't take its place", () => {
+test("a notice that beats CLIque's message to the prompt doesn't take its place", () => {
   hub.send({ to: 'dev', text: 'now the docs' })
   const msg = hub.feed.at(-1)
   notice()

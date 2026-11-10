@@ -1,9 +1,9 @@
-// The demo crew behaves like a Mac: the same calls as net/client.ts, answered on the phone. Answer a card and the
+// The demo clique behaves like a Mac: the same calls as net/client.ts, answered on the phone. Answer a card and the
 // agent gets back to work, send a message and someone picks it up and replies, switch workspaces, flip YOLO.
 // Nothing leaves the phone.
 import type { Push, Snapshot } from '@/net/client'
 import type { Agent, ChannelEdit, FeedEntry, Reply, SendOpts, State, Workspace } from '@/net/types'
-import type { CrewLink } from '@/state/types'
+import type { CliqueLink } from '@/state/types'
 
 import { makeDemo, type Space } from './fixture'
 import { inThread } from '@/ui/threads'
@@ -50,8 +50,8 @@ const WORK: Record<string, string> = {
   June: 'Edit · docs/release-notes.md', 'Rex@workstation': 'Bash · npm run deploy', 'Noor@workstation': 'Read · api/orders.ts',
 }
 
-export class DemoClient implements CrewLink {
-  readonly macName = 'Demo crew'
+export class DemoClient implements CliqueLink {
+  readonly macName = 'Demo clique'
   readonly demo = true
   private spaces: Space[] = makeDemo()
   private ws = this.spaces[0].id
@@ -142,7 +142,7 @@ export class DemoClient implements CrewLink {
     if (to && !names.length) throw new Error(`there's no ${to} here`)
     const off = names.find((n) => !agents.find((a) => a.name === n)?.on)
     if (off) throw new Error(`@${off} is off: turn it on first`)
-    // Auto picks among the channel's members, as Crew.send does
+    // Auto picks among the channel's members, as Clique.send does
     const pool = ch?.members ? agents.filter((a) => ch.members!.includes(a.name)) : agents
     const pick = names.length ? names : [(pool.find((a) => a.on && a.status === 'idle') ?? pool.find((a) => a.on))?.name].filter(Boolean) as string[]
     if (!pick.length) throw new Error(ch?.members ? `nobody in #${ch.name} is on to take it: turn one on, or @name someone` : 'no agents to send to')
@@ -235,7 +235,7 @@ export class DemoClient implements CrewLink {
     this.emit()
   }
 
-  // As crew.channelAction: a new channel's id comes from its name and is never one used before; #general stays.
+  // As clique.channelAction: a new channel's id comes from its name and is never one used before; #general stays.
   async channel(op: 'create' | 'edit' | 'remove', id: string | null, arg: ChannelEdit = {}) {
     if (!['create', 'edit', 'remove'].includes(op)) throw new Error(`"${op}" isn't a channel action`)
     const ws = this.ws

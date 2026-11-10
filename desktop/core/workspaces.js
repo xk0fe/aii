@@ -1,11 +1,11 @@
-// Workspaces: the projects the crew works on, several at once if you like. Every one works the same way: a name and a
+// Workspaces: the projects the clique works on, several at once if you like. Every one works the same way: a name and a
 // look, a folder, who works there, its own chat, notes and tasks. You make them, you can remove any of them, and there
 // can be none (the app then asks you to make one). Your agents are yours: a shared agent can work in any workspace, and a
 // workspace can also have agents of its own that exist only there. Everything about a project is kept per workspace: its
 // chat, notes and tasks, each agent's conversation there, what's running there. What's about you is kept once: who your
 // agents are, providers, look and feel, linked computers, attachments.
 //
-// A workspace keeps its files in CREW_HOME/workspaces/<id>/. In config.json, next to "agents" (the shared ones):
+// A workspace keeps its files in CLIQUE_HOME/workspaces/<id>/. In config.json, next to "agents" (the shared ones):
 //   "workspaces": [{
 //     "id": "storefront", "name": "Storefront", "folder": "~/Projects/storefront",  where its agents work
 //     "members": { "ada": {}, "milo": { "folder": "~/Projects/storefront-web" } },  shared agents in it, one with a folder of its own
@@ -23,7 +23,7 @@
 // too. Who it is (its job, instructions, model, look) is the same wherever it works.
 //
 // One id is only about where things are: ROOT, the workspace an install from before this layout had (see settle). Its
-// files stay in CREW_HOME itself and its terminals go by the agent's name alone, because agents outlive Crew in the
+// files stay in CLIQUE_HOME itself and its terminals go by the agent's name alone, because agents outlive CLIque in the
 // terminal host and moving them under a running one isn't worth the risk. Nothing else treats it differently.
 // No Electron in here.
 import { systemAgentIn, systemAgentOn } from './system-agent.js'
@@ -54,10 +54,10 @@ export function workspacesIn(config) {
 export const named = (list) => (Array.isArray(list) ? list.filter((a) => a && typeof a.name === 'string' && a.name) : [])
 const memberMap = (w) => (w.members && typeof w.members === 'object' && !Array.isArray(w.members) ? w.members : {})
 
-// config.json as an older Crew left it, in the layout of today. It had one workspace with no entry of its own: its look
+// config.json as an older CLIque left it, in the layout of today. It had one workspace with no entry of its own: its look
 // and settings at the top of the file, every shared agent in it, each shared agent's "cwd" and "off" being that
 // workspace's. It becomes an entry like any other, first in the list, with its agents as members working where they
-// did. No files move: it keeps ROOT as its id. hadFiles: is there a chat in CREW_HOME itself? (An install with no agents
+// did. No files move: it keeps ROOT as its id. hadFiles: is there a chat in CLIQUE_HOME itself? (An install with no agents
 // left can still have one.) A file with no such history gets no entry: you make your first workspace.
 // -> whether it made one. In a workspace with no folder, a shared agent's "cwd" was where it worked there too: that goes
 // in its member entry, so its folder in each workspace is that workspace's to change.

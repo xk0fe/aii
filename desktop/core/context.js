@@ -1,6 +1,6 @@
 // How full an agent's conversation is: { used, size, pct } in tokens. A long conversation with many unrelated
 // tasks in it is where agents start mixing things up, so the UI shows this and offers a fresh start.
-//   Claude Code: reports it to its status line, which Crew points at the hub (see adapters.js).
+//   Claude Code: reports it to its status line, which CLIque points at the hub (see adapters.js).
 //   Codex: writes token counts into its session log, read after each turn.
 import fs from 'node:fs'
 import os from 'node:os'

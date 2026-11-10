@@ -1,7 +1,7 @@
 // What CLIque needs macOS to allow, one thing at a time, in the voice of a creature coming out of the hatch. core/permissions.js
 // knows what's missing and how to ask; this keeps looking while it's up, since macOS's answer comes from a dialog of its
 // own or a switch in System Settings. Moving on is automatic once it's allowed.
-/* global crew, esc, avatarHTML, ICONS, PRODUCT_NAME */
+/* global clique, esc, avatarHTML, ICONS, PRODUCT_NAME */
 
 const box = document.querySelector('.hatch')
 const ALL = new URLSearchParams(location.search).has('all') // from the ⋯ menu
@@ -45,12 +45,12 @@ let timer = 0
 let drawn = '' // the step on screen: only a new one slides in
 let says = '' // what's on screen, to tell when that's out of date
 
-const call = (...args) => crew.call('permissions', ...args)
+const call = (...args) => clique.call('permissions', ...args)
 const current = () => steps[at]
 
 function fitWindow() {
   const r = document.querySelector('.wrap').getBoundingClientRect()
-  crew.fit(Math.ceil(r.width), Math.ceil(r.height), false)
+  clique.fit(Math.ceil(r.width), Math.ceil(r.height), false)
 }
 
 const stillAsking = () => asking && Date.now() - askedAt < STILL_ASKING
@@ -154,7 +154,7 @@ box.addEventListener('click', (e) => {
 box.addEventListener('dragstart', (e) => {
   if (!e.target.closest('[data-drag]')) return
   e.preventDefault()
-  crew.dragApp()
+  clique.dragApp()
 })
 addEventListener('keydown', (e) => e.key === 'Escape' && act('close'))
 

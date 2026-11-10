@@ -22,7 +22,7 @@ const [owner, repo] = (env.RELEASE_REPO ?? '').split('/')
 
 // What goes into the app: the code and its dependencies, not the tests, scripts or sources of native parts, and of
 // node-pty's prebuilt binaries only the one for the platform (darwin, win32) and arch being built. Windows' tools for
-// agents (bin/win32-x64, bin/win32-arm64: crew.exe and co.) go only into the Windows app, the one for its arch. Given
+// agents (bin/win32-x64, bin/win32-arm64: clique.exe and co.) go only into the Windows app, the one for its arch. Given
 // whole to each platform: electron-builder lets a platform's list replace the top-level one rather than add to it.
 const files = (platform) => [
   'package.json',
@@ -47,22 +47,22 @@ export default {
   appId: APP_ID,
   // The name on the app, its windows, shortcuts and installers. Two folders keep their names from before the rename:
   // the Windows install folder, which a per-user one-click installer names after package.json's name
-  // (%LOCALAPPDATA%\Programs\crew), and Electron's own folder for the app (userData, pinned in main.js).
+  // (%LOCALAPPDATA%\Programs\clique), and Electron's own folder for the app (userData, pinned in main.js).
   productName: PRODUCT_NAME,
   copyright: `© ${new Date().getFullYear()} Greengrass`,
   directories: { output: 'release', buildResources: 'build' },
   artifactName: `${PRODUCT_NAME}-\${version}-\${os}-\${arch}.\${ext}`,
 
   asar: true,
-  // Files something outside Crew's own JavaScript runs: node-pty's helpers (spawn-helper on macOS; conpty.dll,
+  // Files something outside CLIque's own JavaScript runs: node-pty's helpers (spawn-helper on macOS; conpty.dll,
   // OpenConsole.exe and winpty-agent.exe on Windows), bin/, which agents get on their PATH, and the terminal host,
   // which runs as Node outside the app (core/ptyclient.js; on Windows copied out with node-pty, so updates can replace
-  // Crew's files while agents keep running).
+  // CLIque's files while agents keep running).
   asarUnpack: ['node_modules/node-pty/**', 'bin/**', 'core/ptyhost.js'],
-  // node-pty ships N-API prebuilds for every platform Crew does: nothing to compile.
+  // node-pty ships N-API prebuilds for every platform CLIque does: nothing to compile.
   npmRebuild: false,
   nodeGypRebuild: false,
-  // Dictation's helper, built beforehand by scripts/build-voice.mjs: Resources/voice/crew-voice(.exe). Then Crew's
+  // Dictation's helper, built beforehand by scripts/build-voice.mjs: Resources/voice/clique-voice(.exe). Then CLIque's
   // license, and the licenses of the open source software in it (scripts/notices.mjs), beside Electron's own.
   extraResources: [
     { from: 'dist/voice/${os}-${arch}', to: 'voice' },
@@ -71,13 +71,13 @@ export default {
   ],
   afterPack,
 
-  // .crew agent packs open in the app (Finder and Mail on macOS, Explorer on Windows)
-  fileAssociations: [{ ext: 'crew', name: `${PRODUCT_NAME} agents`, description: `${PRODUCT_NAME} agents`, role: 'Viewer', rank: 'Owner' }],
+  // .clique agent packs open in the app (Finder and Mail on macOS, Explorer on Windows)
+  fileAssociations: [{ ext: 'clique', name: `${PRODUCT_NAME} agents`, description: `${PRODUCT_NAME} agents`, role: 'Viewer', rank: 'Owner' }],
 
   electronFuses: {
-    // The terminal host is Crew's own binary run as Node (core/ptyclient.js): this one has to stay on.
+    // The terminal host is CLIque's own binary run as Node (core/ptyclient.js): this one has to stay on.
     runAsNode: true,
-    // Crew itself takes no Node options or debugger flags from outside, and only runs the code in app.asar.
+    // CLIque itself takes no Node options or debugger flags from outside, and only runs the code in app.asar.
     enableNodeOptionsEnvironmentVariable: false,
     enableNodeCliInspectArguments: false,
     onlyLoadAppFromAsar: true,

@@ -1,4 +1,4 @@
-// Agents outliving Crew: a Crew quits mid-turn, the agent's CLI carries on in the terminal host, and the next Crew picks
+// Agents outliving CLIque: a CLIque quits mid-turn, the agent's CLI carries on in the terminal host, and the next CLIque picks
 // it up: what it was answering, its queue, a teammate's question, its clones, and the hook events it sent meanwhile
 // (spooled by the hook itself). Against the real Hub with a fake runner that has survivors. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
@@ -11,12 +11,12 @@ import os from 'node:os'
 import path from 'node:path'
 import { WIN, BIN, SH } from './helpers/platform.mjs'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-outlive-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-outlive-'))
 // no codex to discover: Hub.start would look its models up after the test is over (a Windows runner has none)
 if (!WIN) process.env.PATH = '/usr/bin:/bin'
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { adapters } = await import('../core/adapters.js')
-const at = (f) => path.join(process.env.CREW_HOME, f)
+const at = (f) => path.join(process.env.CLIQUE_HOME, f)
 
 class FakeRunner extends EventEmitter {
   live = new Set()
@@ -37,14 +37,14 @@ class FakeRunner extends EventEmitter {
 }
 
 const hubs = []
-function crew(survivors) {
+function clique(survivors) {
   const runner = new FakeRunner(survivors)
   const hub = new Hub(runner, { bin: BIN })
   hub.start('http://127.0.0.1:1', { survivors })
   hubs.push(hub)
   return { hub, runner }
 }
-// Crew quits: what it knows is saved, nothing of it keeps running here.
+// CLIque quits: what it knows is saved, nothing of it keeps running here.
 function quit(hub) {
   hub.saveRuntime(true)
   for (const a of hub.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'steerTimer', 'retryTimer', 'reapTimer']) clearTimeout(a[t])
@@ -67,7 +67,7 @@ afterEach(() => {
   for (const h of hubs.splice(0)) quit(h)
   fs.unwatchFile(CONFIG)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const ready = (hub, name) => {
   hub.restart(name) // agents rest until there's work: this one's up
@@ -77,8 +77,8 @@ const ready = (hub, name) => {
   return a
 }
 
-test('Crew quits mid-turn; the next one picks the agent up: the reply threads, a question is answered, the queue goes in', async () => {
-  const { hub, runner } = crew([])
+test('CLIque quits mid-turn; the next one picks the agent up: the reply threads, a question is answered, the queue goes in', async () => {
+  const { hub, runner } = clique([])
   const ada = ready(hub, 'ada')
   ready(hub, 'june')
   // you ask ada for something, and he's on it
@@ -90,18 +90,18 @@ test('Crew quits mid-turn; the next one picks the agent up: the reply threads, a
   assert.match(await hub.question({ from: 'june', to: 'ada', text: 'which port does the dev API use?', hold: 20 }), /hasn't answered yet/)
   const asked = typedTo(runner, 'ada').at(-1)
   const run = ada.run
-  quit(hub) // Crew is closed now; ada's CLI keeps going in the terminal host
+  quit(hub) // CLIque is closed now; ada's CLI keeps going in the terminal host
 
-  // meanwhile ada took the question in and finished his turn: his hooks couldn't reach Crew, so they spooled
+  // meanwhile ada took the question in and finished his turn: his hooks couldn't reach CLIque, so they spooled
   spool('ada', [
     { hook_event_name: 'UserPromptSubmit', prompt: asked, session_id: 's1' },
     { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'npm run screenshots' } },
     { hook_event_name: 'Stop', last_assistant_message: 'Option C is built, PR #4860. The dev API is on port 4000.' },
   ])
 
-  const next = crew([{ name: 'ada', tag: run, pid: 4242 }])
+  const next = clique([{ name: 'ada', tag: run, pid: 4242 }])
   assert.ok(!next.runner.starts.includes('ada'), "ada isn't started again: he kept working")
-  assert.ok(next.runner.starts.includes('june'), "june's CLI ended with the old Crew, and an answer waits for it, so it starts (resuming)")
+  assert.ok(next.runner.starts.includes('june'), "june's CLI ended with the old CLIque, and an answer waits for it, so it starts (resuming)")
   assert.ok(next.hub.feed.some((e) => e.kind === 'event' && /picked up @ada where it was/.test(e.text)))
   const reply = next.hub.feed.findLast((e) => e.kind === 'reply' && e.from === 'ada')
   assert.match(reply.text, /Option C is built/)
@@ -124,18 +124,18 @@ test('clones come back too; a terminal whose agent was removed meanwhile is stop
       iris: { run: 'cccc3333', status: 'working', inbox: [] },
     },
   }))
-  const { hub, runner } = crew([{ name: 'ada', tag: 'aaaa1111' }, { name: 'ada.2', tag: 'bbbb2222' }, { name: 'iris', tag: 'cccc3333' }, { name: 'june', tag: 'stale000' }])
+  const { hub, runner } = clique([{ name: 'ada', tag: 'aaaa1111' }, { name: 'ada.2', tag: 'bbbb2222' }, { name: 'iris', tag: 'cccc3333' }, { name: 'june', tag: 'stale000' }])
   const clone = hub.agents.get('ada.2')
   assert.equal(clone.cloneOf, 'ada')
   assert.equal(clone.status, 'working')
   assert.equal(clone.area, 'mobile app', "it wears its original's settings")
-  // iris isn't in the crew any more, and june's terminal isn't the one Crew knew: both stop, june rests until there's work
+  // iris isn't in the clique any more, and june's terminal isn't the one CLIque knew: both stop, june rests until there's work
   assert.deepEqual(runner.stops.sort(), ['iris', 'june'])
   assert.equal(hub.agents.get('june').status, 'resting')
   assert.deepEqual(runner.starts, [])
 })
 
-test("an agent whose CLI ended while Crew was closed still gets what was queued for it, and a clone's goes to its original", () => {
+test("an agent whose CLI ended while CLIque was closed still gets what was queued for it, and a clone's goes to its original", () => {
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'ada', area: 'mobile app', clones: 2 }, { name: 'june', area: 'backend api' }] }))
   fs.writeFileSync(at('runtime.json'), JSON.stringify({
     agents: {
@@ -143,32 +143,32 @@ test("an agent whose CLI ended while Crew was closed still gets what was queued 
       'ada.3': { run: 'dead0002', status: 'working', cloneOf: 'ada', clone: 3, inbox: [{ id: 'm2', ts: Date.now(), kind: 'msg', from: 'june', to: 'ada.3', text: 'check the build', queued: true }] },
     },
   }))
-  const { hub } = crew([])
+  const { hub } = clique([])
   assert.deepEqual(hub.agents.get('june').inbox.map((m) => m.text), ['add rate limiting'])
   assert.deepEqual(hub.agents.get('ada').inbox.map((m) => [m.text, m.to]), [['check the build', 'ada']])
   assert.ok(!hub.agents.has('ada.3'))
 })
 
-test('the hook spools what it sends while Crew is closed, one line per event, and still sends it when Crew is there', async () => {
+test('the hook spools what it sends while CLIque is closed, one line per event, and still sends it when CLIque is there', async () => {
   const settings = JSON.parse(adapters.claude({ name: 'ada' }, { session: 's', attachments: os.tmpdir(), bin: BIN }).args.find((x) => x.startsWith('{"permissions"')))
-  // as Claude Code runs it: a command line for sh on macOS; crew-hook.exe and its arguments, with no shell, on Windows
+  // as Claude Code runs it: a command line for sh on macOS; clique-hook.exe and its arguments, with no shell, on Windows
   const { command, args } = settings.hooks.Stop[0].hooks[0]
   const [file, argv] = WIN ? [command, args] : ['/bin/sh', ['-c', command]]
-  const env = { ...process.env, CREW_HOME: process.env.CREW_HOME, CREW_NODE: process.execPath, CREW_AGENT: 'ada', CREW_WORKSPACE: '' }
+  const env = { ...process.env, CLIQUE_HOME: process.env.CLIQUE_HOME, CLIQUE_NODE: process.execPath, CLIQUE_AGENT: 'ada', CLIQUE_WORKSPACE: '' }
   const payload = JSON.stringify({ hook_event_name: 'Stop', last_assistant_message: 'line one\nline two' }, null, 2) // even spread over lines
-  // Crew closed: its last address answers nothing
+  // CLIque closed: its last address answers nothing
   fs.writeFileSync(at('url'), 'http://127.0.0.1:9')
   fs.writeFileSync(at('token'), 'old')
   execFileSync(file, argv, { input: payload, env })
   const lines = fs.readFileSync(at('spool/ada.jsonl'), 'utf8').split('\n').filter(Boolean)
   assert.equal(lines.length, 1)
   assert.equal(JSON.parse(lines[0]).last_assistant_message, 'line one\nline two')
-  // Crew back (a new address and token, which the hook reads each time): it goes straight there
+  // CLIque back (a new address and token, which the hook reads each time): it goes straight there
   const got = []
   const server = http.createServer((req, res) => {
     let body = ''
     req.on('data', (d) => (body += d))
-    req.on('end', () => (got.push([req.url, req.headers['x-crew'], JSON.parse(body).hook_event_name]), res.end('ok\n')))
+    req.on('end', () => (got.push([req.url, req.headers['x-clique'], JSON.parse(body).hook_event_name]), res.end('ok\n')))
   })
   await new Promise((r) => server.listen(0, '127.0.0.1', r))
   fs.writeFileSync(at('url'), `http://127.0.0.1:${server.address().port}`)

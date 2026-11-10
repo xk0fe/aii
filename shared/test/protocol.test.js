@@ -8,7 +8,7 @@ test('base64url and UTF-8 match Node, without Node', () => {
     assert.equal(b64(bytes), Buffer.from(bytes).toString('base64url'))
     assert.deepEqual(unb64(b64(bytes)), bytes)
   }
-  for (const s of ['', 'gal', 'Crew на Маке', 'creatures 🐸🫧', 'tab\tand\nnewline']) {
+  for (const s of ['', 'gal', 'CLIque на Маке', 'creatures 🐸🫧', 'tab\tand\nnewline']) {
     assert.deepEqual(utf8(s), new Uint8Array(Buffer.from(s, 'utf8')))
     assert.equal(unutf8(utf8(s)), s)
   }
@@ -27,7 +27,7 @@ test('a pairing code says which Mac, its key, the secret and where to find it', 
   assert.ok(code.startsWith(PAIR_PREFIX))
   const back = readPairCode(` ${code}\n`)
   assert.deepEqual(back, { id: 'abc', name: 'Studio', key, secret, hosts: ['192.168.1.20', 'studio.tail.ts.net'], port: 7788 })
-  assert.throws(() => readPairCode('crew1.abc'), /not a CLIque phone code/)
+  assert.throws(() => readPairCode('clique1.abc'), /not a CLIque phone code/)
   assert.throws(() => readPairCode(PAIR_PREFIX + 'not-json'), /not a CLIque phone code/)
 })
 

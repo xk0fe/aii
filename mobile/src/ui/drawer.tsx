@@ -9,7 +9,7 @@ import type { Link } from '@/net/client'
 import type { Agent, Channel, Workspace } from '@/net/types'
 import type { Derived } from '@/state/hooks'
 
-import { CountBadge, CrewMark, Dot, inkFor, Press, tap, Who, WsTile } from './parts'
+import { CountBadge, CliqueMark, Dot, inkFor, Press, tap, Who, WsTile } from './parts'
 import { Creature } from './creature'
 import { displayName, rowLine } from './format'
 import { Icon } from './icon'
@@ -145,7 +145,7 @@ export function Drawer({ t, d, workspaces, ws, going, title, summary, here, chan
           ) : (
             <Press onPress={() => (tap(), onAgent(null))} style={[styles.row, styles.dm, !here && { backgroundColor: t.fill }]} accessibilityRole="button" accessibilityState={{ selected: !here }} accessibilityLabel={`Everyone's messages${total ? `, ${total} new` : ''}`}>
               <View style={[styles.everyone, { backgroundColor: t.fill }]}>
-                <CrewMark size={26} />
+                <CliqueMark size={26} />
               </View>
               <Text style={[styles.rowName, styles.dmText, { color: t.fg, fontWeight: '600' }]}>Everyone</Text>
             </Press>
@@ -159,11 +159,11 @@ export function Drawer({ t, d, workspaces, ws, going, title, summary, here, chan
             <AgentRow key={a.name} t={t} a={a} on={here === a.name} unread={d.unread.get(a.name) ?? 0} now={now} onPress={() => (tap(), onAgent(a.name))} />
           ))}
         </ScrollView>
-        <Press onPress={onComputer} style={[styles.foot, { borderTopColor: t.line, paddingBottom: Math.max(insets.bottom, 12) }]} accessibilityRole="button" accessibilityLabel={`${demo ? 'Demo crew' : mac}, ${offline || link.status}. Computers`}>
+        <Press onPress={onComputer} style={[styles.foot, { borderTopColor: t.line, paddingBottom: Math.max(insets.bottom, 12) }]} accessibilityRole="button" accessibilityLabel={`${demo ? 'Demo clique' : mac}, ${offline || link.status}. Computers`}>
           <Dot t={t} kind={demo ? 'idle' : link.status === 'online' ? 'working' : link.status === 'offline' ? 'waiting' : 'starting'} size={8} />
           <View style={styles.footText}>
             <Text style={[styles.footName, { color: t.fg }]} numberOfLines={1}>
-              {demo ? 'Demo crew' : mac}
+              {demo ? 'Demo clique' : mac}
             </Text>
             <Text style={[styles.footLine, { color: offline ? t.waitingInk : t.fg2 }]} numberOfLines={1}>
               {demo ? 'Made up, and only on this phone' : offline || (link.status === 'online' ? 'Connected' : 'Connecting…')}

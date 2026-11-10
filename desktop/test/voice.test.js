@@ -21,9 +21,9 @@ const can = (() => {
 })()
 
 // A throwaway root with the real Swift source, so the build lands in its own dist/ (built once, shared).
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-voice-'))
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-voice-'))
 fs.mkdirSync(path.join(root, 'native'))
-fs.copyFileSync(path.join(A, 'native', 'crew-voice.swift'), path.join(root, 'native', 'crew-voice.swift'))
+fs.copyFileSync(path.join(A, 'native', 'clique-voice.swift'), path.join(root, 'native', 'clique-voice.swift'))
 after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10 }))
 
 // 16 kHz mono Float32 samples of `text` spoken by macOS.
@@ -91,7 +91,7 @@ test('dictation: the languages offered are ones dictation supports, installed fi
 
 // The rest runs anywhere, Windows included: a Node script stands in for the helper, so these check core/voice.js itself.
 function fakeHelper(script) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-voice-fake-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-voice-fake-'))
   const file = path.join(dir, 'helper.mjs')
   fs.writeFileSync(file, `import fs from 'node:fs'\nconst say = (s) => fs.writeSync(1, s)\n${script}\n`)
   after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10 }))
@@ -138,8 +138,8 @@ test('dictation: closing or reloading the window that owns a session ends it', {
   assert.equal(win.listenerCount('destroyed') + win.listenerCount('did-start-loading'), 0, 'listeners are let go with the session')
 })
 
-test('dictation: an installed Crew whose helper is gone says so, and never tries to build one', { timeout: 10000 }, async () => {
-  const voice = new Voice({ root: os.tmpdir(), binary: path.join(os.tmpdir(), 'no-such-crew-voice') })
+test('dictation: an installed CLIque whose helper is gone says so, and never tries to build one', { timeout: 10000 }, async () => {
+  const voice = new Voice({ root: os.tmpdir(), binary: path.join(os.tmpdir(), 'no-such-clique-voice') })
   const id = voice.start('en_US')
   const seen = await until(voice, id, 'error')
   assert.deepEqual(seen.map((e) => e.type), ['error'], 'no "building" first')
@@ -159,7 +159,7 @@ async function permission(platform, status) {
   return { started, asked, opened }
 }
 
-test('dictation on macOS: Crew asks for the microphone once, and a "no" sends you to System Settings', async () => {
+test('dictation on macOS: CLIque asks for the microphone once, and a "no" sends you to System Settings', async () => {
   assert.deepEqual(await permission('darwin', 'granted'), { started: 'session:en_US', asked: [], opened: [SETTINGS_MAC] })
   assert.deepEqual(await permission('darwin', 'not-determined'), { started: 'mic-denied', asked: ['microphone'], opened: [SETTINGS_MAC] })
   assert.equal((await permission('darwin', 'denied')).started, 'mic-denied')

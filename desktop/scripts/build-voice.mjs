@@ -1,7 +1,7 @@
-// Builds the dictation helper that ships inside Crew (core/voice.js) into dist/voice/<os>-<arch>/, where
+// Builds the dictation helper that ships inside CLIque (core/voice.js) into dist/voice/<os>-<arch>/, where
 // electron-builder.config.mjs picks it up as Resources/voice/.
-//   node scripts/build-voice.mjs mac [--arch=arm64,x64]   native/crew-voice.swift, with Apple's developer tools
-//   node scripts/build-voice.mjs win [--arch=x64,arm64]   native/windows/CrewVoice, with the .NET 8 SDK (any OS)
+//   node scripts/build-voice.mjs mac [--arch=arm64,x64]   native/clique-voice.swift, with Apple's developer tools
+//   node scripts/build-voice.mjs win [--arch=x64,arm64]   native/windows/CliqueVoice, with the .NET 8 SDK (any OS)
 // A source checkout on a Mac doesn't need this: core/voice.js builds the helper itself on first use.
 import { execFileSync } from 'node:child_process'
 import crypto from 'node:crypto'
@@ -15,9 +15,9 @@ const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: 'inherit'
 const newer = (file, than) => fs.existsSync(file) && than.every((f) => fs.statSync(file).mtimeMs >= fs.statSync(f).mtimeMs)
 
 export function buildMac(arches = ['arm64', 'x64']) {
-  const source = path.join(root, 'native', 'crew-voice.swift')
+  const source = path.join(root, 'native', 'clique-voice.swift')
   for (const arch of arches) {
-    const bin = path.join(out('mac', arch), 'crew-voice')
+    const bin = path.join(out('mac', arch), 'clique-voice')
     if (newer(bin, [source])) continue
     fs.mkdirSync(path.dirname(bin), { recursive: true })
     // macOS 13 is the oldest the helper supports; it picks Apple's newer dictation on macOS 26 at run time
@@ -27,9 +27,9 @@ export function buildMac(arches = ['arm64', 'x64']) {
   }
 }
 
-// Windows: a self-contained .NET helper running whisper.cpp on this computer (native/windows/CrewVoice), and the
+// Windows: a self-contained .NET helper running whisper.cpp on this computer (native/windows/CliqueVoice), and the
 // speech model it ships with: Whisper's multilingual base model, 5-bit (60 MB), in <helper>/models/.
-const PROJECT = path.join(root, 'native', 'windows', 'CrewVoice', 'CrewVoice.csproj')
+const PROJECT = path.join(root, 'native', 'windows', 'CliqueVoice', 'CliqueVoice.csproj')
 export const MODEL = {
   file: 'ggml-base-q5_1.bin',
   url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin',

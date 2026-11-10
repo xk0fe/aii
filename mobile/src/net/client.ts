@@ -1,4 +1,4 @@
-// The phone's connection to Crew on a Mac (PROTOCOL.md): try every address at once, keep the first one whose
+// The phone's connection to CLIque on a Mac (PROTOCOL.md): try every address at once, keep the first one whose
 // handshake completes, then calls and replies over encrypted frames, the watched workspace's state kept current with
 // patches, and reconnecting with backoff when the Mac goes away.
 //
@@ -260,7 +260,7 @@ type Pending = { resolve: (v: any) => void; reject: (e: Error) => void; timer: R
 // The Mac's words for a workspace that isn't there (core/remote.js: `… has no workspace "docs"`).
 const gone = (e: unknown) => /no workspace/i.test(String((e as Error)?.message ?? e))
 
-export class CrewClient {
+export class CliqueClient {
   private target: Target
   private d: KeyPair
   private t: Timing
@@ -406,7 +406,7 @@ export class CrewClient {
       fatal = closeReason(code, this.macName).fatal
     } else {
       // The most telling failure: a Mac's close code beats "unreachable". But an answer from one address isn't
-      // necessarily from this Mac (another Crew Mac can have the same LAN address on another network), so "doesn't know
+      // necessarily from this Mac (another CLIque Mac can have the same LAN address on another network), so "doesn't know
       // this phone" only counts when every address said so.
       const coded = errors.filter((e) => e.code && e.code >= 4000)
       const first = coded.find((e) => e.code !== CLOSE.notPaired) ?? coded[0]

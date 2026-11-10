@@ -139,12 +139,12 @@ jobs:
           for app in mac*/CLIque.app; do
             codesign --verify --deep --strict "$app"
             codesign -dv "$app" 2>&1 | grep -E 'Identifier|Authority|TeamIdentifier|flags'
-            test -x "$app/Contents/Resources/voice/crew-voice"
+            test -x "$app/Contents/Resources/voice/clique-voice"
           done
           ls -l *.dmg *.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: crew-mac
+          name: clique-mac
           path: |
             desktop/release/*.dmg
             desktop/release/*.zip
@@ -193,59 +193,59 @@ jobs:
         run: |
           $setup = Get-ChildItem release/CLIque-Setup-*-x64.exe | Select-Object -First 1
           Start-Process $setup.FullName -ArgumentList '/S' -Wait
-          $dir = "$env:LOCALAPPDATA\Programs\crew"
-          foreach ($f in 'CLIque.exe', 'resources\app.asar', 'resources\app.asar.unpacked\bin\crew.mjs',
-                         'resources\app.asar.unpacked\bin\win32-x64\crew.exe', 'resources\app.asar.unpacked\bin\win32-x64\crew-sh',
+          $dir = "$env:LOCALAPPDATA\Programs\clique"
+          foreach ($f in 'CLIque.exe', 'resources\app.asar', 'resources\app.asar.unpacked\bin\clique.mjs',
+                         'resources\app.asar.unpacked\bin\win32-x64\clique.exe', 'resources\app.asar.unpacked\bin\win32-x64\clique-sh',
                          'resources\app.asar.unpacked\core\ptyhost.js',
                          'resources\app.asar.unpacked\node_modules\node-pty\prebuilds\win32-x64\conpty\OpenConsole.exe',
-                         'resources\voice\crew-voice.exe', 'resources\voice\models\ggml-base-q5_1.bin') {
+                         'resources\voice\clique-voice.exe', 'resources\voice\models\ggml-base-q5_1.bin') {
             if (-not (Test-Path "$dir\$f")) { throw "the installed app has no $f" }
           }
           if (Test-Path "$dir\resources\app.asar.unpacked\bin\win32-arm64") { throw 'the x64 app carries the arm64 tools too' }
-          if (-not (Test-Path 'HKCU:\Software\Classes\.crew')) { Write-Output '::warning::.crew files are not associated with the app' }
-          "CREW_INSTALLED=$dir" >> $env:GITHUB_ENV
+          if (-not (Test-Path 'HKCU:\Software\Classes\.clique')) { Write-Output '::warning::.clique files are not associated with the app' }
+          "CLIQUE_INSTALLED=$dir" >> $env:GITHUB_ENV
       - name: the installed dictation helper hears speech
         working-directory: desktop
-        run: node native/windows/smoke.mjs "${{ env.CREW_INSTALLED }}\resources\voice\crew-voice.exe"
-      # what opening it does: the app starts its terminal host from a copy of its runtime in ~\.crew\run\runtime (so an
+        run: node native/windows/smoke.mjs "${{ env.CLIQUE_INSTALLED }}\resources\voice\clique-voice.exe"
+      # what opening it does: the app starts its terminal host from a copy of its runtime in ~\.clique\run\runtime (so an
       # update can replace the app's files while agents keep running), and a terminal runs there. A fresh runner's
-      # ~\.crew is a scratch one.
+      # ~\.clique is a scratch one.
       - name: the installed app's terminal host runs from its copy and runs a terminal
         shell: pwsh
         working-directory: desktop
         run: |
-          $crewHome = "$env:USERPROFILE\.crew"
-          Start-Process "$env:CREW_INSTALLED\CLIque.exe"
-          $pipe = "$crewHome\run\pty.pipe"
+          $cliqueHome = "$env:USERPROFILE\.clique"
+          Start-Process "$env:CLIQUE_INSTALLED\CLIque.exe"
+          $pipe = "$cliqueHome\run\pty.pipe"
           for ($i = 0; $i -lt 180 -and -not (Test-Path $pipe); $i++) { Start-Sleep -Seconds 1 }
           if (-not (Test-Path $pipe)) {
-            Get-Content "$crewHome\run\ptyhost.log", "$crewHome\logs\crew.log" -ErrorAction SilentlyContinue
+            Get-Content "$cliqueHome\run\ptyhost.log", "$cliqueHome\logs\clique.log" -ErrorAction SilentlyContinue
             throw 'the installed app started no terminal host'
           }
           # Electron's folder for the app keeps its name from before the rename (main.js pins it): your view settings
           # and the one-at-a-time lock live there
-          if (-not (Test-Path "$env:APPDATA\Crew")) { throw "the app's own folder isn't $env:APPDATA\Crew" }
+          if (-not (Test-Path "$env:APPDATA\CLIque")) { throw "the app's own folder isn't $env:APPDATA\CLIque" }
           if (Test-Path "$env:APPDATA\CLIque") { throw "the app made itself a new folder, $env:APPDATA\CLIque" }
           $hostPid = (Get-Content $pipe | ConvertFrom-Json).pid
           $exe = (Get-Process -Id $hostPid).Path
           Write-Output "terminal host $hostPid runs $exe"
-          if ($exe -notlike "$crewHome\run\runtime\*\crew-host.exe") { throw "the terminal host runs from $exe, not from its copy" }
-          node scripts/check-host.mjs $crewHome
-          if ($LASTEXITCODE) { Get-Content "$crewHome\run\ptyhost.log" -ErrorAction SilentlyContinue; exit 1 }
-      # uninstalling stops the app and its terminal host and takes the runtime copies, and leaves the crew itself
+          if ($exe -notlike "$cliqueHome\run\runtime\*\clique-host.exe") { throw "the terminal host runs from $exe, not from its copy" }
+          node scripts/check-host.mjs $cliqueHome
+          if ($LASTEXITCODE) { Get-Content "$cliqueHome\run\ptyhost.log" -ErrorAction SilentlyContinue; exit 1 }
+      # uninstalling stops the app and its terminal host and takes the runtime copies, and leaves the clique itself
       - name: uninstall
         shell: pwsh
         run: |
-          Start-Process "$env:CREW_INSTALLED\Uninstall CLIque.exe" -ArgumentList '/S' -Wait
-          for ($i = 0; $i -lt 60 -and (Test-Path "$env:CREW_INSTALLED\CLIque.exe"); $i++) { Start-Sleep -Seconds 1 }
+          Start-Process "$env:CLIQUE_INSTALLED\Uninstall CLIque.exe" -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 60 -and (Test-Path "$env:CLIQUE_INSTALLED\CLIque.exe"); $i++) { Start-Sleep -Seconds 1 }
           Start-Sleep -Seconds 5
-          if (Test-Path "$env:CREW_INSTALLED\CLIque.exe") { throw 'uninstalling left CLIque.exe behind' }
-          if (Get-Process -Name crew-host -ErrorAction SilentlyContinue) { throw 'uninstalling left the terminal host running' }
-          if (Test-Path "$env:USERPROFILE\.crew\run\runtime") { throw 'uninstalling left the runtime copies behind' }
-          if (-not (Test-Path "$env:USERPROFILE\.crew\config.json")) { throw "uninstalling took the crew's settings with it" }
+          if (Test-Path "$env:CLIQUE_INSTALLED\CLIque.exe") { throw 'uninstalling left CLIque.exe behind' }
+          if (Get-Process -Name clique-host -ErrorAction SilentlyContinue) { throw 'uninstalling left the terminal host running' }
+          if (Test-Path "$env:USERPROFILE\.clique\run\runtime") { throw 'uninstalling left the runtime copies behind' }
+          if (-not (Test-Path "$env:USERPROFILE\.clique\config.json")) { throw "uninstalling took the clique's settings with it" }
       - uses: actions/upload-artifact@v4
         with:
-          name: crew-windows
+          name: clique-windows
           path: |
             desktop/release/*.exe
             desktop/release/*.blockmap

@@ -1,4 +1,4 @@
-// Writes assets/icon.ico, the Windows icon (the app, its installer, .crew files). The art is make-icon.mjs's, in its
+// Writes assets/icon.ico, the Windows icon (the app, its installer, .clique files). The art is make-icon.mjs's, in its
 // Windows cut: the tile filling the square without the macOS drop shadow, so it holds up at 16 to 48px.
 // Run: npx electron scripts/make-ico.mjs (npm run icon does it after make-icon.mjs)
 // Small sizes are plain bitmaps, which everything that reads icons understands; 128 and 256 are PNG, as Windows does it.

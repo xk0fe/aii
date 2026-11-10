@@ -1,5 +1,5 @@
-// Crew Link: your computers' crews, as one. Each computer runs its own agents; a link between two computers
-// is one connection over which both share theirs, so every computer sees (and can talk to) the whole crew.
+// CLIque Link: your computers' cliques, as one. Each computer runs its own agents; a link between two computers
+// is one connection over which both share theirs, so every computer sees (and can talk to) the whole clique.
 // The channel is TLS with a self-signed certificate that the pairing code pins, and the secret key in the code
 // is only sent after the certificate checks out, so it stays private even on shared networks.
 import { EventEmitter } from 'node:events'
@@ -20,7 +20,7 @@ export const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, 
 
 // ---- identity: a certificate + key per host, made once ----------------------------------------------
 
-// Made here, not by openssl, which Windows doesn't have. One an older Crew made with openssl is kept, so the computers
+// Made here, not by openssl, which Windows doesn't have. One an older CLIque made with openssl is kept, so the computers
 // linked to this one keep their code, as long as TLS here can use it: macOS's own openssl (LibreSSL) wrote the curve
 // out in full, which Electron's BoringSSL can't read, so sharing never started with one of those and nothing can have
 // linked to it. That one is replaced.
@@ -30,7 +30,7 @@ export function identity(dir) {
   const keyFile = path.join(dir, 'key.pem')
   const saved = usable(certFile, keyFile)
   if (saved) return saved
-  const made = selfSigned('crew-link')
+  const made = selfSigned('clique-link')
   fs.writeFileSync(keyFile, made.key, { mode: 0o600 })
   fs.writeFileSync(certFile, made.cert)
   return usable(certFile, keyFile)
@@ -143,7 +143,7 @@ export function interfaceLabel(iface, address, platform = process.platform) {
 
 // This computer as Tailscale sees it (its status's Self), or null without Tailscale or while it's off. Its CLI is on
 // PATH on Windows and with Homebrew's; the Mac app has it inside, and Windows' installer puts it in Program Files
-// (which a Crew started before Tailscale was installed doesn't have on its PATH).
+// (which a CLIque started before Tailscale was installed doesn't have on its PATH).
 export async function tailscaleSelf(platform = process.platform) {
   const tries = ['tailscale', ...(platform === 'darwin' ? ['/Applications/Tailscale.app/Contents/MacOS/Tailscale'] : []),
     ...(platform === 'win32' ? [path.win32.join(process.env.ProgramFiles || 'C:\\Program Files', 'Tailscale', 'tailscale.exe')] : [])]
@@ -164,9 +164,9 @@ export async function tailscaleSelf(platform = process.platform) {
 
 // ---- Windows Firewall: can other computers get in? -------------------------------------------------------
 
-// Crew listens on every network while it shares this computer (or a phone is paired), and Windows Firewall lets
+// CLIque listens on every network while it shares this computer (or a phone is paired), and Windows Firewall lets
 // connections in only where a rule says so. The installer adds one for Private and Domain networks; without one,
-// Windows asks the first time Crew listens. Neither covers Public networks, which is what Windows makes a network
+// Windows asks the first time CLIque listens. Neither covers Public networks, which is what Windows makes a network
 // unless you've said it's yours. -> a sentence saying what to do, or null when nothing says the way in is shut
 // (anything it can't tell counts as open: if Windows hasn't decided, it asks).
 export async function firewallWarning(hosts, { platform = process.platform, program = process.execPath, query = firewallState } = {}) {
@@ -194,7 +194,7 @@ export function reachWarning(hosts, { nets = [], walls = [], rules = [] } = {}) 
     const profile = h.iface && kind.get(h.iface)
     if (!profile || list(walls).find((w) => w.name === profile)?.on === 'False') continue // its firewall is off
     // a rule that says no (someone said no when Windows asked, or left Public unticked); or a Public network no rule
-    // lets it in on, when Crew has rules (so they'd have been found), as with the installer's
+    // lets it in on, when CLIque has rules (so they'd have been found), as with the installer's
     const mine = list(rules).filter((r) => covers(r, profile))
     if (!mine.some((r) => r.action === 'Block') && !(profile === 'Public' && list(rules).length && !mine.some((r) => r.action === 'Allow'))) continue
     // a public network where a private one would do is better made private than opened up
@@ -212,14 +212,14 @@ export function reachWarning(hosts, { nets = [], walls = [], rules = [] } = {}) 
 
 // What Windows says (see reachWarning), from PowerShell, which every Windows since 8 has; looked up at most every two
 // minutes, as Get-NetFirewallApplicationFilter can take a few seconds. One line, no double quotes, so it goes as
-// itself to -Command (not -EncodedCommand, which virus scanners look at twice); Crew's exe comes in CREW_PROGRAM.
+// itself to -Command (not -EncodedCommand, which virus scanners look at twice); CLIque's exe comes in CLIQUE_PROGRAM.
 const FIREWALL = [
   "$ErrorActionPreference = 'SilentlyContinue'",
   "$ProgressPreference = 'SilentlyContinue'",
   '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false',
   '$nets = @(Get-NetConnectionProfile | ForEach-Object { @{ alias = [string]$_.InterfaceAlias; category = [string]$_.NetworkCategory } })',
   '$walls = @(Get-NetFirewallProfile | ForEach-Object { @{ name = [string]$_.Name; on = [string]$_.Enabled } })',
-  "$rules = @(Get-NetFirewallApplicationFilter -Program $env:CREW_PROGRAM | Get-NetFirewallRule | Where-Object { [string]$_.Enabled -eq 'True' -and [string]$_.Direction -eq 'Inbound' } | ForEach-Object { @{ action = [string]$_.Action; profile = [string]$_.Profile } })",
+  "$rules = @(Get-NetFirewallApplicationFilter -Program $env:CLIQUE_PROGRAM | Get-NetFirewallRule | Where-Object { [string]$_.Enabled -eq 'True' -and [string]$_.Direction -eq 'Inbound' } | ForEach-Object { @{ action = [string]$_.Action; profile = [string]$_.Profile } })",
   'ConvertTo-Json -Compress -Depth 3 -InputObject @{ nets = $nets; walls = $walls; rules = $rules }',
 ].join('; ')
 let firewallSeen = { at: 0, program: null, state: null }
@@ -230,7 +230,7 @@ export async function firewallState(program) {
   let state = null // and not asked again for a while either, when PowerShell can't say
   try {
     const out = await new Promise((resolve, reject) =>
-      execFile('powershell.exe', args, { timeout: 20000, windowsHide: true, env: { ...process.env, CREW_PROGRAM: program } }, (e, o) => (e ? reject(e) : resolve(o))))
+      execFile('powershell.exe', args, { timeout: 20000, windowsHide: true, env: { ...process.env, CLIQUE_PROGRAM: program } }, (e, o) => (e ? reject(e) : resolve(o))))
     state = JSON.parse(out.replace(/^\uFEFF/, '').trim())
   } catch {}
   firewallSeen = { at: Date.now(), program, state }
@@ -238,10 +238,10 @@ export async function firewallState(program) {
 }
 
 export const makeCode = ({ name, port, key, fingerprint, hosts }) =>
-  'crew1.' + Buffer.from(JSON.stringify({ n: name, p: port, k: key, f: fingerprint, h: hosts })).toString('base64url')
+  'clique1.' + Buffer.from(JSON.stringify({ n: name, p: port, k: key, f: fingerprint, h: hosts })).toString('base64url')
 
 export function readCode(code) {
-  const m = String(code ?? '').trim().match(/^crew1\.([\w-]+)$/)
+  const m = String(code ?? '').trim().match(/^(?:clique|crew)1\.([\w-]+)$/) // (crew1: a code from a computer that hasn't updated yet)
   if (!m) throw new Error("that's not a CLIque pairing code")
   const c = JSON.parse(Buffer.from(m[1], 'base64url').toString())
   return { name: c.n, port: c.p, key: c.k, fingerprint: c.f, hosts: c.h }
@@ -256,7 +256,7 @@ const closedWhy = (code, host) =>
 
 // ---- a peer: one live connection, the same on both ends --------------------------------------------
 
-// Either side can call() the other (answered by its `handle`), push() its crew's state / terminal output /
+// Either side can call() the other (answered by its `handle`), push() its clique's state / terminal output /
 // alerts, and type into the other's terminals with input(). Emits 'state', 'space', 'spaces', 'pty', 'alert', 'input',
 // 'close'.
 export class Peer extends EventEmitter {
@@ -283,9 +283,9 @@ export class Peer extends EventEmitter {
       return
     }
     if (m.t === 'state') this.emit('state', m.state)
-    else if (m.t === 'space') this.emit('space', m.id, m.state) // one of its other workspaces (an older Crew never sends it)
+    else if (m.t === 'space') this.emit('space', m.id, m.state) // one of its other workspaces (an older CLIque never sends it)
     else if (m.t === 'spaces') this.emit('spaces', m.ids) // which workspaces it has now
-    else if (m.t === 'ws') this.emit('ws', m.key, m.state) // one of its workspaces, by owner:id (see Crew.keyOf)
+    else if (m.t === 'ws') this.emit('ws', m.key, m.state) // one of its workspaces, by owner:id (see Clique.keyOf)
     else if (m.t === 'wslist') this.emit('wslist', m.list) // its workspaces now, each with its key and look
     else if (m.t === 'pty') this.emit('pty', m.name, m.data)
     else if (m.t === 'alert') this.emit('alert', m.name, m.text)
@@ -340,7 +340,7 @@ export class LinkHost extends EventEmitter {
   }
 
   start(port) {
-    this.server = https.createServer({ cert: this.cert, key: this.keyPem }, (_, res) => res.writeHead(426).end('Crew Link speaks WebSocket\n'))
+    this.server = https.createServer({ cert: this.cert, key: this.keyPem }, (_, res) => res.writeHead(426).end('CLIque Link speaks WebSocket\n'))
     this.wss = new WebSocketServer({ server: this.server, maxPayload: 32 * 1024 * 1024 })
     this.wss.on('connection', (ws, req) => this.welcome(ws, req.socket.remoteAddress))
     this.wss.on('error', () => {}) // the server's errors, which it passes on: a port in use is said by the promise below

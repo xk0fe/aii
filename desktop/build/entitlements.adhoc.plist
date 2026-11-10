@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- entitlements.mac.plist for a build signed ad hoc (no Developer ID yet). Ad-hoc code has no Team ID, so the
-     hardened runtime's library validation would refuse Crew's own frameworks: this build turns that check off.
+     hardened runtime's library validation would refuse CLIque's own frameworks: this build turns that check off.
      A Developer ID build doesn't need it and doesn't get it. -->
 <plist version="1.0">
 <dict>

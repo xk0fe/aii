@@ -188,7 +188,7 @@
     .use-pop .hot { color: var(--ctx-hot); }
     .use-pop small { color: var(--fg2); font-size: 12px; }
     .use-pop small.warn { color: var(--needs-ink); font-weight: 500; }
-    /* ---- who works here: the workspace's agents (take one out), the rest of your crew (bring one in), a new one ---- */
+    /* ---- who works here: the workspace's agents (take one out), the rest of your clique (bring one in), a new one ---- */
     .members-pop { inset: auto; margin: 0; width: 340px; max-height: min(560px, calc(100vh - 80px)); padding: 0; border: 0; border-radius: var(--r-window); background: var(--float); color: var(--fg); box-shadow: var(--shadow-float); overflow: hidden; }
     .members-pop:focus { outline: none; }
     .members-pop:popover-open { display: flex; flex-direction: column; animation: mp-in var(--t-pop) var(--out); }
@@ -665,7 +665,7 @@
         <button class="icon" data-act="add" title="New agent (⌘N)" aria-label="New agent"></button>
       </div>
       <div class="side-nav">
-        <button class="nv" data-place="crew" title="Every agent as a card: turn them on and off, edit, compare (⌘2)"><span class="nv-icon"></span><span>Agents</span><i class="nv-n"></i></button>
+        <button class="nv" data-place="clique" title="Every agent as a card: turn them on and off, edit, compare (⌘2)"><span class="nv-icon"></span><span>Agents</span><i class="nv-n"></i></button>
         <button class="nv" data-place="tasks" title="Tasks: to do, in progress, review, done (⌘3)"><span class="nv-icon"></span><span>Tasks</span><i class="nv-n"></i></button>
         <button class="nv" data-place="terminals" title="The terminals running now (⌘4)"><span class="nv-icon"></span><span>Terminals</span><i class="nv-n"></i></button>
       </div>
@@ -712,7 +712,7 @@
 
   <dialog id="link" class="sheet">
     <h2 class="sheet-title"><span class="h-icon"></span>Computers</h2>
-    <p class="lead" title="Each agent runs on one of them; linked computers see every agent, talk to them and hand work around.">One crew across your computers, over the same Wi-Fi or Tailscale.</p>
+    <p class="lead" title="Each agent runs on one of them; linked computers see every agent, talk to them and hand work around.">One clique across your computers, over the same Wi-Fi or Tailscale.</p>
     <div class="sheet-body link-body"></div>
     <div class="sheet-foot"><button class="btn" data-link-add></button><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
     <div class="pair-view" tabindex="-1"></div>
@@ -745,7 +745,7 @@
       <div class="seg fill tl-modes" aria-label="Agent tools"></div>
       <div class="tl-about"></div>
       <div class="group-list tl-list"></div>
-      <p class="tl-note">Ask any agent in the chat, like “make a workspace called Storefront for ada and milo”. It runs <code>crew app</code> in its terminal.</p>
+      <p class="tl-note">Ask any agent in the chat, like “make a workspace called Storefront for ada and milo”. It runs <code>clique app</code> in its terminal.</p>
     </div>
     <p class="err" data-tl-err></p>
     <div class="sheet-foot"><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>

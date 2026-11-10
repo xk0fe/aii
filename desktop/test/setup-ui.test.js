@@ -32,7 +32,7 @@ function page({ layers = null, saved = null, answers = () => undefined } = {}) {
   const ctx = vm.createContext({
     document: { createElement: node, body: { append() {} }, querySelector: (sel) => (sel.includes('.menu') ? layers?.() ?? null : null) },
     addEventListener: (type, fn) => type === 'keydown' && keys.push(fn),
-    crew: { call: async (...args) => (calls.push(args), answers(args) ?? (args[1] === 'provider' ? { id: args[2], key: false, running: false } : undefined)) },
+    clique: { call: async (...args) => (calls.push(args), answers(args) ?? (args[1] === 'provider' ? { id: args[2], key: false, running: false } : undefined)) },
     ...firstRun,
     esc: (s) => String(s ?? ''),
     morph: (el, html) => (el.html = html),
@@ -200,7 +200,7 @@ test('a new install opens with the first run: the name, + New agent, which makes
   assert.equal(p.step(), 'hello')
   assert.match(p.view.html, /class="fr-fig q pop"/, 'he pops out of it')
   assert.match(p.view.html, /Hi,<\/span> <span[^>]*>I’m<\/span> <span class="em"[^>]*>Q\.</, 'his name in the brand colour')
-  assert.equal(saved.get('crew.firstRun'), 'hello', 'kept, so a quit picks up here')
+  assert.equal(saved.get('clique.firstRun'), 'hello', 'kept, so a quit picks up here')
   assert.doesNotMatch(p.view.html, /data-fr="hi"/, 'nothing to press: the line moves on')
   p.view.on.pointerdown() // (or wait for it)
   await settle()
@@ -213,20 +213,20 @@ test('a new install opens with the first run: the name, + New agent, which makes
 })
 
 test('a quit during his opening lines starts it over: nothing had been asked yet', () => {
-  const p = page({ saved: new Map([['crew.firstRun', 'role']]) })
+  const p = page({ saved: new Map([['clique.firstRun', 'role']]) })
   p.screen.render(fresh())
   assert.equal(p.step(), 'title')
 })
 
 test('the kind of work is kept, and decides the clique he proposes', async () => {
-  const saved = new Map([['crew.firstRun', 'work']])
+  const saved = new Map([['clique.firstRun', 'work']])
   const p = page({ saved })
   p.screen.render(fresh())
   assert.equal(p.step(), 'work')
   for (const w of ['software', 'design', 'writing', 'research', 'marketing', 'other']) assert.match(p.view.html, new RegExp(`data-fr-work="${w}"`))
   p.press(p.view, { frWork: 'writing' })
   assert.match(p.view.html, /class="fr-role on" data-fr-work="writing"/)
-  assert.equal(saved.get('crew.firstWork'), 'writing')
+  assert.equal(saved.get('clique.firstWork'), 'writing')
   await settle(700)
   assert.equal(p.step(), 'workspace', 'Claude Code is ready: no need to ask for it')
   assert.deepEqual(p.screen.starters('writing').length, 3)
@@ -238,13 +238,13 @@ test('an install that already has a workspace never sees it', () => {
   const saved = new Map()
   const p = page({ saved })
   p.screen.render(state({ setup: setup('ready') }))
-  assert.equal(saved.get('crew.firstRun'), 'done')
+  assert.equal(saved.get('clique.firstRun'), 'done')
   assert.equal(p.step(), undefined)
   assert.equal(p.view.hidden, true)
 })
 
 test('with neither Claude Code nor Codex, Q asks for one, and goes on by himself once the check finds it', async () => {
-  const saved = new Map([['crew.firstRun', 'work']])
+  const saved = new Map([['clique.firstRun', 'work']])
   const p = page({ saved })
   p.screen.render(fresh({ setup: setup('missing') }))
   p.press(p.view, { frWork: 'software' })
@@ -259,7 +259,7 @@ test('with neither Claude Code nor Codex, Q asks for one, and goes on by himself
 })
 
 test('the workspace is made with the folder you picked, and the first run stays up for its clique', async () => {
-  const saved = new Map([['crew.firstRun', 'workspace']])
+  const saved = new Map([['clique.firstRun', 'workspace']])
   const made = state({ workspace: { id: 'shop', name: 'Shop' }, setup: setup('ready') })
   const p = page({ saved, answers: ([what, op]) => (what === 'pickFolder' ? '/Users/you/code/shop' : what === 'folderInfo' ? { exists: true, path: '/Users/you/code/shop' } : what === 'workspace' && op === 'create' ? { state: made } : undefined) })
   p.screen.render(fresh())
@@ -273,20 +273,20 @@ test('the workspace is made with the folder you picked, and the first run stays 
   const create = p.calls.find(([w, op]) => w === 'workspace' && op === 'create')
   assert.equal(create[3].folder, '/Users/you/code/shop')
   assert.equal(create[3].name, 'Shop')
-  assert.equal(saved.get('crew.work.shop'), 'software', 'what #general offers to ask first')
+  assert.equal(saved.get('clique.work.shop'), 'software', 'what #general offers to ask first')
   assert.ok(p.calls.some(([w]) => w === 'onMade'), 'the dashboard goes to it')
   p.screen.render(made) // the state that brings it
-  assert.equal(p.step(), 'crew')
-  assert.equal(saved.get('crew.firstRun'), 'crew')
+  assert.equal(p.step(), 'clique')
+  assert.equal(saved.get('clique.firstRun'), 'clique')
   assert.equal(p.view.hidden, false)
 })
 
 test('the clique for that work stands beside Q, anyone can be left out, and the rest join on whichever CLI is ready', async () => {
-  const saved = new Map([['crew.firstRun', 'crew'], ['crew.firstWork', 'writing']])
+  const saved = new Map([['clique.firstRun', 'clique'], ['clique.firstWork', 'writing']])
   const p = page({ saved })
   const here = (agents) => state({ setup: setup('missing', 'ready'), agents })
   p.screen.render(here([]))
-  assert.equal(p.step(), 'crew')
+  assert.equal(p.step(), 'clique')
   assert.match(p.view.html, /clique<\/span> <span[^>]*>for<\/span> <span class="em"[^>]*>writing\./)
   for (const n of ['nora', 'felix', 'maya', 'otis']) assert.match(p.view.html, new RegExp(`data-name="mate-${n}"`))
   assert.match(p.view.html, /Start with these four/)
@@ -300,15 +300,15 @@ test('the clique for that work stands beside Q, anyone can be left out, and the 
   assert.ok(added.every((f) => f.area && f.avatar), 'each with its job and its look')
   p.screen.render(here([{ name: 'nora' }, { name: 'felix' }, { name: 'maya' }, { name: 'q', system: true }]))
   await settle(600)
-  assert.equal(saved.get('crew.firstRun'), 'done')
-  assert.equal(saved.get('crew.hints'), 'on', 'the app says what each new thing is, in place of a tour')
+  assert.equal(saved.get('clique.firstRun'), 'done')
+  assert.equal(saved.get('clique.hints'), 'on', 'the app says what each new thing is, in place of a tour')
   assert.ok(p.calls.some(([w]) => w === 'onLand'))
   assert.ok(!p.calls.some(([w]) => w === 'onTour'))
   assert.equal(p.view.hidden, true, 'and the dashboard is there')
 })
 
 test('with everyone left out it starts with just Q', async () => {
-  const saved = new Map([['crew.firstRun', 'crew']])
+  const saved = new Map([['clique.firstRun', 'clique']])
   const p = page({ saved })
   p.screen.render(state({ setup: setup('ready') }))
   for (const n of ['Ada', 'Theo', 'Iris', 'June']) p.press(p.view, { frPick: n })
@@ -316,16 +316,16 @@ test('with everyone left out it starts with just Q', async () => {
   p.press(p.view, { fr: 'bring' })
   await settle(600)
   assert.equal(p.calls.filter(([w]) => w === 'addAgent').length, 0)
-  assert.equal(saved.get('crew.firstRun'), 'done')
+  assert.equal(saved.get('clique.firstRun'), 'done')
 })
 
 test('a workspace that came another way (a linked computer’s) ends the first run where it is', async () => {
-  const saved = new Map([['crew.firstRun', 'workspace']])
+  const saved = new Map([['clique.firstRun', 'workspace']])
   const p = page({ saved })
   p.screen.render(fresh())
   assert.equal(p.step(), 'workspace')
   p.screen.render(state({ setup: setup('ready') }))
-  assert.equal(saved.get('crew.firstRun'), 'done')
+  assert.equal(saved.get('clique.firstRun'), 'done')
   assert.equal(p.view.hidden, true)
 })
 
@@ -334,13 +334,13 @@ test('Skip leaves the first run for the setup screen, for good', () => {
   const p = page({ saved })
   p.screen.render(fresh())
   p.press(p.view, { fr: 'skip' })
-  assert.equal(saved.get('crew.firstRun'), 'done')
+  assert.equal(saved.get('clique.firstRun'), 'done')
   assert.equal(p.step(), undefined)
   assert.equal(p.title(), 'Make your first workspace')
 })
 
 test('a tour the first run ended with, quit before it began, begins once the dashboard is back', async () => {
-  const saved = new Map([['crew.firstRun', 'tour']])
+  const saved = new Map([['clique.firstRun', 'tour']])
   const p = page({ saved })
   p.screen.render(state({ setup: setup('ready') }))
   await settle(400)

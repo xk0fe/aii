@@ -1,5 +1,5 @@
 // Clones: an agent with `clones: n` takes a message while it's busy by starting a copy of itself (iris.2, iris.3…)
-// in a terminal and conversation of its own. Real Hub, fake runner and clock, throwaway CREW_HOME. `npm test`.
+// in a terminal and conversation of its own. Real Hub, fake runner and clock, throwaway CLIQUE_HOME. `npm test`.
 import { test, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -8,7 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import vm from 'node:vm'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-clones-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-clones-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { packAgents, unpackAgents } = await import('../core/pack.js')
 
@@ -26,7 +26,7 @@ class FakeRunner extends EventEmitter {
 const LINGER = 5 * 60000
 let hub, runner
 const setup = (agents) => {
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -43,7 +43,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const agent = (n) => hub.agents.get(n)
 const names = () => [...hub.agents.keys()]
@@ -67,7 +67,7 @@ test('busy, it starts a clone that takes the message in a conversation of its ow
   assert.equal(c.cloneOf, 'iris')
   assert.equal(c.status, 'starting')
   assert.equal(c.area, 'ui design')
-  assert.deepEqual(runner.starts.map(([n, env]) => [n, env.CREW_AGENT]), [['iris.2', 'iris.2']])
+  assert.deepEqual(runner.starts.map(([n, env]) => [n, env.CLIQUE_AGENT]), [['iris.2', 'iris.2']])
   assert.equal(msgTo('fix the footer').to, 'iris.2') // the feed says who got it
   assert.equal(agent('iris').inbox.length, 0)
   ready('iris.2')
@@ -250,7 +250,7 @@ test('a clone\'s work is its original\'s experience; its conversation isn\'t sav
   assert.equal(hub.stats.iris.turns, 1)
   assert.equal(hub.sessions['iris.2'], 'sess-clone') // it can resume its own conversation while it's around
   hub.saveConvos(true)
-  const saved = (f) => JSON.parse(fs.readFileSync(path.join(process.env.CREW_HOME, f), 'utf8'))
+  const saved = (f) => JSON.parse(fs.readFileSync(path.join(process.env.CLIQUE_HOME, f), 'utf8'))
   assert.equal(saved('conversations.json')['iris.2'], undefined)
   hub.saveSession('ada', 'sess-ada')
   assert.deepEqual(Object.keys(saved('sessions.json')), ['ada'])
@@ -305,7 +305,7 @@ test('packs carry how many clones an agent may have', () => {
 // ---- how clones look in the UI (ui/common.js, rendered from the hub's snapshot) ----
 
 const ui = (() => {
-  const ctx = vm.createContext({ crew: {}, avatarHTML: (a) => `<av ${a.avatar?.seed ?? a.name}>`, agentColor: (a) => `color(${a.avatar?.seed ?? a.name})`, CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
+  const ctx = vm.createContext({ clique: {}, avatarHTML: (a) => `<av ${a.avatar?.seed ?? a.name}>`, agentColor: (a) => `color(${a.avatar?.seed ?? a.name})`, CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
   vm.runInContext(fs.readFileSync(path.resolve(import.meta.dirname, '../ui/common.js'), 'utf8') + ';globalThis.__x = { feedView, nameHTML, rosterHTML, typingHTML }', ctx)
   return ctx.__x
 })()
@@ -321,11 +321,11 @@ test('ui: a clone goes by its agent\'s name and face with its number, in the fee
   assert.match(html, /to <span class="who" data-agent="iris\.2" style="--c:color\(iris\)">@iris<span class="clone-no"/)
   // iris's row counts its clone (its face and how many); unfolded, the clone's row is right under it. "Who's on it"
   // shows it while it starts.
-  const crew = { agents, computers: { me: { name: 'Mac' }, links: [] } }
-  assert.match(ui.rosterHTML(crew), /data-agent="iris"[\s\S]*data-fold="clones:iris"[\s\S]*<av iris><b>1<\/b>/)
-  assert.doesNotMatch(ui.rosterHTML(crew), /data-clone="iris\.2"/)
-  assert.match(ui.rosterHTML(crew, { folds: new Set(['clones:iris']) }), /data-agent="iris"[\s\S]*data-clone="iris\.2"[\s\S]*<av iris>[\s\S]*starting/)
-  assert.match(ui.rosterHTML(crew, { selected: 'iris.2' }), /data-clone="iris\.2"/)
+  const clique = { agents, computers: { me: { name: 'Mac' }, links: [] } }
+  assert.match(ui.rosterHTML(clique), /data-agent="iris"[\s\S]*data-fold="clones:iris"[\s\S]*<av iris><b>1<\/b>/)
+  assert.doesNotMatch(ui.rosterHTML(clique), /data-clone="iris\.2"/)
+  assert.match(ui.rosterHTML(clique, { folds: new Set(['clones:iris']) }), /data-agent="iris"[\s\S]*data-clone="iris\.2"[\s\S]*<av iris>[\s\S]*starting/)
+  assert.match(ui.rosterHTML(clique, { selected: 'iris.2' }), /data-clone="iris\.2"/)
   assert.match(ui.typingHTML(agents), /data-agent="iris\.2"[\s\S]*starting up to take it/)
 })
 

@@ -98,7 +98,7 @@ test('Windows: a command is found the way cmd.exe finds it, by PATHEXT, in PATH 
   const first = win({ 'C:\\Windows\\system32\\claude.cmd': '', [`${NPM}\\claude.exe`]: '' })
   assert.equal(which('claude', first.env.Path, first), 'C:\\Windows\\system32\\claude.cmd', 'an earlier folder wins')
   const script = win({ 'C:\\Windows\\system32\\claude.js': '', 'C:\\Windows\\system32\\claude.vbs': '', [`${NPM}\\claude.exe`]: '' })
-  assert.equal(which('claude', script.env.Path, script), `${NPM}\\claude.exe`, "PATHEXT's .JS and .VBS aren't programs Crew can start")
+  assert.equal(which('claude', script.env.Path, script), `${NPM}\\claude.exe`, "PATHEXT's .JS and .VBS aren't programs CLIque can start")
 })
 
 test("Windows: PATH is the environment's own key, so an agent's environment never holds Path and PATH both", () => {
@@ -106,10 +106,10 @@ test("Windows: PATH is the environment's own key, so an agent's environment neve
   assert.equal(pathKey({ PATH: 'x' }, 'win32'), 'PATH', 'as Git Bash passes it on')
   assert.equal(pathKey({}, 'win32'), 'Path')
   assert.equal(pathKey({ Path: 'x' }, 'darwin'), 'PATH')
-  const bin = 'C:\\Program Files\\Crew\\resources\\app.asar.unpacked\\desktop\\bin'
+  const bin = 'C:\\Program Files\\CLIque\\resources\\app.asar.unpacked\\desktop\\bin'
   assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'x64' }), { Path: `${bin}\\win32-x64;C:\\Windows` })
   assert.deepEqual(withTools({ Path: 'C:\\Windows' }, bin, { platform: 'win32', arch: 'arm64' }), { Path: `${bin}\\win32-arm64;C:\\Windows` })
-  assert.deepEqual(withTools({ PATH: '/usr/bin:/bin' }, '/Applications/Crew.app/bin', { platform: 'darwin' }), { PATH: '/Applications/Crew.app/bin:/usr/bin:/bin' }, 'macOS: as before')
+  assert.deepEqual(withTools({ PATH: '/usr/bin:/bin' }, '/Applications/CLIque.app/bin', { platform: 'darwin' }), { PATH: '/Applications/CLIque.app/bin:/usr/bin:/bin' }, 'macOS: as before')
   assert.equal(toolsDir('/b', { platform: 'darwin' }), '/b')
 })
 
@@ -122,7 +122,7 @@ test("Windows: Claude Code's native installer, WinGet and npm and pnpm installs 
     const npm = win({ [`${NPM}\\claude.cmd`]: shim, [CLAUDE_EXE]: 'MZ' })
     assert.deepEqual(resolve('claude', args, npm), { file: CLAUDE_EXE, args })
   }
-  // installed after Crew started: not on Crew's PATH yet, but where the installer puts it
+  // installed after CLIque started: not on CLIque's PATH yet, but where the installer puts it
   const fresh = win({ [`${ANN}\\.local\\bin\\claude.exe`]: '' }, { Path: 'C:\\Windows' })
   assert.equal(resolve('claude', [], fresh).file, `${ANN}\\.local\\bin\\claude.exe`)
   const winget = win({ [`${ANN}\\AppData\\Local\\Microsoft\\WinGet\\Links\\claude.exe`]: '' }, { Path: 'C:\\Windows' })
@@ -149,7 +149,7 @@ test("Windows: Codex's npm, pnpm and yarn shims start node with codex.js first: 
   assert.equal(resolve('codex', args, installer).file, `${ANN}\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe`)
 })
 
-test("Windows: a batch file Crew can't see through, or no program at all, fails with a reason instead of going through cmd.exe", () => {
+test("Windows: a batch file CLIque can't see through, or no program at all, fails with a reason instead of going through cmd.exe", () => {
   const odd = win({ [`${NPM}\\claude.cmd`]: '@echo off\r\ncall "%~dp0\\setup.bat"\r\nstart claude-real\r\n' })
   assert.throws(() => resolve('claude', [], odd), /claude\.cmd is a batch file, which Windows can't start with these arguments intact/)
   const loop = win({ [`${NPM}\\codex.cmd`]: '@"%~dp0\\codex.cmd" %*\r\n' })
@@ -159,7 +159,7 @@ test("Windows: a batch file Crew can't see through, or no program at all, fails 
 })
 
 test('macOS: a command is still the first runnable file on PATH, and one that is nowhere stays its name', { skip: process.platform === 'win32' && 'POSIX paths' }, () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-launch-'))
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-launch-'))
   fs.writeFileSync(path.join(tmp, 'claude'), '#!/bin/sh\n', { mode: 0o755 })
   fs.writeFileSync(path.join(tmp, 'codex'), '', { mode: 0o644 })
   const PATH = `/nowhere:${tmp}`
@@ -171,16 +171,16 @@ test('macOS: a command is still the first runnable file on PATH, and one that is
 
 // ---- what the CLIs are given --------------------------------------------------------------------------------
 
-const BIN = 'C:\\Program Files\\Crew\\resources\\app.asar.unpacked\\desktop\\bin'
-const HOOK_EXE = `${BIN}\\win32-${process.arch === 'arm64' ? 'arm64' : 'x64'}\\crew-hook.exe`
+const BIN = 'C:\\Program Files\\CLIque\\resources\\app.asar.unpacked\\desktop\\bin'
+const HOOK_EXE = `${BIN}\\win32-${process.arch === 'arm64' ? 'arm64' : 'x64'}\\clique-hook.exe`
 const agent = {
   name: 'iris.2', cloneOf: 'iris', area: 'the API: routes, "auth" & rate limits | 100% covered', model: 'opus', effort: 'high',
   prompt: `Keep PRs small.\nRun "npm test" before you push & never force-push.\n${'Write tests first; keep the API stable. '.repeat(40)}`,
   images: ['C:\\Users\\Ann Lee\\Pictures\\api flow.png'],
 }
 
-test('Windows: Claude Code starts every hook as crew-hook.exe with its arguments and no shell, whatever shell Windows has', () => {
-  const claude = adapters.claude(agent, { session: 's', attachments: `${ANN}\\.crew\\attachments`, platform: 'win32', bin: BIN })
+test('Windows: Claude Code starts every hook as clique-hook.exe with its arguments and no shell, whatever shell Windows has', () => {
+  const claude = adapters.claude(agent, { session: 's', attachments: `${ANN}\\.clique\\attachments`, platform: 'win32', bin: BIN })
   const settings = JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
   const hooks = Object.values(settings.hooks).flat().flatMap((h) => h.hooks)
   assert.ok(hooks.every((h) => h.type === 'command' && h.command === HOOK_EXE && Array.isArray(h.args)), 'exec form: no Git Bash or PowerShell in between')
@@ -189,22 +189,22 @@ test('Windows: Claude Code starts every hook as crew-hook.exe with its arguments
   assert.deepEqual(settings.hooks.PreToolUse[1], { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: HOOK_EXE, args: ['lease'], timeout: 5 }] })
   assert.deepEqual(settings.hooks.PreToolUse.map((h) => h.matcher), ['Agent|Task', 'Edit|Write|MultiEdit|NotebookEdit'])
   // the status line always goes through a shell: a bare name means the same in Git Bash and PowerShell
-  assert.deepEqual(settings.statusLine, { type: 'command', command: 'crew-status', padding: 0 })
-  assert.deepEqual(settings.permissions, { allow: ['Bash(crew *)', 'PowerShell(crew *)'], deny: ['SendMessage'] }, 'crew runs from the PowerShell tool unasked too')
+  assert.deepEqual(settings.statusLine, { type: 'command', command: 'clique-status', padding: 0 })
+  assert.deepEqual(settings.permissions, { allow: ['Bash(clique *)', 'PowerShell(clique *)'], deny: ['SendMessage'] }, 'clique runs from the PowerShell tool unasked too')
 })
 
-test('Windows: Codex runs its hooks through PowerShell or cmd, so each is a bare crew-hook command that reads the same in both', () => {
+test('Windows: Codex runs its hooks through PowerShell or cmd, so each is a bare clique-hook command that reads the same in both', () => {
   const codex = adapters.codex(agent, { resume: 'r', platform: 'win32' })
   const hooks = codex.args.filter((x) => x.startsWith('hooks.')).map((x) => [x.slice(6, x.indexOf('=')), [...x.matchAll(/command="([^"]*)"/g)].map((m) => m[1])])
   assert.deepEqual(Object.fromEntries(hooks), {
-    SessionStart: ['crew-hook hook'], UserPromptSubmit: ['crew-hook hook'], PostToolUse: ['crew-hook hook'], Stop: ['crew-hook hook'], Interrupt: ['crew-hook hook'],
-    PermissionRequest: [`crew-hook ask ${ASK_WAIT.codex - 10}`], PreToolUse: ['crew-hook lease'],
+    SessionStart: ['clique-hook hook'], UserPromptSubmit: ['clique-hook hook'], PostToolUse: ['clique-hook hook'], Stop: ['clique-hook hook'], Interrupt: ['clique-hook hook'],
+    PermissionRequest: [`clique-hook ask ${ASK_WAIT.codex - 10}`], PreToolUse: ['clique-hook lease'],
   })
   assert.match(codex.args.find((x) => x.startsWith('hooks.PermissionRequest=')), new RegExp(`timeout=${ASK_WAIT.codex},statusMessage=`))
 })
 
 test("Windows: the arguments survive CreateProcess, as node-pty's ConPTY hands them over, and fit Windows' 32767 characters", () => {
-  for (const [cli, opts] of [['claude', { session: 's', attachments: `${ANN}\\.crew\\attachments` }], ['codex', { resume: 'r' }]]) {
+  for (const [cli, opts] of [['claude', { session: 's', attachments: `${ANN}\\.clique\\attachments` }], ['codex', { resume: 'r' }]]) {
     const { file, args } = adapters[cli](agent, { ...opts, platform: 'win32', bin: BIN })
     const launched = resolve(file, args, win({ [`${ANN}\\.local\\bin\\claude.exe`]: '', [`${ANN}\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe`]: '' }))
     const line = argsToCommandLine(launched.file, launched.args)
@@ -221,13 +221,13 @@ test('macOS: the hooks and status line are what they always were', () => {
   const settings = JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
   assert.match(settings.hooks.Stop[0].hooks[0].command, /^p=\$\(cat\); printf '%s' "\$p" \| curl -sf -m 2 /)
   assert.equal(settings.hooks.Stop[0].hooks[0].args, undefined)
-  assert.deepEqual(settings.permissions.allow, ['Bash(crew *)'])
+  assert.deepEqual(settings.permissions.allow, ['Bash(clique *)'])
   assert.match(adapters.codex({ name: 'm' }, { platform: 'darwin' }).args.find((x) => x.startsWith('hooks.Stop=')), /curl -sf -m 2 /)
 })
 
-test("a codex on PATH that isn't a program the system can start leaves Codex's models unknown, and Crew running", async () => {
+test("a codex on PATH that isn't a program the system can start leaves Codex's models unknown, and CLIque running", async () => {
   const { discoverCodex } = await import('../core/providers.js')
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-broken-codex-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-broken-codex-'))
   // an empty codex.exe on Windows; a file marked executable that isn't a program, elsewhere
   fs.writeFileSync(path.join(dir, process.platform === 'win32' ? 'codex.exe' : 'codex'), '\0\0\0\0', { mode: 0o755 })
   const key = pathKey()

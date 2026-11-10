@@ -210,7 +210,7 @@ export function pillWindow(overlay, screen, { hatch = () => null, onDock = () =>
         told(wasDocked)
       }
     },
-    // Back in the hatch as Crew starts, where you left it (the point onDock was told).
+    // Back in the hatch as CLIque starts, where you left it (the point onDock was told).
     dock(point = null) {
       const h = hatch(point)
       if (h) dockIn(h)

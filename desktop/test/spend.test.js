@@ -1,5 +1,5 @@
-// What the crew's work costs: Claude Code's running total from its status line, Codex's tokens from its log, counted
-// per agent, task and hour, never twice. Against the real Hub with a fake runner in a throwaway CREW_HOME. Run with
+// What the clique's work costs: Claude Code's running total from its status line, Codex's tokens from its log, counted
+// per agent, task and hour, never twice. Against the real Hub with a fake runner in a throwaway CLIQUE_HOME. Run with
 // `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -8,10 +8,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-spend-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-spend-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { spentFrom, codexSpent } = await import('../core/context.js')
-const at = (f) => path.join(process.env.CREW_HOME, f)
+const at = (f) => path.join(process.env.CLIQUE_HOME, f)
 
 class FakeRunner extends EventEmitter {
   live = new Set()
@@ -38,14 +38,14 @@ const quiet = () => {
   for (const t of ['statsTimer', 'convoTimer', 'spendTimer', 'ticketsTimer', 'usageTimer']) clearTimeout(hub[t])
 }
 afterEach(quiet)
-// Crew quits (saving what it knows, as Crew.close does) and starts again.
+// CLIque quits (saving what it knows, as Clique.close does) and starts again.
 const restart = () => {
   hub.saveStats()
   hub.saveSpend(true)
   quiet()
   return newHub()
 }
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const line = (name, session, cost, added = 0, removed = 0) =>
   hub.onStatusLine(name, { session_id: session, cost: { total_cost_usd: cost, total_lines_added: added, total_lines_removed: removed, total_api_duration_ms: cost * 1000 } })
@@ -84,7 +84,7 @@ test('a task gets what its conversation spent on it, and a clone counts as its o
   assert.equal(hub.tickets.get(t.id).spent.cost, 2.5, "the clone's conversation isn't on that task")
 })
 
-test('nothing is counted twice: a counter that starts over, a restarted CLI, a resumed session Crew never saw', () => {
+test('nothing is counted twice: a counter that starts over, a restarted CLI, a resumed session CLIque never saw', () => {
   line('noor', 's1', 1.0)
   line('noor', 's1', 0.3) // /clear or the like: its counter started over
   near(stats('noor').cost, 1.3)
@@ -97,13 +97,13 @@ test('nothing is counted twice: a counter that starts over, a restarted CLI, a r
   noor.run = 'run-3'
   line('noor', 's1', 0.2)
   near(stats('noor').cost, 2.1)
-  // a session from before Crew counted spend, resumed: from here on
+  // a session from before CLIque counted spend, resumed: from here on
   noor.run = 'run-4'
   noor.resumed = true
   line('noor', 'old', 40)
   line('noor', 'old', 41)
   near(stats('noor').cost, 3.1)
-  // after a restart of Crew, what it saw is still known
+  // after a restart of CLIque, what it saw is still known
   restart()
   hub.agents.get('noor').run = 'run-4'
   line('noor', 'old', 42)
@@ -124,7 +124,7 @@ test('Codex agents count the tokens in their session log', () => {
   assert.equal(s.cost, 0)
 })
 
-test("today against what's usual by now, on the days the crew spent anything", () => {
+test("today against what's usual by now, on the days the clique spent anything", () => {
   const day = (n) => new Date(Date.now() - n * 864e5 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
   const flat = (perHour) => Array(24).fill(perHour)
   hub.spend.hours = { [day(1)]: flat(1), [day(2)]: flat(2), [day(3)]: flat(3), [day(40)]: flat(100) } // 40 days ago is too old

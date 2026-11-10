@@ -6,7 +6,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import type { FeedEntry, Reply } from '@/net/types'
-import { useCrew, useDerived } from '@/state/hooks'
+import { useClique, useDerived } from '@/state/hooks'
 import { AskCard, AskSummary, askVerb } from '@/ui/ask'
 import { agentColor } from '@/ui/avatar'
 import { Creature, MotionContext } from '@/ui/creature'
@@ -62,7 +62,7 @@ function Ask({ t, e, d, answer, disabled }: { t: Theme; e: FeedEntry; d: ReturnT
 export default function NeedsScreen() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
-  const { client, link, state } = useCrew()
+  const { client, link, state } = useClique()
   const d = useDerived(state)
   const focused = useIsFocused()
   const active = useAppActive()

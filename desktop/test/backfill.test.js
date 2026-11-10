@@ -1,5 +1,5 @@
-// The look back: what the crew's work cost before Crew counted it, read from the agents' own logs (core/backfill.js),
-// added to the stats once, and never counted again by the live count. Fixture transcripts in a throwaway CREW_HOME;
+// The look back: what the clique's work cost before CLIque counted it, read from the agents' own logs (core/backfill.js),
+// added to the stats once, and never counted again by the live count. Fixture transcripts in a throwaway CLIQUE_HOME;
 // the merge against the real Hub with a fake runner. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -8,11 +8,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-backfill-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-backfill-'))
 process.env.PATH = '/usr/bin:/bin' // no codex to discover: Hub.start would look its models up after the test is over
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { lookBack, costOf, taskOf } = await import('../core/backfill.js')
-const root = process.env.CREW_HOME
+const root = process.env.CLIQUE_HOME
 const near = (x, y) => assert.ok(Math.abs(x - y) < 1e-9, `${x} ≈ ${y}`)
 const HOUR = 3600000
 
@@ -28,9 +28,9 @@ test('a response priced at list price: cache writes by their lifetime, fast mode
 })
 
 test("a task's brief opens its conversation; one that lives on another computer isn't this one's", () => {
-  assert.equal(taskOf('<pasted_content id="1">\n[bug #14] Arabic iOS: titles sit left\n…\nThen run: crew task done 14 "what was wrong"'), 14)
+  assert.equal(taskOf('<pasted_content id="1">\n[bug #14] Arabic iOS: titles sit left\n…\nThen run: clique task done 14 "what was wrong"'), 14)
   assert.equal(taskOf('[feature #2] Daily copy'), 2)
-  assert.equal(taskOf('[bug #12] Jump\nThen run: crew task done 12@laptop "…"'), null)
+  assert.equal(taskOf('[bug #12] Jump\nThen run: clique task done 12@laptop "…"'), null)
   assert.equal(taskOf('build option C of the hole card'), null)
 })
 
@@ -50,7 +50,7 @@ const project = path.join(claude, '-code-app')
 write(path.join(project, 's-noor.jsonl'), [
   JSON.stringify({ type: 'custom-title', customTitle: 'noor', sessionId: 's-noor' }),
   JSON.stringify({ type: 'agent-name', agentName: 'noor', sessionId: 's-noor' }),
-  JSON.stringify({ type: 'user', timestamp: ts(5 * HOUR), message: { role: 'user', content: '<pasted_content id="a">\n[bug #7] Coins reset after level 2\nThen run: crew task done 7 "…"' } }),
+  JSON.stringify({ type: 'user', timestamp: ts(5 * HOUR), message: { role: 'user', content: '<pasted_content id="a">\n[bug #7] Coins reset after level 2\nThen run: clique task done 7 "…"' } }),
   response(1, 5 * HOUR, out(50000)), // $1 of output
   response(1, 5 * HOUR, out(50000)), // the same response, streamed as another line
   response(2, 4 * HOUR, out(100000)), // $2
@@ -60,22 +60,22 @@ write(path.join(project, 's-noor.jsonl'), [
 write(path.join(project, 's-noor', 'subagents', 'agent-x.jsonl'), [response(4, 3 * HOUR, out(25000))]) // $0.50
 // a clone's session: counts as noor's, and isn't about a task
 write(path.join(project, 's-noor2.jsonl'), [JSON.stringify({ type: 'agent-name', agentName: 'noor.2' }), JSON.stringify({ type: 'user', message: { content: 'also fix the footer' } }), response(5, 2 * HOUR, out(50000))])
-// your own session with a name, and one without: not the crew's
+// your own session with a name, and one without: not the clique's
 write(path.join(project, 's-you.jsonl'), [JSON.stringify({ type: 'agent-name', agentName: 'caddy feature ui' }), response(6, HOUR, out(1e6))])
 write(path.join(project, 's-anon.jsonl'), [response(7, HOUR, out(1e6))])
-// Codex: the crew prompt names the agent; running totals, one of which starts over
+// Codex: the clique prompt names the agent; running totals, one of which starts over
 const tokens = (ago, total) => JSON.stringify({ timestamp: ts(ago), type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { total_tokens: total } } } })
 write(path.join(codex, '2026', '10', '07', 'rollout-2026-10-07T21-20-13-01a118e1-cbb7-79f1-86de-171129cfb460.jsonl'), [
   JSON.stringify({ type: 'session_meta', payload: { id: '01a118e1-cbb7-79f1-86de-171129cfb460', model: 'gpt-6.1-sol' } }),
   JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'You are "eli", one of several AI agents working side by side…' }] } }),
-  JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '[task #9] Release notes\nThen run: crew task done 9 "…"' }] } }),
+  JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '[task #9] Release notes\nThen run: clique task done 9 "…"' }] } }),
   tokens(3 * HOUR, 10000), tokens(2 * HOUR, 25000), tokens(HOUR, 4000), // 10k, 15k, then a restart: 4k
 ])
 write(path.join(codex, '2026', '10', '07', 'rollout-2026-10-07T22-00-00-99999999-cbb7-79f1-86de-171129cfb460.jsonl'), [
   JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'You are "stranger", one of several AI agents' }] } }), tokens(HOUR, 999999),
 ])
 
-test("the look back finds the crew's sessions, counts each response once, and leaves everything else alone", async () => {
+test("the look back finds the clique's sessions, counts each response once, and leaves everything else alone", async () => {
   const r = await lookBack({ claude: [claude], codex, names: ['noor', 'eli'], since: now - 30 * 864e5, until: now })
   const sum = (days, k) => Object.values(days ?? {}).reduce((s, d) => s + d[k], 0)
   near(sum(r.agents.noor, 'cost'), 1 + 2 + 0.5 + 1) // the session, its sub-agent and the clone
@@ -140,16 +140,16 @@ test('while the look back runs, a session that was already going counts from her
   hub.startedAt = Date.now() - 1000
   hub.lookingBack = true
   const noor = hub.agents.get('noor')
-  noor.run = 'adopted' // picked up from the terminal host: no launch by this Crew
+  noor.run = 'adopted' // picked up from the terminal host: no launch by this CLIque
   line('noor', 'old', 12)
   line('noor', 'old', 12.5)
   near(stats('noor').cost, 0.5)
-  Object.assign(noor, { run: 'fresh', launchedAt: Date.now() }) // started by this Crew
+  Object.assign(noor, { run: 'fresh', launchedAt: Date.now() }) // started by this CLIque
   line('noor', 'new', 0.3)
   near(stats('noor').cost, 0.8)
 })
 
-test("it looks back once: a Crew that already did doesn't again", () => {
+test("it looks back once: a CLIque that already did doesn't again", () => {
   hub.spend.lookedBack = { at: Date.now() }
   let looked = false
   hub.lookBack = () => (looked = true)

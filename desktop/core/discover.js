@@ -1,7 +1,7 @@
 // Nearby: the other computers on this network that have Computers open too, so linking one is a click instead of a code
 // to copy across. While the sheet is open, each computer says who it is (a beacon, broadcast on the local network every
 // second and a half) and listens for the others'. A beacon has nothing secret in it: a name, how many agents, the port
-// Crew Link listens on and its certificate's fingerprint. Linking still takes a person at both computers, who checks
+// CLIque Link listens on and its certificate's fingerprint. Linking still takes a person at both computers, who checks
 // that both show the same code (core/link.js, PairClient). Tailscale doesn't carry broadcasts: there, it's a code.
 // No Electron in here.
 import { EventEmitter } from 'node:events'
@@ -9,13 +9,13 @@ import crypto from 'node:crypto'
 import dgram from 'node:dgram'
 import os from 'node:os'
 
-export const DISCOVER_PORT = 7789 // UDP; Crew Link is TCP 7787 and phones TCP 7788
+export const DISCOVER_PORT = 7789 // UDP; CLIque Link is TCP 7787 and phones TCP 7788
 const EVERY = 1500
 const GONE = 5000 // a computer whose beacons stop (its sheet closed, it slept, it left the Wi-Fi) leaves the list
 const TAILSCALE = /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./
 
 // Where beacons go: each network's own broadcast address (192.168.0.255 on 192.168.0.x/24), Tailscale's left out, and
-// 255.255.255.255, which macOS refuses outright when it keeps Crew off the local network (that's how it's told).
+// 255.255.255.255, which macOS refuses outright when it keeps CLIque off the local network (that's how it's told).
 export function broadcastTargets({ interfaces = os.networkInterfaces(), port = DISCOVER_PORT } = {}) {
   const out = new Set()
   for (const list of Object.values(interfaces)) {
@@ -146,7 +146,7 @@ export class Discovery extends EventEmitter {
     const key = `${m.id.slice(0, 32)}|${m.fingerprint}`
     if (m.bye) return void (this.found.delete(key) && this.emit('change'))
     if (typeof m.name !== 'string' || !Number.isInteger(m.port)) return
-    if (m.fingerprint === this.beacon().fingerprint) return // this computer, as another copy of Crew (the dev one and the installed one)
+    if (m.fingerprint === this.beacon().fingerprint) return // this computer, as another copy of CLIque (the dev one and the installed one)
     if (!this.found.has(key) && this.found.size >= 32) return // a network flooded with made-up computers: the first ones stay
     const was = this.found.get(key)
     const next = { id: key, name: m.name.slice(0, 64), platform: String(m.platform ?? '').slice(0, 16), agents: Number(m.agents) || 0, port: m.port, fingerprint: m.fingerprint, address: from.address, seen: this.now() }

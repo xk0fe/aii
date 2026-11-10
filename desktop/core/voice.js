@@ -1,9 +1,9 @@
 // Voice input for the chat, through a small helper that turns speech into text on this computer: on macOS Apple's
-// on-device dictation (native/crew-voice.swift), on Windows whisper.cpp with a speech model that ships with Crew
-// (native/windows/CrewVoice). Both speak the same protocol (top of crew-voice.swift). The chat window streams
+// on-device dictation (native/clique-voice.swift), on Windows whisper.cpp with a speech model that ships with CLIque
+// (native/windows/CliqueVoice). Both speak the same protocol (top of clique-voice.swift). The chat window streams
 // 16 kHz microphone audio in; what the helper hears comes back as events for that window. Speech never leaves the
-// computer, and it works the same on a computer linked to another one's crew, since dictation only fills in your
-// message. An installed Crew carries the helper ready-built (scripts/build-voice.mjs); a source checkout on a Mac
+// computer, and it works the same on a computer linked to another one's clique, since dictation only fills in your
+// message. An installed CLIque carries the helper ready-built (scripts/build-voice.mjs); a source checkout on a Mac
 // builds it on first use.
 // No Electron in here: main.js hands over the few Electron pieces it needs (see voiceActions).
 import { execFile, spawn } from 'node:child_process'
@@ -11,7 +11,7 @@ import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
 
-// where you let Crew use the microphone
+// where you let CLIque use the microphone
 const SETTINGS = {
   darwin: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
   win32: 'ms-settings:privacy-microphone',
@@ -22,15 +22,15 @@ export class Voice extends EventEmitter {
   building = null
   seq = 0
 
-  // root: Crew's folder. binary: the helper that came with Crew, when it did (args: what goes before the locale,
+  // root: CLIque's folder. binary: the helper that came with CLIque, when it did (args: what goes before the locale,
   // for a helper that's a script). mayAskPermission: running from an app bundle that explains speech recognition in
   // its Info.plist (CLIque.app); only macOS before 26 asks for that.
   constructor({ root, binary, args = [], mayAskPermission = false }) {
     super()
-    this.source = path.join(root, 'native', 'crew-voice.swift')
+    this.source = path.join(root, 'native', 'clique-voice.swift')
     this.shipped = Boolean(binary)
     this.compiles = !binary && process.platform === 'darwin' // builds its own helper from the Swift source
-    this.binary = binary ?? path.join(root, 'dist', ...(process.platform === 'win32' ? ['voice', `win-${process.arch}`, 'crew-voice.exe'] : ['crew-voice']))
+    this.binary = binary ?? path.join(root, 'dist', ...(process.platform === 'win32' ? ['voice', `win-${process.arch}`, 'clique-voice.exe'] : ['clique-voice']))
     this.args = args
     this.mayAskPermission = mayAskPermission
   }
@@ -38,7 +38,7 @@ export class Voice extends EventEmitter {
   built = () => fs.existsSync(this.binary) && (!this.compiles || fs.statSync(this.binary).mtimeMs >= fs.statSync(this.source).mtimeMs)
 
   // Compiles the helper when it's missing or older than its source (a few seconds, once). Only a source checkout
-  // on a Mac does: an installed Crew has it, and on Windows scripts/build-voice.mjs makes it.
+  // on a Mac does: an installed CLIque has it, and on Windows scripts/build-voice.mjs makes it.
   ensureBinary() {
     if (this.built()) return Promise.resolve(this.binary)
     if (this.shipped) return Promise.reject(new Error('Voice input is missing from this copy of CLIque. Installing CLIque again brings it back.'))
@@ -160,7 +160,7 @@ export class Voice extends EventEmitter {
   }
 }
 
-// The crew.call() actions behind the chat's mic button. main.js passes Electron's systemPreferences and shell,
+// The clique.call() actions behind the chat's mic button. main.js passes Electron's systemPreferences and shell,
 // and a send(event) that reaches every window (each composer only listens to the session it started).
 export function voiceActions({ voice, systemPreferences, shell, send, platform = process.platform }) {
   voice.on('event', send)

@@ -24,7 +24,7 @@ export function threadFields(entry, parent) {
   if (!TALK.has(entry.kind)) return {}
   if (entry.thread) return { thread: entry.thread }
   if (!parent) return {}
-  // said in another channel than what led to it (crew post): it's that channel's, as a line of its own
+  // said in another channel than what led to it (clique post): it's that channel's, as a line of its own
   if ('channel' in entry && (entry.channel ?? null) !== (parent.channel ?? null)) return {}
   const answersYou = entry.kind === 'reply' && !inThread(parent) && (parent.from === 'you' || (parent.kind === 'ask' && parent.to === 'you'))
   const out = entry.from === 'you' || entry.kind === 'ask' || entry.held || answersYou

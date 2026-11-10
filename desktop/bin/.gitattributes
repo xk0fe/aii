@@ -1,5 +1,5 @@
 # These run in sh (Git Bash on Windows) and cmd, which want their own line endings whatever a checkout prefers.
 * text eol=lf
 *.cmd text eol=crlf
-# Windows' crew.exe and co. (native/crew-shim.c), committed as built: bytes, never line endings
+# Windows' clique.exe and co. (native/clique-shim.c), committed as built: bytes, never line endings
 *.exe binary

@@ -9,48 +9,48 @@ import path from 'node:path'
 import { toolsDir } from './launch.js'
 import { SPOOL_MAX } from './keep.js'
 
-// Where the hub is, read from CREW_HOME on every call: Crew's address and token change each time it starts, and an agent
-// can outlive a Crew (its CLI keeps running in the terminal host while Crew relaunches), so what it was started with
-// can be out of date. Every workspace's agents talk to the one Crew, saying which workspace they're in (CREW_WORKSPACE,
+// Where the hub is, read from CLIQUE_HOME on every call: CLIque's address and token change each time it starts, and an agent
+// can outlive a CLIque (its CLI keeps running in the terminal host while CLIque relaunches), so what it was started with
+// can be out of date. Every workspace's agents talk to the one CLIque, saying which workspace they're in (CLIQUE_WORKSPACE,
 // none for ROOT: core/workspaces.js).
-const TOKEN = '-H "X-Crew: $(cat "$CREW_HOME/token" 2>/dev/null)" -H "X-Crew-Workspace: $CREW_WORKSPACE"'
-const HUB = (route) => `"$(cat "$CREW_HOME/url" 2>/dev/null)/${route}/$CREW_AGENT"`
-// The agent's workspace's folder for hook events Crew wasn't there to take (Hub.at('spool')).
-const SPOOL = '$CREW_HOME${CREW_WORKSPACE:+/workspaces/$CREW_WORKSPACE}/spool'
-// Every hook forwards its JSON payload to the crew hub, which turns it into status + feed entries. With Crew closed it
-// goes to the spool, one line each, and Crew replays it when it's back (Hub.replaySpool). A spool past SPOOL_MAX
+const TOKEN = '-H "X-Clique: $(cat "$CLIQUE_HOME/token" 2>/dev/null)" -H "X-Clique-Workspace: $CLIQUE_WORKSPACE"'
+const HUB = (route) => `"$(cat "$CLIQUE_HOME/url" 2>/dev/null)/${route}/$CLIQUE_AGENT"`
+// The agent's workspace's folder for hook events CLIque wasn't there to take (Hub.at('spool')).
+const SPOOL = '$CLIQUE_HOME${CLIQUE_WORKSPACE:+/workspaces/$CLIQUE_WORKSPACE}/spool'
+// Every hook forwards its JSON payload to the clique hub, which turns it into status + feed entries. With CLIque closed it
+// goes to the spool, one line each, and CLIque replays it when it's back (Hub.replaySpool). A spool past SPOOL_MAX
 // (core/keep.js) becomes <agent>.jsonl.1, the one before going, and a new one starts: the newest events are kept. It's
 // moved aside under the hook's own name first (one hook alone can take it), and only then over .1 if it's the full one:
 // another hook may have just started a new spool, which then goes back where it was. Whatever happens, the event lands.
 const SPOOL_K = `${SPOOL_MAX / 1024}k`
 const ROTATE = `{ [ -z "$(find "$f" -size +${SPOOL_K})" ] || ! mv "$f" "$f.$$" || { [ -n "$(find "$f.$$" -size +${SPOOL_K})" ] && mv -f "$f.$$" "$f.1"; } || { cat "$f.$$" >> "$f"; rm -f "$f.$$"; }; }`
-const HOOK = `p=$(cat); printf '%s' "$p" | curl -sf -m 2 -X POST ${TOKEN} --data-binary @- ${HUB('hook')} >/dev/null 2>&1 || { f="${SPOOL}/$CREW_AGENT.jsonl"; mkdir -p "${SPOOL}" && { ${ROTATE}; printf '%s\\n' "$(printf '%s' "$p" | tr '\\n' ' ')" >> "$f"; }; } 2>/dev/null || true`
+const HOOK = `p=$(cat); printf '%s' "$p" | curl -sf -m 2 -X POST ${TOKEN} --data-binary @- ${HUB('hook')} >/dev/null 2>&1 || { f="${SPOOL}/$CLIQUE_AGENT.jsonl"; mkdir -p "${SPOOL}" && { ${ROTATE}; printf '%s\\n' "$(printf '%s' "$p" | tr '\\n' ' ')" >> "$f"; }; } 2>/dev/null || true`
 // Permission prompts, questions and plan approvals: the hook waits for your answer in the chat and prints it as
-// its decision. No answer (Crew gone, an error, handed to the terminal, time's up) prints nothing, and the agent
+// its decision. No answer (CLIque gone, an error, handed to the terminal, time's up) prints nothing, and the agent
 // asks as usual. curl gives up 10 s before the agent would kill the hook, so the hook always ends cleanly.
 const ASK = (seconds) => `curl -sf -m ${seconds - 10} -X POST ${TOKEN} --data-binary @- ${HUB('ask')} 2>/dev/null || true`
-// Before a file tool writes: is the file free, or is a teammate editing it? Crew prints a deny decision when it's taken,
-// nothing when it's free (or when Crew isn't there to ask).
+// Before a file tool writes: is the file free, or is a teammate editing it? CLIque prints a deny decision when it's taken,
+// nothing when it's free (or when CLIque isn't there to ask).
 const LEASE = `curl -sf -m 3 -X POST ${TOKEN} --data-binary @- ${HUB('lease')} 2>/dev/null || true`
-// On Windows the hooks are bin/win32-<arch>/crew-hook.exe (bin/crew.mjs) instead, which does what these do. Claude Code
+// On Windows the hooks are bin/win32-<arch>/clique-hook.exe (bin/clique.mjs) instead, which does what these do. Claude Code
 // runs a hook through Git Bash when it's installed and PowerShell when it isn't, so its hooks name the program and its
 // arguments, which Claude Code starts with no shell at all (a hook with args, Claude Code 2.1.139 or later). Codex runs a
-// hook through PowerShell (or cmd), and both find crew-hook on the agent's PATH (core/launch.js withTools).
+// hook through PowerShell (or cmd), and both find clique-hook on the agent's PATH (core/launch.js withTools).
 const POSIX = { hook: () => HOOK, ask: ASK, lease: () => LEASE }
 const claudeHook = (kind, seconds, { platform, bin }) =>
   platform === 'win32'
-    ? { type: 'command', command: path.win32.join(toolsDir(bin, { platform }), 'crew-hook.exe'), args: [kind, ...(seconds ? [String(seconds - 10)] : [])] }
+    ? { type: 'command', command: path.win32.join(toolsDir(bin, { platform }), 'clique-hook.exe'), args: [kind, ...(seconds ? [String(seconds - 10)] : [])] }
     : { type: 'command', command: POSIX[kind](seconds) }
-const codexHook = (kind, seconds, { platform }) => (platform === 'win32' ? `crew-hook ${kind}${seconds ? ` ${seconds - 10}` : ''}` : POSIX[kind](seconds))
+const codexHook = (kind, seconds, { platform }) => (platform === 'win32' ? `clique-hook ${kind}${seconds ? ` ${seconds - 10}` : ''}` : POSIX[kind](seconds))
 // How long each CLI's hook waits, in seconds. Claude shows its own dialog meanwhile (answer in either place), so
 // it can wait a day. Codex shows nothing until the hook is done: after half an hour it asks in its terminal.
 export const ASK_WAIT = { claude: 86400, codex: 1800 }
 const CLAUDE_WAIT = ASK_WAIT.claude
 const CODEX_WAIT = ASK_WAIT.codex
-// Claude Code's status line tells Crew how full the context is (bin/crew-status). Yours keeps showing if you
+// Claude Code's status line tells CLIque how full the context is (bin/clique-status). Yours keeps showing if you
 // have one: it would otherwise be replaced by the one given on the command line. A status line always goes through a
-// shell, so on Windows it's the name alone, which Git Bash and PowerShell both find on PATH: crew-status.exe.
-const STATUS_LINE = 'crew-status'
+// shell, so on Windows it's the name alone, which Git Bash and PowerShell both find on PATH: clique-status.exe.
+const STATUS_LINE = 'clique-status'
 function userStatusLine() {
   try {
     const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
@@ -61,55 +61,55 @@ function userStatusLine() {
   }
 }
 
-// checks: what to check before building something (Hub.checksFor): 'full' (the board, PRs and branches), 'busy' (crew busy),
+// checks: what to check before building something (Hub.checksFor): 'full' (the board, PRs and branches), 'busy' (clique busy),
 // or 'none' (it works alone).
 const BUILD_CHECK = {
-  full: `- Before you build something, check that nobody is building it already: crew board, open PRs, and branches or
-  worktrees named for it. If someone is (a teammate, a clone, another session), don't start a second build: crew ask
+  full: `- Before you build something, check that nobody is building it already: clique board, open PRs, and branches or
+  worktrees named for it. If someone is (a teammate, a clone, another session), don't start a second build: clique ask
   them, or ask the user which one goes ahead.
 `,
-  busy: `- Before you build something, run crew busy to see what your teammates are on. If one of them (or a clone) is
-  building it already, don't start a second build: crew ask them, or ask the user which one goes ahead.
+  busy: `- Before you build something, run clique busy to see what your teammates are on. If one of them (or a clone) is
+  building it already, don't start a second build: clique ask them, or ask the user which one goes ahead.
 `,
   none: '',
 }
-const prompt = (a, checks = 'full') => `You are "${a.cloneOf ?? a.name}", one of several AI agents working side by side in terminals as a crew, coordinated by the user.${
-  a.cloneOf ? `\nThis copy of ${a.cloneOf} is its clone "${a.name}": ${a.cloneOf} was busy, so Crew started you to take on another task at the same time. Teammates reach you as ${a.name}, and your own work counts as ${a.cloneOf}'s. Other copies of ${a.cloneOf} may be working in the same folder right now: stick to your task, and leave changes you didn't make alone.` : ''
+const prompt = (a, checks = 'full') => `You are "${a.cloneOf ?? a.name}", one of several AI agents working side by side in terminals as a clique, coordinated by the user.${
+  a.cloneOf ? `\nThis copy of ${a.cloneOf} is its clone "${a.name}": ${a.cloneOf} was busy, so CLIque started you to take on another task at the same time. Teammates reach you as ${a.name}, and your own work counts as ${a.cloneOf}'s. Other copies of ${a.cloneOf} may be working in the same folder right now: stick to your task, and leave changes you didn't make alone.` : ''
 }
 Your area: ${a.area || 'general'}.
 Stay inside your area. When work belongs to a teammate's area, hand it off instead of doing it yourself.
-Crew commands (run them in the shell):
-  crew who                  teammates, their areas and whether they are busy
-  crew ask <name> "<what>"  when you need something back from a teammate before you go on: an answer, or work done.
+CLIque commands (run them in the shell):
+  clique who                  teammates, their areas and whether they are busy
+  clique ask <name> "<what>"  when you need something back from a teammate before you go on: an answer, or work done.
                             It reaches them even mid-task and prints their answer, usually within a minute. If it
                             isn't in after ~2 minutes it says so: carry on, and the answer comes to you anyway.
-  crew answer "<answer>"    answer a teammate's question right away, even in the middle of something, then carry on
-  crew wait                 keep waiting for the answers to what you asked
-  crew send <name> "<task>" hand work to a teammate for good: it's theirs now, and nothing comes back
-  crew lease <thing> "<why>" take something only one of you can use at a time before you use it: the simulator, a device,
+  clique answer "<answer>"    answer a teammate's question right away, even in the middle of something, then carry on
+  clique wait                 keep waiting for the answers to what you asked
+  clique send <name> "<task>" hand work to a teammate for good: it's theirs now, and nothing comes back
+  clique lease <thing> "<why>" take something only one of you can use at a time before you use it: the simulator, a device,
                             a dev server's port, a rate-limited API. If a teammate has it, it waits for it (up to ~2
                             minutes) and then says who has it
-  crew release [thing]      give it back when you're done (it also goes back when your turn ends with nothing running)
-  crew note "<fact>"        share context with everyone: decisions, interfaces, gotchas
-  crew channels             the channels here: who's in each, and its brief
-  crew post <channel> "<text>"  say it in that channel, whichever one you're working in (its name alone, no #). It takes
+  clique release [thing]      give it back when you're done (it also goes back when your turn ends with nothing running)
+  clique note "<fact>"        share context with everyone: decisions, interfaces, gotchas
+  clique channels             the channels here: who's in each, and its brief
+  clique post <channel> "<text>"  say it in that channel, whichever one you're working in (its name alone, no #). It takes
                             up nobody's turn unless you @name them, which hands it to them there
-  crew busy                 what each teammate is working on right now
-  crew board [words]        read the shared notes, or search them
-  crew task                 the Tasks board: list, show, done, note, add, decline (crew task help)
-  crew app                  change CLIque itself when the user asks: agents, channels, workspaces, linked computers
-                            (crew app help). Changes may wait for the user's OK: your command waits with them
-Crew keeps the crew from stalling. Its rules:
-- Need it back? crew ask. Never poll, sleep or loop waiting for a teammate, and never ask the same thing twice.
-- "[question from @name]": they're waiting on you. Answer with crew answer as soon as you can (mid-task is fine), then
-  carry on. If you don't, your final message is the answer. Either way it goes back by itself: never crew send it.
+  clique busy                 what each teammate is working on right now
+  clique board [words]        read the shared notes, or search them
+  clique task                 the Tasks board: list, show, done, note, add, decline (clique task help)
+  clique app                  change CLIque itself when the user asks: agents, channels, workspaces, linked computers
+                            (clique app help). Changes may wait for the user's OK: your command waits with them
+CLIque keeps the clique from stalling. Its rules:
+- Need it back? clique ask. Never poll, sleep or loop waiting for a teammate, and never ask the same thing twice.
+- "[question from @name]": they're waiting on you. Answer with clique answer as soon as you can (mid-task is fine), then
+  carry on. If you don't, your final message is the answer. Either way it goes back by itself: never clique send it.
 - "[from @name]": a hand-off, yours now. Don't send thanks, acknowledgements or "recorded" messages back.
-- If Crew turns down an ask because that teammate is waiting on you, answer them first with what you know.
-- If Crew says a teammate is editing a file, leave the file to them: do the rest, or crew ask them.
+- If CLIque turns down an ask because that teammate is waiting on you, answer them first with what you know.
+- If CLIque says a teammate is editing a file, leave the file to them: do the rest, or clique ask them.
 - Lease the simulator, a device or a port before you use it, and never take over one a teammate has: no killing their
   server or closing their simulator. Stop the servers and simulators you started once you're done with them.
-- crew send is for work you hand off. News goes in crew note: a busy teammate starts a clone for anything you send.
-- crew post is for what belongs in another channel than the one you were messaged in: your final message shows there.
+- clique send is for work you hand off. News goes in clique note: a busy teammate starts a clone for anything you send.
+- clique post is for what belongs in another channel than the one you were messaged in: your final message shows there.
 One builder per piece of work:
 ${BUILD_CHECK[checks] ?? BUILD_CHECK.full}- Work in your folder, on the branch checked out there, unless the user or your task asks for a branch. Never write
   in a worktree or branch someone else made, unless its owner handed it to you.
@@ -122,7 +122,7 @@ Image files listed in a message are attachments (screenshots, mockups, reference
 // TOML basic strings accept JSON string escaping.
 const toml = (s) => JSON.stringify(s)
 
-// platform and bin (where Crew's bin/ is) say how the hooks reach Crew: see claudeHook.
+// platform and bin (where CLIque's bin/ is) say how the hooks reach CLIque: see claudeHook.
 export const TRUST = {
   // "Is this a project you created or one you trust? … ❯ No, exit  Yes, I trust this folder" (numbered "1. No, exit"
   // before 2.1.318), and no SessionStart until it's answered. The question itself has to be there: moving the
@@ -142,9 +142,9 @@ export const adapters = {
     const where = { platform, bin }
     const on = (matcher) => [{ ...(matcher && { matcher }), hooks: [claudeHook('hook', 0, where)] }]
     const settings = {
-      // Hand-offs go through `crew send` (queued, visible, approvable), so Claude's built-in peer messaging is off.
-      // On Windows the agent may run crew from PowerShell instead (Claude Code's PowerShell tool).
-      permissions: { allow: ['Bash(crew *)', ...(platform === 'win32' ? ['PowerShell(crew *)'] : [])], deny: ['SendMessage'] },
+      // Hand-offs go through `clique send` (queued, visible, approvable), so Claude's built-in peer messaging is off.
+      // On Windows the agent may run clique from PowerShell instead (Claude Code's PowerShell tool).
+      permissions: { allow: ['Bash(clique *)', ...(platform === 'win32' ? ['PowerShell(clique *)'] : [])], deny: ['SendMessage'] },
       hooks: {
         SessionStart: on(),
         UserPromptSubmit: on(),
@@ -164,7 +164,7 @@ export const adapters = {
     return {
       file: 'claude',
       trust: TRUST.claude,
-      env: { CREW_STATUS_LINE: userStatusLine() },
+      env: { CLIQUE_STATUS_LINE: userStatusLine() },
       args: [
         '--name', a.name,
         ...(a.model ? ['--model', a.model] : []),
@@ -195,13 +195,13 @@ export const adapters = {
         ...(a.model ? ['-m', a.model] : []),
         ...(a.effort ? ['-c', `model_reasoning_effort=${toml(a.effort)}`] : []),
         ...(a.tier ? ['-c', `service_tier=${toml(a.tier)}`] : []), // "fast" = fast mode
-        // `crew` talks to the hub over localhost: workspace-write (untrusted folders default to read-only) with network on.
+        // `clique` talks to the hub over localhost: workspace-write (untrusted folders default to read-only) with network on.
         ...(a.yolo ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true']),
         '-c', `developer_instructions=${toml(prompt(a, checks))}`,
         '-c', 'check_for_update_on_startup=false',
         ...events.flatMap((e) => ['-c', `hooks.${e}=[{hooks=[{type="command",command=${toml(codexHook('hook', 0, where))}}]}]`]),
         '-c', `hooks.PermissionRequest=${ask}`,
-        // one editor per file: apply_patch checks with Crew first (every tool comes through; only patches are looked at)
+        // one editor per file: apply_patch checks with CLIque first (every tool comes through; only patches are looked at)
         '-c', `hooks.PreToolUse=[{hooks=[{type="command",command=${toml(codexHook('lease', 0, where))},timeout=5}]}]`,
         // Command-line hooks would otherwise wait on a "trust these hooks" prompt every launch.
         '--dangerously-bypass-hook-trust',

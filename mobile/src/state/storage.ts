@@ -6,8 +6,8 @@ import { b64, unb64 } from '@/net/shared'
 import type { MacRecord } from '@/net/types'
 
 const OPTS: SecureStore.SecureStoreOptions = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY }
-const LIST = 'crew.macs'
-const keyName = (macId: string) => `crew.key.${macId.replace(/[^A-Za-z0-9._-]/g, '_')}`
+const LIST = 'clique.macs'
+const keyName = (macId: string) => `clique.key.${macId.replace(/[^A-Za-z0-9._-]/g, '_')}`
 
 export type Saved = { macs: MacRecord[]; active: string | null }
 

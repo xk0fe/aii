@@ -1,12 +1,12 @@
-// Crew's phone protocol (PROTOCOL.md): its names and numbers, pairing codes, and the encodings both sides need.
-// Plain JavaScript with no dependencies and no Node or browser APIs, so Crew on the Mac imports it as is and the
+// CLIque's phone protocol (PROTOCOL.md): its names and numbers, pairing codes, and the encodings both sides need.
+// Plain JavaScript with no dependencies and no Node or browser APIs, so CLIque on the Mac imports it as is and the
 // phone app bundles it.
 
 export const VERSION = 1
 export const PORT = 7788
-export const PAIR_PREFIX = 'crewphone1.'
+export const PAIR_PREFIX = 'cliquephone1.'
 export const PAIR_TTL = 10 * 60 * 1000 // a pairing code pairs one phone within this long
-export const SALT = 'crew-phone-v1'
+export const SALT = 'clique-phone-v1'
 
 // Why the Mac closed a phone's connection.
 export const CLOSE = { notPaired: 4003, version: 4004, noCode: 4005, badFrame: 4006, tooMany: 4008 }
@@ -104,7 +104,7 @@ export const keyInfo = ({ e, d, m, f }) => concat(utf8('keys'), e, d, m, f)
 
 // ---- pairing codes ----------------------------------------------------------------------------------
 
-// { id, name, key (M.pub bytes), secret (bytes), hosts, port } <-> crewphone1.…
+// { id, name, key (M.pub bytes), secret (bytes), hosts, port } <-> cliquephone1.…
 export function makePairCode({ id, name, key, secret, hosts, port = PORT }) {
   return PAIR_PREFIX + b64(utf8(JSON.stringify({ v: VERSION, id, n: name, k: b64(key), s: b64(secret), h: hosts, p: port })))
 }
@@ -127,6 +127,6 @@ export function readPairCode(code) {
 
 // ---- messages ---------------------------------------------------------------------------------------
 
-// JSON with bytes as { $bytes: base64 }, as on Crew Link
+// JSON with bytes as { $bytes: base64 }, as on CLIque Link
 export const pack = (value) => JSON.stringify(value, (_, x) => (x instanceof Uint8Array ? { $bytes: b64(x) } : x))
 export const unpack = (text) => JSON.parse(text, (_, x) => (x && typeof x === 'object' && typeof x.$bytes === 'string' ? unb64(x.$bytes) : x))

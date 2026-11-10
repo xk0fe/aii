@@ -1,9 +1,9 @@
 // The app's config: everything `npx expo prebuild` writes into ios/ and android/ comes from here (those folders are
 // generated, never edited). The name and the store id come from src/brand.js.
 //
-// A bundle id belongs to one Apple team, so a build signed with your own team needs an id of your own: CREW_BUNDLE_ID
-// and CREW_APPLE_TEAM set them for that build, and nothing else changes.
-//   CREW_BUNDLE_ID=com.you.crew CREW_APPLE_TEAM=ABCDE12345 npx expo run:ios --device
+// A bundle id belongs to one Apple team, so a build signed with your own team needs an id of your own: CLIQUE_BUNDLE_ID
+// and CLIQUE_APPLE_TEAM set them for that build, and nothing else changes.
+//   CLIQUE_BUNDLE_ID=com.you.clique CLIQUE_APPLE_TEAM=ABCDE12345 npx expo run:ios --device
 const { withAndroidManifest } = require('expo/config-plugins')
 
 const { APP_NAME, APP_ID } = require('./src/brand')
@@ -29,21 +29,21 @@ const SPLASH = { light: '#EADFF6', dark: '#211C27' }
 
 module.exports = () => ({
   name: APP_NAME,
-  slug: 'crew',
+  slug: 'clique',
   version: VERSION,
   orientation: 'portrait',
   icon: './assets/images/icon.png', // full bleed, no corners: the system masks it
-  scheme: 'crew',
+  scheme: 'clique',
   userInterfaceStyle: 'automatic',
   backgroundColor: '#F2F2F7',
   ios: {
-    bundleIdentifier: process.env.CREW_BUNDLE_ID || APP_ID,
-    ...(process.env.CREW_APPLE_TEAM && { appleTeamId: process.env.CREW_APPLE_TEAM }),
+    bundleIdentifier: process.env.CLIQUE_BUNDLE_ID || APP_ID,
+    ...(process.env.CLIQUE_APPLE_TEAM && { appleTeamId: process.env.CLIQUE_APPLE_TEAM }),
     buildNumber: String(BUILD),
     supportsTablet: false,
     infoPlist: {
       // iOS asks once, in these words, before the phone may reach the computer on the same Wi-Fi
-      NSLocalNetworkUsageDescription: `${APP_NAME} connects to ${APP_NAME} on your computer over your Wi-Fi, so you can see your crew and answer them from your phone.`,
+      NSLocalNetworkUsageDescription: `${APP_NAME} connects to ${APP_NAME} on your computer over your Wi-Fi, so you can see your clique and answer them from your phone.`,
       // the computer is on the local network or Tailscale; the phone and the computer encrypt everything themselves
       NSAppTransportSecurity: { NSAllowsLocalNetworking: true },
       // Export compliance. The app does its own encryption with standard algorithms (X25519, HKDF-SHA256,

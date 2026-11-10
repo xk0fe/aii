@@ -2,7 +2,7 @@
 // watching again), an answer call, reconnecting, and the ways a Mac can turn the phone away.
 import crypto from 'node:crypto'
 
-import { CrewClient, type Deps, type Snapshot } from '@/net/client'
+import { CliqueClient, type Deps, type Snapshot } from '@/net/client'
 import { parsePairCode } from '@/net/pairing'
 import type { MacRecord, State } from '@/net/types'
 
@@ -28,7 +28,7 @@ const STATE: State = {
 const DOCS: State = { agents: [{ name: 'Iris', status: 'idle', on: true }], feed: [], workspaces: STATE.workspaces }
 
 // Waits until the client's snapshot passes the check.
-function until(client: CrewClient, check: (s: Snapshot) => boolean, ms = 3000): Promise<Snapshot> {
+function until(client: CliqueClient, check: (s: Snapshot) => boolean, ms = 3000): Promise<Snapshot> {
   return new Promise((resolve, reject) => {
     if (check(client.getSnapshot())) return resolve(client.getSnapshot())
     const timer = setTimeout(() => {
@@ -58,7 +58,7 @@ async function pairedClient() {
   const code = parsePairCode(mac.code(['100.101.102.103', '192.168.1.20'], 7788))
   const secret = random(32)
   let paired: MacRecord | null = null
-  const client = new CrewClient({ kind: 'pair', code, secret }, deps, device, { onPaired: ({ mac }) => (paired = mac) })
+  const client = new CliqueClient({ kind: 'pair', code, secret }, deps, device, { onPaired: ({ mac }) => (paired = mac) })
   client.start()
   await until(client, (s) => s.state !== null)
   return { net, mac, deps, client, secret, paired: paired as MacRecord | null }
@@ -155,7 +155,7 @@ test('reconnects without the code after the Mac goes away, and says since when i
   client.stop()
 
   // a fresh start from what was saved: reconnect mode, same keys
-  const again = new CrewClient({ kind: 'mac', mac: paired!, secret }, deps, device)
+  const again = new CliqueClient({ kind: 'mac', mac: paired!, secret }, deps, device)
   again.start()
   await until(again, (x) => x.state !== null)
   expect(again.getSnapshot().link).toMatchObject({ status: 'online' })
@@ -167,7 +167,7 @@ test('a phone the Mac no longer knows is told to pair again, and stops trying', 
   client.stop()
   mac.devices.clear()
   // only the address that answers: every address says "not paired"
-  const again = new CrewClient({ kind: 'mac', mac: { ...paired!, hosts: ['192.168.1.20'] }, secret }, deps, device)
+  const again = new CliqueClient({ kind: 'mac', mac: { ...paired!, hosts: ['192.168.1.20'] }, secret }, deps, device)
   again.start()
   const s = await until(again, (x) => x.link.status === 'offline')
   expect(s.link).toMatchObject({ fatal: true, reason: expect.stringContaining('Pair it again') })
@@ -178,7 +178,7 @@ test('"not paired" from one address while another is unreachable keeps trying: i
   const { mac, deps, client, paired, secret } = await pairedClient()
   client.stop()
   mac.devices.clear()
-  const again = new CrewClient({ kind: 'mac', mac: paired!, secret }, { ...deps, timing: FAST }, device)
+  const again = new CliqueClient({ kind: 'mac', mac: paired!, secret }, { ...deps, timing: FAST }, device)
   again.start()
   const s = await until(again, (x) => x.link.status === 'offline')
   expect(s.link).toMatchObject({ reason: 'Studio is unreachable' })
@@ -198,7 +198,7 @@ test('a used-up code is refused with a reason', async () => {
   const { mac, deps } = setup()
   const code = parsePairCode(mac.code(['192.168.1.20'], 7788))
   mac.secret = null // a newer code replaced it, or it ran out
-  const client = new CrewClient({ kind: 'pair', code, secret: random(32) }, deps, device)
+  const client = new CliqueClient({ kind: 'pair', code, secret: random(32) }, deps, device)
   client.start()
   const s = await until(client, (x) => x.link.status === 'offline')
   expect(s.link).toMatchObject({ fatal: true, reason: 'That code is no longer valid, make a new one on your computer.' })
@@ -210,7 +210,7 @@ test('offline says what each address did, in the code\'s order, and which close 
   net.listen('ws://192.168.1.20:7788', (socket) => socket.close(4008))
   net.listen('ws://studio.tail1234.ts.net:7788', () => {}) // takes the connection, never answers
   const code = parsePairCode(mac.code(['100.101.102.103', '192.168.1.20', 'studio.tail1234.ts.net'], 7788))
-  const client = new CrewClient({ kind: 'pair', code, secret: random(32) }, { ...deps, timing: { ...FAST, handshake: 100 } }, device)
+  const client = new CliqueClient({ kind: 'pair', code, secret: random(32) }, { ...deps, timing: { ...FAST, handshake: 100 } }, device)
   client.start()
   const s = await until(client, (x) => x.link.status === 'offline')
   expect(s.link).toMatchObject({
@@ -230,7 +230,7 @@ test('a Mac with a different key never gets past the first frame', async () => {
   const real = parsePairCode(mac.code(['192.168.1.20'], 7788))
   // a code for this address, but with someone else's key: the Mac can't open our `hi`
   const forged = { ...real, key: new FakeMac({}).m.public }
-  const client = new CrewClient({ kind: 'pair', code: forged, secret: random(32) }, deps, device)
+  const client = new CliqueClient({ kind: 'pair', code: forged, secret: random(32) }, deps, device)
   client.start()
   const s = await until(client, (x) => x.link.status === 'offline')
   expect(s.link.status).toBe('offline')
@@ -243,7 +243,7 @@ test("a code a newer one replaced is refused (its hi doesn't open: 4006), as no 
   const { mac, deps } = setup()
   const old = parsePairCode(mac.code(['192.168.1.20'], 7788))
   mac.code(['192.168.1.20'], 7788) // a new code ends the old one
-  const client = new CrewClient({ kind: 'pair', code: old, secret: random(32) }, deps, device)
+  const client = new CliqueClient({ kind: 'pair', code: old, secret: random(32) }, deps, device)
   client.start()
   const s = await until(client, (x) => x.link.status === 'offline')
   expect(s.link).toMatchObject({ fatal: true, reason: 'That code is no longer valid, make a new one on your computer.' })
@@ -255,7 +255,7 @@ test('two addresses that both reach the Mac make one session: only one says hi',
   const { net, mac, deps } = setup()
   net.listen('ws://studio.tail1234.ts.net:7788', mac.serve)
   const code = parsePairCode(mac.code(['192.168.1.20', 'studio.tail1234.ts.net'], 7788))
-  const client = new CrewClient({ kind: 'pair', code, secret: random(32) }, deps, device)
+  const client = new CliqueClient({ kind: 'pair', code, secret: random(32) }, deps, device)
   client.start()
   await until(client, (x) => x.state !== null)
   await new Promise((r) => setTimeout(r, 30))
@@ -290,10 +290,10 @@ test('a removed workspace: the Mac pushes Home, and the phone watches Home from 
 test('a switch the Mac turns down leaves the phone where it was, and calls still go to the workspace on screen', async () => {
   const { mac, deps, secret, paired, client: first } = await pairedClient()
   first.stop()
-  const client = new CrewClient({ kind: 'mac', mac: paired!, secret }, { ...deps, timing: FAST }, device)
+  const client = new CliqueClient({ kind: 'mac', mac: paired!, secret }, { ...deps, timing: FAST }, device)
   client.start()
   await until(client, (x) => x.state !== null)
-  mac.failNext.watch = 'Crew is busy'
+  mac.failNext.watch = 'CLIque is busy'
   await expect(client.watch('docs')).rejects.toThrow('busy')
   // the connection is started over (a failed watch leaves the phone unsure what the Mac sends), on the old workspace
   const s = await until(client, (x) => x.link.status === 'online' && x.state !== null && x.ws === 'default', 3000)
@@ -308,7 +308,7 @@ test('a switch the Mac turns down leaves the phone where it was, and calls still
 test('a Mac that stops answering is dropped and reconnected (calls time out, wake() proves the link)', async () => {
   const { mac, deps, secret, paired, client: first } = await pairedClient()
   first.stop()
-  const client = new CrewClient({ kind: 'mac', mac: { ...paired!, hosts: ['192.168.1.20'] }, secret }, { ...deps, timing: FAST }, device)
+  const client = new CliqueClient({ kind: 'mac', mac: { ...paired!, hosts: ['192.168.1.20'] }, secret }, { ...deps, timing: FAST }, device)
   client.start()
   await until(client, (x) => x.state !== null)
   const his = mac.his.length
@@ -321,7 +321,7 @@ test('a Mac that stops answering is dropped and reconnected (calls time out, wak
   client.stop()
 })
 
-test('calls that return nothing resolve with null; send resolves with what Crew says', async () => {
+test('calls that return nothing resolve with null; send resolves with what CLIque says', async () => {
   const { mac, client } = await pairedClient()
   await expect(client.answer('q1', { allow: false, note: 'not now' })).resolves.toBeNull()
   expect(mac.answers.q1).toEqual({ allow: false, note: 'not now' })

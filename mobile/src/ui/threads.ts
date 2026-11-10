@@ -65,7 +65,7 @@ export function threadLines(feed: FeedEntry[], id: string) {
   const key = keyOf(id, byId)
   const all = feed.filter((e) => !e.answers && (e.thread ? keyOf(e.thread, byId) === key : byId.get(e.id)?.id === key && e.id === key))
   const root = byId.get(key) ?? null
-  // (Crew stepping in is the computer's to explain: it has no words of its own to show here)
+  // (CLIque stepping in is the computer's to explain: it has no words of its own to show here)
   const rows = all.filter((e) => !e.echo && e.kind !== 'rule')
   const echoes = new Map<string, FeedEntry[]>()
   for (const e of all) {

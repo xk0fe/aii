@@ -1,4 +1,4 @@
-/* The crew collection: cards grouped by computer, bulk select, the stats table, and the agent's sheet. */
+/* The clique collection: cards grouped by computer, bulk select, the stats table, and the agent's sheet. */
 /* a container, so the bulk bar floating over the list can lay itself out for the room it has */
 .collection { overflow: hidden; container: collection / inline-size; }
 .col-list { position: absolute; inset: 0; overflow-y: auto; scrollbar-gutter: stable; container-type: inline-size; }
@@ -58,7 +58,7 @@
 .pcard.add svg { width: 16px; height: 16px; color: var(--fg2); }
 .pcard.add:hover { color: var(--fg); background: var(--fill); }
 
-/* ---- compact cards: a big crew on one screen (the creature plain, no patch) ---- */
+/* ---- compact cards: a big clique on one screen (the creature plain, no patch) ---- */
 .pcard.mini { height: 88px; padding: 12px 14px; gap: 2px; }
 .pcard.mini .pc-name { display: flex; align-items: center; gap: 6px; max-width: calc(100% - 108px); min-width: 0; height: 20px; }
 .pcard.mini .pc-name b { font: 600 15px/20px var(--font-brand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

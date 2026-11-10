@@ -10,7 +10,7 @@ const SCROLLBACK = 256 * 1024
 // Output that only sets the window title (OSC 0/1/2), like the spinner Codex keeps in its title for half a minute
 // after it starts: nothing on screen changes, so it doesn't count as drawing (see quietFor).
 export const TITLE_ONLY = /^(?:\x1b\][012];[^\x07\x1b]*(?:\x07|\x1b\\))+$/
-// Markers a parent Claude Code session leaves in the environment (e.g. when crew is started from inside one).
+// Markers a parent Claude Code session leaves in the environment (e.g. when clique is started from inside one).
 // Inherited, they make the agent think it's a child session and stop saving transcripts, which breaks resume.
 const PARENT_SESSION_VARS = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_CODE_(ENTRYPOINT|EXECPATH|SESSION_ID|CHILD_SESSION|SESSION_ATTENDED|MESSAGING_\w+))$/
 
@@ -129,7 +129,7 @@ function trim(proc) {
 
 // One workspace's terminals, in the runner all workspaces share (core/workspaces.js). The runner knows them by the
 // workspace and the agent's name (storefront/june); ROOT's by the agent's name alone, as they were before there were
-// workspaces, so terminals that outlived an older Crew are still found.
+// workspaces, so terminals that outlived an older CLIque are still found.
 export class Scoped extends EventEmitter {
   constructor(runner, workspace) {
     super()

@@ -1,5 +1,5 @@
 // Composer -> hub contract: the composer's `to` and hint formatting, read out of ui/common.js, fed to the real
-// Hub with a fake runner in a throwaway CREW_HOME. Written by ada; run with `npm test`.
+// Hub with a fake runner in a throwaway CLIQUE_HOME. Written by ada; run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -13,22 +13,22 @@ assert.ok(line, 'composer to-expression not found')
 assert.doesNotMatch(line[1], /test\(text\)/, 'leading-mention override still present')
 const composerTo = new Function('target', 'text', `return ${line[1]}`)
 // the hint's formatting: whatever follows the send call (its options grew: fresh, re)
-const hint = src.match(/say\(\(await crew\.call\('send', .*\)\)(\.trim\(\)[^\n]*)\)$/m)[1]
+const hint = src.match(/say\(\(await clique\.call\('send', .*\)\)(\.trim\(\)[^\n]*)\)$/m)[1]
 const format = new Function('r', `return r${hint}`)
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-composer-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-composer-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
-const CREW = ['june', 'ada', 'iris', 'abe', 'jay'].map((name) => ({ name, area: name })).concat({ name: 'uma', area: 'x', off: true })
+const CLIQUE = ['june', 'ada', 'iris', 'abe', 'jay'].map((name) => ({ name, area: name })).concat({ name: 'uma', area: 'x', off: true })
 class FakeRunner extends EventEmitter { on_ = new Set(); running = (n) => this.on_.has(n); submit() {}; write() {}; stop() {}; start() {} }
 let hub
 beforeEach(() => {
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CLIQUE }))
   const r = new FakeRunner()
   hub = new Hub(r, { bin: '/nonexistent' })
   for (const a of hub.agents.values()) if (!a.off) (r.on_.add(a.name), (a.status = 'working'))
 })
 afterEach(() => { for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer); clearTimeout(hub.statsTimer); clearTimeout(hub.convoTimer) })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 const send = (target, text) => format(hub.send({ to: composerTo(target, text), text }))
 const queued = () => Object.fromEntries([...hub.agents.values()].filter((a) => a.inbox.length).map((a) => [a.name, a.inbox.length]))
 
@@ -71,7 +71,7 @@ test('emails, package names, possessives and code never address anyone', () => {
 })
 test('a rejected send keeps the draft and leaves the error up until the draft is edited', () => {
   const submit = src.slice(src.indexOf('const submit = async'), src.indexOf('chips.addEventListener'))
-  assert.ok(submit.indexOf("ta.value = ''") > submit.indexOf("await crew.call('send'"), 'draft cleared only after a successful send')
+  assert.ok(submit.indexOf("ta.value = ''") > submit.indexOf("await clique.call('send'"), 'draft cleared only after a successful send')
   assert.match(submit, /catch \(e\) \{\s*say\(errorLine\(e\), true\)/) // the reason, in words (common.js errorLine)
   assert.match(src, /if \(!error\) say\.timer = setTimeout/)
 })

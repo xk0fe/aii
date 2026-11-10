@@ -5,15 +5,15 @@ read; filling the stores in does.
 
 - [listing.md](listing.md): name, subtitle, descriptions, keywords, categories, URLs, screenshots
 - [privacy.md](privacy.md): App Privacy and Data safety answers, permissions, with the code they're based on
-- [review.md](review.md): age ratings, App Review notes (the demo crew), Play's App access
-- [screenshots/iphone-6.9/](screenshots/iphone-6.9/): iPhone 6.9" (1320 x 2868), light, from the demo crew (App Store Connect scales them down for the smaller iPhones)
+- [review.md](review.md): age ratings, App Review notes (the demo clique), Play's App access
+- [screenshots/iphone-6.9/](screenshots/iphone-6.9/): iPhone 6.9" (1320 x 2868), light, from the demo clique (App Store Connect scales them down for the smaller iPhones)
 
 ## What's set in the app already
 
 `app.config.js` (the only config; `ios/` and `android/` are generated from it):
 
 - Version 1.0.0, iOS build number and Android versionCode 1 (`BUILD`: raise it for every upload).
-- One id for both stores, `APP_ID` in `src/brand.js`, a placeholder: `com.greengrass.crew`. `CREW_BUNDLE_ID` still
+- One id for both stores, `APP_ID` in `src/brand.js`, a placeholder: `com.greengrass.clique`. `CLIQUE_BUNDLE_ID` still
   overrides the iOS one for a build signed with your own team. **The Android package can never change after the first
   upload to Google Play** (a new package is a new app, with no reviews or installs carried over), so settle it before.
   The iOS bundle id can't change either once the App Store record exists.

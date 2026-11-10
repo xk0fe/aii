@@ -1,7 +1,8 @@
 // Electron shell: menu bar popover, floating pill + chat panel, full-screen dashboard.
-// All agent logic lives in core/; this file owns windows, dialogs and notifications and wires them to the crew:
-// this computer's agents plus those of every computer linked over Crew Link (see core/crew.js), and your phones
+// All agent logic lives in core/; this file owns windows, dialogs and notifications and wires them to the clique:
+// this computer's agents plus those of every computer linked over CLIque Link (see core/clique.js), and your phones
 // (core/remote.js).
+import { moveUserData } from './core/migrate.js' // first: it moves an older install's folder before anything below reads it
 import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, systemPreferences } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -10,7 +11,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import qrcode from 'qrcode-generator'
 import { CONFIG, ATTACHMENTS, HOME } from './core/hub.js'
-import { Crew, CACHE } from './core/crew.js'
+import { Clique, CACHE } from './core/clique.js'
 import { addresses } from './core/link.js'
 import { Remote } from './core/remote.js'
 import { readPack } from './core/pack.js'
@@ -30,10 +31,10 @@ const MAC = process.platform === 'darwin'
 const WINDOWS = process.platform === 'win32'
 // Windows' own cut of the app icon (no Mac tile shadow), every size it asks for from 16 to 256px
 const WIN_ICON = path.join(dir, 'assets', 'icon.ico')
-const LOG = path.join(HOME, 'logs', 'crew.log') // ~/.crew/logs/crew.log (logLine)
+const LOG = path.join(HOME, 'logs', 'clique.log') // ~/.clique/logs/clique.log (logLine)
 const LOG_MAX = 1024 * 1024
 
-let crew, remote, tray, trayWin, overlay, dash
+let clique, remote, tray, trayWin, overlay, dash
 let phoneCodes = Promise.resolve() // phones('code') one at a time: the code made last is the one asked for last
 let dashPage = 0 // the dashboard's page: a new one on each load, and when it closes
 let pill // the floating pill's window placement (core/pill.js)
@@ -44,36 +45,36 @@ let permPoint // the screen it came up on, as a point on it
 let afterPermissions = null // what comes next once it's gone: on a first launch, the dashboard
 let trayHiddenAt = 0
 let quitting = false
-let started = false // Crew is up: its windows exist, so a second launch or a .crew file can show them
+let started = false // CLIque is up: its windows exist, so a second launch or a .clique file can show them
 let awake = null
 const setup = new Setup() // can Claude Code and Codex run here (core/setup.js): the first-run screen, ui/setup.js
 
-// Something that went wrong in here and nothing caught: written to Crew's log, and Crew carries on. Without this
+// Something that went wrong in here and nothing caught: written to CLIque's log, and CLIque carries on. Without this
 // Electron shows a dialog with the stack; the agents run in the terminal host either way, so they never stop for it.
 process.on('uncaughtException', (e) => logLine('crash', e?.stack ?? String(e)))
 process.on('unhandledRejection', (e) => logLine('unhandled', e?.stack ?? String(e)))
 process.stderr.on('error', () => {}) // a closed terminal (npm run dev) mustn't make each log line another crash
 
-// Electron names its folder for the app (userData) after the package's productName, as it starts. It's pinned to the
-// one the app had before its rename, before anything reads it (the single-instance lock below lives there too), so
-// your view settings stay, and a renamed copy and an older one can't run at once.
-app.setPath('userData', path.join(app.getPath('appData'), USER_DATA))
+// Electron names its folder for the app (userData) after the package's productName, as it starts. It's pinned here,
+// before anything reads it (the single-instance lock below lives there too), and an install from before the app's
+// rename has its folder moved there first, so your view settings stay.
+app.setPath('userData', moveUserData(app.getPath('appData'), USER_DATA))
 app.setName(PRODUCT_NAME) // the Mac's app menu: About, Hide and Quit say it
 // Windows shows a notification only for an app id it knows: the installer's (packaged), or this Electron's own when
 // running from source.
 if (WINDOWS) app.setAppUserModelId(app.isPackaged ? APP_ID : process.execPath)
 loadShellEnv()
 
-// One Crew at a time: opening it again (Dock, Finder, the Start menu or npm start) brings up the one that's running,
+// One CLIque at a time: opening it again (Dock, Finder, the Start menu or npm start) brings up the one that's running,
 // instead of a second copy launching the same agents.
 const primary = app.requestSingleInstanceLock()
 if (!primary) app.exit(0)
 
-// A .crew file opened from Finder, Explorer or Mail: the dashboard shows what's in it, to pick what to import. A Mac
-// hands it over as open-file; Windows starts Crew with it as an argument, or, with Crew running already, hands that
+// A .clique file opened from Finder, Explorer or Mail: the dashboard shows what's in it, to pick what to import. A Mac
+// hands it over as open-file; Windows starts CLIque with it as an argument, or, with CLIque running already, hands that
 // one the arguments (second-instance).
 let opened = null
-const packIn = (argv) => argv.slice(1).find((a) => /\.crew$/i.test(a) && fs.existsSync(a)) ?? null
+const packIn = (argv) => argv.slice(1).find((a) => /\.clique$/i.test(a) && fs.existsSync(a)) ?? null
 function openPack(file) {
   opened = file
   if (started) openPackFile()
@@ -111,16 +112,16 @@ async function start() {
   app.setAboutPanelOptions?.({ applicationName: PRODUCT_NAME, iconPath: path.join(dir, 'assets', 'icon.png'), credits: 'Your clique of AI agents, side by side.' })
 
   // The agents' terminals live in the terminal host (core/ptyhost.js), run by this same binary as Node, so they keep
-  // working while Crew quits or relaunches with new code.
-  // bin/ goes on the agents' PATH, so it has to be a real folder: in an installed Crew, the one next to app.asar.
+  // working while CLIque quits or relaunches with new code.
+  // bin/ goes on the agents' PATH, so it has to be a real folder: in an installed CLIque, the one next to app.asar.
   const bin = path.join(dir, 'bin').replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
-  crew = new Crew({ bin, computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
+  clique = new Clique({ bin, computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
   const checked = setup.check() // meanwhile, in the background
-  await crew.start()
-  checked.then(() => crew.changed())
-  remote = new Remote(crew)
+  await clique.start()
+  checked.then(() => clique.changed())
+  remote = new Remote(clique)
   await remote.start()
-  nativeTheme.themeSource = crew.config.data.theme // every window + the popover's material
+  nativeTheme.themeSource = clique.config.data.theme // every window + the popover's material
   if (MAC) {
     notches = (await readNotches()) ?? notches
     permissions = newPermissions()
@@ -130,35 +131,35 @@ async function start() {
   createTray()
   createOverlay()
   wire()
-  const key = crew.config.data.hotkey ?? 'Alt+Shift+Space'
+  const key = clique.config.data.hotkey ?? 'Alt+Shift+Space'
   const hotkey = () => (dashOnScreen() ? dash.focus() : overlay.webContents.send('toggle'))
-  if (!globalShortcut.register(key, hotkey)) crew.say(shortcutTaken(key, 'opens the floating chat', `open the chat from ${PRODUCT_NAME}'s icon in the ${MAC ? 'menu bar' : 'taskbar'}`))
+  if (!globalShortcut.register(key, hotkey)) clique.say(shortcutTaken(key, 'opens the floating chat', `open the chat from ${PRODUCT_NAME}'s icon in the ${MAC ? 'menu bar' : 'taskbar'}`))
   wireVoice()
 
-  // Running from source: CREW_SHOW=tray,panel,dashboard opens those views on launch.
+  // Running from source: CLIQUE_SHOW=tray,panel,dashboard opens those views on launch.
   if (!app.isPackaged) {
-    const show = (process.env.CREW_SHOW ?? '').split(',')
+    const show = (process.env.CLIQUE_SHOW ?? '').split(',')
     if (show.includes('dashboard')) openDashboard()
     if (show.includes('panel')) overlay.webContents.once('did-finish-load', () => overlay.webContents.send('toggle'))
     if (show.includes('tray')) setTimeout(toggleTray, 800)
   }
   started = true
-  openPackFile() // Crew was opened by double-clicking a .crew file
+  openPackFile() // CLIque was opened by double-clicking a .clique file
   try {
-    keepProvidersInUse(crew.config)
+    keepProvidersInUse(clique.config)
   } catch (e) {
     logLine('config', `couldn't note the providers in use: ${e.message}`) // the picker counts them anyway
   }
-  // A first run: no workspace or no agents yet, so Crew opens on its dashboard, which says what to set up, asks for the
+  // A first run: no workspace or no agents yet, so CLIque opens on its dashboard, which says what to set up, asks for the
   // first workspace, or invites the first agent. What macOS still has to allow comes first, up in the hatch.
-  const firstRun = !crew.screen || !hasAgents(crew.config.data)
+  const firstRun = !clique.screen || !hasAgents(clique.config.data)
   const missing = (await permissions?.missing().catch((e) => (logLine('permissions', e?.stack ?? String(e)), []))) ?? []
   if (missing.length) openPermissions({ then: firstRun ? openDashboard : null })
   else if (firstRun) openDashboard()
 }
 
-// Crew couldn't start (its terminal host, say): say so and quit, rather than run on with no icon and no window, holding
-// the one-Crew-at-a-time lock so opening it again does nothing. Agents it had picked up keep running in the host.
+// CLIque couldn't start (its terminal host, say): say so and quit, rather than run on with no icon and no window, holding
+// the one-CLIque-at-a-time lock so opening it again does nothing. Agents it had picked up keep running in the host.
 function failedToStart(e) {
   logLine('start', e?.stack ?? String(e))
   dialog.showMessageBoxSync({
@@ -169,13 +170,13 @@ function failedToStart(e) {
   })
   quitting = true
   try {
-    crew?.detach()
+    clique?.detach()
   } catch {}
   app.exit(1)
 }
 
 // A global shortcut another app already has: what it was for, and what to do instead, for the chat. (There's no setting
-// for the shortcuts in Crew yet.)
+// for the shortcuts in CLIque yet.)
 const shortcutTaken = (key, does, instead) => `${shortcutText(key)} ${does}, but another app already uses it, so it's off for now. ${instead.charAt(0).toUpperCase()}${instead.slice(1)} instead.`
 // A shortcut as you'd read it: Alt+Shift+Space is ⌥⇧Space on a Mac.
 function shortcutText(accelerator) {
@@ -185,7 +186,7 @@ function shortcutText(accelerator) {
   return parts.slice(0, -1).map((m) => glyphs[m] ?? `${m}+`).join('') + parts.at(-1)
 }
 
-// The menus. A Mac's menu bar: Crew, Edit (copy and paste need it), View for zoom and full screen, Window. Windows shows
+// The menus. A Mac's menu bar: CLIque, Edit (copy and paste need it), View for zoom and full screen, Window. Windows shows
 // no menu bar (windowKeys has its zoom and full-screen keys). Reload and the developer tools only when running from
 // source (npm run dev).
 function setMenu() {
@@ -218,26 +219,26 @@ function windowKeys(win, { zoom = false } = {}) {
 }
 
 app.on('window-all-closed', () => {}) // keep living in the menu bar
-app.on('will-quit', () => remote?.stop()) // phones hear Crew went away, rather than lose it
+app.on('will-quit', () => remote?.stop()) // phones hear CLIque went away, rather than lose it
 
 // Ctrl+C in the terminal that ran `npm start`: quit without the confirmation dialog. The agents keep working.
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     quitting = true
-    crew?.detach()
+    clique?.detach()
     app.exit(0)
   })
 }
 
-// Quitting leaves the agents working in the terminal host, and the next Crew picks them up; "Stop Agents and Quit"
+// Quitting leaves the agents working in the terminal host, and the next CLIque picks them up; "Stop Agents and Quit"
 // ends them too.
 app.on('before-quit', (e) => {
-  if (quitting || !crew) return
-  const live = [...crew.hubs.values()].reduce((n, h) => n + h.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'parked', 'resting'].includes(a.status)).length, 0)
+  if (quitting || !clique) return
+  const live = [...clique.hubs.values()].reduce((n, h) => n + h.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'parked', 'resting'].includes(a.status)).length, 0)
   const s = live > 1 ? 's' : ''
   if (live) lowerHatch() // its dialog is coming, right under the docked chat
   const answer = !live ? 1
-    : crew.outlives
+    : clique.outlives
       ? dialog.showMessageBoxSync({
           type: 'question',
           message: `Quit ${PRODUCT_NAME}?`,
@@ -259,8 +260,8 @@ app.on('before-quit', (e) => {
     return e.preventDefault()
   }
   quitting = true
-  if (answer === 1) crew.stop()
-  else crew.detach()
+  if (answer === 1) clique.stop()
+  else clique.detach()
 })
 
 // A Mac's friendly name ("Studio", "Ann's MacBook Pro"); a PC's is its device name (Settings > System > About).
@@ -275,7 +276,7 @@ const computerName = () => {
 
 // A computer that shares its agents shouldn't doze off while others (or your phone) use them.
 function keepAwake() {
-  const on = Boolean(crew.sharing) || [...crew.links.values()].some((l) => l.peer) || crew.phones.live.size > 0
+  const on = Boolean(clique.sharing) || [...clique.links.values()].some((l) => l.peer) || clique.phones.live.size > 0
   if (on && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension')
   if (!on && awake !== null) powerSaveBlocker.stop(awake), (awake = null)
 }
@@ -283,9 +284,9 @@ function keepAwake() {
 // ---- windows ---------------------------------------------------------------
 
 // A window for one of the pages in ui/. The page hears which computer this is from preload.cjs, and your home folder and
-// whether Crew runs from source from here. One whose page crashed loads it again.
+// whether CLIque runs from source from here. One whose page crashed loads it again.
 function page(file, options, query) {
-  const args = [`--crew-home=${os.homedir()}`, ...(app.isPackaged ? [] : ['--crew-dev'])]
+  const args = [`--clique-home=${os.homedir()}`, ...(app.isPackaged ? [] : ['--clique-dev'])]
   const win = new BrowserWindow({ show: false, ...options, webPreferences: { preload: path.join(dir, 'preload.cjs'), additionalArguments: args } })
   win.loadFile(path.join(dir, 'ui', file), { query })
   win.webContents.on('will-navigate', (e) => e.preventDefault()) // a file dropped outside a drop zone must not replace the page
@@ -298,7 +299,7 @@ function page(file, options, query) {
   return win
 }
 
-// The popover and the floating chat are hidden, never closed (⌘W, Alt+F4), until Crew quits, or Windows shuts down
+// The popover and the floating chat are hidden, never closed (⌘W, Alt+F4), until CLIque quits, or Windows shuts down
 // or signs you out (no before-quit then).
 function keepOpen(win) {
   win.on('close', (e) => quitting || (e.preventDefault(), win.hide()))
@@ -372,8 +373,8 @@ async function drawTrayIcon(counts) {
   const wc = trayWin.webContents
   if (wc.isLoading()) await new Promise((r) => wc.once('did-finish-load', r))
   const [urls, badge] = await Promise.all([
-    wc.executeJavaScript(`window.crewTrayIcon(${JSON.stringify({ count: waiting || working, tone })}, ${JSON.stringify(TRAY_SIZES)})`),
-    waiting ? wc.executeJavaScript(`window.crewBadge(${waiting})`) : null,
+    wc.executeJavaScript(`window.cliqueTrayIcon(${JSON.stringify({ count: waiting || working, tone })}, ${JSON.stringify(TRAY_SIZES)})`),
+    waiting ? wc.executeJavaScript(`window.cliqueBadge(${waiting})`) : null,
   ])
   if (draw !== trayDraws || tray.isDestroyed()) return
   const image = nativeImage.createEmpty()
@@ -401,11 +402,11 @@ function createOverlay() {
   pill = pillWindow(overlay, screen, {
     hatch: MAC ? hatchAt : () => null,
     onDock: (at) => {
-      crew.config.data.pillInHatch = at ?? false
+      clique.config.data.pillInHatch = at ?? false
       saveConfig()
     },
   })
-  const at = crew.config.data.pillInHatch
+  const at = clique.config.data.pillInHatch
   if (at) pill.dock(Number.isFinite(at.x) && Number.isFinite(at.y) ? at : null)
   overlay.webContents.on('did-finish-load', () => {
     pill.cancelDrag() // a reload mid-drag never says "let go"
@@ -454,7 +455,7 @@ const asksMacOS = {
 // For a setting nobody's waiting on: a config.json that can't be written says so itself (core/config.js).
 function saveConfig() {
   try {
-    crew.config.save()
+    clique.config.save()
   } catch (e) {
     logLine('config', e.message)
   }
@@ -472,7 +473,7 @@ function newPermissions() {
     openUrl: (url) => shell.openExternal(url),
     notify: () => new Notification({ title: PRODUCT_NAME, body: 'Like this, when one of your agents needs you.' }).show(),
     bundleId: bundleIdIn(info, APP_ID),
-    answers: () => (crew.config.data.permissions ??= {}),
+    answers: () => (clique.config.data.permissions ??= {}),
     save: saveConfig,
   })
 }
@@ -543,7 +544,7 @@ function openDashboard(focus = '') {
   // navigation will-navigate then stops.)
   const endPairing = () => {
     dashPage++
-    crew.phones.endCode()
+    clique.phones.endCode()
   }
   dash.webContents.on('did-navigate', endPairing)
   dash.webContents.on('render-process-gone', endPairing)
@@ -567,10 +568,10 @@ function showDock() {
 
 // ---- wiring ------------------------------------------------------------------
 
-// Every action the UI can take: crew.call('<name>', ...args). Agents are addressed by the name the UI shows,
+// Every action the UI can take: clique.call('<name>', ...args). Agents are addressed by the name the UI shows,
 // so an agent on another computer (iris@workstation) is handled there. What the UI does lands in the workspace on screen.
 const actions = {
-  state: () => withSetup(crew.snapshot(), crew.config.data, setup.status),
+  state: () => withSetup(clique.snapshot(), clique.config.data, setup.status),
   // The permissions flow: permissions('list', all) what's missing and the hatch to fit, 'look' / 'ask' / 'open' / 'skip'
   // one of them, 'done' puts it away. openPermissions: "Permissions…" in the ⋯ menu.
   permissions: async (op, arg) => {
@@ -593,107 +594,107 @@ const actions = {
   setup: async (op, id) => {
     const ops = {
       check: async () => {
-        if (await setup.refresh()) crew.config.load() // a key set since Crew started: providers say so
+        if (await setup.refresh()) clique.config.load() // a key set since CLIque started: providers say so
         const status = await setup.check({ again: true })
-        crew.changed()
+        clique.changed()
         return status
       },
       provider: () => checkProvider(id),
-      add: () => addProvider(crew.config, id),
-      remove: () => removeProvider(crew.config, id),
+      add: () => addProvider(clique.config, id),
+      remove: () => removeProvider(clique.config, id),
     }
     if (!Object.hasOwn(ops, op)) throw new Error(`unknown setup action "${op}"`)
     return ops[op]()
   },
   // The switcher and the workspace sheet: workspace('switch', 'storefront'), workspace('create', null, { name, … }), and
-  // edit, open, park, remove, members (see Crew.workspaceAction). -> { id, state }
-  workspace: (op, id, arg) => crew.workspaceAction(op, id, arg),
+  // edit, open, park, remove, members (see Clique.workspaceAction). -> { id, state }
+  workspace: (op, id, arg) => clique.workspaceAction(op, id, arg),
   // The workspace's channels: channel('create', null, { name, brief, members }), channel('edit', id, patch),
-  // channel('remove', id) (see Crew.channelAction). -> { id, state }
-  channel: (op, id, arg, ws) => crew.channelAction(op, id, arg, ws),
-  send: (to, text, images, opts) => crew.send(to, text, images, opts),
+  // channel('remove', id) (see Clique.channelAction). -> { id, state }
+  channel: (op, id, arg, ws) => clique.channelAction(op, id, arg, ws),
+  send: (to, text, images, opts) => clique.send(to, text, images, opts),
   // A new conversation for an agent (after its current task, if it's busy).
-  freshStart: (name) => crew.at(name, 'freshStart'),
+  freshStart: (name) => clique.at(name, 'freshStart'),
   // The Tasks board: task('file', null, { text, images, kind }), task('dispatch', '12'), task('accept', '12@laptop')…
-  task: (op, key, arg) => crew.ticket(op, key, arg),
-  taskSettings: (patch) => crew.here.setTaskSettings(patch),
-  saveImage: (name, type, bytes) => crew.here.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
-  approve: (id) => crew.feedAction(id, 'approve'),
-  drop: (id) => crew.feedAction(id, 'drop'),
+  task: (op, key, arg) => clique.ticket(op, key, arg),
+  taskSettings: (patch) => clique.here.setTaskSettings(patch),
+  saveImage: (name, type, bytes) => clique.here.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
+  approve: (id) => clique.feedAction(id, 'approve'),
+  drop: (id) => clique.feedAction(id, 'drop'),
   // Answer an agent's question (a permission prompt, AskUserQuestion, a plan) from the chat; see hub.ask.
-  answer: (id, reply) => crew.feedAction(id, 'answer', [reply]),
-  autopilot: (on) => crew.here.setAutopilot(on),
+  answer: (id, reply) => clique.feedAction(id, 'answer', [reply]),
+  autopilot: (on) => clique.here.setAutopilot(on),
   // The token savers (core/savers.js): savers({ coldStart: false }) turns one off.
-  savers: (patch) => crew.setSavers(patch),
-  // What agents may change in CLIque with `crew app` (core/tools.js): tools('off' | 'ask' | 'auto').
-  tools: (mode) => crew.setTools(mode),
+  savers: (patch) => clique.setSavers(patch),
+  // What agents may change in CLIque with `clique app` (core/tools.js): tools('off' | 'ask' | 'auto').
+  tools: (mode) => clique.setTools(mode),
   // You've seen agents' replies up to then: { name: ts }. Unread badges count what's newer.
-  read: (seen, ws) => (crew.hubs.get(ws) ?? crew.here).read(seen),
-  update: (names, patch) => crew.update(names, patch),
-  draftPrompt: (agent) => crew.draftPrompt(agent),
-  addAgent: (fields) => crew.addAgent(fields),
+  read: (seen, ws) => (clique.hubs.get(ws) ?? clique.here).read(seen),
+  update: (names, patch) => clique.update(names, patch),
+  draftPrompt: (agent) => clique.draftPrompt(agent),
+  addAgent: (fields) => clique.addAgent(fields),
   // everywhere: one of your shared agents, out of every workspace and off your roster
-  removeAgent: (name, opts) => crew.at(name, 'removeAgent', [opts]),
-  restart: (name) => crew.at(name, 'restart'),
-  markIdle: (name) => crew.at(name, 'markIdle'),
-  dismiss: (name) => crew.at(name, 'dismiss'), // send a clone away
-  resize: (name, cols, rows) => crew.at(name, 'resize', [cols, rows]),
-  buffer: (name) => crew.at(name, 'buffer'),
+  removeAgent: (name, opts) => clique.at(name, 'removeAgent', [opts]),
+  restart: (name) => clique.at(name, 'restart'),
+  markIdle: (name) => clique.at(name, 'markIdle'),
+  dismiss: (name) => clique.at(name, 'dismiss'), // send a clone away
+  resize: (name, cols, rows) => clique.at(name, 'resize', [cols, rows]),
+  buffer: (name) => clique.at(name, 'buffer'),
 
-  // Agent packs: a .crew file with the agents' definitions, looks and reference images.
+  // Agent packs: a .clique file with the agents' definitions, looks and reference images.
   exportAgents: async (names) => {
     names = [].concat(names)
     const { canceled, filePath } = await dialog.showSaveDialog(dash, {
       title: 'Export agents',
-      defaultPath: path.join(app.getPath('downloads'), `${names.length === 1 ? names[0].split('@')[0] : 'crew'}.crew`),
-      filters: [{ name: `${PRODUCT_NAME} agents`, extensions: ['crew'] }],
+      defaultPath: path.join(app.getPath('downloads'), `${names.length === 1 ? names[0].split('@')[0] : 'clique'}.clique`),
+      filters: [{ name: `${PRODUCT_NAME} agents`, extensions: ['clique'] }],
     })
     if (canceled || !filePath) return null
-    fs.writeFileSync(filePath, JSON.stringify(await crew.exportAgents(names), null, 2))
+    fs.writeFileSync(filePath, JSON.stringify(await clique.exportAgents(names), null, 2))
     shell.showItemInFolder(filePath)
     return path.basename(filePath)
   },
-  // Pick a .crew file (or take one dropped on the window, as { name, text }): the pack plus what importing it
+  // Pick a .clique file (or take one dropped on the window, as { name, text }): the pack plus what importing it
   // would look like.
   openPack: async (dropped) => {
     let { name, text } = dropped ?? {}
     if (!dropped) {
-      const file = (await dialog.showOpenDialog(dash, { title: 'Import agents', properties: ['openFile'], filters: [{ name: `${PRODUCT_NAME} agents`, extensions: ['crew', 'json'] }] })).filePaths[0]
+      const file = (await dialog.showOpenDialog(dash, { title: 'Import agents', properties: ['openFile'], filters: [{ name: `${PRODUCT_NAME} agents`, extensions: ['clique', 'json'] }] })).filePaths[0]
       if (!file) return null
       ;[name, text] = [path.basename(file), fs.readFileSync(file, 'utf8')]
     }
     const pack = readPack(text)
-    return { file: name, pack, agents: crew.importPreview(pack) }
+    return { file: name, pack, agents: clique.importPreview(pack) }
   },
-  importAgents: (pack, choices) => crew.importAgents(pack, choices),
+  importAgents: (pack, choices) => clique.importAgents(pack, choices),
   // Moves an agent to another computer (home: a computer's slug, '' for this one), conversation and all:
-  // -> { name, conversation: 'moved' | 'fresh', reason?, older? } (older: that computer runs an older Crew).
-  moveAgent: (name, home, folder) => crew.moveAgent(name, home, folder),
-  freeName: (name, home) => crew.freeName(name, home),
+  // -> { name, conversation: 'moved' | 'fresh', reason?, older? } (older: that computer runs an older CLIque).
+  moveAgent: (name, home, folder) => clique.moveAgent(name, home, folder),
+  freeName: (name, home) => clique.freeName(name, home),
   // Folders on any computer (home '' = this one), since pickFolder only browses this one:
   // folderInfo -> { exists, path } (path written out); folders -> [{ path, label }] to offer, `name` being the
   // agent you're placing (the folder at its current path comes first, if it's there).
-  folderInfo: (home, dir) => crew.folderInfo(home, dir),
-  folders: (home, name) => crew.folders(home, name),
+  folderInfo: (home, dir) => clique.folderInfo(home, dir),
+  folders: (home, name) => clique.folders(home, name),
 
-  // Crew Link: share this computer, link others, choose which of their agents to use here.
+  // CLIque Link: share this computer, link others, choose which of their agents to use here.
   link: async (op, ...args) => {
     const ops = {
-      share: (on) => crew.share(on),
-      reset: () => crew.reset(),
-      connect: (code) => crew.connect(code),
-      forget: (home) => crew.forget(home),
-      hide: (names, hidden) => crew.setHidden(names, hidden),
-      rename: (name) => crew.rename(name),
+      share: (on) => clique.share(on),
+      reset: () => clique.reset(),
+      connect: (code) => clique.connect(code),
+      forget: (home) => clique.forget(home),
+      hide: (names, hidden) => clique.setHidden(names, hidden),
+      rename: (name) => clique.rename(name),
       // nearby (core/discover.js): on while Computers is open; pair asks one found nearby, pairAnswer says yes or no to
       // one asking, pairDone puts a finished one away
-      discover: (on) => crew.discover(on),
-      pair: (id) => crew.pairWith(id),
-      pairConfirm: () => crew.pairConfirm(),
-      pairCancel: () => crew.pairCancel(),
-      pairAnswer: (id, yes) => crew.pairAnswer(id, yes),
-      pairDone: () => crew.pairDone(),
-      code: () => crew.linkCode(),
+      discover: (on) => clique.discover(on),
+      pair: (id) => clique.pairWith(id),
+      pairConfirm: () => clique.pairConfirm(),
+      pairCancel: () => clique.pairCancel(),
+      pairAnswer: (id, yes) => clique.pairAnswer(id, yes),
+      pairDone: () => clique.pairDone(),
+      code: () => clique.linkCode(),
       // macOS's Privacy & Security > Local Network, where CLIque is let onto the local network
       localNetwork: () => process.platform === 'darwin' && shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork'),
     }
@@ -711,8 +712,8 @@ const actions = {
         const page = dashPage
         return (phoneCodes = phoneCodes.catch(() => {}).then(() => phoneCode(page)))
       },
-      cancel: () => crew.phones.endCode(),
-      revoke: () => crew.phones.revoke(id),
+      cancel: () => clique.phones.endCode(),
+      revoke: () => clique.phones.revoke(id),
     }
     if (!Object.hasOwn(ops, op)) throw new Error(`unknown phones action "${op}"`)
     return ops[op]()
@@ -721,9 +722,9 @@ const actions = {
   openFile: (file) => [ATTACHMENTS, CACHE].some((d) => String(file).startsWith(d + path.sep)) && shell.openPath(file),
   openUrl: (url) => /^https?:\/\//.test(url) && shell.openExternal(url),
   copy: (text) => clipboard.writeText(String(text)),
-  // What went wrong on a page, for Crew's log (the page tells you in words).
+  // What went wrong on a page, for CLIque's log (the page tells you in words).
   log: (text) => logLine('page', String(text).slice(0, 4000)),
-  theme: (theme) => crew.setTheme(theme),
+  theme: (theme) => clique.setTheme(theme),
   dashboard: (focus) => {
     trayWin.hide()
     openDashboard(focus)
@@ -738,7 +739,7 @@ const actions = {
     },
   }),
   pickFolder: async (home) => {
-    if (home) throw new Error(`Folders are on ${crew.links.get(home)?.name ?? home}: type the path`)
+    if (home) throw new Error(`Folders are on ${clique.links.get(home)?.name ?? home}: type the path`)
     return (await dialog.showOpenDialog(dash, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0]
   },
   quit: () => app.quit(),
@@ -749,11 +750,11 @@ const actions = {
 async function phoneCode(page) {
   const hosts = (await addresses()).map((h) => h.address)
   if (page !== dashPage) throw new Error('the dashboard closed')
-  const made = crew.phones.code({ name: crew.me.name, hosts, port: remote.port })
+  const made = clique.phones.code({ name: clique.me.name, hosts, port: remote.port })
   await remote.sync() // listening before the phone tries
-  if (crew.phones.error) {
-    crew.phones.endCode()
-    throw new Error(crew.phones.error)
+  if (clique.phones.error) {
+    clique.phones.endCode()
+    throw new Error(clique.phones.error)
   }
   return { ...made, qr: qrSvg(made.code) }
 }
@@ -780,12 +781,12 @@ function qrSvg(text) {
 }
 
 function wire() {
-  // An error goes back as its message, which Crew's own errors write for you to read ("Workstation is unreachable
+  // An error goes back as its message, which CLIque's own errors write for you to read ("Workstation is unreachable
   // right now"). Anything else (a bug, a file system error) is logged with its stack too.
   ipcMain.handle('call', async (_e, name, ...args) => {
     try {
       if (!Object.hasOwn(actions, name)) {
-        logLine('action', `a page asked for "${name}", which this Crew doesn't have`)
+        logLine('action', `a page asked for "${name}", which this CLIque doesn't have`)
         return { error: `${PRODUCT_NAME} can't do that right now. Quit ${PRODUCT_NAME} and open it again, then try once more.` }
       }
       return { ok: await actions[name](...args) }
@@ -796,7 +797,7 @@ function wire() {
   })
   // Dragging the pill (or the chat by its header): the page reports the pointer, letting go settles it.
   ipcMain.on('drag', (e, phase, x, y) => BrowserWindow.fromWebContents(e.sender) === overlay && pill.drag(phase, x, y))
-  ipcMain.on('input', (_e, name, data) => crew.input(name, data))
+  ipcMain.on('input', (_e, name, data) => clique.input(name, data))
   // Full Disk Access takes the app as a dragged file: an .app dropped on its list adds it.
   ipcMain.on('drag-app', (e) => {
     const file = appBundle(app.getPath('exe'))
@@ -824,12 +825,12 @@ function wire() {
     }
   })
 
-  crew.on('pty', (name, data) => dash?.webContents.send('pty', name, data))
+  clique.on('pty', (name, data) => dash?.webContents.send('pty', name, data))
 
   // The menu bar's title redraws the status item, so it's set only when it reads differently. Windows: the icon.
   let title = null
-  crew.on('state', (snapshot) => {
-    const state = withSetup(snapshot, crew.config.data, setup.status)
+  clique.on('state', (snapshot) => {
+    const state = withSetup(snapshot, clique.config.data, setup.status)
     if (nativeTheme.themeSource !== state.theme) nativeTheme.themeSource = state.theme
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('state', state)
     const counts = trayCounts(state)
@@ -837,25 +838,25 @@ function wire() {
     else if (trayTitle(counts) !== title) tray.setTitle((title = trayTitle(counts)), { fontType: 'monospacedDigit' })
     keepAwake()
   })
-  crew.changed()
-  // the theme changed (Crew's, or the system's while Crew follows it): Windows' window buttons follow the titlebar
+  clique.changed()
+  // the theme changed (CLIque's, or the system's while CLIque follows it): Windows' window buttons follow the titlebar
   nativeTheme.on('updated', () => !MAC && dash && !dash.isDestroyed() && dash.setTitleBarOverlay(captionColors()))
 
   // From any workspace: with workspaces, the title says which, and a click puts that one on screen first.
   // (your accounts' limits are no workspace's)
-  const from = (ws) => (ws && crew.hubs.size > 1 ? `${crew.hubs.get(ws)?.space.name ?? ws} · ` : '')
+  const from = (ws) => (ws && clique.hubs.size > 1 ? `${clique.hubs.get(ws)?.space.name ?? ws} · ` : '')
   const goTo = (ws, focus) => {
-    if (ws && ws !== crew.current && crew.hubs.has(ws)) crew.workspaceAction('switch', ws)
+    if (ws && ws !== clique.current && clique.hubs.has(ws)) clique.workspaceAction('switch', ws)
     openDashboard(focus)
   }
-  crew.on('alert', (name, text, ws) => {
+  clique.on('alert', (name, text, ws) => {
     const note = new Notification({ title: `${from(ws)}${name.replace(/\.(\d+)(?=@|$)/, ' (clone $1)')} needs you`, body: text })
     note.on('click', () => goTo(ws, name))
     note.show()
   })
 
   // e.g. "@ada fixed #12": click to check it in the Bugs lane
-  crew.on('notice', ({ title, body, focus, workspace }) => {
+  clique.on('notice', ({ title, body, focus, workspace }) => {
     const note = new Notification({ title: `${from(workspace)}${title}`, body })
     note.on('click', () => goTo(workspace, focus))
     note.show()
@@ -868,8 +869,8 @@ function wireVoice() {
   // Older macOS asks for speech-recognition permission, which needs the app's Info.plist to say why (CLIque.app does).
   const plist = path.join(process.resourcesPath, '..', 'Info.plist')
   const mayAskPermission = process.platform === 'darwin' && fs.existsSync(plist) && fs.readFileSync(plist, 'utf8').includes('NSSpeechRecognitionUsageDescription')
-  // An installed Crew carries the helper in Resources/voice; from source (npm start, npm run dev) it's built here.
-  const shipped = path.join(process.resourcesPath, 'voice', process.platform === 'win32' ? 'crew-voice.exe' : 'crew-voice')
+  // An installed CLIque carries the helper in Resources/voice; from source (npm start, npm run dev) it's built here.
+  const shipped = path.join(process.resourcesPath, 'voice', process.platform === 'win32' ? 'clique-voice.exe' : 'clique-voice')
   const voice = new Voice({ root: dir, binary: fs.existsSync(shipped) ? shipped : undefined, mayAskPermission })
   const send = (event) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('voice', event))
   Object.assign(actions, voiceActions({ voice, systemPreferences: MAC ? asksMacOS : systemPreferences, shell, send }))
@@ -877,7 +878,7 @@ function wireVoice() {
   ipcMain.on('voice-audio', (e, id, samples) => audio(e.sender, id, samples))
   app.on('will-quit', () => voice.cancel())
 
-  const key = crew.config.data.voiceHotkey ?? 'Alt+Shift+D'
+  const key = clique.config.data.voiceHotkey ?? 'Alt+Shift+D'
   const dictate = () => {
     if (dashOnScreen()) {
       dash.focus()
@@ -887,7 +888,7 @@ function wireVoice() {
     overlay.webContents.send('toggle', { open: true, focus: true })
     overlay.webContents.send('voice', { type: 'toggle' })
   }
-  if (key && !globalShortcut.register(key, dictate)) crew.say(shortcutTaken(key, 'starts dictation', "click the microphone in the chat's message box"))
+  if (key && !globalShortcut.register(key, dictate)) clique.say(shortcutTaken(key, 'starts dictation', "click the microphone in the chat's message box"))
 }
 
 // How many need you, are at work, and are on; one counts as working while it or any of its clones is. With workspaces,
@@ -906,8 +907,8 @@ function trayCounts(state) {
 // The menu bar's "2/5" (at work out of those on), or "1 needs you".
 const trayTitle = ({ waiting, working, on }) => (waiting ? ` ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? ` ${working}/${on}` : '')
 
-// Crew's log (LOG): what went wrong that nobody saw, a crash in here or a page's error. Kept under LOG_MAX: past that it
-// starts again, the last one kept as crew.old.log.
+// CLIque's log (LOG): what went wrong that nobody saw, a crash in here or a page's error. Kept under LOG_MAX: past that it
+// starts again, the last one kept as clique.old.log.
 function logLine(kind, text) {
   try {
     fs.mkdirSync(path.dirname(LOG), { recursive: true })
@@ -923,8 +924,8 @@ function loadShellEnv() {
   if (WINDOWS) return
   if (process.env.TERM_PROGRAM) return // launched from a terminal, env is already right
   try {
-    const out = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf "\\n__CREW__\\n"; env -0'], { encoding: 'utf8', timeout: 8000 })
-    for (const pair of out.split('\n__CREW__\n')[1].split('\0')) {
+    const out = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf "\\n__CLIQUE__\\n"; env -0'], { encoding: 'utf8', timeout: 8000 })
+    for (const pair of out.split('\n__CLIQUE__\n')[1].split('\0')) {
       const i = pair.indexOf('=')
       if (i > 0 && (pair.startsWith('PATH=') || !(pair.slice(0, i) in process.env))) process.env[pair.slice(0, i)] = pair.slice(i + 1)
     }

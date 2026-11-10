@@ -1,4 +1,4 @@
-// Crew's brand surface, made of felt (SPEC v2: "Felt is the brand material", "Stitches are the graphic mark"): a
+// CLIque's brand surface, made of felt (SPEC v2: "Felt is the brand material", "Stitches are the graphic mark"): a
 // creature's patch in its own colour. A flat fill, the fibre grain (a bundled texture, tiled) and one stitched seam.
 // Text never sits on it.
 import type { ReactNode } from 'react'

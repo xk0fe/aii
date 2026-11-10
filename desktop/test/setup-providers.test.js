@@ -13,9 +13,9 @@ const { Config } = await import('../core/config.js')
 
 const offered = (config) => Object.fromEntries(Object.entries(markOffered(providersFrom(config), config)).map(([id, p]) => [id, p.added]))
 
-// config.json in a folder of its own, read as Crew reads it
+// config.json in a folder of its own, read as CLIque reads it
 function configFile(data) {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'crew-providers-')), 'config.json')
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'clique-providers-')), 'config.json')
   fs.writeFileSync(file, JSON.stringify(data))
   const cfg = new Config(file, { agents: [] })
   cfg.load()
@@ -23,7 +23,7 @@ function configFile(data) {
 }
 const onDisk = (cfg) => JSON.parse(fs.readFileSync(cfg.file, 'utf8'))
 
-test('a new crew’s picker offers Claude and Codex; GLM and Ollama wait behind Add provider…', () => {
+test('a new clique’s picker offers Claude and Codex; GLM and Ollama wait behind Add provider…', () => {
   assert.deepEqual(offered({}), { claude: true, codex: true, glm: false, local: false })
   const marked = markOffered(providersFrom({}), {})
   assert.deepEqual(OPTIONAL.map((id) => marked[id].optional), [true, true])
@@ -66,7 +66,7 @@ test('Add provider… saves it in config.json, once; Remove takes it out, but no
   assert.deepEqual(onDisk(busy).addedProviders, ['local'])
 })
 
-test('as Crew starts, GLM or Ollama in use is written down as added, so it stays after its agent goes', () => {
+test('as CLIque starts, GLM or Ollama in use is written down as added, so it stays after its agent goes', () => {
   const cfg = configFile({ agents: [{ name: 'Ada', provider: 'glm' }], workspaces: [{ id: 'docs', agents: [{ name: 'June', provider: 'local' }] }], addedProviders: ['glm'] })
   assert.equal(keepProvidersInUse(cfg), true)
   assert.deepEqual(onDisk(cfg).addedProviders, ['glm', 'local'])

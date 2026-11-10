@@ -1,4 +1,4 @@
-// The Tasks board and fresh conversations, against the real Hub with a fake runner in a throwaway CREW_HOME:
+// The Tasks board and fresh conversations, against the real Hub with a fake runner in a throwaway CLIQUE_HOME:
 // filing, triage, owner by area, fixing in a fresh conversation, "still broken", context. Run with `npm test`.
 import { test, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -7,12 +7,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-bugs-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-bugs-'))
 const { Hub, CONFIG, ownerFor } = await import('../core/hub.js')
 const { splitReport } = await import('../core/tickets.js')
 const { fromStatusLine, fromCodexLog } = await import('../core/context.js')
 
-const CREW = [
+const CLIQUE = [
   { name: 'ada', area: 'game client: controls, input, pause menu, UI screens' },
   { name: 'june', area: 'backend api, servers, leaderboards' },
   { name: 'abe', area: 'organiser, triage, admin' },
@@ -30,10 +30,10 @@ class FakeRunner extends EventEmitter {
 }
 
 let hub, runner
-const files = () => ['tickets.json', 'conversations.json', 'sessions.json', 'feed.jsonl'].forEach((f) => fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true }))
+const files = () => ['tickets.json', 'conversations.json', 'sessions.json', 'feed.jsonl'].forEach((f) => fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true }))
 beforeEach(() => {
   files()
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CREW }))
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: CLIQUE }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
   for (const a of hub.agents.values()) (runner.live.add(a.name), (a.status = 'idle'))
@@ -43,7 +43,7 @@ afterEach(() => {
   clearTimeout(hub.statsTimer)
   clearTimeout(hub.convoTimer)
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const started = (name) => hub.onHook(name, { hook_event_name: 'SessionStart', source: 'startup' })
 const settle = () => new Promise((r) => setTimeout(r, 0))
@@ -76,7 +76,7 @@ test('with a triage agent, it gets the raw report to triage, without becoming "a
   assert.equal(hub.tickets.get(1).owner, null)
 })
 
-test('triage via `crew bug triage` assigns it; with Auto-fix the owner gets it in a fresh conversation', async () => {
+test('triage via `clique bug triage` assigns it; with Auto-fix the owner gets it in a fresh conversation', async () => {
   hub.space.triage = 'abe'
   hub.space.autofix = true
   hub.fileTask({ kind: 'bug', text: 'jump broken after pause' })
@@ -93,7 +93,7 @@ test('triage via `crew bug triage` assigns it; with Auto-fix the owner gets it i
   assert.ok(hub.feed.some((e) => e.fresh && e.from === 'ada'), 'a "new conversation" divider in the feed')
   started('ada')
   await new Promise((r) => setTimeout(r, 2100)) // the prompt box gets a moment after SessionStart
-  assert.match(lastTyped('ada'), /\[bug #1\] Jump dead after unpausing[\s\S]*crew task done 1 /)
+  assert.match(lastTyped('ada'), /\[bug #1\] Jump dead after unpausing[\s\S]*clique task done 1 /)
   // triage rewrote it, and the fixer still gets the report word for word (paths, repro commands)
   assert.match(lastTyped('ada'), /as written:\njump broken after pause/)
   assert.match(lastTyped('ada'), /don't guess/)
@@ -134,7 +134,7 @@ test('duplicates count on the original; agents can list, show, note and report',
   assert.match(hub.taskCommand('june', ['report', 'Leaderboard 500s', '--details', 'GET /scores fails']), /added #3/)
   assert.equal(hub.tickets.get(3).by, 'june')
   assert.throws(() => hub.taskCommand('ada', ['show', '99']), /no task #99/)
-  assert.match(hub.taskCommand('ada', ['help']), /crew task done/)
+  assert.match(hub.taskCommand('ada', ['help']), /clique task done/)
 })
 
 test('new conversation: right away when free, after the task when busy', () => {
@@ -176,7 +176,7 @@ test('context from Claude Code\'s status line, tasks per conversation, compactio
 })
 
 test('context from a Codex session log', () => {
-  const file = path.join(process.env.CREW_HOME, 'rollout.jsonl')
+  const file = path.join(process.env.CLIQUE_HOME, 'rollout.jsonl')
   const count = (total) => JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { total_tokens: total }, model_context_window: 258400 } } })
   fs.writeFileSync(file, [count(20000), '{"type":"event_msg","payload":{"type":"token_count","info":null}}', count(135200)].join('\n') + '\n')
   assert.deepEqual(fromCodexLog(file), { used: 135200, size: 258400, pct: 50 })
@@ -185,7 +185,7 @@ test('context from a Codex session log', () => {
 
 // ---- from review: the edges -------------------------------------------------------------------
 
-test('dispatch survives a null options argument (how Crew Link delivers a missing one)', async () => {
+test('dispatch survives a null options argument (how CLIque Link delivers a missing one)', async () => {
   hub.fileTask({ kind: 'bug', text: 'pause menu stuck' })
   await hub.ticket('dispatch', 1, null)
   assert.equal(hub.tickets.get(1).status, 'fixing')
@@ -222,7 +222,7 @@ test('one fresh task, one restart: a pending fresh start serves the task waiting
   assert.equal(hub.feed.filter((e) => e.fresh && e.from === 'june' && e.kind === 'event').length, 1)
 })
 
-test('a late `crew bug fixed` does not reopen a closed bug; a double send is caught', async () => {
+test('a late `clique bug fixed` does not reopen a closed bug; a double send is caught', async () => {
   hub.fileTask({ kind: 'bug', text: 'pause menu stuck' })
   hub.fileTask({ kind: 'bug', text: 'pause menu stuck again' })
   hub.taskCommand('abe', ['dup', '2', '1'])
@@ -290,7 +290,7 @@ test('naming the owner skips triage; a feature gets a "do it" brief, not a bug h
   assert.doesNotMatch(lastTyped('ada'), /Reproduce it/)
 })
 
-test('the old names still work: crew bug fixed / report, works / broken', async () => {
+test('the old names still work: clique bug fixed / report, works / broken', async () => {
   hub.fileTask({ text: 'pause menu stuck', kind: 'bug' })
   await hub.ticket('dispatch', 1)
   assert.match(hub.taskCommand('ada', ['fixed', '1', 'rebound it']), /review/)

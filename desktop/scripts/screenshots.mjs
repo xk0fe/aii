@@ -1,5 +1,5 @@
-// Renders every view with a made-up crew (scripts/screenshot-preload.cjs) and saves PNGs, plus short GIFs of
-// the animations. Nothing starts and ~/.crew is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp] [--win]
+// Renders every view with a made-up clique (scripts/screenshot-preload.cjs) and saves PNGs, plus short GIFs of
+// the animations. Nothing starts and ~/.clique is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp] [--win]
 import { app, BrowserWindow, nativeTheme } from 'electron'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -8,35 +8,35 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-shots-'))
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-shots-'))
 app.setPath('userData', path.join(tmp, 'userdata'))
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // --win: every view as Windows shows it (screenshot-preload.cjs ?platform=win32)
 const WIN = process.argv.includes('--win')
-// The computer linked to this one, where the demo crew's Rex and Noor run (screenshot-preload.cjs): the Windows PC
+// The computer linked to this one, where the demo clique's Rex and Noor run (screenshot-preload.cjs): the Windows PC
 // Workstation, or with --win (when this one is Workstation) the Mac Studio.
 const LINK = WIN ? { slug: 'studio', name: 'Studio' } : { slug: 'workstation', name: 'Workstation' }
 const REX = `Rex@${LINK.slug}`
 const NOOR = `Noor@${LINK.slug}`
 // The events shot: what CLIque says in the chat, as the hub posts it (two agents stopping together, Claude's weekly
-// limit getting close, a crew waking up, a lost turn, a task fixed, a new conversation, a context limit passed)
-const EVENTS_FEED = `const s = window.__crewState; const t = (m) => Date.now() - m * 60000
+// limit getting close, a clique waking up, a lost turn, a task fixed, a new conversation, a context limit passed)
+const EVENTS_FEED = `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
   const day = new Date(Date.now() + 2 * 86400000); day.setHours(15, 0, 0, 0); const resets = day.getTime()
   s.feed = [
     { id: 'e1', kind: 'reply', from: 'Theo', to: 'you', text: 'All 48 checkout tests pass on Chrome and Safari.', ts: t(30) },
     { id: 'e2', kind: 'event', from: '${REX}', text: 'exited (code 143)', ts: t(26) },
     { id: 'e3', kind: 'event', from: '${NOOR}', text: 'exited (code 143)', ts: t(26) },
-    { id: 'e4', kind: 'event', from: 'crew', alert: true, text: "Claude is at 90% of its weekly limit. At this pace it runs out Wed at 13:54, before it resets Wed at 15:00", ts: t(20),
+    { id: 'e4', kind: 'event', from: 'clique', alert: true, text: "Claude is at 90% of its weekly limit. At this pace it runs out Wed at 13:54, before it resets Wed at 15:00", ts: t(20),
       limit: { account: 'claude', label: 'Claude', window: 'seven_day', name: 'weekly limit', pct: 90, resetsAt: resets, runsOut: resets - 66 * 60000 } },
-    { id: 'e6', kind: 'event', from: 'crew', text: 'woke up: @Ada and @Milo pick up where they left off', ts: t(12) },
+    { id: 'e6', kind: 'event', from: 'clique', text: 'woke up: @Ada and @Milo pick up where they left off', ts: t(12) },
     { id: 'e7', kind: 'event', from: 'Ada', text: 'lost its turn to an API error (overloaded), so CLIque types "continue" for it in 20s', ts: t(9) },
     { id: 'e7b', kind: 'task', type: 'bug', act: 'fixed', from: 'Ada', ticket: 4, title: 'Totals round wrong with 3 items', text: 'Rounding happened per line; now once on the total.', ts: t(8) },
     { id: 'e8', kind: 'event', from: 'Milo', fresh: true, text: 'started a new conversation for #7', ts: t(6) },
     { id: 'e9', kind: 'msg', from: 'you', to: 'Milo', text: 'Start with the coupon guard, then the expired-code message.', ts: t(5.9) },
     { id: 'e10', kind: 'event', from: 'Iris', alert: true, text: 'passed its 400k context limit (412k used). Start a new conversation when it suits you', ts: t(2) },
   ]
-  window.__crewEmit('state', s)`
+  window.__cliqueEmit('state', s)`
 // What's behind the transparent windows: the popover's material, or a soft desktop for the floating pill.
 const BACKDROP = {
   popover: { light: '#ececef', dark: '#2b2b2f' },
@@ -67,9 +67,9 @@ async function open(file, { theme, width, height, backdrop, fixture, transparent
 
 const js = (win, code) => win.webContents.executeJavaScript(`(async () => { ${code} })()`)
 
-// Popover-style windows size themselves to their content through crew.fit().
+// Popover-style windows size themselves to their content through clique.fit().
 async function fitToContent(win) {
-  const fit = await js(win, 'return window.__crewFit')
+  const fit = await js(win, 'return window.__cliqueFit')
   if (fit) win.setContentSize(Math.ceil(fit.width), Math.ceil(fit.height))
   await sleep(150)
 }
@@ -152,11 +152,11 @@ const SHOTS = {
     const win = await open('overlay.html', { theme, width: 900, height: 110, backdrop: 'desktop' })
     await win.webContents.insertCSS(SCREEN_TOP)
     await sleep(300)
-    await js(win, "window.__crewEmit('place', { side: 'hatch', align: 'center', hatch: { width: 185, height: 32, real: true } })")
+    await js(win, "window.__cliqueEmit('place', { side: 'hatch', align: 'center', hatch: { width: 185, height: 32, real: true } })")
     await sleep(600)
     await save(win, `hatch-${theme}`)
     win.setContentSize(900, 680)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(800)
     await save(win, `hatch-chat-${theme}`)
     win.destroy()
@@ -165,15 +165,15 @@ const SHOTS = {
   async 'hatch-dock'() {
     const win = await open('overlay.html', { theme: 'dark', width: 900, height: 680, backdrop: 'desktop' })
     await win.webContents.insertCSS(SCREEN_TOP)
-    await js(win, "window.__crewEmit('place', { side: 'below', align: 'center' })")
+    await js(win, "window.__cliqueEmit('place', { side: 'below', align: 'center' })")
     await sleep(500)
     await record(win, 'hatch-dock', {
       clip: { x: 0, y: 0, width: 900, height: 680 }, ms: 2600, width: 600,
       during: async () => {
         await sleep(500)
-        await js(win, "window.__crewEmit('place', { side: 'hatch', align: 'center', hatch: { width: 185, height: 32, real: true } })")
+        await js(win, "window.__cliqueEmit('place', { side: 'hatch', align: 'center', hatch: { width: 185, height: 32, real: true } })")
         await sleep(900)
-        await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+        await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
       },
     })
     win.destroy()
@@ -206,11 +206,11 @@ const SHOTS = {
   async overlay(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await save(win, `chat-${theme}`)
-    await js(win, "window.__crewEmit('toggle', { open: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: false })")
     await sleep(500)
     await fitToContent(win)
     await save(win, `pill-${theme}`)
@@ -223,7 +223,7 @@ const SHOTS = {
     await save(win, `channel-${theme}`)
     win.destroy()
   },
-  // What CLIque itself says in the chat: agents stopping, your accounts' limits, a crew waking up, a new conversation
+  // What CLIque itself says in the chat: agents stopping, your accounts' limits, a clique waking up, a new conversation
   // in the window, and in the floating chat
   async events(theme) {
     const win = await dashboard(theme, 'chat', { width: 1100, height: 760 })
@@ -235,7 +235,7 @@ const SHOTS = {
     const chat = await open('overlay.html', { theme, width: 520, height: 820, backdrop: 'desktop' })
     await sleep(400)
     await js(chat, EVENTS_FEED.replace("s.feed = [", "s.agents = s.agents.map((a) => ({ ...a, status: 'idle', activity: '', subs: [] })); s.feed = ["))
-    await js(chat, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(chat, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(900)
     await fitToContent(chat)
     await save(chat, `events-chat-${theme}`)
@@ -284,14 +284,14 @@ const SHOTS = {
     win.destroy()
   },
   async cards(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await js(win, click('[data-mode=cards]'))
     await sleep(1200)
     await save(win, `cards-${theme}`)
     win.destroy()
   },
   async stats(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await js(win, click('[data-mode=stats]'))
     await sleep(1000)
     await save(win, `stats-${theme}`)
@@ -300,7 +300,7 @@ const SHOTS = {
   },
   // The agent's sheet: no scrolling, one tab at a time.
   async detail(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
     await js(win, click('.pcard[data-name="Iris"]'))
@@ -316,7 +316,7 @@ const SHOTS = {
   },
   // A new agent: a random creature and an empty name to type.
   async create(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await sleep(300)
     await js(win, click('.pcard.add'))
     await sleep(1000)
@@ -325,7 +325,7 @@ const SHOTS = {
   },
   // Moving an agent to another computer: the sheet that asks where its folder is there.
   async move(theme) {
-    const win = await dashboard(theme, 'crew', { fixture: 'big' })
+    const win = await dashboard(theme, 'clique', { fixture: 'big' })
     await sleep(900)
     await js(win, `moveSheet('Iris', '${LINK.slug}')`)
     await sleep(900)
@@ -334,7 +334,7 @@ const SHOTS = {
   },
   // Computers: this one, Workstation linked, the Laptop asleep, and a Mac mini nearby with Computers open too.
   async computers(theme) {
-    const win = await dashboard(theme, 'crew', { fixture: 'big' })
+    const win = await dashboard(theme, 'clique', { fixture: 'big' })
     await sleep(900)
     await js(win, 'openComputers()')
     await sleep(800)
@@ -343,12 +343,12 @@ const SHOTS = {
   },
   // Nearby with nothing found yet (the radar), and with macOS keeping the app off the network.
   async nearby(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await sleep(900)
-    await js(win, 'window.__crewNearby = []; openComputers()')
+    await js(win, 'window.__cliqueNearby = []; openComputers()')
     await sleep(900)
     await save(win, `nearby-find-${theme}`)
-    await js(win, "const s = window.__crewState; s.computers.me.localNetwork = 'blocked'; window.__crewEmit('state', s)")
+    await js(win, "const s = window.__cliqueState; s.computers.me.localNetwork = 'blocked'; window.__cliqueEmit('state', s)")
     await sleep(500)
     await save(win, `nearby-blocked-${theme}`)
     win.destroy()
@@ -356,9 +356,9 @@ const SHOTS = {
   // Linking the Mac mini found nearby: asking, the code to check on both screens, Link here and waiting for the Mac mini,
   // linked; one that said no; a computer asking this one; and Link with a code.
   async linking(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await sleep(900)
-    await js(win, 'window.__crewPairDelay = 1500; openComputers()')
+    await js(win, 'window.__cliquePairDelay = 1500; openComputers()')
     await sleep(700)
     await js(win, "document.querySelector('[data-pair=\"n1\"]').click()")
     await sleep(500)
@@ -368,16 +368,16 @@ const SHOTS = {
     await js(win, "document.querySelector('[data-pair-confirm]').click()")
     await sleep(500)
     await save(win, `link-waiting-${theme}`)
-    await js(win, 'window.__crewTheyAgree()')
+    await js(win, 'window.__cliqueTheyAgree()')
     await sleep(700)
     await save(win, `link-linked-${theme}`)
     await sleep(1600)
-    await js(win, "window.__crewPairDelay = 200; window.__crewPairEnd = 'declined'; document.querySelector('[data-pair=\"n1\"]').click()")
+    await js(win, "window.__cliquePairDelay = 200; window.__cliquePairEnd = 'declined'; document.querySelector('[data-pair=\"n1\"]').click()")
     await sleep(700)
     await save(win, `link-declined-${theme}`)
-    await js(win, "window.__crewPairEnd = null; document.querySelector('[data-pair-back]').click()")
+    await js(win, "window.__cliquePairEnd = null; document.querySelector('[data-pair-back]').click()")
     await sleep(400)
-    await js(win, "window.__crewAsk('Laptop')")
+    await js(win, "window.__cliqueAsk('Laptop')")
     await sleep(700)
     await save(win, `link-ask-${theme}`)
     await js(win, "document.querySelector('[data-pair-no]').click()")
@@ -390,7 +390,7 @@ const SHOTS = {
   // Token savers: a switch each, what each counted, and cost per turn with them on and off. Then a switch flipped, as you
   // would: the sheet redraws from the state that comes back.
   async savers(theme) {
-    const win = await dashboard(theme, 'crew', { fixture: 'big' })
+    const win = await dashboard(theme, 'clique', { fixture: 'big' })
     await sleep(900)
     await js(win, 'openSavers()')
     await sleep(800)
@@ -402,7 +402,7 @@ const SHOTS = {
       const sw = document.querySelector('#savers [data-sv="noReportBack"]')
       sw.click()
       await new Promise((r) => setTimeout(r, 300))
-      return [window.__crewState.savers.on.noReportBack, document.querySelector('#savers [data-sv="noReportBack"]').checked, document.querySelectorAll('#savers .sv').length]`)
+      return [window.__cliqueState.savers.on.noReportBack, document.querySelector('#savers [data-sv="noReportBack"]').checked, document.querySelectorAll('#savers .sv').length]`)
     if (String(flipped) !== 'true,true,6') throw new Error(`savers: flipping a switch gave ${flipped}`)
     win.destroy()
   },
@@ -412,22 +412,22 @@ const SHOTS = {
   async tools(theme) {
     const win = await dashboard(theme, 'chat')
     await sleep(900)
-    await js(win, `const s = window.__crewState
+    await js(win, `const s = window.__cliqueState
       s.feed = s.feed.filter((e) => !(e.kind === 'ask' && !e.answer))
       s.feed.push({ id: 't0', kind: 'msg', from: 'you', to: 'Ada', text: 'Can you add a #design channel for Iris and Milo? They should check new screens against the design system.', ts: Date.now() - 60000 })
-      s.feed.push({ id: 't1', kind: 'ask', from: 'Ada', to: 'you', cli: 'crew', re: 't0', ts: Date.now() - 20000, ask: { type: 'permission', tool: 'crew app', app: true, title: 'Add a channel', code: '#design\\nCheck new screens against the design system: spacing, type scale and dark mode. Post before/after screenshots.', detail: 'For @Iris, @Milo', say: 'Can I add a #design channel?', always: [], alert: 'wants to add a channel' } })
+      s.feed.push({ id: 't1', kind: 'ask', from: 'Ada', to: 'you', cli: 'clique', re: 't0', ts: Date.now() - 20000, ask: { type: 'permission', tool: 'clique app', app: true, title: 'Add a channel', code: '#design\\nCheck new screens against the design system: spacing, type scale and dark mode. Post before/after screenshots.', detail: 'For @Iris, @Milo', say: 'Can I add a #design channel?', always: [], alert: 'wants to add a channel' } })
       for (const a of s.agents) if (a.status === 'waiting') a.status = 'idle'
       Object.assign(s.agents.find((a) => a.name === 'Ada'), { status: 'waiting', since: Date.now() - 20000 })
-      window.__crewEmit('state', s)`)
+      window.__cliqueEmit('state', s)`)
     await sleep(1000)
     await save(win, `tools-ask-${theme}`)
-    await js(win, `const s = window.__crewState
+    await js(win, `const s = window.__cliqueState
       s.feed.find((e) => e.id === 't1').answer = { by: 'you', allow: true, at: Date.now() - 15000 }
       s.feed.push({ id: 't2', kind: 'reply', from: 'Ada', to: 'you', re: 't0', text: 'Done: **#design** is up, with Iris and Milo in it and your brief as its instructions.', ts: Date.now() - 12000 })
       s.feed.push({ id: 't3', kind: 'msg', from: 'you', to: 'Ada', text: 'Thanks! And a workspace for the storefront, with you and June in it.', ts: Date.now() - 8000 })
       s.feed.push({ id: 't4', kind: 'event', from: 'Ada', text: 'made the Storefront workspace', app: true, ts: Date.now() - 4000 })
       Object.assign(s.agents.find((a) => a.name === 'Ada'), { status: 'working', since: Date.now() - 8000 })
-      window.__crewEmit('state', s)`)
+      window.__cliqueEmit('state', s)`)
     await sleep(900)
     await save(win, `tools-done-${theme}`)
     await js(win, 'openTools()')
@@ -437,20 +437,20 @@ const SHOTS = {
       const h = d.getBoundingClientRect().height
       d.querySelector('[data-tl="auto"]').click()
       await new Promise((r) => setTimeout(r, 500))
-      return [Math.round(d.getBoundingClientRect().height - h), window.__crewState.tools, [...d.querySelectorAll('.tl-how')].map((x) => x.textContent).join('/'), d.querySelector('.tl-about p.on').dataset.mode]`)
+      return [Math.round(d.getBoundingClientRect().height - h), window.__cliqueState.tools, [...d.querySelectorAll('.tl-how')].map((x) => x.textContent).join('/'), d.querySelector('.tl-about p.on').dataset.mode]`)
     if (String(after) !== '0,auto,Automatic/Automatic/Automatic/Asks first,auto') throw new Error(`tools: switching to Automatic gave ${after}`)
     await save(win, `tools-sheet-auto-${theme}`)
     win.destroy()
     // the floating chat's Needs you queue: the creature asks in its own words, the card under them
     const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
     await sleep(400)
-    await js(chat, `const s = window.__crewState
+    await js(chat, `const s = window.__cliqueState
       s.feed = s.feed.filter((e) => !(e.kind === 'ask' && !e.answer))
-      s.feed.push({ id: 't1', kind: 'ask', from: 'Ada', to: 'you', cli: 'crew', ts: Date.now() - 20000, ask: { type: 'permission', tool: 'crew app', app: true, title: 'Add a workspace', code: '🛒 Storefront\\n~/Projects/storefront', detail: '@Ada, @June work there, and start right away.', say: 'Can I make a workspace called Storefront?', always: [], alert: 'wants to add a workspace' } })
+      s.feed.push({ id: 't1', kind: 'ask', from: 'Ada', to: 'you', cli: 'clique', ts: Date.now() - 20000, ask: { type: 'permission', tool: 'clique app', app: true, title: 'Add a workspace', code: '🛒 Storefront\\n~/Projects/storefront', detail: '@Ada, @June work there, and start right away.', say: 'Can I make a workspace called Storefront?', always: [], alert: 'wants to add a workspace' } })
       for (const a of s.agents) if (a.status === 'waiting') a.status = 'idle'
       Object.assign(s.agents.find((a) => a.name === 'Ada'), { status: 'waiting', since: Date.now() - 20000 })
-      window.__crewEmit('state', s)
-      window.__crewEmit('toggle', { open: true, focus: false })`)
+      window.__cliqueEmit('state', s)
+      window.__cliqueEmit('toggle', { open: true, focus: false })`)
     await sleep(900)
     await js(chat, "document.querySelector('.nq-go')?.click()")
     await sleep(700)
@@ -464,13 +464,13 @@ const SHOTS = {
     const win = await dashboard(theme, 'chat')
     await sleep(900)
     const ask = `{ type: 'permission', trust: true, title: 'Trust this folder', detail: '${os.homedir()}/Projects/storefront', say: 'First time in storefront. Can I trust this folder?', always: [], alert: 'asks whether to trust its folder' }`
-    const setup = (card) => `const s = window.__crewState
+    const setup = (card) => `const s = window.__cliqueState
       s.feed = s.feed.filter((e) => !(e.kind === 'ask' && !e.answer) && !/^t[rb]/.test(e.id))
       s.feed.push({ id: '${card ? 'tr0' : 'tb0'}', kind: 'msg', from: 'you', to: 'June', text: 'Can you set up the storefront repo and get its tests running?', ts: Date.now() - 60000 })
       ${card ? `s.feed.push({ id: 'tr1', kind: 'ask', from: 'June', to: 'you', cli: 'claude', ts: Date.now() - 20000, ask: ${ask} })` : "s.feed.push({ id: 'tb1', kind: 'event', from: 'June', alert: true, ts: Date.now() - 20000, text: 'asks whether to trust its folder, ~/Projects/storefront. Answer in its terminal: messages wait until then' })"}
       for (const a of s.agents) if (a.status === 'waiting') a.status = 'idle'
       Object.assign(s.agents.find((a) => a.name === 'June'), { status: 'waiting', since: Date.now() - 20000, activity: '' })
-      window.__crewEmit('state', s)`
+      window.__cliqueEmit('state', s)`
     await js(win, setup(false))
     await sleep(1000)
     await save(win, `trust-before-${theme}`)
@@ -489,7 +489,7 @@ const SHOTS = {
     const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
     await sleep(400)
     await js(chat, `${setup(true)}
-      window.__crewEmit('toggle', { open: true, focus: false })`)
+      window.__cliqueEmit('toggle', { open: true, focus: false })`)
     await sleep(900)
     await js(chat, "document.querySelector('.nq-go')?.click()")
     await sleep(700)
@@ -500,14 +500,14 @@ const SHOTS = {
   // Add a phone: the pairing view with its code to scan, the phone that paired with it, then the list with that phone
   // highlighted (two paired before it, one connected).
   async phones(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await sleep(900)
     await js(win, 'openComputers()')
     await sleep(500)
     await js(win, click('[data-phone-add]'))
     await sleep(900)
     await save(win, `phones-${theme}`)
-    await js(win, "const s = window.__crewState; s.computers.phones.devices.push({ id: 'p3', name: 'iPad', platform: 'ios', app: '0.1.0', paired: Date.now(), seen: Date.now(), online: true }); window.__crewEmit('state', s)")
+    await js(win, "const s = window.__cliqueState; s.computers.phones.devices.push({ id: 'p3', name: 'iPad', platform: 'ios', app: '0.1.0', paired: Date.now(), seen: Date.now(), online: true }); window.__cliqueEmit('state', s)")
     await sleep(900)
     await save(win, `phones-paired-${theme}`)
     await sleep(1700)
@@ -517,10 +517,10 @@ const SHOTS = {
   // Add a phone: the code to scan, a new one before it runs out (codes last four seconds here, so the QR just changes),
   // then a phone pairs and the list shows it highlighted.
   async pairGif() {
-    const win = await dashboard('light', 'crew')
+    const win = await dashboard('light', 'clique')
     await js(win, 'openComputers()')
     await sleep(900)
-    await js(win, 'window.__crewPhoneTTL = 4000')
+    await js(win, 'window.__cliquePhoneTTL = 4000')
     await record(win, 'pair', {
       clip: { x: 396, y: 16, width: 648, height: 768 }, ms: 9800, width: 648,
       during: async () => {
@@ -530,7 +530,7 @@ const SHOTS = {
         await tap(win, at)
         await glide(win, at, { x: at.x + 60, y: at.y + 120 }, 600)
         await sleep(4300)
-        await js(win, "const s = window.__crewState; s.computers.phones.devices.push({ id: 'p3', name: 'iPad', platform: 'ios', app: '0.1.0', paired: Date.now(), seen: Date.now(), online: true }); s.computers.phones.pairing = null; window.__crewEmit('state', s)")
+        await js(win, "const s = window.__cliqueState; s.computers.phones.devices.push({ id: 'p3', name: 'iPad', platform: 'ios', app: '0.1.0', paired: Date.now(), seen: Date.now(), online: true }); s.computers.phones.pairing = null; window.__cliqueEmit('state', s)")
         await sleep(3000)
       },
     })
@@ -550,17 +550,17 @@ const SHOTS = {
     win.destroy()
   },
   async select(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
-    await js(win, `${click('.page-head[data-for=crew] [data-act=more]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.menu [data-menu-act=select]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.pcard[data-name="Ada"]')}; ${click('.pcard[data-name="Theo"]')}`)
+    await js(win, `${click('.page-head[data-for=clique] [data-act=more]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.menu [data-menu-act=select]')}; await new Promise((r) => setTimeout(r, 200)); ${click('.pcard[data-name="Ada"]')}; ${click('.pcard[data-name="Theo"]')}`)
     await sleep(900)
     await save(win, `select-${theme}`)
     win.destroy()
   },
   async tasks(theme) {
     const win = await dashboard(theme, 'tasks')
-    await js(win, "localStorage.setItem('crew.tasks.view', 'board'); localStorage.setItem('crew.tasks.done', '0')")
+    await js(win, "localStorage.setItem('clique.tasks.view', 'board'); localStorage.setItem('clique.tasks.done', '0')")
     win.webContents.reload()
     await new Promise((r) => win.webContents.once('did-finish-load', r))
     await sleep(1100)
@@ -594,7 +594,7 @@ const SHOTS = {
   // board and in the list; then the header's ⋯ for clearing the board, with the chat's one line for a bulk action.
   async tasksBulk(theme) {
     const win = await dashboard(theme, 'tasks')
-    await js(win, "localStorage.setItem('crew.tasks.view', 'board'); localStorage.setItem('crew.tasks.done', '1')")
+    await js(win, "localStorage.setItem('clique.tasks.view', 'board'); localStorage.setItem('clique.tasks.done', '1')")
     win.webContents.reload()
     await new Promise((r) => win.webContents.once('did-finish-load', r))
     await sleep(1100)
@@ -609,8 +609,8 @@ const SHOTS = {
     await sleep(800)
     await save(win, `tasks-bulk-list-${theme}`)
     await js(win, `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); ${click('.tk-views [data-mode=board]')}
-      window.__crewState.feed.push({ id: 'bk1', kind: 'task', type: 'task', act: 'bulk', from: 'you', text: 'closed 23 tasks', count: 23, ts: Date.now() })
-      window.__crewEmit('state', window.__crewState)`)
+      window.__cliqueState.feed.push({ id: 'bk1', kind: 'task', type: 'task', act: 'bulk', from: 'you', text: 'closed 23 tasks', count: 23, ts: Date.now() })
+      window.__cliqueEmit('state', window.__cliqueState)`)
     await sleep(700)
     await js(win, click('[data-board-menu]'))
     await sleep(500)
@@ -618,7 +618,7 @@ const SHOTS = {
     win.destroy()
   },
   async conversation(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
     await js(win, click('.pcard[data-name="Milo"]'))
@@ -634,7 +634,7 @@ const SHOTS = {
   async chatTask(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(600)
     await js(win, `${click('.chip.task-chip')}; const ta = document.querySelector('.composer textarea'); ta.value = 'Promo banner hides the cart button on small phones @Milo'; ta.dispatchEvent(new Event('input'))`)
     await sleep(500)
@@ -642,7 +642,7 @@ const SHOTS = {
     await save(win, `chat-task-${theme}`)
     win.destroy()
   },
-  // Switching workspaces: the switcher, Storefront, then back to Docs site from the sidebar's dock. The crew slides over.
+  // Switching workspaces: the switcher, Storefront, then back to Docs site from the sidebar's dock. The clique slides over.
   // Workspaces on the rail: switch to the one that needs you, back, then see who works there.
   async workspacesGif() {
     const win = await dashboard('light', 'chat', { fixture: 'workspaces', width: 1280, height: 800 })
@@ -671,7 +671,7 @@ const SHOTS = {
   // Add a task, start it in a new conversation, then accept another one: the board's whole loop.
   async tasksGif() {
     const win = await dashboard('light', 'tasks')
-    await js(win, "localStorage.setItem('crew.tasks.view', 'board'); localStorage.setItem('crew.tasks.done', '0')")
+    await js(win, "localStorage.setItem('clique.tasks.view', 'board'); localStorage.setItem('clique.tasks.done', '0')")
     win.webContents.reload()
     await new Promise((r) => win.webContents.once('did-finish-load', r))
     await sleep(1200)
@@ -703,7 +703,7 @@ const SHOTS = {
         win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
         await sleep(500)
         // the task just added: the newest on the board
-        const added = await js(win, 'return Math.max(...window.__crewState.tasks.tickets.map((t) => t.id))')
+        const added = await js(win, 'return Math.max(...window.__cliqueState.tasks.tickets.map((t) => t.id))')
         at = await glide(win, at, await center(win, `.tc[data-name="${added}"] [data-act=start]`), 700)
         await sleep(200)
         await tap(win, at)
@@ -739,7 +739,7 @@ const SHOTS = {
   async chatThread(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await js(win, "document.querySelector('#m-f6c').scrollIntoView({ block: 'end' }); document.querySelector('.feed').scrollTop += 16")
@@ -752,7 +752,7 @@ const SHOTS = {
   async rightOfWay(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop', fixture: 'row' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(900)
     await fitToContent(win)
     await save(win, `right-of-way-${theme}`)
@@ -763,12 +763,12 @@ const SHOTS = {
   async rightOfWayGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop', fixture: 'row' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await sleep(300)
     const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + 40), width: Math.round(r.width) + 80, height: Math.round(r.height - 200) }")
-    const step = (code) => js(win, `const s = window.__crewState; const a = (n) => s.agents.find((x) => x.name === n); ${code}; window.__crewEmit('state', s)`)
+    const step = (code) => js(win, `const s = window.__cliqueState; const a = (n) => s.agents.find((x) => x.name === n); ${code}; window.__cliqueEmit('state', s)`)
     await record(win, 'right-of-way', {
       clip: panel, ms: 9500, width: 760,
       during: async () => {
@@ -777,7 +777,7 @@ const SHOTS = {
         await sleep(1200)
         await step("s.feed.push({ id: 'g1', kind: 'msg', from: 'June', to: 'Ada', ask: true, text: 'Which coupon codes can stack in 1.2?', ts: Date.now() }); a('June').waitingOn = [{ name: 'Ada', since: Date.now(), id: 'g1', text: 'Which coupon codes can stack in 1.2?' }]; a('Ada').owes = [{ name: 'June', since: Date.now(), id: 'g1', waiting: true }]")
         await sleep(1400)
-        await step("a('Ada').activity = 'Bash · crew answer'")
+        await step("a('Ada').activity = 'Bash · clique answer'")
         await sleep(900)
         await step("const q = s.feed.find((e) => e.id === 'g1'); s.feed.push({ id: 'g2', kind: 'reply', from: 'Ada', re: 'g1', text: 'One code per order, plus free shipping on top.', ts: Date.now() }); q.answered = { by: 'Ada', at: Date.now(), reply: 'g2' }; a('June').waitingOn = []; a('June').activity = 'Edit · docs/release-1.2.md'; a('Ada').owes = []; a('Ada').activity = 'Edit · api/orders.ts'")
         await sleep(1600)
@@ -789,7 +789,7 @@ const SHOTS = {
   },
   // The same in the dashboard: the sidebar and the chat both say who's waiting on whom.
   async rightOfWayDash(theme) {
-    const win = await dashboard(theme, 'crew', { fixture: 'row' })
+    const win = await dashboard(theme, 'clique', { fixture: 'row' })
     await sleep(900)
     await save(win, `right-of-way-dash-${theme}`)
     win.destroy()
@@ -799,17 +799,17 @@ const SHOTS = {
     const win = await dashboard(theme, 'grid', { width: 1920, height: 1080 })
     await sleep(1500)
     await js(win, `
-      const s = window.__crewState
+      const s = window.__cliqueState
       const by = (n) => s.agents.find((a) => a.name === n)
       by('Theo').status = 'stopped'
-      window.__crewBufferDelay = 600000
+      window.__cliqueBufferDelay = 600000
       by('June').convo = { ...by('June').convo, since: Date.now() }
-      window.__crewEmit('state', s)`)
+      window.__cliqueEmit('state', s)`)
     await sleep(900)
     await js(win, "document.querySelector('.terms').scrollTop = 99999")
     await sleep(500)
     await save(win, `ribbons-${theme}`)
-    await js(win, `const s = window.__crewState; s.agents.find((a) => a.name === '${REX}').status = 'away'; window.__crewEmit('state', s)`)
+    await js(win, `const s = window.__cliqueState; s.agents.find((a) => a.name === '${REX}').status = 'away'; window.__cliqueEmit('state', s)`)
     await sleep(700)
     await save(win, `ribbons-offline-${theme}`)
     win.destroy()
@@ -823,7 +823,7 @@ const SHOTS = {
       clip: tile, ms: 4200, width: 900,
       during: async () => {
         await sleep(600)
-        await js(win, "window.__crewBufferDelay = 1800; const s = window.__crewState; const a = s.agents.find((x) => x.name === 'June'); a.convo = { ...a.convo, since: Date.now() }; window.__crewEmit('state', s)")
+        await js(win, "window.__cliqueBufferDelay = 1800; const s = window.__cliqueState; const a = s.agents.find((x) => x.name === 'June'); a.convo = { ...a.convo, since: Date.now() }; window.__cliqueEmit('state', s)")
         await sleep(3000)
       },
     })
@@ -833,7 +833,7 @@ const SHOTS = {
   async railGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await sleep(300)
@@ -865,7 +865,7 @@ const SHOTS = {
   async chatBelow(theme) {
     const win = await open('overlay.html', { theme, width: 640, height: 760, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('place', { side: 'below', align: 'center' }); window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('place', { side: 'below', align: 'center' }); window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(800)
     await fitToContent(win)
     await save(win, `chat-below-${theme}`)
@@ -875,12 +875,12 @@ const SHOTS = {
   async subsGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await sleep(300)
     const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + 40), width: Math.round(r.width) + 80, height: Math.round(r.height - 200) }")
-    const step = (code) => js(win, `const s = window.__crewState; const m = s.agents.find((a) => a.name === 'Ada'); ${code}; window.__crewEmit('state', s)`)
+    const step = (code) => js(win, `const s = window.__cliqueState; const m = s.agents.find((a) => a.name === 'Ada'); ${code}; window.__cliqueEmit('state', s)`)
     await record(win, 'subagents', {
       clip: panel, ms: 9000, width: 760,
       during: async () => {
@@ -909,7 +909,7 @@ const SHOTS = {
   async unread(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await js(win, "document.querySelector('.new-line').scrollIntoView({ block: 'start' }); document.querySelector('.feed').scrollTop -= 20")
@@ -922,7 +922,7 @@ const SHOTS = {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
     // an offscreen window never has focus; the chat only counts what you could actually have seen
-    await js(win, "document.hasFocus = () => true; window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "document.hasFocus = () => true; window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await js(win, "document.querySelector('.feed').scrollTop = 0")
@@ -937,7 +937,7 @@ const SHOTS = {
         await sleep(2600)
       },
     })
-    const left = await js(win, "return JSON.stringify(window.__crewState.reads.agents)")
+    const left = await js(win, "return JSON.stringify(window.__cliqueState.reads.agents)")
     console.log('reads after:', left)
     win.destroy()
   },
@@ -945,7 +945,7 @@ const SHOTS = {
   async replyGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await js(win, "document.querySelector('#m-f8').scrollIntoView({ block: 'center' })")
@@ -976,7 +976,7 @@ const SHOTS = {
         await sleep(300)
         await key('Return')
         await sleep(1300)
-        await js(win, "const s = window.__crewState; const mine = s.feed.findLast((e) => e.from === 'you'); s.feed.push({ id: 'r-ship', kind: 'reply', from: 'Ada', to: 'you', re: mine.id, text: 'Shipped, with a test for three items: 43 passing.', ts: Date.now() }); window.__crewEmit('state', s)")
+        await js(win, "const s = window.__cliqueState; const mine = s.feed.findLast((e) => e.from === 'you'); s.feed.push({ id: 'r-ship', kind: 'reply', from: 'Ada', to: 'you', re: mine.id, text: 'Shipped, with a test for three items: 43 passing.', ts: Date.now() }); window.__cliqueEmit('state', s)")
         await sleep(2200)
         await key('Escape')
         await sleep(1200)
@@ -988,7 +988,7 @@ const SHOTS = {
   async threadGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "localStorage.setItem('crew.fresh', '0'); window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "localStorage.setItem('clique.fresh', '0'); window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + r.height - 420), width: Math.round(r.width), height: 420 }")
@@ -1032,13 +1032,13 @@ const SHOTS = {
   async latest(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await js(win, "document.querySelector('.feed').scrollTop = 0")
     await sleep(400)
     for (let i = 0; i < 3; i++) {
-      await js(win, `const s = window.__crewState; s.feed.push({ id: 'late${i}', kind: 'reply', from: 'Ada', to: 'you', text: 'Reply ${i + 1} while you read', ts: Date.now() }); window.__crewEmit('state', s)`)
+      await js(win, `const s = window.__cliqueState; s.feed.push({ id: 'late${i}', kind: 'reply', from: 'Ada', to: 'you', text: 'Reply ${i + 1} while you read', ts: Date.now() }); window.__cliqueEmit('state', s)`)
       await sleep(250)
     }
     await sleep(600)
@@ -1050,16 +1050,16 @@ const SHOTS = {
   async latestGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, `const s = window.__crewState; const t0 = Date.now() - 3 * 3600000
+    await js(win, `const s = window.__cliqueState; const t0 = Date.now() - 3 * 3600000
       const said = ['Checked the orders table migration.', 'Tests are green on CI.', 'Left a note on the empty cart task.', 'Nudged the product grid spacing a little.']
       s.feed.unshift(...Array.from({ length: 90 }, (_, i) => ({ id: 'old' + i, kind: 'reply', from: ['Ada', 'Milo', 'Iris', 'Theo'][i % 4], to: 'you', text: said[i % 4], ts: t0 + i * 60000 })))
-      window.__crewEmit('state', s); window.__crewEmit('toggle', { open: true, focus: false })`)
+      window.__cliqueEmit('state', s); window.__cliqueEmit('toggle', { open: true, focus: false })`)
     await sleep(900)
     await fitToContent(win)
     await js(win, "document.querySelector('#m-old60').scrollIntoView({ block: 'start' })")
     await sleep(500)
     const panel = await js(win, "const r = document.querySelector('.panel').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
-    const say = (i, from, text) => js(win, `const s = window.__crewState; s.feed.push({ id: 'late${i}', kind: 'reply', from: '${from}', to: 'you', text: ${JSON.stringify(text)}, ts: Date.now() }); window.__crewEmit('state', s)`)
+    const say = (i, from, text) => js(win, `const s = window.__cliqueState; s.feed.push({ id: 'late${i}', kind: 'reply', from: '${from}', to: 'you', text: ${JSON.stringify(text)}, ts: Date.now() }); window.__cliqueEmit('state', s)`)
     await record(win, 'latest', {
       clip: panel, ms: 8200, width: 760,
       during: async () => {
@@ -1086,7 +1086,7 @@ const SHOTS = {
   async subsReply(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await js(win, "document.querySelector('#m-f8 details summary').click()")
@@ -1096,11 +1096,11 @@ const SHOTS = {
     await save(win, `subs-reply-${theme}`)
     win.destroy()
   },
-  // @ in the message box: the crew pops up, filtered as you type.
+  // @ in the message box: the clique pops up, filtered as you type.
   async mention(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     const type = (text) => js(win, `const ta = document.querySelector('.composer textarea'); ta.focus(); ta.value = ${JSON.stringify(text)}; ta.setSelectionRange(ta.value.length, ta.value.length); ta.dispatchEvent(new Event('input', { bubbles: true }))`)
@@ -1119,7 +1119,7 @@ const SHOTS = {
   async mentionGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await sleep(300)
@@ -1164,7 +1164,7 @@ const SHOTS = {
   async convo(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await js(win, click('.item.said .face[data-agent="Ada"]'))
@@ -1174,7 +1174,7 @@ const SHOTS = {
   },
   // The same in the dashboard's chat column.
   async convoDash(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await sleep(700)
     await js(win, click('.chat .item.said .face[data-agent="Ada"]'))
     await sleep(900)
@@ -1187,7 +1187,7 @@ const SHOTS = {
   async convoGif() {
     const win = await open('overlay.html', { theme: 'light', width: 520, height: 700, backdrop: 'desktop' })
     await sleep(400)
-    await js(win, "localStorage.setItem('crew.fresh', '0'); window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "localStorage.setItem('clique.fresh', '0'); window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(win)
     await js(win, "document.querySelector('#m-f8').scrollIntoView({ block: 'center' })")
@@ -1223,7 +1223,7 @@ const SHOTS = {
         await sleep(400)
         await key('Return')
         await sleep(1400)
-        await js(win, "const s = window.__crewState; const mine = s.feed.findLast((e) => e.from === 'you'); s.feed.push({ id: 'cv-r', kind: 'reply', from: 'Ada', to: 'you', re: mine.id, text: 'Re-ran it: **43 passing**. Sent @Milo the numbers.', ts: Date.now() }); window.__crewEmit('state', s)")
+        await js(win, "const s = window.__cliqueState; const mine = s.feed.findLast((e) => e.from === 'you'); s.feed.push({ id: 'cv-r', kind: 'reply', from: 'Ada', to: 'you', re: mine.id, text: 'Re-ran it: **43 passing**. Sent @Milo the numbers.', ts: Date.now() }); window.__cliqueEmit('state', s)")
         await sleep(1800)
         at = await glide(win, at, await center(win, '.ch-back'), 800)
         await sleep(300)
@@ -1246,7 +1246,7 @@ const SHOTS = {
   },
   // An agent's own context limit: Ada's 1M window held to 250k.
   async limit(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
     await js(win, click('.pcard[data-name="Ada"]'))
@@ -1261,7 +1261,7 @@ const SHOTS = {
   },
   // Setting one: Milo is already past 150k, so the note says what happens on Save; then "Just tell me".
   async limitGif() {
-    const win = await dashboard('light', 'crew')
+    const win = await dashboard('light', 'clique')
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
     await js(win, click('.pcard[data-name="Milo"]'))
@@ -1302,7 +1302,7 @@ const SHOTS = {
   },
   // The Clones setting on an agent's card, with the clones at work right now.
   async clonesEditor(theme) {
-    const win = await dashboard(theme, 'crew', { fixture: 'clones' })
+    const win = await dashboard(theme, 'clique', { fixture: 'clones' })
     await js(win, click('[data-mode=cards]'))
     await sleep(300)
     await js(win, click('.pcard[data-name="Theo"]'))
@@ -1319,7 +1319,7 @@ const SHOTS = {
     const win = await open('overlay.html', { theme: 'light', width: 560, height: 760, backdrop: 'desktop' })
     await sleep(400)
     // start from Theo alone, busy
-    await js(win, "const s = window.__crewState; s.agents = s.agents.filter((a) => !a.cloneOf); window.__crewEmit('state', s); window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(win, "const s = window.__cliqueState; s.agents = s.agents.filter((a) => !a.cloneOf); window.__cliqueEmit('state', s); window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(900)
     await fitToContent(win)
     await sleep(300)
@@ -1357,7 +1357,7 @@ const SHOTS = {
   },
   // Dictation: the composer while it listens (scripted words, a tone for a voice; no microphone).
   async voice(theme) {
-    const win = await dashboard(theme, 'crew')
+    const win = await dashboard(theme, 'clique')
     await sleep(600)
     await tap(win, await center(win, '.chat .mic'))
     await sleep(2600)
@@ -1366,10 +1366,10 @@ const SHOTS = {
   },
   // The Cards/Stats switch: the header must not move.
   async tabsGif() {
-    const win = await dashboard('light', 'crew')
+    const win = await dashboard('light', 'clique')
     await js(win, click('[data-mode=cards]'))
     await sleep(900)
-    const head = await js(win, "const r = document.querySelector('.page-head[data-for=crew]').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height + 230) }")
+    const head = await js(win, "const r = document.querySelector('.page-head[data-for=clique]').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height + 230) }")
     await record(win, 'tabs', {
       clip: head, ms: 3600, width: 900,
       during: async () => {
@@ -1451,7 +1451,7 @@ const SHOTS = {
   },
   // Sidebar: a click opens your conversation with an agent; a computer's name folds its agents away.
   async sidebarGif() {
-    const win = await dashboard('light', 'chat', { fixture: 'big', reset: ['crew.folds'] })
+    const win = await dashboard('light', 'chat', { fixture: 'big', reset: ['clique.folds'] })
     await sleep(1200)
     const side = await js(win, "const r = document.querySelector('.side').getBoundingClientRect(); return { x: 0, y: Math.round(r.y), width: Math.round(r.width), height: Math.min(760, Math.round(r.height)) }")
     await record(win, 'sidebar', {
@@ -1480,7 +1480,7 @@ const SHOTS = {
   },
   // Moving an agent from any computer: right-click it, Move to Workstation, check the folder there, Move.
   async moveGif() {
-    const win = await dashboard('light', 'crew', { reset: ['crew.folds'] })
+    const win = await dashboard('light', 'clique', { reset: ['clique.folds'] })
     await sleep(1200)
     await record(win, 'move', {
       ms: 9800, width: 1000,
@@ -1512,7 +1512,7 @@ const SHOTS = {
   },
   // The agent's sheet: Setup, Instructions, Look (try a hat on), Stats, without ever scrolling.
   async sheetGif() {
-    const win = await dashboard('light', 'crew')
+    const win = await dashboard('light', 'clique')
     await js(win, click('[data-mode=cards]'))
     await sleep(1000)
     await record(win, 'sheet', {
@@ -1541,17 +1541,17 @@ const SHOTS = {
   // On and off from the cards: June goes to sleep (black and white, where her card was) and wakes up again, and Rex
   // too; nothing else moves.
   async switchGif() {
-    const win = await dashboard('light', 'crew')
+    const win = await dashboard('light', 'clique')
     await js(win, click('[data-mode=cards]'))
     await sleep(1400)
-    const box = await js(win, "const h = document.querySelector('.page-head[data-for=crew]').getBoundingClientRect(); const g = document.querySelector('.col-grid').getBoundingClientRect(); return { x: Math.round(h.x), y: Math.round(h.y), width: Math.round(h.width), height: Math.round(Math.min(innerHeight - h.y, g.bottom - h.y)) }")
+    const box = await js(win, "const h = document.querySelector('.page-head[data-for=clique]').getBoundingClientRect(); const g = document.querySelector('.col-grid').getBoundingClientRect(); return { x: Math.round(h.x), y: Math.round(h.y), width: Math.round(h.width), height: Math.round(Math.min(innerHeight - h.y, g.bottom - h.y)) }")
     let at = { x: box.x + box.width / 2, y: box.y + 60 }
     const flip = async (name) => {
       at = await glide(win, at, await center(win, `.pcard[data-name="${name}"] .switch`), 600)
       await sleep(250)
       await tap(win, at)
     }
-    await record(win, 'crew-switch', {
+    await record(win, 'clique-switch', {
       clip: box, ms: 7200, width: 1000,
       during: async () => {
         await sleep(500)
@@ -1566,12 +1566,12 @@ const SHOTS = {
     })
     win.destroy()
   },
-  // Nobody yet, and no tasks yet: the empty Crew view and the empty board.
+  // Nobody yet, and no tasks yet: the empty CLIque view and the empty board.
   async empty(theme) {
-    for (const [name, view, code] of [['empty-crew', 'crew', 's.agents = []; s.feed = []'], ['empty-tasks', 'tasks', 's.tasks = { ...s.tasks, tickets: [] }']]) {
+    for (const [name, view, code] of [['empty-clique', 'clique', 's.agents = []; s.feed = []'], ['empty-tasks', 'tasks', 's.tasks = { ...s.tasks, tickets: [] }']]) {
       const win = await dashboard(theme, view)
       await sleep(700)
-      await js(win, `const s = window.__crewState; ${code}; window.__crewEmit('state', s)`)
+      await js(win, `const s = window.__cliqueState; ${code}; window.__cliqueEmit('state', s)`)
       await sleep(1300)
       await js(win, "for (const a of document.getAnimations()) { try { const t = a.effect?.getTiming?.(); if (t && t.iterations !== Infinity) a.finish(); else { a.pause(); a.currentTime = 0 } } catch {} }")
       await sleep(200)
@@ -1579,17 +1579,17 @@ const SHOTS = {
       win.destroy()
     }
   },
-  // A crew of 24 on three computers: every view has to hold up with many agents.
+  // A clique of 24 on three computers: every view has to hold up with many agents.
   async big(theme) {
-    for (const view of ['crew', 'tasks', 'grid']) {
-      const win = await dashboard(theme, view, { fixture: 'big', reset: ['crew.collection'] })
+    for (const view of ['clique', 'tasks', 'grid']) {
+      const win = await dashboard(theme, view, { fixture: 'big', reset: ['clique.collection'] })
       await sleep(1400)
       await save(win, `big-${view}-${theme}`)
       win.destroy()
     }
     const chat = await open('overlay.html', { theme, width: 520, height: 900, backdrop: 'desktop', fixture: 'big' })
     await sleep(400)
-    await js(chat, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(chat, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(chat)
     await save(chat, `big-chat-${theme}`)
@@ -1602,7 +1602,7 @@ const SHOTS = {
   },
   // Opening a card and going back.
   async detailGif() {
-    const win = await dashboard('light', 'crew')
+    const win = await dashboard('light', 'clique')
     await js(win, click('[data-mode=cards]'))
     await sleep(1200)
     await record(win, 'card-open', {
@@ -1632,10 +1632,10 @@ const SHOTS = {
     const win = await dashboard(theme, 'chat', { fixture: 'workspaces' })
     await sleep(900)
     await save(win, `hosted-rail-${theme}`)
-    await js(win, "window.__crewEmit('state', (window.__crewShow('storefront-2'), window.__crewState))")
+    await js(win, "window.__cliqueEmit('state', (window.__cliqueShow('storefront-2'), window.__cliqueState))")
     await sleep(900)
     await save(win, `hosted-on-screen-${theme}`)
-    await js(win, "window.__crewEmit('state', (window.__crewShow('notes'), window.__crewState))")
+    await js(win, "window.__cliqueEmit('state', (window.__cliqueShow('notes'), window.__cliqueState))")
     await sleep(900)
     await save(win, `hosted-owner-offline-${theme}`)
     await js(win, click('.ws-switch'))
@@ -1688,10 +1688,10 @@ const SHOTS = {
     await js(win, "openMenu?.close()")
     await sleep(300)
     // a new workspace's empty #general: its first steps
-    await js(win, "await crew.call('workspace', 'create', null, { name: 'Checkout', icon: '🛒', color: 'teal', members: ['Ada', 'Iris'] }); const s = window.__crewState; s.feed = []; s.agents = s.agents.map((a) => ({ ...a, status: 'idle', activity: '', subs: [], unread: 0 })); window.__crewEmit('state', s)")
+    await js(win, "await clique.call('workspace', 'create', null, { name: 'Checkout', icon: '🛒', color: 'teal', members: ['Ada', 'Iris'] }); const s = window.__cliqueState; s.feed = []; s.agents = s.agents.map((a) => ({ ...a, status: 'idle', activity: '', subs: [], unread: 0 })); window.__cliqueEmit('state', s)")
     await sleep(900)
     await save(win, `ws-welcome-${theme}`)
-    await js(win, "window.__crewEmit('state', (window.__crewShow('research'), window.__crewState))")
+    await js(win, "window.__cliqueEmit('state', (window.__cliqueShow('research'), window.__cliqueState))")
     await sleep(900)
     await save(win, `ws-parked-${theme}`)
     win.destroy()
@@ -1706,7 +1706,7 @@ const SHOTS = {
     tray.destroy()
     const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop', fixture: 'workspaces' })
     await sleep(400)
-    await js(chat, "window.__crewEmit('toggle', { open: true, focus: false })")
+    await js(chat, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(700)
     await fitToContent(chat)
     await save(chat, `ws-chat-${theme}`)
@@ -1716,10 +1716,10 @@ const SHOTS = {
 
 async function dashboard(theme, view, { width = 1440, height = 880, fixture, reset = [] } = {}) {
   const win = await open('dashboard.html', { theme, width, height, fixture })
-  // the places: chat (a channel), crew (Agents), tasks, terminals; grid and focus are Terminals laid out that way
+  // the places: chat (a channel), clique (Agents), tasks, terminals; grid and focus are Terminals laid out that way
   const place = { grid: 'terminals', focus: 'terminals' }[view] ?? view
   const layout = view === 'focus' ? 'focus' : view === 'grid' ? 'grid' : null
-  await js(win, `localStorage.setItem('crew.place', '${place}'); ${layout ? `localStorage.setItem('crew.layout', '${layout}');` : ''} localStorage.setItem('crew.target', 'auto'); localStorage.removeItem('crew.edTab'); for (const k of Object.keys(localStorage)) if (k.startsWith('crew.channel.')) localStorage.removeItem(k); ${reset.map((k) => `localStorage.removeItem('${k}');`).join(' ')}`)
+  await js(win, `localStorage.setItem('clique.place', '${place}'); ${layout ? `localStorage.setItem('clique.layout', '${layout}');` : ''} localStorage.setItem('clique.target', 'auto'); localStorage.removeItem('clique.edTab'); for (const k of Object.keys(localStorage)) if (k.startsWith('clique.channel.')) localStorage.removeItem(k); ${reset.map((k) => `localStorage.removeItem('${k}');`).join(' ')}`)
   win.webContents.reload()
   await new Promise((r) => win.webContents.once('did-finish-load', r))
   await sleep(500)

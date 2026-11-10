@@ -1,7 +1,7 @@
 // Codex's usage limits, from its session log: each token count carries the account's rate limits (a primary and a
 // secondary window, so many minutes long) and its credits. Reading them (numbers only, the newest that has them), and
 // keeping them per provider next to Claude's, with the same heads-ups and routing. Real Hub, fake runner and clock,
-// throwaway CREW_HOME. Run with `npm test`.
+// throwaway CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-codex-limits-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-codex-limits-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { codexLimitsFrom } = await import('../core/context.js')
 
@@ -23,13 +23,13 @@ class FakeRunner extends EventEmitter {
 }
 
 const HOUR = 3600000
-const LOG = path.join(process.env.CREW_HOME, 'rollout-2026-10-14T12-00-00-0199aaaa.jsonl')
+const LOG = path.join(process.env.CLIQUE_HOME, 'rollout-2026-10-14T12-00-00-0199aaaa.jsonl')
 let hub, runner, now
 beforeEach(() => {
   mock.timers.reset()
   now = Date.UTC(2026, 9, 14, 12, 0)
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now })
-  for (const f of ['usage.json', 'feed.jsonl', 'conversations.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['usage.json', 'feed.jsonl', 'conversations.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [
     { name: 'ada', area: 'backend api, servers', provider: 'codex' },
     { name: 'june', area: 'backend api, servers' },
@@ -43,7 +43,7 @@ afterEach(() => {
   for (const a of hub.agents.values()) clearTimeout(a.ack), clearTimeout(a.timer), clearTimeout(a.readyTimer)
   for (const t of ['statsTimer', 'convoTimer', 'usageTimer']) clearTimeout(hub[t])
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 // A token count the way Codex writes one. windows: { primary: [pct, minutes, hours until it resets], secondary: … }
 const count = (windows, extra = {}) => JSON.stringify({
@@ -81,7 +81,7 @@ test('the newest token count that has limits wins; garbage, other meters and win
   assert.equal(codexLimitsFrom(LOG), null)
   log(count({ primary: ['9', 10080, 50] }, { credits: null }), count({ primary: [99, 10080, -1] }, { credits: null }))
   assert.equal(codexLimitsFrom(LOG), null)
-  assert.equal(codexLimitsFrom(path.join(process.env.CREW_HOME, 'missing.jsonl')), null)
+  assert.equal(codexLimitsFrom(path.join(process.env.CLIQUE_HOME, 'missing.jsonl')), null)
 })
 
 test("a Codex agent's step brings its account's limits in, kept per provider next to Claude's", () => {
@@ -96,7 +96,7 @@ test("a Codex agent's step brings its account's limits in, kept per provider nex
   assert.equal(agents.find((a) => a.name === 'ada').nearLimit, true)
   assert.equal(agents.find((a) => a.name === 'june').nearLimit, false)
   hub.saveUsage(true)
-  const saved = JSON.parse(fs.readFileSync(path.join(process.env.CREW_HOME, 'usage.json'), 'utf8'))
+  const saved = JSON.parse(fs.readFileSync(path.join(process.env.CLIQUE_HOME, 'usage.json'), 'utf8'))
   assert.deepEqual(Object.keys(saved).sort(), ['claude', 'codex'])
 })
 

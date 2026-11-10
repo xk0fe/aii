@@ -1,4 +1,4 @@
-// Channels on the phone: which channel a message shows in, what's new and waiting in each, and the demo crew acting
+// Channels on the phone: which channel a message shows in, what's new and waiting in each, and the demo clique acting
 // like the computer does (sending in a channel, Auto among its members, read marks per channel, making and deleting).
 import { DemoClient } from '@/demo/client'
 import { makeDemo } from '@/demo/fixture'
@@ -38,7 +38,7 @@ describe('what is new and waiting, per channel', () => {
   })
 })
 
-describe('the demo crew in channels', () => {
+describe('the demo clique in channels', () => {
   let demo: DemoClient
   beforeEach(() => {
     jest.useFakeTimers()

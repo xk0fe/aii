@@ -82,7 +82,7 @@ export function discoverCodex() {
       }
     }
     // a codex that isn't a program the system can start (an empty or broken codex.exe on PATH) throws right here
-    // rather than calling back, which took Crew's start down with it
+    // rather than calling back, which took CLIque's start down with it
     try {
       execFile(codex.file, codex.args, { timeout: 15000, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, done)
     } catch (e) {
@@ -131,7 +131,7 @@ export function removeProvider(cfg, id) {
   cfg.save()
 }
 
-// Once, as Crew starts: GLM or Ollama, when an agent runs on it, is written down as added, so it stays in the picker
+// Once, as CLIque starts: GLM or Ollama, when an agent runs on it, is written down as added, so it stays in the picker
 // after that agent goes. -> whether config.json changed.
 export function keepProvidersInUse(cfg) {
   const added = listOf(cfg.data.addedProviders)

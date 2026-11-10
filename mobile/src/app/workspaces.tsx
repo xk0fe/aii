@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 
 import type { Workspace } from '@/net/types'
-import { useCrew } from '@/state/hooks'
+import { useClique } from '@/state/hooks'
 import { session } from '@/state/session'
 import { Icon } from '@/ui/icon'
 import { Faces, Press, tap, WsTile } from '@/ui/parts'
@@ -50,7 +50,7 @@ function Row({ t, w, current, busy, onPress, disabled }: { t: Theme; w: Workspac
 
 export default function Workspaces() {
   const t = useTheme()
-  const { client, state, ws, link } = useCrew()
+  const { client, state, ws, link } = useClique()
   const [going, setGoing] = useState<string | null>(null)
   const [error, setError] = useState('')
   const list = state?.workspaces ?? []

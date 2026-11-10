@@ -1,6 +1,6 @@
 // A turn an API error cut short (Claude Code's StopFailure): a dropped connection or a busy server gets a "continue"
-// from Crew, a few times; anything else, or one too many, calls you. Real Hub, fake runner and clock, throwaway
-// CREW_HOME. Run with `npm test`.
+// from CLIque, a few times; anything else, or one too many, calls you. Real Hub, fake runner and clock, throwaway
+// CLIQUE_HOME. Run with `npm test`.
 import { test, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-process.env.CREW_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-api-errors-'))
+process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-api-errors-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 
 class FakeRunner extends EventEmitter {
@@ -24,7 +24,7 @@ class FakeRunner extends EventEmitter {
 let hub, runner, noor, task
 beforeEach(() => {
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CREW_HOME, f), { force: true })
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [{ name: 'noor', area: 'client code' }, { name: 'iris', area: 'design' }] }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
@@ -43,13 +43,13 @@ afterEach(async () => {
   clearTimeout(hub.convoTimer)
   await hub.saving
 })
-after(() => fs.rmSync(process.env.CREW_HOME, { recursive: true, force: true, maxRetries: 10 }))
+after(() => fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 }))
 
 const hook = (e) => hub.onHook('noor', e)
 const fail = (error, text = 'API Error: Connection lost mid-response.') => hook({ hook_event_name: 'StopFailure', error, last_assistant_message: text })
 const events = () => hub.feed.filter((e) => e.kind === 'event' && e.from === 'noor').map((e) => e.text)
 
-test('a dropped connection: Crew types "continue", and the turn goes on answering the same task', () => {
+test('a dropped connection: CLIque types "continue", and the turn goes on answering the same task', () => {
   const tasks = hub.stats.noor.tasks
   fail('server_error')
   assert.equal(noor.status, 'working')
@@ -99,7 +99,7 @@ test('a turn that ends well starts the count again', () => {
   assert.match(events().at(-1), /in 20s$/)
 })
 
-test('you typed in its terminal first: no "continue" from Crew', () => {
+test('you typed in its terminal first: no "continue" from CLIque', () => {
   fail('server_error')
   hook({ hook_event_name: 'UserPromptSubmit', prompt: 'go on with the captures' })
   mock.timers.tick(30000)

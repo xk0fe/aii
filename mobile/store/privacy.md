@@ -15,7 +15,7 @@ Checked against the code on 2026-11-02 (`package.json`, `src/`):
 - **Camera:** only while the pairing screen is open, to read the QR code; frames are processed on the device and never
   stored or sent. Pasting the code works without the camera.
 - **Local network:** to reach the user's own computer. No Bonjour browsing, no scanning.
-- The demo crew is made up and never leaves the phone.
+- The demo clique is made up and never leaves the phone.
 
 ## Apple: App Privacy ("nutrition label")
 
@@ -51,5 +51,5 @@ messages on it are encrypted by the app.
 ## iOS permission prompts
 
 - Camera: "CLIque uses the camera to scan the pairing code your computer shows."
-- Local network: "CLIque connects to CLIque on your computer over your Wi-Fi, so you can see your crew and answer them
+- Local network: "CLIque connects to CLIque on your computer over your Wi-Fi, so you can see your clique and answer them
   from your phone."

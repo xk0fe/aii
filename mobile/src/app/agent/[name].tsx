@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 
 import { openConvo } from '@/state/convo'
-import { useCrew, useDerived } from '@/state/hooks'
+import { useClique, useDerived } from '@/state/hooks'
 import { agentColor } from '@/ui/avatar'
 import { Creature, MotionContext } from '@/ui/creature'
 import { activityWords, ago, brainLine, displayName, plural, rowLine, statusWord } from '@/ui/format'
@@ -47,7 +47,7 @@ function ActionRow({ t, icon, title, detail, onPress, disabled, last }: { t: The
 export default function AgentSheet() {
   const t = useTheme()
   const { name } = useLocalSearchParams<{ name: string }>()
-  const { client, state, link } = useCrew()
+  const { client, state, link } = useClique()
   const d = useDerived(state)
   const now = useNow(15000)
   const focused = useIsFocused()

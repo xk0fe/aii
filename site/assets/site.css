@@ -116,7 +116,7 @@ code { font-family: var(--font-mono); font-size: .93em; }
   .hero-dl .row .btn { flex: 1 1 auto; padding: 0 12px; }
 }
 
-/* the Crew room: a picture that scales with its width, and the bubbles with it (the room is the page's width less its
+/* the CLIque room: a picture that scales with its width, and the bubbles with it (the room is the page's width less its
    gutters, so their size follows the viewport's) */
 .rooms { margin-top: 48px; }
 .room { position: relative; }

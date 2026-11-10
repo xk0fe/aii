@@ -1,7 +1,7 @@
 // Dictation in the chat composer. The mic button (or the voice hotkey) streams the microphone to Apple's
 // on-device recognizer (core/voice.js), and what it hears appears in the message box as you talk, words still
 // settling included. Click to start and stop, or hold to talk. Enter stops and sends, Esc stops.
-/* global crew, store, esc, keys */
+/* global clique, store, esc, keys */
 
 const VOICE_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11.5" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>'
@@ -44,7 +44,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
   let watchdog = null
   let hint = '' // what the status line says outside listening
 
-  const locale = () => store.get('crew.voiceLocale') || ''
+  const locale = () => store.get('clique.voiceLocale') || ''
   const lang = (code) => String(code).split(/[-_]/)[0]
   const language = () => {
     const want = using || locale()
@@ -105,7 +105,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
 
   // Waiting too long for the last words (or you said stop waiting): cancel, keeping what's in the box.
   function giveUp() {
-    if (id) crew.call('voiceCancel', id)
+    if (id) clique.call('voiceCancel', id)
     reset()
   }
 
@@ -131,27 +131,27 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
     set('starting', '<span class="spin"></span>Getting ready…')
     let session
     try {
-      session = await crew.call('voiceStart', locale())
+      session = await clique.call('voiceStart', locale())
     } catch (e) {
       return current() && fail(e.message)
     }
-    if (!current()) return crew.call('voiceCancel', session) // stopped, or started again, while it was starting
+    if (!current()) return clique.call('voiceCancel', session) // stopped, or started again, while it was starting
     id = session
-    crew.voiceAudio(id, new Float32Array(0)) // this window owns the session: closing it ends the session too
+    clique.voiceAudio(id, new Float32Array(0)) // this window owns the session: closing it ends the session too
     for (const e of early.splice(0)) handle(e)
     if (!current()) return
     let opened
     try {
-      opened = await openMic((samples) => crew.voiceAudio(session, samples))
+      opened = await openMic((samples) => clique.voiceAudio(session, samples))
     } catch (e) {
       if (!current()) return
-      crew.call('voiceCancel', session)
+      clique.call('voiceCancel', session)
       return fail(e.name === 'NotAllowedError' ? 'mic-denied' : `Couldn't open the microphone: ${e.message}`)
     }
     if (!current() || state === 'finishing') return opened.close() // nobody's listening for it any more
     mic = opened
     if (!options) {
-      crew.call('voiceLocales').then((o) => {
+      clique.call('voiceLocales').then((o) => {
         options = o
         if (state === 'listening') show()
       }, () => {})
@@ -170,7 +170,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
     }
     if (state === 'starting' && !mic) {
       // nothing heard yet: just don't start
-      if (id) crew.call('voiceCancel', id)
+      if (id) clique.call('voiceCancel', id)
       return reset()
     }
     finish()
@@ -179,7 +179,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
   function finish() {
     closeMic()
     set('finishing', '<span class="spin"></span>Finishing…')
-    crew.call('voiceStop', id)
+    clique.call('voiceStop', id)
   }
 
   function closeMic() {
@@ -188,7 +188,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
     button.style.removeProperty('--lv')
   }
 
-  crew.onVoice(handle)
+  clique.onVoice(handle)
   function handle(e) {
     if (e.type === 'toggle') return state === 'idle' ? (reveal?.(), start()) : stop()
     if (state === 'starting' && id === null && e.id) return void early.push(e)
@@ -205,7 +205,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
       const send = sendWhenDone
       reset()
       ta.focus()
-      if (next) store.set('crew.voiceLocale', next)
+      if (next) store.set('clique.voiceLocale', next)
       if (send) return ta.value.trim() && submit()
       if (next) start() // carry on in the new language
     } else if (e.type === 'error') fail(e.message)
@@ -228,7 +228,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
   button.addEventListener('click', (e) => e.preventDefault())
   bar.addEventListener('click', (e) => {
     const act = e.target.closest('[data-voice]')?.dataset.voice
-    if (act === 'settings') crew.call('voiceSettings')
+    if (act === 'settings') clique.call('voiceSettings')
     if (act === 'lang' && options?.length > 1 && state === 'listening') {
       const at = Math.max(0, options.indexOf(language()))
       switchTo = options[(at + 1) % options.length].id
@@ -265,7 +265,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
       ctx.close()
       throw e
     }
-    const node = new AudioWorkletNode(ctx, 'crew-mic', { numberOfOutputs: 0 })
+    const node = new AudioWorkletNode(ctx, 'clique-mic', { numberOfOutputs: 0 })
     ctx.createMediaStreamSource(stream).connect(node)
     let level = 0
     node.port.onmessage = ({ data }) => {

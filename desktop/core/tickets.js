@@ -1,7 +1,7 @@
-// The Tasks board: work for the crew (bugs you call out, features, chores) as tickets that move
+// The Tasks board: work for the clique (bugs you call out, features, chores) as tickets that move
 // to do → in progress → review → done (stored as new / fixing / check / done). A ticket carries everything a
 // fresh conversation needs to do it (what's wanted, screenshots, notes), so whoever picks it up doesn't need
-// anyone's chat history. Stored in ~/.crew/tickets.json. No Electron in here.
+// anyone's chat history. Stored in ~/.clique/tickets.json. No Electron in here.
 import fs from 'node:fs'
 
 export const STATUSES = ['new', 'fixing', 'check', 'done']
@@ -61,7 +61,7 @@ export class Tickets {
 
   get(id) {
     const t = this.all.find((x) => x.id === Number(String(id).replace(/^#/, '')))
-    if (!t) throw new Error(`no task #${String(id).replace(/^#/, '')} (try: crew task list)`)
+    if (!t) throw new Error(`no task #${String(id).replace(/^#/, '')} (try: clique task list)`)
     return t
   }
 
@@ -149,7 +149,7 @@ export class Tickets {
 
   log(t, by, text, kind) {
     t.updated = Date.now()
-    if (by !== 'crew') delete t.stalled // someone's on it again (see Hub.checkStalls)
+    if (by !== 'clique') delete t.stalled // someone's on it again (see Hub.checkStalls)
     t.log.push({ ts: t.updated, by, text, ...(kind && { kind }) })
     if (t.log.length > 60) t.log.splice(1, t.log.length - 60) // keep the first entry (who reported it)
     this.save()
@@ -160,7 +160,7 @@ export class Tickets {
   }
 }
 
-// What an agent sees for `crew task list` and `crew task show`.
+// What an agent sees for `clique task list` and `clique task show`.
 export const ticketLine = (t) =>
   `#${String(t.id).padEnd(4)} ${t.kind.padEnd(8)} ${t.status.padEnd(7)} ${PRIORITY_NAME[t.severity].padEnd(7)} ${(t.owner ? `@${t.owner}` : 'unassigned').padEnd(14)} ${t.title}${t.seen > 1 ? ` (seen ${t.seen}x)` : ''}`
 
@@ -181,11 +181,11 @@ export function ticketText(t) {
 }
 
 // The brief whoever picks a task up gets: everything about it, in a conversation of its own. `ref` is how the
-// agent names it in `crew task` (12, or 12@laptop when it lives on another computer). `again`: you sent it back,
+// agent names it in `clique task` (12, or 12@laptop when it lives on another computer). `again`: you sent it back,
 // and the agent is still in the conversation where it worked on it.
 export function fixPrompt(t, ref, note, again) {
   const bug = t.kind === 'bug'
-  const done = `Check it for real before you report it (run it, or its test). Then run: crew task done ${ref} "${bug ? 'what was wrong, what you changed' : 'what you did'}, how you checked"`
+  const done = `Check it for real before you report it (run it, or its test). Then run: clique task done ${ref} "${bug ? 'what was wrong, what you changed' : 'what you did'}, how you checked"`
   if (again) return `[${t.kind} #${t.id}] Sent back: ${bug ? 'still broken' : 'not done yet'}.${note ? ` The user says: ${note}` : ''}\n\nTake another look. ${done}`
   const notes = t.log.filter((l) => l.kind === 'note').map((l) => `- ${l.by === 'you' ? 'the user' : `@${l.by}`}: ${l.text}`)
   return [
@@ -197,8 +197,8 @@ export function fixPrompt(t, ref, note, again) {
     note && `\nThe user adds: ${note}`,
     `\nThis conversation is just for this ${t.kind}. ${bug ? 'Reproduce it, find the cause, fix it.' : 'Do it, and keep to what it asks.'}`,
     `Stay in your own project. If it isn't clear ${bug ? 'where the bug lives and you can\'t find it there' : 'what is wanted or where it goes'}, don't guess and don't change other code:`,
-    `run crew task note ${ref} "what you looked at, what you need to know" and stop.${bug ? " Same if you can't reproduce it." : ''}`,
-    `If it isn't yours to do (not your area, or you can't take it), run crew task decline ${ref} "why" and stop: Crew gives it to whoever's area it is.`,
+    `run clique task note ${ref} "what you looked at, what you need to know" and stop.${bug ? " Same if you can't reproduce it." : ''}`,
+    `If it isn't yours to do (not your area, or you can't take it), run clique task decline ${ref} "why" and stop: CLIque gives it to whoever's area it is.`,
     done,
   ].filter(Boolean).join('\n')
 }
@@ -209,19 +209,19 @@ export const triagePrompt = (t, ref) =>
     `[${t.kind} #${t.id} to triage] ${t.body || t.title}`,
     '',
     `Triage this ${t.kind === 'bug' ? 'bug report' : 'task'} the user just added. Don't do it yourself.`,
-    `1. If it's the same as an open task (crew task list), run: crew task dup ${ref} <that task's number>`,
-    '2. Otherwise make it clear and give it to the agent whose area it is and who is on (crew who).',
+    `1. If it's the same as an open task (clique task list), run: clique task dup ${ref} <that task's number>`,
+    '2. Otherwise make it clear and give it to the agent whose area it is and who is on (clique who).',
     '   Keep every concrete detail from what the user wrote: file paths, commands, steps, numbers, devices.',
-    `   crew task triage ${ref} --owner <name> --priority <urgent|high|medium|low> --kind <bug|feature|task> --title "short title" --details "${t.kind === 'bug' ? 'steps to reproduce, expected, actual' : 'what is wanted, how to tell it is done'}, where to look"`,
+    `   clique task triage ${ref} --owner <name> --priority <urgent|high|medium|low> --kind <bug|feature|task> --title "short title" --details "${t.kind === 'bug' ? 'steps to reproduce, expected, actual' : 'what is wanted, how to tell it is done'}, where to look"`,
     'Keep it short. Urgent means it blocks the user right now.',
   ].join('\n')
 
 // Quick triage (core/savers.js quickTriage): the same job in one short call with no tools, so everything it needs is
-// written in, and the answer is one JSON object (readTriage). `open`: the other open tasks; `crew`: who can own it.
-export function quickTriagePrompt(t, open, crew) {
+// written in, and the answer is one JSON object (readTriage). `open`: the other open tasks; `clique`: who can own it.
+export function quickTriagePrompt(t, open, clique) {
   const bug = t.kind === 'bug'
   return [
-    `You triage tasks for a crew of AI coding agents. Answer with one JSON object and nothing else.`,
+    `You triage tasks for a clique of AI coding agents. Answer with one JSON object and nothing else.`,
     '',
     `The ${bug ? 'bug report' : 'task'} the user just added (#${t.id}):`,
     t.report || [t.title, t.body].filter(Boolean).join('\n\n'),
@@ -231,7 +231,7 @@ export function quickTriagePrompt(t, open, crew) {
     open.length ? open.map(ticketLine).join('\n') : '(none)',
     '',
     'Agents who can own it (name, status, area):',
-    crew.length ? crew.map((a) => `${a.name}  ${a.status}  ${a.area || 'general'}`).join('\n') : '(none)',
+    clique.length ? clique.map((a) => `${a.name}  ${a.status}  ${a.area || 'general'}`).join('\n') : '(none)',
     '',
     'If it is the same as one of the open tasks: {"dup": <that task\'s number>}',
     `Otherwise: {"owner": "<the agent whose area it is, or null>", "priority": "urgent|high|medium|low", "kind": "bug|feature|task", "title": "<short title>", "details": "<${bug ? 'steps to reproduce, expected, actual' : 'what is wanted, how to tell it is done'}, where to look>"}`,
@@ -256,13 +256,13 @@ export function readTriage(text) {
   return priorityOf(out.priority) && KINDS.includes(out.kind) && out.title ? out : null
 }
 
-export const TASK_HELP = `crew task list                    open tasks
-crew task show <n>                one task in full: details, screenshots, notes
-crew task done <n> "..."          you did it: what you did (or what was wrong), how you checked
-crew task note <n> "..."          add what you found (unclear, can't reproduce, a clue)
-crew task decline <n> "why"       it isn't yours (not your area, can't take it): Crew gives it to the next owner by area
-crew task add "title" "..."       add a task (--kind bug|feature|task, --priority, --owner)
-crew task triage <n> --owner <name> --priority <urgent|high|medium|low> [--kind] [--title "..."] [--details "..."]
-crew task dup <n> <original>      it's the same as another task
-(crew bug ... works too)
+export const TASK_HELP = `clique task list                    open tasks
+clique task show <n>                one task in full: details, screenshots, notes
+clique task done <n> "..."          you did it: what you did (or what was wrong), how you checked
+clique task note <n> "..."          add what you found (unclear, can't reproduce, a clue)
+clique task decline <n> "why"       it isn't yours (not your area, can't take it): CLIque gives it to the next owner by area
+clique task add "title" "..."       add a task (--kind bug|feature|task, --priority, --owner)
+clique task triage <n> --owner <name> --priority <urgent|high|medium|low> [--kind] [--title "..."] [--details "..."]
+clique task dup <n> <original>      it's the same as another task
+(clique bug ... works too)
 `

@@ -1,4 +1,4 @@
-// A made-up crew for the demo (and the store screenshots, and App Review): the neutral demo crew every Crew picture
+// A made-up clique for the demo (and the store screenshots, and App Review): the neutral demo clique every CLIque picture
 // uses, building a small online shop in "Storefront", with a second workspace for its docs. Everything is relative to
 // `now`, so the demo always looks like it's happening.
 import type { Agent, Channel, FeedEntry, State, Sub } from '@/net/types'

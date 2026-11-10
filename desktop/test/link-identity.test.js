@@ -1,6 +1,6 @@
-// A computer's Crew Link certificate (core/link.js identity): made without openssl, which Windows doesn't have, kept
-// when an older Crew made one with openssl (so linked computers keep their code), and replaced when the TLS of the
-// runtime can't use it. Crew runs in Electron, whose TLS is BoringSSL, not the OpenSSL these tests run on, so the
+// A computer's CLIque Link certificate (core/link.js identity): made without openssl, which Windows doesn't have, kept
+// when an older CLIque made one with openssl (so linked computers keep their code), and replaced when the TLS of the
+// runtime can't use it. CLIque runs in Electron, whose TLS is BoringSSL, not the OpenSSL these tests run on, so the
 // handshake is tried there too. Run with `npm test`.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { identity, selfSigned } from '../core/link.js'
 import { ELECTRON } from './helpers/platform.mjs'
 
-// What an older Crew made with `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1` (test keys, made
+// What an older CLIque made with `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1` (test keys, made
 // for these tests only). OpenSSL 3 names the curve; macOS's own openssl, LibreSSL 3, writes its parameters out, which
 // BoringSSL can't read.
 const OPENSSL = {
@@ -67,7 +67,7 @@ VQ==
 
 const made = []
 const tmp = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-identity-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-identity-'))
   made.push(dir)
   return dir
 }
@@ -85,8 +85,8 @@ test('a computer gets its certificate without openssl, or any other program', ()
     process.env.PATH = was
   }
   const x = new crypto.X509Certificate(id.cert)
-  assert.equal(x.subject, 'CN=crew-link')
-  assert.equal(x.issuer, 'CN=crew-link')
+  assert.equal(x.subject, 'CN=clique-link')
+  assert.equal(x.issuer, 'CN=clique-link')
   assert.ok(x.verify(x.publicKey), 'self-signed')
   assert.ok(x.checkPrivateKey(crypto.createPrivateKey(id.key)), 'with its key')
   assert.equal(x.publicKey.asymmetricKeyDetails.namedCurve, 'prime256v1')
@@ -99,11 +99,11 @@ test('a computer gets its certificate without openssl, or any other program', ()
 })
 
 test('dates past 2049 are written as X.509 wants them', () => {
-  const x = new crypto.X509Certificate(selfSigned('crew-link', { now: new Date('2045-06-01T00:00:00Z') }).cert)
+  const x = new crypto.X509Certificate(selfSigned('clique-link', { now: new Date('2045-06-01T00:00:00Z') }).cert)
   assert.equal(new Date(x.validTo).getUTCFullYear(), 2055)
 })
 
-test("one an older Crew made with openssl is kept: computers linked to it don't need a new code", () => {
+test("one an older CLIque made with openssl is kept: computers linked to it don't need a new code", () => {
   const dir = saved(tmp(), OPENSSL)
   const id = identity(dir)
   assert.equal(id.fingerprint, OPENSSL.fingerprint)
@@ -144,7 +144,7 @@ const LINKS = `
   }
   const out = {}
   for (const [name, saved] of Object.entries({ fresh: null, ...JSON.parse(process.env.SAVED) })) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-identity-run-'))
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-identity-run-'))
     if (saved) for (const f of ['cert', 'key']) fs.writeFileSync(path.join(dir, f + '.pem'), saved[f])
     try {
       const id = identity(dir)
@@ -171,7 +171,7 @@ test('linking works with each of them in Node', () => {
   })
 })
 
-test('…and in Electron, where Crew runs: a LibreSSL one is made anew there', { skip: !fs.existsSync(ELECTRON) && 'no Electron to run' }, () => {
+test('…and in Electron, where CLIque runs: a LibreSSL one is made anew there', { skip: !fs.existsSync(ELECTRON) && 'no Electron to run' }, () => {
   assert.deepEqual(run(ELECTRON, { ELECTRON_RUN_AS_NODE: '1' }), {
     fresh: { kept: null, answer: 'pong ping' },
     openssl: { kept: true, answer: 'pong ping' },

@@ -1,7 +1,7 @@
 <Project>
-  <!-- What building crew-voice leaves behind goes in desktop/dist/ (ignored by git), not next to the source. -->
+  <!-- What building clique-voice leaves behind goes in desktop/dist/ (ignored by git), not next to the source. -->
   <PropertyGroup>
-    <BaseOutputPath>$(MSBuildThisFileDirectory)../../dist/crew-voice-build/bin/</BaseOutputPath>
-    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../../dist/crew-voice-build/obj/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)../../dist/clique-voice-build/bin/</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../../dist/clique-voice-build/obj/</BaseIntermediateOutputPath>
   </PropertyGroup>
 </Project>

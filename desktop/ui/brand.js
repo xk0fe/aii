@@ -1,10 +1,10 @@
-// Crew's brand layer: the name the app shows, its felt, and the Crew view's header. Felt is the creatures' material,
-// and the brand surfaces are made of it too: each creature's patch on its card, the menu bar's crew strip, empty
+// CLIque's brand layer: the name the app shows, its felt, and the CLIque view's header. Felt is the creatures' material,
+// and the brand surfaces are made of it too: each creature's patch on its card, the menu bar's clique strip, empty
 // states and the wordmark. Never on controls, and text never sits on it. One felt surface per region.
 /* global avatarHTML, poseOf, statusWord, plainName, esc */
 
 // The product's name wherever it's shown (the wordmark, window titles). A rename is this line and PRODUCT_NAME in
-// core/appid.js (the app, its menus and installers); the `crew` command, the ~/.crew folder, environment variables and
+// core/appid.js (the app, its menus and installers); the `clique` command, the ~/.clique folder, environment variables and
 // app IDs keep theirs.
 const PRODUCT_NAME = 'CLIque'
 document.title = PRODUCT_NAME
@@ -147,7 +147,7 @@ function stripHTML(agents, width = 318) {
   const cast = keep ? agents.filter((a) => keep.has(a.name)) : agents
   const more = agents.length - cast.length
   const who = (a) => `<button class="strip-who" data-open="${esc(a.name)}" title="${esc(a.seed ?? a.name)}">${avatarHTML(a, { size: 36 })}${a.on && a.status === 'waiting' ? '<i class="dot waiting"></i>' : ''}</button>`
-  return `<div class="strip"><div class="strip-crew">${cast.map(who).join('')}${more ? `<button class="strip-more" data-act="dashboard" title="Everyone, in the dashboard">+${more}</button>` : ''}</div></div>`
+  return `<div class="strip"><div class="strip-clique">${cast.map(who).join('')}${more ? `<button class="strip-more" data-act="dashboard" title="Everyone, in the dashboard">+${more}</button>` : ''}</div></div>`
 }
 // Someone new popping up on the stage: the empty Agents view. And everyone waiting with their mugs: the empty Tasks
 // board.

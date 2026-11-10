@@ -7,7 +7,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import type { Link } from '@/net/client'
-import { useCrew } from '@/state/hooks'
+import { useClique } from '@/state/hooks'
 
 import { clock, when } from './format'
 import { Press, WsTile } from './parts'
@@ -33,7 +33,7 @@ export function TopBar({ background, children }: { background: string; children:
 // A tab's head. `workspace`: this tab shows one workspace, so the head says which and can switch it.
 export function TabHead({ t, title, sub, workspace = true }: { t: Theme; title: string; sub?: string; workspace?: boolean }) {
   const insets = useSafeAreaInsets()
-  const { client, link, state, ws, switching } = useCrew()
+  const { client, link, state, ws, switching } = useClique()
   const w = state?.workspaces?.find((x) => x.id === ws) ?? state?.workspace
   const needsElsewhere = (state?.workspaces ?? []).filter((x) => x.id !== ws).reduce((n, x) => n + (x.waiting ?? 0), 0)
   const name = w?.name ?? ws

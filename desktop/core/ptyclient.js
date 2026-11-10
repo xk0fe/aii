@@ -1,6 +1,6 @@
-// The Runner for agents that outlive Crew: the same as core/runner.js to the hub, but the terminals live in the terminal
-// host (core/ptyhost.js), a process of their own, started the first time it's needed. Quitting Crew just lets go of
-// them (detach); the next Crew to connect finds them still running (survivors) and picks them up where they are.
+// The Runner for agents that outlive CLIque: the same as core/runner.js to the hub, but the terminals live in the terminal
+// host (core/ptyhost.js), a process of their own, started the first time it's needed. Quitting CLIque just lets go of
+// them (detach); the next CLIque to connect finds them still running (survivors) and picks them up where they are.
 // Keeps a copy of each terminal's state here (what it printed, when, its size), so running(), quietFor() and buffer()
 // answer straight away, as the hub expects.
 import { EventEmitter } from 'node:events'
@@ -16,7 +16,7 @@ import { pathKey } from './launch.js'
 import { PROTOCOL, RUN, LOG, address } from './ptyhost.js'
 
 const SCROLLBACK = 256 * 1024
-// In an installed Crew the host and node-pty are unpacked next to app.asar (electron-builder.config.mjs asarUnpack):
+// In an installed CLIque the host and node-pty are unpacked next to app.asar (electron-builder.config.mjs asarUnpack):
 // the host runs from there as plain Node, and on Windows they're copied from there (stage).
 const unpacked = (file) => file.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
 const HOST = unpacked(fileURLToPath(new URL('./ptyhost.js', import.meta.url)))
@@ -26,13 +26,13 @@ export const RUNTIMES = path.join(RUN, 'runtime')
 
 export class HostRunner extends EventEmitter {
   procs = new Map() // name -> { pid, tag, chunks, size, startedAt, lastOutput, cols, rows }
-  survivors = [] // what was already running when Crew connected: [{ name, tag, pid }]
+  survivors = [] // what was already running when CLIque connected: [{ name, tag, pid }]
   sock = null
   outbox = [] // what to send once connected
   stopping = new Map() // name -> resolve, for stop()'s promise
 
-  // runtime: how to run the host as Node ({ file, env }); Crew passes its own Electron binary in Node mode. stage:
-  // whether it runs from a copy (see stage(); into: where), by default when that binary is a packaged Crew on Windows.
+  // runtime: how to run the host as Node ({ file, env }); CLIque passes its own Electron binary in Node mode. stage:
+  // whether it runs from a copy (see stage(); into: where), by default when that binary is a packaged CLIque on Windows.
   constructor({ runtime } = {}) {
     super()
     this.runtime = runtime ?? { file: process.execPath, env: {} }
@@ -42,7 +42,7 @@ export class HostRunner extends EventEmitter {
   async connect() {
     let line = await dial().catch(() => null)
     if (!line) {
-      // from the copy if there is one, and from where Crew is if the copy won't start (a policy that keeps programs
+      // from the copy if there is one, and from where CLIque is if the copy won't start (a policy that keeps programs
       // out of your own folders, say)
       for (const runtime of await this.runtimes()) {
         this.spawnHost(runtime)
@@ -52,12 +52,12 @@ export class HostRunner extends EventEmitter {
           line = await dial().catch(() => null)
         }
         if (line) {
-          this.started = runtime // what the host Crew started runs from
+          this.started = runtime // what the host CLIque started runs from
           break
         }
-        // next time straight to where Crew is, without the wait
+        // next time straight to where CLIque is, without the wait
         if (runtime.staged) {
-          note(`terminal host: the copy in ${path.dirname(runtime.file)} didn't start, so it runs from Crew's folder`)
+          note(`terminal host: the copy in ${path.dirname(runtime.file)} didn't start, so it runs from CLIque's folder`)
           fs.writeFileSync(path.join(path.dirname(runtime.file), '.broken'), '')
         }
       }
@@ -65,7 +65,7 @@ export class HostRunner extends EventEmitter {
     }
     const hello = await this.greet(line.sock, line.token)
     if (hello.protocol !== PROTOCOL) {
-      // a host from another Crew version: its terminals go (the agents resume their conversations), and a new one starts
+      // a host from another CLIque version: its terminals go (the agents resume their conversations), and a new one starts
       line.sock.write(JSON.stringify({ t: 'quit' }) + '\n')
       line.sock.destroy()
       await new Promise((r) => setTimeout(r, 800))
@@ -92,7 +92,7 @@ export class HostRunner extends EventEmitter {
       const copy = await stage({ exe: direct.file, script: HOST, pty, into: this.runtime.into ?? RUNTIMES })
       return [{ ...direct, ...copy, staged: true }, direct]
     } catch (e) {
-      note(`terminal host: couldn't copy it out of Crew's folder (${e.message}), so it runs from there`)
+      note(`terminal host: couldn't copy it out of CLIque's folder (${e.message}), so it runs from there`)
       return [direct]
     }
   }
@@ -101,7 +101,7 @@ export class HostRunner extends EventEmitter {
     fs.mkdirSync(RUN, { recursive: true, mode: 0o700 })
     rotate(LOG)
     const log = fs.openSync(LOG, 'a')
-    // detached: on Windows that also keeps it out of the job that ends what Crew started once Crew goes.
+    // detached: on Windows that also keeps it out of the job that ends what CLIque started once CLIque goes.
     // windowsHide: a console program (Node, in the tests) would get a console window of its own otherwise.
     const p = spawn(file, [script], {
       detached: true, windowsHide: true, stdio: ['ignore', log, log], cwd: RUN,
@@ -226,7 +226,7 @@ export class HostRunner extends EventEmitter {
     for (const name of [...this.procs.keys()]) this.stop(name)
   }
 
-  // Crew is quitting and the agents stay: lets go of the host without stopping anything.
+  // CLIque is quitting and the agents stay: lets go of the host without stopping anything.
   detach() {
     this.detached = true
     this.sock?.end()
@@ -305,13 +305,13 @@ export function rotate(file, keep = LOG_KEEP) {
   } catch {}
 }
 
-// Windows won't replace a program's files while it runs, and an update replaces Crew's. A host running from Crew's
+// Windows won't replace a program's files while it runs, and an update replaces CLIque's. A host running from CLIque's
 // folder would have to stop for an update, every agent with it (the installer stops whatever runs as CLIque.exe there
 // anyway). So on Windows it runs from a copy of what it needs, made once per version, in `into` (RUNTIMES):
-//   <version>/crew-host.exe      Crew's own binary (Electron, run as Node), with the DLLs and data files beside it
+//   <version>/clique-host.exe      CLIque's own binary (Electron, run as Node), with the DLLs and data files beside it
 //   <version>/app/ptyhost.js     this host, with node-pty in app/node_modules
 // Copies no host runs from any more are removed. Windows won't remove a running program's file, which is how `busy`
-// tells by default. Files inside Crew's app.asar are read the way Electron reads them. A copy that didn't start once
+// tells by default. Files inside CLIque's app.asar are read the way Electron reads them. A copy that didn't start once
 // (connect marks it .broken) isn't tried again. -> { file, script }
 export async function stage({ exe, script, pty, into, busy = running }) {
   const fsp = fs.promises
@@ -324,14 +324,14 @@ export async function stage({ exe, script, pty, into, busy = running }) {
     .update(await fsp.readFile(script))
     .digest('hex').slice(0, 16)
   const home = path.join(into, version)
-  const out = { file: path.join(home, 'crew-host.exe'), script: path.join(home, 'app', 'ptyhost.js') }
+  const out = { file: path.join(home, 'clique-host.exe'), script: path.join(home, 'app', 'ptyhost.js') }
   if (fs.existsSync(path.join(home, '.broken'))) throw new Error("the copy didn't start before")
   await fsp.mkdir(into, { recursive: true })
   if (!fs.existsSync(path.join(home, '.complete'))) {
     // copied aside first and moved into place whole, so a copy cut short is never run
     const tmp = path.join(into, `.${version}-${process.pid}-${Date.now()}`)
     await fsp.mkdir(path.join(tmp, 'app'), { recursive: true })
-    await fsp.copyFile(exe, path.join(tmp, 'crew-host.exe'))
+    await fsp.copyFile(exe, path.join(tmp, 'clique-host.exe'))
     for (const f of beside) await fsp.copyFile(path.join(path.dirname(exe), f), path.join(tmp, f))
     await fsp.writeFile(path.join(tmp, 'app', 'ptyhost.js'), await fsp.readFile(script))
     await fsp.writeFile(path.join(tmp, 'app', 'package.json'), '{ "type": "module" }\n')
@@ -345,14 +345,14 @@ export async function stage({ exe, script, pty, into, busy = running }) {
     await fsp.rm(home, { recursive: true, force: true }).catch(() => {})
     await fsp.rename(tmp, home).catch(async (e) => {
       await fsp.rm(tmp, { recursive: true, force: true }).catch(() => {})
-      if (!fs.existsSync(path.join(home, '.complete'))) throw e // made meanwhile by another Crew is just as good
+      if (!fs.existsSync(path.join(home, '.complete'))) throw e // made meanwhile by another CLIque is just as good
     })
   }
   for (const name of await fsp.readdir(into)) {
     const dir = path.join(into, name)
     if (name === version) continue
     if (name.startsWith('.')) {
-      // a copy cut short, unless it's another Crew's still under way
+      // a copy cut short, unless it's another CLIque's still under way
       if (Date.now() - (await fsp.stat(dir)).mtimeMs > 3600e3) await fsp.rm(dir, { recursive: true, force: true }).catch(() => {})
     } else if (!(await busy(dir))) {
       await fsp.rm(dir, { recursive: true, force: true }).catch(() => {})
@@ -364,7 +364,7 @@ export async function stage({ exe, script, pty, into, busy = running }) {
 // Does a host run from this copy? On Windows its program can't be removed while it runs.
 async function running(dir) {
   try {
-    await fs.promises.unlink(path.join(dir, 'crew-host.exe'))
+    await fs.promises.unlink(path.join(dir, 'clique-host.exe'))
     return false
   } catch (e) {
     return e.code !== 'ENOENT'

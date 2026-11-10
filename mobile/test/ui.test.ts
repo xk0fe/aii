@@ -1,5 +1,5 @@
 // The words and pictures the screens are made of, without React: status in plain words, the creatures' own voice,
-// the crew's headline, the poses, the felt.
+// the clique's headline, the poses, the felt.
 import type { Agent, FeedEntry } from '@/net/types'
 import { BODIES, COLORS, moodOf, poseArt, poseOf, type Pose, type Spec } from '@/ui/avatar'
 import { ellipse, flatten, fuzz, fuzzy, roundRect, toPath } from '@/ui/felt'
@@ -92,9 +92,9 @@ describe("the creature's own voice", () => {
   })
 })
 
-describe('how the crew is doing', () => {
+describe('how the clique is doing', () => {
   test('the demo: two need you, in plain words', () => {
-    expect(headline(store.agents, open)).toEqual({ title: '2 of your crew need you', line: 'Milo wants to run a command and Iris has a question.' })
+    expect(headline(store.agents, open)).toEqual({ title: '2 of your clique need you', line: 'Milo wants to run a command and Iris has a question.' })
     expect(needsOf(store.agents, open).map((n) => [n.agent.name, n.kind])).toEqual([['Milo', 'ok'], ['Iris', 'question']])
   })
   test('one, busy, quiet, empty, asleep', () => {
