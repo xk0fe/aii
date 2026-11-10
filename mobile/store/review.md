@@ -26,7 +26,7 @@ developers), which keeps it out of the Families programme.
 >
 > To review without a computer: on the first screen, tap "Try the demo clique". It opens a made-up clique that lives only
 > on the phone and answers like a real one. Things to try: in Needs you, tap Allow for Milo's command, or tap one of
-> Iris's answers; in Chat, send a message; in the CLIque tab, tap an agent and switch YOLO or On. Computers › Leave the demo goes
+> Iris's answers; in Chat, send a message; in the Clique tab, tap an agent and switch YOLO or On. Computers › Leave the demo goes
 > back to the first screen.
 >
 > Permissions: the camera, only to scan the pairing QR code the desktop app shows (pasting the code works too); the

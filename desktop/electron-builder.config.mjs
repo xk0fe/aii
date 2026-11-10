@@ -117,6 +117,10 @@ export default {
     }),
   },
   nsis: {
+    // The installer's own identity on Windows, which electron-builder derives from the app id unless it's given. It's
+    // the one the app had as com.greengrass.crew, so an update replaces the older install (and stops it first)
+    // instead of installing a second CLIque beside it.
+    guid: '381ff71e-b172-5fde-9cfb-4c27e5eec7f2',
     oneClick: true,
     perMachine: false,
     shortcutName: PRODUCT_NAME,

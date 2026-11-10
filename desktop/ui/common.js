@@ -282,7 +282,7 @@ const store = {
 try {
   if (!localStorage.getItem('clique.carried')) {
     for (const k of Object.keys(localStorage)) {
-      if (k.startsWith('crew.') && localStorage.getItem(`clique.${k.slice(5)}`) === null) localStorage.setItem(`clique.${k.slice(5)}`, localStorage.getItem(k))
+      if (k.startsWith('crew.') && localStorage.getItem(`clique.${k.slice(5)}`) === null) localStorage.setItem(`clique.${k.slice(5)}`, localStorage.getItem(k) === 'crew' ? 'clique' : localStorage.getItem(k)) // (a place or a step named crew is named clique now)
     }
     localStorage.setItem('clique.carried', '1')
   }

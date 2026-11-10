@@ -190,7 +190,7 @@ test('Windows: Claude Code starts every hook as clique-hook.exe with its argumen
   assert.deepEqual(settings.hooks.PreToolUse.map((h) => h.matcher), ['Agent|Task', 'Edit|Write|MultiEdit|NotebookEdit'])
   // the status line always goes through a shell: a bare name means the same in Git Bash and PowerShell
   assert.deepEqual(settings.statusLine, { type: 'command', command: 'clique-status', padding: 0 })
-  assert.deepEqual(settings.permissions, { allow: ['Bash(clique *)', 'PowerShell(clique *)'], deny: ['SendMessage'] }, 'clique runs from the PowerShell tool unasked too')
+  assert.deepEqual(settings.permissions, { allow: ['Bash(clique *)', 'Bash(crew *)', 'PowerShell(clique *)', 'PowerShell(crew *)'], deny: ['SendMessage'] }, 'clique runs from the PowerShell tool unasked too')
 })
 
 test('Windows: Codex runs its hooks through PowerShell or cmd, so each is a bare clique-hook command that reads the same in both', () => {
@@ -221,7 +221,7 @@ test('macOS: the hooks and status line are what they always were', () => {
   const settings = JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
   assert.match(settings.hooks.Stop[0].hooks[0].command, /^p=\$\(cat\); printf '%s' "\$p" \| curl -sf -m 2 /)
   assert.equal(settings.hooks.Stop[0].hooks[0].args, undefined)
-  assert.deepEqual(settings.permissions.allow, ['Bash(clique *)'])
+  assert.deepEqual(settings.permissions.allow, ['Bash(clique *)', 'Bash(crew *)'], 'and by the name a conversation from before the rename knows it as')
   assert.match(adapters.codex({ name: 'm' }, { platform: 'darwin' }).args.find((x) => x.startsWith('hooks.Stop=')), /curl -sf -m 2 /)
 })
 

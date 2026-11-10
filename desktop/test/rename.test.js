@@ -6,7 +6,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { homeDir, oldEnv } from '../core/home.js'
+import { homeDir, oldEnv, movedPath, movedImages } from '../core/home.js'
 import { moveHome, moveUserData } from '../core/migrate.js'
 import { readPack } from '../core/pack.js'
 import { makeCode, readCode } from '../core/link.js'
@@ -53,12 +53,15 @@ test('nothing is moved for a new install, when both folders are there, or when C
   const both = tmp()
   fs.mkdirSync(path.join(both, '.crew'))
   fs.mkdirSync(path.join(both, '.clique'))
+  fs.writeFileSync(path.join(both, '.clique', 'config.json'), '{}')
   assert.equal(moveHome({ env: {}, home: both }), null)
   assert.ok(!fs.lstatSync(path.join(both, '.crew')).isSymbolicLink())
-  const own = tmp()
-  fs.mkdirSync(path.join(own, '.crew'))
-  assert.equal(moveHome({ env: { CLIQUE_HOME: path.join(own, 'mine') }, home: own }), null)
-  assert.ok(fs.existsSync(path.join(own, '.crew')) && !fs.existsSync(path.join(own, '.clique')))
+  for (const name of ['CLIQUE_HOME', 'CREW_HOME']) {
+    const own = tmp()
+    fs.mkdirSync(path.join(own, '.crew'))
+    assert.equal(moveHome({ env: { [name]: path.join(own, 'mine') }, home: own }), null, name)
+    assert.ok(fs.existsSync(path.join(own, '.crew')) && !fs.existsSync(path.join(own, '.clique')), name)
+  }
 })
 
 test('a folder that cannot be moved stays where it is, and is used there', () => {
@@ -121,4 +124,44 @@ test('clique.mjs answers to the old names too', () => {
     assert.equal(out.status, 1)
   }
   assert.equal(run('crow').status, 2, 'any other name is refused')
+})
+
+test('a stray empty ~/.clique does not hide the install: it is used where it is, and moved over the empty one', () => {
+  const home = tmp()
+  fs.mkdirSync(path.join(home, '.crew'))
+  fs.writeFileSync(path.join(home, '.crew', 'config.json'), '{"agents":[]}')
+  fs.mkdirSync(path.join(home, '.clique'))
+  assert.equal(homeDir({ env: {}, home }), path.join(home, '.crew'), 'the one with the settings in it')
+  assert.equal(moveHome({ env: {}, home }), path.join(home, '.clique'))
+  assert.equal(fs.readFileSync(path.join(home, '.clique', 'config.json'), 'utf8'), '{"agents":[]}')
+  assert.equal(homeDir({ env: {}, home }), path.join(home, '.clique'))
+  // one with something in it but no settings is left alone, and the install is still the one used
+  const other = tmp()
+  fs.mkdirSync(path.join(other, '.crew'))
+  fs.writeFileSync(path.join(other, '.crew', 'config.json'), '{}')
+  fs.mkdirSync(path.join(other, '.clique', 'logs'), { recursive: true })
+  assert.equal(moveHome({ env: {}, home: other }), null)
+  assert.equal(homeDir({ env: {}, home: other }), path.join(other, '.crew'))
+})
+
+test('the window-settings folder that cannot be moved is used where it is, so the older app\'s lock is met there', () => {
+  const appData = tmp()
+  fs.mkdirSync(path.join(appData, 'Crew'))
+  const files = { ...fs, renameSync: () => { throw Object.assign(new Error('in use'), { code: 'EPERM' }) } }
+  assert.equal(moveUserData(appData, 'CLIque', { files, env: {} }), path.join(appData, 'Crew'))
+  // a run with a folder of its own moves nothing
+  assert.equal(moveUserData(appData, 'CLIque', { env: { CREW_HOME: '/x' } }), path.join(appData, 'CLIque'))
+  assert.ok(fs.existsSync(path.join(appData, 'Crew')))
+})
+
+test('an image written down before the folder moved is found where it is now', () => {
+  const user = '/Users/you'
+  const home = path.join(user, '.clique')
+  const at = (p) => movedPath(p, { home, user })
+  assert.equal(at('/Users/you/.crew/attachments/2026-10-01-ab.png'), '/Users/you/.clique/attachments/2026-10-01-ab.png')
+  assert.equal(at('/Users/you/.crewcut/x.png'), '/Users/you/.crewcut/x.png', 'only that folder')
+  assert.equal(at('/Users/you/.clique/attachments/a.png'), '/Users/you/.clique/attachments/a.png')
+  assert.equal(at(undefined), undefined)
+  assert.equal(movedPath('/Users/you/.crew/attachments/a.png', { home: '/elsewhere', user }), '/Users/you/.crew/attachments/a.png', 'a folder of your own: nothing moved')
+  assert.deepEqual(movedImages({ id: 1, text: 'x' }), { id: 1, text: 'x' })
 })

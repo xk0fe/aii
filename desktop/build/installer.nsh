@@ -26,7 +26,7 @@
     StrCpy $R0 "$R0\run\runtime"
     ; the folder goes to PowerShell through the environment, so no quote in a name can break the command
     System::Call 'Kernel32::SetEnvironmentVariable(t "CLIQUE_RUNTIME", t "$R0")i'
-    nsExec::Exec `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$dir = $$env:CLIQUE_RUNTIME.TrimEnd('\') + '\'; Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.Name -eq 'clique-host.exe' -and $$_.Path -and $$_.Path.StartsWith($$dir, 'CurrentCultureIgnoreCase') } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"`
+    nsExec::Exec `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$dir = $$env:CLIQUE_RUNTIME.TrimEnd('\') + '\'; Get-CimInstance -ClassName Win32_Process | Where-Object { ($$_.Name -eq 'clique-host.exe' -or $$_.Name -eq 'crew-host.exe') -and $$_.Path -and $$_.Path.StartsWith($$dir, 'CurrentCultureIgnoreCase') } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"`
     Pop $R1
     ; Windows lets go of a program's files a moment after it ends
     StrCpy $R2 0

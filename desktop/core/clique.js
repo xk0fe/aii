@@ -7,6 +7,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage } from './hub.js'
+import { movedPath } from './home.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
 import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
@@ -416,7 +417,8 @@ export class Clique extends EventEmitter {
   // shown). -> { attachments, cache }: how many went.
   sweepImages(now = Date.now()) {
     if (this.config.broken) return { attachments: 0, cache: 0 } // which workspaces there are isn't known: nor is what they need
-    const key = (p) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p))
+    // (movedPath: an image written down before the app's folder moved is the same file, where it is now)
+    const key = (p) => (process.platform === 'win32' ? path.resolve(movedPath(p)).toLowerCase() : path.resolve(movedPath(p)))
     const used = new Set()
     const add = (images) => {
       for (const p of [].concat(images ?? [])) if (typeof p === 'string') used.add(key(p))
@@ -1083,6 +1085,7 @@ export class Clique extends EventEmitter {
       deliver: (opts) => h.send({ ...opts, mentions: false }),
       saveImage: (name, type, bytes) => saveImage(name, type, bytes),
       readImage: (file) => {
+        file = movedPath(file)
         if (!String(file).startsWith(ATTACHMENTS + path.sep)) throw new Error('not an attachment')
         return new Uint8Array(fs.readFileSync(file))
       },

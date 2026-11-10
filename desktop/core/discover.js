@@ -142,7 +142,8 @@ export class Discovery extends EventEmitter {
     } catch {
       return
     }
-    if (m?.app !== 'clique' || m.v !== 1 || typeof m.id !== 'string' || m.id === this.id || typeof m.fingerprint !== 'string') return
+    // (crew: a computer that hasn't updated since the app's rename still shows up; linking it says to update both)
+    if ((m?.app !== 'clique' && m?.app !== 'crew') || m.v !== 1 || typeof m.id !== 'string' || m.id === this.id || typeof m.fingerprint !== 'string') return
     const key = `${m.id.slice(0, 32)}|${m.fingerprint}`
     if (m.bye) return void (this.found.delete(key) && this.emit('change'))
     if (typeof m.name !== 'string' || !Number.isInteger(m.port)) return

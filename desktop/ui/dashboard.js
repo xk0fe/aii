@@ -2497,7 +2497,7 @@ clique.onImport(importPack)
 // A .clique file dropped anywhere on the window (image drop zones only take images).
 document.addEventListener('dragover', (e) => [...e.dataTransfer.items].some((i) => i.kind === 'file') && e.preventDefault())
 document.addEventListener('drop', async (e) => {
-  const file = [...e.dataTransfer.files].find((f) => f.name.endsWith('.clique'))
+  const file = [...e.dataTransfer.files].find((f) => /\.(clique|crew)$/i.test(f.name)) // (.crew: a pack from before the app's rename)
   if (!file) return
   e.preventDefault()
   e.stopPropagation()

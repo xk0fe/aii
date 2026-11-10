@@ -16,7 +16,7 @@ import { callResult } from './transcript.js'
 import { asksSomething, echoOf, familyOf as familyName, forClients, gistOf, inThread, nothingNew, stampAll, threadDigest, threadFields } from './threads.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
-import { HOME } from './home.js'
+import { HOME, movedPath, movedImages } from './home.js'
 import { ROOT, GENERAL, channelName, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
@@ -2439,7 +2439,7 @@ export class Hub extends EventEmitter {
   // `answers` the answer to one asked here.
   send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread }) {
     text = String(text ?? '').trim()
-    images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
+    images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
     if (!text) throw new Error('nothing to send')
     if (answers) {
@@ -2603,7 +2603,7 @@ export class Hub extends EventEmitter {
   // `clique ask <name> "…"`. Resolves with the answer, or after `hold` ms with where things stand.
   async question({ from = 'you', to, text, images = [], closed, hold = ASK_HOLD }) {
     text = String(text ?? '').trim()
-    images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
+    images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text) throw new Error('usage: clique ask <name> "what you need"')
     const named = addressees(to, '')
     if (named.length > 1) throw new Error('ask one teammate at a time: clique ask <name> "…"')
@@ -3209,7 +3209,7 @@ export class Hub extends EventEmitter {
   // picked one, makes it clear and assigns it; otherwise it goes to whoever's area it matches. With Auto-start
   // on, the owner gets it right away, in a fresh conversation. `owner` (an @name you typed) skips all that.
   fileTask({ text, images = [], by = 'you', kind = 'task', owner }) {
-    images = [].concat(images).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
+    images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!String(text ?? '').trim() && images.length) text = 'See the screenshot'
     owner = owner ? this.taskOwner(owner, by) : null
     const t = this.tickets.add({ text, images, by, kind: KINDS.includes(kind) ? kind : 'task', owner })
@@ -3501,7 +3501,7 @@ export class Hub extends EventEmitter {
     switch (op) {
       case 'edit':
         if (arg.owner) arg = { ...arg, owner: this.agentName(arg.owner) }
-        if (arg.images) arg = { ...arg, images: arg.images.filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep)) }
+        if (arg.images) arg = { ...arg, images: arg.images.map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep)) }
         return void this.tickets.edit(t.id, arg, 'you')
       case 'note':
         this.tickets.note(t.id, 'you', arg)
@@ -4036,11 +4036,12 @@ export class Hub extends EventEmitter {
         continue
       }
       for (const k of KEEP) if (s[k] !== undefined) a[k] = s[k]
-      const mine = (m) => live(m.crew && !m.clique ? { ...m, clique: m.crew } : m) // (a note of the app's own, queued before its rename)
+      // (a note of the app's own, queued before its rename, and images written down before its folder moved)
+      const mine = (m) => live(movedImages(m.crew && !m.clique ? { ...m, clique: m.crew } : m))
       a.inbox = (s.inbox ?? []).map(mine)
       a.serving = (s.serving ?? []).map(mine)
-      a.expect = s.expect ? { ...s.expect, msgs: s.expect.msgs.map(live) } : null
-      a.steering = s.steering ? { ...s.steering, msgs: s.steering.msgs.map(live) } : null
+      a.expect = s.expect ? { ...s.expect, msgs: s.expect.msgs.map(mine) } : null
+      a.steering = s.steering ? { ...s.steering, msgs: s.steering.msgs.map(mine) } : null
       Object.assign(a, { subs: new Map(), subPending: [] })
       this.runs.set(p.tag, { name, file: this.at(GROUPS, `${name}.${p.tag}`), pid: p.pid, at: 0 })
       adopted.add(name)
@@ -4394,7 +4395,7 @@ function loadFeed(file, keep = new Set()) {
     // (what the app said in the chat before its rename, it said as "crew")
     if (e.from === 'crew') e.from = 'clique'
     if (e.cli === 'crew') e.cli = 'clique'
-    const entry = { ...e, queued: false, held: false }
+    const entry = { ...movedImages(e), queued: false, held: false }
     all.push(entry)
     byId.set(entry.id, entry)
   }

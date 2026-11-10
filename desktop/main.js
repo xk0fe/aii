@@ -4,6 +4,7 @@
 // (core/remote.js).
 import './core/migrate-now.js' // first: an older install's folder is moved before anything below reads it
 import { moveUserData } from './core/migrate.js'
+import { movedPath } from './core/home.js'
 import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, systemPreferences } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -720,7 +721,7 @@ const actions = {
     return ops[op]()
   },
 
-  openFile: (file) => [ATTACHMENTS, CACHE].some((d) => String(file).startsWith(d + path.sep)) && shell.openPath(file),
+  openFile: (file) => [ATTACHMENTS, CACHE].some((d) => String(movedPath(file)).startsWith(d + path.sep)) && shell.openPath(movedPath(file)),
   openUrl: (url) => /^https?:\/\//.test(url) && shell.openExternal(url),
   copy: (text) => clipboard.writeText(String(text)),
   // What went wrong on a page, for CLIque's log (the page tells you in words).

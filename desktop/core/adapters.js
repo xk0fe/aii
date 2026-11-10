@@ -144,7 +144,8 @@ export const adapters = {
     const settings = {
       // Hand-offs go through `clique send` (queued, visible, approvable), so Claude's built-in peer messaging is off.
       // On Windows the agent may run clique from PowerShell instead (Claude Code's PowerShell tool).
-      permissions: { allow: ['Bash(clique *)', ...(platform === 'win32' ? ['PowerShell(clique *)'] : [])], deny: ['SendMessage'] },
+      // (crew: what a conversation from before the app's rename knows it as; bin/ still has it, and it runs clique)
+      permissions: { allow: ['Bash(clique *)', 'Bash(crew *)', ...(platform === 'win32' ? ['PowerShell(clique *)', 'PowerShell(crew *)'] : [])], deny: ['SendMessage'] },
       hooks: {
         SessionStart: on(),
         UserPromptSubmit: on(),

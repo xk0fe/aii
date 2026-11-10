@@ -362,13 +362,16 @@ export async function stage({ exe, script, pty, into, busy = running }) {
 }
 
 // Does a host run from this copy? On Windows its program can't be removed while it runs.
+// (crew-host.exe: a copy made before the app's rename, which a host from then may still run from)
 async function running(dir) {
-  try {
-    await fs.promises.unlink(path.join(dir, 'clique-host.exe'))
-    return false
-  } catch (e) {
-    return e.code !== 'ENOENT'
+  for (const name of ['clique-host.exe', 'crew-host.exe']) {
+    try {
+      await fs.promises.unlink(path.join(dir, name))
+    } catch (e) {
+      if (e.code !== 'ENOENT') return true
+    }
   }
+  return false
 }
 
 // Copies what `wanted(relativePath, isDirectory)` says of src into dst, through readFile and writeFile, which Electron

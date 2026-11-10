@@ -3,6 +3,7 @@
 // fresh conversation needs to do it (what's wanted, screenshots, notes), so whoever picks it up doesn't need
 // anyone's chat history. Stored in ~/.clique/tickets.json. No Electron in here.
 import fs from 'node:fs'
+import { movedImages } from './home.js'
 
 export const STATUSES = ['new', 'fixing', 'check', 'done']
 export const KINDS = ['task', 'bug', 'feature']
@@ -34,7 +35,7 @@ export class Tickets {
       data = {}
     }
     this.next = data.next ?? 1
-    this.all = data.tickets ?? []
+    this.all = (data.tickets ?? []).map(movedImages) // (images written down before the app's folder moved: core/home.js)
     for (const t of this.all) t.kind ??= 'bug' // the board started out as Bugs
     for (const t of this.all) for (const l of t.log ?? []) if (l.by === 'crew') l.by = 'clique' // (the app's own moves, from before its rename)
   }
