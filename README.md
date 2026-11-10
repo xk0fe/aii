@@ -158,6 +158,7 @@ clique answer "4000"                           # answer one, even in the middle 
 clique send milo "fix the coupon field"        # hand work to a teammate for good
 clique note "API runs on port 4000"            # tell the whole clique something
 clique post ship "1.2 is out"                  # say something in the channel it picks
+clique canvas new 'title: Checkout' '[cart] -> [payment]'   # draw it in the chat instead of writing it out
 clique who                                     # see who's around
 clique task list                               # pick up work from the Tasks board
 ```

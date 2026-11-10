@@ -999,7 +999,9 @@ function md(src) {
 
 function renderMarkdown(src) {
   const blocks = []
-  const text = esc(src).replace(/```[\w-]*\n?([\s\S]*?)```/g, (_, code) => `\u0000${blocks.push(`<pre><button class="copy" data-copy title="Copy">${ICONS.copy}</button><code>${code.replace(/\n$/, '')}</code></pre>`) - 1}\u0000`)
+  // a ```canvas block is drawn as a board (canvas.js); one with nothing to draw stays code
+  const board = (lang, code) => (lang === 'canvas' && typeof canvasBoard === 'function' ? canvasBoard(code) : null)
+  const text = esc(src).replace(/```([\w-]*)\n?([\s\S]*?)```/g, (_, lang, code) => `\u0000${blocks.push(board(lang, code) ?? `<pre><button class="copy" data-copy title="Copy">${ICONS.copy}</button><code>${code.replace(/\n$/, '')}</code></pre>`) - 1}\u0000`)
   const inline = (line) => {
     const codes = []
     return line
@@ -1070,7 +1072,7 @@ function renderMarkdown(src) {
 }
 
 // One line of a message, for "replying to" quotes.
-const snippet = (text) => String(text ?? '').replace(/```[\s\S]*?```/g, '[code]').replace(/^[\s|:-]*-[\s|:-]*$/gm, '').replace(/[*_`#>~|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90)
+const snippet = (text) => String(text ?? '').replace(/```canvas\n([\s\S]*?)```/g, (_, board) => `[canvas${typeof canvasTitle === 'function' && canvasTitle(board) ? `: ${canvasTitle(board)}` : ''}]`).replace(/```[\s\S]*?```/g, '[code]').replace(/^[\s|:-]*-[\s|:-]*$/gm, '').replace(/[*_`#>~|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90)
 
 // The hub stores a message you send to several agents once per recipient, each with its own delivery,
 // and stamps every copy with the same sendId. The feed shows it once, at its first visible copy,
@@ -1528,7 +1530,7 @@ function ownerIn(text, agents) {
 // What happened to a task, as one line in the feed. Click it to open the task. (Entries from when the board
 // was Bugs have kind 'bug' and no type.)
 const typeOf = (e) => e.type ?? 'bug'
-const TASK_ACTS = {
+const TACV_ACTS = {
   filed: (e, who) => `${e.from === 'you' ? 'You' : who(e.from)} ${typeOf(e) === 'bug' ? 'reported' : 'added'}`,
   triaged: (e, who) => `${who(e.from)} triaged${e.text ? ` it for ${who(e.text)}` : ''}`,
   fixing: (e, who) => `went to ${who(e.text)}`,
@@ -1548,7 +1550,7 @@ function taskEvent(e, who) {
   }
   const key = String(e.ticket)
   const type = typeOf(e)
-  const act = TASK_ACTS[e.act]?.(e, who) ?? esc(e.act)
+  const act = TACV_ACTS[e.act]?.(e, who) ?? esc(e.act)
   const tail = (e.act === 'fixed' || e.act === 'note') && e.text ? `<span class="task-ev-text">${esc(snippet(e.text))}</span>` : ''
   const lead = e.act === 'filed' || e.act === 'triaged' || e.act === 'fixed' || e.act === 'note'
   return `<div class="task-ev type-${esc(type)} act-${esc(e.act)}" id="m-${e.id}" data-ticket="${esc(key)}" title="Open #${esc(key)}">
@@ -1579,7 +1581,10 @@ function feedItem(e, prev, ctx) {
   // a message from a channel, shown somewhere that isn't that channel (an agent's conversation, the floating chat)
   const from = channelOf(e, ctx.channels)
   const where = from !== 'general' && from !== ctx.channel ? `<span class="tag ch" title="${esc(`Said in #${ctx.channels.find((c) => c.id === from).name}`)}">#${esc(ctx.channels.find((c) => c.id === from).name)}</span>` : ''
-  const tags = where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
+  // an agent's canvas (a ```canvas block, ui/canvas.js) says so by its name, and under it who else drew on it
+  const drawn = e.from !== 'you' && typeof canvasBoard === 'function' && /```canvas\n/.test(e.text ?? '')
+  const hands = drawn ? [...new Set(e.canvas?.by ?? [])].filter((n) => n !== e.from) : []
+  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
   const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
   // A reply quotes the message it answers, with a bar in the quoted sender's color; click to jump back to it.
@@ -1602,7 +1607,7 @@ function feedItem(e, prev, ctx) {
   })
   // what agents say to each other stays out of the way of what's for you: it folds sooner, in a quieter colour
   const between = e.from !== 'you' && e.kind !== 'reply' && e.kind !== 'ask'
-  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}${between ? ' between' : ''}${e.empty ? ' wordless' : ''}" data-id="${e.id}">${text}</div>`
+  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}${between ? ' between' : ''}${e.empty ? ' wordless' : ''}" data-id="${e.id}">${text}${hands.length ? `<div class="canvas-by">with ${andList(hands.map(name))}</div>` : ''}</div>`
   const cap = (html) => (cont ? '' : `<div class="cap">${html}${tags}<span class="time">${time}</span></div>`)
   // hover a message for its tools: Reply (the chat's message box then answers it)
   const tools = `<div class="msg-tools"><button class="msg-tool" data-reply="${e.id}" title="Reply to this message">${ICONS.reply}<span>Reply</span></button></div>`
@@ -1714,7 +1719,8 @@ function eventLine(e, name, time, known) {
     .replace(/@([\w-]+(?:\.\d+)?(?:@[\w-]+)?)/g, (m, n) => (known(whose(n)) ? name(whose(n)) : m))
     .replace(/ \((code \d+)\)$/, ' <span class="ev-quiet">($1)</span>')
   const who = e.from === 'clique' ? '' : `${andList((e.group ?? [e.from]).map(name))} `
-  const body = e.limit ? limitLine(e.limit) : `${who}${text}`
+  // a change to a canvas up the chat leads back to it
+  const body = e.limit ? limitLine(e.limit) : `${who}${text}${e.canvasOf ? ` <button class="link ev-jump" data-jump="${esc(e.canvasOf)}">Show</button>` : ''}`
   return `<div class="event${e.alert ? ' alert' : ''}" id="m-${e.id}" title="${time}"><span class="ev-icon">${icon ? ICONS[icon] : '<i class="ev-dot"></i>'}</span><div class="ev-text">${body}</div></div>`
 }
 
@@ -2328,7 +2334,8 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
   const measure = () => {
     const bubbles = [...el.querySelectorAll('.bubble')].filter((b) => b.offsetParent)
     // what's between agents folds to five lines, once that hides more than a line
-    const long = bubbles.map((b) => b.scrollHeight > parseFloat(getComputedStyle(b).fontSize) * (b.classList.contains('between') ? 9 : 22) + 4)
+    // (a canvas is never cut in half: a message that carries one shows whole, see .bubble:has(.canvas))
+    const long = bubbles.map((b) => !b.querySelector('.canvas') && b.scrollHeight > parseFloat(getComputedStyle(b).fontSize) * (b.classList.contains('between') ? 9 : 22) + 4)
     bubbles.forEach((b, i) => {
       b.classList.toggle('long', long[i])
       let more = b.nextElementSibling?.matches('.more') ? b.nextElementSibling : null
@@ -2985,9 +2992,9 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
   })
 
   // `task: …`, `bug: …` or `feature: …` (or /task…) adds to the Tasks board whatever chip is picked.
-  const TASK_PREFIX = /^\s*(?:(task|bug|feature):|\/(task|bug|feature)\b)\s*/i
+  const TACV_PREFIX = /^\s*(?:(task|bug|feature):|\/(task|bug|feature)\b)\s*/i
   const kindIn = (text) => {
-    const m = String(text).match(TASK_PREFIX)
+    const m = String(text).match(TACV_PREFIX)
     return m ? (m[1] ?? m[2]).toLowerCase() : target === 'task' ? 'task' : null
   }
   // The Task switch carries a tooltip (data-tip), like the picker beside it.
@@ -3121,7 +3128,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
       const talking = isConvo(target)
       if (kind) {
         // in a conversation, a task is for that agent unless it @names someone else
-        const { owner, text: what } = ownerIn(text.replace(TASK_PREFIX, ''), agents.filter((a) => !a.cloneOf))
+        const { owner, text: what } = ownerIn(text.replace(TACV_PREFIX, ''), agents.filter((a) => !a.cloneOf))
         const forWhom = owner ?? (talking ? familyOf(target) : null)
         say((await clique.call('task', 'file', null, { text: what, images, kind, ...(forWhom && { owner: forWhom }) })).trim())
       }

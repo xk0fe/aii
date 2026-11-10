@@ -19,6 +19,7 @@ import { Config } from './config.js'
 import { HOME, movedPath, movedImages } from './home.js'
 import { ROOT, GENERAL, channelName, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
+import { CANVAS_HELP, CANVAS_LINES, asCanvas, canvasLines, canvasTitle, typedLines, withCanvas } from './canvas.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
 
 export { HOME } // ~/.clique (core/home.js)
@@ -3174,6 +3175,76 @@ export class Hub extends EventEmitter {
     if (handing) return this.send({ from, text, channel: c.id })
     this.post({ kind: 'reply', from, text: clip(text, REPLY_MAX), ...(c.id !== GENERAL && { channel: c.id }) })
     return `posted in #${c.name}\n`
+  }
+
+  // `clique canvas <op> …`: a board drawn in the chat (core/canvas.js). A canvas is the message that holds it, known by
+  // that message's id, and anyone here can draw on it: a change rewrites the message where it stands, so the board in
+  // the chat is always the latest one, and a teammate's change says so on a line of its own. `by` keeps who wrote each
+  // line (without it, a block from a final message: all its author's).
+  canvas(from, [op = '', ...args]) {
+    if (!op || op === 'help') return CANVAS_HELP
+    const all = () => this.feed.filter((e) => (e.kind === 'reply' || e.kind === 'msg') && canvasLines(e.text))
+    const name = (e) => `canvas ${e.id}${canvasTitle(canvasLines(e.text)) ? ` "${canvasTitle(canvasLines(e.text))}"` : ''}`
+    const whose = (e, lines) => (e.canvas?.by?.length === lines.length ? [...e.canvas.by] : lines.map(() => e.from))
+    const numbered = (lines) => lines.map((l, i) => `${String(i + 1).padStart(2)}  ${l}`).join('\n')
+    const listed = () => {
+      const list = all().slice(-12)
+      if (!list.length) return '(no canvases in the chat yet: clique canvas help)\n'
+      return `${list.map((e) => {
+        const lines = canvasLines(e.text)
+        return `${e.id}  #${(this.channel(e.channel ?? GENERAL)?.name ?? GENERAL).padEnd(16)} ${[...new Set(whose(e, lines))].map((n) => (n === 'you' ? 'you' : `@${n}`)).join(' ').padEnd(20)} ${canvasTitle(lines) || lines[0]} (${lines.length} lines)`
+      }).join('\n')}\n`
+    }
+    if (op === 'show' && !args[0]) return listed()
+    if (op === 'new') {
+      const lines = typedLines(args)
+      if (!lines.length) throw new Error('usage: clique canvas new "<line>" "<line>" ... (clique canvas help for the lines)')
+      if (lines.length > CANVAS_LINES) throw new Error(`a canvas holds ${CANVAS_LINES} lines at most, and that's ${lines.length}: say less on it`)
+      if (!this.agents.get(from)) throw new Error('clique canvas new is an agent\'s: in the chat, type a ```canvas block in your message instead')
+      const channel = this.channelFor(from)
+      const e = this.post({ kind: 'reply', from, text: asCanvas(lines), canvas: { by: lines.map(() => from) }, ...(channel && { channel }) })
+      return `drawn in #${this.channel(channel ?? GENERAL)?.name ?? GENERAL}: canvas ${e.id}. It's in the chat already, so don't repeat it in your final message. A teammate adds to it with: clique canvas add ${e.id} "<line>"\n`
+    }
+    if (!['show', 'add', 'set', 'cut'].includes(op)) throw new Error(`there's no clique canvas ${op}: it's new, show, add, set or cut (clique canvas help)`)
+    const found = all().filter((x) => x.id === args[0] || (args[0].length >= 4 && x.id.startsWith(args[0])))
+    const e = found.find((x) => x.id === args[0]) ?? (found.length === 1 ? found[0] : null)
+    if (!e) throw new Error(`there's no canvas ${args[0]} in the chat. The ones there are:\n${listed()}`)
+    const lines = canvasLines(e.text)
+    if (op === 'show') return `${name(e)}, drawn by ${[...new Set(whose(e, lines))].map((n) => (n === 'you' ? 'you' : `@${n}`)).join(', ')}:\n${numbered(lines)}\n`
+    const c = this.channel(e.channel ?? GENERAL)
+    if (c?.members?.length && this.agents.get(from) && !c.members.includes(this.baseOf(from)) && !this.agents.get(from).system) throw new Error(`that canvas is in #${c.name} and you're not, so it stays as it is: it's for ${c.members.map((n) => `@${n}`).join(', ')}`)
+    const by = whose(e, lines)
+    let did
+    if (op === 'add') {
+      const more = typedLines(args.slice(1))
+      if (!more.length) throw new Error('usage: clique canvas add <id> "<line>" ...')
+      if (lines.length + more.length > CANVAS_LINES) throw new Error(`a canvas holds ${CANVAS_LINES} lines at most and this one has ${lines.length}: cut some, or draw a new one`)
+      lines.push(...more)
+      by.push(...more.map(() => from))
+      did = 'added to'
+    } else {
+      const n = Number(args[1])
+      if (!Number.isInteger(n) || n < 1 || n > lines.length) throw new Error(`${name(e)} has lines 1 to ${lines.length}:\n${numbered(lines)}`)
+      if (op === 'set') {
+        const [line] = typedLines(args.slice(2))
+        if (!line) throw new Error('usage: clique canvas set <id> <n> "<line>"')
+        lines[n - 1] = line
+        by[n - 1] = from
+      } else {
+        if (lines.length === 1) throw new Error("that's its only line, and a canvas with nothing on it can't stay in the chat")
+        lines.splice(n - 1, 1)
+        by.splice(n - 1, 1)
+      }
+      did = 'changed'
+    }
+    this.amend(e, { text: withCanvas(e.text, lines), canvas: { by, rev: (e.canvas?.rev ?? 0) + 1 } })
+    // somebody else's canvas: the chat says who drew on it (once, however many changes follow one another)
+    const last = this.feed.at(-1)
+    if (from !== e.from && !(last?.kind === 'event' && last.canvasOf === e.id && last.from === from)) {
+      const title = canvasTitle(lines)
+      this.post({ kind: 'event', from, text: `${did} ${e.from === 'you' ? 'your' : `@${e.from}'s`} canvas${title ? ` "${title}"` : ''}`, canvasOf: e.id, ...(e.channel && { channel: e.channel }) })
+    }
+    return `${name(e)} now reads:\n${numbered(lines)}\n`
   }
 
   // A message's own bracket: what it is and who it's from.
