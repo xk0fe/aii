@@ -1,4 +1,4 @@
-// CLIque's brand layer: the name the app shows, its felt, and the CLIque view's header. Felt is the creatures' material,
+// CLIque's brand layer: the name the app shows, its felt, and the Agents view's header. Felt is the creatures' material,
 // and the brand surfaces are made of it too: each creature's patch on its card, the menu bar's clique strip, empty
 // states and the wordmark. Never on controls, and text never sits on it. One felt surface per region.
 /* global avatarHTML, poseOf, statusWord, plainName, esc */

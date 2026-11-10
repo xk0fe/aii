@@ -22,7 +22,7 @@ On Windows, ⌘ is Ctrl, and ⌥ and ⌃ are Alt: `⌥⇧Space` is Alt+Shift+Spa
 |---|---|
 | `⌥⇧Space` | Open the floating chat from any app (change it with `"hotkey"` in `config.json`) |
 | `⌥⇧D` | Open the chat and start dictating (`"voiceHotkey"`) |
-| `⌘1` `⌘2` `⌘3` `⌘4` | Dashboard views: CLIque, Tasks, the terminal grid, one terminal |
+| `⌘1` `⌘2` `⌘3` `⌘4` | Dashboard views: Agents, Tasks, the terminal grid, one terminal |
 | `⌘F` | Find an agent by name or area |
 | `⌘N` | New agent |
 | `⌃1` to `⌃9` | Jump to a workspace; `⌃Tab` and `⌃⇧Tab` go to the next and previous |
@@ -60,7 +60,7 @@ On Windows, ⌘ is Ctrl, and ⌥ and ⌃ are Alt: `⌥⇧Space` is Alt+Shift+Spa
 An agent pack is a `.clique` file holding one or more agents: name, area, instructions, reference images, brain (provider, model, effort, fast), YOLO, extra flags and look, plus any custom provider they use. Folders, sessions and work experience stay behind.
 
 - **Export:** open an agent and press **Export**, or **Select** several and press **Export** in the bar. The file is saved where you choose and shown in Finder (Explorer on Windows).
-- **Import:** press **Import** on the CLIque page, drop a `.clique` file on the window, or double-click one. For each agent you choose whether to take it, what to call it (names already in use get a free one), which folder it works in and which computer it runs on. Imported agents start switched off, so you can look them over before they run. A pack never overrides providers you already have.
+- **Import:** press **Import** on the Agents page, drop a `.clique` file on the window, or double-click one. For each agent you choose whether to take it, what to call it (names already in use get a free one), which folder it works in and which computer it runs on. Imported agents start switched off, so you can look them over before they run. A pack never overrides providers you already have.
 
 ## How you use it
 

@@ -21,7 +21,7 @@ export default function Tabs() {
         {d.open.length ? <NativeTabs.Trigger.Badge>{String(d.open.length)}</NativeTabs.Trigger.Badge> : null}
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="clique">
-        <NativeTabs.Trigger.Label>CLIque</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>Clique</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'person.2', selected: 'person.2.fill' }} md="group" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">

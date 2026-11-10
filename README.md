@@ -11,7 +11,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/clique-dark.webp">
-  <img src="docs/images/clique-light.webp" alt="The CLIque view: every agent's card with its job, model and what it's doing, beside the sidebar's channels and conversations">
+  <img src="docs/images/clique-light.webp" alt="The Agents view: every agent's card with its job, model and what it's doing, beside the sidebar's channels and conversations">
 </picture>
 
 ## Why CLIque

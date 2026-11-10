@@ -90,7 +90,7 @@ export default function CliqueScreen() {
   return (
     <MotionContext.Provider value={moving}>
       <View style={{ flex: 1, backgroundColor: t.bg }}>
-        <TabHead t={t} title="CLIque" sub={state ? head.title : ''} />
+        <TabHead t={t} title="Clique" sub={state ? head.title : ''} />
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
           {sections.map((s) => (
             <View key={s.slug || 'here'}>
