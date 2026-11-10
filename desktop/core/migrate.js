@@ -1,9 +1,10 @@
 // An install from before the app's rename (Crew) becomes this one, as the app starts and before anything reads its
-// folder: main.js imports this first. ~/.crew moves to ~/.clique, and a link is left where it was, because what was
+// folder: main.js imports core/migrate-now.js first, which calls moveHome(). ~/.crew moves to ~/.clique, and a link is left where it was, because what was
 // written down with the old path still points there: agents' folders in config.json, the conversations their CLIs keep
 // by folder, and agents still running from before, whose hooks and tools were given the old path. If it can't be moved
 // (Windows, with a file in it open), it's used where it is (core/home.js) and moved another time.
-// Only the app does this: a test, a script or the terminal host that imports core/ never moves anyone's folder.
+// Only the app does this: importing this file moves nothing, so a test, a script or the terminal host never moves
+// anyone's folder.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -37,4 +38,3 @@ export function moveUserData(appData, name, { files = fs, old = 'Crew' } = {}) {
   return now
 }
 
-moveHome()

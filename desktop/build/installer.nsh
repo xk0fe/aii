@@ -1,6 +1,6 @@
 ; The app's additions to the Windows installer (electron-builder's NSIS; electron-builder.config.mjs includes this file).
 ; The installer is per user: it runs without admin rights and installs to %LOCALAPPDATA%\Programs\clique (named after
-; package.json's name, so the same folder as before the rename to CLIque; the program in it is CLIque.exe).
+; package.json's name; the program in it is CLIque.exe).
 ; Uninstalling leaves your clique alone: agents, chats and settings live in %USERPROFILE%\.clique (CLIQUE_HOME).
 
 !macro customInstall

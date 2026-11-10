@@ -36,6 +36,7 @@ export class Tickets {
     this.next = data.next ?? 1
     this.all = data.tickets ?? []
     for (const t of this.all) t.kind ??= 'bug' // the board started out as Bugs
+    for (const t of this.all) for (const l of t.log ?? []) if (l.by === 'crew') l.by = 'clique' // (the app's own moves, from before its rename)
   }
 
   // Many changes, one write: a bulk action on the board. fn may be async (starting tasks sends them on).

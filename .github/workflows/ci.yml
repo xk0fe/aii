@@ -222,10 +222,9 @@ jobs:
             Get-Content "$cliqueHome\run\ptyhost.log", "$cliqueHome\logs\clique.log" -ErrorAction SilentlyContinue
             throw 'the installed app started no terminal host'
           }
-          # Electron's folder for the app keeps its name from before the rename (main.js pins it): your view settings
-          # and the one-at-a-time lock live there
+          # Electron's folder for the app is the one main.js pins: your view settings and the one-at-a-time lock
+          # live there
           if (-not (Test-Path "$env:APPDATA\CLIque")) { throw "the app's own folder isn't $env:APPDATA\CLIque" }
-          if (Test-Path "$env:APPDATA\CLIque") { throw "the app made itself a new folder, $env:APPDATA\CLIque" }
           $hostPid = (Get-Content $pipe | ConvertFrom-Json).pid
           $exe = (Get-Process -Id $hostPid).Path
           Write-Output "terminal host $hostPid runs $exe"

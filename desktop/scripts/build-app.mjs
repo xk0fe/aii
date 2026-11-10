@@ -3,8 +3,6 @@
 // on the next launch. (The app people install comes from npm run dist: scripts/dist.mjs.)
 //   npm start      opens the launcher, building it first if it's missing or out of date
 //   npm run app    rebuilds it
-// Before the rename it was dist/CLIque.app. That one is left alone (it may be the copy that's running); once it's quit,
-// delete it, and put the new one in the Dock in its place.
 // On Windows there's no launcher to build: npm start runs the app from this folder, as npm run dev does.
 import { packager } from '@electron/packager'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -47,7 +45,7 @@ const [built] = await packager({
   // .clique agent packs open in the app from Finder or Mail; the two descriptions are what macOS shows when it first
   // asks for the microphone (and, before macOS 26, speech recognition) for dictation
   extendInfo: {
-    CFBundleDocumentTypes: [{ CFBundleTypeName: `${PRODUCT_NAME} agents`, CFBundleTypeExtensions: ['clique'], CFBundleTypeRole: 'Viewer', LSHandlerRank: 'Owner' }],
+    CFBundleDocumentTypes: [{ CFBundleTypeName: `${PRODUCT_NAME} agents`, CFBundleTypeExtensions: ['clique', 'crew'], CFBundleTypeRole: 'Viewer', LSHandlerRank: 'Owner' }],
     NSMicrophoneUsageDescription: `${PRODUCT_NAME} listens while you dictate a message to your agents.`,
     NSSpeechRecognitionUsageDescription: `${PRODUCT_NAME} turns what you say into text, on this Mac.`,
     // what macOS says when it asks to let it onto the local network (other computers, phones, finding them nearby);

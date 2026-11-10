@@ -2,7 +2,8 @@
 // All agent logic lives in core/; this file owns windows, dialogs and notifications and wires them to the clique:
 // this computer's agents plus those of every computer linked over CLIque Link (see core/clique.js), and your phones
 // (core/remote.js).
-import { moveUserData } from './core/migrate.js' // first: it moves an older install's folder before anything below reads it
+import './core/migrate-now.js' // first: an older install's folder is moved before anything below reads it
+import { moveUserData } from './core/migrate.js'
 import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, systemPreferences } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -74,7 +75,7 @@ if (!primary) app.exit(0)
 // hands it over as open-file; Windows starts CLIque with it as an argument, or, with CLIque running already, hands that
 // one the arguments (second-instance).
 let opened = null
-const packIn = (argv) => argv.slice(1).find((a) => /\.clique$/i.test(a) && fs.existsSync(a)) ?? null
+const packIn = (argv) => argv.slice(1).find((a) => /\.(clique|crew)$/i.test(a) && fs.existsSync(a)) // (.crew: a pack from before the app's rename) ?? null
 function openPack(file) {
   opened = file
   if (started) openPackFile()
@@ -659,7 +660,7 @@ const actions = {
   openPack: async (dropped) => {
     let { name, text } = dropped ?? {}
     if (!dropped) {
-      const file = (await dialog.showOpenDialog(dash, { title: 'Import agents', properties: ['openFile'], filters: [{ name: `${PRODUCT_NAME} agents`, extensions: ['clique', 'json'] }] })).filePaths[0]
+      const file = (await dialog.showOpenDialog(dash, { title: 'Import agents', properties: ['openFile'], filters: [{ name: `${PRODUCT_NAME} agents`, extensions: ['clique', 'crew', 'json'] }] })).filePaths[0]
       if (!file) return null
       ;[name, text] = [path.basename(file), fs.readFileSync(file, 'utf8')]
     }

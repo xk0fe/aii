@@ -7,10 +7,10 @@ DIR=${CLIQUE_HOME:-$HOME/.clique}; [ -d "$DIR" ] || [ ! -d "$HOME/.crew" ] || DI
 URL=$(cat "$DIR/url" 2>/dev/null); URL=${URL:-$CLIQUE_URL}
 TOKEN=$(cat "$DIR/token" 2>/dev/null); TOKEN=${TOKEN:-$CLIQUE_TOKEN}
 FROM=${CLIQUE_AGENT:-you}
-[ -n "$URL" ] || { echo "clique app is not running" >&2; exit 1; }
+[ -n "$URL" ] || { echo "CLIque is not running" >&2; exit 1; }
 
 # CLIQUE_WORKSPACE: which workspace this agent works in (none: its files are in CLIQUE_HOME itself)
-call() { curl -sS -m "${WAIT:-5}" -H "X-Clique: $TOKEN" -H "X-Clique-Workspace: ${CLIQUE_WORKSPACE:-}" "$@" || echo "clique app is not running" >&2; }
+call() { curl -sS -m "${WAIT:-5}" -H "X-Clique: $TOKEN" -H "X-Clique-Workspace: ${CLIQUE_WORKSPACE:-}" "$@" || echo "CLIque is not running" >&2; }
 
 cmd=$1
 [ $# -gt 0 ] && shift

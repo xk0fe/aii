@@ -197,7 +197,7 @@ async function cli([cmd, ...args]) {
   // what CLIque wrote when it started comes first: an agent can outlive the CLIque that started it (core/ptyhost.js)
   const url = cliqueFile('url') || env.CLIQUE_URL || ''
   const token = cliqueFile('token') || env.CLIQUE_TOKEN || ''
-  if (!url) return stop('clique app is not running', 1)
+  if (!url) return stop('CLIque is not running', 1)
   const from = encodeURIComponent(env.CLIQUE_AGENT || 'you')
   const q = encodeURIComponent
   // each word NUL-terminated, so quotes, newlines and flags arrive as typed (none: one empty word, as printf gives)
@@ -205,7 +205,7 @@ async function cli([cmd, ...args]) {
   const send = async (route, opts) => {
     const res = await call(url, route, { token, ...opts })
     if (res) await write(res.body.toString('utf8'))
-    else stop('clique app is not running', 0)
+    else stop('CLIque is not running', 0)
   }
   switch (cmd) {
     case 'who':

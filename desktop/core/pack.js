@@ -54,7 +54,8 @@ export function readPack(text) {
   } catch {
     throw new Error("that file isn't a CLIque agent pack")
   }
-  if (pack?.clique !== 1 || !Array.isArray(pack.agents)) throw new Error("that file isn't a CLIque agent pack")
+  // (crew: 1 is a pack exported before the app's rename, as a .crew file)
+  if ((pack?.clique ?? pack?.crew) !== 1 || !Array.isArray(pack.agents)) throw new Error("that file isn't a CLIque agent pack")
   return pack
 }
 

@@ -45,9 +45,9 @@ const files = (platform) => [
 
 export default {
   appId: APP_ID,
-  // The name on the app, its windows, shortcuts and installers. Two folders keep their names from before the rename:
-  // the Windows install folder, which a per-user one-click installer names after package.json's name
-  // (%LOCALAPPDATA%\Programs\clique), and Electron's own folder for the app (userData, pinned in main.js).
+  // The name on the app, its windows, shortcuts and installers. The Windows install folder is named after
+  // package.json's name by a per-user one-click installer (%LOCALAPPDATA%\Programs\clique), and Electron's own
+  // folder for the app (userData) is pinned in main.js.
   productName: PRODUCT_NAME,
   copyright: `© ${new Date().getFullYear()} Greengrass`,
   directories: { output: 'release', buildResources: 'build' },
@@ -71,8 +71,9 @@ export default {
   ],
   afterPack,
 
-  // .clique agent packs open in the app (Finder and Mail on macOS, Explorer on Windows)
-  fileAssociations: [{ ext: 'clique', name: `${PRODUCT_NAME} agents`, description: `${PRODUCT_NAME} agents`, role: 'Viewer', rank: 'Owner' }],
+  // .clique agent packs open in the app (Finder and Mail on macOS, Explorer on Windows); .crew ones too, from before
+  // the app's rename
+  fileAssociations: [{ ext: ['clique', 'crew'], name: `${PRODUCT_NAME} agents`, description: `${PRODUCT_NAME} agents`, role: 'Viewer', rank: 'Owner' }],
 
   electronFuses: {
     // The terminal host is CLIque's own binary run as Node (core/ptyclient.js): this one has to stay on.

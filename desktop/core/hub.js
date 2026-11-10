@@ -71,7 +71,7 @@ export const openConfig = (also) => new Config(CONFIG, DEFAULTS, {
   },
 })
 const AGENT_KEYS = ['system', 'area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared']
-const RESERVED = new Set(['you', 'any', 'clique'])
+const RESERVED = new Set(['you', 'any', 'clique', 'crew']) // (crew: what the app called itself in chats before its rename)
 // an unquoted # starts a comment in the shell, and `clique post` is all that arrives
 const POST_USAGE = 'usage: clique post <channel> "message" (the name alone: an unquoted # starts a shell comment)'
 const SUB_TOOLS = new Set(['Agent', 'Task']) // Claude Code's sub-agent tool ("Task" in older versions)
@@ -4036,8 +4036,9 @@ export class Hub extends EventEmitter {
         continue
       }
       for (const k of KEEP) if (s[k] !== undefined) a[k] = s[k]
-      a.inbox = (s.inbox ?? []).map(live)
-      a.serving = (s.serving ?? []).map(live)
+      const mine = (m) => live(m.crew && !m.clique ? { ...m, clique: m.crew } : m) // (a note of the app's own, queued before its rename)
+      a.inbox = (s.inbox ?? []).map(mine)
+      a.serving = (s.serving ?? []).map(mine)
       a.expect = s.expect ? { ...s.expect, msgs: s.expect.msgs.map(live) } : null
       a.steering = s.steering ? { ...s.steering, msgs: s.steering.msgs.map(live) } : null
       Object.assign(a, { subs: new Map(), subPending: [] })
@@ -4390,6 +4391,9 @@ function loadFeed(file, keep = new Set()) {
       Object.assign(byId.get(amend) ?? {}, patch)
       continue
     }
+    // (what the app said in the chat before its rename, it said as "crew")
+    if (e.from === 'crew') e.from = 'clique'
+    if (e.cli === 'crew') e.cli = 'clique'
     const entry = { ...e, queued: false, held: false }
     all.push(entry)
     byId.set(entry.id, entry)

@@ -109,7 +109,7 @@ test("clique: CLIque not running says so, and the address and token come from th
   const none = posixEnv(home('none'))
   const [sh, node] = await both.clique(['who'], { env: none })
   assert.deepEqual(node, sh)
-  assert.deepEqual(node, { code: 1, stdout: '', stderr: 'clique app is not running\n' })
+  assert.deepEqual(node, { code: 1, stdout: '', stderr: 'CLIque is not running\n' })
   const clique = await cliqueServer()
   const fromEnv = { ...none, CLIQUE_URL: clique.url, CLIQUE_TOKEN: 'from-env' }
   const [sh2, node2] = await both.clique(['note', 'hi'], { env: fromEnv })
@@ -120,7 +120,7 @@ test("clique: CLIque not running says so, and the address and token come from th
   const [sh3, node3] = await both.clique(['who'], { env: fromEnv })
   assert.equal(node3.code, sh3.code)
   assert.equal(node3.stdout, sh3.stdout)
-  assert.ok(sh3.stderr.endsWith('clique app is not running\n') && node3.stderr === 'clique app is not running\n')
+  assert.ok(sh3.stderr.endsWith('CLIque is not running\n') && node3.stderr === 'CLIque is not running\n')
 })
 
 test('clique-hook hook: the same event reaches CLIque, and the same line lands in the spool while CLIque is closed', SIDE_BY_SIDE, async () => {
@@ -282,7 +282,7 @@ test('Windows: clique.exe and clique-status.exe pass every argument and byte thr
   assert.equal(status.stdout, 'context 12% · 24k')
   await clique.close()
   const gone = await exe('clique', ['who'], { env: winEnv(dir) })
-  assert.deepEqual([gone.code, gone.stderr.trim()], [0, 'clique app is not running'])
+  assert.deepEqual([gone.code, gone.stderr.trim()], [0, 'CLIque is not running'])
 })
 
 // What only Windows itself can show: the shells the CLIs really use. Codex: `pwsh|powershell -NoProfile -Command

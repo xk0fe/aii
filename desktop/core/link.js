@@ -12,7 +12,7 @@ import path from 'node:path'
 import tls from 'node:tls'
 import { WebSocketServer, WebSocket } from 'ws'
 
-export const PROTOCOL = 2
+export const PROTOCOL = 3 // (3: the app's rename, which renamed what the two ends say to each other)
 export const DEFAULT_PORT = 7787
 
 // A computer's short name, as agents on it are addressed from elsewhere: iris@workstation.
