@@ -48,6 +48,9 @@ case "$cmd" in
     # each word NUL-terminated, so a channel's name and any text arrive as typed
     [ -n "$1" ] && [ $# -gt 1 ] || { echo 'usage: crew post <channel> "message" (the name alone: an unquoted # starts a shell comment)' >&2; exit 2; }
     printf '%s\0' "$@" | call --data-binary @- "$URL/post?from=$FROM" ;;
+  canvas)
+    # crew canvas <op> ...: a board drawn in the chat (crew canvas help). Each word NUL-terminated: a word is a line
+    printf '%s\0' "$@" | call --data-binary @- "$URL/canvas?from=$FROM" ;;
   task|bug)
     # each word NUL-terminated, so quotes, newlines and flags arrive as typed
     printf '%s\0' "$@" | call --data-binary @- "$URL/task?from=$FROM" ;;
@@ -69,6 +72,7 @@ crew note "..."             share context with the whole crew
 crew board [words]          the shared notes you haven't read (--all for every one, or words to search)
 crew channels               the channels here: who's in each, and its brief
 crew post <channel> "..."   say it in that channel (@name someone to hand it to them there)
+crew canvas                 draw a board in the chat, or add to one that's there (crew canvas help)
 crew task                   the Tasks board: list, show, done, note, add (crew task help)
 crew app <what> ...         change CLIque itself: agents, channels, workspaces, computers (crew app help)
 EOF

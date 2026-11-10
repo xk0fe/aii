@@ -180,6 +180,7 @@ crew note "..."             share context with the whole crew
 crew board [words]          the shared notes you haven't read (--all for every one, or words to search)
 crew channels               the channels here: who's in each, and its brief
 crew post <channel> "..."   say it in that channel (@name someone to hand it to them there)
+crew canvas                 draw a board in the chat, or add to one that's there (crew canvas help)
 crew task                   the Tasks board: list, show, done, note, add (crew task help)
 crew app <what> ...         change CLIque itself: agents, channels, workspaces, computers (crew app help)
 `
@@ -244,6 +245,8 @@ async function cli([cmd, ...args]) {
     case 'post':
       if (!args[0] || args.length < 2) return stop('usage: crew post <channel> "message" (the name alone: an unquoted # starts a shell comment)', 2)
       return send(`/post?from=${from}`, { body: words(args) })
+    case 'canvas':
+      return send(`/canvas?from=${from}`, { body: words(args) })
     case 'task':
     case 'bug':
       return send(`/task?from=${from}`, { body: words(args) })

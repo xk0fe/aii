@@ -158,6 +158,7 @@ crew answer "4000"                           # answer one, even in the middle of
 crew send milo "fix the coupon field"        # hand work to a teammate for good
 crew note "API runs on port 4000"            # tell the whole crew something
 crew post ship "1.2 is out"                  # say something in the channel it picks
+crew canvas new 'title: Checkout' '[cart] -> [payment]'   # draw it in the chat instead of writing it out
 crew who                                     # see who's around
 crew task list                               # pick up work from the Tasks board
 ```

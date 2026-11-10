@@ -94,6 +94,8 @@ Crew commands (run them in the shell):
   crew channels             the channels here: who's in each, and its brief
   crew post <channel> "<text>"  say it in that channel, whichever one you're working in (its name alone, no #). It takes
                             up nobody's turn unless you @name them, which hands it to them there
+  crew canvas               draw it in the chat instead of writing it out: a flow, numbers side by side, what's
+                            checked and what isn't. Teammates can add to the same canvas (crew canvas help)
   crew busy                 what each teammate is working on right now
   crew board [words]        read the shared notes, or search them
   crew task                 the Tasks board: list, show, done, note, add, decline (crew task help)

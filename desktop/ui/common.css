@@ -4,6 +4,7 @@
    Berry, which means "needs you": a question, an OK, a review, the badge that counts them. Red is only for errors.
    The character lives in the creatures, their felt and the brand face (Fredoka, bundled in ui/fonts under the OFL). */
 @font-face { font-family: "Fredoka"; src: url("fonts/Fredoka.woff2") format("woff2"); font-weight: 300 700; font-display: block; }
+@font-face { font-family: "Patrick Hand"; src: url("fonts/PatrickHand.woff2") format("woff2"); font-display: swap; }
 :root {
   color-scheme: light dark;
   /* type: the platform's own face for everything you read, the brand face for names, headlines and the wordmark */
@@ -672,7 +673,7 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 /* your messages: on a quiet fill, in the text colour */
 .me .bubble { background: var(--bubble-me); color: var(--fg); }
 /* long messages fold with a fade; the toggle sits under them with a chevron that turns */
-.bubble.open { max-height: none; }
+.bubble.open, .bubble:has(.canvas) { max-height: none; }
 .bubble.long { cursor: pointer; }
 .bubble.long:not(.open) { -webkit-mask-image: linear-gradient(#000 calc(100% - 4.5em), transparent); }
 /* what agents say to each other: five lines, quieter, the rest a click away */
@@ -705,6 +706,32 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 .bubble blockquote { padding-left: 10px; border-left: 2px solid var(--line-strong); color: var(--fg2); }
 .bubble a { color: var(--link); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 /* a wide table scrolls inside the bubble instead of being clipped by it */
+/* A canvas (canvas.js): an agent's ```canvas block drawn by hand on a sheet. One handwriting (Patrick Hand,
+   bundled in ui/fonts under the OFL), the app's own ink, and felt-pen colours that sit under the lines. The pen draws
+   each piece once, in order, when the board arrives, and then nothing moves. */
+.canvas { margin: var(--s2) 0; padding: var(--s2); max-width: 100%; width: fit-content; border-radius: var(--r-card); background-color: var(--surface); background-image: radial-gradient(var(--line-strong) 1px, transparent 1.3px); background-size: 16px 16px; box-shadow: 0 0 0 1px var(--line); }
+.canvas svg { display: block; max-width: 100%; height: auto; overflow: visible; }
+.cv-text { font-family: "Patrick Hand", var(--font-brand); fill: var(--fg); animation: cv-in .28s ease-out backwards; }
+.cv-dim { fill: var(--fg2); }
+.cv-pen { fill: none; stroke: var(--fg); stroke-linecap: round; stroke-linejoin: round; animation: cv-pen .42s ease-out backwards; }
+.cv-fill, .cv-note { fill: var(--cv-tone); animation: cv-in .28s ease-out backwards; }
+.cv-fill { opacity: .5; }
+.cv-hl { stroke: var(--cv-tone); stroke-linecap: butt; opacity: .55; }
+.cv-ok { stroke: #2E9E5B; }
+.cv-no { stroke: var(--danger); }
+.cv-on-note { fill: #2A2A2A; }
+.cv-t-yellow { --cv-tone: #FFD84A; } .cv-t-pink { --cv-tone: #F58BB8; } .cv-t-blue { --cv-tone: #8CC2F7; } .cv-t-green { --cv-tone: #86D9A4; }
+.cv-t-orange { --cv-tone: #FFAE6B; } .cv-t-purple { --cv-tone: #B9A7F5; } .cv-t-grey { --cv-tone: #C9C9C9; }
+/* (hidden until its turn: a round pen end shows as a dot even with the whole stroke dashed away) */
+@keyframes cv-pen { 0% { stroke-dasharray: 1; stroke-dashoffset: 1; visibility: hidden; } 1% { visibility: visible; } 100% { stroke-dasharray: 1; stroke-dashoffset: 0; } }
+@keyframes cv-in { from { opacity: 0; } }
+/* "via canvas" by the name of the agent that drew it; under the board, who else drew on it; and the way back to it
+   from the line that says a teammate did */
+.via-tool { color: var(--fg3); font-size: var(--t-small); font-weight: 500; }
+.canvas-by { margin-top: var(--s1); color: var(--fg2); font-size: var(--t-small); }
+.ev-jump { padding: 0; margin-left: var(--s1); font-size: inherit; text-decoration: underline; text-underline-offset: 2px; }
+@media (prefers-color-scheme: dark) { .cv-fill { opacity: .38; } .cv-hl { opacity: .4; } .cv-ok { stroke: #5BD08A; } }
+@media (prefers-reduced-motion: reduce) { .cv-text, .cv-pen, .cv-fill, .cv-note { animation: none; } }
 .bubble .tbl { max-width: 100%; overflow-x: auto; border-radius: var(--r-control); box-shadow: 0 0 0 1px var(--line); }
 .bubble table { border-collapse: collapse; font-size: 12.5px; line-height: 1.35; }
 /* the bubble's overflow-wrap: anywhere would squeeze every column to one character */

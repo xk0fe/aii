@@ -37,6 +37,21 @@ const EVENTS_FEED = `const s = window.__crewState; const t = (m) => Date.now() -
     { id: 'e10', kind: 'event', from: 'Iris', alert: true, text: 'passed its 400k context limit (412k used). Start a new conversation when it suits you', ts: t(2) },
   ]
   window.__crewEmit('state', s)`
+// The canvas shot: a real #evidence reply redrawn as a canvas in an agent's final message ("via canvas"), then one made
+// with `crew canvas new` that a teammate added to (who else drew on it, and the line that says so and leads back)
+const CANVAS_FEED = [
+  { id: 'k1', kind: 'msg', from: 'you', to: 'Iris', text: 'How did candidate v1 do on test_dev?' },
+  {
+    id: 'k2', kind: 'reply', from: 'Iris', to: 'you',
+    text: ['**Selected candidate v1** was assessed once on **30 `test_dev` courses in 30 spatial groups**.', '', '```canvas', 'title: Candidate v1 on 30 test_dev courses', 'sub: region IoU per class, course-balanced', 'bar: Green 0.6713 {green}', 'bar: Fairway 0.6485 {green}', 'bar: Water 0.6151 {blue}', 'bar: Bunker 0.5965 {yellow}', 'bar: Tee 0.3241 {pink}', 'bar: Macro average 0.5711 {grey}', 'ok: one run, with "other" left out of the average', 'no: OSM proxy scores with assumed negatives, ==not human-reviewed==', 'source: selected-v1-test_dev-aggregate.json', '```'].join('\n'),
+  },
+  { id: 'k3', kind: 'msg', from: 'you', to: 'Iris', text: 'Where does that number come from? @Theo add what you verified.' },
+  {
+    id: 'k4', kind: 'reply', from: 'Iris', canvas: { by: ['Iris', 'Iris', 'Iris', 'Iris', 'Theo', 'Theo', 'Theo'], rev: 1 },
+    text: ['```canvas', 'title: How the score is made', '1: [30 test_dev courses] -> [candidate v1]{purple} -> [predicted masks]', '2: [predicted masks] -against-> [OSM labels]{yellow} -> [IoU per class]{green}', '3: IoU per class -> ==macro average 0.5711==', 'ok: checkpoint and prediction hashes verified', 'no: no test overlays inspected', 'note: a proxy score, not an accepted release pass {pink}', '```'].join('\n'),
+  },
+  { id: 'k5', kind: 'event', from: 'Theo', text: 'added to @Iris\'s canvas "How the score is made"', canvasOf: 'k4' },
+]
 // What's behind the transparent windows: the popover's material, or a soft desktop for the floating pill.
 const BACKDROP = {
   popover: { light: '#ececef', dark: '#2b2b2f' },
@@ -147,6 +162,17 @@ const SCREEN_TOP = `html::before { content: ''; position: fixed; inset: 0 0 auto
   .wrap { position: absolute !important; left: 50%; top: 0; transform: translateX(-50%); }`
 
 const SHOTS = {
+  // Canvases: boards agents draw by hand in the chat (ui/canvas.js, `crew canvas`): bars with a tick, a cross and a
+  // source in a final message, then a flow two agents drew together.
+  async canvas(theme) {
+    const win = await dashboard(theme, 'chat', { fixture: 'big', width: 1180, height: 1280 })
+    await js(win, `const s = window.__crewState; const t = (m) => Date.now() - m * 60000
+      s.feed = ${JSON.stringify(CANVAS_FEED)}.map((e, i, all) => ({ ...e, ts: t(all.length - i) }))
+      window.__crewEmit('state', s)`)
+    await sleep(3200)
+    await save(win, `canvas-${theme}`)
+    win.destroy()
+  },
   // Dragged to the notch: the band around it, then the chat hanging from it (it's black in both themes).
   async hatch(theme) {
     const win = await open('overlay.html', { theme, width: 900, height: 110, backdrop: 'desktop' })

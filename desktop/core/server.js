@@ -31,6 +31,8 @@ export function serve(to) {
     channels: (q) => hub.channelsText(q.from || 'you'),
     // `crew post <channel> "…"`: the words NUL-separated, so a channel's name needs no escaping and any text survives intact
     post: (q, body) => hub.postIn(q.from || 'you', body.split('\0').slice(0, -1)),
+    // `crew canvas <op> …`: a board drawn in the chat, and changes to one that's there (core/canvas.js)
+    canvas: (q, body) => hub.canvas(q.from || 'you', body.split('\0').slice(0, -1)),
     who: () => hub.who(),
     // `crew board [words]`: the words NUL-separated (none from a `crew` older than that: everything, as it was)
     board: (q, body) => hub.board(q.from || 'you', body.split('\0').slice(0, -1)),
