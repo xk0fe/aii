@@ -496,7 +496,7 @@ export function summarize(index, { owners, agents, providers = {} } = {}) {
     for (const [day, d] of Object.entries(days)) add({ cli, via, pin, who, dir, acct: typeof acct === 'string' ? acct : '' }, at, day, d.models ?? {}, Object.entries(d.lead ?? {}))
   }
   // in one order whatever order the logs were read in: by day, then by what each row is of
-  const of = [0, 1, 2, 3, 4, 5]
+  const of = [0, 1, 2, 3, 4, 5, 15]
   const order = (x, y) => {
     for (const i of of) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1
     return 0
