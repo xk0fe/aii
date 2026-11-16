@@ -17,12 +17,15 @@
 ✔ a hand-off from a turn that's over is not this turn's: stopped before the next prompt is picked up, it stays
 ✔ a key in its terminal while the stop is being checked does not bring the stopped turn back
 ✔ its sub-agents end with the stopped turn
+✔ a spend check-in's card (an ask with `spend`) stays open when its agent is stopped; its other cards close
+✔ a scheduled message you stop counts as ended: its schedule is not held up, and nothing of it goes out again
+✔ no agent can stop a teammate: the local server has no stop command, whoever asks
 ✔ interrupt() alone ends the turn and leaves the queue: what waits goes in once the turn is over
 ✔ a task sent to it that it never started goes back to the board; a stopped agent is not reminded to carry on
 ✔ an API error in a turn you stopped is not retried with "continue"
 ✔ Esc typed in its terminal is not Stop: the queue stays, as before
 ✔ phones may call stop
 ✔ Clique.stopTurns stops agents here by name, and a linked computer’s through its link (Esc for one on an older CLIque)
-ℹ tests 25
-ℹ pass 25
+ℹ tests 28
+ℹ pass 28
 ℹ fail 0

@@ -2,6 +2,8 @@ ok   conversation with a working agent, nothing written: the button is Stop Theo
 ok   one character written: it is Send
 ok   the button and the box stay where they were (Stop <-> Send)
 ok   only spaces written: still Stop
+ok   the clock beside Stop does not stop anyone (it opens Send later)
+ok   and stays where it is between Stop and Send
 ok   Enter in the empty box does not stop anyone
 ok   a state push leaves the same button, still Stop
 ok   its line under the chat has a Stop

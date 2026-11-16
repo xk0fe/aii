@@ -44,6 +44,14 @@ app.whenReady().then(async () => {
     await write(win, '   ')
     ok((await send(win)).mode === 'stop', 'only spaces written: still Stop')
     await write(win, '')
+    // the clock beside it (Send later) keeps its own job while the button is Stop
+    if (await js(win, `return Boolean(document.querySelector('.compose .later'))`)) {
+      const before = await rect(win, '.compose .later')
+      await js(win, `document.querySelector('.compose .later').click()`); await sleep(300)
+      ok((await stops(win)).length === 0 && (await agent(win, 'Theo')).status === 'working', 'the clock beside Stop does not stop anyone (it opens Send later)')
+      await js(win, `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`); await sleep(300)
+      await write(win, 'x'); ok(await rect(win, '.compose .later') === before, 'and stays where it is between Stop and Send'); await write(win, '')
+    }
     // Enter with nothing written never stops
     await js(win, `document.querySelector('.compose textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))`)
     await sleep(200)
