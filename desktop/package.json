@@ -21,7 +21,8 @@
     "dist:win": "node scripts/dist.mjs --win",
     "voice": "node scripts/build-voice.mjs",
     "icon": "electron scripts/make-icon.mjs && electron scripts/make-ico.mjs",
-    "shots": "electron scripts/screenshots.mjs"
+    "shots": "electron scripts/screenshots.mjs",
+    "readme": "node scripts/readme.mjs"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",

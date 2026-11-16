@@ -10,6 +10,7 @@ The examples in this guide use a small made-up clique working on an online shop,
 
 - **What you need:** a Mac (Apple silicon or Intel) or a Windows PC (Windows 10 or 11, x64 or Arm), and Claude Code or Codex installed and signed in with your own account. CLIque runs them for you; it doesn't need an account of its own. GLM and local open-weight models (through Ollama) work too, and you can add other providers.
 - **Install:** on a Mac, open the DMG and drag CLIque into Applications. On Windows, run the installer: it installs CLIque for you alone, with shortcuts on the desktop and in the Start menu.
+- **The first time you open it,** Q (see [below](#q-the-agent-every-workspace-comes-with)) asks what kind of work it is, makes your first workspace and suggests a clique for it. If neither Claude Code nor Codex can run on this computer yet, the screen says what to install or sign in to, with the command to paste.
 - **One copy at a time:** opening CLIque again brings up the one that's running.
 - **Quitting doesn't stop the agents.** Their terminals live in a small process of their own, the terminal host, so an agent in the middle of a task carries on while CLIque is closed, crashes, or restarts after an update. Open CLIque again and it picks every agent up where it is, with one line in the chat saying so: a reply it finished meanwhile shows up threaded to what it answered, and its queue, its clones and its teammates' questions are still there. While CLIque is closed, agents can't reach each other (`clique send` and `clique ask` say CLIque is not running) and a permission prompt waits in the agent's terminal. **Quit** keeps them running; **Stop Agents and Quit** ends them.
 - **Theme:** the sun and moon button (in the dashboard's title bar, or the menu bar popover) switches Light, Dark, or Auto (follows your system). Terminals stay dark either way.
@@ -35,6 +36,7 @@ On Windows, ⌘ is Ctrl, and ⌥ and ⌃ are Alt: `⌥⇧Space` is Alt+Shift+Spa
 - **Floating pill** on the edge of the screen holds the clique as little creatures. One that's working sits at a little laptop, typing. A clique too big for the screen edge keeps the ones that need a look (waiting on you, new replies, at work) and folds the rest into **+N**. Click it, or press `⌥⇧Space`, to open the chat (`⌥⇧D` opens it and starts dictating). Click a creature for your conversation with that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
   - **Drag it anywhere** by its edge or by the chat's header. The chat opens on the side with room: on the left of the screen it opens to the right of the pill, on the right to the left, at the top below, at the bottom above. At the top and bottom the pill lies flat, like the Dock.
   - **It stays put:** dropped near an edge, it tucks in against it, and opening or closing the chat never moves it.
+  - **The notch:** drag the pill to the notch at the top of a MacBook's screen and it moves into it, with the chat hanging below. A screen without a notch gets a drawn one at the top middle, which works the same way.
 - **Dashboard**: the clique on the left, the view in the middle, the chat on the right, and the workspace you're in at the top left (see [Workspaces](#workspaces-a-clique-per-project)).
   - **The sidebar** lists every agent by computer, in your order (a status change never moves a row). Fold a computer with its arrow; its header still counts who's working and who needs you. Off agents fold into one line. **Search** (`⌘F`) finds an agent by name or area, and **+** (`⌘N`) makes one. Click an agent for its terminal and your conversation with it in the chat (its card in the CLIque view); click it again to go back to every terminal and everyone's messages. **Right-click** for everything else: message it, open its terminal, edit it, start a new conversation, move it to another computer, turn it off, remove it. **Drag** an agent onto another computer to move it there.
   - **CLIque** is a collection of agent cards, grouped by computer, where you create and edit agents. Big cards, compact cards (the default once the clique outgrows a screen), or **Stats** to compare them.
@@ -61,6 +63,15 @@ An agent pack is a `.clique` file holding one or more agents: name, area, instru
 
 - **Export:** open an agent and press **Export**, or **Select** several and press **Export** in the bar. The file is saved where you choose and shown in Finder (Explorer on Windows).
 - **Import:** press **Import** on the Agents page, drop a `.clique` file on the window, or double-click one. For each agent you choose whether to take it, what to call it (names already in use get a free one), which folder it works in and which computer it runs on. Imported agents start switched off, so you can look them over before they run. A pack never overrides providers you already have.
+
+## Q: the agent every workspace comes with
+
+Q is the queue in CLIque (CLI agent queue, CLI queue, CLIque) and the clique's own agent. Every workspace has him, whoever else works there.
+
+- **What you send without naming anyone goes to him.** He answers it or gets it to whoever should do it, and tells you how it went. Name someone (`@ada`, or pick them on the **To** line) and it's a direct line to them.
+- **He runs like any other agent:** a CLI in a terminal, in the chat, resting when idle. He works in an empty folder of his own, so no project's instructions load into him, and on Claude Code his one tool is the shell, where `clique` is the only command that runs without asking you.
+- **What you can choose** is his brain (provider, model, effort) and whether he's on. He can't be removed, renamed, moved, cloned or left out of a channel. With Q off, a message with no name on it goes to whoever's area it matches (see **Message Auto** below).
+- **Across computers:** a workspace shown from another computer has that computer's Q (`q@laptop`), and none of its own.
 
 ## How you use it
 
@@ -100,6 +111,7 @@ An agent pack is a `.clique` file holding one or more agents: name, area, instru
 
   Every hand-off and reply shows up in the chat, with the agent's face beside it.
 - **Threads.** Each reply, and each hand-off an agent makes while working on your request, quotes the message it answers, with a bar in its sender's color. Click the quote to jump back. Your messages link forward too ("@iris replied"), so with several messages and several agents in flight you can always tell what answers what. Prompts you type straight into an agent's terminal show up in the chat too, tagged *in terminal*.
+- **Threads between agents.** What agents say to each other on the way (hand-offs, what they tell each other when they finish) goes in a thread under your message, so one request stays a few rows in the channel however many messages it takes. The channel shows one card for it, with who opened it with whom and its latest line: click it to read the whole thread. A question in a thread that nobody there answered comes out to you.
 - **Rich text.** Replies show Markdown: bold, italics, `code`, code blocks, lists, quotes, links and tables (links open in your browser). Wide tables scroll sideways. Long replies fold with a fade; click to unfold.
 - **Autopilot off** makes hand-offs between agents wait in the chat until you click **Send it** or **Drop**.
 - **Reply to a message.** Hover it and press **Reply**. The message box shows what you're answering, linked to it in the chat. If it's an older message, the agent gets a short note saying which one ("replying to your message …").
@@ -116,6 +128,7 @@ An agent pack is a `.clique` file holding one or more agents: name, area, instru
   - **The terminal still works:** Claude keeps its own dialog up as well, and whichever you answer first wins (the card then says it was answered in the terminal). Codex waits for the chat. Its card has *Answer in its terminal instead*, and typing in its terminal does the same.
   - **Everywhere you are:** cards from agents on your other computers work the same way, so do the ones on [your phone](#your-phone), and answered cards stay in the history.
 - **On/off** is saved. An agent you turn off stays off after a restart and resumes its session when you turn it back on.
+- **Resting.** An agent that's on doesn't need its CLI running to be there. Nobody starts with the app, and an agent with nothing to do for ten minutes gives its terminal up. A message, a task or a teammate's question starts it again, and it picks its conversation back up. It doesn't rest while something it started is still running (a dev server, a build) or while it's waiting on anything. Unlike an agent that's off, a resting one takes work: it shows as free. `"restMinutes"` in `config.json` changes the wait, and `0` turns resting off.
 - **Fast** (Codex agents) uses Codex's fast service tier. It shows on the agent's row and is a switch in its sheet; until you set it, it follows `service_tier` in your Codex config.
 - **YOLO** skips every permission prompt: Claude Code runs with `--dangerously-skip-permissions`, Codex with `--dangerously-bypass-approvals-and-sandbox`. Turn it on only for an agent and a folder you'd let run anything.
 

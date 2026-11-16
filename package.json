@@ -13,6 +13,7 @@
     "dist:win": "npm --prefix desktop run dist:win",
     "icon": "npm --prefix desktop run icon",
     "shots": "npm --prefix desktop run shots --",
+    "readme": "npm --prefix desktop run readme --",
     "test": "npm --prefix shared test && npm --prefix desktop test",
     "mobile": "npm --prefix mobile start"
   }

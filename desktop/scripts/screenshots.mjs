@@ -1,11 +1,12 @@
 // Renders every view with a made-up clique (scripts/screenshot-preload.cjs) and saves PNGs, plus short GIFs of
 // the animations. Nothing starts and ~/.clique is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp] [--win]
+// [--frame] [--dark] [--window=1100x700]
 import { app, BrowserWindow, nativeTheme } from 'electron'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-shots-'))
@@ -14,6 +15,15 @@ app.setPath('userData', path.join(tmp, 'userdata'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // --win: every view as Windows shows it (screenshot-preload.cjs ?platform=win32)
 const WIN = process.argv.includes('--win')
+// --frame: every picture stands on the stage (scripts/stage.html): a window with its corners and its shadow on the first
+// run's glow, see-through around the stage, so it sits on a page in either theme. The README's pictures are made this
+// way (npm run readme). A recording comes out as an animated WebP only: a GIF has no soft edges to stand there with.
+const FRAME = process.argv.includes('--frame')
+// --dark: everything in the dark theme. For the recordings, which are made in light otherwise: they're saved as <name>-dark.
+const DARK = process.argv.includes('--dark')
+// --window=1100x700: the dashboard's window where a shot doesn't ask for a size (1440×880 otherwise). A smaller window
+// reads better wherever the picture is shown smaller than the window was.
+const [WIN_W, WIN_H] = process.argv.find((a) => a.startsWith('--window='))?.slice(9).split('x').map(Number) ?? [1440, 880]
 // The computer linked to this one, where the demo clique's Rex and Noor run (screenshot-preload.cjs): the Windows PC
 // Workstation, or with --win (when this one is Workstation) the Mac Studio.
 const LINK = WIN ? { slug: 'studio', name: 'Studio' } : { slug: 'workstation', name: 'Workstation' }
@@ -59,14 +69,18 @@ const BACKDROP = {
 }
 
 async function open(file, { theme, width, height, backdrop, fixture, transparent = false }) {
+  if (DARK) theme = 'dark'
+  // on the stage, what floats over the desktop keeps its see-through window: the stage is what's behind it
+  const float = FRAME && backdrop === 'desktop'
   if (nativeTheme.themeSource !== theme) {
     nativeTheme.themeSource = theme
     await sleep(300)
   }
   const win = new BrowserWindow({
-    width, height, show: false, paintWhenInitiallyHidden: true, useContentSize: true, frame: false, transparent,
+    width, height, show: false, paintWhenInitiallyHidden: true, useContentSize: true, frame: false, transparent: transparent || float,
     webPreferences: { preload: path.join(root, 'scripts', 'screenshot-preload.cjs'), contextIsolation: false, sandbox: false, backgroundThrottling: false },
   })
+  win.stageKind = float ? 'float' : 'window'
   win.webContents.on('console-message', (e) => e.level === 'error' && console.error(`${file}: ${e.message}`))
   const query = { ...(fixture && { fixture }), ...(WIN && { platform: 'win32' }) }
   // --win: Windows draws its window buttons over the dashboard's titlebar (main.js titleBarOverlay); stand-ins show
@@ -76,7 +90,7 @@ async function open(file, { theme, width, height, backdrop, fixture, transparent
       width: 138px; height: 45px; display: grid; place-items: center; font: 14px 'Segoe UI', sans-serif; color: var(--fg); background: var(--bg); pointer-events: none; }`))
   }
   await win.loadFile(path.join(root, 'ui', file), Object.keys(query).length ? { query } : {})
-  if (backdrop && !(WIN && backdrop === 'popover')) await win.webContents.insertCSS(`html { background: ${BACKDROP[backdrop][theme]} !important; }`)
+  if (backdrop && !float && !(WIN && backdrop === 'popover')) await win.webContents.insertCSS(`html { background: ${BACKDROP[backdrop][theme]} !important; }`)
   return win
 }
 
@@ -98,16 +112,41 @@ const FREEZE = `for (const a of document.getAnimations()) {
     a.currentTime = { 'av-wiggle': 70, 'av-wiggle-soft': 400, 'av-z': 1100 }[a.animationName] ?? 0
   } catch {}
 }`
-async function save(win, name) {
+// bare: the picture as it is, even with --frame (the cover is a whole picture already). phone: a capture of the phone
+// app to stand in front of the window (--frame only). crop: only this part of the window ({ x, y, width, height }).
+async function save(win, name, { bare = false, phone, crop } = {}) {
   await js(win, FREEZE)
   await sleep(60)
-  const img = await win.webContents.capturePage()
-  fs.writeFileSync(path.join(out, `${name}.png`), img.toPNG())
+  const img = await (crop ? win.webContents.capturePage(crop) : win.webContents.capturePage())
+  fs.writeFileSync(path.join(out, `${name}.png`), FRAME && !bare ? await onStage(win, img, { phone, size: crop }) : img.toPNG())
   console.log('saved', `${name}.png`)
+}
+
+// ---- the stage (--frame) ----
+// One hidden window draws every stage (scripts/stage.html), in the theme the shot was taken in. Returns the stage's
+// size in px (and where the picture sits on it) with the capture.
+let stageWin = null
+async function stage(params) {
+  stageWin ??= new BrowserWindow({ width: 800, height: 600, show: false, paintWhenInitiallyHidden: true, useContentSize: true, frame: false, transparent: true, webPreferences: { backgroundThrottling: false } })
+  await stageWin.loadURL(`${pathToFileURL(path.join(root, 'scripts', 'stage.html')).href}?${new URLSearchParams(params)}`)
+  const size = await stageWin.webContents.executeJavaScript('window.__ready.then(() => window.__size)')
+  stageWin.setContentSize(size.width, size.height)
+  await sleep(300)
+  return { size, image: await stageWin.webContents.capturePage({ x: 0, y: 0, width: size.width, height: size.height }) }
+}
+const fileURL = (file) => pathToFileURL(file).href
+// A still picture on the stage: the window's capture as it was taken, at the size the window was.
+async function onStage(win, img, { phone, size } = {}) {
+  const file = path.join(tmp, `stage-${Date.now()}.png`)
+  fs.writeFileSync(file, img.toPNG())
+  const { width, height } = size ?? win.getContentBounds()
+  const { image } = await stage([['w', width], ['h', height], ['kind', win.stageKind ?? 'window'], ['src', fileURL(file)], ...(phone ? [['phone', fileURL(phone)]] : [])])
+  return image.toPNG()
 }
 
 // Every frame Chromium paints, each with its real timestamp, then one GIF at the true speed.
 async function record(win, name, { clip, ms, during, width = 760 }) {
+  if (DARK) name += '-dark'
   const dir = fs.mkdtempSync(path.join(tmp, `${name}-`))
   const frames = []
   const start = Date.now()
@@ -125,6 +164,33 @@ async function record(win, name, { clip, ms, during, width = 760 }) {
   const end = start + ms
   const list = frames.map((f, i) => `file '${f.file}'\nduration ${(Math.max(1, (frames[i + 1]?.at ?? end) - f.at) / 1000).toFixed(3)}`).join('\n')
   fs.writeFileSync(path.join(dir, 'list.txt'), `${list}\nfile '${frames.at(-1).file}'\n`)
+  if (FRAME) {
+    // The recording on the stage: the stage drawn once with the window empty, each frame laid over it with the window's
+    // corners (a mask), at the scale the frames were kept at. What floats has no window: its frames are see-through.
+    const { width: w, height: h } = clip ?? win.getContentBounds()
+    const k = width / w
+    const even = (v) => 2 * Math.round(v / 2)
+    const floats = win.stageKind === 'float'
+    const back = await stage([['w', Math.round(w)], ['h', Math.round(h)], ['kind', win.stageKind ?? 'window']])
+    // the stage and the mask are scaled once, here, not once a frame
+    const fh = Math.round(h * k), ow = even(back.size.width * k), oh = even(back.size.height * k)
+    fs.writeFileSync(path.join(dir, 'back.png'), back.image.resize({ width: ow, height: oh, quality: 'best' }).toPNG())
+    const still = (file) => ['-framerate', '20', '-loop', '1', '-i', path.join(dir, file)]
+    const inputs = [...still('back.png'), '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'list.txt')]
+    let fg = `[1:v]fps=20,scale=${width}:${fh}:flags=bicubic,format=rgba[win]`
+    if (!floats) {
+      const mask = await stage([['w', Math.round(w)], ['h', Math.round(h)], ['part', 'mask']])
+      fs.writeFileSync(path.join(dir, 'mask.png'), mask.image.resize({ width, height: fh, quality: 'best' }).toPNG())
+      inputs.push(...still('mask.png'))
+      fg = `[1:v]fps=20,scale=${width}:${fh}:flags=bicubic,format=rgba[fg];[2:v]format=gray[m];[fg][m]alphamerge[win]`
+    }
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...inputs, '-filter_complex',
+      `${fg};[0:v]format=rgba[bg];[bg][win]overlay=${Math.round(back.size.x * k)}:${Math.round(back.size.y * k)}:shortest=1`,
+      // the stage and the mask are stills that never end: the recording's own length ends it
+      '-t', (ms / 1000).toFixed(3), '-c:v', 'libwebp_anim', '-q:v', '76', '-compression_level', '4', '-loop', '0', path.join(out, `${name}.webp`)])
+    console.log('saved', `${name}.webp`, `(${frames.length} frames, on the stage)`)
+    return
+  }
   const gif = path.join(out, `${name}.gif`)
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'list.txt'),
     '-vf', `fps=30,scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle`, gif])
@@ -216,11 +282,84 @@ const SHOTS = {
   },
   // The README's cover (scripts/cover.html): one picture, with see-through rounded corners.
   async cover(theme) {
-    if (theme !== 'light') return
-    const win = await open('../scripts/cover.html', { theme, width: 1280, height: 640, transparent: true })
-    await sleep(800)
-    await save(win, 'cover')
+    const win = await open('../scripts/cover.html', { theme, width: 1280, height: 600, transparent: true })
+    await sleep(900)
+    await save(win, `cover-${theme}`, { bare: true })
     win.destroy()
+  },
+  // The README's pictures (npm run readme): what a newcomer should see, each in a window small enough to read at the
+  // width GitHub shows it, and on the stage with --frame. The phone's own captures (docs/images/src, taken in the
+  // Simulator: mobile/README.md) stand in two of them when they're there.
+  async readme(theme) {
+    const shot = async (name, win, opts) => {
+      await save(win, `readme-${name}-${theme}`, opts)
+      win.destroy()
+    }
+    const phone = (name) => [path.join(root, '..', 'docs', 'images', 'src', `phone-${name}-${DARK ? 'dark' : theme}.webp`)].find((f) => fs.existsSync(f))
+    // #general: a question and a permission prompt answered where they were asked, with the phone asking the same
+    let win = await dashboard(theme, 'chat', { width: 1060, height: 690 })
+    await sleep(1300)
+    await shot('hero', win, { phone: phone('ask') })
+    // Q, the agent in every workspace: what you send goes to him, and he gets it to whoever should do it
+    win = await dashboard(theme, 'chat', { width: 1060, height: 560, fixture: 'q' })
+    await sleep(1300)
+    await shot('q', win)
+    // The pictures shown two to a row are one column of a narrower window: at half the page's width a whole window
+    // would be too small to read.
+    const column = (win) => js(win, "const r = document.querySelector('.page-head[data-for=chat]').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(innerWidth - r.x), height: innerHeight }")
+    // threads: what agents say to each other stays a few rows in the channel
+    win = await dashboard(theme, 'chat', { width: 800, height: 600, fixture: 'threads' })
+    await sleep(1300)
+    await shot('threads', win, { crop: await column(win) })
+    // a canvas: an agent draws its answer, and a teammate adds to it
+    win = await dashboard(theme, 'chat', { width: 800, height: 600 })
+    await js(win, `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+      s.feed = ${JSON.stringify(CANVAS_FEED)}.map((e, i, all) => ({ ...e, ts: t(all.length - i) }))
+      for (const a of s.agents) Object.assign(a, { status: a.on === false ? a.status : 'idle', activity: '', pending: false, subs: [] })
+      window.__cliqueEmit('state', s)`)
+    await sleep(3200)
+    await shot('canvas', win, { crop: await column(win) })
+    // every terminal side by side
+    win = await dashboard(theme, 'grid', { width: 1160, height: 700 })
+    await sleep(1600)
+    await shot('terminals', win)
+    // Computers: linked, nearby, and the phones
+    win = await dashboard(theme, 'clique', { width: 1060, height: 780, fixture: 'big' })
+    await sleep(900)
+    await js(win, 'openComputers()')
+    await sleep(900)
+    // the sheet itself, with a little of the app around it
+    await shot('computers', win, { crop: await js(win, "const r = document.querySelector('#link').getBoundingClientRect(); const m = 22; return { x: Math.round(r.x - m), y: Math.round(Math.max(0, r.y - m)), width: Math.round(r.width + 2 * m), height: Math.round(Math.min(innerHeight, r.bottom + m) - Math.max(0, r.y - m)) }") })
+    // workspaces: the rail (one needs you, one on screen, one asleep, two from other computers) and the workspace's menu
+    win = await dashboard(theme, 'chat', { width: 1060, height: 620, fixture: 'workspaces' })
+    await sleep(1000)
+    await js(win, click('.ws-switch'))
+    await sleep(600)
+    await shot('workspaces', win, { crop: { x: 0, y: 0, width: 620, height: 440 } })
+    // the pill and the chat that opens from it
+    win = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(win)
+    await shot('floating', win)
+    // the same chat hanging from the notch
+    win = await open('overlay.html', { theme, width: 560, height: 660, backdrop: 'desktop' })
+    await win.webContents.insertCSS(SCREEN_TOP)
+    // on the stage the menu bar is only a hint of where the screen's top is
+    await win.webContents.insertCSS('html::before { background: rgba(0, 0, 0, .05) !important; } @media (prefers-color-scheme: dark) { html::before { background: rgba(255, 255, 255, .07) !important; } }')
+    await sleep(300)
+    await js(win, "window.__cliqueEmit('place', { side: 'hatch', align: 'center', hatch: { width: 185, height: 32, real: true } })")
+    await sleep(600)
+    await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
+    await sleep(900)
+    await shot('hatch', win)
+    // the phone app: who needs you, and the chat (only on the stage, and only with its captures at hand)
+    if (FRAME && phone('ask') && phone('chat')) {
+      const { image } = await stage([['kind', 'phones'], ['h', 640], ['w', 880], ['phone', fileURL(phone('ask'))], ['phone', fileURL(phone('chat'))]])
+      fs.writeFileSync(path.join(out, `readme-phone-${theme}.png`), image.toPNG())
+      console.log('saved', `readme-phone-${theme}.png`)
+    }
   },
   async tray(theme) {
     const win = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
@@ -677,7 +816,7 @@ const SHOTS = {
       ms: 8200, width: 1000,
       during: async () => {
         let at = { x: 640, y: 420 }
-        at = await glide(win, at, await center(win, '.rail-ws[data-ws=default]'), 700)
+        at = await glide(win, at, await center(win, '.rail-ws[data-ws=storefront]'), 700)
         await sleep(350)
         await tap(win, at)
         await sleep(1500)
@@ -1740,7 +1879,7 @@ const SHOTS = {
   },
 }
 
-async function dashboard(theme, view, { width = 1440, height = 880, fixture, reset = [] } = {}) {
+async function dashboard(theme, view, { width = WIN_W, height = WIN_H, fixture, reset = [] } = {}) {
   const win = await open('dashboard.html', { theme, width, height, fixture })
   // the places: chat (a channel), clique (Agents), tasks, terminals; grid and focus are Terminals laid out that way
   const place = { grid: 'terminals', focus: 'terminals' }[view] ?? view
@@ -1761,15 +1900,22 @@ fs.mkdirSync(out, { recursive: true })
 app.on('window-all-closed', () => {}) // one window at a time; don't quit between them
 
 app.whenReady().then(async () => {
-  try {
-    for (const [name, fn] of Object.entries(SHOTS)) {
-      if (only.length && !only.includes(name)) continue
+  // A shot that no longer finds its way around the app mustn't cost every shot after it: it's named, the rest go on,
+  // and the run ends with an error so it doesn't pass for a full set.
+  const broken = []
+  for (const [name, fn] of Object.entries(SHOTS)) {
+    if (only.length && !only.includes(name)) continue
+    try {
       if (name.endsWith('Gif')) await fn()
       else for (const theme of ['light', 'dark']) await fn(theme)
+    } catch (e) {
+      broken.push(name)
+      console.error(`${name}: ${e?.stack ?? e}`)
+      for (const win of BrowserWindow.getAllWindows()) win.destroy()
+      stageWin = null
     }
-  } catch (e) {
-    console.error(e)
   }
+  if (broken.length) console.error(`\n${broken.length} shot${broken.length === 1 ? '' : 's'} didn't finish: ${broken.join(', ')}`)
   fs.rmSync(tmp, { recursive: true, force: true })
-  app.exit(0)
+  app.exit(broken.length ? 1 : 0)
 })
