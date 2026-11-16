@@ -44,4 +44,3 @@ export function movedPath(p, { home = HOME, user = os.homedir() } = {}) {
 const movedAll = (images) => (Array.isArray(images) ? images.map((p) => movedPath(p)) : images)
 // What's read from disk, with its images where they are now: a line of the chat, a task, a queued message.
 export const movedImages = (x) => (x && Array.isArray(x.images) ? { ...x, images: movedAll(x.images) } : x)
-
