@@ -1,0 +1,44 @@
+[  0.0s] claude, scenario "queue"
+[  0.1s] status = starting
+[  0.2s] status = waiting
+[  1.7s] key   -> "\u001b[B"
+[  2.0s] key   -> Enter
+[  2.0s] status = starting
+[  2.1s] hook  <- SessionStart
+[  2.1s] status = idle
+[  4.1s] typed -> "Without using any tools, write the numbers 1 to 300, one per line, eac"
+[  4.2s] status = working
+[  4.4s] hook  <- UserPromptSubmit "Without using any tools, write the numbers 1 to 30"
+[  9.5s] ok   2 messages wait in its queue (2)
+[  9.5s] >>> Stop
+[  9.5s] key   -> Esc
+[  9.5s] stop returned {"stopped":["pip"],"dropped":2}
+[  9.5s] ok   it shows free at once
+[  9.5s] status = idle (making sure it stopped)
+[ 10.7s] key   -> Ctrl+C
+[ 10.7s] ok   CLIque saw its turn end
+[ 10.7s] ... 15 s pass
+[ 10.7s] status = idle
+[ 25.7s] ok   still free 15 s later: nothing carried on by itself
+[ 25.7s] ok   its queue is empty
+[ 25.7s] ok   the agent is still on (its CLI runs)
+[ 25.7s] ok   no reply came from the stopped work
+[ 25.7s] >>> asking again
+[ 25.7s] typed -> "What is 2+2? Answer with just the number."
+[ 25.7s] status = working
+[ 25.9s] hook  <- UserPromptSubmit "What is 2+2? Answer with just the number."
+[ 27.1s] hook  <- Stop "4"
+[ 27.1s] status = idle
+[ 27.2s] ok   asked again, it answers: "4" (its prompt box was clean)
+[ 27.2s] ok   same conversation
+
+the chat:
+  msg   you    -> pip "Without using any tools, write the numbers 1 to 300, one per line, each followed by a made"
+  event clique "added up what the clique's work cost before CLIque counted it: 229k Codex tokens over the "
+  msg   you    -> pip "When you are done, also write the numbers 300 down to 1."  [not delivered]
+  msg   you    -> pip "And then translate all of it to French."  [not delivered]
+  event clique "you stopped @pip. 2 waiting messages weren't delivered"
+  msg   you    -> pip "What is 2+2? Answer with just the number."
+  reply pip    "4"
+
+all ok

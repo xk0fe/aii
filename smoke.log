@@ -1,0 +1,38 @@
+ok   conversation with a working agent, nothing written: the button is Stop Theo
+ok   one character written: it is Send
+ok   the button and the box stay where they were (Stop <-> Send)
+ok   only spaces written: still Stop
+ok   Enter in the empty box does not stop anyone
+ok   a state push leaves the same button, still Stop
+ok   its line under the chat has a Stop
+ok   a double click on Send sends once and stops nobody
+ok   Stop on its line calls stop(["Theo"])
+ok   and the click opened nothing else
+ok   Theo is free and still on
+ok   its clone (which took the message sent meanwhile) is still at work: Stop names it
+ok   the message box stops the clone
+ok   nobody at work here: the button is the plain (disabled) Send again
+ok   in the same place
+ok   no Stop for Theo anywhere on the page
+ok   the conversation says "You stopped Theo"
+ok   one line per Stop pressed (Theo, then its clone)
+ok   #general with agents at work: Stop names them
+ok   Stop in #general stops who is in a turn there, with the channel
+ok   nobody of this channel is left in a turn
+ok   (cards closed)
+ok   their open question cards closed as stopped
+ok   a working agent's menu has Stop
+ok   a free agent's menu has no Stop at all (not greyed out)
+ok   cards: Stop on the working one, none on the free one
+ok   a card with Stop is as tall as one without
+ok   its click stops Ada and does not open her profile
+ok   and the button is gone once she is free
+ok   compact cards: Stop on the working one
+ok   terminals: Stop among a working terminal's actions only
+ok   menu bar: Stop on the row of an agent at work
+ok   its click only stops (does not open the dashboard)
+ok   floating chat: the button is Stop while agents are at work
+ok   and Send with something written
+ok   pressed, it stops them and goes back to the plain Send
+
+all ok

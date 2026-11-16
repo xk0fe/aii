@@ -1,0 +1,28 @@
+✔ Stop ends the turn: Esc goes in, the agent is free at once and stays on, and one line says who you stopped
+✔ what was queued behind a stopped turn is not delivered when the agent goes free
+✔ a teammate waiting on its answer hears it was stopped; a question still in its queue is answered the same way
+✔ questions the stopped agent had out are forgotten: a late answer does not start it again
+✔ hand-offs it made in the stopped turn that nobody started on are withdrawn; one a teammate is already on isn't
+✔ a turn that starts by itself after a stop is stopped again, until you ask for something
+✔ a prompt the CLI had queued starts the moment Esc lands (Codex): that turn is stopped too
+✔ Claude Code gets one Ctrl+C once its turn is over, to empty the prompt box it put the stopped prompt back in
+✔ a message sent right after Stop waits until the turn has really ended
+✔ a CLI that keeps working gets Esc again, and after three tries the chat says it didn't stop
+✔ an agent waiting on a permission card is stopped, and the card closes as stopped
+✔ an agent asking whether to trust its folder, one starting up and one that is free have nothing to stop
+✔ several agents stopped together make one line, in the channel it was pressed in
+✔ a stopped clone doesn't help itself to what waits for its original; a new message can still go to it
+✔ past its context limit, a stopped agent is not asked where things stand: that waits for its next message
+✔ a question it had put aside while it asked a teammate in turn is answered too: nobody is left waiting
+✔ a hand-off from a turn that's over is not this turn's: stopped before the next prompt is picked up, it stays
+✔ a key in its terminal while the stop is being checked does not bring the stopped turn back
+✔ its sub-agents end with the stopped turn
+✔ interrupt() alone ends the turn and leaves the queue: what waits goes in once the turn is over
+✔ a task sent to it that it never started goes back to the board; a stopped agent is not reminded to carry on
+✔ an API error in a turn you stopped is not retried with "continue"
+✔ Esc typed in its terminal is not Stop: the queue stays, as before
+✔ phones may call stop
+✔ Clique.stopTurns stops agents here by name, and a linked computer’s through its link (Esc for one on an older CLIque)
+ℹ tests 25
+ℹ pass 25
+ℹ fail 0

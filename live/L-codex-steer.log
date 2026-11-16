@@ -1,0 +1,40 @@
+[  0.0s] codex, scenario "steer"
+[  0.1s] status = starting
+[  3.0s] typed -> "Without using any tools, write the numbers 1 to 300, one per line, eac"
+[  3.0s] status = working
+[  3.9s] hook  <- SessionStart
+[  3.9s] hook  <- UserPromptSubmit "Without using any tools, write the numbers 1 to 30"
+[  8.9s] a prompt goes into the turn it is in (as CLIque types a teammate's question): the CLI queues it
+[ 11.5s] >>> Stop
+[ 11.5s] key   -> Esc
+[ 11.5s] stop returned {"stopped":["pip"],"dropped":0}
+[ 11.5s] ok   it shows free at once
+[ 11.5s] hook  <- Interrupt
+[ 11.5s] status = idle (making sure it stopped)
+[ 11.5s] hook  <- UserPromptSubmit "Also: what is 3+3? Answer with just the number."
+[ 11.5s] key   -> Esc
+[ 11.5s] hook  <- Interrupt
+[ 11.6s] status = idle
+[ 11.7s] ok   CLIque saw its turn end
+[ 11.7s] ... 15 s pass
+[ 26.7s] ok   still free 15 s later: nothing carried on by itself
+[ 26.7s] ok   its queue is empty
+[ 26.7s] ok   the agent is still on (its CLI runs)
+[ 26.7s] ok   no reply came from the stopped work
+[ 26.7s] >>> asking again
+[ 26.7s] typed -> "What is 2+2? Answer with just the number."
+[ 26.7s] status = working
+[ 26.9s] hook  <- UserPromptSubmit "What is 2+2? Answer with just the number."
+[ 29.2s] hook  <- Stop "4"
+[ 29.2s] status = idle
+[ 29.3s] ok   asked again, it answers: "4" (its prompt box was clean)
+[ 29.3s] ok   same conversation
+
+the chat:
+  msg   you    -> pip "Without using any tools, write the numbers 1 to 300, one per line, each followed by a made"
+  event clique "added up what the clique's work cost before CLIque counted it: 229k Codex tokens over the "
+  event clique "you stopped @pip"
+  msg   you    -> pip "What is 2+2? Answer with just the number."
+  reply pip    "4"
+
+all ok

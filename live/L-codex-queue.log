@@ -1,0 +1,40 @@
+[  0.0s] codex, scenario "queue"
+[  0.1s] status = starting
+[  3.0s] status = idle
+[  3.5s] typed -> "Without using any tools, write the numbers 1 to 300, one per line, eac"
+[  3.5s] status = working
+[  4.3s] hook  <- SessionStart
+[  4.3s] hook  <- UserPromptSubmit "Without using any tools, write the numbers 1 to 30"
+[  9.3s] ok   2 messages wait in its queue (2)
+[  9.3s] >>> Stop
+[  9.3s] key   -> Esc
+[  9.3s] stop returned {"stopped":["pip"],"dropped":2}
+[  9.3s] ok   it shows free at once
+[  9.4s] status = idle (making sure it stopped)
+[  9.4s] hook  <- Interrupt
+[  9.5s] ok   CLIque saw its turn end
+[  9.5s] ... 15 s pass
+[  9.5s] status = idle
+[ 24.5s] ok   still free 15 s later: nothing carried on by itself
+[ 24.5s] ok   its queue is empty
+[ 24.5s] ok   the agent is still on (its CLI runs)
+[ 24.5s] ok   no reply came from the stopped work
+[ 24.5s] >>> asking again
+[ 24.5s] typed -> "What is 2+2? Answer with just the number."
+[ 24.5s] status = working
+[ 24.6s] hook  <- UserPromptSubmit "What is 2+2? Answer with just the number."
+[ 26.5s] hook  <- Stop "4"
+[ 26.5s] ok   asked again, it answers: "4" (its prompt box was clean)
+[ 26.5s] ok   same conversation
+[ 26.5s] status = idle
+
+the chat:
+  msg   you    -> pip "Without using any tools, write the numbers 1 to 300, one per line, each followed by a made"
+  event clique "added up what the clique's work cost before CLIque counted it: 229k Codex tokens over the "
+  msg   you    -> pip "When you are done, also write the numbers 300 down to 1."  [not delivered]
+  msg   you    -> pip "And then translate all of it to French."  [not delivered]
+  event clique "you stopped @pip. 2 waiting messages weren't delivered"
+  msg   you    -> pip "What is 2+2? Answer with just the number."
+  reply pip    "4"
+
+all ok

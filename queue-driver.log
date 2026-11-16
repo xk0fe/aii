@@ -1,0 +1,29 @@
+1. You ask ada for something, and it gets to work.
+    [typed into ada's terminal]  "Make the cart and checkout agree on the total."
+    ada: working, 0 waiting in its queue
+
+2. While it works, three things line up behind it: a hand-off from june, a question from theo, another message from you.
+    [typed into ada's terminal]  "[question from @theo, who is waiting on your answer. Answer it now with clique answer \"…\", then carry on with what you were doing] Is the fixture seeded?"
+    ada: working, 2 waiting in its queue
+
+3. You press Stop.
+    [key into ada's terminal]    Esc
+    hub.stopTurns(['ada']) -> {"stopped":["ada"],"dropped":3}
+    ada: idle, 0 waiting in its queue
+    theo's `clique ask` prints: "@ada answered:\n\n(@ada was stopped by the user, so it won't answer.)"
+
+4. Its terminal goes quiet (the turn is over), and ten minutes pass.
+    [key into ada's terminal]    Ctrl+C
+    ada: idle, 0 waiting in its queue
+    (nothing was typed into ada's terminal in those ten minutes, apart from the one Ctrl+C that empties Claude Code's prompt box)
+
+5. The chat:
+    msg   you    -> ada   "Make the cart and checkout agree on the total."
+    msg   june   -> ada   "The release notes need the new endpoint names."   [not delivered]
+    msg   theo   -> ada   "Is the fixture seeded?"   [not delivered]
+    msg   you    -> ada   "Then open a PR."   [not delivered]
+    event clique          "you stopped @ada. 3 waiting messages weren't delivered"
+
+6. You ask again: only the new message goes in.
+    [typed into ada's terminal]  "Carry on with the totals. Skip the PR."
+    ada: working, 0 waiting in its queue

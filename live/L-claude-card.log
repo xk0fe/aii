@@ -1,0 +1,44 @@
+[  0.0s] claude, scenario "card"
+[  0.1s] status = starting
+[  0.3s] status = waiting
+[  1.7s] key   -> "\u001b[B"
+[  2.0s] key   -> Enter
+[  2.0s] status = starting
+[  2.2s] hook  <- SessionStart
+[  2.2s] status = idle
+[  4.2s] typed -> "Use the AskUserQuestion tool to ask me whether I prefer red or blue. A"
+[  4.3s] status = working
+[  4.4s] hook  <- UserPromptSubmit "Use the AskUserQuestion tool to ask me whether I p"
+[  6.0s] status = waiting
+[  8.0s] >>> Stop
+[  8.0s] key   -> Esc
+[  8.0s] stop returned {"stopped":["pip"],"dropped":0}
+[  8.0s] ok   it shows free at once
+[  8.0s] status = idle (making sure it stopped)
+[  9.2s] key   -> Ctrl+C
+[  9.2s] ok   CLIque saw its turn end
+[  9.2s] ... 15 s pass
+[  9.2s] status = idle
+[ 24.2s] ok   still free 15 s later: nothing carried on by itself
+[ 24.2s] ok   its queue is empty
+[ 24.2s] ok   the agent is still on (its CLI runs)
+[ 24.2s] ok   no reply came from the stopped work
+[ 24.2s] ok   its question card closed as stopped
+[ 24.2s] >>> asking again
+[ 24.2s] typed -> "What is 2+2? Answer with just the number."
+[ 24.2s] status = working
+[ 24.4s] hook  <- UserPromptSubmit "What is 2+2? Answer with just the number."
+[ 25.2s] hook  <- Stop "4"
+[ 25.3s] status = idle
+[ 25.3s] ok   asked again, it answers: "4" (its prompt box was clean)
+[ 25.3s] ok   same conversation
+
+the chat:
+  msg   you    -> pip "Use the AskUserQuestion tool to ask me whether I prefer red or blue. After I answer, write"
+  event clique "added up what the clique's work cost before CLIque counted it: 229k Codex tokens over the "
+  ask   pip    -> you ""  [card: stopped]
+  event clique "you stopped @pip"
+  msg   you    -> pip "What is 2+2? Answer with just the number."
+  reply pip    "4"
+
+all ok
