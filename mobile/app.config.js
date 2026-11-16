@@ -24,8 +24,11 @@ const VERSION = '1.0.0'
 // One more for every build uploaded to a store: App Store Connect and Google Play refuse a number they've seen.
 const BUILD = 1
 
-// Felt lilac, from the icon: the splash and what shows before the first screen.
-const SPLASH = { light: '#EADFF6', dark: '#211C27' }
+// The splash, and what shows before the first screen: the app's own page colours (ui/theme.ts bg), with the icon's C
+// mark on them, so the first screen arrives on the same ground.
+const SPLASH = { light: '#F2F2F7', dark: '#000000' }
+// The icon's tile (desktop/scripts/make-icon.mjs draws the icon and every picture here: --phone assets/images)
+const ICON_GROUND = '#161618'
 
 module.exports = () => ({
   name: APP_NAME,
@@ -76,7 +79,7 @@ module.exports = () => ({
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundImage: './assets/images/android-icon-background.png',
       monochromeImage: './assets/images/android-icon-monochrome.png',
-      backgroundColor: SPLASH.light,
+      backgroundColor: ICON_GROUND,
     },
     // The camera for the pairing code; a little vibration when you answer (INTERNET comes with React Native).
     permissions: ['android.permission.CAMERA', 'android.permission.VIBRATE'],
@@ -101,8 +104,8 @@ module.exports = () => ({
       {
         backgroundColor: SPLASH.light,
         image: './assets/images/splash-icon.png',
-        imageWidth: 200,
-        dark: { backgroundColor: SPLASH.dark, image: './assets/images/splash-icon.png' },
+        imageWidth: 160,
+        dark: { backgroundColor: SPLASH.dark, image: './assets/images/splash-icon-dark.png' },
       },
     ],
     ['expo-camera', { cameraPermission: `${APP_NAME} uses the camera to scan the pairing code your computer shows.`, microphonePermission: false, recordAudioAndroid: false }],
