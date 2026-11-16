@@ -8,6 +8,8 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { SYSTEM_AGENT, SYSTEM_AGENT_CHOICES, systemAgentHello } from './system-agent.js'
 import { adapters, ASK_WAIT, RESUME_ASK, TRUST } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
+import { accountOf, accountEnv, accountArgs, accountDir, prepare as prepareAccount } from './accounts.js'
+import { sessionOf, sessionRoot } from './sessions.js'
 import { generatePrompt, quickAsk } from './promptgen.js'
 import { pathKey, resolveCommand, which, withTools } from './launch.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, quickTriagePrompt, readTriage, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
@@ -77,7 +79,7 @@ export const openConfig = (also) => new Config(CONFIG, DEFAULTS, {
     also?.(data)
   },
 })
-const AGENT_KEYS = ['system', 'area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared']
+const AGENT_KEYS = ['system', 'area', 'prompt', 'images', 'provider', 'cli', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'off', 'avatar', 'contextLimit', 'onContextLimit', 'clones', 'shared', 'account']
 const RESERVED = new Set(['you', 'any', 'clique', 'crew']) // (crew: what the app called itself in chats before its rename)
 // an unquoted # starts a comment in the shell, and `clique post` is all that arrives
 const POST_USAGE = 'usage: clique post <channel> "message" (the name alone: an unquoted # starts a shell comment)'
@@ -533,7 +535,7 @@ export class Hub extends EventEmitter {
     if (a.status === 'stopped' || a.status === 'away' || a.status === 'waiting' || a.status === 'off') return false
     if (a.status === 'starting' && now - a.since > SYSTEM_AGENT_START_MAX) return false
     if (a.status === 'resting' && !this.canStart(a)) return false
-    return !this.nearLimit(this.providerOf(a)?.id)
+    return !this.nearLimit(this.usageKey(a))
   }
 
   // He can't take what's waiting for him (his CLI won't start, he was turned off, he's stuck): your messages go to whoever
@@ -712,7 +714,7 @@ export class Hub extends EventEmitter {
   }
 
   launchKey(a) {
-    return a && JSON.stringify([this.providerOf(a)?.id, a.model, a.effort, a.tier, a.cwd, a.args, a.yolo, a.area, a.prompt, a.images])
+    return a && JSON.stringify([this.providerOf(a)?.id, a.model, a.effort, a.tier, a.cwd, a.args, a.yolo, a.area, a.prompt, a.images, this.accountOf(a)?.id ?? ''])
   }
 
   relaunchWhenFree(a) {
@@ -806,6 +808,24 @@ export class Hub extends EventEmitter {
     }
     if (!adapter) return fail(`can't start: it's set to run "${a.provider}", which CLIque doesn't know how to run. Pick Claude Code or Codex for it in its settings`)
     if (provider.missing.length) return fail(`${provider.label} needs ${provider.missing.join(', ')} in your shell environment`)
+    // the account it runs on (core/accounts.js): its CLI is pointed at that sign-in's folder
+    const account = this.accountOf(a)
+    if (account && this.signedIn?.(account.id) === false) return fail(`can't start: ${this.usageLabel(this.usageKey(a))} isn't signed in. Sign it in under Accounts, or pick another account for @${a.name}`)
+    try {
+      if (account) prepareAccount(account, provider)
+    } catch (e) {
+      return fail(`can't start: its account's folder couldn't be made (${e.message})`)
+    }
+    // its conversation lives in the folder of the account it was had on: it goes with it to the one it runs on now
+    const lives = this.convos[a.name]?.account ?? ''
+    if (!fresh && this.sessions[a.name] && lives !== (account?.id ?? '')) {
+      const carried = this.carrySession(a, provider, lives, account)
+      if (carried.ok) (this.convoOf(a).account = account?.id), this.saveConvos()
+      else {
+        this.saveSession(a.name, null)
+        this.post({ kind: 'event', from: a.name, text: `starts a new conversation on ${this.usageLabel(this.usageKey(a))}: the one it had stayed behind (${carried.why})`, fresh: true })
+      }
+    }
     const resume = this.sessions[a.name]
     const session = randomUUID()
     a.checks = this.checksFor(a) // what it checks before building, as its system prompt says (see apply)
@@ -816,6 +836,7 @@ export class Hub extends EventEmitter {
     a.resumeWatch = resume && RESUME_ASK[provider.cli] ? { ask: RESUME_ASK[provider.cli], screen: '' } : null
     a.resumed = Boolean(resume)
     if (!resume) this.newConvo(a)
+    if (!resume && account) (this.convoOf(a).account = account.id), this.saveConvos()
     try {
       const cwd = expand(a.cwd)
       if (!fs.existsSync(cwd)) throw new Error(`folder not found: ${cwd}`)
@@ -825,7 +846,7 @@ export class Hub extends EventEmitter {
       // for them (bin/clique.mjs): never ELECTRON_RUN_AS_NODE itself, which would make every Electron app the agent starts
       // run as Node.
       const env = {
-        ...expandEnv(provider.env), ...extraEnv, ...withTools(process.env, this.bin), CLIQUE_NODE: process.execPath, CLIQUE_AGENT: a.name, CLIQUE_URL: this.url, CLIQUE_BADGE: this.keyOf(a.name), CLIQUE_HOME: HOME,
+        ...expandEnv(provider.env), ...extraEnv, ...accountEnv(account, provider), ...withTools(process.env, this.bin), CLIQUE_NODE: process.execPath, CLIQUE_AGENT: a.name, CLIQUE_URL: this.url, CLIQUE_BADGE: this.keyOf(a.name), CLIQUE_HOME: HOME,
         CLIQUE_GROUPS: groups, ...(provider.cli === 'claude' && shellPrefix(this.bin)),
         // CLIQUE_BADGE: its own key for CLIque's server, which says who's calling (core/keys.js). Not the token every
         // caller used to share, which is no longer in an agent's environment. (Named so that no CLI takes it for a
@@ -836,7 +857,7 @@ export class Hub extends EventEmitter {
         CLIQUE_WORKSPACE: this.ws === ROOT ? '' : this.ws, // ROOT's files are in CLIQUE_HOME itself, where its hooks' spool is (core/adapters.js)
       }
       // the program itself on Windows, through the .cmd npm installs it as (core/launch.js)
-      const command = resolveCommand(file, [...args, ...(provider.args ?? []), ...(a.args ?? [])], { ...process.env, ...env })
+      const command = resolveCommand(file, [...args, ...(provider.args ?? []), ...accountArgs(account, provider), ...(a.args ?? [])], { ...process.env, ...env })
       this.runner.start(a.name, { file: command.file, args: command.args, cwd, env, tag: run })
       // its own group first: what the CLI starts without a group of its own lands there
       const pid = this.runner.pid?.(a.name)
@@ -850,6 +871,59 @@ export class Hub extends EventEmitter {
     } catch (e) {
       this.setStatus(a, 'stopped')
       this.post({ kind: 'event', from: a.name, text: `failed to start: ${e.message}` })
+    }
+  }
+
+  // ---- accounts (core/accounts.js): which sign-in an agent runs on ----------------------------------------------
+
+  // The account an agent runs on: the one its definition names, or null for its provider's own sign-in.
+  accountOf(a) {
+    return accountOf(this.config, a, this.providerOf(a)?.id)
+  }
+
+  // Whose usage limits an agent counts against: its provider's (claude), or one account of it (claude@claude-work).
+  // usage, the samples and the heads-ups all go by this.
+  usageKey(a) {
+    const id = this.providerOf(a)?.id ?? a.provider ?? 'claude'
+    const account = this.accountOf(a)
+    return account ? `${id}@${account.id}` : id
+  }
+
+  // ...and what that's called: "Claude", "Claude · Work".
+  usageLabel(key) {
+    const at = String(key).indexOf('@')
+    const id = at < 0 ? String(key) : String(key).slice(0, at)
+    const label = this.providers[id]?.label ?? id
+    if (at < 0) return label
+    const account = String(key).slice(at + 1)
+    return `${label} · ${accountOf(this.config, { provider: id, account }, id)?.name ?? account}`
+  }
+
+  // An agent's conversation, moved from one account's folder to another's so it can be picked up there (its CLI looks
+  // for it in the folder it's pointed at). from: the account id it lives in ('' the provider's own); to: the account
+  // (null: the provider's own). The CLI isn't running: launch calls this before it starts it. -> { ok } or { ok: false, why }
+  carrySession(a, provider, from, to) {
+    const env = (id) => ({ ...process.env, ...expandEnv(provider.env), ...accountEnv(id ? { id } : null, provider) })
+    const there = env(from)
+    // (where its hooks said it is counts only for the folder they said it in)
+    const session = sessionOf(provider.cli, this.sessions[a.name], { cwd: a.cwd, env: there, transcript: a.transcript })
+    if (!session.files) return { ok: false, why: session.reason }
+    try {
+      const root = provider.cli === 'codex' ? sessionRoot(provider.cli, a.cwd, env(to?.id)) : path.join(path.dirname(sessionRoot(provider.cli, a.cwd, env(to?.id))), path.basename(session.root))
+      for (const f of session.files) {
+        const dest = path.join(root, ...f.rel.split('/'))
+        fs.mkdirSync(path.dirname(dest), { recursive: true })
+        try {
+          fs.renameSync(f.path, dest)
+        } catch {
+          fs.copyFileSync(f.path, dest) // another disk: copied, then the original goes
+          fs.rmSync(f.path, { force: true })
+        }
+      }
+      if (a.transcript?.id === session.id) a.transcript = null // (it's somewhere else now: its next hook says where)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, why: e.message }
     }
   }
 
@@ -1229,7 +1303,7 @@ export class Hub extends EventEmitter {
   lineup(a) {
     const family = [a, ...this.clonesOf(a)]
     const room = family.some((x) => (x.status === 'idle' || x.status === 'resting') && !x.inbox.length) || (this.maxClones(a) > family.length - 1 && this.runner.running(a.name))
-    return { name: a.name, area: a.area, status: room ? 'idle' : a.status, queue: room ? 0 : family.reduce((n, x) => n + x.inbox.length, 0), nearLimit: this.nearLimit(this.providerOf(a)?.id) }
+    return { name: a.name, area: a.area, status: room ? 'idle' : a.status, queue: room ? 0 : family.reduce((n, x) => n + x.inbox.length, 0), nearLimit: this.nearLimit(this.usageKey(a)) }
   }
 
   // ---- conversations: starting fresh, and how full the current one is ------------------------------
@@ -1526,7 +1600,7 @@ export class Hub extends EventEmitter {
     const context = fromStatusLine(s)
     // Before the first message of a resumed session there's no usage yet: keep what we knew.
     if (context && (s.context_window.current_usage || !this.convoOf(a).context)) this.setContext(a, context)
-    const id = this.providerOf(a)?.id ?? 'claude'
+    const id = this.usageKey(a)
     const limits = limitsFrom(s)
     if (limits) this.setUsage(id, limits)
     this.countSpend(a, s?.session_id, spentFrom(s))
@@ -1598,13 +1672,13 @@ export class Hub extends EventEmitter {
     if (!crossed && !forecast) return
     if (crossed) u.told[w.id] = { level, resetsAt: w.resetsAt }
     if (forecast) u.told[pace] = { resetsAt: w.resetsAt }
-    const label = this.providers[id]?.label ?? id
+    const label = this.usageLabel(id)
     const at = `${label} is at ${w.pct}% of its ${limitName(w)}`
     const when = resetsWhen(w.resetsAt)
     const out = runsOut && `At this pace it runs out ${resetsWhen(runsOut)}, before it resets ${when}`
     const limit = { account: id, label, window: w.id, name: limitName(w), pct: w.pct, resetsAt: w.resetsAt, ...(runsOut && { runsOut }) }
     this.aboutAccount({ kind: 'event', from: 'clique', text: out ? `${at}. ${out}` : `${at}, resets ${when}`, limit, ...((level >= 95 || runsOut) && { alert: true }) })
-    const routing = w.pct >= NEAR_LIMIT ? ' Until then, new work goes to agents on other providers when they cover the same area.' : ''
+    const routing = w.pct >= NEAR_LIMIT ? ' Until then, new work goes to agents on other accounts when they cover the same area.' : ''
     if (crossed) this.emit('notice', { title: at, body: `${out ? `${out}.` : `It resets ${when}.`}${routing}`, focus: '', account: true })
     else this.emit('notice', { title: `At this pace, ${label}'s ${limitName(w)} runs out ${resetsWhen(runsOut)}`, body: `It's at ${w.pct}% and resets ${when}.${routing}`, focus: '', account: true })
   }
@@ -2006,11 +2080,11 @@ export class Hub extends EventEmitter {
     const now = Date.now()
     if (e.hook_event_name === 'PostToolUse' && now - (a.contextAt ?? 0) < 5000) return
     a.contextAt = now
-    const file = e.transcript_path || codexLog(e.session_id ?? this.sessions[a.name])
+    const file = e.transcript_path || codexLog(e.session_id ?? this.sessions[a.name], this.accountOf(a) ? accountDir(this.accountOf(a).id) : undefined)
     const context = file && fromCodexLog(file)
     if (context) this.setContext(a, context)
     const limits = file && codexLimitsFrom(file)
-    if (limits) this.setUsage(this.providerOf(a).id, limits.windows, limits.credits)
+    if (limits) this.setUsage(this.usageKey(a), limits.windows, limits.credits)
     if (file) this.countSpend(a, e.session_id ?? this.sessions[a.name], codexSpent(file))
   }
 
@@ -4897,7 +4971,7 @@ export class Hub extends EventEmitter {
 
   // Each provider's usage limits that haven't reset yet (your accounts', the same from any workspace's hub).
   usageNow() {
-    return Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.providers[id]?.label ?? id, at: this.usage[id].at, windows: this.liveUsage(id).map((w) => ({ ...w, pace: this.pace(id, w) ?? undefined })), ...(this.usage[id].credits && { credits: this.usage[id].credits }) }]).filter(([, u]) => u.windows.length))
+    return Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.usageLabel(id), at: this.usage[id].at, windows: this.liveUsage(id).map((w) => ({ ...w, pace: this.pace(id, w) ?? undefined })), ...(this.usage[id].credits && { credits: this.usage[id].credits }) }]).filter(([, u]) => u.windows.length))
   }
 
   snapshot() {
@@ -4912,7 +4986,9 @@ export class Hub extends EventEmitter {
         name: a.name, ...(a.system && { system: true }), area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
         tier: a.tier, fast: this.providerOf(a)?.fastByDefault === undefined ? undefined : a.tier ? a.tier === 'fast' : this.providerOf(a).fastByDefault,
         args: (a.args ?? []).join(' '), avatar: a.avatar, status: this.parked && !a.off && a.status === 'off' ? 'parked' : a.status, since: a.since, activity: a.activity,
-        queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a), nearLimit: this.nearLimit(this.providerOf(a)?.id),
+        queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a), nearLimit: this.nearLimit(this.usageKey(a)),
+        // the account it runs on (none: its provider's own sign-in), and whose limits it counts against (state.usage's key)
+        ...(this.accountOf(a) && { account: this.accountOf(a).id }), usage: this.usageKey(a),
         // how full, measured against its own context limit when it has one
         convo: this.convos[a.name] ? { ...this.convos[a.name], context: againstLimit(this.convos[a.name].context, a.contextLimit) } : null,
         contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : null, onContextLimit: a.onContextLimit === 'notify' ? 'notify' : 'fresh',
