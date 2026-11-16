@@ -8,7 +8,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { SYSTEM_AGENT, SYSTEM_AGENT_CHOICES, systemAgentHello } from './system-agent.js'
 import { adapters, ASK_WAIT, RESUME_ASK, TRUST } from './adapters.js'
 import { providersFrom, expandEnv, discoverCodex } from './providers.js'
-import { accountOf, accountEnv, accountArgs, accountDir, prepare as prepareAccount } from './accounts.js'
+import { accountsIn, accountOf, accountEnv, accountArgs, accountDir, prepare as prepareAccount } from './accounts.js'
 import { sessionOf, sessionRoot } from './sessions.js'
 import { generatePrompt, quickAsk } from './promptgen.js'
 import { pathKey, resolveCommand, which, withTools } from './launch.js'
@@ -1678,7 +1678,9 @@ export class Hub extends EventEmitter {
     const out = runsOut && `At this pace it runs out ${resetsWhen(runsOut)}, before it resets ${when}`
     const limit = { account: id, label, window: w.id, name: limitName(w), pct: w.pct, resetsAt: w.resetsAt, ...(runsOut && { runsOut }) }
     this.aboutAccount({ kind: 'event', from: 'clique', text: out ? `${at}. ${out}` : `${at}, resets ${when}`, limit, ...((level >= 95 || runsOut) && { alert: true }) })
-    const routing = w.pct >= NEAR_LIMIT ? ' Until then, new work goes to agents on other accounts when they cover the same area.' : ''
+    // (with accounts of your own for this provider, an agent on another of them will do; otherwise it's another provider's)
+    const others = accountsIn(this.config).some((x) => x.provider === String(id).split('@')[0]) ? 'accounts' : 'providers'
+    const routing = w.pct >= NEAR_LIMIT ? ` Until then, new work goes to agents on other ${others} when they cover the same area.` : ''
     if (crossed) this.emit('notice', { title: at, body: `${out ? `${out}.` : `It resets ${when}.`}${routing}`, focus: '', account: true })
     else this.emit('notice', { title: `At this pace, ${label}'s ${limitName(w)} runs out ${resetsWhen(runsOut)}`, body: `It's at ${w.pct}% and resets ${when}.${routing}`, focus: '', account: true })
   }

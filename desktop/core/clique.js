@@ -13,7 +13,8 @@ import { FETCH_MAX, kindOf, travels } from './attachments.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
 import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel, dirOf } from './workspaces.js'
-import { providersFrom, expandEnv } from './providers.js'
+import { providersFrom, expandEnv, isOffered } from './providers.js'
+import { accountsIn, accountsInUse, addAccount, renameAccount, moveAgents, dropAccount, signsIn, accountDir, prepare as prepareAccount, whoIs, signIn, signOut, removeFolder } from './accounts.js'
 import { History, UNKNOWN } from './history.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
@@ -29,9 +30,9 @@ import { prefsOf, prefsToSave, changed as notifyChanged } from './notify.js'
 import { MODES, toolMode, parse as parseTool, help as toolHelp, offText, alertOf } from './tools.js'
 import { TICK, LATE_AFTER, LATE_MAX, nextRun, ruleText, whenText, zoneNow, repoMark } from './schedules.js'
 
-// Where Claude Code and Codex keep their logs (as Hub.lookBack reads them), and the folder of any provider of yours
-// that has its own (CLAUDE_CONFIG_DIR or CODEX_HOME in its env): that folder's logs are that provider's.
-export function logRoots(providers = {}, env = process.env) {
+// Where Claude Code and Codex keep their logs (as Hub.lookBack reads them), the folder of any provider of yours that has
+// its own (CLAUDE_CONFIG_DIR or CODEX_HOME in its env: that folder's logs are that provider's), and your accounts' folders.
+export function logRoots(providers = {}, env = process.env, accounts = []) {
   const claude = (dir) => path.join(dir, 'projects')
   const codex = (dir) => path.join(dir, 'sessions')
   const roots = [
@@ -44,6 +45,14 @@ export function logRoots(providers = {}, env = process.env) {
     const home = expandEnv(p.env)[cli === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']
     const dir = home && (cli === 'codex' ? codex(home) : claude(home))
     if (dir && !roots.some((r) => path.resolve(r.dir) === path.resolve(dir))) roots.push({ dir, cli, provider: p.id })
+  }
+  // and each of your accounts' folders (core/accounts.js): what's logged there is that account's
+  for (const a of accounts) {
+    const p = providers[a.provider]
+    if (!p) continue
+    const cli = p.cli ?? 'claude'
+    const dir = cli === 'codex' ? codex(accountDir(a.id)) : claude(accountDir(a.id))
+    if (!roots.some((r) => path.resolve(r.dir) === path.resolve(dir))) roots.push({ dir, cli, provider: a.provider, account: a.id })
   }
   return roots
 }
@@ -63,6 +72,10 @@ const HISTORY_EVERY = 6 * 3600000
 const THEIR_USAGE_EVERY = 3 * 60000
 const THEIR_USAGE_READING = 2000
 const THEIR_USAGE_LEFT = 60000 // which sessions removed workspaces ran is read from their files this often
+// Who's signed in to each account (core/accounts.js) is asked of its CLI when the Accounts sheet opens, after a sign-in,
+// and otherwise no more often than this; a little after CLIque starts when you have accounts of your own.
+const ACCOUNTS_EVERY = 5 * 60000
+const ACCOUNTS_AFTER = 8000
 // What a linked computer may ask with no workspace (see serve).
 const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'readImage', 'moveWrite', 'moveDrop', 'folderInfo', 'usageHistory'])
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
@@ -132,6 +145,13 @@ export class Clique extends EventEmitter {
     hub.relay = (from, names, text, images, extra) => this.relay(from, names, text, images, extra, hub)
     hub.relayTask = (host, from, args) => this.linkCall(this.link(host), 'task', [`${from}@${this.me.slug}`, args], hub.ws)
     hub.self = this.me.slug
+    // is an account signed in, as its CLI last said (undefined: not asked yet)? One that isn't is asked again, so
+    // signing in by hand is noticed the next time its agent is started
+    hub.signedIn = (id) => {
+      const [key, said] = [...this.accountSaid].find(([k]) => k.endsWith(`@${id}`)) ?? []
+      if (said?.signedIn === false && Date.now() - (said.at ?? 0) > 20000) this.checkAccounts({ only: key, force: true }).catch(() => {})
+      return said?.signedIn
+    }
     hub.appTool = (from, words, closed) => this.tool(hub, from, words, closed) // `clique app …`
     hub.directory = () => this.linkedAgents(hub)
     hub.elsewhere = (name) => {
@@ -537,6 +557,10 @@ export class Clique extends EventEmitter {
     this.scheduleTimer = setInterval(() => this.runSchedules().catch(() => {}), TICK)
     this.scheduleTimer.unref?.()
     this.keepHistory(HISTORY_AFTER)
+    if (accountsIn(this.config.data).length) {
+      this.accountsTimer = setTimeout(() => this.checkAccounts().catch(() => {}), ACCOUNTS_AFTER)
+      this.accountsTimer.unref?.()
+    }
   }
 
   // The usage history keeps itself up to date while CLIque runs, whether or not the Usage view is ever opened: Claude
@@ -785,6 +809,8 @@ export class Clique extends EventEmitter {
     clearInterval(this.scheduleTimer)
     clearTimeout(this.historyTimer)
     clearTimeout(this.computerTimer)
+    clearTimeout(this.accountsTimer)
+    for (const s of this.accountSaid.values()) s.signing?.handle.cancel()
     for (const l of this.links.values()) {
       l.client?.close()
       l.peer?.close()
@@ -1107,6 +1133,7 @@ export class Clique extends EventEmitter {
       savers: this.saversState(),
       settingsBroken: Boolean(this.config.broken), // config.json can't be read: with no workspace, the app says so instead of asking for one
       tools: toolMode(this.config.data), // what agents may change in CLIque: off, ask or auto (core/tools.js)
+      accounts: this.accountsView(), // each provider's sign-ins (core/accounts.js)
       // your shared agents, to pick who works in a workspace
       roster: named(this.config.data.agents).map((a) => ({ name: a.name, area: a.area, avatar: a.avatar })),
     }
@@ -1198,7 +1225,7 @@ export class Clique extends EventEmitter {
   // as it was). providers: { id: label }. faces: { key: { name: avatar } } for agents that chose their look.
   usageSummary() {
     const providers = () => providersFrom(this.config.data, this.config.discovered)
-    this.history ??= new History({ file: path.join(HOME, 'history.json'), roots: () => logRoots(providers()), owners: () => this.usagePlacing().owners })
+    this.history ??= new History({ file: path.join(HOME, 'history.json'), roots: () => logRoots(providers(), process.env, accountsIn(this.config.data)), owners: () => this.usagePlacing().owners })
     const all = providers()
     const { rows, ...rest } = this.history.state({ ...this.usagePlacing(), providers: all })
     const keys = new Map()
@@ -1217,7 +1244,9 @@ export class Clique extends EventEmitter {
     }
     const gone = this.config.data.workspacesGone && typeof this.config.data.workspacesGone === 'object' ? this.config.data.workspacesGone : {}
     for (const [ws, key] of keys) spaces[key] ??= { name: Object.keys(gone).find((name) => gone[name] === ws) ?? ws, gone: true }
-    return { ...rest, rows: out, spaces, providers: labels, faces }
+    // the accounts the rows name (core/accounts.js): { id: { name, provider } }; one that's been removed keeps its days, under its id
+    const accounts = Object.fromEntries(accountsIn(this.config.data).map((a) => [a.id, { name: a.name, provider: a.provider }]))
+    return { ...rest, rows: out, spaces, providers: labels, faces, accounts }
   }
 
   // The Usage view's data: this computer's usage and each linked computer's, as it last gave it.
@@ -1234,7 +1263,7 @@ export class Clique extends EventEmitter {
       const d = u.data
       computers.push({
         slug, name: l?.name ?? u.name ?? slug, online: Boolean(l?.peer), got: u.got, at: d?.at ?? 0, reading: (l?.peer && d?.reading) || null, first: d?.first ?? null,
-        cols: d?.cols ?? [], rows: d?.rows ?? [], providers: d?.providers ?? {}, faces: d?.faces ?? {}, ...(u.note && { note: u.note }), ...(u.asking && { asking: true }),
+        cols: d?.cols ?? [], rows: d?.rows ?? [], providers: d?.providers ?? {}, faces: d?.faces ?? {}, accounts: d?.accounts ?? {}, ...(u.note && { note: u.note }), ...(u.asking && { asking: true }),
       })
       for (const [key, w] of Object.entries(d?.spaces ?? {})) spaces[key] ??= { name: String(w?.name ?? key), color: w?.color ?? null, icon: w?.icon ?? null, ...(w?.gone && { gone: true }), ownerName: l?.name ?? u.name ?? slug }
     }
@@ -1281,6 +1310,157 @@ export class Clique extends EventEmitter {
       })
     }
     return this.usageOf
+  }
+
+  // ---- accounts (core/accounts.js): more than one sign-in for a provider --------------------------------------------
+  // Each provider that signs you in has its own sign-in (the CLI's) and the accounts you add. An account's key is what
+  // its usage limits go by too: 'claude' for the provider's own, 'claude@claude-work' for one of yours.
+
+  accountSaid = new Map() // key -> { at, signedIn, email, plan, org, missing, asking, signing: { handle, link, since }, problem }
+
+  // Every sign-in, for the Accounts sheet and each agent's picker:
+  // [{ key, id, provider, label, name, own?, agents, signedIn?, email?, plan?, org?, missing?, signing?: { link, since }, problem? }]
+  // id '' and own: the provider's own sign-in. signedIn undefined: its CLI hasn't been asked yet (checkAccounts).
+  accountsView() {
+    const data = this.config.data
+    const providers = providersFrom(data, this.config.discovered)
+    const inUse = accountsInUse(data)
+    const added = accountsIn(data)
+    const said = (key) => {
+      const s = this.accountSaid.get(key) ?? {}
+      return {
+        ...(s.signedIn !== undefined && { signedIn: s.signedIn }), ...(s.email && { email: s.email }), ...(s.plan && { plan: s.plan }), ...(s.org && { org: s.org }), ...(s.missing && { missing: true }),
+        ...(s.signing && { signing: { link: s.signing.link, since: s.signing.since } }), ...(s.problem && { problem: s.problem }),
+      }
+    }
+    const out = []
+    for (const p of Object.values(providers)) {
+      if (!signsIn(p) || !isOffered(p.id, data)) continue
+      out.push({ key: p.id, id: '', provider: p.id, label: p.label, name: '', own: true, agents: inUse[`:${p.id}`] ?? 0, ...said(p.id) })
+      for (const a of added) if (a.provider === p.id) out.push({ key: `${p.id}@${a.id}`, id: a.id, provider: p.id, label: p.label, name: a.name, agents: inUse[a.id] ?? 0, ...said(`${p.id}@${a.id}`) })
+    }
+    return out
+  }
+
+  // Asks each account's CLI who's signed in. force: now, however lately it was asked. only: one account's key.
+  async checkAccounts({ force = false, only } = {}) {
+    const providers = providersFrom(this.config.data, this.config.discovered)
+    await Promise.all(this.accountsView().filter((a) => !only || a.key === only).map(async (a) => {
+      const s = this.accountSaid.get(a.key) ?? this.accountSaid.set(a.key, {}).get(a.key)
+      if (s.asking || (!force && Date.now() - (s.at ?? 0) < ACCOUNTS_EVERY)) return
+      s.asking = true
+      try {
+        const who = await whoIs(a.id ? { id: a.id } : null, providers[a.provider])
+        Object.assign(s, { at: Date.now(), signedIn: who.signedIn, email: who.email, plan: who.plan, org: who.org, missing: who.missing })
+      } catch {} // its CLI couldn't be asked: what was known stays
+      s.asking = false
+    }))
+    this.changed()
+  }
+
+  // The agents that still run on an account, or whose conversation is still in its folder (an agent at work changes
+  // account when its turn is over): removing the account now would lose those conversations.
+  accountBusy(id) {
+    const names = new Set()
+    for (const hub of this.hubs.values()) {
+      for (const a of hub.agents.values()) if (!a.cloneOf && hub.accountOf(a)?.id === id) names.add(a.name)
+      for (const [name, c] of Object.entries(hub.convos)) if (c?.account === id && hub.sessions[name]) names.add(name)
+    }
+    return [...names]
+  }
+
+  // account('check'): ask who's signed in everywhere. account('add', { provider, name }): a new account, its folder
+  // made ready and its sign-in started in your browser -> its id. account('signIn', { provider, id }) (id '': the
+  // provider's own), account('code', { key, text }): a code the sign-in page gave, account('cancel', { key }),
+  // account('signOut', { id }), account('rename', { id, name }), account('move', { provider, from, to }): every agent on
+  // one onto another ('' the provider's own) -> how many, account('remove', { id }).
+  async accountAction(op, arg = {}) {
+    if (this.config.broken) throw new Error(BROKEN)
+    const data = this.config.data
+    const providers = providersFrom(data, this.config.discovered)
+    const find = (id) => {
+      const a = accountsIn(data).find((x) => x.id === id)
+      if (!a) throw new Error('no such account')
+      return a
+    }
+    const keyOf = (provider, id) => (id ? `${provider}@${id}` : provider)
+    const said = (key) => this.accountSaid.get(key) ?? this.accountSaid.set(key, {}).get(key)
+    const able = (id) => {
+      if (!signsIn(providers[id])) throw new Error(`${providers[id]?.label ?? id} doesn't sign you in (it runs on a key from your environment, or on this computer), so it has no accounts`)
+      return providers[id]
+    }
+    const start = (provider, id) => {
+      const p = able(provider)
+      const account = id ? find(id) : null
+      const key = keyOf(provider, id)
+      const s = said(key)
+      if (s.signing) return key
+      const going = signIn(account, p, {
+        onLink: (link) => {
+          if (s.signing) s.signing.link = link
+          this.changed()
+        },
+      })
+      s.signing = { handle: going, link: null, since: Date.now() }
+      delete s.problem
+      this.changed()
+      going.done.then(async (r) => {
+        delete s.signing
+        if (!r.ok && r.why !== 'stopped') s.problem = r.why
+        await this.checkAccounts({ only: key, force: true })
+      })
+      return key
+    }
+    const ops = {
+      check: () => this.checkAccounts({ force: true }),
+      add: () => {
+        const p = able(arg.provider)
+        const id = addAccount(data, { provider: arg.provider, name: arg.name })
+        this.config.save()
+        prepareAccount(find(id), p)
+        start(arg.provider, id)
+        return id
+      },
+      signIn: () => start(arg.provider ?? find(arg.id).provider, arg.id ?? ''),
+      code: () => void this.accountSaid.get(arg.key)?.signing?.handle.code(arg.text),
+      cancel: () => void this.accountSaid.get(arg.key)?.signing?.handle.cancel(),
+      signOut: async () => {
+        const a = find(arg.id)
+        await signOut(a, providers[a.provider])
+        await this.checkAccounts({ only: keyOf(a.provider, a.id), force: true })
+      },
+      rename: () => {
+        renameAccount(data, arg.id, arg.name)
+        this.config.save()
+      },
+      move: () => {
+        able(arg.provider)
+        const n = moveAgents(data, arg.provider, arg.from ?? '', arg.to ?? '')
+        if (n) this.config.save()
+        return n
+      },
+      remove: async () => {
+        const a = find(arg.id)
+        const busy = this.accountBusy(a.id)
+        if (busy.length) throw new Error(`${busy.length === 1 ? `@${busy[0]} still runs` : `${busy.length} agents still run`} on ${a.name}: move ${busy.length === 1 ? 'it' : 'them'} to another account first, and let ${busy.length === 1 ? 'it' : 'them'} finish what ${busy.length === 1 ? "it's" : "they're"} on`)
+        const key = keyOf(a.provider, a.id)
+        this.accountSaid.get(key)?.signing?.handle.cancel()
+        // signed out by its CLI, so the sign-in goes from wherever it was kept; and what it used is read before its logs go
+        if (providers[a.provider]) await signOut(a, providers[a.provider]).catch(() => {})
+        try {
+          this.usageSummary()
+          await this.history.refresh()
+        } catch {}
+        dropAccount(data, a.id)
+        this.config.save()
+        removeFolder(a.id)
+        this.accountSaid.delete(key)
+      },
+    }
+    if (!Object.hasOwn(ops, op)) throw new Error(`unknown account action "${op}"`)
+    const out = await ops[op]()
+    this.changed()
+    return out
   }
 
   // A linked computer's agent, as this computer writes it.
