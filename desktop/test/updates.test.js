@@ -4,9 +4,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { Updates, restartWords, checkWords, menuItem, offReason, macSignature, feedFrom, feedUrl, feedConfig, newer, electronUpdater, INTERVAL, RETRY, START_DELAY } from '../core/updates.js'
+import { Updates, restartWords, keepsAgents, checkWords, menuItem, offReason, macSignature, feedFrom, feedUrl, feedConfig, newer, electronUpdater, INTERVAL, RETRY, START_DELAY } from '../core/updates.js'
 import { loginItem, LOGIN_ARG } from '../core/login.js'
 import { PROTOCOL } from '../core/ptyhost.js'
+import { hostProtocol, stamp, stampAll } from '../scripts/update-info.mjs'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { createRequire } from 'node:module'
 
 const MIN = 60e3
 const HOUR = 60 * MIN
@@ -252,14 +257,57 @@ test('before restarting while agents work, it says what really happens to them, 
     text: 'ada will be stopped: this time CLIque runs its terminal itself. It picks up the conversation after the restart, but what it was doing right now is lost.',
     go: 'Restart anyway', wait: 'Not now', safe: 'wait',
   })
+  // Windows, the host running from CLIque's own folder (its copy elsewhere wouldn't start): the installer stops it
+  assert.deepEqual(words({ busy: ['ada', 'bo'], hostProtocol: 1, hostInApp: true }), {
+    text: 'ada and bo will be stopped: installing the update stops what runs their terminals. They pick up the conversation after the restart, but what they were doing right now is lost.',
+    go: 'Restart anyway', wait: 'Not now', safe: 'wait',
+  })
+  assert.equal(words({ busy: ['ada'], hostProtocol: 1, hostInApp: null }).safe, 'wait', "a host that doesn't say where it runs from: no promise")
+  // the same answer decides whether quitting the ordinary way may install the update too
+  assert.equal(keepsAgents({ hostProtocol: 1, protocol: 1 }), true)
+  assert.equal(keepsAgents({ hostProtocol: 2, protocol: 1 }), false)
+  assert.equal(keepsAgents({ hostProtocol: 1, protocol: 1, outlives: false }), false)
+  assert.equal(keepsAgents({ hostProtocol: 1, protocol: 1, hostInApp: true }), false)
+  assert.equal(keepsAgents({ hostProtocol: null, protocol: 1 }), null)
+  assert.equal(keepsAgents({ hostProtocol: 1, protocol: 1, hostInApp: null }), null)
 })
 
-test('the build tells the feed which terminal host protocol a version has, the one core/ptyhost.js speaks', async () => {
-  const { default: config } = await import('../electron-builder.config.mjs')
-  assert.deepEqual(config.releaseInfo, { hostProtocol: PROTOCOL })
-  assert.equal(config.publish, null, 'no RELEASE_REPO or UPDATE_FEED for the build: no update address in the app')
-  assert.equal(config.nsis.guid, '381ff71e-b172-5fde-9cfb-4c27e5eec7f2', "the Windows installer's identity: an update replaces the install instead of adding one")
-  assert.ok(config.mac.target.includes('zip'), 'a Mac updates from the zip')
+test("the build's update files say which terminal host the version has, the one core/ptyhost.js speaks", () => {
+  assert.equal(hostProtocol(), PROTOCOL)
+  const yml = "version: 1.0.1\nfiles:\n  - url: CLIque-1.0.1-mac-arm64.zip\n    sha512: abc==\n    size: 1\npath: CLIque-1.0.1-mac-arm64.zip\nsha512: abc==\nreleaseDate: '2026-11-16T00:00:00.000Z'\n"
+  assert.equal(stamp(yml, 1), `${yml}hostProtocol: 1\n`)
+  assert.equal(stamp(stamp(yml, 1), 2), `${yml}hostProtocol: 2\n`, 'once, whatever it said before')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-release-'))
+  for (const f of ['latest-mac.yml', 'latest.yml', 'builder-debug.yml', 'CLIque-1.0.1-mac-arm64.zip']) fs.writeFileSync(path.join(dir, f), yml)
+  assert.deepEqual(stampAll(dir).sort(), ['latest-mac.yml', 'latest.yml'])
+  assert.match(fs.readFileSync(path.join(dir, 'latest.yml'), 'utf8'), new RegExp(`\\nhostProtocol: ${PROTOCOL}\\n$`))
+  assert.equal(fs.readFileSync(path.join(dir, 'builder-debug.yml'), 'utf8'), yml, 'only the update files')
+  assert.deepEqual(stampAll(path.join(dir, 'nowhere')), [], 'a build with nowhere to publish to writes none')
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('the packaging: no update address unless the build is given one, and electron-builder takes the configuration either way', async () => {
+  const { validateConfiguration } = createRequire(import.meta.url)('app-builder-lib/out/util/config/config.js')
+  const keep = { RELEASE_REPO: process.env.RELEASE_REPO, UPDATE_FEED: process.env.UPDATE_FEED }
+  const load = async (env, tag) => {
+    for (const k of Object.keys(keep)) delete process.env[k]
+    Object.assign(process.env, env)
+    return (await import(`../electron-builder.config.mjs?${tag}`)).default
+  }
+  try {
+    const plain = await load({}, 'plain')
+    assert.equal(plain.publish, null, 'no RELEASE_REPO or UPDATE_FEED: no update address in the app')
+    assert.equal(plain.nsis.guid, '381ff71e-b172-5fde-9cfb-4c27e5eec7f2', "the Windows installer's identity: an update replaces the install instead of adding one")
+    assert.ok(plain.mac.target.includes('zip'), 'a Mac updates from the zip')
+    const github = await load({ RELEASE_REPO: 'greengrass/clique' }, 'repo')
+    assert.deepEqual(github.publish, [{ provider: 'github', owner: 'greengrass', repo: 'clique', releaseType: 'draft' }])
+    const feed = await load({ RELEASE_REPO: 'greengrass/clique', UPDATE_FEED: 'https://example.com/updates/' }, 'feed')
+    assert.deepEqual(feed.publish, [{ provider: 'generic', url: 'https://example.com/updates/' }])
+    // electron-builder stops a build whose configuration has a field it doesn't know
+    for (const config of [plain, github, feed]) await validateConfiguration(config, { add() {} })
+  } finally {
+    for (const [k, v] of Object.entries(keep)) v === undefined ? delete process.env[k] : (process.env[k] = v)
+  }
 })
 
 test('Check for Updates… says plainly what it found', () => {
@@ -352,14 +400,15 @@ test("electron-updater: nothing downloads until CLIque says so, a set address is
   const au = standIn({ info: { version: '1.0.1', hostProtocol: 1, files: [], releaseNotes: '<p>Fixes</p>' } })
   const up = electronUpdater(au, { feed: { url: 'https://example.com/updates/' }, version: '1.0.0' })
   assert.equal(au.autoDownload, false)
-  assert.equal(au.autoInstallOnAppQuit, true, 'quitting the ordinary way installs what was downloaded')
+  assert.equal(au.autoInstallOnAppQuit, false, 'nothing installs as CLIque quits until a download says it may')
   assert.equal(au.allowDowngrade, false)
   assert.deepEqual(au.calls, [['feed', { provider: 'generic', url: 'https://example.com/updates/' }]])
   assert.deepEqual(await up.check(), { version: '1.0.1', notesUrl: null, hostProtocol: 1 })
   const seen = []
   await up.download({ version: '1.0.1' }, (pct) => seen.push(pct))
   assert.deepEqual(seen, [50])
-  assert.equal(au.listenerCount('download-progress'), 0, 'it stops listening once the download is over')
+  assert.equal(au.autoInstallOnAppQuit, true, 'by default quitting the ordinary way installs what was downloaded')
+  assert.deepEqual([au.listenerCount('download-progress'), au.listenerCount('update-downloaded')], [0, 0], 'it stops listening once the download is over')
   up.install().catch(() => {})
   assert.deepEqual(au.calls.at(-1), ['quitAndInstall', true, true], 'silently, and open CLIque again after')
 })
@@ -429,6 +478,46 @@ test("…and so does its refusal arriving as an error event, which is how Squirr
   }
   assert.deepEqual(await u.check(), { result: 'failed' })
   assert.equal(u.view().phase, 'ready', 'what was ready stays ready')
+})
+
+test('quitting the ordinary way installs only an update the agents keep working through', async () => {
+  const au = standIn({ info: { version: '1.0.1', hostProtocol: 2 } })
+  const up = electronUpdater(au, { version: '1.0.0', installOnQuit: (found) => keepsAgents({ hostProtocol: found.hostProtocol, protocol: 1 }) === true })
+  await up.download(await up.check())
+  assert.equal(au.autoInstallOnAppQuit, false, 'another terminal host: only Restart to update installs it, after saying so')
+  const same = standIn({ info: { version: '1.0.1', hostProtocol: 1 } })
+  const up2 = electronUpdater(same, { version: '1.0.0', installOnQuit: (found) => keepsAgents({ hostProtocol: found.hostProtocol, protocol: 1 }) === true })
+  await up2.download(await up2.check())
+  assert.equal(same.autoInstallOnAppQuit, true)
+})
+
+test("a look CLIque gave up waiting for that fails later is that look's failure: it doesn't take a good download away", async () => {
+  const au = standIn({ info: { version: '1.0.1' } })
+  au.downloadUpdate = async () => (au.emit('update-downloaded', {}), [])
+  const u = new Updates({ updater: electronUpdater(au, { version: '1.0.0', checkTimeout: 20 }), version: '1.0.0', setTimer: () => 0, clearTimer: () => {} })
+  assert.deepEqual(await u.check(), { result: 'ready', version: '1.0.1' })
+  let fail
+  au.checkForUpdates = () => new Promise((_r, reject) => (fail = reject))
+  assert.deepEqual(await u.check(), { result: 'failed' }, 'the second look hangs, and CLIque stops waiting')
+  au.emit('error', new Error('net::ERR_TIMED_OUT')) // electron-updater gives up on it at last
+  fail(new Error('net::ERR_TIMED_OUT'))
+  await tick()
+  assert.deepEqual([u.view().phase, u.view().next.version], ['ready', '1.0.1'])
+  // …and once that look is over, an error out of nowhere is the installer's again
+  au.emit('error', new Error('Code signature did not pass validation'))
+  assert.equal(u.view().phase, 'idle')
+})
+
+test("the installer refusing the update after you said Restart: the restart fails, nothing is ready, and the menus still work", async () => {
+  const au = standIn({ info: { version: '1.0.1' } })
+  au.downloadUpdate = async () => (au.emit('update-downloaded', {}), [])
+  const u = new Updates({ updater: electronUpdater(au, { version: '1.0.0' }), version: '1.0.0', setTimer: () => 0, clearTimer: () => {} })
+  await u.check()
+  const restart = u.restart()
+  assert.equal(u.view().phase, 'restarting')
+  au.emit('error', new Error('Code signature did not pass validation'))
+  assert.equal(await restart, false)
+  assert.deepEqual(u.view(), { phase: 'idle', version: '1.0.0', off: null, next: null, progress: 100, later: false, asking: null, stuck: false }, 'not "ready" with no version')
 })
 
 test('the whole way with electron-updater behind it: found, downloaded, ready, restart', async () => {

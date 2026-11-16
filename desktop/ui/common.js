@@ -3376,9 +3376,9 @@ function appItems(state) {
   if (!app) return []
   const u = app.update
   const update = !u ? []
-    : u.phase === 'ready' ? [{ label: 'Restart to update', icon: ICONS.up, act: 'app:restart', hint: u.next.version }]
+    : u.phase === 'ready' && u.next ? [{ label: 'Restart to update', icon: ICONS.up, act: 'app:restart', hint: u.next.version }]
       : u.phase === 'restarting' ? [] // (the note says so; no greyed-out row)
-        : [{ label: 'Check for updates…', icon: ICONS.up, act: 'app:check', hint: u.phase === 'downloading' ? `getting ${u.next.version}` : app.version }]
+        : [{ label: 'Check for updates…', icon: ICONS.up, act: 'app:check', hint: u.phase === 'downloading' && u.next ? `getting ${u.next.version}` : app.version }]
   const login = app.login ? [{ label: 'Open at login', icon: ICONS.power, act: 'app:login', hint: app.login.on ? 'On' : 'Off' }] : []
   return login.length || update.length ? ['-', ...login, ...update] : []
 }

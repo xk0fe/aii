@@ -148,7 +148,8 @@ export class Updates {
       return true
     } catch (e) {
       this.log(`update: couldn't restart: ${e?.message ?? e}`)
-      this.set({ phase: 'ready', stuck: true, later: false })
+      // still there to try again, unless it turned out to be no good meanwhile (lost)
+      if (this.phase === 'restarting' && this.next) this.set({ phase: 'ready', stuck: true, later: false })
       return false
     }
   }
@@ -172,24 +173,34 @@ export class Updates {
 
 const list = (names) => (names.length <= 3 ? names.join(', ').replace(/, ([^,]*)$/, ' and $1') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} others`)
 
-// Before restarting into an update while agents are at work, the truth about what happens to them. null: nobody's at
-// work, nothing to ask.
+// Do the agents at work keep working through a restart into this update? -> true, false, or null (it can't be told).
 //   outlives: their terminals run in the terminal host, outside CLIque (core/ptyhost.js), which a restart leaves alone
-//   hostProtocol: the terminal host's protocol in the version that's ready (the feed says: electron-builder.config.mjs
-//     releaseInfo). The same as this CLIque's, the new CLIque picks the running host up, agents and all. Another, it
-//     has to replace the host (core/ptyclient.js connect), which ends every terminal. Not said: it can't be promised.
-//   protocol: this CLIque's (PROTOCOL in core/ptyhost.js)
-// -> { text, go, wait, safe: 'go' | 'wait' }: `safe` is the button that's the default.
-export function restartWords({ busy = [], outlives = true, hostProtocol, protocol, product = 'CLIque' }) {
+//   hostProtocol: the terminal host's protocol in the version that's ready (the feed says: scripts/update-info.mjs).
+//     The same as this CLIque's (protocol: PROTOCOL in core/ptyhost.js), the new CLIque picks the running host up,
+//     agents and all. Another, it has to replace the host (core/ptyclient.js connect), which ends every terminal.
+//   hostInApp: the host runs from CLIque's own folder, where Windows' installer stops everything before it replaces
+//     the files (it normally runs from a copy elsewhere: core/ptyclient.js stage). null: the host doesn't say.
+export function keepsAgents({ outlives = true, hostProtocol, protocol, hostInApp = false }) {
+  if (!outlives || hostInApp === true) return false
+  if (hostProtocol == null || hostInApp == null) return null
+  return hostProtocol === protocol
+}
+
+// Before restarting into an update while agents are at work, the truth about what happens to them. null: nobody's at
+// work, nothing to ask. -> { text, go, wait, safe: 'go' | 'wait' }: `safe` is the button that's the default.
+export function restartWords({ busy = [], outlives = true, hostProtocol, protocol, hostInApp = false, product = 'CLIque' }) {
   if (!busy.length) return null
   const who = list(busy)
   const many = busy.length > 1
-  if (outlives && hostProtocol === protocol) return { text: `${who} ${many ? 'keep' : 'keeps'} working while ${product} restarts.`, go: 'Restart', wait: 'Not now', safe: 'go' }
+  const keeps = keepsAgents({ outlives, hostProtocol, protocol, hostInApp })
+  if (keeps) return { text: `${who} ${many ? 'keep' : 'keeps'} working while ${product} restarts.`, go: 'Restart', wait: 'Not now', safe: 'go' }
   const after = `${many ? 'They pick' : 'It picks'} up the conversation after the restart, but what ${many ? 'they were' : 'it was'} doing right now is lost.`
   const risky = (text) => ({ text: `${text} ${after}`, go: 'Restart anyway', wait: 'Not now', safe: 'wait' })
-  if (!outlives) return risky(`${who} will be stopped: this time ${product} runs ${many ? 'their terminals' : 'its terminal'} itself.`)
-  if (hostProtocol == null) return risky(`${product} can't tell whether ${who} can keep working through this update, so ${many ? 'they' : 'it'} may be stopped.`)
-  return risky(`${who} will be stopped: this update replaces the part of ${product} that runs ${many ? 'their terminals' : 'its terminal'}.`)
+  const terminals = many ? 'their terminals' : 'its terminal'
+  if (!outlives) return risky(`${who} will be stopped: this time ${product} runs ${terminals} itself.`)
+  if (hostInApp === true) return risky(`${who} will be stopped: installing the update stops what runs ${terminals}.`)
+  if (keeps == null) return risky(`${product} can't tell whether ${who} can keep working through this update, so ${many ? 'they' : 'it'} may be stopped.`)
+  return risky(`${who} will be stopped: this update replaces the part of ${product} that runs ${terminals}.`)
 }
 
 // The update row of a Mac's app menu, under About: { label, act: 'check' | 'restart' }. Never greyed out: asked while
@@ -305,61 +316,83 @@ const within = (promise, ms, what) => {
 
 // autoUpdater: electron-updater's (an EventEmitter with checkForUpdates, downloadUpdate, quitAndInstall). feed: from
 // feedFrom. The release notes' address: the feed's own releaseNotesUrl, else the release's page on GitHub.
-// configPath: for an address set by hand, a file saying the same (provider, url, updaterCacheDirName), which
-// electron-updater reads before it downloads anything; the build's own app-update.yml otherwise.
-export function electronUpdater(autoUpdater, { feed, version, configPath, log = () => {}, checkTimeout = 60e3, downloadTimeout = 30 * 60e3, quitTimeout = 120e3 } = {}) {
+// configPath: for an address set by hand, a file saying the same (feedConfig), which electron-updater reads before it
+// downloads anything; the build's own app-update.yml otherwise.
+// installOnQuit(found): may quitting the ordinary way install this one too? (main.js: only one the agents keep
+// working through, since Quit promises they do.)
+export function electronUpdater(autoUpdater, { feed, version, configPath, installOnQuit = () => true, log = () => {}, checkTimeout = 60e3, downloadTimeout = 30 * 60e3, quitTimeout = 10 * 60e3 } = {}) {
   autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = true // quitting the ordinary way installs what's downloaded too
+  autoUpdater.autoInstallOnAppQuit = false // until a download says otherwise (installOnQuit)
   autoUpdater.allowDowngrade = false
   autoUpdater.logger = { info: () => {}, debug: () => {}, warn: (m) => log(`update: ${m}`), error: (m) => log(`update: ${m?.message ?? m}`) }
-  // A failure comes back from the call that caused it, and as an 'error' event too. One that comes with no call under
-  // way is macOS's own installer (Squirrel) refusing what was downloaded, after the download counted as done.
-  let calls = 0
-  let lost = null
-  autoUpdater.on('error', (e) => !calls && lost?.(e))
-  const during = async (work) => {
-    calls++
-    try {
-      return await work()
-    } finally {
-      calls--
-    }
-  }
   if (feed?.url) {
     if (configPath) autoUpdater.updateConfigPath = configPath
     autoUpdater.setFeedURL({ provider: 'generic', url: feed.url })
   }
+  // A failure comes back from the call that caused it, and as an 'error' event too. An event with no call of ours
+  // still open is the system's own installer (Squirrel on a Mac, the NSIS installer on Windows) refusing what was
+  // downloaded, after the download counted as done: that's `lost`, and a restart waiting on it fails with it.
+  // (A call CLIque gave up waiting for is still open until electron-updater is done with it: its late error is its own.)
+  let open = 0
+  let lost = null
+  let failRestart = null
+  autoUpdater.on('error', (e) => {
+    if (open) return
+    failRestart?.(e)
+    lost?.(e)
+  })
+  const counted = (call) => {
+    open++
+    const promise = Promise.resolve().then(call)
+    promise.then(() => open--, () => open--)
+    return promise
+  }
   return {
-    check: () => during(async () => {
-      const res = await within(autoUpdater.checkForUpdates(), checkTimeout, 'looking for an update')
+    async check() {
+      const res = await within(counted(() => autoUpdater.checkForUpdates()), checkTimeout, 'looking for an update')
       const info = res?.updateInfo
       if (!info?.version || !(res.isUpdateAvailable ?? newer(info.version, version))) return null
       const url = feedUrl(info.releaseNotesUrl) && /^https:/.test(info.releaseNotesUrl) ? info.releaseNotesUrl : feed?.repo ? `https://github.com/${feed.repo}/releases/tag/v${encodeURIComponent(info.version)}` : null
       const protocol = Number(info.hostProtocol)
       return { version: String(info.version), notesUrl: url, hostProtocol: Number.isInteger(protocol) && protocol > 0 ? protocol : null }
-    }),
+    },
     // Done once the files are here and checked against the feed's checksum. On a Mac electron-updater then hands them
     // to macOS's own installer, which unpacks them and checks the app's signature against this one's; if it refuses
     // them, that comes through onLost, after the download counted as done.
-    download: (_found, onProgress = () => {}, onLost = () => {}) => during(() => {
+    download(found, onProgress = () => {}, onLost = () => {}) {
+      autoUpdater.autoInstallOnAppQuit = Boolean(installOnQuit(found))
       const progress = (p) => onProgress(p?.percent ?? 0)
       autoUpdater.on('download-progress', progress)
       let done = false
+      let arrived
       lost = (e) => ((lost = null), onLost(e))
       const here = new Promise((resolve, reject) => {
-        const arrived = () => resolve((done = true))
+        arrived = () => resolve((done = true))
         autoUpdater.once('update-downloaded', arrived)
-        Promise.resolve().then(() => autoUpdater.downloadUpdate()).then(arrived, (e) => {
-          autoUpdater.removeListener('update-downloaded', arrived)
-          done ? lost?.(e) : reject(e)
-        })
+        counted(() => autoUpdater.downloadUpdate()).then(arrived, (e) => (done ? lost?.(e) : reject(e)))
       })
-      return within(here, downloadTimeout, 'the download').finally(() => autoUpdater.removeListener('download-progress', progress))
-    }),
-    // Quits and opens the new version. It only comes back if that didn't happen.
+      return within(here, downloadTimeout, 'the download').finally(() => {
+        autoUpdater.removeListener('download-progress', progress)
+        autoUpdater.removeListener('update-downloaded', arrived)
+      })
+    },
+    // Quits and opens the new version. It only comes back if that didn't happen: the installer refused the update
+    // (an 'error'), or CLIque is still running long after (on a Mac the installer may first have to unpack it).
     install() {
-      autoUpdater.quitAndInstall(true, true)
-      return new Promise((_r, reject) => setTimeout(() => reject(new Error('still running after asking to quit and install')), quitTimeout).unref?.())
+      return new Promise((_r, reject) => {
+        const t = setTimeout(() => failRestart?.(new Error('still running long after asking to quit and install')), quitTimeout)
+        t.unref?.()
+        failRestart = (e) => {
+          clearTimeout(t)
+          failRestart = null
+          reject(e)
+        }
+        try {
+          autoUpdater.quitAndInstall(true, true)
+        } catch (e) {
+          failRestart(e)
+        }
+      })
     },
   }
 }
