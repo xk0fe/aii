@@ -1366,7 +1366,18 @@ export class Clique extends EventEmitter {
 
   // h: the hub it's for ('in' says which, and this computer's app and moves pass the one on screen). What's for no
   // workspace needs none; a call without one otherwise is a computer on an older CLIque, asking for its default workspace.
-  serve(fn, args, h) {
+  // Who a linked computer says something is from, as this computer takes it: you (its user is you), or an agent of its
+  // own, named as its agents are here (iris@studio). Whatever name it gives, never one of this computer's agents.
+  senderFrom(peer, from) {
+    const said = String(from ?? 'you')
+    if (said === 'you') return 'you'
+    const base = said.split('@')[0]
+    if (!/^[\w.-]{1,64}$/.test(base)) throw new Error(`not sent: "${said.slice(0, 80)}" isn't a name ${peer.name} can send as`)
+    return `${base}@${slug(peer.name)}`
+  }
+
+  // peer: the linked computer that's asking (none: this computer itself, for one of its own workspaces).
+  serve(fn, args, h, peer) {
     if (!h && !COMPUTER_CALLS.has(fn)) throw new Error(`${this.me.name} runs a newer CLIque, where every workspace is its own: update this computer's to work with its agents`)
     const allowed = {
       // the same call, for one of this computer's workspaces (not on an older CLIque); and which ones it has
@@ -1374,7 +1385,7 @@ export class Clique extends EventEmitter {
         const there = this.hubs.get(this.localOf(String(key)))
         if (!there) throw new Error(`${this.me.name} has no workspace "${key}"`)
         if (call === 'in') throw new Error('one workspace at a time')
-        return this.serve(call, rest ?? [], there)
+        return this.serve(call, rest ?? [], there, peer)
       },
       // an older CLIque matched workspaces by id: it gets none (see keyOf)
       spaces: () => [],
@@ -1385,7 +1396,7 @@ export class Clique extends EventEmitter {
         return this.spaceList()
       },
       state: () => h?.snapshot() ?? this.computerState(),
-      deliver: (opts) => h.send({ ...opts, mentions: false }),
+      deliver: (opts) => h.send({ ...opts, ...(peer && { from: this.senderFrom(peer, opts?.from) }), mentions: false }),
       saveImage: (name, type, bytes) => saveImage(name, type, bytes),
       readImage: (file) => {
         file = movedPath(file)
@@ -1423,8 +1434,8 @@ export class Clique extends EventEmitter {
       },
       exportAgents: (names, opts) => packAgents(h, names, opts),
       freshStart: (name) => h.freshStart(name),
-      task: (from, args) => h.taskCommand(from, args),
-      bug: (from, args) => h.taskCommand(from, args), // a computer on the previous version
+      task: (from, args) => h.taskCommand(peer ? this.senderFrom(peer, from) : from, args),
+      bug: (from, args) => h.taskCommand(peer ? this.senderFrom(peer, from) : from, args), // a computer on the previous version
       ticket: (op, id, arg) => h.ticket(op, id, arg),
       bulk: (op, ids, arg) => h.bulk(op, ids, arg),
       importAgents: (pack, choices) => unpackAgents(h, pack, choices),
@@ -1660,7 +1671,7 @@ export class Clique extends EventEmitter {
       this.saveSettings()
     }
     const id = identity(LINK_DIR)
-    const host = new LinkHost({ key: this.settings.key, cert: id.cert, keyPem: id.key, name: this.me.name, handle: (fn, args) => this.serve(fn, args) })
+    const host = new LinkHost({ key: this.settings.key, cert: id.cert, keyPem: id.key, name: this.me.name, handle: (fn, args, peer) => this.serve(fn, args, undefined, peer) })
     host.fingerprint = id.fingerprint
     host.pairable = () => Boolean(this.discovery) // only while Computers is open here
     host.authable = () => Boolean(this.settings.share) // linked computers' key: not while it runs only for Nearby
@@ -1703,7 +1714,7 @@ export class Clique extends EventEmitter {
     if (this.sharing && info.fingerprint === this.sharing.fingerprint) throw new Error("that's this computer's own code")
     const known = [...this.links.values()].find((l) => l.code === code)
     if (known) return Promise.resolve(known.slug) // already linked (or reconnecting on its own)
-    const client = new LinkClient(code, { name: this.me.name, handle: (fn, args) => this.serve(fn, args) })
+    const client = new LinkClient(code, { name: this.me.name, handle: (fn, args, peer) => this.serve(fn, args, undefined, peer) })
     client.on('status', () => this.changed())
     if (save) {
       this.settings.peers = [...new Set([...(this.settings.peers ?? []), code])]
