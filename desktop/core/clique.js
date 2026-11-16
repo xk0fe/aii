@@ -12,7 +12,8 @@ import { movedPath } from './home.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
 import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
-import { providersFrom } from './providers.js'
+import { providersFrom, expandEnv } from './providers.js'
+import { History } from './history.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
 import { LinkHost, LinkClient, PairClient, identity, addresses, firewallWarning, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
@@ -20,9 +21,30 @@ import { Discovery, DISCOVER_PORT } from './discover.js'
 import { packAgents, unpackAgents } from './pack.js'
 import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, folderInfo, folders } from './move.js'
 import { Phones } from './phones.js'
+import { workingHere } from './awake.js'
 import { sweepFiles, ATTACHMENT_DAYS, CACHE_DAYS } from './keep.js'
 import { SAVERS, SAVER_IDS, saversFrom, report } from './savers.js'
 import { MODES, toolMode, parse as parseTool, help as toolHelp, offText, alertOf } from './tools.js'
+import { TICK, LATE_AFTER, LATE_MAX, nextRun, ruleText, whenText, zoneNow, repoMark } from './schedules.js'
+
+// Where Claude Code and Codex keep their logs (as Hub.lookBack reads them), and the folder of any provider of yours
+// that has its own (CLAUDE_CONFIG_DIR or CODEX_HOME in its env): that folder's logs are that provider's.
+export function logRoots(providers = {}, env = process.env) {
+  const claude = (dir) => path.join(dir, 'projects')
+  const codex = (dir) => path.join(dir, 'sessions')
+  const roots = [
+    { dir: claude(env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')), cli: 'claude' },
+    { dir: codex(env.CODEX_HOME || path.join(os.homedir(), '.codex')), cli: 'codex' },
+  ]
+  for (const p of Object.values(providers)) {
+    if (!p || typeof p.env !== 'object' || !p.env) continue // (config.json is yours to write: an env that isn't one is none)
+    const cli = p.cli ?? 'claude'
+    const home = expandEnv(p.env)[cli === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']
+    const dir = home && (cli === 'codex' ? codex(home) : claude(home))
+    if (dir && !roots.some((r) => path.resolve(r.dir) === path.resolve(dir))) roots.push({ dir, cli, provider: p.id })
+  }
+  return roots
+}
 
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
@@ -30,6 +52,9 @@ const SETTINGS = path.join(LINK_DIR, 'link.json')
 const DISCOVER_FOR = 150000 // Computers open, as the dashboard last said: it says so every minute
 // Images nothing needs any more go this long after CLIque starts (sweepImages), once its workspaces have read their chats.
 const SWEEP_AFTER = 60000
+// The usage history (core/history.js) is brought up to date a few minutes after CLIque starts, then a few times a day.
+const HISTORY_AFTER = 3 * 60000
+const HISTORY_EVERY = 6 * 3600000
 // What a linked computer may ask with no workspace (see serve).
 const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'readImage', 'moveWrite', 'moveDrop', 'folderInfo'])
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
@@ -384,6 +409,27 @@ export class Clique extends EventEmitter {
     this.config.save()
   }
 
+  // Whether this computer stays awake while its agents work (core/awake.js). On unless config.json says
+  // "keepAwake": false.
+  setKeepAwake(on) {
+    if (on) delete this.config.data.keepAwake
+    else this.config.data.keepAwake = false
+    this.config.save()
+    this.changed()
+    return Boolean(on)
+  }
+
+  // What could keep this computer awake right now, for decide() in core/awake.js.
+  awakeNow() {
+    return {
+      working: workingHere(this.hubs.values()),
+      enabled: this.config.data.keepAwake !== false,
+      sharing: Boolean(this.sharing),
+      linked: [...this.links.values()].some((l) => l.peer),
+      phones: this.phones.live.size > 0,
+    }
+  }
+
   // Agent tools: 'off', 'ask' (the default, so config.json doesn't say it) or 'auto'. Turned off, the cards still up
   // close, and their agents hear that nothing was made.
   setTools(mode) {
@@ -443,6 +489,189 @@ export class Clique extends EventEmitter {
     for (const code of this.settings.peers ?? []) this.connect(code, { save: false }).catch(() => {})
     this.sweepTimer = setTimeout(() => this.sweepImages(), SWEEP_AFTER)
     this.sweepTimer.unref?.()
+    // scheduled messages: what came due while CLIque was closed is looked at once everything has had a moment to start
+    this.scheduleTimer = setInterval(() => this.runSchedules().catch(() => {}), TICK)
+    this.scheduleTimer.unref?.()
+    this.keepHistory(HISTORY_AFTER)
+  }
+
+  // The usage history keeps itself up to date while CLIque runs, whether or not the Usage view is ever opened: Claude
+  // Code deletes its logs after a month, so a day that isn't read by then is gone. A look only reads what was added
+  // since the last one, in a worker thread.
+  keepHistory(wait = HISTORY_EVERY) {
+    clearTimeout(this.historyTimer)
+    this.historyTimer = setTimeout(() => {
+      try {
+        this.usageHistory()
+      } catch {}
+      this.keepHistory()
+    }, wait)
+    this.historyTimer.unref?.()
+  }
+
+  // ---- scheduled messages (core/schedules.js) ---------------------------------------------------------------------
+  // A workspace's own, kept beside its chat on the computer they were made on, and sent from it.
+
+  // schedule('add', null, { text, to, channel, images, repeat, date, time, ifChanged }), schedule('edit', id, patch),
+  // schedule('pause' | 'resume' | 'remove', id), schedule('now', id): send it now, whatever its time.
+  // by: who made it ('you', or the agent that asked). -> { id, same?, state }
+  async scheduleAction(op, id, arg, ws = this.current, { by = 'you' } = {}) {
+    const hub = this.hubs.get(ws)
+    if (!hub) throw new Error('no such workspace')
+    const list = hub.schedules
+    const now = this.clock()
+    let same = false
+    const checked = (input) => {
+      const names = String(input?.to ?? '').split(/[\s,]+/).map((n) => n.replace(/^@/, '').trim()).filter(Boolean)
+      // someone here, or on a linked computer (name@computer): a wrong name is said now, not at 9:00
+      const to = names.map((n) => this.resolve(n, hub))
+      const off = to.filter((n) => hub.agents.get(n)?.off)
+      if (off.length) throw new Error(`@${off[0]} is turned off: turn it on first`)
+      return { ...input, to: to.join(','), channel: (input?.channel && hub.space.channels.find((c) => c.id === input.channel)?.id) || null }
+    }
+    const ops = {
+      add: () => {
+        const made = list.add(checked(arg ?? {}), { by, now })
+        same = made.same && (made.schedule.paused ? 'paused' : true)
+        id = made.schedule.id
+      },
+      edit: () => list.edit(id, checked({ ...list.get(id), ...(arg ?? {}) }), { now }),
+      pause: () => list.pause(id, true, { now }),
+      resume: () => {
+        const s = list.pause(id, false, { now })
+        delete s.told
+      },
+      remove: () => list.remove(id),
+      now: () => this.fire(hub, list.get(id), now, { byHand: true }),
+    }
+    if (!Object.hasOwn(ops, op)) throw new Error(`unknown schedule action "${op}"`)
+    await ops[op]()
+    hub.changed()
+    return { id, ...(same && { same }), state: this.snapshot() }
+  }
+
+  // The time, as schedules read it (tests set their own).
+  clock() {
+    return Date.now()
+  }
+
+  // What's due goes out: each schedule at most once, however long ago its time was (CLIque closed, the computer
+  // asleep), and then waits for its next time. Called every TICK.
+  async runSchedules(now = this.clock()) {
+    if (this.scheduling) return
+    this.scheduling = true
+    try {
+      const tz = zoneNow()
+      for (const hub of [...this.hubs.values()]) {
+        const list = hub.schedules
+        let changed = false
+        for (const s of [...list.all]) {
+          // "only when the repo changed" goes by how the repo was once the run before had finished
+          if (s.settle && !this.scheduleBusy(hub, s)) {
+            const mark = await repoMark(hub.space.folder)
+            if (mark) s.mark = mark
+            else delete s.mark
+            delete s.settle
+            changed = true
+          }
+          if (!list.all.includes(s)) continue
+          if (s.paused || !s.next) continue
+          // the clocks are another place's now (a laptop that travelled): 9:00 is 9:00 here
+          // (a one-off whose time has gone by there keeps the time it had: it goes out late, or says it was missed)
+          if (s.zone !== tz && s.next > now) {
+            Object.assign(s, { next: nextRun(s, now, tz) ?? s.next, zone: tz })
+            changed = true
+          }
+          // (removed or paused while the one before it was going out: not this one)
+          if (!list.all.includes(s) || s.paused || !s.next || s.next > now) continue
+          // one that can't run (a schedules.json edited by hand) doesn't hold up the rest
+          try {
+            await this.fire(hub, s, now)
+          } catch (e) {
+            s.next = null
+            s.last = { at: now, result: 'failed', why: String(e?.message ?? e).slice(0, 300) }
+          }
+          changed = true
+        }
+        if (changed) {
+          list.save()
+          hub.changed()
+        }
+      }
+    } finally {
+      this.scheduling = false
+    }
+  }
+
+  // Is a schedule's last run still going: here, or on a linked computer it was sent to?
+  scheduleBusy(hub, s) {
+    if (!s.sent) return false
+    if (hub.scheduleBusy(s.id, s.sent)) return true
+    for (const l of this.links.values()) {
+      const st = this.linkedState(l, hub.ws)
+      for (const e of st?.feed ?? []) {
+        if (e.scheduled?.id !== s.id || e.scheduled.at !== s.sent) continue
+        if (e.queued || e.held) return true
+        const a = st.agents.find((x) => x.name === e.to)
+        if (a && ['working', 'waiting'].includes(a.status) && !st.feed.some((r) => r.kind === 'reply' && r.re === e.id)) return true
+      }
+    }
+    return false
+  }
+
+  // One schedule's turn. byHand: you pressed Send now, so nothing holds it back and its next time stays as it is.
+  async fire(hub, s, now, { byHand = false } = {}) {
+    const list = hub.schedules
+    const tz = zoneNow()
+    const repeating = s.repeat !== 'once'
+    // the time it's for: the one that came due, or, after several went by (closed for days), the latest of them
+    let due = s.next
+    for (let i = 0, n; !byHand && repeating && i < 800 && (n = nextRun(s, due, tz)) !== null && n <= now; i++) due = n
+    const gist = `"${s.text.replace(/\s+/g, ' ').trim().slice(0, 60)}${s.text.trim().length > 60 ? '…' : ''}"`
+    const say = (text) => hub.post({ kind: 'event', from: 'clique', text, schedule: s.id, ...(s.channel && hub.channel(s.channel) && { channel: s.channel }) })
+    if (!byHand) {
+      // its next time first: whatever happens below, it can't come due twice
+      s.next = repeating ? nextRun(s, now, tz) : null
+      s.zone = tz
+      const late = now - due
+      if (late > LATE_MAX) {
+        s.last = { at: now, result: 'missed', due }
+        say(`Scheduled message ${gist} wasn't sent: it was due ${whenText(due, tz)}, while CLIque was closed or this computer was asleep.${repeating ? ` Next: ${whenText(s.next, tz)}` : ' Send it now from Scheduled messages, or remove it'}`)
+        return list.save()
+      }
+      if (repeating && this.scheduleBusy(hub, s)) {
+        s.last = { at: now, result: 'busy' }
+        // said once, until a run goes out again
+        if (!s.told) say(`Scheduled message ${gist} skipped this time: its last run is still going. It goes out again once that's done (next: ${whenText(s.next, tz)})`)
+        s.told = true
+        return list.save()
+      }
+      if (repeating && s.ifChanged && s.mark && s.last?.result !== 'failed') {
+        const mark = await repoMark(hub.space.folder)
+        if (!list.all.includes(s) || s.paused) return list.save() // removed or paused while the repo was read
+        if (mark && mark === s.mark) {
+          s.last = { at: now, result: 'unchanged' }
+          return list.save()
+        }
+      }
+    }
+    const late = !byHand && now - due > LATE_AFTER
+    try {
+      // (sent without it, it would go to everyone's channel, for Auto to pick from all of them)
+      if (s.channel && !hub.space.channels.some((c) => c.id === s.channel)) throw new Error(`its channel, #${s.channel}, isn't there any more: change the schedule, or remove it`)
+      await this.send(s.to || undefined, s.text, s.images ?? [], { ...(s.channel && { channel: s.channel }), scheduled: { id: s.id, at: now, ...(late && { late: due }) } }, hub)
+      s.last = { at: now, result: late ? 'late' : 'sent', ...(late && { due }) }
+      s.sent = now
+      delete s.told
+      if (s.ifChanged) s.settle = true
+      // a one-off that went out is done: it's in the chat now
+      if (!repeating && list.all.includes(s)) list.all.splice(list.all.indexOf(s), 1)
+    } catch (e) {
+      const why = String(e?.message ?? e).split('\n')[0].slice(0, 300)
+      s.last = { at: now, result: 'failed', why }
+      say(`Scheduled message ${gist} (${ruleText(s)}) didn't go out: ${why}`)
+    }
+    list.save()
   }
 
   // Images nothing needs any more (core/keep.js): attachments that no workspace's chat, task or agent refers to, saved
@@ -459,6 +688,7 @@ export class Clique extends EventEmitter {
     for (const hub of this.hubs.values()) {
       for (const e of hub.feed) add(e.images)
       for (const t of hub.tickets.all) add(t.images)
+      for (const s of hub.schedules.all) add(s.images)
       for (const a of hub.agents.values()) {
         add(a.images)
         for (const m of [...(a.inbox ?? []), ...(a.serving ?? []), ...(a.expect?.msgs ?? []), ...(a.steering?.msgs ?? [])]) add(m?.images)
@@ -508,6 +738,8 @@ export class Clique extends EventEmitter {
 
   close() {
     clearTimeout(this.sweepTimer)
+    clearInterval(this.scheduleTimer)
+    clearTimeout(this.historyTimer)
     clearTimeout(this.computerTimer)
     for (const l of this.links.values()) {
       l.client?.close()
@@ -800,6 +1032,7 @@ export class Clique extends EventEmitter {
         feed.push({
           ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && q(e.re), ...(e.thread && { thread: q(e.thread) }), ...(e.echo && { echo: q(e.echo) }), images: e.images?.map((p) => this.fetchImage(l, p)),
           ...(e.ticket !== undefined && { ticket: q(String(e.ticket)) }), ...((e.act === 'fixing' || e.act === 'triaged') && e.text && { text: q(e.text) }),
+          ...(e.reactions && { reactions: e.reactions.map((r) => ({ ...r, by: q(r.by) })) }),
           ...(e.also && { also: e.also.map(q) }), ...(e.reply && { reply: q(e.reply) }), ...(e.line && { line: e.line.map(q) }),
           ...(e.answered && { answered: { ...e.answered, by: q(e.answered.by), ...(e.answered.reply && { reply: q(e.answered.reply) }) } }),
         })
@@ -864,6 +1097,24 @@ export class Clique extends EventEmitter {
     for (const h of this.hubs.values()) h.checkInChanged()
     this.changed()
     return checkInOf(this.config.data)
+  }
+
+  // ---- usage, day by day (core/history.js): what Claude Code and Codex used on this computer, for the Usage view ----
+  // Read from the CLIs' own logs, so it's everything they did here: every workspace's agents, and what you ran outside
+  // CLIque. The clique's agents go by name (their creatures stand beside their share); the rest is "outside CLIque".
+  // -> { at, reading: { done, total } | null, first, providers: [{ id, label, days }] }, Claude and Codex first.
+  usageHistory() {
+    const providers = () => providersFrom(this.config.data, this.config.discovered)
+    this.history ??= new History({ file: path.join(HOME, 'history.json'), roots: () => logRoots(providers()) })
+    const all = providers()
+    const own = (Array.isArray(this.config.data.workspaces) ? this.config.data.workspaces : []).flatMap((w) => named(w?.agents))
+    const names = [...new Set([...this.sharedNames(), ...own.map((a) => a.name), ...[...this.hubs.values()].flatMap((h) => [...h.agents.keys()])])]
+    const { providers: found, ...rest } = this.history.state({ names, providers: all })
+    const order = (id) => (id === 'claude' ? 0 : id === 'codex' ? 1 : 2)
+    return {
+      ...rest,
+      providers: Object.keys(found).sort((x, y) => order(x) - order(y) || x.localeCompare(y)).map((id) => ({ id, label: all[id]?.label ?? id, days: found[id].days })),
+    }
   }
 
   // A linked computer's agent, as this computer writes it.
@@ -967,7 +1218,8 @@ export class Clique extends EventEmitter {
   // shown here: on this computer, or id@computer). Each computer links what it has and quotes the rest.
   // here: the workspace it was sent in, whatever's on screen by the time it goes.
   // opts.channel: the channel it's said in (its id); Auto picks from that channel's members.
-  async send(to, text, images = [], { fresh = false, re, channel, thread } = {}, here = this.here) {
+  // opts.scheduled: one of your scheduled messages going out ({ id, at, late? }, see runSchedules).
+  async send(to, text, images = [], { fresh = false, re, channel, thread, scheduled } = {}, here = this.here) {
     // asleep (put to sleep while on screen, or watched from a phone): what you send wakes it, and the agent it's for
     // picks up its conversation; the message waits for it to start
     if (here.space?.parked) this.workspaceAction('open', here.ws)
@@ -1000,10 +1252,10 @@ export class Clique extends EventEmitter {
       // said in a thread's reply box: it stays in that thread, wherever that lives
       const inside = thread && idThere(home)(thread)
       const reply = { ...(quoted && { re: idThere(home)(re), quote: { ...quote, from: unq(home)(quote.from) } }), ...(inside && { thread: inside }) }
-      if (!home) out.push(await here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...auto, ...reply, ...(channel !== undefined && { channel }) }))
+      if (!home) out.push(await here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...auto, ...reply, ...(channel !== undefined && { channel }), ...(scheduled && { scheduled }) }))
       else {
         const l = this.link(home)
-        out.push(await this.linkCall(l, 'deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...auto, ...reply, ...away }], here.ws))
+        out.push(await this.linkCall(l, 'deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...auto, ...reply, ...away, ...(scheduled && { scheduled }) }], here.ws))
       }
     }
     return out.join('')
@@ -1155,6 +1407,8 @@ export class Clique extends EventEmitter {
       },
       approve: (id) => h.approve(id),
       drop: (id) => h.drop(id),
+      // your reaction, on a message this computer has (you're the same person on both)
+      reactTo: (id, emoji) => h.reactTo(id, emoji),
       answer: (id, reply) => h.answer(id, reply),
       update: (names, patch) => h.update(names, patch),
       draftPrompt: (agent) => h.draftPrompt(agent),

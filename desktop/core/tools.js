@@ -14,6 +14,7 @@ import { GENERAL, channelName, checkLook, named, sharedNames, workspacesIn } fro
 import { isOffered } from './providers.js'
 import { readCode } from './link.js'
 import { folderInfo } from './move.js'
+import { ruleFromWords, ruleText, whenText, nextRun, scheduleLine, inRepo } from './schedules.js'
 
 export const MODES = ['off', 'ask', 'auto']
 export const toolMode = (config) => (MODES.includes(config?.tools) ? config.tools : 'ask')
@@ -216,6 +217,13 @@ export const TOOLS = {
         return `${w.name.padEnd(20)} ${bits.filter(Boolean).join(' · ')}`
       }).join('\n')}\n`,
     }),
+  },
+  schedules: {
+    group: 'look', about: "this workspace's scheduled messages: when each goes out next, and how its last run went", read: true, flags: { in: 'value' },
+    plan: ({ clique, hub }, { flags }) => {
+      const h = hubFor(clique, hub, flags)
+      return { run: () => (h.schedules.all.length ? `${h.schedules.view().map((x) => scheduleLine(x)).join('\n')}\n` : '(nothing scheduled)\n') }
+    },
   },
   computers: {
     group: 'look', about: 'this computer and the computers linked to it', read: true,
@@ -555,6 +563,74 @@ export const TOOLS = {
     },
   },
 
+  // Scheduled messages (core/schedules.js): a message from the user to an agent or a channel, sent at a time, once or
+  // on a repeat. A run of one can't make more: what a schedule sets off doesn't get to set off schedules.
+  'schedule add': {
+    group: 'schedules', what: 'message', about: "send a message for the user later, or on a repeat: to an agent, or to whoever fits. It goes out as theirs, at the computer's local time",
+    use: '"<message>" --at <9:00> [--every day|weekday|<monday…>] [--on today|tomorrow|<monday…>|<2026-11-17>] [--to a,b] [--channel <name>] [--if-changed] [--in <workspace>]',
+    flags: { at: 'value', every: 'value', on: 'value', to: 'value', channel: 'value', 'if-changed': 'switch', in: 'value' },
+    plan: ({ clique, hub: mine, from }, { name: text, flags }) => {
+      noScheduleFromRun(mine, from)
+      const hub = hubFor(clique, mine, flags)
+      if (flags.at === undefined) throw new Error(`say when: --at 9:00. Use: ${usage('schedule add')}`)
+      const now = clique.clock()
+      const rule = ruleFromWords(flags, now)
+      const to = names(flags.to).map((n) => clique.resolve(n, hub))
+      const off = to.filter((n) => hub.agents.get(n)?.off)
+      if (off.length) throw new Error(`@${off[0]} is turned off: turn it on first (clique app agent on ${off[0]})`)
+      const c = flags.channel !== undefined ? channelIn(hub, flags.channel) : null
+      if (flags['if-changed'] && rule.repeat === 'once') throw new Error('--if-changed is for a message that repeats (--every …)')
+      if (flags['if-changed'] && !inRepo(hub.space.folder)) throw new Error(`--if-changed goes by git, and ${hub.space.name}'s folder isn't in a git repo`)
+      const fields = { text, to: to.join(','), ...(c && c.id !== GENERAL && { channel: c.id }), ...rule, ...(flags['if-changed'] && { ifChanged: true }) }
+      hub.schedules.fields(fields) // the words themselves
+      const twin = hub.schedules.all.find((x) => x.text.replace(/\s+/g, ' ').trim().toLowerCase() === text.replace(/\s+/g, ' ').trim().toLowerCase() && x.to === [...to].sort().join(',') && (x.channel ?? '') === (fields.channel ?? '') && ruleText(x) === ruleText(rule))
+      if (twin && Boolean(twin.ifChanged) === Boolean(fields.ifChanged)) throw new Error(twin.paused ? `that's scheduled already (${twin.id}, ${ruleText(twin)}) and paused, so nothing was added: clique app schedule resume ${twin.id} starts it again` : `that's scheduled already (${twin.id}, ${ruleText(twin)}): it's kept as it is, and nothing was added`)
+      const who = to.length ? to.map((n) => `@${n}`).join(' ') : 'whoever fits'
+      const where = `${who}${c && c.id !== GENERAL ? ` in #${c.name}` : ''}${inWs(hub, mine)}`
+      return {
+        title: 'Schedule a message',
+        code: [`${upFirst(ruleText(rule))} · to ${where}`, clip(text, 600)].join('\n'),
+        detail: `It goes out as a message from you${rule.repeat === 'once' ? '' : `, first on ${whenText(nextRun(rule, now), undefined)}`}.${fields.ifChanged ? ' Only when the repo has changed since its last run.' : ''} Pause or remove it under Scheduled messages.`,
+        say: `Can I schedule a message to ${where}, ${ruleText(rule)}?`,
+        // a YOLO agent runs whatever it's sent without asking: sending it things on a timer asks
+        risky: yoloGets(hub, to, text),
+        hub,
+        did: `scheduled a message to ${where}, ${ruleText(rule)}`,
+        run: async () => {
+          const made = await clique.scheduleAction('add', null, fields, hub.ws, { by: from })
+          return made.same ? `that was scheduled already (${made.id})${made.same === 'paused' ? ', and is paused' : ''}: kept as it is` : `scheduled (${made.id}): ${ruleText(rule)}, to ${where}. It goes out next on ${whenText(hub.schedules.get(made.id).next)}`
+        },
+      }
+    },
+  },
+  'schedule pause': {
+    group: 'schedules', what: 'schedule', about: 'pause a scheduled message (its id: clique app schedules)', use: '<id> [--in <workspace>]', flags: { in: 'value' },
+    plan: (ctx, call) => pauseSchedule(ctx, call, true),
+  },
+  'schedule resume': {
+    group: 'schedules', what: 'schedule', about: 'let a paused scheduled message run again, from its next time', use: '<id> [--in <workspace>]', flags: { in: 'value' },
+    plan: (ctx, call) => pauseSchedule(ctx, call, false),
+  },
+  'schedule remove': {
+    group: 'schedules', what: 'schedule', risky: true, about: 'remove a scheduled message', use: '<id> [--in <workspace>]', flags: { in: 'value' },
+    plan: ({ clique, hub: mine }, { name: id, flags }) => {
+      const hub = hubFor(clique, mine, flags)
+      const x = hub.schedules.get(id)
+      return {
+        title: `Remove a scheduled message${inWs(hub, mine)}`,
+        code: scheduleCode(x),
+        detail: "It won't go out again.",
+        say: `Can I remove the scheduled message "${clip(x.text.replace(/\s+/g, ' '), 60)}"${inWs(hub, mine)}?`,
+        hub,
+        did: `removed a scheduled message${inWs(hub, mine)}`,
+        run: async () => {
+          await clique.scheduleAction('remove', x.id, null, hub.ws)
+          return `removed ${x.id}`
+        },
+      }
+    },
+  },
+
   link: {
     group: 'computers', what: 'code', risky: true, about: "link this computer with another, by the code the other one's Computers sheet shows (clique1.…)", use: '<code>',
     plan: ({ clique }, { name: code }) => {
@@ -595,6 +671,46 @@ export const TOOLS = {
   },
 }
 
+const upFirst = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1)
+const scheduleCode = (x) => [`${upFirst(ruleText(x))} · to ${x.to ? x.to.split(',').map((n) => `@${n}`).join(' ') : 'whoever fits'}${x.channel ? ` in #${x.channel}` : ''}`, clip(x.text, 600)].join('\n')
+
+// Could a YOLO agent get it? One named (--to, or @named in the words: that's who it goes to as well), or, with nobody
+// named, any that's here to be picked. A YOLO agent runs whatever it's sent without asking: sending it things on a
+// timer asks first.
+function yoloGets(hub, to, text) {
+  const all = [...hub.agents.values()].filter((x) => x.yolo && !x.cloneOf)
+  const said = all.filter((x) => new RegExp(`(^|[^\\w.@/'-])@${x.name}(?![\\w-])`, 'i').test(text))
+  if (to.some((n) => hub.agents.get(n)?.yolo) || said.length) return true
+  const named = to.length > 0 || [...hub.agents.values()].some((x) => new RegExp(`(^|[^\\w.@/'-])@${x.name}(?![\\w-])`, 'i').test(text))
+  return !named && all.some((x) => !x.off)
+}
+
+// What a scheduled message set off can't schedule more (nor start a paused one again).
+function noScheduleFromRun(hub, from) {
+  if (hub.inScheduledRun(from)) throw new Error("this turn came from a scheduled message, and a scheduled run can't set up schedules. Tell the user what you'd schedule instead")
+}
+
+function pauseSchedule({ clique, hub: mine, from }, { name: id, flags }, paused) {
+  if (!paused) noScheduleFromRun(mine, from)
+  const hub = hubFor(clique, mine, flags)
+  const x = hub.schedules.get(id)
+  if (Boolean(x.paused) === paused) throw new Error(`${x.id} is ${paused ? 'paused' : 'running'} already`)
+  if (!paused && nextRun(x, clique.clock()) === null) throw new Error(`${x.id}'s time has passed: the user can send it now or change it under Scheduled messages`)
+  return {
+    title: `${paused ? 'Pause' : 'Resume'} a scheduled message${inWs(hub, mine)}`,
+    code: scheduleCode(x),
+    detail: paused ? 'It keeps its place and sends nothing until it runs again.' : `It goes out next on ${whenText(nextRun(x, clique.clock()))}.`,
+    say: `Can I ${paused ? 'pause' : 'resume'} the scheduled message "${clip(x.text.replace(/\s+/g, ' '), 60)}"${inWs(hub, mine)}?`,
+    risky: !paused && yoloGets(hub, x.to ? x.to.split(',') : [], x.text),
+    hub,
+    did: `${paused ? 'paused' : 'resumed'} a scheduled message${inWs(hub, mine)}`,
+    run: async () => {
+      await clique.scheduleAction(paused ? 'pause' : 'resume', x.id, null, hub.ws)
+      return `${x.id} is ${paused ? 'paused' : 'running again'}`
+    },
+  }
+}
+
 function onOff({ clique, hub: mine }, { name: raw, flags }, on) {
   const hub = hubFor(clique, mine, flags)
   const name = agentIn(hub, raw)
@@ -631,7 +747,7 @@ To look (never asks):
 ${keys.filter((k) => TOOLS[k].read).map((k) => `  clique app ${k.padEnd(12)} ${TOOLS[k].about}`).join('\n')}
 To change:
 ${keys.filter((k) => !TOOLS[k].read).map(line).join('\n')}
-Agents and channels are your workspace's unless you add --in <workspace>. Names are lowercase words (ada, ios-release).
+Agents, channels and scheduled messages are your workspace's unless you add --in <workspace>. Names are lowercase words (ada, ios-release).
 `
 }
 

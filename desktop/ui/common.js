@@ -17,7 +17,7 @@ const THIS_COMPUTER = ON_WINDOWS ? 'this PC' : 'this Mac'
 const upFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // A shortcut as this computer writes it: ⌥⌘S on a Mac is Ctrl+Alt+S on Windows, ⌘-click is Ctrl+click. The workspaces'
-// ⌃1–9 is Alt+1–9 there, since Ctrl+1–4 are the views (⌘1–4 on a Mac).
+// ⌃1–9 is Alt+1–9 there, since Ctrl+1–5 are the views (⌘1–5 on a Mac).
 function keys(mac) {
   if (!ON_WINDOWS) return mac
   const names = { '⌃': 'Alt', '⌘': 'Ctrl', '⌥': 'Alt', '⇧': 'Shift' }
@@ -71,8 +71,11 @@ function markSVG(viewBox = '0 0 24 24', { split = false } = {}) {
 
 const ICONS = {
   mark: markSVG(),
+  clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
   expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
+  // kept awake: a hot mug
+  mug: svg('<path d="M5 9.5h11v5.5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9.5z"/><path d="M16 11h1.2a2.4 2.4 0 0 1 0 4.8H16"/><path d="M8.5 3.5v2.5M12.5 3.5v2.5"/>'),
   moon: svg('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'),
   auto: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/>'),
   braces: svg('<path d="M8.5 4C6.6 4 6 5 6 6.8v2.4C6 10.6 5.2 11.6 4 12c1.2.4 2 1.4 2 2.8v2.4C6 19 6.6 20 8.5 20M15.5 4c1.9 0 2.5 1 2.5 2.8v2.4c0 1.4.8 2.4 2 2.8-1.2.4-2 1.4-2 2.8v2.4c0 1.8-.6 2.8-2.5 2.8"/>'),
@@ -1093,6 +1096,7 @@ const mergeSends = (feed) => {
     const lead = e.from === 'you' && e.sendId ? bySend[e.sendId] : undefined
     if (lead) {
       if (e.queued) lead.queued = true
+      if (e.reactions?.length) lead.reactions = [...(lead.reactions ?? []), ...e.reactions] // each copy's agent reacted to its own
       as[e.id] = lead
       continue
     }
@@ -1339,7 +1343,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const more = e.from !== 'you' && (line !== String(e.text ?? '').trim() || echoes.length)
     const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
     const body = whole ? `${pics}<div class="tr-full bubble open">${md(e.text)}</div>${echoes.map((x) => `<div class="tr-echo"><span>Also said</span><div class="bubble open">${md(x.text)}</div></div>`).join('')}` : `${pics}<div class="tr-line">${esc(line)}</div>`
-    return `<div class="thread-row${more ? ' opens' : ''}${whole ? ' open' : ''}" id="tr-${esc(e.id)}" data-row="${esc(e.id)}"${more ? ` tabindex="0" role="button" aria-expanded="${whole}"` : ''}>${face}<div class="tr-main">${head}${body}</div><span class="tr-chev">${more ? ICONS.chevron : ''}</span></div>`
+    return `<div class="thread-row${more ? ' opens' : ''}${whole ? ' open' : ''}" id="tr-${esc(e.id)}" data-row="${esc(e.id)}"${more ? ` tabindex="0" role="button" aria-expanded="${whole}"` : ''}>${face}<div class="tr-main">${head}${body}${reactsHTML(e, agent)}</div><span class="tr-chev">${more ? ICONS.chevron : ''}</span></div>`
   }
   const draw = (force = false) => {
     if (!key || !state) return
@@ -1356,7 +1360,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const hintText = who ? `Reply to ${familyOf(who)}, in the thread` : 'Reply in the thread'
     if (ta.placeholder !== hintText) ta.placeholder = hintText
     reply.classList.toggle('hidden', !who)
-    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.paused, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length]), agents().map((a) => [a.name, a.avatar]).length])
+    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.paused, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length, reactsSig(e)]), agents().map((a) => [a.name, a.avatar]).length])
     if (next !== drawn || force) {
       drawn = next
       const top = list.scrollTop
@@ -1430,6 +1434,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     }
     const pic = ev.target.closest('[data-open]')
     if (pic) return clique.call('openFile', pic.dataset.open)
+    if (reactClick(ev)) return
     const who = ev.target.closest('[data-agent]')
     if (who) return onAgent?.(who.dataset.agent)
     const card = ev.target.closest('[data-card]')
@@ -1566,7 +1571,59 @@ function taskEvent(e, who) {
   </div>`
 }
 
+// ---- reactions: one emoji on a message in place of a written "got it" (core/hub.js react) ----
+// A pill under the message for each emoji, with the little faces of the agents who put it there (and how many, when
+// several did). Yours is inked. Click one to add yours or take it off; hover a message for the handy ones.
+const REACT_HANDY = ['👍', '✅', '👀', '❤️', '🎉'] // the first five of shared/protocol.js HANDY_REACTIONS
+const REACT_SHOWN = 4
+// [{ emoji, by: [names], said: { name: words } }], in the order each emoji first landed (shared/protocol.js reactionGroups)
+function reactionGroups(list) {
+  const groups = []
+  for (const r of Array.isArray(list) ? list : []) {
+    if (!r || typeof r.emoji !== 'string' || !r.emoji || typeof r.by !== 'string' || !r.by) continue
+    let g = groups.find((x) => x.emoji === r.emoji)
+    if (!g) groups.push((g = { emoji: r.emoji, by: [], said: {} }))
+    if (g.by.includes(r.by)) continue
+    g.by.push(r.by)
+    if (typeof r.said === 'string' && r.said) g.said[r.by] = r.said
+  }
+  return groups
+}
+// what the redraw keys take in, so a reaction that lands (or goes) redraws the message it's on
+const reactsSig = (e) => (e.reactions?.length ? e.reactions.map((r) => `${r.by}${r.emoji}${r.said ? 1 : ''}`).join('') : '')
+function reactsHTML(e, agent) {
+  const groups = reactionGroups(e.reactions)
+  if (!groups.length) return ''
+  const nameOf = (n) => (n === 'you' ? 'You' : shownName(agent(n).seed ?? displayName(agent(n))))
+  const pill = (g) => {
+    const mine = g.by.includes('you')
+    const faces = g.by.filter((n) => n !== 'you').slice(0, 3).map((n) => `<i class="react-face">${avatarHTML(agent(n), { size: 16, mood: 'still' })}</i>`).join('')
+    const words = g.by.filter((n) => g.said[n]).map((n) => `${nameOf(n)}: “${g.said[n]}”`)
+    const tip = [`${andList(g.by.map(nameOf))} reacted ${g.emoji}`, ...words, mine ? 'Click to take yours off' : ''].filter(Boolean).join('\n')
+    return `<button type="button" class="react${mine ? ' mine' : ''}" data-react="${esc(g.emoji)}" data-on="${esc(e.id)}" aria-pressed="${mine}" title="${esc(tip)}"><span class="react-emoji">${esc(g.emoji)}</span>${faces}${g.by.length > 1 ? `<b>${g.by.length}</b>` : ''}</button>`
+  }
+  const more = groups.length - REACT_SHOWN
+  const rest = more > 0 ? `<span class="react react-more" title="${esc(groups.slice(REACT_SHOWN).map((g) => `${g.emoji} ${andList(g.by.map(nameOf))}`).join('\n'))}">+${more}</span>` : ''
+  return `<div class="reacts" role="group" aria-label="Reactions">${groups.slice(0, REACT_SHOWN).map(pill).join('')}${rest}</div>`
+}
+// hover a message: the handy ones, one click each
+const reactTools = (id) => `<span class="react-picks">${REACT_HANDY.map((r) => `<button type="button" class="msg-tool react-pick" data-react="${r}" data-on="${esc(id)}" title="React ${r}" aria-label="React ${r}">${r}</button>`).join('')}</span><i class="msg-tools-sep"></i>`
+// a click on a pill or a handy one: yours goes on, or comes off (the hub's answer redraws it)
+function reactClick(ev) {
+  const b = ev.target.closest('[data-react][data-on]')
+  if (!b) return false
+  Promise.resolve(clique.call('react', b.dataset.on, b.dataset.react)).catch(() => {})
+  return true
+}
+
 const YOU_FACE = '<span class="you-av" aria-hidden="true">You</span>'
+// One of your scheduled messages (ui/schedules.js) looks like any message of yours, with a small clock by its time.
+const scheduledTag = (e) => {
+  if (!e.scheduled || e.from !== 'you') return ''
+  const due = e.scheduled.late ? new Date(e.scheduled.late).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''
+  return `<span class="tag sched" title="${esc(due ? `A scheduled message. It was due at ${due}, and went out late: CLIque was closed or this computer was asleep` : 'A scheduled message: CLIque sent it for you')}">${ICONS.clock}${due ? `scheduled for ${esc(due)}, sent late` : 'scheduled'}</span>`
+}
+
 function feedItem(e, prev, ctx) {
   if (e.kind === 'thread') return threadCard(e, ctx)
   const { byName, byId, repliesTo, open } = ctx
@@ -1591,7 +1648,7 @@ function feedItem(e, prev, ctx) {
   // an agent's canvas (a ```canvas block, ui/canvas.js) says so by its name, and under it who else drew on it
   const drawn = e.from !== 'you' && typeof canvasBoard === 'function' && /```canvas\n/.test(e.text ?? '')
   const hands = drawn ? [...new Set(e.canvas?.by ?? [])].filter((n) => n !== e.from) : []
-  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.paused ? '<span class="tag" title="Held by the spend check-in. It goes on when you say Keep going.">held for the check-in</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
+  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.paused ? '<span class="tag" title="Held by the spend check-in. It goes on when you say Keep going.">held for the check-in</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '') + scheduledTag(e)
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
   const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
   // A reply quotes the message it answers, with a bar in the quoted sender's color; click to jump back to it.
@@ -1617,17 +1674,20 @@ function feedItem(e, prev, ctx) {
   const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}${between ? ' between' : ''}${e.empty ? ' wordless' : ''}" data-id="${e.id}">${text}${hands.length ? `<div class="canvas-by">with ${andList(hands.map(name))}</div>` : ''}</div>`
   const cap = (html) => (cont ? '' : `<div class="cap">${html}${tags}<span class="time">${time}</span></div>`)
   // hover a message for its tools: Reply (the chat's message box then answers it)
-  const tools = `<div class="msg-tools"><button class="msg-tool" data-reply="${e.id}" title="Reply to this message">${ICONS.reply}<span>Reply</span></button></div>`
+  const tools = `<div class="msg-tools">${reactTools(e.id)}<button class="msg-tool" data-reply="${e.id}" title="Reply to this message">${ICONS.reply}<span>Reply</span></button></div>`
+  // reactions sit under the message, on one line with "… replied" when there is one
+  const reacts = reactsHTML(e, agent)
+  const under = reacts ? `<div class="under">${reacts}${replied}</div>` : replied
   const fresh = isUnread(e, ctx.reads)
   const seen = e.kind === 'reply' ? ` data-from="${esc(e.from)}" data-ts="${e.ts}"${e.channel ? ` data-channel="${esc(e.channel)}"` : ''}` : ''
   // Agents talk with their little face next to the bubble, like a group chat.
   const said = (cls, capHTML, rest = '', body = bubble, withTools = true) =>
-    `<div class="item said ${cls}${cont}${fresh ? ' unread' : ''}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"${seen}><span class="face${here(e.from)}" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: ctx.face, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${replied}</div>${withTools ? tools : ''}</div>`
+    `<div class="item said ${cls}${cont}${fresh ? ' unread' : ''}" id="m-${e.id}" style="--c:${agentColor(agent(e.from))}" title="${time}"${seen}><span class="face${here(e.from)}" data-agent="${esc(e.from)}">${cont ? '' : avatarHTML(agent(e.from), { size: ctx.face, mood: 'still' })}</span><div class="stack">${cap(capHTML)}${body}${rest}${under}</div>${withTools ? tools : ''}</div>`
 
   // sent to the clique with nobody named: Auto chose who took it, not you
   const toLine = (names) => `${e.auto ? 'Auto picked' : 'to'} ${names.map(who).join(' ')}`
   const toWhom = (names) => (ctx.here && names.every((n) => familyOf(n) === familyOf(ctx.here)) ? '' : `<span class="to">${toLine(names)}</span>`)
-  const mine = (cls, body) => `<div class="item said mine ${cls}${cont}" id="m-${e.id}" title="${time}"><span class="face">${cont ? '' : YOU_FACE}</span><div class="stack">${cap(`<span class="you">You</span>${toWhom(e.cc ?? [e.to])}`)}${body}${replied}</div>${withTools(cls)}</div>`
+  const mine = (cls, body) => `<div class="item said mine ${cls}${cont}" id="m-${e.id}" title="${time}"><span class="face">${cont ? '' : YOU_FACE}</span><div class="stack">${cap(`<span class="you">You</span>${toWhom(e.cc ?? [e.to])}`)}${body}${under}</div>${withTools(cls)}</div>`
   const withTools = (cls) => (cls.includes('ticket') ? '' : tools)
 
   // the quiet lines (tasks, right of way, CLIque's own) name agents plainly, as captions do
@@ -1658,7 +1718,7 @@ function feedItem(e, prev, ctx) {
     return said(`ask ${e.answer ? 'answered' : 'open'}`, `${name(e.from)} <span>${verb}</span>`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`, false)
   }
   if (e.from === 'you' && ctx.rows) return mine('', bubble)
-  if (e.from === 'you') return `<div class="item me${cont}" id="m-${e.id}" title="${time}">${cap(toLine(e.cc ?? [e.to]))}${bubble}${replied}${tools}</div>`
+  if (e.from === 'you') return `<div class="item me${cont}" id="m-${e.id}" title="${time}">${cap(toLine(e.cc ?? [e.to]))}${bubble}${under}${tools}</div>`
   const actions = e.held
     ? `<div class="actions"><button class="btn primary" data-act="approve" data-id="${e.id}">Send it</button><button class="btn" data-act="drop" data-id="${e.id}">Drop</button></div>`
     : ''
@@ -1710,7 +1770,7 @@ const EVENT_ICONS = [
   [/another app already uses it/, 'keyboard'],
   [/terminal/, 'terminal'],
 ]
-const eventIcon = (e) => (e.limit ? 'gauge' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'clique' ? 'mark' : null))
+const eventIcon = (e) => (e.limit ? 'gauge' : e.schedule ? 'clock' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'clique' ? 'mark' : null))
 // "Rex", "Rex and Noor", "Rex, Noor and Ada", "Rex, Noor and 3 others" (names as HTML)
 const andList = (list) => (list.length > 3 ? `${list.slice(0, 2).join(', ')} and ${list.length - 2} others` : list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0] ?? '')
 
@@ -2049,6 +2109,7 @@ function markWords(root, words) {
 function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply, onThread, onTicket = (key) => clique.call('dashboard', `task:${key}`), onFound, welcome, limit = 200, inline = false, face = 28 } = {}) {
   const open = new Set()
   const seen = new Set()
+  const reacted = new Set() // `${id}|${by}|${emoji}`: the reactions already drawn, so only a new one pops
   const drafts = new Map() // question card id -> { picks: { qi: [labels] }, other: { qi: text }, note }
   let typingAll = false // the who's-on-it line, unfolded
   const sending = new Set() // cards whose answer is on its way: one answer each, even with a held Enter
@@ -2234,6 +2295,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     if (thread && onThread) return onThread(thread.dataset.thread)
     const to = ev.target.closest('[data-jump]')
     if (to) return jump(to.dataset.jump)
+    if (reactClick(ev)) return
     const re = ev.target.closest('[data-reply]')
     if (re) {
       // replying to one agent opens its conversation (see the composer's replyTo), with this message in view
@@ -2577,7 +2639,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       const view = feedView(feed, agents, open, limit, drafts, { reads, divider: words.length ? null : divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline, channels, channel: convo ? null : channel, threads, threadSeen: (id) => readTo?.[id] })
       shown = new Map(view.items.map((e) => [e.id, e]))
       // (a line others joined, sameEvents, counts them; a usage line turns to "reset" once its window has)
-      let next = view.items.map((e) => e.id + (e.sig ?? '') + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.paused ? 'p' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '')).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
+      let next = view.items.map((e) => e.id + (e.sig ?? '') + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.paused ? 'p' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '') + reactsSig(e)).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
       // searching, who's at work right now isn't part of the results
@@ -2604,6 +2666,17 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
           list.querySelector(`#m-${CSS.escape(e.id)}`)?.classList.add('enter')
           added = true
           if (!pinned && e.from !== 'you' && e.kind !== 'event') missed++
+        }
+        // a reaction that just landed pops once; the ones already there stay put
+        for (const e of view.items) {
+          for (const r of e.reactions ?? []) {
+            const k = `${e.id}|${r.by}|${r.emoji}`
+            if (reacted.has(k)) continue
+            reacted.add(k)
+            if (first) continue
+            list.querySelector(`#m-${CSS.escape(e.id)} .react[data-react="${CSS.escape(r.emoji)}"]`)?.classList.add('pop')
+            added = true // following the chat, the line it adds glides in as a new message does, instead of snapping
+          }
         }
         for (const id of sending) list.querySelector(`[data-ask="${CSS.escape(id)}"]`)?.classList.add('sending')
         watch.disconnect()
@@ -2919,7 +2992,9 @@ function mountInk(field, { agents, strict = () => true }) {
 
 // onTarget(target): who it's aimed at changed (an agent's name opens your conversation with it; see isConvo).
 // onDictate: the dictation hotkey is about to start, so the box should be on screen.
-function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) {
+// onLater(button, draft): the clock beside Send was pressed (ui/schedules.js): what the box holds, to send later or on
+// a repeat. draft: { text, images, to, channel, clear() }. Without it there's no clock.
+function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater } = {}) {
   el.classList.add('composer')
   // Who it goes to is one picker in the box's bar (To: Auto, Task, or an agent), beside the Task switch.
   el.innerHTML = `<div class="input">
@@ -2932,6 +3007,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
         <button class="fresh-toggle" aria-pressed="false" aria-label="New conversation">${ICONS.fresh}</button>
         <span class="grow"></span>
         <button class="mic" aria-label="Dictate"></button>
+        ${onLater ? `<button class="later" title="Send later, or on a repeat" aria-label="Send later" aria-haspopup="menu">${ICONS.clock}</button>` : ''}
         <button class="send" disabled title="Send (Enter)" aria-label="Send">${ICONS.up}</button>
       </div>
     </div>
@@ -3252,6 +3328,26 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     }
   })
   send.addEventListener('click', submit)
+  // Send later: what the box holds now, who it's for and the channel it's said in, as Send would send it (a reply's
+  // thread and New conversation don't carry over: a scheduled message starts on its own).
+  el.querySelector('.later')?.addEventListener('click', (e) => {
+    const talking = isConvo(target)
+    const from = draftKey(target)
+    onLater(e.currentTarget, {
+      text: ta.value.trim(),
+      images: attach.get(),
+      to: reply && !talking ? reply.to.join(',') : target === 'auto' || target === 'task' ? '' : target,
+      channel: !talking && channel ? channel.id : null,
+      // scheduled: the box is empty again (unless you've moved on to another conversation: then it's that draft that goes)
+      clear: () => {
+        if (draftKey(target) !== from) return void drafts.delete(from)
+        ta.value = ''
+        attach.set([])
+        autosize()
+        say('')
+      },
+    })
+  })
   // Dictation (ui/voice.js): the mic button fills in the message as you talk.
   const voice = typeof mountVoice === 'function' && clique.onVoice ? mountVoice({ composer: el, textarea: ta, button: el.querySelector('.mic'), changed: autosize, submit, reveal: onDictate }) : null
   if (!voice) el.querySelector('.mic').remove()

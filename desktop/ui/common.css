@@ -754,6 +754,28 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 .replied svg { width: 13px; height: 13px; flex: none; }
 .replied span { overflow: hidden; text-overflow: ellipsis; }
 .replied:hover { color: var(--fg); }
+/* Reactions: one emoji on a message in place of a written "got it". A pill per emoji under the message, with the
+   little faces of the agents who put it there; yours is outlined in ink. One line, never wrapping: past four, "+2". */
+.under { display: flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; margin-top: 4px; }
+.under > .replied { margin-top: 0; min-width: 0; }
+.reacts { display: flex; align-items: center; gap: 4px; flex: none; max-width: 100%; overflow: hidden; white-space: nowrap; user-select: none; }
+.tr-main > .reacts { margin-top: 5px; }
+.react { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 7px 0 5px; border-radius: 11px; background: var(--fill); color: var(--fg2); font: 600 11px/1 var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; transition: background var(--t-quick); }
+.react:hover { background: var(--fill-hover); }
+.react:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.react.mine { box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--fg); }
+.react.react-more { padding: 0 7px; cursor: default; }
+.react-emoji { font-size: 13px; line-height: 1; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+.react-face { display: inline-flex; width: 16px; height: 16px; line-height: 0; pointer-events: none; }
+.react-face + .react-face { margin-left: -6px; }
+.react b { font-weight: 600; margin-left: 1px; }
+/* one that just landed pops once (a one-off, like a new message rising in) */
+.react.pop { animation: react-pop .34s var(--out) backwards; }
+@keyframes react-pop { from { opacity: 0; transform: scale(.4); } 55% { opacity: 1; transform: scale(1.14); } }
+@media (prefers-reduced-motion: reduce) { .react.pop { animation: none; } }
+.msg-tool.react-pick { padding: 0 5px; font-size: 14px; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+.react-picks { display: inline-flex; align-items: center; gap: 2px; }
+.msg-tools-sep { align-self: center; width: 1px; height: 14px; margin: 0 2px; background: var(--line-strong); }
 .item.flash > .bubble, .item.flash .stack > .bubble, .item.flash .ask-card { animation: flash 1.4s ease-out; }
 @keyframes flash { 0%, 30% { box-shadow: 0 0 0 3px var(--ring); } 100% { box-shadow: 0 0 0 3px transparent; } }
 .item.note .bubble, .item.note .stack > .bubble { background: transparent; padding: 8px 12px; border-radius: var(--r-card); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--fg2); }
@@ -762,6 +784,9 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 /* a teammate's question: who asks whom, whether the asker is waiting on it right now, and where the answer went */
 .item .cap .verb { color: var(--fg3); }
 .item .tag.wait { color: var(--fg2); }
+/* one of your scheduled messages: a small clock by its time, and nothing else different about it */
+.item .tag.sched { gap: 3px; padding: 0; box-shadow: none; color: var(--fg3); font-weight: 500; cursor: help; }
+.item .tag.sched svg { width: 11px; height: 11px; }
 .item .tag.back { display: inline-flex; align-items: center; gap: 3px; color: var(--fg2); cursor: help; }
 .item .tag.back svg { width: 10px; height: 10px; transform: scaleX(-1); }
 .replied.answered { color: var(--working-ink); }
@@ -1027,6 +1052,11 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .feed .item.me > .msg-tools { left: calc(100% - 100cqw); min-width: max-content; justify-content: flex-end; padding: 0; background: none; box-shadow: none; }
 .feed .item.me > .msg-tools .msg-tool { height: 28px; padding: 0 10px 0 8px; border-radius: var(--r-control); background: var(--float); box-shadow: var(--shadow-float); }
 .feed .item.me > .msg-tools .msg-tool:hover { background: linear-gradient(var(--btn), var(--btn)), var(--float); }
+/* (there each tool floats by itself: the handy reactions float together, as one) */
+.feed .item.me > .msg-tools .react-picks { height: 28px; padding: 0 2px; margin-right: 2px; border-radius: var(--r-control); background: var(--float); box-shadow: var(--shadow-float); }
+.feed .item.me > .msg-tools .react-picks .msg-tool { height: 24px; padding: 0 5px; border-radius: var(--r-tag); background: none; box-shadow: none; }
+.feed .item.me > .msg-tools .react-picks .msg-tool:hover { background: var(--btn); }
+.feed .item.me > .msg-tools .msg-tools-sep { display: none; }
 .item.me > .msg-tools::after { content: ''; position: absolute; left: 100%; top: 0; bottom: 0; width: 10px; } /* a bridge, so the way over to it keeps the hover */
 .msg-tool { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border: 0; border-radius: var(--r-tag); background: none; color: var(--fg2); font-size: 12px; font-weight: 500; cursor: pointer; transition: background .15s, color .15s; }
 .msg-tool:hover { background: var(--btn); color: var(--fg); }
@@ -1156,6 +1186,11 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .fresh-toggle svg { width: 16px; height: 16px; flex: none; }
 .fresh-toggle[aria-pressed=true] { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .composer.task-mode .fresh-toggle { visibility: hidden; }
+/* send later (ui/schedules.js): a quiet clock beside Send; a task isn't a message, so it steps aside in task mode */
+.composer .later { width: 28px; height: 28px; border-radius: var(--r-control); border: 0; padding: 0; background: none; color: var(--fg2); cursor: pointer; flex: none; display: grid; place-items: center; transition: background .15s, color .15s; }
+.composer .later:hover { background: var(--btn); color: var(--fg); }
+.composer .later svg { width: 16px; height: 16px; }
+.composer.task-mode .later { visibility: hidden; }
 .send { width: 28px; height: 28px; border-radius: var(--r-control); border: 0; padding: 0; background: var(--accent); color: var(--on-accent); cursor: pointer; display: grid; place-items: center; flex: none; transition: background .2s, color .2s; }
 .send:disabled { background: var(--fill); color: var(--fg3); cursor: default; }
 .send svg { width: 15px; height: 15px; }

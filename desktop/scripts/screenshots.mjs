@@ -62,22 +62,39 @@ const CANVAS_FEED = [
   },
   { id: 'k5', kind: 'event', from: 'Theo', text: 'added to @Iris\'s canvas "How the score is made"', canvasOf: 'k4' },
 ]
-// The check-in shots: a request of yours that Ada and Milo passed back and forth until it had cost $5.40, as the hub
-// posts it (core/hub.js checkIn): the hand-offs in the request's thread, the last one held, and the card.
-const CHECK_IN_CARD = `{ id: 'c6', kind: 'ask', from: 'Ada', to: 'you', cli: 'clique', re: 'c1', thread: 'c1', out: true, ts: t(1), ask: { type: 'permission', tool: 'clique spend', always: [],
-    title: '@Ada and @Milo have spent $5.40 since you last spoke', say: "We've spent $5.40 since you last spoke. Keep going?", detail: 'Nothing new starts until you answer. Turns already running finish first.',
-    spend: { round: 'c1', who: ['Ada', 'Milo'], by: { Ada: { cost: 3.7, tokens: 0 }, Milo: { cost: 1.7, tokens: 0 } }, cost: 5.4, tokens: 0, since: t(47), from: 'you', limit: { usd: 5, tokens: 5e6 } } } }`
-const CHECK_IN_FEED = (card = true) => `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
-  s.feed = [
-    { id: 'c0', kind: 'reply', from: 'Theo', to: 'you', text: 'All 48 checkout tests pass on Chrome and Safari.', ts: t(55) },
-    { id: 'c1', kind: 'msg', from: 'you', to: 'Ada', text: 'The checkout takes four seconds to load. Find out why and fix it with Milo.', ts: t(47) },
-    { id: 'c2', kind: 'msg', from: 'Ada', to: 'Milo', re: 'c1', thread: 'c1', round: 'c1', text: 'The order API is fine (180 ms). The page waits on three requests in a row. Can you load them together?', gist: 'The order API is fine (180 ms).', ts: t(40) },
-    { id: 'c3', kind: 'msg', from: 'Milo', to: 'Ada', re: 'c2', thread: 'c1', round: 'c1', text: 'That needs the totals in one call. Can the API return them with the cart?', gist: 'That needs the totals in one call.', ts: t(26) },
-    { id: 'c4', kind: 'msg', from: 'Ada', to: 'Milo', re: 'c3', thread: 'c1', round: 'c1', text: 'Done: GET /cart includes the totals now. Try it.', gist: 'Done: GET /cart includes the totals now.', ts: t(12) },
-    ${card ? `{ id: 'c5', kind: 'msg', from: 'Milo', to: 'Ada', re: 'c4', thread: 'c1', round: 'c1', paused: 'c1', text: 'Down to 1.1 s. Can you cache the shipping rates too?', gist: 'Down to 1.1 s.', ts: t(1.2) },
-    ${CHECK_IN_CARD},` : ''}
+// The reactions shots: one scripted exchange, twice. 'acks': every "got it" is a message, as it was. 'reactions': the
+// same agents put an emoji on what they were told instead (clique react), and the acknowledgements are gone from the chat.
+const REACT_FEED = (mode) => {
+  const on = mode === 'reactions'
+  const gist = (text) => text.split('\n')[0].split(/(?<=[.!?])\s/)[0]
+  const r = (by, emoji, said) => ({ by, emoji, at: 0, ...(said && { said }) })
+  const say = (id, from, to, text, re, extra = {}) => ({ id, kind: 'msg', from, to, text, re, thread: 'y0', gist: gist(text), ...extra })
+  const said = (id, from, text, re, extra = {}) => ({ id, kind: 'reply', from, text, re, gist: gist(text), ...extra })
+  const news = 'Heads-up: the release freeze starts Thursday at 5pm. Nothing to do yet.'
+  const cc = { cc: ['Ada', 'Milo', 'Theo'], sendId: 'sx' }
+  return [
+    { id: 'xa', kind: 'msg', from: 'you', to: 'Ada', text: news, ...cc, ...(on && { reactions: [r('Ada', '👍')] }) },
+    { id: 'xm', kind: 'msg', from: 'you', to: 'Milo', text: news, ...cc, ...(on && { reactions: [r('Milo', '👍', 'Noted, thanks.')] }) },
+    { id: 'xt', kind: 'msg', from: 'you', to: 'Theo', text: news, ...cc, ...(on && { reactions: [r('Theo', '👀')] }) },
+    ...(on ? [] : [
+      said('xa1', 'Ada', 'Got it, the freeze is Thursday at 5pm.', 'xa', { thread: 'xa', out: true }),
+      said('xm1', 'Milo', 'Noted, thanks.', 'xm', { thread: 'xm', out: true }),
+      said('xt1', 'Theo', 'Acknowledged. Nothing to add from testing.', 'xt', { thread: 'xt', out: true }),
+    ]),
+    { id: 'y0', kind: 'msg', from: 'you', to: 'Ada', text: 'Rename `rows` to `items` in the cart API, and let Milo and Theo know.' },
+    say('y1', 'Ada', 'Milo', 'I renamed `rows` to `items` in GET /api/cart. Your cart table reads the old name: switch it over.', 'y0'),
+    say('y2', 'Ada', 'Theo', 'Heads-up: `rows` is `items` in the cart API now. Nothing for you to do unless a test names it.', 'y0', on ? { reactions: [r('Theo', '👍', 'No test names it.')] } : {}),
+    said('y3', 'Ada', 'Renamed in the API, and Milo and Theo know. Milo has one change to make in the cart table.', 'y0', { thread: 'y0', out: true }),
+    ...(on ? [] : [said('y4', 'Theo', 'Thanks, noted. No test names it, so nothing to change.', 'y2', { thread: 'y0' })]),
+    say('y5', 'Milo', 'Ada', 'Switched the cart table to `items`. It is on feat/cart-items, and the page still renders.', 'y1', on ? { reactions: [r('Ada', '🙏')] } : {}),
+    ...(on ? [] : [said('y6', 'Ada', 'Thanks Milo, got it. Nothing more from me.', 'y5', { thread: 'y0' })]),
+    said('y7', 'Ada', 'All done: the API and the cart table both use `items` now.', 'y0', { thread: 'y0', out: true, ...(on && { reactions: [r('you', '🎉')] }) }),
   ]
-  s.agents = s.agents.map((a) => ({ ...a, status: a.name === 'Milo' && ${!card} ? 'working' : a.status === 'off' ? 'off' : 'idle', activity: a.name === 'Milo' && ${!card} ? 'Edit pages/checkout.tsx' : '', since: Date.now() - 60000, subs: [], waitingOn: [], owes: [], queue: 0 }))
+}
+const REACT_SETUP = (mode) => `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+  s.feed = ${JSON.stringify(REACT_FEED(mode))}.map((e, i, all) => ({ ...e, ts: t(2 * (all.length - i)) }))
+  for (const a of s.agents) Object.assign(a, { status: 'idle', activity: '', subs: [], waitingOn: [], thread: undefined })
+  s.reads = { since: Date.now() + 1e6, agents: {} }
   window.__cliqueEmit('state', s)`
 // What's behind the transparent windows: the popover's material, or a soft desktop for the floating pill.
 const BACKDROP = {
@@ -245,6 +262,101 @@ const SCREEN_TOP = `html::before { content: ''; position: fixed; inset: 0 0 auto
   .wrap { position: absolute !important; left: 50%; top: 0; transform: translateX(-50%); }`
 
 const SHOTS = {
+  // Reactions: an emoji on a message in place of a written "got it" (clique react). The same exchange with every
+  // acknowledgement as a message (before) and as a reaction (after), in the channel and in the thread beside it; a
+  // hand-off in an agent's conversation; and a message with more reactions than fit, in the narrow floating chat.
+  async reactions(theme) {
+    for (const mode of ['acks', 'reactions']) {
+      const win = await dashboard(theme, 'chat', { width: 1180, height: 900, fixture: 'threads' })
+      await js(win, REACT_SETUP(mode))
+      await sleep(900)
+      await js(win, click('.thread-card[data-thread="y0"]'))
+      await sleep(700)
+      const rows = await js(win, "return { channel: document.querySelectorAll('.feed .feed-list:not(.typing-list) > .item, .feed .feed-list:not(.typing-list) > .thread-card').length, thread: document.querySelectorAll('.thread-list .thread-row').length }")
+      console.log(`reactions (${mode}): ${rows.channel} rows in the channel, ${rows.thread} in the thread`)
+      await save(win, `reactions-${mode === 'acks' ? 'before' : 'after'}-${theme}`)
+      if (mode === 'reactions') {
+        // the hand-off itself, in the conversation with the agent it went to
+        await js(win, click('.thread-x'))
+        await js(win, click('.dm[data-agent="Theo"]'))
+        await sleep(900)
+        await save(win, `reactions-handoff-${theme}`)
+      }
+      win.destroy()
+    }
+    // the floating chat, 380 wide: long names, many reactions, one line
+    const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+      const r = (by, emoji, said) => ({ by, emoji, at: 0, ...(said && { said }) })
+      s.feed = [
+        { id: 'm1', kind: 'msg', from: 'you', to: 'Ada', text: 'Checkout v2 is live. Thank you all.', ts: t(9), cc: ['Ada', 'Milo', 'Iris', 'Theo', 'June'], sendId: 'sm',
+          reactions: [r('Ada', '🎉'), r('Milo', '🎉'), r('Iris', '🎉'), r('Theo', '🎉'), r('June', '🎉'), r('Ada', '🚀'), r('Milo', '❤️'), r('Iris', '🙌'), r('Theo', '✅'), r('June', '👏'), r('Theo', '🫡'), r('June', '💯')] },
+        { id: 'm2', kind: 'reply', from: 'Theo', to: 'you', text: 'All 48 checkout tests pass on Chrome, Safari and Firefox.', ts: t(6), reactions: [r('you', '👍'), r('Ada', '👍'), r('you', '🎉')] },
+        { id: 'm3', kind: 'msg', from: 'Ada', to: 'Milo', text: 'The orders endpoint returns totals in cents now. Nothing to change on your side.', ts: t(4), reactions: [r('Milo', '👀', 'Seen, the table already reads cents.')] },
+        { id: 'm4', kind: 'msg', from: 'you', to: 'Iris', text: 'Standup is at 10:30 from tomorrow.', ts: t(2), reactions: [r('Iris', '👍')] },
+      ]
+      for (const a of s.agents) Object.assign(a, { status: 'idle', activity: '', subs: [] })
+      s.reads = { since: Date.now() + 1e6, agents: {} }
+      window.__cliqueEmit('state', s); window.__cliqueEmit('toggle', { open: true, focus: false })`)
+    await sleep(900)
+    await fitToContent(win)
+    await save(win, `reactions-floating-${theme}`)
+    // pointing at a message: the handy ones beside Reply (an agent's message, then one of yours)
+    for (const [id, name] of [['m2', 'hover'], ['m4', 'hover-yours']]) {
+      const at = await center(win, `#m-${id} .bubble`)
+      await glide(win, { x: at.x - 60, y: at.y - 80 }, at, 200)
+      await sleep(500)
+      const img = await win.webContents.capturePage()
+      fs.writeFileSync(path.join(out, `reactions-${name}-${theme}.png`), img.toPNG())
+      console.log('saved', `reactions-${name}-${theme}.png`)
+    }
+    win.destroy()
+  },
+  // A reaction landing: on the message at the bottom while you follow the chat, on one above while you read further up
+  // (nothing you're reading moves), then your own from the tools a message shows when you point at it.
+  async reactionsGif() {
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { width: 900, height: 600, fixture: 'threads' })
+    await js(win, REACT_SETUP('acks'))
+    // a longer history, so there's something to read further up
+    await js(win, `const s = window.__cliqueState; s.feed = s.feed.filter((e) => !['xa1', 'xm1', 'xt1', 'y4', 'y6'].includes(e.id)); const t0 = s.feed[0].ts - 3600000
+      const said = ['Checked the orders table migration.', 'Tests are green on CI.', 'Left a note on the empty cart task.', 'Nudged the product grid spacing a little.']
+      s.feed.unshift(...Array.from({ length: 14 }, (_, i) => ({ id: 'old' + i, kind: 'reply', from: ['Ada', 'Milo', 'Iris', 'Theo'][i % 4], to: 'you', text: said[i % 4], ts: t0 + i * 60000 })))
+      s.feed.push({ id: 'z0', kind: 'msg', from: 'you', to: 'Theo', text: 'Standup is at 10:30 from tomorrow.', ts: Date.now() }); window.__cliqueEmit('state', s)`)
+    await sleep(1200)
+    const col = await js(win, "const r = document.querySelector('.page-head[data-for=chat]').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(innerWidth - r.x), height: innerHeight }")
+    const land = (id, by, emoji) => js(win, `const s = window.__cliqueState; const e = s.feed.find((x) => x.id === '${id}'); e.reactions = [...(e.reactions ?? []), { by: '${by}', emoji: '${emoji}', at: Date.now() }]; window.__cliqueEmit('state', s)`)
+    await record(win, 'reactions', {
+      clip: col, ms: 12500, width: 760,
+      during: async () => {
+        let at = { x: col.x + 420, y: 200 }
+        // following the chat: Theo's 👍 lands on the newest message
+        await sleep(900)
+        await land('z0', 'Theo', '👍')
+        await sleep(1500)
+        // reading further up: three land on the message in view and one below it, and what you read stays where it is
+        await js(win, "document.querySelector('#m-old11').scrollIntoView({ block: 'start', behavior: 'smooth' })")
+        await sleep(1300)
+        await land('xa', 'Ada', '👍')
+        await sleep(700)
+        await land('xm', 'Milo', '👍')
+        await sleep(700)
+        await land('xt', 'Theo', '👀')
+        await sleep(700)
+        await land('y7', 'Milo', '✅')
+        await sleep(1300)
+        // your own: point at a message and pick one
+        at = await glide(win, at, await center(win, '#m-old13 .bubble'), 700)
+        await sleep(400)
+        at = await glide(win, at, await center(win, '#m-old13 .react-pick[data-react="🎉"]'), 500)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1500)
+        await glide(win, at, { x: at.x - 200, y: at.y + 120 }, 500)
+      },
+    })
+    win.destroy()
+  },
   // Canvases: boards agents draw by hand in the chat (ui/canvas.js, `clique canvas`): bars with a tick, a cross and a
   // source in a final message, then a flow two agents drew together.
   async canvas(theme) {
@@ -336,6 +448,10 @@ const SHOTS = {
       window.__cliqueEmit('state', s)`)
     await sleep(3200)
     await shot('canvas', win, { crop: await column(win) })
+    // Usage: a calendar per provider, and who used it
+    win = await dashboard(theme, 'usage', { width: 1160, height: 950, reset: ['clique.usage.range'] })
+    await sleep(900)
+    await shot('usage', win)
     // every terminal side by side
     win = await dashboard(theme, 'grid', { width: 1160, height: 700 })
     await sleep(1600)
@@ -384,6 +500,28 @@ const SHOTS = {
     await fitToContent(win)
     await save(win, `tray-${theme}`)
     win.destroy()
+  },
+  // Staying awake while agents work (core/awake.js): the tray's line, its switch under the gear, the tray once it's
+  // off, and the same switch in the dashboard's menu.
+  async awake(theme) {
+    const win = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(win)
+    await save(win, `awake-tray-${theme}`)
+    await js(win, click('[data-act=settings]'))
+    await sleep(350)
+    await save(win, `awake-tray-settings-${theme}`)
+    await js(win, click('.menu [data-menu-act=awake]'))
+    await sleep(400)
+    await fitToContent(win)
+    await save(win, `awake-tray-off-${theme}`)
+    win.destroy()
+    const dash = await dashboard(theme, 'chat', { width: 1060, height: 690 })
+    await js(dash, click('.side-more'))
+    await sleep(350)
+    const box = await js(dash, "const r = document.querySelector('.menu').getBoundingClientRect(); return { x: 0, y: Math.max(0, Math.round(r.top) - 40), width: 560, height: Math.round(innerHeight - Math.max(0, Math.round(r.top) - 40)) }")
+    await save(dash, `awake-menu-${theme}`, { crop: box })
+    dash.destroy()
   },
   async overlay(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
@@ -478,6 +616,85 @@ const SHOTS = {
     await sleep(1000)
     await save(win, `stats-${theme}`)
     await js(win, click('[data-mode=cards]'))
+    win.destroy()
+  },
+  // Usage (ui/usage.js): a calendar per provider from Claude Code's and Codex's own logs, the range's numbers, and who
+  // used it; then a day picked (its square ringed in both calendars, the breakdown under them the day's), one year,
+  // and the first look at the logs, the newest days in and the rest on their way.
+  async usage(theme) {
+    const win = await dashboard(theme, 'usage', { height: 1010, reset: ['clique.usage.range'] })
+    await sleep(700)
+    await save(win, `usage-${theme}`)
+    // a busy weekday three weeks back, in whichever column it falls
+    const day = await js(win, `const d = new Date(Date.now() - 20 * 864e5); while (d.getDay() === 0 || d.getDay() === 6 || !window.__cliqueHistory.providers[0].days[key(d)] || !window.__cliqueHistory.providers[1].days[key(d)]) d.setDate(d.getDate() - 1)
+      function key(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+      return key(d)`)
+    const cell = `.us-prov[data-prov=claude] .us-c[data-day="${day}"]`
+    await tap(win, await glide(win, { x: 700, y: 500 }, await center(win, cell), 200))
+    await sleep(500)
+    await save(win, `usage-day-${theme}`)
+    await js(win, click('[data-us=clear]'))
+    await js(win, click('.page-head[data-for=usage] [data-us=range]'))
+    await sleep(300)
+    await save(win, `usage-range-${theme}`)
+    await js(win, `document.querySelector('.menu [data-menu-act="${new Date().getFullYear()}"]').click()`)
+    await sleep(500)
+    await save(win, `usage-year-${theme}`)
+    win.destroy()
+    const first = await dashboard(theme, 'usage', { height: 1010, fixture: 'usage-reading', reset: ['clique.usage.range'] })
+    await sleep(900)
+    await save(first, `usage-reading-${theme}`)
+    await js(first, `window.__cliqueHistory = { at: Date.now(), reading: null, first: null, providers: [] }; localStorage.setItem('clique.place', 'chat')`)
+    await js(first, click('.nv[data-place=clique]'))
+    await js(first, click('.nv[data-place=usage]'))
+    await sleep(500)
+    await save(first, `usage-none-${theme}`)
+    first.destroy()
+    // the way in from the sidebar's foot: under the limits, Usage by day
+    const foot = await dashboard(theme, 'chat', { height: 600 })
+    await js(foot, click('.use-line'))
+    await sleep(400)
+    await save(foot, `usage-popover-${theme}`)
+    foot.destroy()
+    // a narrow window: the tiles two by two, the limits out of the provider's line, the squares smaller but all there
+    const narrow = await dashboard(theme, 'usage', { width: 940, height: 1010, reset: ['clique.usage.range'] })
+    await sleep(700)
+    await save(narrow, `usage-narrow-${theme}`)
+    narrow.destroy()
+  },
+  // Usage in motion: in from the sidebar, the pointer along a week of days (each says its numbers), one picked (the
+  // breakdown under the calendars becomes that day's), another, and back to the whole range.
+  async usageGif() {
+    const win = await dashboard('light', 'chat', { width: 1240, height: 900, reset: ['clique.usage.range'] })
+    await sleep(900)
+    const days = await js(win, `const h = window.__cliqueHistory.providers; const out = []
+      function key(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+      for (let i = 40; out.length < 6 && i > 8; i--) { const k = key(new Date(Date.now() - i * 864e5)); if (h[0].days[k] && h[1].days[k]) out.push(k) }
+      return out`)
+    const cell = (prov, day) => `.us-prov[data-prov=${prov}] .us-c[data-day="${day}"]`
+    await record(win, 'usage', {
+      clip: { x: 0, y: 0, width: 1240, height: 900 }, ms: 9800, width: 1000,
+      during: async () => {
+        let at = { x: 620, y: 520 }
+        await sleep(500)
+        at = await glide(win, at, await center(win, '.nv[data-place=usage]'), 600)
+        await tap(win, at)
+        await sleep(1100)
+        for (const day of days.slice(0, 4)) {
+          at = await glide(win, at, await center(win, cell('claude', day)), 320)
+          await sleep(360)
+        }
+        await tap(win, at)
+        await sleep(1500)
+        at = await glide(win, at, await center(win, cell('codex', days[5])), 600)
+        await sleep(500)
+        await tap(win, at)
+        await sleep(1500)
+        at = await glide(win, at, await center(win, '[data-us=clear]'), 600)
+        await tap(win, at)
+        await sleep(900)
+      },
+    })
     win.destroy()
   },
   // The agent's sheet: no scrolling, one tab at a time.
@@ -588,85 +805,139 @@ const SHOTS = {
     if (String(flipped) !== 'true,true,6') throw new Error(`savers: flipping a switch gave ${flipped}`)
     win.destroy()
   },
-  // The spend check-in (core/hub.js checkIn): its card in the chat with the hand-off it holds, the card after Keep going
-  // and after Stop, the sheet that sets the amount (which mustn't change its height between an amount and Off), the
-  // floating chat's Needs you queue, and the menu bar's.
-  async checkIn(theme) {
-    const win = await dashboard(theme, 'chat', { width: 1100, height: 760 })
-    await sleep(700)
-    await js(win, CHECK_IN_FEED())
-    await sleep(1000)
-    await save(win, `checkin-chat-${theme}`)
-    const card = await js(win, `const c = document.querySelector('.ask-card.spend'); return c ? [c.querySelector('.ask-title')?.textContent, [...c.querySelectorAll('.btn')].map((b) => b.textContent).join('/')].join(' | ') : 'no card'`)
-    if (!/spent \$5\.40 since you last spoke.*Keep going\/Stop/.test(card)) throw new Error(`checkIn: the card reads ${card}`)
-    // the thread the hand-offs are in: the one that waits says so
-    await js(win, "document.querySelector('.thread-card').click()")
+  // Scheduled messages (ui/schedules.js): the clock beside Send with its quick times, the Send later sheet (which
+  // mustn't change its height as the repeat changes), the list with a few set up and with none, and how a scheduled
+  // message and CLIque's lines about one read in the chat
+  async schedules(theme) {
+    const win = await dashboard(theme, 'chat')
     await sleep(900)
-    await save(win, `checkin-thread-${theme}`)
-    const held = await js(win, "return [...document.querySelectorAll('.thread-row .tag')].map((x) => x.textContent).join(',')")
-    if (held !== 'held for the check-in') throw new Error(`checkIn: the thread's tags read ${held}`)
-    await js(win, "document.querySelector('.thread-x').click()")
+    const type = (text) => js(win, `const ta = document.querySelector('.compose textarea'); ta.value = ${JSON.stringify(text)}; ta.dispatchEvent(new Event('input')); ta.focus()`)
+    const chat = () => js(win, "const r = document.querySelector('.chat').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(innerHeight - 380), width: Math.round(r.width), height: 380 }")
+    // the entry point: the clock, and what it offers with a message in the box
+    await type('@Theo run the checkout tests on Safari and Chrome, and say what broke')
+    await sleep(300)
+    await save(win, `schedules-composer-${theme}`, { crop: await chat() })
+    await js(win, click('.compose .later'))
     await sleep(500)
-    await js(win, "document.querySelector('.ask-card.spend [data-answer=\"allow\"]').click()")
-    await sleep(900)
-    await save(win, `checkin-kept-${theme}`)
-    await js(win, `${CHECK_IN_FEED()}; await new Promise((r) => setTimeout(r, 400)); document.querySelector('.ask-card.spend [data-answer="deny"]').click()`)
-    await sleep(900)
-    await save(win, `checkin-stopped-${theme}`)
-    const done = await js(win, "return [...document.querySelectorAll('.ask-card.done')].at(-1)?.textContent.trim().replace(/\\s+/g, ' ')")
-    if (!/Stopped.*at \$5\.40/.test(done)) throw new Error(`checkIn: after Stop the card reads ${done}`)
-    // where it's set: the sidebar's ⋯ menu, under Autopilot
-    await js(win, "document.querySelector('.side-more').click()")
-    await sleep(600)
-    await save(win, `checkin-menu-${theme}`)
-    const row = await js(win, "return [...document.querySelectorAll('.menu [data-menu-act]')].find((b) => b.dataset.menuAct === 'checkin')?.textContent.trim().replace(/\\s+/g, ' ')")
-    if (!/Spend check-in….*After \$5/.test(row)) throw new Error(`checkIn: the menu's row reads ${row}`)
-    await js(win, "[...document.querySelectorAll('.menu [data-menu-act]')].find((b) => b.dataset.menuAct === 'checkin').click()")
+    const items = await js(win, "return [...document.querySelectorAll('.menu [data-menu-act]')].map((b) => b.querySelector('span').textContent).join('|')")
+    if (!/^(Today at .*\|)?Tomorrow at .*\|(Monday at .*\|)?Every weekday at .*\|Pick a time…\|Scheduled messages…$/.test(items)) throw new Error(`schedules: the clock offers ${items}`)
+    await save(win, `schedules-menu-${theme}`, { crop: await chat() })
+    // Pick a time…: the sheet, on Once and then on Weekdays
+    await js(win, click('.menu [data-menu-act=custom]'))
+    await sleep(700)
+    await save(win, `schedules-later-${theme}`)
+    const moved = await js(win, `const d = document.querySelector('#later'); const h = d.getBoundingClientRect().height; const out = []
+      for (const rp of ['daily', 'weekly', 'once', 'weekdays']) { d.querySelector('[data-rp=' + rp + ']').click(); await new Promise((r) => setTimeout(r, 350)); out.push(Math.round(d.getBoundingClientRect().height - h)) }
+      d.querySelector('[data-lt-if]').click()
+      return out.join(',') + '|' + d.querySelector('[data-lt-sum]').textContent`)
+    if (!/^0,0,0,0\|Goes out Monday to Friday at /.test(moved)) throw new Error(`schedules: changing the repeat gave ${moved}`)
+    await sleep(300)
+    await save(win, `schedules-later-weekdays-${theme}`)
+    await js(win, click('#later [data-lt-go]'))
+    await sleep(700)
+    const made = await js(win, "const s = window.__cliqueState.schedules.list; return [s.length, s[0]?.to, s[0]?.repeat, s[0]?.ifChanged, document.querySelector('#later').open, document.querySelector('.compose textarea').value, document.querySelector('.toast')?.textContent].join('|')")
+    if (!/^1\|\|weekdays\|true\|false\|\|Scheduled: every weekday at /.test(made)) throw new Error(`schedules: scheduling gave ${made}`)
+    // the list: one running, one an agent set up, one paused, one that didn't go out
+    await js(win, `const s = window.__cliqueState; const day = (n, h, m = 0) => { const d = new Date(); d.setDate(d.getDate() + n); d.setHours(h, m, 0, 0); return d }
+      const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+      s.schedules.list = [
+        { id: 'a1', text: 'Run the checkout tests on Safari and Chrome, and say what broke', to: 'Theo', repeat: 'weekdays', date: iso(day(-9, 9)), time: '09:00', by: 'you', created: 1, next: day(1, 9).getTime(), last: { at: day(0, 9).getTime(), result: 'sent' }, ifChanged: true },
+        { id: 'a2', text: 'Post what shipped this week, in three lines', to: '', channel: 'launch', repeat: 'weekly', date: iso(day(3, 16, 30)), time: '16:30', by: 'Q', created: 2, next: day(3, 16, 30).getTime() },
+        { id: 'a3', text: 'Check the nightly build and file a task for anything red', to: 'June,Milo', repeat: 'daily', date: iso(day(-20, 7)), time: '07:30', by: 'you', created: 3, next: day(1, 7, 30).getTime(), last: { at: day(0, 7, 30).getTime(), result: 'busy' } },
+        { id: 'a4', text: 'Remind me to renew the signing certificate', to: 'Ada', repeat: 'once', date: iso(day(12, 10)), time: '10:00', by: 'you', created: 4, next: day(12, 10).getTime() },
+        { id: 'a5', text: 'Summarise open review comments', to: 'Iris', repeat: 'weekdays', date: iso(day(-30, 17)), time: '17:00', by: 'you', created: 5, next: day(1, 17).getTime(), paused: true, last: { at: day(-1, 17).getTime(), result: 'failed', why: '@Iris is turned off, turn it on first' } },
+      ]
+      window.__cliqueEmit('state', s)`)
+    await sleep(300)
+    await js(win, click('.compose .later'))
+    await sleep(400)
+    await js(win, click('.menu [data-menu-act=list]'))
     await sleep(800)
-    if (!(await js(win, "return document.querySelector('#checkin').open"))) throw new Error("checkIn: the menu's row didn't open the sheet")
-    await save(win, `checkin-sheet-${theme}`)
-    const after = await js(win, `const d = document.querySelector('#checkin')
-      const h = d.getBoundingClientRect().height
-      d.querySelector('[data-ci="off"]').click()
-      await new Promise((r) => setTimeout(r, 500))
-      return [Math.round(d.getBoundingClientRect().height - h), JSON.stringify(window.__cliqueState.checkIn), d.querySelector('.ci-amounts .on').textContent, Boolean(d.querySelector('[data-ci-off].on'))]`)
-    if (String(after) !== '0,null,Off,true') throw new Error(`checkIn: switching it off gave ${after}`)
-    await save(win, `checkin-sheet-off-${theme}`)
-    win.destroy()
-    const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
-    await sleep(400)
-    await js(chat, `${CHECK_IN_FEED()}; window.__cliqueEmit('toggle', { open: true, focus: false })`)
-    await sleep(900)
-    await js(chat, "document.querySelector('.nq-go')?.click()")
-    await sleep(700)
-    await fitToContent(chat)
-    await save(chat, `checkin-queue-${theme}`)
-    chat.destroy()
-    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
-    await sleep(400)
-    await js(tray, CHECK_IN_FEED())
+    await save(win, `schedules-list-${theme}`)
+    // the switch pauses one, and turns it back on
+    const paused = await js(win, `const sw = document.querySelector('#scheduled [data-sc=a1] [data-sc-on]'); sw.click(); await new Promise((r) => setTimeout(r, 400))
+      const one = [window.__cliqueState.schedules.list.find((x) => x.id === 'a1').paused, document.querySelector('#scheduled [data-sc=a1]').classList.contains('paused')]
+      document.querySelector('#scheduled [data-sc=a1] [data-sc-on]').click(); await new Promise((r) => setTimeout(r, 400))
+      return [...one, window.__cliqueState.schedules.list.find((x) => x.id === 'a1').paused, document.querySelector('#scheduled [data-sc=a1] [data-sc-on]').checked].join()`)
+    if (paused !== 'true,true,,true') throw new Error(`schedules: the switch gave ${paused}`)
+    await js(win, "const s = window.__cliqueState; s.schedules.list = []; window.__cliqueEmit('state', s)")
     await sleep(600)
-    await fitToContent(tray)
-    await save(tray, `checkin-tray-${theme}`)
-    tray.destroy()
-  },
-  // ...and the card coming up while Milo works, then Keep going
-  async checkInGif() {
-    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { width: 1100, height: 760 })
-    await sleep(700)
-    await js(win, CHECK_IN_FEED(false))
+    await save(win, `schedules-empty-${theme}`)
+    await js(win, click('#scheduled [data-close]'))
+    // in the chat: one that went out on time, one that went late, and what CLIque says when one is skipped or fails
+    await type('')
+    // (mins: how long ago each was said; late: how long ago it was due)
+    const said = [
+      { id: 'c1', kind: 'msg', from: 'you', to: 'Theo', text: 'Run the checkout tests on Safari and Chrome, and say what broke', mins: 34, scheduled: { id: 'a1' } },
+      { id: 'c2', kind: 'reply', from: 'Theo', to: 'you', re: 'c1', text: 'All 48 pass on Chrome. Safari fails 2: the payment sheet test times out waiting for the frame, and the coupon field loses focus.', mins: 31 },
+      { id: 'c3', kind: 'event', from: 'clique', schedule: 'a3', text: 'Scheduled message "Check the nightly build and file a task for anything red" skipped this time: its last run is still going. It goes out again once that\'s done (next: Tue 17 Nov at 7:30)', mins: 20 },
+      { id: 'c4', kind: 'event', from: 'clique', schedule: 'a5', text: 'Scheduled message "Summarise open review comments" (every weekday at 17:00) didn\'t go out: @Iris is turned off, turn it on first', mins: 12 },
+      { id: 'c5', kind: 'msg', from: 'you', to: 'June', auto: true, text: 'Post what shipped this week, in three lines', mins: 3, scheduled: { id: 'a2', late: 43 } },
+      { id: 'c6', kind: 'reply', from: 'June', to: 'you', re: 'c5', text: 'Shipped: coupon guard on checkout, the new payment sheet on Safari, and receipts with the new logo.', mins: 1 },
+    ]
+    await js(win, `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+      for (const a of s.agents) if (a.status === 'waiting') a.status = 'idle'
+      s.feed = ${JSON.stringify(said)}.map(({ mins, ...e }) => ({ ...e, ts: t(mins), ...(e.scheduled && { scheduled: { id: e.scheduled.id, at: t(mins), ...(e.scheduled.late && { late: t(e.scheduled.late) }) } }) }))
+      window.__cliqueEmit('state', s)`)
     await sleep(900)
-    await record(win, 'checkin', {
-      ms: 6200,
+    const marks = await js(win, "return [...document.querySelectorAll('.feed .tag.sched')].map((x) => x.textContent).join('|') + '/' + document.querySelectorAll('.feed .event .ev-icon svg').length")
+    if (!/^scheduled\|scheduled for .*, sent late\/2$/.test(marks)) throw new Error(`schedules: the chat marks read ${marks}`)
+    const whole = "const r = document.querySelector('.chat').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(r.width), height: innerHeight }"
+    await save(win, `schedules-chat-${theme}`, { crop: await js(win, whole) })
+    // said in words: you ask Q, Q runs \`clique app schedule add\`, and its card waits for your OK (the card's words are
+    // what core/tools.js makes for that command)
+    const asked = [
+      { id: 'q0', kind: 'msg', from: 'you', to: 'Ada', text: 'Every weekday at 9, ask Theo to run the checkout tests and say what broke.', mins: 1 },
+      { id: 'q1', kind: 'ask', from: 'Ada', to: 'you', cli: 'clique', re: 'q0', mins: 0.3, ask: { type: 'permission', tool: 'clique app', app: true, title: 'Schedule a message', code: 'Every weekday at 9:00 · to @Theo\nRun the checkout tests on Safari and Chrome, and say what broke', detail: 'It goes out as a message from you, first on Tue 17 Nov at 9:00. Pause or remove it under Scheduled messages.', say: 'Can I schedule a message to @Theo, every weekday at 9:00?', always: [], alert: 'wants to schedule a message' } },
+    ]
+    await js(win, `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+      s.feed = ${JSON.stringify(asked)}.map(({ mins, ...e }) => ({ ...e, ts: t(mins) }))
+      Object.assign(s.agents.find((a) => a.name === 'Ada'), { status: 'waiting', since: Date.now() - 20000 })
+      window.__cliqueEmit('state', s)`)
+    await sleep(1000)
+    await save(win, `schedules-ask-${theme}`, { crop: await js(win, whole) })
+    win.destroy()
+  },
+  // Scheduling a message from the composer: write it, the clock, Pick a time…, Weekdays, Schedule, then the list
+  async schedulesGif() {
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { width: 1180, height: 760 })
+    await sleep(1200)
+    const text = '@Theo run the checkout tests and say what broke'
+    await record(win, 'schedules', {
+      ms: 14500, width: 1000,
       during: async () => {
-        await sleep(900)
-        await js(win, CHECK_IN_FEED())
-        await sleep(1900)
-        let at = await glide(win, { x: 760, y: 420 }, await center(win, '.ask-card.spend [data-answer="allow"]'), 700)
-        await sleep(350)
+        let at = { x: 700, y: 400 }
+        at = await glide(win, at, await center(win, '.compose textarea'), 500)
         await tap(win, at)
-        await sleep(600)
-        await js(win, `const s = window.__cliqueState; const m = s.agents.find((a) => a.name === 'Milo'); Object.assign(m, { status: 'working', activity: 'Edit pages/checkout.tsx', since: Date.now() }); window.__cliqueEmit('state', s)`)
+        for (let i = 1; i <= text.length; i++) {
+          await js(win, `const ta = document.querySelector('.compose textarea'); ta.value = ${JSON.stringify(text)}.slice(0, ${i}); ta.dispatchEvent(new Event('input'))`)
+          await sleep(24)
+        }
+        await sleep(400)
+        at = await glide(win, at, await center(win, '.compose .later'), 500)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=custom]'), 450)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1100)
+        at = await glide(win, at, await center(win, '#later [data-rp=weekdays]'), 600)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(1000)
+        at = await glide(win, at, await center(win, '#later [data-lt-go]'), 600)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1500)
+        at = await glide(win, at, await center(win, '.compose .later'), 600)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(700)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=list]'), 400)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(1600)
       },
     })
     win.destroy()
@@ -703,7 +974,7 @@ const SHOTS = {
       d.querySelector('[data-tl="auto"]').click()
       await new Promise((r) => setTimeout(r, 500))
       return [Math.round(d.getBoundingClientRect().height - h), window.__cliqueState.tools, [...d.querySelectorAll('.tl-how')].map((x) => x.textContent).join('/'), d.querySelector('.tl-about p.on').dataset.mode]`)
-    if (String(after) !== '0,auto,Automatic/Automatic/Automatic/Asks first,auto') throw new Error(`tools: switching to Automatic gave ${after}`)
+    if (String(after) !== '0,auto,Automatic/Automatic/Automatic/Automatic/Asks first,auto') throw new Error(`tools: switching to Automatic gave ${after}`)
     await save(win, `tools-sheet-auto-${theme}`)
     win.destroy()
     // the floating chat's Needs you queue: the creature asks in its own words, the card under them
@@ -1981,7 +2252,7 @@ const SHOTS = {
 
 async function dashboard(theme, view, { width = WIN_W, height = WIN_H, fixture, reset = [] } = {}) {
   const win = await open('dashboard.html', { theme, width, height, fixture })
-  // the places: chat (a channel), clique (Agents), tasks, terminals; grid and focus are Terminals laid out that way
+  // the places: chat (a channel), clique (Agents), tasks, terminals, usage; grid and focus are Terminals laid out that way
   const place = { grid: 'terminals', focus: 'terminals' }[view] ?? view
   const layout = view === 'focus' ? 'focus' : view === 'grid' ? 'grid' : null
   await js(win, `localStorage.setItem('clique.place', '${place}'); ${layout ? `localStorage.setItem('clique.layout', '${layout}');` : ''} localStorage.setItem('clique.target', 'auto'); localStorage.removeItem('clique.edTab'); for (const k of Object.keys(localStorage)) if (k.startsWith('clique.channel.')) localStorage.removeItem(k); ${reset.map((k) => `localStorage.removeItem('${k}');`).join(' ')}`)

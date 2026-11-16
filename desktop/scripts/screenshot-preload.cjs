@@ -383,6 +383,58 @@ COMPUTERS.links[0].usage = {
   codex: { label: 'Codex', at: now, windows: [{ id: 'five_hour', pct: 9, resetsAt: now + 3 * 60 * min }, { id: 'seven_day', pct: 22, resetsAt: now + 4 * day }] },
 }
 if (BIG) COMPUTERS.links[1].usage = { claude: { label: 'Claude', at: now - 3 * 60 * min, windows: [{ id: 'seven_day', pct: 12, resetsAt: now + 6 * day }] } }
+// Usage, day by day (core/history.js, as Clique.usageHistory gives it to the Usage view): a year of Claude that grew
+// busier, Codex since the spring, quieter. Weekends are light, a week in August is off, and the numbers are the same
+// every time (a seeded draw), so two shots match. Who used it: the clique's agents on this computer, and what you ran
+// outside CLIque; where: the project's folders. ?fixture=usage-reading: the first look at the logs, a third of the way through.
+function usageHistory() {
+  let seed = 20261116
+  const rnd = () => {
+    seed = (seed + 0x6d2b79f5) | 0
+    let x = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296
+  }
+  const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const today = new Date(now)
+  const make = ({ since, base, grow, price, models, who, where }) => {
+    const days = {}
+    for (let i = since; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i)
+      const weekend = d.getDay() === 0 || d.getDay() === 6
+      const away = d.getMonth() === 7 && d.getDate() >= 10 && d.getDate() <= 17
+      const dice = rnd()
+      const spike = rnd()
+      const mix = models.map(() => rnd())
+      const share = who.map(() => rnd())
+      const spread = where.map(() => rnd())
+      if (away || dice < (weekend ? 0.62 : 0.1)) continue
+      const tokens = Math.round(base * (1 + grow * (1 - i / since)) * (weekend ? 0.3 : 1) * (0.25 + 1.5 * dice * dice) * (spike > 0.96 ? 2.6 : 1) * (i === 0 ? 0.45 : 1))
+      const split = (names, weights, draws) => {
+        const parts = names.map((n, j) => weights[j] * (0.4 + draws[j]))
+        const sum = parts.reduce((x, y) => x + y, 0)
+        return Object.fromEntries(names.map((n, j) => [n, Math.round((tokens * parts[j]) / sum)]).filter(([, v]) => v > 0))
+      }
+      const messages = Math.max(1, Math.round(tokens / 3.2e6 + dice * 6))
+      days[key(d)] = {
+        tokens, input: Math.round(tokens * 0.012), output: Math.round(tokens * 0.004), cached: Math.round(tokens * 0.964), written: price ? Math.round(tokens * 0.02) : 0,
+        replies: Math.round(tokens / 3.3e5) + 1, messages, sessions: Math.max(1, Math.round(messages / 3.2)), cost: tokens * price,
+        models: split(models.map((m) => m[0]), models.map((m) => m[1]), mix), who: split(who.map((w) => w[0]), who.map((w) => w[1]), share),
+        where: split(where.map((w) => here(w[0])), where.map((w) => w[1]), spread),
+      }
+    }
+    return days
+  }
+  const claude = make({ since: 371, base: 4.4e7, grow: 1.6, price: 0.354e-6, models: [['claude-opus-5-5', 8], ['claude-sonnet-5-5', 1.6], ['claude-haiku-5-5', 0.25]], who: [['Ada', 5], ['Milo', 3.4], ['Iris', 1.8], ['', 2.2]], where: [['/Users/you/Projects/storefront', 6], ['/Users/you/Projects/storefront-web', 3], ['/Users/you/Projects/docs-site', 1.4], ['/Users/you/notes', 0.5]] })
+  const codex = make({ since: 197, base: 2.3e7, grow: 0.7, price: 0, models: [['gpt-6.1-sol', 6], ['gpt-6-luna', 2], ['gpt-5.4-mini', 0.3]], who: [['Theo', 5], ['June', 2.6], ['', 1.4]], where: [['/Users/you/Projects/storefront', 4], ['/Users/you/Projects/docs-site', 2.6], ['/Users/you/Projects/storefront/e2e', 1]] })
+  const first = Object.keys(claude).sort()[0]
+  if (FIXTURE === 'usage-reading') {
+    // the newest logs are read first: the last weeks are in, the rest still to come
+    const recent = (days) => Object.fromEntries(Object.entries(days).filter(([k]) => k >= key(new Date(now - 34 * day))))
+    return { at: 0, reading: { done: 3.4e8, total: 1.01e9, files: 640 }, first: key(new Date(now - 34 * day)), providers: [{ id: 'claude', label: 'Claude', days: recent(claude) }, { id: 'codex', label: 'Codex', days: recent(codex) }] }
+  }
+  return { at: now - 40000, reading: null, first, providers: [{ id: 'claude', label: 'Claude', days: claude }, { id: 'codex', label: 'Codex', days: codex }] }
+}
 // what the work on a task cost so far
 for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [5, { cost: 1.31, tokens: 0, added: 42, removed: 18 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }], [3, { cost: 0.86, tokens: 0, added: 21, removed: 4 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })
 // the clique's spend: today against what's usual by now, and the last week and month
@@ -463,7 +515,15 @@ if (FIXTURE === 'q') {
   for (const r of Object.keys(READS)) delete READS[r]
   Object.assign(READS, { since: now })
 }
-const state = { savers: SAVER_STATE, checkIn: { usd: 5, tokens: 5e6 }, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
+const state = { savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false }, schedules: { list: [], repo: true } }
+// Whether the computer is kept awake, as main.js says it (core/awake.js makes the line there): while this computer's
+// agents work, when that's on.
+function awakeOf(enabled) {
+  const working = state.agents.filter((a) => !a.home && !a.cloneOf && a.status === 'working').length
+  const on = enabled && working > 0
+  return { on, reasons: on ? ['working'] : [], enabled, line: on ? `Keeping this ${PLATFORM === 'win32' ? 'PC' : 'Mac'} awake while ${working === 1 ? 'an agent works' : `${working} agents work`}` : '' }
+}
+state.awake = awakeOf(true)
 
 // Workspaces, as Clique.workspaces() reports them. Storefront has everyone; Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the clique, Storefront
 // in the background with two of its clique needing you and a reply you haven't read, and Research parked.
@@ -585,6 +645,51 @@ function workspaceAction(op, id, arg) {
   return { id, state }
 }
 const emit = () => setTimeout(() => window.__cliqueEmit('state', state), 30)
+// Scheduled messages, as Clique.scheduleAction keeps them (core/schedules.js): the list and each one's next time, by
+// this computer's clock. `now` sends it, marked as scheduled, the way a run does.
+function scheduleAction(op, id, arg = {}) {
+  const list = state.schedules.list
+  const at = (s, from = Date.now()) => {
+    const [y, mo, d] = s.date.split('-').map(Number)
+    const [h, mi] = s.time.split(':').map(Number)
+    const first = new Date(y, mo - 1, d, h, mi)
+    if (s.repeat === 'once') return first.getTime() > from ? first.getTime() : null
+    const today = new Date(from)
+    for (let i = 0; i < 9; i++) {
+      const day = new Date(Math.max(new Date(y, mo - 1, d).getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()))
+      day.setDate(day.getDate() + i)
+      day.setHours(h, mi, 0, 0)
+      const ok = s.repeat === 'daily' || (s.repeat === 'weekdays' && day.getDay() >= 1 && day.getDay() <= 5) || (s.repeat === 'weekly' && day.getDay() === first.getDay())
+      if (ok && day.getTime() > from) return day.getTime()
+    }
+    return null
+  }
+  const s = list.find((x) => x.id === id)
+  let same = false
+  if (op === 'add' || op === 'edit') {
+    const f = { ...(s ?? {}), ...arg }
+    if (!String(f.text ?? '').trim()) throw new Error('write the message to send first')
+    if (at(f) === null) throw new Error('that time has passed already: pick one that is still to come')
+    const key = (x) => JSON.stringify([String(x.text).trim().toLowerCase(), x.to ?? '', x.channel && x.channel !== 'general' ? x.channel : '', x.repeat, x.repeat === 'once' ? x.date : '', x.time])
+    const twin = list.find((x) => x !== s && key(x) === key(f))
+    if (twin && op === 'edit') throw new Error("there's a schedule just like that already")
+    if (twin) (same = true), (id = twin.id)
+    else if (s) Object.assign(s, f, { next: at(f) })
+    else list.push({ id: (id = `s${list.length + 1}${Date.now() % 1000}`), text: String(f.text).trim(), to: f.to ?? '', ...(f.channel && f.channel !== 'general' && { channel: f.channel }), ...(f.images?.length && { images: f.images }), repeat: f.repeat, date: f.date, time: f.time, ...(f.ifChanged && { ifChanged: true }), by: 'you', created: Date.now(), next: at(f) })
+  }
+  if (op === 'pause') s.paused = true
+  if (op === 'resume') (delete s.paused), (s.next = at(s))
+  if (op === 'remove') list.splice(list.indexOf(s), 1)
+  if (op === 'now') {
+    const names = s.to ? s.to.split(',') : ['Ada']
+    for (const n of names) state.feed.push({ id: `sc${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text: s.text, ts: Date.now(), ...(s.channel && { channel: s.channel }), ...(!s.to && { auto: true }), scheduled: { id: s.id, at: Date.now() } })
+    s.last = { at: Date.now(), result: 'sent' }
+    if (s.repeat === 'once') list.splice(list.indexOf(s), 1)
+  }
+  list.sort((a, b) => (a.paused || !a.next ? Infinity : a.next) - (b.paused || !b.next ? Infinity : b.next))
+  emit()
+  return { id, ...(same && { same }), state }
+}
 // an agent just made (addAgent, a new workspace's Q): idle, nothing done yet
 const newAgent = (fields) => ({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: state.workspace?.folder ?? '', prompt: '', images: [], status: 'idle', since: Date.now(), provider: 'claude', model: '', effort: '', area: '', stats: stats(0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0, 0, 0, 0, 0]), ...fields })
 let nextTask = Math.max(...TICKETS.map((x) => x.id)) + 1
@@ -702,12 +807,14 @@ function voiceCall(action) {
 window.__cliqueFit = null
 window.__cliqueEmit = (channel, ...args) => listeners[channel]?.forEach((fn) => fn(...args))
 window.__cliqueState = state
+window.__cliqueHistory = usageHistory() // what the Usage view asks for (a shot can swap it: nothing yet, a first look)
 window.clique = {
   platform: PLATFORM,
   home: HOME,
   dev: QUERY.get('dev') === '1',
   call: async (action, ...args) => {
     if (action === 'state') return state
+    if (action === 'history') return window.__cliqueHistory
     // the permissions flow: ?fixture=<a step>:<its state> shows that one first (ui/permissions.js)
     if (action === 'permissions') {
       const [id, state] = (FIXTURE ?? 'notifications:ask').split(':')
@@ -720,11 +827,11 @@ window.clique = {
       emit()
       return state.savers
     }
-    // the spend check-in: an amount in dollars, or false for never
-    if (action === 'checkIn') {
-      state.checkIn = args[0] ? { usd: args[0], tokens: args[0] * 1e6 } : null
+    // stay awake while agents work: on or off
+    if (action === 'keepAwake') {
+      state.awake = awakeOf(Boolean(args[0]))
       emit()
-      return state.checkIn
+      return Boolean(args[0])
     }
     // agent tools: off, ask (the default) or auto
     if (action === 'tools') {
@@ -747,6 +854,16 @@ window.clique = {
       emit()
       return `sent to ${names.map((n) => `@${n}`).join(' ')}\n`
     }
+    // your reaction on a message, on or off (Hub.react)
+    if (action === 'react') {
+      const [id, emoji] = args
+      const e = state.feed.find((x) => x.id === id)
+      if (!e) throw new Error("that message isn't in the chat any more")
+      const had = (e.reactions ?? []).some((r) => r.by === 'you' && r.emoji === emoji)
+      e.reactions = had ? e.reactions.filter((r) => !(r.by === 'you' && r.emoji === emoji)) : [...(e.reactions ?? []), { by: 'you', emoji, at: Date.now() }]
+      emit()
+      return had ? 'taken off\n' : 'reacted\n'
+    }
     if (action === 'read') {
       // like the hub: 'Ada#review' is Ada's replies in #review, 'Ada#general' (or plain 'Ada') #general's
       for (const [key, ts] of Object.entries(args[0] ?? {})) {
@@ -765,11 +882,7 @@ window.clique = {
       const always = e.ask.always?.find((x) => x.i === reply.always)?.label
       e.answer = reply.terminal ? { by: 'terminal', handedOver: true } : reply.answers ? { by: 'you', answers: Object.fromEntries(Object.entries(reply.answers).map(([k, v]) => [k, [].concat(v).join(', ')])) } : { by: 'you', allow: Boolean(reply.allow), ...(always && { always }), ...(reply.note && { note: reply.note }) }
       const a = state.agents.find((x) => x.name === e.from)
-      // a spend check-in (core/hub.js checkIn): what it held goes on, or is dropped, and its agent isn't waiting on it
-      if (e.ask.spend) {
-        Object.assign(e.answer, { cost: e.ask.spend.cost, tokens: e.ask.spend.tokens })
-        for (const m of state.feed.filter((x) => x.paused === e.ask.spend.round)) Object.assign(m, { paused: false }, reply.allow ? {} : { dropped: true })
-      } else if (a && !reply.terminal) Object.assign(a, { status: 'working', since: Date.now() })
+      if (a && !reply.terminal) Object.assign(a, { status: 'working', since: Date.now() })
       setTimeout(() => window.__cliqueEmit('state', state), 30)
       return undefined
     }
@@ -805,6 +918,7 @@ window.clique = {
       return name
     }
     if (action === 'channel') return channelAction(...args)
+    if (action === 'schedule') return scheduleAction(...args)
     // moving an agent to another computer: its folders there, then the move itself
     if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? []).map(([path, label]) => ({ path, label }))
     if (action === 'folderInfo') {
