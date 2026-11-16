@@ -694,6 +694,7 @@ $('.side-more').addEventListener('click', (e) => {
     { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
     ...(state.workspace ? [{ label: 'Take the tour', icon: ICONS.sparkles, act: 'tour', hint: 'Q shows you around' }] : []),
     ...(ON_WINDOWS ? [] : [{ label: 'Permissions…', icon: ICONS.shield, act: 'permissions' }]),
+    ...appItems(state),
     '-',
     { head: 'Theme' },
     ...THEME_CHOICES.map(([id, label, icon, note]) => ({ label, icon: ICONS[icon], act: `theme:${id}`, hint: theme === id ? '✓' : note })),
@@ -708,7 +709,55 @@ $('.side-more').addEventListener('click', (e) => {
     if (act === 'permissions') clique.call('openPermissions').catch((err) => oops('Couldn’t open that', err))
     if (act.startsWith('theme:')) clique.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
     if (act === 'config') clique.call('config')
+    appPick(act, state)
   })
+})
+
+// ---- an update that's ready: a note in the corner, once per version (core/updates.js) -----------------------------
+
+// "CLIque 1.0.1 is ready", with Restart to update and Later. Restart while agents work turns it into the question
+// first, with what happens to them (main.js restartToUpdate): the button that's safe is the one that's filled. Later
+// puts it away for this version; the ⋯ menu keeps Restart to update. It floats over the corner: nothing moves for it.
+const updateNote = $('.update-note')
+function drawUpdate(state) {
+  const u = state.app?.update
+  const show = Boolean(u?.next) && (u.phase === 'restarting' || (u.phase === 'ready' && (!u.later || u.asking || u.stuck)))
+  updateNote.classList.toggle('show', show)
+  updateNote.inert = !show
+  if (!show) return // it keeps its words while it fades
+  placeUpdateNote()
+  const name = `${PRODUCT_NAME} ${u.next.version}`
+  const ask = u.phase === 'ready' ? u.asking : null
+  const btn = (act, label, primary) => `<button class="btn ${primary ? 'primary' : ''}" data-update="${act}">${esc(label)}</button>`
+  const body = u.phase === 'restarting' ? `<b class="un-title">Restarting…</b><p>${esc(name)} opens in a moment.</p>`
+    : ask ? `<b class="un-title">Restart to update?</b><p>${esc(ask.text)}</p>
+      <div class="un-acts">${ask.safe === 'go' ? btn('go', ask.go, true) + btn('wait', ask.wait) : btn('wait', ask.wait, true) + btn('go', ask.go)}</div>`
+      : `<b class="un-title">${esc(name)} is ready</b>
+      <p>${u.stuck ? `${esc(PRODUCT_NAME)} couldn’t restart. Try again.` : 'Restart to update.'}${u.next.notesUrl ? ` <a href="#" data-update="notes">What’s new</a>` : ''}</p>
+      <div class="un-acts">${btn('go', 'Restart to update', true)}${btn('later', 'Later')}</div>`
+  morph(updateNote, `<span class="un-mark">${ICONS.mark}</span><div class="un-body">${body}</div>`)
+}
+// Over the corner, but never over a message box: with one down there (the chat's, a thread's), it sits just above it.
+const noteWatch = new ResizeObserver(() => placeUpdateNote())
+function placeUpdateNote() {
+  let bottom = 16
+  for (const box of document.querySelectorAll('.composer')) {
+    noteWatch.observe(box) // (once each: observing again does nothing)
+    const r = box.getBoundingClientRect()
+    if (r.width && r.right > innerWidth - 16 - updateNote.offsetWidth && r.bottom > innerHeight - 160) bottom = Math.max(bottom, Math.round(innerHeight - r.top) + 4)
+  }
+  updateNote.style.bottom = `${bottom}px`
+}
+addEventListener('resize', placeUpdateNote)
+updateNote.addEventListener('click', (e) => {
+  const act = e.target.closest('[data-update]')?.dataset.update
+  if (!act) return
+  e.preventDefault()
+  const u = state.app?.update
+  if (act === 'notes') return u?.next?.notesUrl && clique.call('openUrl', u.next.notesUrl)
+  // Not now and Later both put it away; Restart says which question (if any) you said yes to
+  const call = act === 'go' ? clique.call('update', 'restart', u?.asking?.text ?? null) : clique.call('update', 'later')
+  call.catch((err) => oops('Couldn’t do that', err))
 })
 
 // ---- token savers (core/savers.js): one switch each, and what each has counted ----
@@ -1703,6 +1752,7 @@ const ready = live((next) => {
   if (saversDialog.open) drawSavers()
   if (toolsDialog.open) drawTools()
   drawFoot(state)
+  drawUpdate(state)
   // Terminals only for agents that have one running; the sidebar lists everyone so off agents are one click from coming
   // back.
   const on = state.agents.filter(hasTerminal)

@@ -3368,6 +3368,26 @@ function themeButton(btn) {
   }
 }
 
+// This app's own rows for a settings menu (the dashboard's ⋯, the popover's gear), from state.app: Open at login where
+// CLIque can (an installed one), and updates: Check for updates…, or Restart to update once one is here. appPick does
+// what was picked.
+function appItems(state) {
+  const app = state.app
+  if (!app) return []
+  const u = app.update
+  const update = !u ? []
+    : u.phase === 'ready' ? [{ label: 'Restart to update', icon: ICONS.up, act: 'app:restart', hint: u.next.version }]
+      : u.phase === 'restarting' ? [] // (the note says so; no greyed-out row)
+        : [{ label: 'Check for updates…', icon: ICONS.up, act: 'app:check', hint: u.phase === 'downloading' ? `getting ${u.next.version}` : app.version }]
+  const login = app.login ? [{ label: 'Open at login', icon: ICONS.power, act: 'app:login', hint: app.login.on ? 'On' : 'Off' }] : []
+  return login.length || update.length ? ['-', ...login, ...update] : []
+}
+function appPick(act, state) {
+  if (act === 'app:login') clique.call('openAtLogin', !state.app.login.on).catch((err) => oops('Couldn’t change that', err))
+  if (act === 'app:check') clique.call('update', 'check').catch((err) => oops('Couldn’t check for updates', err))
+  if (act === 'app:restart') clique.call('update', 'restart', null).catch((err) => oops('Couldn’t restart', err))
+}
+
 // A small pop-up menu (right-click on an agent, the More button): items are { label, icon, act, danger, hint,
 // disabled } or '-' for a line. Picks call onPick(act). Closes on a pick, Esc, a click elsewhere or a scroll.
 let openMenu = null

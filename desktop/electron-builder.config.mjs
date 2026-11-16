@@ -10,7 +10,12 @@
 //   Windows  WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD: an Authenticode .pfx, or Azure Trusted Signing with
 //            AZURE_SIGN_ENDPOINT + AZURE_SIGN_ACCOUNT + AZURE_SIGN_PROFILE (and AZURE_TENANT_ID, AZURE_CLIENT_ID,
 //            AZURE_CLIENT_SECRET for the account). Without either the installer is unsigned and SmartScreen warns.
-//   RELEASE_REPO=owner/name: the public GitHub repo releases go to, written into the update metadata.
+//   RELEASE_REPO=owner/name: the public GitHub repo releases go to. With it the app knows where its updates come
+//            from (that repo's newest published release), and the build writes what an update needs beside the
+//            installers: latest-mac.yml and latest.yml, which name the files and their checksums.
+//   UPDATE_FEED=https://…/: instead, a folder on the web that holds latest-mac.yml, latest.yml and the files they name.
+//   Neither: the app is built without an update address and never looks for updates (core/updates.js).
+import fs from 'node:fs'
 import { APP_ID, PRODUCT_NAME } from './core/appid.js'
 import { afterPack } from './scripts/after-pack.mjs'
 
@@ -19,6 +24,11 @@ const macCertificate = Boolean(env.CSC_LINK || env.CSC_NAME)
 const notarize = macCertificate && Boolean((env.APPLE_API_KEY && env.APPLE_API_KEY_ID && env.APPLE_API_ISSUER) || (env.APPLE_ID && env.APPLE_APP_SPECIFIC_PASSWORD && env.APPLE_TEAM_ID))
 const azure = env.AZURE_SIGN_ENDPOINT && env.AZURE_SIGN_ACCOUNT && env.AZURE_SIGN_PROFILE
 const [owner, repo] = (env.RELEASE_REPO ?? '').split('/')
+// The terminal host's protocol in this version (core/ptyhost.js PROTOCOL; read as text: loading the file would load
+// node-pty). It goes into latest*.yml, so a CLIque about to restart into this version can tell whether the agents at
+// work keep working through it (the same protocol) or are stopped (another): core/updates.js restartWords.
+const hostProtocol = Number(/^export const PROTOCOL = (\d+)$/m.exec(fs.readFileSync(new URL('./core/ptyhost.js', import.meta.url), 'utf8'))?.[1])
+if (!Number.isInteger(hostProtocol)) throw new Error("core/ptyhost.js no longer says its PROTOCOL the way electron-builder.config.mjs reads it")
 
 // What goes into the app: the code and its dependencies, not the tests, scripts or sources of native parts, and of
 // node-pty's prebuilt binaries only the one for the platform (darwin, win32) and arch being built. Windows' tools for
@@ -132,5 +142,6 @@ export default {
     artifactName: `${PRODUCT_NAME}-Setup-\${version}-\${arch}.\${ext}`,
   },
 
-  publish: owner && repo ? [{ provider: 'github', owner, repo, releaseType: 'draft' }] : null,
+  releaseInfo: { hostProtocol },
+  publish: env.UPDATE_FEED ? [{ provider: 'generic', url: env.UPDATE_FEED }] : owner && repo ? [{ provider: 'github', owner, repo, releaseType: 'draft' }] : null,
 }

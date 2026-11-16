@@ -8,6 +8,10 @@
 # Repository variables (Settings › Secrets and variables › Actions › Variables):
 #   RELEASE_REPO     owner/name of the public repo for releases and the website. Unset: the apps are only kept as
 #                    this run's artifacts and the site isn't deployed.
+#                    Set: the apps also look there for updates (its newest published release), and each release
+#                    carries latest-mac.yml and latest.yml for that (site/README.md, "Updates").
+#   UPDATE_FEED      only if updates are served from somewhere else: the https address of a folder holding
+#                    latest-mac.yml, latest.yml and the files they name
 #   SITE_URL         the site's address with a trailing slash, if not https://<owner>.github.io/<name>/ (link previews)
 #   SITE_DOMAIN      a custom domain for the site (written to CNAME), if any
 #   AZURE_SIGN_ENDPOINT, AZURE_SIGN_ACCOUNT, AZURE_SIGN_PROFILE   Azure Trusted Signing for Windows, if used
@@ -44,6 +48,7 @@ concurrency:
 
 env:
   RELEASE_REPO: ${{ vars.RELEASE_REPO }}
+  UPDATE_FEED: ${{ vars.UPDATE_FEED }}
 
 jobs:
   # What this run will make and how it's signed, before an hour of building

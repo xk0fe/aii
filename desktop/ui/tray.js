@@ -1,5 +1,5 @@
 // Menu bar popover: what needs you first, who's at work, the accounts' limits, and the way into everything else.
-/* global activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, clique, live, morph, esc, celebrate, markSVG, store, ICONS,
+/* global appItems, appPick, activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, clique, live, morph, esc, celebrate, markSVG, store, ICONS,
    needsYou, needText, usageTip, usageByComputer, computerIcon, THIS_COMPUTER, paceWarning, resetsText, runningSubs, subsTip, clonesOf, displayName, statusText, blockedOn, ago,
    plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys, wordmarkHTML, stripHTML, PRODUCT_NAME */
 // Everything here is local: classic scripts share one global scope with common.js and avatar.js.
@@ -270,8 +270,9 @@
     settingsMenu = popMenu(btn, [
       { head: 'Theme' },
       ...[['system', `Match ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light'], ['dark', 'Dark']].map(([id, text]) => ({ label: text, act: `theme:${id}`, icon: id === theme ? ICONS.check : undefined })),
+      ...appItems(state),
       ...(clique.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
-    ], (act) => (act === 'config' ? clique.call('config') : clique.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
+    ], (act) => (act === 'config' ? clique.call('config') : act.startsWith('app:') ? appPick(act, state) : clique.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
   }
 
   // an agent's clones, each a click from its terminal

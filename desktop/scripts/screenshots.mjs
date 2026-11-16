@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { restartWords } from '../core/updates.js'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-shots-'))
@@ -228,6 +229,80 @@ const SCREEN_TOP = `html::before { content: ''; position: fixed; inset: 0 0 auto
   .wrap { position: absolute !important; left: 50%; top: 0; transform: translateX(-50%); }`
 
 const SHOTS = {
+  // CLIque updating itself (core/updates.js): the note in the corner when a new version is ready, the question it asks
+  // before restarting while agents work (they keep working; or, when the update replaces the terminal host, they don't),
+  // restarting, and the rows in the ⋯ menu and the popover's gear: Open at login, Check for updates…, Restart to update.
+  async updates(theme) {
+    const win = await dashboard(theme, 'chat', { width: 1180, height: 760 })
+    const ready = { phase: 'ready', next: { version: '1.0.1', notesUrl: 'https://example.com/releases/v1.0.1' }, later: false, asking: null }
+    const corner = { x: 1180 - 372, y: 760 - 390, width: 372, height: 390 }
+    const push = async (patch) => {
+      await js(win, `window.__cliqueUpdate(${JSON.stringify(patch)})`)
+      await sleep(500)
+    }
+    await push(ready)
+    await save(win, `update-ready-${theme}`)
+    await save(win, `update-ready-note-${theme}`, { crop: corner })
+    const words = (hostProtocol) => restartWords({ busy: ['Ada', 'Theo'], outlives: true, hostProtocol, protocol: 1, product: 'CLIque' })
+    await push({ asking: words(1) })
+    await save(win, `update-ask-keep-${theme}`, { crop: corner })
+    await push({ asking: words(2) })
+    await save(win, `update-ask-stop-${theme}`, { crop: corner })
+    await push({ asking: restartWords({ busy: ['Ada'], outlives: true, hostProtocol: undefined, protocol: 1 }) })
+    await save(win, `update-ask-unsure-${theme}`, { crop: corner })
+    await push({ phase: 'restarting', asking: null })
+    await save(win, `update-restarting-${theme}`, { crop: corner })
+    // the ⋯ menu, with nothing new (Check for updates…, this version) and with one ready (Restart to update)
+    const menu = async (name) => {
+      await js(win, click('.side-more'))
+      await sleep(400)
+      const r = await js(win, "const r = [...document.querySelectorAll('.menu[role=menu]')].at(-1).getBoundingClientRect(); return { x: Math.max(0, Math.round(r.x) - 16), y: Math.max(0, Math.round(r.y) - 16), width: Math.round(r.width) + 32, height: Math.round(r.height) + 76 }")
+      await save(win, name, { crop: r })
+      await js(win, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+      await sleep(300)
+    }
+    await push({ phase: 'idle', next: null })
+    await menu(`update-menu-${theme}`)
+    await push({ ...ready, later: true })
+    await js(win, 'window.__cliqueState.app.login.on = true')
+    await menu(`update-menu-ready-${theme}`)
+    win.destroy()
+    // the popover's gear: the same rows
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(tray)
+    await js(tray, `window.__cliqueUpdate(${JSON.stringify({ ...ready, later: true })})`)
+    await sleep(200)
+    await js(tray, click('[data-act=settings]'))
+    await sleep(400)
+    await save(tray, `update-tray-${theme}`)
+    tray.destroy()
+  },
+  // The note arriving, and Later: it slides up in the corner when the download is done, nothing else moves; Later puts
+  // it away, and Restart to update stays in the ⋯ menu.
+  async updatesGif() {
+    const win = await dashboard('light', 'chat', { width: 1180, height: 760 })
+    await sleep(600)
+    await record(win, 'update-later', {
+      clip: { x: 0, y: 760 - 420, width: 1180, height: 420 }, ms: 9000, width: 1000,
+      during: async () => {
+        let at = { x: 620, y: 520 }
+        await glide(win, { x: 600, y: 480 }, at, 200)
+        await sleep(900)
+        await js(win, `window.__cliqueUpdate(${JSON.stringify({ phase: 'ready', next: { version: '1.0.1', notesUrl: 'https://example.com/releases/v1.0.1' } })})`)
+        await sleep(1800)
+        at = await glide(win, at, await center(win, '.update-note [data-update=later]'), 700)
+        await sleep(350)
+        await tap(win, at)
+        await sleep(1300)
+        at = await glide(win, at, await center(win, '.side-more'), 800)
+        await sleep(200)
+        await tap(win, at)
+        await sleep(2600)
+      },
+    })
+    win.destroy()
+  },
   // Canvases: boards agents draw by hand in the chat (ui/canvas.js, `clique canvas`): bars with a tick, a cross and a
   // source in a final message, then a flow two agents drew together.
   async canvas(theme) {
