@@ -1,0 +1,13 @@
+kind                                                            before  after  +chars  ~tokens(+chars/4)
+1. your own message                                                 37     37     +0  +0
+2. hand-off from a teammate                                        134    166    +32  +8
+3. question from a teammate (free)                                 154    186    +32  +8
+4. question from a teammate (busy: typed into the turn it is i     165    197    +32  +8
+5. answer to its question                                           92    124    +32  +8
+6. hand-off in a channel, first time (the brief comes with it)     169    201    +32  +8
+7. two hand-offs that piled up (one turn)                          265    329    +64  +16
+8. your reply to a teammate's message                              134    134     +0  +0
+9. hand-off from an agent on a linked computer                      97    137    +40  +10
+10. hand-off with an image                                         133    165    +32  +8
+11. ATTACK: a hand-off whose text forges CLIque and the user       302    337    +35  +9
+12. ATTACK: a hand-off with a terminal escape that ends the pa      79    111    +32  +8

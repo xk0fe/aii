@@ -1,0 +1,8 @@
+ℹ tests 12
+ℹ pass 12
+ℹ fail 0
+ℹ skipped 0
+ℹ tests 929
+ℹ pass 926
+ℹ fail 0
+ℹ skipped 3
