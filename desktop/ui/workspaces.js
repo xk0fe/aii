@@ -47,6 +47,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       ...(w ? [
         { head: w.folder ? `${wsLabel(w)} · ${tildePath(w.folder)}` : wsLabel(w) },
         { label: 'Who works here…', icon: ICONS.subs, act: 'members', hint: plural(state.agents.filter((a) => !a.cloneOf).length, 'agent') },
+        ...(w.folder && FOLDER_APP ? [{ label: OPEN_FOLDER, icon: ICONS.folder, act: 'folder' }] : []),
         { label: 'Settings…', icon: ICONS.gear, act: 'settings' },
         // the one thing to do about running: sleep. Waking is going there, or sending it a message.
         ...(list.length > 1 && !w.parked ? [{ label: 'Put to sleep', icon: ICONS.moon, act: 'park', hint: 'stops its agents' }] : []),
@@ -58,6 +59,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
     ], (act) => {
       if (act.startsWith('join:')) join(act.slice('join:'.length))
       if (act === 'members') onMembers?.(button)
+      if (act === 'folder') openFolder(w)
       if (act === 'settings') openSheet(w.id)
       if (act === 'park') park(w)
       if (act === 'new') openSheet(null)
@@ -133,6 +135,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       ...(w.current && !w.parked ? [] : [{ label: w.current ? 'Wake it' : 'Switch to it', icon: ICONS.arrow, act: 'switch', ...(w.parked && { hint: 'wakes it up' }) }]),
       ...(w.current ? [{ label: 'Who works here…', icon: ICONS.subs, act: 'members' }] : []),
       ...(others && !w.parked ? [{ label: 'Put to sleep', icon: ICONS.moon, act: 'park', hint: 'stops its agents' }] : []),
+      ...(w.folder && FOLDER_APP ? [{ label: OPEN_FOLDER, icon: ICONS.folder, act: 'folder' }] : []),
       { label: 'Settings…', icon: ICONS.gear, act: 'settings' },
       '-',
       w.ownerName ? { label: 'Hide on this computer…', icon: ICONS.close, act: 'remove' } : { label: 'Remove…', icon: ICONS.trash, act: 'remove', danger: true },
@@ -140,6 +143,7 @@ function mountWorkspaces({ button, banner, dock, dialog, onSwitch, onSwitched, o
       if (act === 'switch') onSwitch(w.id)
       if (act === 'members') onMembers?.(e.target.closest('[data-ws]'))
       if (act === 'park') park(w)
+      if (act === 'folder') openFolder(w)
       if (act === 'settings') openSheet(w.id)
       if (act === 'remove') remove(w)
     })

@@ -1127,3 +1127,28 @@ test("a connection that loses to another doesn't take the winner's workspaces wi
     quit(c)
   }
 })
+
+test("a workspace's folder to open in Finder or Explorer: the one config.json has, ~ and all; said in words when there's none or it's gone", async () => {
+  const { Clique } = await import('../core/clique.js')
+  const gone = path.join(FOLDERS, 'gone')
+  const inHome = fs.mkdtempSync(path.join(os.homedir(), '.clique-test-folder-'))
+  fs.writeFileSync(CONFIG, JSON.stringify({ workspaces: [
+    { id: 'storefront', name: 'Storefront', folder: API }, { id: 'home', folder: `~${path.sep}${path.basename(inHome)}` },
+    { id: 'notes', name: 'Notes' }, { id: 'old', folder: gone }, { id: 'file', folder: path.join(API, 'a.txt') },
+  ] }))
+  fs.writeFileSync(path.join(API, 'a.txt'), '')
+  const c = new Clique({ bin: BIN, computerName: 'test' })
+  try {
+    assert.equal(c.workspaceFolder('storefront'), API)
+    assert.equal(c.workspaceFolder(), API, 'the one on screen, when none is named')
+    assert.equal(c.workspaceFolder('home'), inHome)
+    assert.throws(() => c.workspaceFolder('notes'), /Notes has no folder/)
+    assert.throws(() => c.workspaceFolder('old'), /gone isn't on this computer any more/)
+    assert.throws(() => c.workspaceFolder('file'), /isn't on this computer any more/, 'a file is not a folder to open')
+    assert.throws(() => c.workspaceFolder('../../etc'), /no such workspace/, 'a workspace, never a path')
+  } finally {
+    quit(c)
+    fs.rmSync(inHome, { recursive: true, force: true })
+    fs.rmSync(path.join(API, 'a.txt'), { force: true })
+  }
+})
