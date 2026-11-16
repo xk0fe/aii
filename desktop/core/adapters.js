@@ -100,7 +100,8 @@ CLIque commands (run them in the shell):
   clique busy                 what each teammate is working on right now
   clique board [words]        read the shared notes, or search them
   clique task                 the Tasks board: list, show, done, note, add, decline (clique task help)
-  clique app                  change CLIque itself when the user asks: agents, channels, workspaces, linked computers
+  clique app                  change CLIque itself when the user asks: agents, channels, workspaces, linked computers,
+                            and messages to send later or on a repeat
                             (clique app help). Changes may wait for the user's OK: your command waits with them
 CLIque keeps the clique from stalling. Its rules:
 - Need it back? clique ask. Never poll, sleep or loop waiting for a teammate, and never ask the same thing twice.
