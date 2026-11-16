@@ -623,6 +623,8 @@ const actions = {
   saveImage: (name, type, bytes) => clique.here.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
   approve: (id) => clique.feedAction(id, 'approve'),
   drop: (id) => clique.feedAction(id, 'drop'),
+  // Your reaction on a message, on or off (Hub.react): react('3f9a…', '👍')
+  react: (id, emoji) => clique.feedAction(id, 'reactTo', [emoji]),
   // Answer an agent's question (a permission prompt, AskUserQuestion, a plan) from the chat; see hub.ask.
   answer: (id, reply) => clique.feedAction(id, 'answer', [reply]),
   autopilot: (on) => clique.here.setAutopilot(on),
