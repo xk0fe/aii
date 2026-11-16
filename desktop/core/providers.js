@@ -7,16 +7,27 @@ import os from 'node:os'
 import path from 'node:path'
 import { resolveCommand } from './launch.js'
 
+// What a provider's CLI reports of an agent's use, for the spend check-in (core/hub.js checkIn): its unit, and the
+// values offered as one tap. Claude Code reports dollars (its own count at API rates); Codex reports tokens, cached
+// reads included, which is why its values are large. A provider without a meter has no check-in: GLM runs through
+// Claude Code, whose dollars are Anthropic's prices, not Z.ai's.
+const METERS = {
+  usd: { unit: 'usd', presets: [2, 5, 10, 25] },
+  tokens: { unit: 'tokens', presets: [2e6, 5e6, 10e6, 25e6] },
+}
+
 export const BUILT_IN = {
   claude: {
     label: 'Claude',
     cli: 'claude',
+    meter: METERS.usd,
     models: ['fable', 'opus', 'sonnet', 'haiku'],
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
   },
   codex: {
     label: 'Codex',
     cli: 'codex',
+    meter: METERS.tokens,
     models: [], // filled from `codex debug models` at startup
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
   },
@@ -34,6 +45,7 @@ export const BUILT_IN = {
     label: 'Ollama',
     cli: 'codex',
     args: ['--oss', '--local-provider', 'ollama'],
+    meter: METERS.tokens,
     models: ['gpt-oss:20b', 'gpt-oss:120b', 'qwen3-coder'],
     efforts: [],
   },

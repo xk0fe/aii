@@ -1770,7 +1770,7 @@ const EVENT_ICONS = [
   [/another app already uses it/, 'keyboard'],
   [/terminal/, 'terminal'],
 ]
-const eventIcon = (e) => (e.limit ? 'gauge' : e.schedule ? 'clock' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'clique' ? 'mark' : null))
+const eventIcon = (e) => (e.limit ? 'gauge' : e.spend ? 'coin' : e.schedule ? 'clock' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'clique' ? 'mark' : null))
 // "Rex", "Rex and Noor", "Rex, Noor and Ada", "Rex, Noor and 3 others" (names as HTML)
 const andList = (list) => (list.length > 3 ? `${list.slice(0, 2).join(', ')} and ${list.length - 2} others` : list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0] ?? '')
 
@@ -1857,10 +1857,10 @@ function askCard(e, draft = {}, { queue = false } = {}) {
   // each one's part and how long it took. In the queue its creature has just said the title in its own words.
   if (q.spend) {
     const s = q.spend
-    const part = (n) => `${esc(shownName(String(n).split('@')[0]))} ${spentText(s.by?.[n] ?? {})}`
+    const part = (n) => `${esc(shownName(String(n).split('@')[0]))} ${meterText(s.unit, s.by?.[n] ?? 0)}`
     const took = spanWords((e.ts ?? Date.now()) - s.since)
     const parts = s.who?.length > 1 ? `${s.who.map(part).join(' · ')} · in ${took}` : `In ${took}`
-    const more = s.limit ? `Allows another ${checkInText(s)}, then asks again` : ''
+    const more = s.at ? `Allows another ${meterText(s.unit, s.at)}, then asks again` : ''
     return `<div class="ask-card spend" data-ask="${e.id}">
       <div class="ask-title">${ICONS.coin}<span>${esc(q.title)}</span></div>
       <div class="ask-detail ask-parts">${parts}</div>
@@ -1908,8 +1908,16 @@ const spanWords = (ms) => {
   const m = Math.round(ms / 60000)
   return m < 1 ? 'under a minute' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`
 }
-// What a spend check-in asks at, in the unit its round spends in: "$5.00", "5M tokens", "$5.00 or 5M tokens".
-const checkInText = ({ limit, cost = 1, tokens = 0 }) => [cost >= 0.005 && `$${limit.usd.toFixed(2)}`, tokens > 0 && `${tokenCount(limit.tokens)} tokens`].filter(Boolean).join(' or ')
+// What a provider's meter reads (core/providers.js), in its unit: "$5.40" for dollars, "5.2M tokens" for tokens...
+const meterText = (unit, v) => (unit === 'usd' ? `$${Number(v).toFixed(2)}` : `${tokenCount(Math.round(v))} tokens`)
+// ...and a value you pick, as a choice reads: "$5", "$2.50", "5M"
+const meterPick = (unit, v) => (unit === 'usd' ? `$${Number.isInteger(v) ? v : Number(v).toFixed(2)}` : tokenCount(v))
+// The spend check-in for one provider, in a few words: "After $5, asks you", "After 5M tokens, tells you", "Off"
+const checkInSays = (state, id) => {
+  const unit = state.providers?.[id]?.meter?.unit
+  const at = state.checkIn?.at?.[id]
+  return !unit || !at ? 'Off' : `After ${meterPick(unit, at)}${unit === 'tokens' ? ' tokens' : ''}, ${state.checkIn.then === 'tell' ? 'tells you' : 'asks you'}`
+}
 function sayLine({ agent, ask }) {
   const q = ask?.ask
   if (!q) return agent.activity ? `I need you in my terminal. I was ${esc(lowerFirst(activityWords(agent.activity)))}.` : 'I need you in my terminal.'
@@ -1952,7 +1960,7 @@ function askSummary(q, a) {
   const what = q.type === 'question' ? '' : `<span class="ask-what">${esc(q.type === 'plan' ? 'the plan' : q.trust ? shortPath(q.detail) : q.title ?? '')}</span>`
   const mark = (cls, icon) => `<span class="ask-mark ${cls}">${ICONS[icon]}</span>`
   if (q.spend) {
-    const at = spentText({ cost: a.cost ?? q.spend.cost, tokens: a.tokens ?? q.spend.tokens })
+    const at = meterText(q.spend.unit, a.used ?? q.spend.used ?? 0)
     const so = q.spend.who?.length > 1 ? 'they' : 'it'
     if (a.stale) return `${mark('', 'dash')}<span>${a.done ? 'The work finished before you answered' : 'No longer waiting'}</span><span class="ask-what">${at}</span>`
     if (!a.allow) return `${mark('no', 'close')}<span>Stopped</span><span class="ask-what">at ${at}</span>`

@@ -723,48 +723,98 @@ $('.side-more').addEventListener('click', (e) => {
   })
 })
 
-// ---- the spend check-in (core/hub.js checkIn): how much a round may cost before its agents stop and ask ----
+// ---- the spend check-in (core/hub.js checkIn): per provider, what its agents may use on one request before they
+// check in, in the unit that provider's CLI reports. Built like an agent's Context limit (ui/collection.js drawLimit):
+// a row of values and a Custom field for each provider, what happens when it's reached, and one line that says it.
 
 const checkInDialog = $('#checkin')
 checkInDialog.querySelector('.h-icon').innerHTML = ICONS.coin
-const CHECK_IN_CHOICES = [1, 5, 10, 25, 50]
-const checkInLabel = (usd) => `$${Number.isInteger(usd) ? usd : usd.toFixed(2)}`
-const checkInHint = () => (state.checkIn ? `After ${checkInLabel(state.checkIn.usd)}` : 'Off')
-// Both sets of words in one cell, the one that applies showing: the sheet keeps its height between Off and an amount.
-checkInDialog.querySelector('.ci-about').innerHTML = '<p data-ci-on></p><p data-ci-off>Your agents keep working and handing work to each other for as long as it takes, without asking. The warnings at 80% and 95% of your usage limits still come.</p>'
+// The providers that have a meter (core/providers.js), the ones your picker offers. One without a meter has no row.
+const checkInProviders = () => Object.entries(state.providers ?? {}).filter(([, p]) => p.meter && p.added !== false).map(([id, p]) => ({ id, label: p.label ?? id, ...p.meter }))
+const checkInSet = () => checkInProviders().filter((p) => state.checkIn?.at?.[p.id])
+const checkInHint = () => {
+  const set = checkInSet()
+  return set.length ? set.map((p) => `${set.length > 1 ? `${p.label} ` : ''}${meterPick(p.unit, state.checkIn.at[p.id])}`).join(' · ') : 'Off'
+}
+// A Custom field holds dollars, or millions of tokens.
+const checkInTyped = (unit, v) => (unit === 'usd' ? Math.round(Number(v) * 100) / 100 : Math.round(Number(v) * 1e6))
+let checkInKey = ''
 function drawCheckIn() {
-  const usd = state.checkIn?.usd ?? null
-  // an amount of your own (checkIn in config.json) takes its place among the choices
-  const choices = [...new Set([...CHECK_IN_CHOICES, ...(usd ? [usd] : [])])].sort((x, y) => x - y)
-  const amounts = checkInDialog.querySelector('.ci-amounts')
-  const html = `<button data-ci="off">Off</button>${choices.map((c) => `<button data-ci="${c}">${checkInLabel(c)}</button>`).join('')}`
-  if (amounts.dataset.html !== html) (amounts.innerHTML = html), (amounts.dataset.html = html)
-  segmented(amounts, (b) => b.dataset.ci === (usd ? String(usd) : 'off'))
-  const on = checkInDialog.querySelector('[data-ci-on]')
-  if (usd) on.textContent = `Once the work that followed your last message has cost ${checkInLabel(usd)}, one card asks you in Needs you. Until you answer, nothing new starts: hand-offs between those agents wait, and a turn that is already running finishes. Keep going allows another ${checkInLabel(usd)}. Stop drops what was waiting and interrupts their turns. Codex reports tokens, not dollars: its agents check in after ${tokenCount(state.checkIn.tokens)} tokens.`
-  on.classList.toggle('on', Boolean(usd))
-  checkInDialog.querySelector('[data-ci-off]').classList.toggle('on', !usd)
+  const list = checkInProviders()
+  const host = checkInDialog.querySelector('.ci-list')
+  const key = JSON.stringify(list)
+  if (key !== checkInKey) {
+    checkInKey = key
+    host.innerHTML = list.map((p) => `
+      <div class="ed-row" data-ci-row="${esc(p.id)}"><span class="ed-label">${esc(p.label)}<small>check in after</small></span><div class="ed-ctl">
+        <div class="seg fill" data-ci="${esc(p.id)}"><button type="button" data-v="">Off</button>${p.presets.map((v) => `<button type="button" data-v="${v}">${meterPick(p.unit, v)}</button>`).join('')}<label class="limit-custom ci-custom ${p.unit}"><input type="number" min="0" step="${p.unit === 'usd' ? 1 : 0.5}" data-ci-custom="${esc(p.id)}" placeholder="Custom" title="${p.unit === 'usd' ? 'Any amount, in dollars' : 'Any number, in millions of tokens'}"><span>${p.unit === 'usd' ? '$' : 'M'}</span></label></div>
+      </div></div>`).join('') +
+      '<div class="ed-row when-row"><span class="ed-label">When it’s reached</span><div class="ed-ctl"><div class="seg fill" data-ci-then><button type="button" data-v="ask">Ask me</button><button type="button" data-v="tell">Just tell me</button></div></div></div>' +
+      '<p class="limit-note ci-says"></p>'
+  }
+  syncCheckIn()
+}
+// What a pick changes, in place (so the thumb slides and a field keeps its focus): the picks, whether "When it's
+// reached" applies, and the line under them.
+function syncCheckIn() {
+  const host = checkInDialog.querySelector('.ci-list')
+  const at = state.checkIn?.at ?? {}
+  for (const p of checkInProviders()) {
+    const seg = host.querySelector(`[data-ci="${CSS.escape(p.id)}"]`)
+    if (!seg) continue
+    const v = at[p.id] || 0
+    const preset = !v || p.presets.includes(v)
+    segmented(seg, (el) => (el.matches('.ci-custom') ? !preset : (Number(el.dataset.v) || 0) === v), { none: true })
+    const field = seg.querySelector('[data-ci-custom]')
+    if (document.activeElement !== field) field.value = preset ? '' : p.unit === 'usd' ? v : +(v / 1e6).toFixed(2)
+  }
+  const set = checkInSet()
+  const tell = state.checkIn?.then === 'tell'
+  segmented(host.querySelector('[data-ci-then]'), (el) => el.dataset.v === (tell ? 'tell' : 'ask'), { none: true })
+  host.querySelector('.when-row').classList.toggle('off', !set.length)
+  const past = set.map((p) => `${meterPick(p.unit, at[p.id])}${p.unit === 'tokens' ? ' tokens' : ''} for ${p.label}`).join(' or ')
+  host.querySelector('.ci-says').textContent = !set.length ? 'Off. Nothing checks in until you pick a value.'
+    : tell ? `Past ${past} since you last spoke, you get one line in the chat and a notification. Nothing is held.`
+    : `Past ${past} since you last spoke, one card asks you. Until you answer, nothing new starts; turns already running finish.`
 }
 function openCheckIn() {
   checkInDialog.querySelector('[data-ci-err]').textContent = ''
   drawCheckIn()
   checkInDialog.showModal()
 }
-checkInDialog.addEventListener('click', (e) => {
-  if (e.target.closest('[data-close]') || e.target === checkInDialog) return checkInDialog.close()
-  const pick = e.target.closest('button[data-ci]')
-  if (!pick) return
-  const usd = pick.dataset.ci === 'off' ? false : Number(pick.dataset.ci)
-  if ((state.checkIn?.usd ?? false) === usd) return
+// shown now; the state that follows says it for good
+function setCheckIn(patch) {
   const was = state.checkIn
-  state.checkIn = usd ? { usd, tokens: usd * 1e6 } : null // shown now; the state that follows says it for good
+  const at = { ...(was?.at ?? {}), ...(patch.at ?? {}) }
+  for (const k of Object.keys(at)) if (!at[k]) delete at[k]
+  state.checkIn = { at, then: patch.then ?? was?.then ?? 'ask' }
   checkInDialog.querySelector('[data-ci-err]').textContent = ''
-  drawCheckIn()
-  clique.call('checkIn', usd).catch((x) => {
+  syncCheckIn()
+  clique.call('checkIn', patch).catch((x) => {
     state.checkIn = was
-    drawCheckIn()
+    syncCheckIn()
     checkInDialog.querySelector('[data-ci-err]').textContent = errorLine(x)
   })
+}
+checkInDialog.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]') || e.target === checkInDialog) return checkInDialog.close()
+  const pick = e.target.closest('[data-ci] button[data-v]')
+  if (pick) {
+    const id = pick.closest('[data-ci]').dataset.ci
+    const v = Number(pick.dataset.v) || null
+    if ((state.checkIn?.at?.[id] ?? null) !== v) setCheckIn({ at: { [id]: v } })
+    return
+  }
+  const then = e.target.closest('[data-ci-then] button[data-v]')
+  if (then && then.dataset.v !== (state.checkIn?.then ?? 'ask')) setCheckIn({ then: then.dataset.v })
+})
+// a value of your own: taken as you type it (an empty field is Off)
+checkInDialog.addEventListener('input', (e) => {
+  const id = e.target.dataset.ciCustom
+  if (!id) return
+  const p = checkInProviders().find((x) => x.id === id)
+  const v = checkInTyped(p.unit, e.target.value)
+  setCheckIn({ at: { [id]: v > 0 ? v : null } })
 })
 
 // ---- token savers (core/savers.js): one switch each, and what each has counted ----

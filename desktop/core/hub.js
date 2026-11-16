@@ -112,19 +112,17 @@ const CONTINUE = 'continue'
 // At NEAR_LIMIT of its 5-hour or weekly window, routing prefers agents on other providers among equal area matches.
 const LIMIT_WARN = [80, 95]
 const NEAR_LIMIT = 90
-// The spend check-in (see Hub.checkIn): the work that followed your last message stops to ask once it has cost this
-// much (checkIn in config.json: dollars, or false for never). Codex reports tokens, not dollars, and CLIque doesn't
-// price them: its agents count by tokens, this many to each dollar of the threshold (5M tokens at $5).
-export const CHECK_IN_USD = 5
-export const CHECK_IN_TOKENS_PER_USD = 1e6
+// The spend check-in (see Hub.checkIn), as config.json has it: checkIn: { at: { claude: 5, codex: 5000000 }, then: 'tell' }.
+// at: per provider, in the unit its CLI reports (core/providers.js meter); a provider that isn't there never checks in,
+// and nothing is there until you pick it. then: 'ask' (a card, and hand-offs wait for your answer) or 'tell' (a line
+// and a notification, nothing held). -> { at: { id: value > 0 }, then }
 export const checkInOf = (config) => {
-  const v = config?.checkIn
-  if (v === false || v === 0) return null
-  const usd = Number(v) > 0 ? Number(v) : CHECK_IN_USD
-  return { usd, tokens: usd * CHECK_IN_TOKENS_PER_USD }
+  const c = config?.checkIn
+  const at = Object.fromEntries(Object.entries(c?.at && typeof c.at === 'object' ? c.at : {}).filter(([, v]) => typeof v === 'number' && v > 0 && Number.isFinite(v)))
+  return { at, then: c?.then === 'tell' ? 'tell' : 'ask' }
 }
 // Said to an agent whose hand-off waits for your answer to a check-in, or was stopped by it.
-const CHECK_IN_HELD = "CLIque is checking with the user before this work spends more. It goes on if they say keep going, so don't send it again: finish your turn."
+const CHECK_IN_HELD = "CLIque is checking with the user before this work uses more. It goes on if they say keep going, so don't send it again: finish your turn."
 const CHECK_IN_STOPPED = 'the user stopped this work at the spend check-in. Finish your turn and wait for them.'
 // The pace forecast (paceOf): readings this recent give the 5-hour window's pace right now; the heads-up that a window
 // runs out before it resets comes once it's less than a quarter of the window away (weekly: under 42 hours).
@@ -1639,21 +1637,29 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
-  // ---- the spend check-in: work that followed your last message stops to ask before it spends more -------------
-  // With Autopilot on, agents hand work to each other for as long as they like. A round is everything that follows from
-  // one message of yours: the agents it went to, and whoever they handed on to (each hand-off carries its round, see
-  // post; a turn works in the round of the message it took up, see joinRound). What they spend adds up per round, and
-  // once that passes the threshold (checkInOf) one card asks you: who, how much, since when; Keep going or Stop.
+  // ---- the spend check-in: work that followed your last message stops to ask before it uses more -----------------
+  // With Autopilot on, agents hand work to each other for as long as they like. A check-in is a soft limit on that, per
+  // provider and in the unit that provider's CLI really reports (its meter, core/providers.js): dollars for Claude Code
+  // (its own count at API rates), tokens for Codex. Nothing is converted, and agents on different providers are never
+  // added up. It's off until you pick a value for a provider (checkIn in config.json).
+  // What's counted: a round is everything that follows from one message of yours: the agents it went to, and whoever
+  // they handed on to (each hand-off carries its round, see post; a turn works in the round of the message it took up,
+  // see joinRound). Within a round, the agents of one provider are a group, and what they report adds up per group.
+  // Past its provider's value, a group either gets one line and a notification ("Just tell me"), or one card asks you:
+  // who, how much, since when; Keep going or Stop.
   // What a pause is, honestly: CLIque can't refuse a CLI's tool calls, so a turn that is already running finishes.
-  // Nothing new starts: hand-offs and questions between the round's agents wait in the chat (paused) instead of being
-  // delivered. Keep going delivers them and allows another full threshold. Stop drops them and interrupts the turns
+  // Nothing new starts: hand-offs and questions to and from the group's agents wait in the chat (paused) instead of
+  // being delivered. Keep going delivers them and allows another full value. Stop drops them and interrupts the turns
   // still running (interrupt). You speaking to one of them is Keep going: there's no counter to reset, because the
   // next round is the one your new message starts. A message of yours is never held.
-  // Only this computer's spend counts here: a hand-off to a linked computer starts a round of its own there, checked
-  // against that computer's threshold and asked in its chat.
+  // Only this computer's agents count here: a hand-off to a linked computer starts a round of its own there, checked
+  // against that computer's values and asked in its chat.
 
-  get checkInAt() {
-    return checkInOf(this.config)
+  // A provider's check-in: { at, unit, then } or null (no meter, or no value picked).
+  checkInFor(id) {
+    const unit = this.providers[id]?.meter?.unit
+    const set = checkInOf(this.config)
+    return unit && set.at[id] ? { at: set.at[id], unit, then: set.then } : null
   }
 
   // A turn begins: it works in the round of what it took up (yours first, when hand-offs came with it). Answers to
@@ -1664,52 +1670,80 @@ export class Hub extends EventEmitter {
     if (m) a.round = roundId(m)
   }
 
+  // The group an agent is in: its round's agents on its provider.
+  groupOf(a, round = a?.round) {
+    return a && round ? this.spend.rounds?.[`${round}|${this.providerOf(a)?.id}`] : undefined
+  }
+
+  inGroup(a, r) {
+    return a.round === r.round && this.providerOf(a)?.id === r.provider
+  }
+
   roundSpend(a, { cost = 0, tokens = 0 }) {
-    if (!a.round || !(cost > 0 || tokens > 0)) return
+    const id = this.providerOf(a)?.id
+    const limit = this.checkInFor(id)
+    if (!a.round || !limit) return
+    const used = limit.unit === 'usd' ? cost : tokens // what its CLI reports, as it reports it
+    if (!(used > 0)) return
     const rounds = (this.spend.rounds ??= {})
-    if (!rounds[a.round]) {
+    const key = `${a.round}|${id}`
+    if (!rounds[key]) {
       const root = this.feed.find((e) => e.kind === 'msg' && (e.id === a.round || e.sendId === a.round))
-      // base: where the count stood at the last Keep going (the next check-in is a full threshold past it)
-      rounds[a.round] = { id: a.round, at: root?.ts ?? Date.now(), from: root?.from ?? 'you', ...(root && { msg: root.id }), cost: 0, tokens: 0, by: {}, base: { cost: 0, tokens: 0 } }
+      // base: where the count stood when it last checked in (the next one is a full value past it)
+      rounds[key] = { id: key, round: a.round, provider: id, unit: limit.unit, at: root?.ts ?? Date.now(), from: root?.from ?? 'you', ...(root && { msg: root.id }), used: 0, by: {}, base: 0 }
     }
-    const r = rounds[a.round]
-    const mine = (r.by[this.baseOf(a.name)] ??= { cost: 0, tokens: 0 })
-    for (const x of [r, mine]) (x.cost += cost), (x.tokens += tokens)
+    const r = rounds[key]
+    const name = this.baseOf(a.name)
+    r.used += used
+    r.by[name] = (r.by[name] ?? 0) + used
     r.last = Date.now()
     this.checkIn(r)
   }
 
   // Is anyone still on it: a turn running, something of it queued, or hand-offs held by its check-in?
   roundBusy(r) {
-    return [...this.agents.values()].some((a) => (a.round === r.id && !a.ending && (a.status === 'working' || a.status === 'waiting' || a.status === 'starting')) || a.inbox.some((m) => !m.clique && roundId(m) === r.id)) ||
+    const mine = (a) => this.providerOf(a)?.id === r.provider
+    return [...this.agents.values()].some((a) => (this.inGroup(a, r) && !a.ending && (a.status === 'working' || a.status === 'waiting' || a.status === 'starting')) || (mine(a) && a.inbox.some((m) => !m.clique && roundId(m) === r.round))) ||
       this.feed.some((e) => e.paused === r.id)
   }
 
-  // Past the threshold, with work still going: one card, in the needs-you queue like a permission prompt's. Its agent
-  // (who spent most) isn't waiting on it, and no hook is: it stays up until you answer, across a restart too.
+  // "@ada has used $5.40 at API rates since you last spoke", "@theo and @june have used 5.2M tokens since …"
+  checkInWords(r, who) {
+    const names = Object.keys(r.by).sort((x, y) => r.by[y] - r.by[x])
+    who ??= `${atNames(names)} ${names.length > 1 ? 'have' : 'has'}`
+    return `${who} used ${meterText(r.unit, r.used)}${r.unit === 'usd' ? ' at API rates' : ''} ${r.from === 'you' ? 'since you last spoke' : `since @${r.from} handed this over`}`
+  }
+
+  // Past its provider's value. Just tell me: one line in the chat and one notification, and the count goes on from
+  // here. Ask me, with work still going: one card, in the needs-you queue like a permission prompt's. Its agent (who
+  // used most) isn't waiting on it, and no hook is: it stays up until you answer, across a restart too.
   checkIn(r) {
-    const limit = this.checkInAt
-    if (!limit || r.ask || r.stopped) return
-    if ((r.cost - r.base.cost) / limit.usd + (r.tokens - r.base.tokens) / limit.tokens < 1 || !this.roundBusy(r)) return
-    const share = (x) => x.cost / limit.usd + x.tokens / limit.tokens
-    const who = Object.keys(r.by).sort((x, y) => share(r.by[y]) - share(r.by[x]))
-    const top = this.agents.get(who[0]) ?? [...this.agents.values()].find((a) => a.round === r.id)
-    if (!top) return
-    const since = r.from === 'you' ? 'since you last spoke' : `since @${r.from} handed this over`
-    const title = `${atNames(who)} ${who.length > 1 ? 'have' : 'has'} ${spentWords(r)} ${since}`
-    const ask = {
-      type: 'permission', tool: 'clique spend', title, say: `${who.length > 1 ? "We've" : "I've"} ${spentWords(r)} ${since}. Keep going?`,
-      detail: 'Nothing new starts until you answer. Turns already running finish first.', always: [], alert: `checks in: ${title}. Keep going?`,
-      spend: { round: r.id, who, by: structuredClone(r.by), cost: r.cost, tokens: r.tokens, since: r.at, from: r.from, limit },
+    const limit = this.checkInFor(r.provider)
+    if (!limit || r.ask || r.stopped || r.used - r.base < limit.at) return
+    const who = Object.keys(r.by).sort((x, y) => r.by[y] - r.by[x])
+    const top = this.agents.get(who[0]) ?? [...this.agents.values()].find((a) => this.inGroup(a, r))
+    const root = r.msg && this.feed.find((x) => x.id === r.msg)
+    if (limit.then === 'tell') {
+      r.base = r.used
+      const text = this.checkInWords(r)
+      this.post({ kind: 'event', from: 'clique', text, spend: { provider: r.provider, unit: r.unit, used: r.used, at: limit.at }, ...(root?.channel && { channel: root.channel }) })
+      this.emit('notice', { title: 'Spend check-in', body: `${text}. Nothing is held: they carry on.`, focus: top?.name ?? '' })
+      return this.saveSpend()
     }
-    const e = this.post({ kind: 'ask', from: top.name, to: 'you', ask, cli: 'clique', ...(r.msg && this.feed.some((x) => x.id === r.msg) && { re: r.msg }) })
+    if (!top || !this.roundBusy(r)) return
+    const ask = {
+      type: 'permission', tool: 'clique spend', title: this.checkInWords(r), say: `${this.checkInWords(r, who.length > 1 ? "We've" : "I've")}. Keep going?`,
+      detail: 'Nothing new starts until you answer. Turns already running finish first.', always: [], alert: `checks in: ${this.checkInWords(r)}. Keep going?`,
+      spend: { group: r.id, provider: r.provider, label: this.providers[r.provider]?.label ?? r.provider, unit: r.unit, who, by: { ...r.by }, used: r.used, since: r.at, from: r.from, at: limit.at },
+    }
+    const e = this.post({ kind: 'ask', from: top.name, to: 'you', ask, cli: 'clique', ...(root && { re: root.id }) })
     r.ask = e.id
     this.asks.set(e.id, { name: top.name, cli: 'clique', input: {}, entry: e, spend: r.id, resolve() {} })
     // what was queued for its agents and hasn't gone in yet waits with the card
     for (const a of this.agents.values()) {
-      for (const m of a.inbox.filter((x) => this.roundHolding(x))) {
+      for (const m of a.inbox.filter((x) => this.roundHolding(x, a))) {
         a.inbox.splice(a.inbox.indexOf(m), 1)
-        this.amend(m, { paused: r.id, queued: false })
+        this.amend(m, { paused: this.roundHolding(m, a).id, queued: false })
       }
     }
     this.emit('alert', top, ask.alert)
@@ -1717,20 +1751,19 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
-  // A message that waits for a check-in's answer: a hand-off or a question in a round whose card is up. Never one of
-  // yours, an answer on its way back to a turn that's waiting for it, or CLIque's own prompts.
-  roundHolding(m) {
-    const r = m?.round && this.spend.rounds?.[m.round]
-    return r?.ask && m.kind === 'msg' && m.from !== 'you' && !m.answers && !m.clique ? r : null
+  // A message that waits for a check-in's answer: a hand-off or a question from or to an agent of a group whose card
+  // is up. Never one of yours, an answer on its way back to a turn that's waiting for it, or CLIque's own prompts.
+  roundHolding(m, to) {
+    if (!m?.round || m.kind !== 'msg' || m.from === 'you' || m.answers || m.clique) return null
+    return [this.groupOf(this.agents.get(m.from), m.round), this.groupOf(to, m.round)].find((r) => r?.ask) ?? null
   }
 
-  // Before an agent sends work on: not from a round you stopped, and not to another computer while its round's card
-  // is up (CLIque holds what's delivered here; what's sent there is out of its hands).
+  // Before an agent sends work on: not from a group you stopped, and not to another computer while its card is up
+  // (CLIque holds what's delivered here; what's sent there is out of its hands).
   checkInGate(from, away = []) {
-    const a = this.agents.get(from)
-    const r = a?.round && this.spend.rounds?.[a.round]
+    const r = this.groupOf(this.agents.get(from))
     if (r?.stopped) throw new Error(`not sent: ${CHECK_IN_STOPPED}`)
-    if (r?.ask && away.length) throw new Error(`not sent: ${atNames(away)} ${away.length > 1 ? 'are' : 'is'} on another computer, and CLIque is checking with the user before this work spends more. Finish your turn; send it again if you're asked to carry on.`)
+    if (r?.ask && away.length) throw new Error(`not sent: ${atNames(away)} ${away.length > 1 ? 'are' : 'is'} on another computer, and CLIque is checking with the user before this work uses more. Finish your turn; send it again if you're asked to carry on.`)
   }
 
   // reply: { allow: true } keeps going, { allow: false } stops.
@@ -1745,15 +1778,15 @@ export class Hub extends EventEmitter {
     const q = this.asks.get(r.ask)
     this.asks.delete(r.ask)
     r.ask = null
-    if (q) this.amend(q.entry, { answer: { ...answer, cost: r.cost, tokens: r.tokens, at: Date.now() } })
+    if (q) this.amend(q.entry, { answer: { ...answer, used: r.used, at: Date.now() } })
     return this.feed.filter((e) => e.paused === r.id)
   }
 
-  // Another full threshold from here, and what waited goes to its agents (one that's been turned off since: dropped).
+  // Another full value from here, and what waited goes to its agents (one that's been turned off since: dropped).
   keepGoing(r, answer) {
     if (!r?.ask) return
     const waiting = this.closeCheckIn(r, answer)
-    r.base = { cost: r.cost, tokens: r.tokens }
+    r.base = r.used
     for (const m of waiting) {
       const a = this.agents.get(m.to) ?? this.agents.get(this.baseOf(m.to)) // for a clone that went away: its original
       if (a && !a.off) {
@@ -1777,7 +1810,7 @@ export class Hub extends EventEmitter {
     if (!r?.ask) return
     const waiting = this.closeCheckIn(r, { by: 'you', allow: false })
     r.stopped = Date.now()
-    const on = [...this.agents.values()].filter((a) => a.round === r.id)
+    const on = [...this.agents.values()].filter((a) => this.inGroup(a, r))
     const names = new Set(on.map((a) => a.name))
     for (const c of [...this.calls.values()]) {
       if (!names.has(c.from) || !names.has(this.ownerOf(c))) continue
@@ -1786,7 +1819,8 @@ export class Hub extends EventEmitter {
     }
     for (const m of waiting) this.dropPaused(m, 'never got it: the user stopped this work at the spend check-in')
     for (const a of this.agents.values()) {
-      for (const m of a.inbox.filter((x) => !x.clique && roundId(x) === r.id)) {
+      if (this.providerOf(a)?.id !== r.provider) continue
+      for (const m of a.inbox.filter((x) => !x.clique && roundId(x) === r.round)) {
         a.inbox.splice(a.inbox.indexOf(m), 1)
         this.amend(m, { queued: false, dropped: true })
       }
@@ -1796,8 +1830,9 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
-  // Stop the turn an agent is in, as Esc in its terminal does. (Kept small and on its own: the Stop button uses the
-  // same thing.) -> whether there was a turn to stop
+  // Stop the turn an agent is in, as Esc in its terminal does. -> whether there was a turn to stop.
+  // (The Stop button's PR, #115, has an interrupt(name) of the same name and shape that does more: whichever of the two
+  // merges second keeps that one and drops this.)
   interrupt(name) {
     const a = this.agents.get(name)
     if (!a || !this.runner.running(name) || (a.status !== 'working' && a.status !== 'waiting')) return false
@@ -1813,7 +1848,7 @@ export class Hub extends EventEmitter {
     const said = new Set(names.map((n) => this.baseOf(n)))
     for (const r of Object.values(this.spend.rounds ?? {})) {
       if (!r.ask) continue
-      const part = new Set([...Object.keys(r.by), ...[...this.agents.values()].filter((a) => a.round === r.id).map((a) => this.baseOf(a.name))])
+      const part = new Set([...Object.keys(r.by), ...[...this.agents.values()].filter((a) => this.inGroup(a, r)).map((a) => this.baseOf(a.name))])
       if ([...said].some((n) => part.has(n))) this.keepGoing(r, { by: 'you', allow: true, spoke: true })
     }
   }
@@ -1827,15 +1862,18 @@ export class Hub extends EventEmitter {
     }
   }
 
-  // The check-in was switched off: the cards still up are answered, keep going.
+  // The check-in changed: cards of a provider that no longer asks (off, or "Just tell me") are answered, keep going.
   checkInChanged() {
-    if (this.checkInAt) return
-    for (const r of Object.values(this.spend.rounds ?? {})) this.keepGoing(r, { by: 'you', allow: true, off: true })
+    for (const r of Object.values(this.spend.rounds ?? {})) if (this.checkInFor(r.provider)?.then !== 'ask') this.keepGoing(r, { by: 'you', allow: true, off: true })
   }
 
   // CLIque started again with a check-in still up: it's still yours to answer. (One whose round wasn't saved: closed.)
   resumeCheckIns() {
-    for (const r of Object.values(this.spend.rounds ?? {})) {
+    for (const [key, r] of Object.entries(this.spend.rounds ?? {})) {
+      if (!r?.provider) {
+        delete this.spend.rounds[key]
+        continue
+      }
       const e = r.ask && this.feed.find((x) => x.id === r.ask)
       if (e && !e.answer) this.asks.set(e.id, { name: e.from, cli: 'clique', input: {}, entry: e, spend: r.id, resolve() {} })
       else r.ask = null
@@ -2860,7 +2898,7 @@ export class Hub extends EventEmitter {
 
   enqueue(a, msg) {
     // its round is checking in with you (see checkIn): it waits, in the chat, for your answer
-    const paused = this.roundHolding(msg)
+    const paused = this.roundHolding(msg, a)
     if (paused) {
       this.amend(msg, { paused: paused.id, queued: false })
       return `held for @${a.name}: ${CHECK_IN_HELD}${msg.ask ? ` @${a.name}'s answer will come to you as a message.` : ''}\n`
@@ -4551,7 +4589,7 @@ export class Hub extends EventEmitter {
       autopilot: this.space.autopilot,
       theme: this.config.theme,
       providers: Object.fromEntries(
-        Object.values(this.providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault }]),
+        Object.values(this.providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault, ...(p.meter && { meter: p.meter }) }]),
       ),
       agents: this.ordered().map((a) => ({
         name: a.name, ...(a.system && { system: true }), area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
@@ -4583,7 +4621,7 @@ export class Hub extends EventEmitter {
       schedules: { list: this.schedules.view(), repo: inRepo(this.space.folder) },
       reads: this.reads,
       spend: this.spendNow(),
-      checkIn: this.checkInAt, // { usd, tokens } the spend check-in asks at, or null when it's off
+      checkIn: checkInOf(this.config), // { at: { provider: value }, then }: the spend check-in, per provider (none: off)
       // { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
       // each window with where it's heading at this pace: { projected (percent at its reset), runsOut (ms) }
       usage: this.usageNow(),
@@ -4732,10 +4770,8 @@ const resetsWhen = (ms) => {
 // Agents named in a line of the chat: "@ada", "@ada and @june", "@ada, @june and @milo".
 // A message's round: the request of yours it follows from (stamped on what agents send on, see Hub.post), or itself.
 const roundId = (m) => m.round ?? m.sendId ?? m.id
-// $5.40, $12.00 (to the cent: a check-in is about small sums)
-const usd = (v) => `$${v.toFixed(2)}`
-// "spent $5.40", "used 5.2M tokens", "spent $3.10 and used 2.4M tokens"
-const spentWords = ({ cost, tokens }) => [cost >= 0.005 && `spent ${usd(cost)}`, tokens > 0 && `used ${tokenCount(tokens)} tokens`].filter(Boolean).join(' and ')
+// What a meter reads, in its unit: $5.40 (to the cent: a check-in is about small sums), 5.2M tokens
+const meterText = (unit, v) => (unit === 'usd' ? `$${v.toFixed(2)}` : `${tokenCount(Math.round(v))} tokens`)
 const atNames = (names) => (names.length > 1 ? `${names.slice(0, -1).map((n) => `@${n}`).join(', ')} and @${names.at(-1)}` : names.map((n) => `@${n}`).join(''))
 
 // A message in one line, for quoting it back: code blocks folded, cut at `max`.

@@ -1,6 +1,7 @@
-// The spend check-in: the work that followed your last message stops to ask once it has cost a set amount. One card
-// per round, hand-offs held while it's up, Keep going and Stop, you speaking as the answer, a restart with the card
-// up, Codex's tokens, and the threshold in config.json. Real Hub (and Clique, for what the app calls), fake runner and
+// The spend check-in: the work that followed your last message stops to ask once it has used a set amount, per
+// provider and in the unit its CLI reports (dollars for Claude Code, tokens for Codex, never added together), and only
+// once you've picked a value. One card per group, hand-offs held while it's up, Keep going and Stop, you speaking as
+// the answer, "Just tell me", a restart with the card up, and the values in config.json. Real Hub (and Clique, for what the app calls), fake runner and
 // clock, throwaway CLIQUE_HOME. `npm test`. CHECK_IN_LOG=1 prints what happens, step by step.
 import { test as nodeTest, beforeEach, afterEach, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
@@ -28,7 +29,9 @@ class FakeRunner extends EventEmitter {
 
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-check-in-app-'))
 const FILES = ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json', 'tickets.json', 'spend.json', 'runtime.json']
-const AGENTS = [{ name: 'ada', area: 'checkout', cwd: DIR }, { name: 'bo', area: 'tests', cwd: DIR }, { name: 'cy', area: 'docs', cwd: DIR }, { name: 'eli', area: 'release', provider: 'codex', cwd: DIR }]
+const AGENTS = [{ name: 'ada', area: 'checkout', cwd: DIR }, { name: 'bo', area: 'tests', cwd: DIR }, { name: 'cy', area: 'docs', cwd: DIR }, { name: 'eli', area: 'release', provider: 'codex', cwd: DIR }, { name: 'gil', area: 'translations', provider: 'glm', cwd: DIR }]
+// $5 for Claude's agents and 5M tokens for Codex's, asking: what most of these tests run with
+const SET = { checkIn: { at: { claude: 5, codex: 5e6 } } }
 let hub, runner
 const newHub = () => {
   runner = new FakeRunner()
@@ -37,7 +40,7 @@ const newHub = () => {
   for (const a of hub.agents.values()) if (!a.off) (runner.live.add(a.name), (a.status = 'idle'), (a.run = `run-${a.name}-${Date.now()}`))
   return hub
 }
-const setup = (extra = {}) => {
+const setup = (extra = SET) => {
   for (const f of FILES) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: AGENTS, ...extra }))
   totals.clear()
@@ -108,12 +111,30 @@ const loop = (turns, each) => {
   return n
 }
 
-test('the threshold: $5 unless config.json says otherwise, false for never; Codex counts 1M tokens to the dollar', () => {
-  assert.deepEqual(checkInOf({}), { usd: 5, tokens: 5e6 })
-  assert.deepEqual(checkInOf({ checkIn: 12.5 }), { usd: 12.5, tokens: 12.5e6 })
-  assert.equal(checkInOf({ checkIn: false }), null)
-  assert.equal(checkInOf({ checkIn: 0 }), null)
-  assert.deepEqual(hub.snapshot().checkIn, { usd: 5, tokens: 5e6 })
+test('off until you pick a value: an install without one never checks in, and counts nothing', () => {
+  setup({})
+  assert.deepEqual(checkInOf({}), { at: {}, then: 'ask' })
+  assert.deepEqual(hub.snapshot().checkIn, { at: {}, then: 'ask' })
+  you('ada', 'a big job')
+  pickUp('ada')
+  spend('ada', 60)
+  hand('ada', 'eli', 'release it')
+  pickUp('eli')
+  hub.addSpend(agent('eli'), { tokens: 80e6 })
+  assert.equal(cards().length, 0)
+  assert.equal(hub.feed.filter((e) => e.kind === 'event' && e.spend).length, 0)
+  assert.deepEqual(hub.spend.rounds ?? {}, {})
+})
+
+test('config.json: a value per provider in its own unit, and what happens when it is reached', () => {
+  assert.deepEqual(checkInOf({ checkIn: { at: { claude: 12.5, codex: 5e6, glm: 0, local: 'lots' }, then: 'tell' } }), { at: { claude: 12.5, codex: 5e6 }, then: 'tell' })
+  assert.deepEqual(checkInOf({ checkIn: 5 }), { at: {}, then: 'ask' }, 'a bare number means nothing: there is no amount for everyone')
+  // each provider says what its CLI reports (core/providers.js): Claude dollars, Codex tokens, GLM nothing
+  const { providers } = hub.snapshot()
+  assert.deepEqual([providers.claude.meter.unit, providers.codex.meter.unit, providers.glm.meter], ['usd', 'tokens', undefined])
+  assert.deepEqual(hub.checkInFor('claude'), { at: 5, unit: 'usd', then: 'ask' })
+  assert.deepEqual(hub.checkInFor('codex'), { at: 5e6, unit: 'tokens', then: 'ask' })
+  assert.equal(hub.checkInFor('glm'), null)
 })
 
 test('a hand-off loop is held at the threshold, and goes on after Keep going', () => {
@@ -121,10 +142,10 @@ test('a hand-off loop is held at the threshold, and goes on after Keep going', (
   assert.equal(loop(10, 1.2), 4, 'four hand-offs went through ($4.80), the fifth turn passed $5')
   const [card] = open()
   assert.equal(card.from, 'ada')
-  assert.equal(card.ask.title, '@ada and @bo have spent $6.00 since you last spoke')
-  assert.equal(card.ask.say, "We've spent $6.00 since you last spoke. Keep going?")
+  assert.equal(card.ask.title, '@ada and @bo have used $6.00 at API rates since you last spoke')
+  assert.equal(card.ask.say, "We've used $6.00 at API rates since you last spoke. Keep going?")
   assert.equal(card.ask.type, 'permission') // phones and linked computers draw it as a card they know: Allow is keep going
-  assert.deepEqual(card.ask.spend.who, ['ada', 'bo'])
+  assert.deepEqual([card.ask.spend.who, card.ask.spend.provider, card.ask.spend.unit, card.ask.spend.at], [['ada', 'bo'], 'claude', 'usd', 5])
   assert.deepEqual(paused(), ['ada>bo'])
   assert.match(hand('bo', 'cy', 'write this up'), /^held for @cy: CLIque is checking with the user/)
   assert.equal(typedInto('cy').length, 0, 'nothing new starts while the card is up')
@@ -136,7 +157,7 @@ test('a hand-off loop is held at the threshold, and goes on after Keep going', (
   assert.equal(typedInto('bo').length, before + 1, 'the held hand-off went to bo')
   assert.equal(typedInto('cy').length, 1)
   assert.deepEqual(paused(), [])
-  assert.deepEqual([card.answer.allow, card.answer.cost], [true, 6])
+  assert.deepEqual([card.answer.allow, card.answer.used], [true, 6])
 
   // another full threshold: $6 + $5
   pickUp('bo')
@@ -144,7 +165,7 @@ test('a hand-off loop is held at the threshold, and goes on after Keep going', (
   assert.equal(open().length, 0, '$10.90: not yet')
   spend('bo', 0.2)
   assert.equal(open().length, 1)
-  assert.equal(open()[0].ask.title, '@bo and @ada have spent $11.10 since you last spoke')
+  assert.equal(open()[0].ask.title, '@bo and @ada have used $11.10 at API rates since you last spoke')
   assert.equal(cards().length, 2)
 })
 
@@ -155,8 +176,8 @@ test('one card per round, however much more is spent while it waits', () => {
   spend('ada', 3)
   spend('ada', 9)
   assert.equal(cards().length, 1)
-  assert.equal(cards()[0].ask.title, '@ada has spent $5.50 since you last spoke')
-  assert.equal(cards()[0].ask.say, "I've spent $5.50 since you last spoke. Keep going?")
+  assert.equal(cards()[0].ask.title, '@ada has used $5.50 at API rates since you last spoke')
+  assert.equal(cards()[0].ask.say, "I've used $5.50 at API rates since you last spoke. Keep going?")
   assert.equal(agent('ada').status, 'working', 'its turn is not cut short: a turn that is running finishes')
 })
 
@@ -294,7 +315,7 @@ test('CLIque restarts with the card up: it is still yours to answer, and what wa
   assert.equal(open().length, 0)
 })
 
-test('Codex counts by tokens, and a mixed round adds the two up', () => {
+test('Codex counts in tokens, Claude in dollars, and the two are never added together', () => {
   const tokens = (n) => hub.addSpend(agent('eli'), { tokens: n })
   you('eli', 'cut the release')
   pickUp('eli')
@@ -302,30 +323,60 @@ test('Codex counts by tokens, and a mixed round adds the two up', () => {
   assert.equal(cards().length, 0)
   tokens(0.3e6)
   assert.equal(open()[0].ask.title, '@eli has used 5.2M tokens since you last spoke')
-  // half the dollars and half the tokens is a whole threshold
+  assert.deepEqual([open()[0].ask.spend.provider, open()[0].ask.spend.unit], ['codex', 'tokens'])
+  // one request, both providers, each just under its own value: nothing, however much that is together
   setup()
   you('ada', 'make the checkout faster')
   pickUp('ada')
-  spend('ada', 2.6)
+  spend('ada', 4.9)
   hand('ada', 'eli', 'release it')
   pickUp('eli')
-  tokens(2.3e6)
+  tokens(4.9e6)
   assert.equal(cards().length, 0)
+  // Claude's part passes: the card is about ada alone, in dollars, and what goes to or from her waits
+  spend('ada', 0.2)
+  assert.equal(open().length, 1)
+  assert.equal(open()[0].ask.title, '@ada has used $5.10 at API rates since you last spoke')
+  assert.deepEqual(open()[0].ask.spend.who, ['ada'])
+  assert.match(hand('eli', 'ada', 'tagged v1.2'), /^held for @ada/)
+  assert.match(hand('eli', 'cy', 'write the notes'), /^held for @cy/, "new work for the request's Claude agents waits too")
+  assert.equal(agent('eli').status, 'working')
+  // Stop ends ada's turn, not eli's
+  answer(false)
+  assert.deepEqual(runner.writes.filter((w) => w.data === '\x1b').map((w) => w.name), ['ada'])
+  assert.equal(agent('eli').status, 'working')
+  // ...and eli's tokens check in by themselves
   tokens(0.2e6)
-  assert.equal(open()[0].ask.title, '@ada and @eli have spent $2.60 and used 2.5M tokens since you last spoke')
+  assert.equal(open()[0].ask.title, '@eli has used 5.1M tokens since you last spoke')
 })
 
-test('your own threshold, and off', () => {
-  setup({ checkIn: 1 })
-  you('ada', 'a small job')
-  pickUp('ada')
-  spend('ada', 1.1)
-  assert.equal(open()[0].ask.title, '@ada has spent $1.10 since you last spoke')
-  setup({ checkIn: false })
+test('a value for one provider only: the others never check in, and one without a meter cannot have one', () => {
+  setup({ checkIn: { at: { codex: 2e6, glm: 3 } } })
   you('ada', 'a big job')
   pickUp('ada')
   spend('ada', 60)
+  you('gil', 'translate it')
+  pickUp('gil')
+  hub.addSpend(agent('gil'), { cost: 60, tokens: 60e6 })
   assert.equal(cards().length, 0)
+  you('eli', 'cut the release')
+  pickUp('eli')
+  hub.addSpend(agent('eli'), { tokens: 2.4e6 })
+  assert.equal(open()[0].ask.title, '@eli has used 2.4M tokens since you last spoke')
+})
+
+test('Just tell me: one line and one notification each time the value is passed, and nothing is held', () => {
+  setup({ checkIn: { at: { claude: 5 }, then: 'tell' } })
+  const notices = []
+  hub.on('notice', (n) => notices.push(n))
+  you('ada', 'make the checkout faster')
+  assert.equal(loop(10, 1.2), 10, 'every hand-off went through')
+  assert.equal(cards().length, 0)
+  const lines = hub.feed.filter((e) => e.kind === 'event' && e.spend)
+  assert.deepEqual(lines.map((e) => e.text), ['@ada and @bo have used $6.00 at API rates since you last spoke', '@ada and @bo have used $12.00 at API rates since you last spoke'])
+  assert.equal(notices.length, 2)
+  assert.match(notices[0].body, /Nothing is held/)
+  assert.deepEqual(paused(), [])
 })
 
 test('an agent leaving for good does not leave its hand-offs held, and a rest leaves the card up', () => {
@@ -339,7 +390,7 @@ test('an agent leaving for good does not leave its hand-offs held, and a rest le
   assert.equal(typedInto('bo').length, before + 1)
 })
 
-test('through CLIque, as the app calls it: the preference, a message of yours, and switching it off', async () => {
+test('through CLIque, as the app calls it: the values per provider, a message of yours, and no longer asking', async () => {
   await quiet()
   for (const f of FILES) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
   fs.rmSync(path.join(process.env.CLIQUE_HOME, 'workspaces'), { recursive: true, force: true })
@@ -351,15 +402,18 @@ test('through CLIque, as the app calls it: the preference, a message of yours, a
   runner = { submitted: [], writes: [] }
   const got = (n) => typed.filter((t) => t.n.endsWith(n)).map((t) => t.text)
   for (const a of hub.agents.values()) (a.status = 'idle'), (a.run = `run-${a.name}`)
-  assert.deepEqual(clique.snapshot().checkIn, { usd: 5, tokens: 5e6 })
-  assert.deepEqual(clique.setCheckIn(2), { usd: 2, tokens: 2e6 })
-  assert.equal(JSON.parse(fs.readFileSync(CONFIG, 'utf8')).checkIn, 2)
-  assert.throws(() => clique.setCheckIn('lots'), /an amount in dollars/)
+  assert.deepEqual(clique.snapshot().checkIn, { at: {}, then: 'ask' }, 'off on a new install')
+  assert.deepEqual(clique.setCheckIn({ at: { claude: 2, codex: 2e6 } }), { at: { claude: 2, codex: 2e6 }, then: 'ask' })
+  assert.deepEqual(JSON.parse(fs.readFileSync(CONFIG, 'utf8')).checkIn, { at: { claude: 2, codex: 2e6 } })
+  assert.deepEqual(clique.setCheckIn({ at: { codex: null } }).at, { claude: 2 })
+  assert.throws(() => clique.setCheckIn({ at: { claude: 'lots' } }), /an amount in dollars/)
+  assert.throws(() => clique.setCheckIn({ at: { glm: 5 } }), /GLM doesn't report what its agents use/)
+  assert.deepEqual(clique.snapshot().providers.claude.meter, { unit: 'usd', presets: [2, 5, 10, 25] })
 
   await clique.send('ada', 'make the checkout faster')
   hub.onHook('ada', { hook_event_name: 'UserPromptSubmit', prompt: got('ada').at(-1) })
   hub.onStatusLine('ada', { session_id: 's-ada', cost: { total_cost_usd: 2.4 } })
-  assert.equal(open()[0].ask.title, '@ada has spent $2.40 since you last spoke')
+  assert.equal(open()[0].ask.title, '@ada has used $2.40 at API rates since you last spoke')
   hub.send({ from: 'ada', to: 'bo', text: 'run the tests' })
   assert.equal(got('bo').length, 0)
   await clique.send('ada', 'and the cart page')
@@ -372,10 +426,12 @@ test('through CLIque, as the app calls it: the preference, a message of yours, a
   hub.onHook('ada', { hook_event_name: 'UserPromptSubmit', prompt: got('ada').at(-1) })
   hub.onStatusLine('ada', { session_id: 's-ada', cost: { total_cost_usd: 5 } })
   assert.equal(open().length, 1)
-  assert.equal(clique.setCheckIn(false), null)
+  // "Just tell me" from now on: the card that was up is answered, and nothing is held any more
+  assert.deepEqual(clique.setCheckIn({ then: 'tell' }), { at: { claude: 2 }, then: 'tell' })
   assert.equal(open().length, 0)
-  assert.equal(clique.snapshot().checkIn, null)
-  clique.setCheckIn(5)
-  assert.equal('checkIn' in JSON.parse(fs.readFileSync(CONFIG, 'utf8')), false, 'the default is not written down')
+  assert.equal(cards().at(-1).answer.off, true)
+  // and off again: nothing is left in config.json
+  clique.setCheckIn({ at: { claude: null }, then: 'ask' })
+  assert.equal('checkIn' in JSON.parse(fs.readFileSync(CONFIG, 'utf8')), false)
   for (const h of clique.hubs.values()) for (const t of ['statsTimer', 'convoTimer', 'spendTimer', 'runtimeTimer']) clearTimeout(h[t])
 })

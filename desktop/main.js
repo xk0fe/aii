@@ -651,8 +651,8 @@ const actions = {
   autopilot: (on) => clique.here.setAutopilot(on),
   // The token savers (core/savers.js): savers({ coldStart: false }) turns one off.
   savers: (patch) => clique.setSavers(patch),
-  // The spend check-in (Hub.checkIn): checkIn(10) asks once a round has cost $10, checkIn(false) never asks.
-  checkIn: (usd) => clique.setCheckIn(usd),
+  // The spend check-in (Hub.checkIn), per provider: checkIn({ at: { claude: 5, codex: null }, then: 'ask' | 'tell' }).
+  checkIn: (patch) => clique.setCheckIn(patch),
   // Usage, day by day (core/history.js): what Claude Code and Codex used on this computer, from their own logs. The
   // first ask starts reading them; the Usage view asks again while `reading` says how far along that is.
   history: () => clique.usageHistory(),

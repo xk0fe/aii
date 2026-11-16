@@ -7,7 +7,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf, CHECK_IN_USD } from './hub.js'
+import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf } from './hub.js'
 import { movedPath } from './home.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
@@ -1009,7 +1009,7 @@ export class Clique extends EventEmitter {
     const providers = providersFrom(this.config.data, this.config.discovered)
     return {
       parked: false, autopilot: this.config.data.autopilot ?? true, theme: this.config.data.theme,
-      providers: Object.fromEntries(Object.values(providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault }])),
+      providers: Object.fromEntries(Object.values(providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault, ...(p.meter && { meter: p.meter }) }])),
       agents: [], feed: [], channels: channelsIn({}), reads: { since: 0, agents: {} },
       spend: { today: 0, usual: null, week: 0, weekBefore: 0 }, checkIn: checkInOf(this.config.data), usage: {}, tasks: { tickets: [], triage: null, autofix: false },
     }
@@ -1086,13 +1086,27 @@ export class Clique extends EventEmitter {
     return this.saversState()
   }
 
-  // The spend check-in (Hub.checkIn): setCheckIn(10) asks at $10, setCheckIn(false) never asks. It's yours, so it's one
-  // for every workspace on this computer. Switched off, the cards still up are answered: keep going.
-  setCheckIn(v) {
-    const usd = v === false ? false : Math.round(Number(v) * 100) / 100
-    if (usd !== false && !(usd >= 0.01 && usd <= 10000)) throw new Error('a check-in is an amount in dollars, from $0.01 up')
-    if (usd === CHECK_IN_USD) delete this.config.data.checkIn
-    else this.config.data.checkIn = usd
+  // The spend check-in (Hub.checkIn), per provider: setCheckIn({ at: { claude: 5 } }) asks once Claude agents have used
+  // $5 on one request, { at: { claude: null } } is off again, { then: 'tell' } only tells. A value is in the unit that
+  // provider's CLI reports (its meter); a provider without one has no check-in. It's yours, so it's one for every
+  // workspace on this computer. Cards of a provider that no longer asks are answered: keep going.
+  setCheckIn(patch = {}) {
+    const providers = providersFrom(this.config.data, this.config.discovered)
+    const now = checkInOf(this.config.data)
+    for (const [id, v] of Object.entries(patch.at ?? {})) {
+      const unit = providers[id]?.meter?.unit
+      if (!unit) throw new Error(`${providers[id]?.label ?? id} doesn't report what its agents use, so it has no check-in`)
+      if (v === null || v === false || v === 0 || v === '') {
+        delete now.at[id]
+        continue
+      }
+      const n = unit === 'usd' ? Math.round(Number(v) * 100) / 100 : Math.round(Number(v))
+      if (!(n > 0) || !Number.isFinite(n)) throw new Error(unit === 'usd' ? 'a check-in is an amount in dollars' : 'a check-in is a number of tokens')
+      now.at[id] = n
+    }
+    if (patch.then !== undefined) now.then = patch.then === 'tell' ? 'tell' : 'ask'
+    if (Object.keys(now.at).length || now.then === 'tell') this.config.data.checkIn = { at: now.at, ...(now.then === 'tell' && { then: 'tell' }) }
+    else delete this.config.data.checkIn
     this.config.save()
     for (const h of this.hubs.values()) h.checkInChanged()
     this.changed()

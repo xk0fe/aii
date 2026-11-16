@@ -55,7 +55,7 @@ export type ChannelEdit = { name?: string; brief?: string; members?: string[] | 
 
 // app: an agent tool (clique app, desktop/core/tools.js), a change to CLIque itself, answered only in the chat; say: its own words
 // spend: the spend check-in (desktop/core/hub.js checkIn): allow is Keep going, and no is Stop
-export type PermissionAsk = { type: 'permission'; tool?: string; title?: string; code?: string; detail?: string; always?: { i: number; label: string }[]; alert?: string; app?: boolean; say?: string; trust?: boolean; spend?: { who?: string[]; cost?: number; tokens?: number } }
+export type PermissionAsk = { type: 'permission'; tool?: string; title?: string; code?: string; detail?: string; always?: { i: number; label: string }[]; alert?: string; app?: boolean; say?: string; trust?: boolean; spend?: { provider?: string; unit?: string; who?: string[]; used?: number; at?: number } }
 export type Question = { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string }[] }
 export type QuestionAsk = { type: 'question'; questions: Question[]; alert?: string }
 export type PlanAsk = { type: 'plan'; plan: string; alert?: string }
