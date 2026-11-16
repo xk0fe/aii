@@ -13,6 +13,7 @@ const { CONFIG } = await import('../core/hub.js')
 const { Clique } = await import('../core/clique.js')
 const { addChannel, editChannel, dropChannel, channelsIn, channelName, renameShared, forget, space } = await import('../core/workspaces.js')
 const { serve } = await import('../core/server.js')
+const { agentKey } = await import('../core/keys.js')
 
 const REVIEW = 'Review only: never edit files. Numbered findings, most severe first.'
 fs.writeFileSync(CONFIG, JSON.stringify({
@@ -160,7 +161,7 @@ test('hand-offs, questions, replies and notes stay in the channel of the work th
   const reply = clique.hubs.get('default').post({ kind: 'reply', from: 'june', text: 'looks fine', re: june.current })
   assert.deepEqual(clique.hubs.get('default').feed.slice(-4).map((e) => [e.kind, e.channel]), [['msg', 'review'], ['msg', 'review'], ['note', 'review'], ['reply', 'review']])
   // the teammate it reached gets the brief with it, the first time
-  assert.match(typed.find(([n]) => n === 'iris')[1], /^\[in #review\. Channel brief, .*\] \[from @june: it's yours now/)
+  assert.match(typed.find(([n]) => n === 'iris')[1], /^\[in #review\. Channel brief, .*\] \[from @june: it's yours now, no need to report back\]\n<relayed from="june">\n/)
   // your reply to it from the agent's conversation (no channel of its own) stays in #review
   await clique.send('june', 'thanks', [], { re: reply.id })
   assert.equal(msgs().at(-1).channel, 'review')
@@ -266,7 +267,7 @@ test('hand-offs from two channels go in one turn each, and what comes of each st
   iris.status = 'idle'
   hub.pump(iris)
   assert.equal(typed.length, 1)
-  assert.match(typed[0][1], /check the colours$/)
+  assert.match(typed[0][1], /check the colours\n<\/relayed>$/)
   assert.equal(iris.inbox.length, 1)
   assert.equal(iris.inbox[0].channel, 'ios')
 })
@@ -397,7 +398,7 @@ test('clique post with an @name hands it to them in that channel, with its brief
   assert.equal(post(hub, 'june', 'review', '@iris please check the colours'), 'sent to @iris\n')
   const m = msgs().at(-1)
   assert.deepEqual([m.from, m.to, m.channel, m.text], ['june', 'iris', 'review', '@iris please check the colours'])
-  assert.equal(typed.at(-1)[1], `[in #review. Channel brief, for every message in #review: ${REVIEW}] [from @june: it's yours now, no need to report back] @iris please check the colours`)
+  assert.equal(typed.at(-1)[1], `[in #review. Channel brief, for every message in #review: ${REVIEW}] [from @june: it's yours now, no need to report back]\n<relayed from="june">\n@iris please check the colours\n</relayed>`)
   hub.onHook('iris', { hook_event_name: 'UserPromptSubmit', prompt: typed.at(-1)[1] })
   hub.onHook('iris', { hook_event_name: 'Stop', last_assistant_message: 'they look right' })
   const answer = replies(hub).at(-1)
@@ -539,7 +540,7 @@ test('clique post and clique channels, as an agent runs them, land in its worksp
   const home = fs.mkdtempSync(path.join(process.env.CLIQUE_HOME, 'cli-'))
   fs.writeFileSync(path.join(home, 'url'), `http://127.0.0.1:${server.address().port}`)
   fs.writeFileSync(path.join(home, 'token'), 'tok')
-  const env = { ...process.env, CLIQUE_HOME: home, CLIQUE_AGENT: 'june', CLIQUE_WORKSPACE: 'default' }
+  const env = { ...process.env, CLIQUE_HOME: home, CLIQUE_AGENT: 'june', CLIQUE_WORKSPACE: 'default', CLIQUE_BADGE: agentKey('default', 'june') } // its own key (core/keys.js)
   const run = (file, args) => new Promise((resolve) => execFile(file, args, { env }, (e, stdout, stderr) => resolve({ code: e?.code ?? 0, stdout, stderr })))
   const tricky = 'it\'s "done" & $HOME\nsecond line'
   const clis = [['clique.mjs', (...a) => run(process.execPath, [path.join(BIN, 'clique.mjs'), 'clique', ...a])], ...(WIN ? [] : [['bin/clique', (...a) => run(path.join(BIN, 'clique'), a)]])]

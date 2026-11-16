@@ -5,7 +5,10 @@ CLIQUE_HOME=${CLIQUE_HOME:-$CREW_HOME}; CLIQUE_URL=${CLIQUE_URL:-$CREW_URL}; CLI
 DIR=${CLIQUE_HOME:-$HOME/.clique}; [ -d "$DIR" ] || [ ! -d "$HOME/.crew" ] || DIR=$HOME/.crew
 # what CLIque wrote when it started comes first: an agent can outlive the CLIque that started it (core/ptyhost.js)
 URL=$(cat "$DIR/url" 2>/dev/null); URL=${URL:-$CLIQUE_URL}
-TOKEN=$(cat "$DIR/token" 2>/dev/null); TOKEN=${TOKEN:-$CLIQUE_TOKEN}
+# who's calling: an agent shows its own key (CLIQUE_BADGE, the same whichever CLIque is running), which says who it is
+# whatever FROM says. In a terminal of your own, or in an agent an older CLIque started, the token CLIque wrote down.
+TOKEN=$CLIQUE_BADGE
+[ -n "$TOKEN" ] || { TOKEN=$(cat "$DIR/token" 2>/dev/null); TOKEN=${TOKEN:-$CLIQUE_TOKEN}; }
 FROM=${CLIQUE_AGENT:-you}
 [ -n "$URL" ] || { echo "CLIque is not running" >&2; exit 1; }
 
