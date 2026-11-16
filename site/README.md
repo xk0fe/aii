@@ -97,6 +97,42 @@ Only the store links are typed in by hand, in `DOWNLOADS` in `config.mjs`: when 
 set its `href` to the App Store or Google Play address (instead of `null`, which shows "Coming soon"), commit, and run
 the site. Any button can go back to "Coming soon" the same way.
 
+## Updates
+
+An installed CLIque updates itself (`desktop/core/updates.js`): it looks for a newer version a little after it starts,
+every six hours and when the computer wakes, downloads it in the background, and shows a note when it's ready. Where it
+looks is decided when the app is **built**:
+
+- `RELEASE_REPO` set (step 3): the public repo's newest **published** release. Nothing else to set up.
+- `UPDATE_FEED` set (a repository variable, an `https://…/` address): that folder on the web instead.
+- Neither: the app is built with no update address and never looks. Check for Updates… says it can't update itself.
+
+What a release has to carry for that, all of it written by `npm run dist` and uploaded by the workflow already:
+
+| File | For |
+|---|---|
+| `latest-mac.yml` | Macs: the version, and the name, size and checksum of each zip |
+| `CLIque-<version>-mac-arm64.zip`, `CLIque-<version>-mac-x64.zip` (and their `.blockmap`) | the Mac update itself (the DMGs are only for the website) |
+| `latest.yml` | Windows: the same, for both installers |
+| `CLIque-Setup-<version>-x64.exe`, `CLIque-Setup-<version>-arm64.exe` (and their `.blockmap`) | the Windows update: the same installers people download |
+
+An update goes live the moment the draft is **published**: a draft or a pre-release is never seen by the apps. So try
+the draft's files first (step 8), then publish.
+
+- **A Mac only updates a signed app** (step 4): macOS swaps in a new version only if it's signed by the same Developer
+  ID. An ad hoc build never looks, and says why. It also has to be in Applications, not opened from the disk image.
+- **Windows** updates with or without signing. Signed (step 5), the app also checks that an update carries the same
+  publisher's signature; unsigned, it checks the checksum from `latest.yml` only.
+- `latest*.yml` also say which terminal host a version has (`hostProtocol`, from `desktop/core/ptyhost.js`). Before
+  restarting into an update while agents work, the app compares it with its own: the same, the agents keep working
+  through the restart and it says so; another, it warns that they will be stopped. Raise `PROTOCOL` only when the host
+  really changes what it speaks.
+- Versions from before the updater (1.0.0) don't have it: those are replaced by hand once, with the download.
+- To try a feed without a release: put the four files above in a folder on the web, and set `"updateFeed":
+  "https://…/"` in `~/.clique/config.json` (or `CLIQUE_UPDATE_FEED`) on a computer with a signed, installed CLIque.
+  `node desktop/scripts/update-drill.mjs` runs the whole flow against a made-up feed on this computer, installing
+  nothing.
+
 ## For the App Store and Google Play
 
 - Privacy policy URL: `<site>/privacy.html`. Support URL: `<site>/support.html`. Marketing URL: the site itself.

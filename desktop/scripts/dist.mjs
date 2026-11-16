@@ -12,6 +12,7 @@ import { build, Platform, Arch } from 'electron-builder'
 import yaml from 'js-yaml' // electron-builder's own
 import config from '../electron-builder.config.mjs'
 import { buildMac, buildWin } from './build-voice.mjs'
+import { stampAll } from './update-info.mjs'
 
 // CI hands every signing secret over, set or not, and electron-builder takes an empty CSC_LINK for a certificate at
 // "" (the folder it runs in): without a certificate there's nothing to sign with, so an empty one isn't there at all.
@@ -45,3 +46,7 @@ for (const os of platforms) {
     if (infos.length > 1) fs.writeFileSync(updateInfo, yaml.dump({ ...infos[0], files: infos.flatMap((i) => i.files) }, { lineWidth: -1 }))
   }
 }
+// The update information (latest-mac.yml, latest.yml, when the build has somewhere to publish to) also says which
+// terminal host this version has: scripts/update-info.mjs.
+const stamped = stampAll(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', config.directories.output))
+if (stamped.length) console.log(`update information: ${stamped.join(', ')} say which terminal host this version has`)

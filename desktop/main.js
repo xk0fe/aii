@@ -5,7 +5,7 @@
 import './core/migrate-now.js' // first: an older install's folder is moved before anything below reads it
 import { moveUserData } from './core/migrate.js'
 import { movedPath } from './core/home.js'
-import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, powerMonitor, systemPreferences } from 'electron'
+import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, powerMonitor, systemPreferences, protocol, autoUpdater as systemUpdater } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -14,16 +14,22 @@ import { fileURLToPath } from 'node:url'
 import qrcode from 'qrcode-generator'
 import { CONFIG, ATTACHMENTS, HOME } from './core/hub.js'
 import { Clique, CACHE } from './core/clique.js'
+import { opens } from './core/attachments.js'
+import { serveSandbox, lockFrames } from './core/sandbox.js'
 import { addresses } from './core/link.js'
 import { Remote } from './core/remote.js'
 import { readPack } from './core/pack.js'
 import { Voice, voiceActions, voiceAudio } from './core/voice.js'
 import { pillWindow } from './core/pill.js'
+import { Calm, morningAfter } from './core/notify.js'
 import { readNotches, hatchOn } from './core/hatch.js'
 import { Permissions, appBundle, bundleIdIn } from './core/permissions.js'
 import { Setup, withSetup, hasAgents } from './core/setup.js'
 import { keeper, awakeState } from './core/awake.js'
 import { addProvider, removeProvider, checkProvider, keepProvidersInUse } from './core/providers.js'
+import { Updates, restartWords, keepsAgents, checkWords, menuItem, offReason, macSignature, feedFrom, feedConfig, electronUpdater, newer } from './core/updates.js'
+import { loginItem, LOGIN_ARG } from './core/login.js'
+import { PROTOCOL } from './core/ptyhost.js'
 // The app's name and id (core/appid.js), which packaging uses too: on Windows notifications carry the id, and it must
 // match the installer's Start menu shortcut.
 import { APP_ID, PRODUCT_NAME, USER_DATA } from './core/appid.js'
@@ -44,12 +50,18 @@ let pill // the floating pill's window placement (core/pill.js)
 let notches = [] // where the screens' notches are (core/hatch.js)
 let permissions // what macOS allows this app (core/permissions.js)
 let permWin // the permissions flow, while it's up (ui/permissions.js)
+let calm // when to notify, and with what (core/notify.js)
+const looks = new Map() // what the dashboard and the floating chat have open, as their pages say
 let permPoint // the screen it came up on, as a point on it
 let afterPermissions = null // what comes next once it's gone: on a first launch, the dashboard
 let trayHiddenAt = 0
 let quitting = false
 let onBattery = false // a laptop that isn't plugged in (the tray says so while it's kept awake)
 let started = false // CLIque is up: its windows exist, so a second launch or a .clique file can show them
+let updates = null // CLIque updating itself (core/updates.js)
+let updating = false // quitting into an update: what closes and quits from here on does so without asking
+let updatesStarted = null // startUpdates, once it's done
+let login = null // Open at login (core/login.js)
 const setup = new Setup() // can Claude Code and Codex run here (core/setup.js): the first-run screen, ui/setup.js
 
 // Something that went wrong in here and nothing caught: written to CLIque's log, and CLIque carries on. Without this
@@ -89,6 +101,7 @@ app.on('open-file', (e, file) => {
 app.on('second-instance', (_e, argv) => {
   const file = packIn(argv)
   if (file) return openPack(file)
+  if (argv.includes(LOGIN_ARG)) return // the system opening it at login, with CLIque up already: nothing to show
   if (started) openDashboard()
 })
 opened = packIn(process.argv)
@@ -118,6 +131,8 @@ async function start() {
   // working while CLIque quits or relaunches with new code.
   // bin/ goes on the agents' PATH, so it has to be a real folder: in an installed CLIque, the one next to app.asar.
   const bin = path.join(dir, 'bin').replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
+  // A page an agent attached runs in a sandbox of its own, never in the chat's page (core/sandbox.js).
+  serveSandbox(protocol, [ATTACHMENTS, CACHE])
   clique = new Clique({ bin, computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
   const checked = setup.check() // meanwhile, in the background
   await clique.start()
@@ -130,10 +145,12 @@ async function start() {
     permissions = newPermissions()
   }
 
+  login = loginItem({ app })
   setMenu()
   createTray()
   createOverlay()
   wire()
+  updatesStarted = startUpdates().catch((e) => logLine('update', e?.stack ?? String(e)))
   const key = clique.config.data.hotkey ?? 'Alt+Shift+Space'
   const hotkey = () => (dashOnScreen() ? dash.focus() : overlay.webContents.send('toggle'))
   if (!globalShortcut.register(key, hotkey)) clique.say(shortcutTaken(key, 'opens the floating chat', `open the chat from ${PRODUCT_NAME}'s icon in the ${MAC ? 'menu bar' : 'taskbar'}`))
@@ -148,6 +165,7 @@ async function start() {
   }
   started = true
   openPackFile() // CLIque was opened by double-clicking a .clique file
+  const updated = afterUpdate()
   try {
     keepProvidersInUse(clique.config)
   } catch (e) {
@@ -156,9 +174,11 @@ async function start() {
   // A first run: no workspace or no agents yet, so CLIque opens on its dashboard, which says what to set up, asks for the
   // first workspace, or invites the first agent. What macOS still has to allow comes first, up in the hatch.
   const firstRun = !clique.screen || !hasAgents(clique.config.data)
+  // Opened by the system at login (core/login.js): the icon and the pill, no window put in front of you.
+  if (login.opened()) return
   const missing = (await permissions?.missing().catch((e) => (logLine('permissions', e?.stack ?? String(e)), []))) ?? []
-  if (missing.length) openPermissions({ then: firstRun ? openDashboard : null })
-  else if (firstRun) openDashboard()
+  if (missing.length) openPermissions({ then: firstRun || updated?.dashboard ? openDashboard : null })
+  else if (firstRun || updated?.dashboard) openDashboard()
 }
 
 // CLIque couldn't start (its terminal host, say): say so and quit, rather than run on with no icon and no window, holding
@@ -196,7 +216,11 @@ function setMenu() {
   if (!MAC) return Menu.setApplicationMenu(null)
   const dev = app.isPackaged ? [] : [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }]
   const view = { label: 'View', submenu: [...dev, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] }
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, view, { role: 'windowMenu' }]))
+  // the app menu as macOS makes it, with updates under About: Check for Updates…, or Restart to Update once one is here
+  const { label, act } = menuItem(updates?.phase)
+  const update = { label, click: () => (act === 'restart' ? restartToUpdate() : checkForUpdates()) }
+  const appMenu = { label: PRODUCT_NAME, submenu: [{ role: 'about' }, update, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }
+  Menu.setApplicationMenu(Menu.buildFromTemplate([appMenu, { role: 'editMenu' }, view, { role: 'windowMenu' }]))
 }
 
 // Windows' keys for what a Mac's View menu does: Ctrl+= / Ctrl+- / Ctrl+0 zoom and F11 full screen (the dashboard); and,
@@ -222,7 +246,7 @@ function windowKeys(win, { zoom = false } = {}) {
 }
 
 app.on('window-all-closed', () => {}) // keep living in the menu bar
-app.on('will-quit', () => remote?.stop()) // phones hear CLIque went away, rather than lose it
+app.on('will-quit', () => (remote?.stop(), calm?.stop())) // phones hear CLIque went away, rather than lose it
 // and the computer may sleep again, whatever its agents are doing
 app.on('will-quit', () => {
   quitting = true
@@ -242,6 +266,12 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 // ends them too.
 app.on('before-quit', (e) => {
   if (quitting || !clique) return
+  // Restart to update: you were told what happens to the agents before you said yes (restartToUpdate)
+  if (updating) {
+    quitting = true
+    clique.detach()
+    return void keepAwake() // and the computer may sleep again (will-quit does so too)
+  }
   const live = [...clique.hubs.values()].reduce((n, h) => n + h.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'parked', 'resting'].includes(a.status)).length, 0)
   const s = live > 1 ? 's' : ''
   if (live) lowerHatch() // its dialog is coming, right under the docked chat
@@ -295,13 +325,31 @@ const awake = keeper({
 })
 const keepAwake = awake.check
 
-// The state the windows get: the workspace on screen, what's set up, and whether the computer is kept awake.
+// The state the windows get: the workspace on screen, what's set up, whether the computer is kept awake, when notifications are held (notifyState), and this app's
+// own: its version, an update that's on its way or ready (core/updates.js), and whether it opens at login (null where
+// it can't: running from source).
 const stateNow = (snapshot = clique.snapshot()) => ({
   ...withSetup(snapshot, clique.config.data, setup.status),
+  notify: notifyState(),
   awake: awakeState(awake.decision, { enabled: clique.config.data.keepAwake !== false, pc: MAC ? 'Mac' : 'PC', battery: onBattery }),
+  app: { version: app.getVersion(), update: updates?.view() ?? null, login: login?.supported ? { on: login.on } : null },
 })
 
 // ---- windows ---------------------------------------------------------------
+
+// One of CLIque's own files from the chat: in its attachments or its cache of linked computers' files, wherever `..`
+// and links really lead. (A file that's gone is still one of them by its name: the action says it's gone.)
+function ownFile(file) {
+  const real = (p) => {
+    try {
+      return fs.realpathSync(p)
+    } catch {
+      return path.resolve(p)
+    }
+  }
+  const at = real(String(file))
+  return [ATTACHMENTS, CACHE].some((d) => at.startsWith(real(d) + path.sep))
+}
 
 // A window for one of the pages in ui/. The page hears which computer this is from preload.cjs, and your home folder and
 // whether CLIque runs from source from here. One whose page crashed loads it again.
@@ -310,6 +358,7 @@ function page(file, options, query) {
   const win = new BrowserWindow({ show: false, ...options, webPreferences: { preload: path.join(dir, 'preload.cjs'), additionalArguments: args } })
   win.loadFile(path.join(dir, 'ui', file), { query })
   win.webContents.on('will-navigate', (e) => e.preventDefault()) // a file dropped outside a drop zone must not replace the page
+  lockFrames(win.webContents) // and a frame in it (an attached page's sandbox) goes nowhere and opens nothing
   win.webContents.on('render-process-gone', (_e, { reason }) => {
     if (reason === 'clean-exit' || quitting) return
     logLine('page', `${file} ${reason}`)
@@ -322,7 +371,7 @@ function page(file, options, query) {
 // The popover and the floating chat are hidden, never closed (⌘W, Alt+F4), until CLIque quits, or Windows shuts down
 // or signs you out (no before-quit then).
 function keepOpen(win) {
-  win.on('close', (e) => quitting || (e.preventDefault(), win.hide()))
+  win.on('close', (e) => quitting || updating || (e.preventDefault(), win.hide())) // (updating: macOS's updater closes every window, then quits)
   win.on('session-end', () => (quitting = true))
 }
 
@@ -382,10 +431,10 @@ let trayTip = ''
 let trayDraws = 0
 let needsBadge = null // [image, words] for the taskbar button, or null
 async function drawTrayIcon(counts) {
-  const { waiting, working, on } = counts
+  const { waiting, working, on, quiet } = counts
   const tone = waiting ? 'need' : working ? 'work' : ''
   const next = `${tone}:${waiting || working}`
-  const tip = waiting ? `${PRODUCT_NAME} · ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? `${PRODUCT_NAME} · ${working} of ${on} at work` : PRODUCT_NAME
+  const tip = `${waiting ? `${PRODUCT_NAME} · ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? `${PRODUCT_NAME} · ${working} of ${on} at work` : PRODUCT_NAME}${quiet ? ` · ${quiet}` : ''}`
   if (tip !== trayTip) tray.setToolTip((trayTip = tip))
   if (next === trayDrawn) return
   trayDrawn = next
@@ -592,6 +641,13 @@ function showDock() {
 // so an agent on another computer (iris@workstation) is handled there. What the UI does lands in the workspace on screen.
 const actions = {
   state: () => stateNow(),
+  // When CLIque may notify you (core/notify.js): notifications({ days, from, to }) is the schedule from the dashboard's
+  // Notifications…, notifications({ pause: 'hour' | 'morning' | 'manual' | 'off' }) the pause from the menu bar.
+  notifications: (patch) => {
+    clique.setNotifications(patch)
+    calm.tick() // a quiet time that just ended gives its summary
+    return notifyState()
+  },
   // The permissions flow: permissions('list', all) what's missing and the hatch to fit, 'look' / 'ask' / 'open' / 'skip'
   // one of them, 'done' puts it away. openPermissions: "Permissions…" in the ⋯ menu.
   permissions: async (op, arg) => {
@@ -651,6 +707,8 @@ const actions = {
   autopilot: (on) => clique.here.setAutopilot(on),
   // The token savers (core/savers.js): savers({ coldStart: false }) turns one off.
   savers: (patch) => clique.setSavers(patch),
+  // The spend check-in (Hub.checkIn), per provider: checkIn({ at: { claude: 5, codex: null }, then: 'ask' | 'tell' }).
+  checkIn: (patch) => clique.setCheckIn(patch),
   // Usage, day by day (core/history.js): what Claude Code and Codex used on this computer, from their own logs. The
   // first ask starts reading them; the Usage view asks again while `reading` says how far along that is.
   history: () => clique.usageHistory(),
@@ -749,7 +807,26 @@ const actions = {
     return ops[op]()
   },
 
-  openFile: (file) => [ATTACHMENTS, CACHE].some((d) => String(movedPath(file)).startsWith(d + path.sep)) && shell.openPath(movedPath(file)),
+  // A file from the chat, in the app the system has for it: only CLIque's attachments and its cache of linked computers'
+  // files, and only what's looked at (a picture, a recording, a page, a document). Anything else an agent attached is
+  // shown in its folder instead: opening a script or an app would run it. -> 'opened', 'shown', or false (not CLIque's file)
+  openFile: async (file) => {
+    file = movedPath(file)
+    if (!ownFile(file)) return false
+    if (!fs.existsSync(file)) throw new Error("That file isn't kept any more.")
+    if (!opens(file)) return shell.showItemInFolder(file), 'shown'
+    const failed = await shell.openPath(file)
+    if (failed) throw new Error(failed)
+    return 'opened'
+  },
+  // ...and where it is, in Finder (Explorer on Windows)
+  showFile: (file) => {
+    file = movedPath(file)
+    if (!ownFile(file)) return false
+    if (!fs.existsSync(file)) throw new Error("That file isn't kept any more.")
+    shell.showItemInFolder(file)
+    return true
+  },
   openUrl: (url) => /^https?:\/\//.test(url) && shell.openExternal(url),
   // A workspace's folder, in Finder (Explorer on Windows): the one config.json has for it, never a path from the page.
   openFolder: async (ws) => {
@@ -782,6 +859,166 @@ const actions = {
     return (await dialog.showOpenDialog(dash, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0]
   },
   quit: () => app.quit(),
+  // CLIque updating itself (core/updates.js): update('check') is Check for Updates…, update('restart', asked) Restart
+  // to update (asked: the question you said yes to, as the note showed it), update('later') puts the note away.
+  update: (op, arg) => {
+    const ops = { check: () => void checkForUpdates(), restart: () => restartToUpdate(arg), later: () => updates?.putOff() }
+    if (!Object.hasOwn(ops, op)) throw new Error(`unknown update action "${op}"`)
+    return ops[op]()
+  },
+  // Open at login (core/login.js): openAtLogin(true | false) -> what the system now says
+  openAtLogin: (on) => {
+    const now = login.set(on)
+    clique.changed()
+    return now
+  },
+}
+
+// ---- updates (core/updates.js) ---------------------------------------------------------------------------------
+
+// Can this copy update itself, and from where; if so it starts looking, quietly. If not it never looks, and Check for
+// Updates… says why.
+async function startUpdates() {
+  let baked = null
+  try {
+    baked = fs.readFileSync(path.join(process.resourcesPath, 'app-update.yml'), 'utf8') // electron-builder's, when the build had somewhere to publish to
+  } catch {}
+  const feed = feedFrom({ env: process.env, config: clique.config.data, baked: app.isPackaged ? baked : null })
+  const exe = app.getPath('exe')
+  const can = (signature) => offReason({ packaged: app.isPackaged, platform: process.platform, feed, exe, inApplications: MAC && app.isPackaged ? app.isInApplicationsFolder() : true, signature })
+  let off = can('developer-id')
+  if (!off && MAC) off = can(await signatureOf(appBundle(exe)))
+  let updater = null
+  if (!off) {
+    try {
+      const { default: { autoUpdater } } = await import('electron-updater')
+      // an address set by hand: electron-updater wants it in a file too (where it keeps what it downloads)
+      let configPath
+      if (feed.url) {
+        configPath = path.join(app.getPath('userData'), 'update-feed.yml')
+        fs.writeFileSync(configPath, feedConfig(feed.url, baked))
+      }
+      // Quitting the ordinary way installs a downloaded update too, but only one the agents keep working through:
+      // Quit says they keep working, and that has to stay true
+      const installOnQuit = (found) => keepsAgents({ outlives: clique.outlives, hostProtocol: found.hostProtocol, protocol: PROTOCOL, hostInApp: hostInApp() }) === true
+      updater = electronUpdater(autoUpdater, { feed, configPath, installOnQuit, version: app.getVersion(), log: (text) => logLine('update', text) })
+      // the quit into the new version is starting (it can come a moment after you said Restart, once macOS has unpacked
+      // the update): from here on windows close and CLIque quits without asking (keepOpen, before-quit)
+      systemUpdater.on('before-quit-for-update', () => (updating = true))
+    } catch (e) {
+      logLine('update', e?.stack ?? String(e))
+      off = 'platform'
+    }
+  }
+  let menu = ''
+  updates = new Updates({
+    updater, off, version: app.getVersion(),
+    seen: clique.config.data.updateSeen ?? '',
+    saveSeen: (version) => {
+      clique.config.data.updateSeen = version
+      saveConfig()
+    },
+    log: (text) => logLine('update', text),
+    onChange: ({ phase }) => {
+      if (phase !== menu) setMenu((menu = phase))
+      clique.changed()
+    },
+  }).start()
+  setMenu()
+  clique.changed()
+  powerMonitor.on('resume', () => {
+    updates.wake()
+    login.refresh()
+  })
+  app.on('will-quit', () => updates.stop())
+}
+
+// How CLIque.app is signed, as `codesign` tells it -> 'developer-id' | 'signed' | 'adhoc' | 'none'
+const signatureOf = (bundle) => new Promise((resolve) => {
+  if (!bundle) return resolve('none')
+  execFile('/usr/bin/codesign', ['-dv', '--verbose=2', bundle], { timeout: 10000 }, (_e, out, err) => resolve(macSignature(`${out ?? ''}\n${err ?? ''}`)))
+})
+
+// Windows' installer stops whatever runs from CLIque's own folder before it replaces the files. The terminal host runs
+// from a copy elsewhere (core/ptyclient.js stage), unless that copy wouldn't start. -> true (the host would be
+// stopped), false, or null (a host from an older CLIque, which doesn't say where it runs from). A Mac swaps the app
+// under a running host without stopping it (test/host-update.test.js).
+function hostInApp() {
+  if (!WINDOWS) return false
+  const exe = clique.runner.hostExe
+  if (!exe) return clique.outlives ? null : false
+  return exe.toLowerCase().startsWith(path.dirname(process.execPath).toLowerCase() + path.sep)
+}
+
+// The agents at work on this computer right now, by name: the ones a restart could interrupt.
+const busyHere = () => [...new Set([...clique.hubs.values()].flatMap((h) => h.snapshot().agents.filter((a) => a.on && ['working', 'starting', 'waiting'].includes(a.status)).map((a) => a.name)))]
+
+// Check for Updates… (the app menu, the popover's and the dashboard's menus): looks now and says what it found, in a
+// plain dialog. The one time an update speaks up by itself is the note in the dashboard when it's ready.
+let checkingNow = false
+async function checkForUpdates() {
+  if (checkingNow) return
+  checkingNow = true
+  try {
+    await updatesStarted // (asked in the first moment after starting: once it knows whether it can)
+    if (!updates) return
+    const out = await updates.check({ manual: true })
+    const words = checkWords(out, { product: PRODUCT_NAME, version: app.getVersion(), mac: MAC })
+    const buttons = words.buttons ?? ['OK']
+    lowerHatch() // a dialog, right under the docked chat
+    app.focus({ steal: true })
+    const { response } = await dialog.showMessageBox({ type: 'info', message: words.message, detail: words.detail, buttons, defaultId: 0, cancelId: buttons.length - 1 })
+    raiseHatch()
+    if (words.buttons && response === 0) restartToUpdate()
+  } catch (e) {
+    logLine('update', e?.stack ?? String(e))
+  } finally {
+    checkingNow = false
+  }
+}
+
+// Restart to update. While agents work it asks first, in the dashboard's note, with what really happens to them
+// (restartWords): `asked` is the question you said yes to; a different one by now (someone started working) is asked
+// again. Then CLIque lets go of the agents as when it quits, and the new version picks them up.
+function restartToUpdate(asked) {
+  if (updates?.phase !== 'ready' || !updates.next) return false
+  const words = restartWords({ busy: busyHere(), outlives: clique.outlives, hostProtocol: updates.next.hostProtocol, protocol: PROTOCOL, hostInApp: hostInApp(), product: PRODUCT_NAME })
+  if (words && words.text !== asked) {
+    updates.ask(words)
+    openDashboard()
+    return false
+  }
+  try {
+    fs.writeFileSync(path.join(app.getPath('userData'), 'updated.json'), JSON.stringify({ dashboard: dashOnScreen() })) // for afterUpdate
+  } catch {}
+  updates.restart() // quits (before-quit-for-update, then before-quit); if it can't, the note says so
+  return true
+}
+
+// The first start as a newer version, however it got there (Restart to update, or installed as CLIque quit): says so
+// in the chat, and -> { dashboard } if the dashboard was open when it restarted for it. Which version ran last is
+// kept in Electron's folder for the app.
+function afterUpdate() {
+  const dir = app.getPath('userData')
+  const read = (name) => {
+    try {
+      return fs.readFileSync(path.join(dir, name), 'utf8').trim()
+    } catch {
+      return null
+    }
+  }
+  let was = null
+  try {
+    was = JSON.parse(read('updated.json'))
+  } catch {}
+  fs.rmSync(path.join(dir, 'updated.json'), { force: true })
+  const [ran, now] = [read('clique-version'), app.getVersion()]
+  try {
+    if (ran !== now) fs.writeFileSync(path.join(dir, 'clique-version'), now)
+  } catch {}
+  if (!app.isPackaged || !ran || !newer(now, ran)) return null // from source, a first run, or the same version again
+  clique.say(`updated to ${PRODUCT_NAME} ${now}`)
+  return { dashboard: Boolean(was?.dashboard) }
 }
 
 // A new pairing code for the dashboard's page that asked -> { code, qr, expires }, made once this computer's addresses are
@@ -871,11 +1108,16 @@ function wire() {
   clique.on('state', (snapshot) => {
     keepAwake() // first: the state says whether the computer is kept awake
     const state = stateNow(snapshot)
+    calm?.settle() // whoever was answered since: their notification comes down
     if (nativeTheme.themeSource !== state.theme) nativeTheme.themeSource = state.theme
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('state', state)
-    const counts = trayCounts(state)
+    const counts = { ...trayCounts(state), quiet: quietWords(state.notify) }
     if (!MAC) drawTrayIcon(counts).catch((e) => logLine('tray', e?.stack ?? String(e)))
-    else if (trayTitle(counts) !== title) tray.setTitle((title = trayTitle(counts)), { fontType: 'monospacedDigit' })
+    else {
+      if (trayTitle(counts) !== title) tray.setTitle((title = trayTitle(counts)), { fontType: 'monospacedDigit' })
+      const tip = counts.quiet ? `${PRODUCT_NAME} · ${counts.quiet}` : PRODUCT_NAME
+      if (tip !== trayTip) tray.setToolTip((trayTip = tip))
+    }
   })
   clique.changed()
   // plugged in or unplugged: the tray's line says when it's on battery
@@ -884,25 +1126,71 @@ function wire() {
   // the theme changed (CLIque's, or the system's while CLIque follows it): Windows' window buttons follow the titlebar
   nativeTheme.on('updated', () => !MAC && dash && !dash.isDestroyed() && dash.setTitleBarOverlay(captionColors()))
 
-  // From any workspace: with workspaces, the title says which, and a click puts that one on screen first.
+  // From any workspace: with workspaces, the notification says which, and a click puts that one on screen first.
   // (your accounts' limits are no workspace's)
-  const from = (ws) => (ws && clique.hubs.size > 1 ? `${clique.hubs.get(ws)?.space.name ?? ws} · ` : '')
   const goTo = (ws, focus) => {
     if (ws && ws !== clique.current && clique.hubs.has(ws)) clique.workspaceAction('switch', ws)
     openDashboard(focus)
   }
-  clique.on('alert', (name, text, ws) => {
-    const note = new Notification({ title: `${from(ws)}${name.replace(/\.(\d+)(?=@|$)/, ' (clone $1)')} needs you`, body: text })
-    note.on('click', () => goTo(ws, name))
-    note.show()
+  // What interrupts you is core/notify.js's to decide: held outside your schedule and while paused (one summary after),
+  // nothing for the place you're looking at, agents that ask together as one notification, one that was answered taken
+  // down. The queue, the count up here and the chat get everything either way, and so do your phones (core/remote.js
+  // hears the clique itself).
+  calm = new Calm({
+    prefs: () => clique.config.data.notifications,
+    views: lookingNow,
+    needs: (ws, name) => clique.stillNeeds(ws, name),
+    label: (ws) => (ws && clique.hubs.size > 1 ? clique.hubs.get(ws)?.space.name ?? ws : ''),
+    changed: () => clique.changed(), // the menu bar says "paused", or stops saying it
+    show: (note, wanted) => {
+      const n = new Notification({ title: note.title, body: note.body })
+      n.on('click', () => {
+        calm.gone(n)
+        goTo(note.target.ws, note.target.focus)
+      })
+      // checked once more as the system shows it: quiet time may have begun, or the card been answered, in between
+      n.on('show', () => wanted() || n.close())
+      n.on('close', () => calm.gone(n))
+      n.on('failed', () => calm.gone(n))
+      n.show()
+      return n
+    },
   })
-
+  clique.on('alert', (name, text, ws) => calm.alert(name, text, ws))
   // e.g. "@ada fixed #12": click to check it in the Bugs lane
-  clique.on('notice', ({ title, body, focus, workspace }) => {
-    const note = new Notification({ title: `${from(workspace)}${title}`, body })
-    note.on('click', () => goTo(workspace, focus))
-    note.show()
+  clique.on('notice', (notice) => calm.notice(notice))
+  // What a page has open, for "not while you're looking": { ws, agent, sees, tasks } (core/notify.js lookingAt).
+  ipcMain.on('looking', (e, view) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const key = win === dash ? 'dash' : win === overlay ? 'overlay' : null
+    if (!key) return
+    if (!view || typeof view !== 'object') return void looks.delete(key)
+    looks.set(key, { ws: String(view.ws ?? ''), agent: view.agent ? String(view.agent) : null, sees: Array.isArray(view.sees) ? view.sees.slice(0, 200).map(String) : [], tasks: Boolean(view.tasks) })
   })
+}
+
+// What you're looking at right now: only a window that has the keyboard counts, so a chat left open behind another app
+// still notifies.
+function lookingNow() {
+  const on = (win) => win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()
+  return [on(dash) && looks.get('dash'), on(overlay) && looks.get('overlay')].filter(Boolean)
+}
+
+// { days, from, to, pause, quiet, why, until, held, morning }: the schedule and the pause as saved; whether notifications
+// are held now, why ('pause' | 'schedule') and until when (ms; null: until you turn them back on); how many are being
+// kept; and when "until tomorrow morning" would end.
+function notifyState() {
+  const prefs = clique.notifications
+  return { ...prefs, ...(calm?.view() ?? { quiet: false, why: null, until: null, held: 0 }), morning: morningAfter(prefs) }
+}
+// "notifications paused until 9:00", for the icon's tooltip; '' while they come through.
+function quietWords(n) {
+  if (!n?.quiet) return ''
+  const words = n.why === 'pause' ? 'notifications paused' : 'notifications off'
+  if (n.until == null) return words
+  const d = new Date(n.until)
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return `${words} until ${d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`}`
 }
 
 // Voice input (core/voice.js): the chat's mic button, plus a hotkey that opens the chat and starts listening.

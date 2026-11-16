@@ -808,6 +808,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       row('Context limit', choices('contextLimit', `${choice('', win ? `Full ${tokenCount(win)}` : 'Full')}${presets.map((n) => choice(n, tokenCount(n))).join('')}<label class="limit-custom"><input type="number" min="10" step="10" data-limit-k value="${custom ? Math.round(limit / 1000) : ''}" placeholder="Custom" title="Any limit, in thousands of tokens"><span>k</span></label>`)) +
       row('When it’s reached', choices('onContextLimit', choice('fresh', 'New conversation') + choice('notify', 'Just tell me')), { cls: 'when-row' }) +
       '<p class="limit-note"></p>' +
+      // its provider's spend check-in (ui/dashboard.js drawCheckIn), as it stands: set for every agent on that provider
+      (state.providers?.[draft.provider]?.meter ? row('Spend check-in', '<em class="checkin-read"></em>', { cls: 'checkin-row' }) : '') +
       `<div class="ed-row clones-row"><span class="ed-label">Clones at once<small>when it's busy</small></span><div class="ed-ctl">${choices('clones', choice('', 'None') + CLONES.map((v) => choice(v, v)).join(''))}</div></div>`
     syncLimit()
   }
@@ -829,6 +831,12 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       : fresh ? `At ${tokenCount(limit)} it finishes what it's doing and starts a new conversation.`
       : `At ${tokenCount(limit)} you get a notification and decide when to start fresh.`
     note.classList.toggle('past', past)
+    const read = host.querySelector('.checkin-read')
+    if (read) {
+      const label = state.providers?.[draft.provider]?.label ?? draft.provider
+      read.textContent = `${checkInSays(state, draft.provider)} · every ${label} agent`
+      read.closest('.ed-row').title = `Set for every ${label} agent in the sidebar's ⋯ menu, under Spend check-in`
+    }
     host.querySelector('.clones-row').title = clonesTip()
   }
 

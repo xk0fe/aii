@@ -1,12 +1,16 @@
 // Renders every view with a made-up clique (scripts/screenshot-preload.cjs) and saves PNGs, plus short GIFs of
 // the animations. Nothing starts and ~/.clique is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp] [--win]
 // [--frame] [--dark] [--window=1100x700]
-import { app, BrowserWindow, nativeTheme } from 'electron'
+import { app, BrowserWindow, nativeTheme, protocol } from 'electron'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { restartWords } from '../core/updates.js'
+
+import { serveSandbox } from '../core/sandbox.js'
+import { sampleFiles } from './sample-files.mjs'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-shots-'))
@@ -95,6 +99,35 @@ const REACT_SETUP = (mode) => `const s = window.__cliqueState; const t = (m) => 
   s.feed = ${JSON.stringify(REACT_FEED(mode))}.map((e, i, all) => ({ ...e, ts: t(2 * (all.length - i)) }))
   for (const a of s.agents) Object.assign(a, { status: 'idle', activity: '', subs: [], waitingOn: [], thread: undefined })
   s.reads = { since: Date.now() + 1e6, agents: {} }
+  window.__cliqueEmit('state', s)`
+// The check-in shots (core/hub.js checkIn), as the hub posts them. Claude: a request of yours that Ada and Milo passed
+// back and forth until it had used $5.40, the hand-offs in the request's thread, the last one held, and the card.
+// Codex: Theo alone on a long test run, in tokens. And "Just tell me": the line that comes instead of a card.
+const CHECK_IN_HEAD = `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+  s.checkIn = { at: { claude: 5, codex: 5e6 }, then: 'ask' }
+  const calm = (busy, doing) => { s.agents = s.agents.map((a) => ({ ...a, status: a.name === busy ? 'working' : a.status === 'off' ? 'off' : 'idle', activity: a.name === busy ? doing : '', since: Date.now() - 60000, subs: [], waitingOn: [], owes: [], queue: 0 })) }
+  const card = (id, from, re, spend, title, say) => ({ id, kind: 'ask', from, to: 'you', cli: 'clique', re, thread: re, out: true, ts: t(1), ask: { type: 'permission', tool: 'clique spend', always: [], title, say,
+    detail: 'Nothing new starts until you answer. Turns already running finish first.', spend: { since: t(47), from: 'you', ...spend } } })
+  const loop = [
+    { id: 'c0', kind: 'reply', from: 'Theo', to: 'you', text: 'All 48 checkout tests pass on Chrome and Safari.', ts: t(55) },
+    { id: 'c1', kind: 'msg', from: 'you', to: 'Ada', text: 'The checkout takes four seconds to load. Find out why and fix it with Milo.', ts: t(47) },
+    { id: 'c2', kind: 'msg', from: 'Ada', to: 'Milo', re: 'c1', thread: 'c1', round: 'c1', text: 'The order API is fine (180 ms). The page waits on three requests in a row. Can you load them together?', gist: 'The order API is fine (180 ms).', ts: t(40) },
+    { id: 'c3', kind: 'msg', from: 'Milo', to: 'Ada', re: 'c2', thread: 'c1', round: 'c1', text: 'That needs the totals in one call. Can the API return them with the cart?', gist: 'That needs the totals in one call.', ts: t(26) },
+    { id: 'c4', kind: 'msg', from: 'Ada', to: 'Milo', re: 'c3', thread: 'c1', round: 'c1', text: 'Done: GET /cart includes the totals now. Try it.', gist: 'Done: GET /cart includes the totals now.', ts: t(12) },
+  ]`
+const CHECK_IN_FEED = (kind = 'claude') => `${CHECK_IN_HEAD}
+  s.feed = ${{
+    // before the card: Milo is still on it
+    before: 'loop',
+    claude: `[...loop, { id: 'c5', kind: 'msg', from: 'Milo', to: 'Ada', re: 'c4', thread: 'c1', round: 'c1', paused: 'c1|claude', text: 'Down to 1.1 s. Can you cache the shipping rates too?', gist: 'Down to 1.1 s.', ts: t(1.2) },
+      card('c6', 'Ada', 'c1', { group: 'c1|claude', provider: 'claude', label: 'Claude', unit: 'usd', who: ['Ada', 'Milo'], by: { Ada: 3.7, Milo: 1.7 }, used: 5.4, at: 5 }, '@Ada and @Milo have used $5.40 at API rates since you last spoke', "We've used $5.40 at API rates since you last spoke. Keep going?")]`,
+    codex: `[loop[0], { id: 'd1', kind: 'msg', from: 'you', to: 'Theo', text: 'Run the whole checkout suite on every browser, and fix what fails.', ts: t(47) },
+      card('d2', 'Theo', 'd1', { group: 'd1|codex', provider: 'codex', label: 'Codex', unit: 'tokens', who: ['Theo'], by: { Theo: 5.2e6 }, used: 5.2e6, at: 5e6 }, '@Theo has used 5.2M tokens since you last spoke', "I've used 5.2M tokens since you last spoke. Keep going?")]`,
+    tell: `[...loop, { id: 'c5', kind: 'msg', from: 'Milo', to: 'Ada', re: 'c4', thread: 'c1', round: 'c1', text: 'Down to 1.1 s. Can you cache the shipping rates too?', gist: 'Down to 1.1 s.', ts: t(1.2) },
+      { id: 'c6', kind: 'event', from: 'clique', text: '@Ada and @Milo have used $5.40 at API rates since you last spoke', spend: { provider: 'claude', unit: 'usd', used: 5.4, at: 5 }, ts: t(1) }]`,
+  }[kind]}
+  ${kind === 'tell' ? "s.checkIn.then = 'tell'" : ''}
+  calm(${{ before: "'Milo', 'Edit pages/checkout.tsx'", claude: "'', ''", codex: "'Theo', 'Bash: npm test -- checkout'", tell: "'Ada', 'Edit api/shipping.ts'" }[kind]})
   window.__cliqueEmit('state', s)`
 // What's behind the transparent windows: the popover's material, or a soft desktop for the floating pill.
 const BACKDROP = {
@@ -261,7 +294,164 @@ const SCREEN_TOP = `html::before { content: ''; position: fixed; inset: 0 0 auto
   html::after { content: ''; position: fixed; top: 0; left: 50%; width: 185px; height: 32px; margin-left: -92.5px; background: #000; border-radius: 0 0 9px 9px; z-index: 99; pointer-events: none; outline: 1px dashed rgba(255, 90, 170, var(--notch-guide, 0)); }
   .wrap { position: absolute !important; left: 50%; top: 0; transform: translateX(-50%); }`
 
+// The files shot: what agents attach (`clique attach`, core/attachments.js), made once (scripts/sample-files.mjs)
+let samples = null
+const filesFeed = async () => {
+  samples ??= await sampleFiles(path.join(tmp, 'files'))
+  const f = samples
+  return [
+    { id: 'f1', kind: 'msg', from: 'you', to: 'Theo', text: 'Show me the new checkout, on desktop and on a phone.' },
+    { id: 'f2', kind: 'reply', from: 'Theo', text: 'The new checkout on desktop. The total rounds once now.', files: [f.desktop] },
+    // (reactions, core/reactions.js, sit under a message's files)
+    { id: 'f3', kind: 'reply', from: 'Theo', text: 'And on a phone: cart, payment, receipt.', files: [f.cart, f.payment, f.receipt], reactions: [{ by: 'you', emoji: '👍', at: 1 }, { by: 'Iris', emoji: '👍', at: 2 }, { by: 'June', emoji: '🎉', at: 3 }] },
+    { id: 'f4', kind: 'reply', from: 'Iris', text: 'The coupon flow from start to finish.', files: [f.clip], reactions: [{ by: 'Theo', emoji: '👀', at: 1 }] },
+    { id: 'f5', kind: 'reply', from: 'Ada', text: 'The totals as a page you can try: change the quantities.', files: [f.page], reactions: [{ by: 'you', emoji: '🎉', at: 1 }] },
+    { id: 'f6', kind: 'reply', from: 'June', text: 'All 48 checkout tests pass. The log:', files: [f.log] },
+    { id: 'f7', kind: 'reply', from: REX, text: 'The same run on Windows.', files: [{ name: 'checkout-windows.mp4', kind: 'video', type: 'video/mp4', size: 48 * 1024 * 1024, w: 1920, h: 1080, dur: 94, path: '', away: LINK.name }] },
+  ]
+}
+const chatColumn = (win) => js(win, "const r = document.querySelector('.page-head[data-for=chat]').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(innerWidth - r.x), height: innerHeight }")
+const FILES_STATE = (feed) => `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+  s.feed = ${JSON.stringify(feed)}.map((e, i, all) => ({ ...e, ts: t(3 * (all.length - i)) }))
+  window.__cliqueEmit('state', s)`
+
 const SHOTS = {
+  // CLIque updating itself (core/updates.js): the note in the corner when a new version is ready, the question it asks
+  // before restarting while agents work (they keep working; or, when the update replaces the terminal host, they don't),
+  // restarting, and the rows in the ⋯ menu and the popover's gear: Open at login, Check for updates…, Restart to update.
+  async updates(theme) {
+    const win = await dashboard(theme, 'chat', { width: 1180, height: 760 })
+    const ready = { phase: 'ready', next: { version: '1.0.1', notesUrl: 'https://example.com/releases/v1.0.1' }, later: false, asking: null }
+    const corner = { x: 1180 - 372, y: 760 - 390, width: 372, height: 390 }
+    const push = async (patch) => {
+      await js(win, `window.__cliqueUpdate(${JSON.stringify(patch)})`)
+      await sleep(500)
+    }
+    await push(ready)
+    await save(win, `update-ready-${theme}`)
+    await save(win, `update-ready-note-${theme}`, { crop: corner })
+    const words = (hostProtocol) => restartWords({ busy: ['Ada', 'Theo'], outlives: true, hostProtocol, protocol: 1, product: 'CLIque' })
+    await push({ asking: words(1) })
+    await save(win, `update-ask-keep-${theme}`, { crop: corner })
+    await push({ asking: words(2) })
+    await save(win, `update-ask-stop-${theme}`, { crop: corner })
+    await push({ asking: restartWords({ busy: ['Ada'], outlives: true, hostProtocol: undefined, protocol: 1 }) })
+    await save(win, `update-ask-unsure-${theme}`, { crop: corner })
+    await push({ phase: 'restarting', asking: null })
+    await save(win, `update-restarting-${theme}`, { crop: corner })
+    // the ⋯ menu, with nothing new (Check for updates…, this version) and with one ready (Restart to update)
+    const menu = async (name) => {
+      await js(win, click('.side-more'))
+      await sleep(400)
+      const r = await js(win, "const r = [...document.querySelectorAll('.menu[role=menu]')].at(-1).getBoundingClientRect(); return { x: Math.max(0, Math.round(r.x) - 16), y: Math.max(0, Math.round(r.y) - 16), width: Math.round(r.width) + 32, height: Math.round(r.height) + 76 }")
+      await save(win, name, { crop: r })
+      await js(win, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+      await sleep(300)
+    }
+    await push({ phase: 'idle', next: null })
+    await menu(`update-menu-${theme}`)
+    await push({ ...ready, later: true })
+    await js(win, 'window.__cliqueState.app.login.on = true')
+    await menu(`update-menu-ready-${theme}`)
+    win.destroy()
+    // the popover's gear: the same rows
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(tray)
+    await js(tray, `window.__cliqueUpdate(${JSON.stringify({ ...ready, later: true })})`)
+    await sleep(200)
+    await js(tray, click('[data-act=settings]'))
+    await sleep(400)
+    await save(tray, `update-tray-${theme}`)
+    tray.destroy()
+  },
+  // The note arriving, and Later: it slides up in the corner when the download is done, nothing else moves; Later puts
+  // it away, and Restart to update stays in the ⋯ menu.
+  async updatesGif() {
+    const win = await dashboard('light', 'chat', { width: 1180, height: 760 })
+    await sleep(600)
+    await record(win, 'update-later', {
+      clip: { x: 0, y: 760 - 420, width: 1180, height: 420 }, ms: 9000, width: 1000,
+      during: async () => {
+        let at = { x: 620, y: 520 }
+        await glide(win, { x: 600, y: 480 }, at, 200)
+        await sleep(900)
+        await js(win, `window.__cliqueUpdate(${JSON.stringify({ phase: 'ready', next: { version: '1.0.1', notesUrl: 'https://example.com/releases/v1.0.1' } })})`)
+        await sleep(1800)
+        at = await glide(win, at, await center(win, '.update-note [data-update=later]'), 700)
+        await sleep(350)
+        await tap(win, at)
+        await sleep(1300)
+        at = await glide(win, at, await center(win, '.side-more'), 800)
+        await sleep(200)
+        await tap(win, at)
+        await sleep(2600)
+      },
+    })
+    win.destroy()
+  },
+  // Files agents attach: pictures, a recording, a page that runs in a sandbox, a plain file, and one that stayed on a
+  // linked computer; then the recording playing and the page running, and the viewer.
+  async files(theme) {
+    const feed = await filesFeed()
+    const win = await dashboard(theme, 'chat', { fixture: 'big', width: 1180, height: 1500 })
+    await js(win, FILES_STATE(feed))
+    await sleep(1500)
+    await save(win, `files-${theme}`, { crop: await chatColumn(win) })
+    await js(win, `${click('[data-fx=play]')}; ${click('[data-fx=run]')}`)
+    await sleep(2200)
+    await js(win, "document.querySelector('.fx-video video').pause()")
+    await sleep(200)
+    await save(win, `files-live-${theme}`, { crop: await chatColumn(win) })
+    win.setContentSize(1180, 760)
+    await js(win, click('.fx-pics:not(.one) [data-fx=view]'))
+    await sleep(500)
+    await save(win, `files-viewer-${theme}`)
+    await js(win, `${click('[data-fxv=close]')}; ${click('.fx-page [data-fx=view]')}`)
+    await sleep(900)
+    await save(win, `files-viewer-page-${theme}`)
+    win.destroy()
+    // the floating chat: the same cards in a narrow column
+    const chat = await open('overlay.html', { theme, width: 520, height: 900, backdrop: 'desktop' })
+    await sleep(400)
+    await js(chat, "window.__cliqueEmit('toggle', { open: true, focus: false })")
+    await js(chat, `window.__cliqueState.agents.forEach((a) => Object.assign(a, { status: 'idle', ask: null, activity: null, subs: [] })); ${FILES_STATE(feed.slice(2, 6))}`)
+    await sleep(1200)
+    await fitToContent(chat)
+    await save(chat, `files-chat-${theme}`)
+    chat.destroy()
+  },
+  // A recording played and a page run where they are, in the chat
+  async filesGif() {
+    const feed = await filesFeed()
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { fixture: 'big', width: 1000, height: 900 })
+    await js(win, FILES_STATE(feed.slice(3, 5)))
+    await sleep(1200)
+    const clip = await chatColumn(win)
+    await record(win, 'files', {
+      clip, ms: 9500,
+      during: async () => {
+        let at = await glide(win, { x: clip.x + 300, y: clip.y + 60 }, await center(win, '.fx-play'))
+        await tap(win, at)
+        await sleep(2600)
+        at = await glide(win, at, await center(win, '.fx-run'))
+        await tap(win, at)
+        await sleep(900)
+        // inside the page: its + button, three times (the frame is the page's own: real clicks)
+        const frame = await center(win, '.fx-page .fx-frame')
+        at = await glide(win, at, { x: frame.x - frame.w / 2 + 381, y: frame.y - frame.h / 2 + 135 })
+        // (through the debugger, which sends a click the way a real mouse does: into the frame's own process)
+        const d = win.webContents.debugger
+        d.attach('1.3')
+        for (let i = 0; i < 3; i++) {
+          for (const type of ['mousePressed', 'mouseReleased']) await d.sendCommand('Input.dispatchMouseEvent', { type, x: Math.round(at.x), y: Math.round(at.y), button: 'left', clickCount: 1 })
+          await sleep(450)
+        }
+        d.detach()
+      },
+    })
+    win.destroy()
+  },
   // Reactions: an emoji on a message in place of a written "got it" (clique react). The same exchange with every
   // acknowledgement as a message (before) and as a reaction (after), in the channel and in the thread beside it; a
   // hand-off in an agent's conversation; and a message with more reactions than fit, in the narrow floating chat.
@@ -947,6 +1137,130 @@ const SHOTS = {
     if (String(flipped) !== 'true,true,6') throw new Error(`savers: flipping a switch gave ${flipped}`)
     win.destroy()
   },
+  // Notifications: the sheet that says when CLIque may interrupt you (any time, then a schedule, which mustn't change its
+  // height), paused from it; and the menu bar's popover with notifications on, the pause menu, paused for an hour (one
+  // click on Resume turns them back on), and held by the schedule. Checked as it goes: a broken step stops the shot.
+  async notifications(theme) {
+    const errors = []
+    const check = (what, ok, got) => {
+      console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}${ok ? '' : `: ${JSON.stringify(got)}`}`)
+      if (!ok) errors.push(what)
+    }
+    const win = await dashboard(theme, 'chat')
+    win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(`console: ${e.message}`))
+    await sleep(700)
+    const hint = await js(win, `document.querySelector('.side-more').click(); await new Promise((r) => setTimeout(r, 300))
+      const row = [...document.querySelectorAll('.menu button')].find((b) => b.textContent.includes('Notifications'))
+      const text = row?.textContent; row?.click(); await new Promise((r) => setTimeout(r, 500)); return text`)
+    check('the ⋯ menu has Notifications…, saying "Any time"', hint === 'Notifications…Any time', hint)
+    check('the sheet opens', await js(win, "return document.querySelector('#notify').open"))
+    await save(win, `notify-sheet-${theme}`)
+    const sched = await js(win, `const d = document.querySelector('#notify')
+      const h = d.getBoundingClientRect().height
+      d.querySelector('[data-nf-days=every]').click()
+      await new Promise((r) => setTimeout(r, 400))
+      return [Math.round(d.getBoundingClientRect().height - h), window.__cliqueState.notify.days, d.querySelector('.nf-hours').classList.contains('on'), d.querySelector('[data-nf-time=from]').value, d.querySelector('[data-nf-time=to]').value, d.querySelector('.nf-say').textContent]`)
+    check('Every day: the hours show, 8:00 to 22:00, and the sheet keeps its height', String(sched.slice(0, 5)) === '0,every,true,08:00,22:00', sched)
+    check('the sentence says when you won’t be notified', /^You won’t be notified between .+ and .+\. What comes up then is held/.test(sched[5]), sched[5])
+    await save(win, `notify-sheet-schedule-${theme}`)
+    const weekdays = await js(win, `const d = document.querySelector('#notify')
+      d.querySelector('[data-nf-days=weekdays]').click()
+      const to = d.querySelector('[data-nf-time=to]'); to.value = '18:30'; to.dispatchEvent(new Event('change', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, 400))
+      const n = window.__cliqueState.notify
+      return [n.days, n.to, d.querySelector('.nf-say').textContent]`)
+    check('Weekdays until 18:30 is saved, and the sentence names the weekend', weekdays[0] === 'weekdays' && weekdays[1] === '18:30' && /or on Saturday and Sunday/.test(weekdays[2]), weekdays)
+    const paused = await js(win, `const d = document.querySelector('#notify')
+      d.querySelector('[data-nf-days=always]').click()
+      await new Promise((r) => setTimeout(r, 300))
+      d.querySelector('[data-nf-pause]').click(); await new Promise((r) => setTimeout(r, 300))
+      const items = [...d.querySelectorAll('.menu button')].map((b) => b.querySelector('span').textContent)
+      d.querySelector('.menu [data-menu-act=manual]').click(); await new Promise((r) => setTimeout(r, 500))
+      return [items.join('/'), window.__cliqueState.notify.why, d.querySelector('.nf-pause b').textContent, d.querySelector('[data-nf-pause]').textContent]`)
+    check('Pause… offers an hour, tomorrow morning, until you turn them back on; picking one says so with Resume', String(paused) === 'For 1 hour/Until tomorrow morning/Until I turn them back on,pause,Paused until you turn them back on,Resume', paused)
+    await save(win, `notify-sheet-paused-${theme}`)
+    const resumed = await js(win, `const d = document.querySelector('#notify')
+      d.querySelector('[data-nf-pause]').click(); await new Promise((r) => setTimeout(r, 500))
+      d.querySelector('[data-close]').click()
+      return [window.__cliqueState.notify.quiet, d.querySelector('[data-nf-pause]').textContent, d.open]`)
+    check('Resume turns them back on, and Done closes the sheet', String(resumed) === 'false,Pause…,false', resumed)
+    // what the dashboard says it has open, for "not while you're looking"
+    const looking = await js(win, `const out = [JSON.stringify(window.__cliqueLooking)]
+      select('Milo'); await new Promise((r) => setTimeout(r, 400)); out.push(JSON.stringify(window.__cliqueLooking))
+      goPlace('tasks'); await new Promise((r) => setTimeout(r, 400)); out.push(JSON.stringify(window.__cliqueLooking))
+      return out`)
+    check('the chat says whose questions are on screen', /"agent":null,"sees":\[.+\],"tasks":false/.test(looking[0]), looking[0])
+    check("a conversation says whose it is, Tasks says it's Tasks", /"agent":"Milo","sees":\[\],"tasks":false/.test(looking[1]) && /"agent":null,"sees":\[\],"tasks":true/.test(looking[2]), looking)
+    win.destroy()
+
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    tray.webContents.on('console-message', (e) => e.level === 'error' && errors.push(`console: ${e.message}`))
+    await sleep(500)
+    await fitToContent(tray)
+    const height = async () => (await js(tray, 'return window.__cliqueFit')).height
+    const row = () => js(tray, "return [document.querySelector('.nf-open').textContent, document.querySelector('.nf-end').textContent, document.querySelector('.notif').classList.contains('held')]")
+    const h0 = await height()
+    check('the popover says notifications are on', String(await row()) === 'NotificationsOn,,false', await row())
+    await save(tray, `tray-notify-${theme}`)
+    await js(tray, `${click('.nf-open')}; await new Promise((r) => setTimeout(r, 400))`)
+    const menu = await js(tray, "return [...document.querySelectorAll('.menu button')].map((b) => b.querySelector('span').textContent).join('/')")
+    check('a click opens the pause menu', menu === 'For 1 hour/Until tomorrow morning/Until I turn them back on/Schedule…', menu)
+    await save(tray, `tray-pause-menu-${theme}`)
+    await js(tray, `${click('.menu [data-menu-act=hour]')}; await new Promise((r) => setTimeout(r, 500))`)
+    await js(tray, 'window.__cliqueNotify({}, 2)') // two came up meanwhile
+    await sleep(300)
+    await fitToContent(tray)
+    const p = await row()
+    check('paused for an hour: it says until when, with Resume', /^Notifications pauseduntil \d/.test(p[0]) && p[1] === 'Resume' && p[2] === true, p)
+    check('the tooltip says what is held and that it is still listed', /2 are held: you get one summary at .*still listed here/s.test(await js(tray, "return document.querySelector('.notif').title")))
+    check('pausing moved nothing', (await height()) === h0, [h0, await height()])
+    await save(tray, `tray-paused-${theme}`)
+    await js(tray, `${click('.notif [data-resume]')}; await new Promise((r) => setTimeout(r, 500))`)
+    check('Resume, one click: on again', String(await row()) === 'NotificationsOn,,false', await row())
+    // outside the hours of a schedule: "off until", the schedule's doing, no Resume
+    const hour = new Date().getHours()
+    const hh = (h) => `${String((h + 24) % 24).padStart(2, '0')}:00`
+    await js(tray, `window.__cliqueNotify({ days: 'every', from: '${hh(hour + 2)}', to: '${hh(hour - 1)}' }, 1)`)
+    await sleep(300)
+    await fitToContent(tray)
+    const off = await row()
+    check('outside your hours: off until they start, no Resume', /^Notifications offuntil \d/.test(off[0]) && off[1] === '' && off[2] === true, off)
+    check('and still the same height', (await height()) === h0, [h0, await height()])
+    await save(tray, `tray-off-hours-${theme}`)
+    tray.destroy()
+
+    // the floating pill while notifications are held: its warm edge holds still
+    const pill = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
+    await sleep(500)
+    const edge = async () => js(pill, "return [document.body.classList.contains('alert'), getComputedStyle(document.querySelector('.pill'), '::after').animationName]")
+    check('the pill breathes while someone needs you', String(await edge()) === 'true,pill-alert', await edge())
+    await js(pill, "window.__cliqueNotify({ pause: 'manual' })")
+    await sleep(300)
+    check('paused: the edge stays, and holds still', String(await edge()) === 'true,none', await edge())
+    check('the open chat says what it shows', await js(pill, "document.querySelector('.home').click(); await new Promise((r) => setTimeout(r, 500)); return /\"sees\":\\[.+\\]/.test(JSON.stringify(window.__cliqueLooking))"))
+    pill.destroy()
+    if (errors.length) throw new Error(`notifications: ${errors.join('; ')}`)
+  },
+  // Pausing from the menu bar's popover: the menu, For 1 hour, the row says until when, Resume.
+  async pauseGif() {
+    const tray = await open('tray.html', { theme: 'light', width: 340, height: 600, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(tray)
+    const [, h] = tray.getContentSize()
+    await record(tray, 'pause', {
+      clip: { x: 0, y: Math.max(0, h - 330), width: 340, height: Math.min(h, 330) }, ms: 6200, width: 680,
+      during: async () => {
+        await sleep(900)
+        await js(tray, click('.nf-open'))
+        await sleep(1300)
+        await js(tray, click('.menu [data-menu-act=hour]'))
+        await sleep(2200)
+        await js(tray, click('.notif [data-resume]'))
+        await sleep(1200)
+      },
+    })
+    tray.destroy()
+  },
   // Scheduled messages (ui/schedules.js): the clock beside Send with its quick times, the Send later sheet (which
   // mustn't change its height as the repeat changes), the list with a few set up and with none, and how a scheduled
   // message and CLIque's lines about one read in the chat
@@ -1080,6 +1394,134 @@ const SHOTS = {
         await sleep(250)
         await tap(win, at)
         await sleep(1600)
+      },
+    })
+    win.destroy()
+  },
+  // The spend check-in (core/hub.js checkIn). Where it's set: the ⋯ menu's row and its sheet, a row per provider in
+  // that provider's own unit, off as a new install has it, then with values, then "Just tell me" (the sheet mustn't
+  // change its height between them), and an agent's sheet saying what applies to it. What it does: a Claude group's
+  // card in the chat with the hand-off it holds, in its thread, after Keep going and after Stop; a Codex agent's card,
+  // in tokens; the line "Just tell me" gives instead; the floating chat's Needs you queue, and the menu bar's.
+  async checkIn(theme) {
+    const win = await dashboard(theme, 'chat', { width: 1100, height: 760 })
+    await sleep(700)
+    await js(win, "document.querySelector('.side-more').click()")
+    await sleep(500)
+    const row = () => js(win, "return [...document.querySelectorAll('.menu [data-menu-act]')].find((b) => b.dataset.menuAct === 'checkin')?.textContent.trim().replace(/\\s+/g, ' ')")
+    if (!/Spend check-in….*Off/.test(await row())) throw new Error(`checkIn: on a new install the menu's row reads ${await row()}`)
+    await js(win, "[...document.querySelectorAll('.menu [data-menu-act]')].find((b) => b.dataset.menuAct === 'checkin').click()")
+    await sleep(800)
+    await save(win, `checkin-sheet-off-${theme}`)
+    const sheet = (code) => js(win, `const d = document.querySelector('#checkin'); ${code}`)
+    const rows = await sheet("return [...d.querySelectorAll('[data-ci-row]')].map((r) => r.dataset.ciRow + ':' + [...r.querySelectorAll('button')].map((b) => b.textContent).join('/')).join(' ')")
+    if (rows !== 'claude:Off/$2/$5/$10/$25 codex:Off/2M/5M/10M/25M') throw new Error(`checkIn: the sheet's rows are ${rows}`) // (GLM has no meter: no row)
+    const h0 = await sheet('return d.getBoundingClientRect().height')
+    const pick = (id, v) => sheet(`d.querySelector('[data-ci="${id}"] button[data-v="${v}"]').click(); await new Promise((r) => setTimeout(r, 400))`)
+    await pick('claude', 5)
+    await pick('codex', 5000000)
+    await save(win, `checkin-sheet-${theme}`)
+    let now = await sheet("return [Math.round(d.getBoundingClientRect().height), JSON.stringify(window.__cliqueState.checkIn), d.querySelector('.ci-says').textContent]")
+    if (now[0] !== Math.round(h0) || now[1] !== '{"at":{"claude":5,"codex":5000000},"then":"ask"}' || !/^Past \$5 for Claude or 5M tokens for Codex since you last spoke, one card asks you/.test(now[2])) throw new Error(`checkIn: with values picked the sheet gave ${now} (was ${h0} tall)`)
+    await sheet("d.querySelector('[data-ci-then] [data-v=tell]').click(); await new Promise((r) => setTimeout(r, 400))")
+    await save(win, `checkin-sheet-tell-${theme}`)
+    now = await sheet("return [Math.round(d.getBoundingClientRect().height), window.__cliqueState.checkIn.then, d.querySelector('.ci-says').textContent]")
+    if (now[0] !== Math.round(h0) || now[1] !== 'tell' || !/Nothing is held\.$/.test(now[2])) throw new Error(`checkIn: Just tell me gave ${now}`)
+    // a value of your own, typed: 7.5 million tokens
+    now = await sheet(`const f = d.querySelector('[data-ci-custom="codex"]'); f.focus(); f.value = '7.5'; f.dispatchEvent(new Event('input', { bubbles: true })); await new Promise((r) => setTimeout(r, 400))
+      return [window.__cliqueState.checkIn.at.codex, d.querySelector('[data-ci="codex"] .on')?.className, Math.round(d.getBoundingClientRect().height)]`)
+    if (String(now) !== `7500000,limit-custom ci-custom tokens on,${Math.round(h0)}`) throw new Error(`checkIn: a typed value gave ${now}`)
+    await sheet("document.activeElement.blur(); d.querySelector('[data-ci-then] [data-v=ask]').click(); d.querySelector('[data-ci=\"codex\"] button[data-v=\"5000000\"]').click(); await new Promise((r) => setTimeout(r, 400)); d.close()")
+    await js(win, "document.querySelector('.side-more').click()")
+    await sleep(500)
+    await save(win, `checkin-menu-${theme}`, { crop: { x: 0, y: 290, width: 620, height: 470 } })
+    if (!/Claude \$5 · Codex 5M/.test(await row())) throw new Error(`checkIn: with values the menu's row reads ${await row()}`)
+    await js(win, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); document.body.click()")
+    await sleep(400)
+
+    // a Claude group's card
+    await js(win, CHECK_IN_FEED('claude'))
+    await sleep(1000)
+    await save(win, `checkin-claude-${theme}`)
+    const card = await js(win, `const c = document.querySelector('.ask-card.spend'); return c ? [c.querySelector('.ask-title')?.textContent, c.querySelector('.ask-parts')?.textContent, [...c.querySelectorAll('.btn')].map((b) => b.textContent).join('/')].join(' | ') : 'no card'`)
+    if (!/used \$5\.40 at API rates since you last spoke \| Ada \$3\.70 · Milo \$1\.70 · in 46 min \| Keep going\/Stop/.test(card)) throw new Error(`checkIn: the card reads ${card}`)
+    // the thread the hand-offs are in: the one that waits says so
+    await js(win, "document.querySelector('.thread-card').click()")
+    await sleep(900)
+    await save(win, `checkin-thread-${theme}`)
+    const held = await js(win, "return [...document.querySelectorAll('.thread-row .tag')].map((x) => x.textContent).join(',')")
+    if (held !== 'held for the check-in') throw new Error(`checkIn: the thread's tags read ${held}`)
+    await js(win, "document.querySelector('.thread-x').click()")
+    await sleep(500)
+    await js(win, "document.querySelector('.ask-card.spend [data-answer=\"allow\"]').click()")
+    await sleep(900)
+    await save(win, `checkin-kept-${theme}`)
+    await js(win, `${CHECK_IN_FEED('claude')}; await new Promise((r) => setTimeout(r, 400)); document.querySelector('.ask-card.spend [data-answer="deny"]').click()`)
+    await sleep(900)
+    await save(win, `checkin-stopped-${theme}`)
+    const done = await js(win, "return [...document.querySelectorAll('.ask-card.done')].at(-1)?.textContent.trim().replace(/\\s+/g, ' ')")
+    if (!/Stopped.*at \$5\.40/.test(done)) throw new Error(`checkIn: after Stop the card reads ${done}`)
+    // a Codex agent's, in tokens
+    await js(win, CHECK_IN_FEED('codex'))
+    await sleep(1000)
+    await save(win, `checkin-codex-${theme}`)
+    const codex = await js(win, "const c = document.querySelector('.ask-card.spend'); return [c.querySelector('.ask-title').textContent, c.querySelector('[data-answer=allow]').title].join(' | ')")
+    if (codex !== '@Theo has used 5.2M tokens since you last spoke | Allows another 5M tokens, then asks again') throw new Error(`checkIn: Codex's card reads ${codex}`)
+    // "Just tell me": a line, and nothing held
+    await js(win, CHECK_IN_FEED('tell'))
+    await sleep(1000)
+    await save(win, `checkin-tell-${theme}`)
+    const line = await js(win, "return [[...document.querySelectorAll('.event')].at(-1)?.textContent.trim(), document.querySelectorAll('.ask-card.spend').length].join(' | ')")
+    if (line !== 'Ada and Milo have used $5.40 at API rates since you last spoke | 0') throw new Error(`checkIn: the line reads ${line}`)
+    // an agent's sheet: what applies to it, beside its context limit
+    await js(win, `${CHECK_IN_FEED('claude')}; document.querySelector('.side-nav [data-place="clique"]').click()`)
+    await sleep(600)
+    await js(win, click('[data-mode=cards]'))
+    await sleep(300)
+    await js(win, click('.pcard[data-name="Theo"]'))
+    await sleep(1000)
+    await js(win, "const h = document.querySelector('.ed-adv-head'); if (h.getAttribute('aria-expanded') !== 'true') h.click()")
+    await sleep(700)
+    await js(win, "document.querySelector('.checkin-row')?.scrollIntoView({ block: 'center' })")
+    await sleep(300)
+    await save(win, `checkin-agent-${theme}`)
+    const read = await js(win, "return document.querySelector('.checkin-read')?.textContent")
+    if (read !== 'After 5M tokens, asks you · every Codex agent') throw new Error(`checkIn: the agent's sheet reads ${read}`)
+    win.destroy()
+    const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
+    await sleep(400)
+    await js(chat, `${CHECK_IN_FEED('claude')}; window.__cliqueEmit('toggle', { open: true, focus: false })`)
+    await sleep(900)
+    await js(chat, "document.querySelector('.nq-go')?.click()")
+    await sleep(700)
+    await fitToContent(chat)
+    await save(chat, `checkin-queue-${theme}`)
+    chat.destroy()
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    await sleep(400)
+    await js(tray, CHECK_IN_FEED('codex'))
+    await sleep(600)
+    await fitToContent(tray)
+    await save(tray, `checkin-tray-${theme}`)
+    tray.destroy()
+  },
+  // ...and the card coming up while Milo works, then Keep going
+  async checkInGif() {
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { width: 1100, height: 760 })
+    await sleep(700)
+    await js(win, CHECK_IN_FEED('before'))
+    await sleep(900)
+    await record(win, 'checkin', {
+      ms: 6200,
+      during: async () => {
+        await sleep(900)
+        await js(win, CHECK_IN_FEED('claude'))
+        await sleep(1900)
+        let at = await glide(win, { x: 760, y: 420 }, await center(win, '.ask-card.spend [data-answer="allow"]'), 700)
+        await sleep(350)
+        await tap(win, at)
+        await sleep(600)
+        await js(win, `const s = window.__cliqueState; const m = s.agents.find((a) => a.name === 'Milo'); Object.assign(m, { status: 'working', activity: 'Edit pages/checkout.tsx', since: Date.now() }); window.__cliqueEmit('state', s)`)
       },
     })
     win.destroy()
@@ -2413,6 +2855,7 @@ fs.mkdirSync(out, { recursive: true })
 app.on('window-all-closed', () => {}) // one window at a time; don't quit between them
 
 app.whenReady().then(async () => {
+  serveSandbox(protocol, [path.join(tmp, 'files', 'attachments')]) // the page in the files shot runs in the real sandbox
   // A shot that no longer finds its way around the app mustn't cost every shot after it: it's named, the rest go on,
   // and the run ends with an error so it doesn't pass for a full set.
   const broken = []

@@ -25,6 +25,8 @@ const FONT = /\.(woff2?|ttf|otf)$/i
 const NO_FILE = {
   // MIT, said at the top of its code
   'qrcode-generator': { file: 'dist/qrcode.js', copyright: /Copyright \(c\) 2009 Kazuhiko Arase/ },
+  // MIT, said only in its package.json, by its author (it comes with electron-updater)
+  'lazy-val': { declared: 'Vladimir Krivosheev' },
 }
 
 // What isn't in the app though it's a dependency: CLIque's own clique-shared, and node-addon-api, which only builds node-pty
@@ -96,7 +98,11 @@ const section = ({ title, url, license, about, texts }) =>
 function npmSections() {
   return shipped().map((p) => {
     let texts = licenseTexts(p.dir)
-    if (!texts.length && NO_FILE[p.name]) {
+    if (!texts.length && NO_FILE[p.name]?.declared) {
+      const pkg = json(path.join(p.dir, 'package.json'))
+      if (pkg.license !== 'MIT' || (pkg.author?.name ?? pkg.author) !== NO_FILE[p.name].declared) throw new Error(`${p.name}: its package.json no longer says MIT, by ${NO_FILE[p.name].declared}`)
+      texts = [mit(`Copyright (c) ${NO_FILE[p.name].declared}`)]
+    } else if (!texts.length && NO_FILE[p.name]) {
       const head = fs.readFileSync(path.join(p.dir, NO_FILE[p.name].file), 'utf8').slice(0, 2000)
       const line = head.match(NO_FILE[p.name].copyright)?.[0]
       if (!line || !/MIT license/i.test(head)) throw new Error(`${p.name}: its license isn't where it was (${NO_FILE[p.name].file})`)

@@ -1,7 +1,7 @@
 // Menu bar popover: what needs you first, who's at work, the accounts' limits, and the way into everything else.
-/* global stopButton, activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, clique, live, morph, esc, celebrate, markSVG, store, ICONS,
+/* global stopButton, appItems, appPick, activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, clique, live, morph, esc, celebrate, markSVG, store, ICONS,
    needsYou, needText, usageTip, usageByComputer, computerIcon, THIS_COMPUTER, paceWarning, resetsText, runningSubs, subsTip, clonesOf, displayName, statusText, blockedOn, ago,
-   plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys, wordmarkHTML, stripHTML, PRODUCT_NAME */
+   pauseMenu, notifyTime, notifyHeld, plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys, wordmarkHTML, stripHTML, PRODUCT_NAME */
 // Everything here is local: classic scripts share one global scope with common.js and avatar.js.
 ;(() => {
   const $ = (s) => document.querySelector(s)
@@ -276,8 +276,32 @@
       '-',
       { head: 'Theme' },
       ...[['system', `Match ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light'], ['dark', 'Dark']].map(([id, text]) => ({ label: text, act: `theme:${id}`, icon: id === theme ? ICONS.check : undefined })),
+      ...appItems(state),
       ...(clique.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
-    ], (act) => (act === 'config' ? clique.call('config') : act === 'awake' ? clique.call('keepAwake', !stay).catch((err) => oops('Couldn’t change that', err)) : clique.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
+    ], (act) => (act === 'config' ? clique.call('config') : act === 'awake' ? clique.call('keepAwake', !stay).catch((err) => oops('Couldn’t change that', err)) : act.startsWith('app:') ? appPick(act, state) : clique.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
+  }
+
+  // Notifications: a click opens the pause menu (for an hour, until tomorrow morning, until you turn them back on, and
+  // the schedule in the dashboard); while paused, Resume turns them back on in one click.
+  let pauseOpen = null
+  let pauseWasOpen = false
+  addEventListener('pointerdown', (e) => (pauseWasOpen = Boolean(e.target.closest?.('.notif') && pauseOpen?.el.isConnected && !pauseOpen.el.classList.contains('leaving'))), true)
+  $('.notif').addEventListener('click', (e) => {
+    if (e.target.closest('[data-resume]')) return clique.call('notifications', { pause: 'off' }).catch((err) => oops('Couldn’t turn notifications back on', err))
+    if (pauseWasOpen) return (pauseWasOpen = false)
+    pauseOpen = pauseMenu($('.notif'), state.notify, { schedule: () => clique.call('dashboard', ':notifications') })
+  })
+  function drawNotify() {
+    const n = state.notify ?? { quiet: false }
+    const paused = n.quiet && n.why === 'pause'
+    $('.notif').classList.toggle('held', Boolean(n.quiet))
+    morph($('.notif .glyph'), n.quiet ? ICONS.bellZ : ICONS.bell)
+    const until = n.quiet && n.until != null ? `until ${notifyTime(n.until)}` : ''
+    morph($('.nf-open'), `<b>${paused ? 'Notifications paused' : n.quiet ? 'Notifications off' : 'Notifications'}</b><small>${esc(n.quiet ? until : 'On')}</small>`)
+    morph($('.nf-end'), paused ? '<button class="t-go" data-resume title="Turn notifications back on">Resume</button>' : `<span class="chev">${ICONS.updown}</span>`)
+    $('.notif').title = n.quiet
+      ? `${paused ? (n.until == null ? 'Paused until you turn them back on.' : `Paused until ${notifyTime(n.until)}.`) : `Outside the hours you set: back ${n.until == null ? 'later' : notifyTime(n.until)}.`} ${notifyHeld(n)}\nWhat needs you is still listed here and counted in the ${ON_WINDOWS ? 'taskbar' : 'menu bar'}.`
+      : 'Notifications come through. Click to pause them.'
   }
 
   // an agent's clones, each a click from its terminal
@@ -288,7 +312,7 @@
   }
 
   document.addEventListener('click', (e) => {
-    if (e.target.closest('.mode, .switch, .menu')) return
+    if (e.target.closest('.mode, .switch, .menu, .notif')) return
     const clones = e.target.closest('[data-clones]')
     if (clones) return cloneMenu(clones)
     const fold = e.target.closest('[data-fold]')
@@ -340,6 +364,7 @@
     const each = machines.length > 1 || machines.some((m) => !m.here)
     const pcHead = (m) => `<div class="t-use-pc ${m.online ? '' : 'off'}">${computerIcon(m.name)}<b>${esc(m.name)}</b><small>${m.here ? THIS_COMPUTER : m.online ? '' : 'offline'}</small></div>`
     morph($('.usage'), machines.length ? `<div class="t-hr first"></div>${machines.map((m) => `${each ? pcHead(m) : ''}${m.accounts.map((u) => usageRow(u, !m.here && m.name)).join('')}`).join('')}` : '')
+    drawNotify()
     // kept awake, and why: said only while it is
     const awake = state.awake?.on ? state.awake : null
     $('.t-awake').classList.toggle('hidden', !awake)

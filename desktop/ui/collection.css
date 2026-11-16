@@ -293,7 +293,7 @@ html[data-os=win] .ed { height: min(720px, calc(100vh - 104px)); }
 .ed-adv-body { display: none; }
 .ed-adv.open .ed-adv-body { display: block; animation: pane-in var(--t-move) var(--out); }
 /* its rows aren't the card's own children, so they draw the hairlines between them themselves */
-.ed-adv-body .ed-row + .ed-row, .ed-adv-body .clones-row, .ed-adv-body .flags .ed-row { box-shadow: inset 0 1px 0 var(--line); }
+.ed-adv-body .ed-row + .ed-row, .ed-adv-body .clones-row, .ed-adv-body .checkin-row, .ed-adv-body .flags .ed-row { box-shadow: inset 0 1px 0 var(--line); }
 
 /* Instructions: the text fills the pane */
 .pd-prompt { flex: 1; min-height: 160px; width: 100%; border: 0; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); border-radius: var(--r-card); padding: 12px 14px; resize: none; outline: 0; font-size: 13px; line-height: 1.55; user-select: text; transition: box-shadow .2s, background .2s; }

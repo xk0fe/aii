@@ -218,8 +218,9 @@ if (FIXTURE === 'clones') {
 }
 
 const PROVIDERS = {
-  claude: { label: 'Claude', models: ['fable', 'opus', 'sonnet', 'haiku'], efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  codex: { label: 'Codex', models: ['gpt-6-luna', 'gpt-6'], efforts: ['low', 'medium', 'high'], fastByDefault: false },
+  // meter: what each one's CLI reports of an agent's use, for the spend check-in (core/providers.js). GLM has none.
+  claude: { label: 'Claude', models: ['fable', 'opus', 'sonnet', 'haiku'], efforts: ['low', 'medium', 'high', 'xhigh', 'max'], meter: { unit: 'usd', presets: [2, 5, 10, 25] } },
+  codex: { label: 'Codex', models: ['gpt-6-luna', 'gpt-6'], efforts: ['low', 'medium', 'high'], fastByDefault: false, meter: { unit: 'tokens', presets: [2e6, 5e6, 10e6, 25e6] } },
   glm: { label: 'GLM', models: ['glm-5'], efforts: [], missing: ['ZAI_API_KEY'] },
 }
 
@@ -515,7 +516,12 @@ if (FIXTURE === 'q') {
   for (const r of Object.keys(READS)) delete READS[r]
   Object.assign(READS, { since: now })
 }
-const state = { savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false }, schedules: { list: [], repo: true } }
+// When CLIque may notify you (core/notify.js): any time, not paused; window.__cliqueNotify({ … }) changes it as the app's
+// own action would ({ days, from, to } or { pause }), with `held` as how many are being kept
+const notifyCore = require('../core/notify.js')
+let notifyPrefs = notifyCore.prefsOf(null)
+const notifyState = (held = 0) => ({ ...notifyPrefs, ...notifyCore.quietNow(notifyPrefs), held, morning: notifyCore.morningAfter(notifyPrefs) })
+const state = { notify: notifyState(), savers: SAVER_STATE, checkIn: { at: {}, then: 'ask' }, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false }, schedules: { list: [], repo: true } }
 // Whether the computer is kept awake, as main.js says it (core/awake.js makes the line there): while this computer's
 // agents work, when that's on.
 function awakeOf(enabled) {
@@ -645,6 +651,24 @@ function workspaceAction(op, id, arg) {
   return { id, state }
 }
 const emit = () => setTimeout(() => window.__cliqueEmit('state', state), 30)
+// The app's own state (main.js stateNow): its version, an update, Open at login. __cliqueUpdate(patch) is what
+// core/updates.js would report next (an update ready, say); __cliqueRestartAsk, when set, is the question Restart to
+// update asks first (core/updates.js restartWords), as when agents are at work.
+const UPDATE = { phase: 'idle', version: '1.0.0', off: null, next: null, progress: 0, later: false, asking: null, stuck: false }
+state.app = { version: '1.0.0', update: UPDATE, login: { on: false } }
+window.__cliqueUpdate = (patch) => {
+  Object.assign(UPDATE, patch)
+  window.__cliqueEmit('state', state)
+}
+function updateAction(op, asked) {
+  if (op === 'later') Object.assign(UPDATE, { later: true, asking: null, stuck: false })
+  if (op === 'restart' && UPDATE.phase === 'ready') {
+    const ask = window.__cliqueRestartAsk
+    if (ask && ask.text !== asked) UPDATE.asking = ask
+    else Object.assign(UPDATE, { phase: 'restarting', asking: null })
+  }
+  emit()
+}
 // Scheduled messages, as Clique.scheduleAction keeps them (core/schedules.js): the list and each one's next time, by
 // this computer's clock. `now` sends it, marked as scheduled, the way a run does.
 function scheduleAction(op, id, arg = {}) {
@@ -820,8 +844,15 @@ window.__cliqueEmit = (channel, ...args) => {
   listeners[channel]?.forEach((fn) => fn(...args))
 }
 window.__cliqueState = state
+window.__cliqueNotify = (patch, held = 0) => {
+  notifyPrefs = notifyCore.changed(notifyPrefs, patch)
+  state.notify = notifyState(held)
+  window.__cliqueEmit('state', state)
+}
+window.__cliqueLooking = null // what the page last said it has open (clique.looking)
 window.__cliqueHistory = usageHistory() // what the Usage view asks for (a shot can swap it: nothing yet, a first look)
 window.clique = {
+  looking: (view) => (window.__cliqueLooking = view),
   platform: PLATFORM,
   home: HOME,
   dev: QUERY.get('dev') === '1',
@@ -860,6 +891,20 @@ window.clique = {
       Object.assign(state.savers.on, args[0])
       emit()
       return state.savers
+    }
+    if (action === 'notifications') {
+      notifyPrefs = notifyCore.changed(notifyPrefs, args[0])
+      state.notify = notifyState(state.notify.held)
+      emit()
+      return state.notify
+    }
+    // the spend check-in, per provider: { at: { claude: 5, codex: null }, then: 'ask' | 'tell' }
+    if (action === 'checkIn') {
+      const at = { ...state.checkIn.at, ...(args[0].at ?? {}) }
+      for (const k of Object.keys(at)) if (!at[k]) delete at[k]
+      state.checkIn = { at, then: args[0].then ?? state.checkIn.then }
+      emit()
+      return state.checkIn
     }
     // stay awake while agents work: on or off
     if (action === 'keepAwake') {
@@ -916,7 +961,11 @@ window.clique = {
       const always = e.ask.always?.find((x) => x.i === reply.always)?.label
       e.answer = reply.terminal ? { by: 'terminal', handedOver: true } : reply.answers ? { by: 'you', answers: Object.fromEntries(Object.entries(reply.answers).map(([k, v]) => [k, [].concat(v).join(', ')])) } : { by: 'you', allow: Boolean(reply.allow), ...(always && { always }), ...(reply.note && { note: reply.note }) }
       const a = state.agents.find((x) => x.name === e.from)
-      if (a && !reply.terminal) Object.assign(a, { status: 'working', since: Date.now() })
+      // a spend check-in (core/hub.js checkIn): what it held goes on, or is dropped, and its agent isn't waiting on it
+      if (e.ask.spend) {
+        e.answer.used = e.ask.spend.used
+        for (const m of state.feed.filter((x) => x.paused === e.ask.spend.group)) Object.assign(m, { paused: false }, reply.allow ? {} : { dropped: true })
+      } else if (a && !reply.terminal) Object.assign(a, { status: 'working', since: Date.now() })
       setTimeout(() => window.__cliqueEmit('state', state), 30)
       return undefined
     }
@@ -945,6 +994,12 @@ window.clique = {
       emit()
     }
     if (action === 'workspace') return workspaceAction(...args)
+    if (action === 'update') return updateAction(...args)
+    if (action === 'openAtLogin') {
+      state.app.login.on = Boolean(args[0])
+      emit()
+      return state.app.login.on
+    }
     if (action === 'addAgent') {
       const name = String(args[0].name).toLowerCase()
       state.agents.push(newAgent({ ...args[0], name, shared: false }))

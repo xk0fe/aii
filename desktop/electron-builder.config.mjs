@@ -10,7 +10,12 @@
 //   Windows  WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD: an Authenticode .pfx, or Azure Trusted Signing with
 //            AZURE_SIGN_ENDPOINT + AZURE_SIGN_ACCOUNT + AZURE_SIGN_PROFILE (and AZURE_TENANT_ID, AZURE_CLIENT_ID,
 //            AZURE_CLIENT_SECRET for the account). Without either the installer is unsigned and SmartScreen warns.
-//   RELEASE_REPO=owner/name: the public GitHub repo releases go to, written into the update metadata.
+//   RELEASE_REPO=owner/name: the public GitHub repo releases go to. With it the app knows where its updates come
+//            from (that repo's newest published release), and the build writes what an update needs beside the
+//            installers: latest-mac.yml and latest.yml, which name the files and their checksums (scripts/dist.mjs
+//            adds which terminal host the version has: scripts/update-info.mjs).
+//   UPDATE_FEED=https://…/: instead, a folder on the web that holds latest-mac.yml, latest.yml and the files they name.
+//   Neither: the app is built without an update address and never looks for updates (core/updates.js).
 import { APP_ID, PRODUCT_NAME } from './core/appid.js'
 import { afterPack } from './scripts/after-pack.mjs'
 
@@ -132,5 +137,5 @@ export default {
     artifactName: `${PRODUCT_NAME}-Setup-\${version}-\${arch}.\${ext}`,
   },
 
-  publish: owner && repo ? [{ provider: 'github', owner, repo, releaseType: 'draft' }] : null,
+  publish: env.UPDATE_FEED ? [{ provider: 'generic', url: env.UPDATE_FEED }] : owner && repo ? [{ provider: 'github', owner, repo, releaseType: 'draft' }] : null,
 }
