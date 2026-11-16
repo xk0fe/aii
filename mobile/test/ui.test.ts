@@ -149,7 +149,7 @@ describe('poses', () => {
       expect(art.s).toBeGreaterThan(0.7)
       expect(Math.abs(art.dx)).toBeLessThanOrEqual(10)
       expect(Math.abs(art.dy)).toBeLessThanOrEqual(30)
-      for (const layer of [art.back, art.held, art.stand, art.float, ...(art.paws ?? [])]) for (const s of layer ?? []) if (s.felt) expect(s.fill).toBeTruthy()
+      for (const layer of [art.back, art.held, art.stand, art.float]) for (const s of layer ?? []) if (s.felt) expect(s.fill).toBeTruthy()
     }
   })
   test.each(Object.keys(BODIES))('the small laptop fits a %s: its mouth clear of the lid, its eyes in the box', (body) => {
@@ -159,12 +159,18 @@ describe('poses', () => {
     expect(JSON.stringify(art)).not.toMatch(/NaN|null/)
     expect(at(b.mouth[1])).toBeLessThanOrEqual(67 - 3 + 1e-6)
     expect(at(Math.min(b.eyes[0][1], b.eyes[1][1]))).toBeGreaterThan(8)
-    expect(art.paws).toHaveLength(2)
     expect(art.stand?.length).toBe(3)
   })
-  test('a paw is the creature’s own colour', () => {
-    const art = poseArt('laptop', { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false })
-    expect(art.paws?.[0][0].fill).toBe(COLORS.mint)
+  test('at its laptop it has no paws, at either size: only the laptop is drawn', () => {
+    for (const small of [false, true]) {
+      const art = poseArt('laptop', { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false }, small)
+      expect(Object.keys(art).sort()).toEqual(['dx', 'dy', 'rot', 's', 'stand'])
+      expect(art.stand?.some((s) => s.fill === COLORS.mint)).toBe(false)
+    }
+  })
+  test('a paw holding a prop is the creature’s own colour', () => {
+    const art = poseArt('mug', { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false })
+    expect(art.held?.at(-1)?.fill).toBe(COLORS.mint)
   })
 })
 

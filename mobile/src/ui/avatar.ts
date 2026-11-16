@@ -134,7 +134,6 @@ export type PoseArt = {
   back?: Shape[] // behind the creature, still
   held?: Shape[] // moves with it
   stand?: Shape[] // in front of it, still
-  paws?: Shape[][] // in front, tapping
   float?: Shape[] // drifting above
 }
 
@@ -144,7 +143,7 @@ const SIDE: Record<string, number> = { blob: 92, frog: 89, drop: 86, heart: 86, 
 export const PROP = { lid: '#dfe2e8', base: '#a3a9b4', mug: '#f6efe3', band: '#ff9478', coffee: '#7b4a2c', steam: '#c9c1b6', board: '#fff3d6', wood: '#c48a55', bubble: '#fffaf1', hole: '#2a2230', zz: '#a69fd0' }
 // The small laptop (desktop/ui/avatar.js LAPTOP_SMALL), as an emoji draws one: a few chunky shapes in a silver that
 // reads on a light and on a dark screen, and no fine detail.
-const LAPTOP_SMALL = { s: 0.86, lid: 67, gap: 3, w: 27, fill: '#b4bac6', base: '#7f8694', logo: 4.2, paw: 15, pawR: 6 }
+const LAPTOP_SMALL = { s: 0.86, lid: 67, gap: 3, w: 27, fill: '#b4bac6', base: '#7f8694', logo: 4.2 }
 
 // small: the creature is under POSE_MIN (only the laptop has a small drawing).
 export function poseArt(pose: Pose, spec: Spec, small = false): PoseArt {
@@ -163,7 +162,6 @@ export function poseArt(pose: Pose, spec: Spec, small = false): PoseArt {
         { kind: 'rect', x: 50 - L.w - 9, y: 90, w: 2 * L.w + 18, h: 7, r: 3.5, fill: L.base, felt: true },
         { kind: 'ellipse', cx: 50, cy: mid, rx: L.logo, ry: L.logo, fill: '#fff', opacity: 0.9 },
       ],
-      paws: [[paw(50 - L.paw, L.lid + 0.5, L.pawR, L.pawR * 0.8)], [paw(50 + L.paw, L.lid + 0.5, L.pawR, L.pawR * 0.8)]],
     }
   }
   switch (pose) {
@@ -180,7 +178,6 @@ export function poseArt(pose: Pose, spec: Spec, small = false): PoseArt {
           { kind: 'rect', x: 18, y: 90.5, w: 64, h: 5.5, r: 2.75, fill: PROP.base, felt: true },
           { kind: 'path', d: `M45.5 ${lid + 14.5}Q45.5 ${lid + 9.5} 50 ${lid + 9.5}Q54.5 ${lid + 9.5} 54.5 ${lid + 14.5}Z`, fill: '#fff', opacity: 0.6 },
         ],
-        paws: [[paw(37, lid + 0.6)], [paw(63, lid + 0.6)]],
       }
     }
     case 'mug': {

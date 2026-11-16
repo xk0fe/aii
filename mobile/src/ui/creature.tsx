@@ -283,7 +283,7 @@ function Plain({ s }: { s: Shape }) {
   }
 }
 
-// One layer of a pose (behind, held, in front, a paw, floating): its own <Svg> over the creature's box.
+// One layer of a pose (behind, held, in front, floating): its own <Svg> over the creature's box.
 const Layer = memo(function Layer({ shapes, size, felt }: { shapes: Shape[]; size: number; felt: boolean }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, '')
   const soft = shapes.filter((s) => s.felt)
@@ -372,9 +372,8 @@ const hop = (size: number) => {
 const WIGGLE = css.keyframes({ '0%': { transform: [{ rotate: '-6deg' }] }, '50%': { transform: [{ rotate: '6deg' }] }, '100%': { transform: [{ rotate: '-6deg' }] } })
 const WIGGLE_SOFT = css.keyframes({ '0%': { transform: [{ rotate: '-2.5deg' }] }, '50%': { transform: [{ rotate: '2.5deg' }] }, '100%': { transform: [{ rotate: '-2.5deg' }] } })
 const BREATHE = css.keyframes({ '0%': { transform: [{ scaleX: 1 }, { scaleY: 1 }] }, '50%': { transform: [{ scaleX: 0.982 }, { scaleY: 1.03 }] }, '100%': { transform: [{ scaleX: 1 }, { scaleY: 1 }] } })
-const type_ = (size: number) => motion('type', size, (u) => ({ '0%': { transform: [{ translateY: 0 }] }, '50%': { transform: [{ translateY: 1.2 * u }] }, '100%': { transform: [{ translateY: 0 }] } }))
-// a small creature's paws lift a little higher: 2.5% of it is a fraction of a pixel
-const tapping = (size: number, small: boolean) => motion(small ? 'tap-small' : 'tap', size, (u) => ({ from: { transform: [{ translateY: 0 }] }, to: { transform: [{ translateY: (small ? -4.5 : -2.5) * u }] } }))
+// behind its laptop it bobs a little; a small creature by more of itself (1.2% of it is a fraction of a pixel)
+const type_ = (size: number) => motion('type', size, (u) => ({ '0%': { transform: [{ translateY: 0 }] }, '50%': { transform: [{ translateY: (size < POSE_MIN ? 3 : 1.2) * u }] }, '100%': { transform: [{ translateY: 0 }] } }))
 const drift = (size: number) => motion('drift', size, (u) => ({ '0%': { transform: [{ translateY: 0 }] }, '50%': { transform: [{ translateY: -3 * u }] }, '100%': { transform: [{ translateY: 0 }] } }))
 const rise = (size: number) => motion('rise', size, (u) => ({ from: { transform: [{ translateY: 30 * u }] }, to: { transform: [{ translateY: 0 }] } }))
 
@@ -442,11 +441,6 @@ export const Creature = memo(function Creature({ agent, size = 48, mood, posed =
         {art.held ? <Layer shapes={art.held} size={size} felt={felt} /> : null}
       </Animated.View>
       {art.stand ? <Layer shapes={art.stand} size={size} felt={felt} /> : null}
-      {art.paws?.map((p, i) => (
-        <Animated.View key={i} style={[StyleSheet.absoluteFill, play({ ...loop(tapping(size, small), 340, (phase + i * 170) % 680), animationDirection: 'alternate' })]} pointerEvents="none">
-          <Layer shapes={p} size={size} felt={felt} />
-        </Animated.View>
-      ))}
       {art.float ? (
         <Animated.View style={[StyleSheet.absoluteFill, play(loop(drift(size), 3200, phase % 3200))]} pointerEvents="none">
           <Layer shapes={art.float} size={size} felt={felt} />

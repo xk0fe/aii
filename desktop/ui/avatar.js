@@ -213,10 +213,10 @@ const SIDE = { blob: 92, frog: 89, drop: 86, heart: 86, bean: 83, mochi: 90, cat
 // Felt for the props: soft warm neutrals, so the creature's own colour stays the only loud one.
 const PROP = { lid: '#dfe2e8', base: '#a3a9b4', mug: '#f6efe3', band: '#ff9478', coffee: '#7b4a2c', steam: '#c9c1b6', board: '#fff3d6', wood: '#c48a55', bubble: '#fffaf1', hole: '#2a2230', zz: '#a69fd0' }
 const BRAND_FACE = 'Fredoka, ui-rounded, "SF Pro Rounded", sans-serif'
-const LAPTOP_SMALL = { s: 0.86, lid: 67, gap: 3, w: 27, fill: '#b4bac6', base: '#7f8694', logo: 4.2, paw: 15, pawR: 6 }
+const LAPTOP_SMALL = { s: 0.86, lid: 67, gap: 3, w: 27, fill: '#b4bac6', base: '#7f8694', logo: 4.2 }
 
 // What a pose adds: how the figure sits (scale s, shift dx/dy in % of the box, tilt rot, clip from the bottom) and the
-// felt layers around it: back (behind), held (moves with the creature), stand (in front, still), paws (typing), float.
+// felt layers around it: back (behind), held (moves with the creature), stand (in front, still), float.
 function poseLayers(pose, b, body, color, fuzz, size) {
   const felt = (shape, fill) => `<g ${fuzz}><g fill="${fill}">${shape}</g><g fill="url(#av-hi)">${shape}</g><g fill="url(#av-lo)">${shape}</g></g>`
   const paw = (x, y, rx = 5, ry = 3.8) => felt(`<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}"/>`, color)
@@ -230,7 +230,7 @@ function poseLayers(pose, b, body, color, fuzz, size) {
     const stand = felt(`<path d="M${50 - L.w + 2} ${lid + 4}Q${50 - L.w + 2} ${lid} ${50 - L.w + 6} ${lid}H${50 + L.w - 6}Q${50 + L.w - 2} ${lid} ${50 + L.w - 2} ${lid + 4}L${50 + L.w} 92H${50 - L.w}Z"/>`, L.fill) +
       felt(`<rect x="${50 - L.w - 9}" y="90" width="${2 * L.w + 18}" height="7" rx="3.5"/>`, L.base) +
       `<circle cx="50" cy="${(lid + 90) / 2 + 0.5}" r="${L.logo}" fill="#fff" opacity=".9"/>`
-    return { s, dx: 0, dy, small: true, stand, paws: [paw(50 - L.paw, lid + 0.5, L.pawR, L.pawR * 0.8), paw(50 + L.paw, lid + 0.5, L.pawR, L.pawR * 0.8)] }
+    return { s, dx: 0, dy, small: true, stand }
   }
   if (pose === 'laptop') {
     const s = 0.84, lid = 70
@@ -240,7 +240,7 @@ function poseLayers(pose, b, body, color, fuzz, size) {
       felt(`<path d="M27 ${lid + 3}Q27 ${lid} 30 ${lid}H70Q73 ${lid} 73 ${lid + 3}L75 92H25Z"/>`, PROP.lid) +
       felt('<rect x="18" y="90.5" width="64" height="5.5" rx="2.75"/>', PROP.base) +
       `<path d="M45.5 ${lid + 14.5}Q45.5 ${lid + 9.5} 50 ${lid + 9.5}Q54.5 ${lid + 9.5} 54.5 ${lid + 14.5}Z" fill="#fff" opacity=".6"/>`
-    return { s, dx: 0, dy, stand, paws: [paw(37, lid + 0.6), paw(63, lid + 0.6)] }
+    return { s, dx: 0, dy, stand }
   }
   if (pose === 'mug') {
     const s = 0.88
@@ -329,11 +329,10 @@ function creatureHTML(agent, size, mood, pose) {
     figure = `<span class="av-fig" style="transform:translate(${+p.dx.toFixed(2)}%, ${+p.dy.toFixed(2)}%) rotate(${p.rot ?? 0}deg) scale(${p.s})">${figure}</span>`
     if (p.clip) figure = `<span class="av-clip" style="clip-path:inset(-40% -40% ${p.clip}% -40%)">${figure}</span>`
   }
-  const paws = p?.paws ? p.paws.map((g, i) => `<span class="av-paw p${i}">${layer('', g)}</span>`).join('') : ''
   return `<span class="av ${mood}${pose ? ` posed pose-${pose}` : ''}${p?.small ? ' small' : ''}${grey ? ' asleep' : ''}" data-sig="${sig}" style="--size:${size}px;--delay:${delay}s" title="${String(agent.name).replace(/"/g, '')}">
     ${layer('av-back', p?.back)}<span class="av-in">
       ${figure}${layer('av-held', p?.held)}
-    </span>${layer('av-stand', p?.stand)}${paws}${p?.float ? `<span class="av-float">${layer('', p.float)}</span>` : ''}
+    </span>${layer('av-stand', p?.stand)}${p?.float ? `<span class="av-float">${layer('', p.float)}</span>` : ''}
     ${mood === 'waiting' ? '<span class="av-bang">!</span>' : ''}${asleep && pose !== 'sleep' ? '<span class="av-z">z</span>' : ''}
   </span>`
 }
