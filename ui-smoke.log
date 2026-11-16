@@ -12,14 +12,17 @@ ok   a message with no caption has no empty bubble
 ok   Play starts the recording in the message, with its controls: 1.22s, controls true
 ok   Run page loads it with scripts, in the same box
 ok   the page is live: clicking its + changes its total: 18.08 -> 25.33
-ok   a new message arrives: the same recording is still playing: 0.90s -> 2.04s
+ok   a new message arrives: the same recording is still playing: 0.90s -> 2.02s
 ok   and the page is still running, as it was: 25.33
 ok   scrolled out of sight, the recording stops
 ok   Stop goes back to the still preview
-(node:35329) electron: Failed to load URL: https://example.com/ with error: ERR_BLOCKED_BY_CSP
+(node:75348) electron: Failed to load URL: https://example.com/ with error: ERR_BLOCKED_BY_CSP
 (Use `Electron --trace-warnings ...` to show where the warning was created)
 ok   a page that tries to go elsewhere is stopped, and its card says so
 ok   the app's page is where it was
+ok   a reaction on a message with files sits under the files, inside the message, overlapping nothing
+ok   a reaction landing redraws the message: the recording keeps playing and the page keeps running
+ok   a click on the pill is a reaction, not a file: ["react","f4","👀"]
 ok   a picture opens in the viewer, fitted to the window, at its place in the message: {"name":"phone-payment.svg","count":"2 of 3","pct":"Fit","fits":true,"w":305,"focus":"close"}
 ok   → shows the next: phone-receipt.svg
 ok   → past the last goes round to the first: phone-cart.svg
@@ -29,13 +32,13 @@ ok   a click on the zoomed picture fits it again
 ok   a click on the fitted picture shows it at its real size: 100%
 ok   it fits a smaller window too
 ok   Esc closes it, and the keyboard is back on the picture it opened from
-ok   your own picture on a message opens in the viewer too: 2026-11-16-6df52f36-phone-cart.svg
-ok   the recording opens in the viewer from where it was, still playing; the one in the message stops: {"t":2.290162,"playing":true,"inlinePaused":true,"controls":true}
+ok   your own picture on a message opens in the viewer too: 2026-11-16-65d34be2-phone-cart.svg
+ok   the recording opens in the viewer from where it was, still playing; the one in the message stops: {"t":2.290511,"playing":true,"inlinePaused":true,"controls":true}
 ok   closed: the one in the message is at the same place, paused
 ok   the page opens in the viewer, running, sandboxed
 ok   Esc pressed inside the page closes the viewer
-(node:35329) electron: Failed to load URL: https://example.com/ with error: ERR_BLOCKED_BY_CSP
 ok   in the viewer, a page that tries to leave is closed with a line that says so
+[75348:1116/173427.805068:ERROR:base/process/process_mac.cc:98] task_policy_set TASK_SUPPRESSION_POLICY: (os/kern) invalid argument (4)
 ok   the floating chat shows the same cards, none wider than its column
 ok   there, looking closer opens the main window on that file
 ok   no errors in the console

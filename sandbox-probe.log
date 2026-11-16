@@ -1,5 +1,5 @@
 ok   the app's own policy lets a frame hold only clique-sandbox:, and still no inline script: default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; media-src 'self' file:; frame-src clique-sandbox:
-ok   three frames: the app, the shell inside it, the page inside that: file:///var/folders/kc > clique-sandbox://page/ > about:srcdoc > http://127.0.0.1:59437
+ok   three frames: the app, the shell inside it, the page inside that: file:///var/folders/kc > clique-sandbox://page/ > about:srcdoc > http://127.0.0.1:64864
 ok   the app itself has its bridge (so there is something to reach for)
 ok   the shell and the page have nobody's origin: null, null
 ok   the page's own script ran (the sandbox is live, not just dead)
