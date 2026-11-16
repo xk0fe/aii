@@ -33,6 +33,8 @@ export function serve(to) {
     post: (q, body) => hub.postIn(q.from || 'you', body.split('\0').slice(0, -1)),
     // `clique canvas <op> …`: a board drawn in the chat, and changes to one that's there (core/canvas.js)
     canvas: (q, body) => hub.canvas(q.from || 'you', body.split('\0').slice(0, -1)),
+    // `clique attach <file> …`: files shown in the chat (core/attachments.js). The first word is the folder the agent is in
+    attach: (q, body) => hub.attach(q.from || 'you', body.split('\0').slice(0, -1)),
     who: () => hub.who(),
     // `clique board [words]`: the words NUL-separated (none from a `clique` older than that: everything, as it was)
     board: (q, body) => hub.board(q.from || 'you', body.split('\0').slice(0, -1)),

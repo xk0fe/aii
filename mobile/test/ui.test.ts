@@ -3,7 +3,7 @@
 import type { Agent, FeedEntry } from '@/net/types'
 import { BODIES, COLORS, moodOf, poseArt, poseOf, type Pose, type Spec } from '@/ui/avatar'
 import { ellipse, flatten, fuzz, fuzzy, roundRect, toPath } from '@/ui/felt'
-import { activityWords, brainLine, reachedOver, reasonOf, statusWord, tryWords, voiceOf } from '@/ui/format'
+import { activityWords, brainLine, fileLine, reachedOver, reasonOf, statusWord, tryWords, voiceOf } from '@/ui/format'
 import { andList, headline, needsOf } from '@/ui/room'
 import { makeDemo } from '@/demo/fixture'
 
@@ -206,5 +206,16 @@ describe('felt', () => {
     const d1 = fuzzy('k', () => [e], 3)
     expect(fuzzy('k', () => [], 3)).toBe(d1) // the second time it doesn't even look
     expect(toPath([[[0, 0], [1.23456, 2]]])).toBe('M0 0L1.2 2Z')
+  })
+})
+
+describe('files an agent attached', () => {
+  it('says what each one is, how long and how big', () => {
+    expect(fileLine({ name: 'coupon-flow.mp4', kind: 'video', size: 2.14 * 1024 * 1024, dur: 75.4 })).toBe('Video · 1:15 · 2.1 MB')
+    expect(fileLine({ name: 'long.mov', kind: 'video', size: 48 * 1024 * 1024, dur: 3725 })).toBe('Video · 1:02:05 · 48 MB')
+    expect(fileLine({ name: 'totals.html', kind: 'html', size: 14 * 1024 })).toBe('HTML page · 14 KB')
+    expect(fileLine({ name: 'shot.png', kind: 'image', size: 900 })).toBe('Picture · 900 B')
+    expect(fileLine({ name: 'report.pdf', kind: 'file', size: 1536 })).toBe('PDF · 1.5 KB')
+    expect(fileLine({ name: 'Makefile', kind: 'file', size: 10 })).toBe('File · 10 B')
   })
 })

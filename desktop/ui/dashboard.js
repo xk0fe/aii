@@ -1683,6 +1683,14 @@ function handleFocus(arg) {
   else if (arg === ':workspace') workspaces.create()
   else if (arg === ':workspace-settings') workspaces.settings()
   else if (arg?.startsWith('task:') || arg?.startsWith('bug:')) openTask(arg.slice(arg.indexOf(':') + 1))
+  // a file from the floating chat, to look at closer: this window has the room (ui/files.js)
+  else if (arg?.startsWith('file:')) {
+    try {
+      const { files, i } = JSON.parse(arg.slice(5))
+      fxRemember('elsewhere', files)
+      fxView('elsewhere', i)
+    } catch {}
+  }
   else if (arg) select(arg)
 }
 

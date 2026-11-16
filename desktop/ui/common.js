@@ -1335,8 +1335,10 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const line = e.gist ?? snippet(e.text)
     const whole = e.from === 'you' || open.has(e.id)
     const more = e.from !== 'you' && (line !== String(e.text ?? '').trim() || echoes.length)
-    const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
-    const body = whole ? `${pics}<div class="tr-full bubble open">${md(e.text)}</div>${echoes.map((x) => `<div class="tr-echo"><span>Also said</span><div class="bubble open">${md(x.text)}</div></div>`).join('')}` : `${pics}<div class="tr-line">${esc(line)}</div>`
+    const pics = (e.images?.length ? (typeof fxPics === 'function' ? fxPics(e) : `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>`) : '') // (ui/files.js: they open in the viewer)
+    // what an agent attached (clique attach): pictures, a recording, a page, any file (ui/files.js)
+    const files = typeof filesHTML === 'function' ? filesHTML(e) : ''
+    const body = whole ? `${pics}<div class="tr-full bubble open">${md(e.text)}</div>${files}${echoes.map((x) => `<div class="tr-echo"><span>Also said</span><div class="bubble open">${md(x.text)}</div></div>`).join('')}` : `${pics}<div class="tr-line">${esc(line)}</div>${files}`
     return `<div class="thread-row${more ? ' opens' : ''}${whole ? ' open' : ''}" id="tr-${esc(e.id)}" data-row="${esc(e.id)}"${more ? ` tabindex="0" role="button" aria-expanded="${whole}"` : ''}>${face}<div class="tr-main">${head}${body}</div><span class="tr-chev">${more ? ICONS.chevron : ''}</span></div>`
   }
   const draw = (force = false) => {
@@ -1358,7 +1360,9 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     if (next !== drawn || force) {
       drawn = next
       const top = list.scrollTop
+      const live = typeof fxHold === 'function' ? fxHold(list) : null
       list.innerHTML = lines.length ? lines.map((e) => rowHTML(e, echoes(e.id))).join('') : '<div class="empty empty-state small"><b>Nothing here any more</b><span>This thread is older than what the chat keeps.</span></div>'
+      live?.()
       if (pinned) list.scrollTop = list.scrollHeight
       else list.scrollTop = top
     }
@@ -1591,10 +1595,12 @@ function feedItem(e, prev, ctx) {
   const hands = drawn ? [...new Set(e.canvas?.by ?? [])].filter((n) => n !== e.from) : []
   const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
-  const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
+  const pics = (e.images?.length ? (typeof fxPics === 'function' ? fxPics(e) : `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>`) : '') // (ui/files.js: they open in the viewer)
+  // what an agent attached (clique attach): pictures, a recording, a page, any file (ui/files.js)
+  const files = typeof filesHTML === 'function' ? filesHTML(e) : ''
   // A reply quotes the message it answers, with a bar in the quoted sender's color; click to jump back to it.
   const orig = e.re && byId[e.re]
-  const quoted = orig?.ticket !== undefined ? `#${String(orig.ticket).split('@')[0]} ${orig.title ?? ''}` : snippet(orig?.text)
+  const quoted = orig?.ticket !== undefined ? `#${String(orig.ticket).split('@')[0]} ${orig.title ?? ''}` : snippet(orig?.text) || (orig?.files?.length ? `Attached ${orig.files[0].name}` : '')
   const quote = orig ? `<button class="quote" data-jump="${orig.id}" style="--qc:${tint(orig.from)}" title="Jump to the message this answers">${ICONS.reply}<b>${orig.from === 'you' ? 'You' : label(orig.from)}</b><span>${esc(quoted)}</span></button>` : ''
   // ...and a message you sent links forward to the agents' replies.
   const answers = repliesTo[e.id] ?? []
@@ -1612,7 +1618,7 @@ function feedItem(e, prev, ctx) {
   })
   // what agents say to each other stays out of the way of what's for you: it folds sooner, in a quieter colour
   const between = e.from !== 'you' && e.kind !== 'reply' && e.kind !== 'ask'
-  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}${between ? ' between' : ''}${e.empty ? ' wordless' : ''}" data-id="${e.id}">${text}${hands.length ? `<div class="canvas-by">with ${andList(hands.map(name))}</div>` : ''}</div>`
+  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}${between ? ' between' : ''}${e.empty ? ' wordless' : ''}" data-id="${e.id}">${text}${hands.length ? `<div class="canvas-by">with ${andList(hands.map(name))}</div>` : ''}</div>${files}`
   const cap = (html) => (cont ? '' : `<div class="cap">${html}${tags}<span class="time">${time}</span></div>`)
   // hover a message for its tools: Reply (the chat's message box then answers it)
   const tools = `<div class="msg-tools"><button class="msg-tool" data-reply="${e.id}" title="Reply to this message">${ICONS.reply}<span>Reply</span></button></div>`
@@ -2562,7 +2568,10 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
         const keep = active && { id: active.closest('[data-ask]').dataset.ask, field: 'note' in active.dataset ? '[data-note]' : `[data-other="${active.dataset.other}"]`, from: active.selectionStart, to: active.selectionEnd }
         const reading = pinned || first || jumpTo ? null : readingAt()
         const aimedAt = jumpTo && placeOf(jumpTo)
+        // (a recording that's playing, a page that's running: carried over as they are, ui/files.js)
+        const live = typeof fxHold === 'function' ? fxHold(list) : null
         list.innerHTML = view.items.length || busy.length ? view.html() : emptyHTML(agents)
+        live?.()
         markWords(list, words)
         // New messages pop in; the ones already on screen stay put.
         for (const e of view.items) {

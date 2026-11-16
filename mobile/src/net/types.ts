@@ -108,6 +108,8 @@ export type FeedEntry = {
   fresh?: boolean
   triage?: boolean
   images?: string[]
+  files?: FeedFile[] // what an agent attached: what each file is (it stays on the computer)
+  caption?: string // with files: what the agent said, without the line of `text` that names the files for older phones
   rule?: string
   file?: string
   thing?: string
@@ -175,3 +177,6 @@ export type MacRecord = {
   ws?: string // the workspace this phone watches there
   pairedAt: number
 }
+
+// A file an agent attached to a message (`clique attach`): its name, what it is, how big. Never the file itself.
+export type FeedFile = { name: string; kind: 'image' | 'video' | 'html' | 'file'; size: number; w?: number; h?: number; dur?: number }

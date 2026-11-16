@@ -185,6 +185,7 @@ clique board [words]          the shared notes you haven't read (--all for every
 clique channels               the channels here: who's in each, and its brief
 clique post <channel> "..."   say it in that channel (@name someone to hand it to them there)
 clique canvas                 draw a board in the chat, or add to one that's there (clique canvas help)
+clique attach <file> ...      show files in the chat: a screenshot, a recording, a page (clique attach for more)
 clique task                   the Tasks board: list, show, done, note, add (clique task help)
 clique app <what> ...         change CLIque itself: agents, channels, workspaces, computers (clique app help)
 `
@@ -251,6 +252,10 @@ async function cli([cmd, ...args]) {
       return send(`/post?from=${from}`, { body: words(args) })
     case 'canvas':
       return send(`/canvas?from=${from}`, { body: words(args) })
+    case 'attach':
+      // clique attach <file> ... [--caption "..."]: files shown in the chat. The folder you're in goes first, so a file's
+      // name alone is found; CLIque copies the files itself (it's on this computer)
+      return send(`/attach?from=${from}`, { body: words([process.cwd(), ...args]), seconds: 60 })
     case 'task':
     case 'bug':
       return send(`/task?from=${from}`, { body: words(args) })

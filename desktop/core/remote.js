@@ -11,6 +11,7 @@ import path from 'node:path'
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { WebSocketServer, WebSocket } from 'ws'
 import { ATTACHMENTS, saveImage } from './hub.js'
+import { FETCH_MAX, forPhone, kindOf } from './attachments.js'
 import { CACHE, LINK_DIR } from './clique.js'
 import { keyPair, privateKey, publicKey } from './phones.js'
 import { VERSION, PORT, SALT, CLOSE, CALLS, TASK_OPS, CHANNEL_OPS, b64, unb64, utf8, concat, keyInfo, nonce } from 'clique-shared/protocol.js'
@@ -63,7 +64,9 @@ const unpack = (s) => JSON.parse(s, (_, x) => (x && typeof x === 'object' && typ
 export function phoneState(s) {
   const { parked, autopilot, feed, reads, usage, spend, tasks, workspace, workspaces } = s
   return {
-    parked, autopilot, feed, reads, usage, spend, tasks, workspace, workspaces,
+    parked, autopilot, reads, usage, spend, tasks, workspace, workspaces,
+    // a message with files an agent attached says what they are, never where they are (core/attachments.js forPhone)
+    feed: feed.some((e) => e.files) ? feed.map(forPhone) : feed,
     // the workspace's channels, #general first: each with its brief and who's in it (no members: everyone)
     channels: (s.channels ?? []).map(({ id, name, brief, members }) => ({ id, name, ...(brief && { brief }), ...(members && { members }) })),
     // resting is free to a phone, which has no terminal to miss: older phones don't know the word
@@ -89,6 +92,8 @@ function image(file) {
   const at = real(file)
   if (!at) throw new Error('that image is gone')
   if (!inside(at, ATTACHMENTS, CACHE)) throw new Error("that isn't an image from CLIque")
+  // (attachments also hold what agents attach, core/attachments.js: a recording or a big file never goes down this socket)
+  if (kindOf(at) !== 'image' || fs.statSync(at).size > FETCH_MAX) throw new Error("that isn't an image a phone can show: open it on the computer")
   return new Uint8Array(fs.readFileSync(at))
 }
 

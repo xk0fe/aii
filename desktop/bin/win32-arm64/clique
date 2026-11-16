@@ -53,6 +53,10 @@ case "$cmd" in
   canvas)
     # clique canvas <op> ...: a board drawn in the chat (clique canvas help). Each word NUL-terminated: a word is a line
     printf '%s\0' "$@" | call --data-binary @- "$URL/canvas?from=$FROM" ;;
+  attach)
+    # clique attach <file> ... [--caption "..."]: files shown in the chat. The folder you're in goes first, so a file's
+    # name alone is found; CLIque copies the files itself (it's on this computer)
+    printf '%s\0' "$PWD" "$@" | WAIT=60 call --data-binary @- "$URL/attach?from=$FROM" ;;
   task|bug)
     # each word NUL-terminated, so quotes, newlines and flags arrive as typed
     printf '%s\0' "$@" | call --data-binary @- "$URL/task?from=$FROM" ;;
@@ -75,6 +79,7 @@ clique board [words]          the shared notes you haven't read (--all for every
 clique channels               the channels here: who's in each, and its brief
 clique post <channel> "..."   say it in that channel (@name someone to hand it to them there)
 clique canvas                 draw a board in the chat, or add to one that's there (clique canvas help)
+clique attach <file> ...      show files in the chat: a screenshot, a recording, a page (clique attach for more)
 clique task                   the Tasks board: list, show, done, note, add (clique task help)
 clique app <what> ...         change CLIque itself: agents, channels, workspaces, computers (clique app help)
 EOF
