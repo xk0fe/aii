@@ -1011,15 +1011,17 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       `<div class="look-row"><span>Blush</span><div class="opts"><input type="checkbox" class="switch" data-look="cheeks" ${s.cheeks ? 'checked' : ''}></div></div>`
   }
 
+  let writing = false // its brain is drafting its instructions (write, below)
   function drawAvatar(hop = false) {
     card.style.setProperty('--c', colorOf(draft.avatar))
     card.style.setProperty('--ed-c', colorOf(draft.avatar))
     card.classList.toggle('light', LIGHT.has(draft.avatar.color))
     const live = agentNamed(editing)
     const host = card.querySelector('.pd-av')
-    const mood = live?.status === 'working' || live?.status === 'waiting' ? undefined : live && !live.on ? 'sleep' : 'idle'
-    const pose = live ? poseOf(live, { ask: asksByName.get(live.name) }) : undefined
-    host.innerHTML = avatarHTML({ name: draft.name || 'new', avatar: draft.avatar, status: live?.status }, { size: 168, mood, pose })
+    // while it writes it's at its laptop, whatever it was doing
+    const mood = writing ? 'working' : live?.status === 'working' || live?.status === 'waiting' ? undefined : live && !live.on ? 'sleep' : 'idle'
+    const pose = writing ? 'laptop' : live ? poseOf(live, { ask: asksByName.get(live.name) }) : undefined
+    host.innerHTML = avatarHTML({ name: draft.name || 'new', avatar: draft.avatar, status: writing ? 'working' : live?.status }, { size: 168, mood, pose })
     if (hop) bounce(host.querySelector('.av'), 'pop')
   }
 
@@ -1219,7 +1221,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     })
   }
 
-  // The agent's own brain drafts its instructions; the creature hops while it writes.
+  // The agent's own brain drafts its instructions; the creature types at its laptop while it writes.
   async function write() {
     const msg = card.querySelector('.pd-msg')
     const btn = card.querySelector('[data-act=write]')
@@ -1230,7 +1232,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     btn.disabled = true
     btn.querySelector('span').textContent = `${label} is writing…`
     box.classList.add('writing')
-    card.querySelector('.pd-av .av')?.classList.add('working')
+    writing = true
+    drawAvatar()
     msg.textContent = ''
     try {
       const { name, area, provider, model, cwd } = draft
@@ -1243,6 +1246,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       btn.disabled = false
       btn.querySelector('span').textContent = 'Write it'
       box.classList.remove('writing')
+      writing = false
       drawAvatar(true)
     }
   }

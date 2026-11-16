@@ -103,7 +103,7 @@ async function fitToContent(win) {
   await sleep(150)
 }
 
-// A still picture: the creatures at rest (eyes open, nobody mid-hop), what was sliding in already in place.
+// A still picture: the creatures at rest (eyes open, nobody mid-move), what was sliding in already in place.
 const FREEZE = `for (const a of document.getAnimations()) {
   try {
     const t = a.effect?.getTiming?.()

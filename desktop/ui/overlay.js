@@ -2,7 +2,7 @@
 /* global wordmarkHTML, PRODUCT_NAME, clique, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, cliqueSummary, celebrate, ICONS, wsTile, wsLabel, elsewhere, hasWorkspaces */
 
 const $ = (s) => document.querySelector(s)
-$('.home').innerHTML = markSVG('0 6 24 16', { split: true }) // its buddies hop while anyone works
+$('.home').innerHTML = markSVG('0 6 24 16', { split: true }) // its buddies bob while anyone works
 $('.home').title = PRODUCT_NAME
 // the panel's header: the wordmark, or the workspace it shows (drawn on each push)
 $('[data-act=dashboard]').innerHTML = ICONS.expand

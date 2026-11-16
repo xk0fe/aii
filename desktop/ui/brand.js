@@ -138,7 +138,7 @@ const ROOM_RANK = { waiting: 0, working: 1, starting: 2, idle: 3 }
 // creatures themselves and their patches.
 const glowBedHTML = () => '<span class="glowbed" aria-hidden="true"><i class="sky"></i><i class="pink"></i><i class="lime"></i><b></b></span>'
 
-// Everyone in a row, for the menu bar's popover (plain creatures at this size, hopping while they work, wiggling
+// Everyone in a row, for the menu bar's popover (small creatures: at their laptops while they work, wiggling
 // when they need you, asleep when off). A click opens one (data-open). A clique too big for it shows the ones that
 // matter most right now, in your order, and how many more at the end.
 function stripHTML(agents, width = 318) {

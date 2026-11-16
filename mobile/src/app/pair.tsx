@@ -37,7 +37,7 @@ function Buddies({ busy, trouble }: { busy: boolean; trouble: boolean }) {
     <View pointerEvents="none" style={styles.buddies}>
       {BUDDIES.map((b, i) => (
         <View key={b.name} style={{ marginHorizontal: -7, zIndex: i === 1 ? 2 : 1 }}>
-          <Creature agent={b} size={b.size} mood={busy ? 'working' : trouble && i === 1 ? 'waiting' : 'idle'} />
+          <Creature agent={b} size={b.size} mood={busy ? 'hop' : trouble && i === 1 ? 'waiting' : 'idle'} />
         </View>
       ))}
     </View>
