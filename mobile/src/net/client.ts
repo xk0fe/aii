@@ -595,6 +595,10 @@ export class CliqueClient {
   agentAction(action: 'freshStart' | 'restart' | 'markIdle', name: string) {
     return this.call(action, this.here, name)
   }
+  // Stop: end the turn these agents are in (they stay on, and keep their conversations)
+  stopAgents(names: string[], opts?: { channel?: string }) {
+    return this.call('stop', this.here, names, opts ?? {})
+  }
   // Not on screen yet in version 1, but typed as the Mac answers: what it printed so far and the size it was drawn
   // at, then `pty` pushes.
   terminal(name: string, on: boolean) {

@@ -103,6 +103,15 @@ test('answers a question card with the shape hub.decide takes, and the card come
   client.stop()
 })
 
+test('Stop names the agents and the channel it was pressed in, in the workspace on screen', async () => {
+  const { mac, client } = await pairedClient()
+  await client.stopAgents(['Ada'], { channel: 'review' })
+  expect(mac.calls.at(-1)).toEqual({ name: 'stop', args: ['default', ['Ada'], { channel: 'review' }] })
+  await client.stopAgents(['Ada', 'June'])
+  expect(mac.calls.at(-1)).toEqual({ name: 'stop', args: ['default', ['Ada', 'June'], {}] })
+  client.stop()
+})
+
 test('sends a message, and switches workspaces', async () => {
   const { mac, client } = await pairedClient()
   await expect(client.send('', 'make it fast')).resolves.toBe('sent to @Ada\n')

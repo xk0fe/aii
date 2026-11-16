@@ -1,7 +1,7 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: a channel (#general or one you made), one agent's conversation with its terminal docked beside it,
 // Agents, Tasks, Terminals or Usage.
-/* global mountSchedules, mountUsage, shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon, channelOf, pauseMenu, notifyTime, notifyClock, notifyHeld */
+/* global stopNow, mountSchedules, mountUsage, shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon, channelOf, pauseMenu, notifyTime, notifyClock, notifyHeld */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -1278,6 +1278,7 @@ function tileHead(t) {
 
 // The four actions, floating over the terminal's corner.
 const tileActs = (a) => `
+  ${a.canStop ? `<button class="icon" data-stop="${esc(a.name)}" title="${esc(`Stop ${displayName(a)}: end what it's doing now. It stays on`)}" aria-label="${esc(`Stop ${displayName(a)}`)}">${ICONS.stop}</button>` : ''}
   <button class="icon" data-act="fresh" aria-pressed="${Boolean(a.freshPending)}" title="${a.freshPending ? 'Starts a new conversation when it finishes this task' : 'New conversation: a clean slate for its next task (the old one stays in its history)'}">${ICONS.fresh}</button>
   <button class="icon" data-act="edit" title="${a.cloneOf ? `Edit ${esc(a.cloneOf)} (its clones follow)` : 'Edit agent'}">${ICONS.edit}</button>
   <button class="icon" data-act="restart" title="Restart (resumes the session)">${ICONS.restart}</button>
@@ -1743,12 +1744,14 @@ function agentMenu(name, at) {
       { label: 'Message', icon: ICONS.reply, act: 'message' },
       { label: 'Open terminal', icon: ICONS.terminal, act: 'terminal', disabled: !terms.has(name) },
       { label: `Edit ${a.cloneOf.split('@')[0]}…`, icon: ICONS.edit, act: 'edit' },
+      ...(a.canStop ? [{ label: 'Stop', icon: ICONS.stop, act: 'stop', hint: 'it stays on' }] : []),
       '-',
       { label: 'Send it away', icon: ICONS.close, act: 'dismiss', danger: true },
     ], (act) => {
       if (act === 'message') (openDM(name), composer.focus())
       if (act === 'terminal') select(name)
       if (act === 'edit') edit(name)
+      if (act === 'stop') stopNow(name)
       if (act === 'dismiss' && (!busy(a) || confirm(`${displayName(a)} is in the middle of something. Send it away anyway?`))) clique.call('dismiss', name).catch((err) => oops(`Couldn't send ${displayName(a)} away`, err))
     })
   }
@@ -1765,6 +1768,7 @@ function agentMenu(name, at) {
     { label: 'Open terminal', icon: ICONS.terminal, act: 'terminal', disabled: !terms.has(name) && a.status !== 'resting' },
     { label: 'Edit…', icon: ICONS.edit, act: 'edit' },
     { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a.on || a.freshPending },
+    ...(a.on && a.canStop ? [{ label: 'Stop', icon: ICONS.stop, act: 'stop', hint: 'it stays on' }] : []), // only while it's in a turn
     ...(places.length && !a.system ? ['-', ...places.map((g) => ({ label: `Move to ${g.name}`, icon: g.here ? ICONS.desktop : ICONS.laptop, act: `move:${g.key}`, disabled: !g.online, hint: g.online ? '' : 'offline' }))] : []),
     ...(joins.length ? ['-', ...joins.map((w) => ({ label: `Add to ${w.name}`, icon: wsTile(w, { size: 16 }), act: `join:${w.id}`, hint: w.parked ? 'asleep' : '' }))] : []),
     '-',
@@ -1782,6 +1786,7 @@ function agentMenu(name, at) {
       if (act === 'terminal') select(name)
       if (act === 'edit') edit(name)
       if (act === 'fresh') await clique.call('freshStart', name)
+      if (act === 'stop') stopNow(name)
       if (act.startsWith('move:')) moveSheet(name, act.slice(5))
       if (act === 'power') {
         if (a.on && busy(a) && !confirm(`${a.seed ?? a.name} is in the middle of something. Turn it off anyway?`)) return

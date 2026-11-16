@@ -155,6 +155,7 @@ export default function AgentSheet() {
         <View style={[styles.group, styles.list, { backgroundColor: t.surface }]}>
           <ActionRow t={t} icon="message" title={`Message ${base}`} detail="Your conversation with it, in the chat" onPress={message} />
           <ActionRow t={t} icon="fresh" title="New conversation" detail={a.freshPending ? 'Starts once it finishes what it’s doing' : 'A clean slate: instructions, folder and notes stay'} onPress={() => void run(null, () => client.agentAction('freshStart', a.name))} disabled={Boolean(offline) || !a.on || a.freshPending} />
+          {a.canStop ? <ActionRow t={t} icon="stop" title="Stop" detail="Ends what it’s doing now. It stays on" onPress={() => void run(null, () => client.stopAgents([a.name]))} disabled={Boolean(offline)} /> : null}
           <ActionRow t={t} icon="restart" title="Restart" detail="Starts it again, same conversation" onPress={restart} disabled={Boolean(offline) || !a.on} />
           <ActionRow t={t} icon="free" title="Mark idle" detail="If it looks stuck at work" onPress={() => void run(null, () => client.agentAction('markIdle', a.name))} disabled={Boolean(offline) || !a.on || a.status === 'idle'} last />
         </View>

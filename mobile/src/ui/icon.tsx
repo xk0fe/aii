@@ -26,6 +26,7 @@ const ICONS = {
   restart: ['arrow.clockwise', 'restart_alt'],
   fresh: ['plus.bubble', 'add_comment'],
   free: ['checkmark.circle', 'task_alt'],
+  stop: ['stop.fill', 'stop'],
   power: ['power', 'power_settings_new'],
   trash: ['trash', 'delete'],
   bug: ['ladybug', 'bug_report'],

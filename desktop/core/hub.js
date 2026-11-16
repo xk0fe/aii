@@ -50,7 +50,7 @@ const RUNTIME = 'runtime.json'
 const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
   'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'promptAt', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks',
-  'trustAsk', 'trustAt', 'round', 'keyed']
+  'trustAsk', 'trustAt', 'round', 'keyed', 'halted']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 // An image saved with this computer's attachments, whichever workspace it's for. -> where
@@ -155,6 +155,21 @@ const HELPER = /^(caffeinate|codex-code-mode-host|conhost|OpenConsole)(\.exe)?$/
 // A CLI that doesn't say when it's up (Codex) but hasn't drawn anything yet is given this long before it counts as ready
 // anyway: what's typed before its trust question shows answers that question.
 const READY_MAX = 30000
+// Stop (Hub.interrupt): the key that ends a turn in Claude Code and in Codex, and how CLIque makes sure it did. A CLI at
+// work keeps drawing (its spinner, several times a second); one that stopped falls silent. So a turn counts as stopped
+// once its terminal has been quiet for STOP_QUIET, no sooner than STOP_SETTLE after the key (Claude Code redraws its
+// prompt box about a second after it's interrupted), or at once when the CLI says so itself (Codex's Interrupt hook).
+// Still drawing STOP_AGAIN after the key: it's pressed again, up to STOP_PRESSES times in all.
+const ESC = '\x1b'
+const CTRL_C = '\x03'
+const STOP_TICK = 300
+const STOP_SETTLE = 1200
+const STOP_QUIET = 700
+const STOP_AGAIN = 2500
+const STOP_PRESSES = 3
+// Claude Code quits on a second Ctrl+C within a moment of the first: CLIque never sends two this close together, nor one
+// right after you typed in its terminal.
+const CLEAR_APART = 5000
 const STOP_WORDS = new Set(
   'a an and are as at be but by can could do for from has have if in into is it me my no not of on or our please should so that the this to up us we with would you your'.split(' '),
 )
@@ -768,6 +783,8 @@ export class Hub extends EventEmitter {
     this.letGo(a.name)
     a.relaunch = false
     clearTimeout(a.retryTimer)
+    clearTimeout(a.stopTimer)
+    Object.assign(a, { stopping: null, halted: null }) // a new process: nothing of a stopped turn is left to come back
     a.retrying = false
     a.subs = new Map() // sub-agents don't outlive their process
     a.background = 0 // nor does anything else it ran
@@ -1178,7 +1195,7 @@ export class Hub extends EventEmitter {
   dismiss(name) {
     const c = this.agents.get(name)
     if (!c?.cloneOf) throw new Error(`@${name} isn't a clone`)
-    for (const t of ['reapTimer', 'timer', 'ack', 'readyTimer', 'steerTimer']) clearTimeout(c[t])
+    for (const t of ['reapTimer', 'timer', 'ack', 'readyTimer', 'steerTimer', 'stopTimer']) clearTimeout(c[t])
     this.forgetAsks(name)
     this.runner.stop(name)
     this.setStatus(c, 'off')
@@ -1254,6 +1271,9 @@ export class Hub extends EventEmitter {
   // (or for its next task), asks the agent where things stand, and the new conversation starts from its answer.
   freshWhenDone(a) {
     if (!a.freshLimit || a.wrapNote !== undefined) return this.startFresh(a)
+    // you stopped it: it isn't asked where things stand now (that's a turn, and its answer would carry the stopped work
+    // into the new conversation by itself). Its next message asks (pump).
+    if (a.halted && !a.wrapUp) return this.changed()
     if (a.wrapUp && a.inbox.some((m) => m.wrapUp)) return this.pump(a) // asked, not taken up yet: it's next in its queue
     if (a.wrapUp) return this.startFresh(a) // asked, and its turn ended without an answer (you stopped it)
     if (a.background && !a.inbox.length) {
@@ -1851,19 +1871,6 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
-  // Stop the turn an agent is in, as Esc in its terminal does. -> whether there was a turn to stop.
-  // (The Stop button's PR, #115, has an interrupt(name) of the same name and shape that does more: whichever of the two
-  // merges second keeps that one and drops this.)
-  interrupt(name) {
-    const a = this.agents.get(name)
-    if (!a || !this.runner.running(name) || (a.status !== 'working' && a.status !== 'waiting')) return false
-    this.runner.write(name, '\x1b')
-    // Esc interrupts without a Stop hook, so assume idle unless a hook says otherwise (as input() does)
-    const pressed = Date.now()
-    setTimeout(() => a.hookAt <= pressed && (a.status === 'working' || a.status === 'waiting') && this.setStatus(a, 'idle'), 1500).unref?.()
-    return true
-  }
-
   // You spoke to these agents: a check-in about work they're part of is answered, keep going.
   spoke(names) {
     const said = new Set(names.map((n) => this.baseOf(n)))
@@ -2099,6 +2106,7 @@ export class Hub extends EventEmitter {
     this.noteGroups(a)
     // when its conversation last went to the API (its cache lasts from then: see coldFor). A sub-agent's steps don't count.
     if (!e.agent_id && ['UserPromptSubmit', 'PostToolUse', 'Stop', 'StopFailure'].includes(e.hook_event_name)) (this.convoOf(a).lastAt = a.hookAt), this.saveConvos()
+    if ((a.stopping || a.halted) && !e.agent_id && this.afterStop(a, e)) return // you stopped it: see interrupt
     if (e.hook_event_name === 'SessionStart' || e.hook_event_name === 'UserPromptSubmit') {
       // past any trust question: one still up was answered after all (a late redraw can bring its card back)
       if (a.trustAsk && !e.agent_id) this.stopPick(a, { by: 'terminal' }), this.trustAnswered(a)
@@ -2143,7 +2151,7 @@ export class Hub extends EventEmitter {
         // from you, nor a new task. It comes in mid-turn, or starts a turn of its own once the last one is over; either
         // way the agent is still on what it was answering, and its reply threads there.
         if (isNotice(e.prompt)) {
-          if (a.status !== 'working') (a.activity = ''), (a.turnStart = Date.now())
+          if (a.status !== 'working') (a.activity = ''), (a.turnStart = a.turnBegan = Date.now())
           return this.setStatus(a, 'working')
         }
         // A question or an answer CLIque typed into the turn it's in (steer): it's part of this turn now. (A turn that
@@ -2755,6 +2763,224 @@ export class Hub extends EventEmitter {
     if (a && this.runner.running(name)) this.setStatus(a, 'idle')
   }
 
+  // ---- Stop -----------------------------------------------------------------------------------------------------
+  // Stopping an agent ends the turn it's in. It stays on and keeps its conversation; it just isn't working any more, and
+  // nothing of the stopped request carries on by itself. To continue, ask again.
+  //
+  // What ends a turn, as tried on Claude Code 2.1.325 and Codex 0.166:
+  // - Esc, in both. Claude Code fires no hook when it's interrupted, so CLIque watches its terminal go quiet. Codex fires
+  //   Interrupt at once.
+  // - With a question up (a permission prompt, AskUserQuestion, a plan), Esc turns it down and ends the turn, in both.
+  //   Its card in the chat closes as stopped.
+  // - Sub-agents running in the turn end with it. Claude Code's background sub-agents end on the Ctrl+C below; a
+  //   background shell command (a dev server) keeps running, as it does when you press Esc yourself.
+  // - A prompt the CLI had queued (one CLIque typed into the turn) starts a turn of its own the moment Esc lands, in
+  //   both. So does Claude Code when something it left running in the background finishes. A turn that begins by
+  //   itself after a stop is stopped again (afterStop), until you ask for something.
+  // - Claude Code puts the stopped prompt back in its prompt box when it had answered nothing yet, where the next
+  //   message would be typed after it. One Ctrl+C empties the box (and only says "press again to exit" when it was
+  //   empty). Codex quits on Ctrl+C when it's free, so it never gets one.
+
+  // In a turn that can be stopped: at work, or waiting on you mid-turn (not on whether to trust its folder, or to pick
+  // up its conversation: Esc there quits the CLI).
+  stoppable(a) {
+    return Boolean(a && !a.stopping && !a.trustAsk && !a.resumeAsk && (a.status === 'working' || a.status === 'waiting') && this.runner.running(a.name))
+  }
+
+  // End this agent's turn now. -> whether there was one to end.
+  // Only the turn: its queue is the caller's business (stopTurns empties it; anything left in it goes in once the agent
+  // is free, as after any turn).
+  interrupt(name) {
+    const a = this.agents.get(name)
+    if (!this.stoppable(a)) return false
+    for (const t of ['ack', 'steerTimer', 'retryTimer', 'stopTimer']) clearTimeout(a[t])
+    Object.assign(a, { retrying: false, apiRetries: 0 })
+    // a prompt CLIque typed that the CLI hasn't reported taking yet is this turn's too: whoever asked hears it stopped
+    if (a.expect) a.serving = [...new Set([...(a.serving ?? []), ...a.expect.msgs])]
+    a.expect = null
+    this.runner.write(name, ESC)
+    // its questions in the chat close with the turn (the hook behind each gets no decision: Esc has turned it down)
+    // (not a spend check-in's card: that one is about what it has spent, and stays yours to answer)
+    for (const [id, q] of [...this.asks]) if (q.name === name && !q.plan && !q.trust && !q.spend && !q.entry?.spend && !q.entry?.ask?.spend) this.settle(id, '', { by: 'you', stopped: true }, true)
+    const now = Date.now()
+    if (a.turnStart) this.record(name, { turns: 1, turnMs: now - a.turnStart })
+    // its sub-agents end with the turn (Claude Code says nothing of them when it's interrupted; one that goes on says so)
+    for (const sub of a.subs?.values() ?? []) if (!sub.ended) Object.assign(sub, { ended: now, activity: '' })
+    Object.assign(a, { replyDue: false, activity: '', turnStart: null, halted: { at: now }, stopping: { pressed: now, presses: 1, heard: false } })
+    this.setStatus(a, 'idle') // what it was editing is free, and whoever waited on its answer hears it was stopped
+    this.watchStop(a)
+    return true
+  }
+
+  watchStop(a, ms = STOP_TICK) {
+    clearTimeout(a.stopTimer)
+    a.stopTimer = setTimeout(() => this.checkStop(a), ms)
+    a.stopTimer.unref?.()
+  }
+
+  // Has its turn really ended? Nothing is typed into its terminal until it has (pump waits on a.stopping).
+  checkStop(a, now = Date.now()) {
+    const s = a.stopping
+    if (!s) return
+    if (this.agents.get(a.name) !== a || !this.runner.running(a.name)) return void (a.stopping = null)
+    const since = now - s.pressed
+    const quiet = this.runner.quietFor?.(a.name) ?? Infinity
+    if (s.heard || (since >= STOP_SETTLE && quiet >= STOP_QUIET)) return this.stopDone(a, now)
+    if (since < STOP_AGAIN) return this.watchStop(a)
+    if (s.presses >= STOP_PRESSES) {
+      // still at it after three tries: it's working, and the chat says so rather than show it free
+      a.stopping = null
+      a.halted = null
+      this.post({ kind: 'event', from: a.name, text: "didn't stop when asked. Press Esc in its terminal", alert: true })
+      this.emit('alert', a, "didn't stop when asked")
+      return this.setStatus(a, 'working')
+    }
+    s.presses += 1
+    s.pressed = now
+    this.runner.write(a.name, ESC)
+    this.watchStop(a)
+  }
+
+  stopDone(a, now = Date.now()) {
+    a.stopping = null
+    clearTimeout(a.stopTimer)
+    if (this.providerOf(a)?.cli === 'claude' && now - Math.max(a.clearedAt ?? 0, a.typedAt ?? 0) > CLEAR_APART) {
+      this.runner.write(a.name, CTRL_C)
+      a.clearedAt = now
+      hold(a, 800) // its prompt box redraws: the next message goes in after that
+    }
+    this.pump(a)
+    this.changed()
+  }
+
+  // A hook from an agent you stopped. -> true when it's been dealt with here.
+  afterStop(a, e) {
+    const s = a.stopping
+    switch (e.hook_event_name) {
+      case 'Interrupt':
+      case 'Stop': // (its turn ended by itself as you pressed: its last message still shows)
+        if (s) (s.heard = true), this.watchStop(a, 50)
+        return false
+      case 'StopFailure': // an API error: no "continue" is typed for a turn you stopped
+        if (s) (s.heard = true), this.watchStop(a, 50)
+        return true
+      case 'UserPromptSubmit':
+      case 'PostToolUse': {
+        const began = e.hook_event_name === 'UserPromptSubmit'
+        // a step of the turn being stopped: if it goes on, its terminal keeps drawing and Esc goes in again (checkStop)
+        if (s && !began) return true
+        // you typed in its terminal since: that's you asking again (a prompt of yours, or a step of the turn it started)
+        if ((a.typedAt ?? 0) > (a.halted?.at ?? 0)) {
+          clearTimeout(a.stopTimer)
+          Object.assign(a, { stopping: null, halted: null })
+          return false
+        }
+        // a turn that began by itself: a prompt its CLI had queued, or word that something it left running finished.
+        // One that Esc can't end (six tries in a row) is working, and the chat says so.
+        const tries = (a.halted.again = (a.halted.again ?? 0) + 1)
+        if (tries > 2 * STOP_PRESSES) {
+          clearTimeout(a.stopTimer)
+          Object.assign(a, { stopping: null, halted: null })
+          this.post({ kind: 'event', from: a.name, text: "started again after you stopped it, and didn't stop when asked. Press Esc in its terminal", alert: true })
+          this.emit('alert', a, "didn't stop when asked")
+          return false
+        }
+        const st = (a.stopping ??= { pressed: 0, presses: 0, heard: false })
+        if (st.presses < STOP_PRESSES) {
+          Object.assign(st, { pressed: Date.now(), presses: st.presses + 1, heard: false })
+          this.runner.write(a.name, ESC)
+        }
+        this.watchStop(a)
+        return true
+      }
+      case 'PreToolUse':
+      case 'Notification':
+        return Boolean(s)
+    }
+    return false
+  }
+
+  // Stop, as you press it: these agents' turns end, and everything lined up behind each one is withdrawn rather than
+  // delivered the moment it's free. One line in the chat says who you stopped. -> { stopped: [names], dropped }
+  // channel: where you pressed it, for the line.
+  stopTurns(names, { channel } = {}) {
+    const stopped = []
+    let dropped = 0
+    let where
+    for (const name of new Set([].concat(names ?? []).map(String))) {
+      const a = this.agents.get(name)
+      if (!this.stoppable(a)) continue
+      where ??= this.channelFor(a.name)
+      dropped += this.withdraw(a)
+      this.interrupt(name)
+      stopped.push(name)
+    }
+    if (!stopped.length) return { stopped, dropped }
+    const ch = this.channel(channel) ? channel : where
+    const who = stopped.map((n) => `@${n}`)
+    const list = who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1)}` : who[0]
+    const left = dropped ? `. ${dropped === 1 ? "A waiting message wasn't" : `${dropped} waiting messages weren't`} delivered` : ''
+    this.post({ kind: 'event', from: 'clique', text: `you stopped ${list}${left}`, stop: true, about: stopped, ...(ch && ch !== GENERAL && { channel: ch }) })
+    return { stopped, dropped }
+  }
+
+  // Everything lined up behind the turn you're stopping, taken back: what waits in its queue (your messages, teammates'
+  // hand-offs and questions, answers to what it asked, CLIque's own follow-ups), what CLIque was typing into the turn, the
+  // questions it has out with teammates, and the hand-offs it made this turn that nobody has started on. Each stays in
+  // the chat, marked as not delivered. -> how many.
+  withdraw(a) {
+    const mine = [...(a.steering?.msgs ?? []), ...a.inbox]
+    if (a.steering) this.unbrief(a, a.steering.msgs)
+    clearTimeout(a.steerTimer)
+    a.steering = null
+    a.inbox = []
+    // hand-offs it made in this turn, still waiting in a teammate's queue
+    const since = a.turnBegan ?? Infinity
+    const sent = []
+    for (const b of this.agents.values()) {
+      if (b === a) continue
+      for (const m of b.inbox.filter((m) => m.from === a.name && !m.answers && !m.clique && m.ts >= since)) {
+        b.inbox.splice(b.inbox.indexOf(m), 1)
+        sent.push(m)
+      }
+    }
+    let n = 0
+    // a teammate's question it had put aside while it asked someone else in turn: with that answer gone, so is its own
+    const parents = new Set()
+    for (const m of [...mine, ...sent]) {
+      m.queued = false
+      if (m.answers && m.for) parents.add(m.for)
+      if (m.clique) {
+        // CLIque's own prompt, not a message in the chat. A thread's closing line it was to write: its last report stands in
+        if (m.closes) this.bringOut(m.closes)
+        if (m.wrapUp) a.wrapUp = false
+        continue
+      }
+      n += 1
+      this.amend(m, { queued: false, dropped: true, stopped: true })
+      // a question (to it, or one of its own to a teammate): nobody waits on the answer any more
+      const call = m.ask && this.calls.get(m.id)
+      if (call && m.to === a.name) this.respond(call, { by: a.name, why: "was stopped by the user, so it won't answer" })
+      else if (call) (this.calls.delete(call.id), call.hold?.resolve(''))
+      // a task sent to it that it never started goes back to the board
+      try {
+        if (m.ticket !== undefined && !m.triage && this.tickets.get(m.ticket)?.status === 'fixing') this.tickets.move(m.ticket, 'new', 'you', `stopped @${a.name} before it started this`)
+      } catch {} // (a task that's gone, or another computer's)
+    }
+    // what it asked teammates and is still waiting to hear: the answers would start it again
+    for (const call of [...this.calls.values()]) {
+      if (call.from !== a.name) continue
+      if (call.parent) parents.add(call.parent)
+      this.calls.delete(call.id)
+      call.hold?.resolve('')
+    }
+    for (const id of parents) {
+      const call = this.calls.get(id)
+      if (call && this.ownerOf(call) === a.name) this.respond(call, { by: a.name, why: "was stopped by the user, so it won't answer" })
+    }
+    return n
+  }
+
   // Keystrokes typed into an agent's terminal in the dashboard.
   input(name, data) {
     const a = this.agents.get(name)
@@ -2763,6 +2989,7 @@ export class Hub extends EventEmitter {
     // Only real keys count, not what the terminal reports by itself (focus in/out, cursor position, mouse).
     if (typed(data)) for (const [id, q] of this.asks) if (q.name === name && q.cli === 'codex' && !q.trust) this.answer(id, { terminal: true })
     if (typed(data)) a.typedAt = Date.now()
+    if (typed(data) && !a.stopping) a.halted = null // you're at its terminal yourself: what you start there runs
     if (typed(data)) this.stopPick(a, { by: 'terminal' }) // you're answering its trust question yourself
     hold(a, 3000)
     this.runner.write(name, data)
@@ -3380,8 +3607,9 @@ export class Hub extends EventEmitter {
   pump(a) {
     clearTimeout(a.timer)
     const resting = a.status === 'resting'
-    if (a.resumeAsk || (resting ? a.moving || this.agents.get(a.name) !== a : a.status !== 'idle' || !this.runner.running(a.name))) return
-    if (a.cloneOf && !a.inbox.length) this.takeOver(a) // a clone with nothing of its own takes what waits for its original
+    if (a.resumeAsk || a.stopping || (resting ? a.moving || this.agents.get(a.name) !== a : a.status !== 'idle' || !this.runner.running(a.name))) return
+    // a clone with nothing of its own takes what waits for its original (not one you just stopped: Stop isn't "next, please")
+    if (a.cloneOf && !a.inbox.length && !a.halted) this.takeOver(a)
     if (!a.inbox.length) return a.cloneOf && this.linger(a)
     // past its context limit, and free while it waited on what it left running: its next task is the moment for
     // the new conversation, once it has said where things stand
@@ -3419,6 +3647,8 @@ export class Hub extends EventEmitter {
     const head = msgs.length < 2 ? '' : msg.answers ? `[${msgs.length} answers to your questions came in]` : `[${msgs.length} hand-offs came in while you were busy, oldest first. Take them together, in this one turn.]`
     // (as the terminal gets it, without control characters: the prompt the CLI reports back is matched against this)
     const text = pasteable([note, head, ...msgs.map((m) => this.framed(a, m))].filter(Boolean).join('\n\n'))
+    a.halted = null // asked again: what starts now is wanted
+    a.turnBegan = Date.now() // (what it hands on from here is this turn's: see withdraw)
     this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
     a.promptAt ||= Date.now()
     // Matched against the prompt the agent reports, even if it shows up late. Only the words count:
@@ -3867,6 +4097,7 @@ export class Hub extends EventEmitter {
         continue
       }
       if ((w.status === 'idle' ? !this.runner.running(w.name) : w.status !== 'resting') || w.retrying || w.freshPending || w.relaunch || this.owed(w)) continue
+      if (w.halted) continue // you stopped it: it isn't reminded to carry on
       const idle = now - Math.max(w.since, word)
       if (idle < after * (w.background ? 3 : 1)) continue
       const mins = Math.round(idle / 60000)
@@ -4408,7 +4639,8 @@ export class Hub extends EventEmitter {
     if (!unseen.length) return mine && this.bringOut(id, mine.from)
     const owner = this.agents.get(you.to) ?? this.agents.get(this.baseOf(you.to))
     const asked = root?.closed ?? 0
-    const up = owner && !owner.off && !this.parked && !owner.moving && owner.status !== 'stopped' && owner.status !== 'away' && this.workable(owner)
+    // (one you stopped isn't asked for a closing line either: that would be its work going on)
+    const up = owner && !owner.off && !this.parked && !owner.moving && !owner.halted && owner.status !== 'stopped' && owner.status !== 'away' && this.workable(owner)
     if (!up || now - asked < THREAD_ASK_AGAIN) return this.bringOut(id)
     if (root) this.amend(root, { closed: now })
     this.queue(owner, { ...cliquePrompt(owner, CLOSE_THREAD(threadDigest(unseen))), closes: id, closeRe: you.id, ...(you.channel && { channel: you.channel }) })
@@ -4657,6 +4889,8 @@ export class Hub extends EventEmitter {
         convo: this.convos[a.name] ? { ...this.convos[a.name], context: againstLimit(this.convos[a.name].context, a.contextLimit) } : null,
         contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : null, onContextLimit: a.onContextLimit === 'notify' ? 'notify' : 'fresh',
         freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
+        // in a turn you can stop (Stop shows only then)
+        ...(this.stoppable(a) && { canStop: true }),
         // one of your shared agents (in other workspaces too), or only this one's
         ...(!a.cloneOf && { shared: Boolean(a.shared) }),
         // a clone: whose, and its number (iris.2 is clone 2); it looks like its original

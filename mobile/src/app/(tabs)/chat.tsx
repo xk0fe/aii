@@ -29,7 +29,7 @@ import { displayName, plural, rowLine } from '@/ui/format'
 import { useAppActive, useNow } from '@/ui/hooks'
 import { Icon } from '@/ui/icon'
 import { newSince, nextLine, tracker } from '@/ui/latest'
-import { Button, CountBadge, Faces, inkFor, Press, thud } from '@/ui/parts'
+import { Button, CountBadge, Faces, inkFor, Press, tap, thud } from '@/ui/parts'
 import { andList, needsOf } from '@/ui/room'
 import { offlineText, TopBar } from '@/ui/topbar'
 import { fonts, useTheme, type Theme } from '@/ui/theme'
@@ -59,7 +59,7 @@ function mergeSends(feed: FeedEntry[]) {
 function inConvo(e: FeedEntry, name: string) {
   const its = (n?: string) => Boolean(n) && familyOf(n!) === name
   if (e.kind === 'task' || e.kind === 'bug') return its(e.from) || its(e.owner) || ((e.act === 'triaged' || e.act === 'fixing') && its(e.text))
-  return its(e.from) || its(e.to) || (e.cc ?? []).some(its)
+  return its(e.from) || its(e.to) || (e.cc ?? []).some(its) || (e.about ?? []).some(its) // (about: "You stopped Ada")
 }
 
 // Marking replies read as they're seen: collected while they're on screen (the chat in front, the app in the
@@ -109,7 +109,8 @@ const reader = (() => {
 // Who's at work, on one line under the last message, the way Slack and Discord show who's typing. Its room is always
 // kept, so the messages don't move when someone starts or stops. With several, tap to see what each one is doing.
 // chan: in a channel, who's at work on something said there
-function Working({ t, d, here, chan, now }: { t: Theme; d: Derived; here: string | null; chan: string | null; now: number }) {
+// Stop, at the end of an agent's line: ends the turn it's in (it stays on). Only while it has one the Mac can stop.
+function Working({ t, d, here, chan, now, onStop }: { t: Theme; d: Derived; here: string | null; chan: string | null; now: number; onStop: (name: string) => void }) {
   const [open, setOpen] = useState(false)
   const busy = [...d.byName.values()].filter((a) => a.on && (a.status === 'working' || (a.cloneOf && a.status === 'starting')) && (here ? familyOf(a.name) === here : !chan || channelOf(a, d.channels ?? undefined) === chan))
   // everyone stopped: the next ones to start come up as the one line again
@@ -144,6 +145,13 @@ function Working({ t, d, here, chan, now }: { t: Theme; d: Derived; here: string
                 {line.text}
               </Text>
             </Press>
+            {a.canStop ? (
+              <Press onPress={() => onStop(a.name)} style={styles.workFold} accessibilityRole="button" accessibilityLabel={`Stop ${displayName(a.name).base}`} accessibilityHint="Ends what it's doing now. It stays on" hitSlop={8}>
+                <View style={[styles.workStop, { backgroundColor: t.btn }]}>
+                  <Icon name="stop" size={11} color={t.fg} weight="bold" />
+                </View>
+              </Press>
+            ) : null}
             {i === 0 && busy.length > 1 ? (
               <Press onPress={() => setOpen(false)} style={styles.workFold} accessibilityRole="button" accessibilityLabel="Show one line" hitSlop={8}>
                 <Icon name="up" size={12} color={t.fg3} weight="bold" />
@@ -579,7 +587,19 @@ export default function ChatScreen() {
           renderItem={({ item, index }) => <FeedItem e={item} prev={items[index + 1]} c={ctx} />}
           renderScrollComponent={(props) => <KeyboardChatScrollView {...props} inverted offset={tabH} onContentInsetChange={(i) => follow.onInset(i.top)} />}
           maintainVisibleContentPosition={follow.away ? HOLD : undefined}
-          ListHeaderComponent={<Working t={t} d={d} here={here?.name ?? null} chan={here ? null : chan} now={now} />}
+          ListHeaderComponent={
+            <Working
+              t={t}
+              d={d}
+              here={here?.name ?? null}
+              chan={here ? null : chan}
+              now={now}
+              onStop={(name) => {
+                tap()
+                client.stopAgents([name], !here && chan ? { channel: chan } : undefined).catch((e: Error) => Alert.alert(`Couldn't stop ${displayName(name).base}`, String(e?.message ?? e)))
+              }}
+            />
+          }
           ListFooterComponent={inChannel && state && items.length ? <Intro t={t} d={d} c={inChannel} /> : undefined}
           ListEmptyComponent={
             inChannel && state ? (
@@ -663,6 +683,7 @@ const styles = StyleSheet.create({
   workName: { fontSize: 13.5, fontWeight: '600', marginLeft: -8 },
   workWhat: { flex: 1, fontSize: 13.5 },
   workFold: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  workStop: { width: 22, height: 22, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 22, fontWeight: '800' },
   emptyText: { fontSize: 15, lineHeight: 21, textAlign: 'center' },

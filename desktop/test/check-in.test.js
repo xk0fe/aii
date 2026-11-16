@@ -206,6 +206,7 @@ test('Stop: what was held is dropped, running turns are interrupted, and nothing
   assert.equal(cards().length, 1, 'what a stopped round still reports asks nothing')
   // you speak: a new round, with a threshold of its own
   you('bo', 'ok, just the tests then')
+  mock.timers.tick(1000) // a stopped Claude Code's prompt box is emptied first: the message goes in after that
   pickUp('bo')
   assert.match(hub.send({ from: 'bo', to: 'cy', text: 'the test notes' }), /^sent to @cy/)
 })

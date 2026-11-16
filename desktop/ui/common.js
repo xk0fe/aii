@@ -141,6 +141,7 @@ const ICONS = {
   crown: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 8.2 8 12l4-6.5 4 6.5 4.5-3.8-1.6 10.3H5.1z"/></svg>',
   snail: svg('<path d="M3 18.5h14.5a3.5 3.5 0 0 0 3.5-3.5V11"/><circle cx="11" cy="12.5" r="5"/><path d="M11 12.5a1.8 1.8 0 1 1 1.8-1.8"/><path d="M19.5 11 18.5 7.5M21.5 11l1-3.5"/>'),
   pause: svg('<rect x="6.5" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.9" y="5" width="3.6" height="14" rx="1.2"/>'),
+  stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="6.5" width="11" height="11" rx="2.6"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.3v13.4a1 1 0 0 0 1.5.86l10.6-6.7a1 1 0 0 0 0-1.72L9.5 4.44A1 1 0 0 0 8 5.3z"/></svg>',
   gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4.9a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.4A7.6 7.6 0 0 0 7 6.4l-2.4-.9-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-.9a7.6 7.6 0 0 0 2.6 1.5l.4 2.4h4l.4-2.4a7.6 7.6 0 0 0 2.6-1.5l2.4.9 2-3.4z"/>'),
   updown: svg('<path d="M8 9.5 12 5.5l4 4M8 14.5l4 4 4-4"/>', 'stroke-width="2.2"'),
@@ -1128,8 +1129,36 @@ const familyOf = (name) => String(name ?? '').replace(/\.\d+(?=@|$)/, '')
 function inConvo(e, name) {
   const its = (n) => Boolean(n) && familyOf(n) === name
   if (e.kind === 'task' || e.kind === 'bug') return its(e.from) || its(e.owner) || ((e.act === 'triaged' || e.act === 'fixing') && its(e.text))
-  return its(e.from) || its(e.to) || (e.cc ?? []).some(its)
+  return its(e.from) || its(e.to) || (e.cc ?? []).some(its) || (e.about ?? []).some(its) // (about: who a line of CLIque's is about, "You stopped Ada")
 }
+
+// ---- Stop: end the turn an agent is in (core/hub.js stopTurns). It stays on; nothing is turned off. ----------------
+// An agent has a.canStop while it's in a turn that can be stopped. Stop is shown only then, never greyed out.
+// Who Stop stops in a place: in a conversation, its agent and its clones; in a channel, everyone at work on something
+// said there; in everyone's chat (the floating one), everyone at work.
+function stoppableIn(agents, { convo, channel, channels = [] } = {}) {
+  const able = (agents ?? []).filter((a) => a.on && a.canStop)
+  if (convo) return able.filter((a) => familyOf(a.name) === familyOf(convo))
+  if (channel) return able.filter((a) => (channels.some((c) => c.id === a.channel) ? a.channel : 'general') === channel)
+  return able
+}
+const stopNames = (list) => andList(list.map((a) => displayName(a)))
+function stopNow(names, { channel } = {}) {
+  names = [].concat(names).filter(Boolean)
+  if (!names.length) return
+  clique.call('stop', names, channel ? { channel } : {}).catch((err) => oops(`Couldn't stop ${names.length > 1 ? 'them' : names[0].split('@')[0]}`, err))
+}
+// A Stop button anywhere: data-stop="ada" (several names with commas), data-stop-channel for the line in the chat.
+// Before anything else hears the click (a row that opens a terminal, a card that opens a profile).
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('[data-stop]')
+  if (!b) return
+  e.preventDefault()
+  e.stopPropagation()
+  stopNow(b.dataset.stop.split(','), { channel: b.dataset.stopChannel })
+}, true)
+// The small Stop on an agent's row, card or tile: a square in a quiet button. '' when it has no turn to stop.
+const stopButton = (a, cls = '') => (a.on && a.canStop ? `<button type="button" class="stop-btn ${cls}" data-stop="${esc(a.name)}" title="${esc(`Stop ${displayName(a)}: end what it's doing now. It stays on`)}" aria-label="${esc(`Stop ${displayName(a)}`)}">${ICONS.stop}</button>` : '')
 
 // Its header: back to everyone (with what came in from the others meanwhile), who you're talking to and what
 // it's doing, and its terminal.
@@ -1340,7 +1369,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const face = e.from === 'you' ? YOU_FACE : `<span class="face" data-agent="${esc(e.from)}">${avatarHTML(agent(e.from), { size: 22, mood: 'still' })}</span>`
     const to = e.kind === 'msg' && e.to && e.from !== 'you' ? ` <span class="to">to ${name(e.to)}</span>` : ''
     const verb = e.kind === 'note' ? ' <span class="to">shared a note</span>' : e.kind === 'ask' ? ` <span class="to">${e.ask?.spend ? 'checks in' : 'asks you'}</span>` : ''
-    const tags = [e.held && !e.dropped && 'waiting for your OK', e.paused && 'held for the check-in', e.queued && 'queued', e.dropped && 'dropped', e.asks && 'asks you'].filter(Boolean).map((w) => `<span class="tag">${esc(w)}</span>`).join('')
+    const tags = [e.held && !e.dropped && 'waiting for your OK', e.paused && 'held for the check-in', e.queued && 'queued', e.dropped && (e.stopped ? 'not delivered' : 'dropped'), e.asks && 'asks you'].filter(Boolean).map((w) => `<span class="tag">${esc(w)}</span>`).join('')
     const head = `<div class="tr-head">${name(e.from)}${to}${verb}${tags}<time>${time}</time></div>`
     if (e.kind === 'ask') return `<div class="thread-row card" id="tr-${esc(e.id)}" data-card="${esc(e.id)}">${face}<div class="tr-main">${head}<div class="tr-line">${esc(needText({ agent: agent(e.from), ask: e }))}</div></div><span class="tr-chev">${ICONS.chevron}</span></div>`
     const line = e.gist ?? snippet(e.text)
@@ -1657,7 +1686,7 @@ function feedItem(e, prev, ctx) {
   // an agent's canvas (a ```canvas block, ui/canvas.js) says so by its name, and under it who else drew on it
   const drawn = e.from !== 'you' && typeof canvasBoard === 'function' && /```canvas\n/.test(e.text ?? '')
   const hands = drawn ? [...new Set(e.canvas?.by ?? [])].filter((n) => n !== e.from) : []
-  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.paused ? '<span class="tag" title="Held by the spend check-in. It goes on when you say Keep going.">held for the check-in</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '') + scheduledTag(e)
+  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.paused ? '<span class="tag" title="Held by the spend check-in. It goes on when you say Keep going.">held for the check-in</span>' : '') + (e.stopped ? `<span class="tag" title="${esc(`You stopped ${e.to ? e.to.split('@')[0] : 'it'} before this was delivered. Send it again if you still want it`)}">not delivered</span>` : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '') + scheduledTag(e)
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
   const pics = (e.images?.length ? (typeof fxPics === 'function' ? fxPics(e) : `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>`) : '') // (ui/files.js: they open in the viewer)
   // what an agent attached (clique attach): pictures, a recording, a page, any file (ui/files.js)
@@ -1770,6 +1799,7 @@ const RULES = {
 // needs you. Agents go by their plain names; CLIque's own lines have its mark and start with a capital (they used to
 // follow "@clique").
 const EVENT_ICONS = [
+  [/^you stopped /, 'stop'],
   [/^(exited|quit\b|failed to start|can't start)|still running for a workspace|left (a|\d+) process/, 'power'],
   [/^woke up/, 'sun'],
   [/^went to sleep/, 'moon'],
@@ -1977,6 +2007,7 @@ function askSummary(q, a) {
     if (!a.allow) return `${mark('no', 'close')}<span>Stopped</span><span class="ask-what">at ${at}</span>`
     return `${mark('ok', 'check')}<span>${a.spoke ? `You spoke, so ${so} kept going` : a.off ? `Check-in switched off, so ${so} kept going` : 'Kept going'}</span><span class="ask-what">past ${at}</span>`
   }
+  if (a.stopped) return `${mark('', 'stop')}<span>Stopped before you answered</span>${what}`
   if (a.stale) return `${mark('', 'dash')}<span>No longer waiting</span>${what}`
   if (a.by === 'terminal') return `${mark('', 'keyboard')}<span>${a.handedOver ? 'Handed to its terminal' : 'Answered in the terminal'}</span>${what}`
   if (a.by === 'cli') return `${mark('no', 'close')}<span>Claude Code said no${a.why ? ` (${esc(a.why)})` : ''}</span>${what}`
@@ -2022,7 +2053,9 @@ function typingParts(agents, asks = new Map(), { all = false, clique = agents, q
     const starting = a.cloneOf && a.status === 'starting'
     const busy = waiting || a.status === 'working' || starting
     const what = waiting ? (card ? 'is waiting for your answer' : 'needs you in its terminal') : starting ? 'starting up to take it…' : busy ? (a.activity ? activityWords(a.activity) : 'working…') : 'free, its sub-agents are still working'
-    const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : busy ? '<span class="typing"><i></i><i></i><i></i></span>' : ''
+    // at work: the dots, which make way for Stop while the pointer is on the line (the same slot: nothing moves)
+    const dots = '<span class="typing"><i></i><i></i><i></i></span>'
+    const end = waiting ? `<span class="tr-go">${card ? `Answer${ICONS.up}` : 'Open'}</span>` : busy ? (a.canStop ? `<span class="tr-end">${dots}${stopButton(a, 'tr-stop')}</span>` : dots) : ''
     const inThreadNow = !card && a.status === 'working' && threads?.(a.thread)
     return [`<div class="typing-row ${a.status}"${inThreadNow ? ` data-thread="${esc(inThreadNow)}"` : ''} ${card ? `data-jump="${card}"` : `data-agent="${esc(a.name)}"`} style="--c:${agentColor(a)}" title="${card ? 'Jump to the question' : inThreadNow ? 'Open the thread it’s working in' : waiting ? 'Open its terminal to answer' : 'Open its terminal'}">
     <span class="face">${avatarHTML(a, { size: 22 })}${orbitHTML(a)}</span><span class="tr-name">${nameHTML(a)}</span><span class="tr-what ${busy ? '' : 'quiet'}">${esc(what)}</span>${owedChip(a, someone)}${end}</div>`, subTree(a, many ? 2 : 4)]
@@ -3049,6 +3082,27 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
   let agents = []
   let feed = []
   let channel = null // the channel it says things in: { id, name, members, ws } (the dashboard's); null: #general, as before
+  let channels = []
+  // Stop: with nothing written and someone at work in the place that's open, the send button stops them instead. The
+  // same button in the same spot; with the first character it's Send again.
+  let stopping = [] // who it would stop
+  let lastSend = 0 // when you last pressed Send
+  const drawSend = () => {
+    const empty = !ta.value.trim() && !attach?.get().length
+    const who = empty && !voice?.busy() ? stoppableIn(agents, { convo: isConvo(target) ? target : null, channel: channel?.id, channels }) : []
+    const mode = who.length ? 'stop' : 'send'
+    stopping = who.map((a) => a.name)
+    send.disabled = empty && !who.length
+    const label = mode === 'stop' ? `Stop ${stopNames(who)}` : 'Send'
+    const sig = `${mode}:${label}`
+    if (send.dataset.sig === sig) return
+    send.dataset.sig = sig
+    send.dataset.mode = mode
+    send.classList.toggle('stop', mode === 'stop')
+    send.innerHTML = mode === 'stop' ? ICONS.stop : ICONS.up
+    send.title = mode === 'stop' ? `${label}: end what ${who.length > 1 ? "they're" : "it's"} doing now. ${who.length > 1 ? 'They stay' : 'It stays'} on` : 'Send (Enter)'
+    send.setAttribute('aria-label', label)
+  }
   // Replying: to a message in the feed (its Reply button), and then staying in that thread, each message answering
   // the newest one in it. A message sent into a new conversation starts a thread too, so what you send next goes
   // on in that conversation. Esc, ×, or picking someone on the To line leaves it.
@@ -3192,6 +3246,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
       : target === 'auto' && systemAgentOf(agents) ? (fresh ? `New conversation with ${displayName(systemAgentOf(agents))}…` : channel ? `Message #${channel.name}` : 'Message the clique')
       : target === 'auto' ? (fresh ? 'New conversation, Auto picks who…' : channel ? `Message #${channel.name}, Auto picks who…` : 'Message the clique, Auto picks who…')
       : fresh ? `New conversation with ${who}…` : `Message ${who}…`
+    drawSend()
     if (target !== told) onTarget?.((told = target))
   }
   // Names while they fit on the line, faces only once they don't (the same for every chip, so picking one never
@@ -3210,7 +3265,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     ta.style.height = 'auto'
     ta.style.height = `${ta.scrollHeight}px`
     ta.style.overflowY = ta.scrollHeight > 160 ? 'auto' : 'hidden'
-    send.disabled = !ta.value.trim() && !attach?.get().length
+    drawSend()
     ink?.paint() // dictation and sending change the text without an input event
   }
   const say = (text, error = false) => {
@@ -3349,7 +3404,13 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
       submit()
     }
   })
-  send.addEventListener('click', submit)
+  send.addEventListener('click', () => {
+    // (dictating: it sends what you said, whatever it showed when you started)
+    if (send.dataset.mode !== 'stop' || voice?.busy()) return void ((lastSend = Date.now()), submit())
+    // (it turned into Stop under the pointer as your message went: the second click of a double click isn't a stop)
+    if (Date.now() - lastSend < 600) return
+    stopNow(stopping, { channel: isConvo(target) ? undefined : channel?.id })
+  })
   // Send later: what the box holds now, who it's for and the channel it's said in, as Send would send it (a reply's
   // thread and New conversation don't carry over: a scheduled message starts on its own).
   el.querySelector('.later')?.addEventListener('click', (e) => {
@@ -3379,6 +3440,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     render(state) {
       agents = state.agents
       feed = state.feed ?? []
+      channels = state.channels ?? []
       advance()
       draw()
       ink.paint({ quiet: true }) // someone switched on, off, or joined

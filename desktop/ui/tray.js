@@ -1,5 +1,5 @@
 // Menu bar popover: what needs you first, who's at work, the accounts' limits, and the way into everything else.
-/* global appItems, appPick, activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, clique, live, morph, esc, celebrate, markSVG, store, ICONS,
+/* global stopButton, appItems, appPick, activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, clique, live, morph, esc, celebrate, markSVG, store, ICONS,
    needsYou, needText, usageTip, usageByComputer, computerIcon, THIS_COMPUTER, paceWarning, resetsText, runningSubs, subsTip, clonesOf, displayName, statusText, blockedOn, ago,
    pauseMenu, notifyTime, notifyHeld, plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys, wordmarkHTML, stripHTML, PRODUCT_NAME */
 // Everything here is local: classic scripts share one global scope with common.js and avatar.js.
@@ -130,7 +130,8 @@
       (subs.length ? `<span class="t-count" title="${esc(`${plural(subs.length, 'sub-agent')} working:\n${subsTip(subs)}`)}">${ICONS.subs}${subs.length}</span>` : '')
   }
   // YOLO, Fast and power on hover, as on the dashboard's rows (common.js handles their clicks)
-  const acts = (a) => (a.cloneOf ? '' : `<span class="t-acts">${modeChips(a)}${powerSwitch(a)}</span>`)
+  // (and Stop while it's in a turn: a clone has that alone)
+  const acts = (a) => (a.cloneOf ? (a.canStop ? `<span class="t-acts">${stopButton(a)}</span>` : '') : `<span class="t-acts">${stopButton(a)}${modeChips(a)}${powerSwitch(a)}</span>`)
 
   function needRow({ agent: a, ask }) {
     const text = needText({ agent: a, ask })

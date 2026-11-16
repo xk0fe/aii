@@ -1071,7 +1071,7 @@ export class Clique extends EventEmitter {
           ...(e.files && { files: e.files.map((f) => (travels(f) ? { ...f, path: this.fetchImage(l, f.path), home: l.name } : { ...f, path: '', away: l.name })) }),
           ...(e.ticket !== undefined && { ticket: q(String(e.ticket)) }), ...((e.act === 'fixing' || e.act === 'triaged') && e.text && { text: q(e.text) }),
           ...(e.reactions && { reactions: e.reactions.map((r) => ({ ...r, by: q(r.by) })) }),
-          ...(e.also && { also: e.also.map(q) }), ...(e.reply && { reply: q(e.reply) }), ...(e.line && { line: e.line.map(q) }),
+          ...(e.also && { also: e.also.map(q) }), ...(e.reply && { reply: q(e.reply) }), ...(e.line && { line: e.line.map(q) }), ...(e.about && { about: e.about.map(q) }),
           ...(e.answered && { answered: { ...e.answered, by: q(e.answered.by), ...(e.answered.reply && { reply: q(e.answered.reply) }) } }),
         })
       }
@@ -1174,7 +1174,7 @@ export class Clique extends EventEmitter {
     // who it waits on and who waits on it: names and the questions' feed ids, as this computer writes them
     const waits = (list) => list?.map((w) => ({ ...w, name: q(w.name), id: w.id && q(w.id) }))
     return {
-      ...a, name: q(a.name), seed: a.name, home: l.slug, homeName: l.name, status: l.peer ? a.status : 'away', ...(!l.peer && a.status === 'resting' && { rested: true }), images: a.images?.map((p) => this.fetchImage(l, p)),
+      ...a, name: q(a.name), seed: a.name, home: l.slug, homeName: l.name, status: l.peer ? a.status : 'away', ...(!l.peer && a.status === 'resting' && { rested: true }), ...(!l.peer && { canStop: undefined }), images: a.images?.map((p) => this.fetchImage(l, p)),
       ticket: a.ticket == null ? null : q(String(a.ticket)), ...(a.cloneOf && { cloneOf: q(a.cloneOf) }), ...(a.thread && { thread: q(a.thread) }), waitingOn: waits(a.waitingOn), owes: waits(a.owes),
     }
   }
@@ -1332,6 +1332,31 @@ export class Clique extends EventEmitter {
     const { l, base } = this.where(name)
     if (l) return this.linkCall(l, fn, [base, ...args], here.ws)
     return this.serve(fn, [base, ...args], here)
+  }
+
+  // Stop: end these agents' turns, each on its own computer (Hub.stopTurns). -> { stopped: [names as given], dropped }
+  // A linked computer on an older CLIque has no Stop: its agent gets Esc in its terminal, as you'd press it there.
+  async stopTurns(names, { channel } = {}, here = this.here) {
+    const out = { stopped: [], dropped: 0 }
+    for (const [home, bases] of this.group([].concat(names ?? []).map(String))) {
+      if (!home) {
+        const r = here.stopTurns(bases, { channel })
+        out.stopped.push(...r.stopped)
+        out.dropped += r.dropped
+        continue
+      }
+      const l = this.link(home)
+      try {
+        const r = await this.linkCall(l, 'stop', [bases, { channel }], here.ws)
+        out.stopped.push(...(r?.stopped ?? []).map((n) => `${n}@${home}`))
+        out.dropped += r?.dropped ?? 0
+      } catch (e) {
+        if (!/isn't available over CLIque Link/.test(e.message)) throw e
+        for (const base of bases) l.peer?.input(`${this.keyOf(here.ws)}/${base}`, '\x1b')
+        out.stopped.push(...bases.map((n) => `${n}@${home}`))
+      }
+    }
+    return out
   }
 
   async update(names, patch, here = this.here) {
@@ -1492,6 +1517,8 @@ export class Clique extends EventEmitter {
       removeAgent: (name, opts) => h.removeAgent(name, { everywhere: Boolean(opts?.everywhere) }),
       restart: (name) => h.restart(name),
       markIdle: (name) => h.markIdle(name),
+      // Stop pressed on a computer this one's agents show on
+      stop: (names, opts) => h.stopTurns([].concat(names ?? []).map(String), { channel: typeof opts?.channel === 'string' ? opts.channel : undefined }),
       dismiss: (name) => h.dismiss(name),
       resize: (name, cols, rows) => h.runner.resize(name, cols, rows),
       // Flush first: chunks already batched are in the buffer, so a viewer replaying it won't see them twice.

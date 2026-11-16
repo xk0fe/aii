@@ -726,6 +726,148 @@ const SHOTS = {
     await save(win, `pill-${theme}`)
     win.destroy()
   },
+  // Stop (ui/common.js stoppableIn and stopButton, core/hub.js stopTurns): every place it shows, at work and free.
+  // The message box with nothing written while Theo works (Stop), with something written (Send), and with Theo free;
+  // the line of an agent at work under the pointer; the chat after a stop, with what waited marked not delivered; the
+  // agent's menu, its card, its row in the sidebar, its terminal and the menu bar.
+  async stop(theme) {
+    const win = await dashboard(theme, 'chat', { width: 1100, height: 700 })
+    const box = (sel, pad = [12, 12, 12, 12]) => js(win, `const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); const [t, rt, b, l] = ${JSON.stringify(pad)}
+      const x = Math.max(0, Math.round(r.x - l)), y = Math.max(0, Math.round(r.y - t)); return { x, y, width: Math.min(innerWidth - x, Math.round(r.width + l + rt)), height: Math.min(innerHeight - y, Math.round(r.height + t + b)) }`)
+    const hover = async (sel) => {
+      const at = await center(win, sel)
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(at.x) - 3, y: Math.round(at.y) })
+      await sleep(30)
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(at.x), y: Math.round(at.y) })
+      await sleep(350)
+    }
+    const away = async () => (win.webContents.sendInputEvent({ type: 'mouseMove', x: 700, y: 8 }), sleep(300))
+    const write = (text) => js(win, `const ta = document.querySelector('.compose textarea'); ta.value = ${JSON.stringify(text)}; ta.dispatchEvent(new Event('input', { bubbles: true }))`)
+    // your conversation with Theo, who's running the tests
+    await js(win, "openDM('Theo')")
+    await sleep(1000)
+    // the message box with the line of who's at work over it
+    const both = () => js(win, `const a = document.querySelector('.typing-list').getBoundingClientRect(), b = document.querySelector('.compose').getBoundingClientRect()
+      const top = Math.max(0, Math.round((a.height ? a.y : b.y) - 14)); const x = Math.max(0, Math.round(b.x - 16)); return { x, y: top, width: Math.min(innerWidth - x, Math.round(b.width + 32)), height: Math.min(innerHeight, Math.round(b.bottom + 12)) - top }`)
+    await js(win, `const s = window.__cliqueState; s.feed = s.feed.filter((e) => e.kind !== 'msg' || !e.held); window.__cliqueEmit('state', s)`)
+    await sleep(500)
+    const bottom = await both()
+    await save(win, `stop-composer-working-${theme}`, { crop: bottom })
+    await write('Then run them on Safari too')
+    await sleep(300)
+    await save(win, `stop-composer-typing-${theme}`, { crop: bottom })
+    await write('')
+    // the line of an agent at work, under the pointer: its dots make way for Stop
+    await hover('.typing-row .tr-name')
+    await save(win, `stop-line-${theme}`, { crop: bottom })
+    await hover('.typing-row .tr-end')
+    await save(win, `stop-line-hover-${theme}`, { crop: bottom })
+    await away()
+    // two messages wait for Theo; Stop, pressed in the message box
+    await js(win, `const s = window.__cliqueState; const t = Date.now()
+      s.feed.push({ id: 'sq1', kind: 'msg', from: 'you', to: 'Theo', text: 'Then run them on Safari too', ts: t - 40000, queued: true }, { id: 'sq2', kind: 'msg', from: 'Iris', to: 'Theo', text: 'The empty cart has a new layout: its snapshot test needs a new baseline.', ts: t - 20000, queued: true })
+      s.agents.find((a) => a.name === 'Theo').queue = 2
+      window.__cliqueEmit('state', s)`)
+    await sleep(700)
+    await save(win, `stop-before-${theme}`)
+    await js(win, click('.compose .send.stop'))
+    await sleep(900)
+    await save(win, `stop-after-${theme}`)
+    await save(win, `stop-composer-idle-${theme}`, { crop: await both() })
+    // #general: Ada and Theo's clones at work, Milo and Iris waiting on you mid-turn
+    await js(win, "goPlace('chat')")
+    await sleep(900)
+    await js(win, 'feed.toLatest()')
+    await sleep(600)
+    await save(win, `stop-channel-${theme}`, { crop: await both() })
+    // an agent's menu: Stop, only while it's in a turn
+    const row = await center(win, '.dm[data-agent="Ada"]')
+    await js(win, `document.querySelector('.dm[data-agent="Ada"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: ${Math.round(row.x)}, clientY: ${Math.round(row.y)} }))`)
+    await sleep(500)
+    await js(win, `document.querySelector('[data-menu-act="stop"]')?.closest('.menu').setAttribute('id', 'stop-menu')`)
+    await save(win, `stop-menu-${theme}`, { crop: await box('#stop-menu', [50, 40, 16, 190]) })
+    await js(win, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+    await sleep(300)
+    // Agents: a card says how its agent is, with Stop beside it while it's in a turn
+    await js(win, "goPlace('clique')")
+    await sleep(400)
+    await js(win, click('[data-mode=cards]'))
+    await sleep(1200)
+    await save(win, `stop-cards-${theme}`)
+    await js(win, click('[data-mode=tiles]') + ';' + click('[data-mode=compact]'))
+    await sleep(900)
+    // Terminals: Stop with a terminal's other actions
+    await js(win, "goPlace('terminals')")
+    await sleep(1500)
+    if (await js(win, "return Boolean(document.querySelector('.tile[data-name=\"Ada\"]'))")) {
+      await hover('.tile[data-name="Ada"] .tile-head')
+      await save(win, `stop-terminal-${theme}`, { crop: await box('.tile[data-name="Ada"]', [4, 4, 4, 4]) })
+    }
+    win.destroy()
+    // the menu bar: Stop on the row of an agent at work, under the pointer
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(tray)
+    const at = await center(tray, '.work .t-row .t-who')
+    tray.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(at.x) - 3, y: Math.round(at.y) })
+    tray.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(at.x), y: Math.round(at.y) })
+    await sleep(400)
+    await save(tray, `stop-tray-${theme}`)
+    tray.destroy()
+    // the floating chat: the same message box, and the same line
+    const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
+    await sleep(400)
+    await js(chat, "window.__cliqueEmit('toggle', { open: true, focus: false })")
+    await sleep(700)
+    await fitToContent(chat)
+    await save(chat, `stop-floating-${theme}`)
+    chat.destroy()
+  },
+  // The message box's button changing as you write, then a stop: Theo is running the tests; with something written the
+  // button sends, with nothing written it stops; pressed, Theo is free at once and the chat says so in one line.
+  async stopGif() {
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { width: 1100, height: 700 })
+    await js(win, "openDM('Theo')")
+    await sleep(1000)
+    await js(win, `const s = window.__cliqueState
+      s.feed.push({ id: 'sq2', kind: 'msg', from: 'Iris', to: 'Theo', text: 'The empty cart has a new layout: its snapshot test needs a new baseline.', ts: Date.now() - 20000, queued: true })
+      s.agents.find((a) => a.name === 'Theo').queue = 1
+      window.__cliqueEmit('state', s)`)
+    await sleep(600)
+    const clip = await js(win, "const r = document.querySelector('.chat').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y + 150), width: Math.round(r.width), height: Math.round(r.height - 150) }")
+    const typeOut = async (text) => {
+      for (const ch of text) {
+        win.webContents.sendInputEvent({ type: 'char', keyCode: ch })
+        await sleep(45)
+      }
+    }
+    const key = async (keyCode, n = 1) => {
+      for (let i = 0; i < n; i++) {
+        win.webContents.sendInputEvent({ type: 'keyDown', keyCode })
+        win.webContents.sendInputEvent({ type: 'keyUp', keyCode })
+        await sleep(35)
+      }
+    }
+    await record(win, 'stop', {
+      clip, ms: 9500, width: 820,
+      during: async () => {
+        let at = { x: clip.x + 200, y: clip.y + 120 }
+        await sleep(900)
+        at = await glide(win, at, await center(win, '.compose textarea'), 500)
+        await tap(win, at)
+        await sleep(400)
+        await typeOut('Safari too')
+        await sleep(1100)
+        await key('Backspace', 10)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '.compose .send'), 600)
+        await sleep(700)
+        await tap(win, at)
+        await sleep(3200)
+      },
+    })
+    win.destroy()
+  },
   // #general: everyone's messages, questions answered where they were asked
   async channel(theme) {
     const win = await dashboard(theme, 'chat')

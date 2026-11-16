@@ -22,4 +22,6 @@ export interface CliqueLink {
   power(name: string, on: boolean): Promise<unknown>
   setModes(name: string, modes: { yolo?: boolean; fast?: boolean }): Promise<unknown>
   agentAction(action: 'freshStart' | 'restart' | 'markIdle', name: string): Promise<unknown>
+  // Stop: end the turn these agents are in. They stay on.
+  stopAgents(names: string[], opts?: { channel?: string }): Promise<unknown>
 }
