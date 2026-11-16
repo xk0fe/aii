@@ -520,7 +520,7 @@ if (FIXTURE === 'q') {
 const notifyCore = require('../core/notify.js')
 let notifyPrefs = notifyCore.prefsOf(null)
 const notifyState = (held = 0) => ({ ...notifyPrefs, ...notifyCore.quietNow(notifyPrefs), held, morning: notifyCore.morningAfter(notifyPrefs) })
-const state = { notify: notifyState(), savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
+const state = { notify: notifyState(), savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false }, schedules: { list: [], repo: true } }
 // Whether the computer is kept awake, as main.js says it (core/awake.js makes the line there): while this computer's
 // agents work, when that's on.
 function awakeOf(enabled) {
@@ -650,6 +650,51 @@ function workspaceAction(op, id, arg) {
   return { id, state }
 }
 const emit = () => setTimeout(() => window.__cliqueEmit('state', state), 30)
+// Scheduled messages, as Clique.scheduleAction keeps them (core/schedules.js): the list and each one's next time, by
+// this computer's clock. `now` sends it, marked as scheduled, the way a run does.
+function scheduleAction(op, id, arg = {}) {
+  const list = state.schedules.list
+  const at = (s, from = Date.now()) => {
+    const [y, mo, d] = s.date.split('-').map(Number)
+    const [h, mi] = s.time.split(':').map(Number)
+    const first = new Date(y, mo - 1, d, h, mi)
+    if (s.repeat === 'once') return first.getTime() > from ? first.getTime() : null
+    const today = new Date(from)
+    for (let i = 0; i < 9; i++) {
+      const day = new Date(Math.max(new Date(y, mo - 1, d).getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()))
+      day.setDate(day.getDate() + i)
+      day.setHours(h, mi, 0, 0)
+      const ok = s.repeat === 'daily' || (s.repeat === 'weekdays' && day.getDay() >= 1 && day.getDay() <= 5) || (s.repeat === 'weekly' && day.getDay() === first.getDay())
+      if (ok && day.getTime() > from) return day.getTime()
+    }
+    return null
+  }
+  const s = list.find((x) => x.id === id)
+  let same = false
+  if (op === 'add' || op === 'edit') {
+    const f = { ...(s ?? {}), ...arg }
+    if (!String(f.text ?? '').trim()) throw new Error('write the message to send first')
+    if (at(f) === null) throw new Error('that time has passed already: pick one that is still to come')
+    const key = (x) => JSON.stringify([String(x.text).trim().toLowerCase(), x.to ?? '', x.channel && x.channel !== 'general' ? x.channel : '', x.repeat, x.repeat === 'once' ? x.date : '', x.time])
+    const twin = list.find((x) => x !== s && key(x) === key(f))
+    if (twin && op === 'edit') throw new Error("there's a schedule just like that already")
+    if (twin) (same = true), (id = twin.id)
+    else if (s) Object.assign(s, f, { next: at(f) })
+    else list.push({ id: (id = `s${list.length + 1}${Date.now() % 1000}`), text: String(f.text).trim(), to: f.to ?? '', ...(f.channel && f.channel !== 'general' && { channel: f.channel }), ...(f.images?.length && { images: f.images }), repeat: f.repeat, date: f.date, time: f.time, ...(f.ifChanged && { ifChanged: true }), by: 'you', created: Date.now(), next: at(f) })
+  }
+  if (op === 'pause') s.paused = true
+  if (op === 'resume') (delete s.paused), (s.next = at(s))
+  if (op === 'remove') list.splice(list.indexOf(s), 1)
+  if (op === 'now') {
+    const names = s.to ? s.to.split(',') : ['Ada']
+    for (const n of names) state.feed.push({ id: `sc${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text: s.text, ts: Date.now(), ...(s.channel && { channel: s.channel }), ...(!s.to && { auto: true }), scheduled: { id: s.id, at: Date.now() } })
+    s.last = { at: Date.now(), result: 'sent' }
+    if (s.repeat === 'once') list.splice(list.indexOf(s), 1)
+  }
+  list.sort((a, b) => (a.paused || !a.next ? Infinity : a.next) - (b.paused || !b.next ? Infinity : b.next))
+  emit()
+  return { id, ...(same && { same }), state }
+}
 // an agent just made (addAgent, a new workspace's Q): idle, nothing done yet
 const newAgent = (fields) => ({ on: true, queue: 0, clones: 0, activity: '', pending: false, args: '', cwd: state.workspace?.folder ?? '', prompt: '', images: [], status: 'idle', since: Date.now(), provider: 'claude', model: '', effort: '', area: '', stats: stats(0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0, 0, 0, 0, 0]), ...fields })
 let nextTask = Math.max(...TICKETS.map((x) => x.id)) + 1
@@ -891,6 +936,7 @@ window.clique = {
       return name
     }
     if (action === 'channel') return channelAction(...args)
+    if (action === 'schedule') return scheduleAction(...args)
     // moving an agent to another computer: its folders there, then the move itself
     if (action === 'folders') return (FOLDERS[args[0] ?? ''] ?? []).map(([path, label]) => ({ path, label }))
     if (action === 'folderInfo') {

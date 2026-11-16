@@ -194,7 +194,7 @@ test('the /ask route holds the hook open until you answer, and notices when the 
   const server = await serve(hub)
   const { port } = server.address()
   const post = (body) => {
-    const req = http.request({ port, method: 'POST', path: '/ask/june', headers: { 'x-clique': hub.token } })
+    const req = http.request({ port, method: 'POST', path: '/ask/june', headers: { 'x-clique': hub.keyOf('june') } }) // its own key says it's june
     const res = new Promise((resolve) => req.on('response', (r) => { let b = ''; r.on('data', (c) => (b += c)); r.on('end', () => resolve(b)) }))
     req.on('error', () => {})
     req.end(JSON.stringify(body))

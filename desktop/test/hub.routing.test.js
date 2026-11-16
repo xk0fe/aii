@@ -79,7 +79,7 @@ test('an idle agent gets the message typed in straight away, tagged with the sen
   const ada = hub.agents.get('ada')
   ada.status = 'idle'
   assert.equal(hub.send({ from: 'june', to: 'ada', text: 'ping' }), 'sent to @ada\n')
-  assert.deepEqual(runner.submitted, [{ name: 'ada', text: "[from @june: it's yours now, no need to report back] ping" }])
+  assert.deepEqual(runner.submitted, [{ name: 'ada', text: "[from @june: it's yours now, no need to report back]\n<relayed from=\"june\">\nping\n</relayed>" }])
 })
 
 test('unknown, off and self recipients are rejected as before', () => {
@@ -177,8 +177,8 @@ test('each recipient is told who else has it and who leads: the first named owns
   for (const a of hub.agents.values()) a.status = 'idle'
   hub.send({ from: 'abe', text: '@ada @june fix checkout' })
   assert.deepEqual(runner.submitted.map((s) => s.text), [
-    "[from @abe: it's yours now, no need to report back, also sent to @june: you lead this and own the result, and they each take the part in their own area] @ada @june fix checkout",
-    "[from @abe: it's yours now, no need to report back, also sent to @ada, and @ada leads it: take only the part in your own area] @ada @june fix checkout",
+    "[from @abe: it's yours now, no need to report back, also sent to @june: you lead this and own the result, and they each take the part in their own area]\n<relayed from=\"abe\">\n@ada @june fix checkout\n</relayed>",
+    "[from @abe: it's yours now, no need to report back, also sent to @ada, and @ada leads it: take only the part in your own area]\n<relayed from=\"abe\">\n@ada @june fix checkout\n</relayed>",
   ])
 })
 

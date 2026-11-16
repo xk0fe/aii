@@ -13,6 +13,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { which, cleanEnv, TITLE_ONLY } from './runner.js'
 import { pathKey } from './launch.js'
+import { pasteable } from './framing.js'
 import { PROTOCOL, RUN, LOG, address } from './ptyhost.js'
 
 const SCROLLBACK = 256 * 1024
@@ -259,7 +260,7 @@ export class HostRunner extends EventEmitter {
   // As core/runner.js: a bracketed paste, then Enter on its own.
   submit(name, text) {
     if (!this.procs.has(name)) return
-    this.write(name, `\x1b[200~${text}\x1b[201~`)
+    this.write(name, `\x1b[200~${pasteable(text)}\x1b[201~`)
     setTimeout(() => this.write(name, '\r'), 150)
   }
 

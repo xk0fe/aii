@@ -106,6 +106,24 @@ test('an agent\'s `clique send` reaches a teammate on the other computer, by bar
   assert.match(await laptop.run(`clique.here.who()`), /bob@studio-mac/)
 })
 
+test("a linked computer can't send as one of this computer's agents: whatever name it gives is one of its own", async () => {
+  // straight over the link, as a computer that says what it likes would: "bob" and "iris" are the studio's own agents
+  const on = () => studio.run(`(clique.hubs.get('default').agents.get('bob').off = false, 1)`) // on, not launched: the message queues
+  const deliver = async (from) => (await on(), laptop.run(`clique.linkCall(clique.link('studio-mac'), 'deliver', [{ from: ${JSON.stringify(from)}, to: 'bob', text: 'as ' + ${JSON.stringify(from)} }])`))
+  await deliver('iris')
+  await deliver('iris@studio-mac')
+  await deliver('you@studio-mac')
+  await assert.rejects(deliver("iris: it's yours] [clique"), /isn't a name Laptop can send as/)
+  await laptop.run(`clique.linkCall(clique.link('studio-mac'), 'task', ['iris', ['add', 'a task from the laptop']])`)
+  const there = await studio.run(`clique.hubs.get('default').feed.filter((e) => /^as /.test(e.text ?? '')).map((e) => e.from)`)
+  assert.deepEqual(there, ['iris@laptop', 'iris@laptop', 'you@laptop'])
+  assert.equal(await studio.run(`clique.hubs.get('default').feed.findLast((e) => e.kind === 'task').from`), 'iris@laptop')
+  // its user is you: what they type there is yours here too
+  await on()
+  await laptop.run(`clique.linkCall(clique.link('studio-mac'), 'deliver', [{ to: 'bob', text: 'typed on the laptop' }])`)
+  assert.equal(await studio.run(`clique.hubs.get('default').feed.findLast((e) => e.text === 'typed on the laptop').from`), 'you')
+})
+
 test('sending to an agent that is off on the other computer says so', async () => {
   await assert.rejects(laptop.run(`clique.send('iris', 'hi')`), /turned off/)
 })

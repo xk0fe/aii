@@ -5,7 +5,7 @@ input=$(cat)
 # (an agent started before the app's rename has these as CREW_*: they still count)
 CLIQUE_HOME=${CLIQUE_HOME:-$CREW_HOME}; CLIQUE_AGENT=${CLIQUE_AGENT:-$CREW_AGENT}; CLIQUE_WORKSPACE=${CLIQUE_WORKSPACE:-$CREW_WORKSPACE}; CLIQUE_STATUS_LINE=${CLIQUE_STATUS_LINE:-$CREW_STATUS_LINE}
 dir=${CLIQUE_HOME:-$HOME/.clique}; [ -d "$dir" ] || [ ! -d "$HOME/.crew" ] || dir=$HOME/.crew
-line=$(printf '%s' "$input" | curl -s -m 1 -X POST -H "X-Clique: $(cat "$dir/token" 2>/dev/null)" -H "X-Clique-Workspace: ${CLIQUE_WORKSPACE:-}" --data-binary @- "$(cat "$dir/url" 2>/dev/null)/status/$CLIQUE_AGENT" 2>/dev/null)
+line=$(printf '%s' "$input" | curl -s -m 1 -X POST -H "X-Clique: ${CLIQUE_BADGE:-$(cat "$dir/token" 2>/dev/null)}" -H "X-Clique-Workspace: ${CLIQUE_WORKSPACE:-}" --data-binary @- "$(cat "$dir/url" 2>/dev/null)/status/$CLIQUE_AGENT" 2>/dev/null)
 if [ -n "$CLIQUE_STATUS_LINE" ]; then
   printf '%s' "$input" | "${SHELL:-/bin/sh}" -c "$CLIQUE_STATUS_LINE"
 else

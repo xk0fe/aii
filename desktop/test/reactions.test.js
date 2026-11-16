@@ -15,6 +15,7 @@ process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-reaction
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { Clique } = await import('../core/clique.js')
 const { serve } = await import('../core/server.js')
+const { agentKey } = await import('../core/keys.js') // each agent shows the server its own key
 const { emojiOf, justAnAck, saidWith, REACT_MAX, REACT_WINDOW } = await import('../core/reactions.js')
 const { inThread } = await import('../core/threads.js')
 const { reactionGroups, HANDY_REACTIONS } = await import('clique-shared/protocol.js')
@@ -285,7 +286,7 @@ test('clique react, as agents run it in a shell: the emoji arrives as typed, and
   const home = fs.mkdtempSync(path.join(process.env.CLIQUE_HOME, 'cli-'))
   fs.writeFileSync(path.join(home, 'url'), `http://127.0.0.1:${server.address().port}`)
   fs.writeFileSync(path.join(home, 'token'), 'tok')
-  const run = (file, args, agent) => new Promise((resolve) => execFile(file, args, { env: { ...process.env, CLIQUE_HOME: home, CLIQUE_AGENT: agent, CLIQUE_WORKSPACE: 'default' } }, (e, stdout, stderr) => resolve({ code: e?.code ?? 0, stdout, stderr })))
+  const run = (file, args, agent) => new Promise((resolve) => execFile(file, args, { env: { ...process.env, CLIQUE_HOME: home, CLIQUE_AGENT: agent, CLIQUE_WORKSPACE: 'default', CLIQUE_BADGE: agentKey('default', agent) } }, (e, stdout, stderr) => resolve({ code: e?.code ?? 0, stdout, stderr })))
   const clis = [['clique.mjs', (agent, ...a) => run(process.execPath, [path.join(BIN, 'clique.mjs'), 'clique', ...a], agent)], ...(WIN ? [] : [['bin/clique', (agent, ...a) => run(path.join(BIN, 'clique'), a, agent)]])]
   try {
     for (const [what, cli] of clis) {

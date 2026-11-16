@@ -118,7 +118,7 @@ test('a teammate\'s answer goes back to the clone that asked, whoever is free', 
   ready('iris.2')
   hub.onHook('iris.2', { hook_event_name: 'UserPromptSubmit', prompt: 'build the card' })
   hub.send({ from: 'iris.2', to: 'ada', text: 'what does the API return?' })
-  assert.match(runner.submitted.at(-1).text, /^\[from @iris\.2: it's yours now, no need to report back\] what does the API return\?/)
+  assert.match(runner.submitted.at(-1).text, /^\[from @iris\.2: it's yours now, no need to report back\]\n<relayed from="iris\.2">\nwhat does the API return\?\n<\/relayed>/)
   hub.onHook('ada', { hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1).text })
   hub.onHook('iris.2', { hook_event_name: 'Stop' })
   mock.timers.tick(600)
