@@ -84,3 +84,20 @@ npx tsx scripts/smoke.ts --no-send --wait 30     # reconnect with the pairing it
 ```
 
 Options: `--to <name>`, `--text "…"`, `--ws <workspace>`, `--answer <card id>:allow|deny`, `--save <file>`, `--verbose`.
+
+## Pictures for the README
+
+Two of the README's pictures show the phone app: the one at the top and the one under "And your phone". They're built
+by `npm run readme` (`desktop/scripts/readme.mjs`) from four captures of the app itself, kept in `docs/images/src/`:
+`phone-ask-light.webp`, `phone-ask-dark.webp`, `phone-chat-light.webp` and `phone-chat-dark.webp`. Take them again
+when those screens change:
+
+```sh
+xcrun simctl status_bar booted override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 --dataNetwork wifi
+xcrun simctl ui booted appearance light            # then again with dark
+xcrun simctl io booted screenshot ask-light.png    # the Needs you tab; chat-light.png is #general
+cwebp -q 90 ask-light.png -o ../docs/images/src/phone-ask-light.webp
+```
+
+Use the demo clique (**Try the demo clique**) on an iPhone 17 Pro Max simulator, so the captures are 1320 × 2868 and
+show nothing of yours.

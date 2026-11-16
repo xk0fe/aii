@@ -62,23 +62,24 @@
     .home + .dots:not(:empty) { padding-top: 7px; border-top: 1px solid var(--line); width: 32px; }
     [data-side=above] .home + .dots:not(:empty), [data-side=below] .home + .dots:not(:empty) { padding: 0 0 0 7px; border-top: 0; border-left: 1px solid var(--line); width: auto; height: 32px; }
     .home svg { width: 100%; height: 100%; display: block; overflow: visible; }
-    /* the buddies are stacked <svg>s, one per span (markSVG split), so their hops run on the compositor */
+    /* the buddies are stacked <svg>s, one per span (markSVG split), so their bobbing runs on the compositor */
     .home { container-type: size; }
     .home .marks { position: relative; display: block; width: 100%; height: 100%; }
     .home .marks > span { position: absolute; inset: 0; }
-    /* while anyone works, the three buddies hop in a little wave */
+    /* while anyone works, the three buddies bob in a slow wave. They used to hop (2.4 units every 1.1s), which is a lot
+       of motion for something that's always on screen. */
     .home path { transform-box: fill-box; transform-origin: 50% 100%; }
-    .busy .home .m0, .busy .home .m1, .busy .home .m2 { animation: buddy-hop 1.1s cubic-bezier(.3, .6, .4, 1) infinite; }
-    .busy .home .m1 { animation-delay: .14s; }
-    .busy .home .m2 { animation-delay: .28s; }
-    /* 2.4 units of the mark's viewBox (24 × 16, fitted into the button): the hop it always had, in px */
-    @keyframes buddy-hop { 0%, 55%, 100% { translate: 0 0; } 25% { translate: 0 calc(-2.4 * min(100cqw / 24, 100cqh / 16)); } }
+    .busy .home .m0, .busy .home .m1, .busy .home .m2 { animation: buddy-bob 2.6s ease-in-out infinite; }
+    .busy .home .m1 { animation-delay: .3s; }
+    .busy .home .m2 { animation-delay: .6s; }
+    /* 1 unit of the mark's viewBox (24 × 16, fitted into the button), in px */
+    @keyframes buddy-bob { 0%, 60%, 100% { translate: 0 0; } 30% { translate: 0 calc(-1 * min(100cqw / 24, 100cqh / 16)); } }
     /* someone needs you: a warm edge that breathes (their creature wiggles). The edge is its own layer that only fades
        in and out, so the compositor plays it. */
     .pill::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--needs) 75%, transparent), 0 0 0 5px color-mix(in srgb, var(--needs) 16%, transparent); }
     .alert .pill::after { animation: pill-alert 2s ease-in-out infinite; }
     @keyframes pill-alert { 50% { opacity: 1; } }
-    /* the clique lives in the pill: one little creature per agent, hopping while it works, magnified like the Dock */
+    /* the clique lives in the pill: one little creature per agent, at its laptop while it works, magnified like the Dock */
     .dots { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     /* creatures magnify away from the screen edge */
     .dots .face { position: relative; cursor: pointer; line-height: 0; transition: transform var(--t-quick) var(--out); transform-origin: 70% 50%; --orbit-ring: var(--panel); --dot: 6px; }

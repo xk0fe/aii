@@ -7,6 +7,11 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(
 // Its keys (⌘ or Ctrl), its words (this Mac, this PC) and how its paths are written. The page's <html> says it too
 // (data-os="mac" or "win"), for the CSS: the fonts, and room for Windows' window buttons in the dashboard's titlebar.
 const ON_WINDOWS = window.clique?.platform === 'win32'
+// Where this computer shows folders, for "Open in Finder" (empty where there's no way to open one: a page outside the app).
+const FOLDER_APP = { darwin: 'Finder', win32: 'Explorer', linux: 'Files' }[window.clique?.platform] ?? ''
+const OPEN_FOLDER = `Open in ${FOLDER_APP}`
+// A workspace's folder, opened there.
+const openFolder = (w) => clique.call('openFolder', w.id).catch((err) => oops(`Couldn't open ${w.name}'s folder`, err))
 document.documentElement.dataset.os = ON_WINDOWS ? 'win' : 'mac'
 const THIS_COMPUTER = ON_WINDOWS ? 'this PC' : 'this Mac'
 const upFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -47,9 +52,9 @@ const svg = (paths, attrs = '') =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${attrs}>${paths}</svg>`
 
 // CLIque's mark: three little mochis in a huddle. Eyes are evenodd holes, so the same shape works as the
-// menu bar template icon; each buddy is its own path (.m0 .m1 .m2) so CSS can make them hop in turn.
-// split: each buddy in an <svg> of its own (in a span), stacked into the same picture, so a hop is a transform on an
-// HTML element, which the compositor can play (the pill's buddies hop for as long as anyone works).
+// menu bar template icon; each buddy is its own path (.m0 .m1 .m2) so CSS can move them in turn.
+// split: each buddy in an <svg> of its own (in a span), stacked into the same picture, so its motion is a transform on an
+// HTML element, which the compositor can play (the pill's buddies bob for as long as anyone works).
 function markSVG(viewBox = '0 0 24 24', { split = false } = {}) {
   const n = (v) => +v.toFixed(2)
   const hole = (x, y, r) => `M${n(x - r)} ${n(y)}a${r} ${r} 0 1 0 ${n(2 * r)} 0a${r} ${r} 0 1 0 ${n(-2 * r)} 0Z`
@@ -524,7 +529,7 @@ const subsChip = (a) => {
 // ---- the clique roster: the sidebar and the menu bar ------------------------------------------------------
 // Agents grouped by the computer they run on (once there's more than one), each group in your own order, so a
 // row never jumps when an agent changes status. Agents that are off fold into one line at the end of their group.
-// Every row is one glance: the creature (it hops while working, wiggles with a "!" when it needs you, sleeps
+// Every row is one glance: the creature (at its laptop while working, it wiggles with a "!" when it needs you, sleeps
 // when off), the name, and one line of what it's doing. Modes that are on show as small marks; the switches
 // for them, and power, appear over the row's end on hover, so nothing shifts.
 
@@ -1920,7 +1925,7 @@ function typingParts(agents, asks = new Map(), { all = false, clique = agents, q
 }
 
 // An agent waiting on a teammate's answer (its `clique ask`): who it's waiting on, what it asked, and for how long. It
-// rests instead of hopping, in the calm color of waiting rather than the orange of "needs you". Click for its question.
+// rests instead of typing, in the calm color of waiting rather than the orange of "needs you". Click for its question.
 function waitRow(a, on, someone) {
   const w = on[0]
   const them = someone(w.name)

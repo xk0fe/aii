@@ -13,6 +13,9 @@ const day = 24 * 60 * min
 // ?fixture=big | row | clones | workspaces picks one of the variations below. ?platform=win32: the pages as Windows
 // shows them (Ctrl for ⌘, "this PC", paths with drive letters, the titlebar with room for the window buttons), rendered
 // on a Mac. ?dev=1: as when CLIque runs from source (npm run dev), with the developer's extras.
+// Nobody's there to answer a confirm: a shot that closes a sheet with changes in it ("Discard your changes?") would wait
+// on a dialog in a hidden window for good. Here every confirm is a yes.
+window.confirm = () => true
 const QUERY = new URLSearchParams(location.search)
 const FIXTURE = QUERY.get('fixture')
 const BIG = FIXTURE === 'big'

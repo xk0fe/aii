@@ -192,8 +192,9 @@ export function space(config, id) {
       own.autofix = Boolean(on) || undefined
     },
     // #general first, then the channels you made, in the order you made them
+    // (one shown from a linked computer has that computer's, as it last said them: of.channels, see Clique.showTheirs)
     get channels() {
-      return channelsIn(own)
+      return channelsIn(Array.isArray(own.of?.channels) ? { channels: own.of.channels } : own)
     },
     // parked: its agents don't run (their conversations wait for it to open again)
     get parked() {

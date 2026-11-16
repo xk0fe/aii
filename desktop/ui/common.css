@@ -1232,7 +1232,11 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 /* While they blink, the eyes and what's drawn over them get layers of their own, as Chrome gave the blinking SVG group
    (and the rest of the face after it) when the blink was inside the face's <svg>: the same pixels as before. */
 .av:not(.still) .av-eye, .av:not(.still) .av-eyes + .av-face .av-front { will-change: transform; transform-box: fill-box; transform-origin: center; }
-.av.working .av-in { animation: av-hop .72s cubic-bezier(.3, .6, .4, 1) infinite var(--delay); }
+/* at work it sits behind its laptop, at every size (avatar.js), and bobs a little, each creature at its own beat
+   (--delay). It used to hop below 64px, and a sidebar of hopping creatures was tiring to have in the corner of the
+   eye. A small creature bobs by more of itself: 1.2% of it is a fraction of a pixel. */
+.av.working .av-in { animation: av-type 1.2s ease-in-out infinite var(--delay); }
+.av.small.working .av-in { animation-name: av-type-small; }
 .av.waiting .av-in { animation: av-wiggle .55s ease-in-out infinite; }
 /* asleep (off, parked, or on a computer that's asleep): black and white, props and all, breathing slowly */
 .av.asleep { filter: grayscale(1); }
@@ -1250,12 +1254,6 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 }
 @keyframes av-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(.982, 1.03); } }
 @keyframes av-blink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(.08); } }
-@keyframes av-hop {
-  0%, 100% { transform: translateY(0) scale(1.07, .93); }
-  18% { transform: translateY(0) scale(.94, 1.07); }
-  50% { transform: translateY(-16%) scale(.98, 1.02); }
-  82% { transform: translateY(0) scale(1.05, .95); }
-}
 @keyframes av-wiggle { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
 @keyframes av-pop { 0% { transform: scale(0); } 100% { transform: scale(1); } }
 @keyframes av-jump { 0% { transform: scale(1.1, .88); } 40% { transform: translateY(-22%) scale(.92, 1.1); } 75% { transform: translateY(0) scale(1.08, .92); } 100% { transform: none; } }
@@ -1267,13 +1265,9 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .av-fig, .av-clip { position: absolute; inset: 0; transform-origin: 50% 97%; }
 .av-fig > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .av-prop { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.av-paw, .av-float { position: absolute; inset: 0; }
-/* at the laptop: a small typing bob instead of the hop; paws tap in turn */
-.av.posed.working .av-in { animation: av-type 1.2s ease-in-out infinite var(--delay); }
-.av-paw { animation: av-tap .34s ease-in-out infinite alternate; }
-.av-paw.p1 { animation-delay: -.17s; }
+.av-float { position: absolute; inset: 0; }
 @keyframes av-type { 50% { transform: translateY(1.2%); } }
-@keyframes av-tap { to { transform: translateY(-2.5%); } }
+@keyframes av-type-small { 50% { transform: translateY(3%); } }
 /* the question bubble and the z's drift; the sign wiggles with the creature */
 .av-float { animation: av-drift 3.2s ease-in-out infinite var(--delay); }
 @keyframes av-drift { 50% { transform: translateY(-3%); } }
@@ -1282,7 +1276,7 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 /* starting: it rises out of its hole once */
 .av.posed.starting .av-in { animation: av-rise .9s cubic-bezier(.3, 1.4, .5, 1) both; }
 @keyframes av-rise { from { transform: translateY(30%); } }
-.av.still .av-paw, .av.still .av-float { animation: none; }
+.av.still .av-float { animation: none; }
 /* the black felt accessories (the beret, the headphones) vanish on dark: lifted to a charcoal that still reads black */
 @media (prefers-color-scheme: dark) {
   .av-acc { fill: #4E4C56; }
@@ -1297,7 +1291,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .28); animation: fade-in var(--t-mo
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-  .av-in, .av-eyes, .av-z, .av-bang, .av-paw, .av-float, .shimmer, .typing i { animation: none !important; }
+  .av-in, .av-eyes, .av-z, .av-bang, .av-float, .shimmer, .typing i { animation: none !important; }
   .av-eye, .av-front { will-change: auto !important; }
   .shimmer { color: var(--fg2); background: none; }
 }
