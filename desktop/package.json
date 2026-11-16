@@ -22,6 +22,7 @@
     "voice": "node scripts/build-voice.mjs",
     "icon": "electron scripts/make-icon.mjs && electron scripts/make-ico.mjs",
     "shots": "electron scripts/screenshots.mjs",
+    "probe:sandbox": "electron scripts/sandbox-probe.mjs",
     "readme": "node scripts/readme.mjs"
   },
   "dependencies": {

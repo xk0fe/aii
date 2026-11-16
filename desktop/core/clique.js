@@ -7,8 +7,9 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage } from './hub.js'
+import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf } from './hub.js'
 import { movedPath } from './home.js'
+import { FETCH_MAX, kindOf, travels } from './attachments.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
 import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
@@ -24,6 +25,7 @@ import { Phones } from './phones.js'
 import { workingHere } from './awake.js'
 import { sweepFiles, ATTACHMENT_DAYS, CACHE_DAYS } from './keep.js'
 import { SAVERS, SAVER_IDS, saversFrom, report } from './savers.js'
+import { prefsOf, prefsToSave, changed as notifyChanged } from './notify.js'
 import { MODES, toolMode, parse as parseTool, help as toolHelp, offText, alertOf } from './tools.js'
 import { TICK, LATE_AFTER, LATE_MAX, nextRun, ruleText, whenText, zoneNow, repoMark } from './schedules.js'
 
@@ -409,6 +411,39 @@ export class Clique extends EventEmitter {
     this.config.save()
   }
 
+  // When CLIque may notify you (core/notify.js): config.json's `notifications`, there only once something isn't the
+  // default. setNotifications({ days, from, to }) is the schedule, ({ pause: 'hour' | 'morning' | 'manual' | 'off' }) the
+  // pause from the menu bar. It's this computer's: each of your computers notifies on its own.
+  get notifications() {
+    return prefsOf(this.config.data.notifications)
+  }
+
+  setNotifications(patch, now = Date.now()) {
+    const kept = prefsToSave(notifyChanged(this.config.data.notifications, patch, now))
+    if (kept) this.config.data.notifications = kept
+    else delete this.config.data.notifications
+    this.config.save()
+    this.changed()
+    return this.notifications
+  }
+
+  // Is this agent still waiting for you in a workspace: its status says so, or a card of its is still up (an agent tool's
+  // card stays while its agent carries on). One on a linked computer: as that computer last said, and not while it's
+  // unreachable. A notification for it comes down once this says no.
+  stillNeeds(ws, name) {
+    const hub = this.hubs.get(ws)
+    if (!hub) return false
+    if (hub.agents.has(name)) return hub.agents.get(name).status === 'waiting' || [...hub.asks.values()].some((q) => q.name === name)
+    for (const l of this.links.values()) {
+      const st = l.peer && this.linkedState(l, hub.ws)
+      if (!st) continue
+      const q = this.qualifier(l)
+      if (st.agents.some((a) => q(a.name) === name && a.status === 'waiting')) return true
+      if (st.feed.some((e) => e.kind === 'ask' && !e.answer && q(e.from) === name)) return true
+    }
+    return false
+  }
+
   // Whether this computer stays awake while its agents work (core/awake.js). On unless config.json says
   // "keepAwake": false.
   setKeepAwake(on) {
@@ -686,7 +721,7 @@ export class Clique extends EventEmitter {
       for (const p of [].concat(images ?? [])) if (typeof p === 'string') used.add(key(p))
     }
     for (const hub of this.hubs.values()) {
-      for (const e of hub.feed) add(e.images)
+      for (const e of hub.feed) (add(e.images), add(e.files?.map((f) => f.path))) // what you attached, and what an agent did (core/attachments.js)
       for (const t of hub.tickets.all) add(t.images)
       for (const s of hub.schedules.all) add(s.images)
       for (const a of hub.agents.values()) {
@@ -1009,9 +1044,9 @@ export class Clique extends EventEmitter {
     const providers = providersFrom(this.config.data, this.config.discovered)
     return {
       parked: false, autopilot: this.config.data.autopilot ?? true, theme: this.config.data.theme,
-      providers: Object.fromEntries(Object.values(providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault }])),
+      providers: Object.fromEntries(Object.values(providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault, ...(p.meter && { meter: p.meter }) }])),
       agents: [], feed: [], channels: channelsIn({}), reads: { since: 0, agents: {} },
-      spend: { today: 0, usual: null, week: 0, weekBefore: 0 }, usage: {}, tasks: { tickets: [], triage: null, autofix: false },
+      spend: { today: 0, usual: null, week: 0, weekBefore: 0 }, checkIn: checkInOf(this.config.data), usage: {}, tasks: { tickets: [], triage: null, autofix: false },
     }
   }
 
@@ -1031,6 +1066,9 @@ export class Clique extends EventEmitter {
       for (const e of st.feed) {
         feed.push({
           ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && q(e.re), ...(e.thread && { thread: q(e.thread) }), ...(e.echo && { echo: q(e.echo) }), images: e.images?.map((p) => this.fetchImage(l, p)),
+          // what an agent there attached: a picture or a page is fetched like your images; a recording or any other file stays
+          // there (`away`: that computer's name, for the card to say so)
+          ...(e.files && { files: e.files.map((f) => (travels(f) ? { ...f, path: this.fetchImage(l, f.path), home: l.name } : { ...f, path: '', away: l.name })) }),
           ...(e.ticket !== undefined && { ticket: q(String(e.ticket)) }), ...((e.act === 'fixing' || e.act === 'triaged') && e.text && { text: q(e.text) }),
           ...(e.reactions && { reactions: e.reactions.map((r) => ({ ...r, by: q(r.by) })) }),
           ...(e.also && { also: e.also.map(q) }), ...(e.reply && { reply: q(e.reply) }), ...(e.line && { line: e.line.map(q) }),
@@ -1084,6 +1122,33 @@ export class Clique extends EventEmitter {
     else delete this.config.data.savers
     this.config.save()
     return this.saversState()
+  }
+
+  // The spend check-in (Hub.checkIn), per provider: setCheckIn({ at: { claude: 5 } }) asks once Claude agents have used
+  // $5 on one request, { at: { claude: null } } is off again, { then: 'tell' } only tells. A value is in the unit that
+  // provider's CLI reports (its meter); a provider without one has no check-in. It's yours, so it's one for every
+  // workspace on this computer. Cards of a provider that no longer asks are answered: keep going.
+  setCheckIn(patch = {}) {
+    const providers = providersFrom(this.config.data, this.config.discovered)
+    const now = checkInOf(this.config.data)
+    for (const [id, v] of Object.entries(patch.at ?? {})) {
+      const unit = providers[id]?.meter?.unit
+      if (!unit) throw new Error(`${providers[id]?.label ?? id} doesn't report what its agents use, so it has no check-in`)
+      if (v === null || v === false || v === 0 || v === '') {
+        delete now.at[id]
+        continue
+      }
+      const n = unit === 'usd' ? Math.round(Number(v) * 100) / 100 : Math.round(Number(v))
+      if (!(n > 0) || !Number.isFinite(n)) throw new Error(unit === 'usd' ? 'a check-in is an amount in dollars' : 'a check-in is a number of tokens')
+      now.at[id] = n
+    }
+    if (patch.then !== undefined) now.then = patch.then === 'tell' ? 'tell' : 'ask'
+    if (Object.keys(now.at).length || now.then === 'tell') this.config.data.checkIn = { at: now.at, ...(now.then === 'tell' && { then: 'tell' }) }
+    else delete this.config.data.checkIn
+    this.config.save()
+    for (const h of this.hubs.values()) h.checkInChanged()
+    this.changed()
+    return checkInOf(this.config.data)
   }
 
   // ---- usage, day by day (core/history.js): what Claude Code and Codex used on this computer, for the Usage view ----
@@ -1401,6 +1466,8 @@ export class Clique extends EventEmitter {
       readImage: (file) => {
         file = movedPath(file)
         if (!String(file).startsWith(ATTACHMENTS + path.sep)) throw new Error('not an attachment')
+        // (a recording an agent attached is never sent whole: it's watched on this computer)
+        if (kindOf(file) === 'video' || fs.statSync(file).size > FETCH_MAX) throw new Error('too big to send: open it on the computer it is on')
         return new Uint8Array(fs.readFileSync(file))
       },
       approve: (id) => h.approve(id),

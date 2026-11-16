@@ -216,3 +216,21 @@ export function voiceOf(ask: unknown): Said {
   if (/^(run|edit|write|read|use|fetch|search|delete|create|open|make|move|install|change|update)\b/i.test(title)) return [{ text: `Can I ${low(title)}?${shell ? why : ''}` }]
   return [{ text: `Can I use ${q.tool ?? 'a tool'}?` }]
 }
+
+// A file an agent attached, in a line: "Video · 0:12 · 2.1 MB", "HTML page · 14 KB", "PDF · 1.2 MB".
+export function fileLine(f: { name: string; kind: string; size: number; dur?: number }): string {
+  const ext = /\.([A-Za-z0-9]{1,8})$/.exec(f.name)?.[1]?.toUpperCase()
+  const what = f.kind === 'image' ? 'Picture' : f.kind === 'video' ? 'Video' : f.kind === 'html' ? 'HTML page' : ext || 'File'
+  const two = (n: number) => String(n).padStart(2, '0')
+  const secs = Math.max(0, Math.round(f.dur ?? 0))
+  const time = f.dur ? (secs >= 3600 ? `${Math.floor(secs / 3600)}:${two(Math.floor(secs / 60) % 60)}:${two(secs % 60)}` : `${Math.floor(secs / 60)}:${two(secs % 60)}`) : ''
+  let size = `${f.size} B`
+  if (f.size >= 1024) {
+    const units = ['KB', 'MB', 'GB']
+    let v = f.size / 1024
+    let u = 0
+    while (v >= 1024 && u < units.length - 1) (v /= 1024), u++
+    size = `${v >= 10 ? Math.round(v) : Math.round(v * 10) / 10} ${units[u]}`
+  }
+  return [what, time, size].filter(Boolean).join(' · ')
+}

@@ -179,6 +179,8 @@ function carried(e, { names, tasks, lines, images, moving }) {
   if (e.thread && !moving.has(e.thread)) out.thread = lines(e.thread)
   if (e.echo && !moving.has(e.echo)) out.echo = lines(e.echo)
   if (e.images) out.images = e.images.map((p) => images.get(p) ?? p)
+  // what the agent attached (core/attachments.js) doesn't go along: its card says where the file stayed
+  if (e.files) out.files = e.files.map((f) => ({ ...f, path: '', away: f.away ?? 'the computer it was attached on' }))
   return out
 }
 

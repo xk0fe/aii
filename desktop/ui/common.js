@@ -74,6 +74,11 @@ const ICONS = {
   clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
   expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
+  // notifications: a bell, and a bell asleep (held: paused, or outside your hours)
+  bell: svg('<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 21h4"/>'),
+  bellZ: svg('<path d="M12.5 5.02A6 6 0 0 0 6 11v5.5l-1.5 2h15l-1.5-2V13"/><path d="M10 21h4"/><path d="M16 3.5h4.5L16 9h4.5"/>'),
+  eye: svg('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>'),
+  stack: svg('<path d="m12 4 8.5 4.5L12 13 3.5 8.5z"/><path d="m3.5 12.5 8.5 4.5 8.5-4.5"/><path d="m3.5 16.5 8.5 4.5 8.5-4.5"/>'),
   // kept awake: a hot mug
   mug: svg('<path d="M5 9.5h11v5.5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9.5z"/><path d="M16 11h1.2a2.4 2.4 0 0 1 0 4.8H16"/><path d="M8.5 3.5v2.5M12.5 3.5v2.5"/>'),
   moon: svg('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'),
@@ -97,6 +102,7 @@ const ICONS = {
   bug: svg('<path d="M8.6 7.6a3.4 3.4 0 0 1 6.8 0"/><rect x="6.6" y="7.6" width="10.8" height="12.4" rx="5.4"/><path d="M12 11v9M3.8 12.6h2.8M17.4 12.6h2.8M4.6 8l2.3 1.6M19.4 8l-2.3 1.6M4.6 18l2.4-1.5M19.4 18 17 16.5"/>'),
   fresh: svg('<path d="M20.2 12a8.2 8.2 0 0 1-12 7.3L3.8 20.4l1.1-4.2A8.2 8.2 0 1 1 20.2 12z"/><path d="M12 8.4l.9 2.7 2.7.9-2.7.9-.9 2.7-.9-2.7-2.7-.9 2.7-.9z" fill="currentColor" stroke-width="1"/>'),
   computers: svg('<rect x="2.5" y="4" width="13" height="9.5" rx="1.8"/><path d="M6 17h6M9 13.5V17"/><rect x="17.5" y="7" width="4.5" height="10" rx="1.2"/>'),
+  coin: svg('<circle cx="12" cy="12" r="8.5"/><path d="M14.5 9.6c-.4-.9-1.4-1.4-2.5-1.4-1.5 0-2.6.8-2.6 1.9s.9 1.6 2.6 1.9 2.6.8 2.6 1.9-1.1 1.9-2.6 1.9c-1.1 0-2.1-.5-2.5-1.4M12 6.7v1.5m0 7.6v1.5"/>'),
   plane: svg('<path d="M21 3 3 10.4l7.2 2.4L12.6 20 21 3z"/><path d="m10.2 12.8 4.6-4.6"/>'),
   shield: svg('<path d="M12 3 5 6v5.5c0 4.3 3 7.9 7 9.5 4-1.6 7-5.2 7-9.5V6l-7-3z"/><path d="m9 12 2 2 4-4"/>'),
   ask: svg('<path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.7A8 8 0 0 1 4 12z"/><path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.9c0 1.5-2.2 1.9-2.2 3.1M12 16.6v.1"/>'),
@@ -751,6 +757,7 @@ function needText({ agent, ask }) {
   if (q.type === 'question') return q.questions?.[0]?.question ?? 'Has a question'
   if (q.type === 'plan') return 'Wants you to approve a plan'
   if (q.trust) return `Asks to trust its folder, ${shortPath(q.detail)}`
+  if (q.spend) return q.say ?? 'Checks in before spending more' // the spend check-in (core/hub.js checkIn)
   if (q.app) return `Wants to ${lowerFirst(q.title ?? 'change CLIque')}` // an agent tool: its code is no command
   return q.code ? `Wants to run ${q.code.split('\n')[0]}` : `Wants to use ${q.title ?? 'a tool'}`
 }
@@ -1332,15 +1339,17 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     if (e.kind === 'rule') return ruleLine(e, name, time)
     const face = e.from === 'you' ? YOU_FACE : `<span class="face" data-agent="${esc(e.from)}">${avatarHTML(agent(e.from), { size: 22, mood: 'still' })}</span>`
     const to = e.kind === 'msg' && e.to && e.from !== 'you' ? ` <span class="to">to ${name(e.to)}</span>` : ''
-    const verb = e.kind === 'note' ? ' <span class="to">shared a note</span>' : e.kind === 'ask' ? ' <span class="to">asks you</span>' : ''
-    const tags = [e.held && !e.dropped && 'waiting for your OK', e.queued && 'queued', e.dropped && 'dropped', e.asks && 'asks you'].filter(Boolean).map((w) => `<span class="tag">${esc(w)}</span>`).join('')
+    const verb = e.kind === 'note' ? ' <span class="to">shared a note</span>' : e.kind === 'ask' ? ` <span class="to">${e.ask?.spend ? 'checks in' : 'asks you'}</span>` : ''
+    const tags = [e.held && !e.dropped && 'waiting for your OK', e.paused && 'held for the check-in', e.queued && 'queued', e.dropped && 'dropped', e.asks && 'asks you'].filter(Boolean).map((w) => `<span class="tag">${esc(w)}</span>`).join('')
     const head = `<div class="tr-head">${name(e.from)}${to}${verb}${tags}<time>${time}</time></div>`
     if (e.kind === 'ask') return `<div class="thread-row card" id="tr-${esc(e.id)}" data-card="${esc(e.id)}">${face}<div class="tr-main">${head}<div class="tr-line">${esc(needText({ agent: agent(e.from), ask: e }))}</div></div><span class="tr-chev">${ICONS.chevron}</span></div>`
     const line = e.gist ?? snippet(e.text)
     const whole = e.from === 'you' || open.has(e.id)
     const more = e.from !== 'you' && (line !== String(e.text ?? '').trim() || echoes.length)
-    const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
-    const body = whole ? `${pics}<div class="tr-full bubble open">${md(e.text)}</div>${echoes.map((x) => `<div class="tr-echo"><span>Also said</span><div class="bubble open">${md(x.text)}</div></div>`).join('')}` : `${pics}<div class="tr-line">${esc(line)}</div>`
+    const pics = (e.images?.length ? (typeof fxPics === 'function' ? fxPics(e) : `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>`) : '') // (ui/files.js: they open in the viewer)
+    // what an agent attached (clique attach): pictures, a recording, a page, any file (ui/files.js)
+    const files = typeof filesHTML === 'function' ? filesHTML(e) : ''
+    const body = whole ? `${pics}<div class="tr-full bubble open">${md(e.text)}</div>${files}${echoes.map((x) => `<div class="tr-echo"><span>Also said</span><div class="bubble open">${md(x.text)}</div></div>`).join('')}` : `${pics}<div class="tr-line">${esc(line)}</div>${files}`
     return `<div class="thread-row${more ? ' opens' : ''}${whole ? ' open' : ''}" id="tr-${esc(e.id)}" data-row="${esc(e.id)}"${more ? ` tabindex="0" role="button" aria-expanded="${whole}"` : ''}>${face}<div class="tr-main">${head}${body}${reactsHTML(e, agent)}</div><span class="tr-chev">${more ? ICONS.chevron : ''}</span></div>`
   }
   const draw = (force = false) => {
@@ -1358,11 +1367,13 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const hintText = who ? `Reply to ${familyOf(who)}, in the thread` : 'Reply in the thread'
     if (ta.placeholder !== hintText) ta.placeholder = hintText
     reply.classList.toggle('hidden', !who)
-    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length, reactsSig(e)]), agents().map((a) => [a.name, a.avatar]).length])
+    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.paused, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length, reactsSig(e)]), agents().map((a) => [a.name, a.avatar]).length])
     if (next !== drawn || force) {
       drawn = next
       const top = list.scrollTop
+      const live = typeof fxHold === 'function' ? fxHold(list) : null
       list.innerHTML = lines.length ? lines.map((e) => rowHTML(e, echoes(e.id))).join('') : '<div class="empty empty-state small"><b>Nothing here any more</b><span>This thread is older than what the chat keeps.</span></div>'
+      live?.()
       if (pinned) list.scrollTop = list.scrollHeight
       else list.scrollTop = top
     }
@@ -1646,12 +1657,14 @@ function feedItem(e, prev, ctx) {
   // an agent's canvas (a ```canvas block, ui/canvas.js) says so by its name, and under it who else drew on it
   const drawn = e.from !== 'you' && typeof canvasBoard === 'function' && /```canvas\n/.test(e.text ?? '')
   const hands = drawn ? [...new Set(e.canvas?.by ?? [])].filter((n) => n !== e.from) : []
-  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '') + scheduledTag(e)
+  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.paused ? '<span class="tag" title="Held by the spend check-in. It goes on when you say Keep going.">held for the check-in</span>' : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '') + scheduledTag(e)
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
-  const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
+  const pics = (e.images?.length ? (typeof fxPics === 'function' ? fxPics(e) : `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>`) : '') // (ui/files.js: they open in the viewer)
+  // what an agent attached (clique attach): pictures, a recording, a page, any file (ui/files.js)
+  const files = typeof filesHTML === 'function' ? filesHTML(e) : ''
   // A reply quotes the message it answers, with a bar in the quoted sender's color; click to jump back to it.
   const orig = e.re && byId[e.re]
-  const quoted = orig?.ticket !== undefined ? `#${String(orig.ticket).split('@')[0]} ${orig.title ?? ''}` : snippet(orig?.text)
+  const quoted = orig?.ticket !== undefined ? `#${String(orig.ticket).split('@')[0]} ${orig.title ?? ''}` : snippet(orig?.text) || (orig?.files?.length ? `Attached ${orig.files[0].name}` : '')
   const quote = orig ? `<button class="quote" data-jump="${orig.id}" style="--qc:${tint(orig.from)}" title="Jump to the message this answers">${ICONS.reply}<b>${orig.from === 'you' ? 'You' : label(orig.from)}</b><span>${esc(quoted)}</span></button>` : ''
   // ...and a message you sent links forward to the agents' replies.
   const answers = repliesTo[e.id] ?? []
@@ -1660,7 +1673,7 @@ function feedItem(e, prev, ctx) {
   const replied = done
     ? `<button class="replied answered${done.why ? ' none' : ''}" ${done.reply ? `data-jump="${done.reply}"` : ''} title="${done.reply ? 'Jump to the answer' : ''}">${done.why ? ICONS.dash : ICONS.check}<span>@${at(done.by)} ${done.why ? esc(done.why) : `answered in ${duration(done.at - e.ts)}`}</span></button>`
     : answers.length
-    ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">${ICONS.thread}<span>${[...new Set(answers.map((r) => (r.from === 'you' ? 'You' : `@${at(r.from)}`)))].join(', ')} ${answers.some((r) => r.kind === 'reply' || r.from === 'you') ? 'replied' : answers.some((r) => r.kind === 'ask') ? 'has a question' : 'handed it on'}</span></button>`
+    ? `<button class="replied" data-jump="${answers[0].id}" title="Jump to the reply">${ICONS.thread}<span>${[...new Set(answers.map((r) => (r.from === 'you' ? 'You' : `@${at(r.from)}`)))].join(', ')} ${answers.some((r) => r.kind === 'reply' || r.from === 'you') ? 'replied' : answers.some((r) => r.kind === 'ask' && !r.ask?.spend) ? 'has a question' : answers.some((r) => r.kind === 'ask') ? 'checks in' : 'handed it on'}</span></button>`
     : ''
   // @names in the text take their agent's color; one nobody here has stays a plain word
   const text = md(e.text).replace(/<span class="mention" data-m="([^"]+)">([^<]*)<\/span>/g, (_, n, at) => {
@@ -1669,7 +1682,7 @@ function feedItem(e, prev, ctx) {
   })
   // what agents say to each other stays out of the way of what's for you: it folds sooner, in a quieter colour
   const between = e.from !== 'you' && e.kind !== 'reply' && e.kind !== 'ask'
-  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}${between ? ' between' : ''}${e.empty ? ' wordless' : ''}" data-id="${e.id}">${text}${hands.length ? `<div class="canvas-by">with ${andList(hands.map(name))}</div>` : ''}</div>`
+  const bubble = `${quote}${pics}<div class="bubble ${open.has(e.id) ? 'open' : ''}${between ? ' between' : ''}${e.empty ? ' wordless' : ''}" data-id="${e.id}">${text}${hands.length ? `<div class="canvas-by">with ${andList(hands.map(name))}</div>` : ''}</div>${files}`
   const cap = (html) => (cont ? '' : `<div class="cap">${html}${tags}<span class="time">${time}</span></div>`)
   // hover a message for its tools: Reply (the chat's message box then answers it)
   const tools = `<div class="msg-tools">${reactTools(e.id)}<button class="msg-tool" data-reply="${e.id}" title="Reply to this message">${ICONS.reply}<span>Reply</span></button></div>`
@@ -1711,7 +1724,7 @@ function feedItem(e, prev, ctx) {
     return said(e.subs?.length ? 'with-subs' : '', `${name(e.from)}${went}${asks}`, subsUsed(e, open))
   }
   if (e.kind === 'ask') {
-    const verb = { permission: 'needs your OK', question: 'asks', plan: 'has a plan for you' }[e.ask?.type] ?? 'asks'
+    const verb = e.ask?.spend ? 'checks in' : { permission: 'needs your OK', question: 'asks', plan: 'has a plan for you' }[e.ask?.type] ?? 'asks'
     if (!e.answer && ctx.queued) return said('ask open pointer', `${name(e.from)} <span>${verb}</span>`, '', `${quote}<button class="ask-pointer" data-needs="${esc(e.id)}" title="Answer it in Needs you, at the top of the chat"><span>${esc(needText({ agent: agent(e.from), ask: e }))}</span><b>${ICONS.up}Answer</b></button>`, false)
     return said(`ask ${e.answer ? 'answered' : 'open'}`, `${name(e.from)} <span>${verb}</span>`, '', `${quote}${askCard(e, ctx.drafts.get(e.id))}`, false)
   }
@@ -1768,7 +1781,7 @@ const EVENT_ICONS = [
   [/another app already uses it/, 'keyboard'],
   [/terminal/, 'terminal'],
 ]
-const eventIcon = (e) => (e.limit ? 'gauge' : e.schedule ? 'clock' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'clique' ? 'mark' : null))
+const eventIcon = (e) => (e.limit ? 'gauge' : e.spend ? 'coin' : e.schedule ? 'clock' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'clique' ? 'mark' : null))
 // "Rex", "Rex and Noor", "Rex, Noor and Ada", "Rex, Noor and 3 others" (names as HTML)
 const andList = (list) => (list.length > 3 ? `${list.slice(0, 2).join(', ')} and ${list.length - 2} others` : list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0] ?? '')
 
@@ -1851,6 +1864,22 @@ function askCard(e, draft = {}, { queue = false } = {}) {
       <div class="ask-error"></div>
     </div>`
   }
+  // the spend check-in (core/hub.js checkIn): who has spent how much since you last spoke. Its title says it; under it,
+  // each one's part and how long it took. In the queue its creature has just said the title in its own words.
+  if (q.spend) {
+    const s = q.spend
+    const part = (n) => `${esc(shownName(String(n).split('@')[0]))} ${meterText(s.unit, s.by?.[n] ?? 0)}`
+    const took = spanWords((e.ts ?? Date.now()) - s.since)
+    const parts = s.who?.length > 1 ? `${s.who.map(part).join(' · ')} · in ${took}` : `In ${took}`
+    const more = s.at ? `Allows another ${meterText(s.unit, s.at)}, then asks again` : ''
+    return `<div class="ask-card spend" data-ask="${e.id}">
+      <div class="ask-title">${ICONS.coin}<span>${esc(q.title)}</span></div>
+      <div class="ask-detail ask-parts">${parts}</div>
+      <div class="ask-detail">${esc(q.detail ?? '')}</div>
+      <div class="ask-actions"><button class="btn primary" data-answer="allow" title="${esc(more)}">Keep going</button><button class="btn deny" data-answer="deny" title="Drops what is waiting and interrupts the turns still running">Stop</button></div>
+      <div class="ask-error"></div>
+    </div>`
+  }
   // a CLI's "do you trust this folder?" (core/hub.js trustCard): CLIque picks your answer in its terminal for you
   if (q.trust) {
     const cli = { claude: 'Claude Code', codex: 'Codex' }[e.cli] ?? 'It'
@@ -1885,6 +1914,21 @@ function askCard(e, draft = {}, { queue = false } = {}) {
 // What a creature says when it asks you, in its own words: "Can I run npm run build?", the question itself, "I have a
 // plan. Can I go ahead?". The plain title stays on the card under it, for scanning. HTML (a command is code).
 const lowerFirst = (s) => String(s).charAt(0).toLowerCase() + String(s).slice(1)
+// under a minute, 42 min, 1 h 5 min
+const spanWords = (ms) => {
+  const m = Math.round(ms / 60000)
+  return m < 1 ? 'under a minute' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`
+}
+// What a provider's meter reads (core/providers.js), in its unit: "$5.40" for dollars, "5.2M tokens" for tokens...
+const meterText = (unit, v) => (unit === 'usd' ? `$${Number(v).toFixed(2)}` : `${tokenCount(Math.round(v))} tokens`)
+// ...and a value you pick, as a choice reads: "$5", "$2.50", "5M"
+const meterPick = (unit, v) => (unit === 'usd' ? `$${Number.isInteger(v) ? v : Number(v).toFixed(2)}` : tokenCount(v))
+// The spend check-in for one provider, in a few words: "After $5, asks you", "After 5M tokens, tells you", "Off"
+const checkInSays = (state, id) => {
+  const unit = state.providers?.[id]?.meter?.unit
+  const at = state.checkIn?.at?.[id]
+  return !unit || !at ? 'Off' : `After ${meterPick(unit, at)}${unit === 'tokens' ? ' tokens' : ''}, ${state.checkIn.then === 'tell' ? 'tells you' : 'asks you'}`
+}
 function sayLine({ agent, ask }) {
   const q = ask?.ask
   if (!q) return agent.activity ? `I need you in my terminal. I was ${esc(lowerFirst(activityWords(agent.activity)))}.` : 'I need you in my terminal.'
@@ -1906,10 +1950,10 @@ const NEED_VERBS = { permission: 'needs your OK', question: 'has a question', pl
 function needsHTML(needs, expanded, drafts = new Map()) {
   const item = (n) => {
     const { agent: a, ask } = n
-    const verb = ask ? NEED_VERBS[ask.ask?.type] ?? 'needs your OK' : 'is waiting in its terminal'
+    const verb = ask ? (ask.ask?.spend ? 'checks in' : NEED_VERBS[ask.ask?.type] ?? 'needs your OK') : 'is waiting in its terminal'
     const face = `<span class="nq-face">${avatarHTML(a, { size: 40, mood: 'waiting' })}</span>`
     // (an agent tool's card is answered only here: its terminal is just waiting)
-    const term = ask?.ask?.app ? '' : `<button class="icon nq-term" data-needs-term="${esc(a.name)}" title="${esc(`Answer in ${displayName(a)}'s terminal`)}">${ICONS.terminal}</button>`
+    const term = ask?.ask?.app || ask?.ask?.spend ? '' : `<button class="icon nq-term" data-needs-term="${esc(a.name)}" title="${esc(`Answer in ${displayName(a)}'s terminal`)}">${ICONS.terminal}</button>`
     const since = n.since || Date.now()
     const who = `<div class="nq-who"><b>${nameHTML(a)}</b><span class="nq-verb">${verb} · <span class="nq-ago" data-since="${since}">${ago(since)}</span></span>${ask && ask.id !== expanded ? '' : term}</div>`
     const say = `<div class="nq-say">${sayLine(n)}</div>`
@@ -1926,6 +1970,13 @@ function needsHTML(needs, expanded, drafts = new Map()) {
 function askSummary(q, a) {
   const what = q.type === 'question' ? '' : `<span class="ask-what">${esc(q.type === 'plan' ? 'the plan' : q.trust ? shortPath(q.detail) : q.title ?? '')}</span>`
   const mark = (cls, icon) => `<span class="ask-mark ${cls}">${ICONS[icon]}</span>`
+  if (q.spend) {
+    const at = meterText(q.spend.unit, a.used ?? q.spend.used ?? 0)
+    const so = q.spend.who?.length > 1 ? 'they' : 'it'
+    if (a.stale) return `${mark('', 'dash')}<span>${a.done ? 'The work finished before you answered' : 'No longer waiting'}</span><span class="ask-what">${at}</span>`
+    if (!a.allow) return `${mark('no', 'close')}<span>Stopped</span><span class="ask-what">at ${at}</span>`
+    return `${mark('ok', 'check')}<span>${a.spoke ? `You spoke, so ${so} kept going` : a.off ? `Check-in switched off, so ${so} kept going` : 'Kept going'}</span><span class="ask-what">past ${at}</span>`
+  }
   if (a.stale) return `${mark('', 'dash')}<span>No longer waiting</span>${what}`
   if (a.by === 'terminal') return `${mark('', 'keyboard')}<span>${a.handedOver ? 'Handed to its terminal' : 'Answered in the terminal'}</span>${what}`
   if (a.by === 'cli') return `${mark('no', 'close')}<span>Claude Code said no${a.why ? ` (${esc(a.why)})` : ''}</span>${what}`
@@ -2607,7 +2658,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       const view = feedView(feed, agents, open, limit, drafts, { reads, divider: words.length ? null : divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline, channels, channel: convo ? null : channel, threads, threadSeen: (id) => readTo?.[id] })
       shown = new Map(view.items.map((e) => [e.id, e]))
       // (a line others joined, sameEvents, counts them; a usage line turns to "reset" once its window has)
-      let next = view.items.map((e) => e.id + (e.sig ?? '') + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '') + reactsSig(e)).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
+      let next = view.items.map((e) => e.id + (e.sig ?? '') + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.paused ? 'p' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '') + reactsSig(e)).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
       // searching, who's at work right now isn't part of the results
@@ -2624,7 +2675,10 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
         const keep = active && { id: active.closest('[data-ask]').dataset.ask, field: 'note' in active.dataset ? '[data-note]' : `[data-other="${active.dataset.other}"]`, from: active.selectionStart, to: active.selectionEnd }
         const reading = pinned || first || jumpTo ? null : readingAt()
         const aimedAt = jumpTo && placeOf(jumpTo)
+        // (a recording that's playing, a page that's running: carried over as they are, ui/files.js)
+        const live = typeof fxHold === 'function' ? fxHold(list) : null
         list.innerHTML = view.items.length || busy.length ? view.html() : emptyHTML(agents)
+        live?.()
         markWords(list, words)
         // New messages pop in; the ones already on screen stay put.
         for (const e of view.items) {
@@ -3482,6 +3536,37 @@ function appPick(act, state) {
   if (act === 'app:login') clique.call('openAtLogin', !state.app.login.on).catch((err) => oops('Couldn’t change that', err))
   if (act === 'app:check') clique.call('update', 'check').catch((err) => oops('Couldn’t check for updates', err))
   if (act === 'app:restart') clique.call('update', 'restart', null).catch((err) => oops('Couldn’t restart', err))
+}
+
+// ---- notifications: when CLIque may interrupt you (core/notify.js; state.notify) -----------------------------------
+
+// A time as this computer writes it ("8:00", "8:00 AM"), with the day when it isn't today ("Tue 8:00").
+function notifyTime(ms, now = Date.now()) {
+  const d = new Date(ms)
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return d.toDateString() === new Date(now).toDateString() ? time : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`
+}
+// 'HH:MM' the same way
+const notifyClock = (hhmm) => new Date(2026, 0, 1, Number(hhmm.slice(0, 2)), Number(hhmm.slice(3))).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+// What's being kept meanwhile, for a tooltip: "3 are held: you get one summary at 8:00."
+function notifyHeld(n) {
+  if (!n?.quiet) return ''
+  const then = n.until == null ? 'when you turn them back on' : `at ${notifyTime(n.until)}`
+  return n.held ? `${n.held} ${n.held === 1 ? 'is' : 'are'} held: you get one summary ${then}.` : `Anything that comes up is held, and you get one summary ${then}.`
+}
+// Pause notifications, from the menu bar's popover and the dashboard's Notifications sheet: for an hour, until tomorrow
+// morning, until you turn them back on. Paused: turn them back on, or pick another length.
+function pauseMenu(at, n, { schedule = null } = {}) {
+  const until = n?.why === 'pause' ? n.pause?.until : undefined
+  const set = (pause) => clique.call('notifications', { pause }).catch((err) => oops('Couldn’t change notifications', err))
+  return popMenu(at, [
+    ...(n?.why === 'pause' ? [{ label: 'Turn notifications back on', icon: ICONS.bell, act: 'off' }, '-'] : []),
+    { head: 'Pause notifications' },
+    { label: 'For 1 hour', icon: ICONS.bellZ, act: 'hour' },
+    { label: 'Until tomorrow morning', icon: ICONS.bellZ, act: 'morning', hint: n?.morning ? notifyTime(n.morning) : '', on: until != null && until === n?.morning },
+    { label: 'Until I turn them back on', icon: ICONS.bellZ, act: 'manual', on: until === null },
+    ...(schedule ? ['-', { label: 'Schedule…', icon: ICONS.clock, act: 'schedule' }] : []),
+  ], (act) => (act === 'schedule' ? schedule() : set(act)))
 }
 
 // A small pop-up menu (right-click on an agent, the More button): items are { label, icon, act, danger, hint,

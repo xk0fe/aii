@@ -5,7 +5,7 @@
 import './core/migrate-now.js' // first: an older install's folder is moved before anything below reads it
 import { moveUserData } from './core/migrate.js'
 import { movedPath } from './core/home.js'
-import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, powerMonitor, systemPreferences, autoUpdater as systemUpdater } from 'electron'
+import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, powerMonitor, systemPreferences, protocol, autoUpdater as systemUpdater } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -14,11 +14,14 @@ import { fileURLToPath } from 'node:url'
 import qrcode from 'qrcode-generator'
 import { CONFIG, ATTACHMENTS, HOME } from './core/hub.js'
 import { Clique, CACHE } from './core/clique.js'
+import { opens } from './core/attachments.js'
+import { serveSandbox, lockFrames } from './core/sandbox.js'
 import { addresses } from './core/link.js'
 import { Remote } from './core/remote.js'
 import { readPack } from './core/pack.js'
 import { Voice, voiceActions, voiceAudio } from './core/voice.js'
 import { pillWindow } from './core/pill.js'
+import { Calm, morningAfter } from './core/notify.js'
 import { readNotches, hatchOn } from './core/hatch.js'
 import { Permissions, appBundle, bundleIdIn } from './core/permissions.js'
 import { Setup, withSetup, hasAgents } from './core/setup.js'
@@ -47,6 +50,8 @@ let pill // the floating pill's window placement (core/pill.js)
 let notches = [] // where the screens' notches are (core/hatch.js)
 let permissions // what macOS allows this app (core/permissions.js)
 let permWin // the permissions flow, while it's up (ui/permissions.js)
+let calm // when to notify, and with what (core/notify.js)
+const looks = new Map() // what the dashboard and the floating chat have open, as their pages say
 let permPoint // the screen it came up on, as a point on it
 let afterPermissions = null // what comes next once it's gone: on a first launch, the dashboard
 let trayHiddenAt = 0
@@ -126,6 +131,8 @@ async function start() {
   // working while CLIque quits or relaunches with new code.
   // bin/ goes on the agents' PATH, so it has to be a real folder: in an installed CLIque, the one next to app.asar.
   const bin = path.join(dir, 'bin').replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
+  // A page an agent attached runs in a sandbox of its own, never in the chat's page (core/sandbox.js).
+  serveSandbox(protocol, [ATTACHMENTS, CACHE])
   clique = new Clique({ bin, computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
   const checked = setup.check() // meanwhile, in the background
   await clique.start()
@@ -239,7 +246,7 @@ function windowKeys(win, { zoom = false } = {}) {
 }
 
 app.on('window-all-closed', () => {}) // keep living in the menu bar
-app.on('will-quit', () => remote?.stop()) // phones hear CLIque went away, rather than lose it
+app.on('will-quit', () => (remote?.stop(), calm?.stop())) // phones hear CLIque went away, rather than lose it
 // and the computer may sleep again, whatever its agents are doing
 app.on('will-quit', () => {
   quitting = true
@@ -318,16 +325,31 @@ const awake = keeper({
 })
 const keepAwake = awake.check
 
-// The state the windows get: the workspace on screen, what's set up, whether the computer is kept awake, and this app's
+// The state the windows get: the workspace on screen, what's set up, whether the computer is kept awake, when notifications are held (notifyState), and this app's
 // own: its version, an update that's on its way or ready (core/updates.js), and whether it opens at login (null where
 // it can't: running from source).
 const stateNow = (snapshot = clique.snapshot()) => ({
   ...withSetup(snapshot, clique.config.data, setup.status),
+  notify: notifyState(),
   awake: awakeState(awake.decision, { enabled: clique.config.data.keepAwake !== false, pc: MAC ? 'Mac' : 'PC', battery: onBattery }),
   app: { version: app.getVersion(), update: updates?.view() ?? null, login: login?.supported ? { on: login.on } : null },
 })
 
 // ---- windows ---------------------------------------------------------------
+
+// One of CLIque's own files from the chat: in its attachments or its cache of linked computers' files, wherever `..`
+// and links really lead. (A file that's gone is still one of them by its name: the action says it's gone.)
+function ownFile(file) {
+  const real = (p) => {
+    try {
+      return fs.realpathSync(p)
+    } catch {
+      return path.resolve(p)
+    }
+  }
+  const at = real(String(file))
+  return [ATTACHMENTS, CACHE].some((d) => at.startsWith(real(d) + path.sep))
+}
 
 // A window for one of the pages in ui/. The page hears which computer this is from preload.cjs, and your home folder and
 // whether CLIque runs from source from here. One whose page crashed loads it again.
@@ -336,6 +358,7 @@ function page(file, options, query) {
   const win = new BrowserWindow({ show: false, ...options, webPreferences: { preload: path.join(dir, 'preload.cjs'), additionalArguments: args } })
   win.loadFile(path.join(dir, 'ui', file), { query })
   win.webContents.on('will-navigate', (e) => e.preventDefault()) // a file dropped outside a drop zone must not replace the page
+  lockFrames(win.webContents) // and a frame in it (an attached page's sandbox) goes nowhere and opens nothing
   win.webContents.on('render-process-gone', (_e, { reason }) => {
     if (reason === 'clean-exit' || quitting) return
     logLine('page', `${file} ${reason}`)
@@ -408,10 +431,10 @@ let trayTip = ''
 let trayDraws = 0
 let needsBadge = null // [image, words] for the taskbar button, or null
 async function drawTrayIcon(counts) {
-  const { waiting, working, on } = counts
+  const { waiting, working, on, quiet } = counts
   const tone = waiting ? 'need' : working ? 'work' : ''
   const next = `${tone}:${waiting || working}`
-  const tip = waiting ? `${PRODUCT_NAME} · ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? `${PRODUCT_NAME} · ${working} of ${on} at work` : PRODUCT_NAME
+  const tip = `${waiting ? `${PRODUCT_NAME} · ${waiting} need${waiting > 1 ? '' : 's'} you` : working ? `${PRODUCT_NAME} · ${working} of ${on} at work` : PRODUCT_NAME}${quiet ? ` · ${quiet}` : ''}`
   if (tip !== trayTip) tray.setToolTip((trayTip = tip))
   if (next === trayDrawn) return
   trayDrawn = next
@@ -618,6 +641,13 @@ function showDock() {
 // so an agent on another computer (iris@workstation) is handled there. What the UI does lands in the workspace on screen.
 const actions = {
   state: () => stateNow(),
+  // When CLIque may notify you (core/notify.js): notifications({ days, from, to }) is the schedule from the dashboard's
+  // Notifications…, notifications({ pause: 'hour' | 'morning' | 'manual' | 'off' }) the pause from the menu bar.
+  notifications: (patch) => {
+    clique.setNotifications(patch)
+    calm.tick() // a quiet time that just ended gives its summary
+    return notifyState()
+  },
   // The permissions flow: permissions('list', all) what's missing and the hatch to fit, 'look' / 'ask' / 'open' / 'skip'
   // one of them, 'done' puts it away. openPermissions: "Permissions…" in the ⋯ menu.
   permissions: async (op, arg) => {
@@ -677,6 +707,8 @@ const actions = {
   autopilot: (on) => clique.here.setAutopilot(on),
   // The token savers (core/savers.js): savers({ coldStart: false }) turns one off.
   savers: (patch) => clique.setSavers(patch),
+  // The spend check-in (Hub.checkIn), per provider: checkIn({ at: { claude: 5, codex: null }, then: 'ask' | 'tell' }).
+  checkIn: (patch) => clique.setCheckIn(patch),
   // Usage, day by day (core/history.js): what Claude Code and Codex used on this computer, from their own logs. The
   // first ask starts reading them; the Usage view asks again while `reading` says how far along that is.
   history: () => clique.usageHistory(),
@@ -773,7 +805,26 @@ const actions = {
     return ops[op]()
   },
 
-  openFile: (file) => [ATTACHMENTS, CACHE].some((d) => String(movedPath(file)).startsWith(d + path.sep)) && shell.openPath(movedPath(file)),
+  // A file from the chat, in the app the system has for it: only CLIque's attachments and its cache of linked computers'
+  // files, and only what's looked at (a picture, a recording, a page, a document). Anything else an agent attached is
+  // shown in its folder instead: opening a script or an app would run it. -> 'opened', 'shown', or false (not CLIque's file)
+  openFile: async (file) => {
+    file = movedPath(file)
+    if (!ownFile(file)) return false
+    if (!fs.existsSync(file)) throw new Error("That file isn't kept any more.")
+    if (!opens(file)) return shell.showItemInFolder(file), 'shown'
+    const failed = await shell.openPath(file)
+    if (failed) throw new Error(failed)
+    return 'opened'
+  },
+  // ...and where it is, in Finder (Explorer on Windows)
+  showFile: (file) => {
+    file = movedPath(file)
+    if (!ownFile(file)) return false
+    if (!fs.existsSync(file)) throw new Error("That file isn't kept any more.")
+    shell.showItemInFolder(file)
+    return true
+  },
   openUrl: (url) => /^https?:\/\//.test(url) && shell.openExternal(url),
   // A workspace's folder, in Finder (Explorer on Windows): the one config.json has for it, never a path from the page.
   openFolder: async (ws) => {
@@ -1055,11 +1106,16 @@ function wire() {
   clique.on('state', (snapshot) => {
     keepAwake() // first: the state says whether the computer is kept awake
     const state = stateNow(snapshot)
+    calm?.settle() // whoever was answered since: their notification comes down
     if (nativeTheme.themeSource !== state.theme) nativeTheme.themeSource = state.theme
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('state', state)
-    const counts = trayCounts(state)
+    const counts = { ...trayCounts(state), quiet: quietWords(state.notify) }
     if (!MAC) drawTrayIcon(counts).catch((e) => logLine('tray', e?.stack ?? String(e)))
-    else if (trayTitle(counts) !== title) tray.setTitle((title = trayTitle(counts)), { fontType: 'monospacedDigit' })
+    else {
+      if (trayTitle(counts) !== title) tray.setTitle((title = trayTitle(counts)), { fontType: 'monospacedDigit' })
+      const tip = counts.quiet ? `${PRODUCT_NAME} · ${counts.quiet}` : PRODUCT_NAME
+      if (tip !== trayTip) tray.setToolTip((trayTip = tip))
+    }
   })
   clique.changed()
   // plugged in or unplugged: the tray's line says when it's on battery
@@ -1068,25 +1124,71 @@ function wire() {
   // the theme changed (CLIque's, or the system's while CLIque follows it): Windows' window buttons follow the titlebar
   nativeTheme.on('updated', () => !MAC && dash && !dash.isDestroyed() && dash.setTitleBarOverlay(captionColors()))
 
-  // From any workspace: with workspaces, the title says which, and a click puts that one on screen first.
+  // From any workspace: with workspaces, the notification says which, and a click puts that one on screen first.
   // (your accounts' limits are no workspace's)
-  const from = (ws) => (ws && clique.hubs.size > 1 ? `${clique.hubs.get(ws)?.space.name ?? ws} · ` : '')
   const goTo = (ws, focus) => {
     if (ws && ws !== clique.current && clique.hubs.has(ws)) clique.workspaceAction('switch', ws)
     openDashboard(focus)
   }
-  clique.on('alert', (name, text, ws) => {
-    const note = new Notification({ title: `${from(ws)}${name.replace(/\.(\d+)(?=@|$)/, ' (clone $1)')} needs you`, body: text })
-    note.on('click', () => goTo(ws, name))
-    note.show()
+  // What interrupts you is core/notify.js's to decide: held outside your schedule and while paused (one summary after),
+  // nothing for the place you're looking at, agents that ask together as one notification, one that was answered taken
+  // down. The queue, the count up here and the chat get everything either way, and so do your phones (core/remote.js
+  // hears the clique itself).
+  calm = new Calm({
+    prefs: () => clique.config.data.notifications,
+    views: lookingNow,
+    needs: (ws, name) => clique.stillNeeds(ws, name),
+    label: (ws) => (ws && clique.hubs.size > 1 ? clique.hubs.get(ws)?.space.name ?? ws : ''),
+    changed: () => clique.changed(), // the menu bar says "paused", or stops saying it
+    show: (note, wanted) => {
+      const n = new Notification({ title: note.title, body: note.body })
+      n.on('click', () => {
+        calm.gone(n)
+        goTo(note.target.ws, note.target.focus)
+      })
+      // checked once more as the system shows it: quiet time may have begun, or the card been answered, in between
+      n.on('show', () => wanted() || n.close())
+      n.on('close', () => calm.gone(n))
+      n.on('failed', () => calm.gone(n))
+      n.show()
+      return n
+    },
   })
-
+  clique.on('alert', (name, text, ws) => calm.alert(name, text, ws))
   // e.g. "@ada fixed #12": click to check it in the Bugs lane
-  clique.on('notice', ({ title, body, focus, workspace }) => {
-    const note = new Notification({ title: `${from(workspace)}${title}`, body })
-    note.on('click', () => goTo(workspace, focus))
-    note.show()
+  clique.on('notice', (notice) => calm.notice(notice))
+  // What a page has open, for "not while you're looking": { ws, agent, sees, tasks } (core/notify.js lookingAt).
+  ipcMain.on('looking', (e, view) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const key = win === dash ? 'dash' : win === overlay ? 'overlay' : null
+    if (!key) return
+    if (!view || typeof view !== 'object') return void looks.delete(key)
+    looks.set(key, { ws: String(view.ws ?? ''), agent: view.agent ? String(view.agent) : null, sees: Array.isArray(view.sees) ? view.sees.slice(0, 200).map(String) : [], tasks: Boolean(view.tasks) })
   })
+}
+
+// What you're looking at right now: only a window that has the keyboard counts, so a chat left open behind another app
+// still notifies.
+function lookingNow() {
+  const on = (win) => win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()
+  return [on(dash) && looks.get('dash'), on(overlay) && looks.get('overlay')].filter(Boolean)
+}
+
+// { days, from, to, pause, quiet, why, until, held, morning }: the schedule and the pause as saved; whether notifications
+// are held now, why ('pause' | 'schedule') and until when (ms; null: until you turn them back on); how many are being
+// kept; and when "until tomorrow morning" would end.
+function notifyState() {
+  const prefs = clique.notifications
+  return { ...prefs, ...(calm?.view() ?? { quiet: false, why: null, until: null, held: 0 }), morning: morningAfter(prefs) }
+}
+// "notifications paused until 9:00", for the icon's tooltip; '' while they come through.
+function quietWords(n) {
+  if (!n?.quiet) return ''
+  const words = n.why === 'pause' ? 'notifications paused' : 'notifications off'
+  if (n.until == null) return words
+  const d = new Date(n.until)
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return `${words} until ${d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`}`
 }
 
 // Voice input (core/voice.js): the chat's mic button, plus a hotkey that opens the chat and starts listening.

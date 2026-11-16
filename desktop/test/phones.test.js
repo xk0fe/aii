@@ -433,6 +433,17 @@ test('a phone watches a workspace of its own: state without secrets, patches, al
   assert.ok(file.startsWith(ATTACHMENTS + path.sep))
   assert.deepEqual(await phone.call('image', file), png)
   for (const bad of [CONFIG, path.join(ATTACHMENTS, '..', 'config.json'), `${ATTACHMENTS}/../link/phones.json`]) await assert.rejects(phone.call('image', bad), /isn't an image from CLIque/)
+  // what an agent attached is in the same folder (core/attachments.js): a recording, a page or a log never comes down
+  // the phone's connection, whatever a phone asks for by path, nor a picture too big for it
+  for (const name of ['2026-11-16-aaaaaaaa-clip.mp4', '2026-11-16-aaaaaaaa-demo.html', '2026-11-16-aaaaaaaa-run.log']) {
+    fs.writeFileSync(path.join(ATTACHMENTS, name), 'x')
+    await assert.rejects(phone.call('image', path.join(ATTACHMENTS, name)), /isn't an image a phone can show: open it on the computer/)
+  }
+  const big = path.join(ATTACHMENTS, '2026-11-16-aaaaaaaa-huge.png')
+  fs.writeFileSync(big, '')
+  fs.truncateSync(big, 20 * 1024 * 1024 + 1)
+  await assert.rejects(phone.call('image', big), /isn't an image a phone can show/)
+  fs.rmSync(big)
 
   // what a phone can't do
   for (const name of ['removeAgent', 'workspace', 'in', 'exportAgents', 'link', 'toString', '__proto__']) await assert.rejects(phone.call(name, ROOT, 'june'), { message: `"${name}" isn't available on a phone` })
