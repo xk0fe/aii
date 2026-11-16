@@ -94,6 +94,7 @@ A phone watches **one workspace at a time, its own choice**: never the one on th
 | `power` | `ws, name, on` | Turn an agent on or off. |
 | `set` | `ws, name, { yolo?, fast? }` | YOLO and Fast. |
 | `freshStart`, `restart`, `markIdle` | `ws, name` | As in the agent's menu on the Mac. |
+| `stop` | `ws, names, opts?` | Stop: end the turn these agents are in (`names`: one name or a list). They stay on and keep their conversations; what was lined up behind the stopped turn isn't delivered, and one line in the chat says who was stopped. `opts`: `{ channel? }`, the channel it was pressed in, for that line. Replies `{ stopped: [names], dropped }`. An agent shows `canStop: true` while it's in a turn that can be stopped; a Mac without the call refuses it like any unknown call. |
 | `image` | `path` | An image from the chat or a task, as bytes. Only files in CLIque's attachments, or in its cache of linked computers' images. |
 | `saveImage` | `name, type, bytes` | Store a photo the phone attaches; replies with its path on the Mac, for `send` or `task`. |
 | `terminal` | `ws, name, on` | Start (`true`) or stop streaming a terminal. Starting replies `{ data, cols, rows }`: what it printed so far, and the size it was drawn at (a full-screen CLI only replays right at that size). `pty` messages follow. |

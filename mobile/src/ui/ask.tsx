@@ -313,6 +313,7 @@ function PlanCard(props: AskProps & { ask: PlanAsk }) {
 // ---- answered ----
 
 export function answerLine(type: string | undefined, a: Answer, what = ''): { icon: IconName; tone: 'ok' | 'no' | 'quiet'; text: string } {
+  if (a.stopped) return { icon: 'stop', tone: 'quiet', text: 'Stopped before you answered' }
   if (a.stale) return { icon: 'dash', tone: 'quiet', text: 'No longer waiting' }
   if (a.by === 'terminal') return { icon: 'keyboard', tone: 'quiet', text: a.handedOver ? 'Handed to its terminal' : 'Answered in the terminal' }
   if (a.by === 'cli') return { icon: 'close', tone: 'no', text: `Claude Code said no${a.why ? ` (${a.why})` : ''}` }

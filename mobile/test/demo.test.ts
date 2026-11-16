@@ -88,6 +88,18 @@ describe('the demo answers like a computer would', () => {
   })
 })
 
+describe('Stop in the demo', () => {
+  test('stops an agent at work: it stays on, is free, and one line says so; a free one has nothing to stop', async () => {
+    const demo = new DemoClient()
+    const ada = () => demo.getSnapshot().state!.agents.find((a) => a.name === 'Ada')!
+    expect(ada()).toMatchObject({ status: 'working', canStop: true })
+    await expect(demo.stopAgents(['Ada', 'June'])).resolves.toEqual({ stopped: ['Ada'], dropped: 0 })
+    expect(ada()).toMatchObject({ status: 'idle', on: true, canStop: false })
+    expect(demo.getSnapshot().state!.feed.at(-1)).toMatchObject({ kind: 'event', from: 'clique', stop: true, about: ['Ada'], text: 'you stopped @Ada' })
+    demo.stop()
+  })
+})
+
 describe('switches in the demo', () => {
   test('turned on, an agent starts in its own workspace, wherever you look meanwhile', async () => {
     jest.useFakeTimers()

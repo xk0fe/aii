@@ -365,7 +365,7 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
   if (e.kind === 'rule') return <RuleLine e={e} c={c} />
   if (e.kind === 'event')
     return (
-      <Quiet c={c} icon={e.fresh ? 'fresh' : 'handoff'}>
+      <Quiet c={c} icon={e.fresh ? 'fresh' : e.stop ? 'stop' : 'handoff'}>
         <Text style={[styles.sysText, { color: t.fg2 }]}>
           {e.from && e.from !== 'clique' ? (
             <>
@@ -397,6 +397,7 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
         ) : null}
         {e.auto ? <Text style={{ color: t.fg3 }}> · Auto picked</Text> : null}
         {e.queued ? <Text style={{ color: t.fg3 }}> · queued</Text> : null}
+        {e.stopped ? <Text style={{ color: t.fg3 }}> · not delivered</Text> : null}
         {e.fresh ? <Text style={{ color: t.accent }}> · new conversation</Text> : null}
       </>
     )

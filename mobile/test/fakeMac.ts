@@ -216,6 +216,12 @@ export class FakeMac {
       this.change(ws, { ...state, feed: [...state.feed, { id: `m${state.feed.length + 1}`, ts: Date.now(), kind: 'msg', from: 'you', to: to || 'Ada', text }] })
       return reply(`sent to @${to || 'Ada'}\n`)
     }
+    if (name === 'stop') {
+      const [, names] = args
+      const stopped = state.agents.filter((a) => [].concat(names).includes(a.name as never) && a.canStop).map((a) => a.name)
+      this.change(ws, { ...state, agents: state.agents.map((a) => (stopped.includes(a.name) ? { ...a, status: 'idle', canStop: false } : a)) })
+      return reply({ stopped, dropped: 0 })
+    }
     return error(`"${name}" isn't available on a phone`)
   }
 

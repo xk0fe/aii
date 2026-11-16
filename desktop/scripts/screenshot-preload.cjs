@@ -700,14 +700,48 @@ function voiceCall(action) {
   }
 }
 window.__cliqueFit = null
-window.__cliqueEmit = (channel, ...args) => listeners[channel]?.forEach((fn) => fn(...args))
+// like the hub's snapshot: an agent in a turn (at work, or waiting on you mid-turn, not on whether to trust its folder)
+// can be stopped
+const canStop = (s) => {
+  for (const a of s?.agents ?? []) {
+    const trust = (s.feed ?? []).some((e) => e.kind === 'ask' && e.from === a.name && e.ask?.trust && !e.answer)
+    if (a.on !== false && (a.status === 'working' || a.status === 'waiting') && !trust && !a.oldClique) a.canStop = true
+    else delete a.canStop
+  }
+  return s
+}
+window.__cliqueEmit = (channel, ...args) => {
+  if (channel === 'state') canStop(args[0])
+  listeners[channel]?.forEach((fn) => fn(...args))
+}
 window.__cliqueState = state
 window.clique = {
   platform: PLATFORM,
   home: HOME,
   dev: QUERY.get('dev') === '1',
   call: async (action, ...args) => {
-    if (action === 'state') return state
+    if (action === 'state') return canStop(state)
+    // Stop, as the hub does it: their turns end (they stay on), what waited for them isn't delivered, their open
+    // questions close, and one line says who you stopped
+    if (action === 'stop') {
+      const [names, opts = {}] = args
+      const stopped = state.agents.filter((a) => [names].flat().includes(a.name) && a.canStop)
+      let dropped = 0
+      for (const a of stopped) {
+        Object.assign(a, { status: 'idle', since: Date.now(), activity: '', subs: [], queue: 0, waitingOn: [] })
+        delete a.thread
+        for (const e of state.feed) {
+          if (e.kind === 'ask' && e.from === a.name && !e.answer) e.answer = { by: 'you', stopped: true, at: Date.now() }
+          if (e.kind === 'msg' && e.to === a.name && e.queued) (Object.assign(e, { queued: false, dropped: true, stopped: true }), (dropped += 1))
+        }
+      }
+      if (!stopped.length) return { stopped: [], dropped: 0 }
+      const who = stopped.map((a) => `@${a.name}`)
+      const left = dropped ? `. ${dropped === 1 ? 'A message' : `${dropped} messages`} waiting for ${stopped.length > 1 ? 'them' : 'it'} ${dropped === 1 ? "wasn't" : "weren't"} delivered` : ''
+      state.feed.push({ id: `stop${Date.now()}`, kind: 'event', from: 'clique', stop: true, about: stopped.map((a) => a.name), ts: Date.now(), text: `you stopped ${who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1)}` : who[0]}${left}`, ...(opts.channel && opts.channel !== 'general' && { channel: opts.channel }) })
+      emit()
+      return { stopped: stopped.map((a) => a.name), dropped }
+    }
     // the permissions flow: ?fixture=<a step>:<its state> shows that one first (ui/permissions.js)
     if (action === 'permissions') {
       const [id, state] = (FIXTURE ?? 'notifications:ask').split(':')

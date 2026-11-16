@@ -3,7 +3,7 @@
 // or compact (compact by default once the clique outgrows a screen), or as a Stats table. Click a card to open its
 // sheet: who it is on the left (creature, name, area, a few facts), everything you can set on the right, in four
 // tabs. "Select" (in the header's ⋯) turns on bulk mode to change many agents at once.
-/* global glowBedHTML, reduceMotion, DUR, EASE, shownName, pageHead, markSVG, powerSwitch, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, clique, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, cliqueGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
+/* global stopButton, glowBedHTML, reduceMotion, DUR, EASE, shownName, pageHead, markSVG, powerSwitch, patchSVG, firstRoomHTML, poseOf, statusWord, askTypes, brainWords, helpersText, activityWords, clique, store, esc, statusClass, nameHTML, clonesOf, cloneTag, displayName, contextRing, contextTip, ctxLevel, usageLine, tokenCount, plural, money, spentText, linesText, spendLine, spendTip, SPEND_NOTE, avatarHTML, avatarOf, colorOf, randomAvatar, statusText, mountAttach, morph, segmented, bounce, celebrate, duration, levelOf, ago, cliqueGroups, grouped, popMenu, PARTS, COLORS, ICONS, wsTile, hasWorkspaces, shortPath, needsYou, needText, runningSubs, brainShort, brainLabel, keys, commandKey, THIS_COMPUTER, tildePath, oops, errorLine */
 
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
@@ -109,7 +109,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const ask = asksByName.get(a.name)
     const cls = !a.on ? 'off' : a.status === 'waiting' ? 'needs' : a.status === 'working' && !a.waitingOn?.length ? 'working' : a.status === 'starting' ? 'starting' : a.status === 'stopped' ? 'stopped' : 'idle'
     const since = a.on && (a.status === 'working' || a.status === 'waiting') && a.since ? ago(a.since) : ''
-    return `<span class="c-status ${cls === 'needs' ? 'needs-text' : ''}" title="${esc(statusText(a))}"><i class="dot ${cls}"></i><span>${esc(statusWord(a, ask))}</span>${since && since !== 'just now' ? `<span class="t">${since}</span>` : ''}</span>`
+    return `<span class="c-status ${cls === 'needs' ? 'needs-text' : ''}" title="${esc(statusText(a))}"><i class="dot ${cls}"></i><span>${esc(statusWord(a, ask))}</span>${since && since !== 'just now' ? `<span class="t">${since}</span>` : ''}${stopButton(a, 'c-stop')}</span>`
   }
 
   function cardHTML(a) {
@@ -155,7 +155,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     return `<div class="pcard mini ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, brainWords(a, state.providers), what?.tip].filter(Boolean).join('\n'))}" role="button" tabindex="0" aria-label="${esc(`${a.seed ?? a.name}: ${said}`)}">
       <span class="pc-name"><b>${esc(shownName(a.seed ?? a.name))}</b>${a.yolo ? '<i class="tag">YOLO</i>' : ''}</span>
       <span class="pc-power">${powerSwitch(a)}</span>
-      <span class="pc-line ${cls === 'needs' ? 'needs-text' : ''}"><i class="dot ${cls}"></i><span>${esc(said)}</span></span>
+      <span class="pc-line ${cls === 'needs' ? 'needs-text' : ''}"><i class="dot ${cls}"></i><span>${esc(said)}</span>${stopButton(a, 'c-stop')}</span>
       <span class="pc-tags">${esc(brainWords(a, state.providers, { short: true }))}${subs.length ? ` · ${helpersText(a)}` : ''}${clones ? ` · ${plural(clones, 'clone')}` : ''}</span>
       <span class="pc-av">${avatarHTML(a, { size: 56 })}</span>
       <span class="pick pc-check">${ICONS.check}</span>

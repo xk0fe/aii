@@ -29,6 +29,7 @@ export type Agent = {
   convo?: Convo | null
   contextLimit?: number | null
   freshPending?: boolean
+  canStop?: boolean // in a turn that Stop can end (a Mac without Stop never says so)
   ticket?: number | string | null
   shared?: boolean
   clones?: number
@@ -68,6 +69,7 @@ export type Answer = {
   note?: string
   answers?: Record<string, string>
   stale?: boolean
+  stopped?: boolean // you stopped the agent before answering
   handedOver?: boolean
   why?: string
   failed?: string // an agent tool you allowed that didn't work: why
@@ -99,6 +101,9 @@ export type FeedEntry = {
   held?: boolean
   queued?: boolean
   dropped?: boolean
+  stopped?: boolean // not delivered: you stopped the agent it waited for
+  stop?: boolean // CLIque's line "you stopped …"
+  about?: string[] // who a line of CLIque's is about
   sendId?: string
   ticket?: number | string
   title?: string

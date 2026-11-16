@@ -105,7 +105,9 @@ export class DemoClient implements CliqueLink {
     this.spaces = this.spaces.map((sp) => (sp.id === id ? { ...sp, state: fn(sp.state) } : sp))
   }
   private agent(id: string, name: string, patch: Partial<Agent>) {
-    this.change(id, (s) => ({ ...s, agents: s.agents.map((a) => (a.name === name ? { ...a, ...patch } : a)) }))
+    // (as the Mac says it: an agent in a turn can be stopped)
+    const turn = (a: Agent) => ({ ...a, canStop: a.on && (a.status === 'working' || a.status === 'waiting') })
+    this.change(id, (s) => ({ ...s, agents: s.agents.map((a) => (a.name === name ? turn({ ...a, ...patch }) : a)) }))
   }
   private post(id: string, entry: Omit<FeedEntry, 'id' | 'ts'>) {
     const e = { id: `d${this.nextId++}`, ts: Date.now(), ...entry } as FeedEntry
@@ -306,5 +308,18 @@ export class DemoClient implements CliqueLink {
     }
     if (action === 'markIdle') this.agent(id, name, { status: 'idle', since: Date.now(), activity: '' })
     this.emit()
+  }
+
+  // Stop, as the Mac does it: their turns end, they stay on, and one line says who you stopped
+  async stopAgents(names: string[], opts?: { channel?: string }) {
+    const id = this.ws
+    const stopped = this.space(id).state.agents.filter((a) => names.includes(a.name) && a.canStop).map((a) => a.name)
+    for (const name of stopped) this.agent(id, name, { status: 'idle', since: Date.now(), activity: '' })
+    if (stopped.length) {
+      const who = stopped.map((n) => `@${n}`)
+      this.post(id, { kind: 'event', from: 'clique', stop: true, about: stopped, text: `you stopped ${who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1)}` : who[0]}`, ...(opts?.channel && opts.channel !== 'general' && { channel: opts.channel }) })
+    }
+    this.emit()
+    return { stopped, dropped: 0 }
   }
 }

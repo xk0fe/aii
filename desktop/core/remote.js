@@ -361,6 +361,8 @@ class Session {
       freshStart: (ws, name) => clique.at(name, 'freshStart', [], hub(ws)),
       restart: (ws, name) => clique.at(name, 'restart', [], hub(ws)),
       markIdle: (ws, name) => clique.at(name, 'markIdle', [], hub(ws)),
+      // Stop: end the turn these agents are in (one name or several). They stay on.
+      stop: (ws, names, opts) => clique.stopTurns([].concat(names ?? []).map(String).slice(0, 50), { channel: opts?.channel == null ? undefined : String(opts.channel) }, hub(ws)),
       image: (file) => image(file),
       saveImage: (name, type, bytes) => {
         if (!(bytes instanceof Uint8Array)) throw new Error('send the image as bytes')

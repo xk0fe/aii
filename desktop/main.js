@@ -639,6 +639,8 @@ const actions = {
   removeAgent: (name, opts) => clique.at(name, 'removeAgent', [opts]),
   restart: (name) => clique.at(name, 'restart'),
   markIdle: (name) => clique.at(name, 'markIdle'),
+  // Stop: end the turn these agents are in (they stay on). stop(['ada', 'rex@workstation'], { channel })
+  stop: (names, opts) => clique.stopTurns(names, opts),
   dismiss: (name) => clique.at(name, 'dismiss'), // send a clone away
   resize: (name, cols, rows) => clique.at(name, 'resize', [cols, rows]),
   buffer: (name) => clique.at(name, 'buffer'),

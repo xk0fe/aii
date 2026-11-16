@@ -12,7 +12,7 @@ export const SALT = 'clique-phone-v1'
 export const CLOSE = { notPaired: 4003, version: 4004, noCode: 4005, badFrame: 4006, tooMany: 4008 }
 
 // Everything a phone may ask of the Mac; the Mac refuses anything else.
-export const CALLS = ['watch', 'send', 'answer', 'approve', 'drop', 'read', 'task', 'power', 'set', 'freshStart', 'restart', 'markIdle', 'image', 'saveImage', 'terminal', 'input', 'channel']
+export const CALLS = ['watch', 'send', 'answer', 'approve', 'drop', 'read', 'task', 'power', 'set', 'freshStart', 'restart', 'markIdle', 'stop', 'image', 'saveImage', 'terminal', 'input', 'channel']
 export const TASK_OPS = ['file', 'dispatch', 'accept', 'sendBack', 'note', 'move']
 // what the `channel` call does: make one, change its name, brief or members, delete it (never #general)
 export const CHANNEL_OPS = ['create', 'edit', 'remove']

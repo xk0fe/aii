@@ -46,7 +46,7 @@ export function makeDemo(now = Date.now()): Space[] {
   const helper = (id: string, description: string, started: number): Sub => ({ id, type: 'general-purpose', description, started: t(started), ended: null, tools: 4, activity: 'Read api/orders.ts' })
 
   const ada = agent({
-    name: 'Ada', area: 'Backend developer', provider: 'claude', model: 'opus', effort: 'high', status: 'working', since: t(3), activity: 'Edit · api/orders.ts', convo: ctx(38, 200000, 6), channel: 'ship',
+    name: 'Ada', area: 'Backend developer', provider: 'claude', model: 'opus', effort: 'high', status: 'working', canStop: true, since: t(3), activity: 'Edit · api/orders.ts', convo: ctx(38, 200000, 6), channel: 'ship',
     subs: [helper('h1', 'Find every place totals are rounded', 2), helper('h2', 'Check the coupon tests', 1)],
     avatar: { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false },
   })
@@ -59,7 +59,7 @@ export function makeDemo(now = Date.now()): Space[] {
     avatar: { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true },
   })
   const theo = agent({
-    name: 'Theo', area: 'Tester', provider: 'codex', effort: 'high', status: 'working', since: t(12), activity: 'Running the checkout tests', convo: ctx(44, 258400, 5), channel: 'ship',
+    name: 'Theo', area: 'Tester', provider: 'codex', effort: 'high', status: 'working', canStop: true, since: t(12), activity: 'Running the checkout tests', convo: ctx(44, 258400, 5), channel: 'ship',
     avatar: { body: 'frog', color: 'lime', eyes: 'googly', mouth: 'grin', hat: 'none', cheeks: false },
   })
   const june = agent({
@@ -98,7 +98,7 @@ export function makeDemo(now = Date.now()): Space[] {
   const reads = { since: 0, agents: { Milo: t(7.5) } }
 
   const docsAgents = [
-    { ...june, shared: true, status: 'working', since: t(4), activity: 'Edit · docs/release-notes.md' },
+    { ...june, shared: true, status: 'working', canStop: true, since: t(4), activity: 'Edit · docs/release-notes.md' },
     { ...ada, shared: true, status: 'idle', since: t(20), activity: '', subs: [], channel: undefined },
   ]
   const docs: FeedEntry[] = [
