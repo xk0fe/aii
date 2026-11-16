@@ -11,6 +11,7 @@ import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt, quickAsk } from './promptgen.js'
 import { pathKey, resolveCommand, which, withTools } from './launch.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, quickTriagePrompt, readTriage, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
+import { Schedules, inRepo } from './schedules.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
 import { asksSomething, echoOf, familyOf as familyName, forClients, gistOf, inThread, nothingNew, stampAll, threadDigest, threadFields } from './threads.js'
@@ -180,6 +181,7 @@ export class Hub extends EventEmitter {
     this.turnedAway = new Set() // "who:file" told this turn that a file is taken, so the chat says it once
     this.saving = Promise.resolve() // feed.jsonl appends, one after another (an answer must land after its card)
     this.tickets = new Tickets(this.at('tickets.json'))
+    this.schedules = new Schedules(this.at('schedules.json')) // messages to send later, or on a repeat (core/schedules.js)
     this.stalls = new Map() // task id -> { at, told }: CLIque reminded its agent at `at`, or (told) called you
     // Each agent's current conversation: when it started, tasks in it, compactions, and how full it is.
     this.convos = readJSON(this.at('conversations.json')) ?? {}
@@ -627,6 +629,44 @@ export class Hub extends EventEmitter {
     this.saveConvos()
     for (const t of this.tickets.all) for (const k of ['owner', 'fixer']) if (t[k] === from) t[k] = to
     this.tickets.save()
+    this.schedules.rename(from, to)
+  }
+
+  // ---- scheduled messages (core/schedules.js): what a run of one is doing now --------------------------------------
+
+  // Is a message still being worked on? Waiting in a queue or for your OK, in the turn of an agent that's working or
+  // waiting on you, or handed on to a teammate who is.
+  busyWith(msg, depth = 0) {
+    if (!msg || msg.dropped) return false
+    // (waiting in a queue only while there's still someone to take it: an agent removed with it queued never will)
+    if (msg.held || (msg.queued && Boolean(this.agents.get(msg.to) ?? this.agents.get(this.baseOf(msg.to))))) return true
+    for (const a of this.agents.values()) {
+      if (!['working', 'waiting', 'starting'].includes(a.status)) continue
+      const has = [...(a.inbox ?? []), ...(a.serving ?? []), ...(a.expect?.msgs ?? []), ...(a.steering?.msgs ?? [])].some((m) => m?.id === msg.id)
+      if (has || a.current === msg.id) return true
+    }
+    if (depth >= 4) return false
+    return this.feed.some((e) => e.re === msg.id && e.kind === 'msg' && e.from !== 'you' && e.ts >= msg.ts && this.busyWith(e, depth + 1))
+  }
+
+  // Is a scheduled message's last run (the one sent at `at`) still going here?
+  scheduleBusy(id, at) {
+    return this.feed.some((e) => e.scheduled?.id === id && e.scheduled.at === at && this.busyWith(e))
+  }
+
+  // Is this agent's turn part of a scheduled message's run? The message itself, or a hand-off that came of it.
+  inScheduledRun(name) {
+    const a = this.agents.get(name)
+    if (!a) return false
+    const from = [...(a.serving ?? []), a.current && this.feed.findLast((e) => e.id === a.current)].filter(Boolean)
+    for (let m of from) {
+      for (let i = 0; m && i < 12; i++) {
+        // (or a task that a scheduled run added: whoever picks it up is still on that run's errand)
+        if (m.scheduled || (m.ticket !== undefined && this.tickets.all.find((t) => t.id === m.ticket)?.scheduled)) return true
+        m = m.re ? this.feed.findLast((e) => e.id === m.re) : null
+      }
+    }
+    return false
   }
 
   launchKey(a) {
@@ -2438,7 +2478,8 @@ export class Hub extends EventEmitter {
   // ({ from, text }): the same for a message that lives on another computer, which can only be quoted.
   // From a linked computer, `ask` is a question asked there (its id there: the answer goes back with it), and
   // `answers` the answer to one asked here.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread }) {
+  // `scheduled` ({ id, at, late? }): one of your scheduled messages going out (core/schedules.js); the chat marks it.
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread, scheduled }) {
     text = String(text ?? '').trim()
     images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -2455,7 +2496,8 @@ export class Hub extends EventEmitter {
     const away = all.filter((n) => n.includes('@'))
     const names = all.filter((n) => !n.includes('@'))
     if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and CLIque Link isn't on`)
-    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }) }
+    const sched = from === 'you' && scheduled && typeof scheduled === 'object' && typeof scheduled.id === 'string' ? { id: scheduled.id.slice(0, 16), at: Number(scheduled.at) || Date.now(), ...(Number(scheduled.late) > 0 && { late: Number(scheduled.late) }) } : null
+    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }), ...(sched && { scheduled: sched }) }
     // the channel it's said in: the one you said it in, or the one an agent's working in. One from another computer that
     // this workspace doesn't have keeps its name and brief, so its agents get the brief all the same.
     const remote = channelName && channel !== GENERAL && /^[a-z0-9][a-z0-9-]{0,39}$/.test(String(channel))
@@ -3504,6 +3546,7 @@ export class Hub extends EventEmitter {
       case 'add': {
         const owner = flags.owner ? this.taskOwner(flags.owner, by) : null
         const n = this.tickets.add({ title: words[0], body: flags.details ?? words.slice(1).join(' '), by, owner, severity: priorityOf(flags.priority), kind: flags.kind ?? 'task' })
+        if (this.inScheduledRun(from)) (n.scheduled = true), this.tickets.save() // (see inScheduledRun)
         this.postTask(n, from, 'filed')
         return `added #${n.id}\n`
       }
@@ -4218,6 +4261,8 @@ export class Hub extends EventEmitter {
       })),
       feed: withOpenAsks(forClients(this.feed), this.asks),
       channels: this.space.channels,
+      // messages to send later or on a repeat; repo: the workspace's folder is in a git repo ("only when it changed")
+      schedules: { list: this.schedules.view(), repo: inRepo(this.space.folder) },
       reads: this.reads,
       spend: this.spendNow(),
       // { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
