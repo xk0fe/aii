@@ -7,6 +7,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { inBracket, pasteable } from './framing.js'
 
 export const FILE_MAX = 100 * 1024 * 1024 // one file
 export const FILES_MAX = 10 // one message
@@ -257,6 +258,11 @@ export function safeName(name) {
   return `${stem || 'file'}${ext.toLowerCase()}`
 }
 
+// A file's name as the chat, a phone and other agents' CLIs get it. A name is anybody's text (a download, a page's
+// title): no line breaks, escape sequences or other control characters in it, which typed into a terminal could end a
+// paste early (core/framing.js pasteable), and not endless.
+export const shownName = (name) => pasteable(name).replace(/\s+/g, ' ').trim().slice(0, 120) || 'file'
+
 // A file by the name an agent gave: as typed when it's a whole path, else in the folder the agent ran `clique` in.
 // (Git Bash on Windows says C:\Users\you as /c/Users/you, and bin/clique passes on what it's given.)
 export function resolveIn(cwd, name, { platform = process.platform, p = platform === 'win32' ? path.win32 : path } = {}) {
@@ -296,7 +302,7 @@ export async function store(files, dir, { now = new Date() } = {}) {
       await fs.promises.copyFile(f.from, to)
       out.push({ path: to })
       const size = (await fs.promises.stat(to)).size
-      Object.assign(out.at(-1), { name: f.name.slice(0, 120), ...probe(to, size), size })
+      Object.assign(out.at(-1), { name: shownName(f.name), ...probe(to, size), size })
     }
   } catch (e) {
     for (const f of out) fs.rmSync(f.path, { force: true })
@@ -345,6 +351,14 @@ export function forPhone(e) {
   const files = e.files.map(({ name, kind, size, w, h, dur }) => ({ name, kind, size, ...(w && h && { w, h }), ...(dur && { dur }) }))
   const said = `Attached ${files.length === 1 ? files[0].name : `${files.length} files`} (on the computer)`
   return { ...e, files, caption: e.text ?? '', text: e.text ? `${e.text}\n\n${said}` : said }
+}
+
+// A message's files in a few words, for one of CLIque's brackets in an agent's CLI ("replying to … (with shot.png and 2
+// more files)"): the names can't close the bracket they're in or pass for one of CLIque's own (core/framing.js).
+export function filesInBracket(files) {
+  if (!files?.length) return ''
+  const first = inBracket(shownName(files[0].name)).slice(0, 60)
+  return files.length === 1 ? first : `${first} and ${files.length - 1} more file${files.length === 2 ? '' : 's'}`
 }
 
 export const ATTACH_USAGE = `usage: clique attach <file> ... [--caption "what it shows"]

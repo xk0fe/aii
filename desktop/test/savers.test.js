@@ -109,7 +109,7 @@ test('coldStart: a message to a big conversation gone cold starts a new one, wit
   assert.deepEqual(typedTo('june'), []) // nothing typed into the old one
   up('june')
   const [text] = typedTo('june')
-  assert.match(text, /^\[clique\] This is a new conversation\. Your last one sat idle 2 hours, so CLIque started fresh rather than have you re-read all of it\. The last thing you said in it: "Should I migrate the tests too\?"\n\n\[from @abe: it's yours now, no need to report back\] add rate limiting to the api$/)
+  assert.match(text, /^\[clique\] This is a new conversation\. Your last one sat idle 2 hours, so CLIque started fresh rather than have you re-read all of it\. The last thing you said in it: "Should I migrate the tests too\?"\n\n\[from @abe: it's yours now, no need to report back\]\n<relayed from="abe">\nadd rate limiting to the api\n<\/relayed>$/)
   assert.deepEqual(ledger('coldStart').on, { n: 1, tokens: 460000 }) // a 1-hour cache write costs 2x
 })
 
@@ -117,7 +117,7 @@ test('coldStart off: the message picks the cold conversation up as before, and t
   on('off')
   conversation('june', 230000, 2 * HOUR)
   hub.send({ from: 'abe', to: 'june', text: 'add rate limiting to the api' })
-  assert.deepEqual(typedTo('june'), ["[from @abe: it's yours now, no need to report back] add rate limiting to the api"])
+  assert.deepEqual(typedTo('june'), ["[from @abe: it's yours now, no need to report back]\n<relayed from=\"abe\">\nadd rate limiting to the api\n</relayed>"])
   hub.pump(hub.agents.get('june')) // looked at again: counted once
   assert.deepEqual(ledger('coldStart').off, { n: 1, tokens: 460000 })
   assert.equal(runner.starts.length, 0)
@@ -473,7 +473,7 @@ test('`clique send <name> --new "…"` says it is new work', async () => {
   handOff()
   const server = await serve(hub)
   const post = (route, body) => new Promise((resolve, reject) => {
-    const req = http.request({ port: server.address().port, method: 'POST', path: route, headers: { 'x-clique': hub.token } }, (res) => {
+    const req = http.request({ port: server.address().port, method: 'POST', path: route, headers: { 'x-clique': /from=june/.test(route) ? hub.keyOf('june') : hub.token } }, (res) => { // june's own key, or yours
       let out = ''
       res.on('data', (c) => (out += c))
       res.on('end', () => resolve({ status: res.statusCode, out }))

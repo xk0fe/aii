@@ -11,6 +11,7 @@ import { providersFrom, expandEnv, discoverCodex } from './providers.js'
 import { generatePrompt, quickAsk } from './promptgen.js'
 import { pathKey, resolveCommand, which, withTools } from './launch.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, quickTriagePrompt, readTriage, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
+import { Schedules, inRepo } from './schedules.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
 import { asksSomething, echoOf, familyOf as familyName, forClients, gistOf, inThread, nothingNew, stampAll, threadDigest, threadFields } from './threads.js'
@@ -20,10 +21,12 @@ import { HOME, movedPath, movedImages } from './home.js'
 import { ROOT, GENERAL, channelName, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 import { CANVAS_HELP, CANVAS_LINES, asCanvas, canvasLines, canvasTitle, typedLines, withCanvas } from './canvas.js'
-import { ATTACH_USAGE, CAPTION_MAX, check as checkFiles, store as storeFiles, makeRoom, sizeWords, timeWords } from './attachments.js'
+import { ATTACH_USAGE, CAPTION_MAX, check as checkFiles, store as storeFiles, makeRoom, filesInBracket, sizeWords, timeWords } from './attachments.js'
 import { REACT_MAX, REACT_USAGE, REACT_WINDOW, emojiOf, justAnAck, saidWith } from './reactions.js'
 import { REACTIONS_MAX } from 'clique-shared/protocol.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
+import { defused, inBracket, pasteable, relayed } from './framing.js'
+import { agentKey } from './keys.js'
 
 export { HOME } // ~/.clique (core/home.js)
 export const CONFIG = path.join(HOME, 'config.json')
@@ -47,7 +50,7 @@ const RUNTIME = 'runtime.json'
 const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
   'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'promptAt', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks',
-  'trustAsk', 'trustAt']
+  'trustAsk', 'trustAt', 'keyed']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 // An image saved with this computer's attachments, whichever workspace it's for. -> where
@@ -185,6 +188,7 @@ export class Hub extends EventEmitter {
     this.turnedAway = new Set() // "who:file" told this turn that a file is taken, so the chat says it once
     this.saving = Promise.resolve() // feed.jsonl appends, one after another (an answer must land after its card)
     this.tickets = new Tickets(this.at('tickets.json'))
+    this.schedules = new Schedules(this.at('schedules.json')) // messages to send later, or on a repeat (core/schedules.js)
     this.stalls = new Map() // task id -> { at, told }: CLIque reminded its agent at `at`, or (told) called you
     // Each agent's current conversation: when it started, tasks in it, compactions, and how full it is.
     this.convos = readJSON(this.at('conversations.json')) ?? {}
@@ -632,6 +636,44 @@ export class Hub extends EventEmitter {
     this.saveConvos()
     for (const t of this.tickets.all) for (const k of ['owner', 'fixer']) if (t[k] === from) t[k] = to
     this.tickets.save()
+    this.schedules.rename(from, to)
+  }
+
+  // ---- scheduled messages (core/schedules.js): what a run of one is doing now --------------------------------------
+
+  // Is a message still being worked on? Waiting in a queue or for your OK, in the turn of an agent that's working or
+  // waiting on you, or handed on to a teammate who is.
+  busyWith(msg, depth = 0) {
+    if (!msg || msg.dropped) return false
+    // (waiting in a queue only while there's still someone to take it: an agent removed with it queued never will)
+    if (msg.held || (msg.queued && Boolean(this.agents.get(msg.to) ?? this.agents.get(this.baseOf(msg.to))))) return true
+    for (const a of this.agents.values()) {
+      if (!['working', 'waiting', 'starting'].includes(a.status)) continue
+      const has = [...(a.inbox ?? []), ...(a.serving ?? []), ...(a.expect?.msgs ?? []), ...(a.steering?.msgs ?? [])].some((m) => m?.id === msg.id)
+      if (has || a.current === msg.id) return true
+    }
+    if (depth >= 4) return false
+    return this.feed.some((e) => e.re === msg.id && e.kind === 'msg' && e.from !== 'you' && e.ts >= msg.ts && this.busyWith(e, depth + 1))
+  }
+
+  // Is a scheduled message's last run (the one sent at `at`) still going here?
+  scheduleBusy(id, at) {
+    return this.feed.some((e) => e.scheduled?.id === id && e.scheduled.at === at && this.busyWith(e))
+  }
+
+  // Is this agent's turn part of a scheduled message's run? The message itself, or a hand-off that came of it.
+  inScheduledRun(name) {
+    const a = this.agents.get(name)
+    if (!a) return false
+    const from = [...(a.serving ?? []), a.current && this.feed.findLast((e) => e.id === a.current)].filter(Boolean)
+    for (let m of from) {
+      for (let i = 0; m && i < 12; i++) {
+        // (or a task that a scheduled run added: whoever picks it up is still on that run's errand)
+        if (m.scheduled || (m.ticket !== undefined && this.tickets.all.find((t) => t.id === m.ticket)?.scheduled)) return true
+        m = m.re ? this.feed.findLast((e) => e.id === m.re) : null
+      }
+    }
+    return false
   }
 
   launchKey(a) {
@@ -746,8 +788,12 @@ export class Hub extends EventEmitter {
       // for them (bin/clique.mjs): never ELECTRON_RUN_AS_NODE itself, which would make every Electron app the agent starts
       // run as Node.
       const env = {
-        ...expandEnv(provider.env), ...extraEnv, ...withTools(process.env, this.bin), CLIQUE_NODE: process.execPath, CLIQUE_AGENT: a.name, CLIQUE_URL: this.url, CLIQUE_TOKEN: this.token, CLIQUE_HOME: HOME,
+        ...expandEnv(provider.env), ...extraEnv, ...withTools(process.env, this.bin), CLIQUE_NODE: process.execPath, CLIQUE_AGENT: a.name, CLIQUE_URL: this.url, CLIQUE_BADGE: this.keyOf(a.name), CLIQUE_HOME: HOME,
         CLIQUE_GROUPS: groups, ...(provider.cli === 'claude' && shellPrefix(this.bin)),
+        // CLIQUE_BADGE: its own key for CLIque's server, which says who's calling (core/keys.js). Not the token every
+        // caller used to share, which is no longer in an agent's environment. (Named so that no CLI takes it for a
+        // credential of yours and keeps it from the commands the agent runs: Codex's shell environment policy can leave
+        // out names with KEY, SECRET or TOKEN in them.)
         // which workspace its hooks and `clique` talk to: empty for the default (as for agents started before workspaces),
         // whatever CLIque itself was started with
         CLIQUE_WORKSPACE: this.ws === ROOT ? '' : this.ws, // ROOT's files are in CLIQUE_HOME itself, where its hooks' spool is (core/adapters.js)
@@ -760,6 +806,7 @@ export class Hub extends EventEmitter {
       if (pid) fs.writeFileSync(groups, `${pid} ${Math.floor(Date.now() / 1000)}\n`)
       this.runs.set(run, { name: a.name, file: groups, pid, at: 0 })
       a.run = run
+      a.keyed = run // this CLI has a key of its own (see legacy)
       a.launchedAt = Date.now()
       this.setStatus(a, 'starting')
       this.readyIn(a)
@@ -767,6 +814,19 @@ export class Hub extends EventEmitter {
       this.setStatus(a, 'stopped')
       this.post({ kind: 'event', from: a.name, text: `failed to start: ${e.message}` })
     }
+  }
+
+  // An agent's key for CLIque's server (core/keys.js): the same every time, so a CLI that outlives CLIque keeps it.
+  keyOf(name) {
+    return agentKey(this.ws, name)
+  }
+
+  // Its CLI is still the one an older CLIque started, before agents had keys: its hooks and its `clique` can only show
+  // the token everyone shared, and say who they are. They're taken at their word until that CLI ends (it rests, is
+  // restarted, starts a new conversation): the next one has a key.
+  legacy(name) {
+    const a = this.agents.get(name)
+    return Boolean(a?.run && a.keyed !== a.run && this.runner.running(name))
   }
 
   // A CLI that doesn't say when it's up (Codex) counts as ready this long after it starts.
@@ -1171,7 +1231,7 @@ export class Hub extends EventEmitter {
     this.post({ kind: 'event', from: a.name, text: `started a new conversation${why}${carry ? `, and picks up where it left off: ${gist(carry.text, 160)}` : ''}`, fresh: true })
     this.launch(a, true)
     // where it left off, in its own words: the first thing in the new conversation, threaded to the task it was on
-    if (carry) a.inbox.unshift(cliquePrompt(a, `[clique] Your last conversation passed its context limit, so this is a new one. You hadn't finished. Where you left off, in your own words:\n\n${carry.text}\n\nCheck where things stand, then carry on.`, carry.for))
+    if (carry) a.inbox.unshift(cliquePrompt(a, `[clique] Your last conversation passed its context limit, so this is a new one. You hadn't finished. Where you left off, in your own words:\n\n${relayed(a.name, carry.text)}\n\nCheck where things stand, then carry on.`, carry.for))
   }
 
   // A new conversation once the agent is free. One you asked for starts right away. One for its context limit
@@ -1267,8 +1327,8 @@ export class Hub extends EventEmitter {
     this.startFresh(a, `: the last one had sat idle ${spanOf(idle)}, and picking it back up would have re-read its ${tokenCount(used)} tokens`)
     this.convoOf(a).note = [
       `[clique] This is a new conversation. Your last one sat idle ${spanOf(idle)}, so CLIque started fresh rather than have you re-read all of it.`,
-      t && `You were on #${t.id} "${t.title}".`,
-      said && `The last thing you said in it: "${gist(said.text, 400)}"`,
+      t && `You were on #${t.id} "${defused(t.title)}".`,
+      said && `The last thing you said in it: "${defused(gist(said.text, 400))}"`,
     ].filter(Boolean).join(' ')
     this.saveConvos()
   }
@@ -2230,7 +2290,7 @@ export class Hub extends EventEmitter {
     if (q.resolve(`${text}\n`)) return
     const a = this.agents.get(q.name) ?? this.agents.get(this.baseOf(q.name))
     if (!a) return
-    this.queue(a, cliquePrompt(a, `[clique] You asked to ${q.plan.title.charAt(0).toLowerCase()}${q.plan.title.slice(1)} (clique app). ${text}`, q.entry.id))
+    this.queue(a, cliquePrompt(a, `[clique] You asked to ${defused(q.plan.title.charAt(0).toLowerCase() + q.plan.title.slice(1))} (clique app). ${text}`, q.entry.id))
     this.pump(a)
   }
 
@@ -2252,7 +2312,7 @@ export class Hub extends EventEmitter {
       const a = this.agents.get(e.from) ?? this.agents.get(this.baseOf(e.from))
       if (!a) continue
       const title = String(e.ask?.title ?? 'change CLIque')
-      this.queue(a, cliquePrompt(a, `[clique] CLIque restarted before the user answered when you asked to ${title.charAt(0).toLowerCase()}${title.slice(1)} (clique app), so it wasn't made. If it's still needed, ask again.`, e.id))
+      this.queue(a, cliquePrompt(a, `[clique] CLIque restarted before the user answered when you asked to ${defused(title.charAt(0).toLowerCase() + title.slice(1))} (clique app), so it wasn't made. If it's still needed, ask again.`, e.id))
       this.pump(a)
     }
   }
@@ -2320,7 +2380,7 @@ export class Hub extends EventEmitter {
       m.queued = false
       this.record(a.name, { fromTeam: 1, delivered: 1, queuedMs: Date.now() - m.ts })
     }
-    const text = msgs.map((m) => this.framed(a, m, { busy: true })).join('\n\n')
+    const text = pasteable(msgs.map((m) => this.framed(a, m, { busy: true })).join('\n\n'))
     this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
     a.steering = { text, msgs, at: Date.now() }
     // Enter again in case the first was lost on a stalled CLI (an empty prompt box ignores it)
@@ -2458,7 +2518,8 @@ export class Hub extends EventEmitter {
   // ({ from, text }): the same for a message that lives on another computer, which can only be quoted.
   // From a linked computer, `ask` is a question asked there (its id there: the answer goes back with it), and
   // `answers` the answer to one asked here.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread }) {
+  // `scheduled` ({ id, at, late? }): one of your scheduled messages going out (core/schedules.js); the chat marks it.
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread, scheduled }) {
     text = String(text ?? '').trim()
     images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -2475,7 +2536,8 @@ export class Hub extends EventEmitter {
     const away = all.filter((n) => n.includes('@'))
     const names = all.filter((n) => !n.includes('@'))
     if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and CLIque Link isn't on`)
-    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }) }
+    const sched = from === 'you' && scheduled && typeof scheduled === 'object' && typeof scheduled.id === 'string' ? { id: scheduled.id.slice(0, 16), at: Number(scheduled.at) || Date.now(), ...(Number(scheduled.late) > 0 && { late: Number(scheduled.late) }) } : null
+    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }), ...(sched && { scheduled: sched }) }
     // the channel it's said in: the one you said it in, or the one an agent's working in. One from another computer that
     // this workspace doesn't have keeps its name and brief, so its agents get the brief all the same.
     const remote = channelName && channel !== GENERAL && /^[a-z0-9][a-z0-9-]{0,39}$/.test(String(channel))
@@ -2551,7 +2613,10 @@ export class Hub extends EventEmitter {
     if (quoted && who === a.name && last?.id === quoted.id) return ''
     const line = String(said.text ?? '').replace(/```[\s\S]*?```/g, '[code]').replace(/\s+/g, ' ').trim()
     const snip = line.length > 160 ? `${line.slice(0, 157)}…` : line
-    return `replying to ${who === a.name ? 'your message' : `@${who}'s message`} "${snip}"`
+    // (a message with files an agent attached: which files, so one with no words is still told apart)
+    const files = filesInBracket(said.files)
+    if (files && !snip) return `replying to ${who === a.name ? 'the files you attached' : `the files @${who} attached`} (${files})`
+    return `replying to ${who === a.name ? 'your message' : `@${who}'s message`} "${inBracket(snip)}"${files ? ` (with ${files})` : ''}`
   }
 
   recipients(names, from) {
@@ -2789,7 +2854,7 @@ export class Hub extends EventEmitter {
         this.amend(m, { queued: false })
       }
       a.serving = [...(a.serving ?? []), ...arrived] // this turn takes them up now
-      return arrived.map((m) => `@${m.from} answered${m.question ? ` "${m.question}"` : ''}:\n\n${m.text}`).join('\n\n') + '\n'
+      return arrived.map((m) => `@${m.from} answered${m.question ? ` "${m.question}"` : ''}:${m.unanswered || m.from === 'you' ? `\n\n${m.text}` : `\n${relayed(m.from, m.text)}`}`).join('\n\n') + '\n'
     }
     const open = [...this.calls.values()].filter((c) => c.from === from)
     if (!open.length) return 'Nothing to wait for: every question you asked has been answered.\n'
@@ -2833,11 +2898,12 @@ export class Hub extends EventEmitter {
     this.calls.delete(call.id)
     const said = why ? `(@${by} ${why}.)` : String(text ?? '').trim()
     if (call.msg) this.amend(call.msg, { answered: { by, at: Date.now(), ...(reply && { reply: reply.id }), ...(why && { why }) } })
-    if (call.hold) return call.hold.resolve(`@${by} answered:\n\n${said}\n`)
+    // what `clique ask` prints: the answer in its fence, as it would be in a message (framed)
+    if (call.hold) return call.hold.resolve(why || by === 'you' ? `@${by} answered:\n\n${said}\n` : `@${by} answered:\n${relayed(by, said)}\n`)
     if (call.back) return this.sendBack(by, call, said)
     const asker = this.agents.get(call.from) ?? this.agents.get(this.baseOf(call.from))
     if (!asker || asker.off) return this.changed()
-    const msg = this.post({ kind: 'msg', from: by, to: asker.name, text: said, answers: call.id, question: gist(call.text), re: call.msg?.id ?? call.id, ...(reply && { reply: reply.id }), ...(call.parent && { for: call.parent }), queued: true })
+    const msg = this.post({ kind: 'msg', from: by, to: asker.name, text: said, answers: call.id, ...(why && { unanswered: true }), question: gist(call.text), re: call.msg?.id ?? call.id, ...(reply && { reply: reply.id }), ...(call.parent && { for: call.parent }), queued: true })
     this.pinned.add(msg) // its asker's, not a clone's that happens to be free
     this.enqueue(asker, msg)
   }
@@ -3065,7 +3131,8 @@ export class Hub extends EventEmitter {
     const note = this.convos[a.name]?.note
     if (note) delete this.convos[a.name].note, this.saveConvos()
     const head = msgs.length < 2 ? '' : msg.answers ? `[${msgs.length} answers to your questions came in]` : `[${msgs.length} hand-offs came in while you were busy, oldest first. Take them together, in this one turn.]`
-    const text = [note, head, ...msgs.map((m) => this.framed(a, m))].filter(Boolean).join('\n\n')
+    // (as the terminal gets it, without control characters: the prompt the CLI reports back is matched against this)
+    const text = pasteable([note, head, ...msgs.map((m) => this.framed(a, m))].filter(Boolean).join('\n\n'))
     this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
     a.promptAt ||= Date.now()
     // Matched against the prompt the agent reports, even if it shows up late. Only the words count:
@@ -3101,8 +3168,11 @@ export class Hub extends EventEmitter {
   // A message as the agent reads it: in brackets, what it is and who it's from, so it knows what's expected of it.
   // Several agents sent the same message: the first named leads and owns the result, the rest each take their part.
   // busy: typed into the turn it's in (steer), so it answers right away and carries on.
+  // What anyone but you wrote goes in a fence (core/framing.js): CLIque's bracket says what it is and who it's from, and
+  // the fence says where their words begin and end, so nothing in them reads as yours or as CLIque's.
   framed(a, m, { busy = false } = {}) {
-    if (m.answers) return `[answer from @${m.from} to your question${m.question ? ` "${m.question}"` : ''}] ${m.text}`
+    // (unanswered: CLIque's own line about why there's no answer, in nobody's fence)
+    if (m.answers) return `[answer from @${m.from} to your question${m.question ? ` "${inBracket(m.question)}"` : ''}]${m.unanswered || m.from === 'you' ? ` ${m.text}` : `\n${relayed(m.from, m.text)}`}`
     const where = this.briefed(a, m)
     return where ? `${where} ${this.tagged(a, m, busy)}` : this.tagged(a, m, busy)
   }
@@ -3112,10 +3182,12 @@ export class Hub extends EventEmitter {
   // before there were channels. Called as the message goes in, so the conversation counts the brief as given.
   briefed(a, m) {
     // one said on another computer comes with its name and brief (Clique.send); one of this workspace's, as it is now
-    const c = (m.channelName && { id: m.channel, name: m.channelName, brief: m.brief ?? '' }) || (this.channel(m.channel) ?? this.channel(GENERAL))
+    const given = (m.channelName && { id: m.channel, name: m.channelName, brief: m.brief ?? '' }) || (this.channel(m.channel) ?? this.channel(GENERAL))
+    // (a name and a brief can come from a linked computer, or from an agent's `clique app`: neither can close the bracket)
+    const c = { ...given, name: inBracket(given.name), brief: given.brief ? inBracket(given.brief) : given.brief }
     const convo = this.convoOf(a)
     const had = convo.briefs?.[c.id]
-    const now = c.brief ? briefHash(c.brief) : undefined
+    const now = given.brief ? briefHash(given.brief) : undefined
     if (had === now) return c.id === GENERAL && !c.brief ? '' : `[in #${c.name}]`
     convo.briefs = { ...convo.briefs }
     if (now) convo.briefs[c.id] = now
@@ -3332,7 +3404,7 @@ export class Hub extends EventEmitter {
     if (!this.agents.get(from)) throw new Error("clique attach is an agent's: in the chat, drop or paste the file into the message box instead")
     const files = await storeFiles(checkFiles(names, cwd), ATTACHMENTS)
     const channel = this.channelFor(from)
-    this.post({ kind: 'reply', from, text: clip(caption.trim(), CAPTION_MAX), files, ...(channel && { channel }) })
+    this.post({ kind: 'reply', from, text: clip(pasteable(caption).trim(), CAPTION_MAX), files, ...(channel && { channel }) })
     makeRoom(ATTACHMENTS, { keep: files.map((f) => f.path) })
     const what = (f) => [f.kind === 'html' ? 'a page' : f.kind === 'file' ? 'a file' : f.kind, f.w && `${f.w}×${f.h}`, f.dur && timeWords(f.dur), sizeWords(f.size)].filter(Boolean).join(', ')
     const pages = files.some((f) => f.kind === 'html') ? '\nA page runs in a sandbox: no network, no other files. If it needs any, inline them and attach it again.' : ''
@@ -3341,15 +3413,17 @@ export class Hub extends EventEmitter {
 
   // A message's own bracket: what it is and who it's from.
   tagged(a, m, busy) {
-    if (m.ask && busy) return `[question from @${m.from}, who is waiting on your answer. Answer it now with clique answer "…", then carry on with what you were doing] ${m.text}`
-    if (m.ask) return `[question from @${m.from}, who is waiting on your answer: your final message is the answer, and goes back to @${m.from} by itself] ${m.text}`
+    // yours go in as you typed them; anyone else's, fenced (CLIque's own prompts are from 'you' too: see cliquePrompt)
+    const said = m.from === 'you' ? ` ${m.text}` : `\n${relayed(m.from, m.text)}`
+    if (m.ask && busy) return `[question from @${m.from}, who is waiting on your answer. Answer it now with clique answer "…", then carry on with what you were doing]${said}`
+    if (m.ask) return `[question from @${m.from}, who is waiting on your answer: your final message is the answer, and goes back to @${m.from} by itself]${said}`
     const others = (m.cc ?? []).filter((n) => this.baseOf(n) !== this.baseOf(a.name))
     const leads = others.length && this.baseOf(m.cc[0]) === this.baseOf(a.name)
     const split = !others.length ? '' : leads
       ? `also sent to ${others.map((n) => `@${n}`).join(' ')}: you lead this and own the result, and they each take the part in their own area`
       : `also sent to ${others.map((n) => `@${n}`).join(' ')}, and @${m.cc[0]} leads it: take only the part in your own area`
     const tag = [m.from !== 'you' && `from @${m.from}: it's yours now, no need to report back`, m.replying, split].filter(Boolean).join(', ')
-    return tag ? `[${tag}] ${m.text}` : m.text
+    return tag ? `[${tag}]${said}` : m.text
   }
 
   // UserPromptSubmit cancels this. Until then, press Enter again in case the first one was swallowed: a loaded Mac
@@ -3522,7 +3596,7 @@ export class Hub extends EventEmitter {
     this.stalls.set(t.id, { at: Date.now() })
     this.post({ kind: 'event', from: w.name, text: `stopped on #${t.id} ${mins} min ago without finishing it, so CLIque reminded it` })
     const handed = this.feed.findLast((e) => e.kind === 'msg' && e.ticket === t.id) // its reply threads to the task
-    const text = `[clique] Task #${t.id} "${t.title}" is still in progress, and your turn ended ${mins} min ago without finishing it. If it's done, run: clique task done ${t.id} "what you did, how you checked". If something is in the way (an answer, a decision, access), say what with clique task note ${t.id} "…" and stop. Otherwise carry on with it now.`
+    const text = `[clique] Task #${t.id} "${defused(t.title)}" is still in progress, and your turn ended ${mins} min ago without finishing it. If it's done, run: clique task done ${t.id} "what you did, how you checked". If something is in the way (an answer, a decision, access), say what with clique task note ${t.id} "…" and stop. Otherwise carry on with it now.`
     this.queue(w, cliquePrompt(w, text, handed?.id))
     this.pump(w)
   }
@@ -3596,6 +3670,7 @@ export class Hub extends EventEmitter {
       case 'add': {
         const owner = flags.owner ? this.taskOwner(flags.owner, by) : null
         const n = this.tickets.add({ title: words[0], body: flags.details ?? words.slice(1).join(' '), by, owner, severity: priorityOf(flags.priority), kind: flags.kind ?? 'task' })
+        if (this.inScheduledRun(from)) (n.scheduled = true), this.tickets.save() // (see inScheduledRun)
         this.postTask(n, from, 'filed')
         return `added #${n.id}\n`
       }
@@ -4311,6 +4386,8 @@ export class Hub extends EventEmitter {
       })),
       feed: withOpenAsks(forClients(this.feed), this.asks),
       channels: this.space.channels,
+      // messages to send later or on a repeat; repo: the workspace's folder is in a git repo ("only when it changed")
+      schedules: { list: this.schedules.view(), repo: inRepo(this.space.folder) },
       reads: this.reads,
       spend: this.spendNow(),
       // { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
@@ -4356,8 +4433,10 @@ const samePrompt = (reported, sent) => {
 const isNotice = (prompt) => /^\s*<task-notification>/.test(String(prompt ?? ''))
 
 // Agents get images as file paths (Claude Code and Codex can both open local images).
-const withImages = (text, images) =>
-  images?.length ? `${text}\n\nAttached image${images.length > 1 ? 's' : ''} (open to view):\n${images.join('\n')}` : text
+const withImages = (text, all) => {
+  const images = (all ?? []).filter((p) => !/[\x00-\x1f\x7f]/.test(p)) // a path is one line: nothing rides in after it
+  return images.length ? `${text}\n\nAttached image${images.length > 1 ? 's' : ''} (open to view):\n${images.join('\n')}` : text
+}
 
 // A terminal's text without its escape sequences and spaces: what's on screen, however it was drawn.
 const flat = (s) => s.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-9;?<>=]*[ -\/]*[@-~]/g, '').replace(/\x1b./g, '').replace(/\s+/g, '')
@@ -4394,7 +4473,7 @@ const THREAD_LOOK = 10000
 const THREAD_ASK_AGAIN = 10 * 60000
 // A thread that was going when CLIque closed, back open within this long, carries on where it was.
 const THREAD_RESUME = 60 * 60000
-const CLOSE_THREAD = (said) => `[clique] The thread your request led to has gone quiet.${said ? ` What was said since your last message:\n\n${said}\n\n` : ' '}Tell the user where it ended, in one or two sentences: what's done, what isn't, and anything they have to do. If something failed or wasn't checked, say that first. Don't start anything new or message anyone. If your last message to them already says all that, reply with just: nothing new`
+const CLOSE_THREAD = (said) => `[clique] The thread your request led to has gone quiet.${said ? ` What was said since your last message:\n\n${relayed('thread', said)}\n\n` : ' '}Tell the user where it ended, in one or two sentences: what's done, what isn't, and anything they have to do. If something failed or wasn't checked, say that first. Don't start anything new or message anyone. If your last message to them already says all that, reply with just: nothing new`
 // How long Q may take starting up before what you send stops waiting for him.
 const SYSTEM_AGENT_START_MAX = 90000
 const cliquePrompt = (a, text, id) => ({ id: id ?? randomUUID().slice(0, 8), ts: Date.now(), kind: 'msg', from: 'you', to: a.name, text, clique: true, queued: true })

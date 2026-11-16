@@ -87,13 +87,13 @@ const dialog = (n) => {
 test('a free teammate gets the question as its next prompt, and its final message comes straight back into the asker\'s wait', async () => {
   busy('noor') // mid-turn, running `clique ask` in its shell
   const asked = hub.question({ from: 'noor', to: 'theo', text: 'which build did you test?' })
-  assert.equal(typedInto('theo')[0], '[question from @noor, who is waiting on your answer: your final message is the answer, and goes back to @noor by itself] which build did you test?')
+  assert.equal(typedInto('theo')[0], '[question from @noor, who is waiting on your answer: your final message is the answer, and goes back to @noor by itself]\n<relayed from="noor">\nwhich build did you test?\n</relayed>')
   assert.deepEqual(view('noor').waitingOn.map((w) => w.name), ['theo'])
   assert.deepEqual(view('theo').owes.map((o) => [o.name, o.waiting]), [['noor', true]])
   pickUp('theo')
   assert.equal(await peek(asked), 'pending')
   finish('theo', 'Build 412, on the iPhone Laptop sim.')
-  assert.equal(await asked, '@theo answered:\n\nBuild 412, on the iPhone Laptop sim.\n')
+  assert.equal(await asked, '@theo answered:\n<relayed from="theo">\nBuild 412, on the iPhone Laptop sim.\n</relayed>\n')
   // nothing left over: no message queued for noor, the question shows as answered, by the reply
   assert.equal(agent('noor').inbox.length, 0)
   const q = hub.feed.find((e) => e.ask)
@@ -109,12 +109,12 @@ test('a busy teammate gets the question in the turn it\'s in, answers with cliqu
   busy('noor')
   busy('theo') // in the middle of a long QA pass
   const asked = hub.question({ from: 'noor', to: 'theo', text: 'which build did you test?' })
-  assert.deepEqual(typedInto('theo'), [`${MIDTURN} which build did you test?`], 'typed in now, not at the end of its turn')
+  assert.deepEqual(typedInto('theo'), [`${MIDTURN}\n<relayed from="noor">\nwhich build did you test?\n</relayed>`], 'typed in now, not at the end of its turn')
   assert.deepEqual(agent('theo').inbox, [])
   pickUp('theo') // its CLI takes it in at its next step
   assert.equal(agent('theo').status, 'working')
   assert.equal(hub.answerNow({ from: 'theo', text: 'Build 412.' }), '@noor has your answer.\n')
-  assert.equal(await asked, '@theo answered:\n\nBuild 412.\n')
+  assert.equal(await asked, '@theo answered:\n<relayed from="theo">\nBuild 412.\n</relayed>\n')
   // the answer shows in the chat as theo's reply to the question
   const q = hub.feed.find((e) => e.ask)
   const reply = hub.feed.find((e) => e.kind === 'reply' && e.re === q.id)
@@ -133,7 +133,7 @@ test('...and without clique answer, the final message of its turn is the answer'
   const asked = hub.question({ from: 'noor', to: 'theo', text: 'which build?' })
   pickUp('theo')
   finish('theo', 'QA pass done on build 412.')
-  assert.equal(await asked, '@theo answered:\n\nQA pass done on build 412.\n')
+  assert.equal(await asked, '@theo answered:\n<relayed from="theo">\nQA pass done on build 412.\n</relayed>\n')
 })
 
 test('clique answer @name picks which question, when several are waiting', async () => {
@@ -162,7 +162,7 @@ test('not while a permission prompt is up in its terminal: the question waits fi
   assert.deepEqual(agent('theo').inbox.map((m) => m.text), ['is #4715 good to merge?', 'recorded #5 as passing'])
   assert.deepEqual(typedInto('theo'), [])
   hub.answer(id, { allow: true })
-  assert.deepEqual(typedInto('theo'), [`${MIDTURN.replace('@noor', '@noor')} is #4715 good to merge?`])
+  assert.deepEqual(typedInto('theo'), [`${MIDTURN}\n<relayed from="noor">\nis #4715 good to merge?\n</relayed>`])
   assert.deepEqual(agent('theo').inbox.map((m) => m.text), ['recorded #5 as passing'], 'hand-offs wait for the end of the turn')
   pickUp('theo')
   hub.answerNow({ from: 'theo', text: 'Not yet.' })
@@ -176,7 +176,7 @@ test('not while you\'re typing in its terminal: right after', () => {
   hub.question({ from: 'noor', to: 'theo', text: 'which build?' })
   assert.deepEqual(typedInto('theo'), [])
   mock.timers.tick(3000)
-  assert.deepEqual(typedInto('theo'), [`${MIDTURN} which build?`])
+  assert.deepEqual(typedInto('theo'), [`${MIDTURN}\n<relayed from="noor">\nwhich build?\n</relayed>`])
 })
 
 test('a question its CLI never took in before the turn ended goes back in line, and in as the next prompt', async () => {
@@ -187,7 +187,7 @@ test('a question its CLI never took in before the turn ended goes back in line, 
   assert.equal(agent('theo').steering?.msgs.length, 1)
   mock.timers.tick(5000)
   assert.equal(agent('theo').steering, null)
-  assert.equal(typedInto('theo').at(-1), '[question from @noor, who is waiting on your answer: your final message is the answer, and goes back to @noor by itself] which build?')
+  assert.equal(typedInto('theo').at(-1), '[question from @noor, who is waiting on your answer: your final message is the answer, and goes back to @noor by itself]\n<relayed from="noor">\nwhich build?\n</relayed>')
   pickUp('theo')
   finish('theo', 'Build 412.')
   assert.match(await asked, /Build 412/)
@@ -220,7 +220,7 @@ test('an answer that takes longer comes to the asker anyway: into the turn it\'s
   pickUp('theo')
   hub.answerNow({ from: 'theo', text: 'Yes, merge it.' })
   // noor is busy with something else: the answer goes into its turn
-  assert.equal(typedInto('noor').at(-1), '[answer from @theo to your question "is #4715 good to merge?"] Yes, merge it.')
+  assert.equal(typedInto('noor').at(-1), '[answer from @theo to your question "is #4715 good to merge?"]\n<relayed from="theo">\nYes, merge it.\n</relayed>')
   pickUp('noor')
   assert.deepEqual(agent('noor').inbox, [])
   // free, it gets the next one as its prompt
@@ -231,7 +231,7 @@ test('an answer that takes longer comes to the asker anyway: into the turn it\'s
   finish('noor', 'carrying on')
   pickUp('eli')
   finish('eli', 'Yes.')
-  assert.equal(typedInto('noor').at(-1), '[answer from @eli to your question "board updated?"] Yes.')
+  assert.equal(typedInto('noor').at(-1), '[answer from @eli to your question "board updated?"]\n<relayed from="eli">\nYes.\n</relayed>')
 })
 
 test('a retried question waits on the one already asked instead of asking twice; clique wait waits some more', async () => {
@@ -317,10 +317,10 @@ test('a question asked while answering one keeps that one open until its answer 
   hub.answer(id, { allow: true })
   pickUp('eli')
   hub.answerNow({ from: 'eli', text: '#2 is in review.' })
-  assert.match(typedInto('theo').at(-1), /^\[answer from @eli to your question "what does the board say about #2\?"\] #2 is in review\./)
+  assert.match(typedInto('theo').at(-1), /^\[answer from @eli to your question "what does the board say about #2\?"\]\n<relayed from="eli">\n#2 is in review\./)
   pickUp('theo')
   finish('theo', 'Not ready: #2 is still in review.')
-  assert.equal(await asked, '@theo answered:\n\nNot ready: #2 is still in review.\n')
+  assert.equal(await asked, '@theo answered:\n<relayed from="theo">\nNot ready: #2 is still in review.\n</relayed>\n')
 })
 
 test('an asker always hears back: interrupted, exited or turned off, it says so', async () => {
@@ -354,7 +354,7 @@ test('an answer for a clone goes to that clone, not to whichever of its family i
   hub.answer(id, { allow: true })
   pickUp('theo')
   hub.answerNow({ from: 'theo', text: '402 and 420pt.' })
-  assert.match(typedInto('iris.2').at(-1), /^\[answer from @theo to your question "which sizes do you test\?"\] 402 and 420pt\.$/)
+  assert.match(typedInto('iris.2').at(-1), /^\[answer from @theo to your question "which sizes do you test\?"\]\n<relayed from="theo">\n402 and 420pt\.\n<\/relayed>$/)
   assert.deepEqual(typedInto('iris').filter((t) => /402/.test(t)), [])
 })
 
@@ -370,9 +370,9 @@ test('hand-offs that piled up go in together, in one turn, and the reply threads
   assert.equal(typedInto('noor').length, 1, 'one prompt for all three')
   assert.equal(prompt, [
     '[3 hand-offs came in while you were busy, oldest first. Take them together, in this one turn.]',
-    "[from @eli: it's yours now, no need to report back] triaged #9 to you",
-    "[from @theo: it's yours now, no need to report back] QA found two blockers on #4715",
-    "[from @eli: it's yours now, no need to report back] recorded the blockers on #2",
+    "[from @eli: it's yours now, no need to report back]\n<relayed from=\"eli\">\ntriaged #9 to you\n</relayed>",
+    "[from @theo: it's yours now, no need to report back]\n<relayed from=\"theo\">\nQA found two blockers on #4715\n</relayed>",
+    "[from @eli: it's yours now, no need to report back]\n<relayed from=\"eli\">\nrecorded the blockers on #2\n</relayed>",
   ].join('\n\n'))
   pickUp('noor')
   finish('noor', 'Fixed both blockers in #4747.')
@@ -480,7 +480,7 @@ test('a question for an agent on a linked computer is waited on here, and answer
   assert.deepEqual(view('noor').waitingOn.map((w) => w.name), ['iris@workstation'])
   // the answer arrives over CLIque Link
   assert.equal(hub.send({ from: 'iris@workstation', to: 'noor', text: 'Pastel, from the brand guide.', mentions: false, answers: relayed[0].extra.ask }), 'answered\n')
-  assert.equal(await asked, '@iris@workstation answered:\n\nPastel, from the brand guide.\n')
+  assert.equal(await asked, '@iris@workstation answered:\n<relayed from="iris@workstation">\nPastel, from the brand guide.\n</relayed>\n')
 })
 
 test('...and one from a linked computer is answered there: the answer goes back with its id', async () => {
