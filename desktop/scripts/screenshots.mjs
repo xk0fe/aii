@@ -319,6 +319,10 @@ const SHOTS = {
       window.__cliqueEmit('state', s)`)
     await sleep(3200)
     await shot('canvas', win, { crop: await column(win) })
+    // Usage: a calendar per provider, and who used it
+    win = await dashboard(theme, 'usage', { width: 1160, height: 950, reset: ['clique.usage.range'] })
+    await sleep(900)
+    await shot('usage', win)
     // every terminal side by side
     win = await dashboard(theme, 'grid', { width: 1160, height: 700 })
     await sleep(1600)
@@ -506,6 +510,41 @@ const SHOTS = {
     await sleep(700)
     await save(narrow, `usage-narrow-${theme}`)
     narrow.destroy()
+  },
+  // Usage in motion: in from the sidebar, the pointer along a week of days (each says its numbers), one picked (the
+  // breakdown under the calendars becomes that day's), another, and back to the whole range.
+  async usageGif() {
+    const win = await dashboard('light', 'chat', { width: 1240, height: 900, reset: ['clique.usage.range'] })
+    await sleep(900)
+    const days = await js(win, `const h = window.__cliqueHistory.providers; const out = []
+      function key(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+      for (let i = 40; out.length < 6 && i > 8; i--) { const k = key(new Date(Date.now() - i * 864e5)); if (h[0].days[k] && h[1].days[k]) out.push(k) }
+      return out`)
+    const cell = (prov, day) => `.us-prov[data-prov=${prov}] .us-c[data-day="${day}"]`
+    await record(win, 'usage', {
+      clip: { x: 0, y: 0, width: 1240, height: 900 }, ms: 9800, width: 1000,
+      during: async () => {
+        let at = { x: 620, y: 520 }
+        await sleep(500)
+        at = await glide(win, at, await center(win, '.nv[data-place=usage]'), 600)
+        await tap(win, at)
+        await sleep(1100)
+        for (const day of days.slice(0, 4)) {
+          at = await glide(win, at, await center(win, cell('claude', day)), 320)
+          await sleep(360)
+        }
+        await tap(win, at)
+        await sleep(1500)
+        at = await glide(win, at, await center(win, cell('codex', days[5])), 600)
+        await sleep(500)
+        await tap(win, at)
+        await sleep(1500)
+        at = await glide(win, at, await center(win, '[data-us=clear]'), 600)
+        await tap(win, at)
+        await sleep(900)
+      },
+    })
+    win.destroy()
   },
   // The agent's sheet: no scrolling, one tab at a time.
   async detail(theme) {
