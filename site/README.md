@@ -158,8 +158,10 @@ Also drawn from the design for now:
 - `creatures/*.svg`: from the design's avatar code with poses. Once `desktop/ui/avatar.js` has the poses, redraw them
   from the app: `desktop/node_modules/.bin/electron site/tools/creatures.mjs` (it reads the app's avatar code and
   `desktop/ui/common.css` by default).
-- `assets/favicon.ico`, `icon-192.png`, `apple-touch-icon.png`, `og.png`: from the approved icon render. With the final
-  icon in `desktop/assets/icon.png`: `desktop/node_modules/.bin/electron site/tools/icons.mjs`.
+- `assets/favicon.ico`, `icon-192.png`, `apple-touch-icon.png`, `og.png`: from the app icon's full-bleed square (no
+  corners: the browser and iOS cut their own). Draw the square, then the site's pictures from it:
+  `(cd desktop && npx electron scripts/make-icon.mjs --bleed /tmp/icon-bleed.png)`, then
+  `desktop/node_modules/.bin/electron site/tools/icons.mjs --icon /tmp/icon-bleed.png`.
 
 ## Renaming
 

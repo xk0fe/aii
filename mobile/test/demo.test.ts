@@ -157,7 +157,7 @@ describe('the store build', () => {
   })
   test('every image and font it names is there', () => {
     const c = load()
-    const files = [c.icon, c.android.adaptiveIcon.foregroundImage, c.android.adaptiveIcon.backgroundImage, c.android.adaptiveIcon.monochromeImage, ...c.plugins.flatMap((p: unknown) => (Array.isArray(p) ? [p[1]?.image, ...(p[1]?.fonts ?? [])] : [])).filter(Boolean)]
+    const files = [c.icon, c.android.adaptiveIcon.foregroundImage, c.android.adaptiveIcon.backgroundImage, c.android.adaptiveIcon.monochromeImage, ...c.plugins.flatMap((p: unknown) => (Array.isArray(p) ? [p[1]?.image, p[1]?.dark?.image, ...(p[1]?.fonts ?? [])] : [])).filter(Boolean)]
     for (const f of files) expect(fs.existsSync(path.join(__dirname, '..', f))).toBe(true)
   })
 })

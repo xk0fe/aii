@@ -21,8 +21,10 @@ read; filling the stores in does.
   `ITSAppUsesNonExemptEncryption` (below), the local network and camera prompts in plain words, local networking allowed.
 - Android: CAMERA, INTERNET and VIBRATE only, everything else blocked, the camera optional, cleartext allowed (privacy.md
   says why).
-- Icons: iOS 1024 full bleed with no corners (the approved icon, no alpha); Android adaptive icon with a foreground,
-  a felt background and a monochrome layer for themed icons; the splash on felt lilac, light and dark.
+- Icons: iOS 1024 full bleed with no corners (the C mark, no alpha); Android adaptive icon with the mark as the
+  foreground, the tile as the background and a one-colour layer for themed icons; the splash is the mark on the app's
+  page colour, light and dark. All drawn by the desktop's icon script:
+  `cd desktop && npx electron scripts/make-icon.mjs --phone ../mobile/assets/images`.
 - `eas.json`: `simulator`, `preview` (internal) and `production` (store) profiles. `eas build -p ios --profile production`
   and `eas build -p android --profile production` once the accounts exist (`eas init` adds the project id).
 
