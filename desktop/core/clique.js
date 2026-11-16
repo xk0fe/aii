@@ -7,7 +7,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf, expand, sessionsLeft } from './hub.js'
+import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf, expand, sessionsLeft, arrivedLeft } from './hub.js'
 import { movedPath } from './home.js'
 import { FETCH_MAX, kindOf, travels } from './attachments.js'
 import { BROKEN } from './config.js'
@@ -60,6 +60,7 @@ export function logRoots(providers = {}, env = process.env, accounts = []) {
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
 export const USAGE_DIR = path.join(LINK_DIR, 'usage')
+const USAGE_SPACES = path.join(HOME, 'usage-spaces.json') // (Clique.rememberSpaces)
 const SETTINGS = path.join(LINK_DIR, 'link.json')
 const DISCOVER_FOR = 150000 // Computers open, as the dashboard last said: it says so every minute
 // Images nothing needs any more go this long after CLIque starts (sweepImages), once its workspaces have read their chats.
@@ -72,6 +73,7 @@ const HISTORY_EVERY = 6 * 3600000
 const THEIR_USAGE_EVERY = 3 * 60000
 const THEIR_USAGE_READING = 2000
 const THEIR_USAGE_LEFT = 60000 // which sessions removed workspaces ran is read from their files this often
+const THEIR_USAGE_KEPT = 30 * 864e5 // what a computer last said it used is kept this long after it said it
 // Who's signed in to each account (core/accounts.js) is asked of its CLI when the Accounts sheet opens, after a sign-in,
 // and otherwise no more often than this; a little after CLIque starts when you have accounts of your own.
 const ACCOUNTS_EVERY = 5 * 60000
@@ -89,6 +91,27 @@ const readJSON = (file) => {
 
 // A linked computer's answer to 'usageHistory', as far as the Usage view needs it to be one.
 const usable = (d) => Boolean(d) && typeof d === 'object' && Array.isArray(d.rows) && Array.isArray(d.cols) && d.rows.every((r) => Array.isArray(r))
+// ...and taken no further than that: its rows as they are (the view reads them as text and numbers), and of the rest
+// only what has the shape it should. A workspace's colour and an agent's look end up in the page's markup and styles, so
+// they're kept only when they read as a colour's name or a look's part.
+const WORD = /^[\w#. -]{1,40}$/
+function tidy(d) {
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {})
+  const word = (v) => (typeof v === 'string' && WORD.test(v) ? v : undefined)
+  const look = (v) => Object.fromEntries(Object.entries(obj(v)).map(([k, x]) => [k, typeof x === 'boolean' ? x : word(x)]).filter(([k, x]) => WORD.test(k) && x !== undefined))
+  return {
+    at: Number(d.at) || 0,
+    reading: d.reading && typeof d.reading === 'object' ? { done: Number(d.reading.done) || 0, total: Number(d.reading.total) || 0 } : null,
+    first: typeof d.first === 'string' && /^\d{4}-\d\d-\d\d$/.test(d.first) ? d.first : null,
+    cols: d.cols.map(String),
+    rows: d.rows,
+    providers: Object.fromEntries(Object.entries(obj(d.providers)).map(([id, label]) => [id, String(label).slice(0, 80)])),
+    spaces: Object.fromEntries(Object.entries(obj(d.spaces)).map(([key, w]) => [key, { name: String(obj(w).name ?? key).slice(0, 120), ...(word(obj(w).color) && { color: word(obj(w).color) }), ...(typeof obj(w).icon === 'string' && { icon: [...obj(w).icon].slice(0, 4).join('') }), ...(obj(w).gone && { gone: true }) }])),
+    faces: Object.fromEntries(Object.entries(obj(d.faces)).map(([key, names]) => [key, Object.fromEntries(Object.entries(obj(names)).map(([name, v]) => [name, look(v)]))])),
+    // its accounts, by the names it gave them (core/accounts.js)
+    accounts: Object.fromEntries(Object.entries(obj(d.accounts)).map(([id, a]) => [id, { name: String(obj(a).name ?? id).slice(0, 80), provider: String(obj(a).provider ?? '').slice(0, 80) }])),
+  }
+}
 
 export class Clique extends EventEmitter {
   links = new Map() // computer slug -> { slug, name, peer, client, state, toHost, fetching }
@@ -1194,27 +1217,67 @@ export class Clique extends EventEmitter {
   // computers, shows what all of it used.
 
   // Who ran what, for the usage history (core/history.js placer): the sessions each workspace wrote down as its agents
-  // ran them (one that's been removed: from the files it left), and who works where now.
+  // ran them (one that's been removed: from the files it left), who works where now, and the logs that came with agents
+  // moved from another computer (what they held then is that computer's to count).
   usagePlacing() {
     const owners = {}
+    const arrived = {}
     const agents = []
-    const open = new Set([...this.hubs.keys()])
-    const left = (this.leftSessions ??= { at: 0, owners: {} })
-    if (Date.now() - left.at > THEIR_USAGE_LEFT) {
-      left.at = Date.now()
-      left.owners = {}
+    // a session a workspace wrote down (with its agent's name) is that workspace's, whoever else counted its spend
+    const take = (found) => {
+      for (const [id, own] of Object.entries(found)) if (!owners[id] || own.length > 1 || owners[id].length === 1) owners[id] = own
+    }
+    // what removed workspaces left is read from their files now and then, and again whenever a workspace comes or goes
+    const open = [...this.hubs.keys()].sort().join('\n')
+    const left = (this.leftSessions ??= { at: 0, open: null, owners: {}, arrived: {} })
+    if (left.open !== open || Date.now() - left.at > THEIR_USAGE_LEFT) {
+      Object.assign(left, { at: Date.now(), open, owners: {}, arrived: {} })
       let ids = []
       try {
         ids = fs.readdirSync(path.join(HOME, 'workspaces'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
       } catch {}
-      for (const id of [ROOT, ...ids]) if (!open.has(id)) Object.assign(left.owners, sessionsLeft(id, dirOf(HOME, id)))
+      for (const id of [ROOT, ...ids]) {
+        if (this.hubs.has(id)) continue
+        Object.assign(left.owners, sessionsLeft(id, dirOf(HOME, id)))
+        Object.assign(left.arrived, arrivedLeft(dirOf(HOME, id)))
+      }
     }
-    Object.assign(owners, left.owners)
+    take(left.owners)
+    Object.assign(arrived, left.arrived)
     for (const hub of this.hubs.values()) {
-      Object.assign(owners, hub.sessionsRun()) // (an open workspace's word over what a removed one left)
+      take(hub.sessionsRun())
+      Object.assign(arrived, hub.arrived)
       for (const a of hub.space.agents) agents.push({ name: a.name, ws: hub.ws, dir: expand(a.cwd) })
     }
-    return { owners, agents }
+    // ...and who worked where in the workspaces that are gone, as it was written down
+    for (const [ws, w] of Object.entries(this.rememberSpaces())) {
+      if (!this.hubs.has(ws)) for (const [name, dir] of Array.isArray(w?.agents) ? w.agents : []) agents.push({ name, ws, dir })
+    }
+    return { owners, agents, arrived }
+  }
+
+  // Each workspace this computer has, written down as it is now (usage-spaces.json: id -> { key, name, color, icon,
+  // agents: [[name, folder]] }): once one is removed, or a linked computer's is hidden, its usage still says which
+  // workspace it was (its key on CLIque Link, its name as you wrote it), and a conversation from before conversations
+  // were written down is still told by where its agent worked there, instead of falling to the workspaces that are left.
+  // Saved only when something changed.
+  rememberSpaces() {
+    const known = (this.usageSpaces ??= readJSON(USAGE_SPACES) ?? {})
+    if (this.config.broken) return known
+    let changed = false
+    for (const h of this.hubs.values()) {
+      const now = { key: this.keyOf(h.ws), name: h.space.name, ...(h.space.color && { color: h.space.color }), ...(h.space.icon && { icon: h.space.icon }), agents: h.space.agents.map((a) => [a.name, expand(a.cwd)]) }
+      if (JSON.stringify(known[h.ws]) === JSON.stringify(now)) continue
+      known[h.ws] = now
+      changed = true
+    }
+    if (changed) {
+      try {
+        fs.writeFileSync(`${USAGE_SPACES}.tmp`, JSON.stringify(known))
+        fs.renameSync(`${USAGE_SPACES}.tmp`, USAGE_SPACES)
+      } catch {} // (not kept this time: it's written again the next time something changes)
+    }
+    return known
   }
 
   // This computer's usage, as the Usage view and linked computers get it:
@@ -1225,11 +1288,14 @@ export class Clique extends EventEmitter {
   // as it was). providers: { id: label }. faces: { key: { name: avatar } } for agents that chose their look.
   usageSummary() {
     const providers = () => providersFrom(this.config.data, this.config.discovered)
-    this.history ??= new History({ file: path.join(HOME, 'history.json'), roots: () => logRoots(providers(), process.env, accountsIn(this.config.data)), owners: () => this.usagePlacing().owners })
+    this.history ??= new History({ file: path.join(HOME, 'history.json'), roots: () => logRoots(providers(), process.env, accountsIn(this.config.data)), owners: () => this.usagePlacing().owners, arrived: () => this.usagePlacing().arrived })
     const all = providers()
-    const { rows, ...rest } = this.history.state({ ...this.usagePlacing(), providers: all })
+    const { owners, agents } = this.usagePlacing()
+    const { rows, ...rest } = this.history.state({ owners, agents, providers: all })
+    // a workspace's key: as it is now, or for one that isn't here any more, as it was written down (rememberSpaces)
+    const was = this.usageSpaces ?? {}
     const keys = new Map()
-    const keyOf = (ws) => keys.get(ws) ?? keys.set(ws, this.keyOf(ws)).get(ws)
+    const keyOf = (ws) => keys.get(ws) ?? keys.set(ws, this.hubs.has(ws) ? this.keyOf(ws) : was[ws]?.key ?? this.keyOf(ws)).get(ws)
     const labels = {}
     const out = rows.map((r) => {
       labels[r[3]] ??= all[r[3]]?.label ?? r[3]
@@ -1242,8 +1308,15 @@ export class Clique extends EventEmitter {
       spaces[key] = { name: h.space.name, color: h.space.color, icon: h.space.icon }
       for (const a of h.space.agents) if (a.avatar) (faces[key] ??= {})[a.name] = a.avatar
     }
+    // one that's gone from here: by the name and look it had (a linked computer's, hidden here, is still its computer's:
+    // not "removed"); from before that was written down, by the name config.json kept for it
     const gone = this.config.data.workspacesGone && typeof this.config.data.workspacesGone === 'object' ? this.config.data.workspacesGone : {}
-    for (const [ws, key] of keys) spaces[key] ??= { name: Object.keys(gone).find((name) => gone[name] === ws) ?? ws, gone: true }
+    for (const [ws, key] of keys) {
+      if (spaces[key]) continue
+      const k = was[ws]
+      const theirs = k && !key.startsWith(`${this.me.slug}:`)
+      spaces[key] = { name: k?.name ?? Object.keys(gone).find((name) => gone[name] === ws) ?? ws, ...(k?.color && { color: k.color }), ...(k?.icon && { icon: k.icon }), ...(!theirs && { gone: true }) }
+    }
     // the accounts the rows name (core/accounts.js): { id: { name, provider } }; one that's been removed keeps its days, under its id
     const accounts = Object.fromEntries(accountsIn(this.config.data).map((a) => [a.id, { name: a.name, provider: a.provider }]))
     return { ...rest, rows: out, spaces, providers: labels, faces, accounts }
@@ -1259,7 +1332,9 @@ export class Clique extends EventEmitter {
     const computers = [{ slug: this.me.slug, name: this.me.name, here: true, online: true, ...own }]
     const spaces = {}
     for (const [slug, u] of this.theirUsage()) {
+      // (only the computers linked now, as Computers lists them: one that was renamed or unlinked isn't counted beside itself)
       const l = this.links.get(slug)
+      if (!l) continue
       const d = u.data
       computers.push({
         slug, name: l?.name ?? u.name ?? slug, online: Boolean(l?.peer), got: u.got, at: d?.at ?? 0, reading: (l?.peer && d?.reading) || null, first: d?.first ?? null,
@@ -1286,24 +1361,32 @@ export class Clique extends EventEmitter {
       } catch {}
       for (const f of files) {
         const kept = readJSON(path.join(USAGE_DIR, f))
-        if (kept && typeof kept === 'object' && usable(kept.data)) this.usageOf.set(f.slice(0, -5), { name: String(kept.name ?? ''), got: Number(kept.got) || 0, data: kept.data, note: '', asking: null })
+        const got = Number(kept?.got) || 0
+        // (what a computer said over a month ago, and it hasn't been linked since: it goes)
+        if (!kept || typeof kept !== 'object' || !usable(kept.data) || Date.now() - got > THEIR_USAGE_KEPT) fs.rmSync(path.join(USAGE_DIR, f), { force: true })
+        else this.usageOf.set(f.slice(0, -5), { name: String(kept.name ?? ''), got, data: tidy(kept.data), note: '', asking: null })
       }
     }
     for (const l of this.links.values()) {
       const u = this.usageOf.get(l.slug) ?? this.usageOf.set(l.slug, { name: l.name, got: 0, data: null, note: '', asking: null }).get(l.slug)
       if (l.name) u.name = l.name
+      // a new connection to it (it was off, or the link dropped): asked afresh, and what the last one couldn't say is forgotten
+      if (l.peer && u.peer !== l.peer) Object.assign(u, { peer: l.peer, asked: 0, note: '' })
       const every = u.data?.reading && !u.note ? THEIR_USAGE_READING : THEIR_USAGE_EVERY
       if (!l.peer || u.asking || Date.now() - (u.asked ?? 0) < every) continue
       u.asked = Date.now()
       const peer = l.peer
       u.asking = peer.call('usageHistory').then((data) => {
         if (!usable(data)) throw new Error(`${l.name} answered with something that isn't its usage`)
+        data = tidy(data)
         Object.assign(u, { data, got: Date.now(), note: '' })
         try {
           fs.mkdirSync(USAGE_DIR, { recursive: true })
           fs.writeFileSync(path.join(USAGE_DIR, `${l.slug}.json`), JSON.stringify({ name: l.name, got: u.got, data }))
         } catch {} // not kept: it's asked again next time
       }, (e) => {
+        // the link went while it was asked: it's simply off, and is asked again when it's back
+        if (l.peer !== peer) return void (u.asked = 0)
         u.note = /isn't available over CLIque Link/.test(e?.message ?? '') ? `${l.name} runs an older CLIque: update it to see what it used` : `${l.name} couldn't say what it used: ${String(e?.message ?? e).split('\n')[0].slice(0, 200)}`
       }).finally(() => {
         u.asking = null

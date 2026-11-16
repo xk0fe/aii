@@ -43,9 +43,11 @@ const config = () => ({
   workspaces: [{ id: 'shop', name: 'Shop', folder: cwd, members: { june: {}, iris: {}, ada: {}, rex: {} } }],
 })
 let hub, runner
-beforeEach(() => {
-  fs.rmSync(path.join(process.env.CLIQUE_HOME, 'workspaces'), { recursive: true, force: true })
-  fs.rmSync(path.join(process.env.CLIQUE_HOME, 'accounts'), { recursive: true, force: true })
+beforeEach(async () => {
+  // (the hub before this one may still be writing its chat down: wait for it, and try again if a file lands meanwhile)
+  await hub?.saving
+  fs.rmSync(path.join(process.env.CLIQUE_HOME, 'workspaces'), { recursive: true, force: true, maxRetries: 10 })
+  fs.rmSync(path.join(process.env.CLIQUE_HOME, 'accounts'), { recursive: true, force: true, maxRetries: 10 })
   fs.rmSync(path.join(process.env.CLIQUE_HOME, 'usage.json'), { force: true })
   fs.writeFileSync(CONFIG, JSON.stringify(config()))
   runner = new FakeRunner()

@@ -200,6 +200,9 @@ export class Hub extends EventEmitter {
     // goes by it to say which workspace a log's tokens were used in (sessionsRun): a shared agent works in several,
     // and its logs don't say which.
     this.ran = readJSON(this.at('ran.json')) ?? {}
+    // The logs that came here with an agent moved from another computer: path -> how long each was when it arrived
+    // (arrived.json). That much was used on the computer it came from, which counts it: the Usage view here doesn't.
+    this.arrived = readJSON(this.at('arrived.json')) ?? {}
     this.stats = readJSON(this.at('stats.json')) ?? {}
     // The chat (core/keep.js says how much of it is kept). feedFile: how much feed.jsonl holds, amendments included,
     // and when it's written anew (see save); sizes: each line's length there, worked out once.
@@ -2182,9 +2185,15 @@ export class Hub extends EventEmitter {
   }
 
   saveRan() {
+    writeWhole(this.at('ran.json'), JSON.stringify(this.ran)) // (CLIque's folder gone: its logs still name the agent)
+  }
+
+  // A conversation's file that came with a moved agent (core/move.js moveIn), as long as it is now.
+  noteArrived(file) {
     try {
-      fs.writeFileSync(this.at('ran.json'), JSON.stringify(this.ran))
-    } catch {} // CLIque's folder gone: its logs still name the agent
+      this.arrived[file] = fs.statSync(file).size
+      writeWhole(this.at('arrived.json'), JSON.stringify(this.arrived))
+    } catch {}
   }
 
   // The sessions this workspace's agents ran, for the Usage view (core/history.js placer): { session id: [workspace,
@@ -5397,6 +5406,14 @@ export { expand }
 // The sessions a workspace's agents ran, from what it keeps (Hub.sessionsRun; for a workspace that's been removed, from
 // the files it left: sessionsLeft). ran: { id: name }, sessions: { name: id }, spend: spend.json (a session the look
 // back only read about, `baseline`, was any workspace's: left out). -> { session id: [workspace, name?] }
+// Written whole or not at all: to a file beside it first, which then takes its place (a crash mid-write leaves the old one).
+function writeWhole(file, text) {
+  try {
+    fs.writeFileSync(`${file}.tmp`, text)
+    fs.renameSync(`${file}.tmp`, file)
+  } catch {}
+}
+
 export function sessionsIn(ws, { ran, sessions, spend } = {}, baseOf = (name) => name) {
   const out = {}
   const str = (v) => typeof v === 'string' && Boolean(v)
@@ -5407,6 +5424,8 @@ export function sessionsIn(ws, { ran, sessions, spend } = {}, baseOf = (name) =>
 }
 // ...of a workspace that isn't open: from its folder.
 export const sessionsLeft = (ws, dir) => sessionsIn(ws, { ran: readJSON(path.join(dir, 'ran.json')), sessions: readJSON(path.join(dir, 'sessions.json')), spend: readJSON(path.join(dir, 'spend.json')) }, (name) => String(name).replace(/\.\d+$/, ''))
+// ...and the logs that arrived there with moved agents (Hub.arrived).
+export const arrivedLeft = (dir) => readJSON(path.join(dir, 'arrived.json')) ?? {}
 // What an agent's conversation is tied to: the CLI that keeps it, and the folder it was started in.
 const sessionHome = (a) => JSON.stringify([a.provider ?? a.cli ?? 'claude', expand(a.cwd)])
 

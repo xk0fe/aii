@@ -36,29 +36,42 @@
 .usage-view [data-hue=other] { --hue: var(--fg2); }
 
 .us-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; container: usage / inline-size; }
-.us-wrap { display: flex; flex-direction: column; gap: 16px; max-width: 1040px; margin: 0 auto; padding: 16px var(--gx, 24px) 40px; }
+.us-wrap { box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; max-width: 1088px; margin: 0 auto; padding: 16px var(--gx, 24px) 40px; }
 
 /* ---- the header's switch: the workspace on screen (its tile and name), or everything ---- */
 .us-scope button { gap: 6px; }
-.us-scope button > span:last-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.us-scope button > span:last-child { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+/* (a long workspace name has less room in a smaller window; its whole name is on hover) */
+@container (max-width: 1040px) { .us-scope button > span:last-child { max-width: 150px; } }
+@container (max-width: 760px) { .us-scope button > span:last-child { max-width: 96px; } }
 .us-scope .ws-tile { flex: none; }
 
 /* ---- the filters: one row over everything they narrow, always there (picking one moves nothing) ---- */
-.us-filters { display: flex; align-items: center; gap: 8px; min-height: 28px; overflow-x: auto; scrollbar-width: none; }
-.us-filters::-webkit-scrollbar { display: none; }
+/* (with more picked than fit on one line it takes a second: nothing of it is ever out of reach) */
+.us-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 28px; }
 .us-filters .btn { height: 28px; }
 .us-filters .us-f.on, .us-filters .us-chip { background: var(--fill-hover); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .us-fi { flex: none; display: grid; place-items: center; width: 16px; height: 16px; line-height: 0; }
 .us-fi > svg { width: 14px; height: 14px; }
-.us-fl { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.us-fl { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .us-chip > svg:last-child { width: 11px; height: 11px; }
 .us-comp button { padding: 0 11px; }
 /* which computer: a switch where there's room for one, a menu in a narrow window */
 .us-filters.has-seg .us-comp-menu { display: none; }
-@container usage (max-width: 760px) {
+@container usage (max-width: 800px) {
   .us-filters.has-seg .us-comp { display: none; }
   .us-filters.has-seg .us-comp-menu { display: inline-flex; }
 }
+@container usage (max-width: 960px) {
+  .us-filters.has-seg.c3 .us-comp, .us-filters.has-seg.all .us-comp { display: none; }
+  .us-filters.has-seg.c3 .us-comp-menu, .us-filters.has-seg.all .us-comp-menu { display: inline-flex; }
+}
+@container usage (max-width: 1100px) {
+  .us-filters.has-seg.c3.all .us-comp { display: none; }
+  .us-filters.has-seg.c3.all .us-comp-menu { display: inline-flex; }
+}
+.us-notices { display: flex; flex-direction: column; gap: 8px; }
+.us-notices:empty { display: none; }
 .us-mi { display: grid; place-items: center; line-height: 0; }
 /* a computer with nothing to show says why, when its part is what's on screen */
 .us-notice { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 10px 14px; border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); font-size: 13px; line-height: 20px; color: var(--fg2); text-wrap: pretty; }
@@ -71,7 +84,7 @@
 .usage-view .us-none > svg { width: 40px; height: 40px; color: var(--fg3); }
 
 /* the view's parts rise into place as it opens, one after the other (the same move as the terminals' tiles) */
-.usage-view:not(.hidden) .us-wrap > * { animation: us-in var(--t-move) var(--out) backwards; animation-delay: calc(min(sibling-index(), 8) * 30ms); }
+.usage-view:not(.hidden) .us-wrap.entering > * { animation: us-in var(--t-move) var(--out) backwards; animation-delay: calc(min(sibling-index(), 8) * 30ms); }
 @keyframes us-in { from { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: reduce) { .usage-view .us-wrap > * { animation: none; } }
 
@@ -91,7 +104,7 @@
 .us-by button { padding: 0 10px; }
 .us-trend-body { display: grid; grid-template-columns: minmax(0, 1fr) 336px; gap: 12px 28px; align-items: start; }
 @container usage (max-width: 860px) { .us-trend-body { grid-template-columns: minmax(0, 1fr); } }
-.us-plot { display: grid; grid-template-columns: 34px minmax(0, 1fr); grid-template-rows: 176px 16px; gap: 6px 8px; }
+.us-plot { display: grid; grid-template-columns: 34px minmax(0, 1fr); grid-template-rows: 240px 16px; gap: 6px 8px; }
 /* the scale: its top, its middle and zero, each on its line */
 .us-ya { grid-area: 1 / 1; position: relative; font-size: 10px; line-height: 1; color: var(--fg3); font-variant-numeric: tabular-nums; }
 .us-ya span { position: absolute; right: 0; transform: translateY(-50%); white-space: nowrap; }
@@ -119,7 +132,8 @@
 .us-xa { grid-area: 2 / 2; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); font-size: 11px; line-height: 16px; color: var(--fg3); }
 .us-xa span { grid-row: 1; white-space: nowrap; }
 .us-xa.daily span { justify-self: center; }
-.us-legend-list { display: flex; flex-direction: column; min-width: 0; }
+/* (room for its seven rows whatever it lists, so the card is one height by workspace, by agent or with one row) */
+.us-legend-list { display: flex; flex-direction: column; min-width: 0; min-height: 266px; }
 .us-quiet { margin: 4px 0; font-size: 13px; color: var(--fg3); }
 .us-sw { display: block; width: 8px; height: 8px; border-radius: 2px; }
 .us-ph { display: flex; align-items: baseline; gap: 10px; min-width: 0; min-height: 24px; }

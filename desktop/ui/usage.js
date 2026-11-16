@@ -14,7 +14,7 @@ function mountUsage(root, { headIn = root }) {
   const HUES = ['claude', 'codex', 'glm', 'local'] // each provider has a colour of its own (usage.css); any other is ink
   const ROWS = 6 // a list's rows before "N more"
   const TOP = 5 // the chart's series with a colour of their own (usage.css --us-s0…4); the rest are one "Other"
-  const PLOT = 176 // the chart's height in px (usage.css .us-plot)
+  const PLOT = 240 // the chart's height in px (usage.css .us-plot)
   const OUT = '' // what ran outside CLIque: no workspace, no agent
   const UNKNOWN = '?' // the clique's, in a workspace (or by an agent) its log doesn't say
   const COST_NOTE = `What these tokens would cost at API list prices. On a subscription this measures use, not a bill. Models ${PRODUCT_NAME} has no price for are left out.`
@@ -55,6 +55,7 @@ function mountUsage(root, { headIn = root }) {
   let asked = 0 // only the newest answer is drawn
   let picked = null // the day picked, 'YYYY-MM-DD'
   let cursor = null // the day the keys are on: the one square in each calendar that Tab stops at
+  let barAt = null // ...and the bar of the chart they're on (its place in the row)
   let range = store.get('clique.usage.range') || 'last'
   let scope = store.get('clique.usage.scope') === 'all' ? 'all' : 'here' // the workspace on screen, or everything
   const by = { here: store.get('clique.usage.by.here') || 'who', all: store.get('clique.usage.by.all') || 'ws' } // what the chart is split by, in each
@@ -95,13 +96,13 @@ function mountUsage(root, { headIn = root }) {
   }
 
   // ---- numbers ----
-  // 17.1B, 342M, 2.5M, 340k, 900: three figures at most, and a number that rounds up to a thousand of its unit goes
-  // by the next one (999,960 is 1M, not 1000k)
+  // 17.1B, 342M, 2.5M, 340k, 1.5k, 900: three figures at most, and a number that rounds up to a thousand of its unit
+  // goes by the next one (999,960 is 1M, not 1000k)
   const UNITS = [['k', 1e3], ['M', 1e6], ['B', 1e9], ['T', 1e12]]
   function big(n) {
     n = Math.round(Number(n) || 0)
     if (n < 1000) return String(n)
-    const write = (i) => +(n / UNITS[i][1]).toFixed(i === 0 || n / UNITS[i][1] >= 100 ? 0 : n / UNITS[i][1] >= 10 || i === 1 ? 1 : 2)
+    const write = (i) => +(n / UNITS[i][1]).toFixed(n / UNITS[i][1] >= 100 || (i === 0 && n / UNITS[i][1] >= 10) ? 0 : n / UNITS[i][1] >= 10 || i <= 1 ? 1 : 2)
     let i = UNITS.findLastIndex(([, size]) => n >= size)
     if (write(i) >= 1000 && i < UNITS.length - 1) i++
     return `${write(i).toLocaleString('en-US')}${UNITS[i][0]}`
@@ -114,7 +115,9 @@ function mountUsage(root, { headIn = root }) {
   const pct = (part, whole) => {
     if (!(whole > 0) || !(part > 0)) return '0%'
     const p = (part / whole) * 100
-    return p >= 99.95 && part < whole ? '>99.9%' : p >= 10 ? `${Math.round(p)}%` : p >= 0.1 ? `${+p.toFixed(1)}%` : '<0.1%'
+    if (part >= whole) return '100%'
+    // (never 100% beside a part that's left over: 99.7%, and past 99.9, more than that)
+    return p >= 99.95 ? '>99.9%' : p >= 99.5 ? `${Math.floor(p * 10) / 10}%` : p >= 10 ? `${Math.round(p)}%` : p >= 0.1 ? `${+p.toFixed(1)}%` : '<0.1%'
   }
   // The top of the chart's scale: the next round number over its tallest bar (1, 1.5, 2, 3, 4, 5, 6, 8 × a power of ten)
   function niceMax(v) {
@@ -179,7 +182,9 @@ function mountUsage(root, { headIn = root }) {
   const computerOf = (slug) => data?.computers?.find((c) => c.slug === slug)
   const computerName = (slug) => (computerOf(slug)?.here ? upFirst(THIS_COMPUTER) : computerOf(slug)?.name ?? slug)
   const providerLabel = (id) => data?.computers?.map((c) => c.providers?.[id]).find(Boolean) ?? id
-  const face = (name, slug, ws) => ({ name, avatar: computerOf(slug)?.faces?.[ws]?.[name] ?? Object.values(computerOf(slug)?.faces ?? {}).map((f) => f[name]).find(Boolean) ?? state?.roster?.find((x) => x.name === name)?.avatar })
+  // (a look's parts end up in the creature's markup: only the ones that read as a word or a switch are taken)
+  const lookOf = (v) => (v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([k, x]) => /^\w{1,24}$/.test(k) && (typeof x === 'boolean' || (typeof x === 'string' && /^[\w#. -]{1,40}$/.test(x))))) : undefined)
+  const face = (name, slug, ws) => ({ name, avatar: lookOf(computerOf(slug)?.faces?.[ws]?.[name] ?? Object.values(computerOf(slug)?.faces ?? {}).map((f) => f?.[name]).find(Boolean) ?? state?.roster?.find((x) => x.name === name)?.avatar) })
   // -> { label, sub, icon, tip }: sub is the small word after the name (whose computer), icon its picture's html
   function thing(dim, id, size = 22) {
     if ((dim === 'ws' || dim === 'who') && id === OUT) return { label: `Outside ${PRODUCT_NAME}`, icon: ICONS.terminal, tip: `Claude Code and Codex sessions you started yourself, and agents that aren't in your clique any more` }
@@ -208,7 +213,8 @@ function mountUsage(root, { headIn = root }) {
     if (dim === 'computer') return { label: computerOf(id)?.name ?? id, sub: computerOf(id)?.here ? THIS_COMPUTER : computerOf(id)?.online ? '' : 'offline', icon: computerIcon(computerOf(id)?.name) }
     if (dim === 'model') {
       const [provider, model] = [id.slice(0, id.indexOf('\t')), id.slice(id.indexOf('\t') + 1)]
-      return { label: model || 'Model not logged', icon: `<i class="us-dot" data-hue="${hueOf(provider)}"></i>`, tip: providerLabel(provider) }
+      // (a dated snapshot goes by its model: claude-sonnet-4-5, with the whole id on hover)
+      return { label: model.replace(/-20\d{6}$/, '') || 'Model not logged', icon: `<i class="us-dot" data-hue="${hueOf(provider)}"></i>`, tip: `${model || 'Model not logged'} · ${providerLabel(provider)}` }
     }
     return { label: id ? shortPath(id) : 'Folder not logged', icon: ICONS.folder, tip: id ? tildePath(id) : '' }
   }
@@ -295,7 +301,7 @@ function mountUsage(root, { headIn = root }) {
     }
     const any = Object.entries(filters).some(([dim, x]) => x !== null && !(dim === 'ws' && here))
     // (a few computers: a switch, and in a narrow window the menu instead)
-    return `<div class="us-filters${seg ? ' has-seg' : ''}" role="toolbar" aria-label="Filters">${machine}${computers.length > 1 ? menu('computer', ' us-comp-menu') : ''}${here ? '' : menu('ws')}${menu('who')}${v.providers.length > 1 || filters.provider !== null ? menu('provider') : ''}${hasAccounts() || filters.account !== null ? menu('account') : ''}${chip('model')}${chip('dir')}${
+    return `<div class="us-filters${seg ? ` has-seg c${computers.length}` : ''}${here ? '' : ' all'}" role="toolbar" aria-label="Filters">${machine}${computers.length > 1 ? menu('computer', ' us-comp-menu') : ''}${here ? '' : menu('ws')}${menu('who')}${v.providers.length > 1 ? menu('provider') : ''}${hasAccounts() || filters.account !== null ? menu('account') : ''}${chip('model')}${chip('dir')}${
       any ? `<button type="button" class="btn plain us-clear" data-clear="all">Clear filters</button>` : ''}</div>`
   }
 
@@ -348,6 +354,8 @@ function mountUsage(root, { headIn = root }) {
       const step = bars.length <= 7 ? 1 : 5
       marks = bars.map((b, i) => ({ col: i, label: bars.length <= 7 ? DAY[b.date.getDay()] : `${MONTH[b.date.getMonth()]} ${b.date.getDate()}` })).filter((m, i) => (bars.length - 1 - i) % step === 0)
     }
+    // the bar Tab stops at: where the keys left off, or the newest one there is (a year's last weeks are still to come)
+    const stop = bars[barAt] ? barAt : bars.findLastIndex(Boolean)
     const cols = bars.map((b, i) => {
       if (!b) return '<i class="us-bx"></i>'
       const h = max ? Math.max(b.total > 0 ? 1.5 : 0, (b.total / max) * 100) : 0
@@ -357,7 +365,7 @@ function mountUsage(root, { headIn = root }) {
       const parts = SERIES.filter((s) => b.parts[s] > 0 && (px(b.parts[s]) >= 1.5 || b.parts[s] === Math.max(...Object.values(b.parts))))
       const tight = px(b.total) < parts.length * 5
       const segs = parts.map((s) => `<i data-s="${s}" style="flex-grow:${Math.max(1, Math.round((b.parts[s] / b.total) * 1000))}"></i>`).join('')
-      return `<button type="button" class="us-bar-col${b.day && b.day === picked ? ' picked' : ''}" data-bar="${i}"${b.day ? ` data-day="${b.day}"` : ''} tabindex="${i === bars.length - 1 ? 0 : -1}" aria-label="${esc(`${b.label}: ${b.total > 0 ? `${big(b.total)} tokens` : 'nothing'}`)}"><i class="us-stack${tight ? ' tight' : ''}" style="height:${h.toFixed(2)}%">${segs}</i></button>`
+      return `<button type="button" class="us-bar-col${b.day && b.day === picked ? ' picked' : ''}" data-bar="${i}"${b.day ? ` data-day="${b.day}"` : ''} tabindex="${i === stop ? 0 : -1}" aria-label="${esc(`${b.label}: ${b.total > 0 ? `${big(b.total)} tokens` : 'nothing'}`)}"><i class="us-stack${tight ? ' tight' : ''}" style="height:${h.toFixed(2)}%">${segs}</i></button>`
     }).join('')
     const ticks = max ? [max, max / 2, 0].map((t) => `<span>${big(t)}</span>`).join('') : '<span></span><span></span><span>0</span>'
     // its legend is a list: each entity's colour, name, tokens and share, most first; a click narrows to it
@@ -450,7 +458,7 @@ function mountUsage(root, { headIn = root }) {
     const u = filters.computer === null || computerOf(filters.computer)?.here ? state?.usage?.[p.id] : null
     const line = s && (s.tokens > 0 || s.messages > 0)
       ? factsHTML([`<b>${big(s.tokens)}</b> tokens`, things(s.messages, 'message', { bold: true }), things(s.days, 'day', { bold: true })], s.cost)
-      : p.ghost ? '' : `Nothing ${r.words}`
+      : p.ghost ? '' : Object.keys(p.days).length ? `Nothing ${r.words}` : `Nothing ${Object.values(filters).some((x) => x !== null) ? 'in what’s picked' : scopeNow() === 'here' ? 'in this workspace' : r.words}`
     return `<section class="us-card us-prov" data-prov="${esc(p.id)}" data-hue="${hueOf(p.id)}">
       <header class="us-ph"><i class="us-dot"></i><h2>${esc(p.label)}</h2><span class="us-facts">${line}</span>${
         u?.windows?.length ? `<span class="us-lim" title="${esc(usageTip(u))}">${limitNums(u)}</span>` : ''}</header>
@@ -487,7 +495,7 @@ function mountUsage(root, { headIn = root }) {
       if (c.note) out.push(`${esc(c.note)}.${hosts ? ` ${esc(here.name)} is hosted there, so until then this is only what ${esc(THIS_COMPUTER)} used in it.` : ''}`)
       else if (nothing && !c.online) out.push(`${esc(c.name)} is off and hasn't said what it used yet.${hosts ? ` ${esc(here.name)} is hosted there, so this is only what ${esc(THIS_COMPUTER)} used in it.` : ' Its part shows once it has been on.'}`)
     }
-    return out.map((text) => `<p class="us-notice">${ICONS.computers}<span>${text}</span></p>`).join('')
+    return `<div class="us-notices">${out.map((text) => `<p class="us-notice">${ICONS.computers}<span>${text}</span></p>`).join('')}</div>`
   }
 
   // Where the numbers come from, in a line: each computer's own logs, and when each last answered.
@@ -524,6 +532,10 @@ function mountUsage(root, { headIn = root }) {
     const others = data.computers.filter((c) => !c.here)
     const where = filters.computer !== null ? computerName(filters.computer).replace(/^This/, 'this') : others.length ? `${THIS_COMPUTER} and ${others.length === 1 ? others[0].name : `${others.length} linked computers`}` : THIS_COMPUTER
     headEl.querySelector('.ph-sub').textContent = busy ? `Reading Claude Code’s and Codex’s logs${reading.total ? ` · ${done}%` : '…'}` : here ? `${space?.name ?? state.workspace.name}’s agents, on ${where}` : `Claude Code and Codex, on ${where}`
+    // (said whole or not at all: with a long workspace name in the switch there may be no room for it)
+    const sub = headEl.querySelector('.ph-sub')
+    sub.classList.remove('hidden')
+    if (sub.scrollWidth > sub.clientWidth + 1) sub.classList.add('hidden')
     if (rangeBtn.firstChild.nodeValue !== r.label) rangeBtn.firstChild.nodeValue = r.label
     rangeBtn.classList.toggle('hidden', empty)
     const hereBtn = scopeSeg.querySelector('[data-scope=here]')
@@ -560,8 +572,11 @@ function mountUsage(root, { headIn = root }) {
       d.sessions += f.sessions
       d.cost += f.cost
     }
-    let providers = [...days.keys()].sort((x, y) => order(x) - order(y) || x.localeCompare(y)).map((id) => ({ id, label: providerLabel(id), days: days.get(id) }))
-    if (!providers.length) providers = (filters.provider !== null ? [filters.provider] : ['claude', 'codex']).map((id) => ({ id, label: providerLabel(id) === id ? upFirst(id) : providerLabel(id), days: {}, ghost: none }))
+    // a calendar for every provider that has anything anywhere, whatever is picked now: a filter or another workspace
+    // empties a calendar, it doesn't take it away (and nothing under it moves)
+    const everyone = [...new Set(facts.map((f) => f.provider))]
+    let providers = everyone.sort((x, y) => order(x) - order(y) || x.localeCompare(y)).map((id) => ({ id, label: providerLabel(id), days: days.get(id) ?? {} }))
+    if (!providers.length) providers = ['claude', 'codex'].map((id) => ({ id, label: upFirst(id), days: {}, ghost: true }))
     const t = tally(providers, r, today)
     const total = sum(rows)
     view = {
@@ -577,6 +592,12 @@ function mountUsage(root, { headIn = root }) {
     const last = one
       ? tile('Share of everything', pct(total.tokens, everything), everything > 0 ? `of ${big(everything)} tokens in all` : r.words, `How much of everything Claude Code and Codex used ${r.words} this is (${one}${Object.entries(filters).some(([d, x]) => x !== null && d !== 'ws' && d !== 'computer') ? ', as filtered' : ''}): every workspace, and what you ran outside ${PRODUCT_NAME}.`)
       : tile(`Through ${esc(PRODUCT_NAME)}`, pct(inClique, total.tokens), total.tokens > inClique ? `${pct(total.tokens - inClique, total.tokens)} ran outside it` : total.tokens > 0 ? 'nothing ran outside it' : r.words, `How much of this your clique's agents used. The rest is Claude Code and Codex sessions you started yourself.`)
+    // What's under the pointer stays under it: a filter can make the page shorter than where it's scrolled to, and the
+    // scroll would jump back by the difference (the row just clicked gone from under the pointer). So the page keeps
+    // room down to where it's scrolled; scrolling back up gives it back on the next draw.
+    const scroller = root.querySelector('.us-scroll')
+    const top = scroller.scrollTop
+    wrap.style.minHeight = ''
     const steps = [1, 2, 3, 4].map((l) => `<i data-l="${l}" title="${t.cap ? (l < 4 ? `Up to ${big(t.cap * (l / 4) ** 2)} tokens a day` : `More than ${big(t.cap * (3 / 4) ** 2)} tokens a day`) : ''}"></i>`).join('')
     morph(wrap, `${filtersHTML(view)}${noticesHTML()}
       <div class="us-tiles">${
@@ -588,6 +609,10 @@ function mountUsage(root, { headIn = root }) {
       <div class="us-foot"><span class="us-note">${sourceText()}</span>
         <span class="us-legend" title="${esc(TOKENS_NOTE)} The same scale in every calendar.">Less<i data-l="0"></i>${steps}More</span></div>
       ${detailHTML(view, r, today)}`)
+    if (top > 0 && scroller.scrollHeight < top + scroller.clientHeight) {
+      wrap.style.minHeight = `${top + scroller.clientHeight}px`
+      scroller.scrollTop = top
+    }
   }
 
   // ---- the data: asked for when the view opens, again while the logs are being read, then every couple of minutes ----
@@ -612,6 +637,7 @@ function mountUsage(root, { headIn = root }) {
     const items = [...RANGES.map(([act, label]) => ({ label, act, on: range === act })), '-', ...years(today).map((y) => ({ label: String(y), act: String(y), on: range === String(y) }))]
     popMenu(e.currentTarget, items, (act) => {
       range = act
+      barAt = null
       store.set('clique.usage.range', range)
       hideTip()
       draw()
@@ -663,7 +689,10 @@ function mountUsage(root, { headIn = root }) {
     const clear = e.target.closest('[data-clear]')
     if (clear) {
       for (const dim of clear.dataset.clear === 'all' ? Object.keys(filters) : [clear.dataset.clear]) filters[dim] = null
-      return void (hideTip(), draw())
+      hideTip()
+      draw()
+      if (!wrap.contains(document.activeElement)) wrap.querySelector('.us-filters [data-menu]:not(.us-comp-menu), .us-filters button')?.focus({ preventScroll: true })
+      return
     }
     const split = e.target.closest('.us-by [data-by]')
     if (split) {
@@ -684,12 +713,15 @@ function mountUsage(root, { headIn = root }) {
   wrap.addEventListener('keydown', (e) => {
     // the chart: the arrows move along its bars
     const bar = e.target.closest?.('.us-bar-col')
+    // (Esc lets a day go, picked from a bar as from a square)
+    if (bar && e.key === 'Escape' && picked) return void (e.preventDefault(), e.stopPropagation(), pick(picked))
     if (bar && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault()
       let next = bar
       do next = e.key === 'ArrowLeft' ? next.previousElementSibling : next.nextElementSibling
       while (next && !next.matches('.us-bar-col'))
       if (!next) return
+      barAt = Number(next.dataset.bar) // (kept: the next redraw leaves the tab stop where the keys are)
       bar.tabIndex = -1
       next.tabIndex = 0
       return next.focus()
@@ -769,7 +801,13 @@ function mountUsage(root, { headIn = root }) {
       shown = on
       clearTimeout(timer)
       hideTip()
-      if (on) (draw(), refresh())
+      if (on) {
+        // (its parts rise into place as it opens: usage.css; not again when a redraw rebuilds one of them)
+        wrap.classList.add('entering')
+        setTimeout(() => wrap.classList.remove('entering'), 700)
+        draw()
+        refresh()
+      }
     },
     refresh,
   }
