@@ -13,7 +13,7 @@
 const TAG = 'relayed'
 // The fence itself, and the start of each bracket CLIque writes (Hub.framed, tagged, briefed, pump's batch line, a
 // task's first line in core/tickets.js): one underscore after the "<" or "[" and it's no longer one of ours.
-const LOOKALIKE = /(<\/?|\[)(?=relayed\b|clique\]|(?:question |answer )?from @|in #|(?:bug|feature|task) #\d|\d+ (?:hand-offs|answers) )/gi
+const LOOKALIKE = /(<\/?|\[)(?=relayed\b|clique\]|(?:question |answer )?from @|in #|replying to |also sent to @|(?:bug|feature|task) #\d|\d+ (?:hand-offs|answers) )/gi
 
 // Text that isn't the user's or CLIque's, safe to put inside a fence or after one of CLIque's own lines.
 export const defused = (text) => String(text ?? '').replace(LOOKALIKE, '$1_')

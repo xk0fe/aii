@@ -21,7 +21,7 @@ import { ROOT, GENERAL, channelName, dirOf, space, forget, renameShared, sharedN
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 import { CANVAS_HELP, CANVAS_LINES, asCanvas, canvasLines, canvasTitle, typedLines, withCanvas } from './canvas.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
-import { defused, inBracket, relayed } from './framing.js'
+import { defused, inBracket, pasteable, relayed } from './framing.js'
 import { agentKey } from './keys.js'
 
 export { HOME } // ~/.clique (core/home.js)
@@ -1282,8 +1282,8 @@ export class Hub extends EventEmitter {
     this.startFresh(a, `: the last one had sat idle ${spanOf(idle)}, and picking it back up would have re-read its ${tokenCount(used)} tokens`)
     this.convoOf(a).note = [
       `[clique] This is a new conversation. Your last one sat idle ${spanOf(idle)}, so CLIque started fresh rather than have you re-read all of it.`,
-      t && `You were on #${t.id} "${t.title}".`,
-      said && `The last thing you said in it: "${gist(said.text, 400)}"`,
+      t && `You were on #${t.id} "${defused(t.title)}".`,
+      said && `The last thing you said in it: "${defused(gist(said.text, 400))}"`,
     ].filter(Boolean).join(' ')
     this.saveConvos()
   }
@@ -2320,7 +2320,7 @@ export class Hub extends EventEmitter {
       m.queued = false
       this.record(a.name, { fromTeam: 1, delivered: 1, queuedMs: Date.now() - m.ts })
     }
-    const text = msgs.map((m) => this.framed(a, m, { busy: true })).join('\n\n')
+    const text = pasteable(msgs.map((m) => this.framed(a, m, { busy: true })).join('\n\n'))
     this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
     a.steering = { text, msgs, at: Date.now() }
     // Enter again in case the first was lost on a stalled CLI (an empty prompt box ignores it)
@@ -3066,7 +3066,8 @@ export class Hub extends EventEmitter {
     const note = this.convos[a.name]?.note
     if (note) delete this.convos[a.name].note, this.saveConvos()
     const head = msgs.length < 2 ? '' : msg.answers ? `[${msgs.length} answers to your questions came in]` : `[${msgs.length} hand-offs came in while you were busy, oldest first. Take them together, in this one turn.]`
-    const text = [note, head, ...msgs.map((m) => this.framed(a, m))].filter(Boolean).join('\n\n')
+    // (as the terminal gets it, without control characters: the prompt the CLI reports back is matched against this)
+    const text = pasteable([note, head, ...msgs.map((m) => this.framed(a, m))].filter(Boolean).join('\n\n'))
     this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
     a.promptAt ||= Date.now()
     // Matched against the prompt the agent reports, even if it shows up late. Only the words count:
@@ -3116,10 +3117,12 @@ export class Hub extends EventEmitter {
   // before there were channels. Called as the message goes in, so the conversation counts the brief as given.
   briefed(a, m) {
     // one said on another computer comes with its name and brief (Clique.send); one of this workspace's, as it is now
-    const c = (m.channelName && { id: m.channel, name: m.channelName, brief: m.brief ?? '' }) || (this.channel(m.channel) ?? this.channel(GENERAL))
+    const given = (m.channelName && { id: m.channel, name: m.channelName, brief: m.brief ?? '' }) || (this.channel(m.channel) ?? this.channel(GENERAL))
+    // (a name and a brief can come from a linked computer, or from an agent's `clique app`: neither can close the bracket)
+    const c = { ...given, name: inBracket(given.name), brief: given.brief ? inBracket(given.brief) : given.brief }
     const convo = this.convoOf(a)
     const had = convo.briefs?.[c.id]
-    const now = c.brief ? briefHash(c.brief) : undefined
+    const now = given.brief ? briefHash(given.brief) : undefined
     if (had === now) return c.id === GENERAL && !c.brief ? '' : `[in #${c.name}]`
     convo.briefs = { ...convo.briefs }
     if (now) convo.briefs[c.id] = now
@@ -4289,8 +4292,10 @@ const samePrompt = (reported, sent) => {
 const isNotice = (prompt) => /^\s*<task-notification>/.test(String(prompt ?? ''))
 
 // Agents get images as file paths (Claude Code and Codex can both open local images).
-const withImages = (text, images) =>
-  images?.length ? `${text}\n\nAttached image${images.length > 1 ? 's' : ''} (open to view):\n${images.join('\n')}` : text
+const withImages = (text, all) => {
+  const images = (all ?? []).filter((p) => !/[\x00-\x1f\x7f]/.test(p)) // a path is one line: nothing rides in after it
+  return images.length ? `${text}\n\nAttached image${images.length > 1 ? 's' : ''} (open to view):\n${images.join('\n')}` : text
+}
 
 // A terminal's text without its escape sequences and spaces: what's on screen, however it was drawn.
 const flat = (s) => s.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-9;?<>=]*[ -\/]*[@-~]/g, '').replace(/\x1b./g, '').replace(/\s+/g, '')

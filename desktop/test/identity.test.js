@@ -123,6 +123,7 @@ test('an agent is itself, and is refused as you or as a teammate', async () => {
   // nor report as a teammate: its hooks, permission requests, file leases and status line are its own
   for (const route of ['hook', 'ask', 'lease', 'status']) assert.deepEqual(await call(ada, `/${route}/june`, '{}'), [403, "not done: you're @ada, and can't report as @june"], route)
   assert.equal((await call(ada, '/hook/ada', JSON.stringify({ hook_event_name: 'PostToolUse' })))[0], 200)
+  assert.deepEqual(await call(ada, '/hook', '{}'), [400, 'which agent?'])
   assert.deepEqual(sent(hub), ['ada>june: no name given', 'ada>june: my own name given'])
   assert.equal(hub.feed.filter((e) => e.kind === 'note').length, 0)
   // a key for another workspace, or of an agent that's gone

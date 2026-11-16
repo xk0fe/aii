@@ -81,6 +81,7 @@ export function serve(to) {
     // The name a request gives is only checked, never believed: an agent is who its key says, and can't be you or a
     // teammate; your token can't be an agent that has a key of its own.
     const claimed = AGENTS_OWN.has(route) ? arg : q.from
+    if (AGENTS_OWN.has(route) && !arg) return res.writeHead(400).end('which agent?\n')
     const named = (n) => (n === 'you' ? 'the user' : `@${n}`)
     if (agent && claimed && claimed !== agent.name) return res.writeHead(403).end(`not done: you're @${agent.name}, and can't ${AGENTS_OWN.has(route) ? 'report' : 'speak'} as ${named(claimed)}\n`)
     // (a hook of an agent that's gone is let through, to be ignored as it always was: refused, it would be spooled)
