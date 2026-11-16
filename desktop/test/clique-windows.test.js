@@ -90,7 +90,7 @@ test('clique: every command asks CLIque the same thing as bin/clique and prints 
   const cases = [
     ['who'], ['board'], ['leases'], ['send', 'bob', TRICKY], ['send', 'bob'], ['send'], ['ask', 'any', 'which port?', 'the dev one'], ['ask', 'any'], ['wait'],
     ['answer', '@bob', 'port 3000'], ['answer', 'yes'], ['answer', '@bob'], ['lease', 'iOS Simulator', 'UI tests'], ['lease'], ['release'], ['release', 'iOS Simulator'],
-    ['note', 'we use pnpm', 'now'], ['note'], ['channels'], ['post', 'review', TRICKY], ['post', '#iOS Release', 'build 12', 'is up'], ['post', 'review'], ['post'], ['task', 'add', 'Fix login', '--priority', 'high', TRICKY], ['task'], ['bug', 'it crashes'],
+    ['note', 'we use pnpm', 'now'], ['note'], ['channels'], ['post', 'review', TRICKY], ['post', '#iOS Release', 'build 12', 'is up'], ['post', 'review'], ['post'], ['react', '👍'], ['react'], ['react', 'two', 'words'], ['task', 'add', 'Fix login', '--priority', 'high', TRICKY], ['task'], ['bug', 'it crashes'],
     ['app'], ['app', 'help'], ['app', 'channel', 'add', 'design', '--brief', TRICKY, '--members', 'iris, june'], ['app', 'link', 'clique1.abc'], ['help'], [], ['nonsense'],
   ]
   for (const args of cases) {

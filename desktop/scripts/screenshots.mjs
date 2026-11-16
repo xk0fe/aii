@@ -62,6 +62,40 @@ const CANVAS_FEED = [
   },
   { id: 'k5', kind: 'event', from: 'Theo', text: 'added to @Iris\'s canvas "How the score is made"', canvasOf: 'k4' },
 ]
+// The reactions shots: one scripted exchange, twice. 'acks': every "got it" is a message, as it was. 'reactions': the
+// same agents put an emoji on what they were told instead (clique react), and the acknowledgements are gone from the chat.
+const REACT_FEED = (mode) => {
+  const on = mode === 'reactions'
+  const gist = (text) => text.split('\n')[0].split(/(?<=[.!?])\s/)[0]
+  const r = (by, emoji, said) => ({ by, emoji, at: 0, ...(said && { said }) })
+  const say = (id, from, to, text, re, extra = {}) => ({ id, kind: 'msg', from, to, text, re, thread: 'y0', gist: gist(text), ...extra })
+  const said = (id, from, text, re, extra = {}) => ({ id, kind: 'reply', from, text, re, gist: gist(text), ...extra })
+  const news = 'Heads-up: the release freeze starts Thursday at 5pm. Nothing to do yet.'
+  const cc = { cc: ['Ada', 'Milo', 'Theo'], sendId: 'sx' }
+  return [
+    { id: 'xa', kind: 'msg', from: 'you', to: 'Ada', text: news, ...cc, ...(on && { reactions: [r('Ada', '👍')] }) },
+    { id: 'xm', kind: 'msg', from: 'you', to: 'Milo', text: news, ...cc, ...(on && { reactions: [r('Milo', '👍', 'Noted, thanks.')] }) },
+    { id: 'xt', kind: 'msg', from: 'you', to: 'Theo', text: news, ...cc, ...(on && { reactions: [r('Theo', '👀')] }) },
+    ...(on ? [] : [
+      said('xa1', 'Ada', 'Got it, the freeze is Thursday at 5pm.', 'xa', { thread: 'xa', out: true }),
+      said('xm1', 'Milo', 'Noted, thanks.', 'xm', { thread: 'xm', out: true }),
+      said('xt1', 'Theo', 'Acknowledged. Nothing to add from testing.', 'xt', { thread: 'xt', out: true }),
+    ]),
+    { id: 'y0', kind: 'msg', from: 'you', to: 'Ada', text: 'Rename `rows` to `items` in the cart API, and let Milo and Theo know.' },
+    say('y1', 'Ada', 'Milo', 'I renamed `rows` to `items` in GET /api/cart. Your cart table reads the old name: switch it over.', 'y0'),
+    say('y2', 'Ada', 'Theo', 'Heads-up: `rows` is `items` in the cart API now. Nothing for you to do unless a test names it.', 'y0', on ? { reactions: [r('Theo', '👍', 'No test names it.')] } : {}),
+    said('y3', 'Ada', 'Renamed in the API, and Milo and Theo know. Milo has one change to make in the cart table.', 'y0', { thread: 'y0', out: true }),
+    ...(on ? [] : [said('y4', 'Theo', 'Thanks, noted. No test names it, so nothing to change.', 'y2', { thread: 'y0' })]),
+    say('y5', 'Milo', 'Ada', 'Switched the cart table to `items`. It is on feat/cart-items, and the page still renders.', 'y1', on ? { reactions: [r('Ada', '🙏')] } : {}),
+    ...(on ? [] : [said('y6', 'Ada', 'Thanks Milo, got it. Nothing more from me.', 'y5', { thread: 'y0' })]),
+    said('y7', 'Ada', 'All done: the API and the cart table both use `items` now.', 'y0', { thread: 'y0', out: true, ...(on && { reactions: [r('you', '🎉')] }) }),
+  ]
+}
+const REACT_SETUP = (mode) => `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+  s.feed = ${JSON.stringify(REACT_FEED(mode))}.map((e, i, all) => ({ ...e, ts: t(2 * (all.length - i)) }))
+  for (const a of s.agents) Object.assign(a, { status: 'idle', activity: '', subs: [], waitingOn: [], thread: undefined })
+  s.reads = { since: Date.now() + 1e6, agents: {} }
+  window.__cliqueEmit('state', s)`
 // What's behind the transparent windows: the popover's material, or a soft desktop for the floating pill.
 const BACKDROP = {
   popover: { light: '#ececef', dark: '#2b2b2f' },
@@ -228,6 +262,101 @@ const SCREEN_TOP = `html::before { content: ''; position: fixed; inset: 0 0 auto
   .wrap { position: absolute !important; left: 50%; top: 0; transform: translateX(-50%); }`
 
 const SHOTS = {
+  // Reactions: an emoji on a message in place of a written "got it" (clique react). The same exchange with every
+  // acknowledgement as a message (before) and as a reaction (after), in the channel and in the thread beside it; a
+  // hand-off in an agent's conversation; and a message with more reactions than fit, in the narrow floating chat.
+  async reactions(theme) {
+    for (const mode of ['acks', 'reactions']) {
+      const win = await dashboard(theme, 'chat', { width: 1180, height: 900, fixture: 'threads' })
+      await js(win, REACT_SETUP(mode))
+      await sleep(900)
+      await js(win, click('.thread-card[data-thread="y0"]'))
+      await sleep(700)
+      const rows = await js(win, "return { channel: document.querySelectorAll('.feed .feed-list:not(.typing-list) > .item, .feed .feed-list:not(.typing-list) > .thread-card').length, thread: document.querySelectorAll('.thread-list .thread-row').length }")
+      console.log(`reactions (${mode}): ${rows.channel} rows in the channel, ${rows.thread} in the thread`)
+      await save(win, `reactions-${mode === 'acks' ? 'before' : 'after'}-${theme}`)
+      if (mode === 'reactions') {
+        // the hand-off itself, in the conversation with the agent it went to
+        await js(win, click('.thread-x'))
+        await js(win, click('.dm[data-agent="Theo"]'))
+        await sleep(900)
+        await save(win, `reactions-handoff-${theme}`)
+      }
+      win.destroy()
+    }
+    // the floating chat, 380 wide: long names, many reactions, one line
+    const win = await open('overlay.html', { theme, width: 520, height: 700, backdrop: 'desktop' })
+    await sleep(400)
+    await js(win, `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+      const r = (by, emoji, said) => ({ by, emoji, at: 0, ...(said && { said }) })
+      s.feed = [
+        { id: 'm1', kind: 'msg', from: 'you', to: 'Ada', text: 'Checkout v2 is live. Thank you all.', ts: t(9), cc: ['Ada', 'Milo', 'Iris', 'Theo', 'June'], sendId: 'sm',
+          reactions: [r('Ada', '🎉'), r('Milo', '🎉'), r('Iris', '🎉'), r('Theo', '🎉'), r('June', '🎉'), r('Ada', '🚀'), r('Milo', '❤️'), r('Iris', '🙌'), r('Theo', '✅'), r('June', '👏'), r('Theo', '🫡'), r('June', '💯')] },
+        { id: 'm2', kind: 'reply', from: 'Theo', to: 'you', text: 'All 48 checkout tests pass on Chrome, Safari and Firefox.', ts: t(6), reactions: [r('you', '👍'), r('Ada', '👍'), r('you', '🎉')] },
+        { id: 'm3', kind: 'msg', from: 'Ada', to: 'Milo', text: 'The orders endpoint returns totals in cents now. Nothing to change on your side.', ts: t(4), reactions: [r('Milo', '👀', 'Seen, the table already reads cents.')] },
+        { id: 'm4', kind: 'msg', from: 'you', to: 'Iris', text: 'Standup is at 10:30 from tomorrow.', ts: t(2), reactions: [r('Iris', '👍')] },
+      ]
+      for (const a of s.agents) Object.assign(a, { status: 'idle', activity: '', subs: [] })
+      s.reads = { since: Date.now() + 1e6, agents: {} }
+      window.__cliqueEmit('state', s); window.__cliqueEmit('toggle', { open: true, focus: false })`)
+    await sleep(900)
+    await fitToContent(win)
+    await save(win, `reactions-floating-${theme}`)
+    // pointing at a message: the handy ones beside Reply (an agent's message, then one of yours)
+    for (const [id, name] of [['m2', 'hover'], ['m4', 'hover-yours']]) {
+      const at = await center(win, `#m-${id} .bubble`)
+      await glide(win, { x: at.x - 60, y: at.y - 80 }, at, 200)
+      await sleep(500)
+      const img = await win.webContents.capturePage()
+      fs.writeFileSync(path.join(out, `reactions-${name}-${theme}.png`), img.toPNG())
+      console.log('saved', `reactions-${name}-${theme}.png`)
+    }
+    win.destroy()
+  },
+  // A reaction landing: on the message at the bottom while you follow the chat, on one above while you read further up
+  // (nothing you're reading moves), then your own from the tools a message shows when you point at it.
+  async reactionsGif() {
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { width: 900, height: 600, fixture: 'threads' })
+    await js(win, REACT_SETUP('acks'))
+    // a longer history, so there's something to read further up
+    await js(win, `const s = window.__cliqueState; s.feed = s.feed.filter((e) => !['xa1', 'xm1', 'xt1', 'y4', 'y6'].includes(e.id)); const t0 = s.feed[0].ts - 3600000
+      const said = ['Checked the orders table migration.', 'Tests are green on CI.', 'Left a note on the empty cart task.', 'Nudged the product grid spacing a little.']
+      s.feed.unshift(...Array.from({ length: 14 }, (_, i) => ({ id: 'old' + i, kind: 'reply', from: ['Ada', 'Milo', 'Iris', 'Theo'][i % 4], to: 'you', text: said[i % 4], ts: t0 + i * 60000 })))
+      s.feed.push({ id: 'z0', kind: 'msg', from: 'you', to: 'Theo', text: 'Standup is at 10:30 from tomorrow.', ts: Date.now() }); window.__cliqueEmit('state', s)`)
+    await sleep(1200)
+    const col = await js(win, "const r = document.querySelector('.page-head[data-for=chat]').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(innerWidth - r.x), height: innerHeight }")
+    const land = (id, by, emoji) => js(win, `const s = window.__cliqueState; const e = s.feed.find((x) => x.id === '${id}'); e.reactions = [...(e.reactions ?? []), { by: '${by}', emoji: '${emoji}', at: Date.now() }]; window.__cliqueEmit('state', s)`)
+    await record(win, 'reactions', {
+      clip: col, ms: 12500, width: 760,
+      during: async () => {
+        let at = { x: col.x + 420, y: 200 }
+        // following the chat: Theo's 👍 lands on the newest message
+        await sleep(900)
+        await land('z0', 'Theo', '👍')
+        await sleep(1500)
+        // reading further up: three land on the message in view and one below it, and what you read stays where it is
+        await js(win, "document.querySelector('#m-old11').scrollIntoView({ block: 'start', behavior: 'smooth' })")
+        await sleep(1300)
+        await land('xa', 'Ada', '👍')
+        await sleep(700)
+        await land('xm', 'Milo', '👍')
+        await sleep(700)
+        await land('xt', 'Theo', '👀')
+        await sleep(700)
+        await land('y7', 'Milo', '✅')
+        await sleep(1300)
+        // your own: point at a message and pick one
+        at = await glide(win, at, await center(win, '#m-old13 .bubble'), 700)
+        await sleep(400)
+        at = await glide(win, at, await center(win, '#m-old13 .react-pick[data-react="🎉"]'), 500)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1500)
+        await glide(win, at, { x: at.x - 200, y: at.y + 120 }, 500)
+      },
+    })
+    win.destroy()
+  },
   // Canvases: boards agents draw by hand in the chat (ui/canvas.js, `clique canvas`): bars with a tick, a cross and a
   // source in a final message, then a flow two agents drew together.
   async canvas(theme) {
@@ -319,6 +448,10 @@ const SHOTS = {
       window.__cliqueEmit('state', s)`)
     await sleep(3200)
     await shot('canvas', win, { crop: await column(win) })
+    // Usage: a calendar per provider, and who used it
+    win = await dashboard(theme, 'usage', { width: 1160, height: 950, reset: ['clique.usage.range'] })
+    await sleep(900)
+    await shot('usage', win)
     // every terminal side by side
     win = await dashboard(theme, 'grid', { width: 1160, height: 700 })
     await sleep(1600)
@@ -367,6 +500,28 @@ const SHOTS = {
     await fitToContent(win)
     await save(win, `tray-${theme}`)
     win.destroy()
+  },
+  // Staying awake while agents work (core/awake.js): the tray's line, its switch under the gear, the tray once it's
+  // off, and the same switch in the dashboard's menu.
+  async awake(theme) {
+    const win = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(win)
+    await save(win, `awake-tray-${theme}`)
+    await js(win, click('[data-act=settings]'))
+    await sleep(350)
+    await save(win, `awake-tray-settings-${theme}`)
+    await js(win, click('.menu [data-menu-act=awake]'))
+    await sleep(400)
+    await fitToContent(win)
+    await save(win, `awake-tray-off-${theme}`)
+    win.destroy()
+    const dash = await dashboard(theme, 'chat', { width: 1060, height: 690 })
+    await js(dash, click('.side-more'))
+    await sleep(350)
+    const box = await js(dash, "const r = document.querySelector('.menu').getBoundingClientRect(); return { x: 0, y: Math.max(0, Math.round(r.top) - 40), width: 560, height: Math.round(innerHeight - Math.max(0, Math.round(r.top) - 40)) }")
+    await save(dash, `awake-menu-${theme}`, { crop: box })
+    dash.destroy()
   },
   async overlay(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
@@ -603,6 +758,85 @@ const SHOTS = {
     await sleep(1000)
     await save(win, `stats-${theme}`)
     await js(win, click('[data-mode=cards]'))
+    win.destroy()
+  },
+  // Usage (ui/usage.js): a calendar per provider from Claude Code's and Codex's own logs, the range's numbers, and who
+  // used it; then a day picked (its square ringed in both calendars, the breakdown under them the day's), one year,
+  // and the first look at the logs, the newest days in and the rest on their way.
+  async usage(theme) {
+    const win = await dashboard(theme, 'usage', { height: 1010, reset: ['clique.usage.range'] })
+    await sleep(700)
+    await save(win, `usage-${theme}`)
+    // a busy weekday three weeks back, in whichever column it falls
+    const day = await js(win, `const d = new Date(Date.now() - 20 * 864e5); while (d.getDay() === 0 || d.getDay() === 6 || !window.__cliqueHistory.providers[0].days[key(d)] || !window.__cliqueHistory.providers[1].days[key(d)]) d.setDate(d.getDate() - 1)
+      function key(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+      return key(d)`)
+    const cell = `.us-prov[data-prov=claude] .us-c[data-day="${day}"]`
+    await tap(win, await glide(win, { x: 700, y: 500 }, await center(win, cell), 200))
+    await sleep(500)
+    await save(win, `usage-day-${theme}`)
+    await js(win, click('[data-us=clear]'))
+    await js(win, click('.page-head[data-for=usage] [data-us=range]'))
+    await sleep(300)
+    await save(win, `usage-range-${theme}`)
+    await js(win, `document.querySelector('.menu [data-menu-act="${new Date().getFullYear()}"]').click()`)
+    await sleep(500)
+    await save(win, `usage-year-${theme}`)
+    win.destroy()
+    const first = await dashboard(theme, 'usage', { height: 1010, fixture: 'usage-reading', reset: ['clique.usage.range'] })
+    await sleep(900)
+    await save(first, `usage-reading-${theme}`)
+    await js(first, `window.__cliqueHistory = { at: Date.now(), reading: null, first: null, providers: [] }; localStorage.setItem('clique.place', 'chat')`)
+    await js(first, click('.nv[data-place=clique]'))
+    await js(first, click('.nv[data-place=usage]'))
+    await sleep(500)
+    await save(first, `usage-none-${theme}`)
+    first.destroy()
+    // the way in from the sidebar's foot: under the limits, Usage by day
+    const foot = await dashboard(theme, 'chat', { height: 600 })
+    await js(foot, click('.use-line'))
+    await sleep(400)
+    await save(foot, `usage-popover-${theme}`)
+    foot.destroy()
+    // a narrow window: the tiles two by two, the limits out of the provider's line, the squares smaller but all there
+    const narrow = await dashboard(theme, 'usage', { width: 940, height: 1010, reset: ['clique.usage.range'] })
+    await sleep(700)
+    await save(narrow, `usage-narrow-${theme}`)
+    narrow.destroy()
+  },
+  // Usage in motion: in from the sidebar, the pointer along a week of days (each says its numbers), one picked (the
+  // breakdown under the calendars becomes that day's), another, and back to the whole range.
+  async usageGif() {
+    const win = await dashboard('light', 'chat', { width: 1240, height: 900, reset: ['clique.usage.range'] })
+    await sleep(900)
+    const days = await js(win, `const h = window.__cliqueHistory.providers; const out = []
+      function key(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+      for (let i = 40; out.length < 6 && i > 8; i--) { const k = key(new Date(Date.now() - i * 864e5)); if (h[0].days[k] && h[1].days[k]) out.push(k) }
+      return out`)
+    const cell = (prov, day) => `.us-prov[data-prov=${prov}] .us-c[data-day="${day}"]`
+    await record(win, 'usage', {
+      clip: { x: 0, y: 0, width: 1240, height: 900 }, ms: 9800, width: 1000,
+      during: async () => {
+        let at = { x: 620, y: 520 }
+        await sleep(500)
+        at = await glide(win, at, await center(win, '.nv[data-place=usage]'), 600)
+        await tap(win, at)
+        await sleep(1100)
+        for (const day of days.slice(0, 4)) {
+          at = await glide(win, at, await center(win, cell('claude', day)), 320)
+          await sleep(360)
+        }
+        await tap(win, at)
+        await sleep(1500)
+        at = await glide(win, at, await center(win, cell('codex', days[5])), 600)
+        await sleep(500)
+        await tap(win, at)
+        await sleep(1500)
+        at = await glide(win, at, await center(win, '[data-us=clear]'), 600)
+        await tap(win, at)
+        await sleep(900)
+      },
+    })
     win.destroy()
   },
   // The agent's sheet: no scrolling, one tab at a time.
@@ -2023,7 +2257,7 @@ const SHOTS = {
 
 async function dashboard(theme, view, { width = WIN_W, height = WIN_H, fixture, reset = [] } = {}) {
   const win = await open('dashboard.html', { theme, width, height, fixture })
-  // the places: chat (a channel), clique (Agents), tasks, terminals; grid and focus are Terminals laid out that way
+  // the places: chat (a channel), clique (Agents), tasks, terminals, usage; grid and focus are Terminals laid out that way
   const place = { grid: 'terminals', focus: 'terminals' }[view] ?? view
   const layout = view === 'focus' ? 'focus' : view === 'grid' ? 'grid' : null
   await js(win, `localStorage.setItem('clique.place', '${place}'); ${layout ? `localStorage.setItem('clique.layout', '${layout}');` : ''} localStorage.setItem('clique.target', 'auto'); localStorage.removeItem('clique.edTab'); for (const k of Object.keys(localStorage)) if (k.startsWith('clique.channel.')) localStorage.removeItem(k); ${reset.map((k) => `localStorage.removeItem('${k}');`).join(' ')}`)

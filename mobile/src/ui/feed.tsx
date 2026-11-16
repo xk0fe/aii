@@ -18,6 +18,7 @@ import { Icon } from './icon'
 import { Markdown } from './markdown'
 import { stacks } from './stack'
 import { Button, Faces, Press } from './parts'
+import { Reactions } from './reactions'
 import { fonts, type Theme } from './theme'
 
 export type FeedCtx = {
@@ -100,6 +101,7 @@ function Row({ e, c, cont, face, head, quote, long = true, children }: { e: Feed
         )}
         {quote ? <Quote e={e} c={c} /> : null}
         {children}
+        {e.reactions?.length ? <Reactions e={e} byName={c.byName} t={c.t} /> : null}
       </View>
     </>
   )
