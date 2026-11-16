@@ -50,7 +50,7 @@ const RUNTIME = 'runtime.json'
 const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
   'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'promptAt', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks',
-  'trustAsk', 'trustAt', 'keyed']
+  'trustAsk', 'trustAt', 'round', 'keyed']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 // An image saved with this computer's attachments, whichever workspace it's for. -> where
@@ -115,6 +115,18 @@ const CONTINUE = 'continue'
 // At NEAR_LIMIT of its 5-hour or weekly window, routing prefers agents on other providers among equal area matches.
 const LIMIT_WARN = [80, 95]
 const NEAR_LIMIT = 90
+// The spend check-in (see Hub.checkIn), as config.json has it: checkIn: { at: { claude: 5, codex: 5000000 }, then: 'tell' }.
+// at: per provider, in the unit its CLI reports (core/providers.js meter); a provider that isn't there never checks in,
+// and nothing is there until you pick it. then: 'ask' (a card, and hand-offs wait for your answer) or 'tell' (a line
+// and a notification, nothing held). -> { at: { id: value > 0 }, then }
+export const checkInOf = (config) => {
+  const c = config?.checkIn
+  const at = Object.fromEntries(Object.entries(c?.at && typeof c.at === 'object' ? c.at : {}).filter(([, v]) => typeof v === 'number' && v > 0 && Number.isFinite(v)))
+  return { at, then: c?.then === 'tell' ? 'tell' : 'ask' }
+}
+// Said to an agent whose hand-off waits for your answer to a check-in, or was stopped by it.
+const CHECK_IN_HELD = "CLIque is checking with the user before this work uses more. It goes on if they say keep going, so don't send it again: finish your turn."
+const CHECK_IN_STOPPED = 'the user stopped this work at the spend check-in. Finish your turn and wait for them.'
 // The pace forecast (paceOf): readings this recent give the 5-hour window's pace right now; the heads-up that a window
 // runs out before it resets comes once it's less than a quarter of the window away (weekly: under 42 hours).
 const RECENT = 20 * 60000
@@ -217,6 +229,7 @@ export class Hub extends EventEmitter {
     if (!config) this.cfg.on('problem', this.onProblem)
     if (!this.cfg.tried) this.cfg.load()
     if (!this.space) this.apply() // read before this hub was made, or unreadable: as it is
+    this.resumeCheckIns()
   }
 
   // The workspace is gone from config.json (apply has stopped its agents already): what's pending is saved, and this
@@ -286,6 +299,7 @@ export class Hub extends EventEmitter {
       }
     }
     this.toolsLost()
+    this.settleRounds() // a check-in about work that ended with the last run closes
     for (const name of adopted) {
       const a = this.agents.get(name)
       if (a?.status === 'idle') this.pump(a)
@@ -627,7 +641,7 @@ export class Hub extends EventEmitter {
   // numbers, and the tasks it owns or is working on.
   renameAgent(from, to) {
     if (this.runner.running(from)) this.carryOn.add(to)
-    for (const q of this.asks.values()) if (q.plan && q.name === from) q.name = to // an agent tool's card: its answer finds it
+    for (const q of this.asks.values()) if ((q.plan || q.spend) && q.name === from) q.name = to // an agent tool's card: its answer finds it
     if (this.sessions[from]) this.sessions[to] = this.sessions[from]
     this.saveSession(from, null) // also writes the moved session
     if (this.stats[from]) [this.stats[to], this.stats[from]] = [this.stats[from], undefined]
@@ -1627,6 +1641,7 @@ export class Hub extends EventEmitter {
   addSpend(a, { cost = 0, added = 0, removed = 0, apiMs = 0, tokens = 0 }) {
     const counts = Object.fromEntries(Object.entries({ cost, linesAdded: added, linesRemoved: removed, apiMs, tokens }).filter(([, v]) => v > 0))
     this.record(a.name, counts)
+    this.roundSpend(a, { cost, tokens })
     // a triage turn in the triage agent's conversation: what quick triage would save (or, after it fell back, spent)
     const triage = (a.serving ?? []).find((m) => m.triage)
     if (triage) this.ledger.add('quickTriage', this.fellBack.has(triage.ticket), { cost, tokens })
@@ -1643,6 +1658,250 @@ export class Hub extends EventEmitter {
     this.changed()
   }
 
+  // ---- the spend check-in: work that followed your last message stops to ask before it uses more -----------------
+  // With Autopilot on, agents hand work to each other for as long as they like. A check-in is a soft limit on that, per
+  // provider and in the unit that provider's CLI really reports (its meter, core/providers.js): dollars for Claude Code
+  // (its own count at API rates), tokens for Codex. Nothing is converted, and agents on different providers are never
+  // added up. It's off until you pick a value for a provider (checkIn in config.json).
+  // What's counted: a round is everything that follows from one message of yours: the agents it went to, and whoever
+  // they handed on to (each hand-off carries its round, see post; a turn works in the round of the message it took up,
+  // see joinRound). Within a round, the agents of one provider are a group, and what they report adds up per group.
+  // Past its provider's value, a group either gets one line and a notification ("Just tell me"), or one card asks you:
+  // who, how much, since when; Keep going or Stop.
+  // What a pause is, honestly: CLIque can't refuse a CLI's tool calls, so a turn that is already running finishes.
+  // Nothing new starts: hand-offs and questions to and from the group's agents wait in the chat (paused) instead of
+  // being delivered. Keep going delivers them and allows another full value. Stop drops them and interrupts the turns
+  // still running (interrupt). You speaking to one of them is Keep going: there's no counter to reset, because the
+  // next round is the one your new message starts. A message of yours is never held.
+  // Only this computer's agents count here: a hand-off to a linked computer starts a round of its own there, checked
+  // against that computer's values and asked in its chat.
+
+  // A provider's check-in: { at, unit, then } or null (no meter, or no value picked).
+  checkInFor(id) {
+    const unit = this.providers[id]?.meter?.unit
+    const set = checkInOf(this.config)
+    return unit && set.at[id] ? { at: set.at[id], unit, then: set.then } : null
+  }
+
+  // A turn begins: it works in the round of what it took up (yours first, when hand-offs came with it). Answers to
+  // its own questions and CLIque's own prompts don't move it.
+  joinRound(a) {
+    const msgs = (a.serving ?? []).filter((m) => m && !m.clique && !m.answers)
+    const m = msgs.find((x) => x.from === 'you') ?? msgs[0]
+    if (m) a.round = roundId(m)
+  }
+
+  // The group an agent is in: its round's agents on its provider.
+  groupOf(a, round = a?.round) {
+    return a && round ? this.spend.rounds?.[`${round}|${this.providerOf(a)?.id}`] : undefined
+  }
+
+  inGroup(a, r) {
+    return a.round === r.round && this.providerOf(a)?.id === r.provider
+  }
+
+  roundSpend(a, { cost = 0, tokens = 0 }) {
+    const id = this.providerOf(a)?.id
+    const limit = this.checkInFor(id)
+    if (!a.round || !limit) return
+    const used = limit.unit === 'usd' ? cost : tokens // what its CLI reports, as it reports it
+    if (!(used > 0)) return
+    const rounds = (this.spend.rounds ??= {})
+    const key = `${a.round}|${id}`
+    if (!rounds[key]) {
+      const root = this.feed.find((e) => e.kind === 'msg' && (e.id === a.round || e.sendId === a.round))
+      // base: where the count stood when it last checked in (the next one is a full value past it)
+      rounds[key] = { id: key, round: a.round, provider: id, unit: limit.unit, at: root?.ts ?? Date.now(), from: root?.from ?? 'you', ...(root && { msg: root.id }), used: 0, by: {}, base: 0 }
+    }
+    const r = rounds[key]
+    const name = this.baseOf(a.name)
+    r.used += used
+    r.by[name] = (r.by[name] ?? 0) + used
+    r.last = Date.now()
+    this.checkIn(r)
+  }
+
+  // Is anyone still on it: a turn running, something of it queued, or hand-offs held by its check-in?
+  roundBusy(r) {
+    const mine = (a) => this.providerOf(a)?.id === r.provider
+    return [...this.agents.values()].some((a) => (this.inGroup(a, r) && !a.ending && (a.status === 'working' || a.status === 'waiting' || a.status === 'starting')) || (mine(a) && a.inbox.some((m) => !m.clique && roundId(m) === r.round))) ||
+      this.feed.some((e) => e.paused === r.id)
+  }
+
+  // "@ada has used $5.40 at API rates since you last spoke", "@theo and @june have used 5.2M tokens since …"
+  checkInWords(r, who) {
+    const names = Object.keys(r.by).sort((x, y) => r.by[y] - r.by[x])
+    who ??= `${atNames(names)} ${names.length > 1 ? 'have' : 'has'}`
+    return `${who} used ${meterText(r.unit, r.used)}${r.unit === 'usd' ? ' at API rates' : ''} ${r.from === 'you' ? 'since you last spoke' : `since @${r.from} handed this over`}`
+  }
+
+  // Past its provider's value. Just tell me: one line in the chat and one notification, and the count goes on from
+  // here. Ask me, with work still going: one card, in the needs-you queue like a permission prompt's. Its agent (who
+  // used most) isn't waiting on it, and no hook is: it stays up until you answer, across a restart too.
+  checkIn(r) {
+    const limit = this.checkInFor(r.provider)
+    if (!limit || r.ask || r.stopped || r.used - r.base < limit.at) return
+    const who = Object.keys(r.by).sort((x, y) => r.by[y] - r.by[x])
+    const top = this.agents.get(who[0]) ?? [...this.agents.values()].find((a) => this.inGroup(a, r))
+    const root = r.msg && this.feed.find((x) => x.id === r.msg)
+    if (limit.then === 'tell') {
+      r.base = r.used
+      const text = this.checkInWords(r)
+      this.post({ kind: 'event', from: 'clique', text, spend: { provider: r.provider, unit: r.unit, used: r.used, at: limit.at }, ...(root?.channel && { channel: root.channel }) })
+      this.emit('notice', { title: 'Spend check-in', body: `${text}. Nothing is held: they carry on.`, focus: top?.name ?? '' })
+      return this.saveSpend()
+    }
+    if (!top || !this.roundBusy(r)) return
+    const ask = {
+      type: 'permission', tool: 'clique spend', title: this.checkInWords(r), say: `${this.checkInWords(r, who.length > 1 ? "We've" : "I've")}. Keep going?`,
+      detail: 'Nothing new starts until you answer. Turns already running finish first.', always: [], alert: `checks in: ${this.checkInWords(r)}. Keep going?`,
+      spend: { group: r.id, provider: r.provider, label: this.providers[r.provider]?.label ?? r.provider, unit: r.unit, who, by: { ...r.by }, used: r.used, since: r.at, from: r.from, at: limit.at },
+    }
+    const e = this.post({ kind: 'ask', from: top.name, to: 'you', ask, cli: 'clique', ...(root && { re: root.id }) })
+    r.ask = e.id
+    this.asks.set(e.id, { name: top.name, cli: 'clique', input: {}, entry: e, spend: r.id, resolve() {} })
+    // what was queued for its agents and hasn't gone in yet waits with the card
+    for (const a of this.agents.values()) {
+      for (const m of a.inbox.filter((x) => this.roundHolding(x, a))) {
+        a.inbox.splice(a.inbox.indexOf(m), 1)
+        this.amend(m, { paused: this.roundHolding(m, a).id, queued: false })
+      }
+    }
+    this.emit('alert', top, ask.alert)
+    this.saveSpend(true)
+    this.changed()
+  }
+
+  // A message that waits for a check-in's answer: a hand-off or a question from or to an agent of a group whose card
+  // is up. Never one of yours, an answer on its way back to a turn that's waiting for it, or CLIque's own prompts.
+  roundHolding(m, to) {
+    if (!m?.round || m.kind !== 'msg' || m.from === 'you' || m.answers || m.clique) return null
+    return [this.groupOf(this.agents.get(m.from), m.round), this.groupOf(to, m.round)].find((r) => r?.ask) ?? null
+  }
+
+  // Before an agent sends work on: not from a group you stopped, and not to another computer while its card is up
+  // (CLIque holds what's delivered here; what's sent there is out of its hands).
+  checkInGate(from, away = []) {
+    const r = this.groupOf(this.agents.get(from))
+    if (r?.stopped) throw new Error(`not sent: ${CHECK_IN_STOPPED}`)
+    if (r?.ask && away.length) throw new Error(`not sent: ${atNames(away)} ${away.length > 1 ? 'are' : 'is'} on another computer, and CLIque is checking with the user before this work uses more. Finish your turn; send it again if you're asked to carry on.`)
+  }
+
+  // reply: { allow: true } keeps going, { allow: false } stops.
+  answerCheckIn(q, reply) {
+    if (reply.terminal) throw new Error('this one is answered here, in the chat')
+    const r = this.spend.rounds[q.spend]
+    if (reply.allow) this.keepGoing(r, { by: 'you', allow: true })
+    else this.stopRound(r)
+  }
+
+  closeCheckIn(r, answer) {
+    const q = this.asks.get(r.ask)
+    this.asks.delete(r.ask)
+    r.ask = null
+    if (q) this.amend(q.entry, { answer: { ...answer, used: r.used, at: Date.now() } })
+    return this.feed.filter((e) => e.paused === r.id)
+  }
+
+  // Another full value from here, and what waited goes to its agents (one that's been turned off since: dropped).
+  keepGoing(r, answer) {
+    if (!r?.ask) return
+    const waiting = this.closeCheckIn(r, answer)
+    r.base = r.used
+    for (const m of waiting) {
+      const a = this.agents.get(m.to) ?? this.agents.get(this.baseOf(m.to)) // for a clone that went away: its original
+      if (a && !a.off) {
+        this.amend(m, { paused: false, queued: true })
+        this.enqueue(a, m)
+      } else this.dropPaused(m, 'never got it: it was turned off')
+    }
+    this.saveSpend(true)
+    this.changed()
+  }
+
+  dropPaused(m, why) {
+    this.amend(m, { paused: false, dropped: true })
+    const call = this.calls.get(m.id) // a question: its asker hears so, instead of waiting
+    if (call) this.respond(call, { by: m.to, why })
+  }
+
+  // That work ends: nothing of it is delivered any more, questions between its agents are off, the turns still running
+  // are interrupted, and its agents can't send anything on until you speak to them again.
+  stopRound(r) {
+    if (!r?.ask) return
+    const waiting = this.closeCheckIn(r, { by: 'you', allow: false })
+    r.stopped = Date.now()
+    const on = [...this.agents.values()].filter((a) => this.inGroup(a, r))
+    const names = new Set(on.map((a) => a.name))
+    for (const c of [...this.calls.values()]) {
+      if (!names.has(c.from) || !names.has(this.ownerOf(c))) continue
+      this.calls.delete(c.id)
+      c.hold?.resolve(`The user stopped this work at the spend check-in, so @${this.ownerOf(c)} won't answer.\n`)
+    }
+    for (const m of waiting) this.dropPaused(m, 'never got it: the user stopped this work at the spend check-in')
+    for (const a of this.agents.values()) {
+      if (this.providerOf(a)?.id !== r.provider) continue
+      for (const m of a.inbox.filter((x) => !x.clique && roundId(x) === r.round)) {
+        a.inbox.splice(a.inbox.indexOf(m), 1)
+        this.amend(m, { queued: false, dropped: true })
+      }
+    }
+    for (const a of on) this.interrupt(a.name)
+    this.saveSpend(true)
+    this.changed()
+  }
+
+  // Stop the turn an agent is in, as Esc in its terminal does. -> whether there was a turn to stop.
+  // (The Stop button's PR, #115, has an interrupt(name) of the same name and shape that does more: whichever of the two
+  // merges second keeps that one and drops this.)
+  interrupt(name) {
+    const a = this.agents.get(name)
+    if (!a || !this.runner.running(name) || (a.status !== 'working' && a.status !== 'waiting')) return false
+    this.runner.write(name, '\x1b')
+    // Esc interrupts without a Stop hook, so assume idle unless a hook says otherwise (as input() does)
+    const pressed = Date.now()
+    setTimeout(() => a.hookAt <= pressed && (a.status === 'working' || a.status === 'waiting') && this.setStatus(a, 'idle'), 1500).unref?.()
+    return true
+  }
+
+  // You spoke to these agents: a check-in about work they're part of is answered, keep going.
+  spoke(names) {
+    const said = new Set(names.map((n) => this.baseOf(n)))
+    for (const r of Object.values(this.spend.rounds ?? {})) {
+      if (!r.ask) continue
+      const part = new Set([...Object.keys(r.by), ...[...this.agents.values()].filter((a) => this.inGroup(a, r)).map((a) => this.baseOf(a.name))])
+      if ([...said].some((n) => part.has(n))) this.keepGoing(r, { by: 'you', allow: true, spoke: true })
+    }
+  }
+
+  // A card about work that's over (every turn done, nothing queued or held) closes by itself.
+  settleRounds() {
+    for (const r of Object.values(this.spend.rounds ?? {})) {
+      if (!r.ask || this.roundBusy(r)) continue
+      this.closeCheckIn(r, { stale: true, done: true })
+      this.saveSpend()
+    }
+  }
+
+  // The check-in changed: cards of a provider that no longer asks (off, or "Just tell me") are answered, keep going.
+  checkInChanged() {
+    for (const r of Object.values(this.spend.rounds ?? {})) if (this.checkInFor(r.provider)?.then !== 'ask') this.keepGoing(r, { by: 'you', allow: true, off: true })
+  }
+
+  // CLIque started again with a check-in still up: it's still yours to answer. (One whose round wasn't saved: closed.)
+  resumeCheckIns() {
+    for (const [key, r] of Object.entries(this.spend.rounds ?? {})) {
+      if (!r?.provider) {
+        delete this.spend.rounds[key]
+        continue
+      }
+      const e = r.ask && this.feed.find((x) => x.id === r.ask)
+      if (e && !e.answer) this.asks.set(e.id, { name: e.from, cli: 'clique', input: {}, entry: e, spend: r.id, resolve() {} })
+      else r.ask = null
+    }
+    for (const e of this.feed) if (e.kind === 'ask' && !e.answer && e.ask?.spend && !this.asks.has(e.id)) this.amend(e, { answer: { stale: true, at: Date.now() } })
+  }
+
   // Debounced like the context gauges; `now` on quit. Sessions not heard from in 60 days and days older than that go.
   saveSpend(now = false) {
     clearTimeout(this.spendTimer)
@@ -1650,6 +1909,8 @@ export class Hub extends EventEmitter {
       const cutoff = Date.now() - 60 * 864e5
       for (const k of ['runs', 'sessions']) for (const [id, s] of Object.entries(this.spend[k])) if (!(s.at > cutoff)) delete this.spend[k][id]
       for (const d of Object.keys(this.spend.hours)) if (d < localDay(cutoff)) delete this.spend.hours[d]
+      // rounds: a week after their last spend (one with its check-in still up, or hand-offs held, stays)
+      for (const r of Object.values(this.spend.rounds ?? {})) if (!r.ask && !(r.last > Date.now() - 7 * 864e5) && !this.feed.some((e) => e.paused === r.id)) delete this.spend.rounds[r.id]
       try {
         fs.writeFileSync(this.at('spend.json'), JSON.stringify(this.spend))
       } catch {}
@@ -1906,7 +2167,12 @@ export class Hub extends EventEmitter {
           a.current = a.expect.id
           a.serving = a.expect.msgs // what this turn answers (several, when hand-offs came in together)
           a.expect = null
-        } else if (e.prompt && !e.prompt.startsWith('/')) a.current = this.post({ kind: 'msg', from: 'you', to: name, text: e.prompt.slice(0, 4000), via: 'terminal' }).id
+          this.joinRound(a)
+        } else if (e.prompt && !e.prompt.startsWith('/')) {
+          // typed in its terminal: you spoke to it, so it's a round of its own, and a check-in it was part of is answered
+          a.round = a.current = this.post({ kind: 'msg', from: 'you', to: name, text: e.prompt.slice(0, 4000), via: 'terminal' }).id
+          this.spoke([name])
+        }
         a.replyDue = Boolean(e.prompt && !e.prompt.startsWith('/')) // a message, not a /command
         a.slash = Boolean(e.prompt?.startsWith('/')) // ...whose output is no part of what it was on before
         if (!again) {
@@ -1947,6 +2213,7 @@ export class Hub extends EventEmitter {
         a.turnStart = null
         return this.setStatus(a, 'idle')
       case 'Stop': {
+        a.ending = true // (what its turn's last report adds can't start a check-in about a turn that's over: see roundBusy)
         this.closeAsks(a)
         a.activity = ''
         a.apiRetries = 0
@@ -2158,6 +2425,7 @@ export class Hub extends EventEmitter {
     if (!q) throw new Error('that question has already been answered')
     if (q.plan) return this.answerTool(id, q, reply)
     if (q.trust) return this.answerTrust(id, q, reply)
+    if (q.spend) return this.answerCheckIn(q, reply)
     if (reply.terminal) return this.settle(id, '', { by: 'terminal', handedOver: true }, true)
     const { output, answer } = decide(q.entry.ask, q.input, q.cli, reply)
     this.settle(id, JSON.stringify(output), { by: 'you', ...answer })
@@ -2176,7 +2444,7 @@ export class Hub extends EventEmitter {
 
   // (an agent tool's card that the agent's command has stopped waiting on doesn't keep the agent waiting)
   asking(name) {
-    return [...this.asks.values()].some((q) => q.name === name && (!q.plan || q.held))
+    return [...this.asks.values()].some((q) => q.name === name && !q.spend && (!q.plan || q.held))
   }
 
   // Claude Code can settle a question without anyone answering it: its built-in safety check turns a risky command
@@ -2209,7 +2477,7 @@ export class Hub extends EventEmitter {
   // Its turn is over, so nothing it asked in that turn is waiting any more. (A sub-agent's question can outlive the
   // turn: those stay. So does an agent tool's card: what you decide comes to the agent as a message.)
   closeAsks(a) {
-    for (const [id, q] of this.asks) if (q.name === a.name && !q.plan && !q.trust && !q.input.agent_id && !this.checkAsk(id, true)) this.settle(id, '', { stale: true }, true)
+    for (const [id, q] of this.asks) if (q.name === a.name && !q.plan && !q.trust && !q.spend && !q.input.agent_id && !this.checkAsk(id, true)) this.settle(id, '', { stale: true }, true)
   }
 
   // An agent that exits, restarts or goes away isn't waiting on its questions any more (even if a hook
@@ -2218,6 +2486,11 @@ export class Hub extends EventEmitter {
   forgetAsks(name, { gone = false } = {}) {
     for (const [id, q] of this.asks) {
       if (q.name !== name) continue
+      // a spend check-in is about the round, not this agent's terminal: it stays, unless the agent is gone for good
+      if (q.spend) {
+        if (gone) this.keepGoing(this.spend.rounds[q.spend], { stale: true })
+        continue
+      }
       if (q.plan && !gone) q.resolve('')
       else this.settle(id, '', { stale: true }, true)
     }
@@ -2332,6 +2605,7 @@ export class Hub extends EventEmitter {
   }
 
   setStatus(a, status) {
+    a.ending = false
     if ((status === 'stopped' || status === 'off') && (a.trustAsk || a.trustPick)) this.dropTrust(a)
     if (a.status !== status) {
       const spent = Date.now() - a.since
@@ -2356,6 +2630,7 @@ export class Hub extends EventEmitter {
       if (a.serving?.length) this.settleCalls(a, null, { idle: 'stopped before it answered', stopped: 'exited before it answered', off: 'was turned off before it answered' }[status])
       if (status === 'off' && !a.cloneOf) this.forgetCalls(a.name, "was turned off, so it can't answer")
     }
+    if (status !== 'working' && status !== 'waiting' && status !== 'starting') this.settleRounds()
     if (status === 'idle' && a.freshPending) return this.freshWhenDone(a)
     if (status === 'idle' && a.relaunch) return this.launch(a)
     if (status === 'idle' || status === 'resting') this.pump(a)
@@ -2546,6 +2821,7 @@ export class Hub extends EventEmitter {
     // to agents on other computers: with the channel's name and brief, for their hubs to give it
     const there = ch && (carried || (this.channel(ch) && { channelName: this.channel(ch).name, ...(this.channel(ch).brief && { brief: this.channel(ch).brief }) }))
     const awayExtra = there ? { ...extra, channel: ch, ...there } : extra
+    this.checkInGate(from, away)
     if (away.length && !names.length) return this.relay(from, away, text, images, awayExtra)
     const targets = names.length ? this.recipients(names, from) : [this.route(text, from, ch)]
     if (!targets[0]) throw new Error('no agents to send to')
@@ -2601,6 +2877,8 @@ export class Hub extends EventEmitter {
     })
     if (held) return `waiting for the user to approve this hand-off to ${targets.map((a) => `@${a.name}`).join(' ')}\n`
     const here = targets.map((a, i) => this.enqueue(a, msgs[i])).join('')
+    // you spoke to them: that's your OK for another round (a task sent from the board isn't a word about their work)
+    if (from === 'you' && ticket === undefined) this.spoke(targets.map((a) => a.name))
     return away.length ? this.relay(from, away, text, images, awayExtra).then((there) => here + there) : here
   }
 
@@ -2643,6 +2921,12 @@ export class Hub extends EventEmitter {
   }
 
   enqueue(a, msg) {
+    // its round is checking in with you (see checkIn): it waits, in the chat, for your answer
+    const paused = this.roundHolding(msg, a)
+    if (paused) {
+      this.amend(msg, { paused: paused.id, queued: false })
+      return `held for @${a.name}: ${CHECK_IN_HELD}${msg.ask ? ` @${a.name}'s answer will come to you as a message.` : ''}\n`
+    }
     const to = this.placeFor(a, msg)
     if (to !== a) this.amend(msg, { to: to.name })
     this.queue(to, msg)
@@ -2698,6 +2982,7 @@ export class Hub extends EventEmitter {
     if (!name) throw new Error('no agents to ask')
     const asker = this.agents.get(from)
     this.mayWait(from, name)
+    this.checkInGate(from, name.includes('@') ? [name] : [])
     if (name.includes('@')) return this.questionElsewhere({ from, name, text, images, closed, hold })
     const [target] = this.recipients([name], from)
     // the same question again (a retry after a "hasn't answered yet"): wait on the one already asked
@@ -2707,7 +2992,8 @@ export class Hub extends EventEmitter {
     const msg = this.post({ kind: 'msg', from, to: target.name, text, ask: true, ...(images.length && { images }), ...(asker?.current && { re: asker.current }), queued: !held, held })
     const call = this.open({ id: msg.id, msg, from, text, parent: this.workingOn(asker) })
     if (asker) this.record(from, { handoffs: 1 })
-    if (!held) this.enqueue(target, msg)
+    const out = held ? '' : this.enqueue(target, msg)
+    if (msg.paused) return out // held by a spend check-in: its asker doesn't wait on it
     return this.hold([call], hold, closed)
   }
 
@@ -3975,6 +4261,8 @@ export class Hub extends EventEmitter {
       if (on) entry = { ...entry, thread: on.thread ?? on.id, ...(!('channel' in entry) && on.channel && { channel: on.channel }) }
     }
     const e = { id: randomUUID().slice(0, 8), ts: Date.now(), ...entry, ...threadFields(entry, parent) }
+    // what an agent sends on is part of the round it's working in: the request of yours that led to it (see checkIn)
+    if (e.kind === 'msg' && e.round === undefined && this.agents.get(e.from)?.round) e.round = this.agents.get(e.from).round
     if (e.thread) {
       if (e.text) e.gist = gistOf(e.text, e.from)
       // when the turn it ends began: what it says can't take in anything said after that
@@ -4018,7 +4306,7 @@ export class Hub extends EventEmitter {
     for (const c of this.calls.values()) if (c.msg?.id) ids.add(c.msg.id)
     for (const id of this.asks.keys()) ids.add(id)
     for (const m of this.moves?.values() ?? []) for (const id of m.ids) ids.add(id)
-    return (e) => ids.has(e.id) || (e.kind === 'ask' && !e.answer) || Boolean(e.queued || e.held)
+    return (e) => ids.has(e.id) || (e.kind === 'ask' && !e.answer) || Boolean(e.queued || e.held || e.paused)
   }
 
   // ---- threads (core/threads.js) -------------------------------------------------------------------------------
@@ -4358,7 +4646,7 @@ export class Hub extends EventEmitter {
       autopilot: this.space.autopilot,
       theme: this.config.theme,
       providers: Object.fromEntries(
-        Object.values(this.providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault }]),
+        Object.values(this.providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault, ...(p.meter && { meter: p.meter }) }]),
       ),
       agents: this.ordered().map((a) => ({
         name: a.name, ...(a.system && { system: true }), area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
@@ -4390,6 +4678,7 @@ export class Hub extends EventEmitter {
       schedules: { list: this.schedules.view(), repo: inRepo(this.space.folder) },
       reads: this.reads,
       spend: this.spendNow(),
+      checkIn: checkInOf(this.config), // { at: { provider: value }, then }: the spend check-in, per provider (none: off)
       // { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
       // each window with where it's heading at this pace: { projected (percent at its reset), runsOut (ms) }
       usage: this.usageNow(),
@@ -4538,6 +4827,10 @@ const resetsWhen = (ms) => {
 }
 
 // Agents named in a line of the chat: "@ada", "@ada and @june", "@ada, @june and @milo".
+// A message's round: the request of yours it follows from (stamped on what agents send on, see Hub.post), or itself.
+const roundId = (m) => m.round ?? m.sendId ?? m.id
+// What a meter reads, in its unit: $5.40 (to the cent: a check-in is about small sums), 5.2M tokens
+const meterText = (unit, v) => (unit === 'usd' ? `$${v.toFixed(2)}` : `${tokenCount(Math.round(v))} tokens`)
 const atNames = (names) => (names.length > 1 ? `${names.slice(0, -1).map((n) => `@${n}`).join(', ')} and @${names.at(-1)}` : names.map((n) => `@${n}`).join(''))
 
 // A message in one line, for quoting it back: code blocks folded, cut at `max`.
@@ -4644,9 +4937,11 @@ function loadFeed(file, keep = new Set()) {
   }
   // An unanswered question's hook ended with the last run: the agent isn't waiting on it any more. (An agent tool's
   // agent was told to wait for a message: lost says to tell it, see toolsLost.)
-  for (const e of all) if (e.kind === 'ask' && !e.answer) e.answer = { stale: true, ...(e.ask?.app && { lost: true, at: Date.now() }) }
+  // A spend check-in waits on no hook: it's still yours to answer (Hub.resumeCheckIns).
+  for (const e of all) if (e.kind === 'ask' && !e.answer && !e.ask?.spend) e.answer = { stale: true, ...(e.ask?.app && { lost: true, at: Date.now() }) }
   stampAll(all)
-  const feed = keepFeed(all.filter((e) => !e.gone), { needed: (e) => keep.has(e.id) })
+  // (a spend check-in still up, and the hand-offs it holds, however far back)
+  const feed = keepFeed(all.filter((e) => !e.gone), { needed: (e) => keep.has(e.id) || Boolean(e.paused) || (e.kind === 'ask' && !e.answer) })
   const bytes = Buffer.byteLength(text)
   const at = rewriteAt(feed.length, feed.reduce((n, e) => n + lineSize(e), 0))
   if (lines.length <= at.lines && bytes <= at.bytes) return { feed, lines: lines.length, bytes }
