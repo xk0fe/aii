@@ -809,6 +809,16 @@ window.clique = {
       emit()
       return `sent to ${names.map((n) => `@${n}`).join(' ')}\n`
     }
+    // your reaction on a message, on or off (Hub.react)
+    if (action === 'react') {
+      const [id, emoji] = args
+      const e = state.feed.find((x) => x.id === id)
+      if (!e) throw new Error("that message isn't in the chat any more")
+      const had = (e.reactions ?? []).some((r) => r.by === 'you' && r.emoji === emoji)
+      e.reactions = had ? e.reactions.filter((r) => !(r.by === 'you' && r.emoji === emoji)) : [...(e.reactions ?? []), { by: 'you', emoji, at: Date.now() }]
+      emit()
+      return had ? 'taken off\n' : 'reacted\n'
+    }
     if (action === 'read') {
       // like the hub: 'Ada#review' is Ada's replies in #review, 'Ada#general' (or plain 'Ada') #general's
       for (const [key, ts] of Object.entries(args[0] ?? {})) {

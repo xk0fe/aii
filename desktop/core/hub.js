@@ -20,6 +20,8 @@ import { HOME, movedPath, movedImages } from './home.js'
 import { ROOT, GENERAL, channelName, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 import { CANVAS_HELP, CANVAS_LINES, asCanvas, canvasLines, canvasTitle, typedLines, withCanvas } from './canvas.js'
+import { REACT_MAX, REACT_USAGE, REACT_WINDOW, emojiOf, justAnAck, saidWith } from './reactions.js'
+import { REACTIONS_MAX } from 'clique-shared/protocol.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
 
 export { HOME } // ~/.clique (core/home.js)
@@ -113,6 +115,8 @@ const NEAR_LIMIT = 90
 // runs out before it resets comes once it's less than a quarter of the window away (weekly: under 42 hours).
 const RECENT = 20 * 60000
 const PACE_WARN = 0.25
+// What can take a reaction (Hub.react): something somebody said.
+const REACTABLE = new Set(['msg', 'reply', 'note'])
 // What the chat shows for a turn that answered a message without a word (see Stop).
 const NO_WORDS = 'Finished without a final message. Its terminal shows what it did.'
 // Asked before a new conversation that the context limit starts (see freshWhenDone).
@@ -1849,6 +1853,7 @@ export class Hub extends EventEmitter {
           if (!e.prompt?.startsWith('/')) (this.convoOf(a).tasks += 1), this.saveConvos()
         }
         a.turnStart = a.turnBegan = Date.now()
+        a.turnTools = 0
         this.readCodexContext(a, e)
         return this.setStatus(a, 'working')
       }
@@ -1862,6 +1867,7 @@ export class Hub extends EventEmitter {
       case 'PostToolUse':
         if (e.agent_id) return this.subTool(a, e) // a sub-agent's own step: it's the sub-agent that's busy
         if (SUB_TOOLS.has(e.tool_name)) this.subLaunched(a, e)
+        a.turnTools = (a.turnTools ?? 0) + 1
         a.activity = describe(e)
         this.record(name, { tools: 1 })
         this.readCodexContext(a, e)
@@ -1904,6 +1910,19 @@ export class Hub extends EventEmitter {
           this.settleCalls(a, null)
           a.serving = []
           a.replyDue = false
+          hold(a, 600)
+          return this.setStatus(a, 'idle')
+        }
+        // It reacted to what it was asked (clique react) and did nothing else: the emoji is its answer, and the word or
+        // two it ends on ("Noted.") stay with the reaction instead of taking a line in the chat. Anything it did or
+        // found out after reacting, a question, bad news or more than a line is a message as always.
+        const reacted = a.reacted
+        a.reacted = null
+        if (reacted && reacted.began === a.turnBegan && !closing && !reacted.tools && (a.turnTools ?? 0) <= 1 && justAnAck(e.last_assistant_message) && !(a.serving ?? []).some((m) => m.ask && this.calls.has(m.id))) {
+          const words = saidWith(e.last_assistant_message, reacted.emoji)
+          if (words) for (const m of reacted.on) if (m.reactions?.some((r) => r.by === name)) this.amend(m, { reactions: m.reactions.map((r) => (r.by === name ? { ...r, said: words } : r)) })
+          a.replyDue = false
+          this.settleCalls(a, null)
           hold(a, 600)
           return this.setStatus(a, 'idle')
         }
@@ -3177,6 +3196,54 @@ export class Hub extends EventEmitter {
     return `posted in #${c.name}\n`
   }
 
+  // ---- reactions: one emoji on a message, in place of a written "got it" (core/reactions.js) ----
+
+  // `clique react <emoji>`: an agent's acknowledgement of what it's answering, as an emoji on that message (every
+  // hand-off of the turn, when several came in together). Not a message: nothing is posted, nobody is told or woken,
+  // nothing turns unread, and it reaches no other agent's terminal. A turn that only reacts ends without a line in the
+  // chat (see Stop). One per agent per message, a few per ten minutes, and never in place of an answer somebody waits on.
+  // From you (the app, or a phone), with the message's id: on or off, as many different ones as you like.
+  react({ from = 'you', emoji: typed, id }) {
+    const emoji = emojiOf(typed || '👍')
+    if (!emoji) throw new Error(`"${String(typed).slice(0, 40)}" isn't one emoji, so nothing was shown. ${REACT_USAGE}`)
+    const a = this.agents.get(from)
+    const now = Date.now()
+    if (!a) {
+      if (from !== 'you' || !id) throw new Error("clique react is an agent's, for the message it's answering. In the app, point at a message and pick one.")
+      const e = this.feed.findLast((x) => x.id === id)
+      if (!e || !REACTABLE.has(e.kind)) throw new Error("that message isn't in the chat any more")
+      const had = (e.reactions ?? []).some((r) => r.by === 'you' && r.emoji === emoji)
+      if (!had && (e.reactions?.length ?? 0) >= REACTIONS_MAX) throw new Error('that message has all the reactions it can hold')
+      this.amend(e, { reactions: had ? e.reactions.filter((r) => !(r.by === 'you' && r.emoji === emoji)) : [...(e.reactions ?? []), { by: 'you', emoji, at: now }] })
+      return had ? 'taken off\n' : 'reacted\n'
+    }
+    const inTurn = (a.status === 'working' || a.status === 'waiting') && a.current
+    const turn = !inTurn ? [] : (a.serving ?? []).some((m) => m.id === a.current) ? a.serving : this.feed.filter((e) => e.id === a.current)
+    const waiting = turn.find((m) => m.ask && this.calls.has(m.id))
+    if (waiting) throw new Error(`not shown: @${waiting.from} asked you something and is waiting on the answer, and a reaction isn't one. Answer with clique answer "…" (or your final message).`)
+    const targets = turn.filter((m) => m.kind === 'msg' && !m.ask && !m.clique && !m.wrapUp && !m.closes && this.feed.includes(m))
+    if (!targets.length) throw new Error("not shown: there's no message to react to. A reaction goes on the message you're answering, and that one isn't in the chat (any more).")
+    const family = this.baseOf(from)
+    const fresh = targets.filter((m) => !(m.reactions ?? []).some((r) => this.baseOf(r.by) === family))
+    if (!fresh.length) throw new Error("not shown: you've already reacted to it, and it's one reaction each. Nothing more is needed: end your turn.")
+    const room = fresh.filter((m) => (m.reactions?.length ?? 0) < REACTIONS_MAX)
+    if (!room.length) throw new Error('not shown: that message has all the reactions it can hold. Nothing more is needed: end your turn.')
+    // (an agent and its clones count as one)
+    const who = this.agents.get(family) ?? a
+    who.reacts = (who.reacts ?? []).filter((t) => now - t < REACT_WINDOW)
+    if (who.reacts.length >= REACT_MAX) throw new Error(`not shown: that's ${REACT_MAX} reactions from you in the last ${REACT_WINDOW / 60000} minutes, and the chat doesn't need one on every message. Nothing is expected back here: end your turn without a reply.`)
+    who.reacts.push(now)
+    for (const m of room) this.amend(m, { reactions: [...(m.reactions ?? []), { by: from, emoji, at: now }] })
+    a.reacted = { began: a.turnBegan, tools: a.turnTools ?? 0, emoji, on: room }
+    const whose = [...new Set(room.map((m) => (m.from === 'you' ? "the user's message" : `@${m.from}'s message`)))].join(' and ')
+    return `${emoji} is on ${whose}. That's your acknowledgement: end your turn now, with a word at most.\n`
+  }
+
+  // Your reaction on a message, on or off: what the app, a linked computer and a phone call.
+  reactTo(id, emoji) {
+    return this.react({ from: 'you', id: String(id ?? ''), emoji: String(emoji ?? '') })
+  }
+
   // `clique canvas <op> …`: a board drawn in the chat (core/canvas.js). A canvas is the message that holds it, known by
   // that message's id, and anyone here can draw on it: a change rewrites the message where it stands, so the board in
   // the chat is always the latest one, and a teammate's change says so on a line of its own. `by` keeps who wrote each
@@ -4031,6 +4098,7 @@ export class Hub extends EventEmitter {
     for (const e of this.feed) {
       for (const k of ['from', 'to']) if (e[k] === from) (e[k] = to), (feed = true)
       if (e.cc?.includes(from)) (e.cc = e.cc.map((n) => (n === from ? to : n))), (feed = true)
+      if (e.reactions?.some((r) => r.by === from)) (e.reactions = e.reactions.map((r) => (r.by === from ? { ...r, by: to } : r))), (feed = true)
       if ((e.act === 'fixing' || e.act === 'triaged') && e.text === from) (e.text = to), (feed = true)
     }
     for (const t of this.tickets.all) {

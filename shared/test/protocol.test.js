@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { b64, unb64, utf8, unutf8, nonce, makePairCode, readPairCode, pack, unpack, PAIR_PREFIX } from '../protocol.js'
+import { b64, unb64, utf8, unutf8, nonce, makePairCode, readPairCode, pack, unpack, PAIR_PREFIX, CALLS, HANDY_REACTIONS, REACTIONS_MAX, reactionGroups } from '../protocol.js'
+import { diff, apply } from '../sync.js'
 
 test('base64url and UTF-8 match Node, without Node', () => {
   for (const n of [0, 1, 2, 3, 31, 32, 33, 100]) {
@@ -34,4 +35,28 @@ test('a pairing code says which Mac, its key, the secret and where to find it', 
 test('bytes travel inside JSON', () => {
   const msg = { t: 'call', id: 1, name: 'saveImage', args: ['a.png', 'image/png', new Uint8Array([1, 2, 250])] }
   assert.deepEqual(unpack(pack(msg)), msg)
+})
+
+test('reactions: grouped per emoji in the order they landed, each name once, and anything else left out', () => {
+  const list = [{ by: 'ada', emoji: '👍', at: 1 }, { by: 'you', emoji: '🎉', at: 2 }, { by: 'milo', emoji: '👍', at: 3, said: 'Noted.' }, { by: 'ada', emoji: '👍', at: 4 }]
+  assert.deepEqual(reactionGroups(list), [{ emoji: '👍', by: ['ada', 'milo'], said: { milo: 'Noted.' } }, { emoji: '🎉', by: ['you'], said: {} }])
+  // a newer app's fields, or damage: no throw, nothing shown for them
+  assert.deepEqual(reactionGroups([null, 'x', 7, {}, { by: 'ada' }, { emoji: '👍' }, { by: 3, emoji: '👍' }, { by: 'ada', emoji: '✅', said: 9, later: true }]), [{ emoji: '✅', by: ['ada'], said: {} }])
+  for (const none of [undefined, null, 'no', {}, 3]) assert.deepEqual(reactionGroups(none), [])
+  assert.ok(HANDY_REACTIONS.length >= 4 && HANDY_REACTIONS.length <= REACTIONS_MAX && new Set(HANDY_REACTIONS).size === HANDY_REACTIONS.length)
+})
+
+test('a reaction reaches a phone as a change to the one message it is on; a phone from before reactions asks nothing new', () => {
+  const feed = [{ id: 'a', kind: 'msg', from: 'you', to: 'ada', text: 'the freeze is Thursday', ts: 1 }, { id: 'b', kind: 'reply', from: 'ada', text: 'done', ts: 2 }]
+  const next = [{ ...feed[0], reactions: [{ by: 'ada', emoji: '👍', at: 3 }] }, feed[1]]
+  const patch = diff({ feed }, { feed: next })
+  assert.deepEqual(patch, { lists: { feed: { amend: [next[0]] } } })
+  const got = apply({ feed }, JSON.parse(pack(patch)))
+  assert.deepEqual(got.feed, next)
+  // what an older phone reads of that message is what it always read: the new field is one it doesn't look at
+  const { reactions, ...asBefore } = got.feed[0]
+  assert.deepEqual(asBefore, feed[0])
+  // taken off again: the message is as it was (an empty list, never a missing entry)
+  assert.deepEqual(apply(got, diff(got, { feed: [{ ...feed[0], reactions: [] }, feed[1]] })).feed[0].reactions, [])
+  assert.equal(CALLS.includes('react'), false, 'phones show reactions; they have no call to add one yet')
 })
