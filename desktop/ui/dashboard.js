@@ -1,7 +1,7 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: a channel (#general or one you made), one agent's conversation with its terminal docked beside it,
 // Agents, Tasks or Terminals.
-/* global shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
+/* global shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon, channelOf, pauseMenu, notifyTime, notifyClock, notifyHeld */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -194,6 +194,22 @@ function showPlace(next) {
   const shape = `${place}|${dock}|${dockName()}|${layout}|${terms.size}`
   if (shape !== lastShape) requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
   lastShape = shape
+  tellLooking()
+}
+// What's open here, said to the app whenever it changes, so nothing notifies you about the place you're looking at
+// (core/notify.js lookingAt): the conversation's agent, the agents whose question shows in the open channel, or Tasks.
+let lookingSaid = ''
+function tellLooking() {
+  const view = {
+    ws: state.workspace?.id ?? '',
+    agent: place === 'dm' ? dmAgent()?.name ?? null : null,
+    sees: place === 'chat' ? needsYou(state).filter((n) => n.ask && channelOf(n.ask, channelsNow()) === chan).map((n) => n.agent.name) : [],
+    tasks: place === 'tasks',
+  }
+  const said = JSON.stringify(view)
+  if (said === lookingSaid) return
+  lookingSaid = said
+  clique.looking?.(view)
 }
 let lastShape = ''
 // A place from the sidebar (or ⌘1–4): the composer goes back to everyone, which only a channel shows.
@@ -331,6 +347,7 @@ function setChannel(id, { go = true } = {}) {
   if (go) return goPlace('chat')
   drawChannels()
   drawHead()
+  tellLooking()
 }
 
 // Each channel's row: bold with a count of replies you haven't read there, berry when an agent there needs you.
@@ -689,6 +706,7 @@ $('.side-more').addEventListener('click', (e) => {
     { label: 'Autopilot', icon: ICONS.plane, act: 'autopilot', hint: state.autopilot ? 'On: hand-offs go through' : 'Off: hand-offs wait for you' },
     { label: 'Token savers…', icon: ICONS.chart, act: 'savers', hint: saversHint() },
     { label: 'Agent tools…', icon: ICONS.mark, act: 'tools', hint: toolHint() },
+    { label: 'Notifications…', icon: state.notify?.quiet ? ICONS.bellZ : ICONS.bell, act: 'notify', hint: notifyHint() },
     '-',
     { label: 'Computers…', icon: ICONS.computers, act: 'computers', hint: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : '' },
     { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
@@ -702,6 +720,7 @@ $('.side-more').addEventListener('click', (e) => {
     if (act === 'autopilot') clique.call('autopilot', !state.autopilot).catch((err) => oops("Couldn't change Autopilot", err))
     if (act === 'savers') openSavers()
     if (act === 'tools') openTools()
+    if (act === 'notify') openNotify()
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
     if (act === 'tour') startTour()
@@ -835,6 +854,81 @@ toolsDialog.addEventListener('click', (e) => {
     drawTools()
     toolsDialog.querySelector('[data-tl-err]').textContent = errorLine(x)
   })
+})
+
+// ---- notifications (core/notify.js): the hours CLIque may interrupt you in, and the pause ----
+
+const notifyDialog = $('#notify')
+notifyDialog.querySelector('.h-icon').innerHTML = ICONS.bell
+notifyDialog.querySelector('[data-nf-bar]').textContent = ON_WINDOWS ? 'taskbar' : 'menu bar'
+notifyDialog.querySelector('[data-nf-icon=eye]').innerHTML = ICONS.eye
+notifyDialog.querySelector('[data-nf-icon=stack]').innerHTML = ICONS.stack
+const notifyNow = () => state.notify ?? { days: 'always', from: '08:00', to: '22:00', pause: null, quiet: false, why: null, until: null, held: 0 }
+const notifyHint = () => {
+  const n = notifyNow()
+  if (n.quiet) return n.why === 'pause' ? (n.until == null ? 'Paused' : `Paused until ${notifyTime(n.until)}`) : n.until == null ? 'Off' : `Off until ${notifyTime(n.until)}`
+  return n.days === 'always' ? 'Any time' : `${n.days === 'weekdays' ? 'Weekdays' : 'Every day'}, ${notifyClock(n.from)} to ${notifyClock(n.to)}`
+}
+// When you won't be notified, in a sentence (the hours a schedule leaves out, and its days).
+function notifySentence(n) {
+  if (n.days === 'always') return 'CLIque may notify you at any time. Pause it below, or from its icon, when you need quiet.'
+  const [from, to] = [notifyClock(n.from), notifyClock(n.to)]
+  const night = n.from === n.to ? '' : `between ${to} and ${from}`
+  const weekend = n.days === 'weekdays' ? (n.to > n.from || n.from === n.to ? 'on Saturday and Sunday' : 'over the weekend') : ''
+  if (!night && !weekend) return 'CLIque may notify you at any time: these hours cover the whole day.'
+  return `You won’t be notified ${[night, weekend].filter(Boolean).join(', or ')}. What comes up then is held, and you get one summary when your hours start again.`
+}
+const NF_TIMES = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`)
+function drawNotify() {
+  const n = notifyNow()
+  segmented(notifyDialog.querySelector('.nf-days'), (b) => b.dataset.nfDays === n.days)
+  notifyDialog.querySelector('.nf-any').classList.toggle('on', n.days === 'always')
+  notifyDialog.querySelector('.nf-hours').classList.toggle('on', n.days !== 'always')
+  for (const sel of notifyDialog.querySelectorAll('[data-nf-time]')) {
+    const value = n[sel.dataset.nfTime]
+    const times = NF_TIMES.includes(value) ? NF_TIMES : [...NF_TIMES, value].sort() // a time typed into config.json
+    if (sel.options.length !== times.length) sel.innerHTML = times.map((t) => `<option value="${t}">${esc(notifyClock(t))}</option>`).join('')
+    if (document.activeElement !== sel) sel.value = value
+    sel.tabIndex = n.days === 'always' ? -1 : 0
+  }
+  notifyDialog.querySelector('.nf-say').textContent = notifySentence(n)
+  const paused = n.quiet && n.why === 'pause'
+  const row = notifyDialog.querySelector('.nf-pause')
+  row.querySelector('.nf-icon').innerHTML = n.quiet ? ICONS.bellZ : ICONS.bell
+  row.querySelector('b').textContent = paused ? (n.until == null ? 'Paused until you turn them back on' : `Paused until ${notifyTime(n.until)}`) : n.quiet ? `Off until ${n.until == null ? 'later' : notifyTime(n.until)}` : 'Pause notifications'
+  row.querySelector('.nf-about').textContent = n.quiet ? notifyHeld(n) : 'For an hour, until tomorrow morning, or until you turn them back on. Also one click away from CLIque’s icon.'
+  row.querySelector('[data-nf-pause]').textContent = paused ? 'Resume' : 'Pause…'
+}
+function openNotify() {
+  notifyDialog.querySelector('[data-nf-err]').textContent = ''
+  drawNotify()
+  if (!notifyDialog.open) notifyDialog.showModal()
+}
+// Shown at once; the state that follows says it for good, and what couldn't be saved goes back.
+function setNotify(patch) {
+  const was = state.notify
+  state.notify = { ...notifyNow(), ...patch }
+  notifyDialog.querySelector('[data-nf-err]').textContent = ''
+  drawNotify()
+  clique.call('notifications', patch).then((n) => ((state.notify = n), drawNotify()), (x) => {
+    state.notify = was
+    drawNotify()
+    notifyDialog.querySelector('[data-nf-err]').textContent = errorLine(x)
+  })
+}
+notifyDialog.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]') || e.target === notifyDialog) return notifyDialog.close()
+  const days = e.target.closest('button[data-nf-days]')?.dataset.nfDays
+  if (days && days !== notifyNow().days) return setNotify({ days })
+  const pause = e.target.closest('[data-nf-pause]')
+  if (!pause) return
+  const n = notifyNow()
+  if (n.quiet && n.why === 'pause') clique.call('notifications', { pause: 'off' }).catch((x) => (notifyDialog.querySelector('[data-nf-err]').textContent = errorLine(x)))
+  else pauseMenu(pause, n)
+})
+notifyDialog.addEventListener('change', (e) => {
+  const sel = e.target.closest('[data-nf-time]')
+  if (sel) setNotify({ [sel.dataset.nfTime]: sel.value })
 })
 
 // ---- terminals -------------------------------------------------------------
@@ -1680,6 +1774,7 @@ function addAgent() {
 
 function handleFocus(arg) {
   if (arg === ':add') addAgent()
+  else if (arg === ':notifications') openNotify()
   else if (arg === ':workspace') workspaces.create()
   else if (arg === ':workspace-settings') workspaces.settings()
   else if (arg?.startsWith('task:') || arg?.startsWith('bug:')) openTask(arg.slice(arg.indexOf(':') + 1))
@@ -1702,6 +1797,7 @@ const ready = live((next) => {
   drawComputers(state)
   if (saversDialog.open) drawSavers()
   if (toolsDialog.open) drawTools()
+  if (notifyDialog.open) drawNotify()
   drawFoot(state)
   // Terminals only for agents that have one running; the sidebar lists everyone so off agents are one click from coming
   // back.

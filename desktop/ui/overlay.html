@@ -79,6 +79,8 @@
     .pill::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--needs) 75%, transparent), 0 0 0 5px color-mix(in srgb, var(--needs) 16%, transparent); }
     .alert .pill::after { animation: pill-alert 2s ease-in-out infinite; }
     @keyframes pill-alert { 50% { opacity: 1; } }
+    /* notifications held (paused, or outside your hours): still there to see, but it holds still */
+    .quiet.alert .pill::after { animation: none; opacity: .55; }
     /* the clique lives in the pill: one little creature per agent, at its laptop while it works, magnified like the Dock */
     .dots { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     /* creatures magnify away from the screen edge */

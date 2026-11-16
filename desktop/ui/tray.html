@@ -119,6 +119,20 @@
     .autopilot .glyph { width: 16px; height: 16px; display: grid; place-items: center; flex: none; color: var(--fg2); }
     .autopilot .glyph svg { width: 16px; height: 16px; }
     .autopilot b { flex: 1; font-size: 13px; font-weight: 500; }
+    /* notifications: coming through, or held (paused, or outside your hours) and until when. Always there, the same
+       height, so nothing moves when you pause. A click anywhere on it opens the pause menu; paused, Resume is one click. */
+    .notif { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 6px; border-radius: var(--r-control); cursor: pointer; transition: background .18s; }
+    .notif:hover, .notif:has(.nf-open[aria-expanded=true]) { background: var(--tray-hover); }
+    .notif .glyph { width: 16px; height: 16px; display: grid; place-items: center; flex: none; color: var(--fg2); }
+    .notif .glyph svg { width: 16px; height: 16px; }
+    .nf-open { all: unset; flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; height: 100%; line-height: 36px; white-space: nowrap; cursor: pointer; }
+    .nf-open:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: var(--r-control); }
+    .nf-open b { flex: none; font-size: 13px; font-weight: 500; }
+    .nf-open small { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--fg2); font-variant-numeric: tabular-nums; }
+    .notif .chev { flex: none; display: grid; color: var(--fg3); }
+    .notif .chev svg { width: 12px; height: 12px; }
+    .notif .t-go { min-width: 0; height: 24px; padding: 0 10px; font-size: 12px; }
+    .notif.held .glyph { color: var(--fg); }
     footer { display: flex; align-items: center; gap: 2px; margin-top: 6px; padding: 0 2px; }
     footer .add { height: 28px; padding: 0 12px 0 10px; }
     footer .add svg { width: 14px; height: 14px; }
@@ -139,6 +153,7 @@
   </div>
   <div class="usage"></div>
   <div class="t-hr"></div>
+  <div class="notif"><span class="glyph"></span><button class="nf-open" aria-haspopup="menu" aria-expanded="false"></button><span class="nf-end"></span></div>
   <label class="autopilot">
     <span class="glyph"></span>
     <b>Autopilot</b>

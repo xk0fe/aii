@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('clique', {
   onPlace: listen('place'),
   // The permissions flow: this app, as a file being dragged, into a list in System Settings.
   dragApp: () => ipcRenderer.send('drag-app'),
+  // What this page has open, so nothing notifies you about the place you're looking at (core/notify.js).
+  looking: (view) => ipcRenderer.send('looking', view),
   onState: listen('state'),
   onPty: listen('pty'),
   onFocus: listen('focus'),

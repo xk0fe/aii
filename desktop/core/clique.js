@@ -22,6 +22,7 @@ import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, fo
 import { Phones } from './phones.js'
 import { sweepFiles, ATTACHMENT_DAYS, CACHE_DAYS } from './keep.js'
 import { SAVERS, SAVER_IDS, saversFrom, report } from './savers.js'
+import { prefsOf, prefsToSave, changed as notifyChanged } from './notify.js'
 import { MODES, toolMode, parse as parseTool, help as toolHelp, offText, alertOf } from './tools.js'
 
 export const LINK_DIR = path.join(HOME, 'link')
@@ -382,6 +383,39 @@ export class Clique extends EventEmitter {
   setTheme(theme) {
     this.config.data.theme = ['light', 'dark'].includes(theme) ? theme : 'system'
     this.config.save()
+  }
+
+  // When CLIque may notify you (core/notify.js): config.json's `notifications`, there only once something isn't the
+  // default. setNotifications({ days, from, to }) is the schedule, ({ pause: 'hour' | 'morning' | 'manual' | 'off' }) the
+  // pause from the menu bar. It's this computer's: each of your computers notifies on its own.
+  get notifications() {
+    return prefsOf(this.config.data.notifications)
+  }
+
+  setNotifications(patch, now = Date.now()) {
+    const kept = prefsToSave(notifyChanged(this.config.data.notifications, patch, now))
+    if (kept) this.config.data.notifications = kept
+    else delete this.config.data.notifications
+    this.config.save()
+    this.changed()
+    return this.notifications
+  }
+
+  // Is this agent still waiting for you in a workspace: its status says so, or a card of its is still up (an agent tool's
+  // card stays while its agent carries on). One on a linked computer: as that computer last said, and not while it's
+  // unreachable. A notification for it comes down once this says no.
+  stillNeeds(ws, name) {
+    const hub = this.hubs.get(ws)
+    if (!hub) return false
+    if (hub.agents.has(name)) return hub.agents.get(name).status === 'waiting' || [...hub.asks.values()].some((q) => q.name === name)
+    for (const l of this.links.values()) {
+      const st = l.peer && this.linkedState(l, hub.ws)
+      if (!st) continue
+      const q = this.qualifier(l)
+      if (st.agents.some((a) => q(a.name) === name && a.status === 'waiting')) return true
+      if (st.feed.some((e) => e.kind === 'ask' && !e.answer && q(e.from) === name)) return true
+    }
+    return false
   }
 
   // Agent tools: 'off', 'ask' (the default, so config.json doesn't say it) or 'auto'. Turned off, the cards still up

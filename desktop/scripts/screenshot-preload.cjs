@@ -463,7 +463,12 @@ if (FIXTURE === 'q') {
   for (const r of Object.keys(READS)) delete READS[r]
   Object.assign(READS, { since: now })
 }
-const state = { savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
+// When CLIque may notify you (core/notify.js): any time, not paused; window.__cliqueNotify({ … }) changes it as the app's
+// own action would ({ days, from, to } or { pause }), with `held` as how many are being kept
+const notifyCore = require('../core/notify.js')
+let notifyPrefs = notifyCore.prefsOf(null)
+const notifyState = (held = 0) => ({ ...notifyPrefs, ...notifyCore.quietNow(notifyPrefs), held, morning: notifyCore.morningAfter(notifyPrefs) })
+const state = { notify: notifyState(), savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
 
 // Workspaces, as Clique.workspaces() reports them. Storefront has everyone; Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the clique, Storefront
 // in the background with two of its clique needing you and a reply you haven't read, and Research parked.
@@ -702,7 +707,14 @@ function voiceCall(action) {
 window.__cliqueFit = null
 window.__cliqueEmit = (channel, ...args) => listeners[channel]?.forEach((fn) => fn(...args))
 window.__cliqueState = state
+window.__cliqueNotify = (patch, held = 0) => {
+  notifyPrefs = notifyCore.changed(notifyPrefs, patch)
+  state.notify = notifyState(held)
+  window.__cliqueEmit('state', state)
+}
+window.__cliqueLooking = null // what the page last said it has open (clique.looking)
 window.clique = {
+  looking: (view) => (window.__cliqueLooking = view),
   platform: PLATFORM,
   home: HOME,
   dev: QUERY.get('dev') === '1',
@@ -719,6 +731,12 @@ window.clique = {
       Object.assign(state.savers.on, args[0])
       emit()
       return state.savers
+    }
+    if (action === 'notifications') {
+      notifyPrefs = notifyCore.changed(notifyPrefs, args[0])
+      state.notify = notifyState(state.notify.held)
+      emit()
+      return state.notify
     }
     // agent tools: off, ask (the default) or auto
     if (action === 'tools') {

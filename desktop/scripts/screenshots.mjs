@@ -571,6 +571,130 @@ const SHOTS = {
     if (String(flipped) !== 'true,true,6') throw new Error(`savers: flipping a switch gave ${flipped}`)
     win.destroy()
   },
+  // Notifications: the sheet that says when CLIque may interrupt you (any time, then a schedule, which mustn't change its
+  // height), paused from it; and the menu bar's popover with notifications on, the pause menu, paused for an hour (one
+  // click on Resume turns them back on), and held by the schedule. Checked as it goes: a broken step stops the shot.
+  async notifications(theme) {
+    const errors = []
+    const check = (what, ok, got) => {
+      console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}${ok ? '' : `: ${JSON.stringify(got)}`}`)
+      if (!ok) errors.push(what)
+    }
+    const win = await dashboard(theme, 'chat')
+    win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(`console: ${e.message}`))
+    await sleep(700)
+    const hint = await js(win, `document.querySelector('.side-more').click(); await new Promise((r) => setTimeout(r, 300))
+      const row = [...document.querySelectorAll('.menu button')].find((b) => b.textContent.includes('Notifications'))
+      const text = row?.textContent; row?.click(); await new Promise((r) => setTimeout(r, 500)); return text`)
+    check('the ⋯ menu has Notifications…, saying "Any time"', hint === 'Notifications…Any time', hint)
+    check('the sheet opens', await js(win, "return document.querySelector('#notify').open"))
+    await save(win, `notify-sheet-${theme}`)
+    const sched = await js(win, `const d = document.querySelector('#notify')
+      const h = d.getBoundingClientRect().height
+      d.querySelector('[data-nf-days=every]').click()
+      await new Promise((r) => setTimeout(r, 400))
+      return [Math.round(d.getBoundingClientRect().height - h), window.__cliqueState.notify.days, d.querySelector('.nf-hours').classList.contains('on'), d.querySelector('[data-nf-time=from]').value, d.querySelector('[data-nf-time=to]').value, d.querySelector('.nf-say').textContent]`)
+    check('Every day: the hours show, 8:00 to 22:00, and the sheet keeps its height', String(sched.slice(0, 5)) === '0,every,true,08:00,22:00', sched)
+    check('the sentence says when you won’t be notified', /^You won’t be notified between .+ and .+\. What comes up then is held/.test(sched[5]), sched[5])
+    await save(win, `notify-sheet-schedule-${theme}`)
+    const weekdays = await js(win, `const d = document.querySelector('#notify')
+      d.querySelector('[data-nf-days=weekdays]').click()
+      const to = d.querySelector('[data-nf-time=to]'); to.value = '18:30'; to.dispatchEvent(new Event('change', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, 400))
+      const n = window.__cliqueState.notify
+      return [n.days, n.to, d.querySelector('.nf-say').textContent]`)
+    check('Weekdays until 18:30 is saved, and the sentence names the weekend', weekdays[0] === 'weekdays' && weekdays[1] === '18:30' && /or on Saturday and Sunday/.test(weekdays[2]), weekdays)
+    const paused = await js(win, `const d = document.querySelector('#notify')
+      d.querySelector('[data-nf-days=always]').click()
+      await new Promise((r) => setTimeout(r, 300))
+      d.querySelector('[data-nf-pause]').click(); await new Promise((r) => setTimeout(r, 300))
+      const items = [...d.querySelectorAll('.menu button')].map((b) => b.querySelector('span').textContent)
+      d.querySelector('.menu [data-menu-act=manual]').click(); await new Promise((r) => setTimeout(r, 500))
+      return [items.join('/'), window.__cliqueState.notify.why, d.querySelector('.nf-pause b').textContent, d.querySelector('[data-nf-pause]').textContent]`)
+    check('Pause… offers an hour, tomorrow morning, until you turn them back on; picking one says so with Resume', String(paused) === 'For 1 hour/Until tomorrow morning/Until I turn them back on,pause,Paused until you turn them back on,Resume', paused)
+    await save(win, `notify-sheet-paused-${theme}`)
+    const resumed = await js(win, `const d = document.querySelector('#notify')
+      d.querySelector('[data-nf-pause]').click(); await new Promise((r) => setTimeout(r, 500))
+      d.querySelector('[data-close]').click()
+      return [window.__cliqueState.notify.quiet, d.querySelector('[data-nf-pause]').textContent, d.open]`)
+    check('Resume turns them back on, and Done closes the sheet', String(resumed) === 'false,Pause…,false', resumed)
+    // what the dashboard says it has open, for "not while you're looking"
+    const looking = await js(win, `const out = [JSON.stringify(window.__cliqueLooking)]
+      select('Milo'); await new Promise((r) => setTimeout(r, 400)); out.push(JSON.stringify(window.__cliqueLooking))
+      goPlace('tasks'); await new Promise((r) => setTimeout(r, 400)); out.push(JSON.stringify(window.__cliqueLooking))
+      return out`)
+    check('the chat says whose questions are on screen', /"agent":null,"sees":\[.+\],"tasks":false/.test(looking[0]), looking[0])
+    check("a conversation says whose it is, Tasks says it's Tasks", /"agent":"Milo","sees":\[\],"tasks":false/.test(looking[1]) && /"agent":null,"sees":\[\],"tasks":true/.test(looking[2]), looking)
+    win.destroy()
+
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    tray.webContents.on('console-message', (e) => e.level === 'error' && errors.push(`console: ${e.message}`))
+    await sleep(500)
+    await fitToContent(tray)
+    const height = async () => (await js(tray, 'return window.__cliqueFit')).height
+    const row = () => js(tray, "return [document.querySelector('.nf-open').textContent, document.querySelector('.nf-end').textContent, document.querySelector('.notif').classList.contains('held')]")
+    const h0 = await height()
+    check('the popover says notifications are on', String(await row()) === 'NotificationsOn,,false', await row())
+    await save(tray, `tray-notify-${theme}`)
+    await js(tray, `${click('.nf-open')}; await new Promise((r) => setTimeout(r, 400))`)
+    const menu = await js(tray, "return [...document.querySelectorAll('.menu button')].map((b) => b.querySelector('span').textContent).join('/')")
+    check('a click opens the pause menu', menu === 'For 1 hour/Until tomorrow morning/Until I turn them back on/Schedule…', menu)
+    await save(tray, `tray-pause-menu-${theme}`)
+    await js(tray, `${click('.menu [data-menu-act=hour]')}; await new Promise((r) => setTimeout(r, 500))`)
+    await js(tray, 'window.__cliqueNotify({}, 2)') // two came up meanwhile
+    await sleep(300)
+    await fitToContent(tray)
+    const p = await row()
+    check('paused for an hour: it says until when, with Resume', /^Notifications pauseduntil \d/.test(p[0]) && p[1] === 'Resume' && p[2] === true, p)
+    check('the tooltip says what is held and that it is still listed', /2 are held: you get one summary at .*still listed here/s.test(await js(tray, "return document.querySelector('.notif').title")))
+    check('pausing moved nothing', (await height()) === h0, [h0, await height()])
+    await save(tray, `tray-paused-${theme}`)
+    await js(tray, `${click('.notif [data-resume]')}; await new Promise((r) => setTimeout(r, 500))`)
+    check('Resume, one click: on again', String(await row()) === 'NotificationsOn,,false', await row())
+    // outside the hours of a schedule: "off until", the schedule's doing, no Resume
+    const hour = new Date().getHours()
+    const hh = (h) => `${String((h + 24) % 24).padStart(2, '0')}:00`
+    await js(tray, `window.__cliqueNotify({ days: 'every', from: '${hh(hour + 2)}', to: '${hh(hour - 1)}' }, 1)`)
+    await sleep(300)
+    await fitToContent(tray)
+    const off = await row()
+    check('outside your hours: off until they start, no Resume', /^Notifications offuntil \d/.test(off[0]) && off[1] === '' && off[2] === true, off)
+    check('and still the same height', (await height()) === h0, [h0, await height()])
+    await save(tray, `tray-off-hours-${theme}`)
+    tray.destroy()
+
+    // the floating pill while notifications are held: its warm edge holds still
+    const pill = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
+    await sleep(500)
+    const edge = async () => js(pill, "return [document.body.classList.contains('alert'), getComputedStyle(document.querySelector('.pill'), '::after').animationName]")
+    check('the pill breathes while someone needs you', String(await edge()) === 'true,pill-alert', await edge())
+    await js(pill, "window.__cliqueNotify({ pause: 'manual' })")
+    await sleep(300)
+    check('paused: the edge stays, and holds still', String(await edge()) === 'true,none', await edge())
+    check('the open chat says what it shows', await js(pill, "document.querySelector('.home').click(); await new Promise((r) => setTimeout(r, 500)); return /\"sees\":\\[.+\\]/.test(JSON.stringify(window.__cliqueLooking))"))
+    pill.destroy()
+    if (errors.length) throw new Error(`notifications: ${errors.join('; ')}`)
+  },
+  // Pausing from the menu bar's popover: the menu, For 1 hour, the row says until when, Resume.
+  async pauseGif() {
+    const tray = await open('tray.html', { theme: 'light', width: 340, height: 600, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(tray)
+    const [, h] = tray.getContentSize()
+    await record(tray, 'pause', {
+      clip: { x: 0, y: Math.max(0, h - 330), width: 340, height: Math.min(h, 330) }, ms: 6200, width: 680,
+      during: async () => {
+        await sleep(900)
+        await js(tray, click('.nf-open'))
+        await sleep(1300)
+        await js(tray, click('.menu [data-menu-act=hour]'))
+        await sleep(2200)
+        await js(tray, click('.notif [data-resume]'))
+        await sleep(1200)
+      },
+    })
+    tray.destroy()
+  },
   // Agent tools: an agent asking to change CLIque (its card in the chat, its words in the Needs-you queue), the card
   // once allowed beside what an automatic change says, and the sheet that says how far agents go, in Ask first and in
   // Automatic (which mustn't change its height)

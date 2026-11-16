@@ -17,7 +17,7 @@ const threadPane = mountThread($('.panel > .thread'), {
   onAgent: (name) => (threadPane.close(), composer.setTarget(familyOf(name)), composer.focus()),
   onCard: (id) => (threadPane.close(), feed.jump(id)),
 })
-const composer = mountComposer($('.compose'), { dropZone: $('.panel'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to)) })
+const composer = mountComposer($('.compose'), { dropZone: $('.panel'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to), queueMicrotask(tellLooking)) })
 let size = ''
 
 // The window wraps what's drawn; main.js places it so the pill stays where it is, so it's told where the pill is.
@@ -107,6 +107,7 @@ for (const handle of [$('.pill'), $('.panel header')]) {
 function setOpen(open, focus = open) {
   if (!open) composer.stopVoice() // closing the panel ends dictation, keeping what it heard
   document.body.classList.toggle('open', open)
+  tellLooking()
   fit(focus)
   if (!open) return
   $('.feed').scrollTop = $('.feed').scrollHeight // it can't scroll while hidden, so catch up on open
@@ -169,6 +170,8 @@ live((next) => {
   document.body.classList.toggle('busy', working > 0)
   // anyone waiting on you, in this workspace or another open one
   document.body.classList.toggle('alert', state.agents.some((a) => a.status === 'waiting') || elsewhere(state).waiting > 0)
+  // while notifications are held (paused, or outside your hours) the warm edge stays, but still: it doesn't breathe
+  document.body.classList.toggle('quiet', Boolean(state.notify?.quiet))
   // with workspaces, the chat says whose it is
   morph($('.panel header .brand'), hasWorkspaces(state) ? `${wsTile(state.workspace, { size: 20 })}<b>${esc(wsLabel(state.workspace))}</b>` : wordmarkHTML(20))
   drawPill()
@@ -182,4 +185,17 @@ live((next) => {
   threadPane.render(state)
   composer.render(state)
   fit()
+  tellLooking()
 })
+// What the chat shows while it's open, said to the app when it changes, so nothing notifies you about what's in front of
+// you (core/notify.js lookingAt): one agent's conversation, or everyone's chat with every question in it.
+let lookingSaid = ''
+function tellLooking() {
+  const to = composer.target()
+  const view = !state || !document.body.classList.contains('open') ? null
+    : { ws: state.workspace?.id ?? '', agent: isConvo(to) ? familyOf(to) : null, sees: isConvo(to) ? [] : needsYou(state).filter((n) => n.ask).map((n) => n.agent.name), tasks: false }
+  const said = JSON.stringify(view)
+  if (said === lookingSaid) return
+  lookingSaid = said
+  clique.looking?.(view)
+}
