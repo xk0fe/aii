@@ -21,6 +21,7 @@ import { HOME, movedPath, movedImages } from './home.js'
 import { ROOT, GENERAL, channelName, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 import { CANVAS_HELP, CANVAS_LINES, asCanvas, canvasLines, canvasTitle, typedLines, withCanvas } from './canvas.js'
+import { ATTACH_USAGE, CAPTION_MAX, check as checkFiles, store as storeFiles, makeRoom, filesInBracket, sizeWords, timeWords } from './attachments.js'
 import { REACT_MAX, REACT_USAGE, REACT_WINDOW, emojiOf, justAnAck, saidWith } from './reactions.js'
 import { REACTIONS_MAX } from 'clique-shared/protocol.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
@@ -2612,7 +2613,10 @@ export class Hub extends EventEmitter {
     if (quoted && who === a.name && last?.id === quoted.id) return ''
     const line = String(said.text ?? '').replace(/```[\s\S]*?```/g, '[code]').replace(/\s+/g, ' ').trim()
     const snip = line.length > 160 ? `${line.slice(0, 157)}…` : line
-    return `replying to ${who === a.name ? 'your message' : `@${who}'s message`} "${inBracket(snip)}"`
+    // (a message with files an agent attached: which files, so one with no words is still told apart)
+    const files = filesInBracket(said.files)
+    if (files && !snip) return `replying to ${who === a.name ? 'the files you attached' : `the files @${who} attached`} (${files})`
+    return `replying to ${who === a.name ? 'your message' : `@${who}'s message`} "${inBracket(snip)}"${files ? ` (with ${files})` : ''}`
   }
 
   recipients(names, from) {
@@ -3381,6 +3385,30 @@ export class Hub extends EventEmitter {
       this.post({ kind: 'event', from, text: `${did} ${e.from === 'you' ? 'your' : `@${e.from}'s`} canvas${title ? ` "${title}"` : ''}`, canvasOf: e.id, ...(e.channel && { channel: e.channel }) })
     }
     return `${name(e)} now reads:\n${numbered(lines)}\n`
+  }
+
+  // `clique attach <file> … [--caption "…"]`: an agent shows files in the chat, where it's working (core/attachments.js):
+  // a line of its own from that agent, like a canvas, that takes up nobody's turn. The files are copied into CLIque's
+  // attachments right now, all of them or none. `cwd` is the folder the agent ran the command in: a file's name alone
+  // is looked for there.
+  async attach(from, [cwd = '', ...args]) {
+    const names = []
+    let caption = ''
+    for (let i = 0; i < args.length; i++) {
+      const w = args[i]
+      if (w === '--caption' || w === '-m') caption = args[++i] ?? ''
+      else if (w.startsWith('--caption=')) caption = w.slice(10)
+      else if (w) names.push(w)
+    }
+    if (!names.length || names[0] === 'help') return `${ATTACH_USAGE}\n`
+    if (!this.agents.get(from)) throw new Error("clique attach is an agent's: in the chat, drop or paste the file into the message box instead")
+    const files = await storeFiles(checkFiles(names, cwd), ATTACHMENTS)
+    const channel = this.channelFor(from)
+    this.post({ kind: 'reply', from, text: clip(pasteable(caption).trim(), CAPTION_MAX), files, ...(channel && { channel }) })
+    makeRoom(ATTACHMENTS, { keep: files.map((f) => f.path) })
+    const what = (f) => [f.kind === 'html' ? 'a page' : f.kind === 'file' ? 'a file' : f.kind, f.w && `${f.w}×${f.h}`, f.dur && timeWords(f.dur), sizeWords(f.size)].filter(Boolean).join(', ')
+    const pages = files.some((f) => f.kind === 'html') ? '\nA page runs in a sandbox: no network, no other files. If it needs any, inline them and attach it again.' : ''
+    return `attached in #${this.channel(channel ?? GENERAL)?.name ?? GENERAL}:\n${files.map((f) => `  ${f.name} (${what(f)})`).join('\n')}${pages}\nIt's in the chat already: say what it shows in your final message, without pasting the path again.\n`
   }
 
   // A message's own bracket: what it is and who it's from.

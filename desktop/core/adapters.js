@@ -99,6 +99,8 @@ CLIque commands (run them in the shell):
   clique react <emoji>        put one emoji on the message you're answering, instead of writing back (👍 👀 ✅ 🙏)
   clique canvas               draw it in the chat instead of writing it out: a flow, numbers side by side, what's
                             checked and what isn't. Teammates can add to the same canvas (clique canvas help)
+  clique attach <file> ...    when you have something to show (a screenshot, a recording, a page you built), attach it:
+                            it shows in the chat, where the user can look at it, play it or run it
   clique busy                 what each teammate is working on right now
   clique board [words]        read the shared notes, or search them
   clique task                 the Tasks board: list, show, done, note, add, decline (clique task help)

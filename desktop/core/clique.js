@@ -9,6 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage } from './hub.js'
 import { movedPath } from './home.js'
+import { FETCH_MAX, kindOf, travels } from './attachments.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
 import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
@@ -686,7 +687,7 @@ export class Clique extends EventEmitter {
       for (const p of [].concat(images ?? [])) if (typeof p === 'string') used.add(key(p))
     }
     for (const hub of this.hubs.values()) {
-      for (const e of hub.feed) add(e.images)
+      for (const e of hub.feed) (add(e.images), add(e.files?.map((f) => f.path))) // what you attached, and what an agent did (core/attachments.js)
       for (const t of hub.tickets.all) add(t.images)
       for (const s of hub.schedules.all) add(s.images)
       for (const a of hub.agents.values()) {
@@ -1031,6 +1032,9 @@ export class Clique extends EventEmitter {
       for (const e of st.feed) {
         feed.push({
           ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && q(e.re), ...(e.thread && { thread: q(e.thread) }), ...(e.echo && { echo: q(e.echo) }), images: e.images?.map((p) => this.fetchImage(l, p)),
+          // what an agent there attached: a picture or a page is fetched like your images; a recording or any other file stays
+          // there (`away`: that computer's name, for the card to say so)
+          ...(e.files && { files: e.files.map((f) => (travels(f) ? { ...f, path: this.fetchImage(l, f.path), home: l.name } : { ...f, path: '', away: l.name })) }),
           ...(e.ticket !== undefined && { ticket: q(String(e.ticket)) }), ...((e.act === 'fixing' || e.act === 'triaged') && e.text && { text: q(e.text) }),
           ...(e.reactions && { reactions: e.reactions.map((r) => ({ ...r, by: q(r.by) })) }),
           ...(e.also && { also: e.also.map(q) }), ...(e.reply && { reply: q(e.reply) }), ...(e.line && { line: e.line.map(q) }),
@@ -1401,6 +1405,8 @@ export class Clique extends EventEmitter {
       readImage: (file) => {
         file = movedPath(file)
         if (!String(file).startsWith(ATTACHMENTS + path.sep)) throw new Error('not an attachment')
+        // (a recording an agent attached is never sent whole: it's watched on this computer)
+        if (kindOf(file) === 'video' || fs.statSync(file).size > FETCH_MAX) throw new Error('too big to send: open it on the computer it is on')
         return new Uint8Array(fs.readFileSync(file))
       },
       approve: (id) => h.approve(id),

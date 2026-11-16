@@ -46,6 +46,9 @@ export function serve(to) {
     },
     // `clique canvas <op> …`: a board drawn in the chat, and changes to one that's there (core/canvas.js)
     canvas: async (q, body) => theirs(await hub.canvas(q.from || 'you', body.split('\0').slice(0, -1))),
+    // `clique attach <file> …`: files shown in the chat (core/attachments.js). The first word is the folder the agent is in.
+    // (what it prints names the files: a file's name is anybody's text)
+    attach: async (q, body) => theirs(await hub.attach(q.from || 'you', body.split('\0').slice(0, -1))),
     who: () => hub.who(),
     // `clique board [words]`: the words NUL-separated (none from a `clique` older than that: everything, as it was)
     board: (q, body) => theirs(hub.board(q.from || 'you', body.split('\0').slice(0, -1))),

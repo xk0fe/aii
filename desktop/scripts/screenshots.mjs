@@ -1,12 +1,15 @@
 // Renders every view with a made-up clique (scripts/screenshot-preload.cjs) and saves PNGs, plus short GIFs of
 // the animations. Nothing starts and ~/.clique is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp] [--win]
 // [--frame] [--dark] [--window=1100x700]
-import { app, BrowserWindow, nativeTheme } from 'electron'
+import { app, BrowserWindow, nativeTheme, protocol } from 'electron'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+
+import { serveSandbox } from '../core/sandbox.js'
+import { sampleFiles } from './sample-files.mjs'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-shots-'))
@@ -261,7 +264,90 @@ const SCREEN_TOP = `html::before { content: ''; position: fixed; inset: 0 0 auto
   html::after { content: ''; position: fixed; top: 0; left: 50%; width: 185px; height: 32px; margin-left: -92.5px; background: #000; border-radius: 0 0 9px 9px; z-index: 99; pointer-events: none; outline: 1px dashed rgba(255, 90, 170, var(--notch-guide, 0)); }
   .wrap { position: absolute !important; left: 50%; top: 0; transform: translateX(-50%); }`
 
+// The files shot: what agents attach (`clique attach`, core/attachments.js), made once (scripts/sample-files.mjs)
+let samples = null
+const filesFeed = async () => {
+  samples ??= await sampleFiles(path.join(tmp, 'files'))
+  const f = samples
+  return [
+    { id: 'f1', kind: 'msg', from: 'you', to: 'Theo', text: 'Show me the new checkout, on desktop and on a phone.' },
+    { id: 'f2', kind: 'reply', from: 'Theo', text: 'The new checkout on desktop. The total rounds once now.', files: [f.desktop] },
+    // (reactions, core/reactions.js, sit under a message's files)
+    { id: 'f3', kind: 'reply', from: 'Theo', text: 'And on a phone: cart, payment, receipt.', files: [f.cart, f.payment, f.receipt], reactions: [{ by: 'you', emoji: '👍', at: 1 }, { by: 'Iris', emoji: '👍', at: 2 }, { by: 'June', emoji: '🎉', at: 3 }] },
+    { id: 'f4', kind: 'reply', from: 'Iris', text: 'The coupon flow from start to finish.', files: [f.clip], reactions: [{ by: 'Theo', emoji: '👀', at: 1 }] },
+    { id: 'f5', kind: 'reply', from: 'Ada', text: 'The totals as a page you can try: change the quantities.', files: [f.page], reactions: [{ by: 'you', emoji: '🎉', at: 1 }] },
+    { id: 'f6', kind: 'reply', from: 'June', text: 'All 48 checkout tests pass. The log:', files: [f.log] },
+    { id: 'f7', kind: 'reply', from: REX, text: 'The same run on Windows.', files: [{ name: 'checkout-windows.mp4', kind: 'video', type: 'video/mp4', size: 48 * 1024 * 1024, w: 1920, h: 1080, dur: 94, path: '', away: LINK.name }] },
+  ]
+}
+const chatColumn = (win) => js(win, "const r = document.querySelector('.page-head[data-for=chat]').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(innerWidth - r.x), height: innerHeight }")
+const FILES_STATE = (feed) => `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+  s.feed = ${JSON.stringify(feed)}.map((e, i, all) => ({ ...e, ts: t(3 * (all.length - i)) }))
+  window.__cliqueEmit('state', s)`
+
 const SHOTS = {
+  // Files agents attach: pictures, a recording, a page that runs in a sandbox, a plain file, and one that stayed on a
+  // linked computer; then the recording playing and the page running, and the viewer.
+  async files(theme) {
+    const feed = await filesFeed()
+    const win = await dashboard(theme, 'chat', { fixture: 'big', width: 1180, height: 1500 })
+    await js(win, FILES_STATE(feed))
+    await sleep(1500)
+    await save(win, `files-${theme}`, { crop: await chatColumn(win) })
+    await js(win, `${click('[data-fx=play]')}; ${click('[data-fx=run]')}`)
+    await sleep(2200)
+    await js(win, "document.querySelector('.fx-video video').pause()")
+    await sleep(200)
+    await save(win, `files-live-${theme}`, { crop: await chatColumn(win) })
+    win.setContentSize(1180, 760)
+    await js(win, click('.fx-pics:not(.one) [data-fx=view]'))
+    await sleep(500)
+    await save(win, `files-viewer-${theme}`)
+    await js(win, `${click('[data-fxv=close]')}; ${click('.fx-page [data-fx=view]')}`)
+    await sleep(900)
+    await save(win, `files-viewer-page-${theme}`)
+    win.destroy()
+    // the floating chat: the same cards in a narrow column
+    const chat = await open('overlay.html', { theme, width: 520, height: 900, backdrop: 'desktop' })
+    await sleep(400)
+    await js(chat, "window.__cliqueEmit('toggle', { open: true, focus: false })")
+    await js(chat, `window.__cliqueState.agents.forEach((a) => Object.assign(a, { status: 'idle', ask: null, activity: null, subs: [] })); ${FILES_STATE(feed.slice(2, 6))}`)
+    await sleep(1200)
+    await fitToContent(chat)
+    await save(chat, `files-chat-${theme}`)
+    chat.destroy()
+  },
+  // A recording played and a page run where they are, in the chat
+  async filesGif() {
+    const feed = await filesFeed()
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { fixture: 'big', width: 1000, height: 900 })
+    await js(win, FILES_STATE(feed.slice(3, 5)))
+    await sleep(1200)
+    const clip = await chatColumn(win)
+    await record(win, 'files', {
+      clip, ms: 9500,
+      during: async () => {
+        let at = await glide(win, { x: clip.x + 300, y: clip.y + 60 }, await center(win, '.fx-play'))
+        await tap(win, at)
+        await sleep(2600)
+        at = await glide(win, at, await center(win, '.fx-run'))
+        await tap(win, at)
+        await sleep(900)
+        // inside the page: its + button, three times (the frame is the page's own: real clicks)
+        const frame = await center(win, '.fx-page .fx-frame')
+        at = await glide(win, at, { x: frame.x - frame.w / 2 + 381, y: frame.y - frame.h / 2 + 135 })
+        // (through the debugger, which sends a click the way a real mouse does: into the frame's own process)
+        const d = win.webContents.debugger
+        d.attach('1.3')
+        for (let i = 0; i < 3; i++) {
+          for (const type of ['mousePressed', 'mouseReleased']) await d.sendCommand('Input.dispatchMouseEvent', { type, x: Math.round(at.x), y: Math.round(at.y), button: 'left', clickCount: 1 })
+          await sleep(450)
+        }
+        d.detach()
+      },
+    })
+    win.destroy()
+  },
   // Reactions: an emoji on a message in place of a written "got it" (clique react). The same exchange with every
   // acknowledgement as a message (before) and as a reaction (after), in the channel and in the thread beside it; a
   // hand-off in an agent's conversation; and a message with more reactions than fit, in the narrow floating chat.
@@ -2271,6 +2357,7 @@ fs.mkdirSync(out, { recursive: true })
 app.on('window-all-closed', () => {}) // one window at a time; don't quit between them
 
 app.whenReady().then(async () => {
+  serveSandbox(protocol, [path.join(tmp, 'files', 'attachments')]) // the page in the files shot runs in the real sandbox
   // A shot that no longer finds its way around the app mustn't cost every shot after it: it's named, the rest go on,
   // and the run ends with an error so it doesn't pass for a full set.
   const broken = []

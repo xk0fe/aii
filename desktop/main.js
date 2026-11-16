@@ -5,7 +5,7 @@
 import './core/migrate-now.js' // first: an older install's folder is moved before anything below reads it
 import { moveUserData } from './core/migrate.js'
 import { movedPath } from './core/home.js'
-import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, powerMonitor, systemPreferences } from 'electron'
+import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, powerMonitor, systemPreferences, protocol } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url'
 import qrcode from 'qrcode-generator'
 import { CONFIG, ATTACHMENTS, HOME } from './core/hub.js'
 import { Clique, CACHE } from './core/clique.js'
+import { opens } from './core/attachments.js'
+import { serveSandbox, lockFrames } from './core/sandbox.js'
 import { addresses } from './core/link.js'
 import { Remote } from './core/remote.js'
 import { readPack } from './core/pack.js'
@@ -118,6 +120,8 @@ async function start() {
   // working while CLIque quits or relaunches with new code.
   // bin/ goes on the agents' PATH, so it has to be a real folder: in an installed CLIque, the one next to app.asar.
   const bin = path.join(dir, 'bin').replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
+  // A page an agent attached runs in a sandbox of its own, never in the chat's page (core/sandbox.js).
+  serveSandbox(protocol, [ATTACHMENTS, CACHE])
   clique = new Clique({ bin, computerName: computerName(), host: { file: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } } })
   const checked = setup.check() // meanwhile, in the background
   await clique.start()
@@ -303,6 +307,20 @@ const stateNow = (snapshot = clique.snapshot()) => ({
 
 // ---- windows ---------------------------------------------------------------
 
+// One of CLIque's own files from the chat: in its attachments or its cache of linked computers' files, wherever `..`
+// and links really lead. (A file that's gone is still one of them by its name: the action says it's gone.)
+function ownFile(file) {
+  const real = (p) => {
+    try {
+      return fs.realpathSync(p)
+    } catch {
+      return path.resolve(p)
+    }
+  }
+  const at = real(String(file))
+  return [ATTACHMENTS, CACHE].some((d) => at.startsWith(real(d) + path.sep))
+}
+
 // A window for one of the pages in ui/. The page hears which computer this is from preload.cjs, and your home folder and
 // whether CLIque runs from source from here. One whose page crashed loads it again.
 function page(file, options, query) {
@@ -310,6 +328,7 @@ function page(file, options, query) {
   const win = new BrowserWindow({ show: false, ...options, webPreferences: { preload: path.join(dir, 'preload.cjs'), additionalArguments: args } })
   win.loadFile(path.join(dir, 'ui', file), { query })
   win.webContents.on('will-navigate', (e) => e.preventDefault()) // a file dropped outside a drop zone must not replace the page
+  lockFrames(win.webContents) // and a frame in it (an attached page's sandbox) goes nowhere and opens nothing
   win.webContents.on('render-process-gone', (_e, { reason }) => {
     if (reason === 'clean-exit' || quitting) return
     logLine('page', `${file} ${reason}`)
@@ -747,7 +766,26 @@ const actions = {
     return ops[op]()
   },
 
-  openFile: (file) => [ATTACHMENTS, CACHE].some((d) => String(movedPath(file)).startsWith(d + path.sep)) && shell.openPath(movedPath(file)),
+  // A file from the chat, in the app the system has for it: only CLIque's attachments and its cache of linked computers'
+  // files, and only what's looked at (a picture, a recording, a page, a document). Anything else an agent attached is
+  // shown in its folder instead: opening a script or an app would run it. -> 'opened', 'shown', or false (not CLIque's file)
+  openFile: async (file) => {
+    file = movedPath(file)
+    if (!ownFile(file)) return false
+    if (!fs.existsSync(file)) throw new Error("That file isn't kept any more.")
+    if (!opens(file)) return shell.showItemInFolder(file), 'shown'
+    const failed = await shell.openPath(file)
+    if (failed) throw new Error(failed)
+    return 'opened'
+  },
+  // ...and where it is, in Finder (Explorer on Windows)
+  showFile: (file) => {
+    file = movedPath(file)
+    if (!ownFile(file)) return false
+    if (!fs.existsSync(file)) throw new Error("That file isn't kept any more.")
+    shell.showItemInFolder(file)
+    return true
+  },
   openUrl: (url) => /^https?:\/\//.test(url) && shell.openExternal(url),
   // A workspace's folder, in Finder (Explorer on Windows): the one config.json has for it, never a path from the page.
   openFolder: async (ws) => {
