@@ -5,7 +5,23 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { scan, summarize, readLog, providerOf, emptyIndex, History } from '../core/history.js'
+import { scan, summarize as rowsOf, readLog, providerOf, emptyIndex, History, placer, sessionId, COLS, UNKNOWN } from '../core/history.js'
+
+// A summary's rows, added up the way most of these tests read them: per provider and day, with each day's models, who
+// used it and where. names: the clique's agents, all in one workspace.
+function fold({ first, rows }) {
+  const providers = {}
+  for (const [day, , who, provider, model, dir, tokens, input, output, cached, written, replies, messages, sessions, cost] of rows) {
+    const d = ((providers[provider] ??= { days: {} }).days[day] ??= { tokens: 0, input: 0, output: 0, cached: 0, written: 0, replies: 0, messages: 0, cost: 0, sessions: 0, models: {}, who: {}, where: {} })
+    for (const [k, v] of Object.entries({ tokens, input, output, cached, written, replies, messages, cost, sessions })) d[k] += v
+    if (!tokens) continue
+    d.models[model] = (d.models[model] ?? 0) + tokens
+    d.who[who] = (d.who[who] ?? 0) + tokens
+    d.where[dir] = (d.where[dir] ?? 0) + tokens
+  }
+  return { first, providers }
+}
+const summarize = (index, { names = [], ...opts } = {}) => fold(rowsOf(index, { agents: names.map((name) => ({ name, ws: 'shop' })), ...opts }))
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-history-'))
 after(() => fs.rmSync(root, { recursive: true, force: true }))
@@ -257,17 +273,17 @@ test('in the app: the first ask starts a look and says one is under way; what it
     fs.rmSync(file, { force: true })
     const history = new History({ file, roots: () => roots, worker })
     const first = history.state()
-    assert.deepEqual([first.providers, first.at], [{}, 0])
+    assert.deepEqual([first.rows, first.at], [[], 0])
     assert.ok(first.reading, 'a look is under way')
     await history.running
     const then = history.state()
     assert.equal(then.reading, null)
-    assert.equal(then.providers.claude.days['2026-11-10'].tokens, 15)
+    assert.equal(fold(then).providers.claude.days['2026-11-10'].tokens, 15)
     assert.ok(then.at > 0)
     assert.equal(history.running, null, 'a look this recent is the answer')
     // another CLIque start: the saved index answers before anything is read
     const again = new History({ file, roots: () => roots, worker })
-    assert.equal(again.state().providers.claude.days['2026-11-10'].tokens, 15)
+    assert.equal(fold(again.state()).providers.claude.days['2026-11-10'].tokens, 15)
     assert.equal(again.running, null)
   }
 })
@@ -280,7 +296,7 @@ test("an index from another version, or one that can't be read, starts over", as
     const history = new History({ file, roots: () => roots, worker: false })
     history.state()
     await history.running
-    assert.deepEqual(Object.keys(history.state().providers.claude.days), ['2026-11-10'])
+    assert.deepEqual(Object.keys(fold(history.state()).providers.claude.days), ['2026-11-10'])
   }
 })
 
@@ -438,7 +454,7 @@ test('a saved index with parts missing is read as far as it goes, and the logs a
     const history = new History({ file, roots: () => roots, worker: false })
     assert.ok(history.state().reading, saved)
     await history.running
-    assert.equal(history.state().providers.claude.days['2026-11-10'].tokens, 15, saved)
+    assert.equal(fold(history.state()).providers.claude.days['2026-11-10'].tokens, 15, saved)
   }
   // the folders to read can't be said: the look fails, the asker isn't left waiting, and it's tried again later
   const broken = new History({ file: path.join(path.dirname(claude), 'none.json'), roots: () => { throw new Error('no') }, worker: false })
@@ -446,4 +462,77 @@ test('a saved index with parts missing is read as far as it goes, and the logs a
   await broken.running.catch(() => {})
   const after = broken.state()
   assert.deepEqual([after.reading, after.at > 0, broken.running], [null, true, null])
+})
+
+// ---- whose it is in CLIque: the workspace a session ran in, and the agent it ran as -------------------------------
+
+const rowsBy = (summary, ...names) => summary.rows.map((r) => Object.fromEntries(names.map((n) => [n, r[COLS.indexOf(n)]])))
+
+test('a log is named by its session: a transcript by its id, a sub-agent\'s by its session\'s, a Codex log by the id its name ends in', () => {
+  assert.equal(sessionId(path.join('p', '3f9a.jsonl'), 'claude'), '3f9a')
+  assert.equal(sessionId(path.join('p', '3f9a', 'subagents', 'agent-1.jsonl'), 'claude'), '3f9a')
+  assert.equal(sessionId(path.join('2026', '11', '10', 'rollout-2026-11-10T09-30-00-0199c2aa-1b2c-7d3e-8f90-a1b2c3d4e5f6.jsonl'), 'codex'), '0199c2aa-1b2c-7d3e-8f90-a1b2c3d4e5f6')
+})
+
+test('where a log belongs: the workspace that wrote its session down, else by its agent\'s name, else outside CLIque', () => {
+  const place = placer({
+    owners: { s1: ['shop', 'ada'], s2: ['docs'] },
+    agents: [{ name: 'ada', ws: 'shop', dir: '/code/shop' }, { name: 'ada', ws: 'docs', dir: '/code/docs' }, { name: 'june', ws: 'docs', dir: '/code/docs' }, { name: 'q', ws: 'shop', dir: '/code/shop' }, { name: 'q', ws: 'docs', dir: '/code/docs' }, { name: 'q', ws: 'lab', dir: '/code/docs' }],
+  })
+  // written down: that workspace, under the name it was written down with (a rename since), or the log's own
+  assert.deepEqual(place({ session: 's1', who: 'old-name', dir: '/elsewhere' }), { ws: 'shop', who: 'ada' })
+  assert.deepEqual(place({ session: 's2', who: 'rex.2', dir: '' }), { ws: 'docs', who: 'rex' })
+  assert.deepEqual(place({ session: 's2', who: null, dir: '' }), { ws: 'docs', who: '' })
+  // not written down: the one workspace with an agent by that name
+  assert.deepEqual(place({ session: 'x', who: 'june', dir: '/anywhere' }), { ws: 'docs', who: 'june' })
+  // ...or, for an agent that works in several, the one where it works in that folder
+  assert.deepEqual(place({ session: 'x', who: 'ada.3', dir: '/code/docs' }), { ws: 'docs', who: 'ada' })
+  assert.deepEqual(place({ session: 'x', who: 'ada', dir: '/code/shop/' }), { ws: 'shop', who: 'ada' })
+  // ...and when the folder doesn't say (nowhere it works, or two workspaces with the one folder): the clique's, workspace unknown
+  assert.deepEqual(place({ session: 'x', who: 'ada', dir: '/tmp' }), { ws: UNKNOWN, who: 'ada' })
+  assert.deepEqual(place({ session: 'x', who: 'q', dir: '/code/docs' }), { ws: UNKNOWN, who: 'q' })
+  assert.deepEqual(place({ session: 'x', who: 'q', dir: '/code/shop' }), { ws: 'shop', who: 'q' })
+  // nobody of the clique's: what you ran outside it, whatever name you gave the session
+  assert.deepEqual(place({ session: 'x', who: 'scratch', dir: '/code/shop' }), { ws: '', who: '' })
+  assert.deepEqual(place({ session: 'x', who: null, dir: '/code/shop' }), { ws: '', who: '' })
+  assert.deepEqual(placer()({ session: 's1', who: 'ada', dir: '' }), { ws: '', who: '' })
+})
+
+test('rows: one for each day, workspace, agent, provider, model and folder; a shared agent\'s work goes to the workspace each session ran in', () => {
+  const shop = '/code/shop'
+  write(path.join(claude, 'p', 's-shop.jsonl'), lines(named('ada'), prompt('2026-11-10', 'hi'), reply('1', '2026-11-10', { input_tokens: 100, output_tokens: 0 }, { cwd: shop })))
+  write(path.join(claude, 'p', 's-shop', 'subagents', 'agent-a.jsonl'), lines(reply('2', '2026-11-10', { input_tokens: 20, output_tokens: 0 }))) // its sub-agent: the same session
+  write(path.join(claude, 'p', 's-docs.jsonl'), lines(named('ada'), prompt('2026-11-10', 'hi'), prompt('2026-11-10', 'more'), reply('3', '2026-11-10', { input_tokens: 7, output_tokens: 0 }, { cwd: shop })))
+  write(path.join(claude, 'p', 's-mine.jsonl'), lines(prompt('2026-11-11', 'hi'), reply('4', '2026-11-11', { input_tokens: 5, output_tokens: 1 }, { cwd: shop, model: 'claude-sonnet-5-5' })))
+  write(path.join(codex, '2026', '11', '10', 'rollout-2026-11-10T09-30-00-0199c2aa-1b2c-7d3e-8f90-a1b2c3d4e5f6.jsonl'), lines(meta(), started('2026-11-10'), turn('2026-11-10', 'gpt-6-luna', 'rex'), count('2026-11-10', 40, 10, 2)))
+  const owners = { 's-shop': ['shop', 'ada'], 's-docs': ['docs', 'ada'], '0199c2aa-1b2c-7d3e-8f90-a1b2c3d4e5f6': ['docs', 'rex'] }
+  const s = rowsOf(scan(emptyIndex(), roots), { owners })
+  assert.deepEqual(s.cols, COLS)
+  assert.equal(s.first, '2026-11-10')
+  assert.deepEqual(rowsBy(s, 'day', 'ws', 'who', 'provider', 'model', 'dir', 'tokens', 'messages', 'sessions').sort((x, y) => `${x.day}${x.ws}${x.provider}`.localeCompare(`${y.day}${y.ws}${y.provider}`)), [
+    { day: '2026-11-10', ws: 'docs', who: 'ada', provider: 'claude', model: 'claude-opus-5-5', dir: shop, tokens: 7, messages: 2, sessions: 1 },
+    { day: '2026-11-10', ws: 'docs', who: 'rex', provider: 'codex', model: 'gpt-6-luna', dir: '', tokens: 42, messages: 1, sessions: 1 },
+    { day: '2026-11-10', ws: 'shop', who: 'ada', provider: 'claude', model: 'claude-opus-5-5', dir: shop, tokens: 120, messages: 1, sessions: 1 },
+    { day: '2026-11-11', ws: '', who: '', provider: 'claude', model: 'claude-sonnet-5-5', dir: shop, tokens: 6, messages: 1, sessions: 1 },
+  ])
+  // a row's numbers: every kind of token, what it would cost
+  const codexRow = Object.fromEntries(COLS.map((c, i) => [c, s.rows.find((r) => r[3] === 'codex')[i]]))
+  assert.deepEqual([codexRow.input, codexRow.cached, codexRow.output, codexRow.written, codexRow.replies, codexRow.cost], [30, 10, 2, 0, 1, 0])
+})
+
+test("a log that's gone keeps the workspace that ran it: the rows are the same before and after, whoever is in the clique by then", () => {
+  const a = write(path.join(claude, 'p', 's-shop.jsonl'), lines(named('ada'), prompt('2026-10-01', 'hi'), reply('1', '2026-10-01', { input_tokens: 100, output_tokens: 1 }, { cwd: '/code/shop' })))
+  const sub = write(path.join(claude, 'p', 's-shop', 'subagents', 'agent-a.jsonl'), lines(reply('2', '2026-10-01', { input_tokens: 9, output_tokens: 0 })))
+  const b = write(path.join(claude, 'p', 's-old.jsonl'), lines(named('ada'), prompt('2026-10-01', 'hi'), reply('3', '2026-10-01', { input_tokens: 10, output_tokens: 1 }, { cwd: '/code/docs' })))
+  const owners = { 's-shop': ['shop', 'ada'] }
+  const agents = [{ name: 'ada', ws: 'shop', dir: '/code/shop' }, { name: 'ada', ws: 'docs', dir: '/code/docs' }]
+  let index = scan(emptyIndex(), roots, { owners })
+  const before = rowsOf(index, { owners, agents })
+  assert.deepEqual(rowsBy(before, 'ws', 'who', 'tokens').sort((x, y) => x.ws.localeCompare(y.ws)), [{ ws: 'docs', who: 'ada', tokens: 11 }, { ws: 'shop', who: 'ada', tokens: 110 }])
+  for (const f of [a, sub, b]) fs.rmSync(f)
+  index = scan(index, roots, { owners })
+  assert.deepEqual(Object.keys(index.files), [])
+  assert.deepEqual(rowsOf(index, { owners, agents }), before)
+  // the session written down stays its workspace's with nothing to go by any more; the other was only ever told by name
+  assert.deepEqual(rowsBy(rowsOf(index), 'ws', 'who', 'tokens').sort((x, y) => x.ws.localeCompare(y.ws)), [{ ws: '', who: '', tokens: 11 }, { ws: 'shop', who: 'ada', tokens: 110 }])
 })

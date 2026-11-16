@@ -1,7 +1,8 @@
-// Usage, day by day: what Claude Code and Codex used on this computer, for the Usage view's calendars. Read from the
-// CLIs' own logs, the only record there is of it (CLIque's agents and anything you ran outside CLIque alike): Claude
-// Code's transcripts say what each API response used and which model answered; Codex's session logs keep a running
-// token count. Nothing is sent anywhere, and no message is kept: only numbers per day.
+// Usage, day by day: what Claude Code and Codex used on this computer, for the Usage view. Read from the CLIs' own
+// logs, the only record there is of it (CLIque's agents and anything you ran outside CLIque alike): Claude Code's
+// transcripts say what each API response used and which model answered; Codex's session logs keep a running token
+// count. No message is kept: only numbers per day, and whose they are in CLIque (which workspace's which agent: see
+// placer). They go to the Usage view here, and to your linked computers when their Usage view asks.
 //
 // The index (history.json in CLIque's folder) holds what each log added, so a log is read once and then only where it
 // grew, and a day stays counted after its log is gone (Claude Code deletes transcripts after 30 days). Reading runs in
@@ -285,9 +286,10 @@ function sourceOf(index, file, e) {
 }
 
 // A log that's gone (Claude Code cleaned it up): its days are kept, added up with the others of its kind. A kept day:
-// its models, and under each model that led a log's day, [messages, sessions].
-function keep(index, e) {
-  const k = (index.kept[JSON.stringify([e.cli, e.via ?? '', e.pin ?? '', e.who ?? '', e.dir ?? ''])] ??= {})
+// its models, and under each model that led a log's day, [messages, sessions]. own: the workspace that ran its session
+// and the agent it ran as ([workspace, name], see placer), kept with it: the log's name was the only other way to say.
+function keep(index, e, own) {
+  const k = (index.kept[JSON.stringify([e.cli, e.via ?? '', e.pin ?? '', (own?.[1] || e.who) ?? '', e.dir ?? '', ...(own ? [own[0]] : [])])] ??= {})
   const lead = leadOf(e)
   for (const [day, d] of Object.entries(e.days)) {
     const into = (k[day] ??= { models: {}, lead: {} })
@@ -301,7 +303,8 @@ function keep(index, e) {
 // Bring the index up to date. roots: [{ dir, cli: 'claude' | 'codex', provider? }] (provider: a folder that's one of
 // your own providers', whatever its model is called). Newest logs first, so the days nearest today fill in first.
 // onProgress({ done, total, files }): bytes read of the bytes to read; given often, and once more at the end.
-export function scan(index, roots, { onProgress } = {}) {
+// owners: { session id: [workspace, name] }, the sessions CLIque's workspaces ran (see placer): a log that goes keeps its.
+export function scan(index, roots, { onProgress, owners = {} } = {}) {
   index = asIndex(index)
   const found = new Map() // path -> the log there
   const listed = [] // the roots that could be listed
@@ -376,7 +379,7 @@ export function scan(index, roots, { onProgress } = {}) {
   // logs that are gone give their days to `kept` (resolved first: a sub-agent's log may need its session's, going too)
   const going = Object.entries(index.files).filter(([file]) => gone(file)).map(([file, e]) => [file, sourceOf(index, file, e)])
   for (const [file, e] of going) {
-    keep(index, e)
+    keep(index, e, owners[sessionId(file, e.cli)])
     delete index.files[file]
   }
   for (const [file, e] of Object.entries(index.files)) if (e.seen && quiet(file, e.cli)) delete e.seen
@@ -396,54 +399,92 @@ export function providerOf({ cli, via, pin, model }, providers = {}) {
   return own ?? (/^glm/i.test(model) && providers.glm ? 'glm' : 'claude')
 }
 
-// The index as days per provider. names: the clique's agents, whose work is listed under their names (anything else is
-// what you ran outside CLIque: who ''), and where: the folder each session worked in ('' when its log doesn't say). ->
-// { first, providers: { id: { days: { 'YYYY-MM-DD': { tokens, input, output, cached, written, replies, messages, cost,
-//   sessions, models: { model: tokens }, who: { name: tokens }, where: { folder: tokens } } } } } }
-// The same whether a log is still there or its days are kept: a summary doesn't change when a log goes.
-export function summarize(index, { names = [], providers = {} } = {}) {
-  const clique = new Set(names)
-  const out = {}
+// Which session a log is of: a Claude Code transcript is named by its session's id (a sub-agent's sits in its session's
+// folder), and a Codex log's name ends in it (rollout-2026-11-16T10-00-00-<id>.jsonl).
+export function sessionId(file, cli) {
+  const parts = file.split(path.sep)
+  const sub = parts.lastIndexOf('subagents')
+  const name = sub >= 2 ? parts[sub - 1] : path.basename(file, '.jsonl')
+  return cli === 'codex' ? name.replace(/^rollout-.*?-(?=[0-9a-f]{8}-)/, '') : name
+}
+
+// Whose a log's work is in CLIque: the workspace its session ran in, and the agent it ran as.
+// owners: { session id: [workspace, name?] }, what each workspace wrote down of the sessions its agents ran (Hub.ran).
+// agents: [{ name, ws, dir }], who works where now, for a log from before sessions were written down: the one workspace
+// with an agent by the log's name or, when several have one (a shared agent), the one where it works in the log's folder.
+// When that doesn't say, the work is the clique's in a workspace nobody knows (UNKNOWN). Anything else is what you ran
+// outside CLIque. -> ({ session, who, dir }) => { ws, who }, both '' outside CLIque
+export const UNKNOWN = '?'
+export function placer({ owners = {}, agents = [] } = {}) {
+  const byName = new Map()
+  for (const a of agents) if (a?.name) byName.set(a.name, [...(byName.get(a.name) ?? []), a])
+  const same = (x, y) => Boolean(x && y) && path.resolve(x) === path.resolve(y)
+  return ({ session, who, dir }) => {
+    const own = session ? owners[session] : null
+    if (own) return { ws: own[0], who: base(own[1] || who || '') }
+    const name = who ? base(who) : ''
+    const there = byName.get(name)
+    if (!there) return { ws: '', who: '' }
+    const all = [...new Set(there.map((a) => a.ws))]
+    if (all.length === 1) return { ws: all[0], who: name }
+    const inFolder = [...new Set(there.filter((a) => same(a.dir, dir)).map((a) => a.ws))]
+    return { ws: inFolder.length === 1 ? inFolder[0] : UNKNOWN, who: name }
+  }
+}
+
+// The index as rows the Usage view can add up any way it's asked to: one for each day, workspace, agent, provider,
+// model and folder that has anything. COLS names a row's values, in order:
+//   day 'YYYY-MM-DD' · ws: the workspace it ran in ('' outside CLIque, UNKNOWN when it can't be told) · who: the agent
+//   ('' outside CLIque) · provider · model · dir: the folder the session worked in ('' when its log doesn't say) ·
+//   tokens (all four kinds) · input · output · cached (read from the cache) · written (to it) · replies · messages ·
+//   sessions · cost (at list prices)
+// owners, agents: who ran what (placer). providers: config's (providerOf).
+// -> { first, cols, rows }. The same whether a log is still there or its days are kept: it doesn't change when a log goes.
+export const COLS = ['day', 'ws', 'who', 'provider', 'model', 'dir', 'tokens', 'input', 'output', 'cached', 'written', 'replies', 'messages', 'sessions', 'cost']
+export function summarize(index, { owners, agents, providers = {} } = {}) {
+  const place = placer({ owners, agents })
+  const rows = new Map()
   let first = null
-  const dayOf = (id, day) => {
+  const rowOf = (day, at, provider, model, dir) => {
     if (!first || day < first) first = day
-    return ((out[id] ??= { days: {} }).days[day] ??= { tokens: 0, input: 0, output: 0, cached: 0, written: 0, replies: 0, messages: 0, cost: 0, sessions: 0, models: {}, who: {}, where: {} })
+    const key = [day, at.ws, at.who, provider, model, dir].join('\u0000')
+    let r = rows.get(key)
+    if (!r) rows.set(key, (r = [day, at.ws, at.who, provider, model, dir, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
+    return r
   }
   // a source's day: its tokens to each model's provider, then what `led` says of its messages and sessions
-  const add = (src, day, models, led) => {
-    const who = src.who && clique.has(base(src.who)) ? base(src.who) : ''
-    const where = src.dir ?? ''
+  const add = (src, at, day, models, led) => {
+    const dir = src.dir ?? ''
     for (const [model, [n, input, output, read, write, cost]] of Object.entries(models)) {
-      const tokens = input + output + read + write
-      const x = dayOf(providerOf({ ...src, model }, providers), day)
-      x.tokens += tokens
-      x.input += input
-      x.output += output
-      x.cached += read
-      x.written += write
-      x.replies += n
-      x.cost += cost
-      x.models[model] = (x.models[model] ?? 0) + tokens
-      x.who[who] = (x.who[who] ?? 0) + tokens
-      x.where[where] = (x.where[where] ?? 0) + tokens
+      const r = rowOf(day, at, providerOf({ ...src, model }, providers), model, dir)
+      r[6] += input + output + read + write
+      r[7] += input
+      r[8] += output
+      r[9] += read
+      r[10] += write
+      r[11] += n
+      r[14] += cost
     }
     for (const [model, [messages, sessions]] of led) {
       if (!messages && !sessions) continue
-      const x = dayOf(providerOf({ ...src, model }, providers), day)
-      x.messages += messages
-      x.sessions += sessions
+      const r = rowOf(day, at, providerOf({ ...src, model }, providers), model, dir)
+      r[12] += messages
+      r[13] += sessions
     }
   }
   for (const [file, e] of Object.entries(index?.files ?? {})) {
     const src = sourceOf(index, file, e)
+    const at = place({ session: sessionId(file, e.cli), who: src.who, dir: src.dir })
     const lead = leadOf(e)
-    for (const [day, d] of Object.entries(e.days ?? {})) add(src, day, d.models ?? {}, [[lead(d), [d.m ?? 0, e.sub ? 0 : 1]]])
+    for (const [day, d] of Object.entries(e.days ?? {})) add(src, at, day, d.models ?? {}, [[lead(d), [d.m ?? 0, e.sub ? 0 : 1]]])
   }
   for (const [key, days] of Object.entries(index?.kept ?? {})) {
-    const [cli, via, pin, who, dir] = JSON.parse(key)
-    for (const [day, d] of Object.entries(days)) add({ cli, via, pin, who, dir }, day, d.models ?? {}, Object.entries(d.lead ?? {}))
+    const [cli, via, pin, who, dir, ws] = JSON.parse(key)
+    // (kept with the workspace that ran it, or placed by its name as a log still there would be)
+    const at = typeof ws === 'string' ? { ws, who: base(who ?? '') } : place({ who, dir })
+    for (const [day, d] of Object.entries(days)) add({ cli, via, pin, who, dir }, at, day, d.models ?? {}, Object.entries(d.lead ?? {}))
   }
-  return { first, providers: out }
+  return { first, cols: COLS, rows: [...rows.values()].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0)) }
 }
 
 // ---- in the app: the index on disk, brought up to date in a worker thread ------------------------------------------
@@ -452,9 +493,11 @@ const FRESH = 90 * 1000 // a look this recent is the answer; anything older star
 
 export class History {
   // roots: () => [{ dir, cli, provider? }], asked before each look (a provider of your own can add a folder).
-  constructor({ file, roots, worker = true }) {
+  // owners: () => { session id: [workspace, name] }, the sessions CLIque's workspaces ran, asked then too (scan).
+  constructor({ file, roots, owners = () => ({}), worker = true }) {
     this.file = file
     this.roots = roots
+    this.owners = owners
     this.worker = worker
     this.index = null
     this.progress = null
@@ -489,7 +532,7 @@ export class History {
     }
     let look
     try {
-      look = this.worker ? this.inWorker(this.roots()) : this.inline(this.roots())
+      look = this.worker ? this.inWorker(this.roots(), this.owners()) : this.inline(this.roots(), this.owners())
     } catch (e) {
       look = Promise.reject(e) // the folders to read couldn't be said
     }
@@ -501,15 +544,15 @@ export class History {
     return this.running
   }
 
-  async inline(roots) {
+  async inline(roots, owners) {
     await new Promise((r) => setImmediate(r)) // like the worker: whoever asked hears a look is under way first
-    this.index = scan(this.index, roots, { onProgress: (p) => (this.progress = p) })
+    this.index = scan(this.index, roots, { owners, onProgress: (p) => (this.progress = p) })
     save(this.file, this.index)
   }
 
-  inWorker(roots) {
+  inWorker(roots, owners) {
     return new Promise((resolve, reject) => {
-      const worker = new Worker(new URL('./history.js', import.meta.url), { workerData: { history: { file: this.file, roots } } })
+      const worker = new Worker(new URL('./history.js', import.meta.url), { workerData: { history: { file: this.file, roots, owners } } })
       worker.unref()
       worker.on('message', (m) => {
         if (m.progress) this.progress = m.progress
@@ -534,7 +577,7 @@ function save(file, index) {
 // The worker: reads its own copy of the index, says how far along it is, and hands the index over as it fills (so the
 // calendar does too) and when it's done. Saved along the way: quitting mid-look keeps what was read.
 if (!isMainThread && workerData?.history) {
-  const { file, roots } = workerData.history
+  const { file, roots, owners } = workerData.history
   try {
     let index = emptyIndex()
     try {
@@ -543,6 +586,7 @@ if (!isMainThread && workerData?.history) {
     let told = 0
     let saved = Date.now()
     index = scan(index, roots, {
+      owners,
       onProgress: (progress) => {
         const now = Date.now()
         if (now - told < 1200) return void parentPort.postMessage({ progress })

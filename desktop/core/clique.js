@@ -7,14 +7,14 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf } from './hub.js'
+import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf, expand, sessionsLeft } from './hub.js'
 import { movedPath } from './home.js'
 import { FETCH_MAX, kindOf, travels } from './attachments.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
-import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
+import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel, dirOf } from './workspaces.js'
 import { providersFrom, expandEnv } from './providers.js'
-import { History } from './history.js'
+import { History, UNKNOWN } from './history.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
 import { LinkHost, LinkClient, PairClient, identity, addresses, firewallWarning, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
@@ -50,6 +50,7 @@ export function logRoots(providers = {}, env = process.env) {
 
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
+export const USAGE_DIR = path.join(LINK_DIR, 'usage')
 const SETTINGS = path.join(LINK_DIR, 'link.json')
 const DISCOVER_FOR = 150000 // Computers open, as the dashboard last said: it says so every minute
 // Images nothing needs any more go this long after CLIque starts (sweepImages), once its workspaces have read their chats.
@@ -57,8 +58,13 @@ const SWEEP_AFTER = 60000
 // The usage history (core/history.js) is brought up to date a few minutes after CLIque starts, then a few times a day.
 const HISTORY_AFTER = 3 * 60000
 const HISTORY_EVERY = 6 * 3600000
+// A linked computer's usage history (theirUsage) is asked for again this long after its last answer, while the Usage
+// view is open; sooner while that computer is still reading its logs. What it last said is kept in USAGE_DIR.
+const THEIR_USAGE_EVERY = 3 * 60000
+const THEIR_USAGE_READING = 2000
+const THEIR_USAGE_LEFT = 60000 // which sessions removed workspaces ran is read from their files this often
 // What a linked computer may ask with no workspace (see serve).
-const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'readImage', 'moveWrite', 'moveDrop', 'folderInfo'])
+const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'readImage', 'moveWrite', 'moveDrop', 'folderInfo', 'usageHistory'])
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const readJSON = (file) => {
   try {
@@ -67,6 +73,9 @@ const readJSON = (file) => {
     return null
   }
 }
+
+// A linked computer's answer to 'usageHistory', as far as the Usage view needs it to be one.
+const usable = (d) => Boolean(d) && typeof d === 'object' && Array.isArray(d.rows) && Array.isArray(d.cols) && d.rows.every((r) => Array.isArray(r))
 
 export class Clique extends EventEmitter {
   links = new Map() // computer slug -> { slug, name, peer, client, state, toHost, fetching }
@@ -537,7 +546,7 @@ export class Clique extends EventEmitter {
     clearTimeout(this.historyTimer)
     this.historyTimer = setTimeout(() => {
       try {
-        this.usageHistory()
+        this.usageSummary() // (this computer's: asking for it starts a look when the last one is a while ago)
       } catch {}
       this.keepHistory()
     }, wait)
@@ -1151,22 +1160,127 @@ export class Clique extends EventEmitter {
     return checkInOf(this.config.data)
   }
 
-  // ---- usage, day by day (core/history.js): what Claude Code and Codex used on this computer, for the Usage view ----
-  // Read from the CLIs' own logs, so it's everything they did here: every workspace's agents, and what you ran outside
-  // CLIque. The clique's agents go by name (their creatures stand beside their share); the rest is "outside CLIque".
-  // -> { at, reading: { done, total } | null, first, providers: [{ id, label, days }] }, Claude and Codex first.
-  usageHistory() {
-    const providers = () => providersFrom(this.config.data, this.config.discovered)
-    this.history ??= new History({ file: path.join(HOME, 'history.json'), roots: () => logRoots(providers()) })
-    const all = providers()
-    const own = (Array.isArray(this.config.data.workspaces) ? this.config.data.workspaces : []).flatMap((w) => named(w?.agents))
-    const names = [...new Set([...this.sharedNames(), ...own.map((a) => a.name), ...[...this.hubs.values()].flatMap((h) => [...h.agents.keys()])])]
-    const { providers: found, ...rest } = this.history.state({ names, providers: all })
-    const order = (id) => (id === 'claude' ? 0 : id === 'codex' ? 1 : 2)
-    return {
-      ...rest,
-      providers: Object.keys(found).sort((x, y) => order(x) - order(y) || x.localeCompare(y)).map((id) => ({ id, label: all[id]?.label ?? id, days: found[id].days })),
+  // ---- usage, day by day (core/history.js), for the Usage view ---------------------------------------------------
+  // Read from the CLIs' own logs, so it's everything Claude Code and Codex did on this computer: every workspace's
+  // agents, and what you ran outside CLIque. Each computer reads its own logs; the Usage view shows this computer's
+  // beside each linked computer's (usageHistory), which is how a workspace hosted elsewhere, or with agents on two
+  // computers, shows what all of it used.
+
+  // Who ran what, for the usage history (core/history.js placer): the sessions each workspace wrote down as its agents
+  // ran them (one that's been removed: from the files it left), and who works where now.
+  usagePlacing() {
+    const owners = {}
+    const agents = []
+    const open = new Set([...this.hubs.keys()])
+    const left = (this.leftSessions ??= { at: 0, owners: {} })
+    if (Date.now() - left.at > THEIR_USAGE_LEFT) {
+      left.at = Date.now()
+      left.owners = {}
+      let ids = []
+      try {
+        ids = fs.readdirSync(path.join(HOME, 'workspaces'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
+      } catch {}
+      for (const id of [ROOT, ...ids]) if (!open.has(id)) Object.assign(left.owners, sessionsLeft(id, dirOf(HOME, id)))
     }
+    Object.assign(owners, left.owners)
+    for (const hub of this.hubs.values()) {
+      Object.assign(owners, hub.sessionsRun()) // (an open workspace's word over what a removed one left)
+      for (const a of hub.space.agents) agents.push({ name: a.name, ws: hub.ws, dir: expand(a.cwd) })
+    }
+    return { owners, agents }
+  }
+
+  // This computer's usage, as the Usage view and linked computers get it:
+  // { at, reading: { done, total } | null, first, cols, rows, spaces, providers, faces }
+  // rows: one per day, workspace, agent, provider, model and folder (history.js COLS). A row's workspace is its key on
+  // CLIque Link (keyOf), the same on every computer that has the workspace; '' is what ran outside CLIque.
+  // spaces: { key: { name, color, icon, gone? } } for this computer's workspaces (gone: one that's been removed, named
+  // as it was). providers: { id: label }. faces: { key: { name: avatar } } for agents that chose their look.
+  usageSummary() {
+    const providers = () => providersFrom(this.config.data, this.config.discovered)
+    this.history ??= new History({ file: path.join(HOME, 'history.json'), roots: () => logRoots(providers()), owners: () => this.usagePlacing().owners })
+    const all = providers()
+    const { rows, ...rest } = this.history.state({ ...this.usagePlacing(), providers: all })
+    const keys = new Map()
+    const keyOf = (ws) => keys.get(ws) ?? keys.set(ws, this.keyOf(ws)).get(ws)
+    const labels = {}
+    const out = rows.map((r) => {
+      labels[r[3]] ??= all[r[3]]?.label ?? r[3]
+      return r[1] && r[1] !== UNKNOWN ? [r[0], keyOf(r[1]), ...r.slice(2)] : r
+    })
+    const spaces = {}
+    const faces = {}
+    for (const h of this.hubs.values()) {
+      const key = this.keyOf(h.ws)
+      spaces[key] = { name: h.space.name, color: h.space.color, icon: h.space.icon }
+      for (const a of h.space.agents) if (a.avatar) (faces[key] ??= {})[a.name] = a.avatar
+    }
+    const gone = this.config.data.workspacesGone && typeof this.config.data.workspacesGone === 'object' ? this.config.data.workspacesGone : {}
+    for (const [ws, key] of keys) spaces[key] ??= { name: Object.keys(gone).find((name) => gone[name] === ws) ?? ws, gone: true }
+    return { ...rest, rows: out, spaces, providers: labels, faces }
+  }
+
+  // The Usage view's data: this computer's usage and each linked computer's, as it last gave it.
+  // -> { here, computers: [{ slug, name, here?, online, at, got?, reading, first, cols, rows, providers, faces, note? }], spaces }
+  // here: the key of the workspace on screen. got: when a linked computer last answered (0: never); note: why it has
+  // nothing to show. spaces: every workspace the rows name, { key: { name, color, icon, id?, ownerName?, gone? } } (id:
+  // the workspace here with that key; ownerName: the computer it's hosted on, when that's another one).
+  usageHistory() {
+    const { spaces: mine, ...own } = this.usageSummary()
+    const computers = [{ slug: this.me.slug, name: this.me.name, here: true, online: true, ...own }]
+    const spaces = {}
+    for (const [slug, u] of this.theirUsage()) {
+      const l = this.links.get(slug)
+      const d = u.data
+      computers.push({
+        slug, name: l?.name ?? u.name ?? slug, online: Boolean(l?.peer), got: u.got, at: d?.at ?? 0, reading: (l?.peer && d?.reading) || null, first: d?.first ?? null,
+        cols: d?.cols ?? [], rows: d?.rows ?? [], providers: d?.providers ?? {}, faces: d?.faces ?? {}, ...(u.note && { note: u.note }), ...(u.asking && { asking: true }),
+      })
+      for (const [key, w] of Object.entries(d?.spaces ?? {})) spaces[key] ??= { name: String(w?.name ?? key), color: w?.color ?? null, icon: w?.icon ?? null, ...(w?.gone && { gone: true }), ownerName: l?.name ?? u.name ?? slug }
+    }
+    for (const [key, w] of Object.entries(mine)) {
+      const id = this.localOf(key)
+      spaces[key] = { ...w, ...(id && { id, ...(this.ownerOf(id).ownerName && { ownerName: this.ownerOf(id).ownerName }) }) }
+    }
+    return { here: this.current ? this.keyOf(this.current) : null, computers, spaces }
+  }
+
+  // Each linked computer's usage: what it last answered (kept in USAGE_DIR, so a computer that's off still shows what
+  // it had), asked again once that's THEIR_USAGE_EVERY old, in the background: the Usage view asks again and finds it.
+  // One on an older CLIque can't say: its note says so. -> Map slug -> { name, got, data, note, asking }
+  theirUsage() {
+    if (!this.usageOf) {
+      this.usageOf = new Map()
+      let files = []
+      try {
+        files = fs.readdirSync(USAGE_DIR).filter((f) => f.endsWith('.json'))
+      } catch {}
+      for (const f of files) {
+        const kept = readJSON(path.join(USAGE_DIR, f))
+        if (kept && typeof kept === 'object' && usable(kept.data)) this.usageOf.set(f.slice(0, -5), { name: String(kept.name ?? ''), got: Number(kept.got) || 0, data: kept.data, note: '', asking: null })
+      }
+    }
+    for (const l of this.links.values()) {
+      const u = this.usageOf.get(l.slug) ?? this.usageOf.set(l.slug, { name: l.name, got: 0, data: null, note: '', asking: null }).get(l.slug)
+      if (l.name) u.name = l.name
+      const every = u.data?.reading && !u.note ? THEIR_USAGE_READING : THEIR_USAGE_EVERY
+      if (!l.peer || u.asking || Date.now() - (u.asked ?? 0) < every) continue
+      u.asked = Date.now()
+      const peer = l.peer
+      u.asking = peer.call('usageHistory').then((data) => {
+        if (!usable(data)) throw new Error(`${l.name} answered with something that isn't its usage`)
+        Object.assign(u, { data, got: Date.now(), note: '' })
+        try {
+          fs.mkdirSync(USAGE_DIR, { recursive: true })
+          fs.writeFileSync(path.join(USAGE_DIR, `${l.slug}.json`), JSON.stringify({ name: l.name, got: u.got, data }))
+        } catch {} // not kept: it's asked again next time
+      }, (e) => {
+        u.note = /isn't available over CLIque Link/.test(e?.message ?? '') ? `${l.name} runs an older CLIque: update it to see what it used` : `${l.name} couldn't say what it used: ${String(e?.message ?? e).split('\n')[0].slice(0, 200)}`
+      }).finally(() => {
+        u.asking = null
+      })
+    }
+    return this.usageOf
   }
 
   // A linked computer's agent, as this computer writes it.
@@ -1486,6 +1600,8 @@ export class Clique extends EventEmitter {
         return this.spaceList()
       },
       state: () => h?.snapshot() ?? this.computerState(),
+      // what this computer's CLIs used, day by day, for a linked computer's Usage view (usageSummary)
+      usageHistory: () => this.usageSummary(),
       deliver: (opts) => h.send({ ...opts, ...(peer && { from: this.senderFrom(peer, opts?.from) }), mentions: false }),
       saveImage: (name, type, bytes) => saveImage(name, type, bytes),
       readImage: (file) => {
@@ -2088,6 +2204,8 @@ export class Clique extends EventEmitter {
     // its workspaces go with it, as when it removes one: the ones you've made yours stay (and say it's offline). Also
     // for a computer known only by its workspaces here (renamed since, or gone before this CLIque started).
     this.knownSpaces.delete(home)
+    this.usageOf?.delete(home) // and what it said it used
+    fs.rmSync(path.join(USAGE_DIR, `${home}.json`), { force: true })
     const data = this.config.data
     const gone = this.config.broken ? [] : workspacesIn(data).filter((w) => w.of?.computer === home && this.untouched(w))
     for (const w of gone) dropWorkspace(data, w.id)
