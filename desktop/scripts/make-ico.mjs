@@ -1,12 +1,13 @@
 // Writes assets/icon.ico, the Windows icon (the app, its installer, .clique files). The art is make-icon.mjs's, in its
-// Windows cut: the tile filling the square without the macOS drop shadow, so it holds up at 16 to 48px.
+// Windows cut: the tile filling the square without the macOS drop shadow, and up to 32px the mark a size larger, so it
+// holds up at 16 to 48px.
 // Run: npx electron scripts/make-ico.mjs (npm run icon does it after make-icon.mjs)
 // Small sizes are plain bitmaps, which everything that reads icons understands; 128 and 256 are PNG, as Windows does it.
 import { app, nativeImage } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { cleanUp, drawIcon } from './make-icon.mjs'
+import { cleanUp, drawIcon, SMALL } from './make-icon.mjs'
 
 const assets = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'assets')
 const SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
@@ -35,9 +36,9 @@ function bitmap(image, size) {
 }
 
 app.whenReady().then(async () => {
-  const source = nativeImage.createFromBuffer((await drawIcon('windows'))[0])
+  const [full, small] = (await drawIcon('windows', 'windowsSmall')).map((png) => nativeImage.createFromBuffer(png))
   const images = SIZES.map((size) => {
-    const image = source.resize({ width: size, height: size, quality: 'best' })
+    const image = (size <= SMALL ? small : full).resize({ width: size, height: size, quality: 'best' })
     return { size, data: size >= 128 ? image.toPNG() : bitmap(image, size) }
   })
   const head = Buffer.alloc(6)
