@@ -31,6 +31,12 @@ export function serve(to) {
     channels: (q) => hub.channelsText(q.from || 'you'),
     // `clique post <channel> "…"`: the words NUL-separated, so a channel's name needs no escaping and any text survives intact
     post: (q, body) => hub.postIn(q.from || 'you', body.split('\0').slice(0, -1)),
+    // `clique react <emoji>`: one emoji on the message the agent is answering, in place of an acknowledgement
+    react: (q, body) => {
+      const words = body.split('\0').slice(0, -1)
+      if (words.length > 1) throw new Error("clique react takes one emoji and nothing else: it goes on the message you're answering")
+      return hub.react({ from: q.from || 'you', emoji: words[0] ?? '' })
+    },
     // `clique canvas <op> …`: a board drawn in the chat, and changes to one that's there (core/canvas.js)
     canvas: (q, body) => hub.canvas(q.from || 'you', body.split('\0').slice(0, -1)),
     // `clique attach <file> …`: files shown in the chat (core/attachments.js). The first word is the folder the agent is in
