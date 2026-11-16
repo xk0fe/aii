@@ -687,6 +687,7 @@ $('.side-more').addEventListener('click', (e) => {
   const away = c.links.filter((l) => !l.online).length
   popMenu(e.currentTarget, [
     { label: 'Autopilot', icon: ICONS.plane, act: 'autopilot', hint: state.autopilot ? 'On: hand-offs go through' : 'Off: hand-offs wait for you' },
+    { label: 'Spend check-in…', icon: ICONS.coin, act: 'checkin', hint: checkInHint() },
     { label: 'Token savers…', icon: ICONS.chart, act: 'savers', hint: saversHint() },
     { label: 'Agent tools…', icon: ICONS.mark, act: 'tools', hint: toolHint() },
     '-',
@@ -700,6 +701,7 @@ $('.side-more').addEventListener('click', (e) => {
     ...(clique.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
   ], (act) => {
     if (act === 'autopilot') clique.call('autopilot', !state.autopilot).catch((err) => oops("Couldn't change Autopilot", err))
+    if (act === 'checkin') openCheckIn()
     if (act === 'savers') openSavers()
     if (act === 'tools') openTools()
     if (act === 'computers') openComputers()
@@ -708,6 +710,50 @@ $('.side-more').addEventListener('click', (e) => {
     if (act === 'permissions') clique.call('openPermissions').catch((err) => oops('Couldn’t open that', err))
     if (act.startsWith('theme:')) clique.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
     if (act === 'config') clique.call('config')
+  })
+})
+
+// ---- the spend check-in (core/hub.js checkIn): how much a round may cost before its agents stop and ask ----
+
+const checkInDialog = $('#checkin')
+checkInDialog.querySelector('.h-icon').innerHTML = ICONS.coin
+const CHECK_IN_CHOICES = [1, 5, 10, 25, 50]
+const checkInLabel = (usd) => `$${Number.isInteger(usd) ? usd : usd.toFixed(2)}`
+const checkInHint = () => (state.checkIn ? `After ${checkInLabel(state.checkIn.usd)}` : 'Off')
+// Both sets of words in one cell, the one that applies showing: the sheet keeps its height between Off and an amount.
+checkInDialog.querySelector('.ci-about').innerHTML = '<p data-ci-on></p><p data-ci-off>Your agents keep working and handing work to each other for as long as it takes, without asking. The warnings at 80% and 95% of your usage limits still come.</p>'
+function drawCheckIn() {
+  const usd = state.checkIn?.usd ?? null
+  // an amount of your own (checkIn in config.json) takes its place among the choices
+  const choices = [...new Set([...CHECK_IN_CHOICES, ...(usd ? [usd] : [])])].sort((x, y) => x - y)
+  const amounts = checkInDialog.querySelector('.ci-amounts')
+  const html = `<button data-ci="off">Off</button>${choices.map((c) => `<button data-ci="${c}">${checkInLabel(c)}</button>`).join('')}`
+  if (amounts.dataset.html !== html) (amounts.innerHTML = html), (amounts.dataset.html = html)
+  segmented(amounts, (b) => b.dataset.ci === (usd ? String(usd) : 'off'))
+  const on = checkInDialog.querySelector('[data-ci-on]')
+  if (usd) on.textContent = `Once the work that followed your last message has cost ${checkInLabel(usd)}, one card asks you in Needs you. Until you answer, nothing new starts: hand-offs between those agents wait, and a turn that is already running finishes. Keep going allows another ${checkInLabel(usd)}. Stop drops what was waiting and interrupts their turns. Codex reports tokens, not dollars: its agents check in after ${tokenCount(state.checkIn.tokens)} tokens.`
+  on.classList.toggle('on', Boolean(usd))
+  checkInDialog.querySelector('[data-ci-off]').classList.toggle('on', !usd)
+}
+function openCheckIn() {
+  checkInDialog.querySelector('[data-ci-err]').textContent = ''
+  drawCheckIn()
+  checkInDialog.showModal()
+}
+checkInDialog.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]') || e.target === checkInDialog) return checkInDialog.close()
+  const pick = e.target.closest('button[data-ci]')
+  if (!pick) return
+  const usd = pick.dataset.ci === 'off' ? false : Number(pick.dataset.ci)
+  if ((state.checkIn?.usd ?? false) === usd) return
+  const was = state.checkIn
+  state.checkIn = usd ? { usd, tokens: usd * 1e6 } : null // shown now; the state that follows says it for good
+  checkInDialog.querySelector('[data-ci-err]').textContent = ''
+  drawCheckIn()
+  clique.call('checkIn', usd).catch((x) => {
+    state.checkIn = was
+    drawCheckIn()
+    checkInDialog.querySelector('[data-ci-err]').textContent = errorLine(x)
   })
 })
 
@@ -1701,6 +1747,7 @@ const ready = live((next) => {
   workspaces.render(state)
   drawComputers(state)
   if (saversDialog.open) drawSavers()
+  if (checkInDialog.open) drawCheckIn()
   if (toolsDialog.open) drawTools()
   drawFoot(state)
   // Terminals only for agents that have one running; the sidebar lists everyone so off agents are one click from coming

@@ -883,6 +883,12 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .ask-plan h4 { font-size: 13px; }
 .ask-plan ul, .ask-plan ol { padding-left: 18px; }
 .ask-plan code { font: 11.5px var(--mono); background: rgba(127, 127, 127, .16); padding: 1px 4px; border-radius: 5px; }
+/* the spend check-in: each one's part is numbers, and in the queue the creature has already said the title */
+.ask-parts { font-variant-numeric: tabular-nums; color: var(--fg); }
+.ask-parts + .ask-detail { margin-top: 4px; text-wrap: pretty; }
+.nq-item .ask-card.spend .ask-title { display: none; }
+.nq-item .ask-card.spend .ask-parts { margin-top: 0; }
+.nq-item .ask-card.spend .ask-actions { margin-top: 8px; }
 .ask-card.done { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 12px; border-radius: var(--r-card); background: var(--btn); box-shadow: none; font-size: 13px; color: var(--fg2); }
 .ask-card.done b { color: var(--fg); font-weight: 600; }
 .ask-what { color: var(--fg2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

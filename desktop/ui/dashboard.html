@@ -503,6 +503,12 @@
     .sv-mode small { color: var(--fg2); font-size: 12px; }
     .sv-forced { font-size: 12px; color: var(--fg2); }
     .sv-note { margin: 8px 2px 0; font-size: 12px; line-height: 1.45; color: var(--fg2); }
+    /* The spend check-in: the amounts in one row, and what the one picked means under it */
+    dialog.checkin-sheet { width: 520px; }
+    .ci-about { display: grid; margin: 12px 2px 0; font-size: 12px; line-height: 1.5; color: var(--fg2); }
+    .ci-about p { grid-area: 1 / 1; margin: 0; visibility: hidden; text-wrap: pretty; }
+    .ci-about p.on { visibility: visible; }
+    .ci-note { margin: 12px 2px 0; font-size: 12px; line-height: 1.5; color: var(--fg3); text-wrap: pretty; }
     dialog.tools-sheet { width: 520px; }
     .tl-about { display: grid; margin: 10px 2px 18px; font-size: 12px; line-height: 1.45; color: var(--fg2); }
     .tl-about p { grid-area: 1 / 1; margin: 0; visibility: hidden; text-wrap: pretty; }
@@ -736,6 +742,18 @@
     <div class="sheet-body"><div class="group-list sv-list"></div><div class="sv-modes"></div></div>
     <p class="err" data-sv-err></p>
     <div class="sheet-foot"><span class="sv-forced"></span><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
+  </dialog>
+
+  <dialog id="checkin" class="sheet checkin-sheet">
+    <h2 class="sheet-title"><span class="h-icon"></span>Spend check-in</h2>
+    <p class="lead">With Autopilot on, agents can hand work to each other for hours. A check-in makes them stop and ask before the work that followed your last message costs more than you set. Speaking to them again is your OK for another round.</p>
+    <div class="sheet-body">
+      <div class="seg fill ci-amounts" aria-label="Check in after"></div>
+      <div class="ci-about"></div>
+      <p class="ci-note">Dollars are Claude Code's own count at API rates. On a subscription they measure use, not a bill.</p>
+    </div>
+    <p class="err" data-ci-err></p>
+    <div class="sheet-foot"><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
   </dialog>
 
   <dialog id="tools" class="sheet tools-sheet">

@@ -463,7 +463,7 @@ if (FIXTURE === 'q') {
   for (const r of Object.keys(READS)) delete READS[r]
   Object.assign(READS, { since: now })
 }
-const state = { savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
+const state = { savers: SAVER_STATE, checkIn: { usd: 5, tokens: 5e6 }, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
 
 // Workspaces, as Clique.workspaces() reports them. Storefront has everyone; Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the clique, Storefront
 // in the background with two of its clique needing you and a reply you haven't read, and Research parked.
@@ -720,6 +720,12 @@ window.clique = {
       emit()
       return state.savers
     }
+    // the spend check-in: an amount in dollars, or false for never
+    if (action === 'checkIn') {
+      state.checkIn = args[0] ? { usd: args[0], tokens: args[0] * 1e6 } : null
+      emit()
+      return state.checkIn
+    }
     // agent tools: off, ask (the default) or auto
     if (action === 'tools') {
       state.tools = args[0]
@@ -759,7 +765,11 @@ window.clique = {
       const always = e.ask.always?.find((x) => x.i === reply.always)?.label
       e.answer = reply.terminal ? { by: 'terminal', handedOver: true } : reply.answers ? { by: 'you', answers: Object.fromEntries(Object.entries(reply.answers).map(([k, v]) => [k, [].concat(v).join(', ')])) } : { by: 'you', allow: Boolean(reply.allow), ...(always && { always }), ...(reply.note && { note: reply.note }) }
       const a = state.agents.find((x) => x.name === e.from)
-      if (a && !reply.terminal) Object.assign(a, { status: 'working', since: Date.now() })
+      // a spend check-in (core/hub.js checkIn): what it held goes on, or is dropped, and its agent isn't waiting on it
+      if (e.ask.spend) {
+        Object.assign(e.answer, { cost: e.ask.spend.cost, tokens: e.ask.spend.tokens })
+        for (const m of state.feed.filter((x) => x.paused === e.ask.spend.round)) Object.assign(m, { paused: false }, reply.allow ? {} : { dropped: true })
+      } else if (a && !reply.terminal) Object.assign(a, { status: 'working', since: Date.now() })
       setTimeout(() => window.__cliqueEmit('state', state), 30)
       return undefined
     }

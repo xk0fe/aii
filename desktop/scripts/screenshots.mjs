@@ -62,6 +62,23 @@ const CANVAS_FEED = [
   },
   { id: 'k5', kind: 'event', from: 'Theo', text: 'added to @Iris\'s canvas "How the score is made"', canvasOf: 'k4' },
 ]
+// The check-in shots: a request of yours that Ada and Milo passed back and forth until it had cost $5.40, as the hub
+// posts it (core/hub.js checkIn): the hand-offs in the request's thread, the last one held, and the card.
+const CHECK_IN_CARD = `{ id: 'c6', kind: 'ask', from: 'Ada', to: 'you', cli: 'clique', re: 'c1', thread: 'c1', out: true, ts: t(1), ask: { type: 'permission', tool: 'clique spend', always: [],
+    title: '@Ada and @Milo have spent $5.40 since you last spoke', say: "We've spent $5.40 since you last spoke. Keep going?", detail: 'Nothing new starts until you answer. Turns already running finish first.',
+    spend: { round: 'c1', who: ['Ada', 'Milo'], by: { Ada: { cost: 3.7, tokens: 0 }, Milo: { cost: 1.7, tokens: 0 } }, cost: 5.4, tokens: 0, since: t(47), from: 'you', limit: { usd: 5, tokens: 5e6 } } } }`
+const CHECK_IN_FEED = (card = true) => `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+  s.feed = [
+    { id: 'c0', kind: 'reply', from: 'Theo', to: 'you', text: 'All 48 checkout tests pass on Chrome and Safari.', ts: t(55) },
+    { id: 'c1', kind: 'msg', from: 'you', to: 'Ada', text: 'The checkout takes four seconds to load. Find out why and fix it with Milo.', ts: t(47) },
+    { id: 'c2', kind: 'msg', from: 'Ada', to: 'Milo', re: 'c1', thread: 'c1', round: 'c1', text: 'The order API is fine (180 ms). The page waits on three requests in a row. Can you load them together?', gist: 'The order API is fine (180 ms).', ts: t(40) },
+    { id: 'c3', kind: 'msg', from: 'Milo', to: 'Ada', re: 'c2', thread: 'c1', round: 'c1', text: 'That needs the totals in one call. Can the API return them with the cart?', gist: 'That needs the totals in one call.', ts: t(26) },
+    { id: 'c4', kind: 'msg', from: 'Ada', to: 'Milo', re: 'c3', thread: 'c1', round: 'c1', text: 'Done: GET /cart includes the totals now. Try it.', gist: 'Done: GET /cart includes the totals now.', ts: t(12) },
+    ${card ? `{ id: 'c5', kind: 'msg', from: 'Milo', to: 'Ada', re: 'c4', thread: 'c1', round: 'c1', paused: 'c1', text: 'Down to 1.1 s. Can you cache the shipping rates too?', gist: 'Down to 1.1 s.', ts: t(1.2) },
+    ${CHECK_IN_CARD},` : ''}
+  ]
+  s.agents = s.agents.map((a) => ({ ...a, status: a.name === 'Milo' && ${!card} ? 'working' : a.status === 'off' ? 'off' : 'idle', activity: a.name === 'Milo' && ${!card} ? 'Edit pages/checkout.tsx' : '', since: Date.now() - 60000, subs: [], waitingOn: [], owes: [], queue: 0 }))
+  window.__cliqueEmit('state', s)`
 // What's behind the transparent windows: the popover's material, or a soft desktop for the floating pill.
 const BACKDROP = {
   popover: { light: '#ececef', dark: '#2b2b2f' },
@@ -569,6 +586,89 @@ const SHOTS = {
       await new Promise((r) => setTimeout(r, 300))
       return [window.__cliqueState.savers.on.noReportBack, document.querySelector('#savers [data-sv="noReportBack"]').checked, document.querySelectorAll('#savers .sv').length]`)
     if (String(flipped) !== 'true,true,6') throw new Error(`savers: flipping a switch gave ${flipped}`)
+    win.destroy()
+  },
+  // The spend check-in (core/hub.js checkIn): its card in the chat with the hand-off it holds, the card after Keep going
+  // and after Stop, the sheet that sets the amount (which mustn't change its height between an amount and Off), the
+  // floating chat's Needs you queue, and the menu bar's.
+  async checkIn(theme) {
+    const win = await dashboard(theme, 'chat', { width: 1100, height: 760 })
+    await sleep(700)
+    await js(win, CHECK_IN_FEED())
+    await sleep(1000)
+    await save(win, `checkin-chat-${theme}`)
+    const card = await js(win, `const c = document.querySelector('.ask-card.spend'); return c ? [c.querySelector('.ask-title')?.textContent, [...c.querySelectorAll('.btn')].map((b) => b.textContent).join('/')].join(' | ') : 'no card'`)
+    if (!/spent \$5\.40 since you last spoke.*Keep going\/Stop/.test(card)) throw new Error(`checkIn: the card reads ${card}`)
+    // the thread the hand-offs are in: the one that waits says so
+    await js(win, "document.querySelector('.thread-card').click()")
+    await sleep(900)
+    await save(win, `checkin-thread-${theme}`)
+    const held = await js(win, "return [...document.querySelectorAll('.thread-row .tag')].map((x) => x.textContent).join(',')")
+    if (held !== 'held for the check-in') throw new Error(`checkIn: the thread's tags read ${held}`)
+    await js(win, "document.querySelector('.thread-x').click()")
+    await sleep(500)
+    await js(win, "document.querySelector('.ask-card.spend [data-answer=\"allow\"]').click()")
+    await sleep(900)
+    await save(win, `checkin-kept-${theme}`)
+    await js(win, `${CHECK_IN_FEED()}; await new Promise((r) => setTimeout(r, 400)); document.querySelector('.ask-card.spend [data-answer="deny"]').click()`)
+    await sleep(900)
+    await save(win, `checkin-stopped-${theme}`)
+    const done = await js(win, "return [...document.querySelectorAll('.ask-card.done')].at(-1)?.textContent.trim().replace(/\\s+/g, ' ')")
+    if (!/Stopped.*at \$5\.40/.test(done)) throw new Error(`checkIn: after Stop the card reads ${done}`)
+    // where it's set: the sidebar's ⋯ menu, under Autopilot
+    await js(win, "document.querySelector('.side-more').click()")
+    await sleep(600)
+    await save(win, `checkin-menu-${theme}`)
+    const row = await js(win, "return [...document.querySelectorAll('.menu [data-menu-act]')].find((b) => b.dataset.menuAct === 'checkin')?.textContent.trim().replace(/\\s+/g, ' ')")
+    if (!/Spend check-in….*After \$5/.test(row)) throw new Error(`checkIn: the menu's row reads ${row}`)
+    await js(win, "[...document.querySelectorAll('.menu [data-menu-act]')].find((b) => b.dataset.menuAct === 'checkin').click()")
+    await sleep(800)
+    if (!(await js(win, "return document.querySelector('#checkin').open"))) throw new Error("checkIn: the menu's row didn't open the sheet")
+    await save(win, `checkin-sheet-${theme}`)
+    const after = await js(win, `const d = document.querySelector('#checkin')
+      const h = d.getBoundingClientRect().height
+      d.querySelector('[data-ci="off"]').click()
+      await new Promise((r) => setTimeout(r, 500))
+      return [Math.round(d.getBoundingClientRect().height - h), JSON.stringify(window.__cliqueState.checkIn), d.querySelector('.ci-amounts .on').textContent, Boolean(d.querySelector('[data-ci-off].on'))]`)
+    if (String(after) !== '0,null,Off,true') throw new Error(`checkIn: switching it off gave ${after}`)
+    await save(win, `checkin-sheet-off-${theme}`)
+    win.destroy()
+    const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
+    await sleep(400)
+    await js(chat, `${CHECK_IN_FEED()}; window.__cliqueEmit('toggle', { open: true, focus: false })`)
+    await sleep(900)
+    await js(chat, "document.querySelector('.nq-go')?.click()")
+    await sleep(700)
+    await fitToContent(chat)
+    await save(chat, `checkin-queue-${theme}`)
+    chat.destroy()
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    await sleep(400)
+    await js(tray, CHECK_IN_FEED())
+    await sleep(600)
+    await fitToContent(tray)
+    await save(tray, `checkin-tray-${theme}`)
+    tray.destroy()
+  },
+  // ...and the card coming up while Milo works, then Keep going
+  async checkInGif() {
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { width: 1100, height: 760 })
+    await sleep(700)
+    await js(win, CHECK_IN_FEED(false))
+    await sleep(900)
+    await record(win, 'checkin', {
+      ms: 6200,
+      during: async () => {
+        await sleep(900)
+        await js(win, CHECK_IN_FEED())
+        await sleep(1900)
+        let at = await glide(win, { x: 760, y: 420 }, await center(win, '.ask-card.spend [data-answer="allow"]'), 700)
+        await sleep(350)
+        await tap(win, at)
+        await sleep(600)
+        await js(win, `const s = window.__cliqueState; const m = s.agents.find((a) => a.name === 'Milo'); Object.assign(m, { status: 'working', activity: 'Edit pages/checkout.tsx', since: Date.now() }); window.__cliqueEmit('state', s)`)
+      },
+    })
     win.destroy()
   },
   // Agent tools: an agent asking to change CLIque (its card in the chat, its words in the Needs-you queue), the card

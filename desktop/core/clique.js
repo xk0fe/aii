@@ -7,7 +7,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage } from './hub.js'
+import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf, CHECK_IN_USD } from './hub.js'
 import { movedPath } from './home.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
@@ -779,7 +779,7 @@ export class Clique extends EventEmitter {
       parked: false, autopilot: this.config.data.autopilot ?? true, theme: this.config.data.theme,
       providers: Object.fromEntries(Object.values(providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault }])),
       agents: [], feed: [], channels: channelsIn({}), reads: { since: 0, agents: {} },
-      spend: { today: 0, usual: null, week: 0, weekBefore: 0 }, usage: {}, tasks: { tickets: [], triage: null, autofix: false },
+      spend: { today: 0, usual: null, week: 0, weekBefore: 0 }, checkIn: checkInOf(this.config.data), usage: {}, tasks: { tickets: [], triage: null, autofix: false },
     }
   }
 
@@ -851,6 +851,19 @@ export class Clique extends EventEmitter {
     else delete this.config.data.savers
     this.config.save()
     return this.saversState()
+  }
+
+  // The spend check-in (Hub.checkIn): setCheckIn(10) asks at $10, setCheckIn(false) never asks. It's yours, so it's one
+  // for every workspace on this computer. Switched off, the cards still up are answered: keep going.
+  setCheckIn(v) {
+    const usd = v === false ? false : Math.round(Number(v) * 100) / 100
+    if (usd !== false && !(usd >= 0.01 && usd <= 10000)) throw new Error('a check-in is an amount in dollars, from $0.01 up')
+    if (usd === CHECK_IN_USD) delete this.config.data.checkIn
+    else this.config.data.checkIn = usd
+    this.config.save()
+    for (const h of this.hubs.values()) h.checkInChanged()
+    this.changed()
+    return checkInOf(this.config.data)
   }
 
   // A linked computer's agent, as this computer writes it.

@@ -628,6 +628,8 @@ const actions = {
   autopilot: (on) => clique.here.setAutopilot(on),
   // The token savers (core/savers.js): savers({ coldStart: false }) turns one off.
   savers: (patch) => clique.setSavers(patch),
+  // The spend check-in (Hub.checkIn): checkIn(10) asks once a round has cost $10, checkIn(false) never asks.
+  checkIn: (usd) => clique.setCheckIn(usd),
   // What agents may change in CLIque with `clique app` (core/tools.js): tools('off' | 'ask' | 'auto').
   tools: (mode) => clique.setTools(mode),
   // You've seen agents' replies up to then: { name: ts }. Unread badges count what's newer.
