@@ -6,14 +6,14 @@
 import { memo, useRef, useState, type ReactNode } from 'react'
 import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native'
 
-import type { Agent, Channel, FeedEntry } from '@/net/types'
+import type { Agent, Channel, FeedEntry, FeedFile } from '@/net/types'
 import { channelOf, familyOf, GENERAL } from '@/state/hooks'
 
 import { AskSummary, askVerb } from './ask'
 import { agentColor } from './avatar'
 import { nameInk } from './color'
 import { Creature } from './creature'
-import { clock, dayLabel, displayName, plural, sameDay } from './format'
+import { clock, dayLabel, displayName, fileLine, plural, sameDay } from './format'
 import { Icon } from './icon'
 import { Markdown } from './markdown'
 import { stacks } from './stack'
@@ -170,7 +170,33 @@ function Between({ e, c, tone }: { e: FeedEntry; c: FeedCtx; tone?: 'dropped' })
 
 // What an agent said to you: plain, like anyone's message.
 function Body({ e, c }: { e: FeedEntry; c: FeedCtx }) {
-  return <Markdown text={e.text ?? ''} t={c.t} color={c.t.fg} size={TEXT} mention={mentionInk(c)} />
+  // (with files, `text` also names them for a phone from before files: `caption` is what was said)
+  const text = e.files?.length ? e.caption ?? '' : e.text ?? ''
+  return (
+    <>
+      {text ? <Markdown text={text} t={c.t} color={c.t.fg} size={TEXT} mention={mentionInk(c)} /> : null}
+      {e.files?.length ? <Files files={e.files} t={c.t} /> : null}
+    </>
+  )
+}
+
+// What an agent attached (`clique attach`): pictures, a recording, a page, any file. They're kept on the computer and
+// looked at there (a recording can be tens of megabytes: it never comes down this connection), so the phone says what
+// each one is and where to open it.
+function Files({ files, t }: { files: FeedFile[]; t: Theme }) {
+  return (
+    <View style={styles.files} accessibilityLabel={`${plural(files.length, 'file')} attached, on the computer`}>
+      {files.map((f, i) => (
+        <View key={i} style={[styles.file, { borderColor: t.line, backgroundColor: t.fill }]}>
+          <Icon name="mac" size={18} color={t.fg2} />
+          <View style={styles.fileWhat}>
+            <Text style={[styles.fileName, { color: t.fg }]} numberOfLines={1} ellipsizeMode="middle">{f.name}</Text>
+            <Text style={[styles.fileLine, { color: t.fg2 }]} numberOfLines={1}>{fileLine(f)} · open it on the computer</Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  )
 }
 
 // A question card in the chat: a short line that opens it, or what became of it.
@@ -508,4 +534,9 @@ const styles = StyleSheet.create({
   held: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   heldText: { fontSize: 12.5 },
   subs: { fontSize: 12.5, marginTop: 6 },
+  files: { gap: 6, marginTop: 6 },
+  file: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
+  fileWhat: { flex: 1, minWidth: 0 },
+  fileName: { fontSize: 15, fontWeight: '600' },
+  fileLine: { fontSize: 12.5, marginTop: 1 },
 })

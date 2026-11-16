@@ -710,6 +710,7 @@ $('.side-more').addEventListener('click', (e) => {
   const away = c.links.filter((l) => !l.online).length
   popMenu(e.currentTarget, [
     { label: 'Autopilot', icon: ICONS.plane, act: 'autopilot', hint: state.autopilot ? 'On: hand-offs go through' : 'Off: hand-offs wait for you' },
+    { label: 'Spend check-in…', icon: ICONS.coin, act: 'checkin', hint: checkInHint() },
     { label: 'Stay awake', icon: ICONS.mug, act: 'awake', hint: state.awake?.enabled ?? true ? 'On: while agents work' : `Off: this ${ON_WINDOWS ? 'PC' : 'Mac'} may sleep mid-task` },
     { label: 'Token savers…', icon: ICONS.chart, act: 'savers', hint: saversHint() },
     { label: 'Agent tools…', icon: ICONS.mark, act: 'tools', hint: toolHint() },
@@ -726,6 +727,7 @@ $('.side-more').addEventListener('click', (e) => {
     ...(clique.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
   ], (act) => {
     if (act === 'autopilot') clique.call('autopilot', !state.autopilot).catch((err) => oops("Couldn't change Autopilot", err))
+    if (act === 'checkin') openCheckIn()
     if (act === 'awake') clique.call('keepAwake', !(state.awake?.enabled ?? true)).catch((err) => oops("Couldn't change that", err))
     if (act === 'savers') openSavers()
     if (act === 'tools') openTools()
@@ -738,6 +740,100 @@ $('.side-more').addEventListener('click', (e) => {
     if (act.startsWith('theme:')) clique.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
     if (act === 'config') clique.call('config')
   })
+})
+
+// ---- the spend check-in (core/hub.js checkIn): per provider, what its agents may use on one request before they
+// check in, in the unit that provider's CLI reports. Built like an agent's Context limit (ui/collection.js drawLimit):
+// a row of values and a Custom field for each provider, what happens when it's reached, and one line that says it.
+
+const checkInDialog = $('#checkin')
+checkInDialog.querySelector('.h-icon').innerHTML = ICONS.coin
+// The providers that have a meter (core/providers.js), the ones your picker offers. One without a meter has no row.
+const checkInProviders = () => Object.entries(state.providers ?? {}).filter(([, p]) => p.meter && p.added !== false).map(([id, p]) => ({ id, label: p.label ?? id, ...p.meter }))
+const checkInSet = () => checkInProviders().filter((p) => state.checkIn?.at?.[p.id])
+const checkInHint = () => {
+  const set = checkInSet()
+  return set.length ? set.map((p) => `${set.length > 1 ? `${p.label} ` : ''}${meterPick(p.unit, state.checkIn.at[p.id])}`).join(' · ') : 'Off'
+}
+// A Custom field holds dollars, or millions of tokens.
+const checkInTyped = (unit, v) => (unit === 'usd' ? Math.round(Number(v) * 100) / 100 : Math.round(Number(v) * 1e6))
+let checkInKey = ''
+function drawCheckIn() {
+  const list = checkInProviders()
+  const host = checkInDialog.querySelector('.ci-list')
+  const key = JSON.stringify(list)
+  if (key !== checkInKey) {
+    checkInKey = key
+    host.innerHTML = list.map((p) => `
+      <div class="ed-row" data-ci-row="${esc(p.id)}"><span class="ed-label">${esc(p.label)}<small>check in after</small></span><div class="ed-ctl">
+        <div class="seg fill" data-ci="${esc(p.id)}"><button type="button" data-v="">Off</button>${p.presets.map((v) => `<button type="button" data-v="${v}">${meterPick(p.unit, v)}</button>`).join('')}<label class="limit-custom ci-custom ${p.unit}"><input type="number" min="0" step="${p.unit === 'usd' ? 1 : 0.5}" data-ci-custom="${esc(p.id)}" placeholder="Custom" title="${p.unit === 'usd' ? 'Any amount, in dollars' : 'Any number, in millions of tokens'}"><span>${p.unit === 'usd' ? '$' : 'M'}</span></label></div>
+      </div></div>`).join('') +
+      '<div class="ed-row when-row"><span class="ed-label">When it’s reached</span><div class="ed-ctl"><div class="seg fill" data-ci-then><button type="button" data-v="ask">Ask me</button><button type="button" data-v="tell">Just tell me</button></div></div></div>' +
+      '<p class="limit-note ci-says"></p>'
+  }
+  syncCheckIn()
+}
+// What a pick changes, in place (so the thumb slides and a field keeps its focus): the picks, whether "When it's
+// reached" applies, and the line under them.
+function syncCheckIn() {
+  const host = checkInDialog.querySelector('.ci-list')
+  const at = state.checkIn?.at ?? {}
+  for (const p of checkInProviders()) {
+    const seg = host.querySelector(`[data-ci="${CSS.escape(p.id)}"]`)
+    if (!seg) continue
+    const v = at[p.id] || 0
+    const preset = !v || p.presets.includes(v)
+    segmented(seg, (el) => (el.matches('.ci-custom') ? !preset : (Number(el.dataset.v) || 0) === v), { none: true })
+    const field = seg.querySelector('[data-ci-custom]')
+    if (document.activeElement !== field) field.value = preset ? '' : p.unit === 'usd' ? v : +(v / 1e6).toFixed(2)
+  }
+  const set = checkInSet()
+  const tell = state.checkIn?.then === 'tell'
+  segmented(host.querySelector('[data-ci-then]'), (el) => el.dataset.v === (tell ? 'tell' : 'ask'), { none: true })
+  host.querySelector('.when-row').classList.toggle('off', !set.length)
+  const past = set.map((p) => `${meterPick(p.unit, at[p.id])}${p.unit === 'tokens' ? ' tokens' : ''} for ${p.label}`).join(' or ')
+  host.querySelector('.ci-says').textContent = !set.length ? 'Off. Nothing checks in until you pick a value.'
+    : tell ? `Past ${past} since you last spoke, you get one line in the chat and a notification. Nothing is held.`
+    : `Past ${past} since you last spoke, one card asks you. Until you answer, nothing new starts; turns already running finish.`
+}
+function openCheckIn() {
+  checkInDialog.querySelector('[data-ci-err]').textContent = ''
+  drawCheckIn()
+  checkInDialog.showModal()
+}
+// shown now; the state that follows says it for good
+function setCheckIn(patch) {
+  const was = state.checkIn
+  const at = { ...(was?.at ?? {}), ...(patch.at ?? {}) }
+  for (const k of Object.keys(at)) if (!at[k]) delete at[k]
+  state.checkIn = { at, then: patch.then ?? was?.then ?? 'ask' }
+  checkInDialog.querySelector('[data-ci-err]').textContent = ''
+  syncCheckIn()
+  clique.call('checkIn', patch).catch((x) => {
+    state.checkIn = was
+    syncCheckIn()
+    checkInDialog.querySelector('[data-ci-err]').textContent = errorLine(x)
+  })
+}
+checkInDialog.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]') || e.target === checkInDialog) return checkInDialog.close()
+  const pick = e.target.closest('[data-ci] button[data-v]')
+  if (pick) {
+    const id = pick.closest('[data-ci]').dataset.ci
+    const v = Number(pick.dataset.v) || null
+    if ((state.checkIn?.at?.[id] ?? null) !== v) setCheckIn({ at: { [id]: v } })
+    return
+  }
+  const then = e.target.closest('[data-ci-then] button[data-v]')
+  if (then && then.dataset.v !== (state.checkIn?.then ?? 'ask')) setCheckIn({ then: then.dataset.v })
+})
+// a value of your own: taken as you type it (an empty field is Off)
+checkInDialog.addEventListener('input', (e) => {
+  const id = e.target.dataset.ciCustom
+  if (!id) return
+  const p = checkInProviders().find((x) => x.id === id)
+  const v = checkInTyped(p.unit, e.target.value)
+  setCheckIn({ at: { [id]: v > 0 ? v : null } })
 })
 
 // ---- token savers (core/savers.js): one switch each, and what each has counted ----
@@ -1795,6 +1891,14 @@ function handleFocus(arg) {
   else if (arg === ':workspace') workspaces.create()
   else if (arg === ':workspace-settings') workspaces.settings()
   else if (arg?.startsWith('task:') || arg?.startsWith('bug:')) openTask(arg.slice(arg.indexOf(':') + 1))
+  // a file from the floating chat, to look at closer: this window has the room (ui/files.js)
+  else if (arg?.startsWith('file:')) {
+    try {
+      const { files, i } = JSON.parse(arg.slice(5))
+      fxRemember('elsewhere', files)
+      fxView('elsewhere', i)
+    } catch {}
+  }
   else if (arg) select(arg)
 }
 
@@ -1813,6 +1917,7 @@ const ready = live((next) => {
   workspaces.render(state)
   drawComputers(state)
   if (saversDialog.open) drawSavers()
+  if (checkInDialog.open) drawCheckIn()
   if (toolsDialog.open) drawTools()
   if (notifyDialog.open) drawNotify()
   schedules.render()

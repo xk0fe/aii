@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; media-src 'self' file:; frame-src clique-sandbox:">
   <title>CLIque</title>
   <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
   <link rel="stylesheet" href="common.css">
@@ -525,6 +525,14 @@
     .nf-row .nf-about { grid-column: 2; font-size: 12px; line-height: 1.45; color: var(--fg2); text-wrap: pretty; }
     .nf-row .btn { grid-column: 3; grid-row: 1 / span 2; min-width: 76px; justify-content: center; }
     .notify-sheet .section-label { margin: 0 2px 8px; }
+    /* The spend check-in: a row per provider, built from the agent sheet's rows (collection.css .ed-row, .limit-custom,
+       .limit-note). Its line keeps room for two lines, so the sheet is as tall with nothing picked as with everything. */
+    dialog.checkin-sheet { width: 600px; }
+    .ci-list .ed-row { grid-template-columns: 124px minmax(0, 1fr); }
+    .ci-list .ci-says { box-sizing: content-box; min-height: calc(2 * 1.4em); padding-top: 2px; box-shadow: none; text-wrap: pretty; }
+    .ci-custom.usd span { order: -1; }
+    .ci-custom.usd input { text-align: left; }
+    .ci-note { margin: 12px 2px 0; font-size: 12px; line-height: 1.5; color: var(--fg3); text-wrap: pretty; }
     dialog.tools-sheet { width: 520px; }
     /* Scheduled messages (ui/schedules.js). Send later: the message, a day and a time side by side, how it repeats, and
        one line that says it back in words. Every part keeps its room, so picking a repeat moves nothing. */
@@ -799,6 +807,17 @@
     <div class="sheet-foot"><span class="sv-forced"></span><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
   </dialog>
 
+  <dialog id="checkin" class="sheet checkin-sheet">
+    <h2 class="sheet-title"><span class="h-icon"></span>Spend check-in</h2>
+    <p class="lead">A soft limit on what agents use on one request of yours, in what each CLI reports.</p>
+    <div class="sheet-body">
+      <div class="group-list ci-list"></div>
+      <p class="ci-note">Claude’s dollars are Claude Code’s own count at API rates: a bill with an API key, a yardstick on a subscription.</p>
+    </div>
+    <p class="err" data-ci-err></p>
+    <div class="sheet-foot"><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
+  </dialog>
+
   <dialog id="tools" class="sheet tools-sheet">
     <h2 class="sheet-title"><span class="h-icon"></span>Agent tools</h2>
     <p class="lead">Agents can change CLIque for you when you ask them to: add agents and channels, make workspaces, link your computers.</p>
@@ -851,6 +870,7 @@
   <script src="voice.js"></script>
   <script src="canvas.js"></script>
   <script src="common.js"></script>
+  <script src="files.js"></script>
   <script src="brand.js"></script>
   <script src="collection.js"></script>
   <script src="tasks.js"></script>

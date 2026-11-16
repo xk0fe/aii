@@ -218,8 +218,9 @@ if (FIXTURE === 'clones') {
 }
 
 const PROVIDERS = {
-  claude: { label: 'Claude', models: ['fable', 'opus', 'sonnet', 'haiku'], efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  codex: { label: 'Codex', models: ['gpt-6-luna', 'gpt-6'], efforts: ['low', 'medium', 'high'], fastByDefault: false },
+  // meter: what each one's CLI reports of an agent's use, for the spend check-in (core/providers.js). GLM has none.
+  claude: { label: 'Claude', models: ['fable', 'opus', 'sonnet', 'haiku'], efforts: ['low', 'medium', 'high', 'xhigh', 'max'], meter: { unit: 'usd', presets: [2, 5, 10, 25] } },
+  codex: { label: 'Codex', models: ['gpt-6-luna', 'gpt-6'], efforts: ['low', 'medium', 'high'], fastByDefault: false, meter: { unit: 'tokens', presets: [2e6, 5e6, 10e6, 25e6] } },
   glm: { label: 'GLM', models: ['glm-5'], efforts: [], missing: ['ZAI_API_KEY'] },
 }
 
@@ -520,7 +521,7 @@ if (FIXTURE === 'q') {
 const notifyCore = require('../core/notify.js')
 let notifyPrefs = notifyCore.prefsOf(null)
 const notifyState = (held = 0) => ({ ...notifyPrefs, ...notifyCore.quietNow(notifyPrefs), held, morning: notifyCore.morningAfter(notifyPrefs) })
-const state = { notify: notifyState(), savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false }, schedules: { list: [], repo: true } }
+const state = { notify: notifyState(), savers: SAVER_STATE, checkIn: { at: {}, then: 'ask' }, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false }, schedules: { list: [], repo: true } }
 // Whether the computer is kept awake, as main.js says it (core/awake.js makes the line there): while this computer's
 // agents work, when that's on.
 function awakeOf(enabled) {
@@ -845,6 +846,14 @@ window.clique = {
       emit()
       return state.notify
     }
+    // the spend check-in, per provider: { at: { claude: 5, codex: null }, then: 'ask' | 'tell' }
+    if (action === 'checkIn') {
+      const at = { ...state.checkIn.at, ...(args[0].at ?? {}) }
+      for (const k of Object.keys(at)) if (!at[k]) delete at[k]
+      state.checkIn = { at, then: args[0].then ?? state.checkIn.then }
+      emit()
+      return state.checkIn
+    }
     // stay awake while agents work: on or off
     if (action === 'keepAwake') {
       state.awake = awakeOf(Boolean(args[0]))
@@ -900,7 +909,11 @@ window.clique = {
       const always = e.ask.always?.find((x) => x.i === reply.always)?.label
       e.answer = reply.terminal ? { by: 'terminal', handedOver: true } : reply.answers ? { by: 'you', answers: Object.fromEntries(Object.entries(reply.answers).map(([k, v]) => [k, [].concat(v).join(', ')])) } : { by: 'you', allow: Boolean(reply.allow), ...(always && { always }), ...(reply.note && { note: reply.note }) }
       const a = state.agents.find((x) => x.name === e.from)
-      if (a && !reply.terminal) Object.assign(a, { status: 'working', since: Date.now() })
+      // a spend check-in (core/hub.js checkIn): what it held goes on, or is dropped, and its agent isn't waiting on it
+      if (e.ask.spend) {
+        e.answer.used = e.ask.spend.used
+        for (const m of state.feed.filter((x) => x.paused === e.ask.spend.group)) Object.assign(m, { paused: false }, reply.allow ? {} : { dropped: true })
+      } else if (a && !reply.terminal) Object.assign(a, { status: 'working', since: Date.now() })
       setTimeout(() => window.__cliqueEmit('state', state), 30)
       return undefined
     }

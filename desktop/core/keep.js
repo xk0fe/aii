@@ -10,6 +10,8 @@
 //                                 when CLIque is back.
 //   attachments/                  images you attach: one that no workspace's chat, task or agent refers to any more
 //                                 goes ATTACHMENT_DAYS after it was saved (Clique.sweepImages, a minute after the start).
+//                                 Files agents attach are kept there too (core/attachments.js), by the same rule,
+//                                 and no more than STORE_MAX of them together: past that the oldest go (makeRoom).
 //   link/cache/<computer>/        linked computers' images: CACHE_DAYS after they were fetched (fetched again when
 //                                 they're shown).
 //   run/ptyhost.log               the terminal host's log: a host writes at most 1 MB of it, CLIque's own lines stop at
