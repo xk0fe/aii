@@ -240,10 +240,11 @@ app.whenReady().then(async () => {
     } catch (e) {
       ok(false, `${name}: the probe itself broke`, e?.stack ?? String(e))
     }
-    await js(`if (document.fullscreenElement) await document.exitFullscreen().catch(() => {}); document.querySelector('.fxv [data-fxv=close]')?.click(); document.querySelector('.menu')?.remove(); for (const v of document.querySelectorAll('video')) v.pause()`)
+    await js(`if (document.fullscreenElement) await document.exitFullscreen().catch(() => {}); document.querySelector('.fxv [data-fxv=close]')?.click(); document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); for (const v of document.querySelectorAll('video')) v.pause()`)
     await away()
     await sleep(200)
   }
+  const MENU = '.menu:not(.hidden, .leaving)' // the menu that's open (the page keeps others of its own about, hidden)
   const VID = '.fx-video[data-live="v1:0"]'
   const PL = `${VID} .fxp`
 
@@ -904,10 +905,10 @@ app.whenReady().then(async () => {
     ok(!(await vis('.fxv')), 'Esc closes that')
     // the menu
     await tap(`${PG} [data-fx=more]`)
-    ok(await until(() => vis('.menu'), 2000), 'More opens the menu')
-    const items = await js(`return [...document.querySelectorAll('.menu [data-menu-act]')].map((b) => b.textContent)`)
+    ok(await until(() => vis(MENU), 2000), 'More opens the menu')
+    const items = await js(`return [...document.querySelectorAll('.menu:not(.hidden, .leaving) [data-menu-act]')].map((b) => b.textContent)`)
     ok(JSON.stringify(items) === JSON.stringify(['Open in your browser', 'Show in Finder', 'Copy its path']), 'Open in your browser, Show in Finder, Copy its path', items)
-    await tap('.menu [data-menu-act=copy]')
+    await tap(MENU + ' [data-menu-act=copy]')
     await sleep(200)
     ok((await calls()).some((x) => x[0] === 'copy' && x[1] === page.path), 'Copy its path copies where the page is')
     // a plain file
@@ -978,15 +979,18 @@ app.whenReady().then(async () => {
     const LF = '#m-l2 .fx-file'
     await into(LF)
     ok((await js(`return document.querySelector(${JSON.stringify(`${LF} .fx-what small`)}).textContent`)) === `PDF · ${await js(`return fxSize(${notes.size})`)} · from Workstation`, 'a document from there has its card, with Open')
+    ok(await js(`const m = document.querySelector(${JSON.stringify(`${LF} .fx-what small`)}); return m.scrollWidth <= m.clientWidth`), 'and the line that says so fits its card: nothing cut')
     ok(!fs.existsSync(notes.path), '(not fetched until it is asked for)')
     link.wait = 120
     opened.length = 0
     await tap(`${LF} [data-fx=open]`)
     const said = await until(async () => {
       const s = await js(`return document.querySelector(${JSON.stringify(`${LF} .fx-what small`)}).textContent`)
-      return /^Getting it from Workstation · \d+%$/.test(s) ? s : null
+      return /^\d+% · coming from Workstation$/.test(s) ? s : null
     }, 4000)
-    ok(said, 'Open: its card says it is being brought, and how far', said)
+    ok(said, 'Open: its card says it is coming from there, and how far', said)
+    const line = await js(`const c = document.querySelector(${JSON.stringify(LF)}); const m = c.querySelector('.fx-what small'); return { fits: m.scrollWidth <= m.clientWidth, getting: c.classList.contains('getting'), got: Number(getComputedStyle(c).getPropertyValue('--got')), w: c.getBoundingClientRect().width }`)
+    ok(line.fits && line.getting && line.got > 0 && line.got < 1, 'all of that line shows (nothing cut), and a line along the card\'s foot shows how far', line)
     ok(await js(`return [...document.querySelectorAll(${JSON.stringify(`${LF} button`)})].every((b) => b.disabled)`), 'its buttons wait meanwhile')
     await shot('linked-3-getting')
     ok(await until(() => opened.length > 0, 8000), 'then it opens')
@@ -997,18 +1001,18 @@ app.whenReady().then(async () => {
     opened.length = 0
     await tap(`${LF} [data-fx=show]`)
     await until(() => opened.length > 0, 3000)
-    ok(opened[0]?.[0] === 'showFile' && !(await js(`return document.querySelector(${JSON.stringify(`${LF} .fx-what small`)}).textContent`)).startsWith('Getting'), 'Show in Finder, now that it is here: at once')
+    ok(opened[0]?.[0] === 'showFile' && !/coming from/i.test(await js(`return document.querySelector(${JSON.stringify(`${LF} .fx-what small`)}).textContent`)) && !(await js(`return document.querySelector(${JSON.stringify(LF)}).classList.contains('getting')`)), 'Show in Finder, now that it is here: at once')
     // the recording, opened in its own app: the rest of it comes first
     opened.length = 0
     await into(LV)
     await tap(`${LV} [data-fx=more]`)
-    await until(() => vis('.menu'), 2000)
-    await tap('.menu [data-menu-act=openFile]')
+    await until(() => vis(MENU), 2000)
+    await tap(MENU + ' [data-menu-act=openFile]')
     ok(await until(() => opened.length > 0, 15000), 'Open on the recording brings the rest of it, then opens it')
     ok(opened[0]?.[2] === run.size && fs.existsSync(run.path) && !fs.existsSync(`${run.path}.part`) && Buffer.compare(fs.readFileSync(run.path), fs.readFileSync(path.join(host, 'windows-run.mp4'))) === 0, 'whole in the cache, byte for byte', opened[0])
     await tap(`${LV} [data-fx=more]`)
-    await until(() => vis('.menu'), 2000)
-    await tap('.menu [data-menu-act=copy]')
+    await until(() => vis(MENU), 2000)
+    await tap(MENU + ' [data-menu-act=copy]')
     await until(() => opened.some((o) => o[0] === 'copyFilePath'), 3000)
     ok(opened.some((o) => o[0] === 'copyFilePath'), 'Copy its path copies where it is here')
     await tap(`${LP} > video`, win, [0.5, 0.3])

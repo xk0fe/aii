@@ -58,11 +58,16 @@ const fxExt = (f) => (/\.([A-Za-z0-9]{1,8})$/.exec(f.name ?? f.path ?? '')?.[1] 
 // A linked computer's file being brought here because you asked to open it: path -> { have, size, shown }. Its card
 // says how far it is (fxOpen).
 const fxGetting = new Map()
-// "Video · 0:12 · 2.1 MB", "HTML · 14 KB", "PDF · 1.2 MB · from Workstation"; while it's being brought: "Getting it from
-// Workstation · 42%"
+// How far one that's being brought is, 0 to 1 (null when it isn't being brought, or nothing says yet).
+const fxGot = (f) => {
+  const coming = f.path && fxGetting.get(f.path)
+  return coming?.shown && coming.size ? Math.min(0.99, coming.have / coming.size) : null
+}
+// "Video · 0:12 · 2.1 MB", "HTML · 14 KB", "PDF · 1.2 MB · from Workstation"; while it's being brought: "42% · coming
+// from Workstation" (the number first: it's what's read, and a long computer name is what a narrow card cuts)
 function fxMeta(f, { dims = false } = {}) {
   const coming = f.path && fxGetting.get(f.path)
-  if (coming?.shown) return `Getting it from ${f.home ?? 'its computer'}${coming.size ? ` · ${Math.min(99, Math.floor((100 * coming.have) / coming.size))}%` : ''}`
+  if (coming?.shown) return `${fxGot(f) === null ? '' : `${Math.floor(100 * fxGot(f))}% · `}${fxGot(f) === null ? 'Coming' : 'coming'} from ${f.home ?? 'its computer'}`
   const kind = f.kind === 'video' ? 'Video' : f.kind === 'html' ? 'HTML' : fxExt(f) || 'File'
   return [kind, dims && f.w && f.h && `${f.w}×${f.h}`, f.dur && fxTime(f.dur), fxSize(f.size), f.away ? `on ${f.away}` : f.home ? `from ${f.home}` : ''].filter(Boolean).join(' · ')
 }
@@ -120,7 +125,9 @@ function fxCard(id, f, i, at) {
     return `<div class="fx-card fx-page" data-live="${esc(id)}:${i}">${head(`<span class="fx-running">Running</span>${tool('stop', FX_ICONS.stop, 'Stop the page')}${tool('view', FX_ICONS.expand, 'Open in the viewer')}${more}`)}<div class="fx-stage"><iframe class="fx-frame still" sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" tabindex="-1" title="${esc(f.name)}, not running" src="${esc(fxSandbox(f.path, false))}"></iframe><button type="button" class="fx-run btn" data-fx="run" ${at}>${FX_ICONS.play}<span>Run page</span></button></div></div>`
   const busy = fxGetting.has(f.path) ? ' disabled' : ''
   const acts = `${FX_OPENS.test(f.path) ? `<button type="button" class="btn sm" data-fx="open" ${at}${busy}>Open</button>` : ''}<button type="button" class="btn sm" data-fx="show" ${at}${busy}>${FX_FOLDER()}</button>`
-  return `<div class="fx-card fx-file">${head(acts)}</div>`
+  // (from a linked computer: a wider card, for the line that says so; and a line along its foot while it's being brought)
+  const got = fxGot(f)
+  return `<div class="fx-card fx-file${f.home ? ' theirs' : ''}${got === null ? '' : ' getting'}"${got === null ? '' : ` style="--got:${got.toFixed(3)}"`}>${head(acts)}</div>`
 }
 
 // ---- the player ----------------------------------------------------------------------------------------------------
@@ -766,6 +773,9 @@ function fxSay(f) {
     const hit = fxFile(card.querySelector('[data-id][data-i]') ?? card)
     if (hit?.f?.path !== f.path) continue
     card.querySelector('.fx-what small').textContent = fxMeta(hit.f)
+    const got = fxGot(hit.f)
+    card.classList.toggle('getting', got !== null)
+    card.style.setProperty('--got', got === null ? '0' : got.toFixed(3))
     for (const b of card.querySelectorAll('.fx-file [data-fx=open], .fx-file [data-fx=show]')) b.disabled = fxGetting.has(f.path)
   }
   fxViewer?.said()
