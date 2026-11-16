@@ -74,6 +74,11 @@ const ICONS = {
   clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
   expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
+  // notifications: a bell, and a bell asleep (held: paused, or outside your hours)
+  bell: svg('<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 21h4"/>'),
+  bellZ: svg('<path d="M12.5 5.02A6 6 0 0 0 6 11v5.5l-1.5 2h15l-1.5-2V13"/><path d="M10 21h4"/><path d="M16 3.5h4.5L16 9h4.5"/>'),
+  eye: svg('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>'),
+  stack: svg('<path d="m12 4 8.5 4.5L12 13 3.5 8.5z"/><path d="m3.5 12.5 8.5 4.5 8.5-4.5"/><path d="m3.5 16.5 8.5 4.5 8.5-4.5"/>'),
   // kept awake: a hot mug
   mug: svg('<path d="M5 9.5h11v5.5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9.5z"/><path d="M16 11h1.2a2.4 2.4 0 0 1 0 4.8H16"/><path d="M8.5 3.5v2.5M12.5 3.5v2.5"/>'),
   moon: svg('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'),
@@ -3511,6 +3516,37 @@ function themeButton(btn) {
     btn.innerHTML = ICONS[icon]
     btn.title = `${label} (click for ${NEXT_THEME[theme] === 'system' ? 'auto' : NEXT_THEME[theme]})`
   }
+}
+
+// ---- notifications: when CLIque may interrupt you (core/notify.js; state.notify) -----------------------------------
+
+// A time as this computer writes it ("8:00", "8:00 AM"), with the day when it isn't today ("Tue 8:00").
+function notifyTime(ms, now = Date.now()) {
+  const d = new Date(ms)
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return d.toDateString() === new Date(now).toDateString() ? time : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`
+}
+// 'HH:MM' the same way
+const notifyClock = (hhmm) => new Date(2026, 0, 1, Number(hhmm.slice(0, 2)), Number(hhmm.slice(3))).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+// What's being kept meanwhile, for a tooltip: "3 are held: you get one summary at 8:00."
+function notifyHeld(n) {
+  if (!n?.quiet) return ''
+  const then = n.until == null ? 'when you turn them back on' : `at ${notifyTime(n.until)}`
+  return n.held ? `${n.held} ${n.held === 1 ? 'is' : 'are'} held: you get one summary ${then}.` : `Anything that comes up is held, and you get one summary ${then}.`
+}
+// Pause notifications, from the menu bar's popover and the dashboard's Notifications sheet: for an hour, until tomorrow
+// morning, until you turn them back on. Paused: turn them back on, or pick another length.
+function pauseMenu(at, n, { schedule = null } = {}) {
+  const until = n?.why === 'pause' ? n.pause?.until : undefined
+  const set = (pause) => clique.call('notifications', { pause }).catch((err) => oops('Couldn’t change notifications', err))
+  return popMenu(at, [
+    ...(n?.why === 'pause' ? [{ label: 'Turn notifications back on', icon: ICONS.bell, act: 'off' }, '-'] : []),
+    { head: 'Pause notifications' },
+    { label: 'For 1 hour', icon: ICONS.bellZ, act: 'hour' },
+    { label: 'Until tomorrow morning', icon: ICONS.bellZ, act: 'morning', hint: n?.morning ? notifyTime(n.morning) : '', on: until != null && until === n?.morning },
+    { label: 'Until I turn them back on', icon: ICONS.bellZ, act: 'manual', on: until === null },
+    ...(schedule ? ['-', { label: 'Schedule…', icon: ICONS.clock, act: 'schedule' }] : []),
+  ], (act) => (act === 'schedule' ? schedule() : set(act)))
 }
 
 // A small pop-up menu (right-click on an agent, the More button): items are { label, icon, act, danger, hint,

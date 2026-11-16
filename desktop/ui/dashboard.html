@@ -508,6 +508,23 @@
     .sv-mode small { color: var(--fg2); font-size: 12px; }
     .sv-forced { font-size: 12px; color: var(--fg2); }
     .sv-note { margin: 8px 2px 0; font-size: 12px; line-height: 1.45; color: var(--fg2); }
+    /* Notifications: when CLIque may interrupt you. The hours and "at any time" share one cell and the sentence under them
+       keeps two lines, so the sheet is the same height whichever is picked. */
+    dialog.notify-sheet { width: 520px; }
+    .nf-when { display: grid; align-items: center; height: 28px; margin: 12px 2px 0; font-size: 13px; }
+    .nf-when > * { grid-area: 1 / 1; visibility: hidden; }
+    .nf-when > .on { visibility: visible; }
+    .nf-hours { display: flex; align-items: center; gap: 8px; color: var(--fg2); }
+    .nf-hours select { appearance: none; height: 28px; padding: 0 10px; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
+    .nf-any { color: var(--fg2); }
+    .nf-say { min-height: 36px; margin: 10px 2px 18px; font-size: 12px; line-height: 18px; color: var(--fg2); text-wrap: pretty; }
+    .nf-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 11px 14px; }
+    .nf-row .nf-icon { grid-row: 1 / span 2; display: grid; place-items: center; color: var(--fg2); }
+    .nf-row .nf-icon svg { width: 18px; height: 18px; }
+    .nf-row b { font-weight: 600; }
+    .nf-row .nf-about { grid-column: 2; font-size: 12px; line-height: 1.45; color: var(--fg2); text-wrap: pretty; }
+    .nf-row .btn { grid-column: 3; grid-row: 1 / span 2; min-width: 76px; justify-content: center; }
+    .notify-sheet .section-label { margin: 0 2px 8px; }
     /* The spend check-in: a row per provider, built from the agent sheet's rows (collection.css .ed-row, .limit-custom,
        .limit-note). Its line keeps room for two lines, so the sheet is as tall with nothing picked as with everything. */
     dialog.checkin-sheet { width: 600px; }
@@ -811,6 +828,27 @@
       <p class="tl-note">Ask any agent in the chat, like “make a workspace called Storefront for ada and milo”. It runs <code>clique app</code> in its terminal.</p>
     </div>
     <p class="err" data-tl-err></p>
+    <div class="sheet-foot"><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
+  </dialog>
+
+  <dialog id="notify" class="sheet notify-sheet">
+    <h2 class="sheet-title"><span class="h-icon"></span>Notifications</h2>
+    <p class="lead">When CLIque may interrupt you. Whatever you pick, everything that needs you still waits in the chat, in Needs you and in the count in the <span data-nf-bar>menu bar</span>.</p>
+    <div class="sheet-body">
+      <h4 class="section-label">Notify me</h4>
+      <div class="seg fill nf-days" aria-label="Notify me"><button data-nf-days="always">At any time</button><button data-nf-days="every">Every day</button><button data-nf-days="weekdays">Weekdays</button></div>
+      <div class="nf-when">
+        <span class="nf-any">Day and night, all week.</span>
+        <span class="nf-hours">from <select class="field" data-nf-time="from" aria-label="From"></select> to <select class="field" data-nf-time="to" aria-label="To"></select></span>
+      </div>
+      <p class="nf-say" aria-live="polite"></p>
+      <div class="group-list">
+        <div class="nf-row nf-pause"><span class="nf-icon"></span><b></b><span class="nf-about"></span><button class="btn" data-nf-pause aria-haspopup="menu"></button></div>
+        <div class="nf-row"><span class="nf-icon" data-nf-icon="eye"></span><b>Not while you’re looking</b><span class="nf-about">Nothing notifies you about the conversation that’s open in front of you.</span></div>
+        <div class="nf-row"><span class="nf-icon" data-nf-icon="stack"></span><b>One at a time</b><span class="nf-about">Agents that ask together arrive as one notification, and one you’ve answered, here, on your phone or in its terminal, is taken away.</span></div>
+      </div>
+    </div>
+    <p class="err" data-nf-err></p>
     <div class="sheet-foot"><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
   </dialog>
 

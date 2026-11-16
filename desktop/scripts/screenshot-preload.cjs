@@ -516,7 +516,12 @@ if (FIXTURE === 'q') {
   for (const r of Object.keys(READS)) delete READS[r]
   Object.assign(READS, { since: now })
 }
-const state = { savers: SAVER_STATE, checkIn: { at: {}, then: 'ask' }, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false }, schedules: { list: [], repo: true } }
+// When CLIque may notify you (core/notify.js): any time, not paused; window.__cliqueNotify({ … }) changes it as the app's
+// own action would ({ days, from, to } or { pause }), with `held` as how many are being kept
+const notifyCore = require('../core/notify.js')
+let notifyPrefs = notifyCore.prefsOf(null)
+const notifyState = (held = 0) => ({ ...notifyPrefs, ...notifyCore.quietNow(notifyPrefs), held, morning: notifyCore.morningAfter(notifyPrefs) })
+const state = { notify: notifyState(), savers: SAVER_STATE, checkIn: { at: {}, then: 'ask' }, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false }, schedules: { list: [], repo: true } }
 // Whether the computer is kept awake, as main.js says it (core/awake.js makes the line there): while this computer's
 // agents work, when that's on.
 function awakeOf(enabled) {
@@ -808,8 +813,15 @@ function voiceCall(action) {
 window.__cliqueFit = null
 window.__cliqueEmit = (channel, ...args) => listeners[channel]?.forEach((fn) => fn(...args))
 window.__cliqueState = state
+window.__cliqueNotify = (patch, held = 0) => {
+  notifyPrefs = notifyCore.changed(notifyPrefs, patch)
+  state.notify = notifyState(held)
+  window.__cliqueEmit('state', state)
+}
+window.__cliqueLooking = null // what the page last said it has open (clique.looking)
 window.__cliqueHistory = usageHistory() // what the Usage view asks for (a shot can swap it: nothing yet, a first look)
 window.clique = {
+  looking: (view) => (window.__cliqueLooking = view),
   platform: PLATFORM,
   home: HOME,
   dev: QUERY.get('dev') === '1',
@@ -827,6 +839,12 @@ window.clique = {
       Object.assign(state.savers.on, args[0])
       emit()
       return state.savers
+    }
+    if (action === 'notifications') {
+      notifyPrefs = notifyCore.changed(notifyPrefs, args[0])
+      state.notify = notifyState(state.notify.held)
+      emit()
+      return state.notify
     }
     // the spend check-in, per provider: { at: { claude: 5, codex: null }, then: 'ask' | 'tell' }
     if (action === 'checkIn') {
