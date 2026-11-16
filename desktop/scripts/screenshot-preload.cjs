@@ -464,6 +464,14 @@ if (FIXTURE === 'q') {
   Object.assign(READS, { since: now })
 }
 const state = { savers: SAVER_STATE, reads: READS, autopilot: true, theme: 'light', providers: PROVIDERS, agents: AGENTS, feed: FEED, channels: CHANNELS, computers: COMPUTERS, usage: USAGE, spend: SPEND, tasks: { tickets: TICKETS, triage: 'June', autofix: false } }
+// Whether the computer is kept awake, as main.js says it (core/awake.js makes the line there): while this computer's
+// agents work, when that's on.
+function awakeOf(enabled) {
+  const working = state.agents.filter((a) => !a.home && !a.cloneOf && a.status === 'working').length
+  const on = enabled && working > 0
+  return { on, reasons: on ? ['working'] : [], enabled, line: on ? `Keeping this ${PLATFORM === 'win32' ? 'PC' : 'Mac'} awake while ${working === 1 ? 'an agent works' : `${working} agents work`}` : '' }
+}
+state.awake = awakeOf(true)
 
 // Workspaces, as Clique.workspaces() reports them. Storefront has everyone; Docs site is the second. ?fixture=workspaces has Docs site on screen with three of the clique, Storefront
 // in the background with two of its clique needing you and a reply you haven't read, and Research parked.
@@ -719,6 +727,12 @@ window.clique = {
       Object.assign(state.savers.on, args[0])
       emit()
       return state.savers
+    }
+    // stay awake while agents work: on or off
+    if (action === 'keepAwake') {
+      state.awake = awakeOf(Boolean(args[0]))
+      emit()
+      return Boolean(args[0])
     }
     // agent tools: off, ask (the default) or auto
     if (action === 'tools') {

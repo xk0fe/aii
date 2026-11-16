@@ -20,6 +20,7 @@ import { Discovery, DISCOVER_PORT } from './discover.js'
 import { packAgents, unpackAgents } from './pack.js'
 import { moveOut, moveRead, moveEnd, moveWrite, moveIn, moveDrop, agentMoved, folderInfo, folders } from './move.js'
 import { Phones } from './phones.js'
+import { workingHere } from './awake.js'
 import { sweepFiles, ATTACHMENT_DAYS, CACHE_DAYS } from './keep.js'
 import { SAVERS, SAVER_IDS, saversFrom, report } from './savers.js'
 import { MODES, toolMode, parse as parseTool, help as toolHelp, offText, alertOf } from './tools.js'
@@ -382,6 +383,27 @@ export class Clique extends EventEmitter {
   setTheme(theme) {
     this.config.data.theme = ['light', 'dark'].includes(theme) ? theme : 'system'
     this.config.save()
+  }
+
+  // Whether this computer stays awake while its agents work (core/awake.js). On unless config.json says
+  // "keepAwake": false.
+  setKeepAwake(on) {
+    if (on) delete this.config.data.keepAwake
+    else this.config.data.keepAwake = false
+    this.config.save()
+    this.changed()
+    return Boolean(on)
+  }
+
+  // What could keep this computer awake right now, for decide() in core/awake.js.
+  awakeNow() {
+    return {
+      working: workingHere(this.hubs.values()),
+      enabled: this.config.data.keepAwake !== false,
+      sharing: Boolean(this.sharing),
+      linked: [...this.links.values()].some((l) => l.peer),
+      phones: this.phones.live.size > 0,
+    }
   }
 
   // Agent tools: 'off', 'ask' (the default, so config.json doesn't say it) or 'auto'. Turned off, the cards still up
