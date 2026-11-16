@@ -1,0 +1,107 @@
+/* The Usage view (ui/usage.js): a calendar per provider, a square a day, darker for more tokens.
+   Each provider has a hue of its own (the only place they do: a calendar is a chart, and its hue says whose it is);
+   the steps are that hue mixed into the surface, so more is always further from the page in either theme. Everything
+   around the squares is the app's ink and greys. */
+.usage-view {
+  --us-claude: #EB6834; --us-codex: #2A78D6; --us-glm: #1BAF7A; --us-local: #6250D6;
+  --us-zero: var(--fill); --us-gap: 3px;
+  display: flex; flex-direction: column; overflow: hidden; background: var(--surface);
+}
+@media (prefers-color-scheme: dark) {
+  .usage-view { --us-claude: #D95926; --us-codex: #3987E5; --us-glm: #199E70; --us-local: #9085E9; }
+}
+.usage-view [data-hue=claude] { --hue: var(--us-claude); }
+.usage-view [data-hue=codex] { --hue: var(--us-codex); }
+.usage-view [data-hue=glm] { --hue: var(--us-glm); }
+.usage-view [data-hue=local] { --hue: var(--us-local); }
+.usage-view [data-hue=other] { --hue: var(--fg2); }
+
+.us-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; container: usage / inline-size; }
+.us-wrap { display: flex; flex-direction: column; gap: 16px; max-width: 1040px; margin: 0 auto; padding: 20px var(--gx, 24px) 40px; }
+/* the logs being read, the first time: a hairline along the top (the header's line says how far) */
+.us-prog { position: absolute; z-index: 2; top: 0; left: 0; right: 0; height: 2px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.us-prog.on { opacity: 1; }
+.us-prog i { display: block; height: 100%; background: var(--fg); transform: scaleX(0); transform-origin: left; transition: transform .6s linear; }
+.usage-view .us-none { position: absolute; inset: 0; }
+.usage-view .us-none > svg { width: 40px; height: 40px; color: var(--fg3); }
+
+/* the view's parts rise into place as it opens, one after the other (the same move as the terminals' tiles) */
+.usage-view:not(.hidden) .us-wrap > * { animation: us-in var(--t-move) var(--out) backwards; animation-delay: calc(min(sibling-index(), 8) * 30ms); }
+@keyframes us-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .usage-view .us-wrap > * { animation: none; } }
+
+/* ---- the range's numbers: four tiles ---- */
+.us-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.us-tile { display: flex; flex-direction: column; min-width: 0; padding: 12px 16px 14px; border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+.us-tile span { font-size: 12px; line-height: 16px; color: var(--fg2); }
+.us-tile b { margin-top: 2px; font: 600 26px/32px var(--font-brand); font-variant-numeric: tabular-nums; color: var(--fg); white-space: nowrap; }
+.us-tile small { font-size: 12px; line-height: 16px; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container usage (max-width: 760px) { .us-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---- a provider: its name, its numbers, its limits now, and its calendar ---- */
+.us-prov, .us-detail { display: flex; flex-direction: column; gap: 12px; padding: 14px 18px 18px; border-radius: var(--r-card); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.us-ph { display: flex; align-items: baseline; gap: 10px; min-width: 0; min-height: 24px; }
+.us-ph h2 { flex: none; margin: 0; font: 600 16px/24px var(--font-brand); color: var(--fg); }
+.us-dot { flex: none; align-self: center; display: block; width: 10px; height: 10px; border-radius: 3px; background: var(--hue); }
+/* its numbers, in one line; a narrow window wraps them, whole facts at a time, rather than cutting one off */
+.us-facts { flex: 1; min-width: 0; font-size: 13px; line-height: 20px; color: var(--fg2); font-variant-numeric: tabular-nums; }
+.us-facts > span { white-space: nowrap; }
+.us-facts b { font-weight: 600; color: var(--fg); }
+.us-facts i { margin: 0 3px 0 7px; font-style: normal; color: var(--fg3); }
+.us-lim i { margin: 0 7px; font-style: normal; color: var(--fg3); }
+.us-facts .us-cost, .us-facts abbr { cursor: help; text-decoration: none; }
+.us-lim { flex: none; font-size: 12px; color: var(--fg2); font-variant-numeric: tabular-nums; white-space: nowrap; cursor: help; }
+.us-lim b { font-weight: 500; }
+.us-lim .warm { color: var(--ctx-warm); }
+.us-lim .hot { color: var(--ctx-hot); }
+@container usage (max-width: 700px) { .us-lim { display: none; } }
+
+/* the calendar: weeks across, Monday at the top; it takes the card's width, the squares stay square */
+.us-cal { display: grid; grid-template-columns: 24px minmax(0, 1fr); grid-template-rows: 14px auto; gap: 4px 6px; }
+.us-months { grid-area: 1 / 2; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); column-gap: var(--us-gap); font-size: 11px; line-height: 14px; color: var(--fg3); }
+.us-months span { grid-row: 1; white-space: nowrap; }
+.us-wd { grid-area: 2 / 1; display: grid; grid-template-rows: repeat(7, minmax(0, 1fr)); row-gap: var(--us-gap); font-size: 10px; color: var(--fg3); }
+.us-wd span { display: flex; align-items: center; line-height: 1; }
+.us-cells { grid-area: 2 / 2; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); grid-template-rows: repeat(7, auto); grid-auto-flow: column; gap: var(--us-gap); }
+.us-c, .us-x { aspect-ratio: 1; min-width: 0; }
+.us-c { position: relative; padding: 0; border: 0; border-radius: 22%; background: var(--us-zero); cursor: pointer; outline-offset: 1px; }
+.us-c[data-l="1"], .us-legend i[data-l="1"] { background: color-mix(in srgb, var(--hue) 28%, var(--surface)); }
+.us-c[data-l="2"], .us-legend i[data-l="2"] { background: color-mix(in srgb, var(--hue) 52%, var(--surface)); }
+.us-c[data-l="3"], .us-legend i[data-l="3"] { background: color-mix(in srgb, var(--hue) 76%, var(--surface)); }
+.us-c[data-l="4"], .us-legend i[data-l="4"] { background: var(--hue); }
+/* today: a ring inside its square, so the newest day is easy to find while it's still empty */
+.us-c.today { box-shadow: inset 0 0 0 1.5px var(--fg3); }
+.us-c:hover { outline: 1.5px solid var(--fg2); }
+.us-c:focus-visible { outline: 2px solid var(--ring); }
+.us-c[aria-pressed=true] { outline: 2px solid var(--fg); }
+
+/* under the calendars: where the numbers come from, and the scale they share (in ink: every hue steps the same way) */
+.us-foot { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 0 2px; font-size: 12px; line-height: 16px; color: var(--fg3); }
+.us-note { max-width: 660px; text-wrap: pretty; }
+.us-legend { --hue: var(--fg2); flex: none; display: inline-flex; align-items: center; gap: 3px; cursor: help; }
+.us-legend i { width: 11px; height: 11px; border-radius: 3px; background: var(--us-zero); }
+.us-legend i:first-of-type { margin-left: 4px; }
+.us-legend i:last-of-type { margin-right: 4px; }
+
+/* ---- who used it, in which folders and on which models: the whole range, or the day picked ---- */
+.us-detail .us-ph .btn { flex: none; align-self: center; }
+.us-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 32px; min-height: 172px; align-items: start; }
+.us-cols.none { visibility: hidden; }
+@container usage (max-width: 700px) { .us-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.us-col { min-width: 0; }
+.us-col .section-label { margin-bottom: 6px; }
+.us-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; grid-template-rows: 22px 4px; gap: 3px 8px; align-items: center; padding: 4px 0 5px; font-size: 13px; }
+.us-ic { display: grid; place-items: center; width: 22px; height: 22px; line-height: 0; color: var(--fg3); }
+.us-ic > svg { width: 16px; height: 16px; }
+.us-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.us-row.rest .us-name { color: var(--fg2); }
+.us-row b { font-weight: 500; font-variant-numeric: tabular-nums; color: var(--fg2); }
+.us-bar { grid-column: 1 / -1; display: block; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.us-bar i { display: block; height: 100%; border-radius: 2px; background: var(--fg2); }
+.us-row[data-hue] .us-bar i { background: var(--hue); }
+
+/* a day's numbers over its square: the number first, then what and when */
+.us-tip { position: absolute; z-index: 5; top: 0; left: 0; display: flex; flex-direction: column; padding: 6px 10px 7px; border-radius: 8px; background: var(--tip); color: var(--tip-fg); font-size: 12px; line-height: 16px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity var(--t-quick); }
+.us-tip.on { opacity: 1; }
+.us-tip b { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.us-tip span, .us-tip small { font-size: 12px; opacity: .72; }

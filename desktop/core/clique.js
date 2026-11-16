@@ -5,13 +5,15 @@ import { forClients } from './threads.js'
 import { EventEmitter } from 'node:events'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage } from './hub.js'
 import { movedPath } from './home.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
 import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
-import { providersFrom } from './providers.js'
+import { providersFrom, expandEnv } from './providers.js'
+import { History } from './history.js'
 import { HostRunner } from './ptyclient.js'
 import { serve } from './server.js'
 import { LinkHost, LinkClient, PairClient, identity, addresses, firewallWarning, makeCode, readCode, slug, DEFAULT_PORT } from './link.js'
@@ -23,12 +25,33 @@ import { sweepFiles, ATTACHMENT_DAYS, CACHE_DAYS } from './keep.js'
 import { SAVERS, SAVER_IDS, saversFrom, report } from './savers.js'
 import { MODES, toolMode, parse as parseTool, help as toolHelp, offText, alertOf } from './tools.js'
 
+// Where Claude Code and Codex keep their logs (as Hub.lookBack reads them), and the folder of any provider of yours
+// that has its own (CLAUDE_CONFIG_DIR or CODEX_HOME in its env): that folder's logs are that provider's.
+export function logRoots(providers = {}, env = process.env) {
+  const claude = (dir) => path.join(dir, 'projects')
+  const codex = (dir) => path.join(dir, 'sessions')
+  const roots = [
+    { dir: claude(env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')), cli: 'claude' },
+    { dir: codex(env.CODEX_HOME || path.join(os.homedir(), '.codex')), cli: 'codex' },
+  ]
+  for (const p of Object.values(providers)) {
+    const cli = p.cli ?? 'claude'
+    const home = expandEnv(p.env)[cli === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']
+    const dir = home && (cli === 'codex' ? codex(home) : claude(home))
+    if (dir && !roots.some((r) => path.resolve(r.dir) === path.resolve(dir))) roots.push({ dir, cli, provider: p.id })
+  }
+  return roots
+}
+
 export const LINK_DIR = path.join(HOME, 'link')
 export const CACHE = path.join(LINK_DIR, 'cache')
 const SETTINGS = path.join(LINK_DIR, 'link.json')
 const DISCOVER_FOR = 150000 // Computers open, as the dashboard last said: it says so every minute
 // Images nothing needs any more go this long after CLIque starts (sweepImages), once its workspaces have read their chats.
 const SWEEP_AFTER = 60000
+// The usage history (core/history.js) is brought up to date a few minutes after CLIque starts, then a few times a day.
+const HISTORY_AFTER = 3 * 60000
+const HISTORY_EVERY = 6 * 3600000
 // What a linked computer may ask with no workspace (see serve).
 const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'readImage', 'moveWrite', 'moveDrop', 'folderInfo'])
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
@@ -410,6 +433,21 @@ export class Clique extends EventEmitter {
     for (const code of this.settings.peers ?? []) this.connect(code, { save: false }).catch(() => {})
     this.sweepTimer = setTimeout(() => this.sweepImages(), SWEEP_AFTER)
     this.sweepTimer.unref?.()
+    this.keepHistory(HISTORY_AFTER)
+  }
+
+  // The usage history keeps itself up to date while CLIque runs, whether or not the Usage view is ever opened: Claude
+  // Code deletes its logs after a month, so a day that isn't read by then is gone. A look only reads what was added
+  // since the last one, in a worker thread.
+  keepHistory(wait = HISTORY_EVERY) {
+    clearTimeout(this.historyTimer)
+    this.historyTimer = setTimeout(() => {
+      try {
+        this.usageHistory()
+      } catch {}
+      this.keepHistory()
+    }, wait)
+    this.historyTimer.unref?.()
   }
 
   // Images nothing needs any more (core/keep.js): attachments that no workspace's chat, task or agent refers to, saved
@@ -475,6 +513,7 @@ export class Clique extends EventEmitter {
 
   close() {
     clearTimeout(this.sweepTimer)
+    clearTimeout(this.historyTimer)
     clearTimeout(this.computerTimer)
     for (const l of this.links.values()) {
       l.client?.close()
@@ -800,6 +839,24 @@ export class Clique extends EventEmitter {
     else delete this.config.data.savers
     this.config.save()
     return this.saversState()
+  }
+
+  // ---- usage, day by day (core/history.js): what Claude Code and Codex used on this computer, for the Usage view ----
+  // Read from the CLIs' own logs, so it's everything they did here: every workspace's agents, and what you ran outside
+  // CLIque. The clique's agents go by name (their creatures stand beside their share); the rest is "outside CLIque".
+  // -> { at, reading: { done, total } | null, first, providers: [{ id, label, days }] }, Claude and Codex first.
+  usageHistory() {
+    const providers = () => providersFrom(this.config.data, this.config.discovered)
+    this.history ??= new History({ file: path.join(HOME, 'history.json'), roots: () => logRoots(providers()) })
+    const all = providers()
+    const own = (Array.isArray(this.config.data.workspaces) ? this.config.data.workspaces : []).flatMap((w) => named(w?.agents))
+    const names = [...new Set([...this.sharedNames(), ...own.map((a) => a.name), ...[...this.hubs.values()].flatMap((h) => [...h.agents.keys()])])]
+    const { providers: found, ...rest } = this.history.state({ names, providers: all })
+    const order = (id) => (id === 'claude' ? 0 : id === 'codex' ? 1 : 2)
+    return {
+      ...rest,
+      providers: Object.keys(found).sort((x, y) => order(x) - order(y) || x.localeCompare(y)).map((id) => ({ id, label: all[id]?.label ?? id, days: found[id].days })),
+    }
   }
 
   // A linked computer's agent, as this computer writes it.

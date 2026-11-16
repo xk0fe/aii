@@ -324,6 +324,50 @@ const SHOTS = {
     await js(win, click('[data-mode=cards]'))
     win.destroy()
   },
+  // Usage (ui/usage.js): a calendar per provider from Claude Code's and Codex's own logs, the range's numbers, and who
+  // used it; then a day picked (its square ringed in both calendars, the breakdown under them the day's), one year,
+  // and the first look at the logs, the newest days in and the rest on their way.
+  async usage(theme) {
+    const win = await dashboard(theme, 'usage', { height: 1010, reset: ['clique.usage.range'] })
+    await sleep(700)
+    await save(win, `usage-${theme}`)
+    // a busy weekday three weeks back, in whichever column it falls
+    const day = await js(win, `const d = new Date(Date.now() - 20 * 864e5); while (d.getDay() === 0 || d.getDay() === 6 || !window.__cliqueHistory.providers[0].days[key(d)] || !window.__cliqueHistory.providers[1].days[key(d)]) d.setDate(d.getDate() - 1)
+      function key(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+      return key(d)`)
+    const cell = `.us-prov[data-prov=claude] .us-c[data-day="${day}"]`
+    await tap(win, await glide(win, { x: 700, y: 500 }, await center(win, cell), 200))
+    await sleep(500)
+    await save(win, `usage-day-${theme}`)
+    await js(win, click('[data-us=clear]'))
+    await js(win, click('.page-head[data-for=usage] [data-us=range]'))
+    await sleep(300)
+    await save(win, `usage-range-${theme}`)
+    await js(win, `document.querySelector('.menu [data-menu-act="${new Date().getFullYear()}"]').click()`)
+    await sleep(500)
+    await save(win, `usage-year-${theme}`)
+    win.destroy()
+    const first = await dashboard(theme, 'usage', { height: 1010, fixture: 'usage-reading', reset: ['clique.usage.range'] })
+    await sleep(900)
+    await save(first, `usage-reading-${theme}`)
+    await js(first, `window.__cliqueHistory = { at: Date.now(), reading: null, first: null, providers: [] }; localStorage.setItem('clique.place', 'chat')`)
+    await js(first, click('.nv[data-place=clique]'))
+    await js(first, click('.nv[data-place=usage]'))
+    await sleep(500)
+    await save(first, `usage-none-${theme}`)
+    first.destroy()
+    // the way in from the sidebar's foot: under the limits, Usage by day
+    const foot = await dashboard(theme, 'chat', { height: 600 })
+    await js(foot, click('.use-line'))
+    await sleep(400)
+    await save(foot, `usage-popover-${theme}`)
+    foot.destroy()
+    // a narrow window: the tiles two by two, the limits out of the provider's line, the squares smaller but all there
+    const narrow = await dashboard(theme, 'usage', { width: 940, height: 1010, reset: ['clique.usage.range'] })
+    await sleep(700)
+    await save(narrow, `usage-narrow-${theme}`)
+    narrow.destroy()
+  },
   // The agent's sheet: no scrolling, one tab at a time.
   async detail(theme) {
     const win = await dashboard(theme, 'clique')
@@ -1742,7 +1786,7 @@ const SHOTS = {
 
 async function dashboard(theme, view, { width = 1440, height = 880, fixture, reset = [] } = {}) {
   const win = await open('dashboard.html', { theme, width, height, fixture })
-  // the places: chat (a channel), clique (Agents), tasks, terminals; grid and focus are Terminals laid out that way
+  // the places: chat (a channel), clique (Agents), tasks, terminals, usage; grid and focus are Terminals laid out that way
   const place = { grid: 'terminals', focus: 'terminals' }[view] ?? view
   const layout = view === 'focus' ? 'focus' : view === 'grid' ? 'grid' : null
   await js(win, `localStorage.setItem('clique.place', '${place}'); ${layout ? `localStorage.setItem('clique.layout', '${layout}');` : ''} localStorage.setItem('clique.target', 'auto'); localStorage.removeItem('clique.edTab'); for (const k of Object.keys(localStorage)) if (k.startsWith('clique.channel.')) localStorage.removeItem(k); ${reset.map((k) => `localStorage.removeItem('${k}');`).join(' ')}`)
