@@ -21,5 +21,7 @@ export {
   CLOSE,
   CALLS,
   LISTS,
+  HANDY_REACTIONS,
+  reactionGroups,
 } from '../../../shared/protocol.js'
 export { apply, diff } from '../../../shared/sync.js'

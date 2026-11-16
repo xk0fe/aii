@@ -124,7 +124,11 @@ export type FeedEntry = {
   empty?: boolean
   count?: number
   subs?: { type: string; description?: string; tools?: number; ms?: number; running?: boolean }[]
+  reactions?: Reaction[] // one emoji each, in place of a written "got it" (shared/protocol.js)
 }
+
+// Who put which emoji on a message, and the few words that came with it (an agent's `clique react`, or yours on the computer)
+export type Reaction = { by: string; emoji: string; at?: number; said?: string }
 
 export type Face = { name: string; avatar?: Avatar; status?: string; activity?: string }
 

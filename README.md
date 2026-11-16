@@ -175,8 +175,14 @@ Open **Computers** on two of your machines and they find each other. Click **Lin
 ### Spend less
 
 - **Usage limits** for your Claude and Codex accounts on every computer, with the pace they're heading at and a heads-up before you run out.
+- **Usage by day**: a calendar for each provider, a square a day, darker for more tokens. Pick a day to see which agents used it, in which folders and on which models. It's read from Claude Code's and Codex's own logs on your computer, so it covers what you ran outside CLIque too.
 - **What it costs**, per agent and per task.
 - **Token savers**: six switches that cut what a clique spends, such as starting fresh after a long break and showing agents only the notes they haven't read. Each one measures what it saved.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/usage-dark.webp">
+  <img src="docs/images/usage-light.webp" alt="Usage: a year of days for Claude and for Codex as calendars of squares, the totals above them, and under them which agents used it, in which folders and on which models" width="100%">
+</picture>
 
 ## How agents talk to each other
 
