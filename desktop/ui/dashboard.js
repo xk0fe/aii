@@ -1494,7 +1494,7 @@ function agentMenu(name, at) {
       { label: 'Message', icon: ICONS.reply, act: 'message' },
       { label: 'Open terminal', icon: ICONS.terminal, act: 'terminal', disabled: !terms.has(name) },
       { label: `Edit ${a.cloneOf.split('@')[0]}…`, icon: ICONS.edit, act: 'edit' },
-      ...(a.canStop ? [{ label: 'Stop', icon: ICONS.stop, act: 'stop', hint: 'ends its turn' }] : []),
+      ...(a.canStop ? [{ label: 'Stop', icon: ICONS.stop, act: 'stop', hint: 'it stays on' }] : []),
       '-',
       { label: 'Send it away', icon: ICONS.close, act: 'dismiss', danger: true },
     ], (act) => {
@@ -1518,7 +1518,7 @@ function agentMenu(name, at) {
     { label: 'Open terminal', icon: ICONS.terminal, act: 'terminal', disabled: !terms.has(name) && a.status !== 'resting' },
     { label: 'Edit…', icon: ICONS.edit, act: 'edit' },
     { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a.on || a.freshPending },
-    ...(a.on && a.canStop ? [{ label: 'Stop', icon: ICONS.stop, act: 'stop', hint: 'ends its turn' }] : []), // only while it's in a turn
+    ...(a.on && a.canStop ? [{ label: 'Stop', icon: ICONS.stop, act: 'stop', hint: 'it stays on' }] : []), // only while it's in a turn
     ...(places.length && !a.system ? ['-', ...places.map((g) => ({ label: `Move to ${g.name}`, icon: g.here ? ICONS.desktop : ICONS.laptop, act: `move:${g.key}`, disabled: !g.online, hint: g.online ? '' : 'offline' }))] : []),
     ...(joins.length ? ['-', ...joins.map((w) => ({ label: `Add to ${w.name}`, icon: wsTile(w, { size: 16 }), act: `join:${w.id}`, hint: w.parked ? 'asleep' : '' }))] : []),
     '-',

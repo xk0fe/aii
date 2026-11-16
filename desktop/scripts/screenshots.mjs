@@ -439,7 +439,8 @@ const SHOTS = {
     const row = await center(win, '.dm[data-agent="Ada"]')
     await js(win, `document.querySelector('.dm[data-agent="Ada"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: ${Math.round(row.x)}, clientY: ${Math.round(row.y)} }))`)
     await sleep(500)
-    await save(win, `stop-menu-${theme}`, { crop: await box('.menu[role="menu"]', [50, 40, 16, 190]) })
+    await js(win, `document.querySelector('[data-menu-act="stop"]')?.closest('.menu').setAttribute('id', 'stop-menu')`)
+    await save(win, `stop-menu-${theme}`, { crop: await box('#stop-menu', [50, 40, 16, 190]) })
     await js(win, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
     await sleep(300)
     // Agents: a card says how its agent is, with Stop beside it while it's in a turn

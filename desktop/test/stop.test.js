@@ -126,7 +126,7 @@ test('what was queued behind a stopped turn is not delivered when the agent goes
   assert.equal(agent('ada').status, 'idle')
   const queued = hub.feed.filter((e) => e.kind === 'msg' && e.to === 'ada').slice(1)
   assert.deepEqual(queued.map((m) => [m.from, m.queued, m.dropped, m.stopped]), [['june', false, true, true], ['you', false, true, true], ['you', false, true, true]])
-  assert.deepEqual(lines(), ["you stopped @ada. 3 messages waiting for it weren't delivered"], 'one line, not one per message')
+  assert.deepEqual(lines(), ["you stopped @ada. 3 waiting messages weren't delivered"], 'one line, not one per message')
   // asking again continues: only the new message goes in
   hub.send({ to: 'ada', text: 'carry on with the totals, skip the PR' })
   mock.timers.tick(1000)
@@ -288,7 +288,7 @@ test('several agents stopped together make one line, in the channel it was press
   hub.send({ from: 'june', to: 'theo', text: 'also the docs build' })
   const r = hub.stopTurns(['ada', 'theo'], { channel: 'review' })
   assert.deepEqual(r, { stopped: ['ada', 'theo'], dropped: 1 })
-  assert.deepEqual(lines(), ["you stopped @ada and @theo. A message waiting for them wasn't delivered"])
+  assert.deepEqual(lines(), ["you stopped @ada and @theo. A waiting message wasn't delivered"])
   assert.equal(hub.feed.at(-1).channel, 'review')
 })
 
@@ -310,6 +310,75 @@ test("a stopped clone doesn't help itself to what waits for its original; a new 
   assert.equal(typedInto('ada.2').length, before, 'the stopped clone took nothing more')
   assert.equal(agent('ada').inbox.length, 1, "what waits for ada still waits for ada: only the clone was stopped")
   assert.deepEqual(lines(), ['you stopped @ada.2'])
+})
+
+// ---- what an independent review found ---------------------------------------------------------------------------------
+
+test('past its context limit, a stopped agent is not asked where things stand: that waits for its next message', () => {
+  atWork('ada')
+  Object.assign(agent('ada'), { freshPending: true, freshLimit: true })
+  const before = typedInto('ada').length
+  hub.stopTurns(['ada'])
+  quiet('ada')
+  mock.timers.tick(60000)
+  assert.equal(typedInto('ada').length, before, 'no wrap-up prompt, no new conversation carrying the stopped work on')
+  assert.equal(agent('ada').status, 'idle')
+  assert.equal(agent('ada').freshPending, true, 'the new conversation is still owed')
+  hub.send({ to: 'ada', text: 'something else' })
+  mock.timers.tick(2000)
+  assert.match(typedInto('ada').at(-1), /passed its context limit/, 'asked with its next message, as before')
+})
+
+test('a question it had put aside while it asked a teammate in turn is answered too: nobody is left waiting', async () => {
+  agent('june').status = 'working'
+  const junes = hub.question({ from: 'june', to: 'ada', text: 'which endpoint returns the totals?', hold: 600000 })
+  mock.timers.tick(1500)
+  pickUp('ada')
+  hub.question({ from: 'ada', to: 'theo', text: 'is the fixture seeded?', hold: 1000 }) // ada asks on, and gives up waiting
+  mock.timers.tick(1500)
+  pickUp('theo')
+  hub.onHook('ada', { hook_event_name: 'Stop', last_assistant_message: 'Waiting on Theo.' }) // june's question stays open
+  mock.timers.tick(1000)
+  assert.equal(await peek(junes), 'pending')
+  atWork('ada', 'meanwhile, rename the helper')
+  hub.stopTurns(['ada'])
+  assert.match(await peek(junes), /@ada was stopped by the user, so it won't answer/)
+  assert.equal([...hub.calls.values()].filter((c) => c.from === 'june').length, 0)
+})
+
+test("a hand-off from a turn that's over is not this turn's: stopped before the next prompt is picked up, it stays", () => {
+  atWork('ada')
+  agent('june').status = 'working'
+  hub.send({ from: 'ada', to: 'june', text: 'document the new totals endpoint' }) // waits for june
+  hub.onHook('ada', { hook_event_name: 'Stop', last_assistant_message: 'Done, June has the docs.' })
+  runner.drawing.delete('ada')
+  mock.timers.tick(5000)
+  hub.send({ to: 'ada', text: 'now the coupons' })
+  mock.timers.tick(1500) // typed, not picked up yet
+  assert.equal(agent('ada').status, 'working')
+  assert.deepEqual(hub.stopTurns(['ada']), { stopped: ['ada'], dropped: 0 })
+  assert.equal(agent('june').inbox.length, 1, "june still has the earlier turn's hand-off")
+})
+
+test('a key in its terminal while the stop is being checked does not bring the stopped turn back', () => {
+  atWork('ada')
+  hub.stopTurns(['ada'])
+  mock.timers.tick(200)
+  hub.input('ada', '\x1b[A') // an arrow key
+  hub.onHook('ada', { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' } }) // a late step
+  assert.equal(agent('ada').status, 'idle')
+  quiet('ada')
+  mock.timers.tick(30 * 60000)
+  assert.equal(agent('ada').status, 'idle')
+  assert.equal(view('ada').canStop, undefined)
+})
+
+test('its sub-agents end with the stopped turn', () => {
+  atWork('ada')
+  hub.onHook('ada', { hook_event_name: 'SubagentStart', agent_id: 's1', agent_type: 'Explore' })
+  assert.equal(view('ada').subs.filter((x) => !x.ended).length, 1)
+  hub.stopTurns(['ada'])
+  assert.equal(view('ada').subs.filter((x) => !x.ended).length, 0)
 })
 
 test('interrupt() alone ends the turn and leaves the queue: what waits goes in once the turn is over', () => {

@@ -44,7 +44,7 @@ const RUNTIME = 'runtime.json'
 const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
   'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'promptAt', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks',
-  'trustAsk', 'trustAt']
+  'trustAsk', 'trustAt', 'halted']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 // An image saved with this computer's attachments, whichever workspace it's for. -> where
@@ -1192,6 +1192,9 @@ export class Hub extends EventEmitter {
   // (or for its next task), asks the agent where things stand, and the new conversation starts from its answer.
   freshWhenDone(a) {
     if (!a.freshLimit || a.wrapNote !== undefined) return this.startFresh(a)
+    // you stopped it: it isn't asked where things stand now (that's a turn, and its answer would carry the stopped work
+    // into the new conversation by itself). Its next message asks (pump).
+    if (a.halted && !a.wrapUp) return this.changed()
     if (a.wrapUp && a.inbox.some((m) => m.wrapUp)) return this.pump(a) // asked, not taken up yet: it's next in its queue
     if (a.wrapUp) return this.startFresh(a) // asked, and its turn ended without an answer (you stopped it)
     if (a.background && !a.inbox.length) {
@@ -1835,7 +1838,7 @@ export class Hub extends EventEmitter {
         // from you, nor a new task. It comes in mid-turn, or starts a turn of its own once the last one is over; either
         // way the agent is still on what it was answering, and its reply threads there.
         if (isNotice(e.prompt)) {
-          if (a.status !== 'working') (a.activity = ''), (a.turnStart = Date.now())
+          if (a.status !== 'working') (a.activity = ''), (a.turnStart = a.turnBegan = Date.now())
           return this.setStatus(a, 'working')
         }
         // A question or an answer CLIque typed into the turn it's in (steer): it's part of this turn now. (A turn that
@@ -2458,6 +2461,8 @@ export class Hub extends EventEmitter {
     for (const [id, q] of [...this.asks]) if (q.name === name && !q.plan && !q.trust) this.settle(id, '', { by: 'you', stopped: true }, true)
     const now = Date.now()
     if (a.turnStart) this.record(name, { turns: 1, turnMs: now - a.turnStart })
+    // its sub-agents end with the turn (Claude Code says nothing of them when it's interrupted; one that goes on says so)
+    for (const sub of a.subs?.values() ?? []) if (!sub.ended) Object.assign(sub, { ended: now, activity: '' })
     Object.assign(a, { replyDue: false, activity: '', turnStart: null, halted: { at: now }, stopping: { pressed: now, presses: 1, heard: false } })
     this.setStatus(a, 'idle') // what it was editing is free, and whoever waited on its answer hears it was stopped
     this.watchStop(a)
@@ -2518,15 +2523,25 @@ export class Hub extends EventEmitter {
         return true
       case 'UserPromptSubmit':
       case 'PostToolUse': {
-        // you typed in its terminal since: that's you asking again
+        const began = e.hook_event_name === 'UserPromptSubmit'
+        // a step of the turn being stopped: if it goes on, its terminal keeps drawing and Esc goes in again (checkStop)
+        if (s && !began) return true
+        // you typed in its terminal since: that's you asking again (a prompt of yours, or a step of the turn it started)
         if ((a.typedAt ?? 0) > (a.halted?.at ?? 0)) {
           clearTimeout(a.stopTimer)
           Object.assign(a, { stopping: null, halted: null })
           return false
         }
-        // a step of the turn being stopped: if it goes on, its terminal keeps drawing and Esc goes in again (checkStop)
-        if (s && e.hook_event_name === 'PostToolUse') return true
-        // a turn that began by itself: a prompt its CLI had queued, or word that something it left running finished
+        // a turn that began by itself: a prompt its CLI had queued, or word that something it left running finished.
+        // One that Esc can't end (six tries in a row) is working, and the chat says so.
+        const tries = (a.halted.again = (a.halted.again ?? 0) + 1)
+        if (tries > 2 * STOP_PRESSES) {
+          clearTimeout(a.stopTimer)
+          Object.assign(a, { stopping: null, halted: null })
+          this.post({ kind: 'event', from: a.name, text: "started again after you stopped it, and didn't stop when asked. Press Esc in its terminal", alert: true })
+          this.emit('alert', a, "didn't stop when asked")
+          return false
+        }
         const st = (a.stopping ??= { pressed: 0, presses: 0, heard: false })
         if (st.presses < STOP_PRESSES) {
           Object.assign(st, { pressed: Date.now(), presses: st.presses + 1, heard: false })
@@ -2561,7 +2576,7 @@ export class Hub extends EventEmitter {
     const ch = this.channel(channel) ? channel : where
     const who = stopped.map((n) => `@${n}`)
     const list = who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1)}` : who[0]
-    const left = dropped ? `. ${dropped === 1 ? 'A message' : `${dropped} messages`} waiting for ${stopped.length > 1 ? 'them' : 'it'} ${dropped === 1 ? "wasn't" : "weren't"} delivered` : ''
+    const left = dropped ? `. ${dropped === 1 ? "A waiting message wasn't" : `${dropped} waiting messages weren't`} delivered` : ''
     this.post({ kind: 'event', from: 'clique', text: `you stopped ${list}${left}`, stop: true, about: stopped, ...(ch && ch !== GENERAL && { channel: ch }) })
     return { stopped, dropped }
   }
@@ -2587,8 +2602,11 @@ export class Hub extends EventEmitter {
       }
     }
     let n = 0
+    // a teammate's question it had put aside while it asked someone else in turn: with that answer gone, so is its own
+    const parents = new Set()
     for (const m of [...mine, ...sent]) {
       m.queued = false
+      if (m.answers && m.for) parents.add(m.for)
       if (m.clique) {
         // CLIque's own prompt, not a message in the chat. A thread's closing line it was to write: its last report stands in
         if (m.closes) this.bringOut(m.closes)
@@ -2609,8 +2627,13 @@ export class Hub extends EventEmitter {
     // what it asked teammates and is still waiting to hear: the answers would start it again
     for (const call of [...this.calls.values()]) {
       if (call.from !== a.name) continue
+      if (call.parent) parents.add(call.parent)
       this.calls.delete(call.id)
       call.hold?.resolve('')
+    }
+    for (const id of parents) {
+      const call = this.calls.get(id)
+      if (call && this.ownerOf(call) === a.name) this.respond(call, { by: a.name, why: "was stopped by the user, so it won't answer" })
     }
     return n
   }
@@ -3264,6 +3287,7 @@ export class Hub extends EventEmitter {
     const head = msgs.length < 2 ? '' : msg.answers ? `[${msgs.length} answers to your questions came in]` : `[${msgs.length} hand-offs came in while you were busy, oldest first. Take them together, in this one turn.]`
     const text = [note, head, ...msgs.map((m) => this.framed(a, m))].filter(Boolean).join('\n\n')
     a.halted = null // asked again: what starts now is wanted
+    a.turnBegan = Date.now() // (what it hands on from here is this turn's: see withdraw)
     this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
     a.promptAt ||= Date.now()
     // Matched against the prompt the agent reports, even if it shows up late. Only the words count:

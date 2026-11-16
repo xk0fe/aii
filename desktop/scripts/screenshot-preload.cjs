@@ -737,7 +737,7 @@ window.clique = {
       }
       if (!stopped.length) return { stopped: [], dropped: 0 }
       const who = stopped.map((a) => `@${a.name}`)
-      const left = dropped ? `. ${dropped === 1 ? 'A message' : `${dropped} messages`} waiting for ${stopped.length > 1 ? 'them' : 'it'} ${dropped === 1 ? "wasn't" : "weren't"} delivered` : ''
+      const left = dropped ? `. ${dropped === 1 ? "A waiting message wasn't" : `${dropped} waiting messages weren't`} delivered` : ''
       state.feed.push({ id: `stop${Date.now()}`, kind: 'event', from: 'clique', stop: true, about: stopped.map((a) => a.name), ts: Date.now(), text: `you stopped ${who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1)}` : who[0]}${left}`, ...(opts.channel && opts.channel !== 'general' && { channel: opts.channel }) })
       emit()
       return { stopped: stopped.map((a) => a.name), dropped }

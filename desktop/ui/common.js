@@ -3275,7 +3275,8 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     }
   })
   send.addEventListener('click', () => {
-    if (send.dataset.mode !== 'stop') return void ((lastSend = Date.now()), submit())
+    // (dictating: it sends what you said, whatever it showed when you started)
+    if (send.dataset.mode !== 'stop' || voice?.busy()) return void ((lastSend = Date.now()), submit())
     // (it turned into Stop under the pointer as your message went: the second click of a double click isn't a stop)
     if (Date.now() - lastSend < 600) return
     stopNow(stopping, { channel: isConvo(target) ? undefined : channel?.id })
