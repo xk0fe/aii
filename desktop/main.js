@@ -22,6 +22,7 @@ import { pillWindow } from './core/pill.js'
 import { readNotches, hatchOn } from './core/hatch.js'
 import { Permissions, appBundle, bundleIdIn } from './core/permissions.js'
 import { Setup, withSetup, hasAgents } from './core/setup.js'
+import { keeper, awakeState } from './core/awake.js'
 import { addProvider, removeProvider, checkProvider, keepProvidersInUse } from './core/providers.js'
 import { Updates, restartWords, keepsAgents, checkWords, menuItem, offReason, macSignature, feedFrom, feedConfig, electronUpdater, newer } from './core/updates.js'
 import { loginItem, LOGIN_ARG } from './core/login.js'
@@ -50,8 +51,8 @@ let permPoint // the screen it came up on, as a point on it
 let afterPermissions = null // what comes next once it's gone: on a first launch, the dashboard
 let trayHiddenAt = 0
 let quitting = false
+let onBattery = false // a laptop that isn't plugged in (the tray says so while it's kept awake)
 let started = false // CLIque is up: its windows exist, so a second launch or a .clique file can show them
-let awake = null
 let updates = null // CLIque updating itself (core/updates.js)
 let updating = false // quitting into an update: what closes and quits from here on does so without asking
 let updatesStarted = null // startUpdates, once it's done
@@ -239,6 +240,11 @@ function windowKeys(win, { zoom = false } = {}) {
 
 app.on('window-all-closed', () => {}) // keep living in the menu bar
 app.on('will-quit', () => remote?.stop()) // phones hear CLIque went away, rather than lose it
+// and the computer may sleep again, whatever its agents are doing
+app.on('will-quit', () => {
+  quitting = true
+  keepAwake()
+})
 
 // Ctrl+C in the terminal that ran `npm start`: quit without the confirmation dialog. The agents keep working.
 for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -256,7 +262,8 @@ app.on('before-quit', (e) => {
   // Restart to update: you were told what happens to the agents before you said yes (restartToUpdate)
   if (updating) {
     quitting = true
-    return clique.detach()
+    clique.detach()
+    return void keepAwake() // and the computer may sleep again (will-quit does so too)
   }
   const live = [...clique.hubs.values()].reduce((n, h) => n + h.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'parked', 'resting'].includes(a.status)).length, 0)
   const s = live > 1 ? 's' : ''
@@ -298,12 +305,27 @@ const computerName = () => {
   }
 }
 
-// A computer that shares its agents shouldn't doze off while others (or your phone) use them.
-function keepAwake() {
-  const on = Boolean(clique.sharing) || [...clique.links.values()].some((l) => l.peer) || clique.phones.live.size > 0
-  if (on && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension')
-  if (!on && awake !== null) powerSaveBlocker.stop(awake), (awake = null)
-}
+// What keeps this computer awake (core/awake.js decides, and holds or lets go of the one blocker): one of its own
+// agents working, and for a little after; sharing its agents, a linked computer or a phone connected. Only the computer:
+// the screen may still turn off. Asked on every change of state, and by itself while it's held for work (the windows
+// then hear what came of it, state.awake, for the tray's line). Let go of when CLIque quits.
+const awake = keeper({
+  start: () => powerSaveBlocker.start('prevent-app-suspension'),
+  stop: (id) => powerSaveBlocker.stop(id),
+  now: () => clique && { ...clique.awakeNow(), quitting },
+  told: () => quitting || clique.changed(),
+  log: (text) => logLine('awake', text),
+})
+const keepAwake = awake.check
+
+// The state the windows get: the workspace on screen, what's set up, whether the computer is kept awake, and this app's
+// own: its version, an update that's on its way or ready (core/updates.js), and whether it opens at login (null where
+// it can't: running from source).
+const stateNow = (snapshot = clique.snapshot()) => ({
+  ...withSetup(snapshot, clique.config.data, setup.status),
+  awake: awakeState(awake.decision, { enabled: clique.config.data.keepAwake !== false, pc: MAC ? 'Mac' : 'PC', battery: onBattery }),
+  app: { version: app.getVersion(), update: updates?.view() ?? null, login: login?.supported ? { on: login.on } : null },
+})
 
 // ---- windows ---------------------------------------------------------------
 
@@ -595,7 +617,7 @@ function showDock() {
 // Every action the UI can take: clique.call('<name>', ...args). Agents are addressed by the name the UI shows,
 // so an agent on another computer (iris@workstation) is handled there. What the UI does lands in the workspace on screen.
 const actions = {
-  state: () => fullState(clique.snapshot()),
+  state: () => stateNow(),
   // The permissions flow: permissions('list', all) what's missing and the hatch to fit, 'look' / 'ask' / 'open' / 'skip'
   // one of them, 'done' puts it away. openPermissions: "Permissions…" in the ⋯ menu.
   permissions: async (op, arg) => {
@@ -645,11 +667,16 @@ const actions = {
   saveImage: (name, type, bytes) => clique.here.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
   approve: (id) => clique.feedAction(id, 'approve'),
   drop: (id) => clique.feedAction(id, 'drop'),
+  // Your reaction on a message, on or off (Hub.react): react('3f9a…', '👍')
+  react: (id, emoji) => clique.feedAction(id, 'reactTo', [emoji]),
   // Answer an agent's question (a permission prompt, AskUserQuestion, a plan) from the chat; see hub.ask.
   answer: (id, reply) => clique.feedAction(id, 'answer', [reply]),
   autopilot: (on) => clique.here.setAutopilot(on),
   // The token savers (core/savers.js): savers({ coldStart: false }) turns one off.
   savers: (patch) => clique.setSavers(patch),
+  // Usage, day by day (core/history.js): what Claude Code and Codex used on this computer, from their own logs. The
+  // first ask starts reading them; the Usage view asks again while `reading` says how far along that is.
+  history: () => clique.usageHistory(),
   // What agents may change in CLIque with `clique app` (core/tools.js): tools('off' | 'ask' | 'auto').
   tools: (mode) => clique.setTools(mode),
   // You've seen agents' replies up to then: { name: ts }. Unread badges count what's newer.
@@ -724,7 +751,7 @@ const actions = {
     }
     if (!Object.hasOwn(ops, op)) throw new Error(`unknown link action "${op}"`)
     const out = await ops[op](...args)
-    keepAwake()
+    keepAwake({ tell: true })
     return out
   },
   // Your phones (core/phones.js, core/remote.js): phones('code') -> { code, qr (an SVG), expires }, a code that pairs one
@@ -756,6 +783,8 @@ const actions = {
   // What went wrong on a page, for CLIque's log (the page tells you in words).
   log: (text) => logLine('page', String(text).slice(0, 4000)),
   theme: (theme) => clique.setTheme(theme),
+  // Stay awake while agents work: on or off (core/awake.js).
+  keepAwake: (on) => clique.setKeepAwake(Boolean(on)),
   dashboard: (focus) => {
     trayWin.hide()
     openDashboard(focus)
@@ -788,13 +817,6 @@ const actions = {
     return now
   },
 }
-
-// What every page gets: the clique's state, and this app's own: its version, an update that's on its way or ready, and
-// whether it opens at login (null where it can't: running from source).
-const fullState = (snapshot) => ({
-  ...withSetup(snapshot, clique.config.data, setup.status),
-  app: { version: app.getVersion(), update: updates?.view() ?? null, login: login?.supported ? { on: login.on } : null },
-})
 
 // ---- updates (core/updates.js) ---------------------------------------------------------------------------------
 
@@ -1028,15 +1050,18 @@ function wire() {
   // The menu bar's title redraws the status item, so it's set only when it reads differently. Windows: the icon.
   let title = null
   clique.on('state', (snapshot) => {
-    const state = fullState(snapshot)
+    keepAwake() // first: the state says whether the computer is kept awake
+    const state = stateNow(snapshot)
     if (nativeTheme.themeSource !== state.theme) nativeTheme.themeSource = state.theme
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('state', state)
     const counts = trayCounts(state)
     if (!MAC) drawTrayIcon(counts).catch((e) => logLine('tray', e?.stack ?? String(e)))
     else if (trayTitle(counts) !== title) tray.setTitle((title = trayTitle(counts)), { fontType: 'monospacedDigit' })
-    keepAwake()
   })
   clique.changed()
+  // plugged in or unplugged: the tray's line says when it's on battery
+  onBattery = powerMonitor.isOnBatteryPower()
+  for (const event of ['on-ac', 'on-battery']) powerMonitor.on(event, () => ((onBattery = event === 'on-battery'), clique.changed()))
   // the theme changed (CLIque's, or the system's while CLIque follows it): Windows' window buttons follow the titlebar
   nativeTheme.on('updated', () => !MAC && dash && !dash.isDestroyed() && dash.setTitleBarOverlay(captionColors()))
 

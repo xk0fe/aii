@@ -8,6 +8,7 @@
   $('header .brand').innerHTML = wordmarkHTML(22)
   $('[data-act=quit]').title = `Quit ${PRODUCT_NAME}`
   $('.autopilot .glyph').innerHTML = ICONS.plane
+  $('.t-awake .glyph').innerHTML = ICONS.mug
   $('[data-act=add]').innerHTML = `${ICONS.plus}New agent`
   $('[data-act=dashboard]').innerHTML = ICONS.expand
   $('[data-act=settings]').innerHTML = ICONS.gear
@@ -259,7 +260,7 @@
     })
   })
 
-  // Settings: the theme (and, running from source, config.json). A second click on the gear closes it (the press outside
+  // Settings: whether the computer stays awake while agents work, the theme (and, running from source, config.json). A second click on the gear closes it (the press outside
   // already did).
   let settingsMenu = null
   let settingsWasOpen = false
@@ -267,12 +268,16 @@
   function settings(btn) {
     if (settingsWasOpen) return (settingsWasOpen = false)
     const theme = state.theme ?? 'system'
+    const stay = state.awake?.enabled ?? true
     settingsMenu = popMenu(btn, [
+      { head: 'While agents work' },
+      { label: `Keep this ${ON_WINDOWS ? 'PC' : 'Mac'} awake`, act: 'awake', icon: stay ? ICONS.check : undefined },
+      '-',
       { head: 'Theme' },
       ...[['system', `Match ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light'], ['dark', 'Dark']].map(([id, text]) => ({ label: text, act: `theme:${id}`, icon: id === theme ? ICONS.check : undefined })),
       ...appItems(state),
       ...(clique.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
-    ], (act) => (act === 'config' ? clique.call('config') : act.startsWith('app:') ? appPick(act, state) : clique.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
+    ], (act) => (act === 'config' ? clique.call('config') : act === 'awake' ? clique.call('keepAwake', !stay).catch((err) => oops('Couldn’t change that', err)) : act.startsWith('app:') ? appPick(act, state) : clique.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
   }
 
   // an agent's clones, each a click from its terminal
@@ -335,6 +340,13 @@
     const each = machines.length > 1 || machines.some((m) => !m.here)
     const pcHead = (m) => `<div class="t-use-pc ${m.online ? '' : 'off'}">${computerIcon(m.name)}<b>${esc(m.name)}</b><small>${m.here ? THIS_COMPUTER : m.online ? '' : 'offline'}</small></div>`
     morph($('.usage'), machines.length ? `<div class="t-hr first"></div>${machines.map((m) => `${each ? pcHead(m) : ''}${m.accounts.map((u) => usageRow(u, !m.here && m.name)).join('')}`).join('')}` : '')
+    // kept awake, and why: said only while it is
+    const awake = state.awake?.on ? state.awake : null
+    $('.t-awake').classList.toggle('hidden', !awake)
+    if (awake) {
+      $('.t-awake .say').textContent = awake.line
+      $('.t-awake').title = `Only the computer: the screen can still turn off.${awake.reasons.some((r) => r === 'working' || r === 'finishing') ? '\nTo let it sleep while agents work, turn this off in Settings (the gear below).' : ''}`
+    }
     $('.autopilot').classList.toggle('hidden', !ws) // it's a workspace's
     $('.autopilot .switch').checked = state.autopilot
     $('.autopilot').title = state.autopilot ? 'Autopilot is on: agents hand work to each other without asking you first' : 'Autopilot is off: each hand-off waits in the chat for your Send it'

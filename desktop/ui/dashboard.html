@@ -8,13 +8,14 @@
   <link rel="stylesheet" href="common.css">
   <link rel="stylesheet" href="collection.css">
   <link rel="stylesheet" href="tasks.css">
+  <link rel="stylesheet" href="usage.css">
   <link rel="stylesheet" href="workspaces.css">
   <link rel="stylesheet" href="setup.css">
   <style>
     html, body { height: 100%; background: var(--surface); overflow: hidden; }
     /* Two columns, like a group chat: the sidebar (the workspace, its places, and a direct conversation with each agent)
-       and what's open in it (a channel, an agent's conversation with its terminal docked beside it, Agents, Tasks or
-       Terminals). No titlebar: the sidebar's top and each view's header are where the window is dragged. */
+       and what's open in it (a channel, an agent's conversation with its terminal docked beside it, Agents, Tasks,
+       Terminals or Usage). No titlebar: the sidebar's top and each view's header are where the window is dragged. */
     main { --rail-w: 0px; --side-w: 260px; position: relative; display: grid; grid-template-columns: var(--rail-w) var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; }
     main > .rail { grid-area: 1 / 1; } main > .side { grid-area: 1 / 2; } main > .center { grid-area: 1 / 3; }
     body.has-rail main { --rail-w: 72px; }
@@ -82,7 +83,7 @@
     .side-ws .icon { flex: none; width: 30px; height: 30px; padding: 0; border-radius: 8px; background: var(--fill); color: var(--fg); -webkit-app-region: no-drag; }
     .side-ws .icon:hover { background: var(--fill-hover); }
     .side-ws .icon svg { width: 15px; height: 15px; }
-    /* the places (Agents, Tasks, Terminals) and the channels under them */
+    /* the places (Agents, Tasks, Terminals, Usage) and the channels under them */
     .side-nav { flex: none; display: flex; flex-direction: column; gap: 1px; padding: 0 8px; }
     .nv { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--fg2); font-size: 13.5px; text-align: left; cursor: pointer; transition: background var(--t-quick), color var(--t-quick); }
     .nv:hover { background: var(--row-hover); color: var(--fg); }
@@ -188,6 +189,10 @@
     .use-pop .hot { color: var(--ctx-hot); }
     .use-pop small { color: var(--fg2); font-size: 12px; }
     .use-pop small.warn { color: var(--needs-ink); font-weight: 500; }
+    /* ...and under them, the way to the Usage view: every day, by provider */
+    .use-pop .up-more { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 2px -4px -2px; padding: 7px 6px; border: 0; border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; background: none; color: var(--fg2); font: inherit; font-size: 12px; text-align: left; cursor: pointer; transition: color var(--t-quick); }
+    .use-pop .up-more:hover { color: var(--fg); }
+    .use-pop .up-more svg { width: 12px; height: 12px; }
     /* ---- who works here: the workspace's agents (take one out), the rest of your clique (bring one in), a new one ---- */
     .members-pop { inset: auto; margin: 0; width: 340px; max-height: min(560px, calc(100vh - 80px)); padding: 0; border: 0; border-radius: var(--r-window); background: var(--float); color: var(--fg); box-shadow: var(--shadow-float); overflow: hidden; }
     .members-pop:focus { outline: none; }
@@ -668,6 +673,7 @@
         <button class="nv" data-place="clique" title="Every agent as a card: turn them on and off, edit, compare (⌘2)"><span class="nv-icon"></span><span>Agents</span><i class="nv-n"></i></button>
         <button class="nv" data-place="tasks" title="Tasks: to do, in progress, review, done (⌘3)"><span class="nv-icon"></span><span>Tasks</span><i class="nv-n"></i></button>
         <button class="nv" data-place="terminals" title="The terminals running now (⌘4)"><span class="nv-icon"></span><span>Terminals</span><i class="nv-n"></i></button>
+        <button class="nv" data-place="usage" title="What Claude Code and Codex used, day by day (⌘5)"><span class="nv-icon"></span><span>Usage</span><i class="nv-n"></i></button>
       </div>
       <div class="side-sec chan-sec">
         <span class="sec-label">Channels</span>
@@ -704,6 +710,7 @@
         </div>
         <div class="collection hidden"></div>
         <div class="tasks-view hidden"></div>
+        <div class="usage-view hidden" aria-label="Usage"></div>
         <div class="blank empty-state hidden"><span class="blank-mark"></span><h1 class="display">No agents yet</h1><p class="lead">Give each one a name, an area of work and a model.</p><div class="acts"><button class="btn primary lg" data-act="add">Add your first agent</button></div></div>
       </div>
     </section>
@@ -769,6 +776,7 @@
   <script src="brand.js"></script>
   <script src="collection.js"></script>
   <script src="tasks.js"></script>
+  <script src="usage.js"></script>
   <script src="workspaces.js"></script>
   <script src="setup.js"></script>
   <script src="tour.js"></script>
