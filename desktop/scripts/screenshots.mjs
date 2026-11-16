@@ -368,6 +368,28 @@ const SHOTS = {
     await save(win, `tray-${theme}`)
     win.destroy()
   },
+  // Staying awake while agents work (core/awake.js): the tray's line, its switch under the gear, the tray once it's
+  // off, and the same switch in the dashboard's menu.
+  async awake(theme) {
+    const win = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(win)
+    await save(win, `awake-tray-${theme}`)
+    await js(win, click('[data-act=settings]'))
+    await sleep(350)
+    await save(win, `awake-tray-settings-${theme}`)
+    await js(win, click('.menu [data-menu-act=awake]'))
+    await sleep(400)
+    await fitToContent(win)
+    await save(win, `awake-tray-off-${theme}`)
+    win.destroy()
+    const dash = await dashboard(theme, 'chat', { width: 1060, height: 690 })
+    await js(dash, click('.side-more'))
+    await sleep(350)
+    const box = await js(dash, "const r = document.querySelector('.menu').getBoundingClientRect(); return { x: 0, y: Math.max(0, Math.round(r.top) - 40), width: 560, height: Math.round(innerHeight - Math.max(0, Math.round(r.top) - 40)) }")
+    await save(dash, `awake-menu-${theme}`, { crop: box })
+    dash.destroy()
+  },
   async overlay(theme) {
     const win = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
     await sleep(400)

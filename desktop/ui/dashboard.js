@@ -678,7 +678,7 @@ $('.dock-rest').addEventListener('click', (e) => {
   if (name) clique.call('restart', name).catch((err) => oops(`Couldn't start ${name}'s terminal`, err))
 })
 
-// Everything the titlebar used to carry, at the sidebar's foot: Autopilot, Computers, the CLIs and the theme (and,
+// Everything the titlebar used to carry, at the sidebar's foot: Autopilot, staying awake, Computers, the CLIs and the theme (and,
 // running from source, config.json).
 const THEME_CHOICES = [['system', 'Auto', 'auto', `follows ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light', 'sun', ''], ['dark', 'Dark', 'moon', '']]
 $('.side-more').addEventListener('click', (e) => {
@@ -687,6 +687,7 @@ $('.side-more').addEventListener('click', (e) => {
   const away = c.links.filter((l) => !l.online).length
   popMenu(e.currentTarget, [
     { label: 'Autopilot', icon: ICONS.plane, act: 'autopilot', hint: state.autopilot ? 'On: hand-offs go through' : 'Off: hand-offs wait for you' },
+    { label: 'Stay awake', icon: ICONS.mug, act: 'awake', hint: state.awake?.enabled ?? true ? 'On: while agents work' : `Off: this ${ON_WINDOWS ? 'PC' : 'Mac'} may sleep mid-task` },
     { label: 'Token savers…', icon: ICONS.chart, act: 'savers', hint: saversHint() },
     { label: 'Agent tools…', icon: ICONS.mark, act: 'tools', hint: toolHint() },
     '-',
@@ -700,6 +701,7 @@ $('.side-more').addEventListener('click', (e) => {
     ...(clique.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
   ], (act) => {
     if (act === 'autopilot') clique.call('autopilot', !state.autopilot).catch((err) => oops("Couldn't change Autopilot", err))
+    if (act === 'awake') clique.call('keepAwake', !(state.awake?.enabled ?? true)).catch((err) => oops("Couldn't change that", err))
     if (act === 'savers') openSavers()
     if (act === 'tools') openTools()
     if (act === 'computers') openComputers()
@@ -1616,7 +1618,7 @@ function drawFoot(state) {
   const c = state.computers ?? { me: {}, links: [] }
   const away = c.links.filter((l) => !l.online)
   $('.side-more').classList.toggle('warn', away.length > 0)
-  $('.side-more').title = `Autopilot, Computers, Claude Code and Codex, theme${away.length ? `\n${away.map((l) => l.name).join(', ')} can't be reached` : ''}`
+  $('.side-more').title = `Autopilot, staying awake, Computers, Claude Code and Codex, theme${away.length ? `\n${away.map((l) => l.name).join(', ')} can't be reached` : ''}`
   const machines = usageByComputer(state)
   const use = $('.use-line')
   use.classList.toggle('none', !machines.length)
