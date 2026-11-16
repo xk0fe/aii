@@ -337,7 +337,7 @@ class Session {
         return clique.send(to ?? '', text, attached(images), { fresh: Boolean(opts?.fresh), re: opts?.re, ...(channel !== undefined && { channel }), ...(typeof opts?.thread === 'string' && { thread: opts.thread }) }, h)
       },
       // a channel made, changed or deleted: channelAction's, minus the snapshot it hands back (the watch sends it)
-      channel: (ws, op, id, arg) => {
+      channel: async (ws, op, id, arg) => {
         hub(ws)
         if (!CHANNEL_OPS.includes(op)) throw new Error(`"${op}" isn't a channel action`)
         const a = arg && typeof arg === 'object' ? arg : {}
@@ -346,7 +346,7 @@ class Session {
           ...(typeof a.brief === 'string' && { brief: a.brief }),
           ...('members' in a && { members: Array.isArray(a.members) ? a.members.map(String) : null }),
         }
-        return { id: clique.channelAction(op, op === 'create' ? null : String(id ?? ''), clean, ws).id }
+        return { id: (await clique.channelAction(op, op === 'create' ? null : String(id ?? ''), clean, ws)).id }
       },
       answer: (ws, id, reply) => clique.feedAction(id, 'answer', [reply ?? {}], hub(ws)),
       approve: (ws, id) => clique.feedAction(id, 'approve', [], hub(ws)),

@@ -202,3 +202,28 @@ test("a workspace made on one computer shows up on the other on its own, as its;
   await until(laptop, `!(${of(`studio-mac:${mine}`)})`)
   await studio.run(`clique.workspaceAction('switch', 'default')`)
 })
+
+test("a workspace's channels are its computer's: they show on the computers it's shown on, and a change made there is made on its computer", async () => {
+  const chans = (c) => c.run(`clique.hubs.get('storefront').space.channels.map((c) => c.name + (c.brief ? ': ' + c.brief : '') + (c.members ? ' [' + c.members.join(',') + ']' : ''))`)
+  // made on its computer (as an agent's `clique app channel add` does): there on the other, its members named as seen from there
+  await studio.run(`clique.channelAction('create', null, { name: 'Review', brief: 'review only', members: ['iris', 'milo@laptop'] }, 'storefront').id`)
+  await until(laptop, `clique.hubs.get('storefront').space.channels.length === 2`)
+  assert.deepEqual(await chans(laptop), ['general', 'review: review only [iris@studio-mac,milo]'])
+  assert.deepEqual(wsOf(laptop, 'storefront').channels, undefined, "kept as the studio's, not as the laptop's own")
+  assert.ok(await laptop.run(`clique.untouched({ id: 'x', name: 'x', of: clique.config.data.workspaces.find((w) => w.id === 'storefront').of })`), "they don't make the workspace the laptop's")
+  assert.ok(!JSON.stringify(await laptop.run(`clique.snapshot().remoteWorkspaces`)).includes('review only'), 'the list of workspaces to join carries no briefs')
+  // made from the laptop: it's the studio's, and comes back
+  const id = (await laptop.run(`clique.channelAction('create', null, { name: 'docs', members: ['ann', 'iris@studio-mac'] }, 'storefront').then((r) => r.id)`))
+  assert.equal(id, 'docs')
+  assert.deepEqual(wsOf(studio, 'storefront').channels.find((c) => c.id === 'docs').members, ['ann@laptop', 'iris'])
+  assert.deepEqual(await chans(laptop), ['general', 'review: review only [iris@studio-mac,milo]', 'docs [ann,iris@studio-mac]'], 'there by the time it says so')
+  await laptop.run(`clique.channelAction('edit', 'review', { brief: 'reviews' }, 'storefront').then(() => 1)`)
+  await until(laptop, `clique.hubs.get('storefront').space.channels[1].brief === 'reviews'`)
+  assert.equal(wsOf(studio, 'storefront').channels[0].brief, 'reviews')
+  await laptop.run(`clique.channelAction('remove', 'docs', null, 'storefront').then(() => 1)`)
+  assert.deepEqual(await chans(laptop), ['general', 'review: reviews [iris@studio-mac,milo]'])
+  assert.deepEqual((await chans(studio)).length, 2)
+  // the laptop's own workspaces keep their own
+  await laptop.run(`clique.channelAction('create', null, { name: 'lab-notes' }, 'lab').id`)
+  assert.deepEqual(wsOf(laptop, 'lab').channels.map((c) => c.id), ['lab-notes'])
+})
