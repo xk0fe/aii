@@ -116,7 +116,7 @@ Every agent has its own terminal. See them all side by side, or open one and typ
   </picture>
 </p>
 
-- **The pill** sits on the edge of your screen with the clique inside, hopping while they work. Click it or press `⌥⇧Space` (Alt+Shift+Space on Windows) to open the chat from any app.
+- **The pill** sits on the edge of your screen with the clique inside, each at a little laptop while it works. Click it or press `⌥⇧Space` (Alt+Shift+Space on Windows) to open the chat from any app.
 - **The menu bar** (the taskbar on Windows) shows who's working and who needs you, with a switch for each agent.
 - **Your phone.** Pair the CLIque phone app with a QR code to chat and answer your agents' questions away from your desk, encrypted end to end.
 

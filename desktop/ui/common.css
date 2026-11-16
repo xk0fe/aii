@@ -1232,7 +1232,9 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 /* While they blink, the eyes and what's drawn over them get layers of their own, as Chrome gave the blinking SVG group
    (and the rest of the face after it) when the blink was inside the face's <svg>: the same pixels as before. */
 .av:not(.still) .av-eye, .av:not(.still) .av-eyes + .av-face .av-front { will-change: transform; transform-box: fill-box; transform-origin: center; }
-.av.working .av-in { animation: av-hop .72s cubic-bezier(.3, .6, .4, 1) infinite var(--delay); }
+/* at work it sits at its laptop, at every size (avatar.js): a small typing bob and paws that tap in turn. It used to
+   hop below 64px, and a sidebar of hopping creatures was tiring to have in the corner of the eye. */
+.av.working .av-in { animation: av-type 1.2s ease-in-out infinite var(--delay); }
 .av.waiting .av-in { animation: av-wiggle .55s ease-in-out infinite; }
 /* asleep (off, parked, or on a computer that's asleep): black and white, props and all, breathing slowly */
 .av.asleep { filter: grayscale(1); }
@@ -1250,12 +1252,6 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 }
 @keyframes av-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(.982, 1.03); } }
 @keyframes av-blink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(.08); } }
-@keyframes av-hop {
-  0%, 100% { transform: translateY(0) scale(1.07, .93); }
-  18% { transform: translateY(0) scale(.94, 1.07); }
-  50% { transform: translateY(-16%) scale(.98, 1.02); }
-  82% { transform: translateY(0) scale(1.05, .95); }
-}
 @keyframes av-wiggle { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
 @keyframes av-pop { 0% { transform: scale(0); } 100% { transform: scale(1); } }
 @keyframes av-jump { 0% { transform: scale(1.1, .88); } 40% { transform: translateY(-22%) scale(.92, 1.1); } 75% { transform: translateY(0) scale(1.08, .92); } 100% { transform: none; } }
@@ -1268,12 +1264,15 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .av-fig > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .av-prop { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .av-paw, .av-float { position: absolute; inset: 0; }
-/* at the laptop: a small typing bob instead of the hop; paws tap in turn */
-.av.posed.working .av-in { animation: av-type 1.2s ease-in-out infinite var(--delay); }
-.av-paw { animation: av-tap .34s ease-in-out infinite alternate; }
-.av-paw.p1 { animation-delay: -.17s; }
+/* at the laptop: the paws tap in turn (the body's typing bob is .av.working, above), each creature at its own beat
+   (--delay), so a list of them doesn't tap in step. On a small creature a tap of 2.5% is a fraction of a pixel, so
+   its paws lift a little higher. */
+.av-paw { animation: av-tap .34s ease-in-out infinite alternate var(--delay); }
+.av-paw.p1 { animation-delay: calc(var(--delay) - .17s); }
+.av.small .av-paw { animation-name: av-tap-small; }
 @keyframes av-type { 50% { transform: translateY(1.2%); } }
 @keyframes av-tap { to { transform: translateY(-2.5%); } }
+@keyframes av-tap-small { to { transform: translateY(-4.5%); } }
 /* the question bubble and the z's drift; the sign wiggles with the creature */
 .av-float { animation: av-drift 3.2s ease-in-out infinite var(--delay); }
 @keyframes av-drift { 50% { transform: translateY(-3%); } }

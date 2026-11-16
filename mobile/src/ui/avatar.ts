@@ -87,11 +87,12 @@ export const avatarOf = (agent: Someone): Spec => ({ ...seeded(agent.avatar?.see
 export const colorOf = (spec: { color: string }) => COLORS[spec.color] ?? spec.color ?? '#888888'
 export const agentColor = (agent: Someone) => colorOf(avatarOf(agent))
 
-export type Mood = 'working' | 'waiting' | 'starting' | 'sleep' | 'idle' | 'still'
+// hop: a little jump on a loop, for a short wait that isn't an agent's work (pairing). No status gives it.
+export type Mood = 'working' | 'waiting' | 'starting' | 'sleep' | 'idle' | 'still' | 'hop'
 // parked (its workspace is resting) and away (its computer can't be reached) sleep too, as their pose does
 const MOODS: Record<string, Mood> = { working: 'working', waiting: 'waiting', starting: 'starting', off: 'sleep', stopped: 'sleep', parked: 'sleep', away: 'sleep' }
 
-// Waiting on a teammate's answer, it rests instead of hopping: it isn't working, it's waiting.
+// Waiting on a teammate's answer, it rests instead of typing: it isn't working, it's waiting.
 export const moodOf = (agent: { status?: string; on?: boolean; waitingOn?: unknown[] }): Mood => {
   if (agent.on === false) return 'sleep'
   if (agent.status === 'working' && agent.waitingOn?.length) return 'idle'
@@ -99,7 +100,8 @@ export const moodOf = (agent: { status?: string; on?: boolean; waitingOn?: unkno
 }
 
 // ---- v2: poses and felt props (the design's avatar-v2.js poseOf) ----
-// The creature acts out its status with a felt prop, from 64px up; smaller creatures stay plain.
+// The creature acts out its status with a felt prop, from 64px up; smaller creatures stay plain, except at work: a
+// working creature sits at its laptop at every size (below POSE_MIN a simpler one, drawn to read small).
 export type Pose = 'laptop' | 'mug' | 'sign' | 'question' | 'pop' | 'sleep'
 export const POSE_MIN = 64
 
@@ -140,11 +142,30 @@ export type PoseArt = {
 const SIDE: Record<string, number> = { blob: 92, frog: 89, drop: 86, heart: 86, bean: 83, mochi: 90, cat: 87, bunny: 85 }
 // Felt for the props: soft warm neutrals, so the creature's own colour stays the only loud one.
 export const PROP = { lid: '#dfe2e8', base: '#a3a9b4', mug: '#f6efe3', band: '#ff9478', coffee: '#7b4a2c', steam: '#c9c1b6', board: '#fff3d6', wood: '#c48a55', bubble: '#fffaf1', hole: '#2a2230', zz: '#a69fd0' }
+// The small laptop (desktop/ui/avatar.js LAPTOP_SMALL), as an emoji draws one: a few chunky shapes in a silver that
+// reads on a light and on a dark screen, and no fine detail.
+const LAPTOP_SMALL = { s: 0.86, lid: 67, gap: 3, w: 27, fill: '#b4bac6', base: '#7f8694', logo: 4.2, paw: 15, pawR: 6 }
 
-export function poseArt(pose: Pose, spec: Spec): PoseArt {
+// small: the creature is under POSE_MIN (only the laptop has a small drawing).
+export function poseArt(pose: Pose, spec: Spec, small = false): PoseArt {
   const b = BODIES[spec.body] ?? BODIES.blob
   const color = colorOf(spec)
   const paw = (cx: number, cy: number, rx = 5, ry = 3.8): Shape => ({ kind: 'ellipse', cx, cy, rx, ry, fill: color, felt: true })
+  if (pose === 'laptop' && small) {
+    // the creature stays as large as it can with its mouth clear of the lid
+    const L = LAPTOP_SMALL
+    const mouth = 97 - (97 - b.mouth[1]) * L.s
+    const mid = (L.lid + 90) / 2 + 0.5
+    return {
+      s: L.s, dx: 0, dy: -Math.max(0, mouth + L.gap - L.lid), rot: 0,
+      stand: [
+        { kind: 'path', d: `M${50 - L.w + 2} ${L.lid + 4}Q${50 - L.w + 2} ${L.lid} ${50 - L.w + 6} ${L.lid}H${50 + L.w - 6}Q${50 + L.w - 2} ${L.lid} ${50 + L.w - 2} ${L.lid + 4}L${50 + L.w} 92H${50 - L.w}Z`, fill: L.fill, felt: true },
+        { kind: 'rect', x: 50 - L.w - 9, y: 90, w: 2 * L.w + 18, h: 7, r: 3.5, fill: L.base, felt: true },
+        { kind: 'ellipse', cx: 50, cy: mid, rx: L.logo, ry: L.logo, fill: '#fff', opacity: 0.9 },
+      ],
+      paws: [[paw(50 - L.paw, L.lid + 0.5, L.pawR, L.pawR * 0.8)], [paw(50 + L.paw, L.lid + 0.5, L.pawR, L.pawR * 0.8)]],
+    }
+  }
   switch (pose) {
     case 'laptop': {
       const s = 0.84

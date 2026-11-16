@@ -1,13 +1,15 @@
 // The plush creatures of desktop/ui/avatar.js, drawn with react-native-svg: the same bodies, colours, eyes, mouths,
 // hats and cheeks, so a spec gives the same creature as on the Mac. From 40px up they're felt (felt.ts: a fuzzy edge
 // and the fibre grain), and from 64px up they can act out their status with a felt prop (avatar.ts poseArt): at a
-// laptop, holding a mug, the "OK?" sign, a question bubble, rising from a hole, asleep.
+// laptop, holding a mug, the "OK?" sign, a question bubble, rising from a hole, asleep. At work a creature is at its
+// laptop at every size (a smaller, simpler one under 64px).
 //
 // A creature never takes a touch itself (an SVG under the finger would swallow it): what holds it does.
 //
 // Motion is Reanimated's CSS animations: transforms only, run natively, no JavaScript per frame. A working creature
-// hops (or types, posed), one waiting on you wiggles, one that's off breathes slowly. Everything holds still when the
-// screen isn't in front (MotionContext) or the system asks for reduced motion.
+// types at its laptop (it used to hop when small, which was tiring to watch), one waiting on you wiggles, one that's
+// off breathes slowly. Everything holds still when the screen isn't in front (MotionContext) or the system asks for
+// reduced motion.
 import { createContext, memo, useContext, useId } from 'react'
 import { StyleSheet, View } from 'react-native'
 import Animated, { cubicBezier, css, useReducedMotion } from 'react-native-reanimated'
@@ -371,7 +373,8 @@ const WIGGLE = css.keyframes({ '0%': { transform: [{ rotate: '-6deg' }] }, '50%'
 const WIGGLE_SOFT = css.keyframes({ '0%': { transform: [{ rotate: '-2.5deg' }] }, '50%': { transform: [{ rotate: '2.5deg' }] }, '100%': { transform: [{ rotate: '-2.5deg' }] } })
 const BREATHE = css.keyframes({ '0%': { transform: [{ scaleX: 1 }, { scaleY: 1 }] }, '50%': { transform: [{ scaleX: 0.982 }, { scaleY: 1.03 }] }, '100%': { transform: [{ scaleX: 1 }, { scaleY: 1 }] } })
 const type_ = (size: number) => motion('type', size, (u) => ({ '0%': { transform: [{ translateY: 0 }] }, '50%': { transform: [{ translateY: 1.2 * u }] }, '100%': { transform: [{ translateY: 0 }] } }))
-const tapping = (size: number) => motion('tap', size, (u) => ({ from: { transform: [{ translateY: 0 }] }, to: { transform: [{ translateY: -2.5 * u }] } }))
+// a small creature's paws lift a little higher: 2.5% of it is a fraction of a pixel
+const tapping = (size: number, small: boolean) => motion(small ? 'tap-small' : 'tap', size, (u) => ({ from: { transform: [{ translateY: 0 }] }, to: { transform: [{ translateY: (small ? -4.5 : -2.5) * u }] } }))
 const drift = (size: number) => motion('drift', size, (u) => ({ '0%': { transform: [{ translateY: 0 }] }, '50%': { transform: [{ translateY: -3 * u }] }, '100%': { transform: [{ translateY: 0 }] } }))
 const rise = (size: number) => motion('rise', size, (u) => ({ from: { transform: [{ translateY: 30 * u }] }, to: { transform: [{ translateY: 0 }] } }))
 
@@ -387,7 +390,7 @@ function bodyMotion(mood: Mood, posed: boolean, size: number, phase: number): An
     if (mood === 'sleep') return loop(BREATHE, 5500, phase % 5500)
     return loop(BREATHE, 3600, phase % 3600)
   }
-  if (mood === 'working') return { ...loop(hop(size), 720, phase % 720), animationTimingFunction: 'linear' }
+  if (mood === 'hop') return { ...loop(hop(size), 720, phase % 720), animationTimingFunction: 'linear' }
   if (mood === 'waiting') return loop(WIGGLE, 550, 0)
   if (mood === 'sleep') return loop(BREATHE, 5500, phase % 5500)
   return null
@@ -397,7 +400,7 @@ export type CreatureProps = {
   agent: Someone & { status?: string; on?: boolean; waitingOn?: unknown[] }
   size?: number
   mood?: Mood // defaults to the agent's own (its status)
-  posed?: boolean // act out the status with a prop (64px and up)
+  posed?: boolean // act out the status with a prop (64px and up; at work it's at its laptop whatever this says)
   ask?: string // what it's waiting on you for: 'question' holds up a speech bubble, anything else the "OK?" sign
 }
 
@@ -407,8 +410,9 @@ export const Creature = memo(function Creature({ agent, size = 48, mood, posed =
   const reduced = useReducedMotion()
   const moving = allowed && !reduced && m !== 'still'
   const phase = hash(agent.name) % 4000
-  const pose: Pose | null = posed && size >= POSE_MIN ? poseOf(m === 'sleep' ? { status: 'off' } : agent, ask) : null
-  const art = pose ? poseArt(pose, avatarOf(agent) as Spec) : null
+  const small = size < POSE_MIN
+  const pose: Pose | null = m === 'working' ? 'laptop' : posed && !small ? poseOf(m === 'sleep' ? { status: 'off' } : agent, ask) : null
+  const art = pose ? poseArt(pose, avatarOf(agent) as Spec, small) : null
   const felt = size >= FELT_MIN
   const play = (a: Anim | null): Anim | undefined => (a && moving ? a : undefined)
   const body = play(bodyMotion(m, Boolean(art), size, phase))
@@ -439,7 +443,7 @@ export const Creature = memo(function Creature({ agent, size = 48, mood, posed =
       </Animated.View>
       {art.stand ? <Layer shapes={art.stand} size={size} felt={felt} /> : null}
       {art.paws?.map((p, i) => (
-        <Animated.View key={i} style={[StyleSheet.absoluteFill, play({ ...loop(tapping(size), 340, i * 170), animationDirection: 'alternate' })]} pointerEvents="none">
+        <Animated.View key={i} style={[StyleSheet.absoluteFill, play({ ...loop(tapping(size, small), 340, (phase + i * 170) % 680), animationDirection: 'alternate' })]} pointerEvents="none">
           <Layer shapes={p} size={size} felt={felt} />
         </Animated.View>
       ))}

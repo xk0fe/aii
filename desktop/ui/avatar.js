@@ -171,12 +171,14 @@ const avatarCache = new Map()
 
 // agent: anything with a name (+ optional avatar/status). Big avatars get the felt filter; tiny ones skip it.
 // pose: the creature acts out its status with a felt prop, 'laptop' | 'mug' | 'sign' | 'question' | 'pop' | 'sleep'
-// (poseOf picks one from a status). Only from 64px up: smaller creatures stay plain.
-function avatarHTML(agent, { size = 48, mood, pose, poseMin = 64 } = {}) {
+// (poseOf picks one from a status). Only from 64px up: smaller creatures stay plain, except at work: a working
+// creature sits at its laptop at every size (below POSE_MIN a simpler one, drawn to read small: LAPTOP_SMALL).
+function avatarHTML(agent, { size = 48, mood, pose, poseMin = POSE_MIN } = {}) {
   ensureDefs()
-  // waiting on a teammate's answer, it rests instead of hopping: it isn't working, it's waiting (core/hub.js question)
+  // waiting on a teammate's answer, it rests instead of working: it isn't working, it's waiting (core/hub.js question)
   mood ??= agent.status === 'working' && agent.waitingOn?.length ? 'idle' : (MOODS[agent.status] ?? 'idle')
   if (size < poseMin || !POSES.has(pose)) pose = undefined
+  if (mood === 'working') pose ??= 'laptop'
   const key = `${agent.name}\u0000${agent.seed ?? ''}\u0000${size}\u0000${mood}\u0000${pose ?? ''}\u0000${asleepNow(agent, mood) ? 1 : 0}\u0000${agent.avatar ? JSON.stringify(agent.avatar) : ''}`
   let html = avatarCache.get(key)
   if (html === undefined) {
@@ -192,6 +194,7 @@ const asleepNow = (agent, mood) => mood === 'sleep' || agent.on === false || ['o
 
 // ---- poses: the creature acts out its status with a felt prop ----
 const POSES = new Set(['laptop', 'mug', 'sign', 'question', 'pop', 'sleep'])
+const POSE_MIN = 64
 // Which pose a status gets: at a laptop while it works, a mug while it's free (or waits on a teammate's answer), a
 // sign that asks "OK?" while it needs your OK, a speech bubble while it has a question (ask: the open ask's type),
 // popping up from its patch while it starts, asleep while it's off. The status text and dot stay as they are; the pose
@@ -210,12 +213,25 @@ const SIDE = { blob: 92, frog: 89, drop: 86, heart: 86, bean: 83, mochi: 90, cat
 // Felt for the props: soft warm neutrals, so the creature's own colour stays the only loud one.
 const PROP = { lid: '#dfe2e8', base: '#a3a9b4', mug: '#f6efe3', band: '#ff9478', coffee: '#7b4a2c', steam: '#c9c1b6', board: '#fff3d6', wood: '#c48a55', bubble: '#fffaf1', hole: '#2a2230', zz: '#a69fd0' }
 const BRAND_FACE = 'Fredoka, ui-rounded, "SF Pro Rounded", sans-serif'
+const LAPTOP_SMALL = { s: 0.86, lid: 67, gap: 3, w: 27, fill: '#b4bac6', base: '#7f8694', logo: 4.2, paw: 15, pawR: 6 }
 
 // What a pose adds: how the figure sits (scale s, shift dx/dy in % of the box, tilt rot, clip from the bottom) and the
 // felt layers around it: back (behind), held (moves with the creature), stand (in front, still), paws (typing), float.
-function poseLayers(pose, b, body, color, fuzz) {
+function poseLayers(pose, b, body, color, fuzz, size) {
   const felt = (shape, fill) => `<g ${fuzz}><g fill="${fill}">${shape}</g><g fill="url(#av-hi)">${shape}</g><g fill="url(#av-lo)">${shape}</g></g>`
   const paw = (x, y, rx = 5, ry = 3.8) => felt(`<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}"/>`, color)
+  if (pose === 'laptop' && size < POSE_MIN) {
+    // The small laptop, as an emoji draws one: a few chunky shapes in a silver that reads on a light and on a dark
+    // window, and no fine detail. The creature stays as large as it can with its mouth clear of the lid.
+    const L = LAPTOP_SMALL
+    const s = L.s, lid = L.lid
+    const mouth = 97 - (97 - b.mouth[1]) * s
+    const dy = -Math.max(0, mouth + L.gap - lid)
+    const stand = felt(`<path d="M${50 - L.w + 2} ${lid + 4}Q${50 - L.w + 2} ${lid} ${50 - L.w + 6} ${lid}H${50 + L.w - 6}Q${50 + L.w - 2} ${lid} ${50 + L.w - 2} ${lid + 4}L${50 + L.w} 92H${50 - L.w}Z"/>`, L.fill) +
+      felt(`<rect x="${50 - L.w - 9}" y="90" width="${2 * L.w + 18}" height="7" rx="3.5"/>`, L.base) +
+      `<circle cx="50" cy="${(lid + 90) / 2 + 0.5}" r="${L.logo}" fill="#fff" opacity=".9"/>`
+    return { s, dx: 0, dy, small: true, stand, paws: [paw(50 - L.paw, lid + 0.5, L.pawR, L.pawR * 0.8), paw(50 + L.paw, lid + 0.5, L.pawR, L.pawR * 0.8)] }
+  }
   if (pose === 'laptop') {
     const s = 0.84, lid = 70
     const mouth = 97 - (97 - b.mouth[1]) * s
@@ -299,7 +315,7 @@ function creatureHTML(agent, size, mood, pose) {
   const delay = -((hash(agent.name) % 4000) / 1000).toFixed(2)
   const grey = asleepNow(agent, mood)
   const sig = hash(JSON.stringify([s, mood, size, pose ?? '', grey])) // lets morph() keep a running avatar untouched
-  const p = pose ? poseLayers(pose, b, s.body, color, fuzz) : null
+  const p = pose ? poseLayers(pose, b, s.body, color, fuzz, size) : null
   const layer = (cls, inner) => (inner ? `<svg viewBox="0 0 100 100" class="av-prop ${cls}" aria-hidden="true">${inner}</svg>` : '')
   let figure = `<svg viewBox="0 0 100 100" class="av-body" aria-hidden="true">
         <ellipse cx="50" cy="97.5" rx="33" ry="3.2" fill="#000" opacity=".22"/>
@@ -314,7 +330,7 @@ function creatureHTML(agent, size, mood, pose) {
     if (p.clip) figure = `<span class="av-clip" style="clip-path:inset(-40% -40% ${p.clip}% -40%)">${figure}</span>`
   }
   const paws = p?.paws ? p.paws.map((g, i) => `<span class="av-paw p${i}">${layer('', g)}</span>`).join('') : ''
-  return `<span class="av ${mood}${pose ? ` posed pose-${pose}` : ''}${grey ? ' asleep' : ''}" data-sig="${sig}" style="--size:${size}px;--delay:${delay}s" title="${String(agent.name).replace(/"/g, '')}">
+  return `<span class="av ${mood}${pose ? ` posed pose-${pose}` : ''}${p?.small ? ' small' : ''}${grey ? ' asleep' : ''}" data-sig="${sig}" style="--size:${size}px;--delay:${delay}s" title="${String(agent.name).replace(/"/g, '')}">
     ${layer('av-back', p?.back)}<span class="av-in">
       ${figure}${layer('av-held', p?.held)}
     </span>${layer('av-stand', p?.stand)}${paws}${p?.float ? `<span class="av-float">${layer('', p.float)}</span>` : ''}

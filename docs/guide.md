@@ -32,7 +32,7 @@ On Windows, ⌘ is Ctrl, and ⌥ and ⌃ are Alt: `⌥⇧Space` is Alt+Shift+Spa
 ## Three views
 
 - **Menu bar** (on Windows, CLIque's icon in the taskbar): the clique, grouped by computer, one line per agent with its creature, its name and what it's doing. YOLO and Fast show as small marks when they're on; hover a row for the YOLO, Fast and power switches. Agents that are off fold into one line ("3 off"). It scrolls once the clique is taller than the screen allows. Autopilot sits under the clique.
-- **Floating pill** on the edge of the screen holds the clique as little creatures that hop while they work. A clique too big for the screen edge keeps the ones that need a look (waiting on you, new replies, at work) and folds the rest into **+N**. Click it, or press `⌥⇧Space`, to open the chat (`⌥⇧D` opens it and starts dictating). Click a creature for your conversation with that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
+- **Floating pill** on the edge of the screen holds the clique as little creatures. One that's working sits at a little laptop, typing. A clique too big for the screen edge keeps the ones that need a look (waiting on you, new replies, at work) and folds the rest into **+N**. Click it, or press `⌥⇧Space`, to open the chat (`⌥⇧D` opens it and starts dictating). Click a creature for your conversation with that agent. The pill steps aside while the dashboard is open, and comes back with the chat open when you close or minimize the dashboard.
   - **Drag it anywhere** by its edge or by the chat's header. The chat opens on the side with room: on the left of the screen it opens to the right of the pill, on the right to the left, at the top below, at the bottom above. At the top and bottom the pill lies flat, like the Dock.
   - **It stays put:** dropped near an edge, it tucks in against it, and opening or closing the chat never moves it.
 - **Dashboard**: the clique on the left, the view in the middle, the chat on the right, and the workspace you're in at the top left (see [Workspaces](#workspaces-a-clique-per-project)).
@@ -175,7 +175,7 @@ Agents that depend on each other can stall a clique. Two of them each wait for t
 
 In the chat:
 
-- An agent waiting on a teammate rests instead of hopping, and says so in calm indigo (not the orange of "needs you"): *waiting on @ada · 2m* in the sidebar, the menu bar, its card and its terminal header. Under the last message, its line shows who it's waiting on, what it asked and for how long; click it for the question. The teammate's line shows the faces of whoever waits on it. The title bar counts them: *1 waiting*.
+- An agent waiting on a teammate rests (no laptop: it isn't working), and says so in calm indigo (not the orange of "needs you"): *waiting on @ada · 2m* in the sidebar, the menu bar, its card and its terminal header. Under the last message, its line shows who it's waiting on, what it asked and for how long; click it for the question. The teammate's line shows the faces of whoever waits on it. The title bar counts them: *1 waiting*.
 - A question shows who asked whom, *waiting* while the asker holds on, and then *@ada answered in 24s*. The answer is threaded to it, marked with who it went back to.
 - When CLIque steps in, it's one quiet line with a yield sign, such as *@milo is waiting on @ada, so @ada answers first instead of asking back*. Hover it for the rule.
 

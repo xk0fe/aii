@@ -152,6 +152,16 @@ describe('poses', () => {
       for (const layer of [art.back, art.held, art.stand, art.float, ...(art.paws ?? [])]) for (const s of layer ?? []) if (s.felt) expect(s.fill).toBeTruthy()
     }
   })
+  test.each(Object.keys(BODIES))('the small laptop fits a %s: its mouth clear of the lid, its eyes in the box', (body) => {
+    const b = BODIES[body]
+    const art = poseArt('laptop', { body, color: 'pink', eyes: 'dot', mouth: 'smile', hat: 'none', cheeks: true } as Spec, true)
+    const at = (y: number) => 97 - (97 - y) * art.s + art.dy
+    expect(JSON.stringify(art)).not.toMatch(/NaN|null/)
+    expect(at(b.mouth[1])).toBeLessThanOrEqual(67 - 3 + 1e-6)
+    expect(at(Math.min(b.eyes[0][1], b.eyes[1][1]))).toBeGreaterThan(8)
+    expect(art.paws).toHaveLength(2)
+    expect(art.stand?.length).toBe(3)
+  })
   test('a paw is the creature’s own colour', () => {
     const art = poseArt('laptop', { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false })
     expect(art.paws?.[0][0].fill).toBe(COLORS.mint)
