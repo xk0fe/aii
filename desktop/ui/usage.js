@@ -512,7 +512,7 @@ function mountUsage(root, { headIn = root }) {
     const done = reading?.total ? Math.min(100, Math.floor((reading.done / reading.total) * 100)) : 0
     const others = data.computers.filter((c) => !c.here)
     const where = filters.computer !== null ? computerName(filters.computer).replace(/^This/, 'this') : others.length ? `${THIS_COMPUTER} and ${others.length === 1 ? others[0].name : `${others.length} linked computers`}` : THIS_COMPUTER
-    headEl.querySelector('.ph-sub').textContent = busy ? `Reading Claude Code’s and Codex’s logs${reading.total ? ` · ${done}%` : '…'}` : here ? `What ${space?.name ?? state.workspace.name}’s agents used on ${where}` : `Everything Claude Code and Codex used on ${where}`
+    headEl.querySelector('.ph-sub').textContent = busy ? `Reading Claude Code’s and Codex’s logs${reading.total ? ` · ${done}%` : '…'}` : here ? `${space?.name ?? state.workspace.name}’s agents, on ${where}` : `Claude Code and Codex, on ${where}`
     if (rangeBtn.firstChild.nodeValue !== r.label) rangeBtn.firstChild.nodeValue = r.label
     rangeBtn.classList.toggle('hidden', empty)
     const hereBtn = scopeSeg.querySelector('[data-scope=here]')

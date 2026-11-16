@@ -638,8 +638,9 @@ const SHOTS = {
       window.__cliqueEmit('state', s)`)
     await sleep(3200)
     await shot('canvas', win, { crop: await column(win) })
-    // Usage: a calendar per provider, and who used it
-    win = await dashboard(theme, 'usage', { width: 1160, height: 950, reset: ['clique.usage.range'] })
+    // Usage, everything: tokens a week by workspace with the workspaces ranked beside it, and a calendar per provider
+    win = await dashboard(theme, 'usage', { width: 1160, height: 950, reset: ['clique.usage.range', 'clique.usage.scope', 'clique.usage.by.here', 'clique.usage.by.all'] })
+    await js(win, click('.us-scope [data-scope=all]'))
     await sleep(900)
     await shot('usage', win)
     // every terminal side by side
@@ -1054,37 +1055,39 @@ const SHOTS = {
     await save(big, `usage-three-computers-${theme}`)
     big.destroy()
   },
-  // Usage in motion: in from the sidebar, the pointer along a week of days (each says its numbers), one picked (the
-  // breakdown under the calendars becomes that day's), another, and back to the whole range.
+  // Usage in motion: in from the sidebar to the workspace on screen, over to Everything, one computer alone and back,
+  // a click on a workspace's row (everything narrows to it), the chart split by agent, and a day picked in a calendar.
   async usageGif() {
-    const win = await dashboard('light', 'chat', { width: 1240, height: 900, reset: ['clique.usage.range'] })
+    const win = await dashboard('light', 'chat', { width: 1240, height: 900, reset: ['clique.usage.range', 'clique.usage.scope', 'clique.usage.by.here', 'clique.usage.by.all'] })
     await sleep(900)
-    const days = await js(win, `const rows = window.__cliqueHistory.computers[0].rows; const has = (k, p) => rows.some((r) => r[0] === k && r[3] === p); const out = []
+    const day = await js(win, `const rows = window.__cliqueHistory.computers[0].rows; const has = (k, p) => rows.some((r) => r[0] === k && r[3] === p)
       function key(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
-      for (let i = 40; out.length < 6 && i > 8; i--) { const k = key(new Date(Date.now() - i * 864e5)); if (has(k, 'claude') && has(k, 'codex')) out.push(k) }
-      return out`)
-    const cell = (prov, day) => `.us-prov[data-prov=${prov}] .us-c[data-day="${day}"]`
+      const d = new Date(Date.now() - 12 * 864e5); while (d.getDay() === 0 || d.getDay() === 6 || !has(key(d), 'claude')) d.setDate(d.getDate() - 1)
+      return key(d)`)
     await record(win, 'usage', {
-      clip: { x: 0, y: 0, width: 1240, height: 900 }, ms: 9800, width: 1000,
+      clip: { x: 0, y: 0, width: 1240, height: 900 }, ms: 15500, width: 1000,
       during: async () => {
         let at = { x: 620, y: 520 }
-        await sleep(500)
-        at = await glide(win, at, await center(win, '.nv[data-place=usage]'), 600)
-        await tap(win, at)
-        await sleep(1100)
-        for (const day of days.slice(0, 4)) {
-          at = await glide(win, at, await center(win, cell('claude', day)), 320)
-          await sleep(360)
+        const go = async (sel, ms = 550, rest = 900) => {
+          at = await glide(win, at, await center(win, sel), ms)
+          await tap(win, at)
+          await sleep(rest)
         }
-        await tap(win, at)
-        await sleep(1500)
-        at = await glide(win, at, await center(win, cell('codex', days[5])), 600)
+        await sleep(500)
+        await go('.nv[data-place=usage]', 600, 1300)
+        await go('.us-scope [data-scope=all]', 600, 1300)
+        await go(`.us-comp [data-computer=${LINK.slug}]`, 550, 1100)
+        await go('.us-comp [data-computer=""]', 450, 800)
+        await go('.us-legend-list .us-row[data-f=ws]:nth-child(3)', 600, 1400)
+        await go('.us-by [data-by=who]', 550, 1300)
+        await go('.us-filters [data-clear=all]', 600, 700)
+        // down to the calendars
+        await js(win, `document.querySelector('.us-scroll').scrollTo({ top: 470, behavior: 'smooth' })`)
+        await sleep(900)
+        at = await glide(win, at, await center(win, `.us-prov[data-prov=claude] .us-c[data-day="${day}"]`), 650)
         await sleep(500)
         await tap(win, at)
-        await sleep(1500)
-        at = await glide(win, at, await center(win, '[data-us=clear]'), 600)
-        await tap(win, at)
-        await sleep(900)
+        await sleep(1700)
       },
     })
     win.destroy()

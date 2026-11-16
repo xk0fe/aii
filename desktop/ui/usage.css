@@ -168,7 +168,7 @@
 
 /* ---- the lists: workspaces, agents, folders, models, computers; the whole range, or the day picked ---- */
 .us-detail .us-ph .btn { flex: none; align-self: center; }
-.us-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(228px, 1fr)); gap: 16px 28px; min-height: 172px; align-items: start; }
+.us-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px 28px; min-height: 172px; align-items: start; }
 .us-cols.none { visibility: hidden; }
 .us-col { min-width: 0; }
 .us-col .section-label { margin-bottom: 4px; }
@@ -205,4 +205,4 @@ button.us-row .us-name, .us-row.key .us-name { display: flex; align-items: basel
 .us-tip .us-tip-rows b { min-width: 38px; font-size: 12px; text-align: right; }
 .us-key { flex: none; display: block; width: 10px; height: 3px; border-radius: 2px; }
 /* the header in a narrow window: its switch and its range stay whole, the line about them goes */
-@container (max-width: 760px) { .page-head[data-for=usage] .ph-sub { display: none; } }
+@container (max-width: 1000px) { .page-head[data-for=usage] .ph-sub { display: none; } }
