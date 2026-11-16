@@ -536,3 +536,27 @@ test("a log that's gone keeps the workspace that ran it: the rows are the same b
   // the session written down stays its workspace's with nothing to go by any more; the other was only ever told by name
   assert.deepEqual(rowsBy(rowsOf(index), 'ws', 'who', 'tokens').sort((x, y) => x.ws.localeCompare(y.ws)), [{ ws: '', who: '', tokens: 11 }, { ws: 'shop', who: 'ada', tokens: 110 }])
 })
+
+// ---- a conversation that came from another computer (core/move.js): what it had used there is that computer's ----
+
+test("a log that arrived with a moved agent counts from where it was then: Claude Code's by its lines, Codex's by its running total", () => {
+  const a = write(path.join(claude, 'p', 's-moved.jsonl'), lines(named('ada'), prompt('2026-11-09', 'there'), reply('1', '2026-11-09', { input_tokens: 500, output_tokens: 0 })))
+  const c = write(path.join(codex, '2026', '11', '09', 'rollout-2026-11-09T10-00-00-0199c2aa-1b2c-7d3e-8f90-a1b2c3d4e5f6.jsonl'), lines(meta(), started('2026-11-09'), turn('2026-11-09', 'gpt-6-luna', 'rex'), count('2026-11-09', 4000, 0, 0)))
+  const arrived = { [a]: fs.statSync(a).size, [c]: fs.statSync(c).size }
+  // nothing new yet: nothing of theirs is this computer's
+  let index = scan(emptyIndex(), roots, { arrived })
+  assert.deepEqual(rowsOf(index).rows, [])
+  // they carry on here
+  write(a, lines(prompt('2026-11-10', 'here'), reply('1', '2026-11-10', { input_tokens: 500, output_tokens: 0 }), reply('2', '2026-11-10', { input_tokens: 20, output_tokens: 0 })), { append: true })
+  write(c, lines(started('2026-11-10'), count('2026-11-10', 4300, 0, 0)), { append: true })
+  index = scan(index, roots, { arrived })
+  const now = rowsBy(rowsOf(index), 'day', 'provider', 'tokens', 'messages').sort((x, y) => x.provider.localeCompare(y.provider))
+  assert.deepEqual(now, [
+    { day: '2026-11-10', provider: 'claude', tokens: 20, messages: 1 }, // (response 1 again is the one it brought: told by its id)
+    { day: '2026-11-10', provider: 'codex', tokens: 300, messages: 1 }, // what grew since, not its whole total
+  ])
+  // read again from scratch (a new index): the same
+  assert.deepEqual(rowsBy(rowsOf(scan(emptyIndex(), roots, { arrived })), 'day', 'provider', 'tokens', 'messages').sort((x, y) => x.provider.localeCompare(y.provider)), now)
+  // without knowing they arrived, all of it would be counted here too
+  assert.equal(rowsOf(scan(emptyIndex(), roots)).rows.reduce((n, r) => n + r[COLS.indexOf('tokens')], 0), 520 + 4300)
+})

@@ -154,9 +154,53 @@ test("a workspace that's been removed still has what its agents used, under the 
   clique.leftSessions = null
 })
 
+test('a workspace removed a moment ago is told from one that is still here, and keeps the name you gave it', () => {
+  // iris works in Shop and in Docs; her session a3 was written down by Docs. Docs is removed: a3 is still Docs's (not
+  // Shop's, by her name), at once, and Docs goes by its name as you wrote it
+  const before = pick(rowsOf(me()).filter((r) => r.tokens === 3), 'ws', 'who')
+  assert.deepEqual(before, [{ ws: 'studio:docs', who: 'iris' }])
+  clique.workspaceAction('remove', 'docs')
+  assert.equal(clique.hubs.has('docs'), false)
+  const then = clique.usageHistory()
+  assert.deepEqual(pick(rowsOf(then.computers[0]).filter((r) => r.tokens === 3 || r.tokens === 40), 'ws', 'who', 'tokens'), pick([{ ws: 'studio:docs', who: 'iris', tokens: 3 }, { ws: 'studio:docs', who: 'iris', tokens: 40 }], 'ws', 'who', 'tokens'), "what Docs wrote down stays Docs's, and so does what only her folder there said: neither falls to Shop, the one she's still in")
+  assert.deepEqual(then.spaces['studio:docs'], { name: 'Docs', gone: true })
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(process.env.CLIQUE_HOME, 'usage-spaces.json'), 'utf8')).docs, { key: 'studio:docs', name: 'Docs', agents: [['iris', docsDir]] }, 'written down while it was here')
+})
+
+test("a linked computer's workspace hidden here keeps its key: what this computer used in it is still that workspace's", () => {
+  // Storefront is the workstation's, shown here as "storefront"; june ran session s-host in it
+  const data = JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
+  fs.writeFileSync(CONFIG, JSON.stringify({ ...data, workspaces: [...data.workspaces, { id: 'storefront', name: 'Storefront', color: 'orange', of: { computer: 'workstation', id: 'store', name: 'Workstation' }, members: {} }] }))
+  clique.config.load()
+  clique.hubs.get('storefront').noteSession('june', 'c')
+  let then = clique.usageHistory()
+  assert.deepEqual(pick(rowsOf(then.computers[0]).filter((r) => r.tokens === 7), 'ws', 'who'), [{ ws: 'workstation:store', who: 'june' }])
+  // hidden here (Remove on a linked computer's workspace)
+  clique.workspaceAction('remove', 'storefront')
+  then = clique.usageHistory()
+  assert.deepEqual(pick(rowsOf(then.computers[0]).filter((r) => r.tokens === 7), 'ws', 'who'), [{ ws: 'workstation:store', who: 'june' }], "not re-keyed as one of this computer's")
+  assert.deepEqual(then.spaces['workstation:store'], { name: 'Storefront', color: 'orange' }, 'and not "removed": it is still its computer\'s')
+  fs.rmSync(path.join(process.env.CLIQUE_HOME, 'workspaces', 'storefront'), { recursive: true, force: true })
+  clique.leftSessions = null
+})
+
+test('a session one workspace wrote down and another only counted the spend of is the one that wrote it down\'s', () => {
+  const shop = clique.hubs.get('shop')
+  // Shop counted its spend; a removed workspace's files say whose it was
+  const lab = path.join(process.env.CLIQUE_HOME, 'workspaces', 'lab')
+  fs.mkdirSync(lab, { recursive: true })
+  fs.writeFileSync(path.join(lab, 'ran.json'), JSON.stringify({ b: 'pip' }))
+  shop.spend.sessions.b = { cost: 1, at: Date.now() }
+  clique.leftSessions = null
+  assert.deepEqual(clique.usagePlacing().owners.b, ['lab', 'pip'])
+  delete shop.spend.sessions.b
+  fs.rmSync(lab, { recursive: true })
+  clique.leftSessions = null
+})
+
 test('what a linked computer asks for: this computer\'s rows and workspaces, and nothing of the computers linked to it', () => {
   const said = clique.serve('usageHistory', [], null, { name: 'Laptop' })
   assert.deepEqual(Object.keys(said).sort(), ['at', 'cols', 'faces', 'first', 'providers', 'reading', 'rows', 'spaces'])
   assert.equal(said.rows.length, me().rows.length)
-  assert.deepEqual(Object.keys(said.spaces), ['studio:shop', 'studio:docs'])
+  assert.deepEqual(Object.keys(said.spaces).sort(), ['studio:docs', 'studio:shop'])
 })

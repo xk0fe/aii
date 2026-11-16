@@ -289,7 +289,7 @@ On a Claude subscription, CLIque shows how much of the account's 5-hour and week
 - **Filters.** Menus narrow to one workspace, agent or provider, and every row of a list is a filter too: click a workspace, an agent, a folder or a model to see only that, and again to let go.
 - **Tokens over time.** A bar a week (a day in the last 7 or 30 days), split by workspace, agent, provider or computer. The list beside it ranks them with their share.
 - **Calendars.** A square a day for each provider, darker for more tokens. Pick a day for who used it, where and on which models.
-- **Which workspace a conversation counts for.** CLIque writes each conversation down as its agent takes a prompt (`ran.json`), so an agent that works in several workspaces is counted in the right one. Conversations from before that go by the agent's name and folder; the few that can't be told show as "Workspace not recorded".
+- **Which workspace a conversation counts for.** CLIque writes each conversation down as its agent takes a prompt (`ran.json`), so an agent that works in several workspaces is counted in the right one. Conversations from before that go by the agent's name and folder; the few that can't be told show as "Workspace not recorded". A workspace you've removed keeps what it used, under its name. A conversation that moved to another computer with its agent is counted on each computer for what it used there.
 
 ### What the work costs
 
@@ -377,6 +377,7 @@ Everything CLIque keeps is in the `.clique` folder in your home folder (`~/.cliq
 - `config.json`: your agents, custom providers, theme and workspaces. The app writes it, you can edit it by hand in a text editor, and changes apply right away.
 - `sessions.json`: which conversation each agent resumes.
 - `ran.json`: every conversation the workspace's agents have had, by its id and the agent's name. [Usage](#usage) goes by it to count each conversation in its workspace.
+- `arrived.json`: the conversation files that came with an agent moved here from another computer, and how long each was then. What they held was used on that computer, which counts it; [Usage](#usage) here counts from there on.
 - `stats.json`: each agent's work experience (the day by day part for the last 60 days).
 - `tickets.json`: the Tasks board (every open task, and the last 200 done).
 - `conversations.json`: each agent's current conversation: when it started, tasks in it, compactions and how full it is.
@@ -384,6 +385,7 @@ Everything CLIque keeps is in the `.clique` folder in your home folder (`~/.cliq
 - `board.md`: the shared notes (`clique note`); the last 200 are kept.
 - `reads.json`: up to when you've read each agent's replies (the unread counts).
 - `usage.json`: each provider's usage limits as last reported, and which heads-ups you've had.
+- `usage-spaces.json`: each workspace as it last was (its name and look, and where each agent worked in it), so [Usage](#usage) still names a workspace you've removed and keeps its conversations with it.
 - `history.json`: what Claude Code and Codex used each day, read from their own logs for [Usage](#usage). Only numbers, per day, model, folder and agent: no messages. It keeps the days of logs Claude Code has since cleaned up.
 - `savers.json`: what each [token saver](#token-savers) counted, day by day for the last 90 days, and the clique's spend under each mix of savers that was on.
 - `spend.json`: the last running totals each agent's CLI reported (so nothing is counted twice) and the clique's spend per hour of each day, for the last 60 days.

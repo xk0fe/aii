@@ -160,6 +160,45 @@ test("a computer on an older CLIque can't say: its note says to update it, and w
   await until(laptop, `!clique.usageHistory().computers[1].note`)
 })
 
+test("a link that drops while it's asked isn't a computer that couldn't say: no notice, and it's asked again once it's back", async () => {
+  // the laptop's ask goes out as the connection goes: as if the studio went off mid-ask
+  await laptop.run(`(() => { const l = clique.links.get('studio-mac'); const peer = l.peer; const real = peer.call.bind(peer); globalThis.back = () => { l.peer = peer; peer.call = real }; peer.call = (fn, ...a) => (fn === 'usageHistory' ? (l.peer = null, Promise.reject(new Error('the link closed'))) : real(fn, ...a)); clique.usageOf.get('studio-mac').asked = 0; clique.usageHistory(); return true })()`)
+  await sleep(150)
+  let u = await view(laptop)
+  assert.deepEqual([u.computers[1].online, u.computers[1].note, u.computers[1].rows.length], [false, null, 2], 'offline, with what it last said and nothing about "couldn\'t say"')
+  await studio.run(`(clique.hubs.get('storefront').noteSession('ivo', 's-ivo-3'), true)`)
+  const dir = await studio.run(`process.env.CLAUDE_CONFIG_DIR`)
+  fs.writeFileSync(path.join(dir, 'projects', 'p', 's-ivo-3.jsonl'), lines(named('ivo'), prompt(), reply(11, 25)))
+  await studio.run(`clique.history.refresh().then(() => true)`)
+  await laptop.run(`(globalThis.back(), clique.usageHistory(), true)`) // back: asked right away, not minutes later
+  await until(laptop, `clique.usageHistory().computers[1].rows.some((r) => r[6] === 1525)`)
+})
+
+test("a computer that isn't linked any more isn't listed beside the ones that are; what one said over a month ago goes", async () => {
+  // as a rename leaves it: the studio's answer kept under the name it had before
+  const kept = JSON.parse(fs.readFileSync(path.join(laptop.home, 'link', 'usage', 'studio-mac.json'), 'utf8'))
+  fs.writeFileSync(path.join(laptop.home, 'link', 'usage', 'old-studio.json'), JSON.stringify({ ...kept, name: 'Old Studio' }))
+  fs.writeFileSync(path.join(laptop.home, 'link', 'usage', 'long-gone.json'), JSON.stringify({ ...kept, name: 'Long Gone', got: Date.now() - 40 * 864e5 }))
+  await laptop.run(`(clique.usageOf = null, true)`)
+  const u = await view(laptop)
+  assert.deepEqual(u.computers.map((c) => c.slug), ['laptop', 'studio-mac'], 'the same usage isn\'t there twice under an old name')
+  assert.equal(fs.existsSync(path.join(laptop.home, 'link', 'usage', 'long-gone.json')), false)
+  fs.rmSync(path.join(laptop.home, 'link', 'usage', 'old-studio.json'))
+})
+
+test("a linked computer's answer is taken only as far as it has the shape it should: no markup through a look or a colour", async () => {
+  await studio.run(`(clique.realSummary = clique.usageSummary, clique.usageSummary = function () { const s = this.realSummary(); return { ...s, first: { toString: 1 }, faces: { 'studio-mac:storefront': { ivo: { color: '"><svg onload=alert(1)>', body: 'blob', cheeks: true, extra: { a: 1 } } } }, spaces: { ...s.spaces, 'studio-mac:storefront': { ...s.spaces['studio-mac:storefront'], color: 'red;background:url(x)', icon: '🛒🛒🛒🛒🛒🛒' } } } }, true)`)
+  await askAgain(laptop, 'studio-mac')
+  await until(laptop, `clique.usageHistory().computers[1].faces['studio-mac:storefront']?.ivo?.body === 'blob'`)
+  const said = await laptop.run(`(() => { const u = clique.usageHistory(); return { face: u.computers[1].faces['studio-mac:storefront'].ivo, first: u.computers[1].first, kept: JSON.parse(require('node:fs').readFileSync(require('node:path').join(process.env.CLIQUE_HOME, 'link', 'usage', 'studio-mac.json'), 'utf8')).data.faces['studio-mac:storefront'].ivo } })()`).catch(() => null)
+  const face = said?.face ?? (await laptop.run(`clique.usageHistory().computers[1].faces['studio-mac:storefront'].ivo`))
+  assert.deepEqual(face, { body: 'blob', cheeks: true }, 'the colour that was markup is dropped, and what isn\'t a word or a switch')
+  assert.equal(await laptop.run(`clique.usageHistory().computers[1].first`), null)
+  await studio.run(`(clique.usageSummary = clique.realSummary, true)`)
+  await askAgain(laptop, 'studio-mac')
+  await until(laptop, `clique.usageHistory().computers[1].faces['studio-mac:storefront']?.ivo?.color === 'lime'`)
+})
+
 test("a computer that's off still shows what it last said, also after CLIque starts again; forgetting it forgets that", async () => {
   const kept = path.join(laptop.home, 'link', 'usage', 'studio-mac.json')
   assert.ok(fs.existsSync(kept), 'kept on disk')
@@ -170,7 +209,7 @@ test("a computer that's off still shows what it last said, also after CLIque sta
   // as a CLIque that just started has it: read from what was kept
   await laptop.run(`(clique.usageOf = null, true)`)
   u = await view(laptop)
-  assert.deepEqual([u.computers[1].name, u.computers[1].online, u.computers[1].rows[0]], ['Studio Mac', false, ['studio-mac:storefront', 'ivo', 1500]])
+  assert.deepEqual([u.computers[1].name, u.computers[1].online, u.computers[1].rows[0]], ['Studio Mac', false, ['studio-mac:storefront', 'ivo', 1525]])
   assert.deepEqual(u.spaces['studio-mac:storefront'].name, 'Storefront')
   await laptop.run(`(clique.forget('studio-mac'), true)`)
   assert.equal(fs.existsSync(kept), false)

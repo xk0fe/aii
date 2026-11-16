@@ -44,7 +44,8 @@ const json = (s) => {
 
 // ---- a log's lines, from where reading stopped -------------------------------------------------------------------
 // Whole lines only (one still being written waits for the next look), and only the ones that have one of `needles` in
-// them: most of a log is tool output nobody needs to parse. -> where the last whole line ended.
+// them: most of a log is tool output nobody needs to parse. fn(line, end): end is where the line ends in the file.
+// -> where the last whole line ended.
 function eachLine(fd, from, needles, fn) {
   const buf = Buffer.allocUnsafe(CHUNK)
   let pos = from
@@ -64,7 +65,7 @@ function eachLine(fd, from, needles, fn) {
       }
       end = pos + nl + 1
       start = nl + 1
-      if (needles.some((x) => line.indexOf(x) >= 0)) fn(line)
+      if (needles.some((x) => line.indexOf(x) >= 0)) fn(line, end)
     }
     if (start < n) parts.push(Buffer.from(buf.subarray(start, n)))
     pos += n
@@ -113,9 +114,11 @@ const promptText = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map(
 // so it's never taken for another.
 const idOf = (m, x) => (m.id || x.requestId ? `${String(m.id ?? '').slice(-12)}|${String(x.requestId ?? '').slice(-6)}` : null)
 
-function readClaude(fd, from, e, taken) {
+// skip: the log's first bytes are what it used somewhere else (it came here with a moved agent, core/move.js): read for
+// what they say of the session, not counted.
+function readClaude(fd, from, e, taken, skip = 0) {
   const seen = new Set(e.seen ?? [])
-  const offset = eachLine(fd, from, [N_ASSISTANT, N_USER, N_NAME], (line) => {
+  const offset = eachLine(fd, from, [N_ASSISTANT, N_USER, N_NAME], (line, end) => {
     if (line.indexOf(N_ASSISTANT) >= 0) {
       const x = json(line.toString('utf8'))
       const m = x?.message
@@ -125,6 +128,7 @@ function readClaude(fd, from, e, taken) {
       const id = idOf(m, x)
       if (id && (seen.has(id) || taken?.(id))) return
       if (id) seen.add(id)
+      if (end <= skip) return
       const u = m.usage
       addTo(e.days, localDay(t), m.model, [1, num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens), num(u.cache_creation_input_tokens), costOf(u, m.model) ?? 0])
     } else if (line.indexOf(N_NAME) >= 0) {
@@ -134,7 +138,7 @@ function readClaude(fd, from, e, taken) {
       const t = when(x?.timestamp)
       if (x?.type !== 'user' || x.isMeta || x.isSidechain || x.isCompactSummary || !Number.isFinite(t)) return
       const text = promptText(x.message?.content)
-      if (!text || OWN_NOTE.test(text)) return
+      if (!text || OWN_NOTE.test(text) || end <= skip) return
       ;(e.days[localDay(t)] ??= { m: 0, models: {} }).m += 1
     }
   })
@@ -153,9 +157,9 @@ const N_TURN_START = Buffer.from('"task_started"')
 const N_META = Buffer.from('"session_meta"')
 const CODEX_NAME = /You are \\+"([A-Za-z0-9._-]+)\\+", one of several AI agents/
 
-function readCodex(fd, from, e) {
+function readCodex(fd, from, e, skip = 0) {
   let last = e.last ?? { input: 0, cached: 0, output: 0, total: 0 }
-  const offset = eachLine(fd, from, [N_TOKENS, N_TURN, N_TURN_START, N_META], (line) => {
+  const offset = eachLine(fd, from, [N_TOKENS, N_TURN, N_TURN_START, N_META], (line, end) => {
     const text = line.toString('utf8')
     const x = json(text)
     const p = x?.payload
@@ -169,15 +173,15 @@ function readCodex(fd, from, e) {
     }
     const t = when(x.timestamp)
     if (x.type !== 'event_msg' || !Number.isFinite(t)) return
-    if (p.type === 'task_started') return void ((e.days[localDay(t)] ??= { m: 0, models: {} }).m += 1)
+    if (p.type === 'task_started') return void (end > skip && ((e.days[localDay(t)] ??= { m: 0, models: {} }).m += 1))
     const total = p.type === 'token_count' && p.info?.total_token_usage
     if (!total || typeof total !== 'object') return
     const now = { input: num(total.input_tokens), cached: num(total.cached_input_tokens), output: num(total.output_tokens), total: num(total.total_tokens) || num(total.input_tokens) + num(total.output_tokens) }
     if (now.total < last.total) last = { input: 0, cached: 0, output: 0, total: 0 }
     const grew = { input: Math.max(0, now.input - last.input), cached: Math.max(0, now.cached - last.cached), output: Math.max(0, now.output - last.output) }
     const more = now.total > last.total
-    last = now
-    if (more) addTo(e.days, localDay(t), e.model || '', [1, Math.max(0, grew.input - grew.cached), grew.output, grew.cached, 0, 0])
+    last = now // (its running total carries on from what it had used before it came)
+    if (more && end > skip) addTo(e.days, localDay(t), e.model || '', [1, Math.max(0, grew.input - grew.cached), grew.output, grew.cached, 0, 0])
   })
   e.last = last
   return offset
@@ -209,14 +213,14 @@ function whoOf(fd, file, cli) {
 
 // One log, read from where the last look stopped when it only grew since (the bytes before that spot are the same),
 // from its start otherwise. prev: what the index has for it. taken(id): a response another log of its session has
-// counted. -> its entry.
-export function readLog(file, { cli, pin = null, size, mtime }, prev = null, { taken } = {}) {
+// counted. skip: how many of its first bytes it brought from another computer (not counted here). -> its entry.
+export function readLog(file, { cli, pin = null, size, mtime }, prev = null, { taken, skip = 0 } = {}) {
   const fd = fs.openSync(file, 'r')
   try {
     const on = prev && prev.cli === cli && prev.offset > 0 && size >= prev.offset && markAt(fd, prev.offset) === prev.mark
     const e = on ? { ...prev, days: structuredClone(prev.days) } : { cli, ...(pin && { pin }), who: null, ...(sessionOf(file) && { sub: true }), days: {} }
     if (!e.who) e.who = whoOf(fd, file, cli) // until it has a name: a log's first lines can be written after a first look
-    e.offset = cli === 'codex' ? readCodex(fd, on ? prev.offset : 0, e) : readClaude(fd, on ? prev.offset : 0, e, taken)
+    e.offset = cli === 'codex' ? readCodex(fd, on ? prev.offset : 0, e, skip) : readClaude(fd, on ? prev.offset : 0, e, taken, skip)
     e.mark = markAt(fd, e.offset)
     e.size = size
     e.mtime = mtime
@@ -304,7 +308,9 @@ function keep(index, e, own) {
 // your own providers', whatever its model is called). Newest logs first, so the days nearest today fill in first.
 // onProgress({ done, total, files }): bytes read of the bytes to read; given often, and once more at the end.
 // owners: { session id: [workspace, name] }, the sessions CLIque's workspaces ran (see placer): a log that goes keeps its.
-export function scan(index, roots, { onProgress, owners = {} } = {}) {
+// arrived: { path: bytes }, the logs that came with an agent moved from another computer, and how long each was then:
+// that much was used there, and is that computer's to count.
+export function scan(index, roots, { onProgress, owners = {}, arrived = {} } = {}) {
   index = asIndex(index)
   const found = new Map() // path -> the log there
   const listed = [] // the roots that could be listed
@@ -364,7 +370,7 @@ export function scan(index, roots, { onProgress, owners = {} } = {}) {
     const group = groupOf(l.file, l.cli)
     const ids = group && idsOf(group)
     try {
-      const e = readLog(l.file, l, prev, { taken: ids && ((id) => ids.has(id) && ids.get(id) !== l.file) })
+      const e = readLog(l.file, l, prev, { taken: ids && ((id) => ids.has(id) && ids.get(id) !== l.file), skip: Number(arrived[l.file]) || 0 })
       index.files[l.file] = e
       if (ids) {
         for (const id of prev?.seen ?? []) if (ids.get(id) === l.file) ids.delete(id)
@@ -499,11 +505,13 @@ const FRESH = 90 * 1000 // a look this recent is the answer; anything older star
 
 export class History {
   // roots: () => [{ dir, cli, provider? }], asked before each look (a provider of your own can add a folder).
-  // owners: () => { session id: [workspace, name] }, the sessions CLIque's workspaces ran, asked then too (scan).
-  constructor({ file, roots, owners = () => ({}), worker = true }) {
+  // owners: () => { session id: [workspace, name] }, the sessions CLIque's workspaces ran, asked then too (scan);
+  // arrived: () => { path: bytes }, the logs that came with a moved agent.
+  constructor({ file, roots, owners = () => ({}), arrived = () => ({}), worker = true }) {
     this.file = file
     this.roots = roots
     this.owners = owners
+    this.arrived = arrived
     this.worker = worker
     this.index = null
     this.progress = null
@@ -538,7 +546,7 @@ export class History {
     }
     let look
     try {
-      look = this.worker ? this.inWorker(this.roots(), this.owners()) : this.inline(this.roots(), this.owners())
+      look = this.worker ? this.inWorker(this.roots(), this.owners(), this.arrived()) : this.inline(this.roots(), this.owners(), this.arrived())
     } catch (e) {
       look = Promise.reject(e) // the folders to read couldn't be said
     }
@@ -550,15 +558,15 @@ export class History {
     return this.running
   }
 
-  async inline(roots, owners) {
+  async inline(roots, owners, arrived) {
     await new Promise((r) => setImmediate(r)) // like the worker: whoever asked hears a look is under way first
-    this.index = scan(this.index, roots, { owners, onProgress: (p) => (this.progress = p) })
+    this.index = scan(this.index, roots, { owners, arrived, onProgress: (p) => (this.progress = p) })
     save(this.file, this.index)
   }
 
-  inWorker(roots, owners) {
+  inWorker(roots, owners, arrived) {
     return new Promise((resolve, reject) => {
-      const worker = new Worker(new URL('./history.js', import.meta.url), { workerData: { history: { file: this.file, roots, owners } } })
+      const worker = new Worker(new URL('./history.js', import.meta.url), { workerData: { history: { file: this.file, roots, owners, arrived } } })
       worker.unref()
       worker.on('message', (m) => {
         if (m.progress) this.progress = m.progress
@@ -583,7 +591,7 @@ function save(file, index) {
 // The worker: reads its own copy of the index, says how far along it is, and hands the index over as it fills (so the
 // calendar does too) and when it's done. Saved along the way: quitting mid-look keeps what was read.
 if (!isMainThread && workerData?.history) {
-  const { file, roots, owners } = workerData.history
+  const { file, roots, owners, arrived } = workerData.history
   try {
     let index = emptyIndex()
     try {
@@ -593,6 +601,7 @@ if (!isMainThread && workerData?.history) {
     let saved = Date.now()
     index = scan(index, roots, {
       owners,
+      arrived,
       onProgress: (progress) => {
         const now = Date.now()
         if (now - told < 1200) return void parentPort.postMessage({ progress })
