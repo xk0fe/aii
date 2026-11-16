@@ -1,0 +1,70 @@
+[  0.1s] pid 72413, grace 6 s (2 min in CLIque)
+[  0.1s] -- nobody works
+[  0.2s] ok   blocker not held; tray: (no line)
+[  0.2s]      macOS: no assertion from this process
+[  0.2s] -- you send ada a task; she starts working
+[  0.2s]      powerSaveBlocker.start('prevent-app-suspension') -> 0
+[  0.2s]      log: keeping the computer awake: working (1 working)
+[  0.3s] ok   blocker held; tray: Keeping this Mac awake while an agent works
+[  0.3s]      macOS: pid 72413(Electron): [0x00017e9100019c32] 00:00:00 NoIdleSleepAssertion named: "Electron"
+[  0.3s]      agents: q resting, ada working, june resting
+[  0.3s] -- june starts working too
+[  0.4s]      log: keeping the computer awake: working (2 working)
+[  0.4s] ok   blocker held; tray: Keeping this Mac awake while 2 agents work
+[  0.5s]      macOS: pid 72413(Electron): [0x00017e9100019c32] 00:00:00 NoIdleSleepAssertion named: "Electron"
+[  0.5s] -- ada finishes; june still works
+[  0.5s]      log: keeping the computer awake: working (1 working)
+[  0.6s] ok   blocker held; tray: Keeping this Mac awake while an agent works
+[  0.6s]      macOS: pid 72413(Electron): [0x00017e9100019c32] 00:00:00 NoIdleSleepAssertion named: "Electron"
+[  0.6s] -- june finishes: the grace starts
+[  0.7s]      log: keeping the computer awake: finishing
+[  0.7s] ok   blocker held; tray: Nobody's working now, so this Mac can sleep in a moment
+[  0.8s]      macOS: pid 72413(Electron): [0x00017e9100019c32] 00:00:00 NoIdleSleepAssertion named: "Electron"
+[  0.8s]      agents: q resting, ada idle, june idle
+[  3.3s] -- 2.5 s into the grace ada gets the next task: never let go
+[  3.3s]      log: keeping the computer awake: working (1 working)
+[  3.4s] ok   blocker held; tray: Keeping this Mac awake while an agent works
+[  3.4s]      macOS: pid 72413(Electron): [0x00017e9100019c32] 00:00:03 NoIdleSleepAssertion named: "Electron"
+[  3.4s] ok   one blocker so far (1 started)
+[  3.4s] -- ada asks you something (a needs-you card): not working, the grace starts
+[  3.4s]      log: keeping the computer awake: finishing
+[  3.5s] ok   blocker held; tray: Nobody's working now, so this Mac can sleep in a moment
+[  3.5s]      macOS: pid 72413(Electron): [0x00017e9100019c32] 00:00:03 NoIdleSleepAssertion named: "Electron"
+[  3.5s]      agents: q resting, ada waiting, june idle
+[  3.5s] -- waiting 6 s for the grace to run out, nothing else happening
+[  9.4s]      powerSaveBlocker.stop(0)
+[  9.4s]      log: the computer may sleep
+[  9.9s] ok   blocker not held; tray: (no line)
+[ 10.0s]      macOS: no assertion from this process
+[ 10.0s] -- you answer in her terminal: working again
+[ 10.0s]      powerSaveBlocker.start('prevent-app-suspension') -> 1
+[ 10.0s]      log: keeping the computer awake: working (1 working)
+[ 10.1s] ok   blocker held; tray: Keeping this Mac awake while an agent works
+[ 10.1s]      macOS: pid 72413(Electron): [0x00017e9a00019c34] 00:00:00 NoIdleSleepAssertion named: "Electron"
+[ 10.1s] -- "Stay awake" turned off while she works: let go at once
+[ 10.1s]      powerSaveBlocker.stop(1)
+[ 10.1s]      log: the computer may sleep
+[ 10.2s] ok   blocker not held; tray: (no line)
+[ 10.2s]      macOS: no assertion from this process
+[ 10.2s] -- a phone connects: kept awake as before, though the setting is off
+[ 10.3s]      powerSaveBlocker.start('prevent-app-suspension') -> 2
+[ 10.3s]      log: keeping the computer awake: phone
+[ 10.3s] ok   blocker held; tray: Keeping this Mac awake while your phone is connected
+[ 10.4s]      macOS: pid 72413(Electron): [0x00017e9b00019c35] 00:00:00 NoIdleSleepAssertion named: "Electron"
+[ 10.4s] -- the phone goes: let go at once (no work, no grace)
+[ 10.4s]      powerSaveBlocker.stop(2)
+[ 10.4s]      log: the computer may sleep
+[ 10.5s] ok   blocker not held; tray: (no line)
+[ 10.5s]      macOS: no assertion from this process
+[ 10.5s] -- "Stay awake" turned on again, ada still working
+[ 10.5s]      powerSaveBlocker.start('prevent-app-suspension') -> 3
+[ 10.5s]      log: keeping the computer awake: working (1 working)
+[ 10.6s] ok   blocker held; tray: Keeping this Mac awake while an agent works
+[ 10.6s]      macOS: pid 72413(Electron): [0x00017e9b00019c36] 00:00:00 NoIdleSleepAssertion named: "Electron"
+[ 10.6s] -- CLIque quits with ada still working: let go
+[ 10.6s]      powerSaveBlocker.stop(3)
+[ 10.6s]      log: the computer may sleep
+[ 10.7s] ok   blocker not held; tray: (no line)
+[ 10.7s]      macOS: no assertion from this process
+[ 10.7s] ok   4 blockers over the whole run, never two at once
+[ 10.7s] all ok

@@ -1,0 +1,30 @@
+ok   Mac tray: the line says 2 of this computer's agents work (Rex on Workstation isn't counted)
+ok   Mac tray: shown, and its tooltip says the screen can still turn off
+ok   Mac tray: the gear's menu has "Keep this Mac awake", checked
+ok   Mac tray: the menu stays open through a state push
+ok   Mac tray: picking it calls keepAwake(false), once
+ok   Mac tray: the line goes once it's off
+ok   Mac tray: the menu shows it unchecked
+ok   Mac tray: on again, the line is back
+ok   Mac tray: the longest line wraps and stays inside
+ok   Mac tray: a state without "awake" shows no line
+ok   Mac dashboard: the ⋯ menu has "Stay awake · On: while agents work"
+ok   Mac dashboard: picking it calls keepAwake(false)
+ok   Mac dashboard: then it reads "Off: this Mac may sleep mid-task"
+ok   Mac dashboard: the menu fits a 760x560 window
+ok   PC tray: the line says 2 of this computer's agents work (Rex on Workstation isn't counted)
+ok   PC tray: shown, and its tooltip says the screen can still turn off
+ok   PC tray: the gear's menu has "Keep this PC awake", checked
+ok   PC tray: the menu stays open through a state push
+ok   PC tray: picking it calls keepAwake(false), once
+ok   PC tray: the line goes once it's off
+ok   PC tray: the menu shows it unchecked
+ok   PC tray: on again, the line is back
+ok   PC tray: the longest line wraps and stays inside
+ok   PC tray: a state without "awake" shows no line
+ok   PC dashboard: the ⋯ menu has "Stay awake · On: while agents work"
+ok   PC dashboard: picking it calls keepAwake(false)
+ok   PC dashboard: then it reads "Off: this PC may sleep mid-task"
+ok   PC dashboard: the menu fits a 760x560 window
+ok   no console errors
+all ok
