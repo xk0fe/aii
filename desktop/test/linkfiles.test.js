@@ -11,7 +11,7 @@ import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
 import { fileURLToPath } from 'node:url'
-import { LinkFiles, readPiece, answerFile, rangeOf, inside, fileURL, whyOf, PIECE, SCHEME, FILES_SCHEME } from '../core/linkfiles.js'
+import { LinkFiles, readPiece, answerFile, rangeOf, inside, fileURL, whyOf, PIECE, SCHEME, FILES_SCHEME, NO_PIECES } from '../core/linkfiles.js'
 import { WIN } from './helpers/platform.mjs'
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clique-linkfiles-')))
@@ -44,7 +44,8 @@ function viewer(set = {}) {
         if (/\.mp4$/.test(file) || fs.statSync(file).size > 20 * 1024 * 1024) throw new Error('too big to send: open it on the computer it is on')
         return new Uint8Array(fs.readFileSync(file))
       }
-      throw new Error(`"${name}" isn't available over CLIque Link`)
+      // (what a CLIque from before pieces really says of readFile, asked as it is with no workspace in hand: Clique.serve)
+      throw new Error("Workstation runs a newer CLIque, where every workspace is its own: update this computer's to work with its agents")
     },
   }
   const cache = path.join(tmp, `cache-${++n}`)
@@ -218,6 +219,10 @@ test('a file that changed on its computer since some of it came is fetched again
 })
 
 test('a computer on a CLIque from before pieces: a picture comes whole, as it always did; a recording stays there', async () => {
+  // both ways such a CLIque says it has no readFile (with no workspace in hand, as it's asked; and with one), and nothing else
+  assert.ok(NO_PIECES.test("Workstation runs a newer CLIque, where every workspace is its own: update this computer's to work with its agents"))
+  assert.ok(NO_PIECES.test('"readFile" isn\'t available over CLIque Link'))
+  for (const other of ['not an attachment', 'that file is gone', 'lost the connection to Workstation', 'Workstation took too long to answer', '"readImage" isn\'t available over CLIque Link']) assert.ok(!NO_PIECES.test(other), other)
   const { files, link } = viewer({ old: true })
   const olds = []
   files.on('old', (slug) => olds.push(slug))

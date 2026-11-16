@@ -79,7 +79,8 @@ const peer = {
     await sleep(link.wait)
     if (!link.online) throw new Error('lost the connection to Workstation')
     if (name === 'readFile') {
-      if (link.old) throw new Error('"readFile" isn\'t available over CLIque Link')
+      // (what a CLIque from before pieces says of it: Clique.serve, asked with no workspace in hand)
+      if (link.old) throw new Error("Workstation runs a newer CLIque, where every workspace is its own: update this computer's to work with its agents")
       link.asked.push([path.basename(String(file)), Math.floor(start / PIECE)])
       return readPiece(host, file, start, length)
     }

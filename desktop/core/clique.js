@@ -10,7 +10,7 @@ import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf } from './hub.js'
 import { movedPath } from './home.js'
 import { FETCH_MAX, kindOf, travels } from './attachments.js'
-import { LinkFiles, readPiece, inside } from './linkfiles.js'
+import { LinkFiles, readPiece, inside, NO_PIECES } from './linkfiles.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
 import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel } from './workspaces.js'
@@ -2074,7 +2074,7 @@ export class Clique extends EventEmitter {
     this.files.back(key)
     peer.call('readFile', ['']).catch((e) => {
       if (l.peer !== peer) return
-      const old = /"readFile" isn't available/.test(e.message)
+      const old = NO_PIECES.test(e.message)
       if (old === this.files.old.has(key)) return
       old ? this.files.old.add(key) : this.files.old.delete(key)
       this.changed()

@@ -828,9 +828,16 @@ function fxView(id, i, opener, from = null) {
   const views = files && fxViews(files)
   if (!views?.length) return
   fxViewer?.close()
+  // The list it was opened from (the channel, or the thread beside it: a message can be in both, with a card in each),
+  // and a message's card in it.
+  const home = opener?.closest?.('.feed-list, .thread-list') ?? null
+  const cardOf = (live) => {
+    const sel = `.fx-video[data-live="${CSS.escape(live)}"]`
+    return (home?.isConnected ? home.querySelector(sel) : null) ?? document.querySelector(sel)
+  }
   // the floating chat is too small a window to look closer in: the main window shows it
   if (document.documentElement.dataset.fxElsewhere) {
-    const inline = views.find((v) => v.i === i)?.f.kind === 'video' ? document.querySelector(`.fx-video[data-live="${CSS.escape(`${id}:${i}`)}"] video`) : null
+    const inline = views.find((v) => v.i === i)?.f.kind === 'video' ? cardOf(`${id}:${i}`)?.querySelector('video') : null
     const at = inline && !inline.error ? { t: inline.currentTime, playing: !inline.paused && !inline.ended } : null
     inline?.pause()
     return clique.call('dashboard', `file:${JSON.stringify({ files, i, ...(at && { from: at }) })}`)
@@ -892,7 +899,7 @@ function fxView(id, i, opener, from = null) {
       const { player, live } = lent
       lent = null
       // (the chat may have been drawn again meanwhile: the card that's there now)
-      const card = document.querySelector(`.fx-video[data-live="${CSS.escape(live)}"]`)
+      const card = cardOf(live)
       const slot = card?.querySelector(':scope > .fx-stage')
       player.style.width = player.style.height = '' // (its card sizes it there)
       if (slot) {
@@ -928,7 +935,7 @@ function fxView(id, i, opener, from = null) {
       size()
     } else if (f.kind === 'video') {
       const live = `${id}:${fi}`
-      const card = document.querySelector(`.fx-video[data-live="${CSS.escape(live)}"]`)
+      const card = cardOf(live)
       let player = card?.querySelector(':scope > .fx-stage > .fxp')
       if (player) {
         // the message's own player, as it is
@@ -973,7 +980,7 @@ function fxView(id, i, opener, from = null) {
     leave()
     el.remove()
     // (the chat may have been drawn again meanwhile: the same button, where it is now)
-    const back = opener?.isConnected ? opener : opener?.dataset?.id ? document.querySelector(`[data-fx="${opener.dataset.fx}"][data-id="${CSS.escape(opener.dataset.id)}"][data-i="${opener.dataset.i}"]`) : null
+    const back = opener?.isConnected ? opener : opener?.dataset?.id ? (home?.isConnected ? home : document).querySelector(`[data-fx="${opener.dataset.fx}"][data-id="${CSS.escape(opener.dataset.id)}"][data-i="${opener.dataset.i}"]`) : null
     back?.focus({ preventScroll: true })
   }
   const keys = (ev) => {

@@ -30,6 +30,10 @@ export const SIZE_MAX = 1024 * 1024 * 1024
 // A computer's cache, together: past this the files fetched longest ago go (they're fetched again when they're shown).
 export const CACHE_MAX = 2 * 1024 * 1024 * 1024
 
+// What a computer on a CLIque from before pieces answers readFile with: it has no such call. (Asked with no workspace
+// in hand, as this is, it says so its own way: that the asker is the newer one.)
+export const NO_PIECES = /"readFile" isn't available|runs a newer CLIque/
+
 // Why a file can't be had: 'away' (its computer isn't connected), 'gone' (not kept there any more), 'old' (that computer's
 // CLIque can't send pieces), 'big', or 'failed'.
 const fail = (code, message) => Object.assign(new Error(message), { why: code })
@@ -152,7 +156,7 @@ class Fetch {
     try {
       res = await peer.call('readFile', [this.hostPath, i * PIECE, PIECE])
     } catch (e) {
-      if (/"readFile" isn't available/.test(e.message)) return this.asWhole(peer)
+      if (NO_PIECES.test(e.message)) return this.asWhole(peer)
       if (/is gone|not an attachment|no such file|ENOENT/.test(e.message)) throw fail('gone', "That file isn't kept any more.")
       if (/connect|took too long/.test(e.message)) throw fail('away', `${this.files.nameOf(this.slug)} is away`)
       throw fail('failed', e.message)

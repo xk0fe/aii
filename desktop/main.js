@@ -16,7 +16,7 @@ import { CONFIG, ATTACHMENTS, HOME } from './core/hub.js'
 import { Clique, CACHE } from './core/clique.js'
 import { opens } from './core/attachments.js'
 import { serveSandbox, lockFrames } from './core/sandbox.js'
-import { serveFiles, whyOf, FILES_SCHEME } from './core/linkfiles.js'
+import { serveFiles, inside, whyOf, FILES_SCHEME } from './core/linkfiles.js'
 import { addresses } from './core/link.js'
 import { Remote } from './core/remote.js'
 import { readPack } from './core/pack.js'
@@ -369,15 +369,7 @@ async function brought(file) {
 // One of CLIque's own files from the chat: in its attachments or its cache of linked computers' files, wherever `..`
 // and links really lead. (A file that's gone is still one of them by its name: the action says it's gone.)
 function ownFile(file) {
-  const real = (p) => {
-    try {
-      return fs.realpathSync(p)
-    } catch {
-      return path.resolve(p)
-    }
-  }
-  const at = real(String(file))
-  return [ATTACHMENTS, CACHE].some((d) => at.startsWith(real(d) + path.sep))
+  return inside(String(file), [ATTACHMENTS, CACHE]) !== null
 }
 
 // A window for one of the pages in ui/. The page hears which computer this is from preload.cjs, and your home folder and
