@@ -18,7 +18,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-readme-'))
 // what the README calls each picture, and (stills) how wide to keep it: twice the width it's shown at, at most
 const STILLS = {
   cover: ['cover', 2200], 'readme-hero': ['hero', 1900], 'readme-q': ['q', 1800], 'readme-threads': ['threads', 1800], 'readme-canvas': ['canvas', 1800],
-  'readme-terminals': ['terminals', 1800], 'readme-computers': ['computers', 1800], 'readme-workspaces': ['workspaces', 1800],
+  'readme-terminals': ['terminals', 1800], 'readme-usage': ['usage', 1800], 'readme-computers': ['computers', 1800], 'readme-workspaces': ['workspaces', 1800],
   'readme-floating': ['floating', 1000], 'readme-hatch': ['hatch', 1400], 'readme-phone': ['phone', 1500],
 }
 const RECORDINGS = { 'clique-switch': 'agents', 'group-chat': 'chat', 'tasks-loop': 'tasks', 'right-of-way': 'right-of-way' }
