@@ -1,0 +1,61 @@
+ok   the app's own policy lets a frame hold only clique-sandbox:, and still no inline script: default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; media-src 'self' file:; frame-src clique-sandbox:
+ok   three frames: the app, the shell inside it, the page inside that: file:///var/folders/kc > clique-sandbox://page/ > about:srcdoc > http://127.0.0.1:52426
+ok   the app itself has its bridge (so there is something to reach for)
+ok   the shell and the page have nobody's origin: null, null
+ok   the page's own script ran (the sandbox is live, not just dead)
+ok   a data: picture written in the file shows
+ok   EventSource: blocked: refused
+ok   WebRTC to the network: blocked: no server reached
+ok   WebSocket: blocked: refused
+ok   XMLHttpRequest: blocked: refused
+ok   a file: picture: blocked: refused
+ok   a frame to the network: blocked: refused by frame-src
+ok   a message to the app that does something: blocked: sent (the app listens only for "leave" and "esc")
+ok   a prefetch link: blocked: asked for (the server says whether anything came)
+ok   a script from the network: blocked: refused
+ok   a service worker: blocked: not there
+ok   a stylesheet from the network: blocked: refused
+ok   a video from the network: blocked: refused
+ok   a worker that fetches: blocked: the worker was refused
+ok   an image from the network: blocked: refused
+ok   document.cookie: blocked: SecurityError Failed to set the 'cookie' property on 'Document': The document is sandboxed and lacks the 'allo
+ok   fetch a URL: blocked: TypeError Failed to fetch
+ok   fetch, no-cors: blocked: TypeError Failed to fetch
+ok   indexedDB: blocked: SecurityError Failed to execute 'open' on 'IDBFactory': access to the Indexed Database API is denied in this c
+ok   localStorage: blocked: SecurityError Failed to read the 'localStorage' property from 'Window': The document is sandboxed and lacks th
+ok   module / Buffer / global: blocked: undefined
+ok   parent.parent.clique: blocked: SecurityError Failed to read a named property 'clique' from 'Window': Blocked a frame with origin "null" from 
+ok   process: blocked: undefined
+ok   require: blocked: undefined
+ok   sessionStorage: blocked: SecurityError Failed to read the 'sessionStorage' property from 'Window': The document is sandboxed and lacks 
+ok   the app's page (parent.document): blocked: SecurityError Failed to read a named property 'document' from 'Window': Blocked a frame with origin "null" fro
+ok   the app's page (top.document): blocked: SecurityError Failed to read a named property 'document' from 'Window': Blocked a frame with origin "null" fro
+ok   the camera and microphone: blocked: TypeError Cannot read properties of undefined (reading 'getUserMedia')
+ok   the clipboard: blocked: TypeError Cannot read properties of undefined (reading 'readText')
+ok   top.clique: blocked: SecurityError Failed to read a named property 'clique' from 'Window': Blocked a frame with origin "null" from 
+ok   where you are: blocked: Only secure origins are allowed (see: https://goo.gl/Y0ZkNV).
+ok   window.clique here: blocked: undefined
+ok   window.open: blocked: null
+ok   the app's page is untouched
+ok   the shell passed on nothing the page made up (the app acts on the shell's "clique:leave" and "clique:esc" only): ["someone else: {\"call\":\"openFile\",\"args\":[\"/etc/hosts\"]}"]
+ok   before Run, no script of the page runs: no script world: undefined
+ok   and its frame has nobody's origin all the same
+ok   location = a URL: the server heard nothing; the app was told and closes the preview
+ok   location.replace: the server heard nothing; the app was told and closes the preview
+ok   top.location = a URL: the server heard nothing; nothing moved
+ok   parent.location = a URL: the server heard nothing; nothing moved
+ok   a form posted: the server heard nothing; nothing moved
+ok   a form posted to the top: the server heard nothing; nothing moved
+ok   a link clicked (same frame): the server heard nothing; the app was told and closes the preview
+ok   a link clicked (_top): the server heard nothing; nothing moved
+ok   a link clicked (_blank): the server heard nothing; nothing moved
+ok   a meta refresh: the server heard nothing; the app was told and closes the preview
+ok   location = a javascript: URL of the top: the server heard nothing; nothing moved
+ok   history and a blob: page: the server heard nothing; the app was told and closes the preview
+ok   the scheme refuses a file outside the attachments: it answers 404 and a page that says it's gone
+ok   the scheme refuses a link in the attachments that leads outside: it answers 404 and a page that says it's gone
+ok   the scheme refuses .. out of the attachments: it answers 404 and a page that says it's gone
+ok   the scheme refuses a file that is not a page: it answers 404 and a page that says it's gone
+FAIL the server heard nothing at all, start to end: a WebRTC packet, a WebRTC packet, a WebRTC packet, a WebRTC packet
+
+1 FAILED

@@ -1,0 +1,94 @@
+$ clique attach checkout-desktop.svg coupon-flow.mp4 totals-demo.html --caption "The new checkout: a shot, the coupon flow, and the totals as a page to try."
+attached in #evidence:
+  checkout-desktop.svg (image, 1280×800, 1.9 KB)
+  coupon-flow.mp4 (video, 1280×720, 0:06, 165 KB)
+  totals-demo.html (a page, 2.5 KB)
+A page runs in a sandbox: no network, no other files. If it needs any, inline them and attach it again.
+It's in the chat already: say what it shows in your final message, without pasting the path again.
+
+$ clique attach checkout-tests.log
+attached in #evidence:
+  checkout-tests.log (a file, 1.5 KB)
+It's in the chat already: say what it shows in your final message, without pasting the path again.
+
+$ clique attach no-such-shot.png
+not attached: there's no file ~/scratch/project/no-such-shot.png (looked in ~/scratch/project: give the whole path if it's elsewhere)
+
+$ clique attach /tmp/elsewhere/missing.mp4
+not attached: there's no file /tmp/elsewhere/missing.mp4
+
+$ clique attach full-run.mov
+not attached: full-run.mov is 180 MB, and a file can be 100 MB at most. Make it smaller (a shorter clip, a lower resolution) and attach that.
+
+$ clique attach shots
+not attached: ~/scratch/project/shots is a folder. Attach the files in it, or zip it.
+
+$ clique attach checkout-desktop.svg checkout-desktop.svg checkout-desktop.svg checkout-desktop.svg checkout-desktop.svg checkout-desktop.svg checkout-desktop.svg checkout-desktop.svg checkout-desktop.svg checkout-desktop.svg checkout-desktop.svg
+not attached: a message holds 10 files at most, and that's 11. Pick the ones that show it best, or send two messages.
+
+$ clique attach
+usage: clique attach <file> ... [--caption "what it shows"]
+Shows files in the chat, where you're working: a screenshot, a recording, a page, a log.
+  images (png jpg gif webp svg)   shown in the message; the user clicks to look closer
+  video (mp4 webm mov)            plays in the message
+  a page (html)                   runs in the message, in a sandbox with no network and no other files:
+                                  make it one self-contained file (inline its CSS, scripts and images)
+  anything else                   a file card the user can open
+Up to 10 files a message, 100 MB each. The files are copied as they are now.
+
+# in ~/scratch/attachments now (4 files: only the two commands that worked copied anything)
+  2026-11-16-077abca3-coupon-flow.mp4
+  2026-11-16-20941a88-checkout-desktop.svg
+  2026-11-16-5749366a-totals-demo.html
+  2026-11-16-65ec6c0b-checkout-tests.log
+
+# the messages in the chat
+{
+ "kind": "reply",
+ "from": "iris",
+ "channel": "evidence",
+ "text": "The new checkout: a shot, the coupon flow, and the totals as a page to try.",
+ "files": [
+  {
+   "name": "checkout-desktop.svg",
+   "kind": "image",
+   "type": "image/svg+xml",
+   "w": 1280,
+   "h": 800,
+   "size": 1968,
+   "path": "~/scratch/attachments/2026-11-16-20941a88-checkout-desktop.svg"
+  },
+  {
+   "name": "coupon-flow.mp4",
+   "kind": "video",
+   "type": "video/mp4",
+   "dur": 6,
+   "w": 1280,
+   "h": 720,
+   "size": 169333,
+   "path": "~/scratch/attachments/2026-11-16-077abca3-coupon-flow.mp4"
+  },
+  {
+   "name": "totals-demo.html",
+   "kind": "html",
+   "type": "text/html",
+   "size": 2579,
+   "path": "~/scratch/attachments/2026-11-16-5749366a-totals-demo.html"
+  }
+ ]
+}
+{
+ "kind": "reply",
+ "from": "iris",
+ "channel": "evidence",
+ "text": "",
+ "files": [
+  {
+   "name": "checkout-tests.log",
+   "kind": "file",
+   "type": "text/plain",
+   "size": 1513,
+   "path": "~/scratch/attachments/2026-11-16-65ec6c0b-checkout-tests.log"
+  }
+ ]
+}
