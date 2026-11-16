@@ -296,8 +296,11 @@ export class Clique extends EventEmitter {
   // The channels of the workspace on screen: channel('create', null, { name, brief, members }), channel('edit', id,
   // { name, brief, members }), channel('remove', id). -> { id, state }
   // ws: the workspace it's for (the sheet's, which may not be on screen any more); the one on screen if not given.
+  // One shown from a linked computer has that computer's channels: the change is made there, and comes back with its
+  // list (-> a promise of the same).
   channelAction(op, id, arg, ws = this.current) {
     if (!workspacesIn(this.config.data).some((w) => w.id === ws)) throw new Error('no such workspace')
+    if (this.ownerOf(ws).owner) return this.theirChannel(op, id, arg, ws)
     const ops = {
       create: () => (id = addChannel(this.config.data, ws, arg ?? {})),
       edit: () => editChannel(this.config.data, ws, id, arg ?? {}),
@@ -310,6 +313,23 @@ export class Clique extends EventEmitter {
     clearTimeout(this.changeTimer)
     this.emit('state', state)
     return { id, state }
+  }
+
+  async theirChannel(op, id, arg, ws) {
+    const { owner, ownerName } = this.ownerOf(ws)
+    const l = this.links.get(owner)
+    if (!l?.peer) throw new Error(`${ownerName} is offline: its channels are changed while it's on`)
+    const there = arg && Array.isArray(arg.members) ? { ...arg, members: arg.members.map(this.qualifierFor(l)) } : arg
+    try {
+      id = await this.linkCall(l, 'channel', [op, id, there], ws)
+    } catch (e) {
+      if (/"channel" isn't available over CLIque Link/.test(e.message)) throw new Error(`${ownerName} runs an older CLIque: change its channels there, or update it`)
+      throw e
+    }
+    // its list comes back on its own, a moment later: the channel is here by the time this says it's made
+    const has = () => this.hubs.get(ws)?.space.channels.some((c) => c.id === id)
+    for (const end = Date.now() + 2000; op !== 'edit' && has() !== (op === 'create') && Date.now() < end; ) await new Promise((r) => setTimeout(r, 25))
+    return { id, state: this.snapshot() }
   }
 
   // ---- agent tools (core/tools.js): `clique app …` from an agent's shell -------------------------------------------
@@ -542,7 +562,9 @@ export class Clique extends EventEmitter {
     return [...this.hubs.keys()].map((id) => {
       const h = this.hubs.get(id)
       const key = this.keyOf(id)
-      return { key, owner: key.slice(0, key.indexOf(':')), name: h.space.name, color: h.space.color, icon: h.space.icon }
+      const owner = key.slice(0, key.indexOf(':'))
+      // its channels go with one of this computer's own: the computers it shows on have the same ones (showTheirs)
+      return { key, owner, name: h.space.name, color: h.space.color, icon: h.space.icon, ...(owner === this.me.slug && { channels: h.space.channels }) }
     })
   }
 
@@ -605,7 +627,7 @@ export class Clique extends EventEmitter {
     l.theirs = new Set(l.list.map((w) => this.localOf(w.key)).filter(Boolean))
     for (const id of Object.keys(l.spaces ?? {})) if (!l.theirs.has(id)) delete l.spaces[id]
     for (const id of l.theirs) peer.push('ws', this.keyOf(id), this.hubs.get(id).snapshot())
-    this.knownSpaces.set(l.slug, { name: l.name, list: l.list.filter((w) => w.owner === l.slug).map(({ key, owner, name, color, icon }) => ({ key, owner, name: String(name ?? key), color, icon })) })
+    this.knownSpaces.set(l.slug, { name: l.name, list: l.list.filter((w) => w.owner === l.slug).map(({ key, owner, name, color, icon, channels }) => ({ key, owner, name: String(name ?? key), color, icon, ...(Array.isArray(channels) && { channels }) })) })
     this.showTheirs(l.slug)
     this.changed()
   }
@@ -633,6 +655,12 @@ export class Clique extends EventEmitter {
             changed = true
           } catch {} // a look this version can't show
         }
+        // and its channels, as its computer has them now (one on an older CLIque doesn't say: what's here stays)
+        const channels = this.theirChannels(computer, r.channels)
+        if (shown && channels && JSON.stringify(shown.of.channels ?? null) !== JSON.stringify(channels)) {
+          shown.of = { ...shown.of, channels }
+          changed = true
+        }
         if (here.has(r.key) || hidden.has(r.key)) continue
         try {
           this.addTheirs(data, { ...r, computer, computerName: known.name })
@@ -649,6 +677,15 @@ export class Clique extends EventEmitter {
     } finally {
       this.showing = false
     }
+  }
+
+  // A linked computer's channels for one of its workspaces, as kept here ("of.channels" in config.json): the ones that
+  // read as channels, with who's in each named as this computer sees them (its ada is ada@it, milo@this-one is milo).
+  // -> undefined when it said none (an older CLIque)
+  theirChannels(computer, list) {
+    if (!Array.isArray(list)) return undefined
+    const q = this.qualifier({ slug: computer })
+    return channelsIn({ channels: list }).map((c) => ({ ...c, ...(c.members && { members: c.members.map(q) }) }))
   }
 
   entryKey(w) {
@@ -673,7 +710,8 @@ export class Clique extends EventEmitter {
     } catch {} // a look this version can't show: it keeps the default one
     const list = data.workspaces
     const w = list.pop()
-    w.of = { computer: r.computer ?? r.owner, id: r.key.slice(r.key.indexOf(':') + 1), ...(r.computerName && { name: r.computerName }) }
+    const channels = this.theirChannels(r.computer ?? r.owner, r.channels)
+    w.of = { computer: r.computer ?? r.owner, id: r.key.slice(r.key.indexOf(':') + 1), ...(r.computerName && { name: r.computerName }), ...(channels && { channels }) }
     const last = list.findLastIndex((x) => x?.of?.computer === w.of.computer)
     list.splice(last >= 0 ? last + 1 : list.length, 0, w)
     return id
@@ -772,7 +810,7 @@ export class Clique extends EventEmitter {
       ...s, providers: { ...providers, ...s.providers }, agents: agents.filter((a) => !hidden.has(a.cloneOf ?? a.name)), feed: [...open, ...recent], computers: this.computers(),
       tasks: { ...s.tasks, tickets }, workspace: workspaces.find((w) => w.id === here?.ws) ?? null, workspaces,
       // linked computers' workspaces you can join (workspaceAction('join', key)), greyed while their computer is off
-      remoteWorkspaces: this.remoteWorkspaces(),
+      remoteWorkspaces: this.remoteWorkspaces().map(({ channels, ...w }) => w),
       savers: this.saversState(),
       settingsBroken: Boolean(this.config.broken), // config.json can't be read: with no workspace, the app says so instead of asking for one
       tools: toolMode(this.config.data), // what agents may change in CLIque: off, ask or auto (core/tools.js)
@@ -1095,6 +1133,17 @@ export class Clique extends EventEmitter {
       update: (names, patch) => h.update(names, patch),
       draftPrompt: (agent) => h.draftPrompt(agent),
       addAgent: (fields) => h.addAgent(fields),
+      // a channel of one of this computer's workspaces, changed from a computer it shows on (theirChannel)
+      channel: (op, id, arg) => {
+        if (this.ownerOf(h.ws).owner) throw new Error(`${h.space.name} isn't ${this.me.name}'s workspace`)
+        const a = arg && typeof arg === 'object' ? arg : {}
+        const clean = {
+          ...(typeof a.name === 'string' && { name: a.name }),
+          ...(typeof a.brief === 'string' && { brief: a.brief }),
+          ...('members' in a && { members: Array.isArray(a.members) ? a.members.map(String) : null }),
+        }
+        return this.channelAction(String(op), op === 'create' ? null : String(id ?? ''), clean, h.ws).id
+      },
       removeAgent: (name, opts) => h.removeAgent(name, { everywhere: Boolean(opts?.everywhere) }),
       restart: (name) => h.restart(name),
       markIdle: (name) => h.markIdle(name),
