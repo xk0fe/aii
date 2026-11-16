@@ -880,6 +880,143 @@ const SHOTS = {
     if (String(flipped) !== 'true,true,6') throw new Error(`savers: flipping a switch gave ${flipped}`)
     win.destroy()
   },
+  // Scheduled messages (ui/schedules.js): the clock beside Send with its quick times, the Send later sheet (which
+  // mustn't change its height as the repeat changes), the list with a few set up and with none, and how a scheduled
+  // message and CLIque's lines about one read in the chat
+  async schedules(theme) {
+    const win = await dashboard(theme, 'chat')
+    await sleep(900)
+    const type = (text) => js(win, `const ta = document.querySelector('.compose textarea'); ta.value = ${JSON.stringify(text)}; ta.dispatchEvent(new Event('input')); ta.focus()`)
+    const chat = () => js(win, "const r = document.querySelector('.chat').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(innerHeight - 380), width: Math.round(r.width), height: 380 }")
+    // the entry point: the clock, and what it offers with a message in the box
+    await type('@Theo run the checkout tests on Safari and Chrome, and say what broke')
+    await sleep(300)
+    await save(win, `schedules-composer-${theme}`, { crop: await chat() })
+    await js(win, click('.compose .later'))
+    await sleep(500)
+    const items = await js(win, "return [...document.querySelectorAll('.menu [data-menu-act]')].map((b) => b.querySelector('span').textContent).join('|')")
+    if (!/^(Today at .*\|)?Tomorrow at .*\|(Monday at .*\|)?Every weekday at .*\|Pick a time…\|Scheduled messages…$/.test(items)) throw new Error(`schedules: the clock offers ${items}`)
+    await save(win, `schedules-menu-${theme}`, { crop: await chat() })
+    // Pick a time…: the sheet, on Once and then on Weekdays
+    await js(win, click('.menu [data-menu-act=custom]'))
+    await sleep(700)
+    await save(win, `schedules-later-${theme}`)
+    const moved = await js(win, `const d = document.querySelector('#later'); const h = d.getBoundingClientRect().height; const out = []
+      for (const rp of ['daily', 'weekly', 'once', 'weekdays']) { d.querySelector('[data-rp=' + rp + ']').click(); await new Promise((r) => setTimeout(r, 350)); out.push(Math.round(d.getBoundingClientRect().height - h)) }
+      d.querySelector('[data-lt-if]').click()
+      return out.join(',') + '|' + d.querySelector('[data-lt-sum]').textContent`)
+    if (!/^0,0,0,0\|Goes out Monday to Friday at /.test(moved)) throw new Error(`schedules: changing the repeat gave ${moved}`)
+    await sleep(300)
+    await save(win, `schedules-later-weekdays-${theme}`)
+    await js(win, click('#later [data-lt-go]'))
+    await sleep(700)
+    const made = await js(win, "const s = window.__cliqueState.schedules.list; return [s.length, s[0]?.to, s[0]?.repeat, s[0]?.ifChanged, document.querySelector('#later').open, document.querySelector('.compose textarea').value, document.querySelector('.toast')?.textContent].join('|')")
+    if (!/^1\|\|weekdays\|true\|false\|\|Scheduled: every weekday at /.test(made)) throw new Error(`schedules: scheduling gave ${made}`)
+    // the list: one running, one an agent set up, one paused, one that didn't go out
+    await js(win, `const s = window.__cliqueState; const day = (n, h, m = 0) => { const d = new Date(); d.setDate(d.getDate() + n); d.setHours(h, m, 0, 0); return d }
+      const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+      s.schedules.list = [
+        { id: 'a1', text: 'Run the checkout tests on Safari and Chrome, and say what broke', to: 'Theo', repeat: 'weekdays', date: iso(day(-9, 9)), time: '09:00', by: 'you', created: 1, next: day(1, 9).getTime(), last: { at: day(0, 9).getTime(), result: 'sent' }, ifChanged: true },
+        { id: 'a2', text: 'Post what shipped this week, in three lines', to: '', channel: 'launch', repeat: 'weekly', date: iso(day(3, 16, 30)), time: '16:30', by: 'Q', created: 2, next: day(3, 16, 30).getTime() },
+        { id: 'a3', text: 'Check the nightly build and file a task for anything red', to: 'June,Milo', repeat: 'daily', date: iso(day(-20, 7)), time: '07:30', by: 'you', created: 3, next: day(1, 7, 30).getTime(), last: { at: day(0, 7, 30).getTime(), result: 'busy' } },
+        { id: 'a4', text: 'Remind me to renew the signing certificate', to: 'Ada', repeat: 'once', date: iso(day(12, 10)), time: '10:00', by: 'you', created: 4, next: day(12, 10).getTime() },
+        { id: 'a5', text: 'Summarise open review comments', to: 'Iris', repeat: 'weekdays', date: iso(day(-30, 17)), time: '17:00', by: 'you', created: 5, next: day(1, 17).getTime(), paused: true, last: { at: day(-1, 17).getTime(), result: 'failed', why: '@Iris is turned off, turn it on first' } },
+      ]
+      window.__cliqueEmit('state', s)`)
+    await sleep(300)
+    await js(win, click('.compose .later'))
+    await sleep(400)
+    await js(win, click('.menu [data-menu-act=list]'))
+    await sleep(800)
+    await save(win, `schedules-list-${theme}`)
+    // the switch pauses one, and turns it back on
+    const paused = await js(win, `const sw = document.querySelector('#scheduled [data-sc=a1] [data-sc-on]'); sw.click(); await new Promise((r) => setTimeout(r, 400))
+      const one = [window.__cliqueState.schedules.list.find((x) => x.id === 'a1').paused, document.querySelector('#scheduled [data-sc=a1]').classList.contains('paused')]
+      document.querySelector('#scheduled [data-sc=a1] [data-sc-on]').click(); await new Promise((r) => setTimeout(r, 400))
+      return [...one, window.__cliqueState.schedules.list.find((x) => x.id === 'a1').paused, document.querySelector('#scheduled [data-sc=a1] [data-sc-on]').checked].join()`)
+    if (paused !== 'true,true,,true') throw new Error(`schedules: the switch gave ${paused}`)
+    await js(win, "const s = window.__cliqueState; s.schedules.list = []; window.__cliqueEmit('state', s)")
+    await sleep(600)
+    await save(win, `schedules-empty-${theme}`)
+    await js(win, click('#scheduled [data-close]'))
+    // in the chat: one that went out on time, one that went late, and what CLIque says when one is skipped or fails
+    await type('')
+    // (mins: how long ago each was said; late: how long ago it was due)
+    const said = [
+      { id: 'c1', kind: 'msg', from: 'you', to: 'Theo', text: 'Run the checkout tests on Safari and Chrome, and say what broke', mins: 34, scheduled: { id: 'a1' } },
+      { id: 'c2', kind: 'reply', from: 'Theo', to: 'you', re: 'c1', text: 'All 48 pass on Chrome. Safari fails 2: the payment sheet test times out waiting for the frame, and the coupon field loses focus.', mins: 31 },
+      { id: 'c3', kind: 'event', from: 'clique', schedule: 'a3', text: 'Scheduled message "Check the nightly build and file a task for anything red" skipped this time: its last run is still going. It goes out again once that\'s done (next: Tue 17 Nov at 7:30)', mins: 20 },
+      { id: 'c4', kind: 'event', from: 'clique', schedule: 'a5', text: 'Scheduled message "Summarise open review comments" (every weekday at 17:00) didn\'t go out: @Iris is turned off, turn it on first', mins: 12 },
+      { id: 'c5', kind: 'msg', from: 'you', to: 'June', auto: true, text: 'Post what shipped this week, in three lines', mins: 3, scheduled: { id: 'a2', late: 43 } },
+      { id: 'c6', kind: 'reply', from: 'June', to: 'you', re: 'c5', text: 'Shipped: coupon guard on checkout, the new payment sheet on Safari, and receipts with the new logo.', mins: 1 },
+    ]
+    await js(win, `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+      for (const a of s.agents) if (a.status === 'waiting') a.status = 'idle'
+      s.feed = ${JSON.stringify(said)}.map(({ mins, ...e }) => ({ ...e, ts: t(mins), ...(e.scheduled && { scheduled: { id: e.scheduled.id, at: t(mins), ...(e.scheduled.late && { late: t(e.scheduled.late) }) } }) }))
+      window.__cliqueEmit('state', s)`)
+    await sleep(900)
+    const marks = await js(win, "return [...document.querySelectorAll('.feed .tag.sched')].map((x) => x.textContent).join('|') + '/' + document.querySelectorAll('.feed .event .ev-icon svg').length")
+    if (!/^scheduled\|scheduled for .*, sent late\/2$/.test(marks)) throw new Error(`schedules: the chat marks read ${marks}`)
+    const whole = "const r = document.querySelector('.chat').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(r.width), height: innerHeight }"
+    await save(win, `schedules-chat-${theme}`, { crop: await js(win, whole) })
+    // said in words: you ask Q, Q runs \`clique app schedule add\`, and its card waits for your OK (the card's words are
+    // what core/tools.js makes for that command)
+    const asked = [
+      { id: 'q0', kind: 'msg', from: 'you', to: 'Ada', text: 'Every weekday at 9, ask Theo to run the checkout tests and say what broke.', mins: 1 },
+      { id: 'q1', kind: 'ask', from: 'Ada', to: 'you', cli: 'clique', re: 'q0', mins: 0.3, ask: { type: 'permission', tool: 'clique app', app: true, title: 'Schedule a message', code: 'Every weekday at 9:00 · to @Theo\nRun the checkout tests on Safari and Chrome, and say what broke', detail: 'It goes out as a message from you, first on Tue 17 Nov at 9:00. Pause or remove it under Scheduled messages.', say: 'Can I schedule a message to @Theo, every weekday at 9:00?', always: [], alert: 'wants to schedule a message' } },
+    ]
+    await js(win, `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
+      s.feed = ${JSON.stringify(asked)}.map(({ mins, ...e }) => ({ ...e, ts: t(mins) }))
+      Object.assign(s.agents.find((a) => a.name === 'Ada'), { status: 'waiting', since: Date.now() - 20000 })
+      window.__cliqueEmit('state', s)`)
+    await sleep(1000)
+    await save(win, `schedules-ask-${theme}`, { crop: await js(win, whole) })
+    win.destroy()
+  },
+  // Scheduling a message from the composer: write it, the clock, Pick a time…, Weekdays, Schedule, then the list
+  async schedulesGif() {
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { width: 1180, height: 760 })
+    await sleep(1200)
+    const text = '@Theo run the checkout tests and say what broke'
+    await record(win, 'schedules', {
+      ms: 14500, width: 1000,
+      during: async () => {
+        let at = { x: 700, y: 400 }
+        at = await glide(win, at, await center(win, '.compose textarea'), 500)
+        await tap(win, at)
+        for (let i = 1; i <= text.length; i++) {
+          await js(win, `const ta = document.querySelector('.compose textarea'); ta.value = ${JSON.stringify(text)}.slice(0, ${i}); ta.dispatchEvent(new Event('input'))`)
+          await sleep(24)
+        }
+        await sleep(400)
+        at = await glide(win, at, await center(win, '.compose .later'), 500)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=custom]'), 450)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1100)
+        at = await glide(win, at, await center(win, '#later [data-rp=weekdays]'), 600)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(1000)
+        at = await glide(win, at, await center(win, '#later [data-lt-go]'), 600)
+        await sleep(300)
+        await tap(win, at)
+        await sleep(1500)
+        at = await glide(win, at, await center(win, '.compose .later'), 600)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(700)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=list]'), 400)
+        await sleep(250)
+        await tap(win, at)
+        await sleep(1600)
+      },
+    })
+    win.destroy()
+  },
   // Agent tools: an agent asking to change CLIque (its card in the chat, its words in the Needs-you queue), the card
   // once allowed beside what an automatic change says, and the sheet that says how far agents go, in Ask first and in
   // Automatic (which mustn't change its height)
@@ -912,7 +1049,7 @@ const SHOTS = {
       d.querySelector('[data-tl="auto"]').click()
       await new Promise((r) => setTimeout(r, 500))
       return [Math.round(d.getBoundingClientRect().height - h), window.__cliqueState.tools, [...d.querySelectorAll('.tl-how')].map((x) => x.textContent).join('/'), d.querySelector('.tl-about p.on').dataset.mode]`)
-    if (String(after) !== '0,auto,Automatic/Automatic/Automatic/Asks first,auto') throw new Error(`tools: switching to Automatic gave ${after}`)
+    if (String(after) !== '0,auto,Automatic/Automatic/Automatic/Automatic/Asks first,auto') throw new Error(`tools: switching to Automatic gave ${after}`)
     await save(win, `tools-sheet-auto-${theme}`)
     win.destroy()
     // the floating chat's Needs you queue: the creature asks in its own words, the card under them

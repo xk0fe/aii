@@ -296,7 +296,7 @@ export class Peer extends EventEmitter {
       if (p) m.error ? p.reject(new Error(m.error)) : p.resolve(m.ok)
     } else if (m.t === 'call') {
       try {
-        this.send({ t: 'reply', id: m.id, ok: await this.handle(m.name, m.args ?? []) })
+        this.send({ t: 'reply', id: m.id, ok: await this.handle(m.name, m.args ?? [], this) })
       } catch (e) {
         this.send({ t: 'reply', id: m.id, error: e.message })
       }

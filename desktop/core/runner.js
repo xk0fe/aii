@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import pty from 'node-pty'
 import { which, pathKey } from './launch.js'
 import { ROOT } from './workspaces.js'
+import { pasteable } from './framing.js'
 
 export { which } // where it always was, for core/ptyclient.js
 
@@ -96,10 +97,11 @@ export class Runner extends EventEmitter {
 
   // Type a prompt and press Enter. The text always goes in as a bracketed paste: newlines don't submit early, and
   // when a stalled CLI reads the text and the Enter together, the Enter still submits instead of joining the text.
+  // Without its control characters (core/framing.js): an escape sequence in a message could end the paste early.
   submit(name, text) {
     const proc = this.procs.get(name)
     if (!proc) return
-    proc.p.write(`\x1b[200~${text}\x1b[201~`)
+    proc.p.write(`\x1b[200~${pasteable(text)}\x1b[201~`)
     setTimeout(() => proc.p.write('\r'), 150)
   }
 

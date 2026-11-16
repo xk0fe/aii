@@ -796,6 +796,9 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 /* a teammate's question: who asks whom, whether the asker is waiting on it right now, and where the answer went */
 .item .cap .verb { color: var(--fg3); }
 .item .tag.wait { color: var(--fg2); }
+/* one of your scheduled messages: a small clock by its time, and nothing else different about it */
+.item .tag.sched { gap: 3px; padding: 0; box-shadow: none; color: var(--fg3); font-weight: 500; cursor: help; }
+.item .tag.sched svg { width: 11px; height: 11px; }
 .item .tag.back { display: inline-flex; align-items: center; gap: 3px; color: var(--fg2); cursor: help; }
 .item .tag.back svg { width: 10px; height: 10px; transform: scaleX(-1); }
 .replied.answered { color: var(--working-ink); }
@@ -1189,6 +1192,11 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .fresh-toggle svg { width: 16px; height: 16px; flex: none; }
 .fresh-toggle[aria-pressed=true] { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .composer.task-mode .fresh-toggle { visibility: hidden; }
+/* send later (ui/schedules.js): a quiet clock beside Send; a task isn't a message, so it steps aside in task mode */
+.composer .later { width: 28px; height: 28px; border-radius: var(--r-control); border: 0; padding: 0; background: none; color: var(--fg2); cursor: pointer; flex: none; display: grid; place-items: center; transition: background .15s, color .15s; }
+.composer .later:hover { background: var(--btn); color: var(--fg); }
+.composer .later svg { width: 16px; height: 16px; }
+.composer.task-mode .later { visibility: hidden; }
 .send { width: 28px; height: 28px; border-radius: var(--r-control); border: 0; padding: 0; background: var(--accent); color: var(--on-accent); cursor: pointer; display: grid; place-items: center; flex: none; transition: background .2s, color .2s; }
 .send:disabled { background: var(--fill); color: var(--fg3); cursor: default; }
 .send svg { width: 15px; height: 15px; }

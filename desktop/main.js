@@ -658,6 +658,9 @@ const actions = {
   // The workspace's channels: channel('create', null, { name, brief, members }), channel('edit', id, patch),
   // channel('remove', id) (see Clique.channelAction). -> { id, state }
   channel: (op, id, arg, ws) => clique.channelAction(op, id, arg, ws),
+  // Scheduled messages (core/schedules.js): schedule('add', null, { text, to, channel, images, repeat, date, time,
+  // ifChanged }), schedule('edit' | 'pause' | 'resume' | 'remove' | 'now', id). -> { id, same?, state }
+  schedule: (op, id, arg, ws) => clique.scheduleAction(String(op), id, arg, ws),
   send: (to, text, images, opts) => clique.send(to, text, images, opts),
   // A new conversation for an agent (after its current task, if it's busy).
   freshStart: (name) => clique.at(name, 'freshStart'),
