@@ -5,6 +5,7 @@ import { forClients } from './threads.js'
 import { EventEmitter } from 'node:events'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage } from './hub.js'
 import { movedPath } from './home.js'
@@ -188,6 +189,18 @@ export class Clique extends EventEmitter {
       members: h.space.agents.filter((a) => a.shared).map((a) => ({ name: a.name, folder: this.memberFolder(h.ws, a.name) })),
       ...h.summary(),
     }))
+  }
+
+  // A workspace's folder on this computer, as a path to open (Open in Finder / Explorer). Said in words when it has
+  // none, or when the folder isn't there any more.
+  workspaceFolder(id = this.current) {
+    const w = workspacesIn(this.config.data).find((x) => x.id === id)
+    if (!w) throw new Error('no such workspace')
+    const folder = String(w.folder ?? '').trim()
+    if (!folder) throw new Error(`${w.name ?? id} has no folder: pick one in its settings`)
+    const dir = path.resolve(folder.replace(/^~(?=[\\/]|$)/, os.homedir())) // ~/code or, on Windows, ~\code
+    if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`${folder} isn't on this computer any more`)
+    return dir
   }
 
   // A shared agent's own folder in a workspace (empty: it works in the workspace's).

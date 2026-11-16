@@ -723,6 +723,13 @@ const actions = {
 
   openFile: (file) => [ATTACHMENTS, CACHE].some((d) => String(movedPath(file)).startsWith(d + path.sep)) && shell.openPath(movedPath(file)),
   openUrl: (url) => /^https?:\/\//.test(url) && shell.openExternal(url),
+  // A workspace's folder, in Finder (Explorer on Windows): the one config.json has for it, never a path from the page.
+  openFolder: async (ws) => {
+    const dir = clique.workspaceFolder(ws)
+    const failed = await shell.openPath(dir)
+    if (failed) throw new Error(failed)
+    return dir
+  },
   copy: (text) => clipboard.writeText(String(text)),
   // What went wrong on a page, for CLIque's log (the page tells you in words).
   log: (text) => logLine('page', String(text).slice(0, 4000)),

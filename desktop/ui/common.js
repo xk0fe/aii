@@ -7,6 +7,11 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(
 // Its keys (⌘ or Ctrl), its words (this Mac, this PC) and how its paths are written. The page's <html> says it too
 // (data-os="mac" or "win"), for the CSS: the fonts, and room for Windows' window buttons in the dashboard's titlebar.
 const ON_WINDOWS = window.clique?.platform === 'win32'
+// Where this computer shows folders, for "Open in Finder" (empty where there's no way to open one: a page outside the app).
+const FOLDER_APP = { darwin: 'Finder', win32: 'Explorer', linux: 'Files' }[window.clique?.platform] ?? ''
+const OPEN_FOLDER = `Open in ${FOLDER_APP}`
+// A workspace's folder, opened there.
+const openFolder = (w) => clique.call('openFolder', w.id).catch((err) => oops(`Couldn't open ${w.name}'s folder`, err))
 document.documentElement.dataset.os = ON_WINDOWS ? 'win' : 'mac'
 const THIS_COMPUTER = ON_WINDOWS ? 'this PC' : 'this Mac'
 const upFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1)

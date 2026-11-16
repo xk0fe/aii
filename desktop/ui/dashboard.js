@@ -269,6 +269,7 @@ function chatHead() {
   return [headTitle({ glyph: '#', title: esc(c.name), sub, tip }),
     `${needs.length ? `<button class="mh-needs" data-head="needs" title="${esc(`${needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick for the oldest`)}">${needs.length} waiting on you${DOWN}</button>` : ''}
       ${members.length ? `<button class="mh-faces" data-head="members" aria-haspopup="dialog" title="${esc(c.members ? `In #${c.name}: ${plural(members.length, 'agent')}. Click to change` : `Who works here: ${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 24, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}
+      ${folder && FOLDER_APP ? `<button class="btn" data-head="folder" title="${esc(`${OPEN_FOLDER}: ${tildePath(folder)}`)}">${ICONS.folder}<span>${OPEN_FOLDER}</span></button>` : ''}
       <button class="icon" data-head="channel" title="Channel: its brief, name and members" aria-label="Channel menu" aria-haspopup="menu">${ICONS.more}</button>`]
 }
 // An agent: its creature and name, what it is and its brain in one line (with its clones or helpers), then its
@@ -295,6 +296,7 @@ chatHeadEl.addEventListener('click', (e) => {
   if (act === 'needs') return answerOldest()
   if (act === 'members') return place === 'chat' && openChannel().members ? channelSheet(openChannel().id) : openMembers(b)
   if (act === 'channel') return channelMenu(openChannel().id, b)
+  if (act === 'folder') return openFolder(state.workspace)
   if (!a) return
   if (act === 'terminal') {
     store.set('clique.dock', docked() ? '0' : '1')
