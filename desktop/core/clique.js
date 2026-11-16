@@ -1319,7 +1319,7 @@ export class Clique extends EventEmitter {
   accountSaid = new Map() // key -> { at, signedIn, email, plan, org, missing, asking, signing: { handle, link, since }, problem }
 
   // Every sign-in, for the Accounts sheet and each agent's picker:
-  // [{ key, id, provider, label, name, own?, agents, signedIn?, email?, plan?, org?, missing?, signing?: { link, since }, problem? }]
+  // [{ key, id, provider, cli, label, name, own?, agents, signedIn?, email?, plan?, org?, missing?, signing?: { link, since }, problem? }]
   // id '' and own: the provider's own sign-in. signedIn undefined: its CLI hasn't been asked yet (checkAccounts).
   accountsView() {
     const data = this.config.data
@@ -1336,8 +1336,9 @@ export class Clique extends EventEmitter {
     const out = []
     for (const p of Object.values(providers)) {
       if (!signsIn(p) || !isOffered(p.id, data)) continue
-      out.push({ key: p.id, id: '', provider: p.id, label: p.label, name: '', own: true, agents: inUse[`:${p.id}`] ?? 0, ...said(p.id) })
-      for (const a of added) if (a.provider === p.id) out.push({ key: `${p.id}@${a.id}`, id: a.id, provider: p.id, label: p.label, name: a.name, agents: inUse[a.id] ?? 0, ...said(`${p.id}@${a.id}`) })
+      const cli = p.cli ?? 'claude'
+      out.push({ key: p.id, id: '', provider: p.id, cli, label: p.label, name: '', own: true, agents: inUse[`:${p.id}`] ?? 0, ...said(p.id) })
+      for (const a of added) if (a.provider === p.id) out.push({ key: `${p.id}@${a.id}`, id: a.id, provider: p.id, cli, label: p.label, name: a.name, agents: inUse[a.id] ?? 0, ...said(`${p.id}@${a.id}`) })
     }
     return out
   }
