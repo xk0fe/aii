@@ -53,6 +53,9 @@ case "$cmd" in
     # each word NUL-terminated, so a channel's name and any text arrive as typed
     [ -n "$1" ] && [ $# -gt 1 ] || { echo 'usage: clique post <channel> "message" (the name alone: an unquoted # starts a shell comment)' >&2; exit 2; }
     printf '%s\0' "$@" | call --data-binary @- "$URL/post?from=$FROM" ;;
+  react)
+    # clique react <emoji>: one emoji on the message you're answering (the word NUL-terminated, as typed)
+    printf '%s\0' "$@" | call --data-binary @- "$URL/react?from=$FROM" ;;
   canvas)
     # clique canvas <op> ...: a board drawn in the chat (clique canvas help). Each word NUL-terminated: a word is a line
     printf '%s\0' "$@" | call --data-binary @- "$URL/canvas?from=$FROM" ;;
@@ -77,6 +80,7 @@ clique note "..."             share context with the whole clique
 clique board [words]          the shared notes you haven't read (--all for every one, or words to search)
 clique channels               the channels here: who's in each, and its brief
 clique post <channel> "..."   say it in that channel (@name someone to hand it to them there)
+clique react <emoji>          put one emoji on the message you're answering, in place of a written "got it"
 clique canvas                 draw a board in the chat, or add to one that's there (clique canvas help)
 clique task                   the Tasks board: list, show, done, note, add (clique task help)
 clique app <what> ...         change CLIque itself: agents, channels, workspaces, computers (clique app help)

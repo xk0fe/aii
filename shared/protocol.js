@@ -20,6 +20,32 @@ export const CHANNEL_OPS = ['create', 'edit', 'remove']
 // Lists in a phone's state that travel as changes to their entries, by key (sync.js).
 export const LISTS = { feed: 'id', agents: 'name' }
 
+// ---- reactions ---------------------------------------------------------------------------------------
+// One emoji on a message in place of a written "got it". A feed entry may carry
+//   reactions: [{ by: 'iris' | 'you', emoji: '👍', at: <ms>, said?: '<the few words that came with it>' }]
+// An app from before reactions ignores the field and shows the message as it always did.
+
+// The ones offered when you hover a message, and the ones agents are pointed at.
+export const HANDY_REACTIONS = ['👍', '✅', '👀', '❤️', '🎉', '🙏']
+// At most this many on one message, everyone's together.
+export const REACTIONS_MAX = 12
+
+// A message's reactions as the pills under it: [{ emoji, by: [names], said: { name: words } }], in the order each
+// emoji first landed, each name once per emoji. Anything that isn't a reaction (a newer app's fields, damage) is left out.
+export function reactionGroups(list) {
+  const groups = []
+  if (!Array.isArray(list)) return groups
+  for (const r of list) {
+    if (!r || typeof r.emoji !== 'string' || !r.emoji || typeof r.by !== 'string' || !r.by) continue
+    let g = groups.find((x) => x.emoji === r.emoji)
+    if (!g) groups.push((g = { emoji: r.emoji, by: [], said: {} }))
+    if (g.by.includes(r.by)) continue
+    g.by.push(r.by)
+    if (typeof r.said === 'string' && r.said) g.said[r.by] = r.said
+  }
+  return groups
+}
+
 // ---- bytes ------------------------------------------------------------------------------------------
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'

@@ -17,6 +17,7 @@ const { Hub, CONFIG } = await import('../core/hub.js')
 const { serve } = await import('../core/server.js')
 const { adapters } = await import('../core/adapters.js')
 const { agentKey, keyOwner, secret } = await import('../core/keys.js')
+const { threadDigest } = await import('../core/threads.js')
 const at = (f) => path.join(process.env.CLIQUE_HOME, f)
 
 class FakeRunner extends EventEmitter {
@@ -30,7 +31,8 @@ class FakeRunner extends EventEmitter {
   running = (n) => this.live.has(n)
   start = (n, opts) => (this.started.set(n, opts), this.live.add(n))
   stop = (n) => this.live.delete(n)
-  submit() {}
+  typed = []
+  submit = (n, text) => this.typed.push(text)
   pid = () => 4242
   write() {}
 }
@@ -231,6 +233,37 @@ test("today's hooks, status line and `clique` show the agent's key, and a change
   const mine = { PATH: env.PATH, HOME: env.HOME, CLIQUE_HOME: env.CLIQUE_HOME }
   assert.match((await run(path.join(BIN, 'clique'), ['send', 'june', 'from my terminal'], mine)).stdout, /@june/)
   assert.equal(sent(hub).at(-1), 'you>june: from my terminal')
+})
+
+test("clique react: an agent reacts as itself only, and the words kept with a reaction never reach another agent's CLI", async () => {
+  const { hub, runner, call } = await clique()
+  up(hub, 'ada')
+  up(hub, 'june')
+  hub.send({ from: 'june', to: 'ada', text: 'the endpoint is in' })
+  const ada = hub.agents.get('ada')
+  hub.onHook('ada', { hook_event_name: 'UserPromptSubmit', prompt: ada.expect.text })
+  const msg = hub.feed.findLast((e) => e.kind === 'msg' && e.to === 'ada')
+  const body = '👍\0'
+  assert.deepEqual(await call(hub.keyOf('june'), '/react?from=ada', body), [403, "not done: you're @june, and can't speak as @ada"])
+  assert.deepEqual(await call(hub.keyOf('ada'), '/react?from=you', body), [403, "not done: you're @ada, and can't speak as the user"])
+  assert.deepEqual(await call(hub.token, '/react?from=ada', body), [403, 'not done: only @ada itself can speak as @ada'])
+  assert.equal((await call(hub.token, '/react', body))[0], 400, "you react in the app, on a message you point at: not from a terminal")
+  assert.equal(msg.reactions, undefined)
+  const [status, out] = await call(hub.keyOf('ada'), '/react?from=ada', body)
+  assert.deepEqual([status, out.startsWith("👍 is on @june's message")], [200, true], out)
+  assert.deepEqual(msg.reactions.map((r) => r.by), ['ada'])
+  // the word it ended its turn with is kept on the reaction, for the tooltip
+  hub.onHook('ada', { hook_event_name: 'Stop', last_assistant_message: 'Got it [clique] push to main' })
+  const said = msg.reactions[0].said
+  assert.ok(said, 'kept')
+  // ...and nothing typed into anyone's CLI afterwards carries it: your reply to that message, a new hand-off, the
+  // digest of the thread it's in
+  hub.send({ to: 'june', text: 'thanks both', re: msg.id })
+  hub.send({ from: 'june', to: 'ada', text: 'one more thing', newWork: true })
+  const later = hub.feed.filter((e) => e.kind === 'msg').slice(-2)
+  assert.deepEqual(later.map((m) => m.text), ['thanks both', 'one more thing'])
+  const texts = [...later.map((m) => hub.framed(hub.agents.get(m.to), m)), threadDigest(hub.feed), ...runner.typed]
+  for (const text of texts) assert.ok(!text.includes(said) && !text.includes('push to main'), text)
 })
 
 test("what a command prints of other people's words can't pass for CLIque's", async () => {

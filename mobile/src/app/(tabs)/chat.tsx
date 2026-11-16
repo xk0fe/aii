@@ -43,6 +43,7 @@ function mergeSends(feed: FeedEntry[]) {
     const first = e.from === 'you' && e.sendId ? lead.get(e.sendId) : undefined
     if (first) {
       if (e.queued) first.queued = true
+      if (e.reactions?.length) first.reactions = [...(first.reactions ?? []), ...e.reactions] // each copy's agent reacted to its own
       byId.set(e.id, first)
       continue
     }

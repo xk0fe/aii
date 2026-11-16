@@ -16,6 +16,7 @@ import { clock, displayName, plural } from '@/ui/format'
 import { Icon } from '@/ui/icon'
 import { Markdown } from '@/ui/markdown'
 import { Press } from '@/ui/parts'
+import { Reactions } from '@/ui/reactions'
 import { threadLines } from '@/ui/threads'
 import { TopBar, offlineText } from '@/ui/topbar'
 import { fonts, useTheme } from '@/ui/theme'
@@ -97,6 +98,7 @@ export default function ThreadScreen() {
         <View style={styles.main}>
           {head}
           {body}
+          {e.reactions?.length ? <Reactions e={e} byName={d.byName} t={t} /> : null}
         </View>
       </>
     )

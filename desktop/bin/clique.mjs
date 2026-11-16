@@ -186,6 +186,7 @@ clique note "..."             share context with the whole clique
 clique board [words]          the shared notes you haven't read (--all for every one, or words to search)
 clique channels               the channels here: who's in each, and its brief
 clique post <channel> "..."   say it in that channel (@name someone to hand it to them there)
+clique react <emoji>          put one emoji on the message you're answering, in place of a written "got it"
 clique canvas                 draw a board in the chat, or add to one that's there (clique canvas help)
 clique task                   the Tasks board: list, show, done, note, add (clique task help)
 clique app <what> ...         change CLIque itself: agents, channels, workspaces, computers (clique app help)
@@ -251,6 +252,8 @@ async function cli([cmd, ...args]) {
     case 'post':
       if (!args[0] || args.length < 2) return stop('usage: clique post <channel> "message" (the name alone: an unquoted # starts a shell comment)', 2)
       return send(`/post?from=${from}`, { body: words(args) })
+    case 'react':
+      return send(`/react?from=${from}`, { body: words(args) })
     case 'canvas':
       return send(`/canvas?from=${from}`, { body: words(args) })
     case 'task':
