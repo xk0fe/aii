@@ -1,7 +1,7 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: a channel (#general or one you made), one agent's conversation with its terminal docked beside it,
-// Agents, Tasks or Terminals.
-/* global shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
+// Agents, Tasks, Terminals or Usage.
+/* global mountUsage, shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -48,6 +48,8 @@ const collection = mountCollection($('.collection'), {
   onRenamed: (from, to) => renamed(from, to),
 })
 const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onTerminal: (name) => select(name) })
+// What Claude Code and Codex used on this computer, day by day (ui/usage.js)
+const usage = mountUsage($('.usage-view'), { headIn: $('.heads') })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next), onMembers: (at) => openMembers(at) })
 // A new install's first run: Q makes its first workspace and clique with you, then shows you around (ui/setup.js). After
 // that, the setup screen: Claude Code and Codex, what to install or sign in to, then the first agent.
@@ -85,8 +87,8 @@ function startTour() {
 }
 
 // Where you are: 'chat' (the channel open, see setChannel), 'dm' (the conversation the composer is aimed at), 'clique' (Agents, the cards),
-// 'tasks' or 'terminals'. The terminals are laid out as a grid or one big one.
-const PLACES = ['chat', 'clique', 'tasks', 'terminals']
+// 'tasks', 'terminals' or 'usage'. The terminals are laid out as a grid or one big one.
+const PLACES = ['chat', 'clique', 'tasks', 'terminals', 'usage']
 let place = store.get('clique.place') === 'dm' || PLACES.includes(store.get('clique.place')) ? store.get('clique.place') : 'chat'
 let layout = store.get('clique.layout') === 'focus' ? 'focus' : 'grid'
 let show = ['busy', 'needs'].includes(store.get('clique.show')) ? store.get('clique.show') : 'all' // the grid: every terminal, the busy ones, or the ones waiting on you
@@ -112,7 +114,7 @@ else if (isConvo(composer.target()) && place !== 'dm') composer.setTarget('auto'
 $('.blank .blank-mark').outerHTML = ICONS.mark
 // Windows has no traffic lights: the app's mark sits at the sidebar's top instead
 if (ON_WINDOWS) $('.side-top').innerHTML = `<span class="app-mark" aria-hidden="true">${markSVG('0 4 24 18')}</span>`
-const NAV_ICON = { clique: markSVG('0 4 24 18'), tasks: ICONS.task, terminals: ICONS.terminal }
+const NAV_ICON = { clique: markSVG('0 4 24 18'), tasks: ICONS.task, terminals: ICONS.terminal, usage: ICONS.chart }
 for (const b of document.querySelectorAll('.nv .nv-icon')) b.outerHTML = NAV_ICON[b.closest('.nv').dataset.place]
 // Terminals' header: which terminals (with how many), and the grid or one big one
 $('.heads').insertAdjacentHTML('beforeend', pageHead({
@@ -170,6 +172,8 @@ function showPlace(next) {
   const dock = docked()
   collection.setVisible(place === 'clique')
   tasks.setVisible(place === 'tasks')
+  usage.setVisible(place === 'usage')
+  $('.usage-view').classList.toggle('hidden', place !== 'usage')
   $('.chat').classList.toggle('hidden', place !== 'chat' && place !== 'dm')
   $('.collection').classList.toggle('hidden', place !== 'clique')
   $('.tasks-view').classList.toggle('hidden', place !== 'tasks')
@@ -196,7 +200,7 @@ function showPlace(next) {
   lastShape = shape
 }
 let lastShape = ''
-// A place from the sidebar (or ⌘1–4): the composer goes back to everyone, which only a channel shows.
+// A place from the sidebar (or ⌘1–5): the composer goes back to everyone, which only a channel shows.
 function goPlace(next) {
   if (isConvo(composer.target())) composer.setTarget('auto') // targetChanged: back to the channel's messages
   showPlace(next)
@@ -895,7 +899,7 @@ const shownTerm = new IntersectionObserver((seen) => {
 
 // On Windows, Ctrl is the terminal's own key (Ctrl+C stops what the agent runs), so copy and paste go as in Windows
 // Terminal: Ctrl+C copies when there's a selection, Ctrl+Shift+C always, Ctrl+V and Ctrl+Shift+V paste (the page's paste,
-// which xterm types in). Ctrl+1–4 and Ctrl+Alt+S/C stay CLIque's (a Mac's ⌘ keys never reach the terminal); the other
+// which xterm types in). Ctrl+1–5 and Ctrl+Alt+S/C stay CLIque's (a Mac's ⌘ keys never reach the terminal); the other
 // Ctrl keys go to the agent. false: xterm leaves the key alone.
 function windowsTerminalKey(term, e) {
   if (e.type !== 'keydown' || !e.ctrlKey || e.metaKey || e.getModifierState('AltGraph')) return true
@@ -907,7 +911,7 @@ function windowsTerminalKey(term, e) {
     return false
   }
   if (key === 'v' && !e.altKey) return false
-  if (/^[1-4]$/.test(e.key) && !e.altKey && !e.shiftKey) return false
+  if (/^[1-5]$/.test(e.key) && !e.altKey && !e.shiftKey) return false
   return true
 }
 
@@ -1177,10 +1181,10 @@ $('[data-show]').addEventListener('click', (e) => {
   drawShow()
   requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 })
-// ⌘1 the channel, ⌘2 Agents, ⌘3 Tasks, ⌘4 Terminals; ⌘F searches the messages in a channel and a conversation (elsewhere it
+// ⌘1 the channel, ⌘2 Agents, ⌘3 Tasks, ⌘4 Terminals, ⌘5 Usage; ⌘F searches the messages in a channel and a conversation (elsewhere it
 // finds an agent), ⌘K finds an agent, ⌘N makes one (Ctrl on Windows, where Ctrl+F and Ctrl+N typed in a terminal are
 // the agent's: windowsTerminalKey)
-const KEYS = { 1: 'chat', 2: 'clique', 3: 'tasks', 4: 'terminals' }
+const KEYS = { 1: 'chat', 2: 'clique', 3: 'tasks', 4: 'terminals', 5: 'usage' }
 document.addEventListener('keydown', (e) => {
   if (!commandKey(e)) return
   if (document.querySelector('.ed-layer.open, dialog[open]')) return // the agent's sheet or a dialog is in front
@@ -1191,7 +1195,7 @@ document.addEventListener('keydown', (e) => {
 })
 
 // ⌃1–9: the workspaces, in the switcher's order (one asleep wakes). ⌃Tab and ⌃⇧Tab: the next and previous awake one.
-// On Windows, Alt+1–9 (Ctrl+1–4 are the views there) and Ctrl+Tab. Ahead of the terminals (capture), which would take ⌃1
+// On Windows, Alt+1–9 (Ctrl+1–5 are the views there) and Ctrl+Tab. Ahead of the terminals (capture), which would take ⌃1
 // as a key of their own.
 document.addEventListener('keydown', (e) => {
   const tab = e.key === 'Tab' && e.ctrlKey && !e.metaKey && !e.altKey
@@ -1661,7 +1665,7 @@ function drawUsePop() {
       return `<div class="up-row">${usageLine({ provider: u.provider, home: m.here ? null : m.key, homeName: m.name }, state)}<small class="${warn ? 'warn' : ''}">${esc(warn || u.windows.map((w) => `${w.pct}% ${resetsText(w.resetsAt)}`).join(' · '))}</small></div>`
     })
     return `<div class="up-group" data-key="${esc(m.key)}">${head}${rows.join('')}</div>`
-  }).join(''))
+  }).join('') + `<button class="up-more" data-place="usage">Usage by day${ICONS.chevron}</button>`)
   placeUsePop()
 }
 // Over the usage line, which grows a row per computer: placed again on every redraw, not only when it opens.
@@ -1673,6 +1677,12 @@ function placeUsePop() {
 // The line is its invoker (popovertarget), so a second click closes it and a click anywhere else does too.
 usePop.addEventListener('beforetoggle', (e) => {
   if (e.newState === 'open') drawUsePop()
+})
+// Under the limits: the Usage view, where every day is
+usePop.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-place=usage]')) return
+  usePop.hidePopover()
+  goPlace('usage')
 })
 
 function addAgent() {
@@ -1734,6 +1744,7 @@ const ready = live((next) => {
   followRename()
   collection.render(state)
   tasks.render(state)
+  usage.render(state)
   setup.render(state)
   drawNav()
   if (membersPop.matches(':popover-open')) drawMembers()

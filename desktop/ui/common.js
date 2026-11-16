@@ -17,7 +17,7 @@ const THIS_COMPUTER = ON_WINDOWS ? 'this PC' : 'this Mac'
 const upFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // A shortcut as this computer writes it: ⌥⌘S on a Mac is Ctrl+Alt+S on Windows, ⌘-click is Ctrl+click. The workspaces'
-// ⌃1–9 is Alt+1–9 there, since Ctrl+1–4 are the views (⌘1–4 on a Mac).
+// ⌃1–9 is Alt+1–9 there, since Ctrl+1–5 are the views (⌘1–5 on a Mac).
 function keys(mac) {
   if (!ON_WINDOWS) return mac
   const names = { '⌃': 'Alt', '⌘': 'Ctrl', '⌥': 'Alt', '⇧': 'Shift' }
