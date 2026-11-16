@@ -49,6 +49,8 @@ test('the folders it reads: Claude Code\'s and Codex\'s, where the environment s
     { dir: path.join(house, 'projects'), cli: 'claude', provider: 'house' },
   ])
   assert.deepEqual(logRoots({}, {}).map((r) => r.dir), [path.join(os.homedir(), '.claude', 'projects'), path.join(os.homedir(), '.codex', 'sessions')])
+  // a provider written by hand with an env that isn't one: none
+  assert.equal(logRoots({ odd: { id: 'odd', cli: 'claude', env: null }, text: { id: 'text', env: 'CLAUDE_CONFIG_DIR=/x' }, none: null }).length, 2)
 })
 
 test("the app's history: read in the background, Claude and Codex first, the clique by name wherever its agents live", async () => {

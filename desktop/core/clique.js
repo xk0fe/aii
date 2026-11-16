@@ -35,6 +35,7 @@ export function logRoots(providers = {}, env = process.env) {
     { dir: codex(env.CODEX_HOME || path.join(os.homedir(), '.codex')), cli: 'codex' },
   ]
   for (const p of Object.values(providers)) {
+    if (!p || typeof p.env !== 'object' || !p.env) continue // (config.json is yours to write: an env that isn't one is none)
     const cli = p.cli ?? 'claude'
     const home = expandEnv(p.env)[cli === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']
     const dir = home && (cli === 'codex' ? codex(home) : claude(home))

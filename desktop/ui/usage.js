@@ -59,19 +59,28 @@ function mountUsage(root, { headIn = root }) {
   // The years there's anything in, newest first.
   function years(today) {
     const first = data?.first ? Number(data.first.slice(0, 4)) : today.getFullYear()
-    return Array.from({ length: Math.max(1, today.getFullYear() - first + 1) }, (_, i) => today.getFullYear() - i)
+    return Array.from({ length: Math.min(12, Math.max(1, today.getFullYear() - first + 1)) }, (_, i) => today.getFullYear() - i)
   }
 
   // ---- numbers ----
-  // 17.1B, 342M, 2.5M, 340k, 900
-  const big = (n) => (n >= 1e9 ? `${+(n / 1e9).toFixed(n >= 1e10 ? 1 : 2)}B` : n >= 1e6 ? `${+(n / 1e6).toFixed(n >= 1e8 ? 0 : 1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n ?? 0)))
-  const count = (n) => Math.round(n).toLocaleString('en-US')
+  // 17.1B, 342M, 2.5M, 340k, 900: three figures at most, and a number that rounds up to a thousand of its unit goes
+  // by the next one (999,960 is 1M, not 1000k)
+  const UNITS = [['k', 1e3], ['M', 1e6], ['B', 1e9], ['T', 1e12]]
+  function big(n) {
+    n = Math.round(Number(n) || 0)
+    if (n < 1000) return String(n)
+    const write = (i) => +(n / UNITS[i][1]).toFixed(i === 0 || n / UNITS[i][1] >= 100 ? 0 : n / UNITS[i][1] >= 10 || i === 1 ? 1 : 2)
+    let i = UNITS.findLastIndex(([, size]) => n >= size)
+    if (write(i) >= 1000 && i < UNITS.length - 1) i++
+    return `${write(i).toLocaleString('en-US')}${UNITS[i][0]}`
+  }
+  const count = (n) => Math.round(Number(n) || 0).toLocaleString('en-US')
   // "1,204 messages", the number in bold where it's a fact in a line
   const things = (n, word, { bold = false } = {}) => `${bold ? `<b>${count(n)}</b>` : count(n)} ${Math.round(n) === 1 ? word : `${word}s`}`
   const hueOf = (id) => (HUES.includes(id) ? id : 'other')
 
   // The days of a range that have anything, per provider, and all of it added up.
-  function tally(providers, r) {
+  function tally(providers, r, today) {
     const from = keyOf(r.from)
     const to = keyOf(r.to)
     const total = { tokens: 0, messages: 0, sessions: 0, cost: 0, input: 0, output: 0, cached: 0, written: 0 }
@@ -103,10 +112,11 @@ function mountUsage(root, { headIn = root }) {
       longest = Math.max(longest, run)
       if (byDay.has(k) && (!busiest || byDay.get(k) > byDay.get(busiest))) busiest = k
     }
-    // the one running now: up to today, or to yesterday when today hasn't started
+    // the one running now: up to today, or to yesterday when today hasn't started (a year that's over has none running)
+    const live = to === keyOf(today)
     let now = 0
-    for (let d = active.has(to) ? r.to : addDays(r.to, -1); d >= r.from && active.has(keyOf(d)); d = addDays(d, -1)) now++
-    return { total, per, active: active.size, longest, now, busiest, cap, level: (v) => (v > 0 && cap > 0 ? Math.max(1, Math.min(4, Math.ceil(4 * Math.sqrt(v / cap)))) : 0) }
+    if (live) for (let d = active.has(to) ? r.to : addDays(r.to, -1); d >= r.from && active.has(keyOf(d)); d = addDays(d, -1)) now++
+    return { total, per, active: active.size, longest, now, live, busiest, cap, level: (v) => (v > 0 && cap > 0 ? Math.max(1, Math.min(4, Math.ceil(4 * Math.sqrt(v / cap)))) : 0) }
   }
 
   // Who used it, in which folders and on which models: a day's, or a whole range's.
@@ -233,29 +243,34 @@ function mountUsage(root, { headIn = root }) {
     const today = new Date()
     const reading = data.reading
     const none = !data.providers.length
-    // nothing read yet: the two calendars everyone has, empty, so they fill in where they stand
-    const providers = none && reading ? [{ id: 'claude', label: 'Claude', days: {}, ghost: true }, { id: 'codex', label: 'Codex', days: {}, ghost: true }] : data.providers
+    // The first look ever (the logs have never been read through): the header says how far along it is and, with
+    // nothing in yet, the two calendars everyone has stand empty, so the days fill in where they are. Every look after
+    // that only reads what was added: it's said when that's a lot, and otherwise nothing on the page changes for it.
+    const first = Boolean(reading && !data.at)
+    const busy = Boolean(reading && (first || reading.total > 64e6))
+    const empty = none && !first
+    const providers = none ? [{ id: 'claude', label: 'Claude', days: {}, ghost: true }, { id: 'codex', label: 'Codex', days: {}, ghost: true }] : data.providers
     const r = rangeOf(range, today)
     if (picked && (picked < keyOf(r.from) || picked > keyOf(r.to))) picked = null
     const pct = reading?.total ? Math.min(100, Math.floor((reading.done / reading.total) * 100)) : 0
-    headEl.querySelector('.ph-sub').textContent = reading && (none || reading.total > 64e6) ? `Reading Claude Code’s and Codex’s logs${reading.total ? ` · ${pct}%` : '…'}` : `What Claude Code and Codex used on ${THIS_COMPUTER}`
+    headEl.querySelector('.ph-sub').textContent = busy ? `Reading Claude Code’s and Codex’s logs${reading.total ? ` · ${pct}%` : '…'}` : `What Claude Code and Codex used on ${THIS_COMPUTER}`
     if (rangeBtn.firstChild.nodeValue !== r.label) rangeBtn.firstChild.nodeValue = r.label
-    rangeBtn.classList.toggle('hidden', none && !reading)
-    root.querySelector('.us-prog').classList.toggle('on', Boolean(reading && (none || reading.total > 64e6)))
+    rangeBtn.classList.toggle('hidden', empty)
+    root.querySelector('.us-prog').classList.toggle('on', busy)
     root.querySelector('.us-prog i').style.transform = `scaleX(${pct / 100})`
-    root.querySelector('.us-none').classList.toggle('hidden', !(none && !reading))
-    root.querySelector('.us-scroll').classList.toggle('hidden', none && !reading)
-    if (none && !reading) return
-    const t = tally(providers, r)
+    root.querySelector('.us-none').classList.toggle('hidden', !empty)
+    root.querySelector('.us-scroll').classList.toggle('hidden', empty)
+    if (empty) return
+    const t = tally(providers, r, today)
     const within = r.id === 'last' ? 'in the last 12 months' : `in ${r.label}`
     const steps = [1, 2, 3, 4].map((l) => `<i data-l="${l}" title="${t.cap ? (l < 4 ? `Up to ${big(t.cap * (l / 4) ** 2)} tokens a day` : `More than ${big(t.cap * (3 / 4) ** 2)} tokens a day`) : ''}"></i>`).join('')
     morph(wrap, `<div class="us-tiles">${
       tile('Tokens', big(t.total.tokens), t.total.cost >= 0.005 ? `≈ ${money(t.total.cost)} at API prices` : within, [TOKENS_NOTE, kindsText(t.total), t.total.cost >= 0.005 && COST_NOTE].filter(Boolean).join('\n'))}${
       tile('Messages', count(t.total.messages), `in ${things(t.total.sessions, 'session')}`, `What you, the clique and ${PRODUCT_NAME} sent to Claude Code and Codex: each one starts a turn.`)}${
       tile('Active days', count(t.active), t.busiest ? `busiest ${MONTH[dateOf(t.busiest).getMonth()]} ${dateOf(t.busiest).getDate()}` : within, 'Days anything ran, on any provider.')}${
-      tile('Longest streak', plural(t.longest, 'day'), t.now ? `${plural(t.now, 'day')} running now` : t.longest ? 'none running now' : within, 'Days in a row with anything running.')}</div>
+      tile('Longest streak', plural(t.longest, 'day'), !t.live || !t.longest ? within : t.now ? `${plural(t.now, 'day')} running now` : 'none running now', 'Days in a row with anything running.')}</div>
       ${providers.map((p, i) => providerHTML(p, t.per[i], r, t, today)).join('')}
-      <div class="us-foot"><span class="us-note">From Claude Code’s and Codex’s own logs on ${esc(THIS_COMPUTER)}: your clique in every workspace, and what you ran outside ${esc(PRODUCT_NAME)}. Nothing leaves ${esc(THIS_COMPUTER)}.${data.at && !reading ? ` Read ${Date.now() - data.at < 60000 ? 'just now' : `${ago(data.at)} ago`}.` : ''}</span>
+      <div class="us-foot"><span class="us-note">From Claude Code’s and Codex’s own logs on ${esc(THIS_COMPUTER)}: your clique in every workspace, and what you ran outside ${esc(PRODUCT_NAME)}. Nothing leaves ${esc(THIS_COMPUTER)}.${data.at ? ` Read ${Date.now() - data.at < 60000 ? 'just now' : `${ago(data.at)} ago`}.` : ''}</span>
         <span class="us-legend" title="${esc(TOKENS_NOTE)} The same scale in every calendar.">Less<i data-l="0"></i>${steps}More</span></div>
       ${detailHTML(providers, r, today)}`)
   }

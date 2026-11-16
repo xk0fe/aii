@@ -283,3 +283,167 @@ test("an index from another version, or one that can't be read, starts over", as
     assert.deepEqual(Object.keys(history.state().providers.claude.days), ['2026-11-10'])
   }
 })
+
+// ---- what an independent review of the first version found --------------------------------------------------------
+
+const old = (file, days = 10) => fs.utimesSync(file, new Date(Date.now() - days * 864e5), new Date(Date.now() - days * 864e5))
+
+test("a name that's written after the first look is still found: a Codex agent's, and a sub-agent's session's", () => {
+  const file = write(path.join(codex, '2026', '11', '10', 'rollout-late.jsonl'), lines(meta(), started('2026-11-10')))
+  let index = scan(emptyIndex(), roots)
+  write(file, lines(turn('2026-11-10', 'gpt-6-luna', 'rex'), count('2026-11-10', 1000, 0, 100)), { append: true })
+  index = scan(index, roots)
+  assert.deepEqual(dayOf(index, 'codex', '2026-11-10', { names: ['rex'] }).who, { rex: 1100 })
+  // a sub-agent's log read while its session's has no name yet
+  const session = write(path.join(claude, 'p', 'sess.jsonl'), lines(prompt('2026-11-10', 'go'), reply('1', '2026-11-10', { input_tokens: 7, output_tokens: 0 }, { cwd: '/work/shop' })))
+  write(path.join(claude, 'p', 'sess', 'subagents', 'agent-1.jsonl'), lines(reply('2', '2026-11-10', { input_tokens: 100, output_tokens: 0 }, { isSidechain: true })))
+  index = scan(index, roots)
+  write(session, lines(named('milo')), { append: true })
+  index = scan(index, roots)
+  const d = dayOf(index, 'claude', '2026-11-10', { names: ['milo'] })
+  assert.deepEqual([d.who, d.where], [{ milo: 107 }, { '/work/shop': 107 }])
+  // ...and it keeps them when both logs are gone
+  fs.rmSync(path.join(claude, 'p'), { recursive: true })
+  index = scan(index, roots)
+  assert.deepEqual(dayOf(index, 'claude', '2026-11-10', { names: ['milo'] }).who, { milo: 107 })
+})
+
+test('a log that moved is the same log: its days are counted once, a copy left behind too, and it carries on where it was read to', () => {
+  const from = write(path.join(claude, 'old-folder', 'sid-1.jsonl'), lines(prompt('2026-11-10', 'hi'), reply('1', '2026-11-10', { input_tokens: 200, output_tokens: 0 })))
+  write(path.join(claude, 'old-folder', 'sid-1', 'subagents', 'agent-9.jsonl'), lines(reply('5', '2026-11-10', { input_tokens: 50, output_tokens: 0 }, { isSidechain: true })))
+  let index = scan(emptyIndex(), roots)
+  const before = summarize(index)
+  fs.renameSync(path.join(claude, 'old-folder'), path.join(claude, 'new-folder')) // the project's folder was renamed
+  index = scan(index, roots)
+  assert.deepEqual(summarize(index), before)
+  assert.deepEqual(Object.keys(index.kept), [])
+  // the agent moved to another folder, its log copied there and grown since; the one it left stays behind
+  const to = write(path.join(claude, 'third', 'sid-1.jsonl'), fs.readFileSync(path.join(claude, 'new-folder', 'sid-1.jsonl'), 'utf8') + lines(reply('2', '2026-11-10', { input_tokens: 30, output_tokens: 0 })))
+  index = scan(index, roots)
+  const d = dayOf(index, 'claude', '2026-11-10')
+  assert.deepEqual([d.tokens, d.sessions, d.messages], [280, 1, 1])
+  assert.ok(index.files[to] && !index.files[from])
+  index = scan(index, roots)
+  assert.equal(dayOf(index, 'claude', '2026-11-10').tokens, 280)
+})
+
+test("a response copied into another of its session's logs is counted once, whichever log is read first, in one look or two", () => {
+  // (each session's log is named by its own id, as Claude Code names them)
+  const session = (dir) => path.join(claude, dir, `sess-${dir}.jsonl`)
+  const sub = (dir, n) => path.join(claude, dir, `sess-${dir}`, 'subagents', `agent-${n}.jsonl`)
+  const mine = (n, input) => reply(n, '2026-11-10', { input_tokens: input, output_tokens: 0 })
+  // a sub-agent carries on from its session (1 and 2 are copies), and another from that one (3 is)
+  const build = (dir) => {
+    write(session(dir), lines(prompt('2026-11-10', 'go'), mine('1', 100), mine('2', 10)))
+    write(sub(dir, 'a'), lines(mine('1', 100), mine('2', 10), mine('3', 5)))
+    write(sub(dir, 'b'), lines(mine('3', 5), mine('4', 1)))
+  }
+  build('one')
+  old(sub('one', 'a'), 0.5) // read after the others
+  assert.equal(dayOf(scan(emptyIndex(), roots), 'claude', '2026-11-10').tokens, 116)
+  build('two')
+  old(session('two'), 0.5)
+  old(session('one'), 0.6)
+  let index = scan(emptyIndex(), roots)
+  assert.equal(dayOf(index, 'claude', '2026-11-10').tokens, 232)
+  // a later look: one more sub-agent with a copy of everything, plus its own
+  write(sub('two', 'c'), lines(mine('1', 100), mine('2', 10), mine('3', 5), mine('4', 1), mine('5', 1000)))
+  index = scan(index, roots)
+  assert.equal(dayOf(index, 'claude', '2026-11-10').tokens, 232 + 1000)
+  // a log read again from its start keeps what's its own, and doesn't take back what another log counted
+  write(session('two'), lines(prompt('2026-11-10', 'go'), mine('1', 100), mine('2', 10), mine('6', 7)))
+  index = scan(index, roots)
+  assert.equal(dayOf(index, 'claude', '2026-11-10').tokens, 232 + 1000 + 7)
+  // another session's response with the same id is its own
+  write(path.join(claude, 'three', 'other.jsonl'), lines(mine('1', 100)))
+  assert.equal(dayOf(scan(index, roots), 'claude', '2026-11-10').tokens, 232 + 1000 + 7 + 100)
+})
+
+test('a response is told from the others by its ids, however far apart its lines are; one with no id is its own', () => {
+  const many = Array.from({ length: 300 }, (_, i) => reply(`n${i}`, '2026-11-10', { input_tokens: 1, output_tokens: 0 }))
+  const file = write(path.join(claude, 'p', 'ids.jsonl'), lines(reply('first', '2026-11-10', { input_tokens: 1000, output_tokens: 0 }), ...many.slice(0, 150)))
+  let index = scan(emptyIndex(), roots)
+  write(file, lines(...many.slice(150), reply('first', '2026-11-10', { input_tokens: 1000, output_tokens: 0 })), { append: true })
+  index = scan(index, roots)
+  assert.equal(dayOf(index, 'claude', '2026-11-10').tokens, 1300)
+  assert.equal(dayOf(scan(emptyIndex(), roots), 'claude', '2026-11-10').tokens, 1300, 'the same read in one go')
+  const bare = (input) => ({ type: 'assistant', timestamp: at('2026-11-11'), message: { model: 'claude-opus-5-5', usage: { input_tokens: input, output_tokens: 0 } } })
+  write(path.join(claude, 'p', 'bare.jsonl'), lines(bare(10), bare(20), bare(30)))
+  assert.equal(dayOf(scan(index, roots), 'claude', '2026-11-11').tokens, 60)
+})
+
+test("the ids go once a session has gone quiet: a finished log's entry is small", () => {
+  const live = write(path.join(claude, 'p', 'live.jsonl'), lines(reply('1', '2026-11-10', { input_tokens: 1, output_tokens: 0 })))
+  const done = write(path.join(claude, 'p', 'done.jsonl'), lines(reply('2', '2026-11-01', { input_tokens: 1, output_tokens: 0 })))
+  const doneSub = write(path.join(claude, 'p', 'done', 'subagents', 'agent-1.jsonl'), lines(reply('3', '2026-11-01', { input_tokens: 1, output_tokens: 0 })))
+  old(done)
+  old(doneSub)
+  let index = scan(emptyIndex(), roots)
+  assert.deepEqual([index.files[live].seen?.length, index.files[done].seen, index.files[doneSub].seen], [1, undefined, undefined])
+  // a log read while its session was live, never changed again: its ids go on a later look
+  old(live)
+  index = scan(index, roots)
+  assert.equal(index.files[live].seen, undefined)
+  assert.equal(dayOf(index, 'claude', '2026-11-10').tokens, 1)
+})
+
+test('a summary is the same before and after a log goes, with two providers sharing a day', () => {
+  const day = '2026-10-01'
+  write(path.join(claude, 'p', 'a.jsonl'), lines(prompt(day, '1'), prompt(day, '2'), prompt(day, '3'), reply('1', day, { input_tokens: 10, output_tokens: 0 })))
+  write(path.join(claude, 'p', 'b.jsonl'), lines(prompt(day, '1'), prompt(day, '2'), prompt(day, '3'), reply('2', day, { input_tokens: 90, output_tokens: 0 }, { model: 'glm-5.1' })))
+  // one log on both: its messages and its session go with the model that did most
+  write(path.join(claude, 'p', 'c.jsonl'), lines(prompt(day, '1'), reply('3', day, { input_tokens: 5, output_tokens: 0 }), reply('4', day, { input_tokens: 50, output_tokens: 0 }, { model: 'glm-5.1' })))
+  // asked just before midnight, answered after: the question is the answering provider's too
+  write(path.join(claude, 'p', 'd.jsonl'), lines(prompt('2026-10-02', 'late'), reply('5', '2026-10-03', { input_tokens: 1, output_tokens: 0 }, { model: 'glm-5.1' })))
+  const providers = { claude: { cli: 'claude' }, glm: { cli: 'claude', models: ['glm-5.1'] } }
+  let index = scan(emptyIndex(), roots)
+  const before = summarize(index, { providers })
+  assert.deepEqual([before.providers.claude.days[day].messages, before.providers.claude.days[day].sessions, before.providers.glm.days[day].messages, before.providers.glm.days[day].sessions], [3, 1, 4, 2])
+  assert.deepEqual(Object.keys(before.providers.claude.days), [day])
+  assert.deepEqual([before.providers.glm.days['2026-10-02'].messages, before.providers.glm.days['2026-10-02'].tokens], [1, 0])
+  fs.rmSync(path.join(claude, 'p'), { recursive: true })
+  index = scan(index, roots)
+  assert.deepEqual(Object.keys(index.files), [])
+  assert.deepEqual(summarize(index, { providers }), before)
+})
+
+test("a folder that can't be listed doesn't stop the rest from being read, and nothing of it is given up", { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
+  write(path.join(claude, 'open', 'a.jsonl'), lines(reply('1', '2026-11-10', { input_tokens: 100, output_tokens: 0 })))
+  write(path.join(claude, 'locked', 'b.jsonl'), lines(reply('2', '2026-11-10', { input_tokens: 1000, output_tokens: 0 })))
+  let index = scan(emptyIndex(), roots)
+  fs.chmodSync(path.join(claude, 'locked'), 0o000)
+  try {
+    write(path.join(claude, 'open', 'a.jsonl'), lines(reply('3', '2026-11-10', { input_tokens: 5, output_tokens: 0 })), { append: true })
+    index = scan(index, roots)
+    assert.equal(dayOf(index, 'claude', '2026-11-10').tokens, 1105)
+    assert.deepEqual(Object.keys(index.kept), [])
+  } finally {
+    fs.chmodSync(path.join(claude, 'locked'), 0o755)
+  }
+  assert.equal(dayOf(scan(index, roots), 'claude', '2026-11-10').tokens, 1105)
+})
+
+test("a line with no time, or a time nobody logged at, isn't a day", () => {
+  const timed = (timestamp, input) => ({ ...reply(`t${input}`, '2026-11-10', { input_tokens: input, output_tokens: 0 }), timestamp })
+  write(path.join(claude, 'p', 'odd.jsonl'), lines(timed(0, 1), timed('1970-01-01T00:00:00Z', 2), timed('0', 4), timed('2999-01-01T00:00:00Z', 8), timed(undefined, 16), timed(at('2026-11-10'), 32)))
+  const s = summarize(scan(emptyIndex(), roots))
+  assert.deepEqual([s.first, Object.keys(s.providers.claude.days), s.providers.claude.days['2026-11-10'].tokens], ['2026-11-10', ['2026-11-10'], 32])
+})
+
+test('a saved index with parts missing is read as far as it goes, and the logs are looked at', async () => {
+  write(path.join(claude, 'p', 'a.jsonl'), lines(reply('1', '2026-11-10', { input_tokens: 10, output_tokens: 5 })))
+  const file = path.join(path.dirname(claude), 'history.json')
+  for (const saved of ['{"v":1}', '{"v":1,"files":null,"kept":{}}', '{"v":1,"at":"soon","files":{},"kept":{}}', '[]', 'null']) {
+    fs.writeFileSync(file, saved)
+    const history = new History({ file, roots: () => roots, worker: false })
+    assert.ok(history.state().reading, saved)
+    await history.running
+    assert.equal(history.state().providers.claude.days['2026-11-10'].tokens, 15, saved)
+  }
+  // the folders to read can't be said: the look fails, the asker isn't left waiting, and it's tried again later
+  const broken = new History({ file: path.join(path.dirname(claude), 'none.json'), roots: () => { throw new Error('no') }, worker: false })
+  broken.state()
+  await broken.running.catch(() => {})
+  const after = broken.state()
+  assert.deepEqual([after.reading, after.at > 0, broken.running], [null, true, null])
+})
