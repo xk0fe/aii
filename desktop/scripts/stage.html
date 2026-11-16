@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- The stage the README's pictures stand on (`npm run shots -- … --frame`, scripts/screenshots.mjs): the first run's
+     glow in the creatures' colours, with a picture on it and see-through around the stage's own corners, so it sits on
+     GitHub's page in either theme. The theme comes from the system, as the app's does.
+       ?w=&h=        the picture's size in px
+       ?src=         the picture (a file URL). Without one, the window is drawn empty: what a recording is laid over
+       ?kind=window  a window: rounded corners and a shadow (the default)
+            =float   something that floats over the desktop (the pill, the chat): its own see-through picture, no window
+            =phones  the phone app: every ?phone= side by side, each in a phone's body
+       ?phone=       with kind=window, one phone standing in front of the window's right edge
+       ?part=mask    only the window's shape, white on black, at w × h: the mask that rounds a recording's corners -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: light dark; --ground: #F5F5F4; --paper: #FFFFFF; --glow: .26; --line: rgba(0, 0, 0, .1); --lift: 0 22px 60px rgba(30, 20, 40, .18), 0 4px 14px rgba(30, 20, 40, .08); --body: #1b1b1f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ground: #161616; --paper: #1E1E1E; --glow: .34; --line: rgba(255, 255, 255, .14); --lift: 0 22px 60px rgba(0, 0, 0, .55), 0 4px 14px rgba(0, 0, 0, .35); --body: #2a2a30; }
+  }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  .stage { position: relative; overflow: hidden; border-radius: 22px; background: var(--ground); }
+  .stage > i { position: absolute; border-radius: 50%; filter: blur(70px); opacity: var(--glow); }
+  .stage > .sky { left: -6%; bottom: -18%; width: 46%; height: 70%; background: #3db8ff; }
+  .stage > .pink { left: 28%; bottom: -30%; width: 46%; height: 78%; background: #ff45a8; }
+  .stage > .lime { right: -6%; bottom: -20%; width: 44%; height: 66%; background: #72d63a; }
+  .win { position: absolute; overflow: hidden; background: var(--paper); box-shadow: var(--lift), 0 0 0 1px var(--line); }
+  .win img, .float img { display: block; width: 100%; height: 100%; }
+  .float { position: absolute; }
+  .phone { position: absolute; box-sizing: border-box; background: var(--body); box-shadow: var(--lift), 0 0 0 1px var(--line); }
+  .phone img { display: block; width: 100%; height: 100%; }
+  .mask { background: #000; }
+  .mask > div { background: #fff; }
+</style>
+</head>
+<body>
+<script>
+  const q = new URLSearchParams(location.search)
+  const num = (k, d) => (q.has(k) ? Number(q.get(k)) : d)
+  const w = num('w', 800), h = num('h', 500)
+  const kind = q.get('kind') ?? 'window'
+  const radius = num('r', 12)
+  const src = q.get('src')
+  const img = (url, alt = '') => `<img src="${url}" alt="${alt}">`
+  // a phone's screen is 1320 × 2868: its body is a rim around it, with the screen's corners inside
+  const PHONE = 1320 / 2868
+  const phone = (url, x, y, ph) => {
+    const rim = Math.round(ph * 0.014), pw = Math.round(ph * PHONE)
+    return `<div class="phone" style="left:${x}px;top:${y}px;width:${pw + 2 * rim}px;height:${ph + 2 * rim}px;padding:${rim}px;border-radius:${Math.round(pw * 0.17 + rim)}px"><div style="width:${pw}px;height:${ph}px;border-radius:${Math.round(pw * 0.17)}px;overflow:hidden">${img(url)}</div></div>`
+  }
+  const glow = '<i class="sky"></i><i class="pink"></i><i class="lime"></i>'
+  let html
+  if (q.get('part') === 'mask') {
+    document.documentElement.style.background = '#000'
+    html = `<div class="mask" style="width:${w}px;height:${h}px"><div style="width:${w}px;height:${h}px;border-radius:${radius}px"></div></div>`
+    window.__size = { width: w, height: h }
+  } else if (kind === 'phones') {
+    // the phones stand in a row, as tall as h, with room around them
+    const shots = q.getAll('phone')
+    const ph = h, pw = Math.round(ph * PHONE), gap = Math.round(pw * 0.26), pad = Math.round(ph * 0.09)
+    const rim = Math.round(ph * 0.014)
+    const W = Math.max(w, shots.length * (pw + 2 * rim) + (shots.length - 1) * gap + 2 * pad), H = ph + 2 * rim + 2 * pad
+    const x0 = Math.round((W - (shots.length * (pw + 2 * rim) + (shots.length - 1) * gap)) / 2)
+    html = `<div class="stage" style="width:${W}px;height:${H}px">${glow}${shots.map((s, i) => phone(s, x0 + i * (pw + 2 * rim + gap), pad, ph)).join('')}</div>`
+    window.__size = { width: W, height: H }
+  } else {
+    const pad = num('pad', Math.round(Math.max(28, w * 0.05)))
+    const one = q.get('phone')
+    // a phone in front of the window: it stands past the window's right edge and a little below its foot
+    const ph = one ? Math.round(h * 0.84) : 0, pw = Math.round(ph * PHONE), rim = Math.round(ph * 0.014)
+    const W = w + 2 * pad + (one ? Math.round(pw * 0.42) : 0), H = h + 2 * pad
+    const inner = kind === 'float'
+      ? `<div class="float" style="left:${pad}px;top:${pad}px;width:${w}px;height:${h}px">${src ? img(src) : ''}</div>`
+      : `<div class="win" style="left:${pad}px;top:${pad}px;width:${w}px;height:${h}px;border-radius:${radius}px">${src ? img(src) : ''}</div>`
+    html = `<div class="stage" style="width:${W}px;height:${H}px">${glow}${inner}${one ? phone(one, W - Math.round(pad * 0.7) - pw - 2 * rim, H - Math.round(pad * 0.55) - ph - 2 * rim, ph) : ''}</div>`
+    window.__size = { width: W, height: H, x: pad, y: pad }
+  }
+  document.body.innerHTML = html
+  window.__ready = Promise.all([...document.images].map((i) => i.decode().catch(() => {})))
+</script>
+</body>
+</html>
