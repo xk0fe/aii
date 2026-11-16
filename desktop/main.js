@@ -5,7 +5,7 @@
 import './core/migrate-now.js' // first: an older install's folder is moved before anything below reads it
 import { moveUserData } from './core/migrate.js'
 import { movedPath } from './core/home.js'
-import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, powerMonitor, systemPreferences, protocol } from 'electron'
+import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, screen, nativeImage, nativeTheme, globalShortcut, dialog, shell, clipboard, powerSaveBlocker, powerMonitor, systemPreferences, protocol, autoUpdater as systemUpdater } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -27,6 +27,9 @@ import { Permissions, appBundle, bundleIdIn } from './core/permissions.js'
 import { Setup, withSetup, hasAgents } from './core/setup.js'
 import { keeper, awakeState } from './core/awake.js'
 import { addProvider, removeProvider, checkProvider, keepProvidersInUse } from './core/providers.js'
+import { Updates, restartWords, keepsAgents, checkWords, menuItem, offReason, macSignature, feedFrom, feedConfig, electronUpdater, newer } from './core/updates.js'
+import { loginItem, LOGIN_ARG } from './core/login.js'
+import { PROTOCOL } from './core/ptyhost.js'
 // The app's name and id (core/appid.js), which packaging uses too: on Windows notifications carry the id, and it must
 // match the installer's Start menu shortcut.
 import { APP_ID, PRODUCT_NAME, USER_DATA } from './core/appid.js'
@@ -55,6 +58,10 @@ let trayHiddenAt = 0
 let quitting = false
 let onBattery = false // a laptop that isn't plugged in (the tray says so while it's kept awake)
 let started = false // CLIque is up: its windows exist, so a second launch or a .clique file can show them
+let updates = null // CLIque updating itself (core/updates.js)
+let updating = false // quitting into an update: what closes and quits from here on does so without asking
+let updatesStarted = null // startUpdates, once it's done
+let login = null // Open at login (core/login.js)
 const setup = new Setup() // can Claude Code and Codex run here (core/setup.js): the first-run screen, ui/setup.js
 
 // Something that went wrong in here and nothing caught: written to CLIque's log, and CLIque carries on. Without this
@@ -94,6 +101,7 @@ app.on('open-file', (e, file) => {
 app.on('second-instance', (_e, argv) => {
   const file = packIn(argv)
   if (file) return openPack(file)
+  if (argv.includes(LOGIN_ARG)) return // the system opening it at login, with CLIque up already: nothing to show
   if (started) openDashboard()
 })
 opened = packIn(process.argv)
@@ -137,10 +145,12 @@ async function start() {
     permissions = newPermissions()
   }
 
+  login = loginItem({ app })
   setMenu()
   createTray()
   createOverlay()
   wire()
+  updatesStarted = startUpdates().catch((e) => logLine('update', e?.stack ?? String(e)))
   const key = clique.config.data.hotkey ?? 'Alt+Shift+Space'
   const hotkey = () => (dashOnScreen() ? dash.focus() : overlay.webContents.send('toggle'))
   if (!globalShortcut.register(key, hotkey)) clique.say(shortcutTaken(key, 'opens the floating chat', `open the chat from ${PRODUCT_NAME}'s icon in the ${MAC ? 'menu bar' : 'taskbar'}`))
@@ -155,6 +165,7 @@ async function start() {
   }
   started = true
   openPackFile() // CLIque was opened by double-clicking a .clique file
+  const updated = afterUpdate()
   try {
     keepProvidersInUse(clique.config)
   } catch (e) {
@@ -163,9 +174,11 @@ async function start() {
   // A first run: no workspace or no agents yet, so CLIque opens on its dashboard, which says what to set up, asks for the
   // first workspace, or invites the first agent. What macOS still has to allow comes first, up in the hatch.
   const firstRun = !clique.screen || !hasAgents(clique.config.data)
+  // Opened by the system at login (core/login.js): the icon and the pill, no window put in front of you.
+  if (login.opened()) return
   const missing = (await permissions?.missing().catch((e) => (logLine('permissions', e?.stack ?? String(e)), []))) ?? []
-  if (missing.length) openPermissions({ then: firstRun ? openDashboard : null })
-  else if (firstRun) openDashboard()
+  if (missing.length) openPermissions({ then: firstRun || updated?.dashboard ? openDashboard : null })
+  else if (firstRun || updated?.dashboard) openDashboard()
 }
 
 // CLIque couldn't start (its terminal host, say): say so and quit, rather than run on with no icon and no window, holding
@@ -203,7 +216,11 @@ function setMenu() {
   if (!MAC) return Menu.setApplicationMenu(null)
   const dev = app.isPackaged ? [] : [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }]
   const view = { label: 'View', submenu: [...dev, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] }
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, view, { role: 'windowMenu' }]))
+  // the app menu as macOS makes it, with updates under About: Check for Updates…, or Restart to Update once one is here
+  const { label, act } = menuItem(updates?.phase)
+  const update = { label, click: () => (act === 'restart' ? restartToUpdate() : checkForUpdates()) }
+  const appMenu = { label: PRODUCT_NAME, submenu: [{ role: 'about' }, update, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }
+  Menu.setApplicationMenu(Menu.buildFromTemplate([appMenu, { role: 'editMenu' }, view, { role: 'windowMenu' }]))
 }
 
 // Windows' keys for what a Mac's View menu does: Ctrl+= / Ctrl+- / Ctrl+0 zoom and F11 full screen (the dashboard); and,
@@ -249,6 +266,12 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 // ends them too.
 app.on('before-quit', (e) => {
   if (quitting || !clique) return
+  // Restart to update: you were told what happens to the agents before you said yes (restartToUpdate)
+  if (updating) {
+    quitting = true
+    clique.detach()
+    return void keepAwake() // and the computer may sleep again (will-quit does so too)
+  }
   const live = [...clique.hubs.values()].reduce((n, h) => n + h.snapshot().agents.filter((a) => a.on && !['stopped', 'off', 'parked', 'resting'].includes(a.status)).length, 0)
   const s = live > 1 ? 's' : ''
   if (live) lowerHatch() // its dialog is coming, right under the docked chat
@@ -302,12 +325,14 @@ const awake = keeper({
 })
 const keepAwake = awake.check
 
-// The state the windows get: the workspace on screen, what's set up, whether the computer is kept awake, and when
-// notifications are held (notifyState).
+// The state the windows get: the workspace on screen, what's set up, whether the computer is kept awake, when notifications are held (notifyState), and this app's
+// own: its version, an update that's on its way or ready (core/updates.js), and whether it opens at login (null where
+// it can't: running from source).
 const stateNow = (snapshot = clique.snapshot()) => ({
   ...withSetup(snapshot, clique.config.data, setup.status),
   notify: notifyState(),
   awake: awakeState(awake.decision, { enabled: clique.config.data.keepAwake !== false, pc: MAC ? 'Mac' : 'PC', battery: onBattery }),
+  app: { version: app.getVersion(), update: updates?.view() ?? null, login: login?.supported ? { on: login.on } : null },
 })
 
 // ---- windows ---------------------------------------------------------------
@@ -346,7 +371,7 @@ function page(file, options, query) {
 // The popover and the floating chat are hidden, never closed (⌘W, Alt+F4), until CLIque quits, or Windows shuts down
 // or signs you out (no before-quit then).
 function keepOpen(win) {
-  win.on('close', (e) => quitting || (e.preventDefault(), win.hide()))
+  win.on('close', (e) => quitting || updating || (e.preventDefault(), win.hide())) // (updating: macOS's updater closes every window, then quits)
   win.on('session-end', () => (quitting = true))
 }
 
@@ -832,6 +857,166 @@ const actions = {
     return (await dialog.showOpenDialog(dash, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0]
   },
   quit: () => app.quit(),
+  // CLIque updating itself (core/updates.js): update('check') is Check for Updates…, update('restart', asked) Restart
+  // to update (asked: the question you said yes to, as the note showed it), update('later') puts the note away.
+  update: (op, arg) => {
+    const ops = { check: () => void checkForUpdates(), restart: () => restartToUpdate(arg), later: () => updates?.putOff() }
+    if (!Object.hasOwn(ops, op)) throw new Error(`unknown update action "${op}"`)
+    return ops[op]()
+  },
+  // Open at login (core/login.js): openAtLogin(true | false) -> what the system now says
+  openAtLogin: (on) => {
+    const now = login.set(on)
+    clique.changed()
+    return now
+  },
+}
+
+// ---- updates (core/updates.js) ---------------------------------------------------------------------------------
+
+// Can this copy update itself, and from where; if so it starts looking, quietly. If not it never looks, and Check for
+// Updates… says why.
+async function startUpdates() {
+  let baked = null
+  try {
+    baked = fs.readFileSync(path.join(process.resourcesPath, 'app-update.yml'), 'utf8') // electron-builder's, when the build had somewhere to publish to
+  } catch {}
+  const feed = feedFrom({ env: process.env, config: clique.config.data, baked: app.isPackaged ? baked : null })
+  const exe = app.getPath('exe')
+  const can = (signature) => offReason({ packaged: app.isPackaged, platform: process.platform, feed, exe, inApplications: MAC && app.isPackaged ? app.isInApplicationsFolder() : true, signature })
+  let off = can('developer-id')
+  if (!off && MAC) off = can(await signatureOf(appBundle(exe)))
+  let updater = null
+  if (!off) {
+    try {
+      const { default: { autoUpdater } } = await import('electron-updater')
+      // an address set by hand: electron-updater wants it in a file too (where it keeps what it downloads)
+      let configPath
+      if (feed.url) {
+        configPath = path.join(app.getPath('userData'), 'update-feed.yml')
+        fs.writeFileSync(configPath, feedConfig(feed.url, baked))
+      }
+      // Quitting the ordinary way installs a downloaded update too, but only one the agents keep working through:
+      // Quit says they keep working, and that has to stay true
+      const installOnQuit = (found) => keepsAgents({ outlives: clique.outlives, hostProtocol: found.hostProtocol, protocol: PROTOCOL, hostInApp: hostInApp() }) === true
+      updater = electronUpdater(autoUpdater, { feed, configPath, installOnQuit, version: app.getVersion(), log: (text) => logLine('update', text) })
+      // the quit into the new version is starting (it can come a moment after you said Restart, once macOS has unpacked
+      // the update): from here on windows close and CLIque quits without asking (keepOpen, before-quit)
+      systemUpdater.on('before-quit-for-update', () => (updating = true))
+    } catch (e) {
+      logLine('update', e?.stack ?? String(e))
+      off = 'platform'
+    }
+  }
+  let menu = ''
+  updates = new Updates({
+    updater, off, version: app.getVersion(),
+    seen: clique.config.data.updateSeen ?? '',
+    saveSeen: (version) => {
+      clique.config.data.updateSeen = version
+      saveConfig()
+    },
+    log: (text) => logLine('update', text),
+    onChange: ({ phase }) => {
+      if (phase !== menu) setMenu((menu = phase))
+      clique.changed()
+    },
+  }).start()
+  setMenu()
+  clique.changed()
+  powerMonitor.on('resume', () => {
+    updates.wake()
+    login.refresh()
+  })
+  app.on('will-quit', () => updates.stop())
+}
+
+// How CLIque.app is signed, as `codesign` tells it -> 'developer-id' | 'signed' | 'adhoc' | 'none'
+const signatureOf = (bundle) => new Promise((resolve) => {
+  if (!bundle) return resolve('none')
+  execFile('/usr/bin/codesign', ['-dv', '--verbose=2', bundle], { timeout: 10000 }, (_e, out, err) => resolve(macSignature(`${out ?? ''}\n${err ?? ''}`)))
+})
+
+// Windows' installer stops whatever runs from CLIque's own folder before it replaces the files. The terminal host runs
+// from a copy elsewhere (core/ptyclient.js stage), unless that copy wouldn't start. -> true (the host would be
+// stopped), false, or null (a host from an older CLIque, which doesn't say where it runs from). A Mac swaps the app
+// under a running host without stopping it (test/host-update.test.js).
+function hostInApp() {
+  if (!WINDOWS) return false
+  const exe = clique.runner.hostExe
+  if (!exe) return clique.outlives ? null : false
+  return exe.toLowerCase().startsWith(path.dirname(process.execPath).toLowerCase() + path.sep)
+}
+
+// The agents at work on this computer right now, by name: the ones a restart could interrupt.
+const busyHere = () => [...new Set([...clique.hubs.values()].flatMap((h) => h.snapshot().agents.filter((a) => a.on && ['working', 'starting', 'waiting'].includes(a.status)).map((a) => a.name)))]
+
+// Check for Updates… (the app menu, the popover's and the dashboard's menus): looks now and says what it found, in a
+// plain dialog. The one time an update speaks up by itself is the note in the dashboard when it's ready.
+let checkingNow = false
+async function checkForUpdates() {
+  if (checkingNow) return
+  checkingNow = true
+  try {
+    await updatesStarted // (asked in the first moment after starting: once it knows whether it can)
+    if (!updates) return
+    const out = await updates.check({ manual: true })
+    const words = checkWords(out, { product: PRODUCT_NAME, version: app.getVersion(), mac: MAC })
+    const buttons = words.buttons ?? ['OK']
+    lowerHatch() // a dialog, right under the docked chat
+    app.focus({ steal: true })
+    const { response } = await dialog.showMessageBox({ type: 'info', message: words.message, detail: words.detail, buttons, defaultId: 0, cancelId: buttons.length - 1 })
+    raiseHatch()
+    if (words.buttons && response === 0) restartToUpdate()
+  } catch (e) {
+    logLine('update', e?.stack ?? String(e))
+  } finally {
+    checkingNow = false
+  }
+}
+
+// Restart to update. While agents work it asks first, in the dashboard's note, with what really happens to them
+// (restartWords): `asked` is the question you said yes to; a different one by now (someone started working) is asked
+// again. Then CLIque lets go of the agents as when it quits, and the new version picks them up.
+function restartToUpdate(asked) {
+  if (updates?.phase !== 'ready' || !updates.next) return false
+  const words = restartWords({ busy: busyHere(), outlives: clique.outlives, hostProtocol: updates.next.hostProtocol, protocol: PROTOCOL, hostInApp: hostInApp(), product: PRODUCT_NAME })
+  if (words && words.text !== asked) {
+    updates.ask(words)
+    openDashboard()
+    return false
+  }
+  try {
+    fs.writeFileSync(path.join(app.getPath('userData'), 'updated.json'), JSON.stringify({ dashboard: dashOnScreen() })) // for afterUpdate
+  } catch {}
+  updates.restart() // quits (before-quit-for-update, then before-quit); if it can't, the note says so
+  return true
+}
+
+// The first start as a newer version, however it got there (Restart to update, or installed as CLIque quit): says so
+// in the chat, and -> { dashboard } if the dashboard was open when it restarted for it. Which version ran last is
+// kept in Electron's folder for the app.
+function afterUpdate() {
+  const dir = app.getPath('userData')
+  const read = (name) => {
+    try {
+      return fs.readFileSync(path.join(dir, name), 'utf8').trim()
+    } catch {
+      return null
+    }
+  }
+  let was = null
+  try {
+    was = JSON.parse(read('updated.json'))
+  } catch {}
+  fs.rmSync(path.join(dir, 'updated.json'), { force: true })
+  const [ran, now] = [read('clique-version'), app.getVersion()]
+  try {
+    if (ran !== now) fs.writeFileSync(path.join(dir, 'clique-version'), now)
+  } catch {}
+  if (!app.isPackaged || !ran || !newer(now, ran)) return null // from source, a first run, or the same version again
+  clique.say(`updated to ${PRODUCT_NAME} ${now}`)
+  return { dashboard: Boolean(was?.dashboard) }
 }
 
 // A new pairing code for the dashboard's page that asked -> { code, qr, expires }, made once this computer's addresses are

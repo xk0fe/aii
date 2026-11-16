@@ -498,6 +498,18 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 .toast button { all: unset; flex: none; padding: 3px 9px; border-radius: var(--r-control); font-size: 12px; font-weight: 500; white-space: nowrap; background: color-mix(in srgb, currentColor 14%, transparent); cursor: pointer; }
 .toast button:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
 .toast button:focus-visible { outline: 2px solid currentColor; }
+/* An update that's ready (dashboard.js drawUpdate): a note floating in the bottom corner, over the page, so nothing moves
+   for it. It slides up as it comes and fades as it goes. */
+.update-note { position: fixed; right: 16px; bottom: 16px; z-index: 90; display: flex; gap: 12px; width: 312px; max-width: calc(100vw - 32px); padding: 14px 16px; border-radius: var(--r-window); background: var(--float); color: var(--fg); box-shadow: var(--shadow-float); font-size: 13px; line-height: 1.45; opacity: 0; pointer-events: none; transform: translateY(12px); transition: opacity var(--t-leave) var(--in), transform var(--t-leave) var(--in); }
+.update-note.show { opacity: 1; pointer-events: auto; transform: none; transition: opacity var(--t-pop) var(--out), transform var(--t-move) var(--out); }
+.update-note .un-mark { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: var(--fill); color: var(--fg); }
+.update-note .un-mark svg { width: 18px; height: 18px; }
+.update-note .un-body { min-width: 0; flex: 1; }
+.update-note .un-title { display: block; font-family: var(--font-brand); font-size: 15px; font-weight: 600; line-height: 28px; }
+.update-note p { margin: 0; color: var(--fg2); overflow-wrap: anywhere; }
+.update-note a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+.update-note .un-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) { .update-note, .update-note.show { transform: none; transition: opacity var(--t-quick); } }
 .menu { position: fixed; z-index: 200; min-width: 210px; max-width: 300px; padding: 4px; border-radius: var(--r-card); background: var(--float); color: var(--fg); box-shadow: var(--shadow-float); transform-origin: 24px top; animation: mn-in var(--t-pop) var(--out); }
 /* opened upwards (no room under its anchor), it grows up out of it */
 .menu.up { transform-origin: 24px bottom; animation-name: mn-up; }

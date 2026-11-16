@@ -75,6 +75,7 @@ export class HostRunner extends EventEmitter {
     }
     this.attach(line.sock)
     this.hostPid = hello.pid
+    this.hostExe = hello.exe ?? null // (null: a host from before it said)
     for (const x of hello.procs) {
       this.procs.set(x.name, { pid: x.pid, tag: x.tag, chunks: x.data ? [x.data] : [], size: x.data?.length ?? 0, startedAt: x.startedAt, lastOutput: x.lastOutput, cols: x.cols, rows: x.rows })
     }

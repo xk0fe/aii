@@ -651,6 +651,24 @@ function workspaceAction(op, id, arg) {
   return { id, state }
 }
 const emit = () => setTimeout(() => window.__cliqueEmit('state', state), 30)
+// The app's own state (main.js stateNow): its version, an update, Open at login. __cliqueUpdate(patch) is what
+// core/updates.js would report next (an update ready, say); __cliqueRestartAsk, when set, is the question Restart to
+// update asks first (core/updates.js restartWords), as when agents are at work.
+const UPDATE = { phase: 'idle', version: '1.0.0', off: null, next: null, progress: 0, later: false, asking: null, stuck: false }
+state.app = { version: '1.0.0', update: UPDATE, login: { on: false } }
+window.__cliqueUpdate = (patch) => {
+  Object.assign(UPDATE, patch)
+  window.__cliqueEmit('state', state)
+}
+function updateAction(op, asked) {
+  if (op === 'later') Object.assign(UPDATE, { later: true, asking: null, stuck: false })
+  if (op === 'restart' && UPDATE.phase === 'ready') {
+    const ask = window.__cliqueRestartAsk
+    if (ask && ask.text !== asked) UPDATE.asking = ask
+    else Object.assign(UPDATE, { phase: 'restarting', asking: null })
+  }
+  emit()
+}
 // Scheduled messages, as Clique.scheduleAction keeps them (core/schedules.js): the list and each one's next time, by
 // this computer's clock. `now` sends it, marked as scheduled, the way a run does.
 function scheduleAction(op, id, arg = {}) {
@@ -942,6 +960,12 @@ window.clique = {
       emit()
     }
     if (action === 'workspace') return workspaceAction(...args)
+    if (action === 'update') return updateAction(...args)
+    if (action === 'openAtLogin') {
+      state.app.login.on = Boolean(args[0])
+      emit()
+      return state.app.login.on
+    }
     if (action === 'addAgent') {
       const name = String(args[0].name).toLowerCase()
       state.agents.push(newAgent({ ...args[0], name, shared: false }))

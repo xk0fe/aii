@@ -8,7 +8,7 @@
 //   node core/ptyhost.js            (CLIque runs it with its own Electron binary, as Node: ELECTRON_RUN_AS_NODE=1)
 //
 // Messages are JSON, one per line. In: hello { token, protocol }, start { name, file, args, cwd, env, cols, rows, tag },
-// stop { name }, write { name, data }, resize { name, cols, rows }, quit. Out: hello { protocol, pid, procs, gone },
+// stop { name }, write { name, data }, resize { name, cols, rows }, quit. Out: hello { protocol, pid, exe, procs, gone },
 // data { name, data }, exit { name, tag, code, ms }, error { message }.
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -151,7 +151,8 @@ function welcome(sock, token) {
         client = sock
         clearTimeout(idleTimer)
         const list = [...procs].map(([name, x]) => ({ name, tag: x.tag, pid: x.p.pid, cols: x.cols, rows: x.rows, startedAt: x.startedAt, lastOutput: x.lastOutput, data: scrollback(x) }))
-        send({ t: 'hello', protocol: PROTOCOL, pid: process.pid, procs: list, gone: gone.splice(0) })
+        // exe: the program this host runs as, so CLIque can tell whether an update of its own files would stop it
+        send({ t: 'hello', protocol: PROTOCOL, pid: process.pid, exe: process.execPath, procs: list, gone: gone.splice(0) })
         continue
       }
       handle(m)

@@ -3518,6 +3518,26 @@ function themeButton(btn) {
   }
 }
 
+// This app's own rows for a settings menu (the dashboard's ⋯, the popover's gear), from state.app: Open at login where
+// CLIque can (an installed one), and updates: Check for updates…, or Restart to update once one is here. appPick does
+// what was picked.
+function appItems(state) {
+  const app = state.app
+  if (!app) return []
+  const u = app.update
+  const update = !u ? []
+    : u.phase === 'ready' && u.next ? [{ label: 'Restart to update', icon: ICONS.up, act: 'app:restart', hint: u.next.version }]
+      : u.phase === 'restarting' ? [] // (the note says so; no greyed-out row)
+        : [{ label: 'Check for updates…', icon: ICONS.up, act: 'app:check', hint: u.phase === 'downloading' && u.next ? `getting ${u.next.version}` : app.version }]
+  const login = app.login ? [{ label: 'Open at login', icon: ICONS.power, act: 'app:login', hint: app.login.on ? 'On' : 'Off' }] : []
+  return login.length || update.length ? ['-', ...login, ...update] : []
+}
+function appPick(act, state) {
+  if (act === 'app:login') clique.call('openAtLogin', !state.app.login.on).catch((err) => oops('Couldn’t change that', err))
+  if (act === 'app:check') clique.call('update', 'check').catch((err) => oops('Couldn’t check for updates', err))
+  if (act === 'app:restart') clique.call('update', 'restart', null).catch((err) => oops('Couldn’t restart', err))
+}
+
 // ---- notifications: when CLIque may interrupt you (core/notify.js; state.notify) -----------------------------------
 
 // A time as this computer writes it ("8:00", "8:00 AM"), with the day when it isn't today ("Tue 8:00").
