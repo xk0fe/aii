@@ -71,6 +71,7 @@ function markSVG(viewBox = '0 0 24 24', { split = false } = {}) {
 
 const ICONS = {
   mark: markSVG(),
+  clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
   expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
   // kept awake: a hot mug
@@ -1643,6 +1644,13 @@ function reactClick(ev) {
 }
 
 const YOU_FACE = '<span class="you-av" aria-hidden="true">You</span>'
+// One of your scheduled messages (ui/schedules.js) looks like any message of yours, with a small clock by its time.
+const scheduledTag = (e) => {
+  if (!e.scheduled || e.from !== 'you') return ''
+  const due = e.scheduled.late ? new Date(e.scheduled.late).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''
+  return `<span class="tag sched" title="${esc(due ? `A scheduled message. It was due at ${due}, and went out late: CLIque was closed or this computer was asleep` : 'A scheduled message: CLIque sent it for you')}">${ICONS.clock}${due ? `scheduled for ${esc(due)}, sent late` : 'scheduled'}</span>`
+}
+
 function feedItem(e, prev, ctx) {
   if (e.kind === 'thread') return threadCard(e, ctx)
   const { byName, byId, repliesTo, open } = ctx
@@ -1667,7 +1675,7 @@ function feedItem(e, prev, ctx) {
   // an agent's canvas (a ```canvas block, ui/canvas.js) says so by its name, and under it who else drew on it
   const drawn = e.from !== 'you' && typeof canvasBoard === 'function' && /```canvas\n/.test(e.text ?? '')
   const hands = drawn ? [...new Set(e.canvas?.by ?? [])].filter((n) => n !== e.from) : []
-  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.stopped ? `<span class="tag" title="${esc(`You stopped ${e.to ? e.to.split('@')[0] : 'it'} before this was delivered. Send it again if you still want it`)}">not delivered</span>` : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '')
+  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.stopped ? `<span class="tag" title="${esc(`You stopped ${e.to ? e.to.split('@')[0] : 'it'} before this was delivered. Send it again if you still want it`)}">not delivered</span>` : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '') + scheduledTag(e)
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
   const pics = e.images?.length ? `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>` : ''
   // A reply quotes the message it answers, with a bar in the quoted sender's color; click to jump back to it.
@@ -1790,7 +1798,7 @@ const EVENT_ICONS = [
   [/another app already uses it/, 'keyboard'],
   [/terminal/, 'terminal'],
 ]
-const eventIcon = (e) => (e.limit ? 'gauge' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'clique' ? 'mark' : null))
+const eventIcon = (e) => (e.limit ? 'gauge' : e.schedule ? 'clock' : e.app ? 'mark' : EVENT_ICONS.find(([re]) => re.test(e.text))?.[1] ?? (e.from === 'clique' ? 'mark' : null))
 // "Rex", "Rex and Noor", "Rex, Noor and Ada", "Rex, Noor and 3 others" (names as HTML)
 const andList = (list) => (list.length > 3 ? `${list.slice(0, 2).join(', ')} and ${list.length - 2} others` : list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0] ?? '')
 
@@ -2985,7 +2993,9 @@ function mountInk(field, { agents, strict = () => true }) {
 
 // onTarget(target): who it's aimed at changed (an agent's name opens your conversation with it; see isConvo).
 // onDictate: the dictation hotkey is about to start, so the box should be on screen.
-function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) {
+// onLater(button, draft): the clock beside Send was pressed (ui/schedules.js): what the box holds, to send later or on
+// a repeat. draft: { text, images, to, channel, clear() }. Without it there's no clock.
+function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater } = {}) {
   el.classList.add('composer')
   // Who it goes to is one picker in the box's bar (To: Auto, Task, or an agent), beside the Task switch.
   el.innerHTML = `<div class="input">
@@ -2998,6 +3008,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
         <button class="fresh-toggle" aria-pressed="false" aria-label="New conversation">${ICONS.fresh}</button>
         <span class="grow"></span>
         <button class="mic" aria-label="Dictate"></button>
+        ${onLater ? `<button class="later" title="Send later, or on a repeat" aria-label="Send later" aria-haspopup="menu">${ICONS.clock}</button>` : ''}
         <button class="send" disabled title="Send (Enter)" aria-label="Send">${ICONS.up}</button>
       </div>
     </div>
@@ -3345,6 +3356,26 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate } = {}) 
     // (it turned into Stop under the pointer as your message went: the second click of a double click isn't a stop)
     if (Date.now() - lastSend < 600) return
     stopNow(stopping, { channel: isConvo(target) ? undefined : channel?.id })
+  })
+  // Send later: what the box holds now, who it's for and the channel it's said in, as Send would send it (a reply's
+  // thread and New conversation don't carry over: a scheduled message starts on its own).
+  el.querySelector('.later')?.addEventListener('click', (e) => {
+    const talking = isConvo(target)
+    const from = draftKey(target)
+    onLater(e.currentTarget, {
+      text: ta.value.trim(),
+      images: attach.get(),
+      to: reply && !talking ? reply.to.join(',') : target === 'auto' || target === 'task' ? '' : target,
+      channel: !talking && channel ? channel.id : null,
+      // scheduled: the box is empty again (unless you've moved on to another conversation: then it's that draft that goes)
+      clear: () => {
+        if (draftKey(target) !== from) return void drafts.delete(from)
+        ta.value = ''
+        attach.set([])
+        autosize()
+        say('')
+      },
+    })
   })
   // Dictation (ui/voice.js): the mic button fills in the message as you talk.
   const voice = typeof mountVoice === 'function' && clique.onVoice ? mountVoice({ composer: el, textarea: ta, button: el.querySelector('.mic'), changed: autosize, submit, reveal: onDictate }) : null

@@ -10,6 +10,7 @@ process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-tools-')
 const { CONFIG } = await import('../core/hub.js')
 const { Clique } = await import('../core/clique.js')
 const { serve } = await import('../core/server.js')
+const { agentKey } = await import('../core/keys.js')
 const { parse, help, TOOLS } = await import('../core/tools.js')
 const { makeCode } = await import('../core/link.js')
 
@@ -330,7 +331,7 @@ test("over CLIque's own server: the /app route, in the agent's workspace (the X-
   mode('auto')
   const server = await serve({ token: clique.token, hubFor: (id) => clique.hubs.get(id) })
   const url = `http://127.0.0.1:${server.address().port}`
-  const call = (words, ws = '') => fetch(`${url}/app?from=iris`, { method: 'POST', headers: { 'X-Clique': clique.token, 'X-Clique-Workspace': ws }, body: words.map((w) => `${w}\0`).join('') }).then(async (r) => [r.status, await r.text()])
+  const call = (words, ws = '') => fetch(`${url}/app?from=iris`, { method: 'POST', headers: { 'X-Clique': agentKey(ws || 'default', 'iris'), 'X-Clique-Workspace': ws }, body: words.map((w) => `${w}\0`).join('') }).then(async (r) => [r.status, await r.text()])
   assert.deepEqual(await call(['channel', 'add', 'ship it']), [200, 'added #ship-it\n'])
   assert.deepEqual(await call(['channel', 'add', 'ship it']), [400, "there's a #ship-it already\n"])
   assert.deepEqual(await call(['channel', 'add', 'pixels'], 'storefront'), [200, 'added #pixels\n'])

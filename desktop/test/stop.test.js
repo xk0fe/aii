@@ -76,6 +76,11 @@ const atWork = (n, text = 'make the totals agree') => {
   assert.equal(agent(n).status, 'working')
   runner.drawing.add(n)
 }
+// the same without the fake clock
+const atWorkReal = (n) => {
+  Object.assign(agent(n), { status: 'working', turnStart: Date.now() })
+  runner.drawing.add(n)
+}
 // its terminal falls silent, and CLIque has looked
 const quiet = (n) => {
   runner.drawing.delete(n)
@@ -379,6 +384,60 @@ test('its sub-agents end with the stopped turn', () => {
   assert.equal(view('ada').subs.filter((x) => !x.ended).length, 1)
   hub.stopTurns(['ada'])
   assert.equal(view('ada').subs.filter((x) => !x.ended).length, 0)
+})
+
+// ---- beside the features that merged meanwhile -----------------------------------------------------------------------
+
+test("a spend check-in's card (an ask with `spend`) stays open when its agent is stopped; its other cards close", async () => {
+  atWork('ada')
+  const permission = hub.ask('ada', { tool_name: 'Bash', tool_input: { command: 'npm run build' } })
+  // the check-in card, as the spend check-in posts it: an ask entry with a `spend` field, in hub.asks like any card
+  const e = hub.post({ kind: 'ask', from: 'ada', to: 'you', ask: { type: 'permission', title: 'Keep going?', always: [] }, spend: { cost: 5 } })
+  let answered
+  hub.asks.set(e.id, { name: 'ada', cli: 'claude', input: {}, entry: e, resolve: (v) => (answered = v) })
+  hub.stopTurns(['ada'])
+  assert.equal(await peek(permission), '', 'the permission card closed')
+  assert.equal(hub.asks.has(e.id), true, 'the check-in card is still open')
+  assert.equal(e.answer, undefined)
+  assert.equal(answered, undefined)
+  assert.equal(agent('ada').status, 'idle')
+})
+
+test('a scheduled message you stop counts as ended: its schedule is not held up, and nothing of it goes out again', () => {
+  const sent = { id: 'sch1', at: Date.now() }
+  hub.send({ to: 'ada', text: 'the nightly check', scheduled: sent })
+  mock.timers.tick(1500)
+  pickUp('ada')
+  runner.drawing.add('ada')
+  hub.send({ to: 'ada', text: 'the nightly check, again', scheduled: { id: 'sch2', at: sent.at } }) // another one, waiting behind it
+  assert.equal(hub.scheduleBusy('sch1', sent.at), true)
+  assert.equal(hub.scheduleBusy('sch2', sent.at), true)
+  const before = typedInto('ada').length
+  hub.stopTurns(['ada'])
+  assert.equal(hub.scheduleBusy('sch1', sent.at), false, 'the run you stopped is over')
+  assert.equal(hub.scheduleBusy('sch2', sent.at), false, 'and so is the one that never started')
+  quiet('ada')
+  mock.timers.tick(10 * 60000)
+  assert.equal(typedInto('ada').length, before, 'neither is typed in again')
+  assert.equal(hub.feed.find((m) => m.scheduled?.id === 'sch2').stopped, true)
+})
+
+test('no agent can stop a teammate: the local server has no stop command, whoever asks', async () => {
+  const { serve } = await import('../core/server.js')
+  mock.timers.reset()
+  const server = await serve({ token: 'tok', hubFor: () => hub })
+  try {
+    atWorkReal('ada')
+    for (const from of ['june', 'you']) {
+      const res = await fetch(`http://127.0.0.1:${server.address().port}/stop/ada?from=${from}`, { method: 'POST', headers: { 'X-Clique': 'tok' }, body: 'ada' })
+      assert.ok(res.status >= 400, `refused (${res.status})`)
+    }
+    assert.equal(agent('ada').status, 'working')
+    assert.equal(runner.writes.length, 0)
+  } finally {
+    server.close()
+    server.closeAllConnections?.()
+  }
 })
 
 test('interrupt() alone ends the turn and leaves the queue: what waits goes in once the turn is over', () => {

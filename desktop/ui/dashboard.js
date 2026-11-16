@@ -1,7 +1,7 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: a channel (#general or one you made), one agent's conversation with its terminal docked beside it,
 // Agents, Tasks, Terminals or Usage.
-/* global stopNow, mountUsage, shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
+/* global stopNow, mountSchedules, mountUsage, shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -40,7 +40,9 @@ function openThread(id, at) {
   $('.stage').classList.add('threaded')
   threadPane.open(id, at)
 }
-const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to), onDictate: () => place === 'chat' || place === 'dm' || goPlace('chat') })
+const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to), onDictate: () => place === 'chat' || place === 'dm' || goPlace('chat'), onLater: (button, held) => schedules.pick(button, held) })
+// Scheduled messages (ui/schedules.js): the clock beside Send, the Send later sheet, and the list.
+const schedules = mountSchedules({ later: $('#later'), list: $('#scheduled'), getState: () => state, push: async (next) => (push ??= await ready)(next) })
 const collection = mountCollection($('.collection'), {
   headIn: $('.heads'),
   onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home),
@@ -694,6 +696,7 @@ $('.side-more').addEventListener('click', (e) => {
     { label: 'Stay awake', icon: ICONS.mug, act: 'awake', hint: state.awake?.enabled ?? true ? 'On: while agents work' : `Off: this ${ON_WINDOWS ? 'PC' : 'Mac'} may sleep mid-task` },
     { label: 'Token savers…', icon: ICONS.chart, act: 'savers', hint: saversHint() },
     { label: 'Agent tools…', icon: ICONS.mark, act: 'tools', hint: toolHint() },
+    ...(state.workspace ? [{ label: 'Scheduled messages…', icon: ICONS.clock, act: 'scheduled', hint: schedules.count() ? `${schedules.count()} set up` : '' }] : []),
     '-',
     { label: 'Computers…', icon: ICONS.computers, act: 'computers', hint: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : '' },
     { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
@@ -708,6 +711,7 @@ $('.side-more').addEventListener('click', (e) => {
     if (act === 'awake') clique.call('keepAwake', !(state.awake?.enabled ?? true)).catch((err) => oops("Couldn't change that", err))
     if (act === 'savers') openSavers()
     if (act === 'tools') openTools()
+    if (act === 'scheduled') schedules.openList()
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
     if (act === 'tour') startTour()
@@ -806,6 +810,7 @@ const TOOL_KINDS = [
   ['mark', 'Agents', 'Add agents, change their job, brain or folder, turn them on and off. Removing one always asks.', true],
   ['#', 'Channels', 'Add channels, change their briefs and who’s in them. Removing one always asks.', true],
   ['tiles', 'Workspaces', 'Make workspaces, choose who works in them, put them to sleep. Removing one always asks.', true],
+  ['clock', 'Scheduled messages', 'Set up messages that go out later or on a repeat, pause them and start them again. Removing one always asks.', true],
   ['computers', 'Computers', 'Link and unlink your other computers. Always asks.', false],
 ]
 const toolHint = () => TOOL_MODES.find(([id]) => id === (state.tools ?? 'ask'))?.[1] ?? ''
@@ -1719,6 +1724,7 @@ const ready = live((next) => {
   drawComputers(state)
   if (saversDialog.open) drawSavers()
   if (toolsDialog.open) drawTools()
+  schedules.render()
   drawFoot(state)
   // Terminals only for agents that have one running; the sidebar lists everyone so off agents are one click from coming
   // back.
