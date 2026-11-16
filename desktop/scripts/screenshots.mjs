@@ -1,7 +1,7 @@
 // Renders every view with a made-up clique (scripts/screenshot-preload.cjs) and saves PNGs, plus short GIFs of
 // the animations. Nothing starts and ~/.clique is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp] [--win]
 // [--frame] [--dark] [--window=1100x700]
-import { app, BrowserWindow, nativeTheme, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, protocol } from 'electron'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -10,11 +10,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { restartWords } from '../core/updates.js'
 
 import { serveSandbox } from '../core/sandbox.js'
+import { serveFiles, FILES_SCHEME } from '../core/linkfiles.js'
 import { sampleFiles } from './sample-files.mjs'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-shots-'))
 app.setPath('userData', path.join(tmp, 'userdata'))
+protocol.registerSchemesAsPrivileged([FILES_SCHEME]) // the files shot: a linked computer's recording plays from clique-file:// (core/linkfiles.js)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // --win: every view as Windows shows it (screenshot-preload.cjs ?platform=win32)
@@ -135,7 +137,9 @@ const BACKDROP = {
   desktop: { light: 'linear-gradient(135deg, #dfe7f5, #f1e4f1)', dark: 'linear-gradient(135deg, #1c2233, #2a1f2e)' },
 }
 
-async function open(file, { theme, width, height, backdrop, fixture, transparent = false }) {
+// cache: where a linked computer's files are kept, for a shot that shows one (the files shot): the page then loads them
+// through clique-file://, as the app does.
+async function open(file, { theme, width, height, backdrop, fixture, transparent = false, cache }) {
   if (DARK) theme = 'dark'
   // on the stage, what floats over the desktop keeps its see-through window: the stage is what's behind it
   const float = FRAME && backdrop === 'desktop'
@@ -149,7 +153,7 @@ async function open(file, { theme, width, height, backdrop, fixture, transparent
   })
   win.stageKind = float ? 'float' : 'window'
   win.webContents.on('console-message', (e) => e.level === 'error' && console.error(`${file}: ${e.message}`))
-  const query = { ...(fixture && { fixture }), ...(WIN && { platform: 'win32' }) }
+  const query = { ...(fixture && { fixture }), ...(WIN && { platform: 'win32' }), ...(cache && { cache }) }
   // --win: Windows draws its window buttons over the dashboard's titlebar (main.js titleBarOverlay); stand-ins show
   // where, on every load (shots reload the page)
   if (WIN && file === 'dashboard.html') {
@@ -294,11 +298,16 @@ const SCREEN_TOP = `html::before { content: ''; position: fixed; inset: 0 0 auto
   html::after { content: ''; position: fixed; top: 0; left: 50%; width: 185px; height: 32px; margin-left: -92.5px; background: #000; border-radius: 0 0 9px 9px; z-index: 99; pointer-events: none; outline: 1px dashed rgba(255, 90, 170, var(--notch-guide, 0)); }
   .wrap { position: absolute !important; left: 50%; top: 0; transform: translateX(-50%); }`
 
-// The files shot: what agents attach (`clique attach`, core/attachments.js), made once (scripts/sample-files.mjs)
+// The files shot: what agents attach (`clique attach`, core/attachments.js), made once (scripts/sample-files.mjs). The
+// last one is on the linked computer: here it's in this computer's cache of that one (core/linkfiles.js), whole, as
+// after it was played once.
 let samples = null
+const FILES_CACHE = path.join(tmp, 'files', 'cache')
 const filesFeed = async () => {
   samples ??= await sampleFiles(path.join(tmp, 'files'))
   const f = samples
+  const theirs = path.join(FILES_CACHE, LINK.slug, 'c0ffee00c0ffee00c0ff.mp4')
+  if (!fs.existsSync(theirs)) (fs.mkdirSync(path.dirname(theirs), { recursive: true }), fs.copyFileSync(f.clip.path, theirs))
   return [
     { id: 'f1', kind: 'msg', from: 'you', to: 'Theo', text: 'Show me the new checkout, on desktop and on a phone.' },
     { id: 'f2', kind: 'reply', from: 'Theo', text: 'The new checkout on desktop. The total rounds once now.', files: [f.desktop] },
@@ -307,7 +316,7 @@ const filesFeed = async () => {
     { id: 'f4', kind: 'reply', from: 'Iris', text: 'The coupon flow from start to finish.', files: [f.clip], reactions: [{ by: 'Theo', emoji: '👀', at: 1 }] },
     { id: 'f5', kind: 'reply', from: 'Ada', text: 'The totals as a page you can try: change the quantities.', files: [f.page], reactions: [{ by: 'you', emoji: '🎉', at: 1 }] },
     { id: 'f6', kind: 'reply', from: 'June', text: 'All 48 checkout tests pass. The log:', files: [f.log] },
-    { id: 'f7', kind: 'reply', from: REX, text: 'The same run on Windows.', files: [{ name: 'checkout-windows.mp4', kind: 'video', type: 'video/mp4', size: 48 * 1024 * 1024, w: 1920, h: 1080, dur: 94, path: '', away: LINK.name }] },
+    { id: 'f7', kind: 'reply', from: REX, text: 'The same run on Windows.', files: [{ ...f.clip, name: 'checkout-windows.mp4', path: theirs, home: LINK.name }] },
   ]
 }
 const chatColumn = (win) => js(win, "const r = document.querySelector('.page-head[data-for=chat]').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(innerWidth - r.x), height: innerHeight }")
@@ -394,14 +403,16 @@ const SHOTS = {
   // linked computer; then the recording playing and the page running, and the viewer.
   async files(theme) {
     const feed = await filesFeed()
-    const win = await dashboard(theme, 'chat', { fixture: 'big', width: 1180, height: 1500 })
+    const win = await dashboard(theme, 'chat', { fixture: 'big', width: 1180, height: 1820, cache: FILES_CACHE })
     await js(win, FILES_STATE(feed))
     await sleep(1500)
     await save(win, `files-${theme}`, { crop: await chatColumn(win) })
-    await js(win, `${click('[data-fx=play]')}; ${click('[data-fx=run]')}`)
+    // the recording played (its bar shows while the pointer is on it: a pointer's move, for the picture) and the page run
+    const SHOWN = "for (const p of document.querySelectorAll('.fxp.on')) p.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))"
+    await js(win, `${click('.fxp-big')}; ${click('[data-fx=run]')}`)
     await sleep(2200)
-    await js(win, "document.querySelector('.fx-video video').pause()")
-    await sleep(200)
+    await js(win, `document.querySelector('.fx-video video').pause(); ${SHOWN}`)
+    await sleep(300)
     await save(win, `files-live-${theme}`, { crop: await chatColumn(win) })
     win.setContentSize(1180, 760)
     await js(win, click('.fx-pics:not(.one) [data-fx=view]'))
@@ -410,9 +421,15 @@ const SHOTS = {
     await js(win, `${click('[data-fxv=close]')}; ${click('.fx-page [data-fx=view]')}`)
     await sleep(900)
     await save(win, `files-viewer-page-${theme}`)
+    // the recording in the viewer: the same player, where it was
+    await js(win, `${click('[data-fxv=close]')}; ${click('.fx-video [data-fx=view]')}`)
+    await sleep(600)
+    await js(win, SHOWN)
+    await sleep(300)
+    await save(win, `files-viewer-video-${theme}`)
     win.destroy()
     // the floating chat: the same cards in a narrow column
-    const chat = await open('overlay.html', { theme, width: 520, height: 900, backdrop: 'desktop' })
+    const chat = await open('overlay.html', { theme, width: 520, height: 900, backdrop: 'desktop', cache: FILES_CACHE })
     await sleep(400)
     await js(chat, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await js(chat, `window.__cliqueState.agents.forEach((a) => Object.assign(a, { status: 'idle', ask: null, activity: null, subs: [] })); ${FILES_STATE(feed.slice(2, 6))}`)
@@ -424,14 +441,14 @@ const SHOTS = {
   // A recording played and a page run where they are, in the chat
   async filesGif() {
     const feed = await filesFeed()
-    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { fixture: 'big', width: 1000, height: 900 })
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { fixture: 'big', width: 1000, height: 900, cache: FILES_CACHE })
     await js(win, FILES_STATE(feed.slice(3, 5)))
     await sleep(1200)
     const clip = await chatColumn(win)
     await record(win, 'files', {
       clip, ms: 9500,
       during: async () => {
-        let at = await glide(win, { x: clip.x + 300, y: clip.y + 60 }, await center(win, '.fx-play'))
+        let at = await glide(win, { x: clip.x + 300, y: clip.y + 60 }, await center(win, '.fxp-big'))
         await tap(win, at)
         await sleep(2600)
         at = await glide(win, at, await center(win, '.fx-run'))
@@ -2834,8 +2851,8 @@ const SHOTS = {
   },
 }
 
-async function dashboard(theme, view, { width = WIN_W, height = WIN_H, fixture, reset = [] } = {}) {
-  const win = await open('dashboard.html', { theme, width, height, fixture })
+async function dashboard(theme, view, { width = WIN_W, height = WIN_H, fixture, reset = [], cache } = {}) {
+  const win = await open('dashboard.html', { theme, width, height, fixture, cache })
   // the places: chat (a channel), clique (Agents), tasks, terminals, usage; grid and focus are Terminals laid out that way
   const place = { grid: 'terminals', focus: 'terminals' }[view] ?? view
   const layout = view === 'focus' ? 'focus' : view === 'grid' ? 'grid' : null
@@ -2856,6 +2873,10 @@ app.on('window-all-closed', () => {}) // one window at a time; don't quit betwee
 
 app.whenReady().then(async () => {
   serveSandbox(protocol, [path.join(tmp, 'files', 'attachments')]) // the page in the files shot runs in the real sandbox
+  // ...and the linked computer's recording in it plays through the real scheme, from the cache; what the page asks about
+  // a file (scripts/screenshot-preload.cjs ?cache=) is answered as for one that's here
+  serveFiles(protocol, { dirs: [path.join(tmp, 'files', 'attachments'), FILES_CACHE], files: null })
+  ipcMain.handle('files', (_e, action, file) => ({ ok: action === 'fileState' ? { here: fs.existsSync(file), computer: LINK.name } : true }))
   // A shot that no longer finds its way around the app mustn't cost every shot after it: it's named, the rest go on,
   // and the run ends with an error so it doesn't pass for a full set.
   const broken = []

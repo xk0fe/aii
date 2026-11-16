@@ -1301,10 +1301,11 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .fx-pic { display: block; flex: none; max-width: 100%; padding: 0; border: 0; border-radius: var(--r-card); overflow: hidden; background: var(--fill); box-shadow: 0 0 0 1px var(--line); cursor: zoom-in; }
 .fx-pic img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
 .fx-pics.one .fx-pic img { object-fit: contain; }
-.fx-pic:focus-visible, .fx-play:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.fx-pic:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .fx-pic.gone { cursor: default; }
 .fx-pic.gone img { visibility: hidden; }
-.fx-pic.gone::after { content: "Not kept any more"; position: absolute; inset: 0; display: grid; place-items: center; padding: 6px; font-size: var(--t-caption); color: var(--fg3); text-align: center; }
+.fx-pic.gone::after { content: attr(data-why); position: absolute; inset: 0; display: grid; place-items: center; padding: 6px; font-size: var(--t-caption); color: var(--fg3); text-align: center; }
+.pics img.gone { visibility: hidden; }
 .fx-pic { position: relative; }
 
 .fx-card { width: 440px; max-width: 100%; min-width: 0; border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
@@ -1320,13 +1321,116 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .fx-tools .btn.square:hover { background: var(--fill-hover); }
 .fx-note { margin: 0; padding: 0 12px 10px 48px; font-size: var(--t-small); color: var(--fg2); }
 .fx-stage { position: relative; display: block; width: 100%; background: #000; overflow: hidden; }
-.fx-video video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
-.fx-play { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: 48px; height: 48px; padding: 0 0 0 3px; border: 0; border-radius: 50%; display: grid; place-items: center; background: rgba(20, 20, 20, .72); color: #fff; cursor: pointer; transition: scale var(--t-quick, .15s), background var(--t-quick, .15s); }
-.fx-play:hover { scale: 1.06; background: rgba(20, 20, 20, .86); }
-.fx-play svg { width: 22px; height: 22px; }
-.fx-dur { position: absolute; right: 8px; bottom: 8px; padding: 1px 6px; border-radius: var(--r-tag); background: rgba(20, 20, 20, .72); color: #fff; font-size: var(--t-caption); font-variant-numeric: tabular-nums; pointer-events: none; }
-.fx-video.on .fx-play, .fx-video.on .fx-dur { display: none; }
-/* a page: a still picture of it at half size until you run it, then the page itself, in the same box */
+
+/* A recording's player (ui/files.js fxPlayer): the same one in a message, in the viewer and on the whole screen. Its
+   controls are white on the picture's own dark edge, whatever the app's theme.
+   No container queries on it, in it, or on the viewer's stage it's moved into: a player goes between its message and
+   the viewer as it is (moveBefore), and with the stage a size container the page died (Chromium 14x, a crash, not an
+   error) at the next press of the mouse on the player. What depends on its width it sets itself (.narrow, .tiny,
+   --look), and the viewer sizes it there (fitPlayer). scripts/files-probe.mjs presses the mouse after every such move. */
+.fxp { --fxp-here: rgba(255, 255, 255, .34); position: absolute; inset: 0; display: block; overflow: hidden; background: #000; color: #fff; outline: none; -webkit-user-select: none; user-select: none; font-size: var(--t-small); line-height: 1; }
+.fxp > video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.fxp:focus-visible::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 4px rgba(0, 0, 0, .55); pointer-events: none; }
+/* before it's played: its first frame, Play in the middle, how long it is in the corner */
+.fxp-big { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: 48px; height: 48px; padding: 0 0 0 3px; border: 0; border-radius: 50%; display: grid; place-items: center; background: rgba(20, 20, 20, .72); color: #fff; cursor: pointer; transition: scale var(--t-quick, .15s), background var(--t-quick, .15s); }
+.fxp-big:hover { scale: 1.06; background: rgba(20, 20, 20, .86); }
+.fxp-big svg { width: 22px; height: 22px; }
+.fxp-badge { position: absolute; right: 8px; bottom: 8px; padding: 2px 6px; border-radius: var(--r-tag); background: rgba(20, 20, 20, .72); color: #fff; font-size: var(--t-caption); font-variant-numeric: tabular-nums; pointer-events: none; }
+.fxp.on .fxp-big, .fxp.on .fxp-badge { display: none; }
+/* started: the bar, over the picture's lower edge, while the pointer is about */
+.fxp-bar { position: absolute; left: 0; right: 0; bottom: 0; display: none; flex-direction: column; gap: 2px; padding: 22px 8px 6px; background: linear-gradient(to top, rgba(0, 0, 0, .78), rgba(0, 0, 0, .42) 55%, rgba(0, 0, 0, 0)); transition: opacity var(--t-quick, .15s) var(--out, ease-out); }
+.fxp.on .fxp-bar { display: flex; }
+.fxp.on.idle .fxp-bar { opacity: 0; pointer-events: none; transition: opacity var(--t-move, .26s) var(--in, ease-in); }
+.fxp-track { position: relative; height: 16px; margin: 0 6px; cursor: pointer; touch-action: none; outline: none; }
+.fxp-rail { position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .24); overflow: hidden; transition: scale var(--t-quick, .15s); }
+.fxp-track:hover .fxp-rail, .fxp.seeking .fxp-rail, .fxp-track:focus-visible .fxp-rail { scale: 1 1.5; }
+.fxp-buf, .fxp-fill { position: absolute; inset: 0; }
+.fxp-fill { background: #fff; transform-origin: 0 50%; transform: scaleX(0); }
+.fxp-at { position: absolute; left: 0; right: 0; top: 0; height: 100%; pointer-events: none; }
+.fxp-knob { position: absolute; left: -6px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .5); scale: 0; transition: scale var(--t-quick, .15s); }
+.fxp-track:hover .fxp-knob, .fxp.seeking .fxp-knob, .fxp-track:focus-visible .fxp-knob { scale: 1; }
+.fxp-track:focus-visible .fxp-knob { box-shadow: 0 0 0 3px rgba(255, 255, 255, .45); }
+.fxp-row { display: flex; align-items: center; gap: 2px; height: 28px; }
+.fxp-btn { flex: none; display: grid; place-items: center; min-width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-control); background: none; color: #fff; font: inherit; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
+.fxp-btn:hover { background: rgba(255, 255, 255, .16); }
+.fxp-btn:focus-visible, .fxp-menu button:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+.fxp-btn svg { width: 16px; height: 16px; }
+.fxp-rate { padding: 0 7px; }
+.fxp-rate.set { background: rgba(255, 255, 255, .2); }
+.fxp-full svg + svg, .fxp:fullscreen .fxp-full svg:first-child { display: none; }
+.fxp:fullscreen .fxp-full svg + svg { display: block; }
+html[data-fx-elsewhere] .fxp-full { display: none; } /* the floating chat: its card's own button opens the main window's viewer */
+.fxp-time { flex: none; padding: 0 6px 0 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fxp-time b { font-weight: 600; }
+.fxp-time i { font-style: normal; opacity: .72; }
+.fxp-gap { flex: 1; min-width: 0; }
+.fxp-vol { flex: none; display: flex; align-items: center; }
+.fxp.silent .fxp-vol { display: none; }
+.fxp-level { -webkit-appearance: none; appearance: none; width: 56px; height: 16px; margin: 0 6px 0 2px; background: none; cursor: pointer; outline: none; }
+.fxp-level::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, #fff var(--at, 100%), rgba(255, 255, 255, .28) var(--at, 100%)); }
+.fxp-level::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .5); }
+.fxp-level:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(255, 255, 255, .45); }
+/* a narrow one (a tall recording in a message): the bar keeps what matters */
+.fxp.narrow .fxp-level { display: none; }
+.fxp.tiny .fxp-time i { display: none; }
+/* with the bar away: a hairline of where it is */
+.fxp-line { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(255, 255, 255, .22); opacity: 0; pointer-events: none; transition: opacity var(--t-move, .26s); }
+.fxp-line > i { position: absolute; inset: 0; background: #fff; transform-origin: 0 50%; transform: scaleX(0); }
+.fxp.on.idle:not(:fullscreen) .fxp-line { opacity: 1; }
+/* waiting for more of it */
+.fxp-wait { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .28); border-top-color: #fff; opacity: 0; pointer-events: none; }
+.fxp.waiting .fxp-wait { opacity: 1; animation: fxp-spin .8s linear infinite; }
+@keyframes fxp-spin { to { rotate: 360deg; } }
+/* what a key just did */
+.fxp-flash { position: absolute; left: 50%; top: 50%; translate: -50% -50%; padding: 7px 12px; border-radius: 999px; background: rgba(20, 20, 20, .74); font-size: var(--t-body); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; opacity: 0; pointer-events: none; }
+.fxp-flash.show { animation: fxp-flash .7s var(--out, ease-out) both; }
+@keyframes fxp-flash { 0% { opacity: 0; scale: .92; } 14%, 62% { opacity: 1; scale: 1; } 100% { opacity: 0; scale: 1; } }
+.fxp.waiting .fxp-flash { display: none; }
+/* the moment under the pointer on the track */
+.fxp-tip { position: absolute; left: 0; bottom: 56px; display: none; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+.fxp.tip:not(.idle) .fxp-tip { display: flex; }
+.fxp-tip video { display: block; width: var(--look, 150px); aspect-ratio: var(--ratio, 16 / 9); border-radius: var(--r-control); background: #000; box-shadow: 0 0 0 1px rgba(255, 255, 255, .34), 0 4px 14px rgba(0, 0, 0, .5); visibility: hidden; }
+.fxp-tip.seen video { visibility: visible; }
+.fxp-tip.blind video { display: none; }
+.fxp-tip b { padding: 3px 6px; border-radius: var(--r-tag); background: rgba(20, 20, 20, .82); font-size: var(--t-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* its speeds: a strip over the bar's right end */
+.fxp-menu { position: absolute; right: 8px; bottom: 54px; display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: rgba(28, 28, 28, .94); box-shadow: 0 0 0 1px rgba(255, 255, 255, .14), 0 6px 18px rgba(0, 0, 0, .45); animation: fxp-pop var(--t-pop, .16s) var(--out, ease-out); transform-origin: 100% 100%; }
+@keyframes fxp-pop { from { opacity: 0; transform: scale(.96); } }
+.fxp-menu button { min-width: 34px; height: 24px; padding: 0 5px; border: 0; border-radius: 5px; background: none; color: #fff; font: inherit; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
+.fxp-menu button:hover { background: rgba(255, 255, 255, .16); }
+.fxp-menu button[aria-checked=true] { background: #fff; color: #111; }
+.fxp.tiny .fxp-menu { left: 8px; justify-content: space-between; }
+.fxp.tiny .fxp-menu button { min-width: 0; flex: 1; padding: 0; }
+/* its name, on the whole screen only */
+.fxp-top { display: none; }
+/* it can't be played: why, in its box */
+.fxp.cant > :not(.fx-gone) { display: none; }
+.fxp > .fx-gone { color: var(--fg2); box-shadow: inset 0 0 0 1px var(--line); border-radius: inherit; }
+.fx-card > .fx-stage > .fxp > .fx-gone { border-radius: 0 0 var(--r-card) var(--r-card); }
+/* on the whole screen */
+/* (no-drag: the window's titlebar strip is under it, and would take the pointer along the top of the picture) */
+.fxp:fullscreen { border-radius: 0; font-size: var(--t-body); -webkit-app-region: no-drag; }
+.fxp:fullscreen .fxp-bar { padding: 40px 20px 14px; gap: 4px; }
+.fxp:fullscreen .fxp-row { height: 36px; gap: 4px; }
+.fxp:fullscreen .fxp-btn { min-width: 36px; height: 36px; }
+.fxp:fullscreen .fxp-btn svg { width: 20px; height: 20px; }
+.fxp:fullscreen .fxp-rate { padding: 0 10px; }
+.fxp:fullscreen .fxp-level { width: 84px; }
+.fxp:fullscreen .fxp-tip { bottom: 76px; }
+.fxp:fullscreen .fxp-menu { right: 20px; bottom: 72px; }
+.fxp:fullscreen .fxp-menu button { min-width: 44px; height: 30px; }
+.fxp:fullscreen .fxp-top { display: block; position: absolute; left: 0; right: 0; top: 0; padding: 18px 22px 36px; background: linear-gradient(to bottom, rgba(0, 0, 0, .6), rgba(0, 0, 0, 0)); font-size: var(--t-emph); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; transition: opacity var(--t-quick, .15s); }
+.fxp:fullscreen.on.idle .fxp-top { opacity: 0; transition-duration: var(--t-move, .26s); }
+.fxp.playing.idle:fullscreen, .fxv .fxp.playing.idle { cursor: none; }
+@media (prefers-reduced-motion: reduce) {
+  .fxp.waiting .fxp-wait { animation-duration: 2.4s; }
+  .fxp-flash.show { animation-name: fxp-flash-still; }
+  .fxp-menu { animation: none; }
+}
+@keyframes fxp-flash-still { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+/* what's live is set aside here for the instant a chat is drawn again (fxHold) */
+#fx-shelf { position: fixed; left: -99999px; top: 0; width: 1px; height: 1px; overflow: hidden; pointer-events: none; }
+
 .fx-page .fx-stage { height: 260px; background: #fff; box-shadow: inset 0 1px 0 var(--line); }
 .fx-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
 .fx-frame.still { width: 200%; height: 200%; transform: scale(.5); transform-origin: 0 0; pointer-events: none; }
@@ -1356,8 +1460,11 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .fxv-stage.image { cursor: default; }
 .fxv-stage.image img { flex: none; margin: auto; display: block; border-radius: 4px; background: var(--surface); box-shadow: var(--shadow-lg); cursor: zoom-in; image-rendering: auto; }
 .fxv-stage.zoomed img { cursor: zoom-out; }
-.fxv-stage.video { align-items: center; justify-content: center; padding: 24px 64px; }
-.fxv-stage.video video { max-width: 100%; max-height: 100%; border-radius: var(--r-card); background: #000; box-shadow: var(--shadow-lg); }
+.fxv-stage.video { align-items: center; justify-content: center; padding: 24px 64px; overflow: hidden; }
+/* the recording, as big as the stage lets its shape be (the viewer sizes it: fxView fitPlayer) */
+.fxv-stage.video > .fxp { position: relative; inset: auto; flex: none; border-radius: var(--r-card); box-shadow: var(--shadow-lg); }
+.fxv-stage.video > .fxp:fullscreen { box-shadow: none; }
+@media (max-width: 640px) { .fxv-stage.video { padding: 16px; } }
 .fxv-stage.html { background: #fff; }
 .fxv-stage .fx-gone { background: var(--bg); }
 .fxv-nav { position: absolute; top: calc(50% + 26px); translate: 0 -50%; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; background: var(--surface); color: var(--fg); box-shadow: var(--shadow-float); cursor: pointer; }

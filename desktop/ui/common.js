@@ -1396,7 +1396,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const hintText = who ? `Reply to ${familyOf(who)}, in the thread` : 'Reply in the thread'
     if (ta.placeholder !== hintText) ta.placeholder = hintText
     reply.classList.toggle('hidden', !who)
-    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.paused, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length, reactsSig(e)]), agents().map((a) => [a.name, a.avatar]).length])
+    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.paused, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length, reactsSig(e), filesSig(e)]), agents().map((a) => [a.name, a.avatar]).length])
     if (next !== drawn || force) {
       drawn = next
       const top = list.scrollTop
@@ -1629,6 +1629,8 @@ function reactionGroups(list) {
 }
 // what the redraw keys take in, so a reaction that lands (or goes) redraws the message it's on
 const reactsSig = (e) => (e.reactions?.length ? e.reactions.map((r) => `${r.by}${r.emoji}${r.said ? 1 : ''}`).join('') : '')
+// ...and its files: whether each can be shown here (one on a linked computer that couldn't send it, now can: ui/files.js)
+const filesSig = (e) => (e.files?.length ? e.files.map((f) => (f.path ? 'f' : 'a')).join('') : '')
 function reactsHTML(e, agent) {
   const groups = reactionGroups(e.reactions)
   if (!groups.length) return ''
@@ -2691,7 +2693,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       const view = feedView(feed, agents, open, limit, drafts, { reads, divider: words.length ? null : divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline, channels, channel: convo ? null : channel, threads, threadSeen: (id) => readTo?.[id] })
       shown = new Map(view.items.map((e) => [e.id, e]))
       // (a line others joined, sameEvents, counts them; a usage line turns to "reset" once its window has)
-      let next = view.items.map((e) => e.id + (e.sig ?? '') + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.paused ? 'p' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '') + reactsSig(e)).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
+      let next = view.items.map((e) => e.id + (e.sig ?? '') + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.paused ? 'p' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '') + reactsSig(e) + filesSig(e)).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
       // searching, who's at work right now isn't part of the results
@@ -2759,6 +2761,10 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
 // slashes) and \\server\share\a.png (the server as the URL's host). Every folder's name is escaped (spaces, #, %).
 function fileURL(p) {
   const s = String(p ?? '').replace(/^\\\\[?.]\\UNC\\/i, '\\\\').replace(/^\\\\[?.]\\(?=[A-Za-z]:)/, '') // \\?\C:\… is C:\…, \\?\UNC\… is \\…
+  // One of a linked computer's files (they're kept in CLIque's cache of them): through clique-file://, which brings it
+  // from its computer as it's shown or played, so it never shows as broken while it's on its way (core/linkfiles.js).
+  const cache = typeof clique !== 'undefined' && clique.cache
+  if (cache && (s.startsWith(`${cache}/`) || s.startsWith(`${cache}\\`))) return `clique-file://f/?p=${encodeURIComponent(s)}`
   const enc = (parts) => parts.map(encodeURIComponent).join('/')
   const unc = /^[\\/]{2}([^\\/]+)[\\/](.*)$/.exec(s)
   if (unc) return `file://${unc[1]}/${enc(unc[2].split(/[\\/]/))}`
