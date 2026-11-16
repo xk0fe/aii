@@ -484,7 +484,13 @@ export function summarize(index, { owners, agents, providers = {} } = {}) {
     const at = typeof ws === 'string' ? { ws, who: base(who ?? '') } : place({ who, dir })
     for (const [day, d] of Object.entries(days)) add({ cli, via, pin, who, dir }, at, day, d.models ?? {}, Object.entries(d.lead ?? {}))
   }
-  return { first, cols: COLS, rows: [...rows.values()].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0)) }
+  // in one order whatever order the logs were read in: by day, then by what each row is of
+  const of = [0, 1, 2, 3, 4, 5]
+  const order = (x, y) => {
+    for (const i of of) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1
+    return 0
+  }
+  return { first, cols: COLS, rows: [...rows.values()].sort(order) }
 }
 
 // ---- in the app: the index on disk, brought up to date in a worker thread ------------------------------------------
