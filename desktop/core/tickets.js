@@ -4,6 +4,7 @@
 // anyone's chat history. Stored in ~/.clique/tickets.json. No Electron in here.
 import fs from 'node:fs'
 import { movedImages } from './home.js'
+import { defused, relayed } from './framing.js'
 
 export const STATUSES = ['new', 'fixing', 'check', 'done']
 export const KINDS = ['task', 'bug', 'feature']
@@ -189,12 +190,15 @@ export function fixPrompt(t, ref, note, again) {
   const bug = t.kind === 'bug'
   const done = `Check it for real before you report it (run it, or its test). Then run: clique task done ${ref} "${bug ? 'what was wrong, what you changed' : 'what you did'}, how you checked"`
   if (again) return `[${t.kind} #${t.id}] Sent back: ${bug ? 'still broken' : 'not done yet'}.${note ? ` The user says: ${note}` : ''}\n\nTake another look. ${done}`
-  const notes = t.log.filter((l) => l.kind === 'note').map((l) => `- ${l.by === 'you' ? 'the user' : `@${l.by}`}: ${l.text}`)
+  // It goes to its owner as a message of yours, so what an agent wrote in it is marked as that agent's (core/framing.js):
+  // a task an agent added, one triage put into its own words, a teammate's note.
+  const theirs = t.by !== 'you' || (reworded(t) && !(t.report.includes(t.title) && t.report.includes(t.body ?? '')))
+  const notes = t.log.filter((l) => l.kind === 'note').map((l) => `- ${l.by === 'you' ? `the user: ${l.text}` : `@${l.by}: ${defused(l.text).replace(/\s*\n\s*/g, ' ')}`}`) // (one line each: a note can't start a line of its own)
   return [
-    `[${t.kind} #${t.id}] ${t.title}`,
+    `[${t.kind} #${t.id}] ${theirs ? defused(t.title) : t.title}`,
     `Priority: ${PRIORITY_NAME[t.severity]}. ${bug ? 'Reported' : 'Added'} by ${t.by === 'you' ? 'the user' : `@${t.by}`}${t.seen > 1 ? `, seen ${t.seen} times` : ''}.`,
-    t.body && t.body !== t.title && `\n${t.body}`,
-    reworded(t) && `\nThe user's words, as written:\n${t.report}`,
+    t.body && t.body !== t.title && `\n${theirs ? relayed(t.by === 'you' ? 'triage' : t.by, t.body) : t.body}`,
+    reworded(t) && (t.by === 'you' ? `\nThe user's words, as written:\n${t.report}` : `\nAs @${t.by} first wrote it:\n${relayed(t.by, t.report)}`),
     notes.length && `\nNotes so far:\n${notes.join('\n')}`,
     note && `\nThe user adds: ${note}`,
     `\nThis conversation is just for this ${t.kind}. ${bug ? 'Reproduce it, find the cause, fix it.' : 'Do it, and keep to what it asks.'}`,

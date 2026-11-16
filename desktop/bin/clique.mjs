@@ -16,6 +16,8 @@
 //   CLIQUE_HOME       where CLIque writes its address (url) and token each time it starts; read on every call, since an
 //                   agent can outlive the CLIque that started it. CLIQUE_URL and CLIQUE_TOKEN when those files aren't there.
 //   CLIQUE_AGENT, CLIQUE_WORKSPACE   who is asking, and in which workspace (none: its files are in CLIQUE_HOME itself).
+//   CLIQUE_BADGE      the agent's own key (core/keys.js): what it shows CLIque, which reads who's asking from it. Without one
+//                   (a terminal of your own, an agent an older CLIque started), the token in CLIQUE_HOME.
 import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
@@ -42,7 +44,7 @@ const SPOOL_MAX = 4 * 1024 * 1024
 
 // One request to CLIque, given up `seconds` after it began (curl -m). -> { status, body (a Buffer) }, or null when CLIque
 // isn't there or took too long.
-function call(url, route, { body, method = body === undefined ? 'GET' : 'POST', seconds = 5, token = cliqueFile('token') } = {}) {
+function call(url, route, { body, method = body === undefined ? 'GET' : 'POST', seconds = 5, token = env.CLIQUE_BADGE || cliqueFile('token') } = {}) {
   return new Promise((resolve) => {
     let target
     try {
@@ -198,7 +200,7 @@ function stop(text, code) {
 async function cli([cmd, ...args]) {
   // what CLIque wrote when it started comes first: an agent can outlive the CLIque that started it (core/ptyhost.js)
   const url = cliqueFile('url') || env.CLIQUE_URL || ''
-  const token = cliqueFile('token') || env.CLIQUE_TOKEN || ''
+  const token = env.CLIQUE_BADGE || cliqueFile('token') || env.CLIQUE_TOKEN || ''
   if (!url) return stop('CLIque is not running', 1)
   const from = encodeURIComponent(env.CLIQUE_AGENT || 'you')
   const q = encodeURIComponent

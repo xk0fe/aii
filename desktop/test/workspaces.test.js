@@ -20,6 +20,7 @@ const { Hub, CONFIG, openConfig, fileKey, filePath } = await import('../core/hub
 const { ROOT, dirOf, space, workspacesIn, forget, renameShared, sharedNames, settle } = await import('../core/workspaces.js')
 const { Scoped } = await import('../core/runner.js')
 const { serve } = await import('../core/server.js')
+const { agentKey } = await import('../core/keys.js')
 const { adapters } = await import('../core/adapters.js')
 const { toolsDir } = await import('../core/launch.js')
 const BIN = fileURLToPath(new URL('../bin', import.meta.url))
@@ -412,8 +413,8 @@ test("`clique` and the hooks say which workspace they're from, and land there", 
   const run = (file, args, env, input = '') =>
     new Promise((resolve, reject) => execFile(file, args, { env: { ...process.env, CLIQUE_HOME: HOME, CLIQUE_NODE: process.execPath, ...env } }, (e, out) => (e ? reject(e) : resolve(out))).stdin.end(input))
   const cliqueCli = (env, ...args) => (WIN ? run(path.join(toolsDir(BIN), 'clique.exe'), args, env) : run(path.join(BIN, 'clique'), args, env))
-  assert.equal(await cliqueCli({ CLIQUE_AGENT: 'june', CLIQUE_WORKSPACE: 'storefront' }, 'note', 'storefront runs on pnpm'), 'shared with the clique\n')
-  assert.equal(await cliqueCli({ CLIQUE_AGENT: 'june', CLIQUE_WORKSPACE: '' }, 'note', 'the default runs on npm'), 'shared with the clique\n')
+  assert.equal(await cliqueCli({ CLIQUE_AGENT: 'june', CLIQUE_WORKSPACE: 'storefront', CLIQUE_BADGE: agentKey('storefront', 'june') }, 'note', 'storefront runs on pnpm'), 'shared with the clique\n')
+  assert.equal(await cliqueCli({ CLIQUE_AGENT: 'june', CLIQUE_WORKSPACE: '', CLIQUE_BADGE: agentKey(ROOT, 'june') }, 'note', 'the default runs on npm'), 'shared with the clique\n')
   assert.match(ws.board(), /pnpm/)
   assert.doesNotMatch(ws.board(), /on npm/)
   assert.match(home.board(), /on npm/)
@@ -421,7 +422,7 @@ test("`clique` and the hooks say which workspace they're from, and land there", 
   assert.match(await cliqueCli({ CLIQUE_WORKSPACE: 'gone' }, 'who'), /no workspace "gone"/)
   // a hook: to the hub while CLIque is there, to storefront's spool while it isn't, and replayed in storefront
   const hook = JSON.parse(adapters.claude({ name: 'milo' }, { session: 's', attachments: os.tmpdir(), bin: BIN }).args.find((x) => x.startsWith('{"permissions"'))).hooks.UserPromptSubmit[0].hooks[0]
-  const env = { CLIQUE_AGENT: 'milo', CLIQUE_WORKSPACE: 'storefront' }
+  const env = { CLIQUE_AGENT: 'milo', CLIQUE_WORKSPACE: 'storefront', CLIQUE_BADGE: agentKey('storefront', 'milo') } // each agent's own key (core/keys.js)
   const runHook = (input) => (WIN ? run(hook.command, hook.args, env, input) : run('/bin/sh', ['-c', hook.command], env, input))
   await runHook(JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'write the docs' }))
   assert.equal(ws.agents.get('milo').status, 'working')

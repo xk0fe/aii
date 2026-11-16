@@ -112,7 +112,7 @@ test('an unfinished task carries over: where it left off is the first thing in t
   assert.deepEqual(runner.starts, ['june'])
   assert.match(events('june').at(-1), /started a new conversation \(it passed its 250k context limit\), and picks up where it left off: Not finished\. Worktree bga-payload/)
   up('june')
-  assert.match(runner.submitted.at(-1), /^\[clique\] Your last conversation passed its context limit[\s\S]*branch fix\/payload[\s\S]*open the PR\.\n\nCheck where things stand, then carry on\.$/)
+  assert.match(runner.submitted.at(-1), /^\[clique\] Your last conversation passed its context limit[\s\S]*in your own words:\n\n<relayed from="june">\n[\s\S]*branch fix\/payload[\s\S]*open the PR\.\n<\/relayed>\n\nCheck where things stand, then carry on\.$/)
   // its reply threads to the task it was on
   hub.onHook('june', { hook_event_name: 'UserPromptSubmit', prompt: runner.submitted.at(-1) })
   hub.onHook('june', { hook_event_name: 'Stop', last_assistant_message: 'PR is open.' })

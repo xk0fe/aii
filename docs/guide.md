@@ -370,6 +370,8 @@ Everything CLIque keeps is in the `.clique` folder in your home folder (`~/.cliq
 - `spend.json`: the last running totals each agent's CLI reported (so nothing is counted twice) and the clique's spend per hour of each day, for the last 60 days.
 - `attachments/`: images you've attached to messages, tasks and instructions. One that no chat, task or agent refers to any more is removed 60 days after you added it.
 - `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, copies of images from agents on other computers (fetched again when needed, kept 30 days), and `phones.json`: the phones paired with this computer and the keys for them.
+- `token` and `url`: where CLIque is listening right now, and the token `clique` shows it from a terminal of your own. Both change every time CLIque starts.
+- `agent-secret`: what each agent's key is made from. It never goes into an agent's environment.
 - `run/`: the terminal host's connection (yours only) and its log, and for each running agent the commands it started, so what they leave running can be stopped when they end.
 - `runtime.json`: what CLIque knows about each agent at work (what it's answering, its queue, its clones, questions between agents), so it can pick them up after a restart.
 - `spool/`: what agents reported while CLIque was closed, replayed when it's back (up to the last 8 MB per agent).
@@ -395,7 +397,9 @@ An agent without an `avatar` gets one picked from its name, always the same. `of
 
 ## How it works
 
-- **Your agents run on your computer**, each in a terminal of its own, as the Claude Code or Codex you installed, signed in with your account. CLIque starts them with their instructions and the clique basics, and reads what they do from their hooks, which report to CLIque on your computer only, with a key that changes every time CLIque starts.
+- **Your agents run on your computer**, each in a terminal of its own, as the Claude Code or Codex you installed, signed in with your account. CLIque starts them with their instructions and the clique basics, and reads what they do from their hooks, which report to CLIque on your computer only, each agent with a key of its own.
+- **Who is speaking.** Your messages reach an agent exactly as you typed them. A teammate's words (a hand-off, a question, an answer, a task it added) come between `<relayed from="ada">` and `</relayed>`, under CLIque's own line saying what it is. Anything inside that looks like the end of that fence, or like one of CLIque's own lines (`[clique] …`, `[from @…]`), is changed by one character (`[_clique]`) so it can't pass for the real thing. So a web page or file an agent passes on can't end the hand-off early and carry on as you. A hand-off is still work to do: the fence says who's speaking, not that they should be ignored.
+- **An agent can't speak as you, or as a teammate.** The `clique` command and the hooks show CLIque the agent's own key, and CLIque reads who's calling from the key, whatever name the command gives. An agent linked from another computer always arrives under that computer's name (`iris@studio`).
 - **CLIque has no servers.** Your agents talk to Claude or Codex as they always do. Links between your computers, and your phone, connect directly to each other, encrypted.
 - **`clique` in your own terminal:** on a Mac, the same `clique` command your agents use works from any terminal once it's on your PATH: `ln -s /Applications/CLIque.app/Contents/Resources/app.asar.unpacked/bin/clique ~/.local/bin/clique`.
 
@@ -408,4 +412,6 @@ An agent without an `avatar` gets one picked from its name, always the same. `of
 - Asking an agent on a linked computer needs a CLIque with right of way on both computers. An older one takes the question as a plain hand-off, and the asker is told the answer won't come back by itself.
 - Clones share their agent's folder. Two clones editing the same files at the same time can step on each other.
 - Codex agents are marked ready about 3 seconds after launch, because Codex only announces a session with its first prompt.
+- Agents run as you, so the keys aren't a sandbox: an agent set on it could read `token` or `agent-secret` in `~/.clique`, like any program of yours. They stop an agent from speaking as someone else by accident, or because something it read told it to run a command with another name.
+- An agent that was already running when you updated to the CLIque that added keys has none until its CLI next starts (it rests after 10 idle minutes, or you restart it). Until then it's taken at its word, as before.
 - If an agent looks stuck on "working" (for example after you interrupt it), click its status in the terminal header to mark it free.
