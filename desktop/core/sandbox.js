@@ -62,10 +62,21 @@ const real = (p) => {
   }
 }
 
+// The file a request names ('' when it names none).
+export const pageFile = (url) => {
+  try {
+    return new URL(url).searchParams.get('f') ?? ''
+  } catch {
+    return ''
+  }
+}
+
 // A request's answer: { status, html, policy }. Only a page in one of `dirs` (CLIque's attachments, its cache of linked
-// computers' files), wherever links and `..` really lead.
-export function answer(url, dirs) {
-  const plain = (status, words) => ({ status, ...shell(`<body style="margin:0;display:grid;place-items:center;height:100vh;font:13px system-ui,sans-serif;color:#6b6b6b">${words}</body>`) })
+// computers' files), wherever links and `..` really lead. `missing`: what to say of one that isn't there, when more is
+// known than that (it's on a linked computer that's away).
+export function answer(url, dirs, missing = 'This page is no longer kept.') {
+  const text = (s) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+  const plain = (status, words) => ({ status, ...shell(`<body style="margin:0;display:grid;place-items:center;height:100vh;padding:0 16px;box-sizing:border-box;text-align:center;font:13px system-ui,sans-serif;color:#6b6b6b">${text(words)}</body>`) })
   let u
   try {
     u = new URL(url)
@@ -73,22 +84,29 @@ export function answer(url, dirs) {
     return plain(400, 'Not a page.')
   }
   const file = real(u.searchParams.get('f') ?? '')
-  if (!file || kindOf(file) !== 'html' || !dirs.some((d) => real(d) && file.startsWith(real(d) + path.sep))) return plain(404, 'This page is no longer kept.')
+  if (!file || kindOf(file) !== 'html' || !dirs.some((d) => real(d) && file.startsWith(real(d) + path.sep))) return plain(404, missing)
   let stat
   try {
     stat = fs.statSync(file)
   } catch {
-    return plain(404, 'This page is no longer kept.')
+    return plain(404, missing)
   }
   if (!stat.isFile() || stat.size > PAGE_MAX) return plain(413, 'This page is too big to show here.')
   return { status: 200, ...shell(fs.readFileSync(file, 'utf8'), { run: u.searchParams.get('run') === '1' }) }
 }
 
 // Electron's side (main.js, and the screenshots and probes, which show the same thing): the scheme answers with the
-// shell and its policy, and nothing else.
-export function serveSandbox(protocol, dirs) {
-  protocol.handle(SCHEME, (request) => {
-    const { status, html, policy } = answer(request.url, dirs)
+// shell and its policy, and nothing else. `bring(file)`: a page on a linked computer is brought here first (it's
+// answered when it has come, or with why it couldn't: core/linkfiles.js).
+export function serveSandbox(protocol, dirs, bring) {
+  protocol.handle(SCHEME, async (request) => {
+    let missing
+    try {
+      await bring?.(pageFile(request.url))
+    } catch (e) {
+      missing = e?.message
+    }
+    const { status, html, policy } = answer(request.url, dirs, missing)
     return new Response(html, {
       status,
       headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': policy, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'cache-control': 'no-store' },

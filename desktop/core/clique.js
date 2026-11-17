@@ -10,6 +10,7 @@ import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf, expand, sessionsLeft, arrivedLeft } from './hub.js'
 import { movedPath } from './home.js'
 import { FETCH_MAX, kindOf, travels } from './attachments.js'
+import { LinkFiles, readPiece, inside, NO_PIECES } from './linkfiles.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
 import { ROOT, named, workspacesIn, space, channelsIn, addWorkspace, setLook, dropWorkspace, addChannel, editChannel, dropChannel, dirOf } from './workspaces.js'
@@ -66,7 +67,7 @@ const THEIR_USAGE_READING = 2000
 const THEIR_USAGE_LEFT = 60000 // which sessions removed workspaces ran is read from their files this often
 const THEIR_USAGE_KEPT = 30 * 864e5 // what a computer last said it used is kept this long after it said it
 // What a linked computer may ask with no workspace (see serve).
-const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'readImage', 'moveWrite', 'moveDrop', 'folderInfo', 'usageHistory'])
+const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'readImage', 'readFile', 'moveWrite', 'moveDrop', 'folderInfo', 'usageHistory'])
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const readJSON = (file) => {
   try {
@@ -99,7 +100,7 @@ function tidy(d) {
 }
 
 export class Clique extends EventEmitter {
-  links = new Map() // computer slug -> { slug, name, peer, client, state, toHost, fetching }
+  links = new Map() // computer slug -> { slug, name, peer, client, state, toHost }
 
   // host: run the agents' terminals in the terminal host, where they outlive CLIque ({ file, env }: how to run it as
   // Node, core/ptyclient.js). Without it they live in this process and stop with it.
@@ -113,6 +114,10 @@ export class Clique extends EventEmitter {
     // the phones paired with this computer; main.js serves them (core/remote.js)
     this.phones = new Phones(LINK_DIR)
     this.phones.on('change', () => this.changed())
+    // linked computers' files, fetched a piece at a time as the chat shows, plays or opens them (core/linkfiles.js)
+    this.files = new LinkFiles({ cache: CACHE, peer: (key) => this.links.get(key)?.peer ?? null, name: (key) => this.links.get(key)?.name ?? key })
+    this.files.on('done', () => this.changed()) // a picture that's here now shows, on phones too
+    this.files.on('old', () => this.changed()) // that computer can't send pieces: its recordings say they stay there
     this.bin = bin
     this.runner = host ? new HostRunner({ runtime: host }) : new Runner()
     // A hub per workspace (core/workspaces.js), all on one config.json, one terminal runner and one local server.
@@ -740,8 +745,8 @@ export class Clique extends EventEmitter {
   }
 
   // Images nothing needs any more (core/keep.js): attachments that no workspace's chat, task or agent refers to, saved
-  // over ATTACHMENT_DAYS ago, and linked computers' images fetched over CACHE_DAYS ago (fetched again when they're
-  // shown). -> { attachments, cache }: how many went.
+  // over ATTACHMENT_DAYS ago, and linked computers' files fetched over CACHE_DAYS ago (fetched again when they're
+  // shown or played). -> { attachments, cache }: how many went.
   sweepImages(now = Date.now()) {
     if (this.config.broken) return { attachments: 0, cache: 0 } // which workspaces there are isn't known: nor is what they need
     // (movedPath: an image written down before the app's folder moved is the same file, where it is now)
@@ -1096,9 +1101,8 @@ export class Clique extends EventEmitter {
       for (const e of st.feed) {
         feed.push({
           ...e, id: `${e.id}@${l.slug}`, from: q(e.from), to: q(e.to), cc: e.cc?.map(q), re: e.re && q(e.re), ...(e.thread && { thread: q(e.thread) }), ...(e.echo && { echo: q(e.echo) }), images: e.images?.map((p) => this.fetchImage(l, p)),
-          // what an agent there attached: a picture or a page is fetched like your images; a recording or any other file stays
-          // there (`away`: that computer's name, for the card to say so)
-          ...(e.files && { files: e.files.map((f) => (travels(f) ? { ...f, path: this.fetchImage(l, f.path), home: l.name } : { ...f, path: '', away: l.name })) }),
+          // what an agent there attached (linkedFile)
+          ...(e.files && { files: e.files.map((f) => this.linkedFile(l, f)) }),
           ...(e.ticket !== undefined && { ticket: q(String(e.ticket)) }), ...((e.act === 'fixing' || e.act === 'triaged') && e.text && { text: q(e.text) }),
           ...(e.reactions && { reactions: e.reactions.map((r) => ({ ...r, by: q(r.by) })) }),
           ...(e.also && { also: e.also.map(q) }), ...(e.reply && { reply: q(e.reply) }), ...(e.line && { line: e.line.map(q) }), ...(e.about && { about: e.about.map(q) }),
@@ -1422,22 +1426,25 @@ export class Clique extends EventEmitter {
     throw new Error(`no agent named "${name}" (try: clique who)`)
   }
 
-  // Images are files on the computer an agent lives on: fetched on demand into a cache for display here,
-  // and sent over (or mapped back) when they travel to another computer.
+  // Images are files on the computer an agent lives on: fetched into a cache for display here (core/linkfiles.js),
+  // and sent over (or mapped back) when they travel to another computer. -> where it is (or will be) in the cache
   fetchImage(l, hostPath) {
-    const file = path.join(CACHE, l.slug, crypto.createHash('sha1').update(hostPath).digest('hex').slice(0, 20) + path.extname(hostPath))
+    const file = this.files.place(l.slug, hostPath)
     l.toHost.set(file, hostPath)
-    if (fs.existsSync(file) || l.fetching.has(hostPath) || !l.peer) return file
-    l.fetching.add(hostPath)
-    l.peer
-      .call('readImage', [hostPath])
-      .then((bytes) => {
-        fs.mkdirSync(path.dirname(file), { recursive: true })
-        fs.writeFileSync(file, bytes)
-        this.changed()
-      }, () => {})
-      .finally(() => l.fetching.delete(hostPath))
+    this.files.want(file) // (when it's here the clique changes, and what shows it is drawn again)
     return file
+  }
+
+  // A file an agent on a linked computer attached, as the chat here gets it: `path` is where it is in this computer's
+  // cache, and `home` that computer's name. A picture or a page is fetched as soon as it's seen, like your images; a
+  // recording or any other file when it's played or opened (it plays while it's still coming). From a computer whose
+  // CLIque sends no pieces, those stay there (`away`: its name, for the card to say so).
+  linkedFile(l, f) {
+    if (travels(f)) return { ...f, path: this.fetchImage(l, f.path), home: l.name }
+    if (this.files.old.has(l.slug)) return { ...f, path: '', away: l.name }
+    const file = this.files.place(l.slug, f.path)
+    l.toHost.set(file, f.path)
+    return { ...f, path: file, home: l.name }
   }
 
   async toHome(paths, l) {
@@ -1685,10 +1692,12 @@ export class Clique extends EventEmitter {
       usageHistory: () => this.usageSummary(),
       deliver: (opts) => h.send({ ...opts, ...(peer && { from: this.senderFrom(peer, opts?.from) }), mentions: false }),
       saveImage: (name, type, bytes) => saveImage(name, type, bytes),
+      // one of this computer's attachments, a piece at a time: a recording, a picture, a page, any file (core/linkfiles.js)
+      readFile: (file, start, length) => readPiece(ATTACHMENTS, movedPath(String(file ?? '')), start, length),
+      // ...and whole, as a CLIque from before pieces asks: a picture or a page, never a recording or anything big
       readImage: (file) => {
-        file = movedPath(file)
-        if (!String(file).startsWith(ATTACHMENTS + path.sep)) throw new Error('not an attachment')
-        // (a recording an agent attached is never sent whole: it's watched on this computer)
+        file = inside(movedPath(String(file ?? '')), [ATTACHMENTS])
+        if (!file) throw new Error('not an attachment')
         if (kindOf(file) === 'video' || fs.statSync(file).size > FETCH_MAX) throw new Error('too big to send: open it on the computer it is on')
         return new Uint8Array(fs.readFileSync(file))
       },
@@ -2199,7 +2208,7 @@ export class Clique extends EventEmitter {
   }
 
   newLink(key) {
-    const l = { slug: key, peer: null, toHost: new Map(), fetching: new Set() }
+    const l = { slug: key, peer: null, toHost: new Map() }
     this.links.set(key, l)
     return l
   }
@@ -2258,6 +2267,15 @@ export class Clique extends EventEmitter {
       l.state = s
       this.changed()
     }, () => {})
+    // Can it send its files a piece at a time (core/linkfiles.js)? A CLIque from before that says it has no such call.
+    this.files.back(key)
+    peer.call('readFile', ['']).catch((e) => {
+      if (l.peer !== peer) return
+      const old = NO_PIECES.test(e.message)
+      if (old === this.files.old.has(key)) return
+      old ? this.files.old.add(key) : this.files.old.delete(key)
+      this.changed()
+    })
     // Does it know workspaces by owner (keyOf)? Then it gets ours (and asks the same of us, so we get its). An older
     // CLIque doesn't answer 'workspaces', and shares nothing with this one.
     peer.call('workspaces').then((list) => {
