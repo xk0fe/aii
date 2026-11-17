@@ -107,6 +107,11 @@ app.whenReady().then(async () => {
     check("June's conversation is open", await js(`return composer.target()`), 'June')
     await js(`await open('.channels [data-channel=general]')`)
     check('from a conversation back to #general: where you were', await js(`return [chan(), reading()]`), ['general', there])
+    // with its terminal docked beside it, the chat is narrower until you're back: it aims again once it's wide
+    await js(`openDM('Ada', { terminal: true }); await wait(450)`)
+    check("Ada's conversation is open, her terminal docked", await js(`return [composer.target(), q('.stage').classList.contains('docked')]`), ['Ada', true])
+    await js(`await open('.channels [data-channel=general]')`)
+    check('from it back to #general: where you were', await js(`return [chan(), q('.stage').classList.contains('docked'), reading()]`), ['general', false, there])
 
     // ---- replies while you were away ----
     await js(`await scrollTo(feed.scrollHeight)`)
