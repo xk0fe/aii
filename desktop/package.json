@@ -24,6 +24,7 @@
     "shots": "electron scripts/screenshots.mjs",
     "probe:sandbox": "electron scripts/sandbox-probe.mjs",
     "probe:files": "electron scripts/files-probe.mjs",
+    "probe:composer": "electron scripts/composer-probe.mjs",
     "readme": "node scripts/readme.mjs"
   },
   "dependencies": {

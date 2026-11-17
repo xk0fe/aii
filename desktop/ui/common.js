@@ -3141,6 +3141,30 @@ function mountInk(field, { agents, strict = () => true }) {
   return { paint }
 }
 
+// Going from one conversation's message box to another's (mountComposer swapKeys). A draft: { text, images, reply,
+// follow }. mine: what the box holds as you leave. there: what you'd left where you're going, if anything.
+// Looking elsewhere (the sidebar, a face on a message), yours waits where you wrote it and the one there comes back.
+// move: you changed who it's for on the To line, so what you wrote goes there with you, its images too, under
+// anything you'd left there. The message it answered stays behind: that's part of the conversation you left.
+// everyone: where you're going is everyone's chat (a channel, on Auto or Task). There, the thread you were in decides
+// who gets what you send next. A message that moves in is for who the To line says, so it leaves that thread, as
+// picking Auto does when you're already there. (In an agent's conversation a waiting quote only quotes: it stays.)
+// Returns { box, behind, moved }: what the box holds now, what waits where you were (null: nothing), and whether
+// what you wrote came along.
+function draftSwap(mine, there, { move = false, everyone = false } = {}) {
+  const moved = move && Boolean(mine.text.trim() || mine.images.length)
+  const waiting = there?.text?.trim() ? `${there.text.replace(/\s+$/, '')}\n` : ''
+  const thread = !(moved && everyone)
+  const box = {
+    text: moved ? `${waiting}${mine.text}` : there?.text ?? '',
+    images: [...(there?.images ?? []), ...(moved ? mine.images : [])],
+    reply: (thread && there?.reply) || null,
+    follow: (thread && there?.follow) || null,
+  }
+  const behind = moved ? { text: '', images: [], reply: mine.reply, follow: mine.follow } : mine
+  return { box, behind: behind.text.trim() || behind.images.length || behind.reply ? behind : null, moved }
+}
+
 // onTarget(target): who it's aimed at changed (an agent's name opens your conversation with it; see isConvo).
 // onDictate: the dictation hotkey is about to start, so the box should be on screen.
 // onLater(button, draft): the clock beside Send was pressed (ui/schedules.js): what the box holds, to send later or on
@@ -3304,7 +3328,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
       ...on.map((a) => ({ label: displayName(a), icon: avatarHTML(a, { size: 18, mood: 'still' }), act: a.name, hint: `${statusText(a)}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}` })),
     ], (to) => {
       if (draftKey(to) === draftKey(target)) stopReply()
-      setTarget(to)
+      setTarget(to, { move: true }) // the message you're writing is for them now: it goes to their conversation with you
       ta.focus()
     })
   }
@@ -3374,26 +3398,33 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
   // Each conversation keeps its own draft: what you typed, its images, and what you were replying to. Going to
   // another one puts yours aside and brings back the one you left there. (Auto and Task are both everyone's.)
   // carry: you pressed Reply on its message, so what you're typing comes along, unless it has a draft of its own.
+  // move: you changed who it's for on the To line (the picker, the Task switch), so the message goes where it's going:
+  // what you wrote and its images are in the box there, under anything you'd left there (draftSwap). Not one that's
+  // on its way already (sent, or being filed as a task, and not back yet): that one stays where it was sent from, as
+  // when you look elsewhere, or it would still be in the box once it has gone.
   // Each channel keeps its own too, in its workspace.
   const drafts = new Map() // 'all', 'workspace#channel' or an agent's name -> { text, images, reply, follow }
   const draftKey = (t) => (isConvo(t) ? t : channel ? `${channel.ws ?? ''}#${channel.id}` : 'all')
-  const swapDraft = (next, carry) => swapKeys(draftKey(target), draftKey(next), carry)
-  const swapKeys = (mineKey, nextKey, carry) => {
+  let going = 0 // messages on their way (see submit)
+  const swapDraft = (next, how) => swapKeys(draftKey(target), draftKey(next), { ...how, everyone: !isConvo(next) })
+  const swapKeys = (mineKey, nextKey, { carry = false, move = false, everyone = false } = {}) => {
     if (voice?.busy()) return // dictating: the words keep coming into the box
     const mine = { text: ta.value, images: attach.get(), reply, follow }
     const there = drafts.get(nextKey)
     drafts.delete(nextKey)
     if (carry && !there) return void ((reply = null), (follow = null))
-    if (mine.text.trim() || mine.images.length || mine.reply) drafts.set(mineKey, mine)
-    ta.value = there?.text ?? ''
-    attach.set(there?.images ?? [])
-    reply = there?.reply ?? null
-    follow = there?.follow ?? null
-    if (hint.classList.contains('error')) say('') // that was about the draft you put aside
+    const { box, behind, moved } = draftSwap(mine, there, { move: move && !going, everyone })
+    if (behind) drafts.set(mineKey, behind)
+    ta.value = box.text // (the same text keeps the cursor where it was)
+    attach.set(box.images)
+    reply = box.reply
+    follow = box.follow
+    if (hint.classList.contains('error')) say('') // that was about the message where it was
     autosize()
+    if (moved && box.text !== mine.text) ta.scrollTop = ta.scrollHeight // under a draft that waited: its end, where the cursor is
   }
-  const setTarget = (name, { carry = false } = {}) => {
-    if (draftKey(name) !== draftKey(target)) swapDraft(name, carry)
+  const setTarget = (name, how) => {
+    if (draftKey(name) !== draftKey(target)) swapDraft(name, how)
     target = name
     // Task is a mode of everyone's chat: next time it opens on everyone's
     store.set('clique.target', name === 'task' ? 'auto' : name)
@@ -3409,6 +3440,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     const to = target === 'auto' ? undefined : target
     const sentAt = Date.now()
     const sentFrom = draftKey(target) // you may be in another conversation by the time it's sent
+    going += 1 // (until it's back: the To line doesn't take a message along that has gone already)
     try {
       const kind = kindIn(text)
       const talking = isConvo(target)
@@ -3434,6 +3466,8 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
       autosize()
     } catch (e) {
       say(errorLine(e), true)
+    } finally {
+      going -= 1
     }
   }
 
@@ -3447,7 +3481,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     else {
       // the one you're in leaves the thread; another conversation keeps it for when you're back
       if (draftKey(picked.dataset.to) === draftKey(target)) stopReply()
-      setTarget(picked.dataset.to)
+      setTarget(picked.dataset.to, { move: true }) // Task, from an agent's conversation: what you wrote there is the task
     }
     tip.classList.remove('on')
     ta.focus()
@@ -3492,6 +3526,18 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
   const ink = mountInk(ta, { agents: () => agents, strict: () => !el.classList.contains('task-mode') })
   // @name opens the clique list; in task mode a mention assigns the task
   const mentions = mountMentions(ta, { agents: () => agents, box: el.querySelector('.input'), heading: () => (el.classList.contains('task-mode') ? 'Assign to' : 'Mention: they get it too') })
+  // The box is as tall as its text at the width it has now. A conversation that opens with a terminal beside it is
+  // narrower than the channel, so a message that came along from there (or waited here) wraps onto more lines.
+  // (On the next frame: resizing the field from here would call its other watchers again within this one.)
+  // Hidden (another place is open, the floating chat is closed), it has no width and nothing to fit to: a draft that
+  // came back meanwhile is fitted once it's on screen again, whatever width that is.
+  let fitted = 0
+  new ResizeObserver(() => {
+    const w = ta.clientWidth
+    if (w === fitted) return
+    fitted = w
+    if (w) requestAnimationFrame(autosize)
+  }).observe(ta)
   ta.addEventListener('keydown', (e) => {
     if (voice?.key(e)) return
     if (e.key === 'Escape' && !e.isComposing && stopReply()) return void (e.preventDefault(), e.stopPropagation())
@@ -3512,14 +3558,18 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
   el.querySelector('.later')?.addEventListener('click', (e) => {
     const talking = isConvo(target)
     const from = draftKey(target)
+    const held = { text: ta.value.trim(), images: attach.get() }
     onLater(e.currentTarget, {
-      text: ta.value.trim(),
-      images: attach.get(),
+      ...held,
       to: reply && !talking ? reply.to.join(',') : target === 'auto' || target === 'task' ? '' : target,
       channel: !talking && channel ? channel.id : null,
-      // scheduled: the box is empty again (unless you've moved on to another conversation: then it's that draft that goes)
+      // scheduled: the box is empty again. If you've moved on to another conversation, it's that draft that goes, and
+      // the box too when the message came along with you (the To line)
       clear: () => {
-        if (draftKey(target) !== from) return void drafts.delete(from)
+        if (draftKey(target) !== from) {
+          drafts.delete(from)
+          if (ta.value.trim() !== held.text || attach.get().join('\n') !== held.images.join('\n')) return
+        }
         ta.value = ''
         attach.set([])
         autosize()
