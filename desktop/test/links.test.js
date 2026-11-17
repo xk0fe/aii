@@ -36,4 +36,6 @@ test('every view that shows Markdown opens its links: the chat, a thread, a task
     if (/\bmd\(/.test(src.replace(/^function md\(.*$/m, ''))) assert.match(src, /\bopenLink\((e|ev)\)/, `${file} shows Markdown, so its click handler starts with openLink(ev)`)
   }
   assert.match(fs.readFileSync(path.join(A, 'ui/tasks.js'), 'utf8'), /tp\.addEventListener\('click'[\s\S]{0,600}openLink\(e\)/, 'the task panel: its description, notes and review')
+  // the review's receipt (what was asked, what came back, how it was checked): review.js draws it, tasks.js has its clicks
+  assert.match(fs.readFileSync(path.join(A, 'ui/tasks.js'), 'utf8'), /rv\.addEventListener\('click'[\s\S]{0,400}rvLink\(e\)/, 'the review: its clicks ask review.js about links first')
 })
