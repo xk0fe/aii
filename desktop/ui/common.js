@@ -1097,6 +1097,19 @@ function renderMarkdown(src) {
   return html.replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[i])
 }
 
+// A message that waits for a busy agent says so. One of yours is also where you send it without waiting (Send now:
+// core/hub.js sendNow, and the listener at the end of this file). "up next": you said so, and its terminal can't take it
+// yet (a question is up in it).
+const queuedTag = (e) => {
+  const tag = `<span class="tag"${e.now ? ' title="It goes in as soon as its terminal can take it"' : ''}>${e.now ? 'up next' : 'queued'}</span>`
+  if (e.from !== 'you' || e.kind !== 'msg') return tag
+  const who = (e.queuedIds ? (e.cc ?? [e.to]) : [e.to]).filter(Boolean).map((n) => String(n).split('@')[0])
+  const names = who.length > 2 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1)}` : who.join(' and ')
+  // a new conversation or a task can't join the turn the agent is in; nor can one that's already been told to
+  const join = !e.fresh && e.ticket === undefined && !e.now
+  return `${tag}<button type="button" class="tag go" data-send-now="${esc((e.queuedIds ?? [e.id]).join(' '))}" data-who="${esc(names)}"${who.length > 1 ? ' data-many' : ''}${join ? ' data-join' : ''} aria-haspopup="menu" title="${esc(`It waits until ${names || 'the agent'} ${who.length > 1 ? 'have' : 'has'} finished. Send now doesn't wait`)}">Send now</button>`
+}
+
 // One line of a message, for "replying to" quotes.
 const snippet = (text) => String(text ?? '').replace(/```canvas\n([\s\S]*?)```/g, (_, board) => `[canvas${typeof canvasTitle === 'function' && canvasTitle(board) ? `: ${canvasTitle(board)}` : ''}]`).replace(/```[\s\S]*?```/g, '[code]').replace(/^[\s|:-]*-[\s|:-]*$/gm, '').replace(/[*_`#>~|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90)
 
@@ -1111,12 +1124,13 @@ const mergeSends = (feed) => {
   for (const e of feed) {
     const lead = e.from === 'you' && e.sendId ? bySend[e.sendId] : undefined
     if (lead) {
-      if (e.queued) lead.queued = true
+      if (e.queued) (lead.queued = true), lead.queuedIds.push(e.id), (lead.now &&= Boolean(e.now))
       if (e.reactions?.length) lead.reactions = [...(lead.reactions ?? []), ...e.reactions] // each copy's agent reacted to its own
       as[e.id] = lead
       continue
     }
-    const x = e.from === 'you' && e.sendId ? (bySend[e.sendId] = { ...e }) : e
+    // (queuedIds: the copies still waiting for their agent, for Send now; now: every one of them is to go in first chance)
+    const x = e.from === 'you' && e.sendId ? (bySend[e.sendId] = { ...e, queuedIds: e.queued ? [e.id] : [], now: e.queued ? Boolean(e.now) : true }) : e
     shown.push(x)
     as[e.id] = x
   }
@@ -1379,7 +1393,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const face = e.from === 'you' ? YOU_FACE : `<span class="face" data-agent="${esc(e.from)}">${avatarHTML(agent(e.from), { size: 22, mood: 'still' })}</span>`
     const to = e.kind === 'msg' && e.to && e.from !== 'you' ? ` <span class="to">to ${name(e.to)}</span>` : ''
     const verb = e.kind === 'note' ? ' <span class="to">shared a note</span>' : e.kind === 'ask' ? ` <span class="to">${e.ask?.spend ? 'checks in' : 'asks you'}</span>` : ''
-    const tags = [e.held && !e.dropped && 'waiting for your OK', e.paused && 'held for the check-in', e.queued && 'queued', e.dropped && (e.stopped ? 'not delivered' : 'dropped'), e.asks && 'asks you'].filter(Boolean).map((w) => `<span class="tag">${esc(w)}</span>`).join('')
+    const tags = [e.held && !e.dropped && 'waiting for your OK', e.paused && 'held for the check-in', e.dropped && (e.stopped ? 'not delivered' : 'dropped'), e.asks && 'asks you'].filter(Boolean).map((w) => `<span class="tag">${esc(w)}</span>`).join('') + (e.queued ? queuedTag(e) : '')
     const head = `<div class="tr-head">${name(e.from)}${to}${verb}${tags}<time>${time}</time></div>`
     if (e.kind === 'ask') return `<div class="thread-row card" id="tr-${esc(e.id)}" data-card="${esc(e.id)}">${face}<div class="tr-main">${head}<div class="tr-line">${esc(needText({ agent: agent(e.from), ask: e }))}</div></div><span class="tr-chev">${ICONS.chevron}</span></div>`
     const line = e.gist ?? snippet(e.text)
@@ -1406,7 +1420,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const hintText = who ? `Reply to ${familyOf(who)}, in the thread` : 'Reply in the thread'
     if (ta.placeholder !== hintText) ta.placeholder = hintText
     reply.classList.toggle('hidden', !who)
-    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.paused, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length, reactsSig(e)]), agents().map((a) => [a.name, a.avatar]).length])
+    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.now, e.held, e.paused, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length, reactsSig(e)]), agents().map((a) => [a.name, a.avatar]).length])
     if (next !== drawn || force) {
       drawn = next
       const top = list.scrollTop
@@ -1692,7 +1706,7 @@ function feedItem(e, prev, ctx) {
   // an agent's canvas (a ```canvas block, ui/canvas.js) says so by its name, and under it who else drew on it
   const drawn = e.from !== 'you' && typeof canvasBoard === 'function' && /```canvas\n/.test(e.text ?? '')
   const hands = drawn ? [...new Set(e.canvas?.by ?? [])].filter((n) => n !== e.from) : []
-  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? '<span class="tag">queued</span>' : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.paused ? '<span class="tag" title="Held by the spend check-in. It goes on when you say Keep going.">held for the check-in</span>' : '') + (e.stopped ? `<span class="tag" title="${esc(`You stopped ${e.to ? e.to.split('@')[0] : 'it'} before this was delivered. Send it again if you still want it`)}">not delivered</span>` : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '') + scheduledTag(e)
+  const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? queuedTag(e) : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.paused ? '<span class="tag" title="Held by the spend check-in. It goes on when you say Keep going.">held for the check-in</span>' : '') + (e.stopped ? `<span class="tag" title="${esc(`You stopped ${e.to ? e.to.split('@')[0] : 'it'} before this was delivered. Send it again if you still want it`)}">not delivered</span>` : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '') + scheduledTag(e)
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
   const pics = (e.images?.length ? (typeof fxPics === 'function' ? fxPics(e) : `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>`) : '') // (ui/files.js: they open in the viewer)
   // what an agent attached (clique attach): pictures, a recording, a page, any file (ui/files.js)
@@ -2693,7 +2707,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       const view = feedView(feed, agents, open, limit, drafts, { reads, divider: words.length ? null : divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline, channels, channel: convo ? null : channel, threads, threadSeen: (id) => readTo?.[id] })
       shown = new Map(view.items.map((e) => [e.id, e]))
       // (a line others joined, sameEvents, counts them; a usage line turns to "reset" once its window has)
-      let next = view.items.map((e) => e.id + (e.sig ?? '') + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.paused ? 'p' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '') + reactsSig(e)).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
+      let next = view.items.map((e) => e.id + (e.sig ?? '') + (e.queued ? 'q' : '') + (e.now ? 'n' : '') + (e.queuedIds?.length ?? '') + (e.held ? 'h' : '') + (e.paused ? 'p' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '') + reactsSig(e)).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
       // searching, who's at work right now isn't part of the results
@@ -3102,7 +3116,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     send.dataset.mode = mode
     send.classList.toggle('stop', mode === 'stop')
     send.innerHTML = mode === 'stop' ? ICONS.stop : ICONS.up
-    send.title = mode === 'stop' ? `${label}: end what ${who.length > 1 ? "they're" : "it's"} doing now. ${who.length > 1 ? 'They stay' : 'It stays'} on` : 'Send (Enter)'
+    send.title = mode === 'stop' ? `${label}: end what ${who.length > 1 ? "they're" : "it's"} doing now. ${who.length > 1 ? 'They stay' : 'It stays'} on` : keysIn("Send (Enter)\n⌘Enter: send now. A busy agent gets it in what it's doing, instead of after")
     send.setAttribute('aria-label', label)
   }
   // Replying: to a message in the feed (its Reply button), and then staying in that thread, each message answering
@@ -3305,7 +3319,8 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     store.set('clique.target', name === 'task' ? 'auto' : name)
     draw()
   }
-  const submit = async () => {
+  // now: sent with ⌘Enter. An agent that's busy gets it typed into the turn it's in, instead of after it (core/hub.js sendNow).
+  const submit = async ({ now = false } = {}) => {
     if (voice?.busy()) return voice.stop({ send: true }) // sends once the last words are in
     const text = ta.value.trim()
     const images = attach.get()
@@ -3325,7 +3340,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
         say((await clique.call('task', 'file', null, { text: what, images, kind, ...(forWhom && { owner: forWhom }) })).trim())
       }
       else {
-        say((await clique.call('send', reply && !talking ? reply.to.join(',') : to, text, images, { fresh, ...(reply && { re: reply.id }), ...(!talking && channel && { channel: channel.id }) })).trim().split('\n').join(' · '))
+        say((await clique.call('send', reply && !talking ? reply.to.join(',') : to, text, images, { fresh, ...(reply && { re: reply.id }), ...(!talking && channel && { channel: channel.id }), ...(now && !fresh && { now: true }) })).trim().split('\n').join(' · '))
         // New conversation is for one message: what you send next goes on in that conversation, as a reply. In an
         // agent's conversation it does anyway, so the quote just goes.
         if (draftKey(target) !== sentFrom) drafts.delete(sentFrom)
@@ -3403,7 +3418,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     if (e.key === 'Escape' && !e.isComposing && stopReply()) return void (e.preventDefault(), e.stopPropagation())
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault()
-      submit()
+      submit({ now: commandKey(e) })
     }
   })
   send.addEventListener('click', () => {
@@ -3539,6 +3554,22 @@ function errorLine(err, todo = 'Something went wrong. Try again in a moment.') {
   if (!why) clique.call('log', String(err?.message ?? err ?? '')).catch(() => {})
   return why || todo
 }
+
+// Send now, beside "queued" on a message of yours (queuedTag), wherever the chat shows it: the dashboard, an agent's
+// conversation, a thread, the floating chat. Two ways not to wait for a busy agent (core/hub.js sendNow): into what it's
+// doing, where it reads the message at its next step, or stop that and send. A new conversation or a task only has the
+// second: it has no part in the turn the agent is in.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest?.('[data-send-now]')
+  if (!btn) return
+  const ids = btn.dataset.sendNow.split(' ').filter(Boolean)
+  const many = 'many' in btn.dataset
+  popMenu(btn, [
+    { head: `${btn.dataset.who || 'It'} ${many ? 'are' : 'is'} busy` },
+    ...('join' in btn.dataset ? [{ label: 'Send now', icon: ICONS.up, act: 'join', hint: many ? 'read at their next step' : 'read at its next step' }] : []),
+    { label: 'Stop and send', icon: ICONS.stop, act: 'stop', hint: many ? "ends what they're doing" : "ends what it's doing" },
+  ], (act) => Promise.all(ids.map((id) => clique.call('sendNow', id, { stop: act === 'stop' }))).catch((err) => oops("Couldn't send it now", err, 'It may have gone in already.')))
+})
 
 // Agent rows appear on several views; these listeners handle their mode chips and on/off switch.
 // A chip flips right away and the next state push confirms it.

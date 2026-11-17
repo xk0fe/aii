@@ -2686,11 +2686,13 @@ export class Hub extends EventEmitter {
   // Questions and answers don't wait for the end of a turn. A busy agent gets them typed into the turn it's in: its
   // CLI takes them in at its next step (Claude Code and Codex both do, between two tool calls), so a teammate waiting
   // on its answer waits seconds rather than the rest of a task. It answers with `clique answer` and carries on.
+  // So does a message of yours you said not to hold back (Send now, see sendNow): it goes in as you'd type it in
+  // the agent's terminal, and the agent takes it into what it's doing.
   // Never while a dialog is up in its terminal (a permission prompt), while you're typing there, or while the last
   // thing CLIque typed hasn't been taken in yet; then as soon as that clears.
   steer(a) {
     if (a.status !== 'working' || !this.runner.running(a.name) || a.expect || a.steering || a.retrying || this.asking(a.name)) return
-    const msgs = a.inbox.filter((m) => m.ask || m.answers)
+    const msgs = a.inbox.filter((m) => m.ask || m.answers || m.now)
     if (!msgs.length) return
     clearTimeout(a.steerTimer)
     const wait = a.holdUntil - Date.now()
@@ -2698,7 +2700,7 @@ export class Hub extends EventEmitter {
     for (const m of msgs) {
       a.inbox.splice(a.inbox.indexOf(m), 1)
       m.queued = false
-      this.record(a.name, { fromTeam: 1, delivered: 1, queuedMs: Date.now() - m.ts })
+      this.record(a.name, { [m.now && !m.ask && !m.answers ? 'fromYou' : 'fromTeam']: 1, delivered: 1, queuedMs: Date.now() - m.ts })
     }
     const text = pasteable(msgs.map((m) => this.framed(a, m, { busy: true })).join('\n\n'))
     this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
@@ -2737,6 +2739,49 @@ export class Hub extends EventEmitter {
       else briefs[was.id] = was.had
       BRIEFED.delete(m)
     }
+  }
+
+  // ---- Send now -------------------------------------------------------------------------------------------------
+  // A message of yours for a busy agent waits until the turn it's in is over, and then gets a turn of its own. Send now
+  // is for the one that shouldn't wait (the agent is waiting on something only you know, or heading the wrong way):
+  // - into the turn: typed into what the agent is doing, as you would in its terminal. Its CLI takes it in at its next
+  //   step (steer) and the agent goes on, with your message in mind. With a dialog up in its terminal it goes in the
+  //   moment that's answered. Not for a task or a new conversation: those have no part in the turn it's in.
+  // - stop: the turn ends here, as Stop ends it, and this message is what it does next. Unlike Stop, nothing that waits
+  //   behind it is withdrawn: the rest goes in after it, as after any turn.
+  // -> what happened, in a line
+  sendNow(id, { stop = false } = {}) {
+    const m = this.feed.find((e) => e.id === id && e.kind === 'msg' && e.from === 'you' && e.queued)
+    const a = m && [...this.agents.values()].find((x) => x.inbox.includes(m))
+    if (!a) throw new Error("that message isn't waiting any more")
+    if (!stop) {
+      if (m.fresh || m.ticket !== undefined) throw new Error(`${m.fresh ? 'a new conversation' : 'a task'} starts on its own, so it can't join what @${a.name} is doing. Stop and send ends that and starts it`)
+      this.amend(m, { now: true })
+      this.pump(a) // (free after all: it simply goes in)
+      this.steer(a)
+      if (!m.queued) return `sent to @${a.name}\n`
+      return `it goes to @${a.name} as soon as ${this.asking(a.name) ? 'the question in its terminal is answered' : 'its terminal can take it'}\n`
+    }
+    // first in line, ahead of whatever else waits
+    a.inbox.splice(a.inbox.indexOf(m), 1)
+    a.inbox.unshift(m)
+    if (!this.stoppable(a)) {
+      this.pump(a) // no turn to end (starting up, resting, already free): it's next
+      return m.queued ? `it's the next thing @${a.name} gets\n` : `sent to @${a.name}\n`
+    }
+    // what CLIque had typed into the turn and its CLI hasn't taken in goes back in line behind it, to be typed again
+    if (a.steering) {
+      const { msgs } = a.steering
+      clearTimeout(a.steerTimer)
+      a.steering = null
+      this.unbrief(a, msgs)
+      for (const x of msgs) x.queued = true
+      a.inbox.splice(1, 0, ...msgs)
+    }
+    const where = this.channelFor(a.name)
+    this.interrupt(a.name) // the queue goes in once the turn has really ended (stopDone)
+    this.post({ kind: 'event', from: 'clique', text: `you stopped @${a.name} to send your message now`, stop: true, about: [a.name], ...(where && where !== GENERAL && { channel: where }) })
+    return `stopped @${a.name}: your message goes in now\n`
   }
 
   // ---- work experience: what each agent actually did, kept across restarts -----
@@ -3058,7 +3103,8 @@ export class Hub extends EventEmitter {
   // From a linked computer, `ask` is a question asked there (its id there: the answer goes back with it), and
   // `answers` the answer to one asked here.
   // `scheduled` ({ id, at, late? }): one of your scheduled messages going out (core/schedules.js); the chat marks it.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread, scheduled }) {
+  // now (from you): don't wait for a busy agent's turn to end. It's typed into the turn it's in (see sendNow).
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread, scheduled, now = false }) {
     text = String(text ?? '').trim()
     images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -3076,7 +3122,9 @@ export class Hub extends EventEmitter {
     const names = all.filter((n) => !n.includes('@'))
     if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and CLIque Link isn't on`)
     const sched = from === 'you' && scheduled && typeof scheduled === 'object' && typeof scheduled.id === 'string' ? { id: scheduled.id.slice(0, 16), at: Number(scheduled.at) || Date.now(), ...(Number(scheduled.late) > 0 && { late: Number(scheduled.late) }) } : null
-    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }), ...(sched && { scheduled: sched }) }
+    // (a new conversation and a task each start a turn of their own: there's no turn of theirs to join)
+    const urgent = Boolean(now) && from === 'you' && !fresh && ticket === undefined
+    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }), ...(sched && { scheduled: sched }), ...(urgent && { now: true }) }
     // the channel it's said in: the one you said it in, or the one an agent's working in. One from another computer that
     // this workspace doesn't have keeps its name and brief, so its agents get the brief all the same.
     const remote = channelName && channel !== GENERAL && /^[a-z0-9][a-z0-9-]{0,39}$/.test(String(channel))
@@ -3199,7 +3247,8 @@ export class Hub extends EventEmitter {
     this.pump(to)
     this.steer(to) // a question or an answer for a busy agent goes into the turn it's in
     if (to.cloneOf === a.name && !this.pinned.has(msg)) return `@${a.name} is busy, so ${starting ? `a clone, @${to.name}, is starting up to take this` : `its clone @${to.name} took this`}\n`
-    return busy ? `queued for @${to.name} (${to.status}, ${to.inbox.length} waiting)\n` : `sent to @${to.name}\n`
+    // (one you sent with Send now is in already: typed into the turn it's in)
+    return busy && msg.queued ? `queued for @${to.name} (${to.status}, ${to.inbox.length} waiting)\n` : `sent to @${to.name}\n`
   }
 
   // Hand-offs between agents wait here for you when autopilot is off.
