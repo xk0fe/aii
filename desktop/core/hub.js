@@ -162,6 +162,9 @@ const HELPER = /^(caffeinate|codex-code-mode-host|conhost|OpenConsole)(\.exe)?$/
 // A CLI that doesn't say when it's up (Codex) but hasn't drawn anything yet is given this long before it counts as ready
 // anyway: what's typed before its trust question shows answers that question.
 const READY_MAX = 30000
+// A CLI that hasn't said it's up this long after it started, with no question CLIque knows on its screen, is held up by
+// something there (a question a newer CLI asks first, say): the chat says so once (watchStart).
+const START_QUIET = 60000
 // Stop (Hub.interrupt): the key that ends a turn in Claude Code and in Codex, and how CLIque makes sure it did. A CLI at
 // work keeps drawing (its spinner, several times a second); one that stopped falls silent. So a turn counts as stopped
 // once its terminal has been quiet for STOP_QUIET, no sooner than STOP_SETTLE after the key (Claude Code redraws its
@@ -279,7 +282,7 @@ export class Hub extends EventEmitter {
     const runs = [...this.runs.keys()]
     if (runs.length) setTimeout(() => runs.forEach((id) => this.sweep(id)), 4000).unref?.()
     for (const t of ['statsTimer', 'readsTimer', 'runtimeTimer', 'usageTimer', 'ticketsTimer', 'lookTimer']) clearTimeout(this[t])
-    for (const a of this.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'steerTimer', 'retryTimer', 'reapTimer']) clearTimeout(a[t])
+    for (const a of this.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'startTimer', 'steerTimer', 'retryTimer', 'reapTimer']) clearTimeout(a[t])
   }
 
   // A file of this workspace's, in its folder.
@@ -877,6 +880,7 @@ export class Hub extends EventEmitter {
       a.launchedAt = Date.now()
       this.setStatus(a, 'starting')
       this.readyIn(a)
+      this.watchStart(a)
     } catch (e) {
       this.setStatus(a, 'stopped')
       this.post({ kind: 'event', from: a.name, text: `failed to start: ${e.message}` })
@@ -958,6 +962,22 @@ export class Hub extends EventEmitter {
       if (a.trust && !flat(a.boot) && Date.now() - a.launchedAt < READY_MAX) return this.readyIn(a) // nothing on its screen yet
       this.setStatus(a, 'idle')
     }, a.readyAfter)
+  }
+
+  // Its CLI hasn't come up a while after it started, and nothing CLIque knows is on its screen (its trust question and
+  // the one about resuming have cards and alerts of their own): something else there is in the way, a question a newer
+  // CLI asks before it starts, say, and what's queued for it waits. Said once for this start, so you look at its
+  // terminal. Its status stays "starting": answered there, it comes up and takes its messages as ever.
+  watchStart(a) {
+    clearTimeout(a.startTimer)
+    const run = a.run
+    a.startTimer = setTimeout(() => {
+      if (this.agents.get(a.name) !== a || a.run !== run || a.status !== 'starting' || a.trustAsk || a.resumeAsk || !this.runner.running(a.name)) return
+      const text = `hasn't started after ${spanOf(START_QUIET)}: its terminal may be asking something. Answer there: messages for it wait until then`
+      this.post({ kind: 'event', from: a.name, text, alert: true })
+      this.emit('alert', a, text)
+    }, START_QUIET)
+    a.startTimer.unref?.()
   }
 
   // The first time a CLI runs in a folder it asks whether you trust it, YOLO or not, and nothing typed reaches its
@@ -1284,7 +1304,7 @@ export class Hub extends EventEmitter {
   dismiss(name) {
     const c = this.agents.get(name)
     if (!c?.cloneOf) throw new Error(`@${name} isn't a clone`)
-    for (const t of ['reapTimer', 'timer', 'ack', 'readyTimer', 'steerTimer', 'stopTimer']) clearTimeout(c[t])
+    for (const t of ['reapTimer', 'timer', 'ack', 'readyTimer', 'startTimer', 'steerTimer', 'stopTimer']) clearTimeout(c[t])
     this.forgetAsks(name)
     this.runner.stop(name)
     this.setStatus(c, 'off')

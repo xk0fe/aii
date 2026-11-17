@@ -134,6 +134,15 @@ Image files listed in a message are attachments (screenshots, mockups, reference
 // TOML basic strings accept JSON string escaping.
 const toml = (s) => JSON.stringify(s)
 
+// A folder as Claude Code's permission rules name an absolute path: "//" before it, and on Windows the path written the
+// POSIX way first, C:\Users\ann -> //c/Users/ann (https://code.claude.com/docs/en/permissions, "How path patterns match").
+export function ruleDir(dir, platform = process.platform) {
+  const p = (platform === 'win32' ? String(dir).replace(/\\/g, '/') : String(dir)).replace(/\/+$/, '')
+  const drive = platform === 'win32' && p.match(/^([A-Za-z]):(\/.*)?$/)
+  if (drive) return `//${drive[1].toLowerCase()}${drive[2] ?? ''}`
+  return p.startsWith('//') ? p : `/${p}`
+}
+
 // platform and bin (where CLIque's bin/ is) say how the hooks reach CLIque: see claudeHook.
 export const TRUST = {
   // "Is this a project you created or one you trust? … ❯ No, exit  Yes, I trust this folder" (numbered "1. No, exit"
@@ -157,7 +166,13 @@ export const adapters = {
       // Hand-offs go through `clique send` (queued, visible, approvable), so Claude's built-in peer messaging is off.
       // On Windows the agent may run clique from PowerShell instead (Claude Code's PowerShell tool).
       // (crew: what a conversation from before the app's rename knows it as; bin/ still has it, and it runs clique)
-      permissions: { allow: ['Bash(clique *)', 'Bash(crew *)', ...(platform === 'win32' ? ['PowerShell(clique *)', 'PowerShell(crew *)'] : [])], deny: ['SendMessage'] },
+      // Attached files open without a permission prompt: reading them is allowed, and nothing more. (Not --add-dir:
+      // from Claude Code 2.1.326 a folder added that way is a question every new session asks before it starts,
+      // "Adding a new directory … Yes, add it", and an agent that never starts never takes what's queued for it.)
+      permissions: {
+        allow: ['Bash(clique *)', 'Bash(crew *)', ...(platform === 'win32' ? ['PowerShell(clique *)', 'PowerShell(crew *)'] : []), `Read(${ruleDir(attachments, platform)}/**)`],
+        deny: ['SendMessage'],
+      },
       hooks: {
         SessionStart: on(),
         UserPromptSubmit: on(),
@@ -184,7 +199,6 @@ export const adapters = {
         ...(a.effort ? ['--effort', a.effort] : []),
         ...(a.yolo ? ['--dangerously-skip-permissions'] : []),
         '--settings', JSON.stringify(settings),
-        '--add-dir', attachments, // attached images open without a permission prompt
         '--append-system-prompt', prompt(a, checks),
         // Render the prompt fresh on every request, so edited instructions apply to a resumed conversation too.
         '--system-prompt-snapshot', 'off',
