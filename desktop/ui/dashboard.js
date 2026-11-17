@@ -704,8 +704,8 @@ $('.dock-rest').addEventListener('click', (e) => {
   if (name) clique.call('restart', name).catch((err) => oops(`Couldn't start ${name}'s terminal`, err))
 })
 
-// Everything the titlebar used to carry, at the sidebar's foot: Autopilot, staying awake, Computers, the CLIs and the theme (and,
-// running from source, config.json).
+// Everything the titlebar used to carry, at the sidebar's foot: Autopilot, staying awake, Computers, the CLIs, where the
+// floating chat lives and the theme (and, running from source, config.json).
 const THEME_CHOICES = [['system', 'Auto', 'auto', `follows ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light', 'sun', ''], ['dark', 'Dark', 'moon', '']]
 $('.side-more').addEventListener('click', (e) => {
   const theme = state.theme ?? 'system'
@@ -726,6 +726,7 @@ $('.side-more').addEventListener('click', (e) => {
     ...(state.workspace ? [{ label: 'Take the tour', icon: ICONS.sparkles, act: 'tour', hint: 'Q shows you around' }] : []),
     ...(ON_WINDOWS ? [] : [{ label: 'Permissions…', icon: ICONS.shield, act: 'permissions' }]),
     ...appItems(state),
+    ...chatItems(state),
     '-',
     { head: 'Theme' },
     ...THEME_CHOICES.map(([id, label, icon, note]) => ({ label, icon: ICONS[icon], act: `theme:${id}`, hint: theme === id ? '✓' : note })),
@@ -745,6 +746,7 @@ $('.side-more').addEventListener('click', (e) => {
     if (act === 'permissions') clique.call('openPermissions').catch((err) => oops('Couldn’t open that', err))
     if (act.startsWith('theme:')) clique.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
     if (act === 'config') clique.call('config')
+    chatPick(act, state)
     appPick(act, state)
   })
 })

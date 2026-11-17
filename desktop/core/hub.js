@@ -92,6 +92,11 @@ export const MAX_CLONES = 5
 // waits for this much quiet before it's typed, but never longer than SETTLE_MAX.
 const SETTLE_QUIET = 700
 const SETTLE_MAX = 20000
+// A question answered from the chat is still up in the agent's terminal until the answer has reached its CLI, which
+// then takes it down. Nothing is typed into that terminal until this long after: what's typed in the same instant is
+// lost under the question (seen with Claude Code 2.1.326: a message sent now, typed as the card was answered, never
+// reached the turn).
+const ANSWER_SETTLE = 1500
 // Enter again until the CLI reports the prompt, then call for help: about three minutes in all.
 const PICKUP_WAITS = [2500, 3000, 5000, 10000, 20000, 30000, 60000, 60000]
 // How long `clique ask` holds on for the answer before the asker carries on (the answer then comes as a message).
@@ -157,6 +162,9 @@ const HELPER = /^(caffeinate|codex-code-mode-host|conhost|OpenConsole)(\.exe)?$/
 // A CLI that doesn't say when it's up (Codex) but hasn't drawn anything yet is given this long before it counts as ready
 // anyway: what's typed before its trust question shows answers that question.
 const READY_MAX = 30000
+// A CLI that hasn't said it's up this long after it started, with no question CLIque knows on its screen, is held up by
+// something there (a question a newer CLI asks first, say): the chat says so once (watchStart).
+const START_QUIET = 60000
 // Stop (Hub.interrupt): the key that ends a turn in Claude Code and in Codex, and how CLIque makes sure it did. A CLI at
 // work keeps drawing (its spinner, several times a second); one that stopped falls silent. So a turn counts as stopped
 // once its terminal has been quiet for STOP_QUIET, no sooner than STOP_SETTLE after the key (Claude Code redraws its
@@ -274,7 +282,7 @@ export class Hub extends EventEmitter {
     const runs = [...this.runs.keys()]
     if (runs.length) setTimeout(() => runs.forEach((id) => this.sweep(id)), 4000).unref?.()
     for (const t of ['statsTimer', 'readsTimer', 'runtimeTimer', 'usageTimer', 'ticketsTimer', 'lookTimer']) clearTimeout(this[t])
-    for (const a of this.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'steerTimer', 'retryTimer', 'reapTimer']) clearTimeout(a[t])
+    for (const a of this.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'startTimer', 'steerTimer', 'retryTimer', 'reapTimer']) clearTimeout(a[t])
   }
 
   // A file of this workspace's, in its folder.
@@ -872,6 +880,7 @@ export class Hub extends EventEmitter {
       a.launchedAt = Date.now()
       this.setStatus(a, 'starting')
       this.readyIn(a)
+      this.watchStart(a)
     } catch (e) {
       this.setStatus(a, 'stopped')
       this.post({ kind: 'event', from: a.name, text: `failed to start: ${e.message}` })
@@ -953,6 +962,22 @@ export class Hub extends EventEmitter {
       if (a.trust && !flat(a.boot) && Date.now() - a.launchedAt < READY_MAX) return this.readyIn(a) // nothing on its screen yet
       this.setStatus(a, 'idle')
     }, a.readyAfter)
+  }
+
+  // Its CLI hasn't come up a while after it started, and nothing CLIque knows is on its screen (its trust question and
+  // the one about resuming have cards and alerts of their own): something else there is in the way, a question a newer
+  // CLI asks before it starts, say, and what's queued for it waits. Said once for this start, so you look at its
+  // terminal. Its status stays "starting": answered there, it comes up and takes its messages as ever.
+  watchStart(a) {
+    clearTimeout(a.startTimer)
+    const run = a.run
+    a.startTimer = setTimeout(() => {
+      if (this.agents.get(a.name) !== a || a.run !== run || a.status !== 'starting' || a.trustAsk || a.resumeAsk || !this.runner.running(a.name)) return
+      const text = `hasn't started after ${spanOf(START_QUIET)}: its terminal may be asking something. Answer there: messages for it wait until then`
+      this.post({ kind: 'event', from: a.name, text, alert: true })
+      this.emit('alert', a, text)
+    }, START_QUIET)
+    a.startTimer.unref?.()
   }
 
   // The first time a CLI runs in a folder it asks whether you trust it, YOLO or not, and nothing typed reaches its
@@ -1279,7 +1304,7 @@ export class Hub extends EventEmitter {
   dismiss(name) {
     const c = this.agents.get(name)
     if (!c?.cloneOf) throw new Error(`@${name} isn't a clone`)
-    for (const t of ['reapTimer', 'timer', 'ack', 'readyTimer', 'steerTimer', 'stopTimer']) clearTimeout(c[t])
+    for (const t of ['reapTimer', 'timer', 'ack', 'readyTimer', 'startTimer', 'steerTimer', 'stopTimer']) clearTimeout(c[t])
     this.forgetAsks(name)
     this.runner.stop(name)
     this.setStatus(c, 'off')
@@ -2282,6 +2307,9 @@ export class Hub extends EventEmitter {
           a.steering = null
           if (a.status === 'working') {
             a.serving = [...(a.serving ?? []), ...msgs]
+            // something you said is part of this turn now: it ends with a reply in the chat, even a turn that began by
+            // itself (word that something it left running finished) and would have ended without one
+            if (msgs.some((m) => m.now && m.from === 'you')) a.replyDue = true
             this.changed()
             return this.steer(a)
           }
@@ -2374,7 +2402,8 @@ export class Hub extends EventEmitter {
         // found out after reacting, a question, bad news or more than a line is a message as always.
         const reacted = a.reacted
         a.reacted = null
-        if (reacted && reacted.began === a.turnBegan && !closing && !reacted.tools && (a.turnTools ?? 0) <= 1 && justAnAck(e.last_assistant_message) && !(a.serving ?? []).some((m) => m.ask && this.calls.has(m.id))) {
+        // (not when a message of yours joined the turn, see joined below: that one is answered in words)
+        if (reacted && reacted.began === a.turnBegan && !closing && !reacted.tools && (a.turnTools ?? 0) <= 1 && justAnAck(e.last_assistant_message) && !(a.serving ?? []).some((m) => (m.ask && this.calls.has(m.id)) || (m.now && m.id !== a.current))) {
           const words = saidWith(e.last_assistant_message, reacted.emoji)
           if (words) for (const m of reacted.on) if (m.reactions?.some((r) => r.by === name)) this.amend(m, { reactions: m.reactions.map((r) => (r.by === name ? { ...r, said: words } : r)) })
           a.replyDue = false
@@ -2383,7 +2412,8 @@ export class Hub extends EventEmitter {
           return this.setStatus(a, 'idle')
         }
         // one turn can answer several messages that came in together: the reply threads to the first, and the rest
-        const also = (a.serving ?? []).slice(1).map((m) => m.id)
+        // (the first too, when it's one of yours that joined a turn CLIque didn't start: one typed in its terminal)
+        const also = (a.serving ?? []).filter((m, i) => i > 0 || (m.now && m.id !== a.current)).map((m) => m.id)
         // A turn can also end without a word (Codex does, after a task that was all tool calls). It was asked
         // something, so the chat still says it's done instead of leaving your message hanging.
         const said = String(e.last_assistant_message ?? '')
@@ -2567,7 +2597,10 @@ export class Hub extends EventEmitter {
     q.resolve(output)
     this.amend(q.entry, { answer: { ...answer, at: Date.now() } })
     const a = this.agents.get(q.name)
-    if (a?.status === 'waiting' && !stillWaiting && !this.asking(q.name)) this.setStatus(a, 'working')
+    if (a?.status === 'waiting' && !stillWaiting && !this.asking(q.name)) {
+      hold(a, ANSWER_SETTLE) // what waits to go into its turn (steer) goes once its terminal has taken the question down
+      this.setStatus(a, 'working')
+    }
   }
 
   // (an agent tool's card that the agent's command has stopped waiting on doesn't keep the agent waiting)
@@ -2769,11 +2802,13 @@ export class Hub extends EventEmitter {
   // Questions and answers don't wait for the end of a turn. A busy agent gets them typed into the turn it's in: its
   // CLI takes them in at its next step (Claude Code and Codex both do, between two tool calls), so a teammate waiting
   // on its answer waits seconds rather than the rest of a task. It answers with `clique answer` and carries on.
+  // So does a message of yours you said not to hold back (Send now, see sendNow): it goes in as you'd type it in
+  // the agent's terminal, and the agent takes it into what it's doing.
   // Never while a dialog is up in its terminal (a permission prompt), while you're typing there, or while the last
   // thing CLIque typed hasn't been taken in yet; then as soon as that clears.
   steer(a) {
     if (a.status !== 'working' || !this.runner.running(a.name) || a.expect || a.steering || a.retrying || this.asking(a.name)) return
-    const msgs = a.inbox.filter((m) => m.ask || m.answers)
+    const msgs = a.inbox.filter((m) => m.ask || m.answers || this.joins(a, m))
     if (!msgs.length) return
     clearTimeout(a.steerTimer)
     const wait = a.holdUntil - Date.now()
@@ -2781,7 +2816,7 @@ export class Hub extends EventEmitter {
     for (const m of msgs) {
       a.inbox.splice(a.inbox.indexOf(m), 1)
       m.queued = false
-      this.record(a.name, { fromTeam: 1, delivered: 1, queuedMs: Date.now() - m.ts })
+      this.record(a.name, { [m.now && !m.ask && !m.answers ? 'fromYou' : 'fromTeam']: 1, delivered: 1, queuedMs: Date.now() - m.ts })
     }
     const text = pasteable(msgs.map((m) => this.framed(a, m, { busy: true })).join('\n\n'))
     this.runner.submit(a.name, withImages(text, msgs.flatMap((m) => m.images ?? [])))
@@ -2796,6 +2831,20 @@ export class Hub extends EventEmitter {
     }
     retry([3000, 8000])
     this.changed()
+  }
+
+  // Can this message of yours, sent now, go into the turn the agent is in? Not one that starts on its own (a task, a new
+  // conversation). Not into a turn of CLIque's own asking (where things stand before a new conversation, a thread's
+  // closing line): what the agent says there isn't a reply in the chat, so yours would go unanswered. And one you said
+  // in a thread only into a turn on that thread: the turn's reply goes where the turn is, as when hand-offs are taken
+  // together (peek). Then it waits, first in line, for the turn to end.
+  joins(a, m) {
+    if (!m.now || m.fresh || m.ticket !== undefined) return false
+    const serving = a.serving ?? []
+    if (serving.some((x) => x.wrapUp || x.closes)) return false
+    if (!m.thread) return true
+    const on = serving[0] ?? this.feed.findLast((e) => e.id === a.current)
+    return Boolean(on) && m.thread === (on.thread ?? on.id)
   }
 
   // The turn ended before its CLI took in what CLIque typed into it. If the CLI doesn't start a turn with it by itself
@@ -2820,6 +2869,54 @@ export class Hub extends EventEmitter {
       else briefs[was.id] = was.had
       BRIEFED.delete(m)
     }
+  }
+
+  // ---- Send now -------------------------------------------------------------------------------------------------
+  // A message of yours for a busy agent waits until the turn it's in is over, and then gets a turn of its own. Send now
+  // is for the one that shouldn't wait (the agent is waiting on something only you know, or heading the wrong way):
+  // - into the turn: typed into what the agent is doing, as you would in its terminal. Its CLI takes it in at its next
+  //   step (steer) and the agent goes on, with your message in mind. With a dialog up in its terminal it goes in the
+  //   moment that's answered. Not for a task or a new conversation: those have no part in the turn it's in.
+  // - stop: the turn ends here, as Stop ends it, and this message is what it does next. Unlike Stop, nothing that waits
+  //   behind it is withdrawn: the rest goes in after it, as after any turn.
+  // -> what happened, in a line
+  sendNow(id, { stop = false } = {}) {
+    const m = this.feed.find((e) => e.id === id && e.kind === 'msg' && e.from === 'you' && e.queued)
+    const a = m && [...this.agents.values()].find((x) => x.inbox.includes(m))
+    if (!a) throw new Error("that message isn't waiting any more")
+    if (!stop && (m.fresh || m.ticket !== undefined)) throw new Error(`${m.fresh ? 'a new conversation' : 'a task'} starts on its own, so it can't join what @${a.name} is doing. Stop and send ends that and starts it`)
+    // It's for the agent it waits for (a clone of it that comes free doesn't take it), and first in line from here on:
+    // an answer or a teammate's question that comes in meanwhile goes behind it (rank).
+    this.pinned.add(m)
+    a.inbox.splice(a.inbox.indexOf(m), 1)
+    this.amend(m, { now: true })
+    if (!stop) {
+      this.queue(a, m)
+      this.pump(a) // (free after all: it simply goes in)
+      this.steer(a)
+      if (!m.queued) return `sent to @${a.name}\n`
+      return `it goes to @${a.name} as soon as ${this.asking(a.name) ? 'the question in its terminal is answered' : this.joins(a, m) ? 'its terminal can take it' : "it's done with what it's on"}\n`
+    }
+    // ahead of whatever else waits, others you sent now included (but not of a new conversation that's starting up)
+    a.inbox.splice(this.startingFresh(a) ? 1 : 0, 0, m)
+    if (!this.stoppable(a)) {
+      this.pump(a) // no turn to end (starting up, resting, already free): it's next
+      return m.queued ? `it's the next thing @${a.name} gets\n` : `sent to @${a.name}\n`
+    }
+    // What CLIque had typed and its CLI hasn't taken in goes back in line behind it, to be typed again: into the turn
+    // (steer), or as the prompt that was to begin one (pump). Esc and the emptied prompt box take it away otherwise,
+    // and it would show as delivered. (Not the "continue" CLIque owes it after an API error: that's the turn itself.)
+    const typed = [...(a.steering?.msgs ?? []), ...(a.expect && !a.expect.again ? a.expect.msgs : [])]
+    if (a.steering) this.unbrief(a, a.steering.msgs)
+    clearTimeout(a.steerTimer)
+    a.steering = null
+    if (a.expect && !a.expect.again) a.expect = null
+    for (const x of typed) x.clique ? (x.queued = true) : this.amend(x, { queued: true }) // (CLIque's own prompts aren't lines in the chat)
+    a.inbox.splice(1, 0, ...typed.sort((x, y) => rank(x) - rank(y)))
+    this.interrupt(a.name) // the queue goes in once the turn has really ended (stopDone)
+    // the line says so where you said the message
+    this.post({ kind: 'event', from: 'clique', text: `you stopped @${a.name} to send your message now`, stop: true, about: [a.name], ...(m.channel && m.channel !== GENERAL && this.channel(m.channel) && { channel: m.channel }) })
+    return `stopped @${a.name}: your message goes in now\n`
   }
 
   // ---- work experience: what each agent actually did, kept across restarts -----
@@ -3141,7 +3238,8 @@ export class Hub extends EventEmitter {
   // From a linked computer, `ask` is a question asked there (its id there: the answer goes back with it), and
   // `answers` the answer to one asked here.
   // `scheduled` ({ id, at, late? }): one of your scheduled messages going out (core/schedules.js); the chat marks it.
-  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread, scheduled }) {
+  // now (from you): don't wait for a busy agent's turn to end. It's typed into the turn it's in (see sendNow).
+  send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread, scheduled, now = false }) {
     text = String(text ?? '').trim()
     images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
     if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
@@ -3159,7 +3257,9 @@ export class Hub extends EventEmitter {
     const names = all.filter((n) => !n.includes('@'))
     if (away.length && !this.relay) throw new Error(`${away.map((n) => `@${n}`).join(', ')} is on another computer, and CLIque Link isn't on`)
     const sched = from === 'you' && scheduled && typeof scheduled === 'object' && typeof scheduled.id === 'string' ? { id: scheduled.id.slice(0, 16), at: Number(scheduled.at) || Date.now(), ...(Number(scheduled.late) > 0 && { late: Number(scheduled.late) }) } : null
-    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }), ...(sched && { scheduled: sched }) }
+    // (a new conversation and a task each start a turn of their own: there's no turn of theirs to join)
+    const urgent = Boolean(now) && from === 'you' && !fresh && ticket === undefined
+    const extra = { ...(fresh && { fresh: true }), ...(ticket !== undefined && { ticket, title, ...(type && { type }) }), ...(triage && { triage: true }), ...(sched && { scheduled: sched }), ...(urgent && { now: true }) }
     // the channel it's said in: the one you said it in, or the one an agent's working in. One from another computer that
     // this workspace doesn't have keeps its name and brief, so its agents get the brief all the same.
     const remote = channelName && channel !== GENERAL && /^[a-z0-9][a-z0-9-]{0,39}$/.test(String(channel))
@@ -3262,9 +3362,17 @@ export class Hub extends EventEmitter {
   // An agent's queue, in the order it takes things up: answers to its own questions first (they unblock work it's in
   // the middle of), then teammates' questions (someone is waiting), then everything else as it came.
   queue(a, msg) {
-    const i = a.inbox.findIndex((m) => rank(m) > rank(msg))
+    let i = a.inbox.findIndex((m) => rank(m) > rank(msg))
+    // one sent now doesn't go ahead of the message a new conversation is being started for: that conversation is its,
+    // and whatever went in first would open it instead
+    if (i === 0 && msg.now && this.startingFresh(a)) i = a.inbox.findIndex((m, k) => k > 0 && rank(m) > rank(msg))
     if (i < 0) a.inbox.push(msg)
     else a.inbox.splice(i, 0, msg)
+  }
+
+  // A new conversation is on its way up for the message at the head of its queue (pump).
+  startingFresh(a) {
+    return Boolean(a.inbox[0]) && a.freshFor === a.inbox[0].id
   }
 
   enqueue(a, msg) {
@@ -3274,6 +3382,8 @@ export class Hub extends EventEmitter {
       this.amend(msg, { paused: paused.id, queued: false })
       return `held for @${a.name}: ${CHECK_IN_HELD}${msg.ask ? ` @${a.name}'s answer will come to you as a message.` : ''}\n`
     }
+    // sent now: it's for the turn this agent is in, not a turn of its own with a clone
+    if (msg.now) this.pinned.add(msg)
     const to = this.placeFor(a, msg)
     if (to !== a) this.amend(msg, { to: to.name })
     this.queue(to, msg)
@@ -3282,7 +3392,8 @@ export class Hub extends EventEmitter {
     this.pump(to)
     this.steer(to) // a question or an answer for a busy agent goes into the turn it's in
     if (to.cloneOf === a.name && !this.pinned.has(msg)) return `@${a.name} is busy, so ${starting ? `a clone, @${to.name}, is starting up to take this` : `its clone @${to.name} took this`}\n`
-    return busy ? `queued for @${to.name} (${to.status}, ${to.inbox.length} waiting)\n` : `sent to @${to.name}\n`
+    // (one you sent with Send now is in already: typed into the turn it's in)
+    return busy && msg.queued ? `queued for @${to.name} (${to.status}, ${to.inbox.length} waiting)\n` : `sent to @${to.name}\n`
   }
 
   // Hand-offs between agents wait here for you when autopilot is off.
@@ -5151,7 +5262,8 @@ export const shellPrefix = (bin, env = process.env, platform = process.platform,
 }
 
 // Where a message goes in an agent's queue: answers to its questions, then questions for it, then the rest.
-const rank = (m) => (m.answers ? 0 : m.ask ? 1 : 2)
+// (now: one of yours you said not to hold back, Hub.sendNow: ahead of them all)
+const rank = (m) => (m.now ? -1 : m.answers ? 0 : m.ask ? 1 : 2)
 
 // How long a window is (Codex names its own by length: window_120 is two hours); null when unknown, as a spend limit's is.
 // Two lines about the same usage window: one account's, one window of it, the same reset (give or take a minute).

@@ -796,6 +796,9 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 /* a teammate's question: who asks whom, whether the asker is waiting on it right now, and where the answer went */
 .item .cap .verb { color: var(--fg3); }
 .item .tag.wait { color: var(--fg2); }
+/* Send now, beside a waiting message's "queued": a tag you can press */
+button.tag.go { border: 0; margin: 0; background: none; color: var(--fg); cursor: pointer; transition: background .15s; }
+button.tag.go:hover, button.tag.go:focus-visible { background: var(--btn-hover); }
 /* one of your scheduled messages: a small clock by its time, and nothing else different about it */
 .item .tag.sched { gap: 3px; padding: 0; box-shadow: none; color: var(--fg3); font-weight: 500; cursor: help; }
 .item .tag.sched svg { width: 11px; height: 11px; }
@@ -1273,10 +1276,12 @@ textarea.inked::selection { background: color-mix(in srgb, var(--accent) 28%, tr
 .voice-on .input textarea { caret-color: var(--rec); }
 .voice-listening .voice-hint .av-in { animation: av-listen 1.5s ease-in-out infinite; }
 @keyframes av-listen { 0%, 100% { transform: rotate(-7deg) scale(1.04); } 50% { transform: rotate(5deg) scale(1.04, 1.08); } }
-/* the status line takes the recipients' line (which keeps its space), so nothing moves when you start */
-.voice-note .chips { visibility: hidden; }
-.voice-hint { position: absolute; top: 8px; left: 14px; right: 14px; height: 30px; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--fg2); animation: hint-in var(--t-move) var(--out); white-space: nowrap; overflow: hidden; }
-.voice-hint .to { display: inline-flex; align-items: center; gap: 4px; min-width: 0; height: 22px; padding: 0 8px 0 5px; border-radius: 999px; background: var(--btn); color: var(--fg); font-weight: 600; }
+/* the status line takes the left of the box's bar, over who it's to and the tools beside it (which keep their space), so
+   nothing moves when you start; ui/voice.js says where it ends, at the mic */
+.input-bar { position: relative; }
+.voice-note .chips, .voice-note .attach, .voice-note .fresh-toggle { visibility: hidden; }
+.voice-hint { position: absolute; top: 4px; left: 10px; right: 104px; height: 28px; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--fg2); animation: hint-in var(--t-move) var(--out); white-space: nowrap; overflow: hidden; }
+.voice-hint .to { flex: none; display: inline-flex; align-items: center; height: 22px; }
 .voice-hint .to svg { width: 13px; height: 13px; }
 .voice-hint .to .av { margin: -4px 0 -4px -2px; }
 .voice-hint .keys { flex: none; color: var(--fg3); }

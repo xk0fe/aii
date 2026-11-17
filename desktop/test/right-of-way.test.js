@@ -78,6 +78,12 @@ const peek = async (p) => {
 // ---- clique ask: the answer comes back ----
 
 const MIDTURN = '[question from @noor, who is waiting on your answer. Answer it now with clique answer "…", then carry on with what you were doing]'
+// You answer a question in the chat: nothing is typed into that terminal until it has taken the question down (hub.js
+// ANSWER_SETTLE), since what's typed in the same instant is lost under it. What waited for the answer goes in then.
+const answered = (id, reply = { allow: true }) => {
+  hub.answer(id, reply)
+  mock.timers.tick(1500)
+}
 // a permission prompt up in its terminal: nothing can be typed into it until you answer
 const dialog = (n) => {
   hub.ask(n, { tool_name: 'Bash', tool_input: { command: 'npm test' } })
@@ -162,6 +168,8 @@ test('not while a permission prompt is up in its terminal: the question waits fi
   assert.deepEqual(agent('theo').inbox.map((m) => m.text), ['is #4715 good to merge?', 'recorded #5 as passing'])
   assert.deepEqual(typedInto('theo'), [])
   hub.answer(id, { allow: true })
+  assert.deepEqual(typedInto('theo'), [], 'not in the same instant: the question is still on its screen')
+  mock.timers.tick(1500)
   assert.deepEqual(typedInto('theo'), [`${MIDTURN}\n<relayed from="noor">\nis #4715 good to merge?\n</relayed>`])
   assert.deepEqual(agent('theo').inbox.map((m) => m.text), ['recorded #5 as passing'], 'hand-offs wait for the end of the turn')
   pickUp('theo')
@@ -216,7 +224,7 @@ test('an answer that takes longer comes to the asker anyway: into the turn it\'s
   assert.match(told, /^@theo hasn't answered yet \(your question is next, once it finishes what it is doing\)\./)
   assert.match(told, /Don't ask again\. Carry on with other work and the answer comes to you as a message, or wait more with: clique wait/)
   assert.deepEqual(view('noor').waitingOn, [], 'not stuck waiting any more')
-  hub.answer(id, { allow: true })
+  answered(id)
   pickUp('theo')
   hub.answerNow({ from: 'theo', text: 'Yes, merge it.' })
   // noor is busy with something else: the answer goes into its turn
@@ -314,7 +322,7 @@ test('a question asked while answering one keeps that one open until its answer 
   finish('theo', 'Asked eli, waiting on the board.')
   assert.equal(await peek(asked), 'pending', 'progress, not the answer')
   // eli answers; theo takes that up and finishes: that is noor's answer
-  hub.answer(id, { allow: true })
+  answered(id)
   pickUp('eli')
   hub.answerNow({ from: 'eli', text: '#2 is in review.' })
   assert.match(typedInto('theo').at(-1), /^\[answer from @eli to your question "what does the board say about #2\?"\]\n<relayed from="eli">\n#2 is in review\./)
@@ -351,7 +359,7 @@ test('an answer for a clone goes to that clone, not to whichever of its family i
   finish('iris.2', 'Built it for the sizes I know.')
   agent('iris').status = 'idle'
   busy('iris.2')
-  hub.answer(id, { allow: true })
+  answered(id)
   pickUp('theo')
   hub.answerNow({ from: 'theo', text: '402 and 420pt.' })
   assert.match(typedInto('iris.2').at(-1), /^\[answer from @theo to your question "which sizes do you test\?"\]\n<relayed from="theo">\n402 and 420pt\.\n<\/relayed>$/)

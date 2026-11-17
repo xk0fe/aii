@@ -8,6 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { restartWords } from '../core/updates.js'
+import { followWindow } from '../core/follow.js'
 
 import { serveSandbox } from '../core/sandbox.js'
 import { serveFiles, FILES_SCHEME } from '../core/linkfiles.js'
@@ -303,6 +304,20 @@ async function tap(win, at) {
   win.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(at.x), y: Math.round(at.y), button: 'left', clickCount: 1 })
   await sleep(90)
   win.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(at.x), y: Math.round(at.y), button: 'left', clickCount: 1 })
+}
+
+// Under the mouse: the window's corner put somewhere on the picture (--wx, --wy), and the pointer drawn where it is (--px, --py).
+const POINTER = `html { min-height: 100vh; } .wrap { position: absolute !important; left: var(--wx, 0); top: var(--wy, 0); }
+  html::after { content: ''; position: fixed; left: var(--px, 0); top: var(--py, 0); width: 20px; height: 26px; z-index: 999; pointer-events: none;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 26'%3E%3Cpath d='M2 2v18.5l4.6-4.3 3.1 7.3 2.9-1.2-3.1-7.2h6.2z' fill='%23000' stroke='%23fff' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat; }`
+// The floating chat's page as main.js loads it under the mouse (?at=mouse), on the soft desktop, with the pointer drawn.
+// still: for pictures, its eyes stay open (it blinks now and then, and a picture might catch it).
+async function underMouse(theme, { width, height, still = false }) {
+  const win = await open('overlay.html', { theme, width, height, backdrop: 'desktop' })
+  if (DARK) theme = 'dark'
+  await win.loadFile(path.join(root, 'ui', 'overlay.html'), { query: { at: 'mouse', ...(WIN && { platform: 'win32' }) } })
+  await win.webContents.insertCSS(`${win.stageKind === 'float' ? '' : `html { background: ${BACKDROP.desktop[theme]} !important; }`} ${POINTER} ${still ? '.blink .home ellipse { transform: none !important; }' : ''}`)
+  return win
 }
 
 // The top of a MacBook's screen behind the hatch shots: a menu bar and the notch, which is really a hole in the screen so
@@ -755,6 +770,330 @@ const SHOTS = {
     await sleep(500)
     await fitToContent(win)
     await save(win, `pill-${theme}`)
+    win.destroy()
+  },
+  // Under the mouse (core/follow.js, main.js ?at=mouse): the wisp by the pointer, then what the hotkeys open where the
+  // pointer is: the message box (its To menu, listening, typing taking over, its @names list, below the pointer and above
+  // it) and the chat. The window is the size main.js would make it, so what fits here fits there. Checked as it goes: a
+  // broken step stops the shot.
+  async follow(theme) {
+    const errors = []
+    const check = (what, ok, got) => {
+      console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}${ok ? '' : `: ${JSON.stringify(got)}`}`)
+      if (!ok) errors.push(what)
+    }
+    const win = await underMouse(theme, { width: 150, height: 90, still: true })
+    win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(`console: ${e.message}`))
+    // what the wisp shows: how lit its glow is, whether anything on it loops, its dot, its tail
+    const wisp = () => js(win, `const p = document.querySelector('.pill'), o = (sel) => Number(getComputedStyle(p.querySelector(sel)).opacity)
+      return { glow: o('.wisp-aura'), need: o('.wisp-need'), tail: o('.wisp-tail'), dot: Boolean(p.querySelector('.wisp-dot')), size: [p.offsetWidth, p.offsetHeight],
+        loops: document.getAnimations().filter((a) => a.effect?.getTiming().iterations === Infinity && p.contains(a.effect.target)).length, hop: getComputedStyle(p.querySelector('.home')).animationName, ring: getComputedStyle(p.querySelector('.wisp-ring')).animationName }`)
+    // the window's corner on the picture, and the pointer where the follower would have it (core/follow.js BESIDE, NEAR)
+    const at = (x, y, open) => js(win, `document.documentElement.style.cssText = '--wx: ${x}px; --wy: ${y}px; --px: ${x + (open ? 4 : 17)}px; --py: ${y + (open ? 4 : 14)}px'`)
+    const page = () => js(win, `const b = document.body, q = (s) => document.querySelector(s), r = (el) => { const x = el?.getBoundingClientRect(); return x && { top: Math.round(x.top), bottom: Math.round(x.bottom), left: Math.round(x.left), right: Math.round(x.right), height: Math.round(x.height) } }
+      return { open: b.classList.contains('open'), quick: b.classList.contains('quick'), sent: b.classList.contains('sent'), fit: window.__cliqueFit, looking: window.__cliqueLooking, text: q('.compose textarea').value,
+        voice: q('.compose').classList.contains('voice-on'), send: q('.compose .send').dataset.mode, panel: r(q('.panel')), input: r(q('.compose .input')), menu: r(q('.menu:not(.leaving)')), names: r(q('.mentions:not(.hidden)')), h: innerHeight }`)
+    const emit = (channel, arg) => js(win, `window.__cliqueEmit(${JSON.stringify(channel)}, ${JSON.stringify(arg)})`)
+    const key = async (keyCode) => {
+      for (const type of ['keyDown', 'keyUp']) win.webContents.sendInputEvent({ type, keyCode })
+      await sleep(80)
+    }
+    const type = async (text) => {
+      for (const ch of text) {
+        for (const kind of ['keyDown', 'char', 'keyUp']) win.webContents.sendInputEvent({ type: kind, keyCode: ch })
+        await sleep(40)
+      }
+    }
+    // opens it as main.js would, in a window the size it asks for
+    const show = async (opts) => {
+      await emit('toggle', { open: true, focus: false, ...opts })
+      await sleep(450)
+      await at(0, 0, true)
+      await fitToContent(win)
+      await js(win, "document.querySelector('.compose textarea').focus()")
+      return page()
+    }
+
+    // ---- the buddy
+    await emit('place', { side: 'mouse', align: 'start' })
+    await at(30, 14, false)
+    // nothing going on first: nobody at work, nobody waiting, nothing to read (the demo clique has all three)
+    await js(win, `const s = window.__cliqueState; window.__was = s.agents.map((a) => a.status); window.__reads = s.reads
+      for (const a of s.agents) if (a.status === 'working' || a.status === 'waiting') a.status = 'idle'
+      s.reads = { ...s.reads, since: Date.now() }; window.__cliqueEmit('state', s)`)
+    await sleep(900)
+    let p = await page()
+    let w = await wisp()
+    check('closed, it says so and is one tiny buddy, no bigger than the pointer', p.fit?.pill.open === false && String(w.size) === '14,12' && await js(win, "return getComputedStyle(document.querySelector('.dots')).display === 'none' && !document.querySelector('.dots').children.length && getComputedStyle(document.querySelector('.pill')).backgroundColor === 'rgba(0, 0, 0, 0)'"), [p.fit, w])
+    check('with nothing going on its glow is faint, and it has no dot', w.glow < 0.35 && w.need === 0 && !w.dot && !w.loops, w)
+    await save(win, `follow-buddy-idle-${theme}`)
+    // agents at work: the glow is lit, and nothing loops
+    await js(win, "const s = window.__cliqueState; s.agents.forEach((a, i) => { if (window.__was[i] === 'working') a.status = 'working' }); window.__cliqueEmit('state', s)")
+    await sleep(900)
+    w = await wisp()
+    check('agents at work light its glow, and nothing by the pointer loops', w.glow > 0.7 && w.need === 0 && !w.loops && w.tail === 0, w)
+    await save(win, `follow-buddy-${theme}`)
+    // carried along (up and to the left here): a tail behind it, which goes when it stops
+    await js(win, "window.__cliqueEmit('trail', 215, 1)")
+    await sleep(400)
+    w = await wisp()
+    check('carried along, it trails a tail', w.tail > 0.8, w)
+    await save(win, `follow-buddy-moving-${theme}`)
+    await js(win, "window.__cliqueEmit('trail', 215, 0)")
+    await sleep(400)
+    check('...which goes when it stops', (await wisp()).tail === 0)
+    // a reply comes in: a dot, and one ring
+    await js(win, "const s = window.__cliqueState; s.reads = window.__reads; window.__cliqueEmit('state', s)")
+    await sleep(120)
+    w = await wisp()
+    check('a reply coming in rings once and leaves a dot', w.dot && w.ring === 'wisp-ping', w)
+    await sleep(900)
+    await save(win, `follow-buddy-reply-${theme}`)
+    // someone needs you: the glow turns berry and holds still
+    await js(win, "const s = window.__cliqueState; s.agents.forEach((a, i) => (a.status = window.__was[i])); window.__cliqueEmit('state', s)")
+    await sleep(900)
+    w = await wisp()
+    check('someone needs you: its glow turns berry and holds still', await js(win, "return document.body.classList.contains('alert')") && w.need > 0.9 && w.glow === 0 && w.dot && !w.loops, w)
+    await save(win, `follow-buddy-needs-${theme}`)
+
+    // ---- the message box
+    p = await show({ quick: true, align: 'start' })
+    check('the message box is the composer and nothing else', p.quick && p.fit.pill.open === 'quick' && p.panel.height < 110 && await js(win, "return ['header', '.feed', '.attach'].every((s) => getComputedStyle(document.querySelector(`.panel ${s}`)).display === 'none')"), p.panel)
+    check('room is kept under it for its lists', p.fit.height - (p.fit.pill.y + p.fit.pill.height) >= 300, p.fit)
+    check("it shows no chat, so what comes in still notifies", p.looking === null, p.looking)
+    check('its send button is never Stop', p.send === 'send', p.send)
+    await save(win, `follow-message-${theme}`)
+    await js(win, click('.compose [data-pick-to]'))
+    await sleep(400)
+    p = await page()
+    check('its To menu fits in the window', p.menu && p.menu.top >= 0 && p.menu.bottom <= p.h, [p.menu, p.h])
+    await save(win, `follow-message-to-${theme}`)
+    await key('Escape')
+    await sleep(250)
+    p = await page()
+    check('Esc closes the menu, not the box', !p.menu && p.open, p)
+
+    // ---- listening, as the hotkey opens it; then typing takes over
+    await emit('voice', { type: 'toggle' })
+    await sleep(2500)
+    p = await page()
+    check('it listens, and says so in the bar where it can be seen', p.voice && await js(win, "const h = document.querySelector('.voice-hint'), r = h.getBoundingClientRect(), bar = document.querySelector('.input-bar').getBoundingClientRect(); const top = document.elementFromPoint(r.left + 40, r.top + r.height / 2); return h.contains(top) && r.top >= bar.top && r.bottom <= bar.bottom && /Listening/.test(h.textContent) && /send/.test(h.textContent)"))
+    await save(win, `follow-message-listening-${theme}`)
+    const heard = p.text
+    await type(' on @')
+    await sleep(450)
+    p = await page()
+    // (a word may still land between reading the box and the first key; after the key, nothing more does)
+    check('typing takes over: it stops listening, keeps what it heard, and the keys land', !p.voice && heard.length > 5 && p.text.startsWith(heard) && p.text.endsWith(' on @') && (await sleep(600), (await page()).text === p.text), [heard, p.text, p.voice])
+    check('its @names list opens under it, inside the window', p.names && p.names.top >= p.input.bottom && p.names.bottom <= p.h, [p.names, p.input, p.h])
+    await save(win, `follow-message-names-${theme}`)
+    await key('Escape')
+    await sleep(200)
+    p = await page()
+    check('Esc closes the list, not the box', !p.names && p.open, p)
+
+    // ---- sent: the box goes, and the buddies hop as they take it
+    await js(win, "const ta = document.querySelector('.compose textarea'); ta.value = 'Can someone look at why the build is failing?'; ta.dispatchEvent(new Event('input', { bubbles: true }))")
+    await key('Enter')
+    await sleep(300)
+    p = await page()
+    check('sending puts the box away and the buddies take it', !p.open && p.sent && p.fit.pill.open === false && p.text === '' && await js(win, "return window.__cliqueState.feed.at(-1).text === 'Can someone look at why the build is failing?'"), p)
+    w = await wisp()
+    check('...with a hop and a few motes, even while agents work', await js(win, "return document.body.classList.contains('busy') && document.querySelectorAll('.wisp-motes i').length === 5") && w.hop === 'wisp-took', w)
+    await sleep(1000)
+    w = await wisp()
+    check('...once: then nothing moves again', await js(win, "return !document.body.classList.contains('sent') && !document.querySelector('.wisp-motes')") && w.hop === 'none' && !w.loops, w)
+    // the dictation hotkey reaching a page with nothing open (it closed a moment ago): the box opens, it never listens unseen
+    await emit('voice', { type: 'toggle' })
+    await sleep(500)
+    p = await page()
+    check('dictation never starts with nothing open: the box opens for it', p.open && p.quick && p.voice && p.fit.pill.open === 'quick', p)
+    await key('Escape')
+    await sleep(500)
+    await key('Escape')
+    await sleep(250)
+
+    // ---- put away by a click beside it, or the keyboard going elsewhere; not while it listens
+    p = await show({ quick: true, align: 'start' })
+    win.webContents.sendInputEvent({ type: 'mouseDown', x: 200, y: p.h - 30, button: 'left', clickCount: 1 })
+    win.webContents.sendInputEvent({ type: 'mouseUp', x: 200, y: p.h - 30, button: 'left', clickCount: 1 })
+    await sleep(200)
+    check('a click beside it puts it away', !(await page()).open)
+    await show({ quick: true, align: 'start' })
+    await js(win, "window.dispatchEvent(new Event('blur'))")
+    await sleep(200)
+    check('so does the keyboard going to another app', !(await page()).open)
+    await show({ quick: true, align: 'start' })
+    await emit('voice', { type: 'toggle' })
+    await sleep(500)
+    await js(win, "window.dispatchEvent(new Event('blur'))")
+    await sleep(200)
+    p = await page()
+    check('while it listens it stays', p.open && p.voice, p)
+    await emit('voice', { type: 'toggle' }) // the hotkey again, from the other app: it stops listening
+    await sleep(700)
+    p = await page()
+    check('...and once it stops with the keyboard still elsewhere, it is put away', !p.open && !p.voice, p)
+    await show({ quick: true, align: 'start' })
+    await emit('voice', { type: 'toggle' })
+    await sleep(500)
+    await key('Escape')
+    await sleep(500)
+    p = await page()
+    check('Esc stops the listening and the box stays, for you to send or change', p.open && !p.voice, p)
+    await key('Escape')
+    await sleep(250)
+    check('...the next Esc closes it', !(await page()).open)
+
+    // ---- low on the screen it stands above the pointer: the room, and its lists, are above it
+    await js(win, "const ta = document.querySelector('.compose textarea'); ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true }))")
+    p = await show({ quick: true, align: 'end' })
+    check('above the pointer, the room for its lists is above it', p.fit.pill.y >= 300, p.fit)
+    await type('@')
+    await sleep(450)
+    p = await page()
+    check('...and its @names list opens above it', p.names && p.names.bottom <= p.input.top && p.names.top >= 0, [p.names, p.input])
+    // it grows as you write: main.js hears each new size, or it would grow out of its window down here
+    await key('Escape')
+    const before = (await page()).fit
+    await js(win, "const ta = document.querySelector('.compose textarea'); ta.value = 'one\\ntwo\\nthree\\nfour'; ta.dispatchEvent(new Event('input', { bubbles: true }))")
+    await sleep(300)
+    p = await page()
+    check('it says so when it grows', p.fit.height > before.height && p.fit.pill.height > before.pill.height && p.fit.pill.y + p.fit.pill.height + 14 === p.fit.height, [before, p.fit])
+    // (back to one line, in a window that size again, with its list up for the picture)
+    await js(win, "const ta = document.querySelector('.compose textarea'); ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true }))")
+    await sleep(300)
+    await fitToContent(win)
+    await js(win, "document.querySelector('.compose textarea').focus()")
+    await type('@')
+    await sleep(450)
+    await js(win, "document.documentElement.style.setProperty('--py', `${document.querySelector('.panel').getBoundingClientRect().bottom + 4}px`)")
+    await save(win, `follow-message-above-${theme}`)
+    await key('Escape')
+    await key('Escape')
+    await sleep(250)
+    await js(win, "const ta = document.querySelector('.compose textarea'); ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true }))")
+
+    // ---- the chat, where the pointer is
+    p = await show({ align: 'start' })
+    check('the chat opens whole', p.open && !p.quick && p.fit.pill.open === 'chat' && p.panel.height === 600 && p.looking !== null, [p.fit, p.panel, p.looking])
+    await save(win, `follow-chat-${theme}`)
+    // the message box becomes the chat, and back, without closing
+    p = await show({ quick: true, align: 'start' })
+    check('the chat becomes the message box in place', p.open && p.quick && p.fit.pill.open === 'quick', p.fit)
+    await key('Escape')
+    await sleep(250)
+    check('Esc closes it', !(await page()).open)
+    win.destroy()
+
+    // ---- the setting: the dashboard's menu and the menu bar popover's gear
+    const dash = await dashboard(theme, 'chat', { width: 1060, height: 690 })
+    await js(dash, click('.side-more'))
+    await sleep(350)
+    check('the dashboard’s menu has the choice, on Sticky', await js(dash, "const rows = [...document.querySelectorAll('.menu [data-menu-act^=\"chat:\"]')]; return rows.length === 2 && /✓/.test(rows[0].textContent) && !/✓/.test(rows[1].textContent)"))
+    const box = await js(dash, "const r = document.querySelector('.menu').getBoundingClientRect(); return { x: 0, y: Math.max(0, Math.round(r.top) - 20), width: 520, height: Math.round(innerHeight - Math.max(0, Math.round(r.top) - 20)) }")
+    await save(dash, `follow-setting-${theme}`, { crop: box })
+    await js(dash, click('.menu [data-menu-act="chat:mouse"]'))
+    await sleep(500)
+    check('picking Under the mouse switches it and says which keys reach it', await js(dash, "return window.__cliqueState.app.chat.at === 'mouse' && /follows the pointer now/.test(document.querySelector('.toast')?.textContent ?? '') && /to talk or type a message/.test(document.querySelector('.toast').textContent)"), await js(dash, "return document.querySelector('.toast')?.textContent"))
+    await save(dash, `follow-setting-on-${theme}`, { crop: { x: 0, y: 690 - 200, width: 1060, height: 200 } })
+    await js(dash, click('.side-more'))
+    await sleep(350)
+    check('...and the menu ticks it', await js(dash, "return /✓/.test(document.querySelector('.menu [data-menu-act=\"chat:mouse\"]').textContent) && !/✓/.test(document.querySelector('.menu [data-menu-act=\"chat:sticky\"]').textContent)"))
+    dash.destroy()
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(tray)
+    await js(tray, click('[data-act=settings]'))
+    await sleep(350)
+    check('the menu bar popover’s gear has it too', await js(tray, "return document.querySelectorAll('.menu [data-menu-act^=\"chat:\"]').length === 2"))
+    await save(tray, `follow-setting-tray-${theme}`)
+    tray.destroy()
+    if (errors.length) throw new Error(`follow: ${errors.join('; ')}`)
+  },
+  // Under the mouse, moving: the real follower (core/follow.js) with a made-up pointer on a made-up screen, its window
+  // drawn where the follower puts it. The wisp trails the pointer; the dictation hotkey opens the message box there,
+  // listening, and Enter sends it; then someone needs you (its glow turns berry, with one ring), the chat hotkey opens
+  // the chat there, and Esc puts it away.
+  async followGif() {
+    const [W, H] = [900, 700]
+    const win = await underMouse('light', { width: W, height: H })
+    await win.webContents.insertCSS(`#keys { position: fixed; right: 28px; bottom: 26px; z-index: 998; display: flex; gap: 8px; align-items: center; padding: 7px 12px; border-radius: 12px; background: color-mix(in srgb, var(--fg) 86%, transparent); color: var(--bg); font: 600 14px var(--ui); opacity: 0; transition: opacity .2s; }
+      #keys.on { opacity: 1; } #keys kbd { font: 600 13px var(--ui); padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 22%, transparent); }`)
+    await js(win, "document.body.insertAdjacentHTML('beforeend', '<div id=\"keys\"></div>')")
+    const area = { x: 0, y: 0, width: W, height: H }
+    let pointer = { x: 150, y: 520 }
+    let bounds = { x: 0, y: 0, width: 74, height: 72 }
+    const told = [] // what the follower tells the page (its tail), sent on with the next frame
+    const overlay = { getBounds: () => ({ ...bounds }), setBounds: (b) => (bounds = { ...b }), getPosition: () => [bounds.x, bounds.y], setPosition: (x, y) => (bounds = { ...bounds, x, y }), isVisible: () => true, isFocused: () => false,
+      webContents: { send: (channel, ...args) => told.push([channel, ...args]) } }
+    const follower = followWindow(overlay, { getCursorScreenPoint: () => ({ ...pointer }), getDisplayNearestPoint: () => ({ bounds: area, workArea: area }) })
+    let seen = ''
+    // a frame: the follower looks at the pointer, the page is put where it says, and what the page asks for goes back to it
+    const frame = async () => {
+      follower.look()
+      const fit = await js(win, `for (const m of ${JSON.stringify(told.splice(0))}) window.__cliqueEmit(...m)
+        document.documentElement.style.cssText = '--wx: ${bounds.x}px; --wy: ${bounds.y}px; --px: ${pointer.x}px; --py: ${pointer.y}px'; return JSON.stringify(window.__cliqueFit)`)
+      if (!fit || fit === seen) return
+      seen = fit
+      const { width, height, pill } = JSON.parse(fit)
+      follower.fit(width, height, pill)
+    }
+    const run = async (ms, move) => {
+      const t0 = Date.now()
+      while (Date.now() - t0 < ms) {
+        move?.(Math.min(1, (Date.now() - t0) / ms))
+        await frame()
+        await sleep(6)
+      }
+    }
+    // the pointer goes somewhere the way a hand moves it: off slowly, there slowly, along a slight arc
+    const go = (to, ms, bow = 40) => {
+      const from = { ...pointer }
+      return run(ms, (t) => {
+        const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
+        pointer = { x: Math.round(from.x + (to.x - from.x) * e), y: Math.round(from.y + (to.y - from.y) * e - Math.sin(e * Math.PI) * bow) }
+      })
+    }
+    const keys = (html) => js(win, `const k = document.querySelector('#keys'); ${html ? `k.innerHTML = ${JSON.stringify(html)}; k.classList.add('on')` : "k.classList.remove('on')"}`)
+    const emit = (channel, arg) => js(win, `window.__cliqueEmit(${JSON.stringify(channel)}, ${JSON.stringify(arg)})`)
+    await emit('place', { side: 'mouse', align: 'start' })
+    // agents at work and nobody waiting, to begin with (the demo clique has two who are)
+    await js(win, "const s = window.__cliqueState; window.__was = s.agents.map((a) => a.status); for (const a of s.agents) if (a.status === 'waiting') a.status = 'working'; s.reads = { ...s.reads, since: Date.now() }; window.__cliqueEmit('state', s)")
+    await run(900)
+    await record(win, 'follow', {
+      ms: 13700, width: 720,
+      during: async () => {
+        await run(300)
+        await go({ x: 560, y: 430 }, 900)
+        await go({ x: 300, y: 150 }, 1000, -50)
+        await run(350)
+        // the dictation hotkey: the message box, listening
+        await keys('<kbd>⌥</kbd><kbd>⇧</kbd><kbd>D</kbd> talk or type')
+        await emit('toggle', { open: true, focus: false, quick: true, align: follower.open('quick') })
+        await emit('voice', { type: 'toggle' })
+        await run(2900)
+        await keys('<kbd>⏎</kbd> send')
+        await js(win, "document.querySelector('.compose textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))")
+        await run(1300)
+        await keys('')
+        await go({ x: 200, y: 60 }, 900, 30)
+        // someone needs you: its glow turns berry, with one ring
+        await js(win, "const s = window.__cliqueState; s.agents.forEach((a, i) => (a.status = window.__was[i])); window.__cliqueEmit('state', s)")
+        await run(1300)
+        // the chat hotkey: the chat, right there
+        await keys('<kbd>⌥</kbd><kbd>⇧</kbd><kbd>Space</kbd> the chat')
+        await emit('toggle', { open: true, focus: false, align: follower.open('chat') })
+        await run(2300)
+        await keys('<kbd>esc</kbd>')
+        await emit('toggle', { open: false })
+        follower.close()
+        await run(700)
+        await keys('')
+        await go({ x: 640, y: 520 }, 1000, 60)
+        await run(400)
+      },
+    })
     win.destroy()
   },
   // Stop (ui/common.js stoppableIn and stopButton, core/hub.js stopTurns): every place it shows, at work and free.
