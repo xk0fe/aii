@@ -27,8 +27,10 @@ export const SCHEME = 'clique-file'
 export const PIECE = 1024 * 1024
 // The biggest file fetched: an attachment is 100 MB at most (core/attachments.js FILE_MAX), an image you sent less.
 export const SIZE_MAX = 1024 * 1024 * 1024
-// A computer's cache, together: past this the files fetched longest ago go (they're fetched again when they're shown).
+// A computer's cache, together: past this the files used longest ago go (they're fetched again when they're shown).
 export const CACHE_MAX = 2 * 1024 * 1024 * 1024
+// ...and one that went isn't brought back by itself for this long, so two that don't both fit don't take turns for ever.
+const ROOM_REST = 60000
 
 // What a computer on a CLIque from before pieces answers readFile with: it has no such call. (Asked with no workspace
 // in hand, as this is, it says so its own way: that the asker is the newer one.)
@@ -100,6 +102,7 @@ class Fetch {
   fd = null
   done = false
   asked = new Map() // piece -> its promise
+  used = Date.now() // when something last read it or a piece of it came
 
   constructor(files, file, { slug, hostPath }) {
     Object.assign(this, { files, file, slug, hostPath, part: `${file}.part`, map: `${file}.part.json` })
@@ -138,8 +141,18 @@ class Fetch {
     this.got = 0
   }
 
+  // What's here of it goes (the cache needed the room): from the start the next time it's wanted.
+  drop() {
+    if (this.fd !== null) fs.closeSync(this.fd)
+    this.fd = this.size = this.have = null
+    this.count = this.got = 0
+    fs.rmSync(this.part, { force: true })
+    fs.rmSync(this.map, { force: true })
+  }
+
   // Piece `i`, here: at once if it is, else once it has come (asked for once, however many want it).
   piece(i) {
+    this.used = Date.now()
     if (this.done || this.has(i)) return Promise.resolve()
     let p = this.asked.get(i)
     if (!p) {
@@ -174,6 +187,7 @@ class Fetch {
     if (this.got >= this.size) return this.finish()
     fs.writeFileSync(this.map, JSON.stringify({ size: this.size, have: Buffer.from(this.have).toString('base64') }))
     this.files.emit('progress', this.file, this.got, this.size)
+    this.files.makeRoom(path.dirname(this.file), this.file)
   }
 
   // From a computer whose CLIque sends no pieces: a picture or a page, whole, as it always did. Anything else stays there.
@@ -270,6 +284,7 @@ export class LinkFiles extends EventEmitter {
   theirs = new Map() // file in the cache -> { slug, hostPath }: whose it is, and where it is there
   fetches = new Map() // file in the cache -> its Fetch, while it's on its way
   failed = new Map() // file in the cache -> { why, at }: the last try that didn't work
+  evicted = new Map() // file in the cache -> when it went to make room
   old = new Set() // computers (slugs) whose CLIque sends no pieces
 
   constructor({ cache, peer, name = (slug) => slug, max = CACHE_MAX }) {
@@ -320,6 +335,8 @@ export class LinkFiles extends EventEmitter {
     if (!this.peer(slug)) return
     const last = this.failed.get(file)
     if (last && (last.why === 'gone' || last.why === 'old' || last.why === 'big' || Date.now() - last.at < 30000)) return
+    // (one that just went to make room isn't brought straight back: what shows it asks for it itself, when it does)
+    if (Date.now() - (this.evicted.get(file) ?? 0) < ROOM_REST) return
     this.whole(file).catch(() => {})
   }
 
@@ -344,28 +361,34 @@ export class LinkFiles extends EventEmitter {
     return { here: false, have: f?.got ?? 0, size: f?.size ?? null, why, computer: this.nameOf(whose.slug) }
   }
 
-  // Keeps a computer's cache under `max` bytes: the files fetched longest ago go first, never `keep` (just fetched) or
-  // one that's on its way.
+  // Keeps a computer's cache under `max` bytes of what's really on the disk: what was used longest ago goes first. Never
+  // `keep` (just fetched), nor a file a piece of which is being asked for right now. A file that's partly here counts
+  // for the pieces that are (it's as long as the whole file, with holes), and goes as one with its list of them.
   makeRoom(dir, keep) {
-    let files = []
+    let units = []
     try {
-      files = fs.readdirSync(dir).map((name) => {
-        const file = path.join(dir, name)
-        const s = fs.statSync(file, { throwIfNoEntry: false })
-        return s?.isFile() ? { file, size: s.size, at: s.mtimeMs } : null
+      units = fs.readdirSync(dir).filter((name) => !name.endsWith('.part.json')).map((name) => {
+        const at = path.join(dir, name)
+        const s = fs.statSync(at, { throwIfNoEntry: false })
+        if (!s?.isFile()) return null
+        const part = name.endsWith('.part')
+        const file = part ? at.slice(0, -5) : at
+        const fetch = part ? this.fetches.get(file) : null
+        return { at, file, part, fetch, size: Math.min(s.size, (s.blocks ?? Infinity) * 512), used: fetch?.used ?? s.mtimeMs }
       }).filter(Boolean)
     } catch {
       return 0
     }
-    let total = files.reduce((n, f) => n + f.size, 0)
+    let total = units.reduce((n, u) => n + u.size, 0)
     let gone = 0
-    for (const f of files.sort((a, b) => a.at - b.at)) {
+    for (const u of units.sort((x, y) => x.used - y.used)) {
       if (total <= this.max) break
-      const whole = f.file.replace(/\.part(\.json)?$/, '')
-      if (f.file === keep || this.fetches.has(whole)) continue
+      if (u.file === keep || (u.fetch && u.fetch.asked.size)) continue
       try {
-        fs.rmSync(f.file, { force: true })
-        total -= f.size
+        if (u.fetch) (u.fetch.drop(), this.fetches.delete(u.file))
+        else (fs.rmSync(u.at, { force: true }), u.part && fs.rmSync(`${u.at}.json`, { force: true }))
+        this.evicted.set(u.file, Date.now())
+        total -= u.size
         gone++
       } catch {}
     }
@@ -383,9 +406,9 @@ export function rangeOf(header, size) {
   if (!header) return null
   const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim())
   if (!m || (!m[1] && !m[2])) return false
-  if (!m[1]) return { start: Math.max(0, size - Number(m[2])), end: size }
+  if (!m[1]) return Number(m[2]) > 0 && size > 0 ? { start: Math.max(0, size - Number(m[2])), end: size } : false
   const start = Number(m[1])
-  if (start >= size) return false
+  if (start >= size || (m[2] && Number(m[2]) < start)) return false
   return { start, end: m[2] ? Math.min(size, Number(m[2]) + 1) : size }
 }
 
@@ -398,11 +421,14 @@ const SHUT = { 'x-content-type-options': 'nosniff', 'content-security-policy': "
 // isn't here yet is one of a linked computer's (`files`: a LinkFiles): its bytes come as they're asked for.
 export async function answerFile(request, { dirs, files }) {
   const plain = (status, why = '') => new Response(null, { status, headers: { ...SHUT, ...(why && { 'x-clique-why': why }) } })
-  let file
+  // The file by the path it was asked for by (what a linked computer's file is known by here), once that's known to
+  // lead into one of the folders, wherever links and `..` take it. Never the pieces of one that's on its way.
+  let file = null
   try {
-    file = inside(new URL(request.url).searchParams.get('p'), dirs)
+    const asked = new URL(request.url).searchParams.get('p')
+    if (asked && inside(asked, dirs)) file = path.resolve(asked)
   } catch {}
-  if (!file) return plain(404, 'gone')
+  if (!file || /\.part(\.json)?$/.test(file)) return plain(404, 'gone')
   if (kindOf(file) === 'html') return plain(403)
   if (request.method !== 'GET' && request.method !== 'HEAD') return plain(405)
   const stat = fs.statSync(file, { throwIfNoEntry: false })

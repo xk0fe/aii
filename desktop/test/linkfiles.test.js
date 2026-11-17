@@ -240,7 +240,7 @@ test('a computer on a CLIque from before pieces: a picture comes whole, as it al
   assert.equal(files.state(files.place('workstation', path.join(host, 'other.png'))).why, null) // a picture from it can still come
 })
 
-test("a computer's cache stays under its limit: the files fetched longest ago go, never one that's on its way or just came", async () => {
+test("a computer's cache stays under its limit: what was used longest ago goes, never what just came or what's being asked for", async () => {
   const { files, cache } = viewer({ max: 3 * 5000 + 100 })
   const names = ['a.png', 'b.png', 'c.png', 'd.png'].map((name, i) => put(name, bytes(5000, 10 + i)))
   const kept = []
@@ -252,14 +252,45 @@ test("a computer's cache stays under its limit: the files fetched longest ago go
   }
   // (the fourth came with three already there: the oldest went)
   assert.deepEqual(kept.map((f) => fs.existsSync(f)), [false, true, true, true])
-  // one that's half here isn't taken, though it's the oldest of all
-  const part = files.place('workstation', run)
-  await files.fetchOf(part).read(0, 10)
-  fs.utimesSync(`${part}.part`, new Date(2020, 0, 1), new Date(2020, 0, 1))
-  const e = files.place('workstation', put('e.png', bytes(5000, 20)))
-  await files.whole(e)
-  assert.ok(fs.existsSync(`${part}.part`) && fs.existsSync(e) && !fs.existsSync(kept[1]))
-  assert.ok(fs.readdirSync(path.join(cache, 'workstation')).length <= 6)
+  // what went isn't brought straight back by itself (two that don't both fit would take turns for ever): only when
+  // something that shows it asks
+  const asked = files.fetches.size
+  files.want(kept[0])
+  assert.equal(files.fetches.size, asked)
+  assert.equal(await files.whole(kept[0]), kept[0])
+  assert.deepEqual(kept.map((f) => fs.existsSync(f)), [true, false, true, true])
+  assert.ok(fs.readdirSync(path.join(cache, 'workstation')).length <= 3)
+})
+
+test('a recording that is partly here counts for the pieces that are, and goes as one when room is needed; never while a piece of it is on its way', async () => {
+  // room for three pieces: a recording looked at (a piece of it and the next), then another
+  const { files, link, cache } = viewer({ max: 3 * PIECE + 1000 })
+  const [a, b] = ['a.mp4', 'b.mp4'].map((name, i) => files.place('workstation', put(name, bytes(BIG, 30 + i))))
+  await files.fetchOf(a).read(0, 10)
+  await sleep(20)
+  // (as long as the whole file, with holes: on the disk it's the two pieces. A disk that keeps no holes counts it whole.)
+  assert.equal(fs.statSync(`${a}.part`).size, PIECE * 2)
+  assert.ok(fs.existsSync(`${a}.part.json`))
+  await sleep(5)
+  await files.fetchOf(b).read(0, 10)
+  await sleep(20)
+  // b's two pieces didn't fit beside a's two: a, used longest ago, went, with its list
+  assert.deepEqual(fs.readdirSync(path.join(cache, 'workstation')).sort(), [`${path.basename(b)}.part`, `${path.basename(b)}.part.json`].sort())
+  assert.equal(files.fetches.has(a), false)
+  // wanted again, it comes again from its start
+  link.asked.length = 0
+  assert.ok((await files.fetchOf(a).read(PIECE - 5, PIECE + 5)).equals(fs.readFileSync(path.join(host, 'a.mp4')).subarray(PIECE - 5, PIECE + 5)))
+  assert.deepEqual(link.asked.slice(0, 2), [0, 1])
+  // one a piece of which is being asked for right now is never taken, however old
+  const slow = viewer({ max: PIECE, wait: 40 })
+  const c = slow.files.place('workstation', put('c.mp4', bytes(BIG, 40)))
+  await slow.files.fetchOf(c).read(0, 10) // (and the piece after it is on its way)
+  const d = slow.files.place('workstation', shot)
+  slow.link.wait = 0
+  await slow.files.whole(d)
+  assert.ok(fs.existsSync(`${c}.part`) && slow.files.fetches.get(c).asked.size > 0, 'still there, its next piece still coming')
+  await sleep(80)
+  assert.ok((await slow.files.fetchOf(c).read(PIECE, PIECE + 10)).equals(fs.readFileSync(path.join(host, 'c.mp4')).subarray(PIECE, PIECE + 10)))
 })
 
 // ---- the scheme ------------------------------------------------------------------------------------------------------
@@ -274,7 +305,8 @@ test('ranges, as a player asks for them', () => {
   assert.deepEqual(rangeOf('bytes=90-500', 100), { start: 90, end: 100 })
   assert.deepEqual(rangeOf('bytes=-30', 100), { start: 70, end: 100 })
   assert.deepEqual(rangeOf('bytes=-300', 100), { start: 0, end: 100 })
-  for (const bad of ['bytes=100-', 'bytes=200-300', 'bytes=-', 'items=0-5', 'bytes=0-5,10-15', 'bytes=a-b']) assert.equal(rangeOf(bad, 100), false, bad)
+  for (const bad of ['bytes=100-', 'bytes=200-300', 'bytes=-', 'items=0-5', 'bytes=0-5,10-15', 'bytes=a-b', 'bytes=5-2', 'bytes=-0', 'bytes=99999999999999999999999-']) assert.equal(rangeOf(bad, 100), false, bad)
+  assert.equal(rangeOf('bytes=-5', 0), false) // (nothing of an empty file to give)
 })
 
 test('the scheme a page loads a file through: whole or a range of it, from this computer and from a linked one as it comes', async () => {
@@ -349,6 +381,15 @@ test('the scheme says no to what is not one of CLIque\'s files, to a page, and s
     assert.equal((await answerFile(ask(path.join(here, 'link.txt')), on)).status, 404)
   }
   assert.equal((await answerFile(new Request('clique-file://f/'), on)).status, 404)
+  // nor the pieces of a file that's on its way, by their own names
+  const coming = files.place('workstation', run)
+  link.away = false
+  await files.fetchOf(coming).read(0, 10)
+  assert.ok(fs.existsSync(`${coming}.part`) && fs.existsSync(`${coming}.part.json`))
+  for (const piece of [`${coming}.part`, `${coming}.part.json`]) assert.equal((await answerFile(ask(piece), on)).status, 404, piece)
+  files.fetches.get(coming).drop()
+  files.fetches.delete(coming)
+  link.away = true
   // a page is never handed to the app's own pages: it runs in the sandbox only (core/sandbox.js)
   const res = await answerFile(ask(page), on)
   assert.deepEqual([res.status, (await body(res)).length], [403, 0])
@@ -374,6 +415,26 @@ test('the scheme says no to what is not one of CLIque\'s files, to a page, and s
     for (;;) if ((await reader.read()).done) break
   })
   assert.deepEqual(failures.map((f) => f[1]), ['away'])
+})
+
+test('a cache reached through a link (a home folder that is one, /tmp on a Mac): its files are found by the path they are known by', { skip: WIN && 'makes a symbolic link' }, async () => {
+  const real = path.join(tmp, 'real-home')
+  fs.mkdirSync(path.join(real, 'link', 'cache'), { recursive: true })
+  fs.symlinkSync(real, path.join(tmp, 'home'))
+  const cache = path.join(tmp, 'home', 'link', 'cache') // (as CACHE is: by the name the home folder was given)
+  const asked = []
+  const files = new LinkFiles({ cache, peer: () => ({ call: async (name, [file, start, length]) => (asked.push(name), readPiece(host, file, start, length)) }), name: () => 'Workstation' })
+  const file = files.place('workstation', run)
+  assert.ok(file.startsWith(cache + path.sep))
+  const res = await answerFile(ask(file, { range: 'bytes=0-99' }), { dirs: [cache], files })
+  assert.equal(res.status, 206)
+  assert.ok((await body(res)).equals(fs.readFileSync(run).subarray(0, 100)))
+  await files.whole(file)
+  assert.equal((await answerFile(ask(file), { dirs: [cache], files })).status, 200) // whole, from the cache
+  assert.deepEqual(files.state(file), { here: true, computer: 'Workstation' })
+  // by its other name (where the link leads) it's the same file once it's here, and still nothing outside is
+  assert.equal((await answerFile(ask(path.join(real, 'link', 'cache', 'workstation', path.basename(file))), { dirs: [cache], files })).status, 200)
+  assert.equal((await answerFile(ask(path.join(tmp, 'home', 'link', 'link.json')), { dirs: [cache], files })).status, 404)
 })
 
 // ---- over a real CLIque Link ---------------------------------------------------------------------------------------

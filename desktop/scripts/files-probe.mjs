@@ -1081,6 +1081,33 @@ app.whenReady().then(async () => {
     link.old = false
   })
 
+  // ---- a message that's in the channel and in the thread beside it: a card in each --------------------------------------
+  await section('threads', async () => {
+    await say([{ id: 't1', kind: 'reply', from: 'Iris', text: 'The checkout run from start to finish.', files: [wide] }, { id: 't2', kind: 'msg', from: 'Theo', to: 'Iris', text: 'The total is off at 0:31.', thread: 't1' }, { id: 't3', kind: 'msg', from: 'Iris', to: 'Theo', text: 'Looking.', thread: 't1' }])
+    await sleep(300)
+    await js(`openThread('t1')`)
+    await sleep(600)
+    const cards = await js(`const all = [...document.querySelectorAll('.fx-video[data-live="t1:0"]')]; const inThread = all.find((c) => c.closest('.thread-list')); const inChat = all.find((c) => !c.closest('.thread-list')); if (inThread) { inThread.querySelector('.fxp').id = 'in-thread'; inThread.querySelector('[data-fx=view]').id = 'thread-view' } if (inChat) inChat.querySelector('.fxp').id = 'in-chat'; return [all.length, Boolean(inThread), Boolean(inChat)]`)
+    if (!ok(cards[0] === 2 && cards[1] && cards[2], 'the recording has a card in the channel and one in the thread beside it', cards)) return
+    await until(async () => (await P('#in-thread')).ready >= 2)
+    await tap('#in-thread .fxp-big')
+    await until(async () => (await P('#in-thread')).t > 0.5)
+    ok(!(await P('#in-thread')).paused && (await P('#in-chat')).paused && !(await P('#in-chat')).cls.includes(' on'), 'played in the thread: that one plays, the channel\'s is untouched')
+    await tap('#thread-view')
+    await sleep(500)
+    ok((await js(`return document.querySelector('.fxv .fxv-stage > .fxp')?.id`)) === 'in-thread', 'its card\'s button opens the viewer on the thread\'s player, not the channel\'s (which comes first in the page)')
+    ok(!(await P('#in-thread')).paused && (await js(`return document.querySelector('#in-chat').closest('.fx-video') !== null && !document.querySelector('#in-chat').closest('.fxv')`)), 'still playing; the channel\'s card still has its own')
+    await key('Escape')
+    await sleep(300)
+    const back = await js(`const p = document.getElementById('in-thread'); return { inThread: Boolean(p.closest('.thread-list')), cards: document.querySelectorAll('.fx-video[data-live="t1:0"]').length, players: [...document.querySelectorAll('.fx-video[data-live="t1:0"]')].map((c) => c.querySelectorAll('.fxp').length), lent: Boolean(document.querySelector('.fx-video.lent')), focus: document.activeElement?.id }`)
+    ok(back.inThread && back.cards === 2 && back.players.join() === '1,1' && !back.lent, 'closed: it is back in the thread\'s card, and each card has its one player', back)
+    ok(back.focus === 'thread-view', 'and the keyboard is back on the thread\'s button')
+    await tap('#in-thread > video', win, [0.5, 0.3])
+    ok(await until(async () => !(await P('#in-thread')).paused, 3000), 'a click on it there plays it')
+    await playing('#in-thread', false)
+    await js(`document.querySelector('.thread [data-close], .thread .th-close, .thread-close, [data-thread-close]')?.click()`)
+  })
+
   // ---- the floating chat -----------------------------------------------------------------------------------------------
   await section('floating', async () => {
     const chat = await open('overlay.html', { width: 520, height: 900 })
