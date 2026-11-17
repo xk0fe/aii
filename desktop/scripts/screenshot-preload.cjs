@@ -384,10 +384,14 @@ COMPUTERS.links[0].usage = {
   codex: { label: 'Codex', at: now, windows: [{ id: 'five_hour', pct: 9, resetsAt: now + 3 * 60 * min }, { id: 'seven_day', pct: 22, resetsAt: now + 4 * day }] },
 }
 if (BIG) COMPUTERS.links[1].usage = { claude: { label: 'Claude', at: now - 3 * 60 * min, windows: [{ id: 'seven_day', pct: 12, resetsAt: now + 6 * day }] } }
-// Usage, day by day (core/history.js, as Clique.usageHistory gives it to the Usage view): a year of Claude that grew
-// busier, Codex since the spring, quieter. Weekends are light, a week in August is off, and the numbers are the same
-// every time (a seeded draw), so two shots match. Who used it: the clique's agents on this computer, and what you ran
-// outside CLIque; where: the project's folders. ?fixture=usage-reading: the first look at the logs, a third of the way through.
+// Usage, day by day (core/history.js, as Clique.usageHistory gives it to the Usage view): each computer's rows, one for
+// a day, a workspace, an agent, a provider, a model and a folder. This computer: a year of Storefront that grew busier
+// (Ada, Milo and Iris on Claude, Theo and June on Codex since the spring), Docs site since the summer, and what you ran
+// outside CLIque. The linked computer: Rex and Noor in this computer's Storefront, its own workspaces, its own sessions.
+// Weekends are light, a week in August is off, and the numbers are the same every time (a seeded draw), so two shots
+// match. ?fixture=usage-reading: the first look at the logs, a third of the way through. ?fixture=big: the Laptop too,
+// off, with what it last said.
+const USAGE_COLS = ['day', 'ws', 'who', 'provider', 'model', 'dir', 'tokens', 'input', 'output', 'cached', 'written', 'replies', 'messages', 'sessions', 'cost']
 function usageHistory() {
   let seed = 20261116
   const rnd = () => {
@@ -398,43 +402,84 @@ function usageHistory() {
   }
   const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   const today = new Date(now)
-  const make = ({ since, base, grow, price, models, who, where }) => {
-    const days = {}
-    for (let i = since; i >= 0; i--) {
+  const SPAN = 371
+  // each stream is one agent in one workspace (or what you ran outside CLIque) on one provider, working in one folder:
+  // since (days ago it began), base (tokens on a usual day), grow (how much busier it is now), skip (how often it sits a day out)
+  const rowsOf = (streams, from = SPAN) => {
+    const rows = []
+    for (let i = SPAN; i >= 0; i--) {
       const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i)
       const weekend = d.getDay() === 0 || d.getDay() === 6
       const away = d.getMonth() === 7 && d.getDate() >= 10 && d.getDate() <= 17
-      const dice = rnd()
+      const mood = rnd() // a busy day is busy for everyone
       const spike = rnd()
-      const mix = models.map(() => rnd())
-      const share = who.map(() => rnd())
-      const spread = where.map(() => rnd())
-      if (away || dice < (weekend ? 0.62 : 0.1)) continue
-      const tokens = Math.round(base * (1 + grow * (1 - i / since)) * (weekend ? 0.3 : 1) * (0.25 + 1.5 * dice * dice) * (spike > 0.96 ? 2.6 : 1) * (i === 0 ? 0.45 : 1))
-      const split = (names, weights, draws) => {
-        const parts = names.map((n, j) => weights[j] * (0.4 + draws[j]))
-        const sum = parts.reduce((x, y) => x + y, 0)
-        return Object.fromEntries(names.map((n, j) => [n, Math.round((tokens * parts[j]) / sum)]).filter(([, v]) => v > 0))
-      }
-      const messages = Math.max(1, Math.round(tokens / 3.2e6 + dice * 6))
-      days[key(d)] = {
-        tokens, input: Math.round(tokens * 0.012), output: Math.round(tokens * 0.004), cached: Math.round(tokens * 0.964), written: price ? Math.round(tokens * 0.02) : 0,
-        replies: Math.round(tokens / 3.3e5) + 1, messages, sessions: Math.max(1, Math.round(messages / 3.2)), cost: tokens * price,
-        models: split(models.map((m) => m[0]), models.map((m) => m[1]), mix), who: split(who.map((w) => w[0]), who.map((w) => w[1]), share),
-        where: split(where.map((w) => here(w[0])), where.map((w) => w[1]), spread),
+      for (const s of streams) {
+        const dice = rnd()
+        const pick = rnd()
+        if (away || mood < (weekend ? 0.62 : 0.1) || i > s.since || i > from || dice < s.skip) continue
+        const tokens = Math.round(s.base * (1 + s.grow * (1 - i / s.since)) * (weekend ? 0.3 : 1) * (0.25 + 1.5 * mood * mood) * (0.5 + dice) * (spike > 0.96 ? 2.6 : 1) * (i === 0 ? 0.45 : 1))
+        const whole = s.models.reduce((n, m) => n + m[1], 0)
+        let at = pick * whole
+        const model = (s.models.find((m) => (at -= m[1]) < 0) ?? s.models[0])[0]
+        const price = s.provider === 'claude' ? 0.354e-6 : 0
+        const messages = Math.max(1, Math.round(tokens / 3.2e6 + dice * 3))
+        rows.push([key(d), s.ws, s.who, s.provider, model, s.dir, tokens, Math.round(tokens * 0.012), Math.round(tokens * 0.004), Math.round(tokens * 0.964), price ? Math.round(tokens * 0.02) : 0, Math.round(tokens / 3.3e5) + 1, messages, Math.max(1, Math.round(messages / 3.2)), tokens * price])
       }
     }
-    return days
+    return rows
   }
-  const claude = make({ since: 371, base: 4.4e7, grow: 1.6, price: 0.354e-6, models: [['claude-opus-5-5', 8], ['claude-sonnet-5-5', 1.6], ['claude-haiku-5-5', 0.25]], who: [['Ada', 5], ['Milo', 3.4], ['Iris', 1.8], ['', 2.2]], where: [['/Users/you/Projects/storefront', 6], ['/Users/you/Projects/storefront-web', 3], ['/Users/you/Projects/docs-site', 1.4], ['/Users/you/notes', 0.5]] })
-  const codex = make({ since: 197, base: 2.3e7, grow: 0.7, price: 0, models: [['gpt-6.1-sol', 6], ['gpt-6-luna', 2], ['gpt-5.4-mini', 0.3]], who: [['Theo', 5], ['June', 2.6], ['', 1.4]], where: [['/Users/you/Projects/storefront', 4], ['/Users/you/Projects/docs-site', 2.6], ['/Users/you/Projects/storefront/e2e', 1]] })
-  const first = Object.keys(claude).sort()[0]
-  if (FIXTURE === 'usage-reading') {
-    // the newest logs are read first: the last weeks are in, the rest still to come
-    const recent = (days) => Object.fromEntries(Object.entries(days).filter(([k]) => k >= key(new Date(now - 34 * day))))
-    return { at: 0, reading: { done: 3.4e8, total: 1.01e9, files: 640 }, first: key(new Date(now - 34 * day)), providers: [{ id: 'claude', label: 'Claude', days: recent(claude) }, { id: 'codex', label: 'Codex', days: recent(codex) }] }
+  const P = '/Users/you/Projects'
+  const SF = `${HERE.slug}:storefront`
+  const DOCS = `${HERE.slug}:docs`
+  const THEIR_SF = `${LINK.slug}:storefront`
+  const claude = [['claude-opus-5-5', 8], ['claude-sonnet-5-5', 1.6], ['claude-haiku-5-5', 0.25]]
+  const sonnet = [['claude-sonnet-5-5', 6], ['claude-haiku-5-5', 1]]
+  const codex = [['gpt-6.1-sol', 6], ['gpt-6-luna', 2], ['gpt-5.4-mini', 0.3]]
+  const hosted = WORKSPACES.some((w) => w.id === 'storefront-2') // (?fixture=workspaces: the linked computer's Storefront shows here, Ada and Theo in it)
+  const mine = rowsOf([
+    { ws: SF, who: 'Ada', provider: 'claude', models: claude, dir: here(`${P}/storefront`), base: 1.5e7, grow: 1.6, since: SPAN, skip: 0.12 },
+    { ws: SF, who: 'Milo', provider: 'claude', models: sonnet, dir: here(`${P}/storefront-web`), base: 1.0e7, grow: 1.4, since: 330, skip: 0.2 },
+    { ws: SF, who: 'Iris', provider: 'claude', models: claude, dir: here(`${P}/storefront`), base: 4e6, grow: 1, since: 250, skip: 0.45 },
+    { ws: SF, who: 'Theo', provider: 'codex', models: codex, dir: here(`${P}/storefront/e2e`), base: 9e6, grow: 0.7, since: 197, skip: 0.25 },
+    { ws: SF, who: 'June', provider: 'codex', models: codex, dir: here(`${P}/storefront`), base: 2e6, grow: 0.5, since: 150, skip: 0.6 },
+    { ws: DOCS, who: 'June', provider: 'codex', models: codex, dir: here(`${P}/docs-site`), base: 5e6, grow: 0.9, since: 180, skip: 0.3 },
+    { ws: DOCS, who: 'Iris', provider: 'claude', models: claude, dir: here(`${P}/docs-site`), base: 2.5e6, grow: 1.2, since: 120, skip: 0.5 },
+    { ws: DOCS, who: 'Milo', provider: 'claude', models: sonnet, dir: here(`${P}/docs-site/theme`), base: 1.5e6, grow: 1, since: 90, skip: 0.6 },
+    ...(hosted ? [{ ws: THEIR_SF, who: 'Ada', provider: 'claude', models: claude, dir: here(`${P}/shop`), base: 2e6, grow: 1, since: 60, skip: 0.5 }, { ws: THEIR_SF, who: 'Theo', provider: 'codex', models: codex, dir: here(`${P}/shop`), base: 1.2e6, grow: 1, since: 45, skip: 0.6 }] : []),
+    { ws: '', who: '', provider: 'claude', models: claude, dir: here(`${P}/storefront`), base: 7e6, grow: 0.4, since: SPAN, skip: 0.35 },
+    { ws: '', who: '', provider: 'claude', models: claude, dir: here('/Users/you/notes'), base: 1.5e6, grow: 0.2, since: 300, skip: 0.6 },
+    { ws: '', who: '', provider: 'codex', models: codex, dir: here(`${P}/docs-site`), base: 3e6, grow: 0.3, since: 197, skip: 0.5 },
+  ], FIXTURE === 'usage-reading' ? 34 : SPAN) // (the newest logs are read first: the last weeks are in, the rest still to come)
+  const theirs = rowsOf([
+    { ws: SF, who: 'Rex', provider: 'claude', models: sonnet, dir: onLink(`${P}/storefront`), base: 6e6, grow: 1.2, since: 140, skip: 0.3 },
+    { ws: SF, who: 'Noor', provider: 'codex', models: codex, dir: onLink(`${P}/storefront`), base: 2.5e6, grow: 0.8, since: 100, skip: 0.5 },
+    { ws: THEIR_SF, who: 'Kit', provider: 'claude', models: claude, dir: onLink(`${P}/shop`), base: 5e6, grow: 1, since: 200, skip: 0.3 },
+    { ws: `${LINK.slug}:api`, who: 'Vera', provider: 'claude', models: claude, dir: onLink(`${P}/api`), base: 3e6, grow: 0.6, since: 160, skip: 0.45 },
+    { ws: '', who: '', provider: 'claude', models: claude, dir: onLink(`${P}/api`), base: 2e6, grow: 0.3, since: 220, skip: 0.55 },
+  ])
+  const firstOf = (rows) => rows[0]?.[0] ?? null
+  const looks = (names) => Object.fromEntries(names.map((n) => [n, AGENTS.find((a) => (a.seed ?? a.name) === n)?.avatar]).filter(([, look]) => look))
+  const labels = { claude: 'Claude', codex: 'Codex' }
+  const reading = FIXTURE === 'usage-reading'
+  const computers = [
+    { slug: HERE.slug, name: HERE.name, here: true, online: true, at: reading ? 0 : now - 40000, reading: reading ? { done: 3.4e8, total: 1.01e9, files: 640 } : null, first: firstOf(mine), cols: USAGE_COLS, rows: mine, providers: labels, faces: { [SF]: looks(['Ada', 'Milo', 'Iris', 'Theo', 'June']), [DOCS]: looks(['June', 'Iris', 'Milo']) } },
+    { slug: LINK.slug, name: LINK.name, online: true, got: now - 95000, at: now - 4 * min, reading: null, first: firstOf(theirs), cols: USAGE_COLS, rows: theirs, providers: labels, faces: { [SF]: looks(['Rex', 'Noor']) } },
+  ]
+  if (BIG) {
+    const laptop = rowsOf([{ ws: 'laptop:notes', who: 'Wren', provider: 'claude', models: sonnet, dir: '/Users/you/Notes', base: 1.2e6, grow: 0.4, since: 120, skip: 0.5 }, { ws: '', who: '', provider: 'claude', models: claude, dir: '/Users/you/Notes', base: 8e5, grow: 0.2, since: 200, skip: 0.6 }])
+    computers.push({ slug: 'laptop', name: 'Laptop', online: false, got: now - 3 * 60 * min, at: now - 3 * 60 * min, reading: null, first: firstOf(laptop), cols: USAGE_COLS, rows: laptop, providers: labels, faces: {} })
   }
-  return { at: now - 40000, reading: null, first, providers: [{ id: 'claude', label: 'Claude', days: claude }, { id: 'codex', label: 'Codex', days: codex }] }
+  // the workspaces the rows name: this computer's as the rail has them, the linked computers' by their own names
+  const spaces = {
+    [THEIR_SF]: { name: 'Storefront', color: 'orange', icon: null, ownerName: LINK.name },
+    [`${LINK.slug}:api`]: { name: 'API', color: 'teal', icon: null, ownerName: LINK.name },
+    ...(BIG && { 'laptop:notes': { name: 'Notes', color: 'yellow', icon: null, ownerName: 'Laptop' } }),
+  }
+  for (const w of WORKSPACES) {
+    const theirKey = w.owner && REMOTE.find((r) => r.joined === w.id)?.key
+    spaces[theirKey || `${HERE.slug}:${w.id}`] = { name: w.name, color: w.color, icon: w.icon, id: w.id, ...(w.ownerName && { ownerName: w.ownerName }) }
+  }
+  return { here: state.workspace ? Object.keys(spaces).find((k) => spaces[k].id === state.workspace.id) ?? null : null, computers, spaces }
 }
 // what the work on a task cost so far
 for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [5, { cost: 1.31, tokens: 0, added: 42, removed: 18 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }], [3, { cost: 0.86, tokens: 0, added: 21, removed: 4 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })

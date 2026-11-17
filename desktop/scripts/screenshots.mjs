@@ -638,8 +638,9 @@ const SHOTS = {
       window.__cliqueEmit('state', s)`)
     await sleep(3200)
     await shot('canvas', win, { crop: await column(win) })
-    // Usage: a calendar per provider, and who used it
-    win = await dashboard(theme, 'usage', { width: 1160, height: 950, reset: ['clique.usage.range'] })
+    // Usage, everything: tokens a week by workspace with the workspaces ranked beside it, and a calendar per provider
+    win = await dashboard(theme, 'usage', { width: 1160, height: 950, reset: ['clique.usage.range', 'clique.usage.scope', 'clique.usage.by.here', 'clique.usage.by.all'] })
+    await js(win, click('.us-scope [data-scope=all]'))
     await sleep(900)
     await shot('usage', win)
     // every terminal side by side
@@ -950,33 +951,84 @@ const SHOTS = {
     await js(win, click('[data-mode=cards]'))
     win.destroy()
   },
-  // Usage (ui/usage.js): a calendar per provider from Claude Code's and Codex's own logs, the range's numbers, and who
-  // used it; then a day picked (its square ringed in both calendars, the breakdown under them the day's), one year,
-  // and the first look at the logs, the newest days in and the rest on their way.
+  // Usage (ui/usage.js): the workspace on screen (its agents, on both computers), then everything (each workspace and
+  // what ran outside CLIque); the chart split another way, one computer alone, narrowed to an agent, a short range, a day
+  // picked, one year; the first look at the logs, nothing yet, the way in from the sidebar, and a narrow window.
   async usage(theme) {
-    const win = await dashboard(theme, 'usage', { height: 1010, reset: ['clique.usage.range'] })
+    const RESET = ['clique.usage.range', 'clique.usage.scope', 'clique.usage.by.here', 'clique.usage.by.all']
+    const win = await dashboard(theme, 'usage', { height: 1010, reset: RESET })
     await sleep(700)
     await save(win, `usage-${theme}`)
-    // a busy weekday three weeks back, in whichever column it falls
-    const day = await js(win, `const d = new Date(Date.now() - 20 * 864e5); while (d.getDay() === 0 || d.getDay() === 6 || !window.__cliqueHistory.providers[0].days[key(d)] || !window.__cliqueHistory.providers[1].days[key(d)]) d.setDate(d.getDate() - 1)
-      function key(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
-      return key(d)`)
-    const cell = `.us-prov[data-prov=claude] .us-c[data-day="${day}"]`
-    await tap(win, await glide(win, { x: 700, y: 500 }, await center(win, cell), 200))
+    await js(win, click('.us-scope [data-scope=all]'))
     await sleep(500)
-    await save(win, `usage-day-${theme}`)
-    await js(win, click('[data-us=clear]'))
+    await save(win, `usage-everything-${theme}`)
+    await js(win, click('.us-by [data-by=who]'))
+    await sleep(400)
+    await save(win, `usage-everything-agents-${theme}`)
+    await js(win, click('.us-by [data-by=computer]'))
+    await sleep(400)
+    await save(win, `usage-everything-computers-${theme}`)
+    await js(win, click('.us-by [data-by=ws]'))
+    // one computer alone
+    await js(win, click(`.us-comp [data-computer=${LINK.slug}]`))
+    await sleep(400)
+    await save(win, `usage-one-computer-${theme}`)
+    await js(win, click('.us-comp [data-computer=""]'))
+    // narrowed to one workspace by a click on its row, then to one agent from the menu
+    await js(win, click('.us-legend-list .us-row[data-f=ws]:nth-child(2)'))
+    await sleep(400)
+    await save(win, `usage-filtered-${theme}`)
+    await js(win, click('.us-filters [data-menu=who]'))
+    await sleep(350)
+    await save(win, `usage-filter-menu-${theme}`)
+    await js(win, `document.querySelector('.menu [data-menu-act]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+    await js(win, click('.us-filters [data-clear=all]'))
+    // the last 30 days: a bar a day, the calendars' older days dimmed
+    await js(win, click('.us-scope [data-scope=here]'))
     await js(win, click('.page-head[data-for=usage] [data-us=range]'))
     await sleep(300)
     await save(win, `usage-range-${theme}`)
+    await js(win, `document.querySelector('.menu [data-menu-act="d30"]').click()`)
+    await sleep(500)
+    await save(win, `usage-30-days-${theme}`)
+    await js(win, click('.page-head[data-for=usage] [data-us=range]'))
+    await js(win, `document.querySelector('.menu [data-menu-act="last"]').click()`)
+    // a busy weekday three weeks back, in whichever column it falls
+    const day = await js(win, `const rows = window.__cliqueHistory.computers[0].rows; const has = (k, p) => rows.some((r) => r[0] === k && r[3] === p)
+      const d = new Date(Date.now() - 20 * 864e5); while (d.getDay() === 0 || d.getDay() === 6 || !has(key(d), 'claude') || !has(key(d), 'codex')) d.setDate(d.getDate() - 1)
+      function key(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+      return key(d)`)
+    const cell = `.us-prov[data-prov=claude] .us-c[data-day="${day}"]`
+    await js(win, `document.querySelector('${cell}').scrollIntoView({ block: 'center' })`)
+    await sleep(300)
+    await tap(win, await glide(win, { x: 700, y: 500 }, await center(win, cell), 200))
+    await sleep(600)
+    await save(win, `usage-day-${theme}`)
+    await js(win, click('[data-us=clear]'))
+    await js(win, `document.querySelector('.us-scroll').scrollTop = 0`)
+    await js(win, click('.page-head[data-for=usage] [data-us=range]'))
     await js(win, `document.querySelector('.menu [data-menu-act="${new Date().getFullYear()}"]').click()`)
     await sleep(500)
     await save(win, `usage-year-${theme}`)
+    // the bottom of the page: every list
+    await js(win, `document.querySelector('.us-scroll').scrollTop = 1e6`)
+    await sleep(400)
+    await save(win, `usage-lists-${theme}`)
     win.destroy()
-    const first = await dashboard(theme, 'usage', { height: 1010, fixture: 'usage-reading', reset: ['clique.usage.range'] })
+    // a workspace hosted on the linked computer, seen from here: its agents there and this computer's in it
+    const hosted = await dashboard(theme, 'usage', { height: 1010, fixture: 'workspaces', reset: RESET })
+    await js(hosted, `await window.clique.call('workspace', 'switch', 'storefront-2')`)
+    await sleep(900)
+    await save(hosted, `usage-hosted-${theme}`)
+    // ...and when that computer runs an older CLIque: it says so
+    await js(hosted, `Object.assign(window.__cliqueHistory.computers[1], { rows: [], got: 0, note: '${LINK.name} runs an older CLIque: update it to see what it used' }); document.querySelector('.nv[data-place=clique]').click(); document.querySelector('.nv[data-place=usage]').click()`)
+    await sleep(700)
+    await save(hosted, `usage-hosted-older-${theme}`)
+    hosted.destroy()
+    const first = await dashboard(theme, 'usage', { height: 1010, fixture: 'usage-reading', reset: RESET })
     await sleep(900)
     await save(first, `usage-reading-${theme}`)
-    await js(first, `window.__cliqueHistory = { at: Date.now(), reading: null, first: null, providers: [] }; localStorage.setItem('clique.place', 'chat')`)
+    await js(first, `window.__cliqueHistory = { here: null, computers: [{ slug: 'studio', name: 'Studio', here: true, online: true, at: Date.now(), reading: null, first: null, cols: [], rows: [], providers: {}, faces: {} }], spaces: {} }; localStorage.setItem('clique.place', 'chat')`)
     await js(first, click('.nv[data-place=clique]'))
     await js(first, click('.nv[data-place=usage]'))
     await sleep(500)
@@ -988,43 +1040,54 @@ const SHOTS = {
     await sleep(400)
     await save(foot, `usage-popover-${theme}`)
     foot.destroy()
-    // a narrow window: the tiles two by two, the limits out of the provider's line, the squares smaller but all there
-    const narrow = await dashboard(theme, 'usage', { width: 940, height: 1010, reset: ['clique.usage.range'] })
+    // a narrow window: the tiles two by two, the chart's legend under it, the squares smaller but all there
+    const narrow = await dashboard(theme, 'usage', { width: 940, height: 1010, reset: RESET })
     await sleep(700)
     await save(narrow, `usage-narrow-${theme}`)
+    await js(narrow, click('.us-scope [data-scope=all]'))
+    await sleep(500)
+    await save(narrow, `usage-narrow-everything-${theme}`)
     narrow.destroy()
+    // three computers (one off): which one is a menu's pick
+    const big = await dashboard(theme, 'usage', { height: 1010, fixture: 'big', reset: RESET })
+    await js(big, click('.us-scope [data-scope=all]'))
+    await sleep(700)
+    await save(big, `usage-three-computers-${theme}`)
+    big.destroy()
   },
-  // Usage in motion: in from the sidebar, the pointer along a week of days (each says its numbers), one picked (the
-  // breakdown under the calendars becomes that day's), another, and back to the whole range.
+  // Usage in motion: in from the sidebar to the workspace on screen, over to Everything, one computer alone and back,
+  // a click on a workspace's row (everything narrows to it), the chart split by agent, and a day picked in a calendar.
   async usageGif() {
-    const win = await dashboard('light', 'chat', { width: 1240, height: 900, reset: ['clique.usage.range'] })
+    const win = await dashboard('light', 'chat', { width: 1240, height: 900, reset: ['clique.usage.range', 'clique.usage.scope', 'clique.usage.by.here', 'clique.usage.by.all'] })
     await sleep(900)
-    const days = await js(win, `const h = window.__cliqueHistory.providers; const out = []
+    const day = await js(win, `const rows = window.__cliqueHistory.computers[0].rows; const has = (k, p) => rows.some((r) => r[0] === k && r[3] === p)
       function key(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
-      for (let i = 40; out.length < 6 && i > 8; i--) { const k = key(new Date(Date.now() - i * 864e5)); if (h[0].days[k] && h[1].days[k]) out.push(k) }
-      return out`)
-    const cell = (prov, day) => `.us-prov[data-prov=${prov}] .us-c[data-day="${day}"]`
+      const d = new Date(Date.now() - 12 * 864e5); while (d.getDay() === 0 || d.getDay() === 6 || !has(key(d), 'claude')) d.setDate(d.getDate() - 1)
+      return key(d)`)
     await record(win, 'usage', {
-      clip: { x: 0, y: 0, width: 1240, height: 900 }, ms: 9800, width: 1000,
+      clip: { x: 0, y: 0, width: 1240, height: 900 }, ms: 15500, width: 1000,
       during: async () => {
         let at = { x: 620, y: 520 }
-        await sleep(500)
-        at = await glide(win, at, await center(win, '.nv[data-place=usage]'), 600)
-        await tap(win, at)
-        await sleep(1100)
-        for (const day of days.slice(0, 4)) {
-          at = await glide(win, at, await center(win, cell('claude', day)), 320)
-          await sleep(360)
+        const go = async (sel, ms = 550, rest = 900) => {
+          at = await glide(win, at, await center(win, sel), ms)
+          await tap(win, at)
+          await sleep(rest)
         }
-        await tap(win, at)
-        await sleep(1500)
-        at = await glide(win, at, await center(win, cell('codex', days[5])), 600)
+        await sleep(500)
+        await go('.nv[data-place=usage]', 600, 1300)
+        await go('.us-scope [data-scope=all]', 600, 1300)
+        await go(`.us-comp [data-computer=${LINK.slug}]`, 550, 1100)
+        await go('.us-comp [data-computer=""]', 450, 800)
+        await go('.us-legend-list .us-row[data-f=ws]:nth-child(3)', 600, 1400)
+        await go('.us-by [data-by=who]', 550, 1300)
+        await go('.us-filters [data-clear=all]', 600, 700)
+        // down to the calendars
+        await js(win, `document.querySelector('.us-scroll').scrollTo({ top: 470, behavior: 'smooth' })`)
+        await sleep(900)
+        at = await glide(win, at, await center(win, `.us-prov[data-prov=claude] .us-c[data-day="${day}"]`), 650)
         await sleep(500)
         await tap(win, at)
-        await sleep(1500)
-        at = await glide(win, at, await center(win, '[data-us=clear]'), 600)
-        await tap(win, at)
-        await sleep(900)
+        await sleep(1700)
       },
     })
     win.destroy()
