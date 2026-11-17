@@ -101,6 +101,44 @@
     @keyframes clone-pop { from { opacity: 0; transform: translateY(-75%) scale(.3); } }
     @keyframes clone-pop-x { from { opacity: 0; transform: translateX(-75%) scale(.3); } }
 
+    /* ---- the minimised dock (an experiment: settings' Experiments, config.json's "pillMini"): the pill shrinks to the mark
+       and, under it, a beat of three bars, like a call recorder's. At rest the beat is three dim dots; while anyone works
+       its bars rise and fall in the brand's colours, so you can tell from the corner of your eye. The whole pill opens
+       the chat, and drags from anywhere on it, the mark included. Someone needs you: the same warm edge as the pill's.
+       In the hatch and under the mouse it doesn't apply: they have their own looks. */
+    .beat { display: none; }
+    .mini:not([data-side=hatch]) .pill { width: 34px; padding: 9px 0 10px; gap: 7px; cursor: pointer; transition: box-shadow .3s, background-color .15s; }
+    .mini:not([data-side=hatch]) .pill:hover { background: color-mix(in srgb, var(--panel) 94%, var(--fg)); }
+    .mini:not([data-side=hatch]) .dots { display: none; }
+    .mini:not([data-side=hatch]) .home { width: 22px; height: 15px; padding: 0; border-radius: 0; cursor: pointer; }
+    .mini:not([data-side=hatch]) .home:hover { background: none; }
+    .mini:not([data-side=hatch]) .home .m0, .mini:not([data-side=hatch]) .home .m1, .mini:not([data-side=hatch]) .home .m2 { animation: none; } /* the beat says it */
+    .mini:not([data-side=hatch]) .home-badge { top: -5px; right: -7px; }
+    .mini:not([data-side=hatch]) .beat { display: flex; align-items: center; gap: 3px; height: 12px; }
+    .mini[data-side=above] .pill, .mini[data-side=below] .pill { flex-direction: row; width: auto; height: 34px; padding: 0 10px 0 9px; }
+    .mini[data-side=above] .home-badge, .mini[data-side=below] .home-badge { top: -6px; right: -6px; }
+    /* A bar is a round cap at each end and a middle that stretches between them, each moved on its own, so the compositor
+       plays it and the caps stay round: together at rest (one dot), apart while it works. */
+    .beat i { position: relative; width: 3px; height: 12px; --beat: var(--fg3); }
+    .beat i::before, .beat i::after, .beat b { position: absolute; left: 0; width: 3px; background: var(--beat); transition: background-color .6s; }
+    .beat i::before, .beat i::after { content: ''; top: 4.5px; height: 3px; border-radius: 50%; }
+    .beat b { top: 1.5px; height: 9px; transform: scaleY(0); }
+    .busy .beat i:nth-child(1) { --beat: #3db8ff; --d: 1.05s; --dl: -.4s; }
+    .busy .beat i:nth-child(2) { --beat: #ff45a8; --d: .8s; --dl: -.15s; }
+    .busy .beat i:nth-child(3) { --beat: #8b6cff; --d: 1.3s; --dl: -.9s; }
+    .busy .beat b { animation: beat-mid var(--d) ease-in-out var(--dl) infinite; }
+    .busy .beat i::before { animation: beat-top var(--d) ease-in-out var(--dl) infinite; }
+    .busy .beat i::after { animation: beat-bottom var(--d) ease-in-out var(--dl) infinite; }
+    @keyframes beat-mid { 0%, 100% { transform: scaleY(.2); } 50% { transform: scaleY(1); } }
+    @keyframes beat-top { 0%, 100% { transform: translateY(-.9px); } 50% { transform: translateY(-4.5px); } }
+    @keyframes beat-bottom { 0%, 100% { transform: translateY(.9px); } 50% { transform: translateY(4.5px); } }
+    /* holding still, it still says so: three lit bars */
+    @media (prefers-reduced-motion: reduce) {
+      .busy .beat b { animation: none; transform: scaleY(.67); }
+      .busy .beat i::before { animation: none; transform: translateY(-3px); }
+      .busy .beat i::after { animation: none; transform: translateY(3px); }
+    }
+
     /* ---- in the hatch: dragged to the notch at the top of the screen (core/pill.js), it becomes part of it. A black
        band around the notch, the mark on its left and the clique on its right; the chat hangs from it, one black shape. */
     /* as wide as it wants to be, not as the window happens to be: the window is fitted around this */
@@ -213,6 +251,7 @@
       <button class="home" title="CLIque"></button><span class="home-badge"></span>
       <span class="hatch-who"></span>
       <div class="dots"></div>
+      <span class="beat" aria-hidden="true"><i><b></b></i><i><b></b></i><i><b></b></i></span>
     </aside>
   </div>
   <script src="avatar.js"></script>
