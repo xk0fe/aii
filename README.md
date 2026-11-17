@@ -1,120 +1,148 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/cover-dark.webp">
-    <img src="docs/images/cover-light.webp" alt="CLIque: your AI agents, working as a clique. Q and seven felt creatures stand in a row: two typing at laptops, one holding up an OK? sign, one with a question, two with mugs, one popping up, one asleep" width="100%">
+    <img src="docs/images/cover-light.webp" alt="CLIque: your AI agents, working as a clique. Q, a pink felt creature, pops up in the middle with the clique bursting out around him in a spray of felt: two at laptops, one holding up an OK? sign, one with a question. A note in a hand says: this is Q, he runs the clique" width="100%">
   </picture>
 </p>
 
+<h3 align="center">A team of Claude Code and Codex agents you run from one chat,<br>on every computer you own, and on your phone.</h3>
+
 <p align="center">
-  <b>CLIque runs a team of Claude Code and Codex agents side by side on your Mac or PC.</b><br>
-  You talk to all of them in one chat. They split the work, ask each other, and come to you only when it matters.
+  <a href="#get-clique">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/images/platforms-dark.webp">
+      <img src="docs/images/platforms-light.webp" alt="Mac, Windows, iPhone and Android" width="580">
+    </picture>
+  </a>
 </p>
 
 <p align="center">
   <a href="#get-clique"><b>Get CLIque</b></a> ·
+  <a href="#meet-q">Meet Q</a> ·
   <a href="#the-tour">The tour</a> ·
-  <a href="#how-agents-talk-to-each-other">How agents talk</a> ·
-  <a href="#it-all-stays-with-you">What stays with you</a> ·
-  <a href="docs/guide.md">The full guide</a>
-</p>
-
-<p align="center">
-  <kbd>Mac</kbd> <kbd>Windows</kbd> <kbd>iPhone</kbd> <kbd>Android</kbd>
+  <a href="docs/guide.md">The guide</a>
 </p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.webp">
-  <img src="docs/images/hero-light.webp" alt="CLIque on a Mac: in #general, Milo asks to run npm run build, with Allow and Deny, while Ada's two sub-agents work below. In front, the phone app asks the same question" width="100%">
+  <img src="docs/images/hero-light.webp" alt="CLIque on a Mac: Iris asks in #general whether the empty cart should show suggestions, while Ada and her two helpers work. In front, the phone app has the same question, and Milo asking to run npm run build, with Allow and Deny" width="100%">
 </picture>
 
-## What you get
+## Why CLIque
 
-- **A clique instead of one prompt.** Each agent has a name, a job, its own instructions and a felt creature for a face. Give work to whoever's free instead of waiting for one agent to finish.
-- **One chat for everything.** Say what you need and Q, the agent every workspace comes with, gets it to whoever should do it. Or `@mention` anyone yourself.
-- **Questions in plain words.** "Can I run `npm run build`?" comes to you in the chat, with Allow and Deny. There's no terminal to keep an eye on.
-- **They work together.** Agents hand off tasks, ask each other questions mid-task, and never edit the same file at once.
-- **Nothing is lost.** Quit CLIque and your agents keep working. Open it again and they're right where they were.
-- **Every computer, one clique.** Link your Macs and PCs, and answer your agents from your phone.
-- **It watches the bill.** Usage limits, what each task costs, and token savers that cut what the clique spends.
+<table>
+<tr>
+<td width="50%" valign="top"><b>Start anywhere, finish anywhere.</b><br>Start on your Mac, pick it up on your PC, answer from your phone. One clique across all of them.</td>
+<td width="50%" valign="top"><b>What matters, not walls of terminal.</b><br>Agents ask in plain words, in the chat. You answer with a tap.</td>
+</tr>
+<tr>
+<td valign="top"><b>A workspace per project.</b><br>Its folder, its agents, its chat and its tasks. Every one runs at once.</td>
+<td valign="top"><b>Fewer tokens, no surprises.</b><br>What every task took and where its time went, your limits before you hit them, and savers that cut the bill.</td>
+</tr>
+</table>
 
-It runs Claude Code and Codex. GLM and local models (through Ollama) work too, and you can add other providers.
+Free. It runs the Claude Code and Codex you already have, signed in as you. GLM and local models (through Ollama) work too.
+
+## Meet Q
+
+Every workspace comes with **Q**, the queue in CLIque. Tell him what you need: he hands it to whoever should do it, and tells you how it went.
+
+The first time you open CLIque, he sets you up. He asks what kind of work it is and where it lives, and brings a clique for it.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/first-run-dark.webp">
+  <img src="docs/images/first-run-light.webp" alt="The first run: CLI agent queue folds into CLIque, Q pops out of New agent and says Hi, I'm Q. I run your clique. He asks what kind of work it is (Software), where it lives (~/Projects/storefront), and brings Iris, Ada, Theo and June, who travel into the app's sidebar" width="100%">
+</picture>
 
 ## The tour
 
-### Meet your clique
+### One chat for everyone
 
-Every agent gets a card: what it does, which model it runs on, and what it's busy with. Each creature acts it out. It types at a little laptop while it works, holds a mug while it's free, and holds up an "OK?" sign when it needs your permission. Switch one off and it falls asleep in black and white, ready to pick its conversation back up.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/agents-dark.webp">
-  <img src="docs/images/agents-light.webp" alt="The Agents view: turning June and Rex off from their cards. Each falls asleep in black and white and wakes up again, and no card moves" width="100%">
-</picture>
-
-Click a card to set the agent's job, model and folder, and to write its instructions, or let it draft them for itself from its name and job. An agent with nothing to do rests: its terminal stops after ten minutes, and starts again the moment there's work for it.
-
-### One chat, and a conversation with each agent
-
-Everyone talks in **#general**. When an agent needs a decision, it asks right there and you answer right there, no terminal needed. Click an agent to open your conversation with it, with its terminal beside the chat. Make **channels** for parts of the work, each with its own members and a short brief.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/chat-dark.webp">
-  <img src="docs/images/chat-light.webp" alt="Answering Iris's question where she asked it in #general, then opening the conversations with Theo and Milo, each with its terminal beside the chat" width="100%">
-</picture>
-
-Busy agents get your message the moment they're free. Type `@` to pick who gets it, paste a screenshot, drop a folder, or hold the mic and just talk: dictation runs on your computer, so your voice never leaves it.
-
-### Q gets it to the right agent
-
-Every workspace comes with **Q**, the queue in CLIque. What you send without naming anyone goes to him. He answers it or hands it to whoever should do it, and tells you how it went. Naming someone is still a direct line to them, and with Q switched off CLIque picks by each agent's job.
+Say it in **#general** and Q passes it on, or `@mention` someone yourself. When an agent needs a decision or your OK, it asks right there. Click an agent for your own conversation with it, with its terminal beside the chat.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/q-dark.webp">
-  <img src="docs/images/q-light.webp" alt="Q in #general: asked to give the empty cart some life, he hands it to Iris and says June is writing a line for it" width="100%">
+  <img src="docs/images/q-light.webp" alt="#general: you ask for the empty cart to get some life, Q passes it to Iris and says June is writing a line for it" width="100%">
 </picture>
 
-### Threads, and pictures when words won't do
+### Agents show you, not just tell you
+
+Screenshots, recordings that play where they are, pages you can click through, and canvases they draw when words won't do.
 
 <table>
 <tr>
 <td width="50%" valign="top">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/threads-dark.webp">
-  <img src="docs/images/threads-light.webp" alt="Two requests in #general, each with one card for the thread its agents opened between themselves" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/embeds-dark.webp">
+  <img src="docs/images/embeds-light.webp" alt="In the chat: Theo's three phone screenshots, Iris's recording of the coupon flow playing, and Ada's checkout totals running as a page with plus and minus buttons" width="100%">
 </picture>
-<br>
-<sub><b>Threads.</b> What agents say to each other folds into one card under the request that started it. Open it when you're curious.</sub>
 </td>
 <td width="50%" valign="top">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/canvas-dark.webp">
-  <img src="docs/images/canvas-light.webp" alt="A hand-drawn canvas in the chat: boxes and arrows showing how a score is made, with ticks, crosses and a sticky note" width="100%">
+  <img src="docs/images/canvas-light.webp" alt="Two hand-drawn canvases in the chat: a bar chart of scores, and boxes and arrows showing how the score is made, with ticks, crosses and a sticky note that Theo added to" width="100%">
 </picture>
-<br>
-<sub><b>Canvases.</b> An agent can draw its answer instead of writing it out: boxes, arrows, bars, a sticky note. A teammate can add to it.</sub>
 </td>
 </tr>
 </table>
 
-### Tasks
+### Tasks, with receipts
 
-Unrelated work piling up in one conversation confuses agents. On the Tasks board, every task gets a fresh conversation. Add a bug or a feature, assign it (or let a triage agent pick), and press Start. Finished work lands in Review: accept it, or send it back with a note.
+Every task gets a fresh conversation. Add one, give it to someone (or let triage pick), and press Start.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/tasks-dark.webp">
   <img src="docs/images/tasks-light.webp" alt="The Tasks board: adding a task for Milo, starting it, and accepting another one from Review" width="100%">
 </picture>
 
-### Watch them work
-
-Every agent has its own terminal. See them all side by side, or open one and type into it.
+What comes back opens in a review: who was on it, where its time went, what it cost in tokens, and how long it waited on you. Accept it, or send it back with a note.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/terminals-dark.webp">
-  <img src="docs/images/terminals-light.webp" alt="Every agent's terminal side by side, with who needs you marked in berry" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/review-dark.webp">
+  <img src="docs/images/review-light.webp" alt="A task in review: Milo did it with Ada, June triaged it. A strip shows where 1 h 14 min went, 21 minutes of it waiting on you, each agent's time and tokens, and the longest steps" width="100%">
 </picture>
 
-- **Sub-agents.** When a Claude Code agent splits a job, the chat shows each sub-agent and the step it's on.
-- **Clones.** Give an agent clones and it stops making you wait. While it's busy, a copy of it takes the next task.
+### A workspace per project
+
+Each project gets its own folder, agents, chat, channels and tasks. Your agents are the same everywhere; pick who works where. A count tells you when another workspace needs you, <kbd>⌃</kbd><kbd>1</kbd> to <kbd>⌃</kbd><kbd>9</kbd> jumps there, and one you're not on can sleep.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/workspaces-dark.webp">
+    <img src="docs/images/workspaces-light.webp" alt="Workspaces down the left edge, one with two agents waiting, and the open workspace's menu: who works here, settings, put to sleep, and a workspace on another computer to show" width="620">
+  </picture>
+</p>
+
+### Every computer, and your phone
+
+Open **Computers** on two machines, click **Link**, and check the code matches. Each one's workspaces show up on the other, agents from both work as one clique, and an agent you drag to another computer takes its conversation along.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/computers-dark.webp">
+    <img src="docs/images/computers-light.webp" alt="Computers: Studio, Workstation and a laptop linked, a Mac mini nearby to link, and an iPhone and a Pixel paired" width="640">
+  </picture>
+</p>
+
+Pair the CLIque app with a QR code to chat with the clique and answer its questions away from your desk. It talks straight to your computer, encrypted end to end.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phone-dark.webp">
+    <img src="docs/images/phone-light.webp" alt="The phone app: the Needs you tab with Milo's request and Allow and Deny, and #general with the clique's messages" width="640">
+  </picture>
+</p>
+
+### Spend less
+
+- **Limits** for every Claude and Codex account, with the pace you're on and a heads-up before you run out.
+- **Usage** over time by workspace, agent, provider or computer, read from Claude Code's and Codex's own logs, so it counts what you ran outside CLIque too.
+- **Token savers**: six switches that cut what a clique spends, such as starting fresh after a long break. Each one measures what it saved.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/usage-dark.webp">
+  <img src="docs/images/usage-light.webp" alt="Usage, everything: the totals, tokens a week as bars split by workspace beside a ranked list of the workspaces, and a year of days for Claude as a calendar of squares" width="100%">
+</picture>
 
 ### Always within reach
 
@@ -134,89 +162,15 @@ Every agent has its own terminal. See them all side by side, or open one and typ
   <img src="docs/images/hatch-light.webp" alt="The same chat hanging from the notch at the top of a MacBook's screen" width="100%">
 </picture>
 <br>
-<sub><b>The notch.</b> Drag the pill to the top of a MacBook's screen and it moves into the notch. The chat drops out of it.</sub>
+<sub><b>The notch.</b> Drag the pill to the top of a MacBook's screen and the chat drops out of the notch. Or let a tiny glowing buddy follow your mouse instead.</sub>
 </td>
 </tr>
 </table>
 
-The menu bar (the taskbar on Windows) shows who's working and who needs you, with a switch for each agent.
-
-**Or under your mouse.** Switch the floating chat to *Under the mouse* and a tiny glowing buddy follows your pointer instead: <kbd>⌥</kbd><kbd>⇧</kbd><kbd>D</kbd> opens a message box right there to talk or type into, <kbd>⌥</kbd><kbd>⇧</kbd><kbd>Space</kbd> the whole chat, and when it closes you're typing where you were.
-
-**And your phone.** Pair the CLIque app with a QR code to chat with the clique and answer its questions away from your desk. It talks straight to your computer, encrypted end to end.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phone-dark.webp">
-    <img src="docs/images/phone-light.webp" alt="The phone app: the Needs you tab with Milo's request and Allow and Deny, and #general with the clique's messages" width="640">
-  </picture>
-</p>
-
-### A clique per project
-
-Give each project a workspace: its folder, the agents who work on it, and its own chat, channels and tasks. Your agents are the same everywhere; pick who works where. Every workspace runs at once, and a count tells you when another one needs you. Jump between them with <kbd>⌃</kbd><kbd>1</kbd> to <kbd>⌃</kbd><kbd>9</kbd>, and put one to sleep when you're not on it.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/workspaces-dark.webp">
-    <img src="docs/images/workspaces-light.webp" alt="Workspaces down the left edge, one with two agents waiting, and the open workspace's menu: who works here, settings, put to sleep, and a workspace on another computer to show" width="620">
-  </picture>
-</p>
-
-### All your computers, one clique
-
-Open **Computers** on two of your machines and they find each other. Click **Link**, check the code is the same on both screens, and each one's workspaces show up on the other. Add agents from both to a workspace and they work as one clique. Chat with any of them and watch its terminal from either side. Drag an agent to another computer and its conversation goes with it.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/computers-dark.webp">
-    <img src="docs/images/computers-light.webp" alt="Computers: Studio, Workstation and a laptop linked, a Mac mini nearby to link, and an iPhone and a Pixel paired" width="640">
-  </picture>
-</p>
-
-### Spend less
-
-- **Usage limits** for your Claude and Codex accounts on every computer, with the pace they're heading at and a heads-up before you run out.
-- **More than one account** for a provider: add a work Claude subscription beside your own, sign in once in your browser, and pick which agents run on which. Each account has its own limits and its own usage, and an agent takes its conversation along when you move it.
-- **Usage**, by the things you work with: the workspace you're in or everything, on this computer, a linked one or all of them added up. Tokens over time split by workspace, agent, provider or computer, a calendar of days for each provider, and who used it, where and on which models. Click any row to see only that. It's read from Claude Code's and Codex's own logs on each computer, so it covers what you ran outside CLIque too.
-- **What it costs**, per agent and per task.
-- **Token savers**: six switches that cut what a clique spends, such as starting fresh after a long break and showing agents only the notes they haven't read. Each one measures what it saved.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/usage-dark.webp">
-  <img src="docs/images/usage-light.webp" alt="Usage, everything: the totals, tokens a week as bars split by workspace beside a ranked list of the workspaces and what ran outside CLIque, and a year of days for Claude as a calendar of squares" width="100%">
-</picture>
-
-## How agents talk to each other
-
-Agents pass work around with a small `clique` command:
-
-```sh
-clique ask ada "which port is staging on?"     # ask a teammate and wait for the answer
-clique answer "4000"                           # answer one, even in the middle of a task
-clique send milo "fix the coupon field"        # hand work to a teammate for good
-clique note "API runs on port 4000"            # tell the whole clique something
-clique post ship "1.2 is out"                  # say something in the channel it picks
-clique canvas new '[cart] -> [payment]'        # draw it in the chat instead of writing it out
-clique who                                     # see who's around
-clique task list                               # pick up work from the Tasks board
-```
-
-A question reaches a teammate even mid-task, so the answer comes back in seconds. CLIque also decides who goes first when agents need each other, so they never wait on each other in circles, and the chat says so in one quiet line.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/right-of-way-dark.webp">
-    <img src="docs/images/right-of-way-light.webp" alt="June asks Ada while Ada is busy: June waits on her, Ada answers mid-task in two seconds and carries on" width="620">
-  </picture>
-</p>
-
-Prefer to approve every hand-off? Turn Autopilot off. And you can ask an agent to change CLIque itself ("add a #design channel for Iris and June"): it asks first, like any other permission.
-
 ## It all stays with you
 
-- **Your account.** CLIque runs the Claude Code and Codex you already installed, signed in as you. It has no account of its own and sells you no tokens.
-- **Your computers.** Agents run in terminals on your machine. CLIque has no servers.
+- **Your account.** CLIque runs your own Claude Code and Codex. It has no account of its own and sells you no tokens.
+- **Your computers.** Agents run in terminals on your machines. CLIque has no servers.
 - **Your network.** Linked computers and your phone talk straight to each other, encrypted, over your Wi-Fi or Tailscale.
 - **Your files.** Everything CLIque keeps is in `~/.clique`, in files you can read.
 
@@ -225,13 +179,14 @@ Prefer to approve every hand-off? Turn Autopilot off. And you can ask an agent t
 You need a Mac (Apple silicon or Intel) or a Windows PC (Windows 10 or 11), with Claude Code or Codex installed and signed in.
 
 1. **Install.** On a Mac, drag CLIque into Applications. On Windows, run the installer.
-2. **Open it.** CLIque finds Claude Code and Codex, and tells you exactly what to install or sign in to if one is missing.
-3. **Say what you're working on.** Q asks what kind of work it is, makes your first workspace and suggests a clique for it.
-4. **Start talking.**
+2. **Open it.** CLIque finds Claude Code and Codex, and says exactly what to install or sign in to if one is missing.
+3. **Meet Q.** He makes your first workspace and brings a clique for it.
 
 On Windows, Git for Windows is recommended: Claude Code runs its commands in Git Bash when it's there.
 
-### From this repo
+<details>
+<summary><b>From this repo</b></summary>
+<br>
 
 You also need Node.js.
 
@@ -240,9 +195,34 @@ npm install
 npm start        # on a Mac, the first one builds CLIque.app and opens it
 npm test
 npm run dist     # what people install, for the system you're on
+npm run readme   # every picture on this page, taken again from the app with a made-up clique
 ```
 
-The phone app is in [`mobile/`](mobile/README.md), and [`site/README.md`](site/README.md) covers the website and where releases go.
+The desktop app is in `desktop/`, the phone app in [`mobile/`](mobile/README.md), and the protocol they share in [`shared/`](shared/PROTOCOL.md). [`site/README.md`](site/README.md) covers the website and where releases go.
+
+</details>
+
+<details>
+<summary><b>How agents talk to each other</b></summary>
+<br>
+
+They hand off tasks, ask each other questions mid-task, and never edit the same file at once, with a small `clique` command:
+
+```sh
+clique ask ada "which port is staging on?"     # ask a teammate and wait for the answer
+clique answer "4000"                           # answer one, even in the middle of a task
+clique send milo "fix the coupon field"        # hand work to a teammate for good
+clique note "API runs on port 4000"            # tell the whole clique something
+clique post ship "1.2 is out"                  # say something in the channel it picks
+clique canvas new '[cart] -> [payment]'        # draw it in the chat instead of writing it out
+clique attach out/checkout.png                 # show a picture, a recording or a page in the chat
+clique who                                     # see who's around
+clique task list                               # pick up work from the Tasks board
+```
+
+A question reaches a teammate even mid-task, so the answer comes back in seconds. When agents need each other, CLIque decides who goes first, so they never wait on each other in circles. Prefer to approve every hand-off? Turn Autopilot off.
+
+</details>
 
 <details>
 <summary><b>Keyboard shortcuts</b></summary>
@@ -261,11 +241,6 @@ On Windows, ⌘ is Ctrl, and ⌥ and ⌃ are Alt.
 
 </details>
 
-## More
-
-- **[The full guide](docs/guide.md)** covers every setting, the files CLIque keeps in `~/.clique`, and how it works inside.
-- **Share agents.** Export one agent or a few as a `.clique` file and send it to a friend. They get the names, jobs, instructions and looks. Your folders and history stay with you.
-- **The code:** the desktop app is in `desktop/`, the phone app in `mobile/`, and the protocol they share in [`shared/`](shared/PROTOCOL.md).
-- **The pictures:** `npm run readme` takes every picture on this page again from the app as it is, with a made-up clique.
+**[The full guide](docs/guide.md)** covers every setting, the files CLIque keeps in `~/.clique`, and how it works inside.
 
 <p align="center"><sub>© 2026 Green Grass Inc. · <a href="LICENSE">License</a></sub></p>

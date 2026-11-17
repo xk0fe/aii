@@ -1,69 +1,101 @@
 <!doctype html>
-<!-- The README cover: the wordmark, one line in the brand face, and the clique on the stage's glow, each acting out what
-     it's doing (the app's own CSS, avatar.js and brand.js, with the demo clique and Q). Rendered by
-     `npm run shots -- cover` at 1280×600, in both themes, with see-through corners. -->
+<!-- The README cover: the wordmark and one line, and the clique bursting out around Q in a spray of felt, each acting out
+     what it's doing (the app's own CSS, avatar.js and brand.js, with the demo clique and Q). A note in a hand says who Q
+     is. Rendered by `npm run shots -- cover` at 1280×640, in both themes, with see-through corners. -->
 <html>
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="../ui/common.css">
   <style>
-    html, body { width: 1280px; height: 600px; overflow: hidden; background: transparent !important; }
-    .cover { position: relative; width: 1280px; height: 600px; border-radius: 32px; overflow: hidden; background: var(--bg); color: var(--fg); }
-    .wm { position: absolute; left: 60px; top: 44px; }
-    h1 { position: absolute; left: 64px; top: 126px; margin: 0; font: 600 60px/64px var(--font-brand); letter-spacing: -.01em; }
-    h1 em { font-style: normal; color: var(--needs); }
-    .lead { position: absolute; left: 66px; top: 270px; margin: 0; max-width: 640px; font-size: 21px; line-height: 30px; color: var(--fg2); }
-    .free { position: absolute; right: 64px; top: 64px; font-size: 16px; color: var(--fg2); }
-    /* the stage: the first run's glow under everyone, as wide as the cover */
-    .room { position: absolute; left: 0; right: 0; top: 344px; height: 212px; }
-    .room .glowbed { inset: -40px 0 -70px; }
-    .room .glowbed i { filter: blur(64px); }
-    .room .glowbed b { display: none; }
-    .clique { position: absolute; left: 40px; right: 40px; bottom: 0; display: flex; justify-content: space-around; align-items: flex-end; }
-    .clique > span { line-height: 0; }
-    .names { position: absolute; left: 40px; right: 40px; top: 562px; display: flex; justify-content: space-around; }
-    .names span { width: 120px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 500 17px/22px var(--font-brand); color: var(--fg2); }
-    .names .dot { width: 9px; height: 9px; }
-    .bubble-say { position: absolute; z-index: 3; padding: 9px 14px; border-radius: 12px; border-bottom-left-radius: 4px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 16px; line-height: 22px; white-space: nowrap; }
-    .bubble-say code { font: 15px var(--mono); background: none; padding: 0; }
+    html, body { width: 1280px; height: 640px; overflow: hidden; background: transparent !important; }
+    .cover { position: relative; width: 1280px; height: 640px; border-radius: 32px; overflow: hidden; background: var(--bg); color: var(--fg); --ray: rgba(0, 0, 0, .035); --glow: .3; }
+    /* light from where Q pops up: the creatures' colours, and rays */
+    .glow { position: absolute; border-radius: 50%; filter: blur(80px); opacity: var(--glow); }
+    .rays { position: absolute; inset: 0; background: repeating-conic-gradient(from -2deg at 50% 104%, var(--ray) 0 5deg, transparent 5deg 11deg); -webkit-mask: radial-gradient(ellipse 72% 105% at 50% 104%, #000 30%, transparent 100%); }
+    .head { position: absolute; left: 0; right: 0; top: 54px; display: flex; flex-direction: column; align-items: center; gap: 16px; z-index: 2; }
+    h1 { margin: 0; font: 600 42px/48px var(--font-brand); letter-spacing: -.01em; }
+    h1 em { font-style: normal; color: var(--needs-ink); }
+    .flecks, .crowd { position: absolute; inset: 0; }
+    .fleck { position: absolute; }
+    .who { position: absolute; line-height: 0; transform-origin: 50% 100%; }
+    .who .av { filter: drop-shadow(0 14px 18px rgba(30, 10, 40, .18)); }
+    /* the note: who Q is, in a hand, with an arrow drawn to him */
+    .note { position: absolute; z-index: 3; font: 30px/32px 'Patrick Hand', cursive; color: var(--fg2); transform: rotate(-4deg); white-space: nowrap; }
+    .note b { font-weight: 400; color: var(--fg); }
+    .arrow { position: absolute; z-index: 3; overflow: visible; }
+    .arrow path { fill: none; stroke: var(--fg2); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
     @media (prefers-color-scheme: dark) {
-      h1 em { color: var(--needs-ink); }
+      .cover { --ray: rgba(255, 255, 255, .03); --glow: .42; }
+      .who .av { filter: drop-shadow(0 14px 20px rgba(0, 0, 0, .45)); }
     }
   </style>
 </head>
 <body>
-  <div class="cover">
-    <span class="wm" id="wm"></span>
-    <span class="free">Free. Bring your own Claude or Codex account.</span>
-    <h1>Your AI agents,<br>working as a <em>clique</em></h1>
-    <p class="lead">Claude Code and Codex agents with names, jobs and one chat for all of them. They split the work, and ask when they need you.</p>
-    <div class="room" id="room"></div>
-    <div class="names" id="names"></div>
+  <div class="cover" id="cover">
+    <i class="glow" style="left:-8%;bottom:-30%;width:44%;height:80%;background:#3db8ff"></i>
+    <i class="glow" style="left:26%;bottom:-38%;width:48%;height:86%;background:#ff45a8"></i>
+    <i class="glow" style="right:-8%;bottom:-30%;width:42%;height:76%;background:#72d63a"></i>
+    <i class="glow" style="left:58%;top:-30%;width:30%;height:50%;background:#ffc61f;opacity:calc(var(--glow) * .45)"></i>
+    <i class="glow" style="left:8%;top:-34%;width:28%;height:50%;background:#8b5cf6;opacity:calc(var(--glow) * .45)"></i>
+    <div class="rays"></div>
+    <div class="flecks" id="flecks"></div>
+    <div class="head"><span id="wm"></span><h1>Your AI agents, working as a <em>clique</em></h1></div>
+    <div class="crowd" id="crowd"></div>
   </div>
   <script src="../ui/avatar.js"></script>
   <script src="../ui/common.js"></script>
   <script src="../ui/brand.js"></script>
   <script>
-    // Q and the demo clique (screenshot-preload.cjs), each in the pose its status gives it
-    const clique = [
-      ['Q', 'idle', { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }],
-      ['Ada', 'working', { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false }],
-      ['Milo', 'waiting', { body: 'cat', color: 'sky', eyes: 'happy', mouth: 'cat', hat: 'party', cheeks: true }, 'permission'],
-      ['Iris', 'waiting', { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true }, 'question'],
-      ['Theo', 'working', { body: 'frog', color: 'lime', eyes: 'googly', mouth: 'grin', hat: 'none', cheeks: false }],
-      ['June', 'idle', { body: 'bunny', color: 'peach', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true }],
-      ['Rex', 'starting', { body: 'mochi', color: 'yellow', eyes: 'dot', mouth: 'smile', hat: 'headphones', cheeks: true }],
-      ['Noor', 'off', { body: 'drop', color: 'purple', eyes: 'googly', mouth: 'cat', hat: 'beret', cheeks: false }],
-    ].map(([name, status, avatar, ask]) => ({ name, status, avatar, ask, on: status !== 'off' }))
-    const draw = () => {
-      document.getElementById('wm').innerHTML = wordmarkHTML(64)
-    }
+    // Q and the demo clique (screenshot-preload.cjs), each in the pose its status gives it, flung out from Q in a fan:
+    // where each lands (x of its middle, bottom), how big, and its tilt
+    const W = 1280, H = 640
+    const crowd = [
+      ['June', 'idle', { body: 'bunny', color: 'peach', eyes: 'happy', mouth: 'smile', hat: 'bow', cheeks: true }, 96, 372, 132, -12],
+      ['Ada', 'working', { body: 'blob', color: 'mint', eyes: 'dot', mouth: 'none', hat: 'glasses', cheeks: false }, 248, 548, 168, -7],
+      ['Milo', 'waiting', { body: 'cat', color: 'sky', eyes: 'happy', mouth: 'cat', hat: 'party', cheeks: true }, 442, 652, 186, -3, 'permission'],
+      ['Q', 'idle', { body: 'bean', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'none', cheeks: true }, 640, 652, 250, 0],
+      ['Iris', 'waiting', { body: 'heart', color: 'pink', eyes: 'sparkle', mouth: 'smile', hat: 'flower', cheeks: true }, 840, 652, 186, 3, 'question'],
+      ['Theo', 'working', { body: 'frog', color: 'lime', eyes: 'googly', mouth: 'grin', hat: 'none', cheeks: false }, 1032, 548, 168, 7],
+      ['Rex', 'idle', { body: 'mochi', color: 'yellow', eyes: 'dot', mouth: 'smile', hat: 'headphones', cheeks: true }, 1184, 372, 132, 12],
+    ].map(([name, status, avatar, x, y, size, rot, ask]) => ({ name, status, avatar, ask, on: true, x, y, size, rot }))
+
+    const draw = () => { document.getElementById('wm').innerHTML = wordmarkHTML(132) }
     draw()
-    const room = document.getElementById('room')
-    room.innerHTML = `${glowBedHTML()}<div class="clique">${clique.map((a) => `<span>${avatarHTML(a, { size: 116, pose: poseOf(a, { ask: a.ask }) })}</span>`).join('')}</div>`
-    document.getElementById('names').innerHTML = clique.map((a) => `<span>${a.status === 'working' || a.status === 'waiting' ? `<i class="dot ${a.status === 'waiting' ? 'needs' : 'working'}"></i>` : ''}${a.name}</span>`).join('')
-    // two of them talking: Milo asks, Theo reports
-    room.insertAdjacentHTML('beforeend', '<span class="bubble-say" style="left:452px;top:10px">Can I run <code>npm run build</code>?</span><span class="bubble-say" style="left:742px;top:36px">All 48 checkout tests pass</span>')
+    document.getElementById('crowd').innerHTML = crowd.map((a) => {
+      // Q and the two flung furthest are just themselves (no prop): the others act out what they're doing
+      const pose = ['Q', 'June', 'Rex'].includes(a.name) ? undefined : poseOf(a, { ask: a.ask })
+      return `<span class="who" style="left:${a.x - a.size / 2}px;top:${a.y - a.size}px;transform:rotate(${a.rot}deg)">${avatarHTML(a, { size: a.size, pose, ...(!pose && { mood: 'idle' }) })}</span>`
+    }).join('')
+
+    // the felt flecks they burst out in: a spray from under Q, thicker near him, each a creature's colour
+    ensureFeltDefs()
+    const inks = ['#ff45a8', '#3db8ff', '#ffc61f', '#2fd3a6', '#72d63a', '#ff8a1f', '#8b5cf6']
+    let seed = 7
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+    const flecks = []
+    for (let i = 0; i < 70; i++) {
+      const a = Math.PI * (1.04 + rnd() * 0.92) // up and out, never down
+      const r = 180 + rnd() ** 0.8 * 560
+      const x = W / 2 + Math.cos(a) * r * 1.12, y = H + 30 + Math.sin(a) * r * 0.86
+      if (y < 30 || x < 10 || x > W - 10) continue
+      // keep the words clear
+      if (y < 300 && x > 250 && x < 1030) continue
+      if (y > 330 && y < 420 && x > 700 && x < 1080) continue // the note
+      const s = 7 + rnd() * 13
+      const long = rnd() < 0.45 // some are snips of thread-thick felt, the rest dots
+      const turn = (a * 180) / Math.PI + 90 + (rnd() - 0.5) * 30
+      const c = inks[i % inks.length]
+      flecks.push(long
+        ? `<svg class="fleck" width="${s * 2.2}" height="${s * 0.75}" style="left:${x}px;top:${y}px;transform:translate(-50%,-50%) rotate(${turn}deg);opacity:${0.55 + rnd() * 0.45}"><rect x="1" y="1" width="${s * 2.2 - 2}" height="${s * 0.75 - 2}" rx="${s * 0.37}" fill="${c}" filter="url(#felt-grain)"/></svg>`
+        : `<svg class="fleck" width="${s}" height="${s}" style="left:${x}px;top:${y}px;transform:translate(-50%,-50%);opacity:${0.55 + rnd() * 0.45}"><circle cx="${s / 2}" cy="${s / 2}" r="${s / 2 - 1}" fill="${c}" filter="url(#felt-grain)"/></svg>`)
+    }
+    document.getElementById('flecks').innerHTML = flecks.join('')
+
+    // the note: who Q is
+    document.getElementById('cover').insertAdjacentHTML('beforeend', `
+      <span class="note" style="left:748px;top:350px">this is <b>Q.</b> he runs the clique</span>
+      <svg class="arrow" width="80" height="80" style="left:676px;top:366px"><path d="M70 10 C 44 12, 26 26, 20 58"/><path d="M9 47 L 19 60 L 31 49"/></svg>`)
+
     // a still picture: everyone mid-breath, eyes open, the riser already up
     document.fonts.ready.then(() => {
       draw()
