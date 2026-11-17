@@ -286,6 +286,17 @@ On a Claude subscription, CLIque shows how much of the account's 5-hour and week
 - **Linked computers.** An agent on a [linked computer](#computers-one-clique-across-your-computers) runs on that computer's accounts, so its sheet shows that computer's limits, and hovering them says which computer ("Claude account on Workstation"). Once a linked computer reports its own, the bottom of the sidebar shows a row per computer: its name, a bar and its fullest limit. Click it for every account on every computer. The menu bar lists each computer's accounts under its name. A computer that's offline keeps its last numbers, greyed, until each limit resets.
 - **Routing.** While a provider is at 90% or more of its 5-hour or weekly limit, a message or task CLIque routes for you goes to an agent on another provider when one covers the area just as well. It never sends work outside an agent's area because of a limit, and messages you address to an agent always go to it.
 
+### Usage
+
+**Usage** in the sidebar (⌘5) shows what Claude Code and Codex used, day by day. Each computer reads it from the CLIs' own logs, so it counts every workspace's agents and what you ran outside CLIque.
+
+- **Whose.** The switch in its header picks the workspace on screen (what its agents used) or **Everything** (every workspace, and what ran outside CLIque). It follows you from workspace to workspace.
+- **Where.** With [linked computers](#computers-one-clique-across-your-computers), the first filter picks all of them added up, this one, or another one. Each computer reads its own logs and answers when another one's Usage is open, so a workspace hosted elsewhere, or one with agents on two computers, shows all of it. A computer that's off shows what it last said. One on an older CLIque can't answer: update it.
+- **Filters.** Menus narrow to one workspace, agent or provider, and every row of a list is a filter too: click a workspace, an agent, a folder or a model to see only that, and again to let go.
+- **Tokens over time.** A bar a week (a day in the last 7 or 30 days), split by workspace, agent, provider or computer. The list beside it ranks them with their share.
+- **Calendars.** A square a day for each provider, darker for more tokens. Pick a day for who used it, where and on which models.
+- **Which workspace a conversation counts for.** CLIque writes each conversation down as its agent takes a prompt (`ran.json`), so an agent that works in several workspaces is counted in the right one. Conversations from before that go by the agent's name and folder; the few that can't be told show as "Workspace not recorded". A workspace you've removed keeps what it used, under its name. A conversation that moved to another computer with its agent is counted on each computer for what it used there.
+
 ### What the work costs
 
 Claude Code reports what its session has cost so far (the figure `/cost` shows, at API prices or your organization's rates), the lines it changed and its time on the API. CLIque adds up what grows between reports, per agent and per task:
@@ -371,6 +382,8 @@ Everything CLIque keeps is in the `.clique` folder in your home folder (`~/.cliq
 
 - `config.json`: your agents, custom providers, theme and workspaces. The app writes it, you can edit it by hand in a text editor, and changes apply right away.
 - `sessions.json`: which conversation each agent resumes.
+- `ran.json`: every conversation the workspace's agents have had, by its id and the agent's name. [Usage](#usage) goes by it to count each conversation in its workspace.
+- `arrived.json`: the conversation files that came with an agent moved here from another computer, and how long each was then. What they held was used on that computer, which counts it; [Usage](#usage) here counts from there on.
 - `stats.json`: each agent's work experience (the day by day part for the last 60 days).
 - `tickets.json`: the Tasks board (every open task, and the last 200 done).
 - `conversations.json`: each agent's current conversation: when it started, tasks in it, compactions and how full it is.
@@ -378,10 +391,12 @@ Everything CLIque keeps is in the `.clique` folder in your home folder (`~/.cliq
 - `board.md`: the shared notes (`clique note`); the last 200 are kept.
 - `reads.json`: up to when you've read each agent's replies (the unread counts).
 - `usage.json`: each provider's usage limits as last reported, and which heads-ups you've had.
+- `usage-spaces.json`: each workspace as it last was (its name and look, and where each agent worked in it), so [Usage](#usage) still names a workspace you've removed and keeps its conversations with it.
+- `history.json`: what Claude Code and Codex used each day, read from their own logs for [Usage](#usage). Only numbers, per day, model, folder and agent: no messages. It keeps the days of logs Claude Code has since cleaned up.
 - `savers.json`: what each [token saver](#token-savers) counted, day by day for the last 90 days, and the clique's spend under each mix of savers that was on.
 - `spend.json`: the last running totals each agent's CLI reported (so nothing is counted twice) and the clique's spend per hour of each day, for the last 60 days.
 - `attachments/`: images you've attached to messages, tasks and instructions, and the files agents attach to theirs (up to 2 GB of those: past that the oldest go). One that no chat, task or agent refers to any more is removed 60 days after it was added.
-- `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, copies of the files from other computers that you've looked at, played or opened here (fetched again when needed, kept 30 days, up to 2 GB per computer), and `phones.json`: the phones paired with this computer and the keys for them.
+- `link/`: Computers settings (this computer's name, sharing, linked computers, agents you chose not to use), the certificate and key, copies of the files from other computers that you've looked at, played or opened here (fetched again when needed, kept 30 days, up to 2 GB per computer), what each linked computer last said it used (`usage/`, for [Usage](#usage) while it's off), and `phones.json`: the phones paired with this computer and the keys for them.
 - `token` and `url`: where CLIque is listening right now, and the token `clique` shows it from a terminal of your own. Both change every time CLIque starts.
 - `agent-secret`: what each agent's key is made from. It never goes into an agent's environment.
 - `run/`: the terminal host's connection (yours only) and its log, and for each running agent the commands it started, so what they leave running can be stopped when they end.

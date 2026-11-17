@@ -273,6 +273,11 @@ test('a working agent moves here from a linked computer: its conversation, queue
   assert.equal(fs.readFileSync(path.join(to, id, 'tool-results', 'out.txt'), 'utf8').length, big.length)
   assert.equal(JSON.parse(fs.readFileSync(path.join(to, `${id}.jsonl`), 'utf8')).saved, path.join(to, id, 'tool-results', 'out.txt'))
   assert.equal(await laptop.run(`clique.here.sessions.iris`), id)
+  // how long each of its files was when it arrived is written down: that much was used on the studio, which counts it,
+  // so the Usage view here counts this conversation from here on (core/history.js scan's `arrived`)
+  const arrived = await laptop.run(`clique.here.arrived`)
+  assert.deepEqual(arrived, { [path.join(to, `${id}.jsonl`)]: fs.statSync(path.join(to, `${id}.jsonl`)).size, [path.join(to, id, 'tool-results', 'out.txt')]: big.length })
+  assert.deepEqual(await laptop.run(`clique.usagePlacing().arrived`), arrived, 'and the usage history is told')
   assert.match(await launched(laptop, 'iris'), new RegExp(`--resume ${id}`), 'it resumes that conversation')
   assert.equal(await laptop.run(`clique.here.convos.iris.compactions`), 2)
 

@@ -2,7 +2,7 @@
 // Add one with New task or a column's + (or from the chat). Starting one hands it to its owner in a fresh
 // conversation, so tasks don't pile into one long context; you review what comes back. Board or list, filtered by
 // kind, owner or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via clique.call('task').
-/* global pageHead, mountSearch, notify, oops, reduceMotion, PRODUCT_NAME, ownerIn, mountMentions, mountInk, clique, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine */
+/* global pageHead, mountSearch, notify, oops, reduceMotion, PRODUCT_NAME, ownerIn, mountMentions, mountInk, clique, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine, openLink */
 
 const STATUS = [
   { id: 'new', label: 'To do' },
@@ -1068,7 +1068,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     const m = e.target.closest('[data-menu]')
     if (m) return pick(t, m.dataset.menu, m)
     if (e.target.closest('.tp-live-av')) return onTerminal(worker(t)?.name ?? t.fixer)
-    if (e.target.closest('a[href]')) return
+    if (openLink(e)) return // a link in the description, a note or the review: your browser, not the editor
     const op = e.target.closest('[data-tp]')?.dataset.tp
     if (!op) return
     if (op === 'close') return close()

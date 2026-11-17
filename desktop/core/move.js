@@ -366,7 +366,8 @@ export function moveIn(hub, token, out, { name, folder, on, from, shared, join }
         const parts = out.files.map((f, i) => ({ ...f, i })).filter((f) => f.rel)
         if (!parts.length || !parts.every((f) => whole(f.i))) throw new Error("it didn't arrive whole")
         const root = sessionRoot(cli, folder, { ...process.env, ...expandEnv(hub.providerOf(a)?.env) })
-        for (const f of parts) place(staged(f.i), path.join(root, safeRel(f.rel)))
+        const placed = parts.map((f) => path.join(root, safeRel(f.rel)))
+        parts.forEach((f, i) => place(staged(f.i), placed[i]))
         // Claude Code points at long tool outputs by path: from the old project folder to this one
         const [first] = parts
         if (cli === 'claude' && out.session.root !== root) {
@@ -375,6 +376,8 @@ export function moveIn(hub, token, out, { name, folder, on, from, shared, join }
           const now = repoint(text, { ...out.session, sep: out.session.sep ?? sepOf(out.session.root) }, root)
           if (now !== text) fs.writeFileSync(file, now)
         }
+        // what these logs hold so far was used on the computer they came from: the usage history here counts from there on
+        for (const file of placed) hub.noteArrived(file)
         hub.saveSession(added, out.session.id)
         conversation = 'moved'
         reason = undefined

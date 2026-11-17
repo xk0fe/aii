@@ -999,6 +999,16 @@ function celebrate(root, agents) {
   }
 }
 
+// A click on a link in rendered Markdown opens it in your browser: the page itself never navigates (main.js stops it),
+// so a list that shows Markdown calls this first in its click handler. True when the click was on a link.
+function openLink(ev) {
+  const link = ev.target.closest('a[href]')
+  if (!link) return false
+  ev.preventDefault()
+  clique.call('openUrl', link.href).catch((err) => oops('Couldn’t open that link', err))
+  return true
+}
+
 // Just enough Markdown for agent replies: code, bold/italic/strike, headings, lists, quotes and links.
 // The text is escaped first, so whatever an agent writes can't inject HTML.
 // The feed redraws every message whenever one arrives, so each text is converted once.
@@ -1465,11 +1475,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
   }
   el.querySelector('.thread-x').addEventListener('click', () => api.close())
   list.addEventListener('click', (ev) => {
-    const link = ev.target.closest('a[href]')
-    if (link) {
-      ev.preventDefault()
-      return clique.call('openUrl', link.href)
-    }
+    if (openLink(ev)) return
     const pic = ev.target.closest('[data-open]')
     if (pic) return clique.call('openFile', pic.dataset.open)
     if (reactClick(ev)) return
@@ -2329,11 +2335,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       onFound?.()
       return jump(hit.id.slice(2))
     }
-    const link = ev.target.closest('a[href]')
-    if (link) {
-      ev.preventDefault()
-      return clique.call('openUrl', link.href)
-    }
+    if (openLink(ev)) return
     const opener = ev.target.closest('[data-needs-open]')
     if (opener) return showNeeds(opener.dataset.needsOpen)
     const term = ev.target.closest('[data-needs-term]')

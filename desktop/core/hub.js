@@ -194,6 +194,13 @@ export class Hub extends EventEmitter {
     this.bin = bin
     this.token = token ?? randomBytes(16).toString('hex')
     this.sessions = readJSON(this.at('sessions.json')) ?? {}
+    // Every conversation this workspace's agents have had: session id -> the agent's name (ran.json). The Usage view
+    // goes by it to say which workspace a log's tokens were used in (sessionsRun): a shared agent works in several,
+    // and its logs don't say which.
+    this.ran = readJSON(this.at('ran.json')) ?? {}
+    // The logs that came here with an agent moved from another computer: path -> how long each was when it arrived
+    // (arrived.json). That much was used on the computer it came from, which counts it: the Usage view here doesn't.
+    this.arrived = readJSON(this.at('arrived.json')) ?? {}
     this.stats = readJSON(this.at('stats.json')) ?? {}
     // The chat (core/keep.js says how much of it is kept). feedFile: how much feed.jsonl holds, amendments included,
     // and when it's written anew (see save); sizes: each line's length there, worked out once.
@@ -659,6 +666,8 @@ export class Hub extends EventEmitter {
     for (const q of this.asks.values()) if ((q.plan || q.spend) && q.name === from) q.name = to // an agent tool's card: its answer finds it
     if (this.sessions[from]) this.sessions[to] = this.sessions[from]
     this.saveSession(from, null) // also writes the moved session
+    for (const [id, name] of Object.entries(this.ran)) if (name === from) this.ran[id] = to // what it used before is its too
+    this.saveRan()
     if (this.stats[from]) [this.stats[to], this.stats[from]] = [this.stats[from], undefined]
     this.saveStats()
     if (this.convos[from]) [this.convos[to], this.convos[from]] = [this.convos[from], undefined]
@@ -2091,6 +2100,33 @@ export class Hub extends EventEmitter {
     fs.writeFileSync(this.at('sessions.json'), JSON.stringify(this.lasting(this.sessions), null, 2) + '\n')
   }
 
+  // A conversation one of this workspace's agents is having, written down once (see ran): a clone's is its original's.
+  noteSession(name, id) {
+    const who = this.baseOf(name)
+    if (this.ran[id] === who) return
+    this.ran[id] = who
+    this.saveRan()
+  }
+
+  saveRan() {
+    writeWhole(this.at('ran.json'), JSON.stringify(this.ran)) // (CLIque's folder gone: its logs still name the agent)
+  }
+
+  // A conversation's file that came with a moved agent (core/move.js moveIn), as long as it is now.
+  noteArrived(file) {
+    try {
+      this.arrived[file] = fs.statSync(file).size
+      writeWhole(this.at('arrived.json'), JSON.stringify(this.arrived))
+    } catch {}
+  }
+
+  // The sessions this workspace's agents ran, for the Usage view (core/history.js placer): { session id: [workspace,
+  // name?] }. What was written down as they ran, the conversation each agent has now, and the sessions whose spend was
+  // counted here (from before sessions were written down; kept 60 days, and they don't say whose).
+  sessionsRun() {
+    return sessionsIn(this.ws, { ran: this.ran, sessions: this.sessions, spend: this.spend }, (name) => this.baseOf(name))
+  }
+
   // What's worth saving of a per-agent record: clones come and go.
   lasting(byName) {
     return Object.fromEntries(Object.entries(byName).filter(([name]) => !this.agents.get(name)?.cloneOf))
@@ -2147,6 +2183,7 @@ export class Hub extends EventEmitter {
         const again = Boolean(a.expect?.again) && samePrompt(e.prompt, a.expect.text)
         // Remembered only once it has a prompt: Claude Code doesn't save empty sessions, so they can't be resumed.
         if (e.session_id && this.sessions[name] !== e.session_id) this.saveSession(name, e.session_id)
+        if (typeof e.session_id === 'string' && e.session_id && !e.agent_id) this.noteSession(name, e.session_id)
         // Claude Code's own prompt: something the agent left running in the background finished. It's not a message
         // from you, nor a new task. It comes in mid-turn, or starts a turn of its own once the last one is over; either
         // way the agent is still on what it was answering, and its reply threads there.
@@ -5286,6 +5323,31 @@ function decide(ask, input, cli, reply) {
 }
 
 const expand = (dir) => (dir ? dir.replace(/^~(?=[\\/]|$)/, os.homedir()) : os.homedir()) // ~/code or, on Windows, ~\code
+export { expand }
+
+// The sessions a workspace's agents ran, from what it keeps (Hub.sessionsRun; for a workspace that's been removed, from
+// the files it left: sessionsLeft). ran: { id: name }, sessions: { name: id }, spend: spend.json (a session the look
+// back only read about, `baseline`, was any workspace's: left out). -> { session id: [workspace, name?] }
+// Written whole or not at all: to a file beside it first, which then takes its place (a crash mid-write leaves the old one).
+function writeWhole(file, text) {
+  try {
+    fs.writeFileSync(`${file}.tmp`, text)
+    fs.renameSync(`${file}.tmp`, file)
+  } catch {}
+}
+
+export function sessionsIn(ws, { ran, sessions, spend } = {}, baseOf = (name) => name) {
+  const out = {}
+  const str = (v) => typeof v === 'string' && Boolean(v)
+  for (const [id, s] of Object.entries(spend?.sessions ?? {})) if (s && !s.baseline) out[id] = [ws]
+  for (const [name, id] of Object.entries(sessions ?? {})) if (str(id)) out[id] = [ws, baseOf(name)]
+  for (const [id, name] of Object.entries(ran ?? {})) if (str(name)) out[id] = [ws, name]
+  return out
+}
+// ...of a workspace that isn't open: from its folder.
+export const sessionsLeft = (ws, dir) => sessionsIn(ws, { ran: readJSON(path.join(dir, 'ran.json')), sessions: readJSON(path.join(dir, 'sessions.json')), spend: readJSON(path.join(dir, 'spend.json')) }, (name) => String(name).replace(/\.\d+$/, ''))
+// ...and the logs that arrived there with moved agents (Hub.arrived).
+export const arrivedLeft = (dir) => readJSON(path.join(dir, 'arrived.json')) ?? {}
 // What an agent's conversation is tied to: the CLI that keeps it, and the folder it was started in.
 const sessionHome = (a) => JSON.stringify([a.provider ?? a.cli ?? 'claude', expand(a.cwd)])
 
