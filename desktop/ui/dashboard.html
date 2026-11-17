@@ -142,6 +142,9 @@
     .dm-clones { flex: none; font-size: 11.5px; font-weight: 500; color: var(--fg3); font-variant-numeric: tabular-nums; }
     .dm-end { margin-left: auto; flex: none; display: flex; align-items: center; gap: 6px; padding-left: 6px; }
     .dm-word { font-size: 12px; color: var(--fg3); white-space: nowrap; }
+    /* needs you: a berry dot at the end of the row (the count is in its tooltip, the question in Needs you) */
+    .dm-dot { display: block; width: 7px; height: 7px; border-radius: 50%; }
+    .dm-dot.needs { background: var(--needs); }
     .dm.on .dm-word { color: var(--fg2); }
     .dm-new { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: grid; place-items: center; background: rgba(255, 255, 255, .16); color: #fff; font: 600 11px/1 var(--ui); font-variant-numeric: tabular-nums; }
     .dm.off { color: var(--fg3); }
@@ -235,13 +238,7 @@
     .mh-power:hover { background: var(--fill); }
     .ph-tools .mode { height: 22px; }
     /* a channel: what's waiting on you (a berry pill that jumps to the oldest), and who's in it */
-    .mh-needs { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--needs-tint); color: var(--needs-ink); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background var(--t-quick); animation: mh-in var(--t-move) var(--out); }
-    .mh-needs:hover { background: color-mix(in srgb, var(--needs) 16%, transparent); }
-    .mh-needs svg { width: 12px; height: 12px; }
     @keyframes mh-in { from { opacity: 0; } }
-    .mh-faces { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 4px; border: 0; border-radius: var(--r-control); background: none; color: var(--fg2); font: inherit; font-size: 13px; cursor: pointer; }
-    .mh-faces:hover { background: var(--fill); color: var(--fg); }
-    .mh-faces .av + .av { margin-left: -7px; }
     /* the words found, in the results */
     .chat mark { background: color-mix(in srgb, var(--accent) 14%, transparent); color: inherit; border-radius: 3px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent); }
     .chat .feed.searching .item, .chat .feed.searching .task-ev, .chat .feed.searching .event { cursor: pointer; }
@@ -256,13 +253,9 @@
        every terminal down to three lines. Two columns once there's room for two full-width terminals. */
     .terms-view { position: absolute; inset: 0; display: flex; flex-direction: column; }
     /* in Focus the filter waits for the grid; a click on it goes back there */
-    .tv-show.idle { opacity: .55; }
-    .tv-show.idle:hover { opacity: 1; }
-    .tv-show [data-show=needs] .n.some { color: var(--needs-ink); }
     .terms { position: relative; flex: 1; min-height: 0; padding: 20px var(--gx, 24px) var(--gx, 24px); display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); grid-auto-rows: minmax(250px, 1fr); overflow-y: auto; }
     .terms.focus { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); overflow: hidden; }
     .terms.focus .tile:not(.on) { display: none; }
-    .terms .tile.filtered { display: none; }
     /* nobody busy, nobody waiting: a line where the terminals would be (common.css .empty-state.small) */
     .terms-none { grid-column: 1 / -1; align-self: center; justify-self: center; }
     .terms-view:not(.hidden) .tile { animation: tile-in var(--t-move) var(--out) backwards; animation-delay: calc(min(sibling-index(), 10) * 20ms); }
@@ -274,14 +267,13 @@
     .tile.on { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
     /* a terminal that's waiting on you says so with its outline (and its Answer button) */
     .tile.needs, .tile.needs.on { box-shadow: 0 0 0 2px var(--needs); }
+    .terms:not(.focus) .tile.needs { order: -1; } /* the ones waiting on you come first in the grid */
     /* One header row: who, how it is, its model; then its helpers and what this view is (LIVE, MIRROR…). A narrow tile
        lets the model word go first (it's in the badge's tooltip too). */
     .tile { container-type: inline-size; }
     @container (max-width: 360px) { .tile-head { gap: 6px; } .tile-head .ctx b { display: none; } }
     /* YOLO and Fast show on a roomy tile (Focus, a wide grid); a narrow one keeps its model word instead, and the marks
        stay on the agent's row and card */
-    .tile-head .mark-yolo, .tile-head .mark-fast, .tile-head .mark-holds { flex: none; }
-    @container (max-width: 480px) { .tile-head .mark-yolo, .tile-head .mark-fast, .tile-head .mark-holds { display: none; } }
     .tile-head { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 10px; min-width: 0; white-space: nowrap; background: #1a1a1a; }
     .tile-head .tile-av { position: relative; flex: none; line-height: 0; margin-right: -1px; }
     .tile-head .t-name { flex: none; font: 600 14px/18px var(--font-brand); }
@@ -291,11 +283,6 @@
     .tile-head .t-state.waiting { color: var(--needs-ink); font-weight: 500; }
     .tile-head .t-state.stopped, .tile-head .t-state.away { color: var(--fg3); }
     .tile-head .t-state[data-act] { cursor: pointer; }
-    .tile-head .t-model { flex: none; font-size: 12px; color: var(--fg3); }
-    .t-chip { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 6px 0 4px; border-radius: var(--r-tag); background: var(--btn); color: var(--fg2); font: 500 11px/1 var(--ui); font-variant-numeric: tabular-nums; cursor: help; }
-    .t-chip svg { width: 12px; height: 12px; }
-    .t-chip.clones { padding-left: 2px; }
-    .t-chip .av + .av { margin-left: -7px; }
     /* What this view is. These aren't terminal apps: the badge says whether typing reaches the agent right now (LIVE, or
        MIRROR from another computer), or that it's being redrawn (REPLAY), or frozen (OFFLINE, ENDED). See tileMode(). */
     /* the badge keeps its words (Live, Mirror, Replay, Offline, Ended) as a quiet outlined tag; only Live has a green dot */
@@ -528,6 +515,29 @@
     .nf-row .nf-about { grid-column: 2; font-size: 12px; line-height: 1.45; color: var(--fg2); text-wrap: pretty; }
     .nf-row .btn { grid-column: 3; grid-row: 1 / span 2; min-width: 76px; justify-content: center; }
     .notify-sheet .section-label { margin: 0 2px 8px; }
+    /* Settings: a few groups (.section-label over a .group-list), a row each: its icon, its name and what it does, then its
+       switch, its choices, or its value and a chevron to its own sheet */
+    .settings-sheet { width: 520px; }
+    .settings-sheet .sheet-title { margin-bottom: 14px; }
+    .st-body .section-label { margin: 0 2px 8px; }
+    .st-body .group-list + .section-label { margin-top: 18px; }
+    .st-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 8px 12px 8px 14px; border: 0; background: none; color: var(--fg); font: inherit; font-size: 13px; text-align: left; }
+    button.st-row { cursor: pointer; }
+    button.st-row:hover { background: var(--fill); }
+    .group-list > .st-row:first-child { border-radius: var(--r-card) var(--r-card) 0 0; }
+    .group-list > .st-row:last-child { border-radius: 0 0 var(--r-card) var(--r-card); }
+    .group-list > .st-row:only-child { border-radius: var(--r-card); }
+    .st-icon { flex: none; display: grid; place-items: center; width: 20px; color: var(--fg2); }
+    .st-icon svg { width: 17px; height: 17px; }
+    .st-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .st-text b { font-weight: 500; }
+    .st-text small { font-size: 12px; line-height: 1.4; color: var(--fg2); }
+    .st-value { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--fg2); }
+    .st-row > .st-chev { flex: none; display: grid; color: var(--fg3); }
+    .st-row > .st-chev svg { width: 12px; height: 12px; }
+    .st-row .seg { flex: none; }
+    .st-row .seg button { padding: 0 10px; }
+    .st-row .switch { flex: none; }
     /* The spend check-in: a row per provider, built from the agent sheet's rows (collection.css .ed-row, .limit-custom,
        .limit-note). Its line keeps room for two lines, so the sheet is as tall with nothing picked as with everything. */
     dialog.checkin-sheet { width: 600px; }
@@ -659,7 +669,10 @@
     .chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--surface); }
     .chat .feed { flex: 1; gap: 14px; padding: 20px var(--gx, 24px) 12px; -webkit-mask-image: none; }
     .chat .composer { padding: 6px var(--gx, 24px) 18px; }
-    .chat .needs-queue { display: none !important; }
+    /* Needs you, docked over the message box (common.css): as wide as the lines of who's at work, its card inside it */
+    .chat .needs-queue { width: min(820px, 100%); margin: auto 0 0; }
+    .chat .nq-item .ask-card { width: auto; margin-top: 2px; padding: 0; border-radius: 0; }
+    .chat .nq-item .ask-option { padding: 7px 34px 7px 8px; }
     .chat .item.said { gap: 12px; }
     .chat .item.said .face { width: 36px; }
     .chat .item .cap { margin-bottom: 1px; font-size: 12px; }
@@ -677,6 +690,7 @@
     .chat .item.ask.open .ask-card { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--needs) 62%, transparent); }
     .chat .item.ask.open .ask-title svg { color: var(--needs-ink); }
     .chat .typing-row { margin-left: 48px; }
+    .chat .sub-tree { margin-left: 84px; } /* under its agent's name, past the creatures down the left */
     .chat .typing-row, .chat .sub-tree { max-width: 760px; } /* the line stays near its words: its dots and steps don't drift to the far edge */
     .chat .typing-row .tr-what { flex: 0 1 auto; }
     /* a question's options: one line each, its words after its label, so a card stays a glance tall */
@@ -865,7 +879,7 @@
 
   <dialog id="notify" class="sheet notify-sheet">
     <h2 class="sheet-title"><span class="h-icon"></span>Notifications</h2>
-    <p class="lead">When CLIque may interrupt you. Whatever you pick, everything that needs you still waits in the chat, in Needs you and in the count in the <span data-nf-bar>menu bar</span>.</p>
+    <p class="lead">When CLIque may interrupt you. What needs you still waits for you in Needs you.</p>
     <div class="sheet-body">
       <h4 class="section-label">Notify me</h4>
       <div class="seg fill nf-days" aria-label="Notify me"><button data-nf-days="always">At any time</button><button data-nf-days="every">Every day</button><button data-nf-days="weekdays">Weekdays</button></div>
@@ -876,12 +890,17 @@
       <p class="nf-say" aria-live="polite"></p>
       <div class="group-list">
         <div class="nf-row nf-pause"><span class="nf-icon"></span><b></b><span class="nf-about"></span><button class="btn" data-nf-pause aria-haspopup="menu"></button></div>
-        <div class="nf-row"><span class="nf-icon" data-nf-icon="eye"></span><b>Not while you’re looking</b><span class="nf-about">Nothing notifies you about the conversation that’s open in front of you.</span></div>
-        <div class="nf-row"><span class="nf-icon" data-nf-icon="stack"></span><b>One at a time</b><span class="nf-about">Agents that ask together arrive as one notification, and one you’ve answered, here, on your phone or in its terminal, is taken away.</span></div>
       </div>
     </div>
     <p class="err" data-nf-err></p>
     <div class="sheet-foot"><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
+  </dialog>
+
+  <!-- Settings (the sidebar's gear): everything that isn't a place, a row each, its value or its switch in the row -->
+  <dialog id="settings" class="sheet settings-sheet">
+    <h2 class="sheet-title"><span class="h-icon"></span>Settings</h2>
+    <div class="sheet-body st-body"></div>
+    <div class="sheet-foot"><button class="btn" data-st="tour" hidden>Take the tour</button><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
   </dialog>
 
   <!-- Scheduled messages (ui/schedules.js): Send later, and the list of what's set up -->
@@ -907,7 +926,9 @@
   <script src="files.js"></script>
   <script src="brand.js"></script>
   <script src="collection.js"></script>
+  <script src="tasktime.js"></script>
   <script src="tasks.js"></script>
+  <script src="review.js"></script>
   <script src="usage.js"></script>
   <script src="workspaces.js"></script>
   <script src="setup.js"></script>

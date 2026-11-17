@@ -32,7 +32,8 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   headIn.insertAdjacentHTML('beforeend', pageHead({
     id: 'clique', glyph: markSVG('0 4 24 18'), title: 'Agents',
     tools: `<div class="seg icons" data-mode-switch><button data-mode="cards" title="Cards" aria-label="Cards">${ICONS.grid}</button><button data-mode="tiles" title="Compact cards" aria-label="Compact cards">${ICONS.tiles}</button><button data-mode="stats" title="Stats: compare the clique" aria-label="Stats">${ICONS.table}</button></div>
-      <button class="icon" data-act="more" title="New agent, select, export, import" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`,
+      <button class="btn" data-act="new" title="${esc(keysIn('New agent (⌘N)'))}">${ICONS.plus}<span>New agent</span></button>
+      <button class="icon" data-act="more" title="Select, export, import" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`,
   }))
   const head = headIn.lastElementChild
   root.innerHTML = `
@@ -104,14 +105,9 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   // The context ring only once the conversation is nearly full; calm, it's a number in the sheet.
   const hotRing = (a, opts) => (ctxLevel(a.convo?.context?.pct ?? 0) === 'hot' ? contextRing(a, opts) : '')
 
-  // Its status as the card says it: a dot, the word, how long (amber only when it needs you).
-  function statusLine(a) {
-    const ask = asksByName.get(a.name)
-    const cls = !a.on ? 'off' : a.status === 'waiting' ? 'needs' : a.status === 'working' && !a.waitingOn?.length ? 'working' : a.status === 'starting' ? 'starting' : a.status === 'stopped' ? 'stopped' : 'idle'
-    const since = a.on && (a.status === 'working' || a.status === 'waiting') && a.since ? ago(a.since) : ''
-    return `<span class="c-status ${cls === 'needs' ? 'needs-text' : ''}" title="${esc(statusText(a))}"><i class="dot ${cls}"></i><span>${esc(statusWord(a, ask))}</span>${since && since !== 'just now' ? `<span class="t">${since}</span>` : ''}${stopButton(a, 'c-stop')}</span>`
-  }
-
+  // A card: its creature (which acts out how it is), its name and switch, its job, and one line saying what it's doing
+  // (berry while it needs you), with its context only once it's nearly full. Its brain, YOLO, how long, its helpers and
+  // clones and what's queued are in the card's tooltip, and all of it in its sheet.
   function cardHTML(a) {
     const look = avatarOf(a)
     const what = doingOf(a)
@@ -119,23 +115,21 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const clones = a.on ? clonesOf(state.agents, a) : []
     const subs = runningSubs(a)
     const ctx = a.on ? a.convo?.context : null
-    const meta = [
-      subs.length ? `<span title="${esc(subs.map((s) => s.description || s.type).join('\n'))}">${helpersText(a)}</span>` : '',
-      clones.length ? `<span title="${esc(clones.map((c) => `${displayName(c)}: ${statusText(c)}`).join('\n'))}">${plural(clones.length, 'clone')} at work</span>` : '',
-      ctx && ctx.pct >= 80 ? `<span class="c-ctx">${contextRing(a, { label: false, size: 13 })}Context ${ctx.pct}% full</span>` : '',
-      a.on && a.queue ? `<span>${plural(a.queue, 'message')} waiting</span>` : '',
-    ].filter(Boolean)
+    const since = a.on && (a.status === 'working' || a.status === 'waiting') && a.since ? ago(a.since) : ''
+    const tip = [a.area, `${statusWord(a, ask)}${since && since !== 'just now' ? ` · ${since}` : ''}`, brainLabel(a, state.providers), a.yolo && 'YOLO: skips every permission prompt',
+      subs.length && `${helpersText(a)}: ${subs.map((x) => x.description || x.type).join(', ')}`, clones.length && `${plural(clones.length, 'clone')} at work`, a.on && a.queue && `${plural(a.queue, 'message')} waiting`].filter(Boolean).join('\n')
+    const needs = a.on && a.status === 'waiting'
+    const line = what?.text ?? statusWord(a, ask)
     // its helpers (sub-agents and clones at work) huddle beside it, at laptops of their own
     const huddle = Math.min(3, subs.length + clones.length)
     const helpers = huddle ? `<span class="c2-helpers">${Array.from({ length: huddle }, (_, i) => avatarHTML({ ...a, name: `${a.name}·${i + 2}`, avatar: look, status: 'working', on: true }, { size: 42, mood: 'working', pose: 'laptop', poseMin: 40 })).join('')}</span>` : ''
     const pose = poseOf(a, { ask })
-    return `<div class="pcard c2 ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" role="button" tabindex="0" aria-label="${esc(`${a.seed ?? a.name}: ${statusWord(a, ask)}`)}">
-      <span class="c-name"><b>${esc(shownName(a.seed ?? a.name))}</b>${a.yolo ? '<i class="tag" title="YOLO: skips every permission prompt">YOLO</i>' : ''}</span>
+    return `<div class="pcard c2 ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" role="button" tabindex="0" title="${esc(tip)}" aria-label="${esc(`${a.seed ?? a.name}: ${statusWord(a, ask)}`)}">
+      <span class="c-name"><b>${esc(shownName(a.seed ?? a.name))}</b></span>
       <span class="pc-power">${powerSwitch(a)}</span>
-      <span class="c-job" title="${esc(a.area)}">${esc(a.area || 'No job yet. Open the card to give it one.')}</span>
-      <span class="c-brain" title="${esc(brainLabel(a, state.providers))}">${esc(brainWords(a, state.providers))}</span>
-      <span class="c-state">${statusLine(a)}${what ? `<span class="c-doing" title="${esc(what.tip)}">${esc(what.text)}</span>` : ''}${meta.length ? `<span class="c-meta">${meta.join('')}</span>` : ''}</span>
-      <span class="c2-stage felt${huddle ? ' has-helpers' : ''}">${patchSVG(136, 136, { r: 8, inset: 5, dash: '4 3' })}<span class="c2-av">${avatarHTML(a, { size: huddle ? 92 : 112, pose })}</span>${helpers}${a.on && a.status === 'waiting' ? '<i class="dot needs c2-dot"></i>' : ''}</span>
+      <span class="c-job">${esc(a.area || 'No job yet. Open the card to give it one.')}</span>
+      <span class="c-state"><span class="c-line"><span class="c-doing${needs ? ' needs-text' : ''}">${esc(line)}</span>${stopButton(a, 'c-stop')}</span>${ctx && ctx.pct >= 80 ? `<span class="c-meta"><span class="c-ctx">${contextRing(a, { label: false, size: 13 })}Context ${ctx.pct}% full</span></span>` : ''}</span>
+      <span class="c2-stage felt${huddle ? ' has-helpers' : ''}">${patchSVG(136, 136, { r: 8, inset: 5, dash: '4 3' })}<span class="c2-av">${avatarHTML(a, { size: huddle ? 92 : 112, pose })}</span>${helpers}${needs ? '<i class="dot needs c2-dot"></i>' : ''}</span>
       <span class="pick pc-check">${ICONS.check}</span>
     </div>`
   }
@@ -152,11 +146,11 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const line = atWork(a) && a.status !== 'waiting' && a.activity ? activityWords(a.activity) : statusWord(a, ask)
     const cls = !a.on ? 'off' : a.status === 'waiting' ? 'needs' : a.status === 'working' && !a.waitingOn?.length ? 'working' : a.status === 'starting' ? 'starting' : 'idle'
     const said = a.status === 'waiting' && a.on ? statusWord(a, ask) : line
-    return `<div class="pcard mini ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc([a.seed ?? a.name, a.area, brainWords(a, state.providers), what?.tip].filter(Boolean).join('\n'))}" role="button" tabindex="0" aria-label="${esc(`${a.seed ?? a.name}: ${said}`)}">
-      <span class="pc-name"><b>${esc(shownName(a.seed ?? a.name))}</b>${a.yolo ? '<i class="tag">YOLO</i>' : ''}</span>
+    const tip = [a.seed ?? a.name, a.area, brainWords(a, state.providers), a.yolo && 'YOLO: skips every permission prompt', subs.length && helpersText(a), clones && plural(clones, 'clone'), what?.tip].filter(Boolean).join('\n')
+    return `<div class="pcard mini ${a.on ? a.status : 'off'} ${picked.has(a.name) ? 'picked' : ''}" data-name="${esc(a.name)}" style="--c:${colorOf(look)}" title="${esc(tip)}" role="button" tabindex="0" aria-label="${esc(`${a.seed ?? a.name}: ${said}`)}">
+      <span class="pc-name"><b>${esc(shownName(a.seed ?? a.name))}</b></span>
       <span class="pc-power">${powerSwitch(a)}</span>
       <span class="pc-line ${cls === 'needs' ? 'needs-text' : ''}"><i class="dot ${cls}"></i><span>${esc(said)}</span>${stopButton(a, 'c-stop')}</span>
-      <span class="pc-tags">${esc(brainWords(a, state.providers, { short: true }))}${subs.length ? ` · ${helpersText(a)}` : ''}${clones ? ` · ${plural(clones, 'clone')}` : ''}</span>
       <span class="pc-av">${avatarHTML(a, { size: 56 })}</span>
       <span class="pick pc-check">${ICONS.check}</span>
     </div>`
@@ -180,18 +174,17 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     if (next === gridKey) return
     gridKey = next
     const one = (a) => (m === 'tiles' ? tileHTML(a) : cardHTML(a))
-    const add = `<button class="pcard add ${m === 'tiles' ? 'mini' : ''}" data-act="new">${ICONS.plus}<span>New agent</span></button>`
     // in parts (see morph): a push that changes one agent re-reads its card alone
     const filled = groups.filter((g) => g.agents.length)
-    const where = (g) => (g.here ? upFirst(THIS_COMPUTER) : g.online ? 'Linked' : 'Offline')
+    // (this computer's agents need no heading; another computer's say where they are, as in the sidebar)
     const parts = grouped(groups) && filled.length
-      ? filled.map((g, i) => ({
+      ? filled.map((g) => ({
           start: `<section class="col-group" data-home="${esc(g.key)}">
-          <h3><b>${esc(g.name)}</b><span>${where(g)}</span></h3>
+          ${g.here ? '' : `<h3><b>On ${esc(g.name)}</b>${g.online ? '' : '<span>offline</span>'}</h3>`}
           <div class="col-cards ${m}">`,
-          end: '</div></section>', slot: '.col-cards', parts: [...g.agents.map(one), ...(i === 0 ? [add] : [])],
+          end: '</div></section>', slot: '.col-cards', parts: g.agents.map(one),
         }))
-      : [{ start: `<div class="col-cards ${m}">`, end: '</div>', slot: '.col-cards', parts: [...roster().map(one), add] }]
+      : [{ start: `<div class="col-cards ${m}">`, end: '</div>', slot: '.col-cards', parts: roster().map(one) }]
     morph(grid, none ? '' : parts)
     celebrate(grid, state.agents)
     root.classList.toggle('selecting', selecting)
@@ -201,14 +194,10 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   // The header: Agents, who they are and how many are on (what needs you is in the chat and beside each name in the
   // sidebar: here it's the clique itself).
   function drawHead() {
+    // (no line under it: who's on is each card's switch, and the cards are everyone here)
     const cliqueNow = roster()
-    const ws = state.workspace
     const on = cliqueNow.filter((a) => a.on).length
-    const who = ws ? `Everyone in ${ws.name}` : ''
-    const line = cliqueNow.length ? `${who} · ${on} of ${cliqueNow.length} on` : 'Nobody yet' // parked: the banner under it says so
-    const sub = head.querySelector('.ph-sub')
-    if (sub.textContent !== line) sub.textContent = line
-    sub.title = line
+    head.querySelector('.ph-name').title = cliqueNow.length ? `${on} of ${cliqueNow.length} on` : 'Nobody yet'
   }
 
   // ---- no clique yet: one creature pops up in an empty room and asks who it should be ----
@@ -263,8 +252,6 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   function headMenu(anchor) {
     const out = roster().filter((a) => a.status !== 'away') // an asleep computer can't pack its agents
     popMenu(anchor, [
-      { label: 'New agent…', icon: ICONS.plus, act: 'new', hint: keys('⌘N') },
-      '-',
       { label: selecting ? 'Done selecting' : 'Select…', icon: ICONS.task, act: 'select', disabled: !selecting && modeNow() === 'stats', hint: !selecting && modeNow() === 'stats' ? 'in the card views' : 'change several at once' },
       '-',
       { label: 'Export the clique…', icon: ICONS.export, act: 'export', disabled: !out.length, hint: out.length ? `${plural(out.length, 'agent')} · .clique` : '' },
@@ -280,6 +267,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
   head.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-act]')
     if (btn?.dataset.act === 'more') headMenu(btn)
+    if (btn?.dataset.act === 'new') open(null)
     const m = e.target.closest('[data-mode]')?.dataset.mode
     if (m) {
       mode = m

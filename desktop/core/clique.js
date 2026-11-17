@@ -859,6 +859,7 @@ export class Clique extends EventEmitter {
       hub.saveConvos(true)
       hub.saveUsage(true)
       hub.saveSpend(true)
+      hub.saveTaskTime()
     }
   }
 

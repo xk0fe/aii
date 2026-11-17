@@ -246,7 +246,15 @@ Handing an agent task after task fills one conversation with unrelated work, and
 
    **A task that stalls.** Sometimes a turn ends with the task half done ("I'll take the screenshots once it settles") and nothing calls the agent back. When the agent on a task has been idle for 10 minutes with nothing queued, nothing it's waiting on and no word on the task, CLIque reminds it once: carry on, or say what's in the way with `clique task note`. If it stops again without finishing, if its last reply asked you something, or if no conversation is on the task any more, you get one line in the chat and a notification, and the card says **stalled**. Something it left running in the background (a build) gives it 30 minutes. Set `"stallMinutes"` in `config.json` to change the wait, or `0` to turn this off.
 
-4. **Review.** Finished tasks land in **Review** with what was done and how it was checked, and you get a notification. **Accept** closes it; **Send back** returns it with your note, into the same conversation, so the agent keeps everything it tried.
+4. **Review.** Finished tasks land in **Review**, and you get a notification. Click one (or the receipt in the view switch, or press `R`) to open **the review**: the tasks waiting for you, the one that has waited longest first, then the ones that landed. Each opens with its receipts:
+
+   - **Who was on it.** Several agents can be: its owner, a clone, a teammate it asked or handed a part to, the triage agent. Each has a row with its own time, on the same scale as the task.
+   - **Where the time went**, from the moment it was added: waiting to start, triage, in the queue, working, waiting on you, between turns, waiting for review. The time that waited on you is in Berry, because that's the part you can shorten. Under it are the longest steps: a test run, a helper, a question that sat.
+   - **What you asked for** beside **what came back**; **what changed** (the files, and how many lines); **how it was checked** (the agent's own words, from `clique task done … --checked "…"`, and the tests and builds CLIque saw run); and **what it took** (tokens, helpers, questions, times sent back).
+
+   **Accept** (`A`) lands it and brings up the next one. **Send back** (`S`, write what's missing, Enter) returns it with your note, into the same conversation, so the agent keeps everything it tried. `J` and `K` step through the list, **Details** opens the task's description, notes and history, and `Esc` goes back to the board. At the foot of the list, **Where the time goes** adds up the last tasks that landed: how long a task takes, and how much of that waited on you.
+
+   Time is kept from the version that has the review on: a task worked on before says so. An agent on a linked computer isn't timed yet: its task shows how long it was under way, not who did what.
 
 **Board or list**, filtered by kind, by owner (their creatures above the board) or by search. **Done** folds into a slim column; click it to open. Open a task to change its status, priority, kind or owner from their menus, edit the title and description (Markdown), add attachments and notes, mark it the same as another task, and follow everything that happened to it. The chat shows each step as one line; click it to open the task. Tasks added on a linked computer show up too, marked with that computer.
 

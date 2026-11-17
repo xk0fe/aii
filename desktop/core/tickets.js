@@ -17,6 +17,7 @@ const PRIORITY = { urgent: 'blocker', blocker: 'blocker', high: 'high', medium: 
 export const priorityOf = (word) => PRIORITY[String(word ?? '').toLowerCase()]
 export const PRIORITY_NAME = { blocker: 'urgent', high: 'high', normal: 'medium', low: 'low' }
 const KEEP_DONE = 200 // older done tickets are dropped
+const MOVES_KEPT = 60 // a task's last status changes (a task sent back thirty times keeps its latest rounds)
 
 // "Jump does nothing after pause. Happens every time on level 2" -> a title and the rest as the body.
 export function splitReport(text) {
@@ -81,6 +82,7 @@ export class Tickets {
     const t = {
       id: this.next++, ...report, kind: KINDS.includes(kind) ? kind : 'task', severity: SEVERITIES.includes(severity) ? severity : 'normal', status: 'new',
       owner: owner || null, by, images, created: now, updated: now, seen: 1, triaged: false,
+      timed: true, // its time is kept from the moment it's added (core/tasktime.js): the review can account for all of it
       log: [{ ts: now, by, text: kind === 'bug' ? 'reported it' : 'added it' }],
     }
     this.all.push(t)
@@ -120,6 +122,8 @@ export class Tickets {
     if (!STATUSES.includes(status)) throw new Error(`status is one of: ${STATUSES.join(', ')}`)
     const t = this.get(id)
     t.status = status
+    // when it changed hands, and whose doing it was: what the review's "where the time went" is drawn from (ui/tasktime.js)
+    t.moves = [...(t.moves ?? []), { at: Date.now(), to: status, by }].slice(-MOVES_KEPT)
     this.log(t, by, text ?? `moved it to ${status}`)
     return t
   }
@@ -182,7 +186,7 @@ export function ticketText(t) {
     reworded(t) && `\nAs reported, word for word:\n${t.report}`,
     t.images.length && `\n${shots(t) ? 'Screenshots (open to view)' : 'Attached files (open to read)'}:\n${t.images.join('\n')}`,
     notes.length && `\nNotes:\n${notes.join('\n')}`,
-    t.fix && `\nDone (${t.fixer ? `@${t.fixer}` : ''}): ${t.fix}`,
+    t.fix && `\nDone (${t.fixer ? `@${t.fixer}` : ''}): ${t.fix}${t.checked ? `\nHow it was checked: ${t.checked}` : ''}`,
   ].filter(Boolean).join('\n') + '\n'
 }
 
@@ -191,7 +195,7 @@ export function ticketText(t) {
 // and the agent is still in the conversation where it worked on it.
 export function fixPrompt(t, ref, note, again) {
   const bug = t.kind === 'bug'
-  const done = `Check it for real before you report it (run it, or its test). Then run: clique task done ${ref} "${bug ? 'what was wrong, what you changed' : 'what you did'}, how you checked"`
+  const done = `Check it for real before you report it (run it, or its test). Then run: clique task done ${ref} "${bug ? 'what was wrong, what you changed' : 'what you did'}" --checked "how you checked it: what you ran or opened, and what you saw"`
   if (again) return `[${t.kind} #${t.id}] Sent back: ${bug ? 'still broken' : 'not done yet'}.${note ? ` The user says: ${note}` : ''}\n\nTake another look. ${done}`
   // It goes to its owner as a message of yours, so what an agent wrote in it is marked as that agent's (core/framing.js):
   // a task an agent added, one triage put into its own words, a teammate's note.
@@ -267,7 +271,7 @@ export function readTriage(text) {
 
 export const TASK_HELP = `clique task list                    open tasks
 clique task show <n>                one task in full: details, screenshots, notes
-clique task done <n> "..."          you did it: what you did (or what was wrong), how you checked
+clique task done <n> "..." --checked "..."   you did it: what you did (or what was wrong); --checked: how you checked it
 clique task note <n> "..."          add what you found (unclear, can't reproduce, a clue)
 clique task decline <n> "why"       it isn't yours (not your area, can't take it): CLIque gives it to the next owner by area
 clique task add "title" "..."       add a task (--kind bug|feature|task, --priority, --owner)

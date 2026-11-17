@@ -34,7 +34,7 @@ async function open(file) {
   await new Promise((r) => win.webContents.once('did-finish-load', r))
   await sleep(600)
   // the page's own names (chan, place…) are globals there: the probe's helpers come in as locals over them
-  const js = (code) => win.webContents.executeJavaScript(`(async () => { const { sent, held, ta, wait, type, pick, paste, drop, hint, box, taskMode, side, toChannel, head, enter, fits } = window.__p ?? {}; ${code} })()`)
+  const js = (code) => win.webContents.executeJavaScript(`(async () => { const { sent, held, ta, wait, type, plus, pick, paste, drop, hint, box, taskMode, side, toChannel, head, enter, fits } = window.__p ?? {}; ${code} })()`)
   await win.webContents.executeJavaScript(`(() => {
     const sent = []
     // held.on: a send (or a task being filed) doesn't come back until release() is called, as over a slow link
@@ -51,9 +51,18 @@ async function open(file) {
     const ta = document.querySelector('.compose textarea')
     const wait = (ms = 60) => new Promise((r) => setTimeout(r, ms))
     const type = async (text) => { ta.focus(); ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); await wait() }
-    const pick = async (to) => {
-      document.querySelector('.compose [data-pick-to]').click()
+    // something on the + menu: 'task' (Add a task, on or off), 'to' (Send to someone else), 'images' (Attach files)…
+    const plus = async (act) => {
+      document.querySelector('.compose .attach').click()
       await wait()
+      const item = document.querySelector('.menu:not(.leaving) [data-menu-act="' + act + '"]')
+      if (!item) throw new Error('no ' + act + ' on the + menu')
+      item.click()
+      await wait(120)
+    }
+    // who it's for: + > Send to someone else, then them
+    const pick = async (to) => {
+      await plus('to')
       const item = document.querySelector('.menu:not(.leaving) [data-menu-act="' + to + '"]')
       if (!item) throw new Error('no ' + to + ' in the To menu')
       item.click()
@@ -88,7 +97,7 @@ async function open(file) {
     const head = () => document.querySelector('.page-head[data-for=chat] .ph-title').textContent.trim().replace(/\\s+/g, ' ')
     const enter = async () => { ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await wait(200) }
     const fits = () => [ta.clientHeight >= ta.scrollHeight, ta.clientHeight > 40]
-    window.__p = { sent, held, ta, wait, type, pick, paste, drop, hint, box, taskMode, side, toChannel, head, enter, fits }
+    window.__p = { sent, held, ta, wait, type, plus, pick, paste, drop, hint, box, taskMode, side, toChannel, head, enter, fits }
   })()`)
   return { win, js }
 }
@@ -154,9 +163,9 @@ app.whenReady().then(async () => {
     check('no copy of it waits in the channel', await js(`return box()`), { to: 'auto', text: '', images: 0, quote: false })
 
     // Task, on the same line
-    await js(`await side('Theo'); await type('Totals round wrong with 3 items'); document.querySelector('.compose .task-chip').click(); await wait(120)`)
+    await js(`await side('Theo'); await type('Totals round wrong with 3 items'); await plus('task')`)
     check("Task from Theo's conversation: the board's box, with what you wrote, as a task", await js(`return [place, taskMode(), box()]`), ['chat', true, { to: 'task', text: 'Totals round wrong with 3 items', images: 0, quote: false }])
-    await js(`await type(''); document.querySelector('.compose .task-chip').click(); await wait(120)`)
+    await js(`await type(''); await plus('task')`)
     check('Task off again: Auto', await js(`return [taskMode(), box().to]`), [false, 'auto'])
 
     // nothing written: who you pick still gets their own draft back

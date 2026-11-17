@@ -140,6 +140,14 @@ const ticket = (id, status, severity, title, owner, extra = {}) => ({
   id, key: String(id), home: null, kind: 'task', status, severity, title, body: '', owner, fixer: null, by: 'you', images: [], seen: 1, triaged: Boolean(owner),
   created: now - (100 - id * 6) * min, updated: now - (70 - id * 4) * min, log: log([100 - id * 6, 'you', 'added it']), ...extra,
 })
+// What a task took, as the hub writes it down (core/tasktime.js, core/tickets.js): added `ago` minutes back; then, in
+// minutes from when it was added, its status changes [min, to, by] and who was on it [who, kind, from, to].
+const timed = (ago, moves, spans, more = {}) => {
+  const created = now - ago * min
+  const at = (m) => created + m * min
+  return { timed: true, created, updated: at(moves.at(-1)[0]), moves: moves.map(([m, to, by]) => ({ at: at(m), to, by })), time: { spans: spans.map(([w, k, from, to]) => ({ w, k, at: at(from), ms: Math.round((to - from) * min) })), ...more } }
+}
+const step = (w, minutes, text) => ({ w, ms: Math.round(minutes * min), text })
 // Storefront's board. To do: new, In progress: fixing, Review: check, Done: done.
 const TICKETS = [
   ticket(12, 'new', 'high', 'Empty cart state', 'Iris', {
@@ -159,14 +167,48 @@ const TICKETS = [
   ticket(6, 'fixing', 'normal', 'Flaky checkout test', 'Theo', { kind: 'bug', fixer: 'Theo' }),
   ticket(5, 'check', 'high', 'Dark mode for settings', 'Milo', {
     kind: 'feature',
-    fixer: 'Milo', fix: 'Settings follow the system theme now, with a switch under Appearance to pick one. Checked every settings page in light and dark.',
-    log: log([60, 'you', 'added it'], [55, 'you', 'sent it to @Milo, in a new conversation'], [12, 'Milo', 'finished it: Settings follow the system theme'], [12, 'Milo', 'The order history page needed its own colors too.', 'note']),
+    fixer: 'Milo', fix: 'Settings follow the system theme now, with a switch under Appearance to pick one. Colours come from the tokens, so charts and code blocks follow too.\n\nThe choice is saved per account, not per device: per device needs a local store. Say if you want that.',
+    body: 'Settings should follow the system theme, with a switch under Appearance to pick System, Light or Dark. Remember the choice.',
+    checked: 'Ran the settings tests (142 passed) and opened every settings page in light and in dark.',
+    log: log([112, 'you', 'added it'], [109, 'you', 'sent it to @Milo, in a new conversation'], [38, 'Milo', 'finished it: Settings follow the system theme'], [38, 'Milo', 'The order history page needed its own colors too.', 'note']),
+    spent: { cost: 2.84, tokens: 70400, added: 212, removed: 38 },
+    // Milo did it, Ada added the preference to the API when Milo asked, June triaged it; 21 minutes of it waited on you
+    ...timed(112, [[3, 'fixing', 'you'], [74, 'check', 'Milo']], [['June', 'triage', 0.4, 1.3], ['Milo', 'work', 4, 26], ['Milo', 'you', 26, 47], ['Ada', 'work', 29, 39], ['Milo', 'work', 47, 72.5]], {
+      steps: [step('Milo', 4.2, 'Bash · npm test -- settings'), step('Milo', 3.1, 'Agent · Find every hard-coded colour in settings'), step('Ada', 2.7, 'Bash · npm run build'), step('Milo', 1.8, 'Edit · Appearance.tsx')],
+      files: { 'settings/Appearance.tsx': 6, 'styles/tokens.css': 4, 'settings/ThemeSwitch.tsx': 2, 'app/theme.ts': 2, 'tests/appearance.spec.ts': 2, 'api/preferences.ts': 1 },
+      checks: [{ ...step('Milo', 4.2, 'Bash · npm test -- settings'), at: now - 41 * min }, { ...step('Ada', 2.7, 'Bash · npm run build'), at: now - 74 * min }],
+      by: { Milo: { tokens: 61000, added: 198, removed: 34 }, Ada: { tokens: 9400, added: 14, removed: 4 } }, helpers: 1,
+    }),
   }),
-  ticket(4, 'check', 'normal', 'Totals round wrong with 3 items', 'Ada', { kind: 'bug', fixer: 'Ada', fix: 'Rounding happened per line; now once on the total.' }),
-  ticket(3, 'done', 'normal', 'Search spinner never stops', 'Ada', { kind: 'bug', fixer: 'Ada', fix: 'Missing timeout on the search call; added one and an error state.' }),
+  ticket(4, 'check', 'normal', 'Totals round wrong with 3 items', 'Ada', {
+    kind: 'bug', fixer: 'Ada', fix: 'Rounding happened per line; now once on the total.', checked: 'Added a test with three items at 0.335 each: it failed before and passes now.',
+    body: 'Three items at 0.335 each come to 1.02 in the cart; it should be 1.01.', spent: { cost: 0.61, tokens: 18200, added: 9, removed: 4 },
+    ...timed(52, [[1, 'fixing', 'you'], [20, 'check', 'Ada']], [['Ada', 'work', 6, 19.5]], {
+      steps: [step('Ada', 1.4, 'Bash · npm test -- totals'), step('Ada', 1.1, 'Read · totals.ts')], files: { 'cart/totals.ts': 2, 'cart/totals.test.ts': 1 },
+      checks: [{ ...step('Ada', 1.4, 'Bash · npm test -- totals'), at: now - 33 * min }], by: { Ada: { tokens: 18200, added: 9, removed: 4 } },
+    }),
+  }),
+  ticket(3, 'done', 'normal', 'Search spinner never stops', 'Ada', {
+    kind: 'bug', fixer: 'Ada', fix: 'Missing timeout on the search call; added one and an error state.', spent: { cost: 0.9, tokens: 24100, added: 38, removed: 6 },
+    ...timed(140, [[2, 'fixing', 'you'], [25, 'check', 'Ada'], [46, 'done', 'you']], [['Ada', 'work', 11, 24.6]], { files: { 'search/query.ts': 3, 'search/Results.tsx': 1 }, by: { Ada: { tokens: 24100, added: 38, removed: 6 } }, checks: [{ ...step('Ada', 0.9, 'Bash · npm test -- search'), at: now - 116 * min }] }),
+  }),
   ticket(2, 'done', 'low', 'Search keeps spinning', 'Ada', { kind: 'bug', dupOf: 3 }),
-  ticket(1, 'done', 'normal', 'Guest checkout', 'Milo', { kind: 'feature', fixer: 'Milo', fix: 'Checkout without an account; it offers one after the order.' }),
-  ticket(15, 'done', 'normal', 'Release notes for 1.1', 'June', { fixer: 'June', fix: 'Written up from the merged changes, with a line per fix.', created: now - 3 * day, updated: now - 2 * day }),
+  ticket(1, 'done', 'normal', 'Guest checkout', 'Milo', {
+    kind: 'feature', fixer: 'Milo', fix: 'Checkout without an account; it offers one after the order.', checked: 'Placed a guest order end to end on staging, then the same signed in.',
+    body: 'Let people check out without an account. Offer to make one after the order.', spent: { cost: 6.2, tokens: 164000, added: 310, removed: 44 },
+    // a long one: Theo tested it, a clone of Milo took the emails, you sent it back once, and it sat in review twice
+    ...timed(400, [[20, 'fixing', 'you'], [96, 'check', 'Milo'], [124, 'fixing', 'you'], [151, 'check', 'Milo'], [185, 'done', 'you']], [['June', 'triage', 0.5, 1.5], ['Milo', 'work', 22, 51], ['Milo', 'you', 51, 85], ['Milo.2', 'work', 30, 44], ['Theo', 'work', 60, 72], ['Milo', 'work', 85, 95.5], ['Milo', 'work', 125, 150.5]], {
+      of: { 'Milo.2': 'Milo' }, helpers: 2,
+      steps: [step('Theo', 6.5, 'Bash · npx playwright test checkout'), step('Milo', 5.2, 'Bash · npm test -- checkout'), step('Milo.2', 3.4, 'Edit · order-email.tsx')],
+      files: { 'checkout/Guest.tsx': 9, 'checkout/steps.ts': 5, 'emails/order-email.tsx': 3, 'api/orders.ts': 3, 'tests/guest.spec.ts': 4 },
+      checks: [{ ...step('Theo', 6.5, 'Bash · npx playwright test checkout'), at: now - 330 * min }, { ...step('Milo', 5.2, 'Bash · npm test -- checkout'), at: now - 252 * min }],
+      by: { Milo: { tokens: 121000, added: 262, removed: 40 }, 'Milo.2': { tokens: 22000, added: 41, removed: 2 }, Theo: { tokens: 21000, added: 7, removed: 2 } },
+    }),
+  }),
+  ticket(15, 'done', 'normal', 'Release notes for 1.1', 'June', {
+    fixer: 'June', fix: 'Written up from the merged changes, with a line per fix.', spent: { cost: 0.3, tokens: 11800, added: 46, removed: 0 },
+    ...timed(3 * 24 * 60, [[1, 'fixing', 'you'], [10, 'check', 'June'], [26, 'done', 'you']], [['June', 'work', 1.5, 9.6]], { files: { 'docs/releases/1.1.md': 4 }, by: { June: { tokens: 11800, added: 46, removed: 0 } } }),
+  }),
 ]
 
 const t = (m) => now - m * min
@@ -484,7 +526,7 @@ function usageHistory() {
   return { here: state.workspace ? Object.keys(spaces).find((k) => spaces[k].id === state.workspace.id) ?? null : null, computers, spaces }
 }
 // what the work on a task cost so far
-for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [5, { cost: 1.31, tokens: 0, added: 42, removed: 18 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }], [3, { cost: 0.86, tokens: 0, added: 21, removed: 4 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })
+for (const [id, spent] of [[7, { cost: 3.4, tokens: 0, added: 120, removed: 34 }], [6, { cost: 0, tokens: 820000, added: 64, removed: 9 }]]) Object.assign(TICKETS.find((t) => t.id === id), { spent })
 // the clique's spend: today against what's usual by now, and the last week and month
 const SPEND = { today: 14.2, usual: 12.8, week: 96, weekBefore: 88, month: 340 }
 // The token savers (core/savers.js, which is ESM: required as one), all on but No reports back, and what they counted
@@ -801,7 +843,7 @@ function taskAction(op, key, arg) {
   }
   const t = TICKETS.find((x) => x.key === key)
   if (!t) return
-  const to = (status, extra = {}) => Object.assign(t, { status, updated: Date.now(), ...extra })
+  const to = (status, extra = {}) => Object.assign(t, { status, updated: Date.now(), moves: [...(t.moves ?? []), { at: Date.now(), to: status, by: 'you' }], ...extra })
   if (op === 'dispatch' || (op === 'move' && arg === 'fixing')) {
     to('fixing', { fixer: t.owner })
     const a = AGENTS.find((x) => x.name === t.owner)
