@@ -146,6 +146,85 @@ export function blocks(src: string): Block[] {
   return out
 }
 
+// Steps written in a run, as a question often comes (an agent's question is one line, with no room for a list): "Sign-in
+// setup. (1) Open the console. (2) Create a project. Where are you?" is the words before, each step, and the closing
+// question on its own. The numbers count up from 1, as "(1)", "1)" or "1.", two or more of them, after a lead-in that
+// has ended. null for anything else, and the words stay as written: "Should I (1) rebase or (2) merge?" is one
+// sentence, "options (1) and (2)" names things, and "PR no. 1. Then no. 2." ends two sentences with a number.
+// (The desktop has its own copy, desktop/ui/common.js; both are tested against shared/ask-steps.json.)
+const RUN_MARKS = [/(?<=^|\s)\((\d{1,2})\)(?=\s+\S)/g, /(?<=^|\s)(\d{1,2})\)(?=\s+\S)/g, /(?<=^|[.:;!?]["')\]]?\s)(\d{1,2})\.(?=\s+\S)/g]
+const RUN_JOINS = /^(and|or|andor|nor|to|through|vs|versus|then|plus|&|и|или|либо|und|oder|y|o|u|e|et|ou)?$/iu
+const RUN_ENDS = /[.:;!?…—–-]["'”’)\]*_]*$/ // a sentence or a lead-in has ended here
+export type Run = { before: string; items: string[]; after: string }
+export function runInList(text: string): Run | null {
+  const line = String(text ?? '')
+  const probe = line.replace(/`[^`]*`/g, (code) => 'x'.repeat(code.length)) // a number inside `code` is code
+  // a ")" that closes a bracket, as in "(see step 2)" or "(1 of 2)", is not the ")" of a step's "2)"
+  const closes = new Set<number>()
+  for (let i = 0, open = 0; i < probe.length; i++) {
+    if (probe[i] === '(') open++
+    else if (probe[i] === ')' && open) {
+      open--
+      closes.add(i)
+    }
+  }
+  let best: (Run & { at: number }) | null = null
+  for (const [form, mark] of RUN_MARKS.entries()) {
+    const all = [...probe.matchAll(mark)].map((m) => ({ n: Number(m[1]), at: m.index, end: m.index + m[0].length })).filter((m) => form !== 1 || !closes.has(m.end - 1))
+    let found: (Run & { at: number }) | null = null
+    for (const first of all.filter((m) => m.n === 1)) {
+      const before = line.slice(0, first.at).trim()
+      // "1." only after a colon or a dash: after a full stop, the "1." of "PR no. 1." would read as a step
+      if (before && !(form === 2 ? /[:—–-]["'”’)\]*_]*$/ : RUN_ENDS).test(before)) continue
+      const upFrom = (ended: boolean) => {
+        const run = [first]
+        for (const m of all) if (m.at > run[run.length - 1].at && m.n === run.length + 1 && (!ended || RUN_ENDS.test(probe.slice(0, m.at).trimEnd()))) run.push(m)
+        return run
+      }
+      // a step may name the next one, "(1) Create it; skip (2) if you have one. (2) Enable billing.": the numbers that
+      // follow a finished sentence are the steps, when they count as far
+      const [ended, any] = [upFrom(true), upFrom(false)]
+      const run = ended.length >= any.length ? ended : any
+      const items = run.map((m, k) => line.slice(m.end, run[k + 1]?.at ?? line.length).trim())
+      if (run.length < 2 || items.some((x) => RUN_JOINS.test(x.replace(/[^\p{L}\p{N}&]+/gu, '')))) continue
+      // of two that count as far, the first is the list: what comes after it talks about its steps
+      if (run.length > (found?.items.length ?? 0)) found = { before, items, after: '', at: first.at }
+    }
+    // written two ways, "1) Read: (1) intro (2) body. 2) Reply.", the list that starts first holds the other
+    if (found && found.at < (best?.at ?? Infinity)) best = found
+  }
+  if (!best) return null
+  // the questions the steps lead up to are not the last step's
+  const items = [...best.items]
+  let after = ''
+  for (let m; (m = items[items.length - 1].match(/^([\s\S]*[.!?…]["'”’)\]*_]*)\s+([*_"'“‘(¿¡]*\p{Lu}(?:[^.!?]|[.!?](?=\S))*\?[*_"'”’)]*)$/u)); ) {
+    items[items.length - 1] = m[1]
+    after = after ? `${m[2]} ${after}` : m[2]
+  }
+  return { before: best.before, items, after }
+}
+
+// A question with steps written in a run somewhere in it, as what to show, line by line: words, steps, words. null
+// when it has none, and the question is shown as it always was. Code and a list its agent wrote are left alone.
+export type AskBlock = { text: string } | { steps: string[] }
+export function askBlocks(text: string): AskBlock[] | null {
+  const out: AskBlock[] = []
+  let fenced = false
+  let found = false
+  for (const line of String(text ?? '').split('\n')) {
+    const fence = (line.match(/```|~~~/g) ?? []).length
+    if (fence % 2) fenced = !fenced
+    const run = fenced || fence || /^\s*[-*+•]\s/.test(line) ? null : runInList(line)
+    if (run && !/^\d{1,3}[.)]\s/.test(run.before)) {
+      found = true
+      if (run.before) out.push({ text: run.before })
+      out.push({ steps: run.items })
+      if (run.after) out.push({ text: run.after })
+    } else if (line.trim()) out.push({ text: line.trim() })
+  }
+  return found ? out : null
+}
+
 // A short code span stays in one piece: "#training-runs" or "api/cart.ts" moves to the next line whole instead of
 // breaking at its hyphen or slash (iOS paints the tint to the end of a line it breaks). Narrow no-break spaces give
 // it a hair of room inside the tint, since inline text can't have padding.

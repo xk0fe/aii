@@ -53,6 +53,19 @@ const EVENTS_FEED = `const s = window.__cliqueState; const t = (m) => Date.now()
     { id: 'e10', kind: 'event', from: 'Iris', alert: true, text: 'passed its 400k context limit (412k used). Start a new conversation when it suits you', ts: t(2) },
   ]
   window.__cliqueEmit('state', s)`
+// The askSteps shot: a question whose steps came in one run, the way an agent writes them into its one line
+const STEPS_ASK = {
+  type: 'question', alert: 'asks: Where are you?',
+  questions: [{
+    header: 'Postmark setup', multiSelect: false,
+    question: "This part is yours by hand before I can send the order emails (about 5 minutes, no card needed), with the shop's Postmark account. (1) postmarkapp.com: 'Servers', then 'Create server', any name, Create. (2) On its 'API Tokens' tab click 'Generate token' and copy it (it is shown only once). (3) Under 'Sender Signatures' add orders@storefront.test, then confirm the email it sends you. (4) Save the token in your keychain as postmark-storefront: Keychain Access, 'New Password Item'. Do not paste the token into chat. Where are you?",
+    options: [
+      { label: 'Done, the token is saved', description: 'It is in the keychain as postmark-storefront. I check it with a test email.' },
+      { label: "I'll do this later", description: 'I stop here. The templates stay ready; nothing is sent until the token exists.' },
+      { label: 'Something looks different', description: 'A page or button does not match. Tell me what you see and I will look it up.' },
+    ],
+  }],
+}
 // The canvas shot: a real #evidence reply redrawn as a canvas in an agent's final message ("via canvas"), then one made
 // with `clique canvas new` that a teammate added to (who else drew on it, and the line that says so and leads back)
 const CANVAS_FEED = [
@@ -1072,6 +1085,90 @@ const SHOTS = {
     await save(big, `usage-three-computers-${theme}`)
     big.destroy()
   },
+  // Accounts (ui/accounts.js): each provider's sign-ins in their sheet (the default one and a Work account, each with
+  // its own limits), adding one (its name, then its sign-in under way, then who it is), an account's menu, the account
+  // picked in an agent's Profile, the limits popover with an account's row, and Usage split by account.
+  async accounts(theme) {
+    const win = await dashboard(theme, 'chat', { height: 900, fixture: 'accounts' })
+    await js(win, click('.side-more'))
+    await sleep(350)
+    await save(win, `accounts-menu-${theme}`)
+    await js(win, `document.querySelector('.menu [data-menu-act=accounts]').click()`)
+    await sleep(600)
+    await save(win, `accounts-${theme}`)
+    await js(win, `window.__cliqueSignIn = 'wait'`)
+    await js(win, click('#accounts [data-ac-new=codex]'))
+    await js(win, `const i = document.querySelector('#accounts [data-ac-add] input'); i.value = 'Personal'; i.dispatchEvent(new Event('input', { bubbles: true }))`)
+    await sleep(300)
+    await save(win, `accounts-adding-${theme}`)
+    await js(win, `document.querySelector('#accounts [data-ac-add]').requestSubmit()`)
+    await sleep(700)
+    await save(win, `accounts-signing-${theme}`)
+    await js(win, `window.clique.call('account', 'code', { key: 'codex@codex-personal', text: 'x' })`)
+    await sleep(500)
+    await save(win, `accounts-signed-in-${theme}`)
+    await js(win, click('#accounts .ac-row[data-ac="claude@claude-work"] [data-ac-menu]'))
+    await sleep(350)
+    await save(win, `accounts-row-menu-${theme}`)
+    await js(win, `document.querySelector('.menu [data-menu-act=signout]').click()`)
+    await sleep(500)
+    await save(win, `accounts-signed-out-${theme}`)
+    win.destroy()
+    // an agent's Profile: which account it runs on, under its model
+    const sheet = await dashboard(theme, 'chat', { height: 900, fixture: 'accounts' })
+    await js(sheet, click('[data-agent="Milo"]'))
+    await sleep(600)
+    await js(sheet, click('[data-head=profile]'))
+    await sleep(900)
+    await save(sheet, `accounts-agent-${theme}`)
+    sheet.destroy()
+    // the limits popover: a row per account
+    const foot = await dashboard(theme, 'chat', { height: 640, fixture: 'accounts' })
+    await js(foot, click('.use-line'))
+    await sleep(400)
+    await save(foot, `accounts-limits-${theme}`)
+    foot.destroy()
+    // Usage, everything, split by account
+    const usage = await dashboard(theme, 'usage', { height: 1010, fixture: 'accounts', reset: ['clique.usage.range', 'clique.usage.scope', 'clique.usage.by.here', 'clique.usage.by.all'] })
+    await js(usage, click('.us-scope [data-scope=all]'))
+    await sleep(400)
+    await js(usage, click('.us-by [data-by=account]'))
+    await sleep(600)
+    await save(usage, `accounts-usage-${theme}`)
+    usage.destroy()
+  },
+  // Accounts in motion: the ⋯ menu to Accounts, Add account for Claude, its name typed, the sign-in under way and then
+  // through; then Milo's Profile, where the new account is one click.
+  async accountsGif() {
+    const win = await dashboard('light', 'chat', { width: 1240, height: 860, fixture: 'accounts' })
+    await sleep(900)
+    await record(win, 'accounts', {
+      clip: { x: 0, y: 0, width: 1240, height: 860 }, ms: 15000, width: 1000,
+      during: async () => {
+        let at = { x: 620, y: 520 }
+        const go = async (sel, ms = 550, rest = 800) => {
+          at = await glide(win, at, await center(win, sel), ms)
+          await tap(win, at)
+          await sleep(rest)
+        }
+        await sleep(500)
+        await go('.side-more', 650, 700)
+        await go('.menu [data-menu-act=accounts]', 450, 1300)
+        await go('#accounts [data-ac-new=claude]', 550, 500)
+        for (const ch of 'Personal') {
+          await js(win, `const i = document.querySelector('#accounts [data-ac-add] input'); i.value += ${JSON.stringify(ch)}; i.dispatchEvent(new Event('input', { bubbles: true }))`)
+          await sleep(70)
+        }
+        await sleep(400)
+        await go('#accounts [data-ac-add] button[type=submit]', 450, 2900) // the sign-in goes through on its own, as it does once you've signed in in the browser
+        await go('#accounts [data-close].btn', 550, 600)
+        await go('[data-agent="Milo"]', 600, 900)
+        await go('[data-head=profile]', 600, 1200)
+        await go('.account-row [data-pick=account] button[data-v=claude-personal]', 600, 1500)
+      },
+    })
+    win.destroy()
+  },
   // Usage in motion: in from the sidebar to the workspace on screen, over to Everything, one computer alone and back,
   // a click on a workspace's row (everything narrows to it), the chart split by agent, and a day picked in a calendar.
   async usageGif() {
@@ -1695,6 +1792,66 @@ const SHOTS = {
     await sleep(700)
     await fitToContent(chat)
     await save(chat, `trust-chat-${theme}`)
+    chat.destroy()
+  },
+  // A question with its steps written in a run, "(1) … (2) …", as agents write one (a question is one line): the card
+  // sets them out as a list under what leads in, and the question itself closes it. In the chat, then in the floating
+  // chat's Needs you, where the creature says it. A plain question beside it reads as it always did.
+  async askSteps(theme) {
+    const setup = `const s = window.__cliqueState
+      s.feed = s.feed.filter((e) => !(e.kind === 'ask' && !e.answer))
+      s.feed.push({ id: 'st0', kind: 'msg', from: 'you', to: 'June', text: 'Get the order emails sending from the shop.', ts: Date.now() - 90000 })
+      s.feed.push({ id: 'st1', kind: 'ask', from: 'June', to: 'you', cli: 'claude', re: 'st0', ts: Date.now() - 20000, ask: ${JSON.stringify(STEPS_ASK)} })
+      for (const a of s.agents) if (a.status === 'waiting') a.status = 'idle'
+      Object.assign(s.agents.find((a) => a.name === 'June'), { status: 'waiting', since: Date.now() - 20000, activity: '' })
+      window.__cliqueEmit('state', s)`
+    const steps = (STEPS_ASK.questions[0].question.match(/\(\d\)/g) ?? []).length
+    // the steps as a list, and nothing of the question lost on the way
+    const read = (box) => `const q = document.querySelector('${box}')
+      return { steps: q?.querySelectorAll('ol > li').length ?? 0, last: q?.lastElementChild?.textContent ?? '', words: (q?.textContent ?? '').replace(/\\s+/g, '') }`
+    const check = (where, got) => {
+      const want = STEPS_ASK.questions[0].question.replace(/\(\d\)|\s+/g, '')
+      if (got.steps !== steps || got.last !== 'Where are you?' || got.words !== want) throw new Error(`askSteps, ${where}: ${JSON.stringify(got)}`)
+    }
+    const win = await dashboard(theme, 'chat', { width: 1000, height: 860 })
+    const column = () => js(win, "const r = document.querySelector('.page-head[data-for=chat]').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(innerWidth - r.x), height: innerHeight }")
+    const card = (id) => js(win, `const r = document.querySelector('[data-ask="${id}"]').getBoundingClientRect(); return { x: Math.round(r.x) - 8, y: Math.round(r.y) - 8, width: Math.round(r.width) + 16, height: Math.round(r.height) + 16 }`)
+    await sleep(900)
+    // the plain question the demo clique already has (Iris's), open and answered: one line, as it was
+    await js(win, "document.querySelector('[data-ask=\"f9\"]').scrollIntoView({ block: 'center' })")
+    await sleep(300)
+    await save(win, `ask-plain-${theme}`, { crop: await card('f9') })
+    await js(win, "document.querySelector('[data-ask=\"f9\"] .ask-option').click()")
+    await sleep(900)
+    await save(win, `ask-plain-done-${theme}`, { crop: await card('f9') })
+    await js(win, "document.querySelector('.feed').scrollTop = 1e6") // back at the latest, where the next question lands
+    await sleep(300)
+    await js(win, setup)
+    await sleep(1000)
+    check('the chat', await js(win, read('[data-ask="st1"] .ask-question')))
+    await save(win, `ask-steps-${theme}`, { crop: await column() })
+    // answered: it goes back under the question as the agent asked it, word for word
+    const answered = await js(win, `document.querySelector('[data-ask="st1"] .ask-option')?.click()
+      await new Promise((r) => setTimeout(r, 600))
+      return window.__cliqueState.feed.find((e) => e.id === 'st1').answer?.answers ?? null`)
+    if (answered?.[STEPS_ASK.questions[0].question] !== STEPS_ASK.questions[0].options[0].label) throw new Error(`askSteps: the answer went back as ${JSON.stringify(answered)}`)
+    await js(win, "document.querySelector('.feed').scrollTop = 1e6")
+    await sleep(400)
+    await save(win, `ask-steps-done-${theme}`, { crop: await column() })
+    win.destroy()
+    const chat = await open('overlay.html', { theme, width: 520, height: 660, backdrop: 'desktop' })
+    await sleep(400)
+    await js(chat, `${setup}
+      window.__cliqueEmit('toggle', { open: true, focus: false })`)
+    await sleep(900)
+    await js(chat, "document.querySelector('.nq-go')?.click()")
+    await sleep(700)
+    await fitToContent(chat)
+    check('Needs you', await js(chat, read('[data-need="st1"] .nq-say')))
+    // the queue takes up to 58% of the chat and scrolls: down to the steps
+    await js(chat, "const q = document.querySelector('.needs-queue'); q.scrollTop = q.querySelector('.nq-say ol').getBoundingClientRect().top - q.querySelector('.nq-item').getBoundingClientRect().top - 12")
+    await sleep(200)
+    await save(chat, `ask-steps-chat-${theme}`)
     chat.destroy()
   },
   // Add a phone: the pairing view with its code to scan, the phone that paired with it, then the list with that phone

@@ -80,6 +80,7 @@ Q is the queue in CLIque (CLI agent queue, CLI queue, CLIque) and the clique's o
   - **All** (top left) goes back to everyone's messages, and so does clicking the agent again (its face, its creature on the **To** line, in the pill or in the sidebar). Its count is for new replies from the rest of the clique, and an orange dot means one of them needs you. A link to a message outside the conversation (a quote, "replied", **Answer**) goes back to everyone's messages and shows it.
   - **Clones** share their agent's conversation. Clicking a clone sends what you write to that clone in particular.
   - **Each conversation keeps its own draft.** What you were typing, its images and the message you were replying to wait there while you look elsewhere, and come back when you return.
+  - **Changing who it's for takes the message along.** Pick someone else on the **To** line (or **Auto**, or **Task**) with a message half written, and it's in the box where you land, with its images, ready to send. If a draft was already waiting there, yours goes under it. The message you were replying to stays with the conversation it's in.
   - **An agent that's off** keeps its conversation for reading; it takes messages again once it's back on. One that moves to another computer keeps it too.
   - **Task** on the **To** line adds to the board from everyone's messages; `task:` inside a conversation is the way to give that agent one.
   - In the dashboard, opening an agent's terminal from the sidebar opens your conversation with it in the chat too.
@@ -135,7 +136,7 @@ Q is the queue in CLIque (CLI agent queue, CLI queue, CLIque) and the clique's o
 - **Who's on it.** While an agent works, a slim line under the last message shows what it's doing. Click it to open its terminal; an agent waiting on you gets an **Answer** button that jumps to its question.
 - **Answer from the chat.** When an agent stops to ask you something, the question shows up at the top of the chat under **Needs you**, its creature holds up an "OK?" sign, and you get a notification. The agent waits, and you answer right there:
   - **Permission prompts:** what it wants to run or change ("Can I run npm run build?"), with **Allow** and **Deny**. Claude's "don't ask again" options are there too, such as *Always allow Bash(npm test:\*)*. Type in the note box to say no and tell it what to do instead.
-  - **Its own questions** (Claude's multiple choice): tap an option, pick several where it says *pick any*, or type *something else*.
+  - **Its own questions** (Claude's multiple choice): tap an option, pick several where it says *pick any*, or type *something else*. A question that walks you through steps in a single run, "(1) … (2) …", is set out as a numbered list, with the question itself on its own line after the last step. Its words are never changed, and your answer goes back under the question as the agent asked it.
   - **Plans** (Claude's plan mode): read the plan, then **Approve plan** or **Keep planning** with what should change.
   - **The terminal still works:** Claude keeps its own dialog up as well, and whichever you answer first wins (the card then says it was answered in the terminal). Codex waits for the chat. Its card has *Answer in its terminal instead*, and typing in its terminal does the same.
   - **Everywhere you are:** cards from agents on your other computers work the same way, so do the ones on [your phone](#your-phone), and answered cards stay in the history.
@@ -291,14 +292,29 @@ On a Claude subscription, CLIque shows how much of the account's 5-hour and week
 - **Linked computers.** An agent on a [linked computer](#computers-one-clique-across-your-computers) runs on that computer's accounts, so its sheet shows that computer's limits, and hovering them says which computer ("Claude account on Workstation"). Once a linked computer reports its own, the bottom of the sidebar shows a row per computer: its name, a bar and its fullest limit. Click it for every account on every computer. The menu bar lists each computer's accounts under its name. A computer that's offline keeps its last numbers, greyed, until each limit resets.
 - **Routing.** While a provider is at 90% or more of its 5-hour or weekly limit, a message or task CLIque routes for you goes to an agent on another provider when one covers the area just as well. It never sends work outside an agent's area because of a limit, and messages you address to an agent always go to it.
 
+### Accounts
+
+An agent runs on its provider's sign-in. **Accounts** (the ⋯ menu at the bottom of the sidebar, or under the usage limits) lets a provider have more than one: a personal and a work Claude subscription, two ChatGPT accounts. Agents on different accounts run side by side, and each account has its own usage limits.
+
+- **The default account** is the sign-in Claude Code or Codex already has on this computer. CLIque doesn't touch it, and agents run on it unless you pick another.
+- **Add account** asks for a name ("Work") and opens the provider's own sign-in page in your browser: it's the CLI's `claude auth login` or `codex login`, run for that account. CLIque never sees a password or reads a token. If the browser doesn't open, **Copy link** gives you the page's address. When Claude's page shows a code instead of finishing by itself, paste it into the account's row.
+- **Each account is a folder** in `~/.clique/accounts/`, which its agents' CLI is pointed at (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`). It shares your setup with the CLI's own folder through links (settings, instructions, skills, agents, commands, plugins), so a change in one is a change in all. Your Claude tool servers are copied in once, when the account is made. The sign-in and the conversations are the account's own.
+- **Pick an agent's account** in its Profile, under Model, once its provider has more than one. An idle agent restarts on the new account right away, and one at work when its turn is over. Its conversation goes with it: the files move to the new account's folder and it picks up where it was. **Move its agents to** in an account's menu moves all of them at once, which is the quick way round an account that's out of limit.
+- **Limits and usage are per account.** The sidebar's limits, an agent's sheet, the heads-ups ("Claude · Work is at 95% of its weekly limit") and the routing round a nearly full account all go by the account. [Usage](#usage) gains an Accounts filter, split and list once you have an account of your own.
+- **A new account is a new place for the CLI.** The first time an agent starts on it in a folder, Claude Code asks whether you trust that folder, as it did the first time on your own sign-in: the question comes as a card in the chat.
+- **An account that isn't signed in** says so in the sheet, and its agents don't start: the chat says which account to sign in. **Remove** signs it out and deletes its folder, once no agent runs on it; what it used stays in Usage.
+- Accounts are for providers that sign you in: Claude and Codex, and providers of your own that run those CLIs without a key. GLM runs on a key from your environment and Ollama on your own machine, so they have none. Accounts are this computer's: an agent on a linked computer runs on that computer's accounts, set up there.
+
+In `config.json`, `accounts` lists them, each with an `id`, its `provider` and a `name`, and an agent names its with `"account"` (none: the default one).
+
 ### Usage
 
 **Usage** in the sidebar (⌘5) shows what Claude Code and Codex used, day by day. Each computer reads it from the CLIs' own logs, so it counts every workspace's agents and what you ran outside CLIque.
 
 - **Whose.** The switch in its header picks the workspace on screen (what its agents used) or **Everything** (every workspace, and what ran outside CLIque). It follows you from workspace to workspace.
 - **Where.** With [linked computers](#computers-one-clique-across-your-computers), the first filter picks all of them added up, this one, or another one. Each computer reads its own logs and answers when another one's Usage is open, so a workspace hosted elsewhere, or one with agents on two computers, shows all of it. A computer that's off shows what it last said. One on an older CLIque can't answer: update it.
-- **Filters.** Menus narrow to one workspace, agent or provider, and every row of a list is a filter too: click a workspace, an agent, a folder or a model to see only that, and again to let go.
-- **Tokens over time.** A bar a week (a day in the last 7 or 30 days), split by workspace, agent, provider or computer. The list beside it ranks them with their share.
+- **Filters.** Menus narrow to one workspace, agent, provider or [account](#accounts), and every row of a list is a filter too: click a workspace, an agent, a folder or a model to see only that, and again to let go.
+- **Tokens over time.** A bar a week (a day in the last 7 or 30 days), split by workspace, agent, provider, account or computer. The list beside it ranks them with their share.
 - **Calendars.** A square a day for each provider, darker for more tokens. Pick a day for who used it, where and on which models.
 - **Which workspace a conversation counts for.** CLIque writes each conversation down as its agent takes a prompt (`ran.json`), so an agent that works in several workspaces is counted in the right one. Conversations from before that go by the agent's name and folder; the few that can't be told show as "Workspace not recorded". A workspace you've removed keeps what it used, under its name. A conversation that moved to another computer with its agent is counted on each computer for what it used there.
 
@@ -396,6 +412,7 @@ Everything CLIque keeps is in the `.clique` folder in your home folder (`~/.cliq
 - `board.md`: the shared notes (`clique note`); the last 200 are kept.
 - `reads.json`: up to when you've read each agent's replies (the unread counts).
 - `usage.json`: each provider's usage limits as last reported, and which heads-ups you've had.
+- `accounts/<id>/`: the folder of each [account](#accounts) you added: its sign-in (kept by its CLI), its conversations' logs, and links to your own CLI setup. Removing the account removes it.
 - `usage-spaces.json`: each workspace as it last was (its name and look, and where each agent worked in it), so [Usage](#usage) still names a workspace you've removed and keeps its conversations with it.
 - `history.json`: what Claude Code and Codex used each day, read from their own logs for [Usage](#usage). Only numbers, per day, model, folder and agent: no messages. It keeps the days of logs Claude Code has since cleaned up.
 - `savers.json`: what each [token saver](#token-savers) counted, day by day for the last 90 days, and the clique's spend under each mix of savers that was on.

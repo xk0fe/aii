@@ -2,7 +2,7 @@
 // every computer that has it) or everything (each workspace, and what ran outside CLIque), on this computer, a linked
 // one, or all of them added up. core/history.js reads each computer's logs into rows (a day, a workspace, an agent, a
 // provider, a model, a folder); this view filters and adds them up: the range's numbers, tokens over time by workspace,
-// agent, provider or computer, a calendar per provider, and who used it, where and on which models, for the whole range
+// agent, provider, account or computer, a calendar per provider, and who used it, where and on which models, for the whole range
 // until you pick a day. Every row of a list is a filter. Data comes from clique.call('history').
 /* global pageHead, popMenu, clique, store, esc, morph, reduceMotion, tildePath, shortPath, ICONS, avatarHTML, money, plural, limitNums, usageTip, THIS_COMPUTER, PRODUCT_NAME, shownName, ago, wsTile, computerIcon, upFirst */
 
@@ -25,6 +25,7 @@ function mountUsage(root, { headIn = root }) {
     ws: { label: 'Workspaces', short: 'Workspace', all: 'All workspaces' },
     who: { label: 'Agents', short: 'Agent', all: 'Everyone' },
     provider: { label: 'Providers', short: 'Provider', all: 'All providers' },
+    account: { label: 'Accounts', short: 'Account', all: 'All accounts' },
     computer: { label: 'Computers', short: 'Computer', all: 'All computers' },
     model: { label: 'Models', short: 'Model' },
     dir: { label: 'Folders', short: 'Folder' },
@@ -58,7 +59,7 @@ function mountUsage(root, { headIn = root }) {
   let range = store.get('clique.usage.range') || 'last'
   let scope = store.get('clique.usage.scope') === 'all' ? 'all' : 'here' // the workspace on screen, or everything
   const by = { here: store.get('clique.usage.by.here') || 'who', all: store.get('clique.usage.by.all') || 'ws' } // what the chart is split by, in each
-  const filters = { ws: null, who: null, provider: null, computer: null, model: null, dir: null } // one value of a kind, or null for all
+  const filters = { ws: null, who: null, provider: null, account: null, computer: null, model: null, dir: null } // one value of a kind, or null for all
   const open = new Set() // the lists shown whole, past their first rows
   let view = null // what the last draw worked out, for the tooltips and the menus
 
@@ -137,18 +138,21 @@ function mountUsage(root, { headIn = root }) {
       for (const r of c.rows ?? []) {
         const ws = str(r, 'ws')
         const name = ws ? str(r, 'who') : ''
-        const f = { computer: c.slug, day: str(r, 'day'), ws, name, who: !ws ? OUT : !name ? UNKNOWN : c.here ? name : `${name}@${c.slug}`, provider: str(r, 'provider'), model: str(r, 'model'), dir: str(r, 'dir') }
+        const f = { computer: c.slug, day: str(r, 'day'), ws, name, who: !ws ? OUT : !name ? UNKNOWN : c.here ? name : `${name}@${c.slug}`, provider: str(r, 'provider'), model: str(r, 'model'), dir: str(r, 'dir'), account: str(r, 'account') }
         for (const k of NUMBERS) f[k] = at[k] === undefined ? 0 : Number(r[at[k]]) || 0
         out.push(f)
       }
     }
     return out
   }
-  const valueOf = { ws: (f) => f.ws, who: (f) => f.who, provider: (f) => f.provider, computer: (f) => f.computer, model: (f) => `${f.provider}\t${f.model}`, dir: (f) => f.dir }
+  // (an account is one computer's: Work here and Work on another computer are two)
+  const valueOf = { ws: (f) => f.ws, who: (f) => f.who, provider: (f) => f.provider, account: (f) => `${f.provider}\t${f.account}\t${f.computer}`, computer: (f) => f.computer, model: (f) => `${f.provider}\t${f.model}`, dir: (f) => f.dir }
   // The workspace on screen, as the rows name it: the app's own word for it (it switches before the next answer comes).
   // (one the last answer doesn't know yet, just made: a key nothing has, until the next answer)
   const hereKey = () => (state?.workspace ? Object.entries(data?.spaces ?? {}).find(([, w]) => w.id === state.workspace.id)?.[0] ?? '\u0000' : null)
   const scopeNow = () => (scope === 'here' && hereKey() ? 'here' : 'all')
+  // Accounts are worth telling apart once there's one of your own (until then an account is its provider).
+  const hasAccounts = () => facts.some((f) => f.account)
   // The rows of the scope, with every filter but `skip` (a list of one kind shows all of that kind, the picked one marked).
   function slice(skip) {
     const here = scopeNow() === 'here' ? hereKey() : null
@@ -199,6 +203,13 @@ function mountUsage(root, { headIn = root }) {
       return { label: shownName(name), sub: at < 0 ? '' : `on ${computerOf(slug)?.name ?? slug}`, icon: avatarHTML(face(name, slug, ws), { size, mood: 'still' }), tip: at < 0 ? shownName(name) : `${shownName(name)}, on ${computerOf(slug)?.name ?? slug}` }
     }
     if (dim === 'provider') return { label: providerLabel(id), icon: `<i class="us-dot" data-hue="${hueOf(id)}"></i>` }
+    if (dim === 'account') {
+      // a provider's own sign-in goes by the provider's name; one of your accounts adds its own ("Claude · Work")
+      const [provider, account, slug] = id.split('\t')
+      const name = account ? computerOf(slug)?.accounts?.[account]?.name ?? account : ''
+      const where = (data?.computers?.length ?? 0) > 1 ? `on ${computerOf(slug)?.name ?? slug}` : account ? '' : 'default'
+      return { label: `${providerLabel(provider)}${name ? ` · ${name}` : ''}`, sub: where, icon: `<i class="us-dot" data-hue="${hueOf(provider)}"></i>`, tip: `${providerLabel(provider)}${name ? ` · ${name}` : ', its own sign-in'}${(data?.computers?.length ?? 0) > 1 ? `, on ${computerOf(slug)?.name ?? slug}` : ''}` }
+    }
     if (dim === 'computer') return { label: computerOf(id)?.name ?? id, sub: computerOf(id)?.here ? THIS_COMPUTER : computerOf(id)?.online ? '' : 'offline', icon: computerIcon(computerOf(id)?.name) }
     if (dim === 'model') {
       const [provider, model] = [id.slice(0, id.indexOf('\t')), id.slice(id.indexOf('\t') + 1)]
@@ -290,7 +301,7 @@ function mountUsage(root, { headIn = root }) {
     }
     const any = Object.entries(filters).some(([dim, x]) => x !== null && !(dim === 'ws' && here))
     // (a few computers: a switch, and in a narrow window the menu instead)
-    return `<div class="us-filters${seg ? ` has-seg c${computers.length}` : ''}${here ? '' : ' all'}" role="toolbar" aria-label="Filters">${machine}${computers.length > 1 ? menu('computer', ' us-comp-menu') : ''}${here ? '' : menu('ws')}${menu('who')}${v.providers.length > 1 ? menu('provider') : ''}${chip('model')}${chip('dir')}${
+    return `<div class="us-filters${seg ? ` has-seg c${computers.length}` : ''}${here ? '' : ' all'}" role="toolbar" aria-label="Filters">${machine}${computers.length > 1 ? menu('computer', ' us-comp-menu') : ''}${here ? '' : menu('ws')}${menu('who')}${v.providers.length > 1 ? menu('provider') : ''}${hasAccounts() || filters.account !== null ? menu('account') : ''}${chip('model')}${chip('dir')}${
       any ? `<button type="button" class="btn plain us-clear" data-clear="all">Clear filters</button>` : ''}</div>`
   }
 
@@ -402,7 +413,7 @@ function mountUsage(root, { headIn = root }) {
     const whole = all.reduce((n, g) => n + g.tokens, 0)
     const first = open.has(dim) || all.length <= ROWS ? all : all.slice(0, ROWS - 1)
     const rest = all.slice(first.length)
-    const hue = (g) => (dim === 'model' ? hueOf(g.id.slice(0, g.id.indexOf('\t'))) : dim === 'provider' ? hueOf(g.id) : null)
+    const hue = (g) => (dim === 'model' || dim === 'account' ? hueOf(g.id.slice(0, g.id.indexOf('\t'))) : dim === 'provider' ? hueOf(g.id) : null)
     return `<div class="us-col"><h3 class="section-label">${DIMS[dim].label}${all.length > 1 ? `<small>${all.length}</small>` : ''}</h3>${first.map((g) => rowHTML(dim, g, whole, { max: all[0].tokens, hue: hue(g) })).join('')}${
       rest.length ? restHTML(rest, whole, { more: dim })
       : open.has(dim) && all.length > ROWS ? `<button type="button" class="us-row rest" data-more="${dim}"><span class="us-ic"></span><span class="us-name">Show fewer</span></button>` : ''}</div>`
@@ -466,7 +477,7 @@ function mountUsage(root, { headIn = root }) {
     const none = !(s.tokens > 0 || s.messages > 0)
     const line = none ? (day ? 'Nothing ran that day' : '')
       : factsHTML([`<abbr title="${esc(`${TOKENS_NOTE}\n${kindsText(s)}`)}"><b>${big(s.tokens)}</b> tokens</abbr>`, things(s.messages, 'message', { bold: true }), things(s.sessions, 'session', { bold: true })], s.cost)
-    const dims = [scopeNow() === 'all' && 'ws', 'who', 'dir', 'model', (data?.computers?.length ?? 0) > 1 && 'computer'].filter(Boolean)
+    const dims = [scopeNow() === 'all' && 'ws', 'who', 'dir', 'model', hasAccounts() && 'account', (data?.computers?.length ?? 0) > 1 && 'computer'].filter(Boolean)
     return `<section class="us-card us-detail${day ? ' day' : ''}">
       <header class="us-ph"><h2>${esc(title)}</h2><span class="us-facts">${line}</span>${day ? `<button class="btn sm" data-us="clear">Back to ${esc(r.id === 'last' ? 'the last 12 months' : r.label.replace(/^Last/, 'the last'))}</button>` : ''}</header>
       <div class="us-cols${none ? ' none' : ''}" style="--k:${dims.length}">${dims.map((dim) => listHTML(dim, within(v.rowsButAll(dim)))).join('')}</div>
@@ -549,7 +560,7 @@ function mountUsage(root, { headIn = root }) {
     const all = slice() // the scope, with every filter, on any day
     const rows = all.filter((f) => f.day >= from && f.day <= to)
     const scoped = facts.filter((f) => !here || f.ws === hereKey()) // the scope, nothing filtered: what colours go by
-    const kinds = [!here && 'ws', 'who', 'provider', data.computers.length > 1 && 'computer'].filter(Boolean)
+    const kinds = [!here && 'ws', 'who', 'provider', hasAccounts() && 'account', data.computers.length > 1 && 'computer'].filter(Boolean)
     const dim = kinds.includes(by[here ? 'here' : 'all']) ? by[here ? 'here' : 'all'] : kinds[0]
     // each provider's days, for its calendar: Claude and Codex first
     const order = (id) => (id === 'claude' ? 0 : id === 'codex' ? 1 : 2)

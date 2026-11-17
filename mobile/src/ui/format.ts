@@ -203,7 +203,8 @@ export function voiceOf(ask: unknown): Said {
   const q = ask as { type?: string; tool?: string; title?: string; code?: string; detail?: string; say?: string; questions?: { question: string }[] }
   if (q.type === 'question') {
     const qs = q.questions ?? []
-    return [{ text: (qs[0]?.question ?? 'I have a question.') + (qs.length > 1 ? ` And ${qs.length - 1} more.` : '') }]
+    // (the line about the rest is a part of its own: after steps set out as a list it stands under them, ask.tsx AskWords)
+    return [{ text: qs[0]?.question ?? 'I have a question.' }, ...(qs.length > 1 ? [{ text: ` And ${qs.length - 1} more.` }] : [])]
   }
   if (q.type === 'plan') return [{ text: "Here's my plan. Can I go ahead?" }]
   if (q.say) return [{ text: q.say }] // an agent tool (clique app) asks in its own words: "Can I add a #design channel?"

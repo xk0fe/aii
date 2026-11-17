@@ -537,6 +537,66 @@ test("a log that's gone keeps the workspace that ran it: the rows are the same b
   assert.deepEqual(rowsBy(rowsOf(index), 'ws', 'who', 'tokens').sort((x, y) => x.ws.localeCompare(y.ws)), [{ ws: '', who: '', tokens: 11 }, { ws: 'shop', who: 'ada', tokens: 110 }])
 })
 
+// ---- accounts: a folder per sign-in (core/accounts.js), each with its own logs --------------------------------------
+
+test("an account's folder: its logs' rows say which account, also once the logs are gone", () => {
+  const work = path.join(path.dirname(claude), 'accounts', 'claude-work', 'projects')
+  const both = [...roots, { dir: work, cli: 'claude', provider: 'claude', account: 'claude-work' }]
+  write(path.join(claude, 'p', 'own.jsonl'), lines(prompt('2026-11-10', 'hi'), reply('1', '2026-11-10', { input_tokens: 10, output_tokens: 0 })))
+  const a = write(path.join(work, 'p', 's-work.jsonl'), lines(named('ada'), prompt('2026-11-10', 'hi'), reply('2', '2026-11-10', { input_tokens: 70, output_tokens: 0 })))
+  const sub = write(path.join(work, 'p', 's-work', 'subagents', 'agent-a.jsonl'), lines(reply('3', '2026-11-10', { input_tokens: 5, output_tokens: 0 })))
+  const owners = { 's-work': ['shop', 'ada'] }
+  let index = scan(emptyIndex(), both, { owners })
+  const before = rowsOf(index, { owners })
+  assert.equal(before.cols.at(-1), 'account')
+  assert.deepEqual(rowsBy(before, 'ws', 'who', 'provider', 'account', 'tokens').sort((x, y) => y.tokens - x.tokens), [
+    { ws: 'shop', who: 'ada', provider: 'claude', account: 'claude-work', tokens: 75 },
+    { ws: '', who: '', provider: 'claude', account: '', tokens: 10 },
+  ])
+  fs.rmSync(a)
+  fs.rmSync(sub)
+  index = scan(index, both, { owners })
+  assert.deepEqual(rowsOf(index, { owners }), before, 'the same rows from what was kept')
+  // a session nobody wrote down, on an account: its account is kept all the same
+  const b = write(path.join(work, 'p', 's-plain.jsonl'), lines(prompt('2026-11-11', 'hi'), reply('4', '2026-11-11', { input_tokens: 3, output_tokens: 0 })))
+  index = scan(index, both, { owners })
+  fs.rmSync(b)
+  index = scan(index, both, { owners })
+  assert.deepEqual(rowsBy(rowsOf(index, { owners }), 'ws', 'account', 'tokens').find((r) => r.tokens === 3), { ws: '', account: 'claude-work', tokens: 3 })
+})
+
+test("a conversation that moves to another account's folder: what it used before stays the old account's, what it uses after is the new one's", () => {
+  const work = path.join(path.dirname(claude), 'accounts', 'claude-work', 'projects')
+  const both = [...roots, { dir: work, cli: 'claude', provider: 'claude', account: 'claude-work' }]
+  const was = write(path.join(claude, 'p', 's1.jsonl'), lines(named('ada'), prompt('2026-11-10', 'hi'), reply('1', '2026-11-10', { input_tokens: 100, output_tokens: 0 })))
+  const subWas = write(path.join(claude, 'p', 's1', 'subagents', 'agent-a.jsonl'), lines(reply('2', '2026-11-10', { input_tokens: 9, output_tokens: 0 })))
+  const owners = { s1: ['shop', 'ada'] }
+  let index = scan(emptyIndex(), both, { owners })
+  // its agent changes account: the files are moved (Hub.carrySession), then it carries on there
+  const now = path.join(work, 'p', 's1.jsonl')
+  fs.mkdirSync(path.join(work, 'p', 's1', 'subagents'), { recursive: true })
+  fs.renameSync(was, now)
+  fs.renameSync(subWas, path.join(work, 'p', 's1', 'subagents', 'agent-a.jsonl'))
+  write(now, lines(prompt('2026-11-10', 'more'), reply('3', '2026-11-10', { input_tokens: 40, output_tokens: 0 }), reply('4', '2026-11-11', { input_tokens: 7, output_tokens: 0 })), { append: true })
+  index = scan(index, both, { owners })
+  const rows = rowsBy(rowsOf(index, { owners }), 'day', 'ws', 'who', 'account', 'tokens', 'messages').sort((x, y) => y.tokens - x.tokens)
+  assert.deepEqual(rows, [
+    { day: '2026-11-10', ws: 'shop', who: 'ada', account: '', tokens: 109, messages: 1 },
+    { day: '2026-11-10', ws: 'shop', who: 'ada', account: 'claude-work', tokens: 40, messages: 1 },
+    { day: '2026-11-11', ws: 'shop', who: 'ada', account: 'claude-work', tokens: 7, messages: 0 },
+  ])
+  assert.deepEqual(Object.keys(index.files).sort(), [now, path.join(work, 'p', 's1', 'subagents', 'agent-a.jsonl')].sort(), 'one entry per log, where it is now')
+  // nothing is read twice on the next look, and a response copied into the session's other log is still told
+  index = scan(index, both, { owners })
+  assert.equal(rowsOf(index, { owners }).rows.reduce((n, r) => n + r[COLS.indexOf('tokens')], 0), 156)
+  // back to your own sign-in: the same again, the other way
+  fs.renameSync(now, was)
+  write(was, lines(reply('5', '2026-11-12', { input_tokens: 1, output_tokens: 0 })), { append: true })
+  index = scan(index, both, { owners })
+  assert.deepEqual(rowsBy(rowsOf(index, { owners }), 'day', 'account', 'tokens').filter((r) => r.day === '2026-11-12'), [{ day: '2026-11-12', account: '', tokens: 1 }])
+  assert.equal(rowsOf(index, { owners }).rows.reduce((n, r) => n + r[COLS.indexOf('tokens')], 0), 157)
+})
+
 // ---- a conversation that came from another computer (core/move.js): what it had used there is that computer's ----
 
 test("a log that arrived with a moved agent counts from where it was then: Claude Code's by its lines, Codex's by its running total", () => {
