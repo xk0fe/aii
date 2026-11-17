@@ -80,6 +80,7 @@ Q is the queue in CLIque (CLI agent queue, CLI queue, CLIque) and the clique's o
   - **All** (top left) goes back to everyone's messages, and so does clicking the agent again (its face, its creature on the **To** line, in the pill or in the sidebar). Its count is for new replies from the rest of the clique, and an orange dot means one of them needs you. A link to a message outside the conversation (a quote, "replied", **Answer**) goes back to everyone's messages and shows it.
   - **Clones** share their agent's conversation. Clicking a clone sends what you write to that clone in particular.
   - **Each conversation keeps its own draft.** What you were typing, its images and the message you were replying to wait there while you look elsewhere, and come back when you return.
+  - **Changing who it's for takes the message along.** Pick someone else on the **To** line (or **Auto**, or **Task**) with a message half written, and it's in the box where you land, with its images, ready to send. If a draft was already waiting there, yours goes under it. The message you were replying to stays with the conversation it's in.
   - **An agent that's off** keeps its conversation for reading; it takes messages again once it's back on. One that moves to another computer keeps it too.
   - **Task** on the **To** line adds to the board from everyone's messages; `task:` inside a conversation is the way to give that agent one.
   - In the dashboard, opening an agent's terminal from the sidebar opens your conversation with it in the chat too.
