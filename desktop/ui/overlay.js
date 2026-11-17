@@ -1,5 +1,5 @@
 // Floating pill on the screen edge; click it (or press the hotkey) for the chat panel.
-/* global reduceMotion, wordmarkHTML, PRODUCT_NAME, clique, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, cliqueSummary, celebrate, ICONS, wsTile, wsLabel, elsewhere, hasWorkspaces */
+/* global needsYou, needText, isConvo, familyOf, mountThread, reduceMotion, wordmarkHTML, PRODUCT_NAME, clique, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, cliqueSummary, celebrate, ICONS, wsTile, wsLabel, elsewhere, hasWorkspaces */
 
 const $ = (s) => document.querySelector(s)
 // Under the mouse (main.js opens this page with ?at=mouse): there's no pill to click. The mark follows the pointer, and
@@ -24,7 +24,7 @@ $('[data-act=close]').innerHTML = ICONS.close
 const everyone = () => (composer.setTarget('auto'), composer.focus())
 const head = mountConvoHead($('.panel header .convo-head'), { onBack: everyone, onTerminal: (name) => clique.call('dashboard', name) })
 document.documentElement.dataset.fxElsewhere = '1' // a file opens in the main window's viewer: this one is too small to look closer in (ui/files.js)
-const feed = mountFeed($('.feed'), { limit: 80, onAgent: (name) => clique.call('dashboard', name), onConvo: (name) => (composer.setTarget(name), composer.focus()), onLeave: () => composer.setTarget('auto'), onReply: (e) => composer.replyTo(e), onThread: (id, at) => (threadPane.render(state), threadPane.open(id, at)) })
+const feed = mountFeed($('.feed'), { limit: 80, headSays: true, onAgent: (name) => clique.call('dashboard', name), onConvo: (name) => (composer.setTarget(name), composer.focus()), onLeave: () => composer.setTarget('auto'), onReply: (e) => composer.replyTo(e), onThread: (id, at) => (threadPane.render(state), threadPane.open(id, at)) })
 const threadPane = mountThread($('.panel > .thread'), {
   onSeen: () => feed.refresh(),
   onAgent: (name) => (threadPane.close(), composer.setTarget(familyOf(name)), composer.focus()),
@@ -132,6 +132,7 @@ function setOpen(open, focus = open, { quick = false } = {}) {
   if (open && quick !== isQuick()) threadPane.close() // (the message box has no room for a thread)
   document.body.classList.toggle('open', open)
   document.body.classList.toggle('quick', open && quick)
+  if (state && inHatch()) drawHatch()
   if (MOUSE && state) composer.render(state) // its send button is Stop in the chat, never in the message box
   tellLooking()
   fit(focus)
@@ -242,6 +243,8 @@ const HATCH_FACES = 4 // beside the notch, over the menu bar's own items: a few,
 
 function drawPill() {
   if (MOUSE) return // the wisp alone follows the pointer
+  if (inHatch()) return drawHatch()
+  morph($('.hatch-who'), '')
   const on = state.agents.filter((a) => a.on)
   // A big clique doesn't fit along a screen edge: the pill keeps the ones that need a look (waiting on you, new
   // replies, at work) in their usual order, and the rest become "+N", which opens the chat.
@@ -262,6 +265,35 @@ function drawPill() {
   }), hidden ? `<button class="more-faces" data-more-faces title="${esc(`${plural(hidden, 'more agent')}: ${on.filter((a) => !shown.includes(a)).map((a) => a.name).join(', ')}`)}">+${hidden}</button>` : ''])
 }
 
+// In the hatch the band says one thing, the most pressing: who needs you (its creature comes out of the notch holding up
+// its sign, and what it wants), else who wrote while you were away and how many new replies, else a slow dot while
+// anyone works, else nothing. Open, the chat says it all: only the dot stays.
+function drawHatch() {
+  const needs = needsYou(state)
+  const away = elsewhere(state).waiting
+  const fresh = state.agents.filter((a) => a.unread)
+  const unread = fresh.reduce((n, a) => n + a.unread, 0)
+  const working = state.agents.some((a) => a.on && a.status === 'working')
+  const dot = working ? '<i class="hatch-dot" title="At work"></i>' : ''
+  let who = ''
+  let fact = dot
+  if (!isOpen() && needs.length) {
+    const n = needs[0]
+    const type = n.ask?.ask?.type
+    const what = needs.length > 1 ? `${needs.length} need you` : type === 'question' ? `${displayName(n.agent)} asks` : type === 'plan' ? `${displayName(n.agent)} has a plan` : `${displayName(n.agent)} needs your OK`
+    who = avatarHTML(n.agent, { size: 28, mood: 'waiting', pose: type === 'question' ? 'question' : 'sign', poseMin: 20 })
+    fact = `<span class="hatch-fact needs" title="${esc(needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n'))}">${esc(what)}</span>`
+  } else if (!isOpen() && away) {
+    fact = `<span class="hatch-fact needs">${esc(`${plural(away, 'agent')} in another workspace need${away > 1 ? '' : 's'} you`)}</span>`
+  } else if (!isOpen() && unread) {
+    const latest = fresh.sort((x, y) => (y.since ?? 0) - (x.since ?? 0))[0]
+    who = avatarHTML(latest, { size: 22, mood: 'still' })
+    fact = `<span class="hatch-fact">${esc(unread > 1 ? `${unread} new` : `${displayName(latest)} replied`)}</span>${dot}`
+  }
+  morph($('.hatch-who'), who)
+  morph($('.dots'), fact)
+}
+
 live((next) => {
   state = next
   const on = state.agents.filter((a) => a.on)
@@ -275,7 +307,7 @@ live((next) => {
   morph($('.panel header .brand'), hasWorkspaces(state) ? `${wsTile(state.workspace, { size: 20 })}<b>${esc(wsLabel(state.workspace))}</b>` : wordmarkHTML(20))
   drawPill()
   if (!MOUSE) celebrate($('.dots'), state.agents)
-  morph($('.sums'), cliqueSummary(state))
+  morph($('.sums'), cliqueSummary(state, { needs: false })) // (Needs you, docked over the message box, says who)
   // the mark in the pill counts every reply you haven't read (the wisp only says there are some)
   const fresh = state.agents.reduce((n, a) => n + a.unread, 0)
   if (MOUSE) drawWisp(fresh, document.body.classList.contains('alert'))

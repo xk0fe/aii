@@ -79,14 +79,17 @@ test('To line: with nothing written there is nothing to move, so their draft com
 
 // How the message box is wired to it, read from the source (the box itself needs a page: `npm run probe:composer`
 // drives it in the real dashboard, through every case here and the ones only clicks and timing show).
-test('the To picker and the Task switch move the message; the sidebar, a face and Reply do not', () => {
+test('the To picker, Add a task and the Task chip move the message; the sidebar, a face and Reply do not', () => {
   const composer = src.slice(src.indexOf('function mountComposer'), src.indexOf('// ---- notes at the bottom of the window'))
   const pickTo = composer.slice(composer.indexOf('const pickTo ='), composer.indexOf('let told'))
   assert.match(pickTo, /setTarget\(to, \{ move: true \}\)/)
   const chips = composer.slice(composer.indexOf("chips.addEventListener('click'"), composer.indexOf('new ResizeObserver(fitRail)'))
   assert.match(chips, /setTarget\(picked\.dataset\.to, \{ move: true \}\)/)
+  // + > Add a task (the Task switch that was beside the To picker)
+  const plus = composer.slice(composer.indexOf("plus.addEventListener('click'"), composer.indexOf('const sendLater ='))
+  assert.match(plus, /setTarget\(target === 'task' \? 'auto' : 'task', \{ move: true \}\)/)
   // nowhere else: not as another value, not beside carry
-  assert.equal(composer.match(/[{,]\s*move\s*:\s*(?!move\b)\S/g).length, 2, 'only the To line moves a message')
+  assert.equal(composer.match(/[{,]\s*move\s*:\s*(?!move\b)\S/g).length, 3, 'only the To line, Add a task and the Task chip move a message')
   // from there to the box: setTarget hands what it was given to swapDraft, which hands it on with where it's going;
   // nothing moves unless asked, or while a message is on its way
   assert.match(composer, /const setTarget = \(name, how\) => \{\s*if \(draftKey\(name\) !== draftKey\(target\)\) swapDraft\(name, how\)/)

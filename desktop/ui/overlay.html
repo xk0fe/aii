@@ -113,14 +113,23 @@
     [data-side=hatch].open .pill { min-width: 400px; border-radius: 0; }
     [data-side=hatch].open .panel { width: 0; min-width: 100%; }
     @keyframes hatch-in { from { transform: translateY(-100%); } }
-    [data-side=hatch] .home { grid-column: 1; justify-self: start; width: 32px; height: 22px; padding: 2px; }
-    [data-side=hatch] .home-badge { top: 3px; left: 28px; right: auto; transform: scale(.78); }
-    [data-side=hatch] .dots { grid-column: 3; justify-self: end; flex-direction: row; gap: 3px; }
-    [data-side=hatch] .dots .face { transform-origin: 50% 20%; }
-    /* over the creature's own corner rather than the one before it, small enough to leave its face showing */
-    [data-side=hatch] .dots .unread-badge { left: auto; right: -5px; top: -4px; transform: scale(.78); }
-    [data-side=hatch] .dots .face.clone { margin: 0 0 0 -3px; animation-name: clone-pop-x; }
-    [data-side=hatch] .more-faces { width: 26px; height: 20px; margin: 0 0 0 2px; }
+    /* The band says one thing at a time, like the Dynamic Island: a picture on the left, a fact on the right. Nobody
+       needs you and nothing's new: it's the notch, with one slow dot while anyone works. Someone needs you: its creature
+       comes out holding up its sign, and the right says what it wants. New replies: who wrote, and how many. The whole
+       band opens the chat. (ui/overlay.js drawHatch) */
+    .hatch-who { display: none; }
+    [data-side=hatch] .home, [data-side=hatch] .home-badge { display: none; }
+    [data-side=hatch] .hatch-who { grid-column: 1; justify-self: start; display: flex; align-items: center; line-height: 0; min-width: 0; }
+    [data-side=hatch] .dots { grid-column: 3; justify-self: end; flex-direction: row; align-items: center; gap: 6px; padding: 0 4px; }
+    .hatch-who .av { animation: hatch-out .5s var(--spring) backwards; }
+    @keyframes hatch-out { from { opacity: 0; transform: translateX(28px) scale(.55); } }
+    .hatch-fact { font: 600 12px/1 var(--ui); color: var(--fg2); white-space: nowrap; animation: hatch-fact .35s var(--out) .12s backwards; }
+    .hatch-fact.needs { color: var(--needs-ink); }
+    @keyframes hatch-fact { from { opacity: 0; } }
+    .hatch-dot { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--working); animation: hatch-breathe 2.4s ease-in-out infinite; }
+    @keyframes hatch-breathe { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .hatch-who .av, .hatch-fact, .hatch-dot { animation: none; } }
+    [data-side=hatch] .pill::after { display: none; } /* the creature that came out is the alert */
     [data-side=hatch] .panel { --from: translate(0, -10px); transform-origin: 50% 0; border-radius: 0 0 22px 22px; box-shadow: 0 16px 28px -14px rgba(0, 0, 0, .75); }
     /* the chat is already wide open: the band stays calm, and the one who needs you wiggles in it */
     [data-side=hatch].open .pill::after { display: none; }
@@ -202,6 +211,7 @@
     </section>
     <aside class="pill sheet">
       <button class="home" title="CLIque"></button><span class="home-badge"></span>
+      <span class="hatch-who"></span>
       <div class="dots"></div>
     </aside>
   </div>
