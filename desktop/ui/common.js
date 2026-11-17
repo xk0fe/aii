@@ -2262,8 +2262,9 @@ function subsUsed(e, open) {
     <div class="subs-list">${e.subs.map((s) => `<div class="subs-item ${s.running ? 'running' : ''}"><span class="sub-kind">${esc(subType(s.type))}</span><span class="sub-job">${esc(s.description || 'sub-agent')}</span><span class="sub-meta">${s.tools ? `${plural(s.tools, 'step')} · ` : ''}${duration(s.ms)}${s.running ? ' · working' : ''}</span></div>`).join('')}</div></details>`
 }
 
-// onAgent: an agent's line under the feed (who's at work) was clicked, for its terminal. onConvo: an agent's face
-// or name in a message was, for your conversation with it. onLeave: a jump goes to a message outside the
+// onAgent: an agent's line under the feed (who's at work) was clicked, for your conversation with it. onTerminal: Open
+// its terminal, for one waiting on you there. onConvo: an agent's face or name in a message was, for your conversation
+// with it. onLeave: a jump goes to a message outside the
 // conversation on screen, or the agent you're talking to was clicked again, so the chat goes back to everyone's.
 // ---- searching the chat ----
 // What a feed entry says, for a search: its words, its task's title, a question's options, a command it asked to run,
@@ -2303,7 +2304,7 @@ function markWords(root, words) {
 // onFound: a search result was clicked, so the search is over and the chat shows that message where it was.
 // welcome(): what everyone's chat shows while it has no messages at all (the dashboard's first steps), or nothing.
 // onChannel(id): a jump to a message in another channel (the dashboard opens that channel).
-function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply, onThread, onTicket = (key) => clique.call('dashboard', `task:${key}`), onFound, welcome, limit = 200, inline = false, face = 28, headSays = false } = {}) {
+function mountFeed(el, { onAgent, onTerminal = onAgent, onConvo = onAgent, onLeave, onChannel, onReply, onThread, onTicket = (key) => clique.call('dashboard', `task:${key}`), onFound, welcome, limit = 200, inline = false, face = 28, headSays = false } = {}) {
   const open = new Set()
   const seen = new Set()
   const reacted = new Set() // `${id}|${by}|${emoji}`: the reactions already drawn, so only a new one pops
@@ -2531,7 +2532,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     const opener = ev.target.closest('[data-needs-open]')
     if (opener) return showNeeds(opener.dataset.needsOpen)
     const term = ev.target.closest('[data-needs-term]')
-    if (term) return onAgent?.(term.dataset.needsTerm)
+    if (term) return onTerminal?.(term.dataset.needsTerm)
     const pointer = ev.target.closest('[data-needs]')
     if (pointer) return showNeeds(pointer.dataset.needs)
     const fold = ev.target.closest('[data-typing]')
@@ -2567,8 +2568,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     if (ans) return answerFrom(ans.closest('[data-ask]'), ans.dataset.answer, ans.dataset.i)
     const bug = ev.target.closest('[data-ticket]')
     if (bug && !ev.target.closest('.who')) return onTicket?.(bug.dataset.ticket)
-    // an agent at work (its line under the feed) opens its terminal; a face or name in a message, your
-    // conversation with it
+    // an agent at work (its line under the feed), a face or name in a message: your conversation with it
     const agent = ev.target.closest('[data-agent]')
     if (agent && agent.closest('.typing-list')) return onAgent?.(agent.dataset.agent)
     // (the clique itself, in its notices, isn't anyone to talk to). The one you're talking to, clicked again, lets

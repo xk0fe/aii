@@ -71,7 +71,7 @@
     return canvas.toDataURL('image/png')
   }
 
-  // An agent in the dashboard: its terminal, with the chat on it, where a question it asked waits for your answer.
+  // An agent in the dashboard: your conversation with it, at the question it asked you (dashboard.js openAgent).
   const openAgent = (name) => clique.call('dashboard', name)
 
   // Lists you opened past their first few ('needs', 'work') and the quiet line's rows ('rest'): the popover remembers.
@@ -126,7 +126,7 @@
   function counts(a) {
     const clones = clonesAt(a)
     const subs = runningSubs(a)
-    return (clones.length ? `<button class="t-count clones" data-clones="${esc(a.name)}" title="${esc(`${plural(clones.length, 'clone')} at work. Click for their terminals`)}">${clones.slice(0, 2).map((c) => avatarHTML(c, { size: 16, mood: 'still' })).join('')}${clones.length}</button>` : '') +
+    return (clones.length ? `<button class="t-count clones" data-clones="${esc(a.name)}" title="${esc(`${plural(clones.length, 'clone')} at work. Click to talk to one`)}">${clones.slice(0, 2).map((c) => avatarHTML(c, { size: 16, mood: 'still' })).join('')}${clones.length}</button>` : '') +
       (subs.length ? `<span class="t-count" title="${esc(`${plural(subs.length, 'sub-agent')} working:\n${subsTip(subs)}`)}">${ICONS.subs}${subs.length}</span>` : '')
   }
   // YOLO, Fast and power on hover, as on the dashboard's rows (common.js handles their clicks)
@@ -305,7 +305,7 @@
       : 'Notifications come through. Click to pause them.'
   }
 
-  // an agent's clones, each a click from its terminal
+  // an agent's clones, each a click from its conversation
   function cloneMenu(btn) {
     const a = state.agents.find((x) => x.name === btn.dataset.clones)
     if (!a) return

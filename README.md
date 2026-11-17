@@ -58,7 +58,7 @@ The first time you open CLIque, he sets you up. He asks what kind of work it is 
 
 ### One chat for everyone
 
-Say it in **#general** and Q passes it on, or `@mention` someone yourself. When an agent needs a decision or your OK, it asks right there. Click an agent for your own conversation with it, with its terminal beside the chat.
+Say it in **#general** and Q passes it on, or `@mention` someone yourself. When an agent needs a decision or your OK, it asks right there. Click an agent for your own conversation with it. Its terminal stays out of the way until you want to watch it work.
 
 Paste a screenshot, drop a document or a folder, or hold the mic and talk: dictation runs on your computer, so your voice never leaves it.
 
