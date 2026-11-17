@@ -75,6 +75,7 @@ const ICONS = {
   user: svg('<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.7-3.6 3.5-5.5 7-5.5s6.3 1.9 7 5.5"/>'),
   clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
   expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
+  shrink: svg('<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/>'), // the minimised dock
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
   // notifications: a bell, and a bell asleep (held: paused, or outside your hours)
   bell: svg('<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 21h4"/>'),
@@ -3900,25 +3901,39 @@ function appItems(state) {
   const login = app.login ? [{ label: 'Open at login', icon: ICONS.power, act: 'app:login', hint: app.login.on ? 'On' : 'Off' }] : []
   return login.length || update.length ? ['-', ...login, ...update] : []
 }
-// Where the floating chat lives, for the same menus, from state.app.chat: the pill you put somewhere, or a buddy that
-// follows the pointer and opens where it is (core/follow.js). ticks: 'left' where the menu ticks its choices in the icon
-// column (the popover's). chatPick does what was picked, and says which keys reach it once it follows the pointer.
-function chatItems(state, { ticks = 'right' } = {}) {
-  const at = state.app?.chat?.at
-  const keys = state.app?.chat?.keys ?? {}
+// Experiments, for the popover's gear menu and the dashboard's settings, from state.app.chat: the floating chat following
+// the mouse (a buddy by the pointer that opens where it is, core/follow.js) instead of the pill you put somewhere, and the
+// minimised dock (the pill shrunk to the mark and a beat that moves while agents work, ui/overlay.html .mini).
+// experiments(state) says which there are to offer; experimentItems are the menu's rows, ticked in its icon column;
+// experimentPick does what was picked, and says which keys reach the chat once it follows the pointer.
+function experiments(state) {
+  const chat = state.app?.chat
+  if (!chat?.at) return null
+  const keys = chat.keys ?? {}
+  const mouse = chat.at === 'mouse'
   // (both shortcuts taken by another app: under the mouse there'd be no way in, so it isn't offered)
-  if (!at || (at === 'sticky' && !keys.chat && !keys.message)) return []
-  // (ticked the way the menu ticks its theme: in the icon column, or where the row's note would be)
-  const row = (id, label, icon, hint) => (ticks === 'left' ? { label, act: `chat:${id}`, hint, icon: at === id ? ICONS.check : undefined } : { label, act: `chat:${id}`, icon, hint: at === id ? '✓' : hint })
-  return ['-', { head: 'Floating chat' }, row('sticky', 'Sticky', ICONS.pin, 'where you put it'), row('mouse', 'Under the mouse', ICONS.pointer, 'follows the pointer')]
+  return { mouse: mouse || Boolean(keys.chat || keys.message) ? mouse : null, mini: Boolean(chat.mini), miniApplies: !mouse }
 }
-function chatPick(act, state) {
-  if (!act.startsWith('chat:')) return
-  const where = act.slice(5)
-  if (where === state.app?.chat?.at) return
-  const k = state.app?.chat?.keys ?? {}
-  const keysSay = [k.message && `${k.message} to talk or type a message`, k.chat && `${k.chat} for the chat`].filter(Boolean).join(', ')
-  clique.call('chatAt', where).then(() => where === 'mouse' && notify(`Your clique follows the pointer now${keysSay ? `: ${keysSay}` : ''}.`), (err) => oops('Couldn’t change that', err))
+function experimentItems(state) {
+  const x = experiments(state)
+  if (!x) return []
+  const tick = (on) => (on ? ICONS.check : undefined)
+  return ['-', { head: 'Experiments' },
+    ...(x.mouse === null ? [] : [{ label: 'Follow the mouse', act: 'exp:mouse', icon: tick(x.mouse) }]),
+    { label: 'Minimised dock', act: 'exp:mini', icon: tick(x.mini && x.miniApplies), disabled: !x.miniApplies, hint: x.miniApplies ? '' : 'not while following' }]
+}
+function experimentPick(act, state, on = null) {
+  if (!act.startsWith('exp:')) return
+  const x = experiments(state)
+  if (!x) return
+  if (act === 'exp:mouse') {
+    const mouse = on ?? !x.mouse
+    if (mouse === x.mouse) return
+    const k = state.app?.chat?.keys ?? {}
+    const keysSay = [k.message && `${k.message} to talk or type a message`, k.chat && `${k.chat} for the chat`].filter(Boolean).join(', ')
+    clique.call('chatAt', mouse ? 'mouse' : 'sticky').then(() => mouse && notify(`Your clique follows the pointer now${keysSay ? `: ${keysSay}` : ''}.`), (err) => oops('Couldn’t change that', err))
+  }
+  if (act === 'exp:mini') clique.call('pillMini', on ?? !x.mini).catch((err) => oops('Couldn’t change that', err))
 }
 function appPick(act, state) {
   if (act === 'app:login') clique.call('openAtLogin', !state.app.login.on).catch((err) => oops('Couldn’t change that', err))

@@ -1,5 +1,5 @@
 // Menu bar popover: what needs you first, who's at work, the accounts' limits, and the way into everything else.
-/* global stopButton, appItems, appPick, chatItems, chatPick, activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, clique, live, morph, esc, celebrate, markSVG, store, ICONS,
+/* global stopButton, appItems, appPick, experimentItems, experimentPick, activityWords, unreadBadge, avatarHTML, popMenu, wsTile, wsStatus, wsLabel, joinable, joinItem, oops, elsewhere, hasWorkspaces, clique, live, morph, esc, celebrate, markSVG, store, ICONS,
    needsYou, needText, usageTip, usageByComputer, computerIcon, THIS_COMPUTER, paceWarning, resetsText, runningSubs, subsTip, clonesOf, displayName, statusText, blockedOn, ago,
    pauseMenu, notifyTime, notifyHeld, plural, modeChips, powerSwitch, COLORS, ON_WINDOWS, keys, wordmarkHTML, stripHTML, PRODUCT_NAME */
 // Everything here is local: classic scripts share one global scope with common.js and avatar.js.
@@ -261,8 +261,8 @@
     })
   })
 
-  // Settings: whether the computer stays awake while agents work, the theme, where the floating chat lives (and, running
-  // from source, config.json). A second click on the gear closes it (the press outside already did).
+  // Settings: whether the computer stays awake while agents work, the theme, the experiments (the chat following the mouse,
+  // the minimised dock) and, running from source, config.json. A second click on the gear closes it (the press outside already did).
   let settingsMenu = null
   let settingsWasOpen = false
   addEventListener('pointerdown', (e) => (settingsWasOpen = Boolean(e.target.closest?.('[data-act=settings]') && settingsMenu?.el.isConnected && !settingsMenu.el.classList.contains('leaving'))), true)
@@ -276,10 +276,10 @@
       '-',
       { head: 'Theme' },
       ...[['system', `Match ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light'], ['dark', 'Dark']].map(([id, text]) => ({ label: text, act: `theme:${id}`, icon: id === theme ? ICONS.check : undefined })),
-      ...chatItems(state, { ticks: 'left' }),
+      ...experimentItems(state),
       ...appItems(state),
       ...(clique.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
-    ], (act) => (act === 'config' ? clique.call('config') : act === 'awake' ? clique.call('keepAwake', !stay).catch((err) => oops('Couldn’t change that', err)) : act.startsWith('chat:') ? chatPick(act, state) : act.startsWith('app:') ? appPick(act, state) : clique.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
+    ], (act) => (act === 'config' ? clique.call('config') : act === 'awake' ? clique.call('keepAwake', !stay).catch((err) => oops('Couldn’t change that', err)) : act.startsWith('exp:') ? experimentPick(act, state) : act.startsWith('app:') ? appPick(act, state) : clique.call('theme', act.slice('theme:'.length)).catch((err) => oops('Couldn’t change the theme', err))))
   }
 
   // Notifications: a click opens the pause menu (for an hour, until tomorrow morning, until you turn them back on, and

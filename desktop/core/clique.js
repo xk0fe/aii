@@ -482,6 +482,17 @@ export class Clique extends EventEmitter {
     return this.config.data.chatAt === 'mouse' ? 'mouse' : 'sticky'
   }
 
+  // The minimised dock, an experiment: the pill shrinks to the mark and a beat that moves while agents work, and opens
+  // the chat in one click. config.json's "pillMini": true, there only while it's on. It's the pill's look: under the
+  // mouse there's no pill to shrink. -> whether it's on now
+  setPillMini(on) {
+    if (on) this.config.data.pillMini = true
+    else delete this.config.data.pillMini
+    this.config.save()
+    this.changed()
+    return this.config.data.pillMini === true
+  }
+
   // When CLIque may notify you (core/notify.js): config.json's `notifications`, there only once something isn't the
   // default. setNotifications({ days, from, to }) is the schedule, ({ pause: 'hour' | 'morning' | 'manual' | 'off' }) the
   // pause from the menu bar. It's this computer's: each of your computers notifies on its own.

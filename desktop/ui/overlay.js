@@ -83,12 +83,14 @@ $('.panel').addEventListener('animationend', (e) => e.animationName === 'panel-m
 // Drag the pill (or the chat by its header) anywhere; main.js moves the window with the pointer and, when you
 // let go, picks the chat's side for where you left it. It's a drag once the pointer has moved a few pixels, so
 // a click stays a click. Buttons and creatures stay clickable. In the hatch there's little else to hold, so the mark
-// drags it too, taking the pointer only once it's a drag, so a click on the mark still lands on the mark.
+// drags it too, taking the pointer only once it's a drag, so a click on the mark still lands on the mark. So does the
+// minimised dock, which is little more than its mark.
 const inHatch = () => document.body.dataset.side === 'hatch'
+const isMini = () => document.body.classList.contains('mini') && !inHatch()
 let justDragged = false
 for (const handle of [$('.pill'), $('.panel header')]) {
   handle.addEventListener('pointerdown', (e) => {
-    const onMark = inHatch() && handle === $('.pill') && e.target.closest('.home')
+    const onMark = (inHatch() || isMini()) && handle === $('.pill') && e.target.closest('.home')
     if (e.button !== 0 || (!onMark && e.target.closest('button, .face, .sums, a, input, textarea'))) return
     e.preventDefault()
     if (!onMark) handle.setPointerCapture(e.pointerId)
@@ -142,9 +144,10 @@ function setOpen(open, focus = open, { quick = false } = {}) {
 }
 
 $('.home').addEventListener('click', () => setOpen(!document.body.classList.contains('open')))
-// in the hatch the whole band is a button: the mark and the creatures are small, up by the edge of the screen
+// in the hatch the whole band is a button: the mark and the creatures are small, up by the edge of the screen. The
+// minimised dock is one button too.
 $('.pill').addEventListener('click', (e) => {
-  if (inHatch() && !justDragged && !e.target.closest('button, .face')) setOpen(!document.body.classList.contains('open'))
+  if ((inHatch() || isMini()) && !justDragged && !e.target.closest('button, .face')) setOpen(!document.body.classList.contains('open'))
 })
 $('[data-act=close]').addEventListener('click', () => setOpen(false))
 $('[data-act=dashboard]').addEventListener('click', () => clique.call('dashboard'))
@@ -245,6 +248,8 @@ function drawPill() {
   if (MOUSE) return // the wisp alone follows the pointer
   if (inHatch()) return drawHatch()
   morph($('.hatch-who'), '')
+  $('.home').title = isMini() ? miniSays() : PRODUCT_NAME
+  if (isMini()) return morph($('.dots'), '') // the mark and its beat (ui/overlay.html .beat) say it
   const on = state.agents.filter((a) => a.on)
   // A big clique doesn't fit along a screen edge: the pill keeps the ones that need a look (waiting on you, new
   // replies, at work) in their usual order, and the rest become "+N", which opens the chat.
@@ -263,6 +268,20 @@ function drawPill() {
     const subs = runningSubs(a).length
     return `<span class="face${a.cloneOf ? ' clone' : ''}" data-agent="${esc(a.name)}" style="--c:${agentColor(a)}" title="${esc(`${displayName(a)}${a.cloneOf ? ` (a clone of ${a.cloneOf})` : ''}: ${statusText(a)}${subs ? ` · ${plural(subs, 'sub-agent')} working` : ''}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}`)}">${avatarHTML(a, { size: sized(a) })}${orbitHTML(a)}${cloneTag(a)}${unreadBadge(a.unread)}</span>`
   }), hidden ? `<button class="more-faces" data-more-faces title="${esc(`${plural(hidden, 'more agent')}: ${on.filter((a) => !shown.includes(a)).map((a) => a.name).join(', ')}`)}">+${hidden}</button>` : ''])
+}
+
+// The minimised dock has no creatures to hover: its mark says what they would, "CLIque: 2 at work · Ada needs you".
+function miniSays() {
+  const on = state.agents.filter((a) => a.on)
+  const working = on.filter((a) => a.status === 'working').length
+  const needs = needsYou(state)
+  const fresh = state.agents.reduce((n, a) => n + a.unread, 0)
+  const says = [
+    working ? `${working} at work` : on.length ? 'Nobody at work' : '',
+    needs.length === 1 ? `${displayName(needs[0].agent)} needs you` : needs.length ? `${needs.length} need you` : '',
+    fresh ? plural(fresh, 'new reply', 'new replies') : '',
+  ].filter(Boolean)
+  return says.length ? `${PRODUCT_NAME}: ${says.join(' · ')}` : PRODUCT_NAME
 }
 
 // In the hatch the band says one thing, the most pressing: who needs you (its creature comes out of the notch holding up
@@ -303,6 +322,8 @@ live((next) => {
   document.body.classList.toggle('alert', state.agents.some((a) => a.status === 'waiting') || elsewhere(state).waiting > 0)
   // while notifications are held (paused, or outside your hours) the warm edge stays, but still: it doesn't breathe
   document.body.classList.toggle('quiet', Boolean(state.notify?.quiet))
+  // the minimised dock (an experiment, from settings): the pill's look, so not under the mouse
+  document.body.classList.toggle('mini', !MOUSE && Boolean(state.app?.chat?.mini))
   // with workspaces, the chat says whose it is
   morph($('.panel header .brand'), hasWorkspaces(state) ? `${wsTile(state.workspace, { size: 20 })}<b>${esc(wsLabel(state.workspace))}</b>` : wordmarkHTML(20))
   drawPill()

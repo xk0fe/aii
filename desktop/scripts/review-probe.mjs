@@ -4,6 +4,7 @@
 // Prints ok / FAIL lines and exits 1 when one failed. Run: npm run probe:review
 // (electron scripts/review-probe.mjs [another desktop folder]: the same checks against another checkout's UI.)
 import { app, BrowserWindow } from 'electron'
+import './quiet.mjs' // no beeps from the keys it presses, no sound from its pages
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'

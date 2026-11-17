@@ -169,7 +169,13 @@ async function start() {
   createOverlay()
   watchScreens()
   // where the floating chat lives changed (the setting, or config.json by hand): its window is made for one or the other
-  clique.config.on('change', () => (clique.config.data.chatAt === 'mouse') !== Boolean(pill.follows) && remakeOverlay())
+  // (the minimised dock is the same window: the pages hear it in the state, config.json edited by hand included)
+  let mini = clique.config.data.pillMini === true
+  clique.config.on('change', () => {
+    if ((clique.config.data.chatAt === 'mouse') !== Boolean(pill.follows)) remakeOverlay()
+    else if ((clique.config.data.pillMini === true) !== mini) clique.changed()
+    mini = clique.config.data.pillMini === true
+  })
   wire()
   updatesStarted = startUpdates().catch((e) => logLine('update', e?.stack ?? String(e)))
   const key = clique.config.data.hotkey ?? 'Alt+Shift+Space'
@@ -360,8 +366,9 @@ const stateNow = (snapshot = clique.snapshot()) => ({
   ...withSetup(snapshot, clique.config.data, setup.status),
   notify: notifyState(),
   awake: awakeState(awake.decision, { enabled: clique.config.data.keepAwake !== false, pc: MAC ? 'Mac' : 'PC', battery: onBattery }),
-  // chat: where the floating chat lives ('sticky' | 'mouse'), and the shortcuts that reach it
-  app: { version: app.getVersion(), update: updates?.view() ?? null, login: login?.supported ? { on: login.on } : null, chat: { at: pill?.follows ? 'mouse' : 'sticky', keys: keysOn } },
+  // chat: where the floating chat lives ('sticky' | 'mouse'), the shortcuts that reach it, and whether the pill is the
+  // minimised dock (an experiment, clique.setPillMini)
+  app: { version: app.getVersion(), update: updates?.view() ?? null, login: login?.supported ? { on: login.on } : null, chat: { at: pill?.follows ? 'mouse' : 'sticky', keys: keysOn, mini: clique.config.data.pillMini === true } },
 })
 
 // ---- windows ---------------------------------------------------------------
@@ -684,7 +691,10 @@ function openDashboard(focus = '') {
   dash.on('show', () => overlay.hide())
   dash.on('restore', () => overlay.hide())
   dash.on('minimize', showChat)
-  dash.on('hide', showChat)
+  // On a Mac Electron also says 'hide' when another app's window covers the dashboard (and 'show' when it's uncovered).
+  // That's only switching apps: the dashboard is still up (isVisible() stays true), so the chat stays shut until you open
+  // it. A real hide (⌘H) brings it back.
+  dash.on('hide', () => dashOnScreen() || showChat())
   // A pairing code lives only while the dashboard's pairing view shows it: closing, reloading or losing the page ends
   // it, and one that page asked for isn't made. (did-navigate, not did-start-navigation: that one also fires for a
   // navigation will-navigate then stops.)
@@ -940,6 +950,8 @@ const actions = {
   // Where the floating chat lives: chatAt('sticky'), the pill you put somewhere, or chatAt('mouse'), a buddy that follows
   // the pointer and opens where it is (core/follow.js). Its window is made again as the setting lands (start()).
   chatAt: (where) => clique.setChatAt(where),
+  // The minimised dock (an experiment): on or off. The pill's page hears it in the state and shrinks or grows in place.
+  pillMini: (on) => clique.setPillMini(Boolean(on)),
   // Stay awake while agents work: on or off (core/awake.js).
   keepAwake: (on) => clique.setKeepAwake(Boolean(on)),
   dashboard: (focus) => {
