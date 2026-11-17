@@ -256,7 +256,8 @@ test('a working agent moves here from a linked computer: its conversation, queue
   const working = await studio.run(`clique.here.feed.at(-1).id`)
   await studio.run(`(clique.here.onHook('iris', { hook_event_name: 'UserPromptSubmit', session_id: '${id}', prompt: 'build the login page' }), clique.here.agents.get('iris').status)`)
   const image = await studio.run(`clique.here.saveImage('shot.png', 'image/png', new Uint8Array([1, 2, 3]))`)
-  await studio.run(`clique.here.send({ to: 'iris', text: 'and the signup page', images: [${JSON.stringify(image)}] })`)
+  const doc = await studio.run(`clique.here.saveFile('Sign-up spec.pdf', new Uint8Array([37, 80, 68, 70]))`)
+  await studio.run(`clique.here.send({ to: 'iris', text: 'and the signup page', images: [${JSON.stringify(image)}, ${JSON.stringify(doc)}] })`)
   await studio.run(`clique.here.send({ to: 'iris,bob', text: 'both of you: review' })`)
   await studio.run(`clique.here.send({ from: 'iris', to: 'bob', text: 'the api for login, please' })`)
   await studio.run(`(clique.here.post({ kind: 'reply', from: 'iris', text: 'an earlier answer' }), clique.here.convos.iris.compactions = 2, clique.here.saveConvos(true), 1)`)
@@ -295,6 +296,11 @@ test('a working agent moves here from a linked computer: its conversation, queue
   assert.equal(queue[0].id, working, 'its reply will point at what it was working on')
   assert.ok(queue[1].images[0].startsWith(path.join(laptop.home, 'attachments')))
   assert.deepEqual([...fs.readFileSync(queue[1].images[0])], [1, 2, 3])
+  // ...and a document it was sent, under the name it had: never as a picture it isn't
+  assert.match(path.basename(queue[1].images[0]), /^\d{4}-\d\d-\d\d-[0-9a-f]{8}\.png$/)
+  assert.equal(path.dirname(queue[1].images[1]), path.join(laptop.home, 'attachments'))
+  assert.match(path.basename(queue[1].images[1]), /^\d{4}-\d\d-\d\d-[0-9a-f]{8}_Sign-up_spec\.pdf$/)
+  assert.deepEqual([...fs.readFileSync(queue[1].images[1])], [37, 80, 68, 70])
   assert.equal(here.find((e) => e.text === 'and the signup page').queued, true)
   assert.equal(await laptop.run(`clique.here.reads.agents.iris`), 2000)
 

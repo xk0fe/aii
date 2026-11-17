@@ -1505,7 +1505,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const line = e.gist ?? snippet(e.text)
     const whole = e.from === 'you' || open.has(e.id)
     const more = e.from !== 'you' && (line !== String(e.text ?? '').trim() || echoes.length)
-    const pics = (e.images?.length ? (typeof fxPics === 'function' ? fxPics(e) : `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>`) : '') // (ui/files.js: they open in the viewer)
+    const pics = ownHTML(e)
     // what an agent attached (clique attach): pictures, a recording, a page, any file (ui/files.js)
     const files = typeof filesHTML === 'function' ? filesHTML(e) : ''
     const body = whole ? `${pics}<div class="tr-full bubble open">${md(e.text)}</div>${files}${echoes.map((x) => `<div class="tr-echo"><span>Also said</span><div class="bubble open">${md(x.text)}</div></div>`).join('')}` : `${pics}<div class="tr-line">${esc(line)}</div>${files}`
@@ -1818,7 +1818,7 @@ function feedItem(e, prev, ctx) {
   const hands = drawn ? [...new Set(e.canvas?.by ?? [])].filter((n) => n !== e.from) : []
   const tags = (drawn ? '<span class="via-tool">via canvas</span>' : '') + where + (ctx.waiting.has(e.id) ? `<span class="tag wait" title="${esc(`@${e.from} is waiting for the answer: it goes ahead of everything else @${e.to} has queued`)}">waiting</span>` : e.queued ? queuedTag(e) : '') + (e.held ? '<span class="tag">needs your OK</span>' : '') + (e.paused ? '<span class="tag" title="Held by the spend check-in. It goes on when you say Keep going.">held for the check-in</span>' : '') + (e.stopped ? `<span class="tag" title="${esc(`You stopped ${e.to ? e.to.split('@')[0] : 'it'} before this was delivered. Send it again if you still want it`)}">not delivered</span>` : '') + (e.via === 'terminal' ? '<span class="tag">in terminal</span>' : '') + scheduledTag(e)
   const cont = repeat && !tags ? ' cont' : '' // stacks under the message before it, without its own caption
-  const pics = (e.images?.length ? (typeof fxPics === 'function' ? fxPics(e) : `<div class="pics">${e.images.map((p) => `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">`).join('')}</div>`) : '') // (ui/files.js: they open in the viewer)
+  const pics = ownHTML(e)
   // what an agent attached (clique attach): pictures, a recording, a page, any file (ui/files.js)
   const files = typeof filesHTML === 'function' ? filesHTML(e) : ''
   // A reply quotes the message it answers, with a bar in the quoted sender's color; click to jump back to it.
@@ -2964,29 +2964,76 @@ function insertAt(value, start, end, text) {
   return { value: before + piece + after, caret: before.length + piece.length }
 }
 const isImage = (f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)
+// What you attached to a message, over what it says: pictures that open in the viewer and a card for any other file
+// (ui/files.js); on a page without it, the pictures and the other files' names, which open in the system's own app.
+const ownHTML = (e) =>
+  !e.images?.length ? ''
+  : typeof fxPics === 'function' ? fxPics(e)
+  : `<div class="pics">${e.images.map((p) => (isPicture(p) ? `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">` : `<button type="button" class="thumb doc" data-open="${esc(p)}" title="Open">${ICONS.doc}<b>${esc(attachedName(p))}</b></button>`)).join('')}</div>`
+// What you attached, by where it's kept: a picture shows as itself, any other file by its name.
+const isPicture = (p) => /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i.test(String(p ?? ''))
+// The name a file you attached had: it's kept as <day>-<8 hex>_<name> (core/hub.js saveFile), and one attached on a
+// linked computer is here as <20 hex>_<name> (core/linkfiles.js place).
+const attachedName = (p) => String(p ?? '').split(/[\\/]/).pop().replace(/^(?:\d{4}-\d\d-\d\d-[0-9a-f]{8}[-_]|[0-9a-f]{20}_)(?=.)/, '')
+// The biggest file that's attached (core/hub.js OWN_MAX): it's copied whole.
+const ATTACH_MAX = 20 * 1024 * 1024
 
-// Images for a prompt: paste them, drop them, or pick them with the button. Each is saved under
-// ~/.clique/attachments and reaches the agent as a file path it can open. A folder dropped in isn't attached:
-// onPaths gets its path, for the message to point at.
-function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) {
+// What a prompt takes along: paste files, drop them, or pick them with the button. Each is copied into
+// ~/.clique/attachments and reaches the agent as a file path it can open: a picture shows as a thumbnail, any other
+// file (a document, a log, a recording) as its name. What can't be attached (a folder, a file over 20 MB, one that can't
+// be read) isn't refused where the message can point at it: onPaths gets its path, so the agent finds it itself, and
+// `why` when that needs saying. only: 'images' takes pictures alone (an agent's reference images).
+function mountAttach({ zone, field, tray, button, onChange, onPaths, onError, only }) {
   let paths = []
-  const picker = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', multiple: true, hidden: true })
+  const picker = Object.assign(document.createElement('input'), { type: 'file', multiple: true, hidden: true, ...(only === 'images' && { accept: 'image/png,image/jpeg,image/gif,image/webp' }) })
   button.after(picker)
   const draw = (notify = true) => {
-    tray.innerHTML = paths.map((p, i) => `<span class="thumb"><img src="${fileURL(p)}" data-open="${esc(p)}" alt=""><button type="button" data-rm="${i}" title="Remove">×</button></span>`).join('')
+    tray.innerHTML = paths.map((p, i) => {
+      const rm = `<button type="button" data-rm="${i}" title="Remove">×</button>`
+      if (isPicture(p)) return `<span class="thumb"><img src="${fileURL(p)}" data-open="${esc(p)}" alt="">${rm}</span>`
+      const name = attachedName(p)
+      return `<span class="thumb doc" data-open="${esc(p)}" title="${esc(name)}">${ICONS.doc}<b>${esc(name)}</b>${rm}</span>`
+    }).join('')
     tray.classList.toggle('hidden', !paths.length)
     if (notify) onChange?.([...paths])
   }
-  const add = async (files) => {
-    const images = files.filter(isImage)
-    if (files.length && !images.length) return onError?.(`Only PNG, JPEG, GIF and WebP images${onPaths ? ', or folders' : ''}`)
-    for (const f of images) {
+  const add = async (files, folders = []) => {
+    let refs = [] // what goes in as its path
+    let said = [] // ...and why, for a file (a folder's path needs no words)
+    let no = [] // what doesn't go at all
+    // because: what went wrong, a sentence of its own, said when the file doesn't go in at all
+    const pointAt = (f, why, { quiet = false, because = '' } = {}) => {
+      const p = onPaths && pathOf(f)
+      if (!p) return no.push(because ? `${why}. ${because}` : why)
+      refs.push(p)
+      if (!quiet) said.push(`${why}: its path is in the message instead`)
+    }
+    const tell = () => {
+      if (refs.length) onPaths(refs, said[0] ?? '')
+      if (no.length) onError?.(no[0])
+      ;[refs, said, no] = [[], [], []]
+    }
+    const name = (f) => f.name || 'That file'
+    for (const f of folders) pointAt(f, "A folder can't be attached here: add the files in it", { quiet: true })
+    const save = []
+    for (const f of files) {
+      if (only === 'images' && !isImage(f)) no.push('Only PNG, JPEG, GIF and WebP images')
+      else if (f.size > ATTACH_MAX) pointAt(f, `${name(f)} is over 20 MB`)
+      else save.push(f)
+    }
+    // what's known without reading a file is said now, while the cursor is where it was dropped: a path isn't kept
+    // waiting for the files beside it to be saved (you may be in another conversation by then)
+    tell()
+    if (!save.length) return
+    for (const f of save) {
       try {
-        paths.push(await clique.call('saveImage', f.name, f.type, new Uint8Array(await f.arrayBuffer())))
+        const bytes = new Uint8Array(await f.arrayBuffer())
+        paths.push(await (isImage(f) ? clique.call('saveImage', f.name, f.type, bytes) : clique.call('saveFile', f.name, bytes)))
       } catch (e) {
-        onError?.(errorLine(e))
+        pointAt(f, `${name(f)} couldn't be attached`, { because: errorLine(e) })
       }
     }
+    tell()
     draw()
   }
   const dragging = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files')
@@ -3000,19 +3047,13 @@ function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) 
     zone.classList.remove('dropping')
     if (!dragging(e)) return
     e.preventDefault()
-    // what's a folder can only be read during the drop; where nothing takes paths, a folder is refused like any
-    // file that isn't an image
-    const dropped = [...e.dataTransfer.items].filter((it) => it.kind === 'file').map((it) => {
-      const file = it.getAsFile()
-      return { file, path: onPaths && it.webkitGetAsEntry?.()?.isDirectory ? pathOf(file) : '' }
-    })
-    const folders = dropped.filter((d) => d.path).map((d) => d.path)
-    if (folders.length) onPaths(folders)
-    const files = dropped.filter((d) => !d.path && d.file).map((d) => d.file)
-    if (files.length || !folders.length) add(files)
+    // what's a folder can only be read during the drop
+    const dropped = [...e.dataTransfer.items].filter((it) => it.kind === 'file').map((it) => ({ file: it.getAsFile(), folder: Boolean(it.webkitGetAsEntry?.()?.isDirectory) })).filter((d) => d.file)
+    add(dropped.filter((d) => !d.folder).map((d) => d.file), dropped.filter((d) => d.folder).map((d) => d.file))
   })
+  // a screenshot from the clipboard, or files copied in Finder or Explorer
   field.addEventListener('paste', (e) => {
-    const files = [...(e.clipboardData?.files ?? [])].filter(isImage)
+    const files = [...(e.clipboardData?.files ?? [])].filter((f) => only !== 'images' || isImage(f))
     if (!files.length) return
     e.preventDefault()
     add(files)
@@ -3267,7 +3308,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
       <div class="thumbs hidden"></div>
       <textarea rows="1"></textarea>
       <div class="input-bar">
-        <button class="attach" title="Images, a task, a new conversation, send later… (paste or drop images, or a folder for its path)" aria-label="More ways to send" aria-haspopup="menu">${ICONS.plus}</button><button class="attach-pick" hidden tabindex="-1"></button>
+        <button class="attach" title="Files, a task, a new conversation, send later… (paste or drop files; a folder, or a file over 20 MB, goes in as its path)" aria-label="More ways to send" aria-haspopup="menu">${ICONS.plus}</button><button class="attach-pick" hidden tabindex="-1"></button>
         <span class="chips to-line" role="group" aria-label="Sending as"></span>
         <span class="grow"></span>
         <button class="mic" aria-label="Dictate"></button>
@@ -3375,14 +3416,15 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     zone: dropZone,
     field: ta,
     tray: el.querySelector('.thumbs'),
-    button: el.querySelector('.attach-pick'), // (+ opens its menu; Add images there opens the file picker)
+    button: el.querySelector('.attach-pick'), // (+ opens its menu; Attach files there opens the file picker)
     onChange: () => autosize(),
-    onPaths: (paths) => {
+    onPaths: (paths, why) => {
       const put = insertAt(ta.value, ta.selectionStart, ta.selectionEnd, pathRefs(paths))
       ta.value = put.value
       ta.focus()
       ta.setSelectionRange(put.caret, put.caret)
       ta.dispatchEvent(new Event('input')) // sized, inked and checked for task mode like typing
+      if (why) say(why) // a file that went in as its path, not attached: why (after the input event, which clears the line)
     },
     onError: (msg) => say(msg, true),
   })
@@ -3602,7 +3644,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
   // +: the ways to send that aren't every message's
   const plus = el.querySelector('.attach')
   plus.addEventListener('click', () => popMenu(plus, [
-    { label: 'Add images', icon: ICONS.import, act: 'images', hint: 'or paste or drop them' },
+    { label: 'Attach files', icon: ICONS.import, act: 'images', hint: 'or paste or drop them' },
     { label: 'Add a task', icon: ICONS.task, act: 'task', on: target === 'task', hint: 'to the Tasks board' },
     ...(target === 'task' ? [] : [{ label: 'New conversation', icon: ICONS.fresh, act: 'fresh', on: fresh, hint: 'a clean slate' }]),
     ...(onLater ? [{ label: 'Send later', icon: ICONS.clock, act: 'later', hint: 'or on a repeat' }] : []),

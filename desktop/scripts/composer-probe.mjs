@@ -34,14 +34,21 @@ async function open(file) {
   await new Promise((r) => win.webContents.once('did-finish-load', r))
   await sleep(600)
   // the page's own names (chan, place…) are globals there: the probe's helpers come in as locals over them
-  const js = (code) => win.webContents.executeJavaScript(`(async () => { const { sent, held, ta, wait, type, pick, paste, box, taskMode, side, toChannel, head, enter, fits } = window.__p ?? {}; ${code} })()`)
+  const js = (code) => win.webContents.executeJavaScript(`(async () => { const { sent, held, slow, ta, wait, type, plus, pick, paste, drop, hint, box, taskMode, side, toChannel, head, enter, fits } = window.__p ?? {}; ${code} })()`)
   await win.webContents.executeJavaScript(`(() => {
     const sent = []
     // held.on: a send (or a task being filed) doesn't come back until release() is called, as over a slow link
     const held = { on: false, waiting: [], release() { this.on = false; this.waiting.splice(0).forEach((go) => go()) } }
+    // slow.on: a file being saved isn't saved until release() is called, as a big one from a slow disk
+    const slow = { on: false, waiting: [], release() { this.on = false; this.waiting.splice(0).forEach((go) => go()) } }
     const call = clique.call
     clique.call = (action, ...args) => {
       if (action === 'saveImage') return Promise.resolve(${JSON.stringify(png)})
+      // any other file: kept under its name, as the hub keeps it (core/hub.js saveFile)
+      if (action === 'saveFile') {
+        const kept = ${JSON.stringify(path.join(tmp, '2026-11-17-1a2b3c4d_'))} + String(args[0]).replace(/[^\\p{L}\\p{N}._-]+/gu, '_')
+        return slow.on ? new Promise((done) => slow.waiting.push(() => done(kept))) : Promise.resolve(kept)
+      }
       if (action !== 'send' && action !== 'task') return call(action, ...args)
       sent.push([action, ...args])
       return held.on ? new Promise((done) => held.waiting.push(() => done(call(action, ...args)))) : call(action, ...args)
@@ -49,9 +56,18 @@ async function open(file) {
     const ta = document.querySelector('.compose textarea')
     const wait = (ms = 60) => new Promise((r) => setTimeout(r, ms))
     const type = async (text) => { ta.focus(); ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true })); await wait() }
-    const pick = async (to) => {
-      document.querySelector('.compose [data-pick-to]').click()
+    // something on the + menu: 'task' (Add a task, on or off), 'to' (Send to someone else), 'images' (Attach files)…
+    const plus = async (act) => {
+      document.querySelector('.compose .attach').click()
       await wait()
+      const item = document.querySelector('.menu:not(.leaving) [data-menu-act="' + act + '"]')
+      if (!item) throw new Error('no ' + act + ' on the + menu')
+      item.click()
+      await wait(120)
+    }
+    // who it's for: + > Send to someone else, then them
+    const pick = async (to) => {
+      await plus('to')
       const item = document.querySelector('.menu:not(.leaving) [data-menu-act="' + to + '"]')
       if (!item) throw new Error('no ' + to + ' in the To menu')
       item.click()
@@ -65,6 +81,20 @@ async function open(file) {
       ta.dispatchEvent(ev)
       await wait(150)
     }
+    // files dropped on the box, as from Finder: [name, type, size, where it is on disk ('' when there's no telling)]
+    const at = new Map()
+    clique.pathOf = (f) => at.get(f) ?? ''
+    const drop = async (...files) => {
+      const dt = new DataTransfer()
+      for (const [name, type, size = 3, where = ''] of files) {
+        const f = new File([new Uint8Array(size)], name, { type })
+        at.set(f, where)
+        dt.items.add(f)
+      }
+      ta.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }))
+      await wait(250)
+    }
+    const hint = () => { const h = document.querySelector('.compose .hint'); return [h.textContent, h.classList.contains('error')] }
     const box = () => ({ to: composer.target(), text: ta.value, images: document.querySelectorAll('.compose .thumb').length, quote: !document.querySelector('.compose .reply-to').classList.contains('hidden') })
     const taskMode = () => document.querySelector('.compose').classList.contains('task-mode')
     const side = async (name) => { document.querySelector('.roster .dm[data-agent="' + name + '"]').click(); await wait(120) }
@@ -72,7 +102,7 @@ async function open(file) {
     const head = () => document.querySelector('.page-head[data-for=chat] .ph-title').textContent.trim().replace(/\\s+/g, ' ')
     const enter = async () => { ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await wait(200) }
     const fits = () => [ta.clientHeight >= ta.scrollHeight, ta.clientHeight > 40]
-    window.__p = { sent, held, ta, wait, type, pick, paste, box, taskMode, side, toChannel, head, enter, fits }
+    window.__p = { sent, held, slow, ta, wait, type, plus, pick, paste, drop, hint, box, taskMode, side, toChannel, head, enter, fits }
   })()`)
   return { win, js }
 }
@@ -138,9 +168,9 @@ app.whenReady().then(async () => {
     check('no copy of it waits in the channel', await js(`return box()`), { to: 'auto', text: '', images: 0, quote: false })
 
     // Task, on the same line
-    await js(`await side('Theo'); await type('Totals round wrong with 3 items'); document.querySelector('.compose .task-chip').click(); await wait(120)`)
+    await js(`await side('Theo'); await type('Totals round wrong with 3 items'); await plus('task')`)
     check("Task from Theo's conversation: the board's box, with what you wrote, as a task", await js(`return [place, taskMode(), box()]`), ['chat', true, { to: 'task', text: 'Totals round wrong with 3 items', images: 0, quote: false }])
-    await js(`await type(''); document.querySelector('.compose .task-chip').click(); await wait(120)`)
+    await js(`await type(''); await plus('task')`)
     check('Task off again: Auto', await js(`return [taskMode(), box().to]`), [false, 'auto'])
 
     // nothing written: who you pick still gets their own draft back
@@ -202,6 +232,28 @@ app.whenReady().then(async () => {
     await js(`localStorage.setItem('clique.dock', '0'); document.querySelector('.nv[data-place="tasks"]').click(); await wait(200); await side('Ada'); await wait(200)`)
     check('and when the draft came back while the box was hidden (opened from Tasks)', await js(`return [place, ...fits()]`), ['dm', true, true])
     await js(`localStorage.removeItem('clique.dock'); await type('')`)
+
+    // any file is attached, not only a picture: a document shows by its name in the box and on the message
+    await js(`await side('Ada'); await type('Read this before you start'); await drop(['Q3 plan.pdf', 'application/pdf'], ['shot.png', 'image/png'])`)
+    check('a document and a picture dropped: both are attached, nothing is refused', await js(`return [box(), hint()[1]]`), [{ to: 'Ada', text: 'Read this before you start', images: 2, quote: false }, false])
+    check('the document is there by its name, the picture as a picture', await js(`return [...document.querySelectorAll('.compose .thumb')].map((t) => t.classList.contains('doc') ? t.querySelector('b').textContent : 'img:' + Boolean(t.querySelector('img')))`), ['Q3_plan.pdf', 'img:true'])
+    await js(`await pick('Milo')`)
+    check('Ada → Milo: the document goes with the message, as a picture does', await js(`return box()`), { to: 'Milo', text: 'Read this before you start', images: 2, quote: false })
+    await js(`sent.length = 0; await enter(); await wait(200)`)
+    check('Enter sends it with both', await js(`return sent.map((s) => [s[0], s[1], s[2], s[3].map((p) => p.split('/').pop())])`), [['send', 'Milo', 'Read this before you start', ['2026-11-17-1a2b3c4d_Q3_plan.pdf', 'shot.png']]])
+    check('on the message: a file card with its name and Open, and one picture; no picture that is not one', await js(`const m = [...document.querySelectorAll('.feed .bubble')].at(-1).parentElement; return [[...m.querySelectorAll('.files.own .fx-card.fx-file .fx-name')].map((n) => n.textContent), [...m.querySelectorAll('.files.own [data-fx=open]')].length, [...m.querySelectorAll('img')].map((i) => /\\.png$/.test(i.src))]`), [['Q3_plan.pdf'], 1, [true]])
+    // what can't be attached goes in as its path, where the cursor is
+    await js(`await type('Cut the intro from '); await drop(['demo.mov', 'video/quicktime', 20 * 1024 * 1024 + 1, '/Users/you/Movies/demo.mov'])`)
+    check('a file over 20 MB: its path in the message, nothing attached, and a line that says why (not an error)', await js(`return [box(), hint()]`), [{ to: 'Milo', text: 'Cut the intro from \`/Users/you/Movies/demo.mov\` ', images: 0, quote: false }, ['demo.mov is over 20 MB: its path is in the message instead', false]])
+    await js(`await type(''); await drop(['huge.bin', '', 20 * 1024 * 1024 + 1, ''])`)
+    check('...and with no telling where it is: said, in red, and nothing in the box', await js(`return [box(), hint()]`), [{ to: 'Milo', text: '', images: 0, quote: false }, ['huge.bin is over 20 MB', true]])
+    // a path isn't kept waiting for the file beside it: it's in the box, where the cursor was, while that one is still being saved
+    await js(`await type('Look in '); slow.on = true; await drop(['notes.md', 'text/markdown'], ['demo.mov', 'video/quicktime', 20 * 1024 * 1024 + 1, '/Users/you/Movies/demo.mov'])`)
+    check('a big file and a small one dropped, the small one still being saved: the path is in the box already', await js(`return box()`), { to: 'Milo', text: 'Look in \`/Users/you/Movies/demo.mov\` ', images: 0, quote: false })
+    await js(`slow.release(); await wait(250)`)
+    check('and once it is saved, the small one is attached beside it', await js(`return [box(), [...document.querySelectorAll('.compose .thumb.doc b')].map((b) => b.textContent)]`), [{ to: 'Milo', text: 'Look in \`/Users/you/Movies/demo.mov\` ', images: 1, quote: false }, ['notes.md']])
+    await js(`document.querySelector('.compose .thumb [data-rm]').click(); await type('')`)
+    check('taken off again with its ×', await js(`return box()`), { to: 'Milo', text: '', images: 0, quote: false })
     win.destroy()
 
     // ---- the floating chat (the pill's panel): the same box --------------------------------------------------------

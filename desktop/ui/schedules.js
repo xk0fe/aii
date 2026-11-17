@@ -1,7 +1,7 @@
 // Scheduled messages (core/schedules.js): the clock beside Send (a few quick times, or your own), the Send later sheet
 // (day, time, repeat), and the list of what's scheduled in this workspace, to pause, change, send now or delete.
 // A classic script: its names are shared with every other file in ui/, so they all start with sched or SCHED.
-/* global clique, ICONS, esc, morph, popMenu, segmented, notify, oops, errorLine, avatarHTML, agentColor, displayName, plural, snippet, systemAgentOf */
+/* global clique, ICONS, esc, morph, popMenu, segmented, notify, oops, errorLine, avatarHTML, agentColor, displayName, plural, snippet, systemAgentOf, isPicture */
 
 const SCHED_REPEATS = [['once', 'Once'], ['daily', 'Every day'], ['weekdays', 'Weekdays'], ['weekly', 'Weekly']]
 const schedPad = (n) => String(n).padStart(2, '0')
@@ -157,7 +157,7 @@ function mountSchedules({ later, list, getState, push }) {
     $l('[data-lt-date]').min = schedDate(new Date())
     $l('[data-lt-time]').value = draft.time
     $l('[data-lt-err]').textContent = ''
-    const pics = draft.images?.length ? ` · ${plural(draft.images.length, 'image')}` : ''
+    const pics = draft.images?.length ? ` · ${plural(draft.images.length, draft.images.every(isPicture) ? 'image' : 'attachment')}` : ''
     $l('[data-lt-to]').innerHTML = `To <b>${esc(whoText(draft))}</b>${sentTo(draft).length ? '' : '<span> · picked when it goes out</span>'}${pics}`
     drawLater()
     if (list.open) list.close()

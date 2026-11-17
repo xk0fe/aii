@@ -1114,7 +1114,7 @@ window.clique = {
     // sending from the chat: your message lands in the feed, threaded when it's a reply. Like the hub, an @name in it
     // is who it's for when no one's picked; Auto goes to Ada.
     if (action === 'send') {
-      const [picked, text, , opts = {}] = args
+      const [picked, text, images, opts = {}] = args
       if (state.workspace.parked) workspaceAction('open', state.workspace.id) // what you send wakes it, as in CLIque
       const to = picked || [...new Set([...String(text).matchAll(MENTION)].map((m) => named(m[2])?.name).filter(Boolean))].join(',')
       // a busy agent that can clone itself: a clone takes it (sendAction)
@@ -1122,7 +1122,7 @@ window.clique = {
       const names = String(to || 'Ada').split(',').filter(Boolean).map((n) => named(n)?.name ?? n)
       const group = names.length > 1 && { cc: names, sendId: `s${Date.now()}` }
       const channel = opts.channel && opts.channel !== 'general' ? opts.channel : opts.re ? state.feed.find((e) => e.id === opts.re)?.channel : undefined
-      for (const n of names) state.feed.push({ id: `u${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text, ts: Date.now(), ...group, ...(opts.thread && { thread: opts.thread, gist: text }), ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }), ...(channel && { channel }) })
+      for (const n of names) state.feed.push({ id: `u${Date.now()}${n}`, kind: 'msg', from: 'you', to: n, text, ts: Date.now(), ...(images?.length && { images: [...images] }), ...group, ...(opts.thread && { thread: opts.thread, gist: text }), ...(opts.fresh && { fresh: true }), ...(opts.re && { re: opts.re }), ...(channel && { channel }) })
       emit()
       return `sent to ${names.map((n) => `@${n}`).join(' ')}\n`
     }

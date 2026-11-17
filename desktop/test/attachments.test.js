@@ -136,6 +136,37 @@ test('kept under a name you would recognise, safe on any disk', () => {
   assert.ok(!A.isAgentFile('2026-11-16-1a2b3c4d.png')) // one you attached yourself (saveImage)
 })
 
+test('a document you attach keeps its name in any alphabet, without what would split a path; and gives it back', () => {
+  assert.equal(A.ownName('Q3 plan (final).pdf'), 'Q3_plan_final.pdf')
+  assert.equal(A.ownName('отчёт.pdf'), 'отчёт.pdf')
+  assert.equal(A.ownName('仕様書 v2.PDF'), '仕様書_v2.pdf')
+  assert.equal(A.ownName('re\u0301sume\u0301.docx'), 'résumé.docx') // as Finder gives it, in pieces
+  assert.equal(A.ownName('../../etc/passwd'), 'passwd')
+  assert.equal(A.ownName('a<b>:c|d?.html'), 'a_b_c_d.html')
+  assert.equal(A.ownName('archive.tar.gz'), 'archive.tar.gz')
+  assert.equal(A.ownName('line\nbreak\x1b[31m.txt'), 'line_break_31m.txt')
+  assert.equal(A.ownName(''), 'file')
+  assert.ok(Buffer.byteLength(A.ownName(`${'𠮷'.repeat(200)}.txt`)) <= 190)
+  assert.equal(A.ownName(A.ownName('Q3 plan (final).pdf')), 'Q3_plan_final.pdf') // sent on to a linked computer, it's the same there
+  assert.equal(A.givenName('/home/me/.clique/attachments/2026-11-17-1a2b3c4d_отчёт.pdf'), 'отчёт.pdf')
+  assert.equal(A.givenName('/home/me/.clique/attachments/2026-11-17-1a2b3c4d-demo.mp4'), 'demo.mp4') // an agent's
+  assert.equal(A.givenName('2026-11-17-1a2b3c4d.png'), '2026-11-17-1a2b3c4d.png') // a picture has no name of its own
+  assert.ok(!A.isAgentFile('2026-11-17-1a2b3c4d_отчёт.pdf')) // yours: never counted with what agents attach (makeRoom)
+  // where it's kept may be another computer's path, in that computer's form (a Windows path read on a Mac, and back)
+  const win = 'C:\\Users\\me\\.clique\\attachments\\2026-11-17-1a2b3c4d_Sign-up_spec.pdf'
+  assert.equal(A.givenName(win), 'Sign-up_spec.pdf')
+  assert.deepEqual([win, '/h/attachments/2026-11-17-1a2b3c4d_spec.pdf', '2026-11-17-1a2b3c4d_x'].map(A.isOwnFile), [true, true, true])
+  assert.deepEqual(['/h/attachments/2026-11-17-1a2b3c4d.png', '/h/attachments/2026-11-17-1a2b3c4d-demo.mp4', '/h/2026-11-17-1a2b3c4d_/x.pdf', '/h/attachments/2026-11-17-1a2b3c4d_'].map(A.isOwnFile), [false, false, false, false])
+  // saved again on the computer an agent moved to: a picture as a picture, a document under its name, never one as the other
+  assert.equal(A.keptAs(win), '_Sign-up_spec.pdf')
+  assert.equal(A.keptAs('/h/attachments/2026-11-17-1a2b3c4d_отчёт за Q3.xlsx'), '_отчёт_за_Q3.xlsx')
+  assert.equal(A.keptAs('/h/attachments/2026-11-17-1a2b3c4d.jpg'), '.jpg')
+  assert.equal(A.keptAs('C:\\Users\\me\\.clique\\attachments\\2026-11-17-1a2b3c4d.PNG'), '.PNG')
+  assert.equal(A.keptAs('/h/attachments/2026-11-17-1a2b3c4d_photo.png'), '.png') // a picture, whatever it was called
+  assert.equal(A.keptAs('/h/attachments/2026-11-17-1a2b3c4d_../../x'), '.png') // only ever the last part of a path
+  assert.equal(A.keptAs('/somewhere/odd'), '.png') // (as before: what isn't known to be a document)
+})
+
 // ---- clique attach ------------------------------------------------------------------------------------------------
 
 const attach = (from, ...words) => hub.attach(from, [work, ...words])
@@ -313,7 +344,7 @@ test('the sweep keeps a file a message still shows, and takes one nothing shows 
   assert.deepEqual([fs.existsSync(shown), fs.existsSync(loose)], [true, false])
 })
 
-test("past the store's size the oldest of what agents attached goes: never what was just attached, never your own images", () => {
+test("past the store's size the oldest of what agents attached goes: never what was just attached, never what you attached yourself", () => {
   const dir = fs.mkdtempSync(path.join(process.env.CLIQUE_HOME, 'store-'))
   const make = (name, size, daysAgo) => {
     const f = put(name, Buffer.alloc(size), dir)
@@ -324,13 +355,14 @@ test("past the store's size the oldest of what agents attached goes: never what 
   const oldest = make('2026-01-01-aaaaaaaa-old.mp4', 400, 30)
   const older = make('2026-02-01-bbbbbbbb-older.mp4', 400, 20)
   const mine = make('2026-01-01-cccccccc.png', 400, 40) // yours (saveImage): not an agent's
+  const spec = make('2026-01-01-ffffffff_spec.pdf', 400, 50) // your document (saveFile): a task may still need it
   const just = make('2026-03-01-dddddddd-new.mp4', 400, 0)
   const recent = make('2026-02-20-eeeeeeee-recent.mp4', 400, 1)
   assert.equal(A.makeRoom(dir, { max: 2000, keep: [just] }), 0) // 1600 of agents' files: under
   assert.equal(A.makeRoom(dir, { max: 900, keep: [just] }), 2)
-  assert.deepEqual([oldest, older, mine, just, recent].map((f) => fs.existsSync(f)), [false, false, true, true, true])
+  assert.deepEqual([oldest, older, mine, spec, just, recent].map((f) => fs.existsSync(f)), [false, false, true, true, true, true])
   assert.equal(A.makeRoom(dir, { max: 100, keep: [just] }), 1) // what was just attached stays, whatever the size
-  assert.ok(fs.existsSync(just))
+  assert.ok(fs.existsSync(just) && fs.existsSync(spec) && fs.existsSync(mine))
   assert.equal(A.makeRoom(path.join(dir, 'nowhere')), 0)
 })
 
@@ -539,11 +571,31 @@ test('the cards: every box has its size before anything loads, and a name is onl
   assert.equal(UI.filesHTML({ id: 'e8', files: [] }), '')
 })
 
+test('what you attached to your own message: pictures as pictures, any other file a card with the name it had', () => {
+  const at = (name) => `/Users/you/.clique/attachments/2026-11-17-1a2b3c4d${name}`
+  const html = UI.fxPics({ id: 'm7', images: [at('_Q3_plan.pdf'), at('.png'), at('_run.command'), at('_<b>отчёт.xlsx')] })
+  // one picture, and it's the picture: the second of what was attached, where the viewer looks it up
+  assert.deepEqual(html.match(/<img [^>]+>/g), [`<img src="file://${at('.png')}" data-fx="view" data-id="m7:own" data-i="1" tabindex="0" role="button" alt="" title="Look closer">`])
+  // the rest are file cards over the message, each under its name, with what it is
+  const cards = html.split('<div class="fx-card fx-file">').slice(1)
+  assert.equal(cards.length, 3)
+  assert.match(html, /<div class="files own"><div class="fx-card fx-file">/)
+  assert.match(cards[0], /<b class="fx-name" title="Q3_plan\.pdf">Q3_plan\.pdf<\/b><small>PDF<\/small>/)
+  assert.match(cards[0], /data-fx="open" data-id="m7:own" data-i="0">Open<\/button><button type="button" class="btn sm" data-fx="show" data-id="m7:own" data-i="0">Show in Finder/)
+  assert.ok(!/data-fx="open"/.test(cards[1]) && /data-fx="show"/.test(cards[1]), 'something that would run is only shown in its folder')
+  assert.match(cards[2], /<b class="fx-name" title="&#60;b&#62;отчёт\.xlsx">&#60;b&#62;отчёт\.xlsx<\/b><small>XLSX<\/small>/)
+  assert.match(cards[2], /data-fx="open"/)
+  // pictures alone: as it was, no cards; documents alone: no row of pictures
+  assert.ok(!/class="files/.test(UI.fxPics({ id: 'm8', images: [at('.png'), at('.jpg')] })))
+  assert.ok(!/class="pics"/.test(UI.fxPics({ id: 'm9', images: [at('_notes.md')] })))
+})
+
 test('"Open" is offered for exactly what main will open (the rest is shown in its folder)', () => {
-  for (const name of ['a.png', 'a.JPG', 'a.svg', 'a.mp4', 'a.mov', 'a.webm', 'a.html', 'a.pdf', 'a.log', 'a.txt', 'a.json', 'a.md', 'a.csv', 'a.yml', 'a.har', 'a.command', 'a.sh', 'a.app', 'a.exe', 'a.bat', 'a.dmg', 'a.pkg', 'a.scpt', 'a.py', 'a.js', 'a.jar', 'a.zip', 'a', 'a.lnk', 'a.url', 'a.webloc', 'a.terminal', 'a.workflow']) {
+  for (const name of ['a.png', 'a.JPG', 'a.svg', 'a.mp4', 'a.mov', 'a.webm', 'a.html', 'a.pdf', 'a.log', 'a.txt', 'a.json', 'a.md', 'a.csv', 'a.yml', 'a.har', 'a.docx', 'a.XLSX', 'a.pptx', 'a.rtf', 'a.tsv', 'a.odt', 'a.ods', 'a.odp', 'a.pages', 'a.numbers', 'a.key', 'a.doc', 'a.xls', 'a.docm', 'a.xlsm', 'a.pptm', 'a.command', 'a.sh', 'a.app', 'a.exe', 'a.bat', 'a.dmg', 'a.pkg', 'a.scpt', 'a.py', 'a.js', 'a.jar', 'a.zip', 'a', 'a.lnk', 'a.url', 'a.webloc', 'a.terminal', 'a.workflow']) {
     assert.equal(UI.FX_OPENS.test(name), A.opens(name), name)
   }
-  for (const runs of ['a.command', 'a.sh', 'a.app', 'a.exe', 'a.bat', 'a.scpt', 'a.py', 'a.jar', 'a.lnk', 'a.url', 'a.webloc', 'a.terminal', 'a.workflow', 'a.zip', 'a']) assert.equal(A.opens(runs), false, runs)
+  for (const runs of ['a.command', 'a.sh', 'a.app', 'a.exe', 'a.bat', 'a.scpt', 'a.py', 'a.jar', 'a.lnk', 'a.url', 'a.webloc', 'a.terminal', 'a.workflow', 'a.zip', 'a', 'a.doc', 'a.xls', 'a.docm', 'a.xlsm', 'a.pptm', 'a.odt', 'a.ods', 'a.odp']) assert.equal(A.opens(runs), false, runs)
+  for (const looked of ['a.docx', 'a.xlsx', 'a.pptx', 'a.rtf', 'a.pages', 'a.numbers', 'a.key', 'a.tsv']) assert.equal(A.opens(looked), true, looked) // documents, the kinds without macros
 })
 
 // ---- trying to get out, for real ------------------------------------------------------------------------------------
