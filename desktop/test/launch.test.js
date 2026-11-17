@@ -190,7 +190,7 @@ test('Windows: Claude Code starts every hook as clique-hook.exe with its argumen
   assert.deepEqual(settings.hooks.PreToolUse.map((h) => h.matcher), ['Agent|Task', 'Edit|Write|MultiEdit|NotebookEdit'])
   // the status line always goes through a shell: a bare name means the same in Git Bash and PowerShell
   assert.deepEqual(settings.statusLine, { type: 'command', command: 'clique-status', padding: 0 })
-  assert.deepEqual(settings.permissions, { allow: ['Bash(clique *)', 'Bash(crew *)', 'PowerShell(clique *)', 'PowerShell(crew *)'], deny: ['SendMessage'] }, 'clique runs from the PowerShell tool unasked too')
+  assert.deepEqual(settings.permissions, { allow: ['Bash(clique *)', 'Bash(crew *)', 'PowerShell(clique *)', 'PowerShell(crew *)', 'Read(//c/Users/Ann Lee/.clique/attachments/**)'], deny: ['SendMessage'] }, 'clique runs from the PowerShell tool unasked too')
 })
 
 test('Windows: Codex runs its hooks through PowerShell or cmd, so each is a bare clique-hook command that reads the same in both', () => {
@@ -221,8 +221,24 @@ test('macOS: the hooks and status line are what they always were', () => {
   const settings = JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
   assert.match(settings.hooks.Stop[0].hooks[0].command, /^p=\$\(cat\); printf '%s' "\$p" \| curl -sf -m 2 /)
   assert.equal(settings.hooks.Stop[0].hooks[0].args, undefined)
-  assert.deepEqual(settings.permissions.allow, ['Bash(clique *)', 'Bash(crew *)'], 'and by the name a conversation from before the rename knows it as')
+  assert.deepEqual(settings.permissions.allow, ['Bash(clique *)', 'Bash(crew *)', 'Read(//tmp/**)'], 'and by the name a conversation from before the rename knows it as')
   assert.match(adapters.codex({ name: 'm' }, { platform: 'darwin' }).args.find((x) => x.startsWith('hooks.Stop=')), /curl -sf -m 2 /)
+})
+
+// Claude Code 2.1.326 asks about a folder added with --add-dir before every session starts ("Adding a new directory …
+// Yes, add it"), and an agent at that question never took its messages. Reading attachments is all an agent needs.
+test('attached files open without a prompt by a rule that lets them be read, not --add-dir: on macOS, Linux and Windows', () => {
+  for (const [platform, attachments, rule] of [
+    ['darwin', '/Users/ann/.clique/attachments', 'Read(//Users/ann/.clique/attachments/**)'],
+    ['linux', '/home/ann/.clique/attachments/', 'Read(//home/ann/.clique/attachments/**)'],
+    ['win32', `${ANN}\\.clique\\attachments`, 'Read(//c/Users/Ann Lee/.clique/attachments/**)'],
+    ['win32', 'd:\\clique\\attachments\\', 'Read(//d/clique/attachments/**)'],
+  ]) {
+    const claude = adapters.claude({ name: 'j' }, { session: 's', attachments, platform, bin: platform === 'win32' ? BIN : '/b' })
+    assert.ok(!claude.args.includes('--add-dir'), `${platform}: no folder added`)
+    const settings = JSON.parse(claude.args[claude.args.indexOf('--settings') + 1])
+    assert.equal(settings.permissions.allow.at(-1), rule, `${platform}: ${attachments}`)
+  }
 })
 
 test("a codex on PATH that isn't a program the system can start leaves Codex's models unknown, and CLIque running", async () => {

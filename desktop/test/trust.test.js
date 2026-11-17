@@ -34,6 +34,8 @@ const CLAUDE_TRUST = '\x1b[?25l Accessing workspace:\x1b[2C/Users/me/new-project
 const CLAUDE_ON_YES = '\x1b[3A\r\x1b[2CNo,\x1b[1Cexit\r\n\x1b[36m❯\x1b[1CYes,\x1b[1CI\x1b[1Ctrust\x1b[1Cthis\x1b[1Cfolder\x1b[0m'
 const CLAUDE_ON_NO = '\x1b[3A\r\x1b[36m❯\x1b[1CNo,\x1b[1Cexit\x1b[0m\r\n\x1b[2CYes,\x1b[1CI\x1b[1Ctrust\x1b[1Cthis\x1b[1Cfolder'
 const CODEX_ON_QUIT = '\x1b[13;3H  1. Trust and continue\x1b[14;3H\x1b[36m› 2. Quit\x1b[0m'
+// 2.1.326, for a folder given with --add-dir: not its trust question, and not one CLIque answers
+const CLAUDE_ADD_DIR = ' Adding\x1b[1Ca\x1b[1Cnew\x1b[1Cdirectory:\r\n /Users/me/.clique/attachments\r\n This\x1b[1Csession\x1b[1Chasn\'t\x1b[1Cworked\x1b[1Chere\x1b[1Cbefore.\x1b[1CIs\x1b[1Cthis\x1b[1Ca\x1b[1Cdirectory\x1b[1Cyou\x1b[1Ccreated\x1b[1Cor\x1b[1Cone\x1b[1Cyou\x1b[1Ctrust?\r\n\x1b[36m❯\x1b[1CNo,\x1b[1Cexit\x1b[0m\r\n\x1b[2CYes,\x1b[1Cadd\x1b[1Cit\r\n Enter\x1b[1Cto\x1b[1Cconfirm\x1b[1C·\x1b[1CEsc\x1b[1Cto\x1b[1Ccancel'
 const DOWN = '\x1b[B'
 const UP = '\x1b[A'
 
@@ -362,4 +364,49 @@ test('an answer it doesn\'t name selected ("No, continue without these permissio
   hub.answer(card('june').id, { allow: true })
   mock.timers.tick(1500)
   assert.deepEqual(runner.keys, [DOWN])
+})
+
+test('a question CLIque doesn\'t know keeps it from starting (2.1.326 about an added folder): a minute on, the chat says to look at its terminal, once', () => {
+  const june = launch('june')
+  hub.send({ to: 'june', text: 'fix the login page' })
+  runner.draw('june', CLAUDE_ADD_DIR)
+  assert.equal(june.trustAsk, false, 'not its trust question: no card')
+  mock.timers.tick(59000)
+  assert.deepEqual(alerts, [])
+  mock.timers.tick(1000)
+  assert.deepEqual(alerts, ["june: hasn't started after 1 minute: its terminal may be asking something. Answer there: messages for it wait until then"])
+  assert.equal(hub.feed.at(-1).alert, true, 'and in the chat')
+  assert.equal(june.status, 'starting', 'still starting, so it comes up as ever once that is answered')
+  mock.timers.tick(30 * 60000)
+  assert.equal(alerts.length, 1, 'said once')
+  // answered in its terminal: it comes up, and the message that waited goes in
+  hub.onHook('june', { hook_event_name: 'SessionStart', source: 'startup' })
+  mock.timers.tick(3000)
+  assert.equal(june.status, 'working')
+  assert.match(runner.typed.join('\n'), /fix the login page/)
+})
+
+test('one that comes up in time, or is at a question CLIque knows (its trust question has its own card): nothing more is said', () => {
+  const june = launch('june')
+  mock.timers.tick(5000)
+  hub.onHook('june', { hook_event_name: 'SessionStart', source: 'startup' })
+  mock.timers.tick(5 * 60000)
+  const rex = launch('rex')
+  runner.draw('rex', CODEX_TRUST)
+  mock.timers.tick(5 * 60000)
+  assert.equal(june.status, 'idle')
+  assert.equal(rex.trustAsk, true)
+  assert.deepEqual(alerts.map((x) => x.replace(/:.*/, '')), ['rex'], "only rex's trust question")
+  assert.match(alerts[0], /asks whether to trust its folder/)
+})
+
+test('started again before the minute is up: only the new start counts, from when it began', () => {
+  const june = launch('june')
+  mock.timers.tick(50000)
+  runner.live.delete('june')
+  hub.launch(june) // (a restart: a new run)
+  mock.timers.tick(50000)
+  assert.deepEqual(alerts, [], "the first start's minute says nothing")
+  mock.timers.tick(10000)
+  assert.equal(alerts.length, 1)
 })
