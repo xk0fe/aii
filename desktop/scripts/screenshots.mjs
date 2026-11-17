@@ -288,6 +288,8 @@ async function record(win, name, { clip, ms, during, width = 760 }) {
 }
 
 const click = (sel) => `document.querySelector(${JSON.stringify(sel)})?.click()`
+// One of the message box's + menu (images, a task, a new conversation, later, someone else): opened, then picked.
+const viaPlus = (act, box = '.compose') => `${click(`${box} .attach`)}; await new Promise((r) => setTimeout(r, 250)); ${click(`.menu [data-menu-act=${act}]`)}`
 // Real pointer input, so :hover and pointer-driven effects show up in recordings.
 const center = (win, sel) => js(win, `const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }`)
 async function glide(win, from, to, ms = 500) {
@@ -376,13 +378,13 @@ const SHOTS = {
     await save(win, `update-ask-unsure-${theme}`, { crop: corner })
     await push({ phase: 'restarting', asking: null })
     await save(win, `update-restarting-${theme}`, { crop: corner })
-    // the ⋯ menu, with nothing new (Check for updates…, this version) and with one ready (Restart to update)
+    // Settings, with nothing new (Check for updates, this version) and with one ready (Restart to update): its This Mac group
     const menu = async (name) => {
       await js(win, click('.side-more'))
       await sleep(400)
-      const r = await js(win, "const r = [...document.querySelectorAll('.menu[role=menu]')].at(-1).getBoundingClientRect(); return { x: Math.max(0, Math.round(r.x) - 16), y: Math.max(0, Math.round(r.y) - 16), width: Math.round(r.width) + 32, height: Math.round(r.height) + 76 }")
+      const r = await js(win, "const d = document.querySelector('#settings'); const b = d.querySelector('.st-body'); b.scrollTop = b.scrollHeight; const r = d.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
       await save(win, name, { crop: r })
-      await js(win, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+      await js(win, "document.querySelector('#settings').close()")
       await sleep(300)
     }
     await push({ phase: 'idle', next: null })
@@ -615,6 +617,10 @@ const SHOTS = {
     await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(800)
     await save(win, `hatch-chat-${theme}`)
+    // the next one in Needs you: a permission, said in the creature's words
+    await js(win, click('[data-needs-step="1"]'))
+    await sleep(600)
+    await save(win, `hatch-chat-next-${theme}`)
     win.destroy()
   },
   // The way in: a flat pill reaches the notch and becomes part of it, then the chat drops out of it.
@@ -755,7 +761,7 @@ const SHOTS = {
     const dash = await dashboard(theme, 'chat', { width: 1060, height: 690 })
     await js(dash, click('.side-more'))
     await sleep(350)
-    const box = await js(dash, "const r = document.querySelector('.menu').getBoundingClientRect(); return { x: 0, y: Math.max(0, Math.round(r.top) - 40), width: 560, height: Math.round(innerHeight - Math.max(0, Math.round(r.top) - 40)) }")
+    const box = await js(dash, "const r = document.querySelector('#settings').getBoundingClientRect(); return { x: 0, y: Math.max(0, Math.round(r.top) - 40), width: 560, height: Math.round(innerHeight - Math.max(0, Math.round(r.top) - 40)) }")
     await save(dash, `awake-menu-${theme}`, { crop: box })
     dash.destroy()
   },
@@ -863,15 +869,7 @@ const SHOTS = {
     check("it shows no chat, so what comes in still notifies", p.looking === null, p.looking)
     check('its send button is never Stop', p.send === 'send', p.send)
     await save(win, `follow-message-${theme}`)
-    await js(win, click('.compose [data-pick-to]'))
-    await sleep(400)
-    p = await page()
-    check('its To menu fits in the window', p.menu && p.menu.top >= 0 && p.menu.bottom <= p.h, [p.menu, p.h])
-    await save(win, `follow-message-to-${theme}`)
-    await key('Escape')
-    await sleep(250)
-    p = await page()
-    check('Esc closes the menu, not the box', !p.menu && p.open, p)
+    // (it has no menu of its own: who it goes to is said in its words, and @name picks someone)
 
     // ---- listening, as the hotkey opens it; then typing takes over
     await emit('voice', { type: 'toggle' })
@@ -986,20 +984,18 @@ const SHOTS = {
     check('Esc closes it', !(await page()).open)
     win.destroy()
 
-    // ---- the setting: the dashboard's menu and the menu bar popover's gear
+    // ---- the setting: the dashboard's Settings and the menu bar popover's gear
     const dash = await dashboard(theme, 'chat', { width: 1060, height: 690 })
     await js(dash, click('.side-more'))
     await sleep(350)
-    check('the dashboard’s menu has the choice, on Sticky', await js(dash, "const rows = [...document.querySelectorAll('.menu [data-menu-act^=\"chat:\"]')]; return rows.length === 2 && /✓/.test(rows[0].textContent) && !/✓/.test(rows[1].textContent)"))
-    const box = await js(dash, "const r = document.querySelector('.menu').getBoundingClientRect(); return { x: 0, y: Math.max(0, Math.round(r.top) - 20), width: 520, height: Math.round(innerHeight - Math.max(0, Math.round(r.top) - 20)) }")
+    check('Settings has the choice, on Sticky', await js(dash, "const b = [...document.querySelectorAll('#settings [data-st-seg=chat] [data-v]')]; return b.length === 2 && b[0].getAttribute('aria-pressed') === 'true' && b[1].getAttribute('aria-pressed') === 'false'"))
+    const box = await js(dash, "const r = document.querySelector('#settings').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
     await save(dash, `follow-setting-${theme}`, { crop: box })
-    await js(dash, click('.menu [data-menu-act="chat:mouse"]'))
+    await js(dash, click('#settings [data-st-seg=chat] [data-v=mouse]'))
     await sleep(500)
     check('picking Under the mouse switches it and says which keys reach it', await js(dash, "return window.__cliqueState.app.chat.at === 'mouse' && /follows the pointer now/.test(document.querySelector('.toast')?.textContent ?? '') && /to talk or type a message/.test(document.querySelector('.toast').textContent)"), await js(dash, "return document.querySelector('.toast')?.textContent"))
     await save(dash, `follow-setting-on-${theme}`, { crop: { x: 0, y: 690 - 200, width: 1060, height: 200 } })
-    await js(dash, click('.side-more'))
-    await sleep(350)
-    check('...and the menu ticks it', await js(dash, "return /✓/.test(document.querySelector('.menu [data-menu-act=\"chat:mouse\"]').textContent) && !/✓/.test(document.querySelector('.menu [data-menu-act=\"chat:sticky\"]').textContent)"))
+    check('...and Settings says so', await js(dash, "return document.querySelector('#settings [data-st-seg=chat] [data-v=mouse]').getAttribute('aria-pressed') === 'true'"))
     dash.destroy()
     const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
     await sleep(500)
@@ -1432,7 +1428,7 @@ const SHOTS = {
     await js(win, click('.side-more'))
     await sleep(350)
     await save(win, `accounts-menu-${theme}`)
-    await js(win, `document.querySelector('.menu [data-menu-act=accounts]').click()`)
+    await js(win, `document.querySelector('#settings [data-st=accounts]').click()`)
     await sleep(600)
     await save(win, `accounts-${theme}`)
     await js(win, `window.__cliqueSignIn = 'wait'`)
@@ -1492,7 +1488,7 @@ const SHOTS = {
         }
         await sleep(500)
         await go('.side-more', 650, 700)
-        await go('.menu [data-menu-act=accounts]', 450, 1300)
+        await go('#settings [data-st=accounts]', 450, 1300)
         await go('#accounts [data-ac-new=claude]', 550, 500)
         for (const ch of 'Personal') {
           await js(win, `const i = document.querySelector('#accounts [data-ac-add] input'); i.value += ${JSON.stringify(ch)}; i.dispatchEvent(new Event('input', { bubbles: true }))`)
@@ -1666,9 +1662,9 @@ const SHOTS = {
     win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(`console: ${e.message}`))
     await sleep(700)
     const hint = await js(win, `document.querySelector('.side-more').click(); await new Promise((r) => setTimeout(r, 300))
-      const row = [...document.querySelectorAll('.menu button')].find((b) => b.textContent.includes('Notifications'))
-      const text = row?.textContent; row?.click(); await new Promise((r) => setTimeout(r, 500)); return text`)
-    check('the ⋯ menu has Notifications…, saying "Any time"', hint === 'Notifications…Any time', hint)
+      const row = document.querySelector('#settings [data-st=notify]')
+      const text = row?.querySelector('.st-value')?.textContent; row?.click(); await new Promise((r) => setTimeout(r, 500)); return text`)
+    check('Settings has Notifications, saying "Any time"', hint === 'Any time', hint)
     check('the sheet opens', await js(win, "return document.querySelector('#notify').open"))
     await save(win, `notify-sheet-${theme}`)
     const sched = await js(win, `const d = document.querySelector('#notify')
@@ -1706,7 +1702,7 @@ const SHOTS = {
       goPlace('tasks'); await new Promise((r) => setTimeout(r, 400)); out.push(JSON.stringify(window.__cliqueLooking))
       return out`)
     check('the chat says whose questions are on screen', /"agent":null,"sees":\[.+\],"tasks":false/.test(looking[0]), looking[0])
-    check("a conversation says whose it is, Tasks says it's Tasks", /"agent":"Milo","sees":\[\],"tasks":false/.test(looking[1]) && /"agent":null,"sees":\[\],"tasks":true/.test(looking[2]), looking)
+    check("a conversation says whose it is (and Needs you over its message box), Tasks says it's Tasks", /"agent":"Milo","sees":\["Iris","Milo"\],"tasks":false/.test(looking[1]) && /"agent":null,"sees":\[\],"tasks":true/.test(looking[2]), looking)
     win.destroy()
 
     const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
@@ -1789,7 +1785,7 @@ const SHOTS = {
     await type('@Theo run the checkout tests on Safari and Chrome, and say what broke')
     await sleep(300)
     await save(win, `schedules-composer-${theme}`, { crop: await chat() })
-    await js(win, click('.compose .later'))
+    await js(win, viaPlus('later'))
     await sleep(500)
     const items = await js(win, "return [...document.querySelectorAll('.menu [data-menu-act]')].map((b) => b.querySelector('span').textContent).join('|')")
     if (!/^(Today at .*\|)?Tomorrow at .*\|(Monday at .*\|)?Every weekday at .*\|Pick a time…\|Scheduled messages…$/.test(items)) throw new Error(`schedules: the clock offers ${items}`)
@@ -1821,7 +1817,7 @@ const SHOTS = {
       ]
       window.__cliqueEmit('state', s)`)
     await sleep(300)
-    await js(win, click('.compose .later'))
+    await js(win, viaPlus('later'))
     await sleep(400)
     await js(win, click('.menu [data-menu-act=list]'))
     await sleep(800)
@@ -1886,8 +1882,11 @@ const SHOTS = {
           await sleep(24)
         }
         await sleep(400)
-        at = await glide(win, at, await center(win, '.compose .later'), 500)
+        at = await glide(win, at, await center(win, '.compose .attach'), 500)
         await sleep(250)
+        await tap(win, at)
+        await sleep(450)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=later]'), 350)
         await tap(win, at)
         await sleep(900)
         at = await glide(win, at, await center(win, '.menu [data-menu-act=custom]'), 450)
@@ -1902,8 +1901,11 @@ const SHOTS = {
         await sleep(300)
         await tap(win, at)
         await sleep(1500)
-        at = await glide(win, at, await center(win, '.compose .later'), 600)
+        at = await glide(win, at, await center(win, '.compose .attach'), 600)
         await sleep(250)
+        await tap(win, at)
+        await sleep(450)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=later]'), 350)
         await tap(win, at)
         await sleep(700)
         at = await glide(win, at, await center(win, '.menu [data-menu-act=list]'), 400)
@@ -1924,9 +1926,9 @@ const SHOTS = {
     await sleep(700)
     await js(win, "document.querySelector('.side-more').click()")
     await sleep(500)
-    const row = () => js(win, "return [...document.querySelectorAll('.menu [data-menu-act]')].find((b) => b.dataset.menuAct === 'checkin')?.textContent.trim().replace(/\\s+/g, ' ')")
-    if (!/Spend check-in….*Off/.test(await row())) throw new Error(`checkIn: on a new install the menu's row reads ${await row()}`)
-    await js(win, "[...document.querySelectorAll('.menu [data-menu-act]')].find((b) => b.dataset.menuAct === 'checkin').click()")
+    const row = () => js(win, "return document.querySelector('#settings [data-st=checkin]')?.textContent.trim().replace(/\\s+/g, ' ')")
+    if (!/Spend check-in.*Off/.test(await row())) throw new Error(`checkIn: on a new install Settings' row reads ${await row()}`)
+    await js(win, "document.querySelector('#settings [data-st=checkin]').click()")
     await sleep(800)
     await save(win, `checkin-sheet-off-${theme}`)
     const sheet = (code) => js(win, `const d = document.querySelector('#checkin'); ${code}`)
@@ -1948,10 +1950,10 @@ const SHOTS = {
       return [window.__cliqueState.checkIn.at.codex, d.querySelector('[data-ci="codex"] .on')?.className, Math.round(d.getBoundingClientRect().height)]`)
     if (String(now) !== `7500000,limit-custom ci-custom tokens on,${Math.round(h0)}`) throw new Error(`checkIn: a typed value gave ${now}`)
     await sheet("document.activeElement.blur(); d.querySelector('[data-ci-then] [data-v=ask]').click(); d.querySelector('[data-ci=\"codex\"] button[data-v=\"5000000\"]').click(); await new Promise((r) => setTimeout(r, 400)); d.close()")
-    await js(win, "document.querySelector('.side-more').click()")
+    await js(win, "document.querySelector('#settings').open || document.querySelector('.side-more').click()")
     await sleep(500)
-    await save(win, `checkin-menu-${theme}`, { crop: { x: 0, y: 290, width: 620, height: 470 } })
-    if (!/Claude \$5 · Codex 5M/.test(await row())) throw new Error(`checkIn: with values the menu's row reads ${await row()}`)
+    await save(win, `checkin-menu-${theme}`, { crop: await js(win, "const r = document.querySelector('#settings').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }") })
+    if (!/Claude \$5 · Codex 5M/.test(await row())) throw new Error(`checkIn: with values Settings' row reads ${await row()}`)
     await js(win, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); document.body.click()")
     await sleep(400)
 
@@ -2245,6 +2247,15 @@ const SHOTS = {
     await save(win, `menu-${theme}`)
     win.destroy()
   },
+  // The sidebar's gear: Settings, everything that isn't a place.
+  async sideMenu(theme) {
+    const win = await dashboard(theme, 'chat')
+    await sleep(900)
+    await js(win, click('.side-more'))
+    await sleep(500)
+    await save(win, `settings-${theme}`)
+    win.destroy()
+  },
   async select(theme) {
     const win = await dashboard(theme, 'clique')
     await js(win, click('[data-mode=cards]'))
@@ -2353,7 +2364,7 @@ const SHOTS = {
     await sleep(400)
     await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(600)
-    await js(win, `${click('.chip.task-chip')}; const ta = document.querySelector('.composer textarea'); ta.value = 'Promo banner hides the cart button on small phones @Milo'; ta.dispatchEvent(new Event('input'))`)
+    await js(win, `${viaPlus('task')}; const ta = document.querySelector('.composer textarea'); ta.value = 'Promo banner hides the cart button on small phones @Milo'; ta.dispatchEvent(new Event('input'))`)
     await sleep(500)
     await fitToContent(win)
     await save(win, `chat-task-${theme}`)
@@ -2559,14 +2570,20 @@ const SHOTS = {
       clip: panel, ms: 6200, width: 800,
       during: async () => {
         let at = { x: panel.x + 200, y: panel.y + 40 }
-        at = await glide(win, at, await center(win, '[data-pick-to]'), 500)
+        at = await glide(win, at, await center(win, '.compose .attach'), 500)
+        await tap(win, at)
+        await sleep(400)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=to]'), 350)
         await tap(win, at)
         await sleep(500)
         at = await glide(win, at, await center(win, '.menu [data-menu-act="Theo"]'), 500)
         await sleep(200)
         await tap(win, at)
         await sleep(900)
-        at = await glide(win, at, await center(win, '[data-pick-to]'), 500)
+        at = await glide(win, at, await center(win, '.compose .attach'), 500)
+        await tap(win, at)
+        await sleep(400)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=to]'), 350)
         await tap(win, at)
         await sleep(500)
         at = await glide(win, at, await center(win, '.menu [data-menu-act=auto]'), 500)
@@ -2723,13 +2740,19 @@ const SHOTS = {
       clip: panel, ms: 10000, width: 800,
       during: async () => {
         let at = { x: panel.x + 200, y: panel.y + 100 }
-        at = await glide(win, at, await center(win, '[data-pick-to]'), 600)
+        at = await glide(win, at, await center(win, '.compose .attach'), 600)
+        await tap(win, at)
+        await sleep(400)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=to]'), 350)
         await tap(win, at)
         await sleep(400)
         at = await glide(win, at, await center(win, '.menu [data-menu-act="Iris"]'), 400)
         await tap(win, at)
         await sleep(400)
-        at = await glide(win, at, await center(win, '.fresh-toggle'), 500)
+        at = await glide(win, at, await center(win, '.compose .attach'), 500)
+        await tap(win, at)
+        await sleep(400)
+        at = await glide(win, at, await center(win, '.menu [data-menu-act=fresh]'), 350)
         await tap(win, at)
         await sleep(600)
         await js(win, "document.querySelector('.composer textarea').focus()")
