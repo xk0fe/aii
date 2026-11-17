@@ -45,10 +45,11 @@ const here = path.join(tmp, 'attachments') // this computer's
 const host = path.join(tmp, 'workstation') // the linked computer's
 const cache = path.join(tmp, 'cache')
 for (const d of [src, host, cache]) fs.mkdirSync(d, { recursive: true })
-const ff = (dir, name, args) => (execFileSync('ffmpeg', ['-v', 'error', '-y', ...args, path.join(dir, name)]), name)
+const ff = (dir, name, args) => (execFileSync('ffmpeg', ['-v', 'error', '-y', '-filter_threads', '1', ...args, '-threads', '1', path.join(dir, name)]), name)
 const bars = (size, seconds) => ['-f', 'lavfi', '-i', `testsrc2=size=${size}:rate=30`, '-t', String(seconds)]
 const tone = (seconds) => ['-f', 'lavfi', '-i', 'sine=frequency=330', '-t', String(seconds)]
-const h264 = ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-g', '30']
+// (made quickly and on one core: this runs beside the rest of `npm test`, whose tests have clocks of their own)
+const h264 = ['-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '1', '-pix_fmt', 'yuv420p', '-g', '30']
 const svgShot = (w, h, fill) => `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="${fill}"/><circle cx="${w / 2}" cy="${h / 2}" r="${Math.min(w, h) / 4}" fill="#fff"/></svg>`
 const PAGE = '<!doctype html><title>Demo</title><body style="font:16px system-ui;margin:24px"><h1 id="h">Still</h1><button id="b">Count</button><script>document.getElementById("h").textContent = "Running"; let n = 0; document.getElementById("b").onclick = () => (document.getElementById("h").textContent = "Count " + ++n)</script></body>'
 
@@ -56,9 +57,12 @@ ff(src, 'checkout-run.mp4', [...bars('1280x720', 48), ...tone(48), ...h264, '-b:
 ff(src, 'phone-flow.mp4', [...bars('720x1280', 12), ...h264, '-b:v', '700k'])
 ff(src, 'short.mp4', [...bars('640x360', 3), ...h264])
 ff(src, 'old-codec.mp4', [...bars('320x240', 2), '-c:v', 'mpeg2video']) // a real recording Chromium has no decoder for
+ff(src, 'strip.mp4', [...bars('1920x120', 4), ...h264]) // sixteen times as wide as it's tall
+ff(src, 'pillar.mp4', [...bars('120x1920', 4), ...h264]) // ...and the other way
 for (const [name, text] of [['wide.svg', svgShot(1280, 800, '#CC2277')], ['a.svg', svgShot(390, 844, '#2F7D5B')], ['b.svg', svgShot(390, 844, '#3B6FD9')], ['c.svg', svgShot(390, 844, '#B4691E')], ['demo.html', PAGE], ['tests.log', 'ok 1\nok 2\n# pass 2\n']]) fs.writeFileSync(path.join(src, name), text)
 const kept = async (...names) => store(checkFiles(names, src), here)
 const [wide, tall, short, oldCodec, picWide, picA, picB, picC, page, log] = await kept('checkout-run.mp4', 'phone-flow.mp4', 'short.mp4', 'old-codec.mp4', 'wide.svg', 'a.svg', 'b.svg', 'c.svg', 'demo.html', 'tests.log')
+const [strip, pillar] = await kept('strip.mp4', 'pillar.mp4') // (a message holds ten files at most)
 oldCodec.kind = 'video' // (as one attached by a CLIque that took it for one: the player has to say it can't)
 const missing = { ...short, path: path.join(here, '2026-11-16-00000000-gone.mp4'), name: 'gone.mp4' }
 
@@ -549,6 +553,40 @@ app.whenReady().then(async () => {
     await tap(`${SHORT} .fxp-toggle`)
     ok(await until(async () => (await P(SHORT)).t > 0.2 && (await P(SHORT)).t < 2.5 && !(await P(SHORT)).paused, 3000), 'the button plays it again')
     await key('Space')
+    // shapes far from a screen's: in the viewer the player keeps room for its own bar
+    await say([{ id: 's1', kind: 'reply', from: 'June', text: 'A strip and a pillar.', files: [strip, pillar] }])
+    for (const [i, what] of [[0, 'a strip sixteen times as wide as it is tall'], [1, 'a pillar sixteen times as tall as it is wide']]) {
+      const SV = `.fx-video[data-live="s1:${i}"]`
+      await into(SV)
+      await until(async () => (await P(`${SV} .fxp`))?.ready >= 2)
+      const inCard = await P(`${SV} .fxp`)
+      await tap(`${SV} [data-fx=view]`)
+      const VP = '.fxv .fxv-stage > .fxp'
+      await until(async () => P(VP), 3000)
+      await tap(`${VP} .fxp-big`)
+      await until(async () => (await P(VP)).t > 0.2)
+      await key('Space')
+      const tr = await box(`${VP} .fxp-track`)
+      await move(tr.x + tr.w * 0.6, tr.y + tr.h / 2)
+      await sleep(400)
+      await tap(`${VP} .fxp-rate`)
+      const fits = await js(`const p = document.querySelector(${JSON.stringify(VP)}); const b = p.getBoundingClientRect(); const out = []; for (const sel of ['.fxp-toggle', '.fxp-time', '.fxp-rate', '.fxp-full', '.fxp-track', '.fxp-menu']) { const e = p.querySelector(sel); const r = e.getBoundingClientRect(); if (!r.width || r.left < b.left - 0.5 || r.right > b.right + 0.5 || r.top < b.top - 0.5 || r.bottom > b.bottom + 0.5) out.push(sel) } const s = document.querySelector('.fxv-stage').getBoundingClientRect(); return { out, box: [Math.round(b.width), Math.round(b.height)], inStage: b.left >= s.left && b.right <= s.right + 0.5 && b.top >= s.top && b.bottom <= s.bottom + 0.5 }`)
+      ok(fits.out.length === 0 && fits.inStage, `${what}: in the viewer its bar, its track and its speeds are all inside it, and it inside the window`, [fits, inCard.box])
+      await shot(`more-2-shape-${i}`)
+      await key('Escape')
+      await key('Escape')
+      await sleep(250)
+    }
+    // the window goes out of sight (the floating chat when the main window opens): what plays in it stops
+    await say([{ id: 'v1', kind: 'reply', from: 'Iris', text: 'The checkout run from start to finish.', files: [wide] }])
+    await until(async () => (await P(PL))?.ready >= 2)
+    await into(VID)
+    await tap(`${PL} .fxp-big`)
+    await until(async () => !(await P(PL)).paused)
+    await js(`Object.defineProperty(document, 'hidden', { get: () => true, configurable: true }); document.dispatchEvent(new Event('visibilitychange'))`)
+    await sleep(150)
+    ok((await P(PL)).paused, 'the window goes out of sight: what was playing in it stops')
+    await js(`delete document.hidden`)
     // where it was left: played again later, it carries on
     await into(VID)
     await tap(`${PL} > video`, win, [0.5, 0.3])
@@ -644,6 +682,18 @@ app.whenReady().then(async () => {
     await dblclick(W / 2, H / 3)
     ok(await until(async () => !(await P(PL)).full, 3000), 'and a double click there leaves it')
     await key('Space')
+    // on the whole screen when the chat moves on to something else (another conversation, another workspace): its
+    // message isn't there any more, so neither is it
+    await playing(PL, true)
+    await key('f')
+    await until(async () => (await P(PL)).full, 3000)
+    await say([{ id: 'elsewhere', kind: 'reply', from: 'Ada', text: 'Another conversation altogether.' }])
+    await sleep(500)
+    ok((await js(`return !document.fullscreenElement && !document.querySelector('.fxp') && document.querySelectorAll('video').length === 0 && !document.getElementById('fx-shelf')?.children.length`)), 'the chat moves on to another conversation under the whole screen: the screen is the chat again, and nothing is left playing')
+    await say([{ id: 'v1', kind: 'reply', from: 'Iris', text: 'The checkout run from start to finish.', files: [wide] }, { id: 'v2', kind: 'reply', from: 'Theo', text: 'And the same flow on a phone.', files: [tall] }])
+    await into(VID)
+    p = await until(async () => ((await P(PL))?.ready >= 2 ? P(PL) : null))
+    ok(p && !p.cls.includes(' on') && near(p.box.w, 440, 0.5), 'back in the first one, its recording is as it is before it is played')
     // a tall one on the whole screen
     const TALL = '.fx-video[data-live="v2:0"] .fxp'
     await into(TALL)
@@ -708,6 +758,11 @@ app.whenReady().then(async () => {
     await sleep(250)
     p = await P(VP)
     ok(p && (await vis('.fxv')) && near(p.box.w / p.box.h, 16 / 9, 0.01) && p.box.w < W - 100, 'Esc there: back in the viewer (which stays open), the size it was', p?.box)
+    // its speeds open, and the keyboard moved on to another of the viewer's buttons: Esc closes the speeds, then the viewer
+    await tap(`${VP} .fxp-rate`)
+    await js(`document.querySelector('.fxv [data-fxv=open]').focus()`)
+    await key('Escape')
+    ok((await vis('.fxv')) && !(await vis(`${VP} .fxp-menu`)), 'speeds open, the keyboard on another of the viewer\'s buttons: Esc closes the speeds, and the viewer stays')
     // Close in hand: Space still plays
     await js(`document.querySelector('.fxv [data-fxv=close]').focus()`)
     await key('Space')
@@ -849,12 +904,23 @@ app.whenReady().then(async () => {
     await js(`document.querySelector(${JSON.stringify(OLD)}).focus()`)
     await key('Space')
     ok((await P(OLD)).paused && (await P(OLD)).note, 'Space does nothing there')
+    await js(`window.__old = document.querySelector(${JSON.stringify(OLD)})`)
+    await more({ id: 'x2', kind: 'reply', from: 'Ada', text: 'A new message under it.' })
+    await sleep(400)
+    ok((await js(`return window.__old === document.querySelector(${JSON.stringify(OLD)})`)) && (await P(OLD)).note === "This recording can't play here.", 'a new message is drawn in: it still says so, the same box (not tried, and failed, all over again)')
     await tap('.fx-video[data-live="x1:1"] [data-fx=view]')
     p = await until(async () => P('.fxv .fxv-stage > .fxp'), 3000)
     ok(p?.note === "This recording can't play here.", 'the viewer says the same')
     await tap('.fxv .fxv-stage > .fxp [data-fxp=open]')
     await sleep(150)
     ok((await calls()).some((x) => x[0] === 'openFile'), 'and its Open works there too')
+    const reached = []
+    for (let n = 0; n < 8; n++) (await key('Tab'), reached.push(await js(`const a = document.activeElement; return (a.closest('.fxv') ? '' : 'OUT:') + (a.dataset.fxp ?? a.dataset.fxv ?? a.className.split(' ')[0])`)))
+    ok(reached.includes('open') && reached.includes('show') && !reached.some((r) => r.startsWith('OUT:')), 'Tab there reaches its Open and Show in Finder, and stays in the viewer', reached)
+    await js(`document.querySelector('.fxv .fxv-stage > .fxp [data-fxp=show]').focus()`)
+    await key('Return')
+    await sleep(150)
+    ok((await calls()).some((x) => x[0] === 'showFile'), 'and Enter presses the one the keyboard is on')
     await key('Escape')
     await sleep(200)
     ok(!(await vis('.fxv')) && (await P(OLD))?.note, 'closed, the message still says it')
@@ -1059,6 +1125,11 @@ app.whenReady().then(async () => {
     await key('9')
     p = await until(async () => ((await P(AP))?.note ? P(AP) : null), 9000)
     ok(p?.note === "Workstation is away. This plays once it's back.", 'it goes away mid-play, and a jump needs a part that is not here: the player says so', p?.note)
+    await js(`window.__ap = document.querySelector(${JSON.stringify(AP)})`)
+    await more({ id: 'a1b', kind: 'reply', from: 'Ada', text: 'A new message while it waits for Workstation.' })
+    await sleep(400)
+    p = await P(AP)
+    ok((await js(`return window.__ap === document.querySelector(${JSON.stringify(AP)})`)) && p.note === "Workstation is away. This plays once it's back.", 'a new message is drawn in meanwhile: the same player, still saying why', p)
     link.online = true
     files.back('workstation')
     await computer(true)

@@ -33,6 +33,6 @@ test('files in the chat, every action, in a real window with a real mouse and ke
   assert.equal(failed.length, 0, `the probe found:\n${failed.join('\n')}\n\n${error?.killed ? 'and it was stopped for taking too long' : ''}`)
   assert.ok(!error, `the probe didn't finish: ${error?.message}\n${out.slice(-2000)}`)
   assert.match(out, /\n\d+ held, 0 didn't\s*$/)
-  assert.ok(out.split('\n').filter((l) => l.startsWith('ok')).length >= 240, out.slice(-1500))
+  assert.ok(out.split('\n').filter((l) => l.startsWith('ok')).length >= 260, out.slice(-1500))
   for (const section of ['player', 'more', 'fullscreen', 'viewer', 'cant', 'others', 'linked', 'away', 'threads', 'floating']) assert.ok(out.includes(`\n# ${section}\n`), `the ${section} part ran`)
 })

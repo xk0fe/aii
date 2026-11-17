@@ -372,8 +372,10 @@ function fxPlayer(root) {
   }
 
   // ---- its speeds ----
+  let outside = null // (a press anywhere else closes them: heard only while they're open)
   const closeMenu = (focus = false) => {
     if (!menu) return
+    removeEventListener('pointerdown', outside, true)
     menu.remove()
     menu = null
     root.classList.remove('speeds')
@@ -388,12 +390,7 @@ function fxPlayer(root) {
     menu.setAttribute('aria-label', 'Speed')
     menu.innerHTML = FXP_RATES.map((r) => `<button type="button" role="menuitemradio" aria-checked="${r === video.playbackRate}" data-fxp="pick" data-rate="${r}">${fxRateWords(r)}</button>`).join('')
     root.append(menu)
-    // (a press anywhere else closes it)
-    const outside = (ev) => {
-      if (!menu || root.contains(ev.target)) return
-      removeEventListener('pointerdown', outside, true)
-      closeMenu()
-    }
+    outside = (ev) => root.contains(ev.target) || closeMenu()
     addEventListener('pointerdown', outside, true)
     root.classList.add('speeds')
     q('.fxp-rate').setAttribute('aria-expanded', 'true')
@@ -548,6 +545,7 @@ function fxPlayer(root) {
   const wait = () => {
     clearTimeout(waiting)
     waiting = setTimeout(() => {
+      if (root.classList.contains('cant')) return // (it has said why it can't play: nothing is being waited for)
       root.classList.add('waiting')
       // One from a linked computer that goes on waiting: is it still coming? If its computer went away (or it isn't
       // kept there any more), the player says so rather than turn for ever.
@@ -614,9 +612,7 @@ function fxPlayer(root) {
     delete root.dataset.at
     wanted = asked = null
     video.load()
-    if (!root.classList.contains('on')) return
-    root.closest('.fx-card')?.classList.add('on')
-    if (at > 0.5) video.addEventListener('loadedmetadata', () => (video.currentTime = at), { once: true })
+    if (root.classList.contains('on') && at > 0.5) video.addEventListener('loadedmetadata', () => (video.currentTime = at), { once: true })
   }
 
   // What depends on how wide it is (a tall recording in a message is 240 across, the whole screen a few thousand): what
@@ -660,6 +656,8 @@ async function fxCant(root, code, known = null) {
   if (video.getAttribute('src')) {
     root.dataset.src = video.getAttribute('src')
     root.dataset.at = String(fxPlayers.get(root) ? video.currentTime : 0)
+    // (where it was, kept here: letting go of the file takes the pause that would have said so with it)
+    if (root.classList.contains('on') && video.currentTime > 0.5) fxSpots.set(hit.f.path, video.currentTime)
     video.pause()
     video.removeAttribute('src')
     video.load()
@@ -694,7 +692,6 @@ async function fxCant(root, code, known = null) {
   note.insertAdjacentHTML('beforeend', more)
   root.querySelector(':scope > .fx-gone')?.remove()
   root.append(note)
-  root.closest('.fx-card')?.classList.remove('on')
 }
 
 // A linked computer is connected again: what was waiting for it (a recording, a picture) is asked for once more.
@@ -718,7 +715,8 @@ function fxBack(state) {
 // as it is. -> a function that puts each back where the new drawing has its box. (moveBefore moves a frame or a video
 // without reloading or pausing it, and what fills the screen goes on filling it.)
 function fxHold(root) {
-  const live = [...root.querySelectorAll('[data-live].on')]
+  // (...and a recording that says why it can't play: its words, and the place it will take up again from)
+  const live = [...root.querySelectorAll('[data-live].on, [data-live]:has(> .fx-stage > .fxp.cant)')]
   if (!live.length) return () => {}
   let shelf = document.getElementById('fx-shelf')
   if (!shelf) {
@@ -875,9 +873,11 @@ function fxView(id, i, opener, from = null) {
     const w = stage.clientWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight)
     const h = stage.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom)
     const ratio = Number(player.style.getPropertyValue('--ratio')) || 16 / 9
-    const across = Math.max(1, Math.floor(Math.min(w, h * ratio)))
-    player.style.width = `${across}px`
-    player.style.height = `${Math.round(across / ratio)}px`
+    // (never smaller than its bar, its speeds and the look at a moment need: a strip 16 times as wide as it's tall, or
+    // a pillar, sits in the middle of a box that has the room, on black)
+    const across = Math.min(w, Math.max(280, Math.floor(Math.min(w, h * ratio))))
+    player.style.width = `${Math.max(1, across)}px`
+    player.style.height = `${Math.max(1, Math.min(h, Math.max(170, Math.round(across / ratio))))}px`
   }
   const fitAll = () => (size(), fitPlayer())
   const said = () => {
@@ -907,7 +907,7 @@ function fxView(id, i, opener, from = null) {
         fxMove(slot, player, fresh)
         fresh?.remove()
         card.classList.remove('lent')
-        card.classList.toggle('on', player.classList.contains('on') && !player.classList.contains('cant'))
+        card.classList.toggle('on', player.classList.contains('on'))
         fxPlayer(player).wake(700)
       }
     }
@@ -988,11 +988,15 @@ function fxView(id, i, opener, from = null) {
     const k = ev.key
     const player = stage.querySelector(':scope > .fxp')
     if (k === 'Escape') {
-      if (player?.classList.contains('speeds')) return // (its speeds close first: the player hears it)
-      close()
+      // its speeds close first: the player hears it itself when the keyboard is in it, and is told when it's elsewhere
+      if (player?.classList.contains('speeds')) {
+        if (player.contains(ev.target)) return
+        fxPlayer(player).closeMenu()
+      } else close()
     } else if (k === 'Tab') {
       // the keyboard stays in the viewer while it's open
-      const stops = [...el.querySelectorAll('button, input, [tabindex="0"], iframe')].filter((b) => b.offsetParent && !b.disabled && b.tabIndex !== -1 && (!b.closest('.fxp') || b.closest('.fxp').classList.contains('on') || b.classList.contains('fxp')))
+      // (of a player: itself, its bar once it's started, and what it offers when it can't play)
+      const stops = [...el.querySelectorAll('button, input, [tabindex="0"], iframe')].filter((b) => b.offsetParent && !b.disabled && b.tabIndex !== -1 && (!b.closest('.fxp') || b.classList.contains('fxp') || b.closest('.fx-gone') || b.closest('.fxp').classList.contains('on')))
       const here = stops.indexOf(document.activeElement)
       const to = stops[(here + (ev.shiftKey ? -1 : 1) + stops.length) % stops.length]
       if (to?.tagName === 'IFRAME' || document.activeElement?.tagName === 'IFRAME') return // into the page and out of it: the browser's own order
@@ -1089,6 +1093,11 @@ if (typeof document !== 'undefined' && typeof clique !== 'undefined') {
       p?.closeMenu()
       p?.wake()
     }
+  })
+  // The window goes out of sight (the floating chat when the main window opens, a window minimised): what plays in it
+  // stops, like anything else out of sight. So one recording plays at a time across the windows too.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) for (const video of document.querySelectorAll('.fxp > video')) if (!video.paused) video.pause()
   })
   // the floating chat's player asks for the whole screen: the main window's viewer has it
   document.addEventListener('fx-elsewhere', (ev) => {

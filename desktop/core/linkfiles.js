@@ -6,8 +6,10 @@
 //   over CLIque Link   readFile(file, start, length) -> { size, bytes }: at most PIECE bytes of one of that computer's
 //                      attachments (readPiece, Clique.serve). A message on the link carries one piece, never a whole file.
 //   in the cache       <file>.part holds the pieces that are here, at their places in the file, and <file>.part.json
-//                      says which those are, so what was fetched is still here after a restart. With every piece here
-//                      it becomes <file>: a whole file like any other (Open, Show in Finder, the phone's pictures).
+//                      says which those are, with a checksum of each, so what was fetched is still here after a
+//                      restart (a piece is only believed once it's been read and matches its checksum). With every
+//                      piece here it becomes <file>: a whole file like any other (Open, Show in Finder, the phone's
+//                      pictures).
 //   to the chat        clique-file://f/?p=<the file in the cache>: answered like a web server that takes ranges
 //                      (serveFiles), from the cache when the file is whole and from the other computer when it isn't.
 //                      The app's pages load every linked file through it, so nothing shows as broken while it's on its way.
@@ -19,6 +21,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
+import zlib from 'node:zlib'
 import { kindOf, typeOf } from './attachments.js'
 
 export const SCHEME = 'clique-file'
@@ -99,8 +102,10 @@ class Fetch {
   have = null // a bit per piece
   count = 0
   got = 0 // bytes here
-  fd = null
   done = false
+  dropped = false // let go to make room: whatever still holds this one asks LinkFiles again (there may be a new one)
+  sums = [] // each piece's checksum, as it came
+  unsure = new Set() // pieces an earlier run says are here: read and checked before they're believed
   asked = new Map() // piece -> its promise
   used = Date.now() // when something last read it or a piece of it came
 
@@ -110,12 +115,14 @@ class Fetch {
     try {
       const saved = JSON.parse(fs.readFileSync(this.map, 'utf8'))
       const have = Buffer.from(String(saved.have), 'base64')
-      if (Number.isInteger(saved.size) && saved.size > 0 && saved.size <= SIZE_MAX && have.length === Math.ceil(Math.ceil(saved.size / PIECE) / 8) && fs.statSync(this.part).size <= saved.size) {
-        this.fd = fs.openSync(this.part, 'r+')
+      const part = fs.statSync(this.part)
+      const count = Math.ceil(saved.size / PIECE)
+      if (Number.isInteger(saved.size) && saved.size > 0 && saved.size <= SIZE_MAX && have.length === Math.ceil(count / 8) && part.size <= saved.size && Array.isArray(saved.sums) && saved.sums.length === count) {
         this.size = saved.size
-        this.count = Math.ceil(saved.size / PIECE)
+        this.count = count
         this.have = new Uint8Array(have)
-        for (let i = 0; i < this.count; i++) if (this.has(i)) this.got += this.length(i)
+        this.sums = saved.sums
+        for (let i = 0; i < count; i++) if (this.has(i)) (this.unsure.add(i), (this.got += this.length(i)))
       }
     } catch {}
   }
@@ -128,32 +135,72 @@ class Fetch {
     return Math.min(PIECE, this.size - i * PIECE)
   }
 
+  // Nothing of it is here (any more).
+  forget() {
+    this.size = this.have = null
+    this.count = this.got = 0
+    this.sums = []
+    this.unsure.clear()
+  }
+
+  // A piece an earlier run left: is what's in the pieces file what came? (The list could say more than is there: the
+  // pieces file made anew under it, a disk that lost a write.) One that isn't is not here.
+  sure(i) {
+    if (!this.unsure.delete(i)) return true
+    try {
+      const buf = Buffer.alloc(this.length(i))
+      const fd = fs.openSync(this.part, 'r')
+      try {
+        if (fs.readSync(fd, buf, 0, buf.length, i * PIECE) === buf.length && zlib.crc32(buf) === this.sums[i]) return true
+      } finally {
+        fs.closeSync(fd)
+      }
+    } catch {}
+    this.have[i >> 3] &= ~(1 << (i & 7))
+    this.got -= this.length(i)
+    return false
+  }
+
+  // Bytes of its pieces file, written or read at their place in it. (Opened for each: a recording that was only looked
+  // at would otherwise keep a file open for as long as the app runs, and so would every other one.)
+  put(bytes, at) {
+    const fd = fs.openSync(this.part, 'r+')
+    try {
+      fs.writeSync(fd, bytes, 0, bytes.length, at)
+    } finally {
+      fs.closeSync(fd)
+    }
+  }
+
   // A file of `size` bytes, none of it here yet.
   begin(size) {
     if (!Number.isInteger(size) || size < 0) throw fail('failed', `${this.files.nameOf(this.slug)} sent something that isn't a file`)
     if (size > SIZE_MAX) throw fail('big', "That file is too big to bring here: open it on the computer it's on.")
-    if (this.fd !== null) fs.closeSync(this.fd)
     fs.mkdirSync(path.dirname(this.part), { recursive: true })
-    this.fd = fs.openSync(this.part, 'w+')
+    fs.writeFileSync(this.part, '')
     this.size = size
     this.count = Math.ceil(size / PIECE)
     this.have = new Uint8Array(Math.ceil(this.count / 8))
+    this.sums = Array(this.count).fill(null)
+    this.unsure.clear()
     this.got = 0
   }
 
-  // What's here of it goes (the cache needed the room): from the start the next time it's wanted.
+  // What's here of it goes (the cache needed the room), and this with it: the next time the file is wanted it's
+  // fetched by a new one, from the start. (One that came back to life beside the new one would write the same pieces
+  // file anew under it.)
   drop() {
-    if (this.fd !== null) fs.closeSync(this.fd)
-    this.fd = this.size = this.have = null
-    this.count = this.got = 0
+    this.dropped = true
+    this.forget()
     fs.rmSync(this.part, { force: true })
     fs.rmSync(this.map, { force: true })
   }
 
   // Piece `i`, here: at once if it is, else once it has come (asked for once, however many want it).
   piece(i) {
+    if (this.dropped) return Promise.reject(fail('failed', 'It was let go to make room, and is fetched again when it is asked for.'))
     this.used = Date.now()
-    if (this.done || this.has(i)) return Promise.resolve()
+    if (this.done || (this.has(i) && this.sure(i))) return Promise.resolve()
     let p = this.asked.get(i)
     if (!p) {
       p = this.ask(i).finally(() => this.asked.delete(i))
@@ -174,18 +221,19 @@ class Fetch {
       if (/connect|took too long/.test(e.message)) throw fail('away', `${this.files.nameOf(this.slug)} is away`)
       throw fail('failed', e.message)
     }
-    if (this.done) return
+    if (this.done || this.dropped) return
     if (!res || !(res.bytes instanceof Uint8Array)) throw fail('failed', `${this.files.nameOf(this.slug)} sent something that isn't a file`)
     if (res.size !== this.size) this.begin(res.size) // the first piece, or a file that changed: from the start
     if (!this.size) return this.finish()
     if (i >= this.count) return // (asked past its end, before its size was known)
     if (res.bytes.length !== this.length(i)) throw fail('failed', `${this.files.nameOf(this.slug)} sent a piece of the wrong size`)
     if (this.has(i)) return
-    fs.writeSync(this.fd, res.bytes, 0, res.bytes.length, i * PIECE)
+    this.put(res.bytes, i * PIECE)
     this.have[i >> 3] |= 1 << (i & 7)
+    this.sums[i] = zlib.crc32(res.bytes)
     this.got += res.bytes.length
     if (this.got >= this.size) return this.finish()
-    fs.writeFileSync(this.map, JSON.stringify({ size: this.size, have: Buffer.from(this.have).toString('base64') }))
+    fs.writeFileSync(this.map, JSON.stringify({ size: this.size, have: Buffer.from(this.have).toString('base64'), sums: this.sums }))
     this.files.emit('progress', this.file, this.got, this.size)
     this.files.makeRoom(path.dirname(this.file), this.file)
   }
@@ -202,25 +250,24 @@ class Fetch {
     } finally {
       this.files.emit('old', this.slug)
     }
-    if (this.done) return
+    if (this.done || this.dropped) return
     if (!(bytes instanceof Uint8Array)) throw fail('failed', `${this.files.nameOf(this.slug)} sent something that isn't a file`)
     this.begin(bytes.length)
-    if (bytes.length) fs.writeSync(this.fd, bytes, 0, bytes.length, 0)
+    if (bytes.length) this.put(bytes, 0)
     this.got = this.size
     this.finish()
   }
 
-  // Every piece is here: it's a file like any other now.
+  // Every piece is here: it's a file like any other now. (Not before the ones an earlier run left are checked: one that
+  // doesn't hold is fetched again first.)
   finish() {
     if (this.done) return
-    if (this.fd !== null) fs.closeSync(this.fd)
-    this.fd = null
+    for (const i of [...this.unsure]) if (!this.sure(i)) return this.piece(i)
     try {
       fs.renameSync(this.part, this.file)
     } catch (e) {
       // (its pieces were taken from under it: swept as old, or the cache was cleared by hand. From the start next time.)
-      this.size = this.have = null
-      this.count = this.got = 0
+      this.forget()
       throw fail('failed', `It couldn't be kept here: ${e.message}`)
     }
     this.done = true
@@ -253,11 +300,11 @@ class Fetch {
     for (let i = first; i <= last && !this.done; i++) if (!this.has(i)) throw fail('failed', 'That file changed while it was coming. Try again.')
     if (!this.done && last + 1 < this.count) this.piece(last + 1).catch(() => {})
     const buf = Buffer.alloc(end - start)
-    const fd = this.done ? fs.openSync(this.file, 'r') : this.fd
+    const fd = fs.openSync(this.done ? this.file : this.part, 'r')
     try {
       fs.readSync(fd, buf, 0, buf.length, start)
     } finally {
-      if (this.done) fs.closeSync(fd)
+      fs.closeSync(fd)
     }
     return buf
   }
@@ -272,6 +319,8 @@ class Fetch {
         while (!this.done && next < this.count) await this.piece(next++)
       }
       await Promise.all([lane(), lane(), lane()])
+      // (every piece was here from an earlier run, which stopped before it could call it a file)
+      if (!this.done && this.have && this.got >= this.size) await this.finish()
     }
   }
 }
@@ -311,6 +360,39 @@ export class LinkFiles extends EventEmitter {
     f = new Fetch(this, file, whose)
     this.fetches.set(file, f)
     return f
+  }
+
+  // How long it is, and bytes start..end of it: from the cache when it's whole there, else through the Fetch that's its
+  // now. (Always asked by the file, never by a Fetch held from before: the one from before may have been let go to
+  // make room, with another in its place.)
+  async sized(file, start = 0) {
+    const whole = fs.statSync(file, { throwIfNoEntry: false })
+    if (whole) return whole.size
+    const f = this.fetchOf(file)
+    if (!f) throw fail('gone', "That file isn't kept any more.")
+    return f.sized(start)
+  }
+
+  async read(file, start, end) {
+    for (let again = 0; ; again++) {
+      const f = this.has(file) ? null : this.fetchOf(file)
+      if (!f && !this.has(file)) throw fail('gone', "That file isn't kept any more.")
+      try {
+        if (f) return await f.read(start, end)
+        const fd = fs.openSync(file, 'r')
+        try {
+          const buf = Buffer.alloc(Math.max(0, Math.min(end, fs.fstatSync(fd).size) - start))
+          fs.readSync(fd, buf, 0, buf.length, start)
+          return buf
+        } finally {
+          fs.closeSync(fd)
+        }
+      } catch (e) {
+        // (let go to make room, or gone from the cache, between the look and the read: once more, with what's its now)
+        if (again < 2 && (f?.dropped || e.code === 'ENOENT')) continue
+        throw e
+      }
+    }
   }
 
   // The whole file, here. -> the file. Throws with why it can't be (whyOf).
@@ -428,18 +510,17 @@ export async function answerFile(request, { dirs, files }) {
     const asked = new URL(request.url).searchParams.get('p')
     if (asked && inside(asked, dirs)) file = path.resolve(asked)
   } catch {}
-  if (!file || /\.part(\.json)?$/.test(file)) return plain(404, 'gone')
+  if (!file || /\.part(\.json)?$/i.test(file)) return plain(404, 'gone') // (whatever the letters' case: a Mac's disk doesn't tell)
   if (kindOf(file) === 'html') return plain(403)
   if (request.method !== 'GET' && request.method !== 'HEAD') return plain(405)
   const stat = fs.statSync(file, { throwIfNoEntry: false })
   if (stat && !stat.isFile()) return plain(404, 'gone')
-  const fetch = stat ? null : files?.fetchOf(file)
-  if (!stat && !fetch) return plain(404, 'gone')
+  if (!stat && !files?.theirs.has(file)) return plain(404, 'gone')
   const asked = request.headers.get('range')
   let size
   try {
     // (the piece the range starts in says how big the file is, when nothing of it is here yet)
-    size = stat ? stat.size : await fetch.sized(Number(/^bytes=(\d+)-/.exec(asked ?? '')?.[1] ?? 0))
+    size = stat ? stat.size : await files.sized(file, Number(/^bytes=(\d+)-/.exec(asked ?? '')?.[1] ?? 0))
   } catch (e) {
     files.fail(file, e)
     return plain(STATUS[whyOf(e)] ?? 502, whyOf(e))
@@ -450,7 +531,7 @@ export async function answerFile(request, { dirs, files }) {
   const headers = { ...SHUT, 'content-type': typeOf(file), 'accept-ranges': 'bytes', 'content-length': String(end - start), ...(range && { 'content-range': `bytes ${start}-${end - 1}/${size}` }) }
   if (request.method === 'HEAD' || end === start) return new Response(null, { status: range ? 206 : 200, headers })
   let body
-  if (stat || fetch.done) body = Readable.toWeb(fs.createReadStream(file, { start, end: end - 1 }))
+  if (stat) body = Readable.toWeb(fs.createReadStream(file, { start, end: end - 1 }))
   else {
     let at = start
     let stopped = false // the page stopped asking: it has what it wanted of this stretch, or went elsewhere in the file
@@ -460,7 +541,8 @@ export async function answerFile(request, { dirs, files }) {
         const to = Math.min(end, (Math.floor(at / PIECE) + 1) * PIECE)
         let bytes
         try {
-          bytes = await fetch.read(at, to)
+          bytes = await files.read(file, at, to)
+          if (bytes.length !== to - at) throw fail('failed', 'That file changed while it was coming. Try again.')
         } catch (e) {
           if (stopped) return
           files.fail(file, e)

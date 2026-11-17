@@ -13,6 +13,9 @@ import readline from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { LinkFiles, readPiece, answerFile, rangeOf, inside, fileURL, whyOf, PIECE, SCHEME, FILES_SCHEME, NO_PIECES } from '../core/linkfiles.js'
 import { WIN } from './helpers/platform.mjs'
+import zlib from 'node:zlib'
+
+const zlibCrc = (b) => zlib.crc32(b)
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clique-linkfiles-')))
 after(() => fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10 }))
@@ -159,6 +162,54 @@ test('what was fetched is still here after a restart; what another run left half
   // (…with no pieces file beside it)
   assert.equal(fresh.files.fetchOf(again).size, null)
   assert.ok((await fresh.files.fetchOf(again).read(0, 10)).equals(fs.readFileSync(run).subarray(0, 10)))
+})
+
+test('a piece an earlier run left is read and checked before it is believed; one that does not hold is fetched again', async () => {
+  const whole = fs.readFileSync(run)
+  // pieces 0, 1 and 2 came, the app stopped; meanwhile the pieces file lost piece 0 (made anew under its list: a hole
+  // where it was) and has other bytes where piece 2 was
+  const first = viewer()
+  const file = first.files.place('workstation', run)
+  await first.files.fetchOf(file).read(0, PIECE + 10) // (0 and 1, and 2 asked for ahead)
+  await sleep(20)
+  const list = JSON.parse(fs.readFileSync(`${file}.part.json`, 'utf8'))
+  assert.equal(list.sums.filter((x) => x !== null).length, 3)
+  assert.ok(list.sums.every((x) => x === null || Number.isInteger(x)))
+  const part = fs.readFileSync(`${file}.part`)
+  part.fill(0, 0, PIECE)
+  part.fill(9, 2 * PIECE, 2 * PIECE + 100)
+  fs.writeFileSync(`${file}.part`, part)
+  const later = new LinkFiles({ cache: first.cache, peer: first.files.peer, name: () => 'Workstation' })
+  later.place('workstation', run)
+  first.link.asked.length = 0
+  const f = later.fetchOf(file)
+  assert.deepEqual([f.size, f.got], [BIG, 3 * PIECE]) // what the list says, until it's looked at
+  assert.ok((await f.read(PIECE, PIECE + 50)).equals(whole.subarray(PIECE, PIECE + 50)))
+  await sleep(20)
+  assert.deepEqual(first.link.asked, [2], 'piece 1 holds: not asked for. The one after it, looked at ahead, has other bytes: asked for again')
+  assert.ok((await f.read(10, 20)).equals(whole.subarray(10, 20)), 'piece 0 was a hole: fetched again, and right')
+  assert.deepEqual(first.link.asked, [2, 0])
+  assert.equal(await later.whole(file), file)
+  assert.ok(fs.readFileSync(file).equals(whole), 'the whole file is the file, though piece 2 had other bytes in it')
+  assert.deepEqual([...first.link.asked].sort(), [0, 2, 3])
+  // every piece here from a run that stopped before it called it a file: it's one, with nothing asked
+  const again = viewer()
+  const g = again.files.place('workstation', run)
+  await again.files.whole(g)
+  const sums = [0, 1, 2, 3].map((i) => zlibCrc(whole.subarray(i * PIECE, (i + 1) * PIECE)))
+  fs.renameSync(g, `${g}.part`)
+  fs.writeFileSync(`${g}.part.json`, JSON.stringify({ size: BIG, have: Buffer.from([0x0f]).toString('base64'), sums }))
+  const resumed = new LinkFiles({ cache: again.cache, peer: () => null, name: () => 'Workstation' })
+  resumed.place('workstation', run)
+  assert.equal(await resumed.whole(g), g)
+  assert.ok(fs.readFileSync(g).equals(whole) && !fs.existsSync(`${g}.part`))
+  // a list from before checksums (or one that isn't one) is not believed at all
+  const old = viewer()
+  const h = old.files.place('workstation', run)
+  fs.mkdirSync(path.dirname(h), { recursive: true })
+  fs.writeFileSync(`${h}.part`, Buffer.alloc(BIG))
+  fs.writeFileSync(`${h}.part.json`, JSON.stringify({ size: BIG, have: Buffer.from([0x0f]).toString('base64') }))
+  assert.equal(old.files.fetchOf(h).size, null)
 })
 
 test('why a file can\'t be had: its computer is away, it isn\'t kept there, the connection dropped, it sent nonsense', async () => {
@@ -415,6 +466,39 @@ test('the scheme says no to what is not one of CLIque\'s files, to a page, and s
     for (;;) if ((await reader.read()).done) break
   })
   assert.deepEqual(failures.map((f) => f[1]), ['away'])
+})
+
+test('a page still reading a file that was let go to make room reads on, from what is its now: nothing is written over', async () => {
+  const whole = fs.readFileSync(run)
+  const { files, cache } = viewer({ max: 2 * PIECE + 1000 })
+  const on = { dirs: [cache], files }
+  const a = files.place('workstation', run)
+  // a recording playing from its start: its first piece taken (the next on its way), then paused
+  const playing = await answerFile(ask(a, { range: 'bytes=0-' }), on)
+  const reader = playing.body.getReader()
+  let got = Buffer.from((await reader.read()).value)
+  await sleep(20)
+  const before = files.fetches.get(a)
+  // another file comes and needs the room: the recording's pieces go
+  const other = files.place('workstation', put('other.bin', bytes(2 * PIECE, 50)))
+  await files.whole(other)
+  assert.ok(!fs.existsSync(`${a}.part`) && before.dropped && !files.fetches.has(a))
+  // something else asks for its end (the look at a moment, under the pointer): fetched by a new one
+  const look = await answerFile(ask(a, { range: `bytes=${3 * PIECE}-` }), on)
+  assert.ok((await body(look)).equals(whole.subarray(3 * PIECE)))
+  assert.ok(files.fetches.get(a) && files.fetches.get(a) !== before)
+  // ...and the recording plays on: every byte it reads is the file's, and the file that ends up in the cache is the file
+  for (;;) {
+    const r = await reader.read()
+    if (r.done) break
+    got = Buffer.concat([got, Buffer.from(r.value)])
+  }
+  assert.ok(got.equals(whole), 'what the first stream read')
+  assert.equal(await files.whole(a), a)
+  assert.ok(fs.readFileSync(a).equals(whole), 'what is kept')
+  // the one that was let go never writes again, whoever still holds it
+  await assert.rejects(() => before.read(0, 10), (e) => whyOf(e) === 'failed')
+  assert.ok(fs.readFileSync(a).equals(whole))
 })
 
 test('a cache reached through a link (a home folder that is one, /tmp on a Mac): its files are found by the path they are known by', { skip: WIN && 'makes a symbolic link' }, async () => {
