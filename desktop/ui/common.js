@@ -85,6 +85,8 @@ const ICONS = {
   auto: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/>'),
   braces: svg('<path d="M8.5 4C6.6 4 6 5 6 6.8v2.4C6 10.6 5.2 11.6 4 12c1.2.4 2 1.4 2 2.8v2.4C6 19 6.6 20 8.5 20M15.5 4c1.9 0 2.5 1 2.5 2.8v2.4c0 1.4.8 2.4 2 2.8-1.2.4-2 1.4-2 2.8v2.4c0 1.8-.6 2.8-2.5 2.8"/>'),
   power: svg('<path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/>'),
+  pin: svg('<path d="M9 3.5h6l-.8 5.8 3.3 3.7h-11l3.3-3.7zM12 13v7.5"/>'),
+  pointer: svg('<path d="M5 3.5l14 6.6-6.1 1.9-1.9 6.1z"/>'),
   gauge: svg('<path d="M4.2 17.5a8.6 8.6 0 1 1 15.6 0"/><path d="M12 14l3.6-4.2"/><circle cx="12" cy="14.2" r="1.3" fill="currentColor" stroke="none"/>'),
   restart: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/>'),
   close: svg('<path d="M6 6l12 12M18 6 6 18"/>'),
@@ -2868,6 +2870,7 @@ function mountAttach({ zone, field, tray, button, onChange, onPaths, onError }) 
 // for one on another computer) and a space. Agents that are off are listed but can't be picked: a message to one
 // would be refused. field: the textarea. box: what the list lines up with. place: 'above' or 'below' it.
 // Register it before the field's own keydown (Enter to send), so a pick doesn't also send.
+// place: 'above' or 'below' the box, or a function that says which each time it opens.
 function mountMentions(field, { agents, box = field, place = 'above', heading = () => 'Agents' }) {
   const list = document.createElement('div')
   list.className = 'mentions hidden'
@@ -2907,9 +2910,10 @@ function mountMentions(field, { agents, box = field, place = 'above', heading = 
   }
   const place_ = () => {
     const r = box.getBoundingClientRect()
+    const above = (typeof place === 'function' ? place() : place) === 'above'
     Object.assign(list.style, { left: `${r.left}px`, width: `${r.width}px` })
-    list.classList.toggle('up', place === 'above')
-    if (place === 'above') Object.assign(list.style, { top: '', bottom: `${innerHeight - r.top + 6}px`, maxHeight: `${Math.max(140, r.top - 14)}px` })
+    list.classList.toggle('up', above)
+    if (above) Object.assign(list.style, { top: '', bottom: `${innerHeight - r.top + 6}px`, maxHeight: `${Math.max(140, r.top - 14)}px` })
     else Object.assign(list.style, { bottom: '', top: `${r.bottom + 6}px`, maxHeight: `${Math.max(140, innerHeight - r.bottom - 14)}px` })
   }
   const draw = () => {
@@ -3051,7 +3055,9 @@ function mountInk(field, { agents, strict = () => true }) {
 // onDictate: the dictation hotkey is about to start, so the box should be on screen.
 // onLater(button, draft): the clock beside Send was pressed (ui/schedules.js): what the box holds, to send later or on
 // a repeat. draft: { text, images, to, channel, clear() }. Without it there's no clock.
-function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater } = {}) {
+// onSent: a message or a task went through. popups: where the @names list opens, 'above' (as ever) or 'below' the box.
+// stops: whether the empty box's send button may be Stop right now (not where the chat it would stop isn't in view).
+function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater, onSent, popups = 'above', stops = () => true } = {}) {
   el.classList.add('composer')
   // Who it goes to is one picker in the box's bar (To: Auto, Task, or an agent), beside the Task switch.
   el.innerHTML = `<div class="input">
@@ -3091,7 +3097,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
   let lastSend = 0 // when you last pressed Send
   const drawSend = () => {
     const empty = !ta.value.trim() && !attach?.get().length
-    const who = empty && !voice?.busy() ? stoppableIn(agents, { convo: isConvo(target) ? target : null, channel: channel?.id, channels }) : []
+    const who = empty && !voice?.busy() && stops() ? stoppableIn(agents, { convo: isConvo(target) ? target : null, channel: channel?.id, channels }) : []
     const mode = who.length ? 'stop' : 'send'
     stopping = who.map((a) => a.name)
     send.disabled = empty && !who.length
@@ -3334,10 +3340,11 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
         if (fresh) (fresh = false), store.set('clique.fresh', '0')
         draw()
       }
-      if (draftKey(target) !== sentFrom) return void drafts.delete(sentFrom)
+      if (draftKey(target) !== sentFrom) return void (drafts.delete(sentFrom), onSent?.())
       ta.value = ''
       attach.set([])
       autosize()
+      onSent?.()
     } catch (e) {
       say(errorLine(e), true)
     }
@@ -3397,7 +3404,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
   // mentions in their agent's color as you type
   const ink = mountInk(ta, { agents: () => agents, strict: () => !el.classList.contains('task-mode') })
   // @name opens the clique list; in task mode a mention assigns the task
-  const mentions = mountMentions(ta, { agents: () => agents, box: el.querySelector('.input'), heading: () => (el.classList.contains('task-mode') ? 'Assign to' : 'Mention: they get it too') })
+  const mentions = mountMentions(ta, { agents: () => agents, box: el.querySelector('.input'), place: popups, heading: () => (el.classList.contains('task-mode') ? 'Assign to' : 'Mention: they get it too') })
   ta.addEventListener('keydown', (e) => {
     if (voice?.key(e)) return
     if (e.key === 'Escape' && !e.isComposing && stopReply()) return void (e.preventDefault(), e.stopPropagation())
@@ -3475,6 +3482,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     },
     // true when it stopped a dictation (so Esc can stop that first, and close things on the next press)
     stopVoice: () => Boolean(voice?.busy() && (voice.stop(), true)),
+    dictating: () => Boolean(voice?.busy()),
   }
 }
 
@@ -3595,6 +3603,24 @@ function appItems(state) {
         : [{ label: 'Check for updates…', icon: ICONS.up, act: 'app:check', hint: u.phase === 'downloading' && u.next ? `getting ${u.next.version}` : app.version }]
   const login = app.login ? [{ label: 'Open at login', icon: ICONS.power, act: 'app:login', hint: app.login.on ? 'On' : 'Off' }] : []
   return login.length || update.length ? ['-', ...login, ...update] : []
+}
+// Where the floating chat lives, for the same menus, from state.app.chat: the pill you put somewhere, or a buddy that
+// follows the pointer and opens where it is (core/follow.js). ticks: 'left' where the menu ticks its choices in the icon
+// column (the popover's). chatPick does what was picked, and says which keys reach it once it follows the pointer.
+function chatItems(state, { ticks = 'right' } = {}) {
+  const at = state.app?.chat?.at
+  if (!at) return []
+  // (ticked the way the menu ticks its theme: in the icon column, or where the row's note would be)
+  const row = (id, label, icon, hint) => (ticks === 'left' ? { label, act: `chat:${id}`, hint, icon: at === id ? ICONS.check : undefined } : { label, act: `chat:${id}`, icon, hint: at === id ? '✓' : hint })
+  return ['-', { head: 'Floating chat' }, row('sticky', 'Sticky', ICONS.pin, 'where you put it'), row('mouse', 'Under the mouse', ICONS.pointer, 'follows the pointer')]
+}
+function chatPick(act, state) {
+  if (!act.startsWith('chat:')) return
+  const where = act.slice(5)
+  if (where === state.app?.chat?.at) return
+  const k = state.app?.chat?.keys ?? {}
+  const keysSay = [k.message && `${k.message} to talk or type a message`, k.chat && `${k.chat} for the chat`].filter(Boolean).join(', ')
+  clique.call('chatAt', where).then(() => where === 'mouse' && notify(`Your clique follows the pointer now${keysSay ? `: ${keysSay}` : ''}.`), (err) => oops('Couldn’t change that', err))
 }
 function appPick(act, state) {
   if (act === 'app:login') clique.call('openAtLogin', !state.app.login.on).catch((err) => oops('Couldn’t change that', err))

@@ -8,6 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { restartWords } from '../core/updates.js'
+import { followWindow } from '../core/follow.js'
 
 import { serveSandbox } from '../core/sandbox.js'
 import { sampleFiles } from './sample-files.mjs'
@@ -135,7 +136,7 @@ const BACKDROP = {
   desktop: { light: 'linear-gradient(135deg, #dfe7f5, #f1e4f1)', dark: 'linear-gradient(135deg, #1c2233, #2a1f2e)' },
 }
 
-async function open(file, { theme, width, height, backdrop, fixture, transparent = false }) {
+async function open(file, { theme, width, height, backdrop, fixture, transparent = false, query: more }) {
   if (DARK) theme = 'dark'
   // on the stage, what floats over the desktop keeps its see-through window: the stage is what's behind it
   const float = FRAME && backdrop === 'desktop'
@@ -149,7 +150,7 @@ async function open(file, { theme, width, height, backdrop, fixture, transparent
   })
   win.stageKind = float ? 'float' : 'window'
   win.webContents.on('console-message', (e) => e.level === 'error' && console.error(`${file}: ${e.message}`))
-  const query = { ...(fixture && { fixture }), ...(WIN && { platform: 'win32' }) }
+  const query = { ...(fixture && { fixture }), ...(WIN && { platform: 'win32' }), ...more }
   // --win: Windows draws its window buttons over the dashboard's titlebar (main.js titleBarOverlay); stand-ins show
   // where, on every load (shots reload the page)
   if (WIN && file === 'dashboard.html') {
@@ -293,6 +294,11 @@ async function tap(win, at) {
 const SCREEN_TOP = `html::before { content: ''; position: fixed; inset: 0 0 auto 0; height: 33px; background: rgba(255, 255, 255, .28); }
   html::after { content: ''; position: fixed; top: 0; left: 50%; width: 185px; height: 32px; margin-left: -92.5px; background: #000; border-radius: 0 0 9px 9px; z-index: 99; pointer-events: none; outline: 1px dashed rgba(255, 90, 170, var(--notch-guide, 0)); }
   .wrap { position: absolute !important; left: 50%; top: 0; transform: translateX(-50%); }`
+
+// Under the mouse: the window's corner put somewhere on the picture (--wx, --wy), and the pointer drawn where it is (--px, --py).
+const POINTER = `html { min-height: 100vh; } .wrap { position: absolute !important; left: var(--wx, 0); top: var(--wy, 0); }
+  html::after { content: ''; position: fixed; left: var(--px, 0); top: var(--py, 0); width: 20px; height: 26px; z-index: 999; pointer-events: none;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 26'%3E%3Cpath d='M2 2v18.5l4.6-4.3 3.1 7.3 2.9-1.2-3.1-7.2h6.2z' fill='%23000' stroke='%23fff' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat; }`
 
 // The files shot: what agents attach (`clique attach`, core/attachments.js), made once (scripts/sample-files.mjs)
 let samples = null
@@ -725,6 +731,254 @@ const SHOTS = {
     await sleep(500)
     await fitToContent(win)
     await save(win, `pill-${theme}`)
+    win.destroy()
+  },
+  // Under the mouse (core/follow.js, main.js ?at=mouse): the buddy by the pointer, then what the hotkeys open where the
+  // pointer is: the message box (its To menu, listening, typing taking over, its @names list, below the pointer and above
+  // it) and the chat. The window is the size main.js would make it, so what fits here fits there. Checked as it goes: a
+  // broken step stops the shot.
+  async follow(theme) {
+    const errors = []
+    const check = (what, ok, got) => {
+      console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}${ok ? '' : `: ${JSON.stringify(got)}`}`)
+      if (!ok) errors.push(what)
+    }
+    const win = await open('overlay.html', { theme, width: 200, height: 110, backdrop: 'desktop', query: { at: 'mouse' } })
+    win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(`console: ${e.message}`))
+    await win.webContents.insertCSS(POINTER)
+    // the window's corner on the picture, and the pointer where the follower would have it (core/follow.js BESIDE, NEAR)
+    const at = (x, y, open) => js(win, `document.documentElement.style.cssText = '--wx: ${x}px; --wy: ${y}px; --px: ${x + (open ? 4 : 0)}px; --py: ${y + (open ? 4 : -4)}px'`)
+    const page = () => js(win, `const b = document.body, q = (s) => document.querySelector(s), r = (el) => { const x = el?.getBoundingClientRect(); return x && { top: Math.round(x.top), bottom: Math.round(x.bottom), left: Math.round(x.left), right: Math.round(x.right), height: Math.round(x.height) } }
+      return { open: b.classList.contains('open'), quick: b.classList.contains('quick'), sent: b.classList.contains('sent'), fit: window.__cliqueFit, looking: window.__cliqueLooking, text: q('.compose textarea').value,
+        voice: q('.compose').classList.contains('voice-on'), send: q('.compose .send').dataset.mode, panel: r(q('.panel')), input: r(q('.compose .input')), menu: r(q('.menu:not(.leaving)')), names: r(q('.mentions:not(.hidden)')), h: innerHeight }`)
+    const emit = (channel, arg) => js(win, `window.__cliqueEmit(${JSON.stringify(channel)}, ${JSON.stringify(arg)})`)
+    const key = async (keyCode) => {
+      for (const type of ['keyDown', 'keyUp']) win.webContents.sendInputEvent({ type, keyCode })
+      await sleep(80)
+    }
+    const type = async (text) => {
+      for (const ch of text) {
+        for (const kind of ['keyDown', 'char', 'keyUp']) win.webContents.sendInputEvent({ type: kind, keyCode: ch })
+        await sleep(40)
+      }
+    }
+    // opens it as main.js would, in a window the size it asks for
+    const show = async (opts) => {
+      await emit('toggle', { open: true, focus: false, ...opts })
+      await sleep(450)
+      await at(0, 0, true)
+      await fitToContent(win)
+      await js(win, "document.querySelector('.compose textarea').focus()")
+      return page()
+    }
+
+    // ---- the buddy
+    await emit('place', { side: 'mouse', align: 'start' })
+    await at(60, 34, false)
+    await sleep(500)
+    let p = await page()
+    check('closed, it says so and is the mark alone', p.fit?.pill.open === false && p.fit.pill.width < 60 && await js(win, "return getComputedStyle(document.querySelector('.dots')).display === 'none' && !document.querySelector('.dots').children.length"), p.fit)
+    check('by the pointer nothing moves by itself while agents work', await js(win, "return document.body.classList.contains('busy') && getComputedStyle(document.querySelector('.home .m0')).animationName === 'none'"))
+    await save(win, `follow-buddy-${theme}`)
+    await js(win, "const s = window.__cliqueState; s.agents.find((a) => a.name === 'June').status = 'waiting'; window.__cliqueEmit('state', s)")
+    await sleep(400)
+    check('someone needs you: a warm edge that holds still', await js(win, "const e = getComputedStyle(document.querySelector('.pill'), '::after'); return document.body.classList.contains('alert') && e.animationName === 'none' && Number(e.opacity) > .8"))
+    await save(win, `follow-buddy-needs-${theme}`)
+
+    // ---- the message box
+    p = await show({ quick: true, align: 'start' })
+    check('the message box is the composer and nothing else', p.quick && p.fit.pill.open === 'quick' && p.panel.height < 110 && await js(win, "return ['header', '.feed', '.attach'].every((s) => getComputedStyle(document.querySelector(`.panel ${s}`)).display === 'none')"), p.panel)
+    check('room is kept under it for its lists', p.fit.height - (p.fit.pill.y + p.fit.pill.height) >= 300, p.fit)
+    check("it shows no chat, so what comes in still notifies", p.looking === null, p.looking)
+    check('its send button is never Stop', p.send === 'send', p.send)
+    await save(win, `follow-message-${theme}`)
+    await js(win, click('.compose [data-pick-to]'))
+    await sleep(400)
+    p = await page()
+    check('its To menu fits in the window', p.menu && p.menu.top >= 0 && p.menu.bottom <= p.h, [p.menu, p.h])
+    await save(win, `follow-message-to-${theme}`)
+    await key('Escape')
+    await sleep(250)
+    p = await page()
+    check('Esc closes the menu, not the box', !p.menu && p.open, p)
+
+    // ---- listening, as the hotkey opens it; then typing takes over
+    await emit('voice', { type: 'toggle' })
+    await sleep(2500)
+    p = await page()
+    check('it listens, and says so in the bar where it can be seen', p.voice && await js(win, "const h = document.querySelector('.voice-hint'), r = h.getBoundingClientRect(), bar = document.querySelector('.input-bar').getBoundingClientRect(); const top = document.elementFromPoint(r.left + 40, r.top + r.height / 2); return h.contains(top) && r.top >= bar.top && r.bottom <= bar.bottom && /Listening/.test(h.textContent) && /send/.test(h.textContent)"))
+    await save(win, `follow-message-listening-${theme}`)
+    const heard = p.text
+    await type(' on @')
+    await sleep(450)
+    p = await page()
+    // (a word may still land between reading the box and the first key; after the key, nothing more does)
+    check('typing takes over: it stops listening, keeps what it heard, and the keys land', !p.voice && heard.length > 5 && p.text.startsWith(heard) && p.text.endsWith(' on @') && (await sleep(600), (await page()).text === p.text), [heard, p.text, p.voice])
+    check('its @names list opens under it, inside the window', p.names && p.names.top >= p.input.bottom && p.names.bottom <= p.h, [p.names, p.input, p.h])
+    await save(win, `follow-message-names-${theme}`)
+    await key('Escape')
+    await sleep(200)
+    p = await page()
+    check('Esc closes the list, not the box', !p.names && p.open, p)
+
+    // ---- sent: the box goes, and the buddies hop as they take it
+    await js(win, "const ta = document.querySelector('.compose textarea'); ta.value = 'Can someone look at why the build is failing?'; ta.dispatchEvent(new Event('input', { bubbles: true }))")
+    await key('Enter')
+    await sleep(300)
+    p = await page()
+    check('sending puts the box away and the buddies take it', !p.open && p.sent && p.fit.pill.open === false && p.text === '' && await js(win, "return window.__cliqueState.feed.at(-1).text === 'Can someone look at why the build is failing?'"), p)
+
+    // ---- put away by a click beside it, or the keyboard going elsewhere; not while it listens
+    p = await show({ quick: true, align: 'start' })
+    win.webContents.sendInputEvent({ type: 'mouseDown', x: 200, y: p.h - 30, button: 'left', clickCount: 1 })
+    win.webContents.sendInputEvent({ type: 'mouseUp', x: 200, y: p.h - 30, button: 'left', clickCount: 1 })
+    await sleep(200)
+    check('a click beside it puts it away', !(await page()).open)
+    await show({ quick: true, align: 'start' })
+    await js(win, "window.dispatchEvent(new Event('blur'))")
+    await sleep(200)
+    check('so does the keyboard going to another app', !(await page()).open)
+    await show({ quick: true, align: 'start' })
+    await emit('voice', { type: 'toggle' })
+    await sleep(500)
+    await js(win, "window.dispatchEvent(new Event('blur'))")
+    await sleep(200)
+    p = await page()
+    check('while it listens it stays', p.open && p.voice, p)
+    await key('Escape')
+    await sleep(500)
+    await key('Escape')
+    await sleep(250)
+    p = await page()
+    check('Esc stops the listening, then closes the box', !p.open && !p.voice, p)
+
+    // ---- low on the screen it stands above the pointer: the room, and its lists, are above it
+    await js(win, "const ta = document.querySelector('.compose textarea'); ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true }))")
+    p = await show({ quick: true, align: 'end' })
+    check('above the pointer, the room for its lists is above it', p.fit.pill.y >= 300, p.fit)
+    await type('@')
+    await sleep(450)
+    p = await page()
+    check('...and its @names list opens above it', p.names && p.names.bottom <= p.input.top && p.names.top >= 0, [p.names, p.input])
+    await js(win, "document.documentElement.style.setProperty('--py', `${document.querySelector('.panel').getBoundingClientRect().bottom + 4}px`)")
+    await save(win, `follow-message-above-${theme}`)
+    await key('Escape')
+    await key('Escape')
+    await sleep(250)
+    await js(win, "const ta = document.querySelector('.compose textarea'); ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true }))")
+
+    // ---- the chat, where the pointer is
+    p = await show({ align: 'start' })
+    check('the chat opens whole', p.open && !p.quick && p.fit.pill.open === 'chat' && p.panel.height === 600 && p.looking !== null, [p.fit, p.panel, p.looking])
+    await save(win, `follow-chat-${theme}`)
+    // the message box becomes the chat, and back, without closing
+    p = await show({ quick: true, align: 'start' })
+    check('the chat becomes the message box in place', p.open && p.quick && p.fit.pill.open === 'quick', p.fit)
+    await key('Escape')
+    await sleep(250)
+    check('Esc closes it', !(await page()).open)
+    win.destroy()
+
+    // ---- the setting: the dashboard's menu and the menu bar popover's gear
+    const dash = await dashboard(theme, 'chat', { width: 1060, height: 690 })
+    await js(dash, click('.side-more'))
+    await sleep(350)
+    check('the dashboard’s menu has the choice, on Sticky', await js(dash, "const rows = [...document.querySelectorAll('.menu [data-menu-act^=\"chat:\"]')]; return rows.length === 2 && /✓/.test(rows[0].textContent) && !/✓/.test(rows[1].textContent)"))
+    const box = await js(dash, "const r = document.querySelector('.menu').getBoundingClientRect(); return { x: 0, y: Math.max(0, Math.round(r.top) - 20), width: 520, height: Math.round(innerHeight - Math.max(0, Math.round(r.top) - 20)) }")
+    await save(dash, `follow-setting-${theme}`, { crop: box })
+    await js(dash, click('.menu [data-menu-act="chat:mouse"]'))
+    await sleep(500)
+    check('picking Under the mouse switches it and says which keys reach it', await js(dash, "return window.__cliqueState.app.chat.at === 'mouse' && /follows the pointer now/.test(document.querySelector('.toast')?.textContent ?? '') && /to talk or type a message/.test(document.querySelector('.toast').textContent)"), await js(dash, "return document.querySelector('.toast')?.textContent"))
+    await save(dash, `follow-setting-on-${theme}`, { crop: { x: 0, y: 690 - 200, width: 1060, height: 200 } })
+    await js(dash, click('.side-more'))
+    await sleep(350)
+    check('...and the menu ticks it', await js(dash, "return /✓/.test(document.querySelector('.menu [data-menu-act=\"chat:mouse\"]').textContent) && !/✓/.test(document.querySelector('.menu [data-menu-act=\"chat:sticky\"]').textContent)"))
+    dash.destroy()
+    const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(tray)
+    await js(tray, click('[data-act=settings]'))
+    await sleep(350)
+    check('the menu bar popover’s gear has it too', await js(tray, "return document.querySelectorAll('.menu [data-menu-act^=\"chat:\"]').length === 2"))
+    await save(tray, `follow-setting-tray-${theme}`)
+    tray.destroy()
+    if (errors.length) throw new Error(`follow: ${errors.join('; ')}`)
+  },
+  // Under the mouse, moving: the real follower (core/follow.js) with a made-up pointer on a made-up screen, its window
+  // drawn where the follower puts it. The buddy trails the pointer; the dictation hotkey opens the message box there,
+  // listening, and Enter sends it; the chat hotkey opens the chat there, and Esc puts it away.
+  async followGif() {
+    const [W, H] = [900, 700]
+    const win = await open('overlay.html', { theme: DARK ? 'dark' : 'light', width: W, height: H, backdrop: 'desktop', query: { at: 'mouse' } })
+    await win.webContents.insertCSS(`${POINTER} #keys { position: fixed; right: 28px; bottom: 26px; z-index: 998; display: flex; gap: 8px; align-items: center; padding: 7px 12px; border-radius: 12px; background: color-mix(in srgb, var(--fg) 86%, transparent); color: var(--bg); font: 600 14px var(--ui); opacity: 0; transition: opacity .2s; }
+      #keys.on { opacity: 1; } #keys kbd { font: 600 13px var(--ui); padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 22%, transparent); }`)
+    await js(win, "document.body.insertAdjacentHTML('beforeend', '<div id=\"keys\"></div>')")
+    const area = { x: 0, y: 0, width: W, height: H }
+    let pointer = { x: 150, y: 520 }
+    let bounds = { x: 0, y: 0, width: 70, height: 58 }
+    const overlay = { getBounds: () => ({ ...bounds }), setBounds: (b) => (bounds = { ...b }), getPosition: () => [bounds.x, bounds.y], setPosition: (x, y) => (bounds = { ...bounds, x, y }), isVisible: () => true, isFocused: () => false }
+    const follower = followWindow(overlay, { getCursorScreenPoint: () => ({ ...pointer }), getDisplayNearestPoint: () => ({ bounds: area, workArea: area }) })
+    let seen = ''
+    // a frame: the follower looks at the pointer, the page is put where it says, and what the page asks for goes back to it
+    const frame = async () => {
+      follower.look()
+      const fit = await js(win, `document.documentElement.style.cssText = '--wx: ${bounds.x}px; --wy: ${bounds.y}px; --px: ${pointer.x}px; --py: ${pointer.y}px'; return JSON.stringify(window.__cliqueFit)`)
+      if (!fit || fit === seen) return
+      seen = fit
+      const { width, height, pill } = JSON.parse(fit)
+      follower.fit(width, height, pill)
+    }
+    const run = async (ms, move) => {
+      const t0 = Date.now()
+      while (Date.now() - t0 < ms) {
+        move?.(Math.min(1, (Date.now() - t0) / ms))
+        await frame()
+        await sleep(6)
+      }
+    }
+    // the pointer goes somewhere the way a hand moves it: off slowly, there slowly, along a slight arc
+    const go = (to, ms, bow = 40) => {
+      const from = { ...pointer }
+      return run(ms, (t) => {
+        const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
+        pointer = { x: Math.round(from.x + (to.x - from.x) * e), y: Math.round(from.y + (to.y - from.y) * e - Math.sin(e * Math.PI) * bow) }
+      })
+    }
+    const keys = (html) => js(win, `const k = document.querySelector('#keys'); ${html ? `k.innerHTML = ${JSON.stringify(html)}; k.classList.add('on')` : "k.classList.remove('on')"}`)
+    const emit = (channel, arg) => js(win, `window.__cliqueEmit(${JSON.stringify(channel)}, ${JSON.stringify(arg)})`)
+    await emit('place', { side: 'mouse', align: 'start' })
+    await run(500)
+    await record(win, 'follow', {
+      ms: 12600, width: 720,
+      during: async () => {
+        await run(300)
+        await go({ x: 560, y: 430 }, 900)
+        await go({ x: 300, y: 150 }, 1000, -50)
+        await run(350)
+        // the dictation hotkey: the message box, listening
+        await keys('<kbd>⌥</kbd><kbd>⇧</kbd><kbd>D</kbd> talk or type')
+        await emit('toggle', { open: true, focus: false, quick: true, align: follower.open('quick') })
+        await emit('voice', { type: 'toggle' })
+        await run(2900)
+        await keys('<kbd>⏎</kbd> send')
+        await js(win, "document.querySelector('.compose textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))")
+        await run(1300)
+        await keys('')
+        await go({ x: 200, y: 60 }, 900, 30)
+        await run(250)
+        // the chat hotkey: the chat, right there
+        await keys('<kbd>⌥</kbd><kbd>⇧</kbd><kbd>Space</kbd> the chat')
+        await emit('toggle', { open: true, focus: false, align: follower.open('chat') })
+        await run(2300)
+        await keys('<kbd>esc</kbd>')
+        await emit('toggle', { open: false })
+        follower.close()
+        await run(700)
+        await keys('')
+        await go({ x: 640, y: 520 }, 1000, 60)
+        await run(400)
+      },
+    })
     win.destroy()
   },
   // Stop (ui/common.js stoppableIn and stopButton, core/hub.js stopTurns): every place it shows, at work and free.

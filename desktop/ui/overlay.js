@@ -2,6 +2,11 @@
 /* global wordmarkHTML, PRODUCT_NAME, clique, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, cliqueSummary, celebrate, ICONS, wsTile, wsLabel, elsewhere, hasWorkspaces */
 
 const $ = (s) => document.querySelector(s)
+// Under the mouse (main.js opens this page with ?at=mouse): there's no pill to click. The mark follows the pointer, and
+// the hotkeys open the message box ("quick": only the composer) or the chat where the pointer is (core/follow.js).
+const MOUSE = new URLSearchParams(location.search).get('at') === 'mouse'
+const isOpen = () => document.body.classList.contains('open')
+const isQuick = () => document.body.classList.contains('quick')
 $('.home').innerHTML = markSVG('0 6 24 16', { split: true }) // its buddies bob while anyone works
 $('.home').title = PRODUCT_NAME
 // the panel's header: the wordmark, or the workspace it shows (drawn on each push)
@@ -18,15 +23,22 @@ const threadPane = mountThread($('.panel > .thread'), {
   onAgent: (name) => (threadPane.close(), composer.setTarget(familyOf(name)), composer.focus()),
   onCard: (id) => (threadPane.close(), feed.jump(id)),
 })
-const composer = mountComposer($('.compose'), { dropZone: $('.panel'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to), queueMicrotask(tellLooking)) })
+const composer = mountComposer($('.compose'), {
+  dropZone: $('.panel'), onSend: () => feed.toLatest(), onTarget: (to) => (head.set(to), feed.setConvo(to), queueMicrotask(tellLooking)),
+  // the message box: sent, it's done (the buddies hop as they take it); its @names list opens where there's room for it
+  onSent: () => isQuick() && (setOpen(false), took()),
+  popups: () => (isQuick() && document.body.dataset.align !== 'end' ? 'below' : 'above'),
+  stops: () => !isQuick(), // (the message box is for sending: who's at work isn't in view there)
+})
 let size = ''
 
 // The window wraps what's drawn; main.js places it so the pill stays where it is, so it's told where the pill is.
 function fit(focus = false) {
   const r = $('.wrap').getBoundingClientRect()
   // where it's laid out, not where an animation has it right now (it drops out of the hatch from above the window)
-  const p = $('.pill')
-  const pill = { x: p.offsetLeft, y: p.offsetTop, width: p.offsetWidth, height: p.offsetHeight }
+  // Under the mouse, what's held in place is whatever is open, and main.js hears which that is.
+  const p = MOUSE && isOpen() ? $('.panel') : $('.pill')
+  const pill = { x: p.offsetLeft, y: p.offsetTop, width: p.offsetWidth, height: p.offsetHeight, ...(MOUSE && { open: isOpen() ? (isQuick() ? 'quick' : 'chat') : false }) }
   const next = `${Math.ceil(r.width)}x${Math.ceil(r.height)}@${Object.values(pill)}`
   if (next === size && !focus) return
   size = next
@@ -105,9 +117,13 @@ for (const handle of [$('.pill'), $('.panel header')]) {
 }
 
 // focus=false opens the chat without pulling you out of the app you're in (e.g. after closing the dashboard).
-function setOpen(open, focus = open) {
+// quick: only the message box (under the mouse).
+function setOpen(open, focus = open, { quick = false } = {}) {
   if (!open) composer.stopVoice() // closing the panel ends dictation, keeping what it heard
+  if (open && quick !== isQuick()) threadPane.close() // (the message box has no room for a thread)
   document.body.classList.toggle('open', open)
+  document.body.classList.toggle('quick', open && quick)
+  if (MOUSE && state) composer.render(state) // its send button is Stop in the chat, never in the message box
   tellLooking()
   fit(focus)
   if (!open) return
@@ -125,8 +141,23 @@ $('[data-act=dashboard]').addEventListener('click', () => clique.call('dashboard
 document.addEventListener('keydown', (e) => e.key === 'Escape' && !composer.stopVoice() && setOpen(false))
 clique.onToggle((opts = {}) => {
   const open = opts.open ?? !document.body.classList.contains('open')
-  setOpen(open, opts.focus ?? open)
+  if (opts.align) document.body.dataset.align = opts.align // under the mouse: below the pointer or above it
+  if (MOUSE) size = '' // main.js always hears what came of it
+  setOpen(open, opts.focus ?? open, { quick: Boolean(opts.quick) })
 })
+// The message box is there for one message: a click away from it, or the keyboard going to another app, puts it away
+// (what you wrote stays for next time). Not while it listens: you may be looking at what you're talking about.
+if (MOUSE) {
+  addEventListener('blur', () => isQuick() && !composer.dictating() && setOpen(false))
+  document.addEventListener('pointerdown', (e) => isQuick() && !e.target.closest('.panel, .menu, .mentions, .toast') && setOpen(false))
+}
+// A message went out of the message box: the buddies hop once.
+function took() {
+  document.body.classList.remove('sent')
+  void document.body.offsetWidth
+  document.body.classList.add('sent')
+  setTimeout(() => document.body.classList.remove('sent'), 900)
+}
 // Tap a creature in the pill for your conversation with that agent; with replies you haven't read, it opens on
 // the first.
 let state = null
@@ -144,6 +175,7 @@ $('.dots').addEventListener('click', (e) => {
 const HATCH_FACES = 4 // beside the notch, over the menu bar's own items: a few, however big the screen
 
 function drawPill() {
+  if (MOUSE) return // the mark alone follows the pointer
   const on = state.agents.filter((a) => a.on)
   // A big clique doesn't fit along a screen edge: the pill keeps the ones that need a look (waiting on you, new
   // replies, at work) in their usual order, and the rest become "+N", which opens the chat.
@@ -193,7 +225,8 @@ live((next) => {
 let lookingSaid = ''
 function tellLooking() {
   const to = composer.target()
-  const view = !state || !document.body.classList.contains('open') ? null
+  // (the message box shows no chat: what comes in while it's up still notifies)
+  const view = !state || !isOpen() || isQuick() ? null
     : { ws: state.workspace?.id ?? '', agent: isConvo(to) ? familyOf(to) : null, sees: isConvo(to) ? [] : needsYou(state).filter((n) => n.ask).map((n) => n.agent.name), tasks: false }
   const said = JSON.stringify(view)
   if (said === lookingSaid) return

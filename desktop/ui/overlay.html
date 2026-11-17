@@ -125,6 +125,43 @@
     /* the chat is already wide open: the band stays calm, and the one who needs you wiggles in it */
     [data-side=hatch].open .pill::after { display: none; }
     [data-side=hatch] .panel .compose { padding-bottom: 6px; }
+
+    /* ---- under the mouse (main.js opens this page with ?at=mouse, core/follow.js moves the window): no pill to put
+       somewhere. The mark alone trails the pointer, and clicks go through it. The message box or the chat opens with
+       a corner by the pointer, and the mark steps aside while either is open. */
+    [data-side=mouse] .wrap { gap: 0; padding: 14px; }
+    [data-side=mouse] .pill { width: auto; padding: 4px 6px; border-radius: 15px; cursor: default; }
+    [data-side=mouse] .home { width: 30px; height: 22px; padding: 1px; border-radius: 9px; pointer-events: none; }
+    [data-side=mouse] .dots { display: none; }
+    [data-side=mouse] .home-badge { top: -6px; right: -7px; }
+    [data-side=mouse].open .pill { display: none; }
+    /* right by the pointer is where you're looking, so nothing here moves on its own: the buddies don't bob while agents
+       work, and someone who needs you is a warm edge that holds still (fainter while notifications are held) */
+    [data-side=mouse].busy .home .m0, [data-side=mouse].busy .home .m1, [data-side=mouse].busy .home .m2 { animation: none; }
+    [data-side=mouse].alert .pill::after { animation: none; opacity: .9; }
+    [data-side=mouse].quiet.alert .pill::after { opacity: .45; }
+    /* it grows out of the corner by the pointer: below it (start), or above it (end) */
+    [data-side=mouse] .panel { --from: translate(0, -8px); transform-origin: 50% 0; }
+    [data-side=mouse][data-align=end] .panel { --from: translate(0, 8px); transform-origin: 50% 100%; }
+    /* a message went out of the box: the buddies hop once as they take it */
+    .sent .home .m0, .sent .home .m1, .sent .home .m2 { animation: buddy-took .5s var(--bounce) backwards; }
+    .sent .home .m1 { animation-delay: .07s; }
+    .sent .home .m2 { animation-delay: .14s; }
+    @keyframes buddy-took { 45% { translate: 0 calc(-2.2 * min(100cqw / 24, 100cqh / 16)); } }
+    /* The message box (the dictation hotkey): the composer and nothing else. Its lists (who it's to, @names) open into
+       see-through room kept on the side away from the pointer, so the window never changes size under them. */
+    .quick .panel { height: auto; border-radius: 16px; overflow: visible; }
+    .quick .panel > header, .quick .panel > .feed, .quick .panel > .thread { display: none; }
+    /* the box is the sheet: no frame inside a frame, only the ring that says it has the keyboard (or is listening) */
+    .quick .panel .compose { padding: 0; }
+    .quick .panel .input { border-radius: 16px; background: none; }
+    .quick .panel .input:not(:focus-within) { box-shadow: none; }
+    .quick .panel .input textarea { padding: 12px 15px 4px; font-size: 14px; }
+    .quick .panel .input-bar { padding: 4px 8px 8px; }
+    .quick .panel .hint { margin: 0; padding: 0 15px 10px; }
+    .quick .panel .attach { display: none; } /* its file dialog would take the keyboard, which closes the box: paste or drop instead */
+    .quick .wrap { padding-bottom: 314px; }
+    .quick[data-align=end] .wrap { padding: 314px 14px 14px; }
   </style>
 </head>
 <body>

@@ -141,6 +141,8 @@ Every agent has its own terminal. See them all side by side, or open one and typ
 
 The menu bar (the taskbar on Windows) shows who's working and who needs you, with a switch for each agent.
 
+**Or under your mouse.** Switch the floating chat to *Under the mouse* and the clique follows your pointer instead: <kbd>⌥</kbd><kbd>⇧</kbd><kbd>D</kbd> opens a message box right there to talk or type into, <kbd>⌥</kbd><kbd>⇧</kbd><kbd>Space</kbd> the whole chat, and you never leave the app you're in.
+
 **And your phone.** Pair the CLIque app with a QR code to chat with the clique and answer its questions away from your desk. It talks straight to your computer, encrypted end to end.
 
 <p align="center">
