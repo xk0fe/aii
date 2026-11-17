@@ -79,6 +79,7 @@ app.whenReady().then(async () => {
       const t = window.__cliqueState.tasks.tickets.find((x) => x.id === 5)
       const x = taskTiming(t, { agents: window.__cliqueState.agents })
       return [Math.round(Object.values(x.phases).reduce((n, v) => n + v, 0) / 60000) === Math.round(x.total / 60000), Math.round(x.phases.you / 60000), q('.rv-key.you b').textContent]`), [true, 21, '21 min'])
+    check('the time it has waited for you says since when', await js(`return /waiting for you since \\S*\\d:\\d\\d/.test(q('.rv-time .section-label small').textContent)`), true)
 
     await js(`window.__cliqueState.tasks.tickets.find((t) => t.id === 5).fix += ' See [the notes](https://example.com/dark-mode).'; window.__cliqueEmit('state', window.__cliqueState); await wait(200); q('.rv-say a[href]').click(); await wait(100)`)
     check('a link in what came back opens in your browser, and the review stays where it is', await js(`return [opened, current(), mode()]`), [['https://example.com/dark-mode'], '5', 'review'])
