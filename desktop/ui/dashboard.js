@@ -330,7 +330,7 @@ function syncChannel() {
   const next = channelsNow().some((c) => c.id === kept) ? kept : 'general'
   if (next !== chan && booted) (closeSearch(), threadPane.close()) // the search and the thread were the last channel's
   chan = next
-  feed.setChannel(chan)
+  feed.setChannel(chan, state.workspace?.id ?? '')
   composer.setChannel({ ...openChannel(), ws: state.workspace?.id }) // each workspace's channels keep their own drafts
 }
 // Open a channel. go: as a place from the sidebar (the composer back to everyone's); otherwise only the chat changes,
