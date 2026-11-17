@@ -2,6 +2,7 @@
 // the animations. Nothing starts and ~/.clique is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp] [--win]
 // [--frame] [--dark] [--window=1100x700]
 import { app, BrowserWindow, ipcMain, nativeTheme, protocol } from 'electron'
+import './quiet.mjs' // no beeps from the keys it presses, no sound from its pages
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -859,6 +860,133 @@ const SHOTS = {
     await save(win, `pill-${theme}`)
     win.destroy()
   },
+  // The minimised dock (an experiment, ui/overlay.html .mini): the pill shrunk to the mark and its beat, while agents work,
+  // at rest and while someone needs you, then lying flat at the bottom of the screen. A click anywhere on it opens the
+  // chat and a drag from its mark moves it. Then the switches, in the popover's gear menu and the dashboard's settings.
+  // Checked as it goes: a broken step fails the shot. mini-beat-N are frames of the beat as it plays (not frozen).
+  async mini(theme) {
+    const errors = []
+    const check = (what, ok, got) => {
+      console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}${ok ? '' : `: ${JSON.stringify(got)}`}`)
+      if (!ok) errors.push(what)
+    }
+    const win = await open('overlay.html', { theme, width: 200, height: 260, backdrop: 'desktop' })
+    win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(`console: ${e.message}`))
+    await sleep(500)
+    const look = () => js(win, `const p = document.querySelector('.pill'), beat = p.querySelector('.beat')
+      return { mini: document.body.classList.contains('mini'), size: [p.offsetWidth, p.offsetHeight], dots: getComputedStyle(document.querySelector('.dots')).display, faces: document.querySelectorAll('.dots .face').length,
+        beat: getComputedStyle(beat).display, dancing: document.getAnimations().filter((a) => a.effect?.getTiming().iterations === Infinity && beat.contains(a.effect.target)).length,
+        bob: getComputedStyle(p.querySelector('.home .m1')).animationName, edge: getComputedStyle(p, '::after').animationName, open: document.body.classList.contains('open'), title: p.querySelector('.home').title }`)
+    const set = (code) => js(win, `const s = window.__cliqueState; ${code}; window.__cliqueEmit('state', s)`)
+    const frame = async (name) => fs.writeFileSync(path.join(out, `${name}.png`), (await win.webContents.capturePage()).toPNG())
+    let p = await look()
+    check('off, it is the pill with its creatures', !p.mini && p.size[0] === 52 && p.faces > 3 && p.beat === 'none', p)
+    await js(win, "await clique.call('pillMini', true)")
+    await sleep(400)
+    // agents at work, nobody waiting
+    await set("for (const a of s.agents) if (a.status === 'waiting') a.status = 'idle'")
+    await sleep(500)
+    await fitToContent(win)
+    p = await look()
+    check('on, it is the mark and the beat, the creatures gone', p.mini && p.size[0] === 34 && p.size[1] < 60 && p.dots === 'none' && p.faces === 0 && p.beat === 'flex', p)
+    check('while agents work the beat dances (three bars, each cap and middle) and the mark holds still', p.dancing === 9 && p.bob === 'none', p)
+    check('its mark says who is at work', /: \d+ at work/.test(p.title), p.title)
+    await save(win, `mini-busy-${theme}`)
+    for (const n of [1, 2, 3]) {
+      await sleep(170)
+      await frame(`mini-beat-${n}-${theme}`)
+    }
+    // nobody at work
+    await set("for (const a of s.agents) if (a.status === 'working') a.status = 'idle'")
+    await sleep(500)
+    p = await look()
+    check('at rest the beat is still: three dots', p.dancing === 0 && p.beat === 'flex' && /Nobody at work/.test(p.title), p)
+    await save(win, `mini-rest-${theme}`)
+    // someone needs you
+    await set("s.agents.find((a) => a.on).status = 'waiting'")
+    await sleep(500)
+    p = await look()
+    check('someone needs you: the warm edge breathes', p.edge === 'pill-alert', p)
+    await save(win, `mini-needs-${theme}`)
+    // a click on the beat (not the mark) opens the chat; one on the mark puts it away
+    await js(win, click('.beat'))
+    await sleep(600)
+    p = await look()
+    check('a click anywhere on it opens the chat', p.open, p)
+    win.setContentSize(520, 660)
+    await fitToContent(win)
+    await save(win, `mini-chat-${theme}`)
+    await js(win, click('.home'))
+    await sleep(500)
+    check('a click on the mark puts it away', !(await look()).open)
+    await fitToContent(win)
+    // a drag from the mark moves it, and isn't a click
+    // (a hidden window's events have no screen position unless they're given one: the page tells drags by it)
+    const mark = await center(win, '.home')
+    const at = (dx, dy) => ({ x: Math.round(mark.x + dx), y: Math.round(mark.y + dy), globalX: Math.round(mark.x + dx), globalY: Math.round(mark.y + dy) })
+    win.webContents.sendInputEvent({ type: 'mouseDown', ...at(0, 0), button: 'left', clickCount: 1 })
+    for (let i = 1; i <= 8; i++) {
+      await sleep(20)
+      win.webContents.sendInputEvent({ type: 'mouseMove', ...at(-i * 4, i * 3), modifiers: ['leftButtonDown'] })
+    }
+    win.webContents.sendInputEvent({ type: 'mouseUp', ...at(-32, 24), button: 'left', clickCount: 1 })
+    await sleep(300)
+    const drags = await js(win, 'return window.__cliqueDrags ?? []')
+    check('a drag from the mark moves it, and opens nothing', drags[0] === 'start' && drags.at(-1) === 'end' && !(await look()).open, [drags, await look()])
+    // flat at the bottom of the screen
+    await set("for (const a of s.agents) if (a.status === 'idle' && a.on) { a.status = 'working'; break }")
+    await js(win, "window.__cliqueEmit('place', { side: 'above', align: 'center' })")
+    await sleep(500)
+    await fitToContent(win)
+    p = await look()
+    check('at the bottom it lies flat', p.size[1] === 34 && p.size[0] > p.size[1], p)
+    await save(win, `mini-flat-${theme}`)
+    // off again: the pill as it was
+    await js(win, "await clique.call('pillMini', false)")
+    await js(win, "window.__cliqueEmit('place', { side: 'left', align: 'center' })")
+    await sleep(500)
+    p = await look()
+    check('off again, the pill has its creatures back', !p.mini && p.size[0] === 52 && p.faces > 3, p)
+    win.destroy()
+
+    // the popover's gear: Experiments, with both
+    const tray = await open('tray.html', { theme, width: 340, height: 640, backdrop: 'popover' })
+    await sleep(500)
+    await fitToContent(tray)
+    await js(tray, click('[data-act=settings]'))
+    await sleep(350)
+    const rows = () => js(tray, "return [...document.querySelectorAll('.menu:not(.leaving) > *')].map((el) => el.textContent.trim() + (el.disabled ? ' (disabled)' : ''))")
+    const menu = await rows()
+    check('the gear menu has Experiments: Follow the mouse and Minimised dock', menu.includes('Experiments') && menu.some((r) => r.startsWith('Follow the mouse')) && menu.some((r) => r.startsWith('Minimised dock')) && !menu.includes('Floating chat'), menu)
+    await save(tray, `mini-tray-settings-${theme}`)
+    await js(tray, click('.menu [data-menu-act="exp:mini"]'))
+    await sleep(300)
+    check('picking Minimised dock turns it on', await js(tray, 'return window.__cliqueState.app.chat.mini === true'))
+    tray.destroy()
+
+    // the dashboard's settings: an Experiments group at the end, with a switch each
+    const dash = await dashboard(theme, 'chat', { width: 1060, height: 760 })
+    await js(dash, click('.side-more'))
+    await sleep(400)
+    await js(dash, "for (const el of [document.querySelector('#settings'), document.querySelector('#settings .st-body')]) el.scrollTop = 1e6")
+    await sleep(200)
+    const sheet = () => js(dash, "const labels = [...document.querySelectorAll('#settings .section-label')].map((h) => h.textContent); const sw = (id) => document.querySelector(`#settings [data-st-toggle=${id}]`); return { labels, mouse: sw('mouse') && { on: sw('mouse').checked }, mini: sw('mini') && { on: sw('mini').checked, disabled: sw('mini').disabled }, floating: document.querySelector('#settings [data-st-seg=chat]') !== null }")
+    let st = await sheet()
+    check('settings end with Experiments, a switch each, and This Mac no longer has Floating chat', st.labels.at(-1) === 'Experiments' && st.mouse?.on === false && st.mini?.on === false && !st.mini.disabled && !st.floating, st)
+    const box = await js(dash, "const r = document.querySelector('#settings').getBoundingClientRect(); return { x: Math.max(0, Math.round(r.left) - 30), y: Math.max(0, Math.round(r.top) - 30), width: Math.min(innerWidth, Math.round(r.width) + 60), height: Math.min(innerHeight, Math.round(r.height) + 60) }")
+    await save(dash, `mini-settings-${theme}`, { crop: box })
+    await js(dash, "const el = document.querySelector('#settings [data-st-toggle=mini]'); el.click()")
+    await sleep(300)
+    st = await sheet()
+    check('its switch turns the minimised dock on', await js(dash, 'return window.__cliqueState.app.chat.mini === true') && st.mini.on, st)
+    await js(dash, "document.querySelector('#settings [data-st-toggle=mouse]').click()")
+    await sleep(300)
+    st = await sheet()
+    check('following the mouse, Minimised dock is greyed out (there is no dock)', await js(dash, "return window.__cliqueState.app.chat.at === 'mouse'") && st.mouse.on && st.mini.disabled && !st.mini.on, st)
+    await save(dash, `mini-settings-mouse-${theme}`, { crop: box })
+    dash.destroy()
+    if (errors.length) throw new Error(`mini: ${errors.join('; ')}`)
+  },
   // Under the mouse (core/follow.js, main.js ?at=mouse): the wisp by the pointer, then what the hotkeys open where the
   // pointer is: the message box (its To menu, listening, typing taking over, its @names list, below the pointer and above
   // it) and the chat. The window is the size main.js would make it, so what fits here fits there. Checked as it goes: a
@@ -1065,25 +1193,27 @@ const SHOTS = {
     check('Esc closes it', !(await page()).open)
     win.destroy()
 
-    // ---- the setting: the dashboard's Settings and the menu bar popover's gear
+    // ---- the setting, an experiment: the dashboard's Settings (Experiments, at the end) and the menu bar popover's gear
     const dash = await dashboard(theme, 'chat', { width: 1060, height: 690 })
     await js(dash, click('.side-more'))
     await sleep(350)
-    check('Settings has the choice, on Sticky', await js(dash, "const b = [...document.querySelectorAll('#settings [data-st-seg=chat] [data-v]')]; return b.length === 2 && b[0].getAttribute('aria-pressed') === 'true' && b[1].getAttribute('aria-pressed') === 'false'"))
+    await js(dash, "for (const el of [document.querySelector('#settings'), document.querySelector('#settings .st-body')]) el.scrollTop = 1e6")
+    await sleep(150)
+    check('Settings has it under Experiments, off', await js(dash, "const sw = document.querySelector('#settings [data-st-toggle=mouse]'); return Boolean(sw) && !sw.checked && sw.closest('.group-list').previousElementSibling.textContent === 'Experiments'"))
     const box = await js(dash, "const r = document.querySelector('#settings').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
     await save(dash, `follow-setting-${theme}`, { crop: box })
-    await js(dash, click('#settings [data-st-seg=chat] [data-v=mouse]'))
+    await js(dash, click('#settings [data-st-toggle=mouse]'))
     await sleep(500)
-    check('picking Under the mouse switches it and says which keys reach it', await js(dash, "return window.__cliqueState.app.chat.at === 'mouse' && /follows the pointer now/.test(document.querySelector('.toast')?.textContent ?? '') && /to talk or type a message/.test(document.querySelector('.toast').textContent)"), await js(dash, "return document.querySelector('.toast')?.textContent"))
+    check('turning it on switches it and says which keys reach it', await js(dash, "return window.__cliqueState.app.chat.at === 'mouse' && /follows the pointer now/.test(document.querySelector('.toast')?.textContent ?? '') && /to talk or type a message/.test(document.querySelector('.toast').textContent)"), await js(dash, "return document.querySelector('.toast')?.textContent"))
     await save(dash, `follow-setting-on-${theme}`, { crop: { x: 0, y: 690 - 200, width: 1060, height: 200 } })
-    check('...and Settings says so', await js(dash, "return document.querySelector('#settings [data-st-seg=chat] [data-v=mouse]').getAttribute('aria-pressed') === 'true'"))
+    check('...and Settings says so', await js(dash, "return document.querySelector('#settings [data-st-toggle=mouse]').checked"))
     dash.destroy()
     const tray = await open('tray.html', { theme, width: 340, height: 600, backdrop: 'popover' })
     await sleep(500)
     await fitToContent(tray)
     await js(tray, click('[data-act=settings]'))
     await sleep(350)
-    check('the menu bar popover’s gear has it too', await js(tray, "return document.querySelectorAll('.menu [data-menu-act^=\"chat:\"]').length === 2"))
+    check('the menu bar popover’s gear has it too', await js(tray, "return document.querySelectorAll('.menu [data-menu-act=\"exp:mouse\"]').length === 1"))
     await save(tray, `follow-setting-tray-${theme}`)
     tray.destroy()
     if (errors.length) throw new Error(`follow: ${errors.join('; ')}`)

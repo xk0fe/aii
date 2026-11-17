@@ -698,7 +698,8 @@ $('.dock-rest').addEventListener('click', (e) => {
   if (name) clique.call('restart', name).catch((err) => oops(`Couldn't start ${name}'s terminal`, err))
 })
 
-// Settings, behind the gear at the sidebar's foot: everything that isn't a place, in one sheet. A row each, in four groups;
+// Settings, behind the gear at the sidebar's foot: everything that isn't a place, in one sheet. A row each, in five groups
+// (the last, Experiments: ways of working that may change or go);
 // a switch or the choices sit in the row, and a row with more to it shows its value and opens its own sheet (over this
 // one: Done there comes back here). (Running from source, config.json too.)
 const settingsDialog = $('#settings')
@@ -716,11 +717,9 @@ function drawSettings() {
   const away = c.links.filter((l) => !l.online).length
   const app = state.app ?? {}
   const u = app.update
-  const at = state.app?.chat?.at
-  const keys = state.app?.chat?.keys ?? {}
-  const where = at && !(at === 'sticky' && !keys.chat && !keys.message) // (chatItems: with both shortcuts taken, only Sticky)
+  const x = experiments(state) // (common.js: following the mouse isn't offered with both its shortcuts taken)
   const machine = ON_WINDOWS ? 'PC' : 'Mac'
-  const toggle = (id, on) => `<input type="checkbox" class="switch" data-st-toggle="${id}" ${on ? 'checked' : ''} aria-label="${id}">`
+  const toggle = (id, on, { disabled = false } = {}) => `<input type="checkbox" class="switch" data-st-toggle="${id}" ${on ? 'checked' : ''} ${disabled ? 'disabled' : ''} aria-label="${id}">`
   const seg = (id, choices, on) => `<div class="seg" data-st-seg="${id}">${choices.map(([v, label]) => `<button type="button" data-v="${v}" class="${v === on ? 'on' : ''}" aria-pressed="${v === on}">${esc(label)}</button>`).join('')}</div>`
   const group = (label, rows) => `<h4 class="section-label">${label}</h4><div class="group-list">${rows.filter(Boolean).join('')}</div>`
   const update = !u ? '' : u.phase === 'ready' && u.next
@@ -741,7 +740,6 @@ function drawSettings() {
     ]),
     group(`This ${machine}`, [
       stRow({ icon: theme === 'dark' ? 'moon' : theme === 'light' ? 'sun' : 'auto', name: 'Theme', control: seg('theme', THEME_CHOICES, theme) }),
-      where && stRow({ icon: at === 'mouse' ? 'pointer' : 'pin', name: 'Floating chat', control: seg('chat', [['sticky', 'Where you put it'], ['mouse', 'By the pointer']], at) }),
       app.login && stRow({ icon: 'power', name: 'Open at login', control: toggle('login', app.login.on) }),
       !ON_WINDOWS && stRow({ act: 'permissions', icon: 'shield', name: 'Permissions' }),
       update,
@@ -750,6 +748,10 @@ function drawSettings() {
       stRow({ act: 'computers', icon: 'computers', name: 'Computers', value: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : 'Just this one' }),
       stRow({ act: 'setup', icon: 'terminal', name: 'Claude Code and Codex' }),
       clique.dev && stRow({ act: 'config', icon: 'braces', name: 'Open config.json', value: 'developer' }),
+    ]),
+    x && group('Experiments', [
+      x.mouse !== null && stRow({ icon: 'pointer', name: 'Follow the mouse', about: 'The floating chat waits by the pointer and opens where it is, with no dock to put somewhere', control: toggle('mouse', x.mouse) }),
+      stRow({ icon: 'shrink', name: 'Minimised dock', about: x.miniApplies ? 'The dock shrinks to the mark, with a beat that moves while agents work. A click opens the chat' : 'Not while the chat follows the mouse: there’s no dock', control: toggle('mini', x.mini && x.miniApplies, { disabled: !x.miniApplies }) }),
     ]),
   ].join(''))
   for (const el of settingsDialog.querySelectorAll('[data-st-seg]')) segmented(el, (b) => b.getAttribute('aria-pressed') === 'true')
@@ -767,7 +769,6 @@ settingsDialog.addEventListener('click', (e) => {
     const id = segBtn.closest('[data-st-seg]').dataset.stSeg
     const v = segBtn.dataset.v
     if (id === 'theme') clique.call('theme', v).catch((err) => oops('Couldn’t change the theme', err))
-    if (id === 'chat') chatPick(`chat:${v}`, state)
     return
   }
   const act = e.target.closest('[data-st]')?.dataset.st
@@ -791,6 +792,7 @@ settingsDialog.addEventListener('change', (e) => {
   if (id === 'autopilot') clique.call('autopilot', e.target.checked).catch((err) => oops("Couldn't change Autopilot", err))
   if (id === 'awake') clique.call('keepAwake', e.target.checked).catch((err) => oops("Couldn't change that", err))
   if (id === 'login') appPick('app:login', state)
+  if (id === 'mouse' || id === 'mini') experimentPick(`exp:${id}`, state, e.target.checked)
 })
 
 // ---- an update that's ready: a note in the corner, once per version (core/updates.js) -----------------------------
