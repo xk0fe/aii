@@ -60,6 +60,8 @@ The first time you open CLIque, he sets you up. He asks what kind of work it is 
 
 Say it in **#general** and Q passes it on, or `@mention` someone yourself. When an agent needs a decision or your OK, it asks right there. Click an agent for your own conversation with it, with its terminal beside the chat.
 
+Paste a screenshot, drop a document or a folder, or hold the mic and talk: dictation runs on your computer, so your voice never leaves it.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/q-dark.webp">
   <img src="docs/images/q-light.webp" alt="#general: you ask for the empty cart to get some life, Q passes it to Iris and says June is writing a line for it" width="100%">

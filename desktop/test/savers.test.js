@@ -14,7 +14,7 @@ const { Hub, CONFIG } = await import('../core/hub.js')
 const { serve } = await import('../core/server.js')
 const { adapters } = await import('../core/adapters.js')
 const { saversFrom, modeOf, report, SAVER_IDS } = await import('../core/savers.js')
-const { readTriage, quickTriagePrompt } = await import('../core/tickets.js')
+const { readTriage, quickTriagePrompt, ticketText } = await import('../core/tickets.js')
 
 class FakeRunner extends EventEmitter {
   live = new Set()
@@ -405,6 +405,14 @@ test('quick triage reads only a real triage out of an answer', () => {
   for (const bad of ['no', '{"priority": "soon", "kind": "bug", "title": "t"}', '{"priority": "low", "kind": "chore", "title": "t"}', '{"priority": "low", "kind": "bug", "title": ""}']) assert.equal(readTriage(bad), null, bad)
   const t = { id: 5, kind: 'task', title: 'Dark mode', body: '', report: 'Dark mode for settings', images: ['/a.png'] }
   assert.match(quickTriagePrompt(t, [], []), /\(#5\):\nDark mode for settings\n\(with a screenshot\)\n\nOpen tasks:\n\(none\)\n\nAgents who can own it \(name, status, area\):\n\(none\)/)
+  // what's attached is called what it is: screenshots when every one is a picture, files with a document among them
+  const doc = '/h/attachments/2026-11-17-1a2b3c4d_spec.pdf'
+  assert.match(quickTriagePrompt({ ...t, images: [doc] }, [], []), /\n\(with an attached file\)\n/)
+  assert.match(quickTriagePrompt({ ...t, images: ['/a.png', doc] }, [], []), /\n\(with 2 attached files\)\n/)
+  assert.match(quickTriagePrompt({ ...t, images: ['/a.png', '/b.jpg'] }, [], []), /\n\(with 2 screenshots\)\n/)
+  const whole = { ...t, status: 'new', severity: 'normal', by: 'you', seen: 1, log: [] }
+  assert.match(ticketText({ ...whole, images: ['/a.png'] }), /\nScreenshots \(open to view\):\n\/a\.png\n/)
+  assert.match(ticketText({ ...whole, images: ['/a.png', doc] }), /\nAttached files \(open to read\):\n\/a\.png\n\/h\/attachments\/2026-11-17-1a2b3c4d_spec\.pdf\n/)
 })
 
 // ---- 5. warmRoute ----
