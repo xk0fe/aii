@@ -95,7 +95,6 @@ function startTour() {
 const PLACES = ['chat', 'clique', 'tasks', 'terminals', 'usage']
 let place = store.get('clique.place') === 'dm' || PLACES.includes(store.get('clique.place')) ? store.get('clique.place') : 'chat'
 let layout = store.get('clique.layout') === 'focus' ? 'focus' : 'grid'
-let show = ['busy', 'needs'].includes(store.get('clique.show')) ? store.get('clique.show') : 'all' // the grid: every terminal, the busy ones, or the ones waiting on you
 let lastDm = null // the agent whose conversation was open last, and when you left it (an agent renamed or gone)
 let left = null
 let selected = null // the terminal picked in Terminals
@@ -120,11 +119,10 @@ $('.blank .blank-mark').outerHTML = ICONS.mark
 if (ON_WINDOWS) $('.side-top').innerHTML = `<span class="app-mark" aria-hidden="true">${markSVG('0 4 24 18')}</span>`
 const NAV_ICON = { clique: markSVG('0 4 24 18'), tasks: ICONS.task, terminals: ICONS.terminal, usage: ICONS.chart }
 for (const b of document.querySelectorAll('.nv .nv-icon')) b.outerHTML = NAV_ICON[b.closest('.nv').dataset.place]
-// Terminals' header: which terminals (with how many), and the grid or one big one
+// Terminals' header: the grid or one big one. (Every terminal shows; the ones waiting on you come first.)
 $('.heads').insertAdjacentHTML('beforeend', pageHead({
-  id: 'terminals', glyph: ICONS.terminal, title: 'Terminals', sub: 'The terminals running now, live',
-  tools: `<div class="seg tv-show" data-show><button data-show="all" title="Every terminal">All <i class="n"></i></button><button data-show="busy" title="The ones working, starting or waiting on you">Busy <i class="n"></i></button><button data-show="needs" title="The ones waiting on you">Needs you <i class="n"></i></button></div>
-    <div class="seg icons tv-layout" data-layout><button data-layout="grid" title="Every terminal side by side" aria-label="Grid">${ICONS.grid}</button><button data-layout="focus" title="One terminal, big" aria-label="Focus">${ICONS.focus}</button></div>`,
+  id: 'terminals', glyph: ICONS.terminal, title: 'Terminals',
+  tools: `<div class="seg icons tv-layout" data-layout><button data-layout="grid" title="Every terminal side by side" aria-label="Grid">${ICONS.grid}</button><button data-layout="focus" title="One terminal, big" aria-label="Focus">${ICONS.focus}</button></div>`,
 }))
 // Only the open place's header shows, from the first paint (the state that draws the rest comes a moment later).
 function showHead() {
@@ -187,7 +185,6 @@ function showPlace(next) {
   for (const b of document.querySelectorAll('.nv')) b.dataset.place === place ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')
   showHead()
   segmented($('[data-layout]'), (b) => b.dataset.layout === layout)
-  $('[data-show]').classList.toggle('idle', layout === 'focus') // stays in place, so nothing moves
   if (!terms.has(selected)) selected = terms.keys().next().value ?? null
   highlight(dock ? dockName() : selected)
   drawRoster()
@@ -1249,34 +1246,26 @@ clique.onPty((name, data) => {
   if (t?.ready) t.term.write(data)
 })
 
-// The brain in one word: its model when it has one (opus, sonnet), its provider otherwise (Codex).
-const modelWord = (a) => [a.model ? modelName(a.model) : (state.providers?.[a.provider]?.label ?? a.provider ?? ''), a.fast ? 'Fast' : ''].filter(Boolean).join(' · ')
-// Its name, a clone with its number, and an agent on another computer with that computer: "Rex · Workstation".
-const tileName = (a) => `${esc(a.cloneOf ? a.cloneOf.split('@')[0] : a.home ? a.seed ?? a.name : a.name)}${cloneTag(a)}${a.home ? `<span class="t-home"> · ${esc(a.homeName ?? a.home)}</span>` : ''}`
-
-// Who helps it right now: its clones at work (their faces), or else its sub-agents. A clone's own tile has no clones.
-function tileHelpers(a) {
-  const clones = clonesOf(state.agents, a).filter((c) => c.on)
-  if (clones.length) return `<span class="t-chip clones" title="${esc(`${plural(clones.length, 'clone')} at work: ${clones.map(displayName).join(', ')}`)}">${clones.slice(0, 3).map((c) => avatarHTML(c, { size: 16, mood: 'still' })).join('')}${clones.length}</span>`
-  const subs = runningSubs(a)
-  return subs.length ? `<span class="t-chip" title="${esc(`${plural(subs.length, 'sub-agent')} working:\n${subs.map((s) => `${s.type === 'general-purpose' ? 'general' : s.type || 'agent'}${s.description ? `: ${s.description}` : ''}`).join('\n')}`)}">${ICONS.subs}${subs.length}</span>` : ''
-}
-
-// One row: who (and its YOLO and ⚡ marks), how it is in words, its model; then the context ring once it runs hot, its
-// helpers and the badge, which carries what the ribbon used to say. Waiting on you, an Answer button. The model word
-// sits in a one-line wrapping box: without room it wraps out of sight whole (the badge's tooltip has it too).
+// One row: who, and one line saying what it's doing (berry while it needs you); then its context ring once it runs hot,
+// and Answer while it waits on you. One that isn't this computer's live terminal says so in its line ("· Workstation") or
+// by a tag (Replay, Offline, Ended). How it is, its brain, its modes, its helpers and the terminal's size are in the
+// name's tooltip.
 function tileHead(t) {
   const a = t.agent
   const mode = tileMode(t)
   const [badge, line, tip] = RIBBON[mode](a, displayName(a))
   const size = t.term.cols && t.ready ? `${t.term.cols}×${t.term.rows}` : ''
   const busyNow = a.status === 'working' || a.status === 'waiting'
+  const what = rowLine(a, askTypes(state).get(a.name))
+  const clones = clonesOf(state.agents, a).filter((c) => c.on).length
+  const subs = runningSubs(a).length
+  const nameTip = [upFirst(statusText(a)), brainLabel(a, state.providers), a.yolo && 'YOLO: skips every permission prompt', a.fast && 'Fast', clones ? `${plural(clones, 'clone')} at work` : subs ? `${plural(subs, 'sub-agent')} working` : '', a.holds?.length && `Has ${a.holds.join(', ')} (clique lease)`, size, line, tip].filter(Boolean).join('\n')
   const stateTip = [a.activity, a.queue ? `${a.queue} queued` : '', a.freshPending ? 'New conversation when it finishes this task' : '', busyNow ? 'Stuck? Click to mark it free' : ''].filter(Boolean).join('\n')
-  const badgeTip = [line, tip, [brainShort(a, state.providers), size].filter(Boolean).join(' · ')].filter(Boolean).join('\n\n')
-  return `<span class="tile-av">${avatarHTML(a, { size: 24 })}</span><b class="t-name">${tileName(a)}</b>${modeMarks(a)}
-    <span class="t-mid"><span class="t-state ${statusClass(a)}" ${busyNow ? 'data-act="markIdle"' : ''} title="${esc(stateTip)}">${esc(upFirst(statusText(a)))}</span><span class="t-model" title="${esc(brainLabel(a, state.providers))}">${esc(modelWord(a))}</span></span>
-    ${ctxLevel(a.convo?.context?.pct ?? 0) === 'hot' ? contextRing(a) : ''}${tileHelpers(a)}
-    <span class="t-badge" data-mode="${mode}" title="${esc(badgeTip)}">${badge}</span>
+  const where = mode === 'mirror' ? `<span class="t-home"> · ${esc(a.homeName ?? a.home)}</span>` : ''
+  return `<span class="tile-av">${avatarHTML(a, { size: 24 })}</span><b class="t-name" title="${esc(nameTip)}">${esc(plainName(a))}${cloneTag(a)}</b>
+    <span class="t-mid"><span class="t-state ${what.cls}" ${busyNow ? 'data-act="markIdle"' : ''} title="${esc(stateTip)}">${esc(what.text)}${where}</span></span>
+    ${ctxLevel(a.convo?.context?.pct ?? 0) === 'hot' ? contextRing(a) : ''}
+    ${mode === 'live' || mode === 'mirror' ? '' : `<span class="t-badge" data-mode="${mode}" title="${esc(tip)}">${badge}</span>`}
     ${a.status === 'waiting' ? `<button class="t-answer" data-act="answer" title="${esc(needsYou(state).find((x) => x.agent.name === a.name)?.ask ? 'Answer it in the chat' : 'It asks in its terminal: answer there')}">Answer</button>` : ''}`
 }
 
@@ -1378,38 +1367,10 @@ function drawBlank() {
 // The grid shows every terminal, the busy ones (working, starting or waiting on you), or the ones waiting on you; each
 // with how many there are. The dock shows its own, whatever the grid's filter.
 const busy = (a) => a && (a.status === 'working' || a.status === 'waiting' || a.status === 'starting')
-const SHOW_NONE = {
-  busy: ['Nobody is busy right now', 'A terminal shows here while its agent works.'],
-  needs: ['Nobody needs you right now', 'A terminal shows here when its agent waits on you.'],
-}
+// The grid: every terminal (the ones waiting on you first, by their tile's CSS order), or the one you picked, big.
 function drawShow() {
-  segmented($('[data-show]'), (b) => b.dataset.show === show)
-  const waiting = new Set(needsYou(state).map((x) => x.agent.name))
-  const count = { all: terms.size, busy: 0, needs: 0 }
-  const grid = place === 'terminals' && layout === 'grid'
-  let shown = 0
-  for (const [name, t] of terms) {
-    const isBusy = busy(t.agent)
-    const needs = waiting.has(name)
-    count.busy += isBusy ? 1 : 0
-    count.needs += needs ? 1 : 0
-    const hide = grid && (show === 'busy' ? !isBusy : show === 'needs' ? !needs : false) // focus shows the one you picked
-    t.tile.classList.toggle('filtered', hide)
-    if (!hide) shown++
-  }
-  for (const b of $('[data-show]').children) {
-    const i = b.querySelector('i')
-    if (i.textContent !== String(count[b.dataset.show])) i.textContent = count[b.dataset.show]
-    i.classList.toggle('some', count[b.dataset.show] > 0)
-  }
+  for (const t of terms.values()) t.tile.classList.remove('filtered')
   freshen()
-  const none = $('.terms .terms-none')
-  if (grid && SHOW_NONE[show] && !shown && terms.size) {
-    const [title, line] = SHOW_NONE[show]
-    const html = `${ICONS.terminal}<b>${title}</b><span>${line}</span>`
-    if (!none) $('.terms').insertAdjacentHTML('beforeend', `<div class="terms-none empty-state small" data-none="${show}">${html}</div>`)
-    else if (none.dataset.none !== show) (none.dataset.none = show), (none.innerHTML = html)
-  } else none?.remove()
 }
 
 $('.side-nav').addEventListener('click', (e) => {
@@ -1419,16 +1380,6 @@ $('.side-nav').addEventListener('click', (e) => {
 $('[data-layout]').addEventListener('click', (e) => {
   const b = e.target.closest('[data-layout]')
   if (b?.dataset.layout) setLayout(b.dataset.layout)
-})
-// In Focus, picking a filter goes back to the grid with it.
-$('[data-show]').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-show]')
-  if (!b?.dataset.show) return
-  show = b.dataset.show
-  store.set('clique.show', show)
-  if (layout === 'focus') return setLayout('grid')
-  drawShow()
-  requestAnimationFrame(() => terms.forEach((_, name) => resize(name)))
 })
 // ⌘1 the channel, ⌘2 Agents, ⌘3 Tasks, ⌘4 Terminals, ⌘5 Usage; ⌘F searches the messages in a channel and a conversation (elsewhere it
 // finds an agent), ⌘K finds an agent, ⌘N makes one (Ctrl on Windows, where Ctrl+F and Ctrl+N typed in a terminal are
