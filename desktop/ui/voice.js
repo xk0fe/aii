@@ -78,7 +78,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
     composer.classList.toggle('voice-note', visible)
     if (!visible) return
     // from the bar's left end to the mic, which grows to its left while it listens (its right edge stays)
-    bar.style.right = `${Math.round(row.getBoundingClientRect().right - button.getBoundingClientRect().right) + (state === 'idle' ? 28 : 60) + 8}px`
+    bar.style.right = `${Math.round(row.getBoundingClientRect().right - button.getBoundingClientRect().right) + (state === 'idle' ? 28 : 60) + 6}px`
     bar.classList.remove('error')
     if (state !== 'listening') return void (bar.innerHTML = hint)
     const current = language()
@@ -253,8 +253,9 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
       if (e.key === 'Enter' && !e.shiftKey) stop({ send: true })
       else if (e.key === 'Escape') stop()
       // You'd rather type (the hotkey opens the box listening, to talk or type into): it stops listening, what it heard
-      // stays, and the box takes this key. Not once Enter has it finishing: that message is on its way.
-      else if (state !== 'finishing' && !e.metaKey && !e.ctrlKey && !e.isComposing && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) {
+      // stays, and the box takes this key. Not once Enter has it finishing: that message is on its way. (AltGr, which
+      // types @ and brackets on many keyboards, reads as Ctrl+Alt on Windows.)
+      else if (!(state === 'finishing' && sendWhenDone) && !e.metaKey && (!e.ctrlKey || e.getModifierState?.('AltGraph')) && !e.isComposing && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) {
         giveUp()
         return false
       } else return false

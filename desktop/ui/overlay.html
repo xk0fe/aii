@@ -140,14 +140,14 @@
     [data-side=mouse].busy .home .m0, [data-side=mouse].busy .home .m1, [data-side=mouse].busy .home .m2 { animation: none; }
     [data-side=mouse].alert .pill::after { animation: none; opacity: .9; }
     [data-side=mouse].quiet.alert .pill::after { opacity: .45; }
+    /* ...except once, as a message leaves the box: the buddies hop as they take it, whoever is at work */
+    [data-side=mouse].sent .home .m0, [data-side=mouse].sent .home .m1, [data-side=mouse].sent .home .m2 { animation: buddy-took .5s var(--bounce) backwards; }
+    [data-side=mouse].sent .home .m1 { animation-delay: .07s; }
+    [data-side=mouse].sent .home .m2 { animation-delay: .14s; }
+    @keyframes buddy-took { 45% { translate: 0 calc(-2.2 * min(100cqw / 24, 100cqh / 16)); } }
     /* it grows out of the corner by the pointer: below it (start), or above it (end) */
     [data-side=mouse] .panel { --from: translate(0, -8px); transform-origin: 50% 0; }
     [data-side=mouse][data-align=end] .panel { --from: translate(0, 8px); transform-origin: 50% 100%; }
-    /* a message went out of the box: the buddies hop once as they take it */
-    .sent .home .m0, .sent .home .m1, .sent .home .m2 { animation: buddy-took .5s var(--bounce) backwards; }
-    .sent .home .m1 { animation-delay: .07s; }
-    .sent .home .m2 { animation-delay: .14s; }
-    @keyframes buddy-took { 45% { translate: 0 calc(-2.2 * min(100cqw / 24, 100cqh / 16)); } }
     /* The message box (the dictation hotkey): the composer and nothing else. Its lists (who it's to, @names) open into
        see-through room kept on the side away from the pointer, so the window never changes size under them. */
     .quick .panel { height: auto; border-radius: 16px; overflow: visible; }

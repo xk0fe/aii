@@ -3609,7 +3609,9 @@ function appItems(state) {
 // column (the popover's). chatPick does what was picked, and says which keys reach it once it follows the pointer.
 function chatItems(state, { ticks = 'right' } = {}) {
   const at = state.app?.chat?.at
-  if (!at) return []
+  const keys = state.app?.chat?.keys ?? {}
+  // (both shortcuts taken by another app: under the mouse there'd be no way in, so it isn't offered)
+  if (!at || (at === 'sticky' && !keys.chat && !keys.message)) return []
   // (ticked the way the menu ticks its theme: in the icon column, or where the row's note would be)
   const row = (id, label, icon, hint) => (ticks === 'left' ? { label, act: `chat:${id}`, hint, icon: at === id ? ICONS.check : undefined } : { label, act: `chat:${id}`, icon, hint: at === id ? '✓' : hint })
   return ['-', { head: 'Floating chat' }, row('sticky', 'Sticky', ICONS.pin, 'where you put it'), row('mouse', 'Under the mouse', ICONS.pointer, 'follows the pointer')]

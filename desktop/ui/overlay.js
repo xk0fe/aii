@@ -29,6 +29,8 @@ const composer = mountComposer($('.compose'), {
   onSent: () => isQuick() && (setOpen(false), took()),
   popups: () => (isQuick() && document.body.dataset.align !== 'end' ? 'below' : 'above'),
   stops: () => !isQuick(), // (the message box is for sending: who's at work isn't in view there)
+  // the dictation hotkey, with nothing open under the mouse (it closed a moment ago): the box opens, it never listens unseen
+  onDictate: () => MOUSE && !isOpen() && setOpen(true, true, { quick: true }),
 })
 let size = ''
 
@@ -148,8 +150,24 @@ clique.onToggle((opts = {}) => {
 // The message box is there for one message: a click away from it, or the keyboard going to another app, puts it away
 // (what you wrote stays for next time). Not while it listens: you may be looking at what you're talking about.
 if (MOUSE) {
-  addEventListener('blur', () => isQuick() && !composer.dictating() && setOpen(false))
+  let away = false // the keyboard went elsewhere while it listened
+  addEventListener('focus', () => (away = false))
+  addEventListener('blur', () => {
+    if (!isQuick()) return
+    if (composer.dictating()) away = true
+    else setOpen(false)
+  })
+  // ...and it stopped listening with the keyboard still elsewhere: put away then, unless it has something to say (the
+  // microphone isn't allowed, say), which stays up to be read
+  new MutationObserver(() => {
+    if (!away || composer.dictating()) return
+    away = false
+    if (isQuick() && !$('.compose .voice-hint.error:not(.hidden)')) setOpen(false)
+  }).observe($('.compose'), { attributes: true, attributeFilter: ['class'] })
   document.addEventListener('pointerdown', (e) => isQuick() && !e.target.closest('.panel, .menu, .mentions, .toast') && setOpen(false))
+  // What's open grows and shrinks by itself (lines you write, a picture you paste): main.js holds it by the right corner
+  // only if it hears each new size.
+  new ResizeObserver(() => isOpen() && fit()).observe($('.panel'))
 }
 // A message went out of the message box: the buddies hop once.
 function took() {

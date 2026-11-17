@@ -83,6 +83,7 @@ export function followWindow(overlay, screen, { now = Date.now, later = setTimeo
   // One look at the pointer, and a step toward it. -> how long until the next look.
   function look() {
     const t = now()
+    if (overlay.isDestroyed?.()) return void stop() // its window is gone (CLIque is quitting, or made another): no more looks
     if (state.open && !state.open.seen && t - state.open.at > OPENS_WITHIN) close()
     if (state.open || !state.size || overlay.isVisible?.() === false) return PACE.still
     const p = screen.getCursorScreenPoint()
@@ -122,6 +123,12 @@ export function followWindow(overlay, screen, { now = Date.now, later = setTimeo
     if (overlay.isFocused?.()) overlay.blur?.()
   }
 
+  function stop() {
+    cancel(state.timer)
+    state.timer = null
+    state.stopped = true
+  }
+
   return {
     follows: true,
     get place() {
@@ -143,8 +150,12 @@ export function followWindow(overlay, screen, { now = Date.now, later = setTimeo
     // false), which is how its own closing (Esc, a sent message, a click away) gets here.
     fit(width, height, inside) {
       const says = inside?.open || false
-      if (!state.open && says) open(says) // the page opened by itself: where the pointer is
-      if (state.open && says) state.open.seen = true
+      if (!state.open && says) {
+        open(says) // the page opened by itself: where the pointer is, and it hears which way that lines up
+        overlay.webContents?.send('place', placeNow())
+      }
+      // what's open is the page's to say: the box may have become the chat (or the other way) since it was asked
+      if (state.open && says) Object.assign(state.open, { kind: says, seen: true })
       else if (state.open?.seen) close() // (one it hasn't opened yet: this is word from before it was asked to)
       state.size = { width, height }
       state.inside = inside ? { x: inside.x, y: inside.y, width: inside.width, height: inside.height } : { x: 0, y: 0, width, height }
@@ -196,12 +207,13 @@ export function followWindow(overlay, screen, { now = Date.now, later = setTimeo
     // buddy to whatever is under it.
     start() {
       overlay.setIgnoreMouseEvents?.(true)
-      const loop = () => (state.timer = later(loop, look()))
+      state.stopped = false
+      const loop = () => {
+        const next = look()
+        if (!state.stopped) state.timer = later(loop, next)
+      }
       if (state.timer == null) loop()
     },
-    stop() {
-      cancel(state.timer)
-      state.timer = null
-    },
+    stop,
   }
 }

@@ -512,6 +512,7 @@ function createOverlay({ again = false } = {}) {
     held.cancelDrag()
     if (held.opened) closeAtMouse(win, held) // the dashboard came up: when the buddy's back, it's back at the pointer
   })
+  win.on('closed', () => held.stop?.()) // (quitting, or made again: nothing looks for the pointer on a window that's gone)
   win.once('ready-to-show', () => dashOnScreen() || win.isDestroyed() || win.showInactive())
 }
 

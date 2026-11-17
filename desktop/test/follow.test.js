@@ -324,6 +324,42 @@ test('the page loading again forgets what was open', () => {
   assert.deepEqual(drawn(), { x: 700 + BESIDE.x, y: 400 + BESIDE.y, ...BUDDY })
 })
 
+test('which one is open is the page\'s to say', () => {
+  const { win, f } = setup()
+  const said = []
+  win.webContents = { send: (channel, arg) => said.push([channel, arg]) }
+  f.fit(...layout(false))
+  f.open('quick')
+  f.fit(...layout('chat')) // asked for the box, then for the chat, and the page is showing the chat
+  assert.equal(f.opened, 'chat')
+  f.fit(...layout('quick'))
+  assert.equal(f.opened, 'quick')
+  assert.deepEqual(said, [], 'asked to open, it was told how it lines up when it was asked')
+})
+
+test('a page that opens by itself hears which way it lines up', () => {
+  const { win, f } = setup({ pointer: { x: 700, y: 800 } })
+  const said = []
+  win.webContents = { send: (channel, arg) => said.push([channel, arg]) }
+  f.fit(...layout(false))
+  f.fit(...layout('quick', 'start')) // low on the screen: it belongs above the pointer
+  assert.deepEqual(said, [['place', { side: 'mouse', align: 'end' }]])
+})
+
+test('a window that is gone is not looked at again', () => {
+  const { win, f, clock } = setup()
+  const timers = []
+  const g = followWindow(win, { getCursorScreenPoint: () => ({ x: 1, y: 1 }), getDisplayNearestPoint: () => ({ bounds: SCREEN, workArea: WA }) }, { now: () => clock.t, later: (fn, ms) => (timers.push([fn, ms]), timers.length), cancel: () => {} })
+  g.fit(...layout(false))
+  g.start()
+  assert.equal(timers.length, 1)
+  win.isDestroyed = () => true
+  win.setBounds = () => { throw new Error('Object has been destroyed') }
+  timers.pop()[0]() // the next look
+  assert.equal(timers.length, 0, 'and no look after it')
+  assert.equal(f.follows, true)
+})
+
 test('it stands in for the pill where main.js treats them alike', () => {
   const { f } = setup()
   assert.equal(f.follows, true)
