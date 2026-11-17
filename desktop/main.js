@@ -775,6 +775,7 @@ const actions = {
   task: (op, key, arg) => clique.ticket(op, key, arg),
   taskSettings: (patch) => clique.here.setTaskSettings(patch),
   saveImage: (name, type, bytes) => clique.here.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
+  saveFile: (name, bytes) => clique.here.saveFile(name, bytes), // ...and any other file you attach, the same way
   approve: (id) => clique.feedAction(id, 'approve'),
   drop: (id) => clique.feedAction(id, 'drop'),
   // A message of yours waiting for a busy agent, sent without waiting for its turn to end (Hub.sendNow):

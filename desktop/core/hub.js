@@ -23,7 +23,7 @@ import { HOME, movedPath, movedImages } from './home.js'
 import { ROOT, GENERAL, channelName, dirOf, space, forget, renameShared, sharedNames, settle } from './workspaces.js'
 import { keepFeed, keepLines, lineSize, rewriteAt, replaceFile, replaceFileAsync, BOARD_KEEP, BOARD_MAX } from './keep.js'
 import { CANVAS_HELP, CANVAS_LINES, asCanvas, canvasLines, canvasTitle, typedLines, withCanvas } from './canvas.js'
-import { ATTACH_USAGE, CAPTION_MAX, check as checkFiles, store as storeFiles, makeRoom, filesInBracket, sizeWords, timeWords } from './attachments.js'
+import { ATTACH_USAGE, CAPTION_MAX, check as checkFiles, store as storeFiles, makeRoom, filesInBracket, sizeWords, timeWords, kindOf, ownName, shownName } from './attachments.js'
 import { REACT_MAX, REACT_USAGE, REACT_WINDOW, emojiOf, justAnAck, saidWith } from './reactions.js'
 import { REACTIONS_MAX } from 'clique-shared/protocol.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
@@ -55,16 +55,33 @@ const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'ranOn', 'cur
   'trustAsk', 'trustAt', 'round', 'keyed', 'halted']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
+// What you attach yourself is copied whole, in one call (from the page, from a linked computer): this much at most.
+// A bigger file isn't attached: the message box puts its path in the message instead (ui/common.js mountAttach).
+export const OWN_MAX = 20 * 1024 * 1024
 // An image saved with this computer's attachments, whichever workspace it's for. -> where
 export function saveImage(name, type, bytes) {
   const ext = Object.hasOwn(IMAGE_TYPES, type) && IMAGE_TYPES[type]
   if (!ext) throw new Error('only PNG, JPEG, GIF and WebP images')
-  if (bytes.length > 20 * 1024 * 1024) throw new Error(`${name || 'image'} is over 20 MB`)
+  if (bytes.length > OWN_MAX) throw new Error(`${name || 'image'} is over 20 MB`)
   fs.mkdirSync(ATTACHMENTS, { recursive: true })
   const file = path.join(ATTACHMENTS, `${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}.${ext}`)
   fs.writeFileSync(file, Buffer.from(bytes))
   return file
 }
+// Any other file you attach (a document, a log, a recording), saved there too under the name it had, so the agent that
+// opens it and you in Finder can tell what it is: <day>-<8 hex>_<name> (core/attachments.js ownName).
+// Not a phone's to call: a phone sends pictures (core/remote.js). -> where
+export function saveFile(name, bytes) {
+  if (!(bytes instanceof Uint8Array)) throw new Error('send the file as bytes')
+  if (bytes.length > OWN_MAX) throw new Error(`${shownName(String(name ?? ''))} is over 20 MB`)
+  fs.mkdirSync(ATTACHMENTS, { recursive: true })
+  const file = path.join(ATTACHMENTS, `${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}_${ownName(name ?? '')}`)
+  fs.writeFileSync(file, Buffer.from(bytes))
+  return file
+}
+// What a message's attachments are called when it has no words of its own, and to the agent that gets them: images
+// when every one is a picture, files otherwise.
+const attachedAs = (files) => (files.every((p) => kindOf(p) === 'image') ? 'image' : 'file')
 
 // config.json, for every workspace's hub to share. A file from before today's layout (core/workspaces.js settle) is
 // copied once as it was, and reads in today's: the first save writes it.
@@ -3222,9 +3239,12 @@ export class Hub extends EventEmitter {
 
   // ---- messages ----------------------------------------------------------
 
-  // Images pasted, dropped or picked in the UI become files that agents open by path.
+  // What's pasted, dropped or picked in the UI becomes files that agents open by path: pictures, and any other file.
   saveImage(name, type, bytes) {
     return saveImage(name, type, bytes)
+  }
+  saveFile(name, bytes) {
+    return saveFile(name, bytes)
   }
 
   // Who gets a message: the `to` field (a name, several names, or "any") plus every @name in the text.
@@ -3242,7 +3262,7 @@ export class Hub extends EventEmitter {
   send({ from = 'you', to, text, images = [], mentions = true, fresh = false, ticket, title, type, triage = false, re: replyTo, quote, ask, answers, auto = false, channel, channelName, brief, newWork = false, thread, scheduled, now = false }) {
     text = String(text ?? '').trim()
     images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
-    if (!text && images.length) text = images.length > 1 ? 'Have a look at these images.' : 'Have a look at this image.'
+    if (!text && images.length) text = images.length > 1 ? `Have a look at these ${attachedAs(images)}s.` : `Have a look at this ${attachedAs(images)}.`
     if (!text) throw new Error('nothing to send')
     if (answers) {
       const call = this.calls.get(answers)
@@ -4194,7 +4214,7 @@ export class Hub extends EventEmitter {
   // on, the owner gets it right away, in a fresh conversation. `owner` (an @name you typed) skips all that.
   fileTask({ text, images = [], by = 'you', kind = 'task', owner }) {
     images = [].concat(images).map((p) => movedPath(p)).filter((p) => typeof p === 'string' && p.startsWith(ATTACHMENTS + path.sep))
-    if (!String(text ?? '').trim() && images.length) text = 'See the screenshot'
+    if (!String(text ?? '').trim() && images.length) text = attachedAs(images) === 'image' ? 'See the screenshot' : `See the attached file${images.length > 1 ? 's' : ''}`
     owner = owner ? this.taskOwner(owner, by) : null
     const t = this.tickets.add({ text, images, by, kind: KINDS.includes(kind) ? kind : 'task', owner })
     if (owner) {
@@ -5188,10 +5208,12 @@ const samePrompt = (reported, sent) => {
 // What Claude Code submits by itself when a command or sub-agent the agent ran in the background finishes.
 const isNotice = (prompt) => /^\s*<task-notification>/.test(String(prompt ?? ''))
 
-// Agents get images as file paths (Claude Code and Codex can both open local images).
+// Agents get what you attached as file paths (Claude Code and Codex can both open local images, and read a document).
 const withImages = (text, all) => {
   const images = (all ?? []).filter((p) => !/[\x00-\x1f\x7f]/.test(p)) // a path is one line: nothing rides in after it
-  return images.length ? `${text}\n\nAttached image${images.length > 1 ? 's' : ''} (open to view):\n${images.join('\n')}` : text
+  if (!images.length) return text
+  const what = attachedAs(images)
+  return `${text}\n\nAttached ${what}${images.length > 1 ? 's' : ''} (open to ${what === 'image' ? 'view' : 'read'}):\n${images.join('\n')}`
 }
 
 // A terminal's text without its escape sequences and spaces: what's on screen, however it was drawn.

@@ -28,10 +28,16 @@ const PAGES = { html: 'text/html', htm: 'text/html' }
 const OTHERS = {
   pdf: 'application/pdf', txt: 'text/plain', log: 'text/plain', md: 'text/markdown', json: 'application/json', csv: 'text/csv', xml: 'application/xml',
   zip: 'application/zip', mp3: 'audio/mpeg', wav: 'audio/wav', har: 'application/json', diff: 'text/plain', patch: 'text/plain', yml: 'text/yaml', yaml: 'text/yaml',
+  tsv: 'text/tab-separated-values', rtf: 'application/rtf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet', odp: 'application/vnd.oasis.opendocument.presentation',
 }
 // What "Open" hands to the system's own app for it: things that are looked at. Anything else (a script, an app, an
-// installer) is only ever shown in its folder, since opening it would run it.
-const OPENS = new Set([...Object.keys(IMAGES), ...Object.keys(VIDEOS), ...Object.keys(PAGES), 'pdf', 'txt', 'log', 'md', 'json', 'csv', 'xml', 'mp3', 'wav', 'har', 'diff', 'patch', 'yml', 'yaml'])
+// installer) is only ever shown in its folder, since opening it would run it. Documents are looked at too (you attach
+// them yourself, core/hub.js saveFile): the kinds that can't carry macros, so not .doc, .xls, .docm or .xlsm.
+const OPENS = new Set([...Object.keys(IMAGES), ...Object.keys(VIDEOS), ...Object.keys(PAGES), 'pdf', 'txt', 'log', 'md', 'json', 'csv', 'xml', 'mp3', 'wav', 'har', 'diff', 'patch', 'yml', 'yaml',
+  'tsv', 'rtf', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp', 'pages', 'numbers', 'key'])
 
 const extOf = (file) => path.extname(String(file)).slice(1).toLowerCase()
 export const opens = (file) => OPENS.has(extOf(file))
@@ -264,13 +270,28 @@ export function probe(file, size = fs.statSync(file).size) {
 // ---- the store ---------------------------------------------------------------------------------------------------
 
 // What an agent attached is kept as <day>-<8 hex>-<its own name>: the name it had, so Finder, Explorer and "Open" show
-// something you'd recognise, made safe for any disk. (What you attach yourself is <day>-<8 hex>.<ext>: Hub saveImage.)
+// something you'd recognise, made safe for any disk. What you attach yourself is named apart, so it's never counted with
+// theirs (makeRoom) and stays for as long as a message or a task refers to it: a picture is <day>-<8 hex>.<ext> (Hub
+// saveImage), any other file <day>-<8 hex>_<its own name> (Hub saveFile).
 const AGENTS_FILE = /^\d{4}-\d\d-\d\d-[0-9a-f]{8}-./
 export const isAgentFile = (name) => AGENTS_FILE.test(path.basename(String(name)))
+// ...and the name a file had, an agent's or yours, from where it's kept
+export const givenName = (file) => path.basename(String(file)).replace(/^\d{4}-\d\d-\d\d-[0-9a-f]{8}[-_](?=.)/, '')
 export function safeName(name) {
   const ext = path.extname(name).replace(/[^A-Za-z0-9.]/g, '').slice(0, 12)
   const stem = path.basename(name, path.extname(name)).normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._]+|[._]+$/g, '').slice(0, 60)
   return `${stem || 'file'}${ext.toLowerCase()}`
+}
+
+// A document you attach yourself keeps the letters of its name in any alphabet (отчёт.pdf, 仕様書.pdf): it's your own
+// file, shown to you by that name and opened by the agent that gets it, so only what a disk can't hold, and the spaces
+// and punctuation that would split a path, go.
+export function ownName(name) {
+  const base = path.basename(String(name)).normalize('NFC')
+  const ext = /^\.[A-Za-z0-9]{1,12}$/.test(path.extname(base)) ? path.extname(base) : ''
+  let stem = [...base.slice(0, base.length - ext.length).replace(/[^\p{L}\p{M}\p{N}._-]+/gu, '_').replace(/^[._]+|[._]+$/g, '')].slice(0, 60)
+  while (Buffer.byteLength(stem.join('')) > 180) stem = stem.slice(0, -1) // (a file's name is 255 bytes at most)
+  return `${stem.join('') || 'file'}${ext.toLowerCase()}`
 }
 
 // A file's name as the chat, a phone and other agents' CLIs get it. A name is anybody's text (a download, a page's

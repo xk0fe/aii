@@ -1,5 +1,6 @@
 // Files in the chat: what an agent attached to a message (core/attachments.js: pictures, a recording, a page it built,
-// any file), drawn under what it said, and the viewer a picture, a recording or a page opens into. Loaded after
+// any file), drawn under what it said, what you attached to yours (pictures, and a card for any other file), drawn over
+// what you said, and the viewer a picture, a recording or a page opens into. Loaded after
 // common.js, by the pages that show a chat (dashboard.html, overlay.html).
 //
 // A page (HTML) is never put into this page: it's shown in a sandboxed frame whose address is clique-sandbox://…
@@ -9,7 +10,7 @@
 //
 // A file from a linked computer is kept in this computer's cache of them, and comes from that computer a piece at a time
 // as it's shown, played or opened (core/linkfiles.js; fileURL in common.js gives it its clique-file:// address).
-/* global clique, esc, fileURL, svg, ICONS, popMenu, oops, notify */
+/* global clique, esc, fileURL, svg, ICONS, popMenu, oops, notify, isPicture, attachedName */
 
 const FX_ICONS = {
   image: svg('<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 3.5 3 3-2.5 4.5 4"/>'),
@@ -37,7 +38,7 @@ const FX_ICONS = {
 
 // What "Open" hands to the system's own app: things that are looked at (core/attachments.js OPENS, which decides; a test
 // keeps the two the same). Anything else is only shown in its folder.
-const FX_OPENS = /\.(png|jpe?g|gif|webp|svg|avif|bmp|mp4|m4v|mov|webm|html?|pdf|txt|log|md|json|csv|xml|mp3|wav|har|diff|patch|ya?ml)$/i
+const FX_OPENS = /\.(png|jpe?g|gif|webp|svg|avif|bmp|mp4|m4v|mov|webm|html?|pdf|txt|log|md|json|csv|xml|mp3|wav|har|diff|patch|ya?ml|tsv|rtf|docx|xlsx|pptx|odt|ods|odp|pages|numbers|key)$/i
 const FX_FOLDER = () => (clique.platform === 'win32' ? 'Show in Explorer' : 'Show in Finder')
 
 function fxSize(n) {
@@ -81,11 +82,17 @@ function fxRemember(id, files) {
   fxKnown.set(id, files)
   if (fxKnown.size > 600) fxKnown.delete(fxKnown.keys().next().value)
 }
-// Your own pictures on a message open in the same viewer.
-const fxOwn = (images) => images.map((p) => ({ path: p, kind: 'image', name: String(p).split(/[\\/]/).pop() }))
+// What you attached to a message of yours: its pictures open in the same viewer, and any other file (a document, a
+// log) is a card like the ones agents' files get, with the name it had.
+const fxOwn = (images) => images.map((p) => ({ path: p, kind: isPicture(p) ? 'image' : 'file', name: attachedName(p) }))
 function fxPics(e) {
-  fxRemember(`${e.id}:own`, fxOwn(e.images))
-  return `<div class="pics">${e.images.map((p, i) => `<img src="${fileURL(p)}" data-fx="view" data-id="${esc(e.id)}:own" data-i="${i}" tabindex="0" role="button" alt="" title="Look closer">`).join('')}</div>`
+  const own = fxOwn(e.images)
+  const id = `${e.id}:own`
+  fxRemember(id, own)
+  const at = (i) => `data-id="${esc(id)}" data-i="${i}"`
+  const pics = own.map((f, i) => (f.kind === 'image' ? `<img src="${fileURL(f.path)}" data-fx="view" ${at(i)} tabindex="0" role="button" alt="" title="Look closer">` : '')).join('')
+  const cards = own.map((f, i) => (f.kind === 'image' ? '' : fxCard(id, f, i, at(i)))).join('')
+  return `${pics ? `<div class="pics">${pics}</div>` : ''}${cards ? `<div class="files own">${cards}</div>` : ''}`
 }
 
 // A message's files, under what it says. Every box is its final size from the start (the sizes were read when the file

@@ -1,11 +1,14 @@
 // The Tasks board: work for the clique (bugs you call out, features, chores) as tickets that move
 // to do → in progress → review → done (stored as new / fixing / check / done). A ticket carries everything a
-// fresh conversation needs to do it (what's wanted, screenshots, notes), so whoever picks it up doesn't need
+// fresh conversation needs to do it (what's wanted, screenshots and other files, notes), so whoever picks it up doesn't need
 // anyone's chat history. Stored in ~/.clique/tickets.json. No Electron in here.
 import fs from 'node:fs'
 import { movedImages } from './home.js'
+import { kindOf } from './attachments.js'
 import { defused, relayed } from './framing.js'
 
+// What's attached to a task is screenshots when every one is a picture; with a document among them, files.
+const shots = (t) => t.images.every((p) => kindOf(p) === 'image')
 export const STATUSES = ['new', 'fixing', 'check', 'done']
 export const KINDS = ['task', 'bug', 'feature']
 // Priority, stored under its old name `severity`: blocker / high / normal / low, shown as urgent / high / medium / low.
@@ -177,7 +180,7 @@ export function ticketText(t) {
     `${t.kind} · status: ${t.status} · priority: ${PRIORITY_NAME[t.severity]} · owner: ${t.owner ? `@${t.owner}` : 'unassigned'} · added by ${t.by}${t.seen > 1 ? ` · seen ${t.seen}x` : ''}`,
     t.body && `\n${t.body}`,
     reworded(t) && `\nAs reported, word for word:\n${t.report}`,
-    t.images.length && `\nScreenshots (open to view):\n${t.images.join('\n')}`,
+    t.images.length && `\n${shots(t) ? 'Screenshots (open to view)' : 'Attached files (open to read)'}:\n${t.images.join('\n')}`,
     notes.length && `\nNotes:\n${notes.join('\n')}`,
     t.fix && `\nDone (${t.fixer ? `@${t.fixer}` : ''}): ${t.fix}`,
   ].filter(Boolean).join('\n') + '\n'
@@ -231,7 +234,7 @@ export function quickTriagePrompt(t, open, clique) {
     '',
     `The ${bug ? 'bug report' : 'task'} the user just added (#${t.id}):`,
     t.report || [t.title, t.body].filter(Boolean).join('\n\n'),
-    t.images.length ? `(with ${t.images.length === 1 ? 'a screenshot' : `${t.images.length} screenshots`})` : '',
+    t.images.length ? `(with ${t.images.length === 1 ? (shots(t) ? 'a screenshot' : 'an attached file') : `${t.images.length} ${shots(t) ? 'screenshots' : 'attached files'}`})` : '',
     '',
     'Open tasks:',
     open.length ? open.map(ticketLine).join('\n') : '(none)',

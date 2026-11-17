@@ -682,6 +682,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
         syncSave()
       },
       onError: (text) => (card.querySelector('.pd-msg').textContent = text),
+      only: 'images',
     }).set(d.images, false)
     syncSave()
   }

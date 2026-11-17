@@ -2,7 +2,7 @@
 // Add one with New task or a column's + (or from the chat). Starting one hands it to its owner in a fresh
 // conversation, so tasks don't pile into one long context; you review what comes back. Board or list, filtered by
 // kind, owner or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via clique.call('task').
-/* global pageHead, mountSearch, notify, oops, reduceMotion, PRODUCT_NAME, ownerIn, mountMentions, mountInk, clique, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine, openLink */
+/* global pageHead, mountSearch, notify, oops, reduceMotion, PRODUCT_NAME, ownerIn, mountMentions, mountInk, clique, store, esc, avatarHTML, agentColor, mountAttach, isPicture, attachedName, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine, openLink */
 
 const STATUS = [
   { id: 'new', label: 'To do' },
@@ -86,7 +86,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
             <button class="btn sm has-menu tk-kind" data-kind-pick title="Kind (click to change)" aria-haspopup="menu"></button>
             <span class="tk-to"></span>
             <span class="grow"></span>
-            <button class="icon attach" title="Add a screenshot (or paste / drop one)">${PICTURE}</button>
+            <button class="icon attach" title="Add a screenshot or a file (or paste / drop one)">${PICTURE}</button>
             <button class="btn sm tk-add-go" disabled>Add</button>
           </div>
         </div>
@@ -247,7 +247,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
 
   // ---- adding a task -----------------------------------------------------------------------------
   // One composer: New task or a column's + opens it at the top of that column (in the list, as a popover under the
-  // button). Kind, a title where @name assigns it, screenshots pasted, dropped or picked. Enter adds, Escape closes;
+  // button). Kind, a title where @name assigns it, screenshots and files pasted, dropped or picked. Enter adds, Escape closes;
   // what you typed stays for next time. From In progress's +, the new task starts right away.
 
   const composer = $('.tk-add')
@@ -554,8 +554,11 @@ function mountTasks(root, { headIn = root, onTerminal }) {
   // A card: kind and number, Urgent when it is, the title, and its owner. A task to review has what came back and
   // the board's only coloured buttons instead. Cost, tokens and priority live in the panel.
   function cardHTML(t) {
+    // its first pictures, and how many more attachments there are (more pictures, and files that aren't pictures)
+    const shots = t.images.filter(isPicture).slice(0, 3)
+    const rest = t.images.length - shots.length
     const pics = t.images.length
-      ? `<div class="tk-shots">${t.images.slice(0, 3).map((p) => `<img src="${fileURL(p)}" alt="" draggable="false">`).join('')}${t.images.length > 3 ? `<span>+${t.images.length - 3}</span>` : ''}</div>`
+      ? `<div class="tk-shots">${shots.map((p) => `<img src="${fileURL(p)}" alt="" draggable="false">`).join('')}${rest ? `<span title="${esc(t.images.filter((p) => !shots.includes(p)).map(attachedName).join(', '))}">${shots.length ? `+${rest}` : `${ICONS.doc}${rest}`}</span>` : ''}</div>`
       : ''
     const review = t.status === 'check'
     const summary = review && t.fix ? `<p class="tk-summary">${esc(snippet(t.fix))}</p>` : ''
@@ -582,7 +585,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     return `<div class="tr st-${t.status}${selected === t.key ? ' sel' : ''}${picked.has(t.key) ? ' picked' : ''}" data-name="${esc(t.key)}" draggable="true">
       ${lead}
       <span class="tk-id">#${t.id}</span>
-      <span class="tr-title"><span class="tr-name" title="${esc(t.title)}">${esc(t.title)}</span>${isUrgent(t) ? urgentHTML : ''}${t.home ? `<span class="tk-home">${esc(t.homeName)}</span>` : ''}${t.images.length ? `<span class="tr-pics" title="${t.images.length} screenshot${t.images.length > 1 ? 's' : ''}">${PICTURE}${t.images.length}</span>` : ''}</span>
+      <span class="tr-title"><span class="tr-name" title="${esc(t.title)}">${esc(t.title)}</span>${isUrgent(t) ? urgentHTML : ''}${t.home ? `<span class="tk-home">${esc(t.homeName)}</span>` : ''}${t.images.length ? `<span class="tr-pics" title="${t.images.length} ${t.images.every(isPicture) ? 'screenshot' : 'attachment'}${t.images.length > 1 ? 's' : ''}">${t.images.some(isPicture) ? PICTURE : ICONS.doc}${t.images.length}</span>` : ''}</span>
       <span class="tr-right">${right}</span>
       ${ownerHTML(t)}
       <span class="tk-age" title="${esc(new Date(t.updated).toLocaleString())}">${esc(ago(t.updated))}</span>
@@ -987,7 +990,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
             <div class="tp-desc" data-tp="edit-body"></div>
             <textarea class="tp-details hidden" data-field="body" rows="5" placeholder="What's wanted, how to tell it's done${t.kind === 'bug' ? ', steps to reproduce' : ''}…"></textarea></section>
           <section class="tp-sec tp-orig-slot"></section>
-          <section class="tp-sec"><h5 class="section-label">Attachments <button type="button" class="link" data-shot>+ Add</button></h5><div class="thumbs tp-shots"></div><p class="tp-none" data-no-shots>None. Paste or drop screenshots here.</p></section>
+          <section class="tp-sec"><h5 class="section-label">Attachments <button type="button" class="link" data-shot>+ Add</button></h5><div class="thumbs tp-shots"></div><p class="tp-none" data-no-shots>None. Paste or drop screenshots or files here.</p></section>
           <section class="tp-sec"><h5 class="section-label">Activity</h5>
             <div class="tp-note"><textarea rows="1" data-note placeholder="Leave a note for whoever does it…"></textarea><button class="btn" data-tp="note">Add</button></div>
             <ol class="tp-log"></ol></section>

@@ -7,9 +7,9 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, checkInOf, expand, sessionsLeft, arrivedLeft } from './hub.js'
+import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, saveFile, checkInOf, expand, sessionsLeft, arrivedLeft } from './hub.js'
 import { movedPath } from './home.js'
-import { FETCH_MAX, kindOf, travels } from './attachments.js'
+import { FETCH_MAX, kindOf, travels, givenName } from './attachments.js'
 import { LinkFiles, readPiece, inside, NO_PIECES } from './linkfiles.js'
 import { BROKEN } from './config.js'
 import { Runner, Scoped } from './runner.js'
@@ -80,7 +80,7 @@ const THEIR_USAGE_KEPT = 30 * 864e5 // what a computer last said it used is kept
 const ACCOUNTS_EVERY = 5 * 60000
 const ACCOUNTS_AFTER = 8000
 // What a linked computer may ask with no workspace (see serve).
-const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'readImage', 'readFile', 'moveWrite', 'moveDrop', 'folderInfo', 'usageHistory'])
+const COMPUTER_CALLS = new Set(['in', 'spaces', 'workspaces', 'state', 'saveImage', 'saveFile', 'readImage', 'readFile', 'moveWrite', 'moveDrop', 'folderInfo', 'usageHistory'])
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 const readJSON = (file) => {
   try {
@@ -1639,10 +1639,21 @@ export class Clique extends EventEmitter {
     return { ...f, path: file, home: l.name }
   }
 
+  // What you attached, on its way to an agent on a linked computer: saved there, a picture as a picture and any other
+  // file under the name it had (a CLIque from before documents takes pictures only, and says so).
   async toHome(paths, l) {
     if (!paths?.length) return paths
     return Promise.all(
-      paths.map((p) => l.toHost.get(p) ?? l.peer.call('saveImage', [path.basename(p), MIME[path.extname(p).toLowerCase()] ?? 'image/png', new Uint8Array(fs.readFileSync(p))])),
+      paths.map((p) => {
+        if (l.toHost.has(p)) return l.toHost.get(p)
+        const type = MIME[path.extname(p).toLowerCase()]
+        const bytes = new Uint8Array(fs.readFileSync(p))
+        if (type) return l.peer.call('saveImage', [path.basename(p), type, bytes])
+        // (asked with no workspace in hand, an older CLIque says it its own way: that the asker is the newer one)
+        return l.peer.call('saveFile', [givenName(p), bytes]).catch((e) => {
+          throw new Error(/"saveFile" isn't available|runs a newer CLIque/.test(e.message) ? `${l.name} runs an older CLIque, which takes pictures only: update it to send ${givenName(p)} there` : e.message)
+        })
+      }),
     )
   }
 
@@ -1885,6 +1896,7 @@ export class Clique extends EventEmitter {
       usageHistory: () => this.usageSummary(),
       deliver: (opts) => h.send({ ...opts, ...(peer && { from: this.senderFrom(peer, opts?.from) }), mentions: false }),
       saveImage: (name, type, bytes) => saveImage(name, type, bytes),
+      saveFile: (name, bytes) => saveFile(name, bytes), // a document that came with a message, as a picture does
       // one of this computer's attachments, a piece at a time: a recording, a picture, a page, any file (core/linkfiles.js)
       readFile: (file, start, length) => readPiece(ATTACHMENTS, movedPath(String(file ?? '')), start, length),
       // ...and whole, as a CLIque from before pieces asks: a picture or a page, never a recording or anything big

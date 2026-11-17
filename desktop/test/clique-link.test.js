@@ -106,6 +106,26 @@ test('an agent\'s `clique send` reaches a teammate on the other computer, by bar
   assert.match(await laptop.run(`clique.here.who()`), /bob@studio-mac/)
 })
 
+test('a document you attach goes with the message to the other computer, under its name, as a picture goes as a picture', async () => {
+  await studio.run(`(clique.hubs.get('default').agents.get('bob').off = false, 1)`) // on, not launched: the message queues
+  const doc = await laptop.run(`clique.here.saveFile('API notes.md', new Uint8Array([35, 32, 104, 105]))`)
+  const shot = await laptop.run(`clique.here.saveImage('shot.png', 'image/png', new Uint8Array([1, 2, 3]))`)
+  assert.match(await laptop.run(`clique.send('bob', 'read these', ${JSON.stringify([doc, shot])})`), /bob/)
+  await sleep(300)
+  const there = await studio.run(`clique.hubs.get('default').feed.findLast((e) => e.text === 'read these').images`)
+  assert.equal(there.length, 2)
+  for (const p of there) assert.equal(path.dirname(p), path.join(studio.home, 'attachments'), p)
+  assert.match(path.basename(there[0]), /^\d{4}-\d\d-\d\d-[0-9a-f]{8}_API_notes\.md$/)
+  assert.deepEqual([...fs.readFileSync(there[0])], [35, 32, 104, 105])
+  assert.match(path.basename(there[1]), /^\d{4}-\d\d-\d\d-[0-9a-f]{8}\.png$/)
+  assert.deepEqual([...fs.readFileSync(there[1])], [1, 2, 3])
+  // a computer whose CLIque is from before documents: the message says so, and nothing is sent as a picture it isn't
+  const old = `{ name: 'Old Mac', toHost: new Map(), peer: { call: async (fn) => { throw new Error(fn === 'saveFile' ? "Old Mac runs a newer CLIque, where every workspace is its own: update this computer's to work with its agents" : 'a picture was sent') } } }`
+  await assert.rejects(laptop.run(`clique.toHome(${JSON.stringify([doc])}, ${old})`), /Old Mac runs an older CLIque, which takes pictures only: update it to send API_notes\.md there/)
+  // straight over the link, a document is saved; a phone's call for pictures still takes pictures only
+  await assert.rejects(laptop.run(`clique.link('studio-mac').peer.call('saveImage', ['notes.md', 'text/markdown', new Uint8Array([1])])`), /only PNG, JPEG, GIF and WebP/)
+})
+
 test("a linked computer can't send as one of this computer's agents: whatever name it gives is one of its own", async () => {
   // straight over the link, as a computer that says what it likes would: "bob" and "iris" are the studio's own agents
   const on = () => studio.run(`(clique.hubs.get('default').agents.get('bob').off = false, 1)`) // on, not launched: the message queues
