@@ -87,6 +87,15 @@ test('it has its place in the cache; pieces come as they are asked for, each onc
   assert.equal(file, path.join(cache, 'workstation', `${crypto.createHash('sha1').update(run).digest('hex').slice(0, 20)}.mp4`))
   assert.equal(files.place('workstation', run), file) // the same place every time
   assert.equal(files.place('workstation', 'C:\\Users\\rex\\.clique\\attachments\\A B.MP4').slice(-4), '.mp4')
+  // a document you attached there keeps its name here, after the hash (the chat shows its card by it); nothing else does
+  assert.match(path.basename(files.place('workstation', '/Users/rex/.clique/attachments/2026-11-17-1a2b3c4d_отчёт_Q3.PDF')), /^[0-9a-f]{20}_отчёт_Q3\.pdf$/)
+  assert.match(path.basename(files.place('workstation', 'C:\\Users\\rex\\.clique\\attachments\\2026-11-17-1a2b3c4d_plan.docx')), /^[0-9a-f]{20}_plan\.docx$/)
+  assert.match(path.basename(files.place('workstation', '/Users/rex/.clique/attachments/2026-11-17-1a2b3c4d.png')), /^[0-9a-f]{20}\.png$/)
+  assert.match(path.basename(files.place('workstation', '/Users/rex/.clique/attachments/2026-11-17-1a2b3c4d-demo.mp4')), /^[0-9a-f]{20}\.mp4$/)
+  // that computer's word for a name can't lead anywhere: it's one file in this computer's cache of it, whatever it says
+  const sly = files.place('workstation', '/x/2026-11-17-1a2b3c4d_..')
+  assert.equal(path.dirname(sly), path.dirname(file))
+  assert.match(path.basename(sly), /^[0-9a-f]{20}_file$/)
   assert.deepEqual(files.state(file), { here: false, have: 0, size: null, why: null, computer: 'Workstation' })
   const events = []
   files.on('progress', (f, have, size) => events.push([have, size]))

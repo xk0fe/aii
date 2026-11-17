@@ -2906,8 +2906,9 @@ const ownHTML = (e) =>
   : `<div class="pics">${e.images.map((p) => (isPicture(p) ? `<img src="${fileURL(p)}" data-open="${esc(p)}" alt="" title="Open image">` : `<button type="button" class="thumb doc" data-open="${esc(p)}" title="Open">${ICONS.doc}<b>${esc(attachedName(p))}</b></button>`)).join('')}</div>`
 // What you attached, by where it's kept: a picture shows as itself, any other file by its name.
 const isPicture = (p) => /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i.test(String(p ?? ''))
-// The name a file you attached had (it's kept as <day>-<8 hex>_<name>: core/hub.js saveFile).
-const attachedName = (p) => String(p ?? '').split(/[\\/]/).pop().replace(/^\d{4}-\d\d-\d\d-[0-9a-f]{8}[-_](?=.)/, '')
+// The name a file you attached had: it's kept as <day>-<8 hex>_<name> (core/hub.js saveFile), and one attached on a
+// linked computer is here as <20 hex>_<name> (core/linkfiles.js place).
+const attachedName = (p) => String(p ?? '').split(/[\\/]/).pop().replace(/^(?:\d{4}-\d\d-\d\d-[0-9a-f]{8}[-_]|[0-9a-f]{20}_)(?=.)/, '')
 // The biggest file that's attached (core/hub.js OWN_MAX): it's copied whole.
 const ATTACH_MAX = 20 * 1024 * 1024
 

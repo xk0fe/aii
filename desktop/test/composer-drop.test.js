@@ -156,6 +156,7 @@ test('what was attached, by where it is kept: a picture or not, and the name it 
   assert.equal(attachedName('/home/me/.clique/attachments/2026-11-17-1a2b3c4d_отчёт.pdf'), 'отчёт.pdf')
   assert.equal(attachedName('C:\\Users\\me\\.clique\\attachments\\2026-11-17-1a2b3c4d_Q3_plan.pdf'), 'Q3_plan.pdf')
   assert.equal(attachedName('/a/2026-11-17-1a2b3c4d.png'), '2026-11-17-1a2b3c4d.png')
+  assert.equal(attachedName('/home/me/.clique/link/cache/studio/0123456789abcdef0123_отчёт.pdf'), 'отчёт.pdf') // attached on a linked computer
 })
 
 test('on a message, where the chat has no file cards: pictures as pictures, other files by name, nothing as a broken picture', () => {

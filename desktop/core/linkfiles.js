@@ -22,7 +22,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import zlib from 'node:zlib'
-import { kindOf, typeOf } from './attachments.js'
+import { kindOf, typeOf, givenName, ownName } from './attachments.js'
 
 export const SCHEME = 'clique-file'
 // One piece. A link's message can be 32 MB and bytes travel as base64; this keeps what else the link carries (terminals,
@@ -343,7 +343,11 @@ export class LinkFiles extends EventEmitter {
 
   // Where a linked computer's file is kept here: the same place every time, under that computer's name.
   place(slug, hostPath) {
-    const file = path.join(this.cache, slug, crypto.createHash('sha1').update(String(hostPath)).digest('hex').slice(0, 20) + path.extname(String(hostPath)).toLowerCase().replace(/[^a-z0-9.]/g, ''))
+    // (a document you attached there, kept there as <day>-<8 hex>_<name>, keeps its name here too, after the hash: it's
+    // what its card in the chat is called. The name is that computer's word: made safe again, core/attachments.js ownName)
+    const base = String(hostPath).split(/[\\/]/).pop()
+    const own = /^\d{4}-\d\d-\d\d-[0-9a-f]{8}_./.test(base) ? `_${ownName(givenName(base))}` : ''
+    const file = path.join(this.cache, slug, crypto.createHash('sha1').update(String(hostPath)).digest('hex').slice(0, 20) + (own || path.extname(String(hostPath)).toLowerCase().replace(/[^a-z0-9.]/g, '')))
     this.theirs.set(file, { slug, hostPath: String(hostPath) })
     return file
   }
