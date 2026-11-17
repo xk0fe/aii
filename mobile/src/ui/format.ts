@@ -2,8 +2,6 @@
 import { CLOSE } from '@/net/shared'
 import type { Agent } from '@/net/types'
 
-import { askMarkdown } from './md'
-
 export function ago(ts: number | undefined, now = Date.now()) {
   if (!ts) return ''
   const s = (now - ts) / 1000
@@ -205,9 +203,8 @@ export function voiceOf(ask: unknown): Said {
   const q = ask as { type?: string; tool?: string; title?: string; code?: string; detail?: string; say?: string; questions?: { question: string }[] }
   if (q.type === 'question') {
     const qs = q.questions ?? []
-    // its words as it wrote them, steps set out as a list (md.ts askMarkdown); the line about the rest stands after them
-    const first = askMarkdown(qs[0]?.question ?? 'I have a question.')
-    return [{ text: first + (qs.length > 1 ? `${first.includes('\n') ? '\n\n' : ' '}And ${qs.length - 1} more.` : '') }]
+    // (the line about the rest is a part of its own: after steps set out as a list it stands under them, ask.tsx AskWords)
+    return [{ text: qs[0]?.question ?? 'I have a question.' }, ...(qs.length > 1 ? [{ text: ` And ${qs.length - 1} more.` }] : [])]
   }
   if (q.type === 'plan') return [{ text: "Here's my plan. Can I go ahead?" }]
   if (q.say) return [{ text: q.say }] // an agent tool (clique app) asks in its own words: "Can I add a #design channel?"

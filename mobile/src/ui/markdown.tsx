@@ -160,8 +160,7 @@ function above(b: Block, prev: Block | undefined, gap: number) {
   return gap
 }
 
-// strong: its paragraphs in semibold, the way a question's own words are set, with its steps in regular under them.
-export const Markdown = memo(function Markdown({ text, t, color, size = 17, mention, strong }: { text: string; t: Theme; color: string; size?: number; mention?: (name: string) => string | null; strong?: boolean }) {
+export const Markdown = memo(function Markdown({ text, t, color, size = 17, mention }: { text: string; t: Theme; color: string; size?: number; mention?: (name: string) => string | null }) {
   const parsed = useMemo(() => blocks(text), [text])
   const lh = Math.round(size * 1.42)
   const gap = Math.round(size * 0.72)
@@ -226,7 +225,7 @@ export const Markdown = memo(function Markdown({ text, t, color, size = 17, ment
             return <View key={k} style={[styles.hr, { marginTop: mt + 4, marginBottom: 4, backgroundColor: t.lineStrong }]} />
           default:
             return (
-              <Text key={k} style={[base, strong && styles.bold, { marginTop: mt }]}>
+              <Text key={k} style={[base, { marginTop: mt }]}>
                 {inline(b.text, c, k)}
               </Text>
             )

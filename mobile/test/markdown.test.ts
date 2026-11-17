@@ -2,26 +2,19 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { askMarkdown, blocks, codeText, runInList, type Run } from '@/ui/md'
+import { askBlocks, blocks, codeText, runInList, type AskBlock, type Run } from '@/ui/md'
 import { makeDemo } from '@/demo/fixture'
 
 // A question whose steps came written in a run, "(1) … (2) …": the cases both apps share (the desktop's copy is
 // tested in desktop/test/ask-steps.test.js).
-const steps = JSON.parse(fs.readFileSync(path.join(__dirname, '../../shared/ask-steps.json'), 'utf8')) as { runs: { name: string; text: string; run: Run | null }[]; markdown: { name: string; text: string; markdown: string }[] }
+const steps = JSON.parse(fs.readFileSync(path.join(__dirname, '../../shared/ask-steps.json'), 'utf8')) as { runs: { name: string; text: string; run: Run | null }[]; blocks: { name: string; text: string; blocks: AskBlock[] | null }[] }
 
 describe('steps in a run', () => {
   test.each(steps.runs.map((c) => [c.name, c] as const))('%s', (_, c) => expect(runInList(c.text)).toEqual(c.run))
-  test.each(steps.markdown.map((c) => [c.name, c] as const))('as Markdown: %s', (_, c) => expect(askMarkdown(c.text)).toBe(c.markdown))
+  test.each(steps.blocks.map((c) => [c.name, c] as const))('set out: %s', (_, c) => expect(askBlocks(c.text)).toEqual(c.blocks))
 
-  test('the steps are a list between what leads in and the question itself', () => {
-    const parts = blocks(askMarkdown('Two things by hand. (1) Open the console. (2) Create a project. Where are you?'))
-    expect(parts.map((b) => b.kind)).toEqual(['p', 'list', 'p'])
-    expect(parts[1]).toMatchObject({ items: [{ text: 'Open the console.', n: 1, ordered: true }, { text: 'Create a project.', n: 2, ordered: true }] })
-    expect(parts[2]).toEqual({ kind: 'p', text: 'Where are you?' })
-  })
-
-  test('a plain question is one paragraph: the card shows it as the line it always was', () => {
-    for (const text of ['Should the empty cart show suggestions?', 'Should I (1) rebase onto main, (2) merge main in, or (3) leave it?']) expect(blocks(askMarkdown(text))).toEqual([{ kind: 'p', text }])
+  test('a question without steps has nothing to set out: the card shows it as the line it always was', () => {
+    for (const text of ['Should the empty cart show suggestions?', 'Should I also format *.md and *.json files?', '1. Which region?', 'Should I (1) rebase onto main, (2) merge main in, or (3) leave it?']) expect(askBlocks(text)).toBeNull()
   })
 })
 

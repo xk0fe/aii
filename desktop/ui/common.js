@@ -1099,47 +1099,85 @@ function renderMarkdown(src) {
 
 // Steps written in a run, as a question often comes (an agent's question is one line, with no room for a list): "Sign-in
 // setup. (1) Open the console. (2) Create a project. Where are you?" is the words before, each step, and the closing
-// question on its own. The numbers count up from 1, as "(1)", "1)" or, where a sentence starts, "1."; two or more of
-// them, after a sentence that has ended. null for anything else: "Should I (1) rebase or (2) merge?" is one sentence,
-// and "options (1) and (2)" names things, it doesn't list them. (The phone's: mobile/src/ui/md.ts.)
+// question on its own. The numbers count up from 1, as "(1)", "1)" or "1.", two or more of them, after a lead-in that
+// has ended. null for anything else, and the words stay as written: "Should I (1) rebase or (2) merge?" is one
+// sentence, "options (1) and (2)" names things, and "PR no. 1. Then no. 2." ends two sentences with a number.
+// (The phone has its own copy, mobile/src/ui/md.ts; both are tested against shared/ask-steps.json.)
 const RUN_MARKS = [/(?<=^|\s)\((\d{1,2})\)(?=\s+\S)/g, /(?<=^|\s)(\d{1,2})\)(?=\s+\S)/g, /(?<=^|[.:;!?]["')\]]?\s)(\d{1,2})\.(?=\s+\S)/g]
-const RUN_JOINS = /^(and|or|andor|to|through|vs|versus|nor|then|plus|&)?$/i
+const RUN_JOINS = /^(and|or|andor|nor|to|through|vs|versus|then|plus|&|и|или|либо|und|oder|y|o|u|e|et|ou)?$/iu
+const RUN_ENDS = /[.:;!?…—–-]["'”’)\]*_]*$/ // a sentence or a lead-in has ended here
 function runInList(text) {
   const line = String(text ?? '')
   const probe = line.replace(/`[^`]*`/g, (code) => 'x'.repeat(code.length)) // a number inside `code` is code
-  for (const mark of RUN_MARKS) {
-    const all = [...probe.matchAll(mark)].map((m) => ({ n: Number(m[1]), at: m.index, end: m.index + m[0].length }))
-    let best = null
-    for (let i = 0; i < all.length; i++) {
-      if (all[i].n !== 1) continue
-      const run = [all[i]]
-      for (const m of all.slice(i + 1)) if (m.n === run.length + 1) run.push(m)
-      const before = line.slice(0, run[0].at).trim()
-      const items = run.map((m, k) => line.slice(m.end, run[k + 1]?.at ?? line.length).trim())
-      if (run.length < 2 || !/^$|[.:;!?…—–-]["'”’)\]]*$/.test(before) || items.some((x) => RUN_JOINS.test(x.replace(/[^\p{L}\p{N}&]+/gu, '')))) continue
-      // of two that count as far, the later one is the list: a "(1)" before it was a mention
-      if (run.length >= (best?.items.length ?? 0)) best = { before, items }
+  // a ")" that closes a bracket, as in "(see step 2)" or "(1 of 2)", is not the ")" of a step's "2)"
+  const closes = new Set()
+  for (let i = 0, open = 0; i < probe.length; i++) {
+    if (probe[i] === '(') open++
+    else if (probe[i] === ')' && open) {
+      open--
+      closes.add(i)
     }
-    if (!best) continue
-    // the question the steps lead up to is not the last step's
-    const closing = best.items.at(-1).match(/^([\s\S]*[.!?…]["'”’)\]]*)\s+(\p{Lu}(?:[^.!?]|[.!?](?=\S))*\?)$/u)
-    return closing ? { before: best.before, items: [...best.items.slice(0, -1), closing[1]], after: closing[2] } : { ...best, after: '' }
   }
-  return null
+  let best = null
+  for (const [form, mark] of RUN_MARKS.entries()) {
+    const all = [...probe.matchAll(mark)].map((m) => ({ n: Number(m[1]), at: m.index, end: m.index + m[0].length })).filter((m) => form !== 1 || !closes.has(m.end - 1))
+    let found = null
+    for (const first of all.filter((m) => m.n === 1)) {
+      const before = line.slice(0, first.at).trim()
+      // "1." only after a colon or a dash: after a full stop, the "1." of "PR no. 1." would read as a step
+      if (before && !(form === 2 ? /[:—–-]["'”’)\]*_]*$/ : RUN_ENDS).test(before)) continue
+      const upFrom = (ended) => {
+        const run = [first]
+        for (const m of all) if (m.at > run[run.length - 1].at && m.n === run.length + 1 && (!ended || RUN_ENDS.test(probe.slice(0, m.at).trimEnd()))) run.push(m)
+        return run
+      }
+      // a step may name the next one, "(1) Create it; skip (2) if you have one. (2) Enable billing.": the numbers that
+      // follow a finished sentence are the steps, when they count as far
+      const [ended, any] = [upFrom(true), upFrom(false)]
+      const run = ended.length >= any.length ? ended : any
+      const items = run.map((m, k) => line.slice(m.end, run[k + 1]?.at ?? line.length).trim())
+      if (run.length < 2 || items.some((x) => RUN_JOINS.test(x.replace(/[^\p{L}\p{N}&]+/gu, '')))) continue
+      // of two that count as far, the first is the list: what comes after it talks about its steps
+      if (run.length > (found?.items.length ?? 0)) found = { before, items, after: '', at: first.at }
+    }
+    // written two ways, "1) Read: (1) intro (2) body. 2) Reply.", the list that starts first holds the other
+    if (found && found.at < (best?.at ?? Infinity)) best = found
+  }
+  if (!best) return null
+  // the questions the steps lead up to are not the last step's
+  const items = [...best.items]
+  let after = ''
+  for (let m; (m = items[items.length - 1].match(/^([\s\S]*[.!?…]["'”’)\]*_]*)\s+([*_"'“‘(¿¡]*\p{Lu}(?:[^.!?]|[.!?](?=\S))*\?[*_"'”’)]*)$/u)); ) {
+    items[items.length - 1] = m[1]
+    after = after ? `${m[2]} ${after}` : m[2]
+  }
+  return { before: best.before, items, after }
 }
 
-// A question's words as Markdown: what its agent wrote, with steps written in a run set out as the list they are.
-function askMarkdown(text) {
+// A question with steps written in a run somewhere in it, as what to show, line by line: [{ text }, { steps }, { text }].
+// null when it has none, and the question is shown as it always was. Code and a list its agent wrote are left alone.
+function askBlocks(text) {
+  const blocks = []
   let fenced = false
-  return String(text ?? '')
-    .split('\n')
-    .map((line) => {
-      const fence = (line.match(/```|~~~/g) ?? []).length
-      if (fence % 2) fenced = !fenced
-      const run = fenced || fence || /^\s*([-*+•>#|])/.test(line) ? null : runInList(line)
-      return run ? [run.before, run.items.map((x, i) => `${i + 1}. ${x}`).join('\n'), run.after].filter(Boolean).join('\n\n') : line
-    })
-    .join('\n')
+  let found = false
+  for (const line of String(text ?? '').split('\n')) {
+    const fence = (line.match(/```|~~~/g) ?? []).length
+    if (fence % 2) fenced = !fenced
+    const run = fenced || fence || /^\s*[-*+•]\s/.test(line) ? null : runInList(line)
+    if (run && !/^\d{1,3}[.)]\s/.test(run.before)) {
+      found = true
+      blocks.push(...[run.before && { text: run.before }, { steps: run.items }, run.after && { text: run.after }].filter(Boolean))
+    } else if (line.trim()) blocks.push({ text: line.trim() })
+  }
+  return found ? blocks : null
+}
+// ...and those as HTML: plain words, nothing in them read as Markdown ("*.md and *.json" stays as asked)
+const askHTML = (blocks) => blocks.map((b) => (b.steps ? `<ol>${b.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : `<p>${esc(b.text)}</p>`)).join('')
+// A question's words where it stands in full: as they always were, or with its steps as a list. after: a line that
+// follows them ("And 2 more questions.").
+const askWords = (text, after = '') => {
+  const blocks = askBlocks(text)
+  return blocks ? askHTML(after ? [...blocks, { text: after }] : blocks) : esc(after ? `${text} ${after}` : text)
 }
 
 // One line of a message, for "replying to" quotes.
@@ -1937,7 +1975,7 @@ function askCard(e, draft = {}, { queue = false } = {}) {
     return `<div class="ask-card${q.questions.length === 1 ? ' one' : ''}" data-ask="${e.id}">${q.questions.map((x, qi) => `
       <div class="ask-q">
         <div class="ask-head">${x.header ? `<span class="ask-chip">${esc(x.header)}</span>` : ''}${x.multiSelect ? '<span class="ask-multi">pick any</span>' : ''}</div>
-        <div class="ask-question ask-md">${md(askMarkdown(x.question))}</div>
+        <div class="ask-question ask-words">${askWords(x.question)}</div>
         <div class="ask-options">${x.options.map((o) => `<button class="ask-option ${picked(qi, o.label) ? 'on' : ''}" data-pick="${qi}" data-label="${esc(o.label)}"><b>${esc(o.label)}</b>${o.description ? `<span>${esc(o.description)}</span>` : ''}</button>`).join('')}</div>
         <input class="ask-other" data-other="${qi}" value="${esc(draft.other?.[qi] ?? '')}" placeholder="Something else" spellcheck="false">
       </div>`).join('')}
@@ -2014,9 +2052,9 @@ function sayLine({ agent, ask }) {
   const q = ask?.ask
   if (!q) return agent.activity ? `I need you in my terminal. I was ${esc(lowerFirst(activityWords(agent.activity)))}.` : 'I need you in my terminal.'
   if (q.type === 'question') {
-    // its own words as it wrote them, steps set out as a list (askMarkdown); the line about the rest stands after them
-    const first = askMarkdown(q.questions?.[0]?.question ?? 'I have a question for you.')
-    return md(q.questions?.length > 1 ? `${first}${first.includes('\n') ? '\n\n' : ' '}And ${plural(q.questions.length - 1, 'more question')}.` : first)
+    const first = q.questions?.[0]?.question ?? 'I have a question for you.'
+    // (steps written in a run are said as the list they are, and the line about the rest stands after them: askWords)
+    return askWords(first, q.questions?.length > 1 ? `And ${plural(q.questions.length - 1, 'more question')}.` : '')
   }
   if (q.type === 'plan') return 'I have a plan. Can I go ahead?'
   if (q.say) return esc(q.say) // an agent tool says it in its own words: "Can I add a #design channel?"
@@ -2038,7 +2076,7 @@ function needsHTML(needs, expanded, drafts = new Map()) {
     const term = ask?.ask?.app || ask?.ask?.spend ? '' : `<button class="icon nq-term" data-needs-term="${esc(a.name)}" title="${esc(`Answer in ${displayName(a)}'s terminal`)}">${ICONS.terminal}</button>`
     const since = n.since || Date.now()
     const who = `<div class="nq-who"><b>${nameHTML(a)}</b><span class="nq-verb">${verb} · <span class="nq-ago" data-since="${since}">${ago(since)}</span></span>${ask && ask.id !== expanded ? '' : term}</div>`
-    const say = `<div class="nq-say${ask?.ask?.type === 'question' ? ' ask-md' : ''}">${sayLine(n)}</div>`
+    const say = `<div class="nq-say${ask?.ask?.type === 'question' ? ' ask-words' : ''}">${sayLine(n)}</div>`
     if (ask && ask.id === expanded) return `<article class="nq-item open" data-need="${esc(ask.id)}">${face}<div class="nq-main">${who}${say}${askCard(ask, drafts.get(ask.id), { queue: true })}</div></article>`
     const go = ask
       ? `<button class="btn nq-go" data-needs-open="${esc(ask.id)}">Answer</button>`
@@ -2063,8 +2101,8 @@ function askSummary(q, a) {
   if (a.stale) return `${mark('', 'dash')}<span>No longer waiting</span>${what}`
   if (a.by === 'terminal') return `${mark('', 'keyboard')}<span>${a.handedOver ? 'Handed to its terminal' : 'Answered in the terminal'}</span>${what}`
   if (a.by === 'cli') return `${mark('no', 'close')}<span>Claude Code said no${a.why ? ` (${esc(a.why)})` : ''}</span>${what}`
-  // the question as it was asked (its steps still a list: askMarkdown), and your answer right after its last words
-  if (q.type === 'question') return Object.entries(a.answers ?? {}).map(([k, v]) => `<div class="ask-answer">${mark('ok', 'check')}<div class="ask-asked ask-md">${md(askMarkdown(k))}<b>${esc(v)}</b></div></div>`).join('')
+  // the question as it was asked (its steps still a list: askBlocks), and your answer right after its last words
+  if (q.type === 'question') return Object.entries(a.answers ?? {}).map(([k, v]) => `<div class="ask-answer">${mark('ok', 'check')}<div class="ask-asked ask-words">${askHTML(askBlocks(k) ?? [{ text: k }])}<b>${esc(v)}</b></div></div>`).join('')
   if (q.type === 'plan') return a.allow ? `${mark('ok', 'check')}<span>Plan approved</span>` : `${mark('', 'undo')}<span>Keep planning${a.note ? `: “${esc(a.note)}”` : ''}</span>`
   if (q.trust) return a.allow ? `${mark('ok', 'check')}<span>Trusted</span>${what}` : `${mark('no', 'close')}<span>Not trusted</span>${what}`
   if (a.failed) return `${mark('no', 'close')}<span>Allowed, but it didn't work: ${esc(a.failed)}</span>${what}`

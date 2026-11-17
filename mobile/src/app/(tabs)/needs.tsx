@@ -42,7 +42,7 @@ function Ask({ t, e, d, answer, disabled }: { t: Theme; e: FeedEntry; d: ReturnT
         </Patch>
         <View style={[styles.voice, { backgroundColor: t.bg }]}>
           {askKindOf(e.ask) === 'question' ? (
-            <AskWords t={t} text={words} style={styles.voiceText} size={15} />
+            <AskWords t={t} text={said[0].text} more={said[1]?.text.trim()} style={styles.voiceText} />
           ) : (
             <Text style={[styles.voiceText, { color: t.fg }]}>
               {said.map((p, i) =>

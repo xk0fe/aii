@@ -11,7 +11,7 @@ import type { Answer, FeedEntry, PermissionAsk, PlanAsk, QuestionAsk, Reply } fr
 import { displayName, reasonOf } from './format'
 import { Icon, type IconName } from './icon'
 import { Markdown } from './markdown'
-import { askMarkdown, blocks } from './md'
+import { askBlocks } from './md'
 import { Button, Press } from './parts'
 import { fonts, type Theme } from './theme'
 
@@ -206,12 +206,33 @@ function Choice({ t, label, description, onPress, busy, disabled, on, role }: { 
   )
 }
 
-// A question's own words. With a list in them (steps written in a run, set out by askMarkdown, or a list its agent
-// wrote) they're drawn as Markdown, the steps in regular weight; any other question is the one line it always was.
-export function AskWords({ t, text, style, size, strong }: { t: Theme; text: string; style: StyleProp<TextStyle>; size: number; strong?: boolean }) {
-  const md = useMemo(() => askMarkdown(text), [text])
-  const listed = useMemo(() => blocks(md).some((b) => b.kind === 'list'), [md])
-  return listed ? <Markdown text={md} t={t} color={t.fg} size={size} strong={strong} /> : <Text style={[style, { color: t.fg }]}>{text}</Text>
+// A question's own words, where it stands in full. Steps written in a run (md.ts askBlocks) are set out as a numbered
+// list in regular weight, between what leads in and the question itself; any other question is the one line it always
+// was. more: a line that follows them ("And 2 more.").
+export function AskWords({ t, text, more, style }: { t: Theme; text: string; more?: string; style: StyleProp<TextStyle> }) {
+  const parts = useMemo(() => askBlocks(text), [text])
+  if (!parts) return <Text style={[style, { color: t.fg }]}>{more ? `${text} ${more}` : text}</Text>
+  return (
+    <View style={styles.words}>
+      {parts.map((b, i) =>
+        'steps' in b ? (
+          <View key={i} style={styles.steps}>
+            {b.steps.map((step, n) => (
+              <View key={n} style={styles.step}>
+                <Text style={[style, styles.stepNumber, { color: t.fg2 }]}>{n + 1}.</Text>
+                <Text style={[style, styles.stepText, { color: t.fg }]}>{step}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text key={i} style={[style, { color: t.fg }]}>
+            {b.text}
+          </Text>
+        ),
+      )}
+      {more ? <Text style={[style, { color: t.fg }]}>{more}</Text> : null}
+    </View>
+  )
 }
 
 function QuestionCard(props: AskProps & { ask: QuestionAsk }) {
@@ -242,7 +263,7 @@ function QuestionCard(props: AskProps & { ask: QuestionAsk }) {
             </Text>
           ) : null}
           {/* the creature already says a lone question in its own words */}
-          {direct && props.voiced ? null : <AskWords t={t} text={q.question} style={styles.qtext} size={17} strong />}
+          {direct && props.voiced ? null : <AskWords t={t} text={q.question} style={styles.qtext} />}
           <View style={styles.options}>
             {q.options.map((o) =>
               direct ? (
@@ -391,6 +412,11 @@ const styles = StyleSheet.create({
   question: { gap: 8 },
   qhead: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
   qtext: { fontSize: 17, lineHeight: 22, fontWeight: '600' },
+  words: { gap: 8 },
+  steps: { gap: 5 },
+  step: { flexDirection: 'row' },
+  stepNumber: { minWidth: 24, fontWeight: '400', fontVariant: ['tabular-nums'] },
+  stepText: { flex: 1, fontWeight: '400' },
   options: { gap: 8 },
   choice: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 50, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, borderWidth: 1.5 },
   choiceText: { flex: 1, gap: 2 },

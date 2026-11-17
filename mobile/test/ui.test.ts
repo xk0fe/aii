@@ -87,9 +87,8 @@ describe("the creature's own voice", () => {
     expect(voiceOf(permission({ tool: 'Edit', title: 'Edit cart.ts', code: '- a\n+ b' }))).toEqual([{ text: 'Can I edit cart.ts?' }])
     expect(voiceOf(permission({ tool: 'mcp__x__y', title: 'Something odd' }))).toEqual([{ text: 'Can I use mcp__x__y?' }])
     expect(voiceOf({ type: 'question', questions: [{ question: 'Should the empty cart show suggestions?', options: [] }] })).toEqual([{ text: 'Should the empty cart show suggestions?' }])
-    expect(voiceOf({ type: 'question', questions: [{ question: 'Which region?' }, { question: 'And the name?' }] })).toEqual([{ text: 'Which region? And 1 more.' }])
-    // steps written in a run are said as a list (md.ts askMarkdown), and the line about the rest stands after them
-    expect(voiceOf({ type: 'question', questions: [{ question: 'By hand. (1) Open the console. (2) Create a project. Where are you?' }, { question: 'And the name?' }] })).toEqual([{ text: 'By hand.\n\n1. Open the console.\n2. Create a project.\n\nWhere are you?\n\nAnd 1 more.' }])
+    // the line about the rest is a part of its own, so it can stand under steps set out as a list (ask.tsx AskWords)
+    expect(voiceOf({ type: 'question', questions: [{ question: 'Which region?' }, { question: 'And the name?' }] })).toEqual([{ text: 'Which region?' }, { text: ' And 1 more.' }])
     expect(voiceOf({ type: 'plan', plan: '1. Do it' })[0].text).toBe("Here's my plan. Can I go ahead?")
     expect(voiceOf(true)[0].text).toBe("I'm waiting for you in my terminal.")
   })

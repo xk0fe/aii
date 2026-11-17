@@ -1,5 +1,5 @@
 {
-  "about": "Questions an agent asks with its steps written in a run, \"(1) … (2) …\", and what both apps must make of them: runInList and askMarkdown in desktop/ui/common.js and in mobile/src/ui/md.ts, each tested against this file. run null: no list, the words stay as written.",
+  "about": "Questions an agent asks with its steps written in a run, \"(1) … (2) …\", and what both apps must make of them: runInList and askBlocks in desktop/ui/common.js and in mobile/src/ui/md.ts, each tested against this file. run null: no list. blocks null: the question is shown as it always was.",
   "runs": [
     {
       "name": "the steps of a setup, what leads in and the question they lead up to",
@@ -35,6 +35,11 @@
       "run": null
     },
     {
+      "name": "a joining word in another language",
+      "text": "Выбери: (1) или (2) вариант?",
+      "run": null
+    },
+    {
       "name": "\"1)\" after a colon",
       "text": "Which is right: 1) tabs 2) spaces 3) both?",
       "run": {
@@ -48,7 +53,7 @@
       }
     },
     {
-      "name": "\"1.\" where a sentence starts, not the 2 of \"Python 2.\"",
+      "name": "\"1.\" after a colon, not the 2 of \"Python 2.\"",
       "text": "Steps: 1. Install Python 2. 2. Run the tests. 3. Push. Ready?",
       "run": {
         "before": "Steps:",
@@ -59,6 +64,16 @@
         ],
         "after": "Ready?"
       }
+    },
+    {
+      "name": "\"1.\" after a full stop is the end of a sentence",
+      "text": "The fix is in PR no. 1. The follow-up is PR no. 2. Merge both?",
+      "run": null
+    },
+    {
+      "name": "a date",
+      "text": "It ships Jan. 1. The patch follows Feb. 2. OK?",
+      "run": null
     },
     {
       "name": "a number that ends a sentence is not a step",
@@ -76,6 +91,91 @@
           "close it."
         ],
         "after": "Done?"
+      }
+    },
+    {
+      "name": "a step that names the next one",
+      "text": "Setup: (1) Create the project; skip (2) if you already have one. (2) Enable billing. (3) Copy the key. Where are you?",
+      "run": {
+        "before": "Setup:",
+        "items": [
+          "Create the project; skip (2) if you already have one.",
+          "Enable billing.",
+          "Copy the key."
+        ],
+        "after": "Where are you?"
+      }
+    },
+    {
+      "name": "the numbers spoken of again after the list",
+      "text": "Two options. (1) Rebase onto main. (2) Merge main in. (1) keeps history linear, (2) is safer. Which do you prefer?",
+      "run": {
+        "before": "Two options.",
+        "items": [
+          "Rebase onto main.",
+          "Merge main in. (1) keeps history linear, (2) is safer."
+        ],
+        "after": "Which do you prefer?"
+      }
+    },
+    {
+      "name": "a \"2)\" that closes a bracket",
+      "text": "Steps: 1) Install it (version 2) first. 2) Run it (see step 1) again. Ready?",
+      "run": {
+        "before": "Steps:",
+        "items": [
+          "Install it (version 2) first.",
+          "Run it (see step 1) again."
+        ],
+        "after": "Ready?"
+      }
+    },
+    {
+      "name": "\"(1 of 2)\" inside a step",
+      "text": "Two migrations: 1) Run the first (1 of 2) 2) Run the second (2 of 2). Did both pass?",
+      "run": {
+        "before": "Two migrations:",
+        "items": [
+          "Run the first (1 of 2)",
+          "Run the second (2 of 2)."
+        ],
+        "after": "Did both pass?"
+      }
+    },
+    {
+      "name": "a list written one way inside a list written another",
+      "text": "Plan. 1) Read this: (1) intro (2) body. 2) Reply. Ok?",
+      "run": {
+        "before": "Plan.",
+        "items": [
+          "Read this: (1) intro (2) body.",
+          "Reply."
+        ],
+        "after": "Ok?"
+      }
+    },
+    {
+      "name": "and the other way round",
+      "text": "Steps: (1) Do A: 1) x 2) y. (2) Do B. Ok?",
+      "run": {
+        "before": "Steps:",
+        "items": [
+          "Do A: 1) x 2) y.",
+          "Do B."
+        ],
+        "after": "Ok?"
+      }
+    },
+    {
+      "name": "two questions close it",
+      "text": "Do this. (1) Open it. (2) Save it. Ready? Or should I wait?",
+      "run": {
+        "before": "Do this.",
+        "items": [
+          "Open it.",
+          "Save it."
+        ],
+        "after": "Ready? Or should I wait?"
       }
     },
     {
@@ -140,6 +240,30 @@
       }
     },
     {
+      "name": "a closing question that opens with ¿",
+      "text": "A mano: (1) Abre la consola. (2) Crea un proyecto. ¿Dónde estás?",
+      "run": {
+        "before": "A mano:",
+        "items": [
+          "Abre la consola.",
+          "Crea un proyecto."
+        ],
+        "after": "¿Dónde estás?"
+      }
+    },
+    {
+      "name": "a lead-in and a closing question in bold marks",
+      "text": "**Manual steps needed:** (1) Open the console. (2) Create a project. **Where are you?**",
+      "run": {
+        "before": "**Manual steps needed:**",
+        "items": [
+          "Open the console.",
+          "Create a project."
+        ],
+        "after": "**Where are you?**"
+      }
+    },
+    {
       "name": "a file name in the closing question",
       "text": "By hand: (1) Download the file. (2) Move it. Is it at ~/.config/app/client_secret.json now?",
       "run": {
@@ -177,26 +301,67 @@
       }
     }
   ],
-  "markdown": [
+  "blocks": [
+    {
+      "name": "one line of steps",
+      "text": "Two things by hand. (1) Open the console. (2) Create a project. Where are you?",
+      "blocks": [
+        {
+          "text": "Two things by hand."
+        },
+        {
+          "steps": [
+            "Open the console.",
+            "Create a project."
+          ]
+        },
+        {
+          "text": "Where are you?"
+        }
+      ]
+    },
     {
       "name": "a line of steps among other lines",
-      "text": "Setup first.\n(1) Open it (2) Close it\nReady?",
-      "markdown": "Setup first.\n1. Open it\n2. Close it\nReady?"
+      "text": "Setup first.\n(1) Open it (2) Close it\n\nReady?",
+      "blocks": [
+        {
+          "text": "Setup first."
+        },
+        {
+          "steps": [
+            "Open it",
+            "Close it"
+          ]
+        },
+        {
+          "text": "Ready?"
+        }
+      ]
+    },
+    {
+      "name": "no steps: nothing to set out",
+      "text": "Should the empty cart show suggestions?",
+      "blocks": null
     },
     {
       "name": "a list its agent wrote is left as written",
       "text": "1. Open the console\n2. Create a project\n\nWhere are you?",
-      "markdown": "1. Open the console\n2. Create a project\n\nWhere are you?"
+      "blocks": null
+    },
+    {
+      "name": "a numbered line of its own list is left as written, numbers inside it too",
+      "text": "Before we go on:\n1. Pick a region: (1) us-east-1 (2) eu-west-1\n2. Pick a plan\nReady?",
+      "blocks": null
     },
     {
       "name": "code is left alone",
       "text": "Run this?\n```\nstep (1) a (2) b\n```",
-      "markdown": "Run this?\n```\nstep (1) a (2) b\n```"
+      "blocks": null
     },
     {
       "name": "a bullet is left alone",
       "text": "- then: (1) open it (2) close it",
-      "markdown": "- then: (1) open it (2) close it"
+      "blocks": null
     }
   ]
 }
