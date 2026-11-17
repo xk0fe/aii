@@ -659,14 +659,19 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 .convo-head { display: flex; align-items: center; gap: 9px; min-width: 0; animation: convo-in var(--t-move) var(--out); }
 .convo-head:empty { display: none; }
 @keyframes convo-in { from { opacity: 0; transform: translateX(10px); } }
-.ch-back { position: relative; flex: none; display: inline-flex; align-items: center; gap: 1px; height: 28px; padding: 0 9px 0 4px; border: 0; border-radius: var(--r-control); background: var(--fill); color: var(--fg2); font: 500 13px/1 var(--ui); cursor: pointer; transition: background .15s, color .15s; }
-.ch-back:hover { background: var(--btn-hover); color: var(--fg); }
-.ch-back svg { width: 15px; height: 15px; }
-.ch-count { margin-left: 5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: grid; place-items: center; font: 600 10px/1 var(--ui); font-style: normal; font-variant-numeric: tabular-nums; color: var(--on-accent); background: var(--accent); }
-.ch-back.alert::after { content: ''; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--needs); box-shadow: 0 0 0 2px var(--panel); }
-.ch-face { position: relative; flex: none; margin-left: 2px; line-height: 0; --orbit-ring: var(--panel); --dot: 6px; }
+/* back: a chevron, nothing else. Something new among the others is a dot on it (berry when someone needs you). */
+.ch-back { position: relative; flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-control); background: none; color: var(--fg2); cursor: pointer; transition: background .15s, color .15s; }
+.ch-back:hover { background: var(--btn); color: var(--fg); }
+.ch-back svg { width: 16px; height: 16px; }
+.ch-back.alert::after, .ch-back.fresh::after { content: ''; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--needs); box-shadow: 0 0 0 2px var(--panel); }
+.ch-back.fresh::after { background: var(--fg2); }
+/* its creature is the way to its terminal */
+.ch-face { position: relative; flex: none; margin-left: 2px; padding: 0; border: 0; border-radius: var(--r-control); background: none; line-height: 0; cursor: pointer; --orbit-ring: var(--panel); --dot: 6px; transition: transform var(--t-quick) var(--out); }
+.ch-face:hover { transform: scale(1.08); }
+.ch-face:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.ch-where { color: var(--fg3); font-weight: 400; }
 .ch-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.ch-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 600; line-height: 20px; }
+.ch-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-brand); font-size: 16px; font-weight: 600; line-height: 20px; }
 .ch-who b .at { font-weight: 550; color: var(--fg3); }
 .ch-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; color: var(--fg2); }
 .ch-line.working { color: var(--fg2); }
@@ -690,6 +695,23 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 .bubble.long { cursor: pointer; }
 .bubble.long:not(.open) { -webkit-mask-image: linear-gradient(#000 calc(100% - 4.5em), transparent); }
 /* what agents say to each other: five lines, quieter, the rest a click away */
+/* A hand-off: one line (who passed what to whom, and how its brief starts), the brief folded under it until it's
+   opened. It's between agents: it stays as quiet as a caption. */
+.item.handoff.folded { position: relative; display: flex; flex-direction: column; align-items: stretch; min-width: 0; margin: -6px 0; }
+.ho-line { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 32px; padding: 0 2px 0 4px; border-radius: var(--r-card); color: var(--fg2); font-size: 13px; cursor: pointer; user-select: none; transition: background .15s; }
+.ho-line:hover { background: var(--btn); }
+.ho-face { flex: none; line-height: 0; }
+.ho-who { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ho-gist { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg3); }
+.ho-line .tag { flex: none; }
+.ho-open { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-control); background: none; color: var(--fg3); cursor: pointer; }
+.ho-open svg { width: 12px; height: 12px; transition: transform var(--t-quick) var(--out); }
+.item.handoff.open .ho-open svg { transform: rotate(90deg); }
+.ho-line:hover .ho-open { color: var(--fg); }
+.item.handoff.open .ho-gist { visibility: hidden; }
+.ho-body { display: none; padding: 2px 0 4px 32px; }
+.item.handoff.open .ho-body { display: flex; flex-direction: column; align-items: flex-start; }
+.item.handoff.dropped .ho-line { opacity: .55; text-decoration: line-through; }
 .bubble.between { color: var(--fg2); }
 .bubble.between.long:not(.open) { max-height: 7.5em; }
 .bubble.between.long:not(.open) { -webkit-mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); }
@@ -841,44 +863,38 @@ button.tag.go:hover, button.tag.go:focus-visible { background: var(--btn-hover);
 .item.ask.open .ask-card { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--needs) 45%, transparent); }
 .ask-card.sending { opacity: .55; pointer-events: none; transition: opacity .2s; }
 
-/* Needs you: who's waiting on you, pinned above the messages while they scroll under it (see needsHTML). The one
-   loud thing in the chat, by its amber dot and words. Each creature asks in its own voice, in a bubble beside it, and
-   the plain title stays under it for scanning. */
-.needs-queue { position: sticky; top: -12px; z-index: 4; flex: none; display: flex; flex-direction: column; max-height: 58%; overflow-y: auto; margin: -8px -4px 0; border-radius: var(--r-card); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line), 0 -16px 0 var(--panel), 0 16px 10px -6px var(--panel); user-select: none; overscroll-behavior: contain; } /* outer shadows: a solid one hides messages scrolled into the gap above the queue, a soft one fades them out under its bottom edge */
-.nq-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; flex: none; height: 40px; padding: 0 12px 0 16px; font-size: 13px; font-weight: 600; color: var(--fg); background: var(--surface-2); border-radius: var(--r-card) var(--r-card) 0 0; }
-.nq-head .dot { width: 8px; height: 8px; }
-.nq-head b { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: grid; place-items: center; font-size: 11px; font-weight: 600; color: var(--needs-ink); background: var(--needs-tint); font-variant-numeric: tabular-nums; }
-.nq-order { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--fg2); }
-.nq-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px 14px; border-top: 1px solid var(--line); }
-.nq-face { flex: none; margin-top: 2px; line-height: 0; }
+/* Needs you: docked above the message box (see needsHTML), the messages scrolling over it. One at a time: the creature
+   holds up its sign and asks in its own words, its card right under them. The one berry thing in the chat. */
+.needs-queue { position: sticky; bottom: 0; z-index: 4; flex: none; margin: auto -4px 0; max-height: 72%; overflow-y: auto; border-radius: 14px; background: var(--float); user-select: none; overscroll-behavior: contain;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--needs) 42%, transparent), 0 12px 28px -14px rgba(0, 0, 0, .45), 0 16px 0 var(--panel), 0 0 0 8px var(--panel), 0 -10px 14px -6px var(--panel); } /* solid shadows under and around it hide messages scrolled into the gaps beside it, a soft one fades them out above it */
+.needs-queue.hidden { display: none; }
+.nq-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px 12px 10px; }
+.nq-face { flex: none; margin: -6px 0 -4px; line-height: 0; }
 .nq-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.nq-who { display: flex; align-items: center; gap: 6px; height: 20px; min-width: 0; font-size: 13px; color: var(--fg2); white-space: nowrap; }
+.nq-who { display: flex; align-items: center; gap: 6px; height: 20px; min-width: 0; font-size: 12.5px; color: var(--fg2); white-space: nowrap; }
 .nq-who b { color: var(--fg); font-weight: 600; }
 .nq-who .nq-verb { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.nq-who .icon { margin: 0 -6px 0 auto; width: 28px; height: 28px; }
-/* the creature's own words: a neutral bubble beside it (never on felt) */
-.nq-say { position: relative; padding: 8px 12px; border-radius: var(--r-card); border-top-left-radius: var(--r-tag); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
-.nq-say code { font: 12px var(--mono); }
-.nq-say-row { display: flex; align-items: flex-start; gap: 8px; }
-.nq-say-row .nq-say { flex: 1; min-width: 0; }
-.nq-say-row .btn { margin-top: 4px; }
-.nq-go { flex: none; }
-.btn.amber { background: var(--fill); color: var(--fg); }
-.btn.amber:hover { background: var(--fill-hover); }
+.nq-step { margin-left: auto; display: inline-flex; align-items: center; gap: 1px; font-size: 12px; color: var(--fg3); font-variant-numeric: tabular-nums; }
+.nq-step .icon { width: 22px; height: 22px; padding: 0; }
+.nq-step .icon svg { width: 13px; height: 13px; }
+.nq-step .nq-next svg { transform: rotate(180deg); }
+/* what it asks, in its own words: the line you read first */
+.nq-say { color: var(--fg); font-size: 14px; font-weight: 600; line-height: 19px; overflow-wrap: anywhere; }
+.nq-say code { font: 500 12.5px var(--mono); padding: 1px 5px; border-radius: 5px; background: var(--code-bg); }
 .nq-item .ask-card { min-width: 0; margin-top: 2px; padding: 0; border-radius: 0; background: none; box-shadow: none; }
-/* in the queue the question is the card's whole point: its options sit tighter, each on one line */
-.nq-item .ask-head { display: none; }
+/* the creature has said it: the card's title and a one-line command aren't said twice */
+.nq-item .ask-title, .nq-item .ask-code.one, .nq-item .ask-head { display: none; }
+.nq-item .ask-code.one + .ask-detail, .nq-item .ask-title + .ask-detail { margin-top: 0; }
 .nq-item .ask-card.one .ask-question { display: none; }
+.nq-item .ask-actions { margin-top: 10px; }
 .nq-item .ask-options { gap: 4px; }
-.nq-item .ask-option { flex-direction: row; align-items: baseline; gap: 8px; padding: 7px 34px 7px 10px; }
+.nq-item .ask-option { flex-direction: row; align-items: center; gap: 9px; padding: 7px 34px 7px 8px; background: var(--fill); box-shadow: none; }
+.nq-item .ask-option:hover { background: var(--fill-hover); box-shadow: none; }
 .nq-item .ask-option b { flex: none; }
 .nq-item .ask-option span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* in the feed, a question still open points up at the queue instead of being a second card */
-.ask-pointer { display: flex; align-items: center; gap: 10px; max-width: 100%; padding: 6px 8px 6px 12px; border: 0; border-radius: var(--r-card); background: var(--btn); color: var(--fg2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; transition: background .15s; }
-.ask-pointer:hover { background: var(--btn-hover); color: var(--fg); }
-.ask-pointer span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ask-pointer b { flex: none; display: inline-flex; align-items: center; gap: 3px; color: var(--needs-ink); font-weight: 500; }
-.ask-pointer b svg { width: 12px; height: 12px; }
+.ask-key { flex: none; display: grid; place-items: center; width: 19px; height: 19px; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--line-strong); font: 600 10.5px/1 var(--ui); font-variant-numeric: tabular-nums; color: var(--fg2); }
+.btn.amber { background: var(--fill); color: var(--fg); }
+.btn.amber:hover { background: var(--fill-hover); }
 .ask-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
 .ask-title svg { flex: none; width: 16px; height: 16px; color: var(--needs-ink); }
 .ask-code { margin: 8px 0 0; padding: 6px 12px; border-radius: var(--r-control); background: var(--code-bg); font: 12px/20px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 11em; overflow: auto; }
@@ -1037,23 +1053,16 @@ button.ask-elsewhere:hover { color: var(--fg); }
 .subs-chip svg { width: 11px; height: 11px; }
 .typing-row .face { position: relative; }
 .typing-row .tr-what.quiet { font-family: inherit; font-size: 12px; }
-.sub-tree { position: relative; display: flex; flex-direction: column; gap: 1px; margin: -2px 0 3px 17px; padding-left: 12px; cursor: pointer; }
-.sub-tree::before { content: ''; position: absolute; left: 0; top: -3px; bottom: 19px; width: 1.5px; border-radius: 1px; background: var(--line-strong); }
-.sub-row { position: relative; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 3px 8px 3px 4px; border-radius: var(--r-control); font-size: 12px; color: var(--fg2); white-space: nowrap; transition: opacity .5s, background .15s; animation: sub-in var(--t-move) var(--out) both; }
-.sub-row::before { content: ''; position: absolute; left: -12px; top: 50%; width: 10px; height: 1.5px; border-radius: 1px; background: var(--line-strong); }
-@keyframes sub-in { from { opacity: 0; transform: translateX(-6px) scale(.97); } }
-.sub-row:hover { background: var(--btn); }
-.sub-face { flex: none; width: 16px; height: 16px; display: grid; place-items: center; line-height: 0; }
-.sub-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.sub-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.sub-done { width: 14px; height: 14px; border-radius: 50%; display: grid; place-items: center; color: var(--working-ink); }
-.sub-done svg { width: 9px; height: 9px; stroke-width: 3.4; }
+/* its helpers, in one quiet line under its own (subTree) */
+.sub-tree { display: flex; align-items: center; gap: 6px; min-width: 0; margin: -3px 0 3px 36px; padding: 0 8px 0 0; font-size: 12px; color: var(--fg3); cursor: pointer; }
+.sub-tree:hover { color: var(--fg2); }
+.sub-faces { flex: none; display: flex; line-height: 0; }
+.sub-faces .av + .av { margin-left: -4px; }
+.sub-jobs { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-jobs b { font-weight: 500; color: var(--fg2); }
 .sub-kind { flex: none; height: 16px; display: inline-flex; align-items: center; padding: 0 4px; border-radius: var(--r-tag); font-size: 11px; font-weight: 500; color: var(--fg2); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .sub-job { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 500; color: var(--fg); }
-.sub-doing { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 1.3; color: var(--fg2); }
 .sub-meta { flex: none; font-size: 11px; line-height: 1.35; text-align: right; color: var(--fg2); font-variant-numeric: tabular-nums; }
-.sub-row.done { opacity: .62; }
-.sub-row.done .sub-doing { font-family: inherit; font-size: 11px; color: var(--working-ink); }
 /* under a reply: the sub-agents that helped, folded */
 .subs-used { margin-top: 5px; max-width: 100%; font-size: 12px; color: var(--fg2); user-select: none; }
 .subs-used summary { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; border-radius: var(--r-control); list-style: none; cursor: pointer; font-weight: 500; color: var(--fg2); background: var(--fill); transition: background .15s; }
@@ -1117,7 +1126,7 @@ button.ask-elsewhere:hover { color: var(--fg); }
 /* Scrolled up: a way back down, round, or a pill counting what came in meanwhile. It sticks to the feed's bottom edge
    and takes no space (the negative margin cancels the feed's gap), so showing or hiding it moves nothing. It sits in
    the right corner, where lines end: in the middle it lay over the words you were reading. */
-.feed-latest { position: sticky; bottom: 0; z-index: 3; align-self: flex-end; height: 0; margin-top: -14px; }
+.feed-latest { position: sticky; bottom: var(--needs-h, 0px); z-index: 3; align-self: flex-end; height: 0; margin-top: -14px; }
 .feed-latest button {
   position: absolute; right: 0; bottom: -6px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 32px; height: 32px; padding: 0 12px 0 9px;
   border: 0; border-radius: 16px; background: var(--float); color: var(--fg); font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer;
@@ -1600,6 +1609,12 @@ dialog::backdrop { background: rgba(0, 0, 0, .28); animation: fade-in var(--t-mo
 .to-pick .to-icon svg { width: 14px; height: 14px; }
 .to-pick .av { margin: -2px 0; }
 .to-pick > svg { flex: none; width: 11px; height: 11px; color: var(--fg2); transform: rotate(90deg); }
+.chips.to-line:empty { display: none; }
+/* a mode that's on (Task, New conversation): a chip that comes off with a click */
+.chip.token { height: 26px; gap: 5px; padding: 0 6px 0 4px; font-size: 12.5px; }
+.chip.token > svg { width: 14px; height: 14px; margin-left: 2px; color: var(--fg); }
+.chip.token > svg:last-child { width: 11px; height: 11px; margin: 0 0 0 1px; color: var(--fg3); }
+.chip.token:hover > svg:last-child { color: var(--fg); }
 .chips.to-line .chip.task-chip { width: 28px; height: 28px; padding: 0; justify-content: center; }
 .chips.to-line .chip.task-chip:not(.on) { box-shadow: none; }
 .chips.to-line .chip.task-chip > svg { margin: 0; }
@@ -1607,7 +1622,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .28); animation: fade-in var(--t-mo
 /* a long menu (the To picker with a big clique) scrolls instead of running off the window */
 .menu { max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; }
 /* the feed scrolls a message into view below the Needs you queue, never under it */
-.feed { scroll-padding-top: calc(var(--needs-h, 0px) + 12px); }
+.feed { scroll-padding-bottom: calc(var(--needs-h, 0px) + 12px); }
 .crow-line .crow-clones { margin-right: 6px; vertical-align: -3px; }
 
 /* ---- brand surfaces (brand.js): felt, only for the creatures' patches, the CLIque room, empty states and the

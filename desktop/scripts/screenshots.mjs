@@ -615,6 +615,10 @@ const SHOTS = {
     await js(win, "window.__cliqueEmit('toggle', { open: true, focus: false })")
     await sleep(800)
     await save(win, `hatch-chat-${theme}`)
+    // the next one in Needs you: a permission, said in the creature's words
+    await js(win, click('[data-needs-step="1"]'))
+    await sleep(600)
+    await save(win, `hatch-chat-next-${theme}`)
     win.destroy()
   },
   // The way in: a flat pill reaches the notch and becomes part of it, then the chat drops out of it.
