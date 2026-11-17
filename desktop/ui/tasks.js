@@ -56,7 +56,8 @@ const RECEIPT = icon('<path d="M4 2.5h8v11l-1.6-1-1.6 1-1.6-1-1.6 1-1.6-1z" fill
 // The columns you can add to with their +: To do adds, In progress adds and starts it right away.
 const TK_ADD_TO = { new: 'Add a task', fixing: 'Start a new task' }
 
-function mountTasks(root, { headIn = root, onTerminal }) {
+// onAgent: the face of whoever is on a task, for your conversation with it; onTerminal: its Terminal button.
+function mountTasks(root, { headIn = root, onAgent, onTerminal }) {
   // the header: in the dashboard's row of place headers (common.js pageHead), like every place's. Search, the filters
   // that are on and Filter, board or list, New task, ⋯.
   headIn.insertAdjacentHTML('beforeend', pageHead({
@@ -877,7 +878,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
       }
       if (act === 'sendBack') return open(t.key, { sendBack: true })
     }
-    if (e.target.closest('.tk-face') && t?.status === 'fixing') return onTerminal(worker(t)?.name ?? t.fixer)
+    if (e.target.closest('.tk-face') && t?.status === 'fixing') return onAgent(worker(t)?.name ?? t.fixer)
     // a folded Done lane opens when you click it
     if (e.target.closest('.done-folded [data-lane=done]')) return void ((doneOpen = true), store.set('clique.tasks.done', '1'), draw())
     if (t) open(t.key)
@@ -1225,7 +1226,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     if (!t) return
     const m = e.target.closest('[data-menu]')
     if (m) return pick(t, m.dataset.menu, m)
-    if (e.target.closest('.tp-live-av')) return onTerminal(worker(t)?.name ?? t.fixer)
+    if (e.target.closest('.tp-live-av')) return onAgent(worker(t)?.name ?? t.fixer)
     if (openLink(e)) return // a link in the description, a note or the review: your browser, not the editor
     const op = e.target.closest('[data-tp]')?.dataset.tp
     if (!op) return
