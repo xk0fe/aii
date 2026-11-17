@@ -1948,9 +1948,9 @@ function handleFocus(arg) {
   // a file from the floating chat, to look at closer: this window has the room (ui/files.js)
   else if (arg?.startsWith('file:')) {
     try {
-      const { files, i } = JSON.parse(arg.slice(5))
+      const { files, i, from } = JSON.parse(arg.slice(5))
       fxRemember('elsewhere', files)
-      fxView('elsewhere', i)
+      fxView('elsewhere', i, null, from ?? null) // (from: where a recording was, playing there)
     } catch {}
   }
   else if (arg) select(arg)

@@ -833,7 +833,7 @@ function sendAction(name, text) {
   return out
 }
 
-const listeners = { state: [], focus: [], toggle: [], voice: [], place: [] }
+const listeners = { state: [], focus: [], toggle: [], voice: [], place: [], file: [] }
 
 // Dictation without a microphone: a wobbling tone stands in for your voice (it only moves the meter), and a
 // scripted transcript arrives word by word. Nothing here ever opens a real microphone.
@@ -896,13 +896,24 @@ window.__cliqueNotify = (patch, held = 0) => {
 }
 window.__cliqueLooking = null // what the page last said it has open (clique.looking)
 window.__cliqueHistory = usageHistory() // what the Usage view asks for (a shot can swap it: nothing yet, a first look)
+// ?cache=<folder>: where a linked computer's files are kept, for a script that serves them for real (scripts/files-probe.mjs,
+// core/linkfiles.js). What the chat asks about a file, and opening one, then goes to that script ('files' over IPC), and
+// how far a file is on its way comes back ('file').
+const FILES = QUERY.get('cache') ? require('electron').ipcRenderer : null
+FILES?.on('file', (_e, at) => window.__cliqueEmit('file', at))
 window.clique = {
   looking: (view) => (window.__cliqueLooking = view),
   platform: PLATFORM,
   home: HOME,
+  cache: QUERY.get('cache') ?? '',
   dev: QUERY.get('dev') === '1',
   call: async (action, ...args) => {
     if (action === 'state') return canStop(state)
+    if (FILES && ['fileState', 'openFile', 'showFile', 'copyFilePath'].includes(action)) {
+      const res = await FILES.invoke('files', action, ...args)
+      if (res.error) throw new Error(res.error)
+      return res.ok
+    }
     // Stop, as the hub does it: their turns end (they stay on), what waited for them isn't delivered, their open
     // questions close, and one line says who you stopped
     if (action === 'stop') {
@@ -1108,6 +1119,7 @@ window.clique = {
   onFocus: (fn) => listeners.focus.push(fn),
   onToggle: (fn) => listeners.toggle.push(fn),
   onImport: () => {},
+  onFile: (fn) => listeners.file.push(fn),
   onVoice: (fn) => listeners.voice.push(fn),
   voiceAudio: () => {},
 }

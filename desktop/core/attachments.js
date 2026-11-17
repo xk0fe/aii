@@ -3,7 +3,8 @@
 // showed it, whatever happens to the original. What the chat needs to lay it out without jumping (a picture's size, a
 // video's size and length) is read from the file's first bytes here, once. No Electron in here.
 //
-// A message's `files` are [{ path, name, kind, type, size, w?, h?, dur? }]: kind is 'image', 'video', 'html' or 'file'.
+// A message's `files` are [{ path, name, kind, type, size, w?, h?, dur?, sound? }]: kind is 'image', 'video', 'html' or
+// 'file'; sound: whether a recording has any (its player has no volume to offer one that has none).
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -17,7 +18,7 @@ export const STORE_MAX = 2 * 1024 * 1024 * 1024
 // A page runs in the chat only up to this size (it's read whole and written into its frame); a bigger one is a file card.
 export const PAGE_MAX = 5 * 1024 * 1024
 // What a linked computer or a phone may fetch from here in one piece (Clique.serve readImage, core/remote.js image):
-// pictures and pages, never a recording.
+// pictures and pages, never a recording. (A linked computer gets anything, any size, a piece at a time: core/linkfiles.js.)
 export const FETCH_MAX = 20 * 1024 * 1024
 export const CAPTION_MAX = 2000
 
@@ -112,7 +113,8 @@ export function imageSize(b, ext) {
 }
 
 // MP4 and QuickTime: the boxes at the top are walked for `moov`, wherever it is in the file (after the pictures, when the
-// file wasn't made for streaming), and inside it the movie's length and its video track's size. -> { w?, h?, dur? } or null
+// file wasn't made for streaming), and inside it the movie's length, its video track's size and whether it has a sound
+// track. -> { w?, h?, dur?, sound? } or null
 function mp4Info(file, size) {
   const fd = fs.openSync(file, 'r')
   try {
@@ -154,6 +156,8 @@ function* boxes(b) {
 
 function moovInfo(moov) {
   const out = {}
+  let tracks = 0
+  let sound = false
   for (const b of boxes(moov)) {
     if (b.type === 'mvhd') {
       const v1 = b.data[0] === 1
@@ -161,7 +165,8 @@ function moovInfo(moov) {
       const dur = v1 ? Number(b.data.readBigUInt64BE(24)) : b.data.readUInt32BE(16)
       if (scale > 0 && dur > 0 && dur / scale < 86400 * 7) out.dur = Math.round((dur / scale) * 100) / 100
     }
-    if (b.type !== 'trak' || out.w) continue
+    if (b.type !== 'trak') continue
+    tracks++
     let size = null
     let video = false
     for (const t of boxes(b.data)) {
@@ -175,19 +180,28 @@ function moovInfo(moov) {
         const h = d.readUInt32BE(end - 4) / 65536
         size = turned ? box(h, w) : box(w, h)
       }
-      if (t.type === 'mdia') for (const m of boxes(t.data)) if (m.type === 'hdlr' && m.data.toString('latin1', 8, 12) === 'vide') video = true
+      if (t.type === 'mdia') {
+        for (const m of boxes(t.data)) {
+          if (m.type !== 'hdlr') continue
+          if (m.data.toString('latin1', 8, 12) === 'vide') video = true
+          if (m.data.toString('latin1', 8, 12) === 'soun') sound = true
+        }
+      }
     }
-    if (video && size) Object.assign(out, size)
+    if (video && size && !out.w) Object.assign(out, size)
   }
+  if (tracks) out.sound = sound
   return out
 }
 
-// WebM (and Matroska): its elements, walked as far as the tracks. -> { w?, h?, dur? } or null
+// WebM (and Matroska): its elements, walked as far as the tracks. -> { w?, h?, dur?, sound? } or null
 function webmInfo(b) {
   if (b.length < 4 || b.readUInt32BE(0) !== 0x1a45dfa3) return null
   const out = {}
   let scale = 1000000
   let ticks = 0
+  let tracks = 0
+  let sound = false
   const vint = (at, keep) => {
     const first = b[at]
     if (first === undefined || first === 0) return null
@@ -216,6 +230,7 @@ function webmInfo(b) {
         if (id.v === 0x4489) ticks = size.v === 4 ? b.readFloatBE(from) : size.v === 8 ? b.readDoubleBE(from) : 0
         if (id.v === 0xb0 && !out.w) out.w = uint()
         if (id.v === 0xba && !out.h) out.h = uint()
+        if (id.v === 0x83) (tracks++, (sound ||= uint() === 2)) // a track's type: 1 pictures, 2 sound
       }
       at = to
     }
@@ -225,7 +240,7 @@ function webmInfo(b) {
   } catch {}
   const size = box(out.w, out.h)
   const dur = (ticks * scale) / 1e9
-  return { ...(size ?? {}), ...(dur > 0 && dur < 86400 * 7 && { dur: Math.round(dur * 100) / 100 }) }
+  return { ...(size ?? {}), ...(dur > 0 && dur < 86400 * 7 && { dur: Math.round(dur * 100) / 100 }), ...(tracks > 0 && { sound }) }
 }
 
 // What the chat shows a file as, and what it needs to draw it. One that says it's a picture or a video and isn't is a
@@ -341,7 +356,9 @@ export function makeRoom(dir, { max = STORE_MAX, keep = [] } = {}) {
 
 // ---- what other devices get --------------------------------------------------------------------------------------
 
-// A picture or a page small enough to send whole to a linked computer; a recording, or any other file, stays where it is.
+// A picture or a page small enough to bring to a linked computer as soon as it's seen there; a recording, or any other
+// file, comes when it's played or opened (core/linkfiles.js), and stays where it is for a computer that can't ask for it
+// a piece at a time.
 export const travels = (f) => (f.kind === 'image' || f.kind === 'html') && f.size <= FETCH_MAX
 
 // A message with files, as a phone gets it (shared/PROTOCOL.md): what each file is, never where it is or what's in it.

@@ -1110,7 +1110,8 @@ test("a connection that loses to another doesn't take the winner's workspaces wi
     const answers = []
     const peer = () => {
       const p = Object.assign(new Emitter(), { name: 'Laptop', push() {}, input() {}, close() {} })
-      p.call = (fn) => (fn === 'state' ? Promise.resolve({ agents: [], feed: [], tasks: { tickets: [] }, providers: {} }) : new Promise((resolve, reject) => answers.push({ resolve, reject })))
+      // (what it's asked about its workspaces is answered below, by hand; whether it sends files in pieces, never)
+      p.call = (fn) => (fn === 'state' ? Promise.resolve({ agents: [], feed: [], tasks: { tickets: [] }, providers: {} }) : fn === 'workspaces' ? new Promise((resolve, reject) => answers.push({ resolve, reject })) : new Promise(() => {}))
       return p
     }
     const slow = peer()
