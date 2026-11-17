@@ -10,6 +10,11 @@ import os from 'node:os'
 import path from 'node:path'
 
 process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-model-out-'))
+// (an account's folder is made from Claude Code's own: a throwaway one, never yours)
+const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-model-out-home-'))
+process.env.HOME = SANDBOX
+process.env.CLAUDE_CONFIG_DIR = path.join(SANDBOX, '.claude')
+fs.mkdirSync(process.env.CLAUDE_CONFIG_DIR)
 const FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-model-out-cwd-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { ranOut, resetsAtOf, familyOf, standInFor, withModel, onModelOutOf } = await import('../core/standin.js')
@@ -96,6 +101,16 @@ const modelArg = (name) => {
   return args.includes('--model') ? args[args.indexOf('--model') + 1] : null
 }
 const events = (name) => hub.feed.filter((e) => e.kind === 'event' && e.from === name).map((e) => e.text)
+const editConfig = (f) => {
+  const data = JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
+  f(data)
+  fs.writeFileSync(CONFIG, JSON.stringify(data))
+  hub.loadConfig()
+}
+const startsOf = (name) => runner.starts.filter((s) => s.n === name).length
+const toReset = () => mock.timers.tick(RESET - Date.now() + 120000)
+// Claude Code asking before it resumes a long conversation (adapters.js RESUME_ASK)
+const RESUME_QUESTION = 'Resume this conversation?\nThis conversation has been inactive for 3h and is 900k tokens long. Resuming it will use about 18% of your 5-hour usage limit.\n❯ Resume\n  Start a new conversation'
 const fableOut = (name = 'noor') => hook(name, { hook_event_name: 'StopFailure', error: 'rate_limit', last_assistant_message: FABLE_OUT })
 
 function fresh(extra) {
@@ -119,21 +134,33 @@ function start(extra) {
   hook('noor', { hook_event_name: 'UserPromptSubmit', prompt: typed('noor').at(-1), session_id: 'noor-session' })
 }
 
-beforeEach(() => {
+// (also between two runs in one test: the clock back to NOW, nothing kept from the last run)
+function clean() {
+  if (hub) {
+    for (const a of hub.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'retryTimer', 'startTimer', 'stopTimer']) clearTimeout(a[t])
+    for (const t of ['statsTimer', 'convoTimer', 'usageTimer', 'modelsTimer', 'runtimeTimer']) clearTimeout(hub[t])
+  }
   hub = null
+  mock.timers.reset()
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: NOW })
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json', 'usage.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
-})
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json', 'usage.json', 'runtime.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
+}
+beforeEach(clean)
 afterEach(async () => {
   mock.timers.reset()
   if (!hub) return
   for (const a of hub.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'retryTimer', 'startTimer', 'stopTimer']) clearTimeout(a[t])
-  for (const t of ['statsTimer', 'convoTimer', 'usageTimer', 'modelsTimer', 'runtimeTimer']) clearTimeout(hub[t])
+  for (const t of ['statsTimer', 'convoTimer', 'usageTimer', 'modelsTimer', 'runtimeTimer', 'lookTimer', 'readsTimer']) clearTimeout(hub[t])
+  clearInterval(hub.stallTimer)
+  clearInterval(hub.threadTimer)
+  hub.keepRuntime = false
+  fs.unwatchFile(CONFIG) // (Hub.start watches config.json)
   await hub.saving
 })
 after(() => {
   fs.rmSync(process.env.CLIQUE_HOME, { recursive: true, force: true, maxRetries: 10 })
   fs.rmSync(FOLDER, { recursive: true, force: true })
+  fs.rmSync(SANDBOX, { recursive: true, force: true })
 })
 
 test('switch (the default): the agent goes on with Opus, in the same conversation, and the turn carries on', () => {
@@ -391,4 +418,201 @@ test('through CLIque, as the app calls it: the choice is in config.json, and eve
       h.dispose()
     }
   }
+})
+
+// ---- what the owed "continue" mustn't outlive, and what it must ------------------------------------------------------
+
+test('turned off while it starts again on Opus, or while it waits: no "continue" once it is on again', () => {
+  start()
+  fableOut()
+  editConfig((d) => (d.agents[0].off = true))
+  editConfig((d) => delete d.agents[0].off)
+  assert.equal(noor.carry, null)
+  hub.launch(noor)
+  up('noor')
+  mock.timers.tick(5000)
+  assert.ok(!typed('noor').includes('continue'))
+})
+
+test('wait: turned off, or its workspace parked, while it waits: no "continue" at the reset', () => {
+  for (const away of [() => editConfig((d) => (d.agents[0].off = true)), () => hub.park()]) {
+    clean()
+    start({ onModelOut: 'wait' })
+    fableOut()
+    away()
+    assert.equal(noor.status, 'off')
+    editConfig((d) => delete d.agents[0].off)
+    hub.unpark()
+    const before = startsOf('noor')
+    toReset()
+    assert.equal(startsOf('noor'), before, 'nothing started by itself')
+    assert.ok(!typed('noor').includes('continue'))
+    assert.equal(hub.convos.noor?.carry, undefined)
+  }
+})
+
+test("an agent with work left running in the background, or that you're typing into, isn't restarted under it", () => {
+  start()
+  const iris = hub.agents.get('iris')
+  hub.send({ to: 'iris', text: 'audit the icons' })
+  hook('iris', { hook_event_name: 'UserPromptSubmit', prompt: typed('iris').at(-1), session_id: 'iris-session' })
+  hook('iris', { hook_event_name: 'Stop', last_assistant_message: 'The audit runs in the background.', background_tasks: [{ id: 'b1', type: 'shell', status: 'running' }] })
+  assert.equal(iris.background, 1)
+  hub.input('sam', 'please also che') // half a line in sam's terminal (sam on Sonnet: nothing to do with it anyway)
+  const n = startsOf('iris')
+  fableOut()
+  assert.equal(startsOf('iris'), n)
+  // once what it left running is done, it moves at the next look, a minute on
+  iris.background = 0
+  mock.timers.tick(61000)
+  assert.equal(startsOf('iris'), n + 1)
+  assert.equal(modelArg('iris'), 'opus')
+  // and typing: iris on Opus, you type in her terminal just before Fable is back
+  up('iris')
+  mock.timers.tick(2000)
+  hub.input('iris', 'one more th')
+  const m = startsOf('iris')
+  toReset()
+  assert.ok(startsOf('iris') > m, 'once you stopped typing a minute ago, she goes back to Fable')
+  assert.equal(modelArg('iris'), 'fable')
+})
+
+test('the resume question right after "continue": "continue" again once it is answered, never the task a second time', () => {
+  start()
+  fableOut()
+  up('noor')
+  mock.timers.tick(2000)
+  assert.equal(typed('noor').at(-1), 'continue')
+  runner.emit('data', 'noor', RESUME_QUESTION)
+  assert.equal(noor.status, 'waiting')
+  assert.equal(noor.inbox.length, 0)
+  hub.input('noor', '\r') // Resume, in its terminal
+  mock.timers.tick(5000)
+  assert.deepEqual(typed('noor'), ['build option C', 'continue', 'continue'])
+})
+
+test('wait: kept with its conversation, so CLIque started again with its terminal gone still waits, then carries on', async () => {
+  start({ onModelOut: 'wait' })
+  fableOut()
+  hub.send({ to: 'noor', text: 'and the TV mirror' })
+  hub.saveUsage(true)
+  hub.saveRuntime(true)
+  for (const a of hub.agents.values()) for (const t of ['ack', 'timer', 'readyTimer']) clearTimeout(a[t])
+  clearTimeout(hub.modelsTimer)
+  await hub.saving
+  runner = new FakeRunner()
+  hub = new Hub(runner, { bin: '/nonexistent' })
+  hub.start('http://127.0.0.1:1', { survivors: [] })
+  noor = hub.agents.get('noor')
+  assert.equal(noor.status, 'resting')
+  assert.equal(noor.carry?.until, hub.usage.claude.models.fable.until)
+  mock.timers.tick(5000)
+  assert.deepEqual(typed('noor'), [], 'nothing goes to Fable before its reset')
+  toReset()
+  up('noor')
+  mock.timers.tick(5000)
+  assert.deepEqual(typed('noor'), ['continue'])
+  hook('noor', { hook_event_name: 'UserPromptSubmit', prompt: 'continue' })
+  hook('noor', { hook_event_name: 'Stop', last_assistant_message: 'done' })
+  mock.timers.tick(5000)
+  assert.match(typed('noor').at(-1), /TV mirror/) // and then what waited
+})
+
+test('wait: it may rest meanwhile (its terminal goes), and starts again at the reset to carry on', () => {
+  start({ onModelOut: 'wait' })
+  fableOut()
+  assert.equal(hub.mayRest(noor, Date.now() + 3600000, 600000), true)
+  hub.rest(noor)
+  assert.equal(noor.status, 'resting')
+  const n = startsOf('noor')
+  toReset()
+  assert.equal(startsOf('noor'), n + 1)
+  up('noor')
+  mock.timers.tick(5000)
+  assert.equal(typed('noor').at(-1), 'continue')
+})
+
+test('wait: renamed while it waits, it still carries on at the reset', () => {
+  start({ onModelOut: 'wait' })
+  fableOut()
+  hub.update('noor', { name: 'nora' })
+  if (hub.agents.get('nora').status === 'starting') up('nora')
+  toReset()
+  if (hub.agents.get('nora').status === 'starting') up('nora')
+  mock.timers.tick(5000)
+  assert.equal(typed('nora').at(-1), 'continue')
+})
+
+test('wait: /clear, another account, or Stop ends the wait', () => {
+  start({ onModelOut: 'wait' })
+  fableOut()
+  hook('noor', { hook_event_name: 'SessionStart', source: 'clear', session_id: 'new-one' })
+  toReset()
+  assert.ok(!typed('noor').includes('continue'), 'not into the conversation /clear started')
+
+  clean()
+  start({ onModelOut: 'wait', accounts: [{ id: 'claude-work', provider: 'claude', name: 'Work' }] })
+  hub.signedIn = () => true
+  fableOut()
+  editConfig((d) => (d.agents[0].account = 'claude-work')) // whose Fable has room
+  up('noor')
+  mock.timers.tick(5000)
+  assert.equal(typed('noor').at(-1), 'continue')
+  assert.equal(modelArg('noor'), 'fable')
+
+  clean()
+  start({ onModelOut: 'wait' })
+  fableOut()
+  assert.equal(hub.snapshot().agents.find((a) => a.name === 'noor').canStop, true)
+  assert.deepEqual(hub.stopTurns(['noor']).stopped, ['noor'])
+  toReset()
+  assert.ok(!typed('noor').includes('continue'))
+})
+
+test('tell, then Wait picked: the agent stopped at the limit carries on at the reset', () => {
+  start({ onModelOut: 'tell' })
+  fableOut()
+  editConfig((d) => (d.onModelOut = 'wait')) // as by hand: config.json is followed
+  assert.equal(noor.status, 'idle')
+  assert.match(events('noor').at(-1), /CLIque types "continue" for it then/)
+  toReset()
+  assert.equal(typed('noor').at(-1), 'continue')
+})
+
+test('an agent set to Sonnet whose turn ran into Fable (switched in its terminal) goes back to Sonnet', () => {
+  start()
+  const sam = hub.agents.get('sam')
+  hub.send({ to: 'sam', text: 'migrate the db' })
+  hook('sam', { hook_event_name: 'UserPromptSubmit', prompt: typed('sam').at(-1), session_id: 'sam-session' })
+  fableOut('sam')
+  assert.equal(events('sam').at(-1).replace(/\(.*\)/, '()'), 'ran out of Fable (), so it goes on with its own model, Sonnet')
+  assert.equal(modelArg('sam'), 'sonnet')
+  up('sam')
+  mock.timers.tick(2000)
+  assert.equal(typed('sam').at(-1), 'continue')
+  // ...and runs into Fable again in that turn (a sub-agent set to Fable): no going round, it's yours
+  hook('sam', { hook_event_name: 'UserPromptSubmit', prompt: 'continue' })
+  fableOut('sam')
+  assert.equal(sam.status, 'waiting')
+  assert.match(events('sam').at(-1), /^ran out of Fable again .*a sub-agent set to it/)
+})
+
+test('Next model switched off while Fable is still out: the line says it is still out, not that it is back', () => {
+  start()
+  fableOut()
+  up('iris')
+  editConfig((d) => (d.onModelOut = 'tell'))
+  assert.equal(modelArg('iris'), 'fable')
+  assert.equal(events('iris').at(-1), 'goes back to Fable, which is still out: "When a model runs out" no longer switches models')
+})
+
+test('when it resets, said other ways', () => {
+  assert.equal(resetsAtOf('resets 6am Nov 20 (UTC)', NOW), Date.parse('2026-11-20T06:00:00Z'))
+  assert.equal(resetsAtOf('resets 20 Nov at 6am (UTC)', NOW), Date.parse('2026-11-20T06:00:00Z'))
+  assert.equal(resetsAtOf('resets Thu at 6am (UTC)', NOW), Date.parse('2026-11-19T06:00:00Z'))
+  assert.equal(resetsAtOf('resets Tue at 6am (UTC)', NOW), Date.parse('2026-11-24T06:00:00Z')) // today's has passed
+  assert.equal(resetsAtOf('resets tomorrow at 18:00 (UTC)', NOW), Date.parse('2026-11-18T18:00:00Z'))
+  assert.equal(resetsAtOf('resets at 6am (UTC)', NOW), Date.parse('2026-11-18T06:00:00Z'))
+  assert.equal(resetsAtOf('resets in 2h30m', NOW), NOW + 2.5 * 36e5)
+  assert.equal(resetsAtOf('resets 13pm', NOW), null)
 })

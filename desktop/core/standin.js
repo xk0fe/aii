@@ -49,39 +49,61 @@ export function standInFor(family, models = [], out = new Set()) {
 }
 
 // When what Claude Code said resets, in ms: "resets Nov 20 at 6am (America/Fortaleza)", "resets 9:10pm", "resets
-// Nov 20, 2027 at 6:30am", "resets in 3h 20m". The time is the zone's in brackets, this computer's without one. A date
-// without a year is the next one to come; a time without a date, the next time it's that time. null: it doesn't say.
+// Nov 20, 2027 at 6:30am", "resets 6am Nov 20", "resets Thu at 6am", "resets tomorrow at 18:00", "resets in 3h 20m".
+// What follows "resets" is read in pieces, in any order: a time (6am, 6:30pm, 18:00), a date (Nov 20, 20 Nov, a year),
+// a weekday or "tomorrow", and the zone in brackets (this computer's without one). A date without a year is the next one
+// to come; a time without a date, the next time it's that time. null: it doesn't say.
 export function resetsAtOf(text, now = Date.now()) {
-  const s = String(text ?? '')
-  const span = s.match(/\bresets in ((?:\d+\s*(?:d|days?|h|hrs?|hours?|m|mins?|minutes?)\b\s*)+)/i)
+  const said = String(text ?? '').match(/\bresets\b([^·\n]*)/i)?.[1]
+  if (!said) return null
+  const span = said.match(/^\s*in\s+((?:\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m)(?![a-z])\s*)+)/i)
   if (span) {
     const unit = { d: 864e5, h: 36e5, m: 6e4 }
     let ms = 0
     for (const [, n, u] of span[1].matchAll(/(\d+)\s*([dhm])/gi)) ms += Number(n) * unit[u.toLowerCase()]
     return ms > 0 ? now + ms : null
   }
-  const m = s.match(/\bresets\s+(?:on\s+)?(?:([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:,?\s+(\d{4}))?,?\s+(?:at\s+)?)?(\d{1,2})(?::(\d{2}))?(?:\s*([ap])\.?m\.?(?![a-z]))?(?:\s*\(([^)]+)\))?/i)
-  if (!m) return null
-  const [, mon, day, year, h, min, ap, zone] = m
-  if (!ap && min === undefined) return null // "resets 20": no time in that
-  const month = mon ? MONTHS.indexOf(mon.slice(0, 3).toLowerCase()) : -1
-  if (mon && month < 0) return null
-  if ((ap ? Number(h) > 12 : Number(h) > 23) || Number(min ?? 0) > 59) return null
+  const zone = validZone(said.match(/\(([^)]+)\)/)?.[1]?.trim())
+  const words = said.replace(/\([^)]*\)/g, ' ')
+  // the time: 6am, 6:30 p.m., or 18:00
+  const t = words.match(/\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?(?![a-z])/i) ?? words.match(/\b(\d{1,2}):(\d{2})\b/)
+  if (!t) return null
+  const [, h, min, ap] = t
+  if ((ap ? Number(h) > 12 || Number(h) < 1 : Number(h) > 23) || Number(min ?? 0) > 59) return null
   const hour = ap ? (Number(h) % 12) + (ap.toLowerCase() === 'p' ? 12 : 0) : Number(h)
-  const tz = validZone(zone?.trim())
-  const today = partsIn(now, tz)
   const minute = Number(min ?? 0)
-  if (!mon) {
-    let t = wallTime(today.year, today.month, today.day, hour, minute, tz)
-    if (t <= now) t = wallTime(today.year, today.month, today.day + 1, hour, minute, tz)
-    return t
+  const rest = words.replace(t[0], ' ')
+  // the date: "Nov 20", "20 Nov", with a year or without
+  let date = null
+  for (const m of rest.matchAll(/\b([A-Za-z]{3,9})\.?\s+(\d{1,2})(?!\d)(?:,?\s+(\d{4}))?|\b(\d{1,2})\s+([A-Za-z]{3,9})\b\.?(?:,?\s+(\d{4}))?/g)) {
+    const month = MONTHS.indexOf((m[1] ?? m[5]).slice(0, 3).toLowerCase())
+    if (month >= 0) {
+      date = { month, day: Number(m[2] ?? m[4]), year: m[3] ?? m[6] ? Number(m[3] ?? m[6]) : null }
+      break
+    }
   }
-  const at = (y) => wallTime(y, month, Number(day), hour, minute, tz)
-  if (year) return at(Number(year))
-  const t = at(today.year)
-  return t < now - 864e5 ? at(today.year + 1) : t
+  const today = partsIn(now, zone)
+  const at = (y, mo, d) => wallTime(y, mo, d, hour, minute, zone)
+  if (date) {
+    if (date.day < 1 || date.day > 31) return null
+    if (date.year) return at(date.year, date.month, date.day)
+    const t0 = at(today.year, date.month, date.day)
+    return t0 < now - 864e5 ? at(today.year + 1, date.month, date.day) : t0
+  }
+  // a weekday ("Thu"), or tomorrow: the next such day
+  const day = rest.match(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/i)?.[1]?.toLowerCase()
+  if (/\btomorrow\b/i.test(rest)) return at(today.year, today.month, today.day + 1)
+  if (day) {
+    const weekday = new Date(Date.UTC(today.year, today.month, today.day)).getUTCDay()
+    let ahead = (DAYS.indexOf(day) - weekday + 7) % 7
+    if (ahead === 0 && at(today.year, today.month, today.day) <= now) ahead = 7
+    return at(today.year, today.month, today.day + ahead)
+  }
+  const t1 = at(today.year, today.month, today.day)
+  return t1 > now ? t1 : at(today.year, today.month, today.day + 1)
 }
 
+const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 
 // A time zone this computer knows (America/Fortaleza), or null for its own.
