@@ -1,6 +1,29 @@
 // Reading agents' replies on the phone: the Markdown they write, parsed the way the chat draws it.
-import { blocks, codeText } from '@/ui/md'
+import fs from 'node:fs'
+import path from 'node:path'
+
+import { askMarkdown, blocks, codeText, runInList, type Run } from '@/ui/md'
 import { makeDemo } from '@/demo/fixture'
+
+// A question whose steps came written in a run, "(1) … (2) …": the cases both apps share (the desktop's copy is
+// tested in desktop/test/ask-steps.test.js).
+const steps = JSON.parse(fs.readFileSync(path.join(__dirname, '../../shared/ask-steps.json'), 'utf8')) as { runs: { name: string; text: string; run: Run | null }[]; markdown: { name: string; text: string; markdown: string }[] }
+
+describe('steps in a run', () => {
+  test.each(steps.runs.map((c) => [c.name, c] as const))('%s', (_, c) => expect(runInList(c.text)).toEqual(c.run))
+  test.each(steps.markdown.map((c) => [c.name, c] as const))('as Markdown: %s', (_, c) => expect(askMarkdown(c.text)).toBe(c.markdown))
+
+  test('the steps are a list between what leads in and the question itself', () => {
+    const parts = blocks(askMarkdown('Two things by hand. (1) Open the console. (2) Create a project. Where are you?'))
+    expect(parts.map((b) => b.kind)).toEqual(['p', 'list', 'p'])
+    expect(parts[1]).toMatchObject({ items: [{ text: 'Open the console.', n: 1, ordered: true }, { text: 'Create a project.', n: 2, ordered: true }] })
+    expect(parts[2]).toEqual({ kind: 'p', text: 'Where are you?' })
+  })
+
+  test('a plain question is one paragraph: the card shows it as the line it always was', () => {
+    for (const text of ['Should the empty cart show suggestions?', 'Should I (1) rebase onto main, (2) merge main in, or (3) leave it?']) expect(blocks(askMarkdown(text))).toEqual([{ kind: 'p', text }])
+  })
+})
 
 describe('blocks', () => {
   test('a plan: a heading, numbered steps with code, a table, a checklist, a code block, a quote', () => {

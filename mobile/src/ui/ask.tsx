@@ -3,14 +3,15 @@
 // Answered, a card folds into a line saying what happened. The buttons are thumb-sized and full width; the one you'd
 // most likely press is the brand's.
 import * as Haptics from 'expo-haptics'
-import { useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useMemo, useState } from 'react'
+import { ActivityIndicator, ScrollView, type StyleProp, StyleSheet, Text, TextInput, type TextStyle, View } from 'react-native'
 
 import type { Answer, FeedEntry, PermissionAsk, PlanAsk, QuestionAsk, Reply } from '@/net/types'
 
 import { displayName, reasonOf } from './format'
 import { Icon, type IconName } from './icon'
 import { Markdown } from './markdown'
+import { askMarkdown, blocks } from './md'
 import { Button, Press } from './parts'
 import { fonts, type Theme } from './theme'
 
@@ -205,6 +206,14 @@ function Choice({ t, label, description, onPress, busy, disabled, on, role }: { 
   )
 }
 
+// A question's own words. With a list in them (steps written in a run, set out by askMarkdown, or a list its agent
+// wrote) they're drawn as Markdown, the steps in regular weight; any other question is the one line it always was.
+export function AskWords({ t, text, style, size, strong }: { t: Theme; text: string; style: StyleProp<TextStyle>; size: number; strong?: boolean }) {
+  const md = useMemo(() => askMarkdown(text), [text])
+  const listed = useMemo(() => blocks(md).some((b) => b.kind === 'list'), [md])
+  return listed ? <Markdown text={md} t={t} color={t.fg} size={size} strong={strong} /> : <Text style={[style, { color: t.fg }]}>{text}</Text>
+}
+
 function QuestionCard(props: AskProps & { ask: QuestionAsk }) {
   const { t, e, ask, compact, disabled } = props
   const [draft, setDraft] = useDraft(e.id)
@@ -233,7 +242,7 @@ function QuestionCard(props: AskProps & { ask: QuestionAsk }) {
             </Text>
           ) : null}
           {/* the creature already says a lone question in its own words */}
-          {direct && props.voiced ? null : <Text style={[styles.qtext, { color: t.fg }]}>{q.question}</Text>}
+          {direct && props.voiced ? null : <AskWords t={t} text={q.question} style={styles.qtext} size={17} strong />}
           <View style={styles.options}>
             {q.options.map((o) =>
               direct ? (

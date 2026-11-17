@@ -1,0 +1,202 @@
+{
+  "about": "Questions an agent asks with its steps written in a run, \"(1) … (2) …\", and what both apps must make of them: runInList and askMarkdown in desktop/ui/common.js and in mobile/src/ui/md.ts, each tested against this file. run null: no list, the words stay as written.",
+  "runs": [
+    {
+      "name": "the steps of a setup, what leads in and the question they lead up to",
+      "text": "This part is yours by hand before I can send the order emails (about 5 minutes, no card needed), with the shop's Postmark account. (1) postmarkapp.com: 'Servers', then 'Create server', any name, Create. (2) On its 'API Tokens' tab click 'Generate token' and copy it (it is shown only once). (3) Under 'Sender Signatures' add orders@storefront.test, then confirm the email it sends you. Do not paste the token into chat. Where are you?",
+      "run": {
+        "before": "This part is yours by hand before I can send the order emails (about 5 minutes, no card needed), with the shop's Postmark account.",
+        "items": [
+          "postmarkapp.com: 'Servers', then 'Create server', any name, Create.",
+          "On its 'API Tokens' tab click 'Generate token' and copy it (it is shown only once).",
+          "Under 'Sender Signatures' add orders@storefront.test, then confirm the email it sends you. Do not paste the token into chat."
+        ],
+        "after": "Where are you?"
+      }
+    },
+    {
+      "name": "a plain question",
+      "text": "Should the empty cart show suggestions?",
+      "run": null
+    },
+    {
+      "name": "choices inside one sentence stay a sentence",
+      "text": "Should I (1) rebase onto main, (2) merge main in, or (3) leave it?",
+      "run": null
+    },
+    {
+      "name": "numbers that name things",
+      "text": "Compare options (1) and (2) before choosing (3)?",
+      "run": null
+    },
+    {
+      "name": "nothing between the numbers but a joining word",
+      "text": "Pick one: (1) or (2)?",
+      "run": null
+    },
+    {
+      "name": "\"1)\" after a colon",
+      "text": "Which is right: 1) tabs 2) spaces 3) both?",
+      "run": {
+        "before": "Which is right:",
+        "items": [
+          "tabs",
+          "spaces",
+          "both?"
+        ],
+        "after": ""
+      }
+    },
+    {
+      "name": "\"1.\" where a sentence starts, not the 2 of \"Python 2.\"",
+      "text": "Steps: 1. Install Python 2. 2. Run the tests. 3. Push. Ready?",
+      "run": {
+        "before": "Steps:",
+        "items": [
+          "Install Python 2.",
+          "Run the tests.",
+          "Push."
+        ],
+        "after": "Ready?"
+      }
+    },
+    {
+      "name": "a number that ends a sentence is not a step",
+      "text": "It needs Node 1. 2. is too old. Upgrade?",
+      "run": null
+    },
+    {
+      "name": "a mention of \"(1)\" before the list",
+      "text": "Use (1) or (2). Then: (1) open the file (2) save it (3) close it. Done?",
+      "run": {
+        "before": "Use (1) or (2). Then:",
+        "items": [
+          "open the file",
+          "save it",
+          "close it."
+        ],
+        "after": "Done?"
+      }
+    },
+    {
+      "name": "years",
+      "text": "In (2024) we shipped and in (2025) we will?",
+      "run": null
+    },
+    {
+      "name": "numbers inside code",
+      "text": "Run `foo (1) bar (2) baz` now?",
+      "run": null
+    },
+    {
+      "name": "one number is not a list",
+      "text": "Deploy to (1) staging?",
+      "run": null
+    },
+    {
+      "name": "a list that does not count from 1",
+      "text": "Next: (2) build it (3) ship it",
+      "run": null
+    },
+    {
+      "name": "numbers out of order",
+      "text": "First: (1) one thing (3) another thing",
+      "run": null
+    },
+    {
+      "name": "two steps and nothing after",
+      "text": "Pick a region: (1) us-east-1 (2) eu-west-1",
+      "run": {
+        "before": "Pick a region:",
+        "items": [
+          "us-east-1",
+          "eu-west-1"
+        ],
+        "after": ""
+      }
+    },
+    {
+      "name": "steps from the first word",
+      "text": "(1) Rebase onto main. (2) Force-push. OK to go?",
+      "run": {
+        "before": "",
+        "items": [
+          "Rebase onto main.",
+          "Force-push."
+        ],
+        "after": "OK to go?"
+      }
+    },
+    {
+      "name": "in another alphabet",
+      "text": "Сначала настройка. (1) Откройте консоль. (2) Создайте проект. Где вы сейчас?",
+      "run": {
+        "before": "Сначала настройка.",
+        "items": [
+          "Откройте консоль.",
+          "Создайте проект."
+        ],
+        "after": "Где вы сейчас?"
+      }
+    },
+    {
+      "name": "a file name in the closing question",
+      "text": "By hand: (1) Download the file. (2) Move it. Is it at ~/.config/app/client_secret.json now?",
+      "run": {
+        "before": "By hand:",
+        "items": [
+          "Download the file.",
+          "Move it."
+        ],
+        "after": "Is it at ~/.config/app/client_secret.json now?"
+      }
+    },
+    {
+      "name": "a closing question it cannot be sure of stays with the last step",
+      "text": "Do this: (1) Open it. (2) Save it. Which one, e.g. the first?",
+      "run": {
+        "before": "Do this:",
+        "items": [
+          "Open it.",
+          "Save it. Which one, e.g. the first?"
+        ],
+        "after": ""
+      }
+    },
+    {
+      "name": "a dash leads in",
+      "text": "Three things first - (1) pull main (2) run the tests (3) tag it. Go?",
+      "run": {
+        "before": "Three things first -",
+        "items": [
+          "pull main",
+          "run the tests",
+          "tag it."
+        ],
+        "after": "Go?"
+      }
+    }
+  ],
+  "markdown": [
+    {
+      "name": "a line of steps among other lines",
+      "text": "Setup first.\n(1) Open it (2) Close it\nReady?",
+      "markdown": "Setup first.\n1. Open it\n2. Close it\nReady?"
+    },
+    {
+      "name": "a list its agent wrote is left as written",
+      "text": "1. Open the console\n2. Create a project\n\nWhere are you?",
+      "markdown": "1. Open the console\n2. Create a project\n\nWhere are you?"
+    },
+    {
+      "name": "code is left alone",
+      "text": "Run this?\n```\nstep (1) a (2) b\n```",
+      "markdown": "Run this?\n```\nstep (1) a (2) b\n```"
+    },
+    {
+      "name": "a bullet is left alone",
+      "text": "- then: (1) open it (2) close it",
+      "markdown": "- then: (1) open it (2) close it"
+    }
+  ]
+}

@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import type { FeedEntry, Reply } from '@/net/types'
 import { useClique, useDerived } from '@/state/hooks'
-import { AskCard, AskSummary, askVerb } from '@/ui/ask'
+import { AskCard, AskSummary, AskWords, askVerb } from '@/ui/ask'
 import { agentColor } from '@/ui/avatar'
 import { Creature, MotionContext } from '@/ui/creature'
 import { someone } from '@/ui/feed'
@@ -41,17 +41,21 @@ function Ask({ t, e, d, answer, disabled }: { t: Theme; e: FeedEntry; d: ReturnT
           </View>
         </Patch>
         <View style={[styles.voice, { backgroundColor: t.bg }]}>
-          <Text style={[styles.voiceText, { color: t.fg }]}>
-            {said.map((p, i) =>
-              p.code ? (
-                <Text key={i} style={styles.mono}>
-                  {p.text}
-                </Text>
-              ) : (
-                p.text
-              ),
-            )}
-          </Text>
+          {askKindOf(e.ask) === 'question' ? (
+            <AskWords t={t} text={words} style={styles.voiceText} size={15} />
+          ) : (
+            <Text style={[styles.voiceText, { color: t.fg }]}>
+              {said.map((p, i) =>
+                p.code ? (
+                  <Text key={i} style={styles.mono}>
+                    {p.text}
+                  </Text>
+                ) : (
+                  p.text
+                ),
+              )}
+            </Text>
+          )}
         </View>
       </View>
       <AskCard t={t} e={e} onAnswer={answer} disabled={disabled} voiced />

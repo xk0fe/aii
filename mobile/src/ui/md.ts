@@ -146,6 +146,52 @@ export function blocks(src: string): Block[] {
   return out
 }
 
+// Steps written in a run, as a question often comes (an agent's question is one line, with no room for a list): "Sign-in
+// setup. (1) Open the console. (2) Create a project. Where are you?" is the words before, each step, and the closing
+// question on its own. The numbers count up from 1, as "(1)", "1)" or, where a sentence starts, "1."; two or more of
+// them, after a sentence that has ended. null for anything else: "Should I (1) rebase or (2) merge?" is one sentence,
+// and "options (1) and (2)" names things, it doesn't list them. (The desktop's: desktop/ui/common.js.)
+const RUN_MARKS = [/(?<=^|\s)\((\d{1,2})\)(?=\s+\S)/g, /(?<=^|\s)(\d{1,2})\)(?=\s+\S)/g, /(?<=^|[.:;!?]["')\]]?\s)(\d{1,2})\.(?=\s+\S)/g]
+const RUN_JOINS = /^(and|or|andor|to|through|vs|versus|nor|then|plus|&)?$/i
+export type Run = { before: string; items: string[]; after: string }
+export function runInList(text: string): Run | null {
+  const line = String(text ?? '')
+  const probe = line.replace(/`[^`]*`/g, (code) => 'x'.repeat(code.length)) // a number inside `code` is code
+  for (const mark of RUN_MARKS) {
+    const all = [...probe.matchAll(mark)].map((m) => ({ n: Number(m[1]), at: m.index, end: m.index + m[0].length }))
+    let best: { before: string; items: string[] } | null = null
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].n !== 1) continue
+      const run = [all[i]]
+      for (const m of all.slice(i + 1)) if (m.n === run.length + 1) run.push(m)
+      const before = line.slice(0, run[0].at).trim()
+      const items = run.map((m, k) => line.slice(m.end, run[k + 1]?.at ?? line.length).trim())
+      if (run.length < 2 || !/^$|[.:;!?…—–-]["'”’)\]]*$/.test(before) || items.some((x) => RUN_JOINS.test(x.replace(/[^\p{L}\p{N}&]+/gu, '')))) continue
+      // of two that count as far, the later one is the list: a "(1)" before it was a mention
+      if (run.length >= (best?.items.length ?? 0)) best = { before, items }
+    }
+    if (!best) continue
+    // the question the steps lead up to is not the last step's
+    const closing = best.items[best.items.length - 1].match(/^([\s\S]*[.!?…]["'”’)\]]*)\s+(\p{Lu}(?:[^.!?]|[.!?](?=\S))*\?)$/u)
+    return closing ? { before: best.before, items: [...best.items.slice(0, -1), closing[1]], after: closing[2] } : { ...best, after: '' }
+  }
+  return null
+}
+
+// A question's words as Markdown: what its agent wrote, with steps written in a run set out as the list they are.
+export function askMarkdown(text: string) {
+  let fenced = false
+  return String(text ?? '')
+    .split('\n')
+    .map((line) => {
+      const fence = (line.match(/```|~~~/g) ?? []).length
+      if (fence % 2) fenced = !fenced
+      const run = fenced || fence || /^\s*([-*+•>#|])/.test(line) ? null : runInList(line)
+      return run ? [run.before, run.items.map((x, i) => `${i + 1}. ${x}`).join('\n'), run.after].filter(Boolean).join('\n\n') : line
+    })
+    .join('\n')
+}
+
 // A short code span stays in one piece: "#training-runs" or "api/cart.ts" moves to the next line whole instead of
 // breaking at its hyphen or slash (iOS paints the tint to the end of a line it breaks). Narrow no-break spaces give
 // it a hair of room inside the tint, since inline text can't have padding.
