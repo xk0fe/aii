@@ -796,6 +796,9 @@ body:has(.tasks-view.picking:not(.hidden)) .toast { bottom: 76px; }
 /* a teammate's question: who asks whom, whether the asker is waiting on it right now, and where the answer went */
 .item .cap .verb { color: var(--fg3); }
 .item .tag.wait { color: var(--fg2); }
+/* Send now, beside a waiting message's "queued": a tag you can press */
+button.tag.go { border: 0; margin: 0; background: none; color: var(--fg); cursor: pointer; transition: background .15s; }
+button.tag.go:hover, button.tag.go:focus-visible { background: var(--btn-hover); }
 /* one of your scheduled messages: a small clock by its time, and nothing else different about it */
 .item .tag.sched { gap: 3px; padding: 0; box-shadow: none; color: var(--fg3); font-weight: 500; cursor: help; }
 .item .tag.sched svg { width: 11px; height: 11px; }

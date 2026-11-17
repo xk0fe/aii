@@ -777,6 +777,9 @@ const actions = {
   saveImage: (name, type, bytes) => clique.here.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
   approve: (id) => clique.feedAction(id, 'approve'),
   drop: (id) => clique.feedAction(id, 'drop'),
+  // A message of yours waiting for a busy agent, sent without waiting for its turn to end (Hub.sendNow):
+  // sendNow('3f9a…') types it into the turn; sendNow('3f9a…', { stop: true }) ends the turn and sends it.
+  sendNow: (id, opts) => clique.feedAction(id, 'sendNow', [{ stop: Boolean(opts?.stop) }]),
   // Your reaction on a message, on or off (Hub.react): react('3f9a…', '👍')
   react: (id, emoji) => clique.feedAction(id, 'reactTo', [emoji]),
   // Answer an agent's question (a permission prompt, AskUserQuestion, a plan) from the chat; see hub.ask.

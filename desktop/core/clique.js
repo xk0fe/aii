@@ -1665,7 +1665,8 @@ export class Clique extends EventEmitter {
   // here: the workspace it was sent in, whatever's on screen by the time it goes.
   // opts.channel: the channel it's said in (its id); Auto picks from that channel's members.
   // opts.scheduled: one of your scheduled messages going out ({ id, at, late? }, see runSchedules).
-  async send(to, text, images = [], { fresh = false, re, channel, thread, scheduled } = {}, here = this.here) {
+  // now: don't wait for a busy agent's turn to end (Hub.sendNow)
+  async send(to, text, images = [], { fresh = false, re, channel, thread, scheduled, now = false } = {}, here = this.here) {
     // asleep (put to sleep while on screen, or watched from a phone): what you send wakes it, and the agent it's for
     // picks up its conversation; the message waits for it to start
     if (here.space?.parked) this.workspaceAction('open', here.ws)
@@ -1698,10 +1699,10 @@ export class Clique extends EventEmitter {
       // said in a thread's reply box: it stays in that thread, wherever that lives
       const inside = thread && idThere(home)(thread)
       const reply = { ...(quoted && { re: idThere(home)(re), quote: { ...quote, from: unq(home)(quote.from) } }), ...(inside && { thread: inside }) }
-      if (!home) out.push(await here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...auto, ...reply, ...(channel !== undefined && { channel }), ...(scheduled && { scheduled }) }))
+      if (!home) out.push(await here.send({ to: bases.join(','), text, images, mentions: false, fresh, ...auto, ...reply, ...(channel !== undefined && { channel }), ...(scheduled && { scheduled }), ...(now && { now: true }) }))
       else {
         const l = this.link(home)
-        out.push(await this.linkCall(l, 'deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...auto, ...reply, ...away, ...(scheduled && { scheduled }) }], here.ws))
+        out.push(await this.linkCall(l, 'deliver', [{ to: bases.join(','), text, images: await this.toHome(images, l), fresh, ...auto, ...reply, ...away, ...(scheduled && { scheduled }), ...(now && { now: true }) }], here.ws))
       }
     }
     return out.join('')
@@ -1895,6 +1896,8 @@ export class Clique extends EventEmitter {
       },
       approve: (id) => h.approve(id),
       drop: (id) => h.drop(id),
+      // Send now, pressed on a computer this one's agents show on
+      sendNow: (id, opts) => h.sendNow(String(id), { stop: Boolean(opts?.stop) }),
       // your reaction, on a message this computer has (you're the same person on both)
       reactTo: (id, emoji) => h.reactTo(id, emoji),
       answer: (id, reply) => h.answer(id, reply),

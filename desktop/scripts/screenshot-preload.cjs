@@ -1013,6 +1013,22 @@ window.clique = {
       emit()
       return { stopped: stopped.map((a) => a.name), dropped }
     }
+    // Send now on a message of yours that waits for a busy agent (Hub.sendNow): it goes in. stop: its turn ends for
+    // it first, with a line saying so, and nothing else that waits is withdrawn
+    if (action === 'sendNow') {
+      const [id, opts = {}] = args
+      const m = state.feed.find((e) => e.id === id && e.kind === 'msg' && e.from === 'you' && e.queued)
+      if (!m) throw new Error("that message isn't waiting any more")
+      m.queued = false
+      const a = state.agents.find((x) => x.name === m.to)
+      if (a?.queue) a.queue -= 1
+      if (opts.stop && a) {
+        Object.assign(a, { status: 'working', since: Date.now(), activity: '', subs: [], waitingOn: [] })
+        state.feed.push({ id: `now${Date.now()}`, kind: 'event', from: 'clique', stop: true, about: [m.to], ts: Date.now(), text: `you stopped @${m.to} to send your message now` })
+      }
+      emit()
+      return opts.stop ? `stopped @${m.to}: your message goes in now\n` : `sent to @${m.to}\n`
+    }
     if (action === 'history') return window.__cliqueHistory
     if (action === 'account') return accountAction(...args)
     // the permissions flow: ?fixture=<a step>:<its state> shows that one first (ui/permissions.js)
