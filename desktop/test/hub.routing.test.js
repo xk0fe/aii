@@ -103,6 +103,35 @@ test('attachments outside the attachments folder are dropped; an image alone get
   assert.equal(inbox('iris')[0].images.length, 1)
 })
 
+test('a document attached: saved under its name, and called a file where a message has no words of its own', () => {
+  const doc = hub.saveFile('Q3 plan (final).pdf', new Uint8Array([37, 80, 68, 70]))
+  assert.equal(path.dirname(doc), path.join(process.env.CLIQUE_HOME, 'attachments'))
+  assert.match(path.basename(doc), /^\d{4}-\d\d-\d\d-[0-9a-f]{8}_Q3_plan_final\.pdf$/)
+  assert.deepEqual([...fs.readFileSync(doc)], [37, 80, 68, 70])
+  const shot = hub.saveImage('shot.png', 'image/png', new Uint8Array([1]))
+  hub.send({ to: 'iris', text: '', images: [doc] })
+  assert.equal(inbox('iris')[0].text, 'Have a look at this file.')
+  assert.deepEqual(inbox('iris')[0].images, [doc])
+  hub.send({ to: 'iris', text: '', images: [shot, doc] })
+  assert.equal(inbox('iris')[1].text, 'Have a look at these files.')
+  hub.send({ to: 'iris', text: '', images: [shot, shot] })
+  assert.equal(inbox('iris')[2].text, 'Have a look at these images.')
+  // a task with nothing but a document says so, as one with a screenshot does
+  hub.fileTask({ text: '', images: [doc] })
+  assert.equal(hub.tickets.all.at(-1).title, 'See the attached file')
+  hub.fileTask({ text: '', images: [shot] })
+  assert.equal(hub.tickets.all.at(-1).title, 'See the screenshot')
+})
+
+test("a file that can't be attached is refused before anything is written: too big, or not bytes", () => {
+  const before = fs.existsSync(path.join(process.env.CLIQUE_HOME, 'attachments')) ? fs.readdirSync(path.join(process.env.CLIQUE_HOME, 'attachments')).length : 0
+  assert.throws(() => hub.saveFile('big\nvideo.mov', new Uint8Array(20 * 1024 * 1024 + 1)), /^Error: big video\.mov is over 20 MB$/)
+  assert.throws(() => hub.saveFile('notes.txt', 'not bytes'), /send the file as bytes/)
+  assert.throws(() => hub.saveFile('notes.txt', { length: 3 }), /send the file as bytes/)
+  assert.equal(fs.existsSync(path.join(process.env.CLIQUE_HOME, 'attachments')) ? fs.readdirSync(path.join(process.env.CLIQUE_HOME, 'attachments')).length : 0, before)
+  assert.doesNotThrow(() => hub.saveFile('exactly.bin', new Uint8Array(20 * 1024 * 1024)))
+})
+
 // ---- several recipients ----
 
 test('every @name gets the message once, case-insensitive, with who else got it', () => {

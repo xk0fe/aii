@@ -8,8 +8,9 @@
 //                                 before it goes) and a new one starts, so the newest events are the ones kept; hooks
 //                                 firing at once lose nothing (core/adapters.js, bin/clique.mjs). Replayed and removed
 //                                 when CLIque is back.
-//   attachments/                  images you attach: one that no workspace's chat, task or agent refers to any more
-//                                 goes ATTACHMENT_DAYS after it was saved (Clique.sweepImages, a minute after the start).
+//   attachments/                  what you attach (pictures, documents): one that no workspace's chat, task or agent
+//                                 refers to any more goes ATTACHMENT_DAYS after it was saved (Clique.sweepImages, a
+//                                 minute after the start).
 //                                 Files agents attach are kept there too (core/attachments.js), by the same rule,
 //                                 and no more than STORE_MAX of them together: past that the oldest go (makeRoom).
 //   link/cache/<computer>/        linked computers' files (pictures, recordings, pages, documents: core/linkfiles.js),

@@ -61,7 +61,7 @@ Everyone talks in **#general**. When an agent needs a decision, it asks right th
   <img src="docs/images/chat-light.webp" alt="Answering Iris's question where she asked it in #general, then opening the conversations with Theo and Milo, each with its terminal beside the chat" width="100%">
 </picture>
 
-Busy agents get your message the moment they're free. Type `@` to pick who gets it, paste a screenshot, drop a folder, or hold the mic and just talk: dictation runs on your computer, so your voice never leaves it.
+Busy agents get your message the moment they're free. Type `@` to pick who gets it, paste a screenshot, drop a document or a folder, or hold the mic and just talk: dictation runs on your computer, so your voice never leaves it.
 
 ### Q gets it to the right agent
 
