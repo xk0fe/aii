@@ -149,9 +149,11 @@ test('a bulk action goes to each computer with its own tasks; an older CLIque ge
   const clique = new Clique({ bin: '/nonexistent', computerName: 'Studio' })
   const here = add('Pause menu overlaps', { owner: 'ada', on: clique.hubs.get('default') })
   const calls = []
-  // what a call for a workspace is on the wire: 'in' its key
-  const inWs = (handle) => ({ call: async (_in, [, fn, args]) => handle(fn, args) })
-  clique.links.set('laptop', { slug: 'laptop', name: 'Laptop', peer: { call: async (_in, [, fn, args]) => (calls.push([fn, args]), fn === 'bulk' ? `closed ${args[1].length} tasks\n` : undefined) } })
+  // what a call for a workspace is on the wire: 'in' its key. Each takes what's pushed to it as a real peer does: the
+  // tasks changing here sends this computer's state on to every linked one a moment later, after the test has ended.
+  const push = () => {}
+  const inWs = (handle) => ({ push, call: async (_in, [, fn, args]) => handle(fn, args) })
+  clique.links.set('laptop', { slug: 'laptop', name: 'Laptop', peer: { push, call: async (_in, [, fn, args]) => (calls.push([fn, args]), fn === 'bulk' ? `closed ${args[1].length} tasks\n` : undefined) } })
   clique.links.set('old', {
     slug: 'old', name: 'Old Mac',
     peer: inWs(async (fn, args) => {
