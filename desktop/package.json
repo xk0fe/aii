@@ -26,6 +26,7 @@
     "probe:files": "electron scripts/files-probe.mjs",
     "probe:composer": "electron scripts/composer-probe.mjs",
     "probe:review": "electron scripts/review-probe.mjs",
+    "probe:scroll": "electron scripts/channel-scroll-probe.mjs",
     "readme": "node scripts/readme.mjs"
   },
   "dependencies": {
