@@ -142,6 +142,9 @@
     .dm-clones { flex: none; font-size: 11.5px; font-weight: 500; color: var(--fg3); font-variant-numeric: tabular-nums; }
     .dm-end { margin-left: auto; flex: none; display: flex; align-items: center; gap: 6px; padding-left: 6px; }
     .dm-word { font-size: 12px; color: var(--fg3); white-space: nowrap; }
+    /* needs you: a berry dot at the end of the row (the count is in its tooltip, the question in Needs you) */
+    .dm-dot { display: block; width: 7px; height: 7px; border-radius: 50%; }
+    .dm-dot.needs { background: var(--needs); }
     .dm.on .dm-word { color: var(--fg2); }
     .dm-new { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: grid; place-items: center; background: rgba(255, 255, 255, .16); color: #fff; font: 600 11px/1 var(--ui); font-variant-numeric: tabular-nums; }
     .dm.off { color: var(--fg3); }
@@ -235,13 +238,7 @@
     .mh-power:hover { background: var(--fill); }
     .ph-tools .mode { height: 22px; }
     /* a channel: what's waiting on you (a berry pill that jumps to the oldest), and who's in it */
-    .mh-needs { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--needs-tint); color: var(--needs-ink); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background var(--t-quick); animation: mh-in var(--t-move) var(--out); }
-    .mh-needs:hover { background: color-mix(in srgb, var(--needs) 16%, transparent); }
-    .mh-needs svg { width: 12px; height: 12px; }
     @keyframes mh-in { from { opacity: 0; } }
-    .mh-faces { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 4px; border: 0; border-radius: var(--r-control); background: none; color: var(--fg2); font: inherit; font-size: 13px; cursor: pointer; }
-    .mh-faces:hover { background: var(--fill); color: var(--fg); }
-    .mh-faces .av + .av { margin-left: -7px; }
     /* the words found, in the results */
     .chat mark { background: color-mix(in srgb, var(--accent) 14%, transparent); color: inherit; border-radius: 3px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent); }
     .chat .feed.searching .item, .chat .feed.searching .task-ev, .chat .feed.searching .event { cursor: pointer; }
@@ -659,7 +656,10 @@
     .chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--surface); }
     .chat .feed { flex: 1; gap: 14px; padding: 20px var(--gx, 24px) 12px; -webkit-mask-image: none; }
     .chat .composer { padding: 6px var(--gx, 24px) 18px; }
-    .chat .needs-queue { display: none !important; }
+    /* Needs you, docked over the message box (common.css): as wide as the lines of who's at work, its card inside it */
+    .chat .needs-queue { width: min(820px, 100%); margin: auto 0 0; }
+    .chat .nq-item .ask-card { width: auto; margin-top: 2px; padding: 0; border-radius: 0; }
+    .chat .nq-item .ask-option { padding: 7px 34px 7px 8px; }
     .chat .item.said { gap: 12px; }
     .chat .item.said .face { width: 36px; }
     .chat .item .cap { margin-bottom: 1px; font-size: 12px; }
@@ -677,6 +677,7 @@
     .chat .item.ask.open .ask-card { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--needs) 62%, transparent); }
     .chat .item.ask.open .ask-title svg { color: var(--needs-ink); }
     .chat .typing-row { margin-left: 48px; }
+    .chat .sub-tree { margin-left: 84px; } /* under its agent's name, past the creatures down the left */
     .chat .typing-row, .chat .sub-tree { max-width: 760px; } /* the line stays near its words: its dots and steps don't drift to the far edge */
     .chat .typing-row .tr-what { flex: 0 1 auto; }
     /* a question's options: one line each, its words after its label, so a card stays a glance tall */
