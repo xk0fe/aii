@@ -136,7 +136,7 @@ const BACKDROP = {
   desktop: { light: 'linear-gradient(135deg, #dfe7f5, #f1e4f1)', dark: 'linear-gradient(135deg, #1c2233, #2a1f2e)' },
 }
 
-async function open(file, { theme, width, height, backdrop, fixture, transparent = false, query: more }) {
+async function open(file, { theme, width, height, backdrop, fixture, transparent = false }) {
   if (DARK) theme = 'dark'
   // on the stage, what floats over the desktop keeps its see-through window: the stage is what's behind it
   const float = FRAME && backdrop === 'desktop'
@@ -150,7 +150,7 @@ async function open(file, { theme, width, height, backdrop, fixture, transparent
   })
   win.stageKind = float ? 'float' : 'window'
   win.webContents.on('console-message', (e) => e.level === 'error' && console.error(`${file}: ${e.message}`))
-  const query = { ...(fixture && { fixture }), ...(WIN && { platform: 'win32' }), ...more }
+  const query = { ...(fixture && { fixture }), ...(WIN && { platform: 'win32' }) }
   // --win: Windows draws its window buttons over the dashboard's titlebar (main.js titleBarOverlay); stand-ins show
   // where, on every load (shots reload the page)
   if (WIN && file === 'dashboard.html') {
@@ -289,16 +289,24 @@ async function tap(win, at) {
   win.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(at.x), y: Math.round(at.y), button: 'left', clickCount: 1 })
 }
 
+// Under the mouse: the window's corner put somewhere on the picture (--wx, --wy), and the pointer drawn where it is (--px, --py).
+const POINTER = `html { min-height: 100vh; } .wrap { position: absolute !important; left: var(--wx, 0); top: var(--wy, 0); }
+  html::after { content: ''; position: fixed; left: var(--px, 0); top: var(--py, 0); width: 20px; height: 26px; z-index: 999; pointer-events: none;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 26'%3E%3Cpath d='M2 2v18.5l4.6-4.3 3.1 7.3 2.9-1.2-3.1-7.2h6.2z' fill='%23000' stroke='%23fff' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat; }`
+// The floating chat's page as main.js loads it under the mouse (?at=mouse), on the soft desktop, with the pointer drawn.
+async function underMouse(theme, { width, height }) {
+  const win = await open('overlay.html', { theme, width, height, backdrop: 'desktop' })
+  if (DARK) theme = 'dark'
+  await win.loadFile(path.join(root, 'ui', 'overlay.html'), { query: { at: 'mouse', ...(WIN && { platform: 'win32' }) } })
+  await win.webContents.insertCSS(`${win.stageKind === 'float' ? '' : `html { background: ${BACKDROP.desktop[theme]} !important; }`} ${POINTER}`)
+  return win
+}
+
 // The top of a MacBook's screen behind the hatch shots: a menu bar and the notch, which is really a hole in the screen so
 // it's drawn over what's underneath. What's in the window is centered on it, as main.js places it.
 const SCREEN_TOP = `html::before { content: ''; position: fixed; inset: 0 0 auto 0; height: 33px; background: rgba(255, 255, 255, .28); }
   html::after { content: ''; position: fixed; top: 0; left: 50%; width: 185px; height: 32px; margin-left: -92.5px; background: #000; border-radius: 0 0 9px 9px; z-index: 99; pointer-events: none; outline: 1px dashed rgba(255, 90, 170, var(--notch-guide, 0)); }
   .wrap { position: absolute !important; left: 50%; top: 0; transform: translateX(-50%); }`
-
-// Under the mouse: the window's corner put somewhere on the picture (--wx, --wy), and the pointer drawn where it is (--px, --py).
-const POINTER = `html { min-height: 100vh; } .wrap { position: absolute !important; left: var(--wx, 0); top: var(--wy, 0); }
-  html::after { content: ''; position: fixed; left: var(--px, 0); top: var(--py, 0); width: 20px; height: 26px; z-index: 999; pointer-events: none;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 26'%3E%3Cpath d='M2 2v18.5l4.6-4.3 3.1 7.3 2.9-1.2-3.1-7.2h6.2z' fill='%23000' stroke='%23fff' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat; }`
 
 // The files shot: what agents attach (`clique attach`, core/attachments.js), made once (scripts/sample-files.mjs)
 let samples = null
@@ -743,9 +751,8 @@ const SHOTS = {
       console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}${ok ? '' : `: ${JSON.stringify(got)}`}`)
       if (!ok) errors.push(what)
     }
-    const win = await open('overlay.html', { theme, width: 200, height: 110, backdrop: 'desktop', query: { at: 'mouse' } })
+    const win = await underMouse(theme, { width: 200, height: 110 })
     win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(`console: ${e.message}`))
-    await win.webContents.insertCSS(POINTER)
     // the window's corner on the picture, and the pointer where the follower would have it (core/follow.js BESIDE, NEAR)
     const at = (x, y, open) => js(win, `document.documentElement.style.cssText = '--wx: ${x}px; --wy: ${y}px; --px: ${x + (open ? 4 : 0)}px; --py: ${y + (open ? 4 : -4)}px'`)
     const page = () => js(win, `const b = document.body, q = (s) => document.querySelector(s), r = (el) => { const x = el?.getBoundingClientRect(); return x && { top: Math.round(x.top), bottom: Math.round(x.bottom), left: Math.round(x.left), right: Math.round(x.right), height: Math.round(x.height) } }
@@ -775,12 +782,14 @@ const SHOTS = {
     // ---- the buddy
     await emit('place', { side: 'mouse', align: 'start' })
     await at(60, 34, false)
+    // a calm moment first: nobody waiting on you (the demo clique has two who are)
+    await js(win, "const s = window.__cliqueState; window.__waiting = s.agents.filter((a) => a.status === 'waiting'); for (const a of window.__waiting) a.status = 'working'; window.__cliqueEmit('state', s)")
     await sleep(500)
     let p = await page()
     check('closed, it says so and is the mark alone', p.fit?.pill.open === false && p.fit.pill.width < 60 && await js(win, "return getComputedStyle(document.querySelector('.dots')).display === 'none' && !document.querySelector('.dots').children.length"), p.fit)
     check('by the pointer nothing moves by itself while agents work', await js(win, "return document.body.classList.contains('busy') && getComputedStyle(document.querySelector('.home .m0')).animationName === 'none'"))
     await save(win, `follow-buddy-${theme}`)
-    await js(win, "const s = window.__cliqueState; s.agents.find((a) => a.name === 'June').status = 'waiting'; window.__cliqueEmit('state', s)")
+    await js(win, "const s = window.__cliqueState; for (const a of window.__waiting) a.status = 'waiting'; window.__cliqueEmit('state', s)")
     await sleep(400)
     check('someone needs you: a warm edge that holds still', await js(win, "const e = getComputedStyle(document.querySelector('.pill'), '::after'); return document.body.classList.contains('alert') && e.animationName === 'none' && Number(e.opacity) > .8"))
     await save(win, `follow-buddy-needs-${theme}`)
@@ -909,8 +918,8 @@ const SHOTS = {
   // listening, and Enter sends it; the chat hotkey opens the chat there, and Esc puts it away.
   async followGif() {
     const [W, H] = [900, 700]
-    const win = await open('overlay.html', { theme: DARK ? 'dark' : 'light', width: W, height: H, backdrop: 'desktop', query: { at: 'mouse' } })
-    await win.webContents.insertCSS(`${POINTER} #keys { position: fixed; right: 28px; bottom: 26px; z-index: 998; display: flex; gap: 8px; align-items: center; padding: 7px 12px; border-radius: 12px; background: color-mix(in srgb, var(--fg) 86%, transparent); color: var(--bg); font: 600 14px var(--ui); opacity: 0; transition: opacity .2s; }
+    const win = await underMouse('light', { width: W, height: H })
+    await win.webContents.insertCSS(`#keys { position: fixed; right: 28px; bottom: 26px; z-index: 998; display: flex; gap: 8px; align-items: center; padding: 7px 12px; border-radius: 12px; background: color-mix(in srgb, var(--fg) 86%, transparent); color: var(--bg); font: 600 14px var(--ui); opacity: 0; transition: opacity .2s; }
       #keys.on { opacity: 1; } #keys kbd { font: 600 13px var(--ui); padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 22%, transparent); }`)
     await js(win, "document.body.insertAdjacentHTML('beforeend', '<div id=\"keys\"></div>')")
     const area = { x: 0, y: 0, width: W, height: H }
