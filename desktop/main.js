@@ -790,6 +790,8 @@ const actions = {
   savers: (patch) => clique.setSavers(patch),
   // The spend check-in (Hub.checkIn), per provider: checkIn({ at: { claude: 5, codex: null }, then: 'ask' | 'tell' }).
   checkIn: (patch) => clique.setCheckIn(patch),
+  // When a model runs out: modelOut('switch' | 'wait' | 'tell').
+  modelOut: (how) => clique.setModelOut(how),
   // Usage, day by day (core/history.js): what Claude Code and Codex used on this computer, from their own logs. The
   // first ask starts reading them; the Usage view asks again while `reading` says how far along that is.
   history: () => clique.usageHistory(),

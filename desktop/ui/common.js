@@ -278,8 +278,10 @@ function levelOf(stats = {}) {
   return { lv, xp, toNext: to - xp, progress: (xp - from) / (to - from) }
 }
 
-// "Claude · opus · high"
-const brainLabel = (a, providers = {}) => [providers[a.provider]?.label ?? a.provider, a.model || 'default', a.effort, a.fast && 'fast'].filter(Boolean).join(' · ')
+// "Claude · opus · high". While its own model is out and it runs on another (core/standin.js): "Claude · opus in place of
+// fable · high".
+const standInWords = (a) => (a.standIn ? `${a.standIn.model} in place of ${String(a.standIn.for).toLowerCase()}` : '')
+const brainLabel = (a, providers = {}) => [providers[a.provider]?.label ?? a.provider, standInWords(a) || a.model || 'default', a.effort, a.fast && 'fast'].filter(Boolean).join(' · ')
 // The same without the filler, for tight rows: "Codex · high" (Fast has its own chip).
 const brainShort = (a, providers = {}) => [providers[a.provider]?.label ?? a.provider, a.model, a.effort].filter(Boolean).join(' · ')
 // Who it is, in one quiet line of plain words: "Claude Opus · High · Fast" on a card, "Opus · High · Fast" on a row
@@ -288,7 +290,8 @@ const EFFORT_WORDS = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra
 const modelName = (m) => (/^[a-z]+$/.test(m ?? '') ? upFirst(m) : m)
 function brainWords(a, providers = {}, { short = false } = {}) {
   const label = providers[a.provider]?.label ?? (a.provider ? upFirst(String(a.provider)) : '')
-  const model = a.model ? modelName(a.model) : ''
+  // (on a stand-in while its own model is out: "Claude Opus in place of Fable", "Opus" on a row)
+  const model = a.standIn ? `${modelName(a.standIn.model)}${short ? '' : ` in place of ${a.standIn.for}`}` : a.model ? modelName(a.model) : ''
   const who = short ? model || label : [label, model].filter(Boolean).join(' ')
   return [who, EFFORT_WORDS[a.effort] ?? (a.effort ? upFirst(String(a.effort)) : ''), a.fast ? 'Fast' : ''].filter(Boolean).join(' · ')
 }
@@ -1946,6 +1949,7 @@ const EVENT_ICONS = [
   [/^woke up/, 'sun'],
   [/^went to sleep/, 'moon'],
   [/API error|couldn't resume/, 'restart'],
+  [/^ran out of (?!room)|^goes on with \S+ while |^is back on /, 'brain'], // a model that ran out (core/standin.js)
   [/\bmoved to\b|^moved\b|^picked up /, 'move'],
   [/conversation|context limit|compacted/, 'fresh'],
   [/#\d+/, 'task'],
