@@ -1103,7 +1103,8 @@ function renderMarkdown(src) {
 const queuedTag = (e) => {
   const tag = `<span class="tag"${e.now ? ' title="It goes in as soon as its terminal can take it"' : ''}>${e.now ? 'up next' : 'queued'}</span>`
   if (e.from !== 'you' || e.kind !== 'msg') return tag
-  const who = (e.queuedIds ? (e.cc ?? [e.to]) : [e.to]).filter(Boolean).map((n) => String(n).split('@')[0])
+  // (of one sent to several, only the agents it still waits for)
+  const who = (e.queuedTo ?? [e.to]).filter(Boolean).map((n) => String(n).split('@')[0])
   const names = who.length > 2 ? `${who.slice(0, -1).join(', ')} and ${who.at(-1)}` : who.join(' and ')
   // a new conversation or a task can't join the turn the agent is in; nor can one that's already been told to
   const join = !e.fresh && e.ticket === undefined && !e.now
@@ -1124,13 +1125,14 @@ const mergeSends = (feed) => {
   for (const e of feed) {
     const lead = e.from === 'you' && e.sendId ? bySend[e.sendId] : undefined
     if (lead) {
-      if (e.queued) (lead.queued = true), lead.queuedIds.push(e.id), (lead.now &&= Boolean(e.now))
+      if (e.queued) (lead.queued = true), lead.queuedIds.push(e.id), lead.queuedTo.push(e.to), (lead.now &&= Boolean(e.now))
       if (e.reactions?.length) lead.reactions = [...(lead.reactions ?? []), ...e.reactions] // each copy's agent reacted to its own
       as[e.id] = lead
       continue
     }
-    // (queuedIds: the copies still waiting for their agent, for Send now; now: every one of them is to go in first chance)
-    const x = e.from === 'you' && e.sendId ? (bySend[e.sendId] = { ...e, queuedIds: e.queued ? [e.id] : [], now: e.queued ? Boolean(e.now) : true }) : e
+    // (queuedIds, queuedTo: the copies still waiting and the agents they wait for, for Send now; now: every one of them
+    // is to go in first chance)
+    const x = e.from === 'you' && e.sendId ? (bySend[e.sendId] = { ...e, queuedIds: e.queued ? [e.id] : [], queuedTo: e.queued ? [e.to] : [], now: e.queued ? Boolean(e.now) : true }) : e
     shown.push(x)
     as[e.id] = x
   }
@@ -3574,7 +3576,11 @@ document.addEventListener('click', (e) => {
     { head: `${btn.dataset.who || 'It'} ${many ? 'are' : 'is'} busy` },
     ...('join' in btn.dataset ? [{ label: 'Send now', icon: ICONS.up, act: 'join', hint: many ? 'read at their next step' : 'read at its next step' }] : []),
     { label: 'Stop and send', icon: ICONS.stop, act: 'stop', hint: many ? "ends what they're doing" : "ends what it's doing" },
-  ], (act) => Promise.all(ids.map((id) => clique.call('sendNow', id, { stop: act === 'stop' }))).catch((err) => oops("Couldn't send it now", err, 'It may have gone in already.')))
+  ], (act) => Promise.all(ids.map((id) => clique.call('sendNow', id, { stop: act === 'stop' }))).catch((err) => {
+    // (a linked computer on an older CLIque has no Send now: say that, not the name of the call it doesn't know)
+    const old = /isn't available over CLIque Link/.test(String(err?.message ?? err))
+    oops("Couldn't send it now", old ? new Error(`${btn.dataset.who || 'It'} runs on a computer with an older CLIque. Update CLIque there, or type the message in its terminal`) : err, 'It may have gone in already.')
+  }))
 })
 
 // Agent rows appear on several views; these listeners handle their mode chips and on/off switch.

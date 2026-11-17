@@ -32,18 +32,21 @@ class FakeRunner extends EventEmitter {
 
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-send-now-app-'))
 let hub, runner
-beforeEach(() => {
-  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: Date.now() })
-  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json', 'tickets.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
-  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents: [
-    { name: 'ada', area: 'backend api', cwd: DIR },
-    { name: 'june', area: 'docs, release notes', cwd: DIR },
-    { name: 'theo', area: 'qa, tests', cwd: DIR, provider: 'codex' },
-  ] }))
+const setup = (agents, extra = {}) => {
+  for (const f of ['conversations.json', 'sessions.json', 'feed.jsonl', 'stats.json', 'tickets.json', 'runtime.json']) fs.rmSync(path.join(process.env.CLIQUE_HOME, f), { force: true })
+  fs.writeFileSync(CONFIG, JSON.stringify({ autopilot: true, agents, ...extra }))
   runner = new FakeRunner()
   hub = new Hub(runner, { bin: '/nonexistent' })
   hub.url = 'http://127.0.0.1:1'
   for (const a of hub.agents.values()) if (!a.off) (runner.live.add(a.name), (a.status = 'idle'))
+}
+beforeEach(() => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: Date.now() })
+  setup([
+    { name: 'ada', area: 'backend api', cwd: DIR },
+    { name: 'june', area: 'docs, release notes', cwd: DIR },
+    { name: 'theo', area: 'qa, tests', cwd: DIR, provider: 'codex' },
+  ])
 })
 afterEach(async () => {
   mock.timers.reset()
@@ -60,7 +63,9 @@ after(() => {
 const agent = (n) => hub.agents.get(n)
 const typedInto = (n) => runner.submitted.filter((s) => s.name === n).map((s) => s.text)
 const keys = (n) => runner.writes.filter((w) => w.name === n).map((w) => w.data)
-const pickUp = (n) => hub.onHook(n, { hook_event_name: 'UserPromptSubmit', prompt: typedInto(n).at(-1) })
+const pickUp = (n, prompt = typedInto(n).at(-1)) => hub.onHook(n, { hook_event_name: 'UserPromptSubmit', prompt })
+// a clone (or an agent starting up) has its session
+const ready = (n) => (runner.live.add(n), hub.onHook(n, { hook_event_name: 'SessionStart', source: 'startup' }), mock.timers.tick(2000))
 const done = (n, said = 'Done.') => hub.onHook(n, { hook_event_name: 'Stop', last_assistant_message: said })
 const yours = (text) => hub.feed.findLast((e) => e.kind === 'msg' && e.from === 'you' && e.text === text)
 // you ask `n` something, and it's at work on it
@@ -260,6 +265,199 @@ test('a message sent with now: it goes into a busy agent\'s turn at once, and to
   hub.send({ from: 'june', to: 'ada', text: 'review my notes', now: true })
   assert.equal(hub.feed.findLast((e) => e.from === 'june').queued, true)
   assert.equal(hub.feed.findLast((e) => e.from === 'june').now, undefined)
+})
+
+// ---- what an independent review found ---------------------------------------------------------------------------
+
+test('an agent with clones: one sent now joins the turn the agent is in, instead of a clone taking it', () => {
+  setup([{ name: 'ada', area: 'backend api', cwd: DIR, clones: 2 }, { name: 'june', area: 'docs', cwd: DIR }])
+  atWork('ada')
+  // as before, a plain message to a busy agent that can clone itself goes to a clone
+  assert.match(hub.send({ to: 'ada', text: 'clone work' }), /a clone, @ada\.2, is starting up to take this/)
+  ready('ada.2')
+  pickUp('ada.2')
+  // sent now: into ada's own turn
+  assert.equal(hub.send({ to: 'ada', text: 'use the staging key', now: true }), 'sent to @ada\n')
+  assert.equal(typedInto('ada').at(-1), 'use the staging key')
+  assert.equal(yours('use the staging key').to, 'ada')
+  assert.equal(hub.agents.has('ada.3'), false, 'no clone was made for it')
+})
+
+test('an agent with clones: Send now keeps the message for the agent it waits for when a clone comes free', () => {
+  setup([{ name: 'ada', area: 'backend api', cwd: DIR, clones: 1 }, { name: 'june', area: 'docs', cwd: DIR }])
+  atWork('ada')
+  hub.send({ to: 'ada', text: 'clone work' })
+  ready('ada.2')
+  pickUp('ada.2')
+  hub.send({ to: 'ada', text: 'use the staging key' }) // the one clone is busy: it waits for ada
+  const m = yours('use the staging key')
+  hub.setStatus(agent('ada'), 'waiting') // a question is up in ada's terminal
+  hub.sendNow(m.id)
+  done('ada.2') // the clone is free: it would take what waits for ada
+  mock.timers.tick(1500)
+  assert.equal(m.to, 'ada')
+  assert.deepEqual(typedInto('ada.2'), ['clone work'])
+  hub.setStatus(agent('ada'), 'working')
+  assert.equal(typedInto('ada').at(-1), 'use the staging key')
+})
+
+test('an agent with clones: Stop and send goes to the agent you stopped, not to a clone that comes free meanwhile', () => {
+  setup([{ name: 'ada', area: 'backend api', cwd: DIR, clones: 1 }, { name: 'june', area: 'docs', cwd: DIR }])
+  atWork('ada')
+  hub.send({ to: 'ada', text: 'clone work' })
+  ready('ada.2')
+  pickUp('ada.2')
+  hub.send({ to: 'ada', text: 'prod is down' })
+  hub.sendNow(yours('prod is down').id, { stop: true })
+  done('ada.2')
+  mock.timers.tick(1000)
+  quiet('ada')
+  mock.timers.tick(3000)
+  assert.deepEqual(typedInto('ada.2'), ['clone work'])
+  assert.equal(typedInto('ada').at(-1), 'prod is down')
+})
+
+test('Stop and send stays first in line when an answer or a teammate\'s question comes in before the stop has settled', () => {
+  atWork('ada')
+  hub.send({ to: 'ada', text: 'prod is down' })
+  const m = yours('prod is down')
+  hub.sendNow(m.id, { stop: true })
+  // (these go ahead of anything else that waits)
+  hub.enqueue(agent('ada'), hub.post({ kind: 'msg', from: 'june', to: 'ada', text: 'the v2 names', answers: 'zzz', queued: true }))
+  agent('june').status = 'working'
+  hub.send({ from: 'june', to: 'ada', text: 'which port?', ask: { resolve() {} } })
+  assert.deepEqual(agent('ada').inbox.map((x) => x.text), ['prod is down', 'the v2 names', 'which port?'])
+  quiet('ada')
+  mock.timers.tick(3000)
+  assert.equal(typedInto('ada').at(-1), 'prod is down')
+  assert.equal(m.queued, false)
+})
+
+test('Stop and send puts back what CLIque had just typed and not yet seen taken, behind your message', () => {
+  atWork('ada')
+  hub.send({ to: 'ada', text: 'second' })
+  hub.send({ to: 'ada', text: 'third' })
+  runner.drawing.delete('ada')
+  done('ada')
+  mock.timers.tick(1500)
+  // CLIque has typed "second"; its CLI hasn't reported taking it
+  assert.equal(typedInto('ada').at(-1), 'second')
+  assert.deepEqual(agent('ada').expect.msgs.map((x) => x.text), ['second'])
+  hub.sendNow(yours('third').id, { stop: true })
+  assert.equal(yours('second').queued, true, 'it waits again, rather than showing as delivered')
+  assert.deepEqual(agent('ada').inbox.map((x) => x.text), ['third', 'second'])
+  quiet('ada')
+  mock.timers.tick(3000)
+  assert.equal(typedInto('ada').at(-1), 'third')
+  pickUp('ada')
+  runner.drawing.delete('ada')
+  done('ada')
+  mock.timers.tick(1500)
+  assert.equal(typedInto('ada').at(-1), 'second', 'typed again once the turn on yours is over')
+})
+
+test('one sent now does not join a turn of CLIque\'s own asking: it gets a turn, and a reply, in the conversation that follows', () => {
+  atWork('ada')
+  const a = agent('ada')
+  // past its context limit: once free it's asked where things stand, then starts a new conversation
+  Object.assign(a, { freshPending: true, freshLimit: true, freshWhy: ' (it passed its context limit)' })
+  runner.drawing.delete('ada')
+  done('ada', 'Totals agree.')
+  mock.timers.tick(1500)
+  pickUp('ada')
+  assert.ok(a.serving.some((x) => x.wrapUp), 'the turn is the wrap-up ask')
+  const typed = typedInto('ada').length
+  assert.match(hub.send({ to: 'ada', text: 'which branch did you push to?', now: true }), /^queued for @ada/)
+  const m = yours('which branch did you push to?')
+  assert.equal(typedInto('ada').length, typed, 'not typed into the wrap-up turn, where its answer would be swallowed')
+  assert.deepEqual([m.queued, m.now], [true, true])
+  // Send now on it says why it waits
+  assert.equal(hub.sendNow(m.id), "it goes to @ada as soon as it's done with what it's on\n")
+  assert.equal(typedInto('ada').length, typed)
+})
+
+test('one you said in a thread joins only a turn on that thread: otherwise its reply would land somewhere else', () => {
+  setup([{ name: 'ada', area: 'backend api', cwd: DIR }, { name: 'june', area: 'docs', cwd: DIR }], { channels: [{ id: 'review', name: 'review' }] })
+  hub.send({ to: 'ada', text: 'old root' })
+  mock.timers.tick(1500)
+  pickUp('ada')
+  done('ada', 'old answer')
+  mock.timers.tick(1500)
+  const root = yours('old root')
+  // ada is on something else, in #review
+  hub.send({ to: 'ada', text: 'review the diff', channel: 'review' })
+  mock.timers.tick(1500)
+  pickUp('ada')
+  runner.drawing.add('ada')
+  const typed = typedInto('ada').length
+  hub.send({ to: 'ada', text: 'and the docs?', re: root.id, thread: root.id })
+  const m = yours('and the docs?')
+  assert.equal(hub.sendNow(m.id), "it goes to @ada as soon as it's done with what it's on\n")
+  assert.equal(typedInto('ada').length, typed)
+  // the turn ends: it's next, and its reply is in its own thread
+  runner.drawing.delete('ada')
+  done('ada', 'Diff reviewed.')
+  mock.timers.tick(1500)
+  assert.match(typedInto('ada').at(-1), /and the docs\?$/)
+  pickUp('ada')
+  done('ada', 'The docs are fine too.')
+  const reply = hub.feed.findLast((e) => e.kind === 'reply')
+  assert.equal(reply.re, m.id)
+  // ...and into a turn on its own thread it goes at once
+  hub.send({ to: 'ada', text: 'look at the old root again', re: root.id, thread: root.id })
+  mock.timers.tick(1500)
+  pickUp('ada')
+  runner.drawing.add('ada')
+  hub.send({ to: 'ada', text: 'and the changelog?', re: root.id, thread: root.id })
+  assert.equal(hub.sendNow(yours('and the changelog?').id), 'sent to @ada\n')
+  assert.equal(typedInto('ada').at(-1).endsWith('and the changelog?'), true)
+})
+
+test('a turn CLIque did not start (typed in the terminal, or word that something finished): the reply still answers what joined it', () => {
+  // you typed in ada's terminal
+  hub.onHook('ada', { hook_event_name: 'UserPromptSubmit', prompt: 'typed in the terminal' })
+  hub.send({ to: 'ada', text: 'heads up: the key rotated', now: true })
+  pickUp('ada')
+  done('ada', 'All done, key noted.')
+  let reply = hub.feed.findLast((e) => e.kind === 'reply')
+  assert.equal(hub.feed.find((e) => e.id === reply.re).text, 'typed in the terminal')
+  assert.deepEqual(reply.also, [yours('heads up: the key rotated').id])
+  mock.timers.tick(1500)
+  // something it left running finishes, and it ends that turn without a word
+  atWork('june')
+  hub.onHook('june', { hook_event_name: 'Stop', last_assistant_message: 'Started the build in the background.', background_tasks: [{ id: 'b1', type: 'shell', status: 'running' }] })
+  mock.timers.tick(1500)
+  hub.onHook('june', { hook_event_name: 'UserPromptSubmit', prompt: '<task-notification>build finished</task-notification>' })
+  hub.send({ to: 'june', text: 'which commit was that?', now: true })
+  pickUp('june')
+  done('june', '')
+  reply = hub.feed.at(-1)
+  assert.equal(reply.kind, 'reply', 'it says so in the chat instead of leaving your message hanging')
+  assert.deepEqual(reply.also, [yours('which commit was that?').id])
+})
+
+test('a new conversation that is starting up keeps its place: one sent now goes in after the message it was started for', () => {
+  hub.send({ to: 'ada', text: 'start over on the importer', fresh: true })
+  mock.timers.tick(1500)
+  assert.equal(agent('ada').status, 'starting')
+  hub.send({ to: 'ada', text: 'unrelated nudge' })
+  assert.equal(hub.sendNow(yours('unrelated nudge').id, { stop: true }), "it's the next thing @ada gets\n")
+  hub.send({ to: 'ada', text: 'and another', now: true })
+  assert.deepEqual(agent('ada').inbox.map((x) => x.text), ['start over on the importer', 'unrelated nudge', 'and another'])
+  ready('ada')
+  mock.timers.tick(1500)
+  assert.deepEqual(typedInto('ada'), ['start over on the importer'])
+})
+
+test('the line about a stop is in the channel where you said the message', () => {
+  setup([{ name: 'ada', area: 'backend api', cwd: DIR }], { channels: [{ id: 'review', name: 'review' }, { id: 'design', name: 'design' }] })
+  hub.send({ to: 'ada', text: 'review the diff', channel: 'review' })
+  mock.timers.tick(1500)
+  pickUp('ada')
+  runner.drawing.add('ada')
+  hub.send({ to: 'ada', text: 'prod is down', channel: 'design' })
+  hub.sendNow(yours('prod is down').id, { stop: true })
+  assert.deepEqual([hub.feed.at(-1).text, hub.feed.at(-1).channel], ['you stopped @ada to send your message now', 'design'])
 })
 
 // ---- through Clique, as the app's chat sends it ----------------------------------------------------------------
