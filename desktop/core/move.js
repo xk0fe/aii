@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { HOME, ATTACHMENTS } from './hub.js'
-import { givenName, ownName } from './attachments.js'
+import { keptAs } from './attachments.js'
 import { packAgents, unpackAgents } from './pack.js'
 import { expandEnv } from './providers.js'
 import { accountEnv } from './accounts.js'
@@ -299,13 +299,11 @@ export function moveIn(hub, token, out, { name, folder, on, from, shared, join }
       }
     }
     // what was attached to its lines and messages, saved here: a picture as a picture, and a document under the name it
-    // had (as Hub saveImage and saveFile keep them)
+    // had (as Hub saveImage and saveFile keep them: core/attachments.js keptAs)
     const images = new Map()
     out.files.forEach((f, i) => {
       if (!f.image || !whole(i)) return
-      const ext = /^\.(png|jpe?g|gif|webp)$/i.test(path.extname(f.image)) ? path.extname(f.image) : ''
-      const own = ext || !/^\d{4}-\d\d-\d\d-[0-9a-f]{8}_./.test(path.basename(f.image)) ? '' : `_${ownName(givenName(f.image))}`
-      const file = path.join(ATTACHMENTS, `${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}${own || ext || '.png'}`)
+      const file = path.join(ATTACHMENTS, `${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}${keptAs(f.image)}`)
       place(staged(i), file)
       images.set(f.image, file)
     })

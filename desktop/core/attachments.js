@@ -35,9 +35,9 @@ const OTHERS = {
 }
 // What "Open" hands to the system's own app for it: things that are looked at. Anything else (a script, an app, an
 // installer) is only ever shown in its folder, since opening it would run it. Documents are looked at too (you attach
-// them yourself, core/hub.js saveFile): the kinds that can't carry macros, so not .doc, .xls, .docm or .xlsm.
+// them yourself, core/hub.js saveFile): the kinds that can't carry macros, so not .doc, .xls, .docm, .xlsm or .odt.
 const OPENS = new Set([...Object.keys(IMAGES), ...Object.keys(VIDEOS), ...Object.keys(PAGES), 'pdf', 'txt', 'log', 'md', 'json', 'csv', 'xml', 'mp3', 'wav', 'har', 'diff', 'patch', 'yml', 'yaml',
-  'tsv', 'rtf', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp', 'pages', 'numbers', 'key'])
+  'tsv', 'rtf', 'docx', 'xlsx', 'pptx', 'pages', 'numbers', 'key'])
 
 const extOf = (file) => path.extname(String(file)).slice(1).toLowerCase()
 export const opens = (file) => OPENS.has(extOf(file))
@@ -275,8 +275,18 @@ export function probe(file, size = fs.statSync(file).size) {
 // saveImage), any other file <day>-<8 hex>_<its own name> (Hub saveFile).
 const AGENTS_FILE = /^\d{4}-\d\d-\d\d-[0-9a-f]{8}-./
 export const isAgentFile = (name) => AGENTS_FILE.test(path.basename(String(name)))
+// (where a file is kept may be another computer's word for it, in that computer's form: C:\Users\… read on a Mac)
+const baseOf = (file) => String(file).split(/[\\/]/).pop()
 // ...and the name a file had, an agent's or yours, from where it's kept
-export const givenName = (file) => path.basename(String(file)).replace(/^\d{4}-\d\d-\d\d-[0-9a-f]{8}[-_](?=.)/, '')
+export const givenName = (file) => baseOf(file).replace(/^\d{4}-\d\d-\d\d-[0-9a-f]{8}[-_](?=.)/, '')
+// A document you attached, by where it's kept (Hub saveFile)
+export const isOwnFile = (file) => /^\d{4}-\d\d-\d\d-[0-9a-f]{8}_./.test(baseOf(file))
+// What you attached, saved again on another computer (an agent that moved there takes its messages along, core/move.js):
+// what follows <day>-<8 hex> there. A picture's extension, or _<the name it had> for a document.
+export function keptAs(from) {
+  const ext = path.extname(baseOf(from))
+  return /^\.(png|jpe?g|gif|webp)$/i.test(ext) ? ext : isOwnFile(from) ? `_${ownName(givenName(from))}` : '.png'
+}
 export function safeName(name) {
   const ext = path.extname(name).replace(/[^A-Za-z0-9.]/g, '').slice(0, 12)
   const stem = path.basename(name, path.extname(name)).normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._]+|[._]+$/g, '').slice(0, 60)

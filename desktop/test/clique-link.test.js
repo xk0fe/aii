@@ -119,9 +119,22 @@ test('a document you attach goes with the message to the other computer, under i
   assert.deepEqual([...fs.readFileSync(there[0])], [35, 32, 104, 105])
   assert.match(path.basename(there[1]), /^\d{4}-\d\d-\d\d-[0-9a-f]{8}\.png$/)
   assert.deepEqual([...fs.readFileSync(there[1])], [1, 2, 3])
-  // a computer whose CLIque is from before documents: the message says so, and nothing is sent as a picture it isn't
-  const old = `{ name: 'Old Mac', toHost: new Map(), peer: { call: async (fn) => { throw new Error(fn === 'saveFile' ? "Old Mac runs a newer CLIque, where every workspace is its own: update this computer's to work with its agents" : 'a picture was sent') } } }`
-  await assert.rejects(laptop.run(`clique.toHome(${JSON.stringify([doc])}, ${old})`), /Old Mac runs an older CLIque, which takes pictures only: update it to send API_notes\.md there/)
+  // here, the laptop sees that line as the studio has it: the picture is brought at once, the document has its place
+  // (under its name) and comes when it's opened, like any other file of that computer's
+  const mine = await laptop.run(`clique.snapshot().feed.findLast((e) => e.text === 'read these' && e.id.includes('@')).images`)
+  assert.match(path.basename(mine[0]), /^[0-9a-f]{20}_API_notes\.md$/)
+  assert.match(path.basename(mine[1]), /^[0-9a-f]{20}\.png$/)
+  await sleep(500)
+  assert.deepEqual(mine.map((p) => fs.existsSync(p)), [false, true], 'only the picture is fetched before anyone opens anything')
+  await laptop.run(`clique.files.whole(${JSON.stringify(mine[0])})`)
+  assert.deepEqual([...fs.readFileSync(mine[0])], [35, 32, 104, 105])
+  // a computer whose CLIque is from before documents: the message says so, and none of its pictures is left there
+  const old = `{ name: 'Old Mac', toHost: new Map(), peer: { call: async (fn) => { (globalThis.asked ??= []).push(fn); if (fn === 'saveFile') throw new Error("Old Mac runs a newer CLIque, where every workspace is its own: update this computer's to work with its agents"); return '/there/x.png' } } }`
+  await assert.rejects(laptop.run(`clique.toHome(${JSON.stringify([shot, doc, shot])}, ${old})`), /Old Mac runs an older CLIque, which takes pictures only: update it to send API_notes\.md there/)
+  assert.deepEqual(await laptop.run(`globalThis.asked`), ['saveFile'])
+  // ...and one that takes them gets each where it was in the message
+  const fine = `{ name: 'New Mac', toHost: new Map([[${JSON.stringify(shot)}, '/there/already.png']]), peer: { call: async (fn, [name]) => '/there/' + fn + '/' + name } }`
+  assert.deepEqual(await laptop.run(`clique.toHome(${JSON.stringify([doc, shot, doc])}, ${fine})`), ['/there/saveFile/API_notes.md', '/there/already.png', '/there/saveFile/API_notes.md'])
   // straight over the link, a document is saved; a phone's call for pictures still takes pictures only
   await assert.rejects(laptop.run(`clique.link('studio-mac').peer.call('saveImage', ['notes.md', 'text/markdown', new Uint8Array([1])])`), /only PNG, JPEG, GIF and WebP/)
 })

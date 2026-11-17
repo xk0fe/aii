@@ -152,6 +152,19 @@ test('a document you attach keeps its name in any alphabet, without what would s
   assert.equal(A.givenName('/home/me/.clique/attachments/2026-11-17-1a2b3c4d-demo.mp4'), 'demo.mp4') // an agent's
   assert.equal(A.givenName('2026-11-17-1a2b3c4d.png'), '2026-11-17-1a2b3c4d.png') // a picture has no name of its own
   assert.ok(!A.isAgentFile('2026-11-17-1a2b3c4d_отчёт.pdf')) // yours: never counted with what agents attach (makeRoom)
+  // where it's kept may be another computer's path, in that computer's form (a Windows path read on a Mac, and back)
+  const win = 'C:\\Users\\me\\.clique\\attachments\\2026-11-17-1a2b3c4d_Sign-up_spec.pdf'
+  assert.equal(A.givenName(win), 'Sign-up_spec.pdf')
+  assert.deepEqual([win, '/h/attachments/2026-11-17-1a2b3c4d_spec.pdf', '2026-11-17-1a2b3c4d_x'].map(A.isOwnFile), [true, true, true])
+  assert.deepEqual(['/h/attachments/2026-11-17-1a2b3c4d.png', '/h/attachments/2026-11-17-1a2b3c4d-demo.mp4', '/h/2026-11-17-1a2b3c4d_/x.pdf', '/h/attachments/2026-11-17-1a2b3c4d_'].map(A.isOwnFile), [false, false, false, false])
+  // saved again on the computer an agent moved to: a picture as a picture, a document under its name, never one as the other
+  assert.equal(A.keptAs(win), '_Sign-up_spec.pdf')
+  assert.equal(A.keptAs('/h/attachments/2026-11-17-1a2b3c4d_отчёт за Q3.xlsx'), '_отчёт_за_Q3.xlsx')
+  assert.equal(A.keptAs('/h/attachments/2026-11-17-1a2b3c4d.jpg'), '.jpg')
+  assert.equal(A.keptAs('C:\\Users\\me\\.clique\\attachments\\2026-11-17-1a2b3c4d.PNG'), '.PNG')
+  assert.equal(A.keptAs('/h/attachments/2026-11-17-1a2b3c4d_photo.png'), '.png') // a picture, whatever it was called
+  assert.equal(A.keptAs('/h/attachments/2026-11-17-1a2b3c4d_../../x'), '.png') // only ever the last part of a path
+  assert.equal(A.keptAs('/somewhere/odd'), '.png') // (as before: what isn't known to be a document)
 })
 
 // ---- clique attach ------------------------------------------------------------------------------------------------
@@ -578,11 +591,11 @@ test('what you attached to your own message: pictures as pictures, any other fil
 })
 
 test('"Open" is offered for exactly what main will open (the rest is shown in its folder)', () => {
-  for (const name of ['a.png', 'a.JPG', 'a.svg', 'a.mp4', 'a.mov', 'a.webm', 'a.html', 'a.pdf', 'a.log', 'a.txt', 'a.json', 'a.md', 'a.csv', 'a.yml', 'a.har', 'a.docx', 'a.XLSX', 'a.pptx', 'a.rtf', 'a.tsv', 'a.odt', 'a.pages', 'a.numbers', 'a.key', 'a.doc', 'a.xls', 'a.docm', 'a.xlsm', 'a.pptm', 'a.command', 'a.sh', 'a.app', 'a.exe', 'a.bat', 'a.dmg', 'a.pkg', 'a.scpt', 'a.py', 'a.js', 'a.jar', 'a.zip', 'a', 'a.lnk', 'a.url', 'a.webloc', 'a.terminal', 'a.workflow']) {
+  for (const name of ['a.png', 'a.JPG', 'a.svg', 'a.mp4', 'a.mov', 'a.webm', 'a.html', 'a.pdf', 'a.log', 'a.txt', 'a.json', 'a.md', 'a.csv', 'a.yml', 'a.har', 'a.docx', 'a.XLSX', 'a.pptx', 'a.rtf', 'a.tsv', 'a.odt', 'a.ods', 'a.odp', 'a.pages', 'a.numbers', 'a.key', 'a.doc', 'a.xls', 'a.docm', 'a.xlsm', 'a.pptm', 'a.command', 'a.sh', 'a.app', 'a.exe', 'a.bat', 'a.dmg', 'a.pkg', 'a.scpt', 'a.py', 'a.js', 'a.jar', 'a.zip', 'a', 'a.lnk', 'a.url', 'a.webloc', 'a.terminal', 'a.workflow']) {
     assert.equal(UI.FX_OPENS.test(name), A.opens(name), name)
   }
-  for (const runs of ['a.command', 'a.sh', 'a.app', 'a.exe', 'a.bat', 'a.scpt', 'a.py', 'a.jar', 'a.lnk', 'a.url', 'a.webloc', 'a.terminal', 'a.workflow', 'a.zip', 'a', 'a.doc', 'a.xls', 'a.docm', 'a.xlsm', 'a.pptm']) assert.equal(A.opens(runs), false, runs)
-  for (const looked of ['a.docx', 'a.xlsx', 'a.pptx', 'a.rtf', 'a.pages', 'a.numbers', 'a.key', 'a.odt']) assert.equal(A.opens(looked), true, looked) // documents, the kinds without macros
+  for (const runs of ['a.command', 'a.sh', 'a.app', 'a.exe', 'a.bat', 'a.scpt', 'a.py', 'a.jar', 'a.lnk', 'a.url', 'a.webloc', 'a.terminal', 'a.workflow', 'a.zip', 'a', 'a.doc', 'a.xls', 'a.docm', 'a.xlsm', 'a.pptm', 'a.odt', 'a.ods', 'a.odp']) assert.equal(A.opens(runs), false, runs)
+  for (const looked of ['a.docx', 'a.xlsx', 'a.pptx', 'a.rtf', 'a.pages', 'a.numbers', 'a.key', 'a.tsv']) assert.equal(A.opens(looked), true, looked) // documents, the kinds without macros
 })
 
 // ---- trying to get out, for real ------------------------------------------------------------------------------------

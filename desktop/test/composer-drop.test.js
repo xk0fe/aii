@@ -107,7 +107,7 @@ test("a file too big to attach goes in as its path, and says why; where a messag
   // nowhere to put a path (a task): said, not attached
   const t = box({ paths: false })
   await t.drop(file('demo.mov', 'video/quicktime', 20 * MB + 1, { at: '/Users/me/Movies/demo.mov' }))
-  assert.deepEqual([t.saved, t.errors, t.changed.at(-1)], [[], ['demo.mov is over 20 MB'], []])
+  assert.deepEqual([t.saved, t.errors, t.changed], [[], ['demo.mov is over 20 MB'], []])
   // and no telling where it is (pasted bytes): said too
   const c = box()
   await c.paste(file('huge.bin', '', 21 * MB))
@@ -125,6 +125,27 @@ test('a folder goes in as its path without a word; several things dropped at onc
   const t = box({ paths: false })
   await t.drop(file('src', '', 0, { folder: true, at: '/Users/me/app/src' }))
   assert.deepEqual([t.errors, t.saved], [["A folder can't be attached here: add the files in it"], []])
+})
+
+test('a path goes in at once, where the cursor is: it never waits for the files beside it to be saved', async () => {
+  let release
+  const gate = new Promise((r) => (release = r))
+  const b = box({ save: async (_action, name) => (await gate, `/home/me/.clique/attachments/2026-11-17-00000009_${name}`) })
+  const drop = b.drop(file('src', '', 0, { folder: true, at: '/Users/me/app/src' }), file('slow.pdf', 'application/pdf'), file('big.zip', 'application/zip', 30 * MB, { at: '/Users/me/big.zip' }), file('nowhere.bin', '', 30 * MB))
+  // (nothing awaited yet: the drop handler has only just returned)
+  assert.deepEqual(b.pointed, [[['/Users/me/app/src', '/Users/me/big.zip'], 'big.zip is over 20 MB: its path is in the message instead']])
+  assert.deepEqual(b.errors, ['nowhere.bin is over 20 MB'])
+  await drop
+  assert.deepEqual([b.changed, b.pointed.length], [[], 1], 'the file is still being saved: nothing is drawn, and no path is said twice')
+  release()
+  await new Promise((r) => setTimeout(r, 10))
+  assert.deepEqual(b.changed, [['/home/me/.clique/attachments/2026-11-17-00000009_slow.pdf']])
+  assert.deepEqual([b.pointed.length, b.errors.length], [1, 1])
+  // a folder alone: its path, and the tray is left as it is
+  const f = box()
+  f.attach.set(['/home/me/.clique/attachments/2026-11-17-00000001.png'], false)
+  await f.drop(file('src', '', 0, { folder: true, at: '/Users/me/app/src' }))
+  assert.deepEqual([f.pointed.length, f.changed, [...f.attach.get()]], [1, [], ['/home/me/.clique/attachments/2026-11-17-00000001.png']])
 })
 
 test("a file that can't be saved or read goes in as its path when there is one, and is said when there isn't", async () => {

@@ -38,7 +38,7 @@ const FX_ICONS = {
 
 // What "Open" hands to the system's own app: things that are looked at (core/attachments.js OPENS, which decides; a test
 // keeps the two the same). Anything else is only shown in its folder.
-const FX_OPENS = /\.(png|jpe?g|gif|webp|svg|avif|bmp|mp4|m4v|mov|webm|html?|pdf|txt|log|md|json|csv|xml|mp3|wav|har|diff|patch|ya?ml|tsv|rtf|docx|xlsx|pptx|odt|ods|odp|pages|numbers|key)$/i
+const FX_OPENS = /\.(png|jpe?g|gif|webp|svg|avif|bmp|mp4|m4v|mov|webm|html?|pdf|txt|log|md|json|csv|xml|mp3|wav|har|diff|patch|ya?ml|tsv|rtf|docx|xlsx|pptx|pages|numbers|key)$/i
 const FX_FOLDER = () => (clique.platform === 'win32' ? 'Show in Explorer' : 'Show in Finder')
 
 function fxSize(n) {

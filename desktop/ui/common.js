@@ -2998,9 +2998,9 @@ function mountAttach({ zone, field, tray, button, onChange, onPaths, onError, on
     if (notify) onChange?.([...paths])
   }
   const add = async (files, folders = []) => {
-    const refs = [] // what goes in as its path
-    const said = [] // ...and why, for a file (a folder's path needs no words)
-    const no = [] // what doesn't go at all
+    let refs = [] // what goes in as its path
+    let said = [] // ...and why, for a file (a folder's path needs no words)
+    let no = [] // what doesn't go at all
     // because: what went wrong, a sentence of its own, said when the file doesn't go in at all
     const pointAt = (f, why, { quiet = false, because = '' } = {}) => {
       const p = onPaths && pathOf(f)
@@ -3008,22 +3008,32 @@ function mountAttach({ zone, field, tray, button, onChange, onPaths, onError, on
       refs.push(p)
       if (!quiet) said.push(`${why}: its path is in the message instead`)
     }
+    const tell = () => {
+      if (refs.length) onPaths(refs, said[0] ?? '')
+      if (no.length) onError?.(no[0])
+      ;[refs, said, no] = [[], [], []]
+    }
+    const name = (f) => f.name || 'That file'
     for (const f of folders) pointAt(f, "A folder can't be attached here: add the files in it", { quiet: true })
+    const save = []
     for (const f of files) {
-      const name = f.name || 'That file'
       if (only === 'images' && !isImage(f)) no.push('Only PNG, JPEG, GIF and WebP images')
-      else if (f.size > ATTACH_MAX) pointAt(f, `${name} is over 20 MB`)
-      else {
-        try {
-          const bytes = new Uint8Array(await f.arrayBuffer())
-          paths.push(await (isImage(f) ? clique.call('saveImage', f.name, f.type, bytes) : clique.call('saveFile', f.name, bytes)))
-        } catch (e) {
-          pointAt(f, `${name} couldn't be attached`, { because: errorLine(e) })
-        }
+      else if (f.size > ATTACH_MAX) pointAt(f, `${name(f)} is over 20 MB`)
+      else save.push(f)
+    }
+    // what's known without reading a file is said now, while the cursor is where it was dropped: a path isn't kept
+    // waiting for the files beside it to be saved (you may be in another conversation by then)
+    tell()
+    if (!save.length) return
+    for (const f of save) {
+      try {
+        const bytes = new Uint8Array(await f.arrayBuffer())
+        paths.push(await (isImage(f) ? clique.call('saveImage', f.name, f.type, bytes) : clique.call('saveFile', f.name, bytes)))
+      } catch (e) {
+        pointAt(f, `${name(f)} couldn't be attached`, { because: errorLine(e) })
       }
     }
-    if (refs.length) onPaths(refs, said[0] ?? '')
-    if (no.length) onError?.(no[0])
+    tell()
     draw()
   }
   const dragging = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files')

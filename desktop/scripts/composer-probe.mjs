@@ -34,16 +34,21 @@ async function open(file) {
   await new Promise((r) => win.webContents.once('did-finish-load', r))
   await sleep(600)
   // the page's own names (chan, place…) are globals there: the probe's helpers come in as locals over them
-  const js = (code) => win.webContents.executeJavaScript(`(async () => { const { sent, held, ta, wait, type, plus, pick, paste, drop, hint, box, taskMode, side, toChannel, head, enter, fits } = window.__p ?? {}; ${code} })()`)
+  const js = (code) => win.webContents.executeJavaScript(`(async () => { const { sent, held, slow, ta, wait, type, plus, pick, paste, drop, hint, box, taskMode, side, toChannel, head, enter, fits } = window.__p ?? {}; ${code} })()`)
   await win.webContents.executeJavaScript(`(() => {
     const sent = []
     // held.on: a send (or a task being filed) doesn't come back until release() is called, as over a slow link
     const held = { on: false, waiting: [], release() { this.on = false; this.waiting.splice(0).forEach((go) => go()) } }
+    // slow.on: a file being saved isn't saved until release() is called, as a big one from a slow disk
+    const slow = { on: false, waiting: [], release() { this.on = false; this.waiting.splice(0).forEach((go) => go()) } }
     const call = clique.call
     clique.call = (action, ...args) => {
       if (action === 'saveImage') return Promise.resolve(${JSON.stringify(png)})
       // any other file: kept under its name, as the hub keeps it (core/hub.js saveFile)
-      if (action === 'saveFile') return Promise.resolve(${JSON.stringify(path.join(tmp, '2026-11-17-1a2b3c4d_'))} + String(args[0]).replace(/[^\\p{L}\\p{N}._-]+/gu, '_'))
+      if (action === 'saveFile') {
+        const kept = ${JSON.stringify(path.join(tmp, '2026-11-17-1a2b3c4d_'))} + String(args[0]).replace(/[^\\p{L}\\p{N}._-]+/gu, '_')
+        return slow.on ? new Promise((done) => slow.waiting.push(() => done(kept))) : Promise.resolve(kept)
+      }
       if (action !== 'send' && action !== 'task') return call(action, ...args)
       sent.push([action, ...args])
       return held.on ? new Promise((done) => held.waiting.push(() => done(call(action, ...args)))) : call(action, ...args)
@@ -97,7 +102,7 @@ async function open(file) {
     const head = () => document.querySelector('.page-head[data-for=chat] .ph-title').textContent.trim().replace(/\\s+/g, ' ')
     const enter = async () => { ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await wait(200) }
     const fits = () => [ta.clientHeight >= ta.scrollHeight, ta.clientHeight > 40]
-    window.__p = { sent, held, ta, wait, type, plus, pick, paste, drop, hint, box, taskMode, side, toChannel, head, enter, fits }
+    window.__p = { sent, held, slow, ta, wait, type, plus, pick, paste, drop, hint, box, taskMode, side, toChannel, head, enter, fits }
   })()`)
   return { win, js }
 }
@@ -242,7 +247,13 @@ app.whenReady().then(async () => {
     check('a file over 20 MB: its path in the message, nothing attached, and a line that says why (not an error)', await js(`return [box(), hint()]`), [{ to: 'Milo', text: 'Cut the intro from \`/Users/you/Movies/demo.mov\` ', images: 0, quote: false }, ['demo.mov is over 20 MB: its path is in the message instead', false]])
     await js(`await type(''); await drop(['huge.bin', '', 20 * 1024 * 1024 + 1, ''])`)
     check('...and with no telling where it is: said, in red, and nothing in the box', await js(`return [box(), hint()]`), [{ to: 'Milo', text: '', images: 0, quote: false }, ['huge.bin is over 20 MB', true]])
-    await js(`await type('')`)
+    // a path isn't kept waiting for the file beside it: it's in the box, where the cursor was, while that one is still being saved
+    await js(`await type('Look in '); slow.on = true; await drop(['notes.md', 'text/markdown'], ['demo.mov', 'video/quicktime', 20 * 1024 * 1024 + 1, '/Users/you/Movies/demo.mov'])`)
+    check('a big file and a small one dropped, the small one still being saved: the path is in the box already', await js(`return box()`), { to: 'Milo', text: 'Look in \`/Users/you/Movies/demo.mov\` ', images: 0, quote: false })
+    await js(`slow.release(); await wait(250)`)
+    check('and once it is saved, the small one is attached beside it', await js(`return [box(), [...document.querySelectorAll('.compose .thumb.doc b')].map((b) => b.textContent)]`), [{ to: 'Milo', text: 'Look in \`/Users/you/Movies/demo.mov\` ', images: 1, quote: false }, ['notes.md']])
+    await js(`document.querySelector('.compose .thumb [data-rm]').click(); await type('')`)
+    check('taken off again with its ×', await js(`return box()`), { to: 'Milo', text: '', images: 0, quote: false })
     win.destroy()
 
     // ---- the floating chat (the pill's panel): the same box --------------------------------------------------------
