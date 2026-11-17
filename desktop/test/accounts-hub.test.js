@@ -54,11 +54,14 @@ beforeEach(async () => {
   hub = new Hub(runner, { bin: '/nonexistent', workspace: 'shop' })
   hub.url = 'http://127.0.0.1:1'
 })
-afterEach(() => {
-  for (const a of hub.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'retryTimer', 'stopTimer']) clearTimeout(a[t])
-  for (const t of ['statsTimer', 'convoTimer', 'usageTimer', 'spendTimer', 'readsTimer', 'runtimeTimer', 'ticketsTimer', 'lookTimer']) clearTimeout(hub[t])
-  clearTimeout(hub.ledger.timer)
-})
+// A hub's timers put away and its last lines written, so nothing of it runs once its files are gone.
+const quiet = async (h) => {
+  for (const a of h.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'retryTimer', 'stopTimer']) clearTimeout(a[t])
+  for (const t of ['statsTimer', 'convoTimer', 'usageTimer', 'spendTimer', 'readsTimer', 'runtimeTimer', 'ticketsTimer', 'lookTimer']) clearTimeout(h[t])
+  clearTimeout(h.ledger.timer)
+  await h.saving
+}
+afterEach(() => quiet(hub))
 const agent = (name) => hub.agents.get(name)
 const HOUR = 3600000
 const line = (windows) => ({
@@ -169,4 +172,67 @@ test('an agent at work changes account when its turn is over', () => {
   hub.update('june', { account: '' })
   assert.equal(runner.started.has('june'), false, 'not in the middle of a turn')
   assert.equal(hub.snapshot().agents.find((a) => a.name === 'june').pending, true)
+})
+
+test("a conversation started with /clear is the account's too: after CLIque restarts, the agent picks it up there", async () => {
+  const june = agent('june')
+  hub.launch(june)
+  const first = june.sessionId
+  const project = claudeProject(cwd, { CLAUDE_CONFIG_DIR: accountDir('claude-work') })
+  hub.onHook('june', { hook_event_name: 'UserPromptSubmit', session_id: first, prompt: 'go' })
+  hub.onHook('june', { hook_event_name: 'Stop', session_id: first })
+  // /clear in its terminal: Claude Code starts another session, in the same folder
+  const second = '22222222-2222-4222-8222-222222222222'
+  hub.onHook('june', { hook_event_name: 'SessionStart', source: 'clear', session_id: second })
+  assert.equal(hub.convos.june.account, 'claude-work', 'the new conversation lives where its CLI runs')
+  fs.mkdirSync(project, { recursive: true })
+  fs.writeFileSync(path.join(project, `${second}.jsonl`), '{"type":"user"}\n')
+  hub.onHook('june', { hook_event_name: 'UserPromptSubmit', session_id: second, prompt: 'the long task', transcript_path: path.join(project, `${second}.jsonl`) })
+  hub.onHook('june', { hook_event_name: 'Stop', session_id: second })
+  hub.saveConvos(true)
+  await hub.saving
+  // CLIque starts again: a new hub from what was saved
+  await quiet(hub)
+  runner = new FakeRunner()
+  hub = new Hub(runner, { bin: '/nonexistent', workspace: 'shop' })
+  hub.url = 'http://127.0.0.1:1'
+  hub.launch(agent('june'))
+  const args = runner.started.get('june').args
+  assert.deepEqual(args.slice(args.indexOf('--resume'), args.indexOf('--resume') + 2), ['--resume', second])
+  assert.ok(fs.existsSync(path.join(project, `${second}.jsonl`)), 'nothing was moved: it was where it should be')
+})
+
+test("a Codex agent's conversation goes along too: its session log, under the same day, in the other account's folder", () => {
+  const ada = agent('ada')
+  hub.launch(ada)
+  const id = '0199c2aa-1b2c-7d3e-8f90-a1b2c3d4e5f6'
+  const rel = path.join('2026', '11', '16', `rollout-2026-11-16T10-00-00-${id}.jsonl`)
+  const was = path.join(accountDir('codex-two'), 'sessions', rel)
+  fs.mkdirSync(path.dirname(was), { recursive: true })
+  fs.writeFileSync(was, '{"type":"session_meta"}\n')
+  hub.onHook('ada', { hook_event_name: 'UserPromptSubmit', session_id: id, transcript_path: was, prompt: 'go' })
+  hub.onHook('ada', { hook_event_name: 'Stop', session_id: id })
+  assert.equal(hub.convos.ada.account, 'codex-two')
+  runner.started.clear()
+  hub.update('ada', { account: '' })
+  const now = runner.started.get('ada')
+  assert.equal('CODEX_HOME' in now.env, false)
+  assert.deepEqual(now.args.slice(0, 2), ['resume', id], 'Codex resumes it')
+  assert.equal(fs.readFileSync(path.join(process.env.CODEX_HOME, 'sessions', rel), 'utf8'), '{"type":"session_meta"}\n')
+  assert.equal(fs.existsSync(was), false)
+})
+
+test('Q, the agent every workspace comes with, can be given another account too', async () => {
+  process.env.CLIQUE_SYSTEM_AGENT = 'on'
+  try {
+    const withQ = new Hub(new FakeRunner(), { bin: '/nonexistent', workspace: 'shop' })
+    const q = withQ.systemAgent()
+    assert.ok(q, 'Q is here')
+    withQ.update(q.name, { provider: 'claude', account: 'claude-work' })
+    assert.equal(withQ.accountOf(withQ.systemAgent())?.id, 'claude-work')
+    assert.equal(withQ.snapshot().agents.find((a) => a.system).usage, 'claude@claude-work')
+    await quiet(withQ)
+  } finally {
+    process.env.CLIQUE_SYSTEM_AGENT = 'off'
+  }
 })

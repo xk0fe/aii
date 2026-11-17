@@ -50,7 +50,7 @@ const SPOOL = 'spool'
 const RUNTIME = 'runtime.json'
 // How far back the first look through the agents' logs goes for what their work cost (Hub.lookBack, core/backfill.js).
 const LOOK_BACK_DAYS = 30
-const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
+const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'ranOn', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
   'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'promptAt', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks',
   'trustAsk', 'trustAt', 'round', 'keyed', 'halted']
 
@@ -838,8 +838,9 @@ export class Hub extends EventEmitter {
     Object.assign(a, { readyAfter, trust, trustAsk: false, trustNo: false, boot: '', upAt: 0, resumeAsk: null, promptAt: 0 }) // see onOutput
     a.resumeWatch = resume && RESUME_ASK[provider.cli] ? { ask: RESUME_ASK[provider.cli], screen: '' } : null
     a.resumed = Boolean(resume)
+    // the account this process runs on: every conversation it starts (now, or after a /clear) lives in that one's folder
+    a.ranOn = account?.id ?? ''
     if (!resume) this.newConvo(a)
-    if (!resume && account) (this.convoOf(a).account = account.id), this.saveConvos()
     try {
       const cwd = expand(a.cwd)
       if (!fs.existsSync(cwd)) throw new Error(`folder not found: ${cwd}`)
@@ -1532,12 +1533,18 @@ export class Hub extends EventEmitter {
   // Every way a new conversation starts (fresh start, no session to resume, /clear) comes through here,
   // so what the old one was about (a bug it was fixing) never carries over.
   newConvo(a) {
-    this.convos[a.name] = { since: Date.now(), tasks: 0, compactions: 0 }
+    this.convos[a.name] = this.blankConvo(a)
     this.saveConvos()
   }
 
   convoOf(a) {
-    return (this.convos[a.name] ??= { since: Date.now(), tasks: 0, compactions: 0 })
+    return (this.convos[a.name] ??= this.blankConvo(a))
+  }
+
+  // A conversation that's just begun. account: the account whose folder its files are in (core/accounts.js), the one its
+  // CLI runs on (none: the provider's own sign-in). launch goes by it to take the conversation along to another account.
+  blankConvo(a) {
+    return { since: Date.now(), tasks: 0, compactions: 0, ...(a.ranOn && { account: a.ranOn }) }
   }
 
   // Debounced: the status line reports often. `now` on quit, so the last numbers aren't lost.

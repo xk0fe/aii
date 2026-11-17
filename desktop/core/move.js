@@ -314,7 +314,8 @@ export function moveIn(hub, token, out, { name, folder, on, from, shared, join }
     const there = from.name
     const moved = `moved from ${there} to ${here}` // its lines travel with it, so not "here"
     if (conversation === 'moved') {
-      if (out.convo) hub.convos[added] = { ...out.convo, ...(out.convo.ticket != null && { ticket: tasks(out.convo.ticket) }) }
+      // (which account's folder it was in is the other computer's: here it arrives on its provider's own sign-in)
+      if (out.convo) hub.convos[added] = { ...out.convo, account: undefined, ...(out.convo.ticket != null && { ticket: tasks(out.convo.ticket) }) }
       const folderNote = `your folder here is ${cwd}${out.cwd && out.cwd !== cwd ? ` (it was ${out.cwd} on ${there})` : ''}`
       if (out.working) {
         const what = out.current?.text ? ` while working on: "${out.current.text}"` : ' while working'
