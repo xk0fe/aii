@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { Hub, HOME, ATTACHMENTS, addressees, openConfig, saveImage, saveFile, checkInOf, expand, sessionsLeft, arrivedLeft } from './hub.js'
+import { ON_MODEL_OUT, onModelOutOf } from './standin.js'
 import { movedPath } from './home.js'
 import { FETCH_MAX, kindOf, travels, givenName } from './attachments.js'
 import { LinkFiles, readPiece, inside, NO_PIECES } from './linkfiles.js'
@@ -185,6 +186,10 @@ export class Clique extends EventEmitter {
     hub.elsewhere = (name) => {
       const there = hub.directory().filter((a) => a.seed === name)
       return there.length === 1 ? there[0].name : undefined
+    }
+    // a model that ran out (or came back) is your account's: every workspace's agents on it follow
+    hub.modelsChanged = () => {
+      for (const h of this.hubs.values()) h.followModels()
     }
     hub.on('notice', (n) => this.emit('notice', { ...n, ...(!n.account && { workspace: id }) }))
     hub.on('alert', (a, text) => {
@@ -1130,7 +1135,7 @@ export class Clique extends EventEmitter {
       parked: false, autopilot: this.config.data.autopilot ?? true, theme: this.config.data.theme,
       providers: Object.fromEntries(Object.values(providers).map((p) => [p.id, { label: p.label, models: p.models, efforts: p.efforts, modelEfforts: p.modelEfforts, missing: p.missing, fastByDefault: p.fastByDefault, ...(p.meter && { meter: p.meter }) }])),
       agents: [], feed: [], channels: channelsIn({}), reads: { since: 0, agents: {} },
-      spend: { today: 0, usual: null, week: 0, weekBefore: 0 }, checkIn: checkInOf(this.config.data), usage: {}, tasks: { tickets: [], triage: null, autofix: false },
+      spend: { today: 0, usual: null, week: 0, weekBefore: 0 }, checkIn: checkInOf(this.config.data), modelOut: onModelOutOf(this.config.data), usage: {}, tasks: { tickets: [], triage: null, autofix: false },
     }
   }
 
@@ -1233,6 +1238,19 @@ export class Clique extends EventEmitter {
     for (const h of this.hubs.values()) h.checkInChanged()
     this.changed()
     return checkInOf(this.config.data)
+  }
+
+  // When a model runs out (core/standin.js): 'switch' (the default: on with the next model until it resets), 'wait' (for
+  // the reset) or 'tell' (it stops, and you decide). Yours, so it's every workspace's. Agents already on a stand-in, or
+  // stopped at a limit, follow the new choice once they're free.
+  setModelOut(how) {
+    if (!ON_MODEL_OUT.includes(how)) throw new Error(`a model that runs out is handled one of these ways: ${ON_MODEL_OUT.join(', ')}`)
+    if (how === 'switch') delete this.config.data.onModelOut
+    else this.config.data.onModelOut = how
+    this.config.save()
+    for (const h of this.hubs.values()) h.followModels()
+    this.changed()
+    return onModelOutOf(this.config.data)
   }
 
   // ---- usage, day by day (core/history.js), for the Usage view ---------------------------------------------------

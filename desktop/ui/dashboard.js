@@ -705,6 +705,14 @@ $('.dock-rest').addEventListener('click', (e) => {
 const settingsDialog = $('#settings')
 settingsDialog.querySelector('.h-icon').outerHTML = ICONS.gear
 const THEME_CHOICES = [['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']]
+// When a model runs out (core/standin.js): a model with a limit of its own, like Fable's weekly one
+const MODEL_OUT_CHOICES = [['switch', 'Next model'], ['wait', 'Wait'], ['tell', 'Tell me']]
+// (each two lines at most, so the row keeps its height whichever is picked)
+const MODEL_OUT_ABOUT = {
+  switch: 'Fable → Opus until it resets, then back',
+  wait: 'Waits for the reset, then goes on by itself',
+  tell: 'Stops there, and you pick what’s next',
+}
 const stRow = ({ act, icon, name, about = '', value = '', control = '' }) => {
   const text = `<span class="st-icon">${ICONS[icon] ?? icon}</span><span class="st-text"><b>${esc(name)}</b>${about ? `<small>${esc(about)}</small>` : ''}</span>`
   return control
@@ -731,6 +739,7 @@ function drawSettings() {
       stRow({ icon: 'mug', name: 'Stay awake', about: `This ${machine} doesn't sleep while agents work`, control: toggle('awake', state.awake?.enabled ?? true) }),
       stRow({ act: 'tools', icon: 'mark', name: 'Agent tools', value: toolHint() }),
       stRow({ act: 'checkin', icon: 'coin', name: 'Spend check-in', value: checkInHint() }),
+      stRow({ icon: 'brain', name: 'When a model runs out', about: MODEL_OUT_ABOUT[state.modelOut] ?? MODEL_OUT_ABOUT.switch, control: seg('modelOut', MODEL_OUT_CHOICES, state.modelOut ?? 'switch') }),
       stRow({ act: 'savers', icon: 'chart', name: 'Token savers', value: saversHint() }),
     ]),
     group('You', [
@@ -769,6 +778,16 @@ settingsDialog.addEventListener('click', (e) => {
     const id = segBtn.closest('[data-st-seg]').dataset.stSeg
     const v = segBtn.dataset.v
     if (id === 'theme') clique.call('theme', v).catch((err) => oops('Couldn’t change the theme', err))
+    if (id === 'modelOut' && v !== (state.modelOut ?? 'switch')) {
+      const was = state.modelOut
+      state.modelOut = v // shown now; the state that follows says it for good
+      drawSettings()
+      clique.call('modelOut', v).catch((err) => {
+        state.modelOut = was
+        drawSettings()
+        oops('Couldn’t change that', err)
+      })
+    }
     return
   }
   const act = e.target.closest('[data-st]')?.dataset.st

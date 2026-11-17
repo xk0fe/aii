@@ -30,6 +30,7 @@ import { REACTIONS_MAX } from 'clique-shared/protocol.js'
 import { saversFrom, modeOf, Ledger, RESTART, writePrice, HOUR } from './savers.js'
 import { defused, inBracket, pasteable, relayed } from './framing.js'
 import { agentKey } from './keys.js'
+import { onModelOutOf, ranOut, familyOf as modelFamily, standInFor, withModel } from './standin.js'
 
 export { HOME } // ~/.clique (core/home.js)
 export const CONFIG = path.join(HOME, 'config.json')
@@ -53,7 +54,7 @@ const RUNTIME = 'runtime.json'
 const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'ranOn', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
   'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'promptAt', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks',
-  'trustAsk', 'trustAt', 'round', 'keyed', 'halted', 'taskNow']
+  'trustAsk', 'trustAt', 'round', 'keyed', 'halted', 'taskNow', 'ranModel', 'ranFamily', 'saidStand', 'carry', 'outWait']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 // What you attach yourself is copied whole, in one call (from the page, from a linked computer): this much at most.
@@ -127,6 +128,12 @@ const LEASE_STALE = 30 * 60000
 // before each try. After the last one it calls you.
 const PASSING_ERRORS = new Set(['server_error', 'overloaded', 'unknown', 'max_output_tokens'])
 const API_RETRY = [20000, 60000, 180000]
+// A model that ran out (core/standin.js): one that didn't say when it's back is tried again after this long, and one that
+// did a moment after its reset time (a clock that's a little behind the server's mustn't get the same refusal again).
+const OUT_UNKNOWN = 24 * 3600000
+const RESET_SLACK = 60000
+// (setTimeout's longest: a wait past it is made in steps)
+const TIMER_MAX = 2 ** 31 - 1
 // How often an open question looks at its agent's transcript, in case Claude Code settled it by itself (see watchAsk).
 const ASK_CHECK = 5000
 // Answering a trust question from the chat (Hub.pickTrust): not before this long after it asked, a look at its screen
@@ -290,6 +297,7 @@ export class Hub extends EventEmitter {
     this.runner.dispose?.()
     clearInterval(this.stallTimer)
     clearInterval(this.threadTimer)
+    clearTimeout(this.modelsTimer)
     if (this.statsTimer) this.saveStats()
     this.saveTaskTime()
     this.saveConvos(true)
@@ -355,6 +363,7 @@ export class Hub extends EventEmitter {
       if (a?.status === 'idle') this.pump(a)
       if (a?.status === 'working') this.steer(a)
     }
+    this.followModels()
     this.cfg.watch()
     this.resumeThreads()
     this.greet()
@@ -442,6 +451,7 @@ export class Hub extends EventEmitter {
     for (const a of this.agents.values()) if (a.checks && this.runner.running(a.name) && (a.checks === 'full') !== (this.checksFor(a) === 'full')) this.relaunchWhenFree(a)
     // parked or opened in config.json, from the app or by hand
     if (this.url && this.space.parked !== this.parked) this.space.parked ? this.park() : this.unpark()
+    if (this.url) this.followModels() // ("When a model runs out" changed by hand, say)
     this.changed()
   }
 
@@ -744,10 +754,12 @@ export class Hub extends EventEmitter {
   }
 
   launchKey(a) {
-    return a && JSON.stringify([this.providerOf(a)?.id, a.model, a.effort, a.tier, a.cwd, a.args, a.yolo, a.area, a.prompt, a.images, this.accountOf(a)?.id ?? ''])
+    return a && JSON.stringify([this.providerOf(a)?.id, this.modelOf(a), a.effort, a.tier, a.cwd, a.args, a.yolo, a.area, a.prompt, a.images, this.accountOf(a)?.id ?? ''])
   }
 
   relaunchWhenFree(a) {
+    // stopped on its model's limit, and given another model (by you, or by "When a model runs out"): on it goes now
+    if (a.outWait && a.status === 'waiting' && this.familyOf(a, this.modelOf(a)) !== a.outWait.model) return this.carryTurn(a)
     if (a.status === 'working' || a.status === 'waiting') a.relaunch = true
     else this.launch(a)
     this.changed()
@@ -829,6 +841,8 @@ export class Hub extends EventEmitter {
     a.subPending = []
     clearTimeout(a.readyTimer)
     if (fresh) this.saveSession(a.name, null)
+    if (fresh) this.setCarry(a, null) // (a "continue" is for the conversation a limit cut short, not a new one)
+    else this.restoreCarry(a) // (one renamed, say, keeps what it was owed)
     const provider = this.providerOf(a)
     const adapter = adapters[provider?.cli]
     const fail = (text) => {
@@ -859,7 +873,14 @@ export class Hub extends EventEmitter {
     const resume = this.sessions[a.name]
     const session = randomUUID()
     a.checks = this.checksFor(a) // what it checks before building, as its system prompt says (see apply)
-    const { file, args, readyAfter, trust, env: extraEnv } = adapter(a, { resume, session, attachments: ATTACHMENTS, bin: this.bin, checks: a.checks })
+    // the model it runs on: its own, or a stand-in while its own is out (see modelRanOut)
+    const model = this.modelOf(a)
+    this.sayStandIn(a)
+    a.ranModel = model
+    a.outWait = null
+    // waited for its model on an account, and has another model or account now: no more waiting
+    if (a.carry?.until && (this.familyOf(a, model) !== a.carry.model || this.usageKey(a) !== a.carry.key)) this.setCarry(a, { id: a.carry.id, msgs: a.carry.msgs ?? [] })
+    const { file, args, readyAfter, trust, env: extraEnv } = adapter(model === a.model ? a : { ...a, model }, { resume, session, attachments: ATTACHMENTS, bin: this.bin, checks: a.checks })
     a.sessionId = resume ?? session // the conversation this process runs (see onStatusLine)
     this.stopPick(a, { stale: true })
     Object.assign(a, { readyAfter, trust, trustAsk: false, trustNo: false, boot: '', upAt: 0, resumeAsk: null, promptAt: 0 }) // see onOutput
@@ -1025,7 +1046,12 @@ export class Hub extends EventEmitter {
     if (a.resumeAsk || !watch.ask.test(flat(watch.screen))) return
     a.resumeAsk = true
     clearTimeout(a.timer)
-    if (a.expect) {
+    if (a.expect?.again) {
+      // "continue" for a turn that was cut short: still owed once it's answered (its messages went in long ago)
+      clearTimeout(a.ack)
+      this.setCarry(a, { id: a.expect.id, msgs: a.expect.msgs })
+      a.expect = null
+    } else if (a.expect) {
       clearTimeout(a.ack)
       this.unbrief(a, a.expect.msgs)
       for (const m of [...a.expect.msgs].reverse()) (a.inbox.unshift(m), (m.queued = true))
@@ -1154,6 +1180,7 @@ export class Hub extends EventEmitter {
   // On, with nothing to do yet: it rests. One that couldn't start says why now, as it would have at launch, rather than
   // when the first message finds out.
   standBy(a) {
+    this.restoreCarry(a) // (one that waited for its model's reset before CLIque started again, or a rename, waits on)
     if (this.canStart(a)) this.setStatus(a, 'resting')
     else this.launch(a)
   }
@@ -1165,13 +1192,13 @@ export class Hub extends EventEmitter {
 
   // Can Auto give it work? Not one on its way to another computer, nor one resting that couldn't start.
   workable(a) {
-    return !a.moving && (a.status !== 'resting' || this.canStart(a))
+    return !a.moving && !a.carry?.until && (a.status !== 'resting' || this.canStart(a)) // (nor one waiting for its model to reset)
   }
 
   // Nothing it's doing, waiting for or looking after would end with its CLI. You typing in its terminal counts as doing.
   mayRest(a, now, after) {
     if (a.cloneOf || a.off || a.moving || a.status !== 'idle' || !this.runner.running(a.name)) return false
-    if (a.inbox.length || a.background || a.retrying || a.freshPending || a.relaunch || a.steering || a.expect || a.resumeAsk) return false
+    if (a.inbox.length || a.background || a.retrying || a.freshPending || a.relaunch || a.steering || a.expect || a.resumeAsk || (a.carry && !a.carry.until)) return false
     if (this.clonesOf(a).length || [...(a.subs?.values() ?? [])].some((x) => !x.ended)) return false
     if (this.asking(a.name) || this.owed(a) || this.holdsOf(a.name).length) return false
     return now - Math.max(a.since, a.typedAt ?? 0, a.hookAt ?? 0) >= after
@@ -1261,7 +1288,7 @@ export class Hub extends EventEmitter {
       this.pinned.add(msg)
       return asker
     }
-    const free = family.find((x) => x.status === 'idle' && !x.inbox.length && this.runner.running(x.name)) ?? family.find((x) => x.status === 'starting' && !x.inbox.length)
+    const free = family.find((x) => x.status === 'idle' && !x.inbox.length && !x.carry && this.runner.running(x.name)) ?? family.find((x) => x.status === 'starting' && !x.inbox.length)
     if (free) return free
     if (family.length - 1 >= this.maxClones(a)) return a
     const c = this.spawnClone(a, msg)
@@ -1757,7 +1784,10 @@ export class Hub extends EventEmitter {
     clearTimeout(this.usageTimer)
     const write = () => {
       const t = Date.now()
-      for (const u of Object.values(this.usage)) for (const [k, told] of Object.entries(u.told ?? {})) if (told.resetsAt <= t) delete u.told[k]
+      for (const u of Object.values(this.usage)) {
+        for (const [k, told] of Object.entries(u.told ?? {})) if (told.resetsAt <= t) delete u.told[k]
+        for (const [m, o] of Object.entries(u.models ?? {})) if (o.until <= t) delete u.models[m]
+      }
       try {
         fs.writeFileSync(at('usage.json'), JSON.stringify(this.usage))
       } catch {}
@@ -2296,6 +2326,7 @@ export class Hub extends EventEmitter {
           // has one, this agent starts a new conversation rather than go back to the one you cleared.
           this.saveSession(name, null)
           this.newConvo(a)
+          this.setCarry(a, null) // (what the old one was owed isn't this one's)
           this.post({ kind: 'event', from: name, text: 'started a new conversation (/clear)', fresh: true })
           return this.setStatus(a, 'idle')
         }
@@ -2309,6 +2340,8 @@ export class Hub extends EventEmitter {
         // a "continue" CLIque owes it after an API error: this prompt (CLIque's, or anything you typed) takes its place
         clearTimeout(a.retryTimer)
         a.retrying = false
+        this.setCarry(a, null) // (as is one owed after its model ran out)
+        a.outWait = null
         const again = Boolean(a.expect?.again) && samePrompt(e.prompt, a.expect.text)
         // Remembered only once it has a prompt: Claude Code doesn't save empty sessions, so they can't be resumed.
         if (e.session_id && this.sessions[name] !== e.session_id) this.saveSession(name, e.session_id)
@@ -2466,6 +2499,8 @@ export class Hub extends EventEmitter {
     if (a.turnStart) this.record(a.name, { turns: 1, turnMs: Date.now() - a.turnStart })
     a.turnStart = null
     const error = String(e.error || 'unknown')
+    const out = !PASSING_ERRORS.has(error) && ranOut(e.last_assistant_message, this.providerOf(a)?.models ?? [])
+    if (out) return this.modelRanOut(a, out)
     const tries = a.apiRetries ?? 0
     if (!PASSING_ERRORS.has(error) || tries >= API_RETRY.length) {
       a.apiRetries = 0
@@ -2479,6 +2514,206 @@ export class Hub extends EventEmitter {
     a.retryTimer = setTimeout(() => this.resumeTurn(a), ms)
     this.post({ kind: 'event', from: a.name, text: `lost its turn to an API error (${error}), so CLIque types "continue" for it in ${ms < 60000 ? `${ms / 1000}s` : `${ms / 60000} min`}` })
     this.changed()
+  }
+
+  // ---- when a model runs out (core/standin.js) -----------------------------------------------------------------
+  // A model with a limit of its own (Fable's) can run out while the account has plenty left. Which models are out is the
+  // account's (usage[key].models: { fable: { name, until } }), so every agent on it knows, in every workspace. What
+  // happens to an agent on one is yours to pick ("When a model runs out" in Settings): it goes on with a stand-in model
+  // and back to its own once the limit resets (switch), waits for the reset (wait), or stops and tells you (tell).
+  // A turn the limit cut short is owed a "continue" (a.carry: { id, msgs, until?, model?, key? }); one that waits for a
+  // reset keeps that with its conversation, so a rest, a rename or CLIque starting again doesn't lose it.
+
+  // The model of its provider's list an agent runs: what it's set to, or, for a model the list doesn't know (the CLI's
+  // default, an alias like "default"), what it turned out to be when it ran out.
+  familyOf(a, model = a.model) {
+    return modelFamily(model, this.providerOf(a)?.models ?? []) ?? (model === a.model ? (a.ranFamily ?? null) : null)
+  }
+
+  // The models out on an account that haven't reset yet: { fable: { name, until } }.
+  modelsOut(key) {
+    const now = Date.now()
+    return Object.fromEntries(Object.entries(this.usage[key]?.models ?? {}).filter(([, o]) => o.until > now))
+  }
+
+  // The stand-in an agent runs on while its own model is out, when "When a model runs out" says switch: { family, name,
+  // model (its alias), as (what it's passed as), until }, or null.
+  standInOf(a) {
+    if (onModelOutOf(this.config) !== 'switch') return null
+    const family = this.familyOf(a)
+    const out = family && this.modelsOut(this.usageKey(a))
+    if (!out?.[family]) return null
+    const model = standInFor(family, this.providerOf(a)?.models ?? [], new Set(Object.keys(out)))
+    return model && { family, name: out[family].name, model, as: withModel(a.model, family, model), until: out[family].until }
+  }
+
+  // What an agent's CLI is started with: its model, or its stand-in's.
+  modelOf(a) {
+    return this.standInOf(a)?.as ?? a.model
+  }
+
+  // The chat says when an agent starts on a stand-in, and when it's back on its own model: once each.
+  sayStandIn(a) {
+    const s = this.standInOf(a)
+    const now = s ? { model: s.model, family: s.family, name: s.name } : null
+    if (JSON.stringify(now) === JSON.stringify(a.saidStand ?? null)) return
+    const was = a.saidStand
+    a.saidStand = now
+    if (s) return this.post({ kind: 'event', from: a.name, text: `goes on with ${upFirst(s.model)} while ${s.name} is out (it's back ${resetsWhen(s.until)})` })
+    // (back because you picked another way for a model that's still out, or because it reset)
+    const still = this.modelsOut(this.usageKey(a))[was.family]
+    this.post({ kind: 'event', from: a.name, text: still ? `goes back to ${was.name}, which is still out: "When a model runs out" no longer switches models` : `is back on ${was.name}` })
+  }
+
+  // What a turn its model's limit cut short is owed, set or dropped: kept with its conversation while it waits for a
+  // reset (conversations.json), only in memory while it starts again on another model.
+  setCarry(a, carry) {
+    a.carry = carry ?? null
+    const convo = this.convos[a.name]
+    if (carry?.until) this.convoOf(a).carry = { id: carry.id, until: carry.until, model: carry.model, key: carry.key }
+    else if (convo?.carry) delete convo.carry
+    else return
+    this.saveConvos(true) // (now: it may be days until it's needed, and a crash in between mustn't lose it)
+  }
+
+  // ...and picked up again from its conversation, by an agent that doesn't have it (its terminal didn't survive CLIque
+  // starting again, or it was renamed). One whose reset has passed carries on now.
+  restoreCarry(a) {
+    const c = this.convos[a.name]?.carry
+    if (a.carry || !c || a.cloneOf || a.off) return
+    a.carry = { id: c.id, msgs: [], until: c.until, model: c.model, key: c.key }
+  }
+
+  // Its turn ended on a model's limit. Written down for the account, then as "When a model runs out" says.
+  modelRanOut(a, out) {
+    a.apiRetries = 0
+    const key = this.usageKey(a)
+    const resets = out.resetsAt > Date.now() ? out.resetsAt : null
+    const until = resets ? resets + RESET_SLACK : Date.now() + OUT_UNKNOWN
+    const u = (this.usage[key] ??= { told: {} })
+    ;(u.models ??= {})[out.model] = { name: out.name, until }
+    this.saveUsage()
+    const models = this.providerOf(a)?.models ?? []
+    if (!modelFamily(a.model, models)) a.ranFamily = out.model // what a model the list doesn't know (the CLI's default) is
+    const how = onModelOutOf(this.config)
+    const when = resets ? `it resets ${resetsWhen(resets)}` : "it didn't say when it's back"
+    // The same model ran out again in the same turn, after CLIque moved it off it: something in its work still asks for
+    // that model (a sub-agent set to it, say), and going round again won't help.
+    const again = a.outTurn?.id === a.current && a.outTurn.models.includes(out.model)
+    a.outTurn = { id: a.current, models: [...(a.outTurn?.id === a.current ? a.outTurn.models : []), out.model] }
+    const own = this.familyOf(a)
+    const stand = !again && how === 'switch' && this.standInOf(a)
+    if (again) this.stopAtLimit(a, out, `ran out of ${out.name} again (${when}), though it was moved off it: something in its work still asks for ${out.name}, a sub-agent set to it, say. Give that another model, or type "continue" in its terminal once ${out.name} is back`)
+    else if (own && own !== out.model && how !== 'tell') {
+      // its own model isn't the one that ran out (it was switched in its terminal, or a sub-agent ran on it): back to its own
+      this.post({ kind: 'event', from: a.name, text: `ran out of ${out.name} (${when}), so it goes on with its own model, ${upFirst(own)}` })
+      this.carryTurn(a)
+    } else if (stand) {
+      a.saidStand = { model: stand.model, family: stand.family, name: stand.name }
+      this.post({ kind: 'event', from: a.name, text: `ran out of ${out.name} (${when}), so it goes on with ${upFirst(stand.model)} until then` })
+      this.carryTurn(a)
+    } else if (how === 'wait' && resets) this.waitForReset(a, out.model, out.name, until)
+    else {
+      const other = how === 'switch' && own === out.model ? `No other ${this.providerOf(a)?.label ?? ''} model is left to go on with. ` : ''
+      this.stopAtLimit(a, out, `ran out of ${out.name} (${when}). ${other}Give it another model and it goes on with that, or type "continue" in its terminal once ${out.name} is back`)
+    }
+    this.modelsChanged()
+  }
+
+  // It stops there, and it's yours (tell, or nothing else to do): giving it another model carries its turn on.
+  stopAtLimit(a, out, text) {
+    a.outWait = { model: out.model }
+    this.needsYou(a, text)
+  }
+
+  // Its turn is over until its model resets, when CLIque types "continue" for it. Whoever asked it something hears so now
+  // (it could be days), and nothing else goes in meanwhile.
+  waitForReset(a, model, name, until) {
+    a.outWait = null
+    this.setCarry(a, { id: a.current, msgs: [], until, model, key: this.usageKey(a) })
+    this.post({ kind: 'event', from: a.name, text: `ran out of ${name}, which resets ${resetsWhen(until - RESET_SLACK)}: CLIque types "continue" for it then. Messages for it wait until then` })
+    this.setStatus(a, 'idle')
+  }
+
+  // The turn a model's limit cut short goes on in a new process (on its stand-in now): its CLI starts again with the same
+  // conversation, and once it's up CLIque types "continue" for it (continueTurn), as after an API error that passes.
+  carryTurn(a) {
+    this.setCarry(a, { id: a.current, msgs: a.serving ?? [] })
+    a.serving = []
+    this.launch(a)
+  }
+
+  // Free (or resting) with a turn to carry on: "continue" goes in, threaded to what the turn was answering, once it's
+  // time (wait: the reset) and its CLI has settled. Before anything else in its queue.
+  continueTurn(a) {
+    const c = a.carry
+    clearTimeout(a.timer)
+    const wait = Math.max((c.until ?? 0) - Date.now(), a.holdUntil - Date.now())
+    if (wait > 0) {
+      a.timer = setTimeout(() => this.pump(a), Math.min(wait, TIMER_MAX))
+      return
+    }
+    if (a.status === 'resting') return this.launch(a)
+    if (a.status !== 'idle' || !this.runner.running(a.name)) return
+    const drawing = SETTLE_QUIET - (this.runner.quietFor?.(a.name) ?? Infinity)
+    if (drawing > 0 && Date.now() - (c.settleFrom ??= Date.now()) < SETTLE_MAX) {
+      a.timer = setTimeout(() => this.pump(a), drawing)
+      return
+    }
+    this.setCarry(a, null)
+    a.halted = null
+    a.turnBegan = Date.now()
+    this.runner.submit(a.name, CONTINUE)
+    a.promptAt ||= Date.now()
+    a.expect = { id: c.id, text: CONTINUE, msgs: c.msgs ?? [], again: true }
+    this.awaitPickup(a)
+    this.setStatus(a, 'working')
+  }
+
+  // Which models are out changed (an agent ran into a limit, one reset, or you picked another way to handle it): every
+  // workspace's hub looks at its agents (CLIque wires this to all of them; on its own, a hub looks at its own).
+  modelsChanged() {
+    this.followModels()
+  }
+
+  // A running agent whose model should be another now starts again on it: onto a stand-in when its own ran out, back to
+  // its own once that's reset. One at work does when its turn is over; a free one only while nothing would be lost by it
+  // (what it left running, what you're typing in its terminal), else it's looked at again in a minute. One stopped at a
+  // limit follows the way you picked since. And a look again at the next reset.
+  followModels() {
+    clearTimeout(this.modelsTimer)
+    const now = Date.now()
+    const how = onModelOutOf(this.config)
+    let next = Infinity
+    for (const u of Object.values(this.usage)) for (const [m, o] of Object.entries(u.models ?? {})) o.until > now ? (next = Math.min(next, o.until)) : delete u.models[m]
+    for (const a of this.agents.values()) {
+      if (a.off || !this.runner.running(a.name)) continue
+      // stopped at the limit under Tell me, and Wait picked since: it waits for the reset now
+      const out = a.outWait && a.status === 'waiting' && how === 'wait' && this.modelsOut(this.usageKey(a))[a.outWait.model]
+      if (out) {
+        this.waitForReset(a, a.outWait.model, out.name, out.until)
+        continue
+      }
+      // (not one already starting again on it: a carry without a wait)
+      if ((a.carry && !a.carry.until) || a.ranModel === undefined || (a.ranModel ?? '') === (this.modelOf(a) ?? '')) continue
+      if (a.status === 'idle' && !this.freeToRestart(a, now)) {
+        next = Math.min(next, now + 60000)
+        continue
+      }
+      this.relaunchWhenFree(a)
+    }
+    if (next === Infinity) return
+    this.modelsTimer = setTimeout(() => this.followModels(), Math.min(Math.max(next - now, 0) + 1000, TIMER_MAX))
+    this.modelsTimer.unref?.()
+  }
+
+  // A free agent whose CLI can start again now without losing anything: nothing it left running or started (a sub-agent,
+  // a clone), nothing CLIque typed that it hasn't taken yet, and you haven't typed in its terminal in the last minute.
+  // (Its queue is CLIque's: that waits for the new CLI.)
+  freeToRestart(a, now = Date.now()) {
+    if (a.background || a.steering || a.expect || a.resumeAsk || this.clonesOf(a).length) return false
+    if ([...(a.subs?.values() ?? [])].some((x) => !x.ended) || this.asking(a.name) || this.holdsOf(a.name).length) return false
+    return now - (a.typedAt ?? 0) >= 60000
   }
 
   resumeTurn(a) {
@@ -2803,6 +3038,8 @@ export class Hub extends EventEmitter {
   setStatus(a, status) {
     a.ending = false
     if ((status === 'stopped' || status === 'off') && (a.trustAsk || a.trustPick)) this.dropTrust(a)
+    // turned off, parked or exited: a "continue" its model's limit left owed goes with it, as an API error's retry does
+    if ((status === 'stopped' || status === 'off') && (a.carry || a.outWait)) (this.setCarry(a, null), (a.outWait = null))
     if (a.status !== status) {
       const now = Date.now()
       const spent = now - a.since
@@ -3047,6 +3284,7 @@ export class Hub extends EventEmitter {
   // In a turn that can be stopped: at work, or waiting on you mid-turn (not on whether to trust its folder, or to pick
   // up its conversation: Esc there quits the CLI).
   stoppable(a) {
+    if (a?.carry?.until && (a.status === 'idle' || a.status === 'resting')) return true // waiting for its model to reset (see interrupt)
     return Boolean(a && !a.stopping && !a.trustAsk && !a.resumeAsk && (a.status === 'working' || a.status === 'waiting') && this.runner.running(a.name))
   }
 
@@ -3056,6 +3294,13 @@ export class Hub extends EventEmitter {
   interrupt(name) {
     const a = this.agents.get(name)
     if (!this.stoppable(a)) return false
+    if (a.carry?.until && (a.status === 'idle' || a.status === 'resting')) {
+      // waiting for its model's reset: no "continue" then, and anything still queued for it goes in now
+      this.setCarry(a, null)
+      this.pump(a)
+      this.changed()
+      return true
+    }
     for (const t of ['ack', 'steerTimer', 'retryTimer', 'stopTimer']) clearTimeout(a[t])
     Object.assign(a, { retrying: false, apiRetries: 0 })
     // a prompt CLIque typed that the CLI hasn't reported taking yet is this turn's too: whoever asked hears it stopped
@@ -3888,6 +4133,7 @@ export class Hub extends EventEmitter {
     clearTimeout(a.timer)
     const resting = a.status === 'resting'
     if (a.resumeAsk || a.stopping || (resting ? a.moving || this.agents.get(a.name) !== a : a.status !== 'idle' || !this.runner.running(a.name))) return
+    if (a.carry) return this.continueTurn(a) // a turn a model's limit cut short goes on before anything else
     // a clone with nothing of its own takes what waits for its original (not one you just stopped: Stop isn't "next, please")
     if (a.cloneOf && !a.inbox.length && !a.halted) this.takeOver(a)
     if (!a.inbox.length) return a.cloneOf && this.linger(a)
@@ -5149,6 +5395,7 @@ export class Hub extends EventEmitter {
       a.serving = (s.serving ?? []).map(mine)
       a.expect = s.expect ? { ...s.expect, msgs: s.expect.msgs.map(mine) } : null
       a.steering = s.steering ? { ...s.steering, msgs: s.steering.msgs.map(mine) } : null
+      if (a.carry) a.carry = { ...a.carry, msgs: (a.carry.msgs ?? []).map(mine) } // (a turn its model's limit cut short)
       Object.assign(a, { subs: new Map(), subPending: [] })
       this.runs.set(p.tag, { name, file: this.at(GROUPS, `${name}.${p.tag}`), pid: p.pid, at: 0 })
       adopted.add(name)
@@ -5215,6 +5462,12 @@ export class Hub extends EventEmitter {
     }
   }
 
+  // For the app: the model an agent runs on in place of its own ({ standIn: { model, for, until } }).
+  standInShown(a) {
+    const s = this.standInOf(a)
+    return s ? { standIn: { model: s.model, for: s.name, until: s.until } } : {}
+  }
+
   // Each provider's usage limits that haven't reset yet (your accounts', the same from any workspace's hub).
   usageNow() {
     return Object.fromEntries(Object.keys(this.usage).map((id) => [id, { label: this.usageLabel(id), at: this.usage[id].at, windows: this.liveUsage(id).map((w) => ({ ...w, pace: this.pace(id, w) ?? undefined })), ...(this.usage[id].credits && { credits: this.usage[id].credits }) }]).filter(([, u]) => u.windows.length))
@@ -5232,7 +5485,7 @@ export class Hub extends EventEmitter {
         name: a.name, ...(a.system && { system: true }), area: a.area, prompt: a.prompt, images: a.images, provider: this.providerOf(a)?.id ?? a.provider, model: a.model, effort: a.effort, cwd: a.cwd,
         tier: a.tier, fast: this.providerOf(a)?.fastByDefault === undefined ? undefined : a.tier ? a.tier === 'fast' : this.providerOf(a).fastByDefault,
         args: (a.args ?? []).join(' '), avatar: a.avatar, status: this.parked && !a.off && a.status === 'off' ? 'parked' : a.status, since: a.since, activity: a.activity,
-        queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, stats: this.statsOf(a), nearLimit: this.nearLimit(this.usageKey(a)),
+        queue: a.inbox.length, yolo: Boolean(a.yolo), pending: Boolean(a.relaunch), on: !a.off, ...this.standInShown(a), stats: this.statsOf(a), nearLimit: this.nearLimit(this.usageKey(a)),
         // the account it runs on (none: its provider's own sign-in), and whose limits it counts against (state.usage's key)
         ...(this.accountOf(a) && { account: this.accountOf(a).id }), usage: this.usageKey(a),
         // how full, measured against its own context limit when it has one
@@ -5265,6 +5518,7 @@ export class Hub extends EventEmitter {
       reads: this.reads,
       spend: this.spendNow(),
       checkIn: checkInOf(this.config), // { at: { provider: value }, then }: the spend check-in, per provider (none: off)
+      modelOut: onModelOutOf(this.config), // what an agent does when its model runs out (core/standin.js)
       // { claude: { label, at, windows: [{ id, pct, resetsAt, label? }], credits? } }
       // each window with where it's heading at this pace: { projected (percent at its reset), runsOut (ms) }
       usage: this.usageNow(),
@@ -5408,6 +5662,8 @@ export function paceOf(w, samples = [], now = Date.now()) {
   return { projected: Math.round(w.pct + rate * (w.resetsAt - now)), runsOut: runsOut < w.resetsAt ? Math.round(runsOut) : null }
 }
 
+// A model as the chat names it: opus → Opus (one with a version, gpt-6-luna, as written).
+const upFirst = (m) => (/^[a-z]+$/.test(m) ? m[0].toUpperCase() + m.slice(1) : m)
 // When a usage window resets, as the chat says it: "at 15:00" today, "Thu at 09:00" later in the week.
 const resetsWhen = (ms) => {
   const d = new Date(ms)

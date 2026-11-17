@@ -2458,6 +2458,49 @@ const SHOTS = {
     await save(win, `menu-${theme}`)
     win.destroy()
   },
+  // When a model runs out (core/standin.js): Settings' row with Next model, as a new install has it, then Wait picked
+  // (the call made, the line under it saying what that does); and an agent that ran out of Fable going on with Opus: its
+  // line in the chat, and its row naming the model it runs on now.
+  async modelOut(theme) {
+    const win = await dashboard(theme, 'chat', { width: 1100, height: 760 })
+    await sleep(700)
+    await js(win, "document.querySelector('.side-more').click()")
+    await sleep(500)
+    const crop = () => js(win, "const r = document.querySelector('#settings').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }")
+    const row = () => js(win, "const r = document.querySelector('#settings [data-st-seg=modelOut]')?.closest('.st-row'); return r ? [r.querySelector('b').textContent, r.querySelector('small').textContent, r.querySelector('[aria-pressed=true]')?.dataset.v, String(window.__cliqueState.modelOut)].join(' | ') : 'no row'")
+    let now = await row()
+    if (now !== 'When a model runs out | Fable → Opus until it resets, then back | switch | undefined') throw new Error(`modelOut: on a new install the row reads ${now}`)
+    const h0 = await js(win, "return Math.round(document.querySelector('#settings [data-st-seg=modelOut]').closest('.st-row').getBoundingClientRect().height)")
+    await save(win, `modelout-settings-${theme}`, { crop: await crop() })
+    await js(win, "document.querySelector('#settings [data-st-seg=modelOut] [data-v=wait]').click()")
+    await sleep(500)
+    now = await row()
+    if (now !== 'When a model runs out | Waits for the reset, then goes on by itself | wait | wait') throw new Error(`modelOut: Wait gave ${now}`)
+    const height = () => js(win, "return Math.round(document.querySelector('#settings [data-st-seg=modelOut]').closest('.st-row').getBoundingClientRect().height)")
+    if ((await height()) !== h0) throw new Error(`modelOut: the row went from ${h0} to ${await height()} tall with Wait picked`)
+    await save(win, `modelout-settings-wait-${theme}`, { crop: await crop() })
+    await js(win, "document.querySelector('#settings [data-st-seg=modelOut] [data-v=tell]').click()")
+    await sleep(400)
+    if ((await height()) !== h0) throw new Error(`modelOut: the row went from ${h0} to ${await height()} tall with Tell me picked`)
+    await js(win, "document.querySelector('#settings [data-st-seg=modelOut] [data-v=switch]').click()")
+    await sleep(400)
+    await js(win, "document.querySelector('#settings').close()")
+    await sleep(300)
+    // Ada, set to Fable, ran out of it: she goes on with Opus until Thursday
+    const until = Date.now() + 2.5 * 864e5
+    await js(win, `const s = window.__cliqueState; const a = s.agents.find((x) => x.name === 'Ada'); a.model = 'fable'; a.standIn = { model: 'opus', for: 'Fable', until: ${until} };
+      s.feed.push({ id: 'mo1', kind: 'event', from: 'Ada', text: 'ran out of Fable (it resets Thu at 06:00), so it goes on with Opus until then', ts: Date.now() }); window.__cliqueEmit('state', s)`)
+    await sleep(900)
+    await save(win, `modelout-chat-${theme}`)
+    win.destroy()
+    // the Agents place: Ada's card says which model she runs on now, and in place of which
+    const agents = await dashboard(theme, 'clique', { width: 1100, height: 760 })
+    await js(agents, `const s = window.__cliqueState; const a = s.agents.find((x) => x.name === 'Ada'); a.model = 'fable'; a.standIn = { model: 'opus', for: 'Fable', until: ${until} }; window.__cliqueEmit('state', s)`)
+    await sleep(900)
+    const tip = await js(agents, "const c = document.querySelector('.pcard[data-name=Ada]'); return c ? c.title.split('\\n')[2] : 'no card'")
+    if (tip !== 'Claude · opus in place of fable · high') throw new Error(`modelOut: Ada's card says ${tip}`)
+    agents.destroy()
+  },
   // The sidebar's gear: Settings, everything that isn't a place.
   async sideMenu(theme) {
     const win = await dashboard(theme, 'chat')

@@ -1099,6 +1099,12 @@ window.clique = {
       emit()
       return state.checkIn
     }
+    // when a model runs out: switch, wait or tell
+    if (action === 'modelOut') {
+      state.modelOut = args[0]
+      emit()
+      return state.modelOut
+    }
     // stay awake while agents work: on or off
     if (action === 'keepAwake') {
       state.awake = awakeOf(Boolean(args[0]))
