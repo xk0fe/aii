@@ -698,11 +698,12 @@ function workspaceAction(op, id, arg) {
   return { id, state }
 }
 const emit = () => setTimeout(() => window.__cliqueEmit('state', state), 30)
-// The app's own state (main.js stateNow): its version, an update, Open at login. __cliqueUpdate(patch) is what
+// The app's own state (main.js stateNow): its version, an update, Open at login, where the floating chat lives (?at=mouse:
+// under the mouse) and the shortcuts that reach it. __cliqueUpdate(patch) is what
 // core/updates.js would report next (an update ready, say); __cliqueRestartAsk, when set, is the question Restart to
 // update asks first (core/updates.js restartWords), as when agents are at work.
 const UPDATE = { phase: 'idle', version: '1.0.0', off: null, next: null, progress: 0, later: false, asking: null, stuck: false }
-state.app = { version: '1.0.0', update: UPDATE, login: { on: false } }
+state.app = { version: '1.0.0', update: UPDATE, login: { on: false }, chat: { at: QUERY.get('at') === 'mouse' ? 'mouse' : 'sticky', keys: PLATFORM === 'win32' ? { chat: 'Alt+Shift+Space', message: 'Alt+Shift+D' } : { chat: '⌥⇧Space', message: '⌥⇧D' } } }
 window.__cliqueUpdate = (patch) => {
   Object.assign(UPDATE, patch)
   window.__cliqueEmit('state', state)
@@ -835,7 +836,7 @@ function sendAction(name, text) {
   return out
 }
 
-const listeners = { state: [], focus: [], toggle: [], voice: [], place: [], file: [] }
+const listeners = { state: [], focus: [], toggle: [], voice: [], place: [], trail: [], file: [] }
 
 // Dictation without a microphone: a wobbling tone stands in for your voice (it only moves the meter), and a
 // scripted transcript arrives word by word. Nothing here ever opens a real microphone.
@@ -1134,6 +1135,11 @@ window.clique = {
       emit()
       return state.app.login.on
     }
+    if (action === 'chatAt') {
+      state.app.chat.at = args[0] === 'mouse' ? 'mouse' : 'sticky'
+      emit()
+      return state.app.chat.at
+    }
     if (action === 'addAgent') {
       const name = String(args[0].name).toLowerCase()
       state.agents.push(newAgent({ ...args[0], name, shared: false }))
@@ -1176,6 +1182,7 @@ window.clique = {
   drag: () => {},
   dragApp: () => {},
   onPlace: (fn) => listeners.place.push(fn),
+  onTrail: (fn) => listeners.trail.push(fn),
   onState: (fn) => listeners.state.push(fn),
   onPty: () => {},
   onFocus: (fn) => listeners.focus.push(fn),

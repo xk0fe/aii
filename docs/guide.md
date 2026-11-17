@@ -21,8 +21,8 @@ On Windows, ⌘ is Ctrl, and ⌥ and ⌃ are Alt: `⌥⇧Space` is Alt+Shift+Spa
 
 | Keys | What it does |
 |---|---|
-| `⌥⇧Space` | Open the floating chat from any app (change it with `"hotkey"` in `config.json`) |
-| `⌥⇧D` | Open the chat and start dictating (`"voiceHotkey"`) |
+| `⌥⇧Space` | Open the floating chat from any app; with the chat under the mouse, right where the pointer is (change it with `"hotkey"` in `config.json`) |
+| `⌥⇧D` | Open the chat and start dictating; with the chat under the mouse, a message box where the pointer is, to talk or type into (`"voiceHotkey"`) |
 | `⌘1` `⌘2` `⌘3` `⌘4` | Dashboard views: Agents, Tasks, the terminal grid, one terminal |
 | `⌘F` | Find an agent by name or area |
 | `⌘N` | New agent |
@@ -37,6 +37,12 @@ On Windows, ⌘ is Ctrl, and ⌥ and ⌃ are Alt: `⌥⇧Space` is Alt+Shift+Spa
   - **Drag it anywhere** by its edge or by the chat's header. The chat opens on the side with room: on the left of the screen it opens to the right of the pill, on the right to the left, at the top below, at the bottom above. At the top and bottom the pill lies flat, like the Dock.
   - **It stays put:** dropped near an edge, it tucks in against it, and opening or closing the chat never moves it.
   - **The notch:** drag the pill to the notch at the top of a MacBook's screen and it moves into it, with the chat hanging below. A screen without a notch gets a drawn one at the top middle, which works the same way.
+  - **Or under the mouse.** Instead of a pill you put somewhere, the clique can follow your pointer: pick **Floating chat › Under the mouse** in the dashboard's **⋯** menu or the menu bar popover's gear (**Sticky** is the pill). A wisp then trails the pointer: one tiny buddy, smaller than the pointer itself, on a soft glow. The glow is its status light: faint while nothing happens, lit while agents work, berry while someone needs you. A dot says there's a reply to read. Clicks go through it, so everything is done with two keys:
+    - `⌥⇧D` opens a **message box** where the pointer is, already listening. Talk, or just start typing (it stops listening and keeps what it heard). Enter sends it and the box is gone; Esc, or a click anywhere else, puts it away with what you wrote kept for next time. While it listens it stays up, so you can click around in what you're talking about. The **To** picker and `@names` work as in the chat. Press `⌥⇧D` again to stop or start listening.
+    - `⌥⇧Space` opens the **chat** where the pointer is, and closes it again. From the message box it opens the chat in its place. Drag it by its header to move it; Esc closes it.
+    - Either way you stay in the app you were in: on a Mac, CLIque takes the keyboard without coming to the front, and gives it back when it closes.
+    - It keeps still unless something happens: a short tail while you move the pointer, one ring as a reply comes in or someone starts needing you, a hop with a few motes as a message leaves the box, and a blink now and then.
+    - Like the pill, it steps aside while the dashboard is open (the two keys then go to the dashboard), and is back by the pointer when you close or minimize it.
 - **Dashboard**: the clique on the left, the view in the middle, the chat on the right, and the workspace you're in at the top left (see [Workspaces](#workspaces-a-clique-per-project)).
   - **The sidebar** lists every agent by computer, in your order (a status change never moves a row). Fold a computer with its arrow; its header still counts who's working and who needs you. Off agents fold into one line. **Search** (`⌘F`) finds an agent by name or area, and **+** (`⌘N`) makes one. Click an agent for its terminal and your conversation with it in the chat (its card in the CLIque view); click it again to go back to every terminal and everyone's messages. **Right-click** for everything else: message it, open its terminal, edit it, start a new conversation, move it to another computer, turn it off, remove it. **Drag** an agent onto another computer to move it there.
   - **CLIque** is a collection of agent cards, grouped by computer, where you create and edit agents. Big cards, compact cards (the default once the clique outgrows a screen), or **Stats** to compare them.
@@ -89,7 +95,8 @@ Q is the queue in CLIque (CLI agent queue, CLI queue, CLIque) and the clique's o
 - **Talk instead of typing.** Click the mic next to send and just talk. Your words appear in the message box as you speak, and it fixes them up as it goes. Or press `⌥⇧D` from any app: the chat opens and starts listening.
   - **Hold the mic** to talk and let go to stop, or click once to start and once to stop.
   - **Enter** stops and sends once the last words are in. **Esc** stops and leaves the text for you to edit. If it's slow to finish, a second Esc stops waiting and keeps what it has. In the floating chat the next Esc closes the panel.
-  - **While it listens**, the line above the box shows who it's for and which language. Click the language to switch, for example English and Русский. It offers the languages set on your computer (System Settings › General › Language & Region on a Mac; Settings › Time & language › Language & region on Windows).
+  - **Or just type:** the first key you press stops the listening, keeps what it heard, and lands in the box.
+  - **While it listens**, the box's bar says so, with who it's for, the language and the keys. Click the language (shown by its code, such as EN) to switch, for example English and Русский. It offers the languages set on your computer (System Settings › General › Language & Region on a Mac; Settings › Time & language › Language & region on Windows).
   - **Private:** dictation runs on your computer, so your voice never leaves it, and nothing is sent until you send it. On a Mac it's Apple's on-device dictation; on Windows it's OpenAI's Whisper speech model, which comes with CLIque and needs no internet.
   - **First use:** your computer asks once for the microphone. On a Mac, a language you haven't used for dictation before downloads first. On macOS 13 to 15, CLIque uses Apple's older recognizer, after asking for speech recognition permission, and offers only the languages it can do on the Mac itself.
   - **Linked computers:** dictation runs on the computer you're typing on, even when the clique lives on another one.
@@ -427,6 +434,7 @@ Everything CLIque keeps is in the `.clique` folder in your home folder (`~/.cliq
   "autopilot": true,
   "hotkey": "Alt+Shift+Space",
   "voiceHotkey": "Alt+Shift+D",
+  "chatAt": "mouse",
   "agents": [
     { "name": "iris", "area": "product design", "provider": "claude", "model": "opus", "effort": "high", "cwd": "~/Projects/storefront",
       "avatar": { "body": "heart", "color": "pink", "eyes": "sparkle", "mouth": "cat", "hat": "bow", "cheeks": true } },
@@ -435,7 +443,7 @@ Everything CLIque keeps is in the `.clique` folder in your home folder (`~/.cliq
 }
 ```
 
-An agent without an `avatar` gets one picked from its name, always the same. `off: true` keeps an agent saved but not running. `clones` is how many clones it may run at once when it's busy. `args` are extra flags passed straight to the CLI.
+`"chatAt": "mouse"` keeps the floating chat under the mouse; leave it out for the pill. An agent without an `avatar` gets one picked from its name, always the same. `off: true` keeps an agent saved but not running. `clones` is how many clones it may run at once when it's busy. `args` are extra flags passed straight to the CLI.
 
 **Another provider** on Claude Code or Codex (a different endpoint, a different set of models) goes under `providers` in `config.json`, in the same shape as the built-in ones: a `label`, the `cli` it runs on (`claude` or `codex`), and optionally the `env` and `args` it needs and the `models` and `efforts` to offer. One with the id of a built-in provider replaces it.
 

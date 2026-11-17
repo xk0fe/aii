@@ -468,6 +468,15 @@ export class Clique extends EventEmitter {
     this.config.save()
   }
 
+  // Where the floating chat lives on this computer: 'sticky', a pill you put somewhere (nothing in config.json says so),
+  // or 'mouse', a buddy that follows the pointer and opens where it is (core/follow.js). -> which it is now
+  setChatAt(where) {
+    if (where === 'mouse') this.config.data.chatAt = 'mouse'
+    else delete this.config.data.chatAt
+    this.config.save()
+    return this.config.data.chatAt === 'mouse' ? 'mouse' : 'sticky'
+  }
+
   // When CLIque may notify you (core/notify.js): config.json's `notifications`, there only once something isn't the
   // default. setNotifications({ days, from, to }) is the schedule, ({ pause: 'hour' | 'morning' | 'manual' | 'off' }) the
   // pause from the menu bar. It's this computer's: each of your computers notifies on its own.
