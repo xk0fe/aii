@@ -2,6 +2,7 @@
 // the animations. Nothing starts and ~/.clique is untouched. Run: npm run shots [-- out-dir [shot names...]] [--webp] [--win]
 // [--frame] [--dark] [--window=1100x700]
 import { app, BrowserWindow, ipcMain, nativeTheme, protocol } from 'electron'
+import './quiet.mjs' // no beeps from the keys it presses, no sound from its pages
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'

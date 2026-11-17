@@ -9,6 +9,7 @@
 // Each line says what was tried and whether it held; it ends with 0 when all of it did, 1 otherwise. Nothing of yours is
 // touched: its files are in a temporary folder. (Full screen stays inside the hidden window: nothing takes your screen.)
 import { app, BrowserWindow, nativeTheme, protocol, ipcMain } from 'electron'
+import './quiet.mjs' // no beeps from the keys it presses, no sound from its pages
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
