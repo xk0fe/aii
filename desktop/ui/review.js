@@ -40,7 +40,7 @@ function rvTimeHTML(t, x, agentOf) {
   const far = x.end - x.start > 20 * 3600000
   const waiting = t.status === 'check' && x.reportedAt ? x.end - x.reportedAt : 0
   const since = `${tookText(x.total)} since ${rvClock(x.start, true)}: it was added before ${PRODUCT_NAME} kept the time`
-  const head = x.partial ? esc(since) : x.done ? `${tookText(x.total)} from added to accepted` : x.toReport != null ? `${tookText(x.toReport)} from added to reported${waiting >= 60000 ? ` · ${tookText(waiting)} waiting for you since` : ''}` : `${tookText(x.total)} so far`
+  const head = x.partial ? esc(since) : x.done ? `${tookText(x.total)} from added to accepted` : x.toReport != null ? `${tookText(x.toReport)} from added to reported${waiting >= 60000 ? ` · ${tookText(waiting)} waiting for you since ${rvClock(x.reportedAt, far)}` : ''}` : `${tookText(x.total)} so far`
   const at = (ts) => `${(((ts - x.start) / x.total) * 100).toFixed(3)}%`
   const role = { did: t.kind === 'bug' ? 'fixed it' : 'did it', helped: 'helped', triaged: 'triaged it' }
   const lanes = x.agents.map((row) => {
