@@ -18,7 +18,10 @@
        Terminals or Usage). No titlebar: the sidebar's top and each view's header are where the window is dragged. */
     main { --rail-w: 0px; --side-w: 260px; position: relative; display: grid; grid-template-columns: var(--rail-w) var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; }
     main > .rail { grid-area: 1 / 1; } main > .side { grid-area: 1 / 2; } main > .center { grid-area: 1 / 3; }
-    body.has-rail main { --rail-w: 72px; }
+    /* on a Mac the window's buttons sit at the top of the rail (from 12px, 60px across): it's wide enough for them to
+       stand inside it with room either side, over the middle of its tiles. Windows has its buttons on the right. */
+    body.has-rail main { --rail-w: 84px; }
+    html[data-os=win] body.has-rail main { --rail-w: 72px; }
     @media (max-width: 1160px) { main { --side-w: 232px; } body.has-rail main { --side-w: 216px; } }
     /* the sidebar can be put away for more room (⌥⌘S): it slides out over the middle, pinned where it was (.leaving) */
     body.no-side main { --side-w: 0px; }
@@ -53,22 +56,22 @@
     html[data-os=win] .rail-top { height: 12px; }
     .rail .ws-dock { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 2px 0 14px; overflow-y: auto; scrollbar-width: none; border: 0; }
     .rail .ws-dock::-webkit-scrollbar { display: none; }
-    .rail-ws { position: relative; flex: none; width: 72px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer; }
+    .rail-ws { position: relative; flex: none; width: 100%; height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer; }
     .rail-ws .ws-tile { border-radius: 14px; transition: border-radius var(--t-move) var(--out), filter var(--t-quick); }
     .rail-ws:hover .ws-tile, .rail-ws.current .ws-tile { border-radius: 11px; }
     .rail-ws.parked .ws-tile { filter: grayscale(1); opacity: .6; }
     .rail-ws.parked:hover .ws-tile { opacity: .85; }
     /* hosted on a linked computer: that computer's icon in the corner, and the tile dimmed while it's off */
-    .rail-ws .rail-owner { position: absolute; left: 10px; bottom: -4px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 10px; background: #EEECF1; color: #1E1C22; box-shadow: 0 0 0 3px var(--rail-bg); }
+    .rail-ws .rail-owner { position: absolute; left: calc(50% - 26px); bottom: -4px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 10px; background: #EEECF1; color: #1E1C22; box-shadow: 0 0 0 3px var(--rail-bg); }
     .rail-ws .rail-owner svg { width: 12px; height: 12px; }
     .rail-ws.owner-off .ws-tile { opacity: .5; }
     .rail-pill { position: absolute; left: 0; top: 50%; width: 4px; height: 8px; margin-top: -4px; border-radius: 0 4px 4px 0; background: #fff; opacity: 0; transform: scaleY(.5); transition: opacity var(--t-quick), transform var(--t-move) var(--out); }
     .rail-ws.unread .rail-pill { opacity: 1; transform: none; }
     .rail-ws:hover .rail-pill { opacity: 1; transform: scaleY(2.5); }
     .rail-ws.current .rail-pill { opacity: 1; transform: scaleY(5); }
-    .rail-ws .need-badge { position: absolute; right: 9px; bottom: -3px; min-width: 20px; height: 20px; border-radius: 10px; box-shadow: 0 0 0 3px var(--rail-bg); }
+    .rail-ws .need-badge { position: absolute; right: calc(50% - 27px); bottom: -3px; min-width: 20px; height: 20px; border-radius: 10px; box-shadow: 0 0 0 3px var(--rail-bg); }
     .rail-ws.dragging { opacity: .4; }
-    .rail-ws.drop-before::before, .rail-ws.drop-after::after { content: ''; position: absolute; left: 14px; right: 14px; height: 3px; border-radius: 2px; background: #EEECF1; }
+    .rail-ws.drop-before::before, .rail-ws.drop-after::after { content: ''; position: absolute; left: calc(50% - 22px); right: calc(50% - 22px); height: 3px; border-radius: 2px; background: #EEECF1; }
     .rail-ws.drop-before::before { top: -6px; }
     .rail-ws.drop-after::after { bottom: -6px; }
     .rail-add { flex: none; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 14px; background: rgba(255, 255, 255, .07); color: #B5B1BB; cursor: pointer; transition: border-radius var(--t-move) var(--out), background var(--t-quick), color var(--t-quick); }
@@ -222,7 +225,7 @@
     .center { --caption-w: 0px; }
     html[data-os=win] .center { --caption-w: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))); }
     /* with the sidebar put away, a Mac's traffic lights sit over the header's left end */
-    html:not([data-os=win]) body.no-side .center { --lights-w: 76px; }
+    html:not([data-os=win]) body.no-side:not(.has-rail) .center { --lights-w: 76px; } /* (with the rail, they're on the rail) */
     /* the views' gutter: the header's title and what's under it line up (a narrow middle takes less) */
     @media (max-width: 960px) { .heads, .stage { --gx: 16px; } }
     .heads { flex: none; }
