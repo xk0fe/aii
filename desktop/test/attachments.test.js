@@ -56,22 +56,25 @@ const mbox = (type, ...parts) => {
   return Buffer.concat([u32(body.length + 8), Buffer.from(type, 'latin1'), body])
 }
 // an MP4 as a phone or ffmpeg writes one: where `moov` is doesn't matter, and a track on its side says so in its matrix
-const mp4 = ({ w, h, seconds, turned = false, moovLast = false }) => {
+const mp4 = ({ w, h, seconds, turned = false, moovLast = false, silent = false }) => {
   const matrix = turned ? [0, 0x10000, 0, -0x10000, 0, 0, 0, 0, 0x40000000] : [0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000]
   const tkhd = mbox('tkhd', Buffer.alloc(40), ...matrix.map((n) => u32(n >>> 0)), u32(w * 65536), u32(h * 65536))
   const hdlr = (kind) => mbox('hdlr', Buffer.alloc(8), Buffer.from(kind), Buffer.alloc(13))
   const sound = mbox('trak', mbox('tkhd', Buffer.alloc(84)), mbox('mdia', hdlr('soun')))
-  const moov = mbox('moov', mbox('mvhd', Buffer.alloc(12), u32(600), u32(seconds * 600), Buffer.alloc(80)), sound, mbox('trak', tkhd, mbox('mdia', hdlr('vide'))))
+  const moov = mbox('moov', mbox('mvhd', Buffer.alloc(12), u32(600), u32(seconds * 600), Buffer.alloc(80)), ...(silent ? [] : [sound]), mbox('trak', tkhd, mbox('mdia', hdlr('vide'))))
   const ftyp = mbox('ftyp', Buffer.from('isom'), u32(0x200), Buffer.from('isomiso2'))
   const mdat = mbox('mdat', Buffer.alloc(4096, 7))
   return Buffer.concat(moovLast ? [ftyp, mdat, moov] : [ftyp, moov, mdat])
 }
 const el = (id, body) => Buffer.concat([Buffer.from(id, 'hex'), Buffer.from([0x80 | body.length]), body])
-const webm = (w, h, seconds) => {
+// (types: what each track says it is, 1 pictures and 2 sound; a file that doesn't say isn't asked)
+const webm = (w, h, seconds, types = []) => {
   const dur = Buffer.alloc(4)
   dur.writeFloatBE(seconds * 1000)
   const info = el('1549a966', Buffer.concat([el('2ad7b1', Buffer.from([0x0f, 0x42, 0x40])), el('4489', dur)]))
-  const tracks = el('1654ae6b', el('ae', Buffer.concat([el('d7', Buffer.from([1])), el('e0', Buffer.concat([el('b0', u16(w)), el('ba', u16(h))]))])))
+  const track = (type, more = []) => el('ae', Buffer.concat([el('d7', Buffer.from([1])), ...(type ? [el('83', Buffer.from([type]))] : []), ...more]))
+  const picture = [el('e0', Buffer.concat([el('b0', u16(w)), el('ba', u16(h))]))]
+  const tracks = el('1654ae6b', Buffer.concat(types.length ? types.map((t) => track(t, t === 1 ? picture : [])) : [track(0, picture)]))
   const segment = Buffer.concat([Buffer.from('18538067', 'hex'), Buffer.from([0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]), info, tracks, el('1f43b675', Buffer.alloc(40))])
   return Buffer.concat([el('1a45dfa3', el('4282', Buffer.from('webm'))), segment])
 }
@@ -86,11 +89,15 @@ test('a picture or a recording says how big it is on screen, from its first byte
   assert.deepEqual(sized('a.webp', webp(640, 480)), { kind: 'image', type: 'image/webp', w: 640, h: 480 })
   assert.deepEqual(sized('a.svg', '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="390px" height="844" viewBox="0 0 10 10"></svg>'), { kind: 'image', type: 'image/svg+xml', w: 390, h: 844 })
   assert.deepEqual(sized('b.svg', '<svg viewBox="0 0 24.5 12" xmlns="http://www.w3.org/2000/svg"/>'), { kind: 'image', type: 'image/svg+xml', w: 25, h: 12 })
-  assert.deepEqual(sized('a.mp4', mp4({ w: 1280, h: 720, seconds: 12 })), { kind: 'video', type: 'video/mp4', dur: 12, w: 1280, h: 720 })
-  assert.deepEqual(sized('late.mov', mp4({ w: 1920, h: 1080, seconds: 94, moovLast: true })), { kind: 'video', type: 'video/quicktime', dur: 94, w: 1920, h: 1080 })
+  assert.deepEqual(sized('a.mp4', mp4({ w: 1280, h: 720, seconds: 12 })), { kind: 'video', type: 'video/mp4', dur: 12, w: 1280, h: 720, sound: true })
+  assert.deepEqual(sized('late.mov', mp4({ w: 1920, h: 1080, seconds: 94, moovLast: true })), { kind: 'video', type: 'video/quicktime', dur: 94, w: 1920, h: 1080, sound: true })
   // a phone's recording held upright: stored on its side, shown as it was held
-  assert.deepEqual(sized('tall.mp4', mp4({ w: 1920, h: 1080, seconds: 3, turned: true })), { kind: 'video', type: 'video/mp4', dur: 3, w: 1080, h: 1920 })
+  assert.deepEqual(sized('tall.mp4', mp4({ w: 1920, h: 1080, seconds: 3, turned: true })), { kind: 'video', type: 'video/mp4', dur: 3, w: 1080, h: 1920, sound: true })
   assert.deepEqual(sized('a.webm', webm(854, 480, 7.5)), { kind: 'video', type: 'video/webm', w: 854, h: 480, dur: 7.5 })
+  // whether it has any sound (a screen recording usually has none: its player offers no volume)
+  assert.deepEqual(sized('quiet.mp4', mp4({ w: 1280, h: 720, seconds: 12, silent: true })), { kind: 'video', type: 'video/mp4', dur: 12, w: 1280, h: 720, sound: false })
+  assert.deepEqual(sized('quiet.webm', webm(854, 480, 7.5, [1])), { kind: 'video', type: 'video/webm', w: 854, h: 480, dur: 7.5, sound: false })
+  assert.deepEqual(sized('loud.webm', webm(854, 480, 7.5, [1, 2])), { kind: 'video', type: 'video/webm', w: 854, h: 480, dur: 7.5, sound: true })
   assert.deepEqual(sized('page.html', '<h1>hi</h1>'), { kind: 'html', type: 'text/html' })
   assert.deepEqual(sized('run.log', 'ok'), { kind: 'file', type: 'text/plain' })
   assert.deepEqual(sized('thing.xyz', 'ok'), { kind: 'file', type: 'application/octet-stream' })
@@ -146,7 +153,7 @@ test('clique attach copies the files and shows them where the agent is working, 
   assert.deepEqual([e.kind, e.from, e.channel, e.text, e.re, e.thread], ['reply', 'iris', 'evidence', 'The new checkout: a shot, the flow, and a page to try.', undefined, undefined])
   assert.deepEqual(e.files.map(({ path: p, ...f }) => f), [
     { name: 'shot.png', kind: 'image', type: 'image/png', w: 1280, h: 800, size: 29 },
-    { name: 'clip.mp4', kind: 'video', type: 'video/mp4', dur: 12, w: 1280, h: 720, size: fs.statSync(path.join(work, 'clip.mp4')).size },
+    { name: 'clip.mp4', kind: 'video', type: 'video/mp4', dur: 12, w: 1280, h: 720, sound: true, size: fs.statSync(path.join(work, 'clip.mp4')).size },
     { name: 'demo.html', kind: 'html', type: 'text/html', size: 13 },
   ])
   for (const f of e.files) {
@@ -342,7 +349,7 @@ test('a phone hears what the files are, never where they are; an older phone rea
   assert.equal(phoneState(plain).feed, plain.feed)
 })
 
-test('a recording is never sent whole to a linked computer or a phone; a picture and a page are', async () => {
+test('whole, a picture and a page go to a linked computer or a phone, never a recording; a piece at a time, a linked computer gets anything', async () => {
   put('clip.mp4', mp4({ w: 640, h: 360, seconds: 2 }))
   put('p.png', png(8, 8))
   put('page.html', '<p>hi</p>')
@@ -350,24 +357,56 @@ test('a recording is never sent whole to a linked computer or a phone; a picture
   const [clip, pic, page] = hub.feed.at(-1).files
   assert.deepEqual([clip, pic, page].map(A.travels), [false, true, true])
   assert.equal(A.travels({ kind: 'image', size: A.FETCH_MAX + 1 }), false)
-  // what a linked computer asks this one for (Clique.serve)
+  // what a linked computer on a CLIque from before pieces asks this one for (Clique.serve readImage)
   const read = (file) => clique.serve('readImage', [file])
   assert.ok(Buffer.from(await read(pic.path)).equals(png(8, 8)))
   assert.equal(Buffer.from(await read(page.path)).toString(), '<p>hi</p>')
   await assert.rejects(async () => read(clip.path), /too big to send: open it on the computer it is on/)
   await assert.rejects(async () => read(CONFIG), /not an attachment/)
+  await assert.rejects(async () => read(path.join(ATTACHMENTS, '..', 'config.json')), /not an attachment/) // (wherever .. leads)
+  // ...and what one that knows pieces asks (readFile, core/linkfiles.js): the recording too
+  const piece = (file, start, length) => clique.serve('readFile', [file, start, length])
+  const whole = fs.readFileSync(clip.path)
+  const first = piece(clip.path, 0, 1000)
+  assert.deepEqual([first.size, first.bytes.length], [whole.length, 1000])
+  assert.ok(Buffer.from(first.bytes).equals(whole.subarray(0, 1000)))
+  const rest = piece(clip.path, 1000, 1024 * 1024)
+  assert.ok(Buffer.concat([Buffer.from(first.bytes), Buffer.from(rest.bytes)]).equals(whole))
+  assert.equal(piece(clip.path, whole.length + 5, 10).bytes.length, 0) // past its end: nothing, and how long it is
+  assert.equal(piece(clip.path, 0, 64 * 1024 * 1024).bytes.length, whole.length) // (never more than a piece at once, however much is asked)
+  for (const bad of [CONFIG, path.join(ATTACHMENTS, '..', 'config.json'), '', null, ATTACHMENTS]) assert.throws(() => piece(bad, 0, 10), /not an attachment/, String(bad))
+  assert.throws(() => piece(path.join(ATTACHMENTS, 'never-was.mp4'), 0, 10), /that file is gone/)
+  for (const [start, length] of [[-1, 10], [0.5, 10], ['0', 10], [0, -1]]) assert.throws(() => piece(clip.path, start, length), /not a part of a file/)
+  // both are asked with no workspace in hand: a file is its computer's, not a workspace's
+  assert.ok(Buffer.from(clique.serve('readFile', [pic.path, 0, 100], null).bytes).equals(png(8, 8)))
 })
 
-test('from a linked computer: a picture and a page are fetched into the cache, a recording stays there and says where', () => {
+test('from a linked computer: a picture and a page are brought as soon as they show, a recording when it plays; all say where they are from', async () => {
   const asked = []
-  const l = { slug: 'workstation', name: 'Workstation', toHost: new Map(), fetching: new Set(), peer: { call: (what, [file]) => (asked.push([what, file]), new Promise(() => {})) } }
+  const l = { slug: 'workstation', name: 'Workstation', toHost: new Map(), peer: { call: (what, [file]) => (asked.push([what, file]), new Promise(() => {})) } }
+  clique.links.set('workstation', l)
+  after(() => clique.links.delete('workstation'))
   const theirs = [{ path: 'C:\\Users\\rex\\.clique\\attachments\\2026-11-16-aaaaaaaa-shot.png', name: 'shot.png', kind: 'image', size: 100 }, { path: '/home/rex/.clique/attachments/2026-11-16-bbbbbbbb-run.mp4', name: 'run.mp4', kind: 'video', size: 5e7, w: 1920, h: 1080, dur: 94 }, { path: '/home/rex/.clique/attachments/2026-11-16-cccccccc-notes.pdf', name: 'notes.pdf', kind: 'file', size: 10 }]
-  // (as Clique.snapshot maps a linked computer's feed)
-  const here = theirs.map((f) => (A.travels(f) ? { ...f, path: clique.fetchImage(l, f.path), home: l.name } : { ...f, path: '', away: l.name }))
-  assert.ok(here[0].path.startsWith(path.join(CACHE, 'workstation') + path.sep) && here[0].home === 'Workstation')
-  assert.deepEqual(here.slice(1).map((f) => [f.path, f.away]), [['', 'Workstation'], ['', 'Workstation']])
-  assert.deepEqual(asked, [['readImage', theirs[0].path]])
-  assert.match(fs.readFileSync(path.join(DESKTOP, 'core', 'clique.js'), 'utf8'), /files: e\.files\.map\(\(f\) => \(travels\(f\) \? \{ \.\.\.f, path: this\.fetchImage\(l, f\.path\), home: l\.name \} : \{ \.\.\.f, path: '', away: l\.name \}\)\)/)
+  const here = theirs.map((f) => clique.linkedFile(l, f))
+  // each has its place in this computer's cache of that one, and says where it's from
+  for (const f of here) assert.ok(f.path.startsWith(path.join(CACHE, 'workstation') + path.sep) && f.home === 'Workstation' && !f.away, f.name)
+  assert.deepEqual(here.map((f) => path.extname(f.path)), ['.png', '.mp4', '.pdf'])
+  assert.deepEqual(here.map(({ path: p, home, ...f }) => f), theirs.map(({ path: p, ...f }) => f)) // what it is is unchanged
+  assert.deepEqual(here.map((f) => l.toHost.get(f.path)), theirs.map((f) => f.path)) // (and it's known where it is there)
+  // only the picture is asked for now; the recording and the document wait to be played or opened
+  await new Promise((r) => setImmediate(r))
+  assert.deepEqual(asked, [['readFile', theirs[0].path]])
+  // asked again while it's on its way (every change in the clique comes by here): not asked twice
+  clique.linkedFile(l, theirs[0])
+  await new Promise((r) => setImmediate(r))
+  assert.equal(asked.length, 1)
+  // a computer whose CLIque sends no pieces: its picture still comes, its recording and document stay there and say so
+  clique.files.old.add('workstation')
+  after(() => clique.files.old.delete('workstation'))
+  const old = theirs.map((f) => clique.linkedFile(l, f))
+  assert.ok(old[0].path && old[0].home === 'Workstation')
+  assert.deepEqual(old.slice(1).map((f) => [f.path, f.away, f.home]), [['', 'Workstation', undefined], ['', 'Workstation', undefined]])
+  assert.match(fs.readFileSync(path.join(DESKTOP, 'core', 'clique.js'), 'utf8'), /files: e\.files\.map\(\(f\) => this\.linkedFile\(l, f\)\)/)
 })
 
 // ---- the sandbox --------------------------------------------------------------------------------------------------
@@ -419,14 +458,16 @@ test('the scheme answers only for a page in the folders it was given, wherever l
 test("the app's own pages: a frame may only hold the sandbox's scheme, and still no inline script", () => {
   for (const file of ['dashboard.html', 'overlay.html']) {
     const csp = /http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(fs.readFileSync(path.join(DESKTOP, 'ui', file), 'utf8'))[1]
-    assert.equal(csp, "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; media-src 'self' file:; frame-src clique-sandbox:", file)
+    // (clique-file: a linked computer's pictures and recordings, core/linkfiles.js: never a frame, never a script)
+    assert.equal(csp, "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: clique-file:; media-src 'self' file: clique-file:; frame-src clique-sandbox:", file)
   }
   // nothing gives a frame the app's origin, and the page's HTML is never read into the app's page
   for (const file of ['ui/files.js', 'core/sandbox.js']) assert.ok(!fs.readFileSync(path.join(DESKTOP, file), 'utf8').includes('allow-same-origin'), file)
   const ui = fs.readFileSync(path.join(DESKTOP, 'ui', 'files.js'), 'utf8')
   assert.ok(!/srcdoc|fetch\(|readFile|\.innerHTML = [^`'"F]*f\.(path|name)/.test(ui))
   const main = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8')
-  assert.match(main, /serveSandbox\(protocol, \[ATTACHMENTS, CACHE\]\)/)
+  assert.match(main, /serveSandbox\(protocol, \[ATTACHMENTS, CACHE\], /)
+  assert.match(main, /serveFiles\(protocol, \{ dirs: \[ATTACHMENTS, CACHE\], files: clique\.files \}\)/)
   assert.match(main, /lockFrames\(win\.webContents\)/)
   assert.ok(!/nodeIntegrationInSubFrames|webviewTag|nodeIntegration: true|contextIsolation: false|webSecurity: false/.test(main))
 })
@@ -448,19 +489,49 @@ test('the cards: every box has its size before anything loads, and a name is onl
   const video = UI.filesHTML({ id: 'e3', files: [f({ name: 'clip.mp4', kind: 'video', w: 1280, h: 720, dur: 75, size: 2.1 * 1024 * 1024 })] })
   assert.match(video, /<div class="fx-card fx-video" data-live="e3:0" style="width:440px">/)
   assert.match(video, /<small>Video · 1:15 · 2\.1 MB<\/small>/)
-  assert.match(video, /<div class="fx-stage" style="aspect-ratio:1\.7777777777777777"><video src="[^"]+#t=0\.01" preload="metadata" playsinline /)
-  assert.ok(!/<video[^>]*\b(autoplay|loop|muted|controls)\b/.test(video), 'still until Play: no autoplay, no loop')
+  // its player, in a box of the recording's shape: the first frame, Play, how long it is; the bar is there for when it's started
+  assert.match(video, /<div class="fx-stage" style="aspect-ratio:1\.7777777777777777"><div class="fxp" data-id="e3" data-i="0" tabindex="0" role="group" aria-label="Recording: clip\.mp4" style="--ratio:1\.7777777777777777"><video src="file:\/\/[^"]+clip\.mp4#t=0\.01" preload="metadata" playsinline disablepictureinpicture tabindex="-1"><\/video><button type="button" class="fxp-big" data-fxp="toggle" tabindex="-1" aria-label="Play clip\.mp4">/)
+  assert.match(video, /<span class="fxp-badge">1:15<\/span>/)
+  assert.match(video, /<div class="fxp-track" data-fxp="track" role="slider" tabindex="0" aria-label="Where it is" aria-valuemin="0" aria-valuemax="75" aria-valuenow="0" aria-valuetext="0:00 of 1:15">/)
+  for (const act of ['toggle', 'mute', 'level', 'rate', 'full']) assert.ok(video.includes(`data-fxp="${act}"`), act)
+  assert.ok(!/<video[^>]*\b(autoplay|loop|controls)\b/.test(video), 'still until Play: no autoplay, no loop, and the controls are its own')
+  assert.equal(video.split('<video').length, 3) // the recording, and the small look at a moment (which loads nothing until it's asked)
+  assert.match(video, /<span class="fxp-tip"><video muted playsinline disablepictureinpicture preload="none" tabindex="-1"><\/video>/)
+  // one with no sound says so, for its player to offer no volume; one that doesn't know says nothing
+  assert.match(UI.filesHTML({ id: 'e3', files: [f({ name: 'quiet.mp4', kind: 'video', sound: false })] }), /<div class="fxp silent" /)
+  assert.match(UI.filesHTML({ id: 'e3', files: [f({ name: 'loud.mp4', kind: 'video', sound: true })] }), /<div class="fxp" /)
   const tall = UI.filesHTML({ id: 'e3', files: [f({ name: 'tall.mp4', kind: 'video', w: 1080, h: 1920 })] })
-  assert.match(tall, /style="width:240px">.*style="aspect-ratio:0\.75"/)
+  assert.match(tall, /style="width:240px">.*style="aspect-ratio:0\.75"><div class="fxp" [^>]*style="--ratio:0\.5625">/)
+  assert.ok(!tall.includes('fxp-badge'), 'no length known: no corner')
   const page = UI.filesHTML({ id: 'e4', files: [f({ name: 'demo.html', kind: 'html' })] })
   assert.match(page, /<iframe class="fx-frame still" sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" tabindex="-1" title="demo\.html, not running" src="clique-sandbox:\/\/page\/\?f=%2FUsers%2Fyou%2F\.clique%2Fattachments%2F2026-11-16-aaaaaaaa-demo\.html"><\/iframe>/)
   assert.ok(!page.includes('run=1'), 'not running until Run page')
   const file = UI.filesHTML({ id: 'e5', files: [f({ name: 'run.log', kind: 'file' }), f({ name: 'setup.command', kind: 'file' })] })
   assert.equal(file.split('data-fx="open"').length, 2) // the log opens; the script is only shown in its folder
   assert.equal(file.split('>Show in Finder<').length, 3)
+  // on a linked computer whose CLIque can't send it: where it is, and nothing to press
   const away = UI.filesHTML({ id: 'e6', files: [{ name: 'win.mp4', kind: 'video', size: 5e7, dur: 94, path: '', away: 'Workstation' }] })
   assert.match(away, /Video · 1:34 · 48 MB · on Workstation<\/small>.*Kept on Workstation\. Open it there\./)
   assert.ok(!away.includes('<video') && !away.includes('data-fx'))
+  // from a linked computer: the same cards as this computer's, saying where they're from, loaded through clique-file://
+  const LINKED = vm.createContext({ clique: { platform: 'darwin', cache: '/Users/you/.clique/link/cache' }, CSS: { escape: (x) => x }, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {}, avatarHTML: () => '', agentColor: () => '' })
+  vm.runInContext(`${fs.readFileSync(path.join(DESKTOP, 'ui/common.js'), 'utf8')};${fs.readFileSync(path.join(DESKTOP, 'ui/files.js'), 'utf8')};globalThis.__x = { filesHTML, fxPics, fileURL }`, LINKED)
+  const L = LINKED.__x
+  const theirs = (o) => ({ size: 2048, home: 'Workstation', ...o, path: `/Users/you/.clique/link/cache/workstation/${o.name}` })
+  const from = L.filesHTML({ id: 'e9', files: [theirs({ name: 'aa.mp4', kind: 'video', w: 1280, h: 720, dur: 94 }), theirs({ name: 'bb.png', kind: 'image', w: 10, h: 10 }), theirs({ name: 'cc.pdf', kind: 'file' }), theirs({ name: 'dd.html', kind: 'html' })] })
+  assert.match(from, /<small>Video · 1:34 · 2 KB · from Workstation<\/small>/)
+  assert.match(from, /<video src="clique-file:\/\/f\/\?p=%2FUsers%2Fyou%2F\.clique%2Flink%2Fcache%2Fworkstation%2Faa\.mp4#t=0\.01" preload="metadata"/)
+  assert.match(from, /<img src="clique-file:\/\/f\/\?p=%2FUsers%2Fyou%2F\.clique%2Flink%2Fcache%2Fworkstation%2Fbb\.png" alt="bb\.png"/)
+  assert.match(from, /<small>PDF · 2 KB · from Workstation<\/small><\/span><span class="fx-tools"><button type="button" class="btn sm" data-fx="open" data-id="e9" data-i="2">Open<\/button>/)
+  assert.match(from, /src="clique-sandbox:\/\/page\/\?f=%2FUsers%2Fyou%2F\.clique%2Flink%2Fcache%2Fworkstation%2Fdd\.html"/) // a page: the sandbox, as ever
+  // only what's in that cache goes through it: this computer's files are files, on a Mac and on Windows
+  assert.equal(L.fileURL('/Users/you/.clique/attachments/a b.png'), 'file:///Users/you/.clique/attachments/a%20b.png')
+  assert.equal(L.fileURL('/Users/you/.clique/link/cache-not/x.png'), 'file:///Users/you/.clique/link/cache-not/x.png')
+  assert.match(L.fxPics({ id: 'm1', images: ['/Users/you/.clique/link/cache/workstation/e.png'] }), /<img src="clique-file:\/\/f\/\?p=[^"]+e\.png" data-fx="view"/) // your own pictures, sent from there
+  const WIN_CTX = vm.createContext({ clique: { platform: 'win32', cache: 'C:\\Users\\you\\.clique\\link\\cache' }, CSS: { escape: (x) => x }, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {}, avatarHTML: () => '', agentColor: () => '' })
+  vm.runInContext(`${fs.readFileSync(path.join(DESKTOP, 'ui/common.js'), 'utf8')};globalThis.__x = { fileURL }`, WIN_CTX)
+  assert.equal(WIN_CTX.__x.fileURL('C:\\Users\\you\\.clique\\link\\cache\\studio\\a.mp4'), `clique-file://f/?p=${encodeURIComponent('C:\\Users\\you\\.clique\\link\\cache\\studio\\a.mp4')}`)
+  assert.equal(WIN_CTX.__x.fileURL('C:\\Users\\you\\.clique\\attachments\\a.png'), 'file:///C:/Users/you/.clique/attachments/a.png')
   // a name is text, wherever it's written
   const evil = UI.filesHTML({ id: 'e7', files: [f({ name: '"><img src=x onerror=alert(1)>.html', kind: 'html' }), f({ name: '<script>x</script>.png', kind: 'image', w: 10, h: 10 }), f({ name: '<b>.log', kind: 'file' })] })
   assert.ok(!/<img src=x|<script>x|<b>\.log/.test(evil))

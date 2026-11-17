@@ -12,8 +12,10 @@
 //                                 goes ATTACHMENT_DAYS after it was saved (Clique.sweepImages, a minute after the start).
 //                                 Files agents attach are kept there too (core/attachments.js), by the same rule,
 //                                 and no more than STORE_MAX of them together: past that the oldest go (makeRoom).
-//   link/cache/<computer>/        linked computers' images: CACHE_DAYS after they were fetched (fetched again when
-//                                 they're shown).
+//   link/cache/<computer>/        linked computers' files (pictures, recordings, pages, documents: core/linkfiles.js),
+//                                 and the pieces of one that's only partly here: CACHE_DAYS after they were fetched
+//                                 (fetched again when they're shown), and no more than core/linkfiles.js CACHE_MAX of
+//                                 them together per computer: past that the ones fetched longest ago go.
 //   run/ptyhost.log               the terminal host's log: a host writes at most 1 MB of it, CLIque's own lines stop at
 //                                 2 MB (note), and past 1 MB it starts afresh when a host starts, the one before kept as
 //                                 ptyhost.log.1 (core/ptyclient.js, core/ptyhost.js).
