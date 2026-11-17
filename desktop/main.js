@@ -684,7 +684,10 @@ function openDashboard(focus = '') {
   dash.on('show', () => overlay.hide())
   dash.on('restore', () => overlay.hide())
   dash.on('minimize', showChat)
-  dash.on('hide', showChat)
+  // On a Mac Electron also says 'hide' when another app's window covers the dashboard (and 'show' when it's uncovered).
+  // That's only switching apps: the dashboard is still up (isVisible() stays true), so the chat stays shut until you open
+  // it. A real hide (⌘H) brings it back.
+  dash.on('hide', () => dashOnScreen() || showChat())
   // A pairing code lives only while the dashboard's pairing view shows it: closing, reloading or losing the page ends
   // it, and one that page asked for isn't made. (did-navigate, not did-start-navigation: that one also fires for a
   // navigation will-navigate then stops.)
