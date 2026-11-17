@@ -2,6 +2,7 @@
 // Add one with New task or a column's + (or from the chat). Starting one hands it to its owner in a fresh
 // conversation, so tasks don't pile into one long context; you review what comes back. Board or list, filtered by
 // kind, owner or search; open a task for everything about it. Data comes from the hub (core/tickets.js) via clique.call('task').
+/* global taskTiming, timingSummary, rvListHTML, rvReceiptHTML, rvBarHTML, rvLink, RV_LANDED */ // (tasktime.js, review.js)
 /* global pageHead, mountSearch, notify, oops, reduceMotion, PRODUCT_NAME, ownerIn, mountMentions, mountInk, clique, store, esc, avatarHTML, agentColor, mountAttach, morph, ago, md, snippet, nameHTML, ICONS, fileURL, bounce, contextRing, segmented, money, tokenCount, SPEND_NOTE, keys, errorLine, openLink */
 
 const STATUS = [
@@ -51,6 +52,7 @@ const BACK = icon('<path d="M6.2 4.2 2.8 7.4l3.4 3.2" fill="none" stroke="curren
 const CHEVRON = icon('<path d="M5.5 6.5L8 9l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>')
 const PICK_ALL = icon('<rect x="2.2" y="2.2" width="11.6" height="11.6" rx="3.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.2 8.1l2 2 3.8-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>')
 const TK_FUNNEL = icon('<path d="M2.6 3.4h10.8L9.3 8.4v4.3l-2.6-1.3v-3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>')
+const RECEIPT = icon('<path d="M4 2.5h8v11l-1.6-1-1.6 1-1.6-1-1.6 1-1.6-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6.3 6h3.4M6.3 8.6h3.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>')
 // The columns you can add to with their +: To do adds, In progress adds and starts it right away.
 const TK_ADD_TO = { new: 'Add a task', fixing: 'Start a new task' }
 
@@ -61,7 +63,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     id: 'tasks', glyph: ICONS.task, title: 'Tasks',
     tools: `<div class="tk-search"></div><span class="tk-active"></span>
       <button class="btn" data-filter-btn title="Filter by kind or owner" aria-haspopup="true" aria-expanded="false">${TK_FUNNEL}<span>Filter</span></button>
-      <div class="seg icons tk-views"><button data-mode="board" title="Board" aria-label="Board">${BOARD}</button><button data-mode="list" title="List" aria-label="List">${LIST}</button></div>
+      <div class="seg icons tk-views"><button data-mode="board" title="Board" aria-label="Board">${BOARD}</button><button data-mode="list" title="List" aria-label="List">${LIST}</button><button data-mode="review" title="Review: what came back, who was on it and where the time went (R)" aria-label="Review">${RECEIPT}<i class="tk-rv-dot"></i></button></div>
       <button class="btn primary" data-new-task title="New task (N)">${ICONS.plus}<span>New task</span></button>
       <button class="icon" data-board-menu title="Workflow, and acting on many tasks at once" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`,
   }))
@@ -93,6 +95,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
       </div>
       <div class="bulk-bar tk-bulk" role="toolbar" aria-label="Picked tasks"></div>
     </section>
+    <section class="rv" aria-label="Review"></section>
     <aside class="tp"></aside>`
   const $ = (s) => root.querySelector(s) ?? head.querySelector(s) ?? floats.querySelector(s)
   const tp = $('.tp')
@@ -101,7 +104,10 @@ function mountTasks(root, { headIn = root, onTerminal }) {
   const addGo = $('.tk-add-go')
   let state = null
   let tickets = []
-  let mode = store.get('clique.tasks.view') === 'list' ? 'list' : 'board'
+  let mode = store.get('clique.tasks.view') === 'list' ? 'list' : 'board' // or 'review', which isn't remembered
+  let back = mode // the view the review was opened from: Esc goes back to it
+  let reviewing = null // the task open in the review (its key)
+  let rvFor = null // the task the review's note box was last drawn for
   let doneOpen = store.get('clique.tasks.done') === '1'
   let addKind = 'task'
   const filter = { q: '', kind: '', owner: '' }
@@ -224,7 +230,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     if (t.status === status) return
     if (status === 'fixing' && !t.owner) {
       notify(`Pick who does #${t.id} first`, { warn: true })
-      return open(t.key)
+      return open(t.key, { panel: true }) // (the panel has its owner menu)
     }
     await call('move', t.key, status).catch(() => {})
     if (status === 'fixing') notify(`#${t.id} went to @${t.owner}, in a new conversation`)
@@ -452,11 +458,13 @@ function mountTasks(root, { headIn = root, onTerminal }) {
   $('.tk-views').addEventListener('click', (e) => {
     const m = e.target.closest('[data-mode]')?.dataset.mode
     if (!m || m === mode) return
+    if (m === 'review') return openReview()
+    if (mode === 'review') reviewing = null
     // the composer follows you across (a column on the board, a popover in the list) if you'd written something
     const lane = composeAt
     const keep = lane && drafted()
     closeComposer()
-    mode = m
+    mode = back = m
     store.set('clique.tasks.view', m)
     first = true // no slide-in animation across the switch
     draw()
@@ -654,6 +662,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     // Cards slide to their new place (FLIP): remember where each was before the board changes.
     const before = new Map([...root.querySelectorAll('.tc, .tr')].map((el) => [el.dataset.name, el.getBoundingClientRect()]))
     root.classList.toggle('mode-list', mode === 'list')
+    root.classList.toggle('mode-review', mode === 'review')
     segmented($('.tk-views'), (b) => b.dataset.mode === mode)
     for (const key of picked) if (!ticket(key)) picked.delete(key) // deleted, or gone from the board
     root.classList.toggle('picking', picked.size > 0)
@@ -668,7 +677,8 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     morph($('.tk-empty'), none ? `<div class="empty-state">${cliqueNow.length ? mugsRoomHTML(cliqueNow.filter((a) => a.on).concat(cliqueNow.filter((a) => !a.on))) : ''}<h1 class="display">${cliqueNow.length ? 'We’re all here. What should we work on?' : 'Nothing to work on yet'}</h1><p class="lead">Add a task, or just ask in the chat: whoever’s free picks it up.</p><div class="acts"><button class="btn primary lg" data-add-to="new">${ICONS.plus}New task</button></div></div>`
       : !shown ? `<div class="empty-state small">${narrowed ? TK_FUNNEL : ICONS.search}<b>No tasks match</b><span>${narrowed && filter.q ? 'Nothing has those words with these filters on.' : narrowed ? 'Nothing open or done fits these filters.' : 'No task has those words.'}</span><div class="acts"><button class="btn" data-filter="clear:1">${narrowed ? 'Clear filters' : 'Clear the search'}</button></div></div>` : '')
     $('.tk-body').classList.toggle('empty', none || !shown)
-    if (mode === 'board') drawBoard(by)
+    if (mode === 'review') drawReview()
+    else if (mode === 'board') drawBoard(by)
     else drawList(by)
     for (const el of root.querySelectorAll('.tc, .tr')) {
       const was = before.get(el.dataset.name)
@@ -694,6 +704,7 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     const open = tickets.filter((t) => t.status !== 'done').length
     const review = tickets.filter((t) => t.status === 'check').length
     const urgent = tickets.filter((t) => t.status !== 'done' && t.severity === 'blocker').length
+    head.querySelector('[data-mode=review]').classList.toggle('has', review > 0) // a dot on Review while some wait
     morph(head.querySelector('.ph-sub'), [open ? `${open} open` : 'Nothing open', urgent && `<span class="strong">${urgent} urgent</span>`, review && `<span class="needs">${review} to review</span>`].filter(Boolean).join(' · '))
   }
 
@@ -886,9 +897,153 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     setTimeout(() => b.remove(), 900)
   }
 
+  // ---- the review: what came back, one task at a time, with its receipts (review.js) --------------------
+  // The tasks to review, then the ones that landed. Each opens with who was on it, where its time went
+  // (tasktime.js), what was asked, what changed and how it was checked. Accept and Send back are under it; J and K
+  // step through, A accepts, S writes what's missing, Esc goes back to the board. The search and the filters narrow
+  // it as they do the board.
+
+  const rv = $('.rv')
+  // (the one that has waited longest for you first: the board's Review lane has the latest on top)
+  const reviewQueue = () => tickets.filter((t) => t.status === 'check' && matches(t)).sort((x, y) => x.updated - y.updated)
+  const landedList = () => tickets.filter((t) => t.status === 'done' && !t.dupOf && matches(t)).sort(order.done).slice(0, RV_LANDED)
+  // Where a task's time went. A landed task's doesn't change, so it's worked out once.
+  const timings = new Map()
+  function timingOf(t) {
+    if (t.status !== 'done') return taskTiming(t, { agents: state.agents })
+    const sig = `${t.updated}:${t.time?.spans?.length ?? 0}`
+    const had = timings.get(t.key)
+    if (had?.sig === sig) return had.x
+    const x = taskTiming(t, { agents: state.agents })
+    timings.set(t.key, { sig, x })
+    return x
+  }
+  // The agent to draw for one of a task's rows: one on another computer by its full name, a clone as its original
+  // with its number.
+  // (a name from a task's time record is as its own computer wrote it; its owner and fixer are already as this page has them)
+  function rowAgent(row, t) {
+    const a = agent(!row.known && t.home && !String(row.base).includes('@') ? `${row.base}@${t.home}` : row.base)
+    return row.clone ? { ...a, name: `${a.name}.${row.clone}`, cloneOf: a.name, clone: row.clone, avatar: { seed: a.avatar?.seed ?? a.seed ?? a.name, ...a.avatar } } : a
+  }
+
+  function openReview(key, { sendBack = false } = {}) {
+    closeComposer()
+    closeFilters()
+    closePop()
+    picked.clear()
+    if (selected) (selected = panelFor = null), tp.classList.remove('open'), root.classList.remove('panel-open')
+    if (mode !== 'review') back = mode
+    mode = 'review'
+    if (key) reviewing = String(key)
+    first = true
+    draw()
+    if (sendBack) setTimeout(() => rv.querySelector('[data-rv-note]')?.focus({ preventScroll: true }), 60)
+  }
+  function leaveReview() {
+    mode = back
+    reviewing = null
+    first = true
+    draw()
+  }
+
+  function drawReview() {
+    const review = reviewQueue()
+    const landed = landedList()
+    const all = [...review, ...landed]
+    if (!all.some((t) => t.key === reviewing)) reviewing = all[0]?.key ?? null
+    const items = (list) => list.map((t) => ({ t, x: timingOf(t) }))
+    const landedItems = items(landed)
+    if (!rv.firstElementChild) rv.innerHTML = '<nav class="rv-list" aria-label="To review, and landed"></nav><div class="rv-main"><div class="rv-scroll"></div><footer class="rv-bar"></footer></div>'
+    morph(rv.querySelector('.rv-list'), rvListHTML({ review: items(review), landed: landedItems, current: reviewing, summary: timingSummary(landedItems.map((i) => (i.x?.partial ? null : i.x))), agentOf: rowAgent }))
+    const t = reviewing ? ticket(reviewing) : null
+    const scroll = rv.querySelector('.rv-scroll')
+    const bar = rv.querySelector('.rv-bar')
+    rv.classList.toggle('none', !t)
+    if (!t) {
+      rvFor = null
+      morph(bar, '')
+      return morph(scroll, `<div class="empty-state small">${RECEIPT}<b>Nothing to review</b><span>${filter.kind || filter.owner || filter.q ? 'Nothing that came back fits the search or the filters.' : 'What your agents finish comes here: who was on it, where the time went, what changed and how it was checked.'}</span></div>`)
+    }
+    morph(scroll, rvReceiptHTML(t, timingOf(t), { agentOf: rowAgent, at: t.status === 'check' ? { index: review.indexOf(t), count: review.length } : null }))
+    // what you were writing stays through a redraw; another task starts with an empty box, at its top
+    const typed = rvFor === t.key ? (bar.querySelector('[data-rv-note]')?.value ?? '') : ''
+    morph(bar, rvBarHTML(t))
+    const box = bar.querySelector('[data-rv-note]')
+    if (box && box.value !== typed) (box.value = typed), fit(box)
+    if (rvFor !== t.key) scroll.scrollTop = 0
+    rvFor = t.key
+  }
+
+  // After Accept or Send back: the next one to review comes up (the one before it, at the end of the queue).
+  const nextToReview = (t) => {
+    const queue = reviewQueue()
+    const i = queue.indexOf(t)
+    return (queue[i + 1] ?? queue[i - 1])?.key ?? null
+  }
+  async function acceptReview(t, btn) {
+    const next = nextToReview(t)
+    if (btn) burst(btn)
+    await call('accept', t.key).catch(() => {})
+    if (next) reviewing = next
+    draw()
+  }
+  async function sendBackReview(t) {
+    const box = rv.querySelector('[data-rv-note]')
+    const next = nextToReview(t)
+    await call('sendBack', t.key, box?.value.trim() ?? '').catch(() => {})
+    if (box) (box.value = ''), box.blur() // out of the box: the next task comes up, and the keys are the review's again
+    notify(t.fixer ? `Sent #${t.id} back to @${t.fixer}` : `#${t.id} is open again`)
+    reviewing = next
+    draw()
+  }
+  function stepReview(by) {
+    const keys = [...reviewQueue(), ...landedList()].map((t) => t.key)
+    if (!keys.length) return
+    reviewing = keys[Math.max(0, Math.min(keys.length - 1, keys.indexOf(reviewing) + by))]
+    draw()
+    rv.querySelector('.rv-row.on')?.scrollIntoView({ block: 'nearest' })
+  }
+  // The review's keys (the panel, a menu and the filters have had Esc first: see the keydown below).
+  function reviewKey(e) {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || selected || pop || filtersOpen()) return // (a menu's keys are its own)
+    if (e.key === 'Escape') return leaveReview()
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    const k = e.key.toLowerCase()
+    const t = reviewing ? ticket(reviewing) : null
+    if (k === 'j' || e.key === 'ArrowDown') return void (e.preventDefault(), stepReview(1))
+    if (k === 'k' || e.key === 'ArrowUp') return void (e.preventDefault(), stepReview(-1))
+    if (k === 'a' && t?.status === 'check') return void (e.preventDefault(), acceptReview(t, rv.querySelector('[data-rv=accept]')))
+    if (k === 's' && t?.status === 'check') return void (e.preventDefault(), rv.querySelector('[data-rv-note]')?.focus())
+  }
+
+  rv.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-rv-open]')
+    if (row) return void ((reviewing = row.dataset.rvOpen), draw())
+    if (rvLink(e)) return // a link in what was asked or what came back: your browser (review.js)
+    const t = reviewing ? ticket(reviewing) : null
+    const b = e.target.closest('[data-rv]')
+    if (!t || !b) return
+    const op = b.dataset.rv
+    if (op === 'details') return open(t.key, { panel: true })
+    if (op === 'accept') return acceptReview(t, b)
+    if (op === 'send-back') return sendBackReview(t)
+    if (op === 'reopen') return call('move', t.key, 'new').catch(() => {})
+  })
+  rv.addEventListener('input', (e) => e.target.matches('[data-rv-note]') && fit(e.target))
+  rv.addEventListener('keydown', (e) => {
+    if (!e.target.matches('[data-rv-note]')) return
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) (e.preventDefault(), rv.querySelector('[data-rv=send-back]')?.click())
+    if (e.key === 'Escape') (e.preventDefault(), e.stopPropagation(), e.target.blur()) // out of the box; Esc again is the board
+  })
+
+
   // ---- one task, open ----------------------------------------------------------------------------------
 
-  function open(key, { sendBack = false } = {}) {
+  // A task that came back (to review, or landed) opens in the review, with its receipts; any other in the panel.
+  // panel: the panel all the same (the review's Details: its description, notes and history).
+  function open(key, { sendBack = false, panel = false } = {}) {
+    // (one the review doesn't list, an older landed task, a duplicate, one the filters leave out, opens in the panel too)
+    if (!panel && [...reviewQueue(), ...landedList()].some((t) => t.key === String(key))) return openReview(key, { sendBack })
     selected = key
     sendingBack = sendBack
     editingBody = false
@@ -1130,12 +1285,18 @@ function mountTasks(root, { headIn = root, onTerminal }) {
     if (e.key === 'Escape' && pop) return closePop()
     if (e.key === 'Escape' && filtersOpen()) return void (closeFilters(), fbtn.focus({ preventScroll: true }))
     if (e.key === 'Escape' && selected && !e.target.matches?.('.tp-details')) return close()
+    if (mode === 'review') return reviewKey(e)
     if (e.key === 'Escape' && composeAt) return closeComposer()
     if (e.key === 'Escape' && picked.size) return unpick()
     // ⌘A outside a text field: pick every task shown
     if (e.key === 'a' && (e.metaKey || e.ctrlKey) && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) {
       e.preventDefault()
       return pickAll(onScreen(), false)
+    }
+    // "r": the review
+    if (e.key === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) {
+      e.preventDefault()
+      return openReview()
     }
     // "/" or "n": add a task (New task), like a search box
     if ((e.key === '/' || e.key === 'n') && !e.metaKey && !e.ctrlKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) {

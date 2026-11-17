@@ -14,6 +14,7 @@ import { generatePrompt, quickAsk } from './promptgen.js'
 import { pathKey, resolveCommand, which, withTools } from './launch.js'
 import { Tickets, ticketLine, ticketText, fixPrompt, triagePrompt, quickTriagePrompt, readTriage, TASK_HELP, KINDS, priorityOf, PRIORITY_NAME } from './tickets.js'
 import { Schedules, inRepo } from './schedules.js'
+import { addSpan, addStep, addFile, addCheck, addShare, addHelper, renameWho, inFolder, isCheck } from './tasktime.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
 import { asksSomething, echoOf, familyOf as familyName, forClients, gistOf, inThread, nothingNew, stampAll, threadDigest, threadFields } from './threads.js'
@@ -52,7 +53,7 @@ const RUNTIME = 'runtime.json'
 const LOOK_BACK_DAYS = 30
 const KEEP = ['run', 'status', 'since', 'sessionId', 'transcript', 'ranOn', 'current', 'replyDue', 'turnStart', 'background', 'activity', 'readyAfter', 'resumed',
   'freshPending', 'freshWhy', 'freshLimit', 'freshFor', 'wrapUp', 'wrapFor', 'wrapNote', 'relaunch', 'promptAt', 'retrying', 'apiRetries', 'cloneOf', 'clone', 'checks',
-  'trustAsk', 'trustAt', 'round', 'keyed', 'halted']
+  'trustAsk', 'trustAt', 'round', 'keyed', 'halted', 'taskNow']
 
 const DEFAULTS = { autopilot: true, theme: 'system', hotkey: 'Alt+Shift+Space', agents: [] }
 // An image saved with this computer's attachments, whichever workspace it's for. -> where
@@ -273,7 +274,7 @@ export class Hub extends EventEmitter {
     clearInterval(this.stallTimer)
     clearInterval(this.threadTimer)
     if (this.statsTimer) this.saveStats()
-    if (this.ticketsTimer) this.tickets.save()
+    this.saveTaskTime()
     this.saveConvos(true)
     this.saveSpend(true)
     this.ledger.save(true)
@@ -683,6 +684,7 @@ export class Hub extends EventEmitter {
     if (this.convos[from]) [this.convos[to], this.convos[from]] = [this.convos[from], undefined]
     this.saveConvos()
     for (const t of this.tickets.all) for (const k of ['owner', 'fixer']) if (t[k] === from) t[k] = to
+    for (const t of this.tickets.all) renameWho(t, from, to) // its part of each task's time too (core/tasktime.js)
     this.tickets.save()
     this.schedules.rename(from, to)
   }
@@ -1784,13 +1786,15 @@ export class Hub extends EventEmitter {
     if (triage) this.ledger.add('quickTriage', this.fellBack.has(triage.ticket), { cost, tokens })
     if (cost) (this.spend.hours[localDay()] ??= Array(24).fill(0))[new Date().getHours()] += cost
     // the task its conversation is about (one that lives on this computer)
-    const id = this.convos[a.name]?.ticket
+    // ...or the task this turn is for, when it's a teammate's it is helping with (see taskFor)
+    // (what a turn spent is often reported just after it ended: that's still the turn's task)
+    const turn = a.taskNow === undefined ? a.taskLast : a.taskNow
+    const id = turn?.kind === 'work' ? turn.id : this.convos[a.name]?.ticket
     const t = typeof id === 'number' && this.tickets.all.find((x) => x.id === id)
     if (t) {
       t.spent = { cost: (t.spent?.cost ?? 0) + cost, tokens: (t.spent?.tokens ?? 0) + tokens, added: (t.spent?.added ?? 0) + added, removed: (t.spent?.removed ?? 0) + removed }
-      clearTimeout(this.ticketsTimer)
-      this.ticketsTimer = setTimeout(() => this.tickets.save(), 5000)
-      this.ticketsTimer.unref?.()
+      addShare(t, a.name, { tokens, added, removed }) // whose part it was (several agents can be on one task)
+      this.saveTicketsSoon()
     }
     this.changed()
   }
@@ -2296,7 +2300,7 @@ export class Hub extends EventEmitter {
         // from you, nor a new task. It comes in mid-turn, or starts a turn of its own once the last one is over; either
         // way the agent is still on what it was answering, and its reply threads there.
         if (isNotice(e.prompt)) {
-          if (a.status !== 'working') (a.activity = ''), (a.turnStart = a.turnBegan = Date.now())
+          if (a.status !== 'working') (a.activity = ''), (a.turnStart = a.turnBegan = a.stepAt = Date.now())
           return this.setStatus(a, 'working')
         }
         // A question or an answer CLIque typed into the turn it's in (steer): it's part of this turn now. (A turn that
@@ -2319,7 +2323,8 @@ export class Hub extends EventEmitter {
         a.activity = ''
         // Remember what the agent is answering, so its reply (and any hand-off it makes) can point back to it.
         // A prompt typed straight into its terminal joins the feed too, so replies to it have something to point at.
-        if (a.expect && samePrompt(e.prompt, a.expect.text)) {
+        const taken = Boolean(a.expect && samePrompt(e.prompt, a.expect.text)) // CLIque's own prompt, with the messages it carries
+        if (taken) {
           a.current = a.expect.id
           a.serving = a.expect.msgs // what this turn answers (several, when hand-offs came in together)
           a.expect = null
@@ -2335,8 +2340,12 @@ export class Hub extends EventEmitter {
           this.record(name, { tasks: 1 })
           if (!e.prompt?.startsWith('/')) (this.convoOf(a).tasks += 1), this.saveConvos()
         }
-        a.turnStart = a.turnBegan = Date.now()
+        a.turnStart = a.turnBegan = a.stepAt = Date.now()
         a.turnTools = 0
+        // the task this turn is for (see taskFor): what it answers says so; one you typed in its terminal is its
+        // conversation's. The turn's time is that task's (CLIque typing the prompt already counted as the turn's start).
+        // Something typed into a turn that's under way (your "continue" after an API error) is still that turn's.
+        if (taken || a.taskNow === undefined || (a.status !== 'working' && a.status !== 'waiting')) a.taskNow = this.taskFor(a, taken ? (a.serving ?? []) : [])
         this.readCodexContext(a, e)
         return this.setStatus(a, 'working')
       }
@@ -2352,6 +2361,7 @@ export class Hub extends EventEmitter {
         if (SUB_TOOLS.has(e.tool_name)) this.subLaunched(a, e)
         a.turnTools = (a.turnTools ?? 0) + 1
         a.activity = describe(e)
+        this.clockStep(a, e)
         this.record(name, { tools: 1 })
         this.readCodexContext(a, e)
         return this.setStatus(a, 'working')
@@ -2512,9 +2522,17 @@ export class Hub extends EventEmitter {
 
   subStop(a, e) {
     const sub = this.subOf(a, e.agent_id, e.agent_type)
+    const was = sub.ended
     sub.ended = Date.now()
     sub.activity = ''
     sub.result = String(e.last_assistant_message ?? '').slice(0, 600)
+    // a helper of a turn that's for a task: one of the task's steps, and one more helper it took
+    const t = !was && a.taskNow?.kind === 'work' && this.tickets.all.find((x) => x.id === a.taskNow.id)
+    if (t) {
+      addHelper(t)
+      addStep(t, a.name, `Agent · ${sub.description || sub.type}`, sub.ended - sub.started)
+      this.saveTicketsSoon()
+    }
     this.changed()
     setTimeout(() => this.changed(), SUB_LINGER + 100) // so a finished one leaves the live view
   }
@@ -2769,10 +2787,21 @@ export class Hub extends EventEmitter {
     a.ending = false
     if ((status === 'stopped' || status === 'off') && (a.trustAsk || a.trustPick)) this.dropTrust(a)
     if (a.status !== status) {
-      const spent = Date.now() - a.since
+      const now = Date.now()
+      const spent = now - a.since
       if (a.status === 'working') this.record(a.name, { activeMs: spent })
       if (a.status === 'waiting') this.record(a.name, { waitMs: spent })
-      Object.assign(a, { status, since: Date.now() })
+      // the task this was for gets the time too: at work on it, or waiting on you (see clockTask)
+      this.clockTask(a, a.status, a.since, now)
+      if (a.status === 'waiting') a.stepAt = now // (the wait is no part of its next step)
+      Object.assign(a, { status, since: now })
+      // taskNow: the task its turn is for ({ id, kind }), null when it's for none, undefined between turns
+      if (status === 'working' || status === 'waiting') {
+        if (a.taskNow === undefined) a.taskNow = this.taskFor(a) // a turn that began without a prompt of CLIque's: its conversation's task
+      } else if (a.taskNow !== undefined) {
+        a.taskLast = a.taskNow // its turn is over (what it spent in it can still be reported: see addSpend)
+        a.taskNow = undefined
+      }
     }
     if (a.system && (status === 'stopped' || status === 'off')) this.systemAgentHandOver(a)
     // Its turn is over, whichever way it ended: the files it edited are free again, and whoever asked it something
@@ -3647,7 +3676,7 @@ export class Hub extends EventEmitter {
     if (call.back) return this.sendBack(by, call, said)
     const asker = this.agents.get(call.from) ?? this.agents.get(this.baseOf(call.from))
     if (!asker || asker.off) return this.changed()
-    const msg = this.post({ kind: 'msg', from: by, to: asker.name, text: said, answers: call.id, ...(why && { unanswered: true }), question: gist(call.text), re: call.msg?.id ?? call.id, ...(reply && { reply: reply.id }), ...(call.parent && { for: call.parent }), queued: true })
+    const msg = this.post({ kind: 'msg', from: by, to: asker.name, text: said, answers: call.id, ...(why && { unanswered: true }), question: gist(call.text), re: call.msg?.id ?? call.id, ...(reply && { reply: reply.id }), ...(call.parent && { for: call.parent }), ...(call.msg?.forTask !== undefined && { forTask: call.msg.forTask }), queued: true })
     this.pinned.add(msg) // its asker's, not a clone's that happens to be free
     this.enqueue(asker, msg)
   }
@@ -4294,6 +4323,67 @@ export class Hub extends EventEmitter {
     return Boolean((this.directory?.() ?? []).find((x) => x.name === name)?.on)
   }
 
+  // ---- what a task took: who was on it and when (core/tasktime.js) ---------------------------------------
+
+  // The task an agent's turn is for (one that lives on this computer), as { id, kind }: the task a message it answers
+  // was sent for (its own task, or a teammate's who is on one and asked it for something or handed it a part), else
+  // the task its conversation is about while that one is under way. kind: 'triage' for the triage agent sorting it
+  // out, else 'work'. null: the turn is for no task.
+  taskFor(a, msgs = []) {
+    const m = msgs.find((x) => x.ticket !== undefined) ?? msgs.find((x) => x.forTask !== undefined)
+    const id = m ? (m.ticket ?? m.forTask) : this.convos[a.name]?.ticket
+    const t = typeof id === 'number' ? this.tickets.all.find((x) => x.id === id) : null
+    if (!t || t.status === 'done' || (!m && t.status !== 'fixing')) return null
+    return { id: t.id, kind: m?.triage ? 'triage' : 'work' }
+  }
+
+  // An agent was working (or waiting on you) from `from` to `to`: if its turn is for a task, that's the task's time.
+  clockTask(a, status, from, to) {
+    if (status !== 'working' && status !== 'waiting') return
+    const on = a.taskNow === undefined ? this.taskFor(a) : a.taskNow // (unset: a turn from before a restart)
+    const t = on && this.tickets.all.find((x) => x.id === on.id)
+    if (!t || !addSpan(t, a.name, status === 'waiting' ? 'you' : on.kind, from, to)) return
+    if (a.cloneOf) (t.time.of ??= {})[a.name] = a.cloneOf // a clone's row goes by its original's name
+    this.saveTicketsSoon()
+  }
+
+  // One step of a turn that's for a task (a tool call, with the thinking that led to it): how long it took, the files
+  // it changed, and whether it was a check (a test run, a build).
+  clockStep(a, e) {
+    const now = Date.now()
+    // (a step that ends a wait on you: the wait was the time, and that's counted as waiting on you)
+    const ms = a.status === 'waiting' ? 0 : now - (a.stepAt ?? a.turnBegan ?? now)
+    a.stepAt = now
+    const t = a.taskNow?.kind === 'work' && this.tickets.all.find((x) => x.id === a.taskNow.id)
+    if (!t || SUB_TOOLS.has(e.tool_name)) return // (a helper is a step of its own, when it stops: see subStop)
+    const text = describe(e)
+    addStep(t, a.name, text, ms)
+    const cwd = expand(a.cwd)
+    for (const file of editedFiles(e, cwd).values()) addFile(t, inFolder(file, cwd))
+    if (isCheck(e)) addCheck(t, a.name, text, ms)
+    this.saveTicketsSoon()
+  }
+
+  // Quitting, or this workspace going away: the turns still going are written down as far as they got, and the board
+  // is saved if anything waits to be.
+  saveTaskTime() {
+    for (const a of this.agents.values()) this.clockTask(a, a.status, a.since, Date.now())
+    if (!this.ticketsTimer) return
+    clearTimeout(this.ticketsTimer)
+    this.ticketsTimer = null
+    this.tickets.save()
+  }
+
+  // The board is written a moment later: these come many a second while an agent works.
+  saveTicketsSoon() {
+    clearTimeout(this.ticketsTimer)
+    this.ticketsTimer = setTimeout(() => {
+      this.ticketsTimer = null
+      this.tickets.save()
+    }, 5000)
+    this.ticketsTimer.unref?.()
+  }
+
   // ---- stalled tasks: in progress, and nobody on them --------------------------------------------------
   // A task can sit In progress while its agent does nothing: its turn ended on "I'll take the screenshots once it
   // settles", or the conversation moved on, and nothing calls it back. Once the agent on it has been idle a while with
@@ -4382,7 +4472,7 @@ export class Hub extends EventEmitter {
     const flags = {}
     const words = []
     for (let i = 0; i < rest.length; i++) {
-      const m = rest[i].match(/^--(owner|severity|priority|kind|title|details)(?:=(.*))?$/)
+      const m = rest[i].match(/^--(owner|severity|priority|kind|title|details|checked)(?:=(.*))?$/)
       if (m) flags[m[1] === 'severity' ? 'priority' : m[1]] = m[2] ?? rest[++i]
       else words.push(rest[i])
     }
@@ -4430,10 +4520,13 @@ export class Hub extends EventEmitter {
         return `#${t.id}: ${t.kind}, ${t.owner ? `for @${t.owner}` : 'unassigned'}${this.space.autofix && t.owner ? ', sent to them' : ''}\n`
       }
       case 'done': {
-        if (!text) throw new Error(`usage: clique task done ${ref} "what you did, how you checked"`)
+        if (!text) throw new Error(`usage: clique task done ${ref} "what you did" --checked "how you checked it"`)
         if (t.status === 'done') throw new Error(`#${t.id} is already closed${t.dupOf ? ` (same as #${t.dupOf})` : ''}`)
         const bug = t.kind === 'bug'
         Object.assign(t, { fix: text, fixer: by })
+        // how it was checked, in its own words (the review shows it beside the checks CLIque saw run)
+        if (String(flags.checked ?? '').trim()) t.checked = String(flags.checked).trim().slice(0, 2000)
+        else delete t.checked
         this.tickets.move(t.id, 'check', by, `${bug ? 'fixed' : 'did'} it: ${text}`)
         this.postTask(t, from, 'fixed', text)
         this.emit('notice', { title: `@${by} ${bug ? 'fixed' : 'finished'} #${t.id}`, body: `${t.title}. Review it`, focus: `task:${t.id}` })
@@ -4725,6 +4818,10 @@ export class Hub extends EventEmitter {
     const e = { id: randomUUID().slice(0, 8), ts: Date.now(), ...entry, ...threadFields(entry, parent) }
     // what an agent sends on is part of the round it's working in: the request of yours that led to it (see checkIn)
     if (e.kind === 'msg' && e.round === undefined && this.agents.get(e.from)?.round) e.round = this.agents.get(e.from).round
+    // ...and of the task it's working on: a teammate it asks or hands a part to is on that task too, for as long as
+    // it answers (see taskFor), so the task's review shows everyone who was on it and how long
+    // (an answer is for the task of the one who asked, whatever its answerer is on: respond says which)
+    if (e.kind === 'msg' && e.ticket === undefined && e.forTask === undefined && !e.answers && this.agents.get(e.from)?.taskNow?.kind === 'work') e.forTask = this.agents.get(e.from).taskNow.id
     if (e.thread) {
       if (e.text) e.gist = gistOf(e.text, e.from)
       // when the turn it ends began: what it says can't take in anything said after that
@@ -5122,6 +5219,8 @@ export class Hub extends EventEmitter {
         convo: this.convos[a.name] ? { ...this.convos[a.name], context: againstLimit(this.convos[a.name].context, a.contextLimit) } : null,
         contextLimit: Number(a.contextLimit) > 0 ? Number(a.contextLimit) : null, onContextLimit: a.onContextLimit === 'notify' ? 'notify' : 'fresh',
         freshPending: Boolean(a.freshPending), ticket: this.convos[a.name]?.ticket ?? null,
+        // the task its turn is for right now, when that isn't its own conversation's (it's helping a teammate with one)
+        ...(a.taskNow && (a.status === 'working' || a.status === 'waiting') && { onTask: a.taskNow.id }),
         // in a turn you can stop (Stop shows only then)
         ...(this.stoppable(a) && { canStop: true }),
         // one of your shared agents (in other workspaces too), or only this one's

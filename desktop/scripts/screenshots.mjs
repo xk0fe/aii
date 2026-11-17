@@ -2266,13 +2266,10 @@ const SHOTS = {
     await save(win, `task-panel-${theme}`)
     await js(win, click('.tp [data-tp=close]'))
     await sleep(500)
+    // a task that came back opens in the review, with its receipts (the review shot has the rest of it)
     await js(win, click('.tc[data-name="5"]'))
     await sleep(800)
-    await js(win, click('.tp [data-tp=sendback]'))
-    await sleep(600)
     await save(win, `task-review-${theme}`)
-    await js(win, click('.tp [data-tp=close]'))
-    await sleep(400)
     await js(win, click('.tk-views [data-mode=list]'))
     await sleep(800)
     await save(win, `tasks-list-${theme}`)
@@ -2284,6 +2281,30 @@ const SHOTS = {
     await js(win, click('.tk-pop [data-flow]'))
     await sleep(500)
     await save(win, `tasks-workflow-${theme}`)
+    win.destroy()
+  },
+  // The review: what came back, one task at a time, with who was on it and where its time went. First the one waiting
+  // longest for you (three agents on it, 21 minutes of it waiting on you); then a landed one (a clone, a tester, sent
+  // back once); then what's missing, written under it.
+  async review(theme) {
+    const win = await dashboard(theme, 'tasks')
+    await js(win, "localStorage.setItem('clique.tasks.view', 'board'); localStorage.setItem('clique.tasks.done', '0')")
+    win.webContents.reload()
+    await new Promise((r) => win.webContents.once('did-finish-load', r))
+    await sleep(1000)
+    await js(win, click('.tk-views [data-mode=review]'))
+    await sleep(700)
+    await js(win, click('.rv-row[data-rv-open="5"]'))
+    await sleep(500)
+    await save(win, `review-${theme}`)
+    await js(win, click('.rv-row[data-rv-open="1"]'))
+    await sleep(500)
+    await save(win, `review-landed-${theme}`)
+    await js(win, click('.rv-row[data-rv-open="4"]'))
+    await sleep(400)
+    await js(win, `const box = document.querySelector('[data-rv-note]'); box.focus(); box.value = 'Also wrong with a discount code on top: 3 items and SAVE10 comes to 0.92.'; box.dispatchEvent(new Event('input', { bubbles: true }))`)
+    await sleep(400)
+    await save(win, `review-sendback-${theme}`)
     win.destroy()
   },
   // Several tasks picked (⌘-click, then Shift-click for a run of them) and the bar that acts on them all, on the
