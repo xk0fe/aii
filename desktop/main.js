@@ -22,6 +22,7 @@ import { Remote } from './core/remote.js'
 import { readPack } from './core/pack.js'
 import { Voice, voiceActions, voiceAudio } from './core/voice.js'
 import { pillWindow } from './core/pill.js'
+import { followWindow } from './core/follow.js'
 import { Calm, morningAfter } from './core/notify.js'
 import { readNotches, hatchOn } from './core/hatch.js'
 import { Permissions, appBundle, bundleIdIn } from './core/permissions.js'
@@ -47,7 +48,8 @@ const LOG_MAX = 1024 * 1024
 let clique, remote, tray, trayWin, overlay, dash
 let phoneCodes = Promise.resolve() // phones('code') one at a time: the code made last is the one asked for last
 let dashPage = 0 // the dashboard's page: a new one on each load, and when it closes
-let pill // the floating pill's window placement (core/pill.js)
+let pill // the floating pill's window placement (core/pill.js), or under the mouse the buddy's (core/follow.js)
+const keysOn = { chat: null, message: null } // the global shortcuts that are on, as you'd read them (⌥⇧Space)
 let notches = [] // where the screens' notches are (core/hatch.js)
 let permissions // what macOS allows this app (core/permissions.js)
 let permWin // the permissions flow, while it's up (ui/permissions.js)
@@ -165,18 +167,28 @@ async function start() {
   setMenu()
   createTray()
   createOverlay()
+  watchScreens()
+  // where the floating chat lives changed (the setting, or config.json by hand): its window is made for one or the other
+  clique.config.on('change', () => (clique.config.data.chatAt === 'mouse') !== Boolean(pill.follows) && remakeOverlay())
   wire()
   updatesStarted = startUpdates().catch((e) => logLine('update', e?.stack ?? String(e)))
   const key = clique.config.data.hotkey ?? 'Alt+Shift+Space'
-  const hotkey = () => (dashOnScreen() ? dash.focus() : overlay.webContents.send('toggle'))
-  if (!globalShortcut.register(key, hotkey)) clique.say(shortcutTaken(key, 'opens the floating chat', `open the chat from ${PRODUCT_NAME}'s icon in the ${MAC ? 'menu bar' : 'taskbar'}`))
+  // The chat: by the pill, or under the mouse where the pointer is (and away again).
+  const hotkey = () => {
+    if (dashOnScreen()) return dash.focus()
+    if (!pill.follows) return overlay.webContents.send('toggle')
+    if (pill.opened === 'chat') return closeAtMouse()
+    openAtMouse('chat')
+  }
+  if (globalShortcut.register(key, hotkey)) keysOn.chat = shortcutText(key)
+  else clique.say(shortcutTaken(key, 'opens the floating chat', `open the chat from ${PRODUCT_NAME}'s icon in the ${MAC ? 'menu bar' : 'taskbar'}`))
   wireVoice()
 
   // Running from source: CLIQUE_SHOW=tray,panel,dashboard opens those views on launch.
   if (!app.isPackaged) {
     const show = (process.env.CLIQUE_SHOW ?? '').split(',')
     if (show.includes('dashboard')) openDashboard()
-    if (show.includes('panel')) overlay.webContents.once('did-finish-load', () => overlay.webContents.send('toggle'))
+    if (show.includes('panel')) overlay.webContents.once('did-finish-load', () => (pill.follows ? openAtMouse('chat', { focus: false }) : overlay.webContents.send('toggle')))
     if (show.includes('tray')) setTimeout(toggleTray, 800)
   }
   started = true
@@ -342,13 +354,14 @@ const awake = keeper({
 const keepAwake = awake.check
 
 // The state the windows get: the workspace on screen, what's set up, whether the computer is kept awake, when notifications are held (notifyState), and this app's
-// own: its version, an update that's on its way or ready (core/updates.js), and whether it opens at login (null where
-// it can't: running from source).
+// own: its version, an update that's on its way or ready (core/updates.js), whether it opens at login (null where
+// it can't: running from source), and where its floating chat lives.
 const stateNow = (snapshot = clique.snapshot()) => ({
   ...withSetup(snapshot, clique.config.data, setup.status),
   notify: notifyState(),
   awake: awakeState(awake.decision, { enabled: clique.config.data.keepAwake !== false, pc: MAC ? 'Mac' : 'PC', battery: onBattery }),
-  app: { version: app.getVersion(), update: updates?.view() ?? null, login: login?.supported ? { on: login.on } : null },
+  // chat: where the floating chat lives ('sticky' | 'mouse'), and the shortcuts that reach it
+  app: { version: app.getVersion(), update: updates?.view() ?? null, login: login?.supported ? { on: login.on } : null, chat: { at: pill?.follows ? 'mouse' : 'sticky', keys: keysOn } },
 })
 
 // ---- windows ---------------------------------------------------------------
@@ -475,35 +488,57 @@ async function drawTrayIcon(counts) {
 }
 const showNeedsBadge = () => WINDOWS && dash && !dash.isDestroyed() && dash.setOverlayIcon(needsBadge?.[0] ?? null, needsBadge?.[1] ?? '')
 
-function createOverlay() {
+// The floating chat's window, made for where it lives (config.json's "chatAt"): a pill you put somewhere ('sticky', as
+// ever), or under the mouse a buddy that follows the pointer (core/follow.js). again: made again while CLIque runs.
+function createOverlay({ again = false } = {}) {
+  const follow = clique.config.data.chatAt === 'mouse'
   overlay = page('overlay.html', {
     width: 78, height: 140, frame: false, transparent: true, resizable: false, hasShadow: false, skipTaskbar: true,
     fullscreenable: false, minimizable: false, maximizable: false, alwaysOnTop: true,
     acceptFirstMouse: true, // the first press on the pill drags it (or opens the chat), even from another app
     enableLargerThanScreen: true, // or macOS pushes it back below the menu bar, out of the hatch
-  })
+    // Under the mouse it's a panel on a Mac: it takes the keyboard without CLIque becoming the app in front, so when it
+    // closes you're typing where you were.
+    ...(follow && MAC && { type: 'panel' }),
+  }, follow ? { at: 'mouse' } : undefined)
   keepOpen(overlay)
   overlay.setAlwaysOnTop(true, 'floating')
-  if (MAC) overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }) // on every Space, and over full-screen apps
+  // on every Space, and over full-screen apps (made again: the dashboard may be up, whose Dock icon this would take away)
+  if (MAC) overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, ...(again && { skipTransformProcessType: true }) })
   const wa = screen.getPrimaryDisplay().workArea
   overlay.setPosition(wa.x + wa.width - 78, Math.round(wa.y + wa.height / 2 - 70))
-  // Its chat opens on the side of the pill away from the part of the screen it's in, and it can be dragged
-  // anywhere (core/pill.js), the hatch included (a Mac's: the notch at the top of the screen), where it stays next time.
-  pill = pillWindow(overlay, screen, {
-    hatch: MAC ? hatchAt : () => null,
-    onDock: (at) => {
-      clique.config.data.pillInHatch = at ?? false
-      saveConfig()
-    },
+  if (follow) {
+    pill = followWindow(overlay, screen)
+    pill.start()
+  } else {
+    // Its chat opens on the side of the pill away from the part of the screen it's in, and it can be dragged
+    // anywhere (core/pill.js), the hatch included (a Mac's: the notch at the top of the screen), where it stays next time.
+    pill = pillWindow(overlay, screen, {
+      hatch: MAC ? hatchAt : () => null,
+      onDock: (at) => {
+        clique.config.data.pillInHatch = at ?? false
+        saveConfig()
+      },
+    })
+    const at = clique.config.data.pillInHatch
+    if (at) pill.dock(Number.isFinite(at.x) && Number.isFinite(at.y) ? at : null)
+  }
+  const [win, held] = [overlay, pill]
+  win.webContents.on('did-finish-load', () => {
+    held.cancelDrag() // a reload mid-drag never says "let go"
+    held.reset?.() // ...and what was open under the mouse went with the page
+    win.webContents.send('place', held.place)
   })
-  const at = clique.config.data.pillInHatch
-  if (at) pill.dock(Number.isFinite(at.x) && Number.isFinite(at.y) ? at : null)
-  overlay.webContents.on('did-finish-load', () => {
-    pill.cancelDrag() // a reload mid-drag never says "let go"
-    overlay.webContents.send('place', pill.place)
+  win.on('hide', () => {
+    held.cancelDrag()
+    if (held.opened) closeAtMouse(win, held) // the dashboard came up: when the buddy's back, it's back at the pointer
   })
-  overlay.on('hide', () => pill.cancelDrag())
-  // a display came or went, or the Dock or menu bar moved: bring the pill back on screen and re-pick the side
+  win.on('closed', () => held.stop?.()) // (quitting, or made again: nothing looks for the pointer on a window that's gone)
+  win.once('ready-to-show', () => dashOnScreen() || win.isDestroyed() || win.showInactive())
+}
+
+// A display came or went, or the Dock or menu bar moved: bring the pill back on screen and re-pick the side.
+function watchScreens() {
   for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) {
     screen.on(ev, async () => {
       if (MAC) notches = (await readNotches()) ?? notches // a new scale, or a laptop opened: the notch moved in points
@@ -511,7 +546,27 @@ function createOverlay() {
       if (permWin) placePermissions(permWin.getBounds())
     })
   }
-  overlay.once('ready-to-show', () => dashOnScreen() || overlay.showInactive())
+}
+
+// Sticky or under the mouse changed: the window that was goes, and one made for the other takes its place.
+function remakeOverlay() {
+  const old = overlay
+  pill.stop?.()
+  looks.delete('overlay')
+  createOverlay({ again: true })
+  old.destroy()
+  clique.changed() // the windows hear which it is now
+}
+
+// Under the mouse (core/follow.js): the message box ('quick') or the chat opens where the pointer is, with the keyboard.
+function openAtMouse(kind, { focus = true } = {}) {
+  if (!overlay.isVisible()) overlay.showInactive()
+  const align = pill.open(kind)
+  overlay.webContents.send('toggle', { open: true, focus, quick: kind === 'quick', align })
+}
+function closeAtMouse(win = overlay, held = pill) {
+  win.webContents.send('toggle', { open: false })
+  held.close()
 }
 
 // The hatch on the screen at a point; no point: the one with a notch if there is one, else the main screen's.
@@ -598,13 +653,14 @@ function openPermissions({ all = false, then = null } = {}) {
 }
 
 // The dashboard and the floating chat are two sizes of the same thing, so only one is on screen at a time:
-// the dashboard hides the pill, and leaving the dashboard brings the pill back with the chat open.
+// the dashboard hides the pill, and leaving the dashboard brings the pill back with the chat open (under the mouse, the
+// buddy back without it).
 const dashOnScreen = () => Boolean(dash?.isVisible() && !dash.isMinimized())
 
 function showChat() {
   if (quitting || overlay.isDestroyed()) return
   overlay.showInactive()
-  overlay.webContents.send('toggle', { open: true, focus: false })
+  if (!pill.follows) overlay.webContents.send('toggle', { open: true, focus: false }) // (under the mouse, the buddy is back by the pointer)
 }
 
 function openDashboard(focus = '') {
@@ -721,6 +777,9 @@ const actions = {
   saveImage: (name, type, bytes) => clique.here.saveImage(name, type, bytes), // here; sent along when it goes elsewhere
   approve: (id) => clique.feedAction(id, 'approve'),
   drop: (id) => clique.feedAction(id, 'drop'),
+  // A message of yours waiting for a busy agent, sent without waiting for its turn to end (Hub.sendNow):
+  // sendNow('3f9a…') types it into the turn; sendNow('3f9a…', { stop: true }) ends the turn and sends it.
+  sendNow: (id, opts) => clique.feedAction(id, 'sendNow', [{ stop: Boolean(opts?.stop) }]),
   // Your reaction on a message, on or off (Hub.react): react('3f9a…', '👍')
   react: (id, emoji) => clique.feedAction(id, 'reactTo', [emoji]),
   // Answer an agent's question (a permission prompt, AskUserQuestion, a plan) from the chat; see hub.ask.
@@ -875,6 +934,9 @@ const actions = {
   // What went wrong on a page, for CLIque's log (the page tells you in words).
   log: (text) => logLine('page', String(text).slice(0, 4000)),
   theme: (theme) => clique.setTheme(theme),
+  // Where the floating chat lives: chatAt('sticky'), the pill you put somewhere, or chatAt('mouse'), a buddy that follows
+  // the pointer and opens where it is (core/follow.js). Its window is made again as the setting lands (start()).
+  chatAt: (where) => clique.setChatAt(where),
   // Stay awake while agents work: on or off (core/awake.js).
   keepAwake: (on) => clique.setKeepAwake(Boolean(on)),
   dashboard: (focus) => {
@@ -1132,7 +1194,8 @@ function wire() {
     }
     pill.fit(width, height, inside)
     if (focus) {
-      app.focus({ steal: true })
+      // (under the mouse on a Mac it's a panel: it takes the keyboard, and the app you're in stays in front)
+      if (!(MAC && pill.follows)) app.focus({ steal: true })
       overlay.focus()
     }
   })
@@ -1229,7 +1292,8 @@ function quietWords(n) {
   return `${words} until ${d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`}`
 }
 
-// Voice input (core/voice.js): the chat's mic button, plus a hotkey that opens the chat and starts listening.
+// Voice input (core/voice.js): the chat's mic button, plus a hotkey that opens the chat and starts listening (under the
+// mouse: the message box, where the pointer is, to talk or type into).
 // Dictation runs on this computer: it only fills in your message, wherever the agent you send it to lives.
 function wireVoice() {
   // Older macOS asks for speech-recognition permission, which needs the app's Info.plist to say why (CLIque.app does).
@@ -1250,11 +1314,20 @@ function wireVoice() {
       dash.focus()
       return dash.webContents.send('voice', { type: 'toggle' })
     }
+    if (pill.follows) {
+      // nothing open: the message box, listening. Something open already: it starts or stops listening there, and has
+      // the keyboard again
+      if (!pill.opened) openAtMouse('quick')
+      else overlay.focus()
+      return overlay.webContents.send('voice', { type: 'toggle' })
+    }
     overlay.showInactive()
     overlay.webContents.send('toggle', { open: true, focus: true })
     overlay.webContents.send('voice', { type: 'toggle' })
   }
-  if (key && !globalShortcut.register(key, dictate)) clique.say(shortcutTaken(key, 'starts dictation', "click the microphone in the chat's message box"))
+  if (!key) return
+  if (globalShortcut.register(key, dictate)) keysOn.message = shortcutText(key)
+  else clique.say(shortcutTaken(key, 'starts dictation', "click the microphone in the chat's message box"))
 }
 
 // How many need you, are at work, and are on; one counts as working while it or any of its clones is. With workspaces,

@@ -1,6 +1,7 @@
 // Dictation in the chat composer. The mic button (or the voice hotkey) streams the microphone to Apple's
 // on-device recognizer (core/voice.js), and what it hears appears in the message box as you talk, words still
-// settling included. Click to start and stop, or hold to talk. Enter stops and sends, Esc stops.
+// settling included. Click to start and stop, or hold to talk. Enter stops and sends, Esc stops, and typing takes over:
+// dictation lets go, keeping what it heard, and the key you pressed lands in the box.
 /* global clique, store, esc, keys */
 
 const VOICE_ICON =
@@ -22,10 +23,12 @@ const FINISH_WITHIN = 20000 // a helper that hasn't finished by then never will:
 
 // reveal: called before the hotkey starts dictating, so the message box it fills is on screen.
 function mountVoice({ composer, textarea: ta, button, changed, submit, reveal }) {
-  // The status line sits where the recipient chips are (they keep their space), so nothing moves when you start.
+  // The status line sits in the box's bar, over who it's to and the tools beside it (they keep their space), so nothing
+  // moves when you start.
   const bar = document.createElement('div')
   bar.className = 'voice-hint hidden'
-  composer.prepend(bar)
+  const row = composer.querySelector('.input-bar')
+  row.prepend(bar)
   button.innerHTML = `${VOICE_ICON}<span class="meter"><i></i><i></i><i></i><i></i></span><span class="stop"></span>`
 
   let state = 'idle' // idle | starting | listening | finishing
@@ -74,14 +77,17 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
     bar.classList.toggle('hidden', !visible)
     composer.classList.toggle('voice-note', visible)
     if (!visible) return
-    bar.style.height = `${composer.querySelector('.chips').offsetHeight}px` // exactly over the recipients' line
+    // from the bar's left end to the mic, which grows to its left while it listens (its right edge stays)
+    bar.style.right = `${Math.round(row.getBoundingClientRect().right - button.getBoundingClientRect().right) + (state === 'idle' ? 28 : 60) + 6}px`
     bar.classList.remove('error')
     if (state !== 'listening') return void (bar.innerHTML = hint)
     const current = language()
-    const pick = options?.length > 1 ? `<button class="lang" data-voice="lang" title="Switch language">${esc(current?.label ?? 'Language')} ⇄</button>` : current ? `<span>${esc(current.label)}</span>` : ''
-    // who it's for: the selected chip, whose creature tilts its head while you talk
-    const to = composer.querySelector('.chip.on')
-    bar.innerHTML = `<span class="rec"></span><b>Listening</b>${to ? `<span class="to">${to.innerHTML}</span>` : ''}${pick}<span class="grow"></span><span class="keys"><kbd>⏎</kbd> send <kbd>esc</kbd> stop</span>`
+    // the language by its code (EN), so the keys beside it always fit; its name is the tooltip
+    const code = current ? esc(lang(current.id).toUpperCase()) : ''
+    const pick = options?.length > 1 ? `<button class="lang" data-voice="lang" title="${esc(`Listening in ${current?.label ?? 'this language'}: switch language`)}">${code || 'Language'} ⇄</button>` : current ? `<span title="${esc(`Listening in ${current.label}`)}">${code}</span>` : ''
+    // who it's for, when the To picker shows a face: the creature tilts its head while you talk
+    const to = composer.querySelector('.to-pick .av')
+    bar.innerHTML = `<span class="rec"></span><b>Listening</b>${to ? `<span class="to" title="${esc(composer.querySelector('.to-pick b')?.textContent ?? '')}">${to.outerHTML}</span>` : ''}${pick}<span class="grow"></span><span class="keys"><kbd>⏎</kbd> send <kbd>esc</kbd> stop</span>`
   }
 
   // Back to idle, the microphone closed and the session forgotten (whatever it had typed stays).
@@ -97,7 +103,7 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
 
   function fail(message) {
     reset()
-    set('idle', message === 'mic-denied' ? `<span>${PRODUCT_NAME} can't hear you: it needs the microphone.</span><button data-voice="settings">Open Settings</button>` : `<span>${esc(message)}</span>`)
+    set('idle', message === 'mic-denied' ? `<span>${PRODUCT_NAME} needs the microphone.</span><button data-voice="settings">Open Settings</button>` : `<span title="${esc(message)}">${esc(message)}</span>`)
     bar.classList.add('error')
     clearTimeout(fail.timer)
     fail.timer = setTimeout(() => state === 'idle' && ((hint = ''), show()), 8000)
@@ -246,7 +252,13 @@ function mountVoice({ composer, textarea: ta, button, changed, submit, reveal })
       if (state === 'idle') return false
       if (e.key === 'Enter' && !e.shiftKey) stop({ send: true })
       else if (e.key === 'Escape') stop()
-      else return false
+      // You'd rather type (the hotkey opens the box listening, to talk or type into): it stops listening, what it heard
+      // stays, and the box takes this key. Not once Enter has it finishing: that message is on its way. (AltGr, which
+      // types @ and brackets on many keyboards, reads as Ctrl+Alt on Windows.)
+      else if (!(state === 'finishing' && sendWhenDone) && !e.metaKey && (!e.ctrlKey || e.getModifierState?.('AltGraph')) && !e.isComposing && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) {
+        giveUp()
+        return false
+      } else return false
       e.preventDefault()
       e.stopPropagation() // Esc ends dictation, not the panel around it
       return true
