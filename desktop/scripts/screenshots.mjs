@@ -294,11 +294,12 @@ const POINTER = `html { min-height: 100vh; } .wrap { position: absolute !importa
   html::after { content: ''; position: fixed; left: var(--px, 0); top: var(--py, 0); width: 20px; height: 26px; z-index: 999; pointer-events: none;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 26'%3E%3Cpath d='M2 2v18.5l4.6-4.3 3.1 7.3 2.9-1.2-3.1-7.2h6.2z' fill='%23000' stroke='%23fff' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat; }`
 // The floating chat's page as main.js loads it under the mouse (?at=mouse), on the soft desktop, with the pointer drawn.
-async function underMouse(theme, { width, height }) {
+// still: for pictures, its eyes stay open (it blinks now and then, and a picture might catch it).
+async function underMouse(theme, { width, height, still = false }) {
   const win = await open('overlay.html', { theme, width, height, backdrop: 'desktop' })
   if (DARK) theme = 'dark'
   await win.loadFile(path.join(root, 'ui', 'overlay.html'), { query: { at: 'mouse', ...(WIN && { platform: 'win32' }) } })
-  await win.webContents.insertCSS(`${win.stageKind === 'float' ? '' : `html { background: ${BACKDROP.desktop[theme]} !important; }`} ${POINTER}`)
+  await win.webContents.insertCSS(`${win.stageKind === 'float' ? '' : `html { background: ${BACKDROP.desktop[theme]} !important; }`} ${POINTER} ${still ? '.blink .home ellipse { transform: none !important; }' : ''}`)
   return win
 }
 
@@ -741,7 +742,7 @@ const SHOTS = {
     await save(win, `pill-${theme}`)
     win.destroy()
   },
-  // Under the mouse (core/follow.js, main.js ?at=mouse): the buddy by the pointer, then what the hotkeys open where the
+  // Under the mouse (core/follow.js, main.js ?at=mouse): the wisp by the pointer, then what the hotkeys open where the
   // pointer is: the message box (its To menu, listening, typing taking over, its @names list, below the pointer and above
   // it) and the chat. The window is the size main.js would make it, so what fits here fits there. Checked as it goes: a
   // broken step stops the shot.
@@ -751,10 +752,14 @@ const SHOTS = {
       console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}${ok ? '' : `: ${JSON.stringify(got)}`}`)
       if (!ok) errors.push(what)
     }
-    const win = await underMouse(theme, { width: 200, height: 110 })
+    const win = await underMouse(theme, { width: 150, height: 90, still: true })
     win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(`console: ${e.message}`))
+    // what the wisp shows: how lit its glow is, whether anything on it loops, its dot, its tail
+    const wisp = () => js(win, `const p = document.querySelector('.pill'), o = (sel) => Number(getComputedStyle(p.querySelector(sel)).opacity)
+      return { glow: o('.wisp-aura'), need: o('.wisp-need'), tail: o('.wisp-tail'), dot: Boolean(p.querySelector('.wisp-dot')), size: [p.offsetWidth, p.offsetHeight],
+        loops: document.getAnimations().filter((a) => a.effect?.getTiming().iterations === Infinity && p.contains(a.effect.target)).length, hop: getComputedStyle(p.querySelector('.home')).animationName, ring: getComputedStyle(p.querySelector('.wisp-ring')).animationName }`)
     // the window's corner on the picture, and the pointer where the follower would have it (core/follow.js BESIDE, NEAR)
-    const at = (x, y, open) => js(win, `document.documentElement.style.cssText = '--wx: ${x}px; --wy: ${y}px; --px: ${x + (open ? 4 : 0)}px; --py: ${y + (open ? 4 : -4)}px'`)
+    const at = (x, y, open) => js(win, `document.documentElement.style.cssText = '--wx: ${x}px; --wy: ${y}px; --px: ${x + (open ? 4 : 17)}px; --py: ${y + (open ? 4 : 14)}px'`)
     const page = () => js(win, `const b = document.body, q = (s) => document.querySelector(s), r = (el) => { const x = el?.getBoundingClientRect(); return x && { top: Math.round(x.top), bottom: Math.round(x.bottom), left: Math.round(x.left), right: Math.round(x.right), height: Math.round(x.height) } }
       return { open: b.classList.contains('open'), quick: b.classList.contains('quick'), sent: b.classList.contains('sent'), fit: window.__cliqueFit, looking: window.__cliqueLooking, text: q('.compose textarea').value,
         voice: q('.compose').classList.contains('voice-on'), send: q('.compose .send').dataset.mode, panel: r(q('.panel')), input: r(q('.compose .input')), menu: r(q('.menu:not(.leaving)')), names: r(q('.mentions:not(.hidden)')), h: innerHeight }`)
@@ -781,17 +786,44 @@ const SHOTS = {
 
     // ---- the buddy
     await emit('place', { side: 'mouse', align: 'start' })
-    await at(60, 34, false)
-    // a calm moment first: nobody waiting on you (the demo clique has two who are)
-    await js(win, "const s = window.__cliqueState; window.__waiting = s.agents.filter((a) => a.status === 'waiting'); for (const a of window.__waiting) a.status = 'working'; window.__cliqueEmit('state', s)")
-    await sleep(500)
+    await at(30, 14, false)
+    // nothing going on first: nobody at work, nobody waiting, nothing to read (the demo clique has all three)
+    await js(win, `const s = window.__cliqueState; window.__was = s.agents.map((a) => a.status); window.__reads = s.reads
+      for (const a of s.agents) if (a.status === 'working' || a.status === 'waiting') a.status = 'idle'
+      s.reads = { ...s.reads, since: Date.now() }; window.__cliqueEmit('state', s)`)
+    await sleep(900)
     let p = await page()
-    check('closed, it says so and is the mark alone', p.fit?.pill.open === false && p.fit.pill.width < 60 && await js(win, "return getComputedStyle(document.querySelector('.dots')).display === 'none' && !document.querySelector('.dots').children.length"), p.fit)
-    check('by the pointer nothing moves by itself while agents work', await js(win, "return document.body.classList.contains('busy') && getComputedStyle(document.querySelector('.home .m0')).animationName === 'none'"))
+    let w = await wisp()
+    check('closed, it says so and is one tiny buddy, no bigger than the pointer', p.fit?.pill.open === false && String(w.size) === '14,12' && await js(win, "return getComputedStyle(document.querySelector('.dots')).display === 'none' && !document.querySelector('.dots').children.length && getComputedStyle(document.querySelector('.pill')).backgroundColor === 'rgba(0, 0, 0, 0)'"), [p.fit, w])
+    check('with nothing going on its glow is faint, and it has no dot', w.glow < 0.35 && w.need === 0 && !w.dot && !w.loops, w)
+    await save(win, `follow-buddy-idle-${theme}`)
+    // agents at work: the glow is lit, and nothing loops
+    await js(win, "const s = window.__cliqueState; s.agents.forEach((a, i) => { if (window.__was[i] === 'working') a.status = 'working' }); window.__cliqueEmit('state', s)")
+    await sleep(900)
+    w = await wisp()
+    check('agents at work light its glow, and nothing by the pointer loops', w.glow > 0.7 && w.need === 0 && !w.loops && w.tail === 0, w)
     await save(win, `follow-buddy-${theme}`)
-    await js(win, "const s = window.__cliqueState; for (const a of window.__waiting) a.status = 'waiting'; window.__cliqueEmit('state', s)")
+    // carried along (up and to the left here): a tail behind it, which goes when it stops
+    await js(win, "window.__cliqueEmit('trail', 215, 1)")
     await sleep(400)
-    check('someone needs you: a warm edge that holds still', await js(win, "const e = getComputedStyle(document.querySelector('.pill'), '::after'); return document.body.classList.contains('alert') && e.animationName === 'none' && Number(e.opacity) > .8"))
+    w = await wisp()
+    check('carried along, it trails a tail', w.tail > 0.8, w)
+    await save(win, `follow-buddy-moving-${theme}`)
+    await js(win, "window.__cliqueEmit('trail', 215, 0)")
+    await sleep(400)
+    check('...which goes when it stops', (await wisp()).tail === 0)
+    // a reply comes in: a dot, and one ring
+    await js(win, "const s = window.__cliqueState; s.reads = window.__reads; window.__cliqueEmit('state', s)")
+    await sleep(120)
+    w = await wisp()
+    check('a reply coming in rings once and leaves a dot', w.dot && w.ring === 'wisp-ping', w)
+    await sleep(900)
+    await save(win, `follow-buddy-reply-${theme}`)
+    // someone needs you: the glow turns berry and holds still
+    await js(win, "const s = window.__cliqueState; s.agents.forEach((a, i) => (a.status = window.__was[i])); window.__cliqueEmit('state', s)")
+    await sleep(900)
+    w = await wisp()
+    check('someone needs you: its glow turns berry and holds still', await js(win, "return document.body.classList.contains('alert')") && w.need > 0.9 && w.glow === 0 && w.dot && !w.loops, w)
     await save(win, `follow-buddy-needs-${theme}`)
 
     // ---- the message box
@@ -836,9 +868,11 @@ const SHOTS = {
     await sleep(300)
     p = await page()
     check('sending puts the box away and the buddies take it', !p.open && p.sent && p.fit.pill.open === false && p.text === '' && await js(win, "return window.__cliqueState.feed.at(-1).text === 'Can someone look at why the build is failing?'"), p)
-    check('...with a hop, even while agents work', await js(win, "return document.body.classList.contains('busy') && getComputedStyle(document.querySelector('.home .m0')).animationName === 'buddy-took'"))
+    w = await wisp()
+    check('...with a hop and a few motes, even while agents work', await js(win, "return document.body.classList.contains('busy') && document.querySelectorAll('.wisp-motes i').length === 5") && w.hop === 'wisp-took', w)
     await sleep(1000)
-    check('...once: then nothing moves again', await js(win, "return !document.body.classList.contains('sent') && getComputedStyle(document.querySelector('.home .m0')).animationName === 'none'"))
+    w = await wisp()
+    check('...once: then nothing moves again', await js(win, "return !document.body.classList.contains('sent') && !document.querySelector('.wisp-motes')") && w.hop === 'none' && !w.loops, w)
     // the dictation hotkey reaching a page with nothing open (it closed a moment ago): the box opens, it never listens unseen
     await emit('voice', { type: 'toggle' })
     await sleep(500)
@@ -948,8 +982,9 @@ const SHOTS = {
     if (errors.length) throw new Error(`follow: ${errors.join('; ')}`)
   },
   // Under the mouse, moving: the real follower (core/follow.js) with a made-up pointer on a made-up screen, its window
-  // drawn where the follower puts it. The buddy trails the pointer; the dictation hotkey opens the message box there,
-  // listening, and Enter sends it; the chat hotkey opens the chat there, and Esc puts it away.
+  // drawn where the follower puts it. The wisp trails the pointer; the dictation hotkey opens the message box there,
+  // listening, and Enter sends it; then someone needs you (its glow turns berry, with one ring), the chat hotkey opens
+  // the chat there, and Esc puts it away.
   async followGif() {
     const [W, H] = [900, 700]
     const win = await underMouse('light', { width: W, height: H })
@@ -958,14 +993,17 @@ const SHOTS = {
     await js(win, "document.body.insertAdjacentHTML('beforeend', '<div id=\"keys\"></div>')")
     const area = { x: 0, y: 0, width: W, height: H }
     let pointer = { x: 150, y: 520 }
-    let bounds = { x: 0, y: 0, width: 70, height: 58 }
-    const overlay = { getBounds: () => ({ ...bounds }), setBounds: (b) => (bounds = { ...b }), getPosition: () => [bounds.x, bounds.y], setPosition: (x, y) => (bounds = { ...bounds, x, y }), isVisible: () => true, isFocused: () => false }
+    let bounds = { x: 0, y: 0, width: 74, height: 72 }
+    const told = [] // what the follower tells the page (its tail), sent on with the next frame
+    const overlay = { getBounds: () => ({ ...bounds }), setBounds: (b) => (bounds = { ...b }), getPosition: () => [bounds.x, bounds.y], setPosition: (x, y) => (bounds = { ...bounds, x, y }), isVisible: () => true, isFocused: () => false,
+      webContents: { send: (channel, ...args) => told.push([channel, ...args]) } }
     const follower = followWindow(overlay, { getCursorScreenPoint: () => ({ ...pointer }), getDisplayNearestPoint: () => ({ bounds: area, workArea: area }) })
     let seen = ''
     // a frame: the follower looks at the pointer, the page is put where it says, and what the page asks for goes back to it
     const frame = async () => {
       follower.look()
-      const fit = await js(win, `document.documentElement.style.cssText = '--wx: ${bounds.x}px; --wy: ${bounds.y}px; --px: ${pointer.x}px; --py: ${pointer.y}px'; return JSON.stringify(window.__cliqueFit)`)
+      const fit = await js(win, `for (const m of ${JSON.stringify(told.splice(0))}) window.__cliqueEmit(...m)
+        document.documentElement.style.cssText = '--wx: ${bounds.x}px; --wy: ${bounds.y}px; --px: ${pointer.x}px; --py: ${pointer.y}px'; return JSON.stringify(window.__cliqueFit)`)
       if (!fit || fit === seen) return
       seen = fit
       const { width, height, pill } = JSON.parse(fit)
@@ -990,9 +1028,11 @@ const SHOTS = {
     const keys = (html) => js(win, `const k = document.querySelector('#keys'); ${html ? `k.innerHTML = ${JSON.stringify(html)}; k.classList.add('on')` : "k.classList.remove('on')"}`)
     const emit = (channel, arg) => js(win, `window.__cliqueEmit(${JSON.stringify(channel)}, ${JSON.stringify(arg)})`)
     await emit('place', { side: 'mouse', align: 'start' })
-    await run(500)
+    // agents at work and nobody waiting, to begin with (the demo clique has two who are)
+    await js(win, "const s = window.__cliqueState; window.__was = s.agents.map((a) => a.status); for (const a of s.agents) if (a.status === 'waiting') a.status = 'working'; s.reads = { ...s.reads, since: Date.now() }; window.__cliqueEmit('state', s)")
+    await run(900)
     await record(win, 'follow', {
-      ms: 12600, width: 720,
+      ms: 13700, width: 720,
       during: async () => {
         await run(300)
         await go({ x: 560, y: 430 }, 900)
@@ -1008,7 +1048,9 @@ const SHOTS = {
         await run(1300)
         await keys('')
         await go({ x: 200, y: 60 }, 900, 30)
-        await run(250)
+        // someone needs you: its glow turns berry, with one ring
+        await js(win, "const s = window.__cliqueState; s.agents.forEach((a, i) => (a.status = window.__was[i])); window.__cliqueEmit('state', s)")
+        await run(1300)
         // the chat hotkey: the chat, right there
         await keys('<kbd>⌥</kbd><kbd>⇧</kbd><kbd>Space</kbd> the chat')
         await emit('toggle', { open: true, focus: false, align: follower.open('chat') })

@@ -1,11 +1,11 @@
 // The floating chat under the mouse (config.json's "chatAt": "mouse"): instead of a pill you put somewhere, a small
-// buddy trails the pointer, and the message box or the chat opens right where the pointer is. Closed, the window is the
+// buddy (a wisp: ui/overlay.html) trails the pointer, and the message box or the chat opens right where the pointer is. Closed, the window is the
 // buddy and follows; open, it stays where it opened until it's closed (Esc, sending from the message box, a click away
 // from it, or the hotkey again), and then the keyboard goes back to the app you were in.
 // No Electron in here: rectangles are { x, y, width, height } in screen coordinates, and followWindow() is handed the
 // window and the screen it works with, like core/pill.js.
 
-export const BESIDE = { x: 14, y: 18 } // the buddy sits this far right of and below the pointer's tip, clear of what it points at
+export const BESIDE = { x: 13, y: 16 } // the buddy sits this far right of and below the pointer's tip, clear of what it points at
 export const NEAR = 10 // what opens does so this far from the pointer
 // What each needs at its tallest, to pick the side of the pointer it opens on once and keep it: the message box grows as
 // you write, and its lists (who it's to, @names) open into room kept beside it (ui/overlay.html .quick).
@@ -15,6 +15,9 @@ const EDGE = 8 // what opens stays this far inside the screen
 const TAU = 70 // ms: the buddy covers about two thirds of the way to the pointer in this long
 const REST = 2000 // ms with the pointer still before it looks less often
 const OPENS_WITHIN = 1500 // ms: a page that hasn't opened by then never will, and the buddy follows again
+// The buddy's tail (ui/overlay.html .wisp-tail): none under SLOW px a second, full length at FAST, and the page hears
+// its direction to the nearest TURN degrees, no more often than every TRAIL_EVERY ms.
+const [SLOW, FAST, TURN, TRAIL_EVERY] = [90, 800, 15, 40]
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, Math.max(lo, hi)))
 
@@ -75,6 +78,7 @@ export function followWindow(overlay, screen, { now = Date.now, later = setTimeo
     open: null, // { kind, point, area, spot, seen, moved, at }: seen once the page has opened it
     drag: null,
     timer: null,
+    trail: { s: 0, a: 0, at: 0 }, // the tail as the page last heard it: how long (0 to 1), which way (degrees), when
   }
   const areaAt = (p) => screen.getDisplayNearestPoint({ x: Math.round(p.x), y: Math.round(p.y) })
   const placeNow = () => ({ side: 'mouse', align: state.open?.spot.fy ? 'end' : 'start' })
@@ -91,13 +95,27 @@ export function followWindow(overlay, screen, { now = Date.now, later = setTimeo
     state.pointer = p
     // the whole screen, not just its work area: it goes where the pointer goes
     const to = beside(p, state.inside, areaAt(p).bounds)
-    state.pos = state.pos ? glide(state.pos, to, Math.min(t - state.lookedAt, 64)) : to
+    const [from, dt] = [state.pos, Math.min(t - state.lookedAt, 64)]
+    state.pos = from ? glide(from, to, dt) : to
     state.lookedAt = t
+    trail(from, state.pos, dt, t)
     const b = { x: Math.round(state.pos.x - state.inside.x), y: Math.round(state.pos.y - state.inside.y), width: state.size.width, height: state.size.height }
     const key = `${b.x},${b.y},${b.width},${b.height}`
     if (key !== state.shown) overlay.setBounds(b)
     state.shown = key
     return state.pos === to && t - state.movedAt > REST ? PACE.still : PACE.moving
+  }
+
+  // The tail lies behind the buddy while it's carried along: the page hears which way it's going and how fast, when
+  // either changes (a few times a second while it moves, once as it stops), never on every look.
+  function trail(from, to, dt, t) {
+    const speed = from && dt > 0 ? (Math.hypot(to.x - from.x, to.y - from.y) / dt) * 1000 : 0
+    const s = speed < SLOW ? 0 : Math.max(0.25, Math.min(1, Math.round((speed / FAST) * 4) / 4))
+    const a = s ? Math.round((Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI / TURN) * TURN : state.trail.a
+    if (s === state.trail.s && a === state.trail.a) return
+    if (s && t - state.trail.at < TRAIL_EVERY) return
+    state.trail = { s, a, at: t }
+    overlay.webContents?.send('trail', a, s)
   }
 
   function open(kind, point) {

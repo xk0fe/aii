@@ -127,24 +127,48 @@
     [data-side=hatch] .panel .compose { padding-bottom: 6px; }
 
     /* ---- under the mouse (main.js opens this page with ?at=mouse, core/follow.js moves the window): no pill to put
-       somewhere. The mark alone trails the pointer, and clicks go through it. The message box or the chat opens with
-       a corner by the pointer, and the mark steps aside while either is open. */
-    [data-side=mouse] .wrap { gap: 0; padding: 14px; }
-    [data-side=mouse] .pill { width: auto; padding: 4px 6px; border-radius: 15px; cursor: default; }
-    [data-side=mouse] .home { width: 30px; height: 22px; padding: 1px; border-radius: 9px; pointer-events: none; }
+       somewhere. A wisp trails the pointer, and clicks go through it. The message box or the chat opens with a corner by
+       the pointer, and the wisp steps aside while either is open. */
+    [data-side=mouse] .wrap { gap: 0; padding: 30px; } /* room around the wisp for its glow and its tail */
+    [data-side=mouse].open .wrap { padding: 14px; }
     [data-side=mouse] .dots { display: none; }
-    [data-side=mouse] .home-badge { top: -6px; right: -7px; }
     [data-side=mouse].open .pill { display: none; }
-    /* right by the pointer is where you're looking, so nothing here moves on its own: the buddies don't bob while agents
-       work, and someone who needs you is a warm edge that holds still (fainter while notifications are held) */
-    [data-side=mouse].busy .home .m0, [data-side=mouse].busy .home .m1, [data-side=mouse].busy .home .m2 { animation: none; }
-    [data-side=mouse].alert .pill::after { animation: none; opacity: .9; }
-    [data-side=mouse].quiet.alert .pill::after { opacity: .45; }
-    /* ...except once, as a message leaves the box: the buddies hop as they take it, whoever is at work */
-    [data-side=mouse].sent .home .m0, [data-side=mouse].sent .home .m1, [data-side=mouse].sent .home .m2 { animation: buddy-took .5s var(--bounce) backwards; }
-    [data-side=mouse].sent .home .m1 { animation-delay: .07s; }
-    [data-side=mouse].sent .home .m2 { animation-delay: .14s; }
-    @keyframes buddy-took { 45% { translate: 0 calc(-2.2 * min(100cqw / 24, 100cqh / 16)); } }
+    /* The wisp (ui/overlay.js WISP): one tiny buddy, no bigger than the pointer's tail, on a soft glow. The glow is its
+       status light: faint while nothing happens, lit in the brand's colours while agents work, berry while someone needs
+       you (fainter while notifications are held). A dot says there's something to read. */
+    [data-side=mouse] .pill { --glow: .28; --need: 0; position: relative; display: block; width: 14px; height: 12px; padding: 0; border-radius: 0; background: none; box-shadow: none; cursor: default; }
+    [data-side=mouse] .pill::after { content: none; }
+    [data-side=mouse] .home { position: relative; display: block; width: 14px; height: 12px; padding: 0; border-radius: 0; container-type: normal; pointer-events: none; }
+    [data-side=mouse] .home svg { filter: drop-shadow(0 .5px 1.2px rgba(10, 15, 30, .45)); }
+    [data-side=mouse] .home ellipse { fill: #17181c; transform-box: fill-box; transform-origin: 50% 50%; transition: transform .07s; }
+    .wisp-aura, .wisp-need { position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; margin: -16px; border-radius: 50%; filter: blur(3.5px); pointer-events: none; transition: opacity .6s; }
+    .wisp-aura { opacity: var(--glow); background: radial-gradient(circle at 34% 62%, #3db8ff 0, transparent 58%), radial-gradient(circle at 70% 36%, #ff45a8 0, transparent 56%), radial-gradient(circle at 62% 76%, #8b6cff 0, transparent 52%); }
+    .wisp-need { opacity: var(--need); background: radial-gradient(circle, #e0338a 0, transparent 62%); }
+    [data-side=mouse].busy .pill { --glow: .75; }
+    [data-side=mouse].alert .pill { --glow: 0; --need: .95; }
+    [data-side=mouse].quiet.alert .pill { --need: .5; }
+    [data-side=mouse] .home-badge { top: -4px; right: -4px; }
+    .wisp-dot { display: block; width: 5px; height: 5px; border-radius: 50%; background: #3db8ff; box-shadow: 0 0 0 1px #fff, 0 1px 2px rgba(0, 0, 0, .3); }
+    .alert .wisp-dot { background: var(--needs); }
+    /* Nothing here moves on its own except a blink now and then. The rest answers something: a tail while it's carried
+       along (ui/overlay.js hears which way and how fast from core/follow.js), a ring once as a reply comes in or someone
+       starts needing you, and a hop with a few motes as a message leaves the box. */
+    /* the tail: a small comet's, bright where it leaves the buddy and thinning to nothing behind it */
+    .wisp-tail { position: absolute; right: 50%; top: 50%; width: 34px; height: 10px; margin-top: -5px; pointer-events: none; filter: blur(1.9px); clip-path: polygon(100% 0, 100% 100%, 0 50%);
+      transform-origin: 100% 50%; transform: rotate(var(--a, 0deg)) scaleX(var(--s, 0)); opacity: var(--s, 0); transition: transform .16s linear, opacity .25s;
+      background: linear-gradient(to left, rgba(255, 255, 255, .9), rgba(61, 184, 255, .85) 22%, rgba(139, 108, 255, .5) 62%, rgba(139, 108, 255, 0)); }
+    .alert .wisp-tail { background: linear-gradient(to left, rgba(255, 255, 255, .9), rgba(224, 51, 138, .85) 22%, rgba(255, 122, 192, .45) 62%, rgba(255, 122, 192, 0)); }
+    .blink .home ellipse { transform: scaleY(.12); }
+    .wisp-ring { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px; border-radius: 50%; color: #3db8ff; box-shadow: 0 0 0 1.5px currentColor; opacity: 0; pointer-events: none; }
+    .alert .wisp-ring { color: var(--needs); }
+    .ping .wisp-ring { animation: wisp-ping .8s var(--out); }
+    @keyframes wisp-ping { from { opacity: .75; transform: scale(.7); } to { opacity: 0; transform: scale(2.7); } }
+    [data-side=mouse].sent .home { animation: wisp-took .5s var(--bounce); }
+    @keyframes wisp-took { 45% { translate: 0 -7px; } }
+    .wisp-motes { position: absolute; left: 50%; top: 40%; width: 0; height: 0; pointer-events: none; }
+    .wisp-motes i { position: absolute; left: -1.5px; top: -1.5px; width: 3px; height: 3px; border-radius: 50%; background: var(--b); animation: wisp-mote .7s var(--out) forwards; }
+    @keyframes wisp-mote { from { opacity: 1; } to { opacity: 0; translate: var(--x) var(--y); scale: .4; } }
+    @media (prefers-reduced-motion: reduce) { .wisp-tail, .wisp-ring, .wisp-motes { display: none; } [data-side=mouse].sent .home { animation: none; } }
     /* it grows out of the corner by the pointer: below it (start), or above it (end) */
     [data-side=mouse] .panel { --from: translate(0, -8px); transform-origin: 50% 0; }
     [data-side=mouse][data-align=end] .panel { --from: translate(0, 8px); transform-origin: 50% 100%; }
@@ -160,8 +184,8 @@
     .quick .panel .input-bar { padding: 4px 8px 8px; }
     .quick .panel .hint { margin: 0; padding: 0 15px 10px; }
     .quick .panel .attach { display: none; } /* its file dialog would take the keyboard, which closes the box: paste or drop instead */
-    .quick .wrap { padding-bottom: 314px; }
-    .quick[data-align=end] .wrap { padding: 314px 14px 14px; }
+    [data-side=mouse].quick .wrap { padding: 14px 14px 314px; }
+    [data-side=mouse].quick[data-align=end] .wrap { padding: 314px 14px 14px; }
   </style>
 </head>
 <body>

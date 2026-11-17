@@ -7,15 +7,16 @@ import { beside, glide, openSpot, openBounds, followWindow, BESIDE, NEAR, ROOM, 
 
 const SCREEN = { x: 0, y: 0, width: 1440, height: 900 }
 const WA = { x: 0, y: 25, width: 1440, height: 875 } // under the menu bar
-const PAD = 14 // ui/overlay.html: the see-through margin around what's drawn
-const BUDDY = { width: 42, height: 30 }
+const PAD = 14 // ui/overlay.html: the see-through margin around what's open
+const ROOM_AROUND = 30 // ...and around the buddy, for its glow and its tail
+const BUDDY = { width: 14, height: 12 }
 const BOX = { width: 400, height: 96 } // the message box, empty
 const LISTS = 300 // ...and the room kept beside it for its lists
 const CHAT = { width: 400, height: 600 }
 
 // What the page says it draws (clique.fit): the window's size, where what's held sits in it, and what's open.
 function layout(open, align = 'start', box = BOX) {
-  if (!open) return [BUDDY.width + 2 * PAD, BUDDY.height + 2 * PAD, { x: PAD, y: PAD, ...BUDDY, open: false }]
+  if (!open) return [BUDDY.width + 2 * ROOM_AROUND, BUDDY.height + 2 * ROOM_AROUND, { x: ROOM_AROUND, y: ROOM_AROUND, ...BUDDY, open: false }]
   if (open === 'chat') return [CHAT.width + 2 * PAD, CHAT.height + 2 * PAD, { x: PAD, y: PAD, ...CHAT, open }]
   return [box.width + 2 * PAD, box.height + 2 * PAD + LISTS, { x: PAD, y: align === 'end' ? PAD + LISTS : PAD, ...box, open }]
 }
@@ -143,6 +144,34 @@ test('closed, the window is the buddy: it trails the pointer and clicks go throu
   // the pointer moves again: back to looking often
   screen.pointer = { x: 990, y: 500 }
   assert.equal(run(16), PACE.moving)
+})
+
+test('its tail: the page hears which way it goes and how fast when that changes, and once when it stops', () => {
+  const { win, screen, f, run } = setup()
+  const said = []
+  win.webContents = { send: (channel, ...args) => channel === 'trail' && said.push(args) }
+  f.fit(...layout(false))
+  run(100)
+  assert.deepEqual(said, [], 'at rest there is no tail')
+  // carried to the right: a tail, pointing along 0 degrees, long while it's fast
+  screen.pointer = { x: 1300, y: 400 }
+  run(48)
+  assert.ok(said.length >= 1 && said.every(([a, s]) => a === 0 && s > 0), JSON.stringify(said))
+  assert.equal(Math.max(...said.map(([, s]) => s)), 1)
+  run(1200)
+  assert.deepEqual(said.at(-1), [0, 0], 'it stopped: the tail goes')
+  const looks = (48 + 1200) / 16
+  assert.ok(said.length < looks / 3, `told when it changes, not on every look: ${said.length} of ${looks}`)
+  // down and to the left: 135 degrees (y grows downwards)
+  said.length = 0
+  screen.pointer = { x: 900, y: 800 }
+  run(48)
+  assert.equal(said[0][0], 135)
+  // opened mid-flight, then closed: the tail doesn't come back with it
+  f.open('quick')
+  f.fit(...layout('quick'))
+  f.fit(...layout(false))
+  assert.equal(said.at(-1)[1], 0)
 })
 
 test('it crosses to the other side of the pointer at the edge of the screen', () => {

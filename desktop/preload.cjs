@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('clique', {
   // the chat goes on.
   drag: (phase, x, y) => ipcRenderer.send('drag', phase, x, y),
   onPlace: listen('place'),
+  // Under the mouse: which way the wisp is going (degrees) and how fast (0 to 1), for its tail (core/follow.js).
+  onTrail: listen('trail'),
   // The permissions flow: this app, as a file being dragged, into a list in System Settings.
   dragApp: () => ipcRenderer.send('drag-app'),
   // What this page has open, so nothing notifies you about the place you're looking at (core/notify.js).

@@ -834,7 +834,7 @@ function sendAction(name, text) {
   return out
 }
 
-const listeners = { state: [], focus: [], toggle: [], voice: [], place: [] }
+const listeners = { state: [], focus: [], toggle: [], voice: [], place: [], trail: [] }
 
 // Dictation without a microphone: a wobbling tone stands in for your voice (it only moves the meter), and a
 // scripted transcript arrives word by word. Nothing here ever opens a real microphone.
@@ -1093,6 +1093,7 @@ window.clique = {
   drag: () => {},
   dragApp: () => {},
   onPlace: (fn) => listeners.place.push(fn),
+  onTrail: (fn) => listeners.trail.push(fn),
   onState: (fn) => listeners.state.push(fn),
   onPty: () => {},
   onFocus: (fn) => listeners.focus.push(fn),

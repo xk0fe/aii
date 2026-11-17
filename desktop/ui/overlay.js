@@ -1,5 +1,5 @@
 // Floating pill on the screen edge; click it (or press the hotkey) for the chat panel.
-/* global wordmarkHTML, PRODUCT_NAME, clique, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, cliqueSummary, celebrate, ICONS, wsTile, wsLabel, elsewhere, hasWorkspaces */
+/* global reduceMotion, wordmarkHTML, PRODUCT_NAME, clique, live, morph, esc, mountConvoHead, unreadBadge, statusText, displayName, cloneTag, runningSubs, orbitHTML, plural, agentColor, mountFeed, mountComposer, avatarHTML, markSVG, cliqueSummary, celebrate, ICONS, wsTile, wsLabel, elsewhere, hasWorkspaces */
 
 const $ = (s) => document.querySelector(s)
 // Under the mouse (main.js opens this page with ?at=mouse): there's no pill to click. The mark follows the pointer, and
@@ -7,7 +7,14 @@ const $ = (s) => document.querySelector(s)
 const MOUSE = new URLSearchParams(location.search).get('at') === 'mouse'
 const isOpen = () => document.body.classList.contains('open')
 const isQuick = () => document.body.classList.contains('quick')
-$('.home').innerHTML = markSVG('0 6 24 16', { split: true }) // its buddies bob while anyone works
+// Under the mouse the pill is a wisp: one tiny buddy (its glow, tail and ring are ui/overlay.html's .wisp-*).
+const WISP = `<svg viewBox="0 0 14 12" aria-hidden="true"><defs><linearGradient id="wisp-body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#e9effc"/></linearGradient></defs>
+  <path d="M.5 8.3C.5 2.9 2.7.5 7 .5S13.5 2.9 13.5 8.3Q13.5 11.5 10.3 11.5L3.7 11.5Q.5 11.5 .5 8.3Z" fill="url(#wisp-body)" stroke="rgba(15,23,42,.3)" stroke-width=".5"/>
+  <ellipse cx="4.6" cy="6.9" rx="1.3" ry="1.4"/><ellipse cx="9.4" cy="6.9" rx="1.3" ry="1.4"/></svg>`
+if (MOUSE) {
+  $('.home').innerHTML = WISP
+  $('.pill').insertAdjacentHTML('afterbegin', '<span class="wisp-aura"></span><span class="wisp-need"></span><span class="wisp-tail"></span><span class="wisp-ring"></span>')
+} else $('.home').innerHTML = markSVG('0 6 24 16', { split: true }) // its buddies bob while anyone works
 $('.home').title = PRODUCT_NAME
 // the panel's header: the wordmark, or the workspace it shows (drawn on each push)
 $('[data-act=dashboard]').innerHTML = ICONS.expand
@@ -169,12 +176,53 @@ if (MOUSE) {
   // only if it hears each new size.
   new ResizeObserver(() => isOpen() && fit()).observe($('.panel'))
 }
-// A message went out of the message box: the buddies hop once.
+// A message went out of the message box: the wisp hops once, and a few motes fly off it.
 function took() {
   document.body.classList.remove('sent')
   void document.body.offsetWidth
   document.body.classList.add('sent')
   setTimeout(() => document.body.classList.remove('sent'), 900)
+  if (reduceMotion()) return
+  const motes = document.createElement('span')
+  motes.className = 'wisp-motes'
+  motes.innerHTML = ['#3db8ff', '#ff45a8', '#8b6cff', '#fff', '#3db8ff'].map((b, i, all) => {
+    const angle = (i / all.length) * Math.PI * 2 - Math.PI / 2 + Math.random() * 0.5
+    const d = 13 + Math.random() * 7
+    return `<i style="--x:${(Math.cos(angle) * d).toFixed(1)}px;--y:${(Math.sin(angle) * d).toFixed(1)}px;--b:${b}"></i>`
+  }).join('')
+  $('.pill').append(motes)
+  setTimeout(() => motes.remove(), 800)
+}
+// The wisp's own life (under the mouse): its tail while it's carried along, a ring once when there's something new, and
+// a blink now and then.
+const wisp = { fresh: 0, alert: false, seen: false, turned: 0 }
+function drawWisp(fresh, alert) {
+  morph($('.home-badge'), fresh || alert ? '<i class="wisp-dot"></i>' : '')
+  // a reply came in, or someone started needing you, while you watched: one ring
+  if (wisp.seen && (fresh > wisp.fresh || (alert && !wisp.alert)) && !isOpen()) {
+    const p = $('.pill')
+    p.classList.remove('ping')
+    void p.offsetWidth
+    p.classList.add('ping')
+  }
+  Object.assign(wisp, { fresh, alert, seen: true })
+}
+if (MOUSE) {
+  // which way it's going (degrees) and how fast (0 to 1), from core/follow.js: the tail lies behind it, turning the
+  // short way round
+  clique.onTrail?.((angle, speed) => {
+    if (speed) wisp.turned += ((((angle - wisp.turned) % 360) + 540) % 360) - 180
+    $('.pill').style.setProperty('--a', `${wisp.turned}deg`)
+    $('.pill').style.setProperty('--s', String(speed))
+  })
+  const blink = () => {
+    if (!document.hidden && !isOpen() && !reduceMotion()) {
+      $('.pill').classList.add('blink')
+      setTimeout(() => $('.pill').classList.remove('blink'), 140)
+    }
+    setTimeout(blink, 5000 + Math.random() * 5000)
+  }
+  setTimeout(blink, 4000)
 }
 // Tap a creature in the pill for your conversation with that agent; with replies you haven't read, it opens on
 // the first.
@@ -193,7 +241,7 @@ $('.dots').addEventListener('click', (e) => {
 const HATCH_FACES = 4 // beside the notch, over the menu bar's own items: a few, however big the screen
 
 function drawPill() {
-  if (MOUSE) return // the mark alone follows the pointer
+  if (MOUSE) return // the wisp alone follows the pointer
   const on = state.agents.filter((a) => a.on)
   // A big clique doesn't fit along a screen edge: the pill keeps the ones that need a look (waiting on you, new
   // replies, at work) in their usual order, and the rest become "+N", which opens the chat.
@@ -226,11 +274,12 @@ live((next) => {
   // with workspaces, the chat says whose it is
   morph($('.panel header .brand'), hasWorkspaces(state) ? `${wsTile(state.workspace, { size: 20 })}<b>${esc(wsLabel(state.workspace))}</b>` : wordmarkHTML(20))
   drawPill()
-  celebrate($('.dots'), state.agents)
+  if (!MOUSE) celebrate($('.dots'), state.agents)
   morph($('.sums'), cliqueSummary(state))
-  // the mark in the pill counts every reply you haven't read
+  // the mark in the pill counts every reply you haven't read (the wisp only says there are some)
   const fresh = state.agents.reduce((n, a) => n + a.unread, 0)
-  morph($('.home-badge'), fresh ? `<span class="unread-badge">${fresh > 9 ? '9+' : fresh}</span>` : '')
+  if (MOUSE) drawWisp(fresh, document.body.classList.contains('alert'))
+  else morph($('.home-badge'), fresh ? `<span class="unread-badge">${fresh > 9 ? '9+' : fresh}</span>` : '')
   head.render(state)
   feed.render(state)
   threadPane.render(state)
