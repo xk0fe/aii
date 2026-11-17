@@ -515,6 +515,29 @@
     .nf-row .nf-about { grid-column: 2; font-size: 12px; line-height: 1.45; color: var(--fg2); text-wrap: pretty; }
     .nf-row .btn { grid-column: 3; grid-row: 1 / span 2; min-width: 76px; justify-content: center; }
     .notify-sheet .section-label { margin: 0 2px 8px; }
+    /* Settings: a few groups (.section-label over a .group-list), a row each: its icon, its name and what it does, then its
+       switch, its choices, or its value and a chevron to its own sheet */
+    .settings-sheet { width: 520px; }
+    .settings-sheet .sheet-title { margin-bottom: 14px; }
+    .st-body .section-label { margin: 0 2px 8px; }
+    .st-body .group-list + .section-label { margin-top: 18px; }
+    .st-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 8px 12px 8px 14px; border: 0; background: none; color: var(--fg); font: inherit; font-size: 13px; text-align: left; }
+    button.st-row { cursor: pointer; }
+    button.st-row:hover { background: var(--fill); }
+    .group-list > .st-row:first-child { border-radius: var(--r-card) var(--r-card) 0 0; }
+    .group-list > .st-row:last-child { border-radius: 0 0 var(--r-card) var(--r-card); }
+    .group-list > .st-row:only-child { border-radius: var(--r-card); }
+    .st-icon { flex: none; display: grid; place-items: center; width: 20px; color: var(--fg2); }
+    .st-icon svg { width: 17px; height: 17px; }
+    .st-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .st-text b { font-weight: 500; }
+    .st-text small { font-size: 12px; line-height: 1.4; color: var(--fg2); }
+    .st-value { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--fg2); }
+    .st-row > .st-chev { flex: none; display: grid; color: var(--fg3); }
+    .st-row > .st-chev svg { width: 12px; height: 12px; }
+    .st-row .seg { flex: none; }
+    .st-row .seg button { padding: 0 10px; }
+    .st-row .switch { flex: none; }
     /* The spend check-in: a row per provider, built from the agent sheet's rows (collection.css .ed-row, .limit-custom,
        .limit-note). Its line keeps room for two lines, so the sheet is as tall with nothing picked as with everything. */
     dialog.checkin-sheet { width: 600px; }
@@ -856,7 +879,7 @@
 
   <dialog id="notify" class="sheet notify-sheet">
     <h2 class="sheet-title"><span class="h-icon"></span>Notifications</h2>
-    <p class="lead">When CLIque may interrupt you. Whatever you pick, everything that needs you still waits in the chat, in Needs you and in the count in the <span data-nf-bar>menu bar</span>.</p>
+    <p class="lead">When CLIque may interrupt you. What needs you still waits for you in Needs you.</p>
     <div class="sheet-body">
       <h4 class="section-label">Notify me</h4>
       <div class="seg fill nf-days" aria-label="Notify me"><button data-nf-days="always">At any time</button><button data-nf-days="every">Every day</button><button data-nf-days="weekdays">Weekdays</button></div>
@@ -867,12 +890,17 @@
       <p class="nf-say" aria-live="polite"></p>
       <div class="group-list">
         <div class="nf-row nf-pause"><span class="nf-icon"></span><b></b><span class="nf-about"></span><button class="btn" data-nf-pause aria-haspopup="menu"></button></div>
-        <div class="nf-row"><span class="nf-icon" data-nf-icon="eye"></span><b>Not while you’re looking</b><span class="nf-about">Nothing notifies you about the conversation that’s open in front of you.</span></div>
-        <div class="nf-row"><span class="nf-icon" data-nf-icon="stack"></span><b>One at a time</b><span class="nf-about">Agents that ask together arrive as one notification, and one you’ve answered, here, on your phone or in its terminal, is taken away.</span></div>
       </div>
     </div>
     <p class="err" data-nf-err></p>
     <div class="sheet-foot"><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
+  </dialog>
+
+  <!-- Settings (the sidebar's gear): everything that isn't a place, a row each, its value or its switch in the row -->
+  <dialog id="settings" class="sheet settings-sheet">
+    <h2 class="sheet-title"><span class="h-icon"></span>Settings</h2>
+    <div class="sheet-body st-body"></div>
+    <div class="sheet-foot"><button class="btn" data-st="tour" hidden>Take the tour</button><span class="grow"></span><button class="btn" data-close autofocus>Done</button></div>
   </dialog>
 
   <!-- Scheduled messages (ui/schedules.js): Send later, and the list of what's set up -->

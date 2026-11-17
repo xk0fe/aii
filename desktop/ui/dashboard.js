@@ -133,7 +133,7 @@ $('.find-icon').outerHTML = ICONS.search
 $('[data-act=find]').innerHTML = ICONS.search
 $('.side-ws [data-act=add]').innerHTML = ICONS.plus
 $('.chan-sec [data-act=new-channel]').innerHTML = ICONS.plus
-$('.side-more').innerHTML = ICONS.more
+$('.side-more').innerHTML = ICONS.gear
 $('#link .h-icon').outerHTML = ICONS.computers
 $('#link [data-link-add]').innerHTML = `${ICONS.link}Link with a code…`
 $('#import .h-icon').outerHTML = ICONS.import
@@ -698,51 +698,99 @@ $('.dock-rest').addEventListener('click', (e) => {
   if (name) clique.call('restart', name).catch((err) => oops(`Couldn't start ${name}'s terminal`, err))
 })
 
-// Everything the titlebar used to carry, at the sidebar's foot: Autopilot, staying awake, Computers, the CLIs, where the
-// floating chat lives and the theme (and, running from source, config.json).
-const THEME_CHOICES = [['system', 'Auto', 'auto', `follows ${ON_WINDOWS ? 'Windows' : 'macOS'}`], ['light', 'Light', 'sun', ''], ['dark', 'Dark', 'moon', '']]
-$('.side-more').addEventListener('click', (e) => {
+// Settings, behind the gear at the sidebar's foot: everything that isn't a place, in one sheet. A row each, in four groups;
+// a switch or the choices sit in the row, and a row with more to it shows its value and opens its own sheet (over this
+// one: Done there comes back here). (Running from source, config.json too.)
+const settingsDialog = $('#settings')
+settingsDialog.querySelector('.h-icon').outerHTML = ICONS.gear
+const THEME_CHOICES = [['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']]
+const stRow = ({ act, icon, name, about = '', value = '', control = '' }) => {
+  const text = `<span class="st-icon">${ICONS[icon] ?? icon}</span><span class="st-text"><b>${esc(name)}</b>${about ? `<small>${esc(about)}</small>` : ''}</span>`
+  return control
+    ? `<div class="st-row">${text}${control}</div>`
+    : `<button type="button" class="st-row" data-st="${act}">${text}${value ? `<span class="st-value">${esc(value)}</span>` : ''}<span class="st-chev">${ICONS.chevron}</span></button>`
+}
+function drawSettings() {
   const theme = state.theme ?? 'system'
   const c = state.computers ?? { me: {}, links: [] }
   const away = c.links.filter((l) => !l.online).length
-  popMenu(e.currentTarget, [
-    { label: 'Autopilot', icon: ICONS.plane, act: 'autopilot', hint: state.autopilot ? 'On: hand-offs go through' : 'Off: hand-offs wait for you' },
-    { label: 'Spend check-in…', icon: ICONS.coin, act: 'checkin', hint: checkInHint() },
-    { label: 'Stay awake', icon: ICONS.mug, act: 'awake', hint: state.awake?.enabled ?? true ? 'On: while agents work' : `Off: this ${ON_WINDOWS ? 'PC' : 'Mac'} may sleep mid-task` },
-    { label: 'Token savers…', icon: ICONS.chart, act: 'savers', hint: saversHint() },
-    { label: 'Agent tools…', icon: ICONS.mark, act: 'tools', hint: toolHint() },
-    { label: 'Notifications…', icon: state.notify?.quiet ? ICONS.bellZ : ICONS.bell, act: 'notify', hint: notifyHint() },
-    ...(state.workspace ? [{ label: 'Scheduled messages…', icon: ICONS.clock, act: 'scheduled', hint: schedules.count() ? `${schedules.count()} set up` : '' }] : []),
-    '-',
-    { label: 'Computers…', icon: ICONS.computers, act: 'computers', hint: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : '' },
-    { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
-    { label: 'Accounts…', icon: ICONS.user, act: 'accounts', hint: accountsHint() },
-    ...(state.workspace ? [{ label: 'Take the tour', icon: ICONS.sparkles, act: 'tour', hint: 'Q shows you around' }] : []),
-    ...(ON_WINDOWS ? [] : [{ label: 'Permissions…', icon: ICONS.shield, act: 'permissions' }]),
-    ...appItems(state),
-    ...chatItems(state),
-    '-',
-    { head: 'Theme' },
-    ...THEME_CHOICES.map(([id, label, icon, note]) => ({ label, icon: ICONS[icon], act: `theme:${id}`, hint: theme === id ? '✓' : note })),
-    ...(clique.dev ? ['-', { label: 'Open config.json', icon: ICONS.braces, act: 'config', hint: 'developer' }] : []),
-  ], (act) => {
-    if (act === 'autopilot') clique.call('autopilot', !state.autopilot).catch((err) => oops("Couldn't change Autopilot", err))
-    if (act === 'checkin') openCheckIn()
-    if (act === 'awake') clique.call('keepAwake', !(state.awake?.enabled ?? true)).catch((err) => oops("Couldn't change that", err))
-    if (act === 'savers') openSavers()
-    if (act === 'tools') openTools()
-    if (act === 'notify') openNotify()
-    if (act === 'scheduled') schedules.openList()
-    if (act === 'computers') openComputers()
-    if (act === 'setup') setup.open()
-    if (act === 'accounts') accounts.open()
-    if (act === 'tour') startTour()
-    if (act === 'permissions') clique.call('openPermissions').catch((err) => oops('Couldn’t open that', err))
-    if (act.startsWith('theme:')) clique.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
-    if (act === 'config') clique.call('config')
-    chatPick(act, state)
-    appPick(act, state)
-  })
+  const app = state.app ?? {}
+  const u = app.update
+  const at = state.app?.chat?.at
+  const keys = state.app?.chat?.keys ?? {}
+  const where = at && !(at === 'sticky' && !keys.chat && !keys.message) // (chatItems: with both shortcuts taken, only Sticky)
+  const machine = ON_WINDOWS ? 'PC' : 'Mac'
+  const toggle = (id, on) => `<input type="checkbox" class="switch" data-st-toggle="${id}" ${on ? 'checked' : ''} aria-label="${id}">`
+  const seg = (id, choices, on) => `<div class="seg" data-st-seg="${id}">${choices.map(([v, label]) => `<button type="button" data-v="${v}" class="${v === on ? 'on' : ''}" aria-pressed="${v === on}">${esc(label)}</button>`).join('')}</div>`
+  const group = (label, rows) => `<h4 class="section-label">${label}</h4><div class="group-list">${rows.filter(Boolean).join('')}</div>`
+  const update = !u ? '' : u.phase === 'ready' && u.next
+    ? stRow({ icon: 'up', name: 'Restart to update', about: `${PRODUCT_NAME} ${u.next.version} is ready`, control: '<button type="button" class="btn primary" data-st="app:restart">Restart</button>' })
+    : u.phase === 'restarting' ? '' : stRow({ act: 'app:check', icon: 'up', name: 'Check for updates', value: u.phase === 'downloading' && u.next ? `getting ${u.next.version}` : app.version })
+  morph(settingsDialog.querySelector('.st-body'), [
+    group('Agents', [
+      stRow({ icon: 'plane', name: 'Autopilot', about: 'Hand-offs between agents go through without asking you', control: toggle('autopilot', state.autopilot) }),
+      stRow({ icon: 'mug', name: 'Stay awake', about: `This ${machine} doesn't sleep while agents work`, control: toggle('awake', state.awake?.enabled ?? true) }),
+      stRow({ act: 'tools', icon: 'mark', name: 'Agent tools', value: toolHint() }),
+      stRow({ act: 'checkin', icon: 'coin', name: 'Spend check-in', value: checkInHint() }),
+      stRow({ act: 'savers', icon: 'chart', name: 'Token savers', value: saversHint() }),
+    ]),
+    group('You', [
+      stRow({ act: 'notify', icon: state.notify?.quiet ? 'bellZ' : 'bell', name: 'Notifications', value: notifyHint() }),
+      state.workspace && stRow({ act: 'scheduled', icon: 'clock', name: 'Scheduled messages', value: schedules.count() ? `${schedules.count()} set up` : 'None' }),
+      stRow({ act: 'accounts', icon: 'user', name: 'Accounts', value: accountsHint() }),
+    ]),
+    group(`This ${machine}`, [
+      stRow({ icon: theme === 'dark' ? 'moon' : theme === 'light' ? 'sun' : 'auto', name: 'Theme', control: seg('theme', THEME_CHOICES, theme) }),
+      where && stRow({ icon: at === 'mouse' ? 'pointer' : 'pin', name: 'Floating chat', control: seg('chat', [['sticky', 'Where you put it'], ['mouse', 'By the pointer']], at) }),
+      app.login && stRow({ icon: 'power', name: 'Open at login', control: toggle('login', app.login.on) }),
+      !ON_WINDOWS && stRow({ act: 'permissions', icon: 'shield', name: 'Permissions' }),
+      update,
+    ]),
+    group('Connections', [
+      stRow({ act: 'computers', icon: 'computers', name: 'Computers', value: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : 'Just this one' }),
+      stRow({ act: 'setup', icon: 'terminal', name: 'Claude Code and Codex' }),
+      clique.dev && stRow({ act: 'config', icon: 'braces', name: 'Open config.json', value: 'developer' }),
+    ]),
+  ].join(''))
+  for (const el of settingsDialog.querySelectorAll('[data-st-seg]')) segmented(el, (b) => b.getAttribute('aria-pressed') === 'true')
+  settingsDialog.querySelector('[data-st="tour"]').hidden = !state.workspace
+}
+function openSettings() {
+  drawSettings()
+  if (!settingsDialog.open) settingsDialog.showModal()
+}
+$('.side-more').addEventListener('click', openSettings)
+settingsDialog.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]') || e.target === settingsDialog) return settingsDialog.close()
+  const segBtn = e.target.closest('[data-st-seg] [data-v]')
+  if (segBtn) {
+    const id = segBtn.closest('[data-st-seg]').dataset.stSeg
+    const v = segBtn.dataset.v
+    if (id === 'theme') clique.call('theme', v).catch((err) => oops('Couldn’t change the theme', err))
+    if (id === 'chat') chatPick(`chat:${v}`, state)
+    return
+  }
+  const act = e.target.closest('[data-st]')?.dataset.st
+  if (!act) return
+  if (act === 'tour') return (settingsDialog.close(), startTour())
+  if (act === 'checkin') openCheckIn()
+  if (act === 'savers') openSavers()
+  if (act === 'tools') openTools()
+  if (act === 'notify') openNotify()
+  if (act === 'scheduled') schedules.openList()
+  if (act === 'computers') openComputers()
+  if (act === 'setup') setup.open()
+  if (act === 'accounts') accounts.open()
+  if (act === 'permissions') clique.call('openPermissions').catch((err) => oops('Couldn’t open that', err))
+  if (act === 'config') clique.call('config')
+  appPick(act, state)
+})
+settingsDialog.addEventListener('change', (e) => {
+  const id = e.target.dataset?.stToggle
+  if (!id) return
+  if (id === 'autopilot') clique.call('autopilot', e.target.checked).catch((err) => oops("Couldn't change Autopilot", err))
+  if (id === 'awake') clique.call('keepAwake', e.target.checked).catch((err) => oops("Couldn't change that", err))
+  if (id === 'login') appPick('app:login', state)
 })
 
 // ---- an update that's ready: a note in the corner, once per version (core/updates.js) -----------------------------
@@ -1017,9 +1065,6 @@ toolsDialog.addEventListener('click', (e) => {
 
 const notifyDialog = $('#notify')
 notifyDialog.querySelector('.h-icon').innerHTML = ICONS.bell
-notifyDialog.querySelector('[data-nf-bar]').textContent = ON_WINDOWS ? 'taskbar' : 'menu bar'
-notifyDialog.querySelector('[data-nf-icon=eye]').innerHTML = ICONS.eye
-notifyDialog.querySelector('[data-nf-icon=stack]').innerHTML = ICONS.stack
 const notifyNow = () => state.notify ?? { days: 'always', from: '08:00', to: '22:00', pause: null, quiet: false, why: null, until: null, held: 0 }
 const notifyHint = () => {
   const n = notifyNow()
@@ -1028,7 +1073,7 @@ const notifyHint = () => {
 }
 // When you won't be notified, in a sentence (the hours a schedule leaves out, and its days).
 function notifySentence(n) {
-  if (n.days === 'always') return 'CLIque may notify you at any time. Pause it below, or from its icon, when you need quiet.'
+  if (n.days === 'always') return '' // (the line under the choice says it: day and night, all week)
   const [from, to] = [notifyClock(n.from), notifyClock(n.to)]
   const night = n.from === n.to ? '' : `between ${to} and ${from}`
   const weekend = n.days === 'weekdays' ? (n.to > n.from || n.from === n.to ? 'on Saturday and Sunday' : 'over the weekend') : ''
@@ -1053,7 +1098,7 @@ function drawNotify() {
   const row = notifyDialog.querySelector('.nf-pause')
   row.querySelector('.nf-icon').innerHTML = n.quiet ? ICONS.bellZ : ICONS.bell
   row.querySelector('b').textContent = paused ? (n.until == null ? 'Paused until you turn them back on' : `Paused until ${notifyTime(n.until)}`) : n.quiet ? `Off until ${n.until == null ? 'later' : notifyTime(n.until)}` : 'Pause notifications'
-  row.querySelector('.nf-about').textContent = n.quiet ? notifyHeld(n) : 'For an hour, until tomorrow morning, or until you turn them back on. Also one click away from CLIque’s icon.'
+  row.querySelector('.nf-about').textContent = n.quiet ? notifyHeld(n) : 'For an hour, until morning, or until you turn them back on.'
   row.querySelector('[data-nf-pause]').textContent = paused ? 'Resume' : 'Pause…'
 }
 function openNotify() {
@@ -1710,7 +1755,7 @@ function agentMenu(name, at) {
     })
   }
   const here = a.home ?? ''
-  const places = cliqueGroups(state).filter((g) => g.key !== here)
+  const places = cliqueGroups(state).filter((g) => g.key !== here && g.online) // (one that's offline isn't a place to go now: no greyed-out row)
   // one of your shared agents can join your other workspaces, and leave this one (or leave your clique altogether);
   // a workspace's own agent is only here
   const ws = state.workspace
@@ -1723,7 +1768,7 @@ function agentMenu(name, at) {
     { label: 'Edit…', icon: ICONS.edit, act: 'edit' },
     { label: 'New conversation', icon: ICONS.fresh, act: 'fresh', disabled: !a.on || a.freshPending },
     ...(a.on && a.canStop ? [{ label: 'Stop', icon: ICONS.stop, act: 'stop', hint: 'it stays on' }] : []), // only while it's in a turn
-    ...(places.length && !a.system ? ['-', ...places.map((g) => ({ label: `Move to ${g.name}`, icon: g.here ? ICONS.desktop : ICONS.laptop, act: `move:${g.key}`, disabled: !g.online, hint: g.online ? '' : 'offline' }))] : []),
+    ...(places.length && !a.system ? ['-', ...places.map((g) => ({ label: `Move to ${g.name}`, icon: g.here ? ICONS.desktop : ICONS.laptop, act: `move:${g.key}` }))] : []),
     ...(joins.length ? ['-', ...joins.map((w) => ({ label: `Add to ${w.name}`, icon: wsTile(w, { size: 16 }), act: `join:${w.id}`, hint: w.parked ? 'asleep' : '' }))] : []),
     '-',
     { label: a.on ? 'Turn off' : 'Turn on', icon: ICONS.power, act: 'power' },
@@ -1825,7 +1870,7 @@ function drawFoot(state) {
   const c = state.computers ?? { me: {}, links: [] }
   const away = c.links.filter((l) => !l.online)
   $('.side-more').classList.toggle('warn', away.length > 0)
-  $('.side-more').title = `Autopilot, staying awake, Computers, Claude Code and Codex, theme${away.length ? `\n${away.map((l) => l.name).join(', ')} can't be reached` : ''}`
+  $('.side-more').title = `Settings${away.length ? `\n${away.map((l) => l.name).join(', ')} can't be reached` : ''}`
   // only what's close to a limit (80% of a window, or running out before it resets at this pace): the rest is in Usage
   const near = (u) => fullestPct(u) >= 80 || Boolean(paceWarning(u))
   const machines = usageByComputer(state).filter((m) => m.accounts.some(near)).map((m) => ({ ...m, accounts: m.accounts.filter(near) }))
@@ -1937,6 +1982,7 @@ const ready = live((next) => {
   if (checkInDialog.open) drawCheckIn()
   if (toolsDialog.open) drawTools()
   if (notifyDialog.open) drawNotify()
+  if (settingsDialog.open) drawSettings()
   schedules.render()
   accounts.render()
   drawFoot(state)
