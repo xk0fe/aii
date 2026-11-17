@@ -90,6 +90,11 @@ export const MAX_CLONES = 5
 // waits for this much quiet before it's typed, but never longer than SETTLE_MAX.
 const SETTLE_QUIET = 700
 const SETTLE_MAX = 20000
+// A question answered from the chat is still up in the agent's terminal until the answer has reached its CLI, which
+// then takes it down. Nothing is typed into that terminal until this long after: what's typed in the same instant is
+// lost under the question (seen with Claude Code 2.1.326: a message sent now, typed as the card was answered, never
+// reached the turn).
+const ANSWER_SETTLE = 1500
 // Enter again until the CLI reports the prompt, then call for help: about three minutes in all.
 const PICKUP_WAITS = [2500, 3000, 5000, 10000, 20000, 30000, 60000, 60000]
 // How long `clique ask` holds on for the answer before the asker carries on (the answer then comes as a message).
@@ -2489,7 +2494,10 @@ export class Hub extends EventEmitter {
     q.resolve(output)
     this.amend(q.entry, { answer: { ...answer, at: Date.now() } })
     const a = this.agents.get(q.name)
-    if (a?.status === 'waiting' && !stillWaiting && !this.asking(q.name)) this.setStatus(a, 'working')
+    if (a?.status === 'waiting' && !stillWaiting && !this.asking(q.name)) {
+      hold(a, ANSWER_SETTLE) // what waits to go into its turn (steer) goes once its terminal has taken the question down
+      this.setStatus(a, 'working')
+    }
   }
 
   // (an agent tool's card that the agent's command has stopped waiting on doesn't keep the agent waiting)

@@ -151,6 +151,27 @@ test('Send now with a dialog up in its terminal: it goes in the moment the agent
   assert.equal(m.queued, false)
 })
 
+test('Send now with a question card up: once you answer in the chat, it goes in after its terminal has taken the question down', async () => {
+  atWork('ada')
+  const asked = hub.ask('ada', { tool_name: 'Bash', tool_input: { command: 'rm -rf build' }, hook_event_name: 'PermissionRequest' }, new AbortController().signal)
+  assert.equal(agent('ada').status, 'waiting')
+  hub.send({ to: 'ada', text: 'use the staging key' })
+  const m = yours('use the staging key')
+  assert.equal(hub.sendNow(m.id), 'it goes to @ada as soon as the question in its terminal is answered\n')
+  const typed = typedInto('ada').length
+  hub.answer(hub.feed.findLast((e) => e.kind === 'ask').id, { allow: true })
+  assert.equal(agent('ada').status, 'working')
+  // not in the same instant: the question is still on its screen, and what's typed then is lost under it
+  assert.equal(typedInto('ada').length, typed)
+  assert.equal(m.queued, true)
+  mock.timers.tick(1000)
+  assert.equal(typedInto('ada').length, typed)
+  mock.timers.tick(600)
+  assert.equal(typedInto('ada').at(-1), 'use the staging key')
+  assert.equal(m.queued, false)
+  await asked
+})
+
 test('Send now is for the message you picked: the others keep waiting', () => {
   atWork('ada')
   agent('june').status = 'working'
