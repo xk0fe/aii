@@ -10,7 +10,9 @@ const A = path.resolve(import.meta.dirname, '..')
 const src = fs.readFileSync(path.join(A, 'ui/common.js'), 'utf8')
 const ctx = vm.createContext({ clique: {}, CSS: {}, document: { addEventListener() {}, querySelector() {}, documentElement: { dataset: {} } }, window: { addEventListener() {} }, addEventListener() {} })
 vm.runInContext(`${src};globalThis.__x = { draftSwap }`, ctx)
-const swap = (...args) => JSON.parse(JSON.stringify(ctx.__x.draftSwap(...args)))
+// (moved: whether what you wrote came along; told apart from the rest below)
+const whole = (...args) => JSON.parse(JSON.stringify(ctx.__x.draftSwap(...args)))
+const swap = (...args) => (({ box, behind }) => ({ box, behind }))(whole(...args))
 const draft = (text = '', extra = {}) => ({ text, images: [], reply: null, follow: null, ...extra })
 const QUOTE = { to: ['Ada'], id: 'm1', from: 'Ada', text: 'Which one?' }
 
@@ -25,7 +27,10 @@ test('looking around: a quote waits with its conversation, even with nothing wri
 })
 
 test('To line: what you wrote goes with you, and nothing of it waits behind', () => {
-  assert.deepEqual(swap(draft('Fix the coupon field'), undefined, { move: true }), { box: draft('Fix the coupon field'), behind: null })
+  assert.deepEqual(whole(draft('Fix the coupon field'), undefined, { move: true }), { box: draft('Fix the coupon field'), behind: null, moved: true })
+  // looking around moves nothing
+  assert.equal(whole(draft('Fix the coupon field'), undefined).moved, false)
+  assert.equal(whole(draft('Fix the coupon field'), undefined, { everyone: true }).moved, false)
 })
 
 test('To line: the text arrives as it was written, so the cursor keeps its place', () => {
@@ -52,8 +57,19 @@ test('To line: the message it answered stays with the conversation you left', ()
   const got = swap(draft('Thanks', { reply: QUOTE, follow: { at: 1, to: ['Ada'] } }), undefined, { move: true })
   assert.deepEqual(got.box, draft('Thanks'))
   assert.deepEqual(got.behind, draft('', { reply: QUOTE, follow: { at: 1, to: ['Ada'] } }))
-  // and the one you were answering where you're going is still the one you answer there
+  // in an agent's conversation, a quote that waited there only quotes: it's still there
   assert.deepEqual(swap(draft('Thanks'), draft('', { reply: QUOTE }), { move: true }).box, draft('Thanks', { reply: QUOTE }))
+})
+
+test("To line, into everyone's chat: the message is for who the To line says, so it leaves the thread that waited there", () => {
+  // (there, the thread you're in decides who gets what you send next: left in, Auto would have sent this to Ada)
+  const thread = draft('', { reply: QUOTE, follow: { at: 1, to: ['Ada'] } })
+  assert.deepEqual(swap(draft('Can anyone review PR 12?'), thread, { move: true, everyone: true }), { box: draft('Can anyone review PR 12?'), behind: null })
+  // a draft that waited in that thread keeps its words
+  assert.equal(swap(draft('Can anyone review PR 12?'), draft('half a reply', { reply: QUOTE }), { move: true, everyone: true }).box.text, 'half a reply\nCan anyone review PR 12?')
+  // with nothing written, nothing arrives: back in the channel, you're still in the thread
+  assert.deepEqual(swap(draft(), thread, { move: true, everyone: true }).box, thread)
+  assert.deepEqual(swap(draft('for Theo'), thread, { everyone: true }).box, thread, 'and looking around never leaves it')
 })
 
 test('To line: with nothing written there is nothing to move, so their draft comes back', () => {
@@ -61,13 +77,28 @@ test('To line: with nothing written there is nothing to move, so their draft com
   assert.deepEqual(swap(draft('', { reply: QUOTE }), draft('for Milo'), { move: true }), { box: draft('for Milo'), behind: draft('', { reply: QUOTE }) })
 })
 
+// How the message box is wired to it, read from the source (the box itself needs a page: `npm run probe:composer`
+// drives it in the real dashboard, through every case here and the ones only clicks and timing show).
 test('the To picker and the Task switch move the message; the sidebar, a face and Reply do not', () => {
   const composer = src.slice(src.indexOf('function mountComposer'), src.indexOf('// ---- notes at the bottom of the window'))
   const pickTo = composer.slice(composer.indexOf('const pickTo ='), composer.indexOf('let told'))
   assert.match(pickTo, /setTarget\(to, \{ move: true \}\)/)
   const chips = composer.slice(composer.indexOf("chips.addEventListener('click'"), composer.indexOf('new ResizeObserver(fitRail)'))
   assert.match(chips, /setTarget\(picked\.dataset\.to, \{ move: true \}\)/)
-  assert.equal(composer.match(/move: true/g).length, 2, 'only the To line moves a message')
-  // what the dashboard and the floating chat call to open a conversation takes a name and nothing else
-  for (const file of ['ui/dashboard.js', 'ui/overlay.js']) assert.doesNotMatch(fs.readFileSync(path.join(A, file), 'utf8'), /setTarget\([^)]*move/)
+  // nowhere else: not as another value, not beside carry
+  assert.equal(composer.match(/[{,]\s*move\s*:\s*(?!move\b)\S/g).length, 2, 'only the To line moves a message')
+  // from there to the box: setTarget hands what it was given to swapDraft, which hands it on with where it's going;
+  // nothing moves unless asked, or while a message is on its way
+  assert.match(composer, /const setTarget = \(name, how\) => \{\s*if \(draftKey\(name\) !== draftKey\(target\)\) swapDraft\(name, how\)/)
+  assert.match(composer, /const swapDraft = \(next, how\) => swapKeys\(draftKey\(target\), draftKey\(next\), \{ \.\.\.how, everyone: !isConvo\(next\) \}\)/)
+  assert.match(composer, /const swapKeys = \(mineKey, nextKey, \{ carry = false, move = false, everyone = false \} = \{\}\) => \{/)
+  assert.match(composer, /draftSwap\(mine, there, \{ move: move && !going, everyone \}\)/)
+  assert.match(composer, /going \+= 1[^\n]*\n\s*try \{/)
+  assert.match(composer, /\} finally \{\s*going -= 1\s*\}/)
+  // what the dashboard and the floating chat call to open a conversation never asks for a move, whatever else they pass
+  for (const file of ['ui/dashboard.js', 'ui/overlay.js']) {
+    const calls = fs.readFileSync(path.join(A, file), 'utf8').match(/setTarget\((?:[^()]|\([^()]*\))*\)/g) ?? []
+    assert.ok(calls.length, `${file} opens conversations`)
+    for (const c of calls) assert.doesNotMatch(c, /\bmove\b|,\s*[a-z]\w*\s*\)$/i, `${file}: ${c}`)
+  }
 })

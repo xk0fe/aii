@@ -23,6 +23,7 @@
     "icon": "electron scripts/make-icon.mjs && electron scripts/make-ico.mjs",
     "shots": "electron scripts/screenshots.mjs",
     "probe:sandbox": "electron scripts/sandbox-probe.mjs",
+    "probe:composer": "electron scripts/composer-probe.mjs",
     "readme": "node scripts/readme.mjs"
   },
   "dependencies": {
