@@ -22,9 +22,12 @@ $('[data-act=close]').innerHTML = ICONS.close
 
 // Your conversation with one agent takes the header's left side: back to everyone, and who it's with.
 const everyone = () => (composer.setTarget('auto'), composer.focus())
-const head = mountConvoHead($('.panel header .convo-head'), { onBack: everyone, onTerminal: (name) => clique.call('dashboard', name) })
+const head = mountConvoHead($('.panel header .convo-head'), { onBack: everyone, onTerminal: (name) => clique.call('dashboard', `term:${name}`) })
 document.documentElement.dataset.fxElsewhere = '1' // a file opens in the main window's viewer: this one is too small to look closer in (ui/files.js)
-const feed = mountFeed($('.feed'), { limit: 80, headSays: true, onAgent: (name) => clique.call('dashboard', name), onConvo: (name) => (composer.setTarget(name), composer.focus()), onLeave: () => composer.setTarget('auto'), onReply: (e) => composer.replyTo(e), onThread: (id, at) => (threadPane.render(state), threadPane.open(id, at)) })
+// an agent's line under the chat, or its face on a message: your conversation with it, here; Open its terminal, in the
+// dashboard
+const talkTo = (name) => (composer.setTarget(name), composer.focus())
+const feed = mountFeed($('.feed'), { limit: 80, headSays: true, onAgent: talkTo, onConvo: talkTo, onTerminal: (name) => clique.call('dashboard', `term:${name}`), onLeave: () => composer.setTarget('auto'), onReply: (e) => composer.replyTo(e), onThread: (id, at) => (threadPane.render(state), threadPane.open(id, at)) })
 const threadPane = mountThread($('.panel > .thread'), {
   onSeen: () => feed.refresh(),
   onAgent: (name) => (threadPane.close(), composer.setTarget(familyOf(name)), composer.focus()),

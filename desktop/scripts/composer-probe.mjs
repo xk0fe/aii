@@ -226,12 +226,23 @@ app.whenReady().then(async () => {
     check('Theo → Auto with nothing written: the thread is still there', await js(`return box()`), { to: 'auto', text: '', images: 0, quote: true })
     await js(`composer.stopReply()`)
 
+    // a conversation opens without its terminal; Terminal in its header docks it beside, until it's put away or you leave
+    const docked = `document.querySelector('.terms-view').classList.contains('docked')`
+    await js(`await toChannel(); await side('Ada'); await wait(200)`)
+    check("Ada's conversation opens with her terminal put away", await js(`return [place, ${docked}]`), ['dm', false])
+    await js(`document.querySelector('[data-head=terminal]').click(); await wait(200)`)
+    check('Terminal in the header docks it beside the conversation', await js(`return [${docked}, document.querySelector('[data-head=terminal]').getAttribute('aria-pressed')]`), [true, 'true'])
+    await js(`await side('Milo'); await wait(200)`)
+    check("another agent's conversation opens without it", await js(`return [place, ${docked}]`), ['dm', false])
+    await js(`await side('Ada'); await wait(200)`)
+    check('and back with Ada, it is still put away', await js(`return ${docked}`), false)
+
     // the box is as tall as its text where it lands: beside a docked terminal, and when it was hidden as the draft came back
-    await js(`await toChannel(); await type('A longer message, written in the wide channel, that needs a second line once the conversation is narrower. '.repeat(2)); await pick('Ada'); await wait(200)`)
-    check("in Ada's narrower conversation the box fits the message (all of it, on several lines)", await js(`return fits()`), [true, true])
-    await js(`localStorage.setItem('clique.dock', '0'); document.querySelector('.nv[data-place="tasks"]').click(); await wait(200); await side('Ada'); await wait(200)`)
+    await js(`await toChannel(); await type('A longer message, written in the wide channel, that needs a second line once the conversation is narrower. '.repeat(2)); await pick('Ada'); await wait(200); document.querySelector('[data-head=terminal]').click(); await wait(200)`)
+    check("in Ada's narrower conversation, beside her terminal, the box fits the message (all of it, on several lines)", await js(`return [${docked}, ...fits()]`), [true, true, true])
+    await js(`document.querySelector('.nv[data-place="tasks"]').click(); await wait(200); await side('Ada'); await wait(200)`)
     check('and when the draft came back while the box was hidden (opened from Tasks)', await js(`return [place, ...fits()]`), ['dm', true, true])
-    await js(`localStorage.removeItem('clique.dock'); await type('')`)
+    await js(`await type('')`)
 
     // any file is attached, not only a picture: a document shows by its name in the box and on the message
     await js(`await side('Ada'); await type('Read this before you start'); await drop(['Q3 plan.pdf', 'application/pdf'], ['shot.png', 'image/png'])`)
