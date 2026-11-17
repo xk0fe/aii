@@ -230,7 +230,8 @@ async function onStage(win, img, { phone, size } = {}) {
 }
 
 // Every frame Chromium paints, each with its real timestamp, then one GIF at the true speed.
-async function record(win, name, { clip, ms, during, width = 760 }) {
+// skip: ms cut from the start (on the stage only), for a page's first paint
+async function record(win, name, { clip, ms, during, width = 760, skip = 0 }) {
   if (DARK) name += '-dark'
   const dir = fs.mkdtempSync(path.join(tmp, `${name}-`))
   const frames = []
@@ -269,10 +270,17 @@ async function record(win, name, { clip, ms, during, width = 760 }) {
       inputs.push(...still('mask.png'))
       fg = `[1:v]fps=20,scale=${width}:${fh}:flags=bicubic,format=rgba[fg];[2:v]format=gray[m];[fg][m]alphamerge[win]`
     }
+    // ffmpeg lays the frames on the stage, 20 a second; img2webp encodes them with a keyframe every few seconds. (ffmpeg's
+    // own WebP encoder makes none, and on soft light like the first run's glows a lossy frame drawn over the last for
+    // twenty seconds piles up into blocks.)
+    const laid = path.join(dir, 'laid')
+    fs.mkdirSync(laid)
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...inputs, '-filter_complex',
       `${fg};[0:v]format=rgba[bg];[bg][win]overlay=${Math.round(back.size.x * k)}:${Math.round(back.size.y * k)}:shortest=1`,
       // the stage and the mask are stills that never end: the recording's own length ends it
-      '-t', (ms / 1000).toFixed(3), '-c:v', 'libwebp_anim', '-q:v', '76', '-compression_level', '4', '-loop', '0', path.join(out, `${name}.webp`)])
+      ...(skip ? ['-ss', (skip / 1000).toFixed(3)] : []), '-t', ((ms - skip) / 1000).toFixed(3), path.join(laid, '%05d.png')])
+    const each = fs.readdirSync(laid).sort().map((f) => path.join(laid, f))
+    execFileSync('img2webp', ['-loop', '0', '-kmin', '10', '-kmax', '20', '-lossy', '-q', '76', '-m', '4', '-d', '50', ...each, '-o', path.join(out, `${name}.webp`)], { stdio: ['ignore', 'ignore', 'pipe'] })
     console.log('saved', `${name}.webp`, `(${frames.length} frames, on the stage)`)
     return
   }
@@ -291,7 +299,7 @@ const click = (sel) => `document.querySelector(${JSON.stringify(sel)})?.click()`
 // One of the message box's + menu (images, a task, a new conversation, later, someone else): opened, then picked.
 const viaPlus = (act, box = '.compose') => `${click(`${box} .attach`)}; await new Promise((r) => setTimeout(r, 250)); ${click(`.menu [data-menu-act=${act}]`)}`
 // Real pointer input, so :hover and pointer-driven effects show up in recordings.
-const center = (win, sel) => js(win, `const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }`)
+const center = (win, sel) => js(win, `const el = document.querySelector(${JSON.stringify(sel)}); if (!el) throw new Error('nothing on screen matches ' + ${JSON.stringify(sel)}); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }`)
 async function glide(win, from, to, ms = 500) {
   const steps = Math.max(2, Math.round(ms / 16))
   for (let i = 1; i <= steps; i++) {
@@ -301,6 +309,11 @@ async function glide(win, from, to, ms = 500) {
     await sleep(16)
   }
   return to
+}
+// Until something is on screen (a scene that moves on by itself, in its own time), at most ms.
+async function until(win, sel, ms = 10000) {
+  for (const end = Date.now() + ms; Date.now() < end; await sleep(80)) if (await js(win, `return Boolean(document.querySelector(${JSON.stringify(sel)}))`)) return
+  throw new Error(`nothing on screen matches ${sel} after ${ms} ms`)
 }
 async function tap(win, at) {
   win.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(at.x), y: Math.round(at.y), button: 'left', clickCount: 1 })
@@ -652,9 +665,62 @@ const SHOTS = {
   },
   // The README's cover (scripts/cover.html): one picture, with see-through rounded corners.
   async cover(theme) {
-    const win = await open('../scripts/cover.html', { theme, width: 1280, height: 600, transparent: true })
+    const win = await open('../scripts/cover.html', { theme, width: 1280, height: 640, transparent: true })
     await sleep(900)
     await save(win, `cover-${theme}`, { bare: true })
+    win.destroy()
+  },
+  // The README's row of platforms under the cover (scripts/platforms.html), as big as the row is.
+  async platforms(theme) {
+    const win = await open('../scripts/platforms.html', { theme, width: 900, height: 120, transparent: true })
+    await sleep(500)
+    const size = await js(win, 'await document.fonts.ready; return window.__size')
+    win.setContentSize(size.width, size.height)
+    await sleep(300)
+    await save(win, `platforms-${theme}`, { bare: true })
+    win.destroy()
+  },
+  // A new install's first minute (ui/setup.js), for the README: "CLI agent queue" folds into the name, Q pops out of
+  // + New agent and says who he is, asks what kind of work it is and where it lives (the shop's folder), proposes a
+  // clique for it, and everyone is carried into the app.
+  async firstRunGif() {
+    const win = await dashboard(DARK ? 'dark' : 'light', 'chat', { width: 1100, height: 580, fixture: 'first-run', reset: ['clique.firstRun', 'clique.firstWork', 'clique.hints'] })
+    await record(win, 'first-run', {
+      // its first paint cut: the glows come up so faint they'd only band
+      ms: 26500, skip: 600, width: 900,
+      during: async () => {
+        // from the start of the fold: the page again, with the folder chooser picking the shop's folder
+        await js(win, "localStorage.removeItem('clique.firstRun'); localStorage.removeItem('clique.firstWork')")
+        win.webContents.reload()
+        await new Promise((r) => win.webContents.once('did-finish-load', r))
+        await js(win, "const call = clique.call; clique.call = (a, ...rest) => (a === 'pickFolder' ? Promise.resolve('~/Projects/storefront') : call(a, ...rest))")
+        await until(win, '[data-fr=new]') // the fold, then the name rising
+        await sleep(700)
+        let at = await glide(win, { x: 760, y: 560 }, await center(win, '[data-fr=new]'), 600)
+        await sleep(250)
+        await tap(win, at)
+        await until(win, '[data-fr-work=software]') // after "Hi, I'm Q." and "I run your clique."
+        await sleep(1300) // what he asks, then the kinds of work under it
+        at = await glide(win, at, await center(win, '[data-fr-work=software]'), 600)
+        await sleep(300)
+        await tap(win, at)
+        await until(win, '[data-fr=pick]')
+        await sleep(1100)
+        at = await glide(win, at, await center(win, '[data-fr=pick]'), 600)
+        await sleep(200)
+        await tap(win, at)
+        await sleep(900)
+        at = await glide(win, at, await center(win, '[data-fr=make]'), 500)
+        await sleep(200)
+        await tap(win, at)
+        await until(win, '[data-fr=bring]')
+        await sleep(2300) // the clique for software, beside him
+        at = await glide(win, at, await center(win, '[data-fr=bring]'), 600)
+        await sleep(250)
+        await tap(win, at)
+        await glide(win, at, { x: at.x + 160, y: at.y + 90 }, 500)
+      },
+    })
     win.destroy()
   },
   // The README's pictures (npm run readme): what a newcomer should see, each in a window small enough to read at the
@@ -677,27 +743,42 @@ const SHOTS = {
     // The pictures shown two to a row are one column of a narrower window: at half the page's width a whole window
     // would be too small to read.
     const column = (win) => js(win, "const r = document.querySelector('.page-head[data-for=chat]').getBoundingClientRect(); return { x: Math.round(r.x), y: 0, width: Math.round(innerWidth - r.x), height: innerHeight }")
-    // threads: what agents say to each other stays a few rows in the channel
-    win = await dashboard(theme, 'chat', { width: 800, height: 600, fixture: 'threads' })
-    await sleep(1300)
-    await shot('threads', win, { crop: await column(win) })
-    // a canvas: an agent draws its answer, and a teammate adds to it
-    win = await dashboard(theme, 'chat', { width: 800, height: 600 })
+    // a canvas: an agent draws its answer, and a teammate adds to it (as tall as the one beside it)
+    win = await dashboard(theme, 'chat', { width: 800, height: 1120 })
     await js(win, `const s = window.__cliqueState; const t = (m) => Date.now() - m * 60000
       s.feed = ${JSON.stringify(CANVAS_FEED)}.map((e, i, all) => ({ ...e, ts: t(all.length - i) }))
       for (const a of s.agents) Object.assign(a, { status: a.on === false ? a.status : 'idle', activity: '', pending: false, subs: [] })
+      s.reads = { since: Date.now() + 1e6, agents: {} }
       window.__cliqueEmit('state', s)`)
     await sleep(3200)
     await shot('canvas', win, { crop: await column(win) })
+    // what agents show you rather than tell you: the phone's screens, a recording playing where it is, a page that runs
+    const feed = await filesFeed()
+    win = await dashboard(theme, 'chat', { width: 800, height: 1120, cache: FILES_CACHE })
+    await js(win, `for (const a of window.__cliqueState.agents) Object.assign(a, { status: a.on === false ? a.status : 'idle', activity: '', pending: false, subs: [], ask: null }); window.__cliqueState.reads = { since: Date.now() + 1e6, agents: {} }; ${FILES_STATE(feed.slice(2, 5))}`)
+    await sleep(1500)
+    await js(win, `${click('.fxp-big')}; ${click('[data-fx=run]')}`)
+    await sleep(2200)
+    // the recording stopped on a frame, its bar showing (it shows while the pointer is on it)
+    await js(win, "document.querySelector('.fx-video video').pause(); for (const p of document.querySelectorAll('.fxp.on')) p.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))")
+    await sleep(300)
+    await shot('embeds', win, { crop: await column(win) })
+    // Tasks: one that came back, with who was on it and where its time went
+    win = await dashboard(theme, 'tasks', { width: 1100, height: 700 })
+    await js(win, "localStorage.setItem('clique.tasks.view', 'board'); localStorage.setItem('clique.tasks.done', '0')")
+    win.webContents.reload()
+    await new Promise((r) => win.webContents.once('did-finish-load', r))
+    await sleep(1000)
+    await js(win, click('.tk-views [data-mode=review]'))
+    await sleep(700)
+    await js(win, click('.rv-row[data-rv-open="5"]'))
+    await sleep(500)
+    await shot('review', win)
     // Usage, everything: tokens a week by workspace with the workspaces ranked beside it, and a calendar per provider
     win = await dashboard(theme, 'usage', { width: 1160, height: 950, reset: ['clique.usage.range', 'clique.usage.scope', 'clique.usage.by.here', 'clique.usage.by.all'] })
     await js(win, click('.us-scope [data-scope=all]'))
     await sleep(900)
     await shot('usage', win)
-    // every terminal side by side
-    win = await dashboard(theme, 'grid', { width: 1160, height: 700 })
-    await sleep(1600)
-    await shot('terminals', win)
     // Computers: linked, nearby, and the phones
     win = await dashboard(theme, 'clique', { width: 1060, height: 780, fixture: 'big' })
     await sleep(900)
