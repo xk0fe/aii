@@ -71,6 +71,8 @@ function markSVG(viewBox = '0 0 24 24', { split = false } = {}) {
 
 const ICONS = {
   mark: markSVG(),
+  // an account: who's signed in (ui/accounts.js)
+  user: svg('<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.7-3.6 3.5-5.5 7-5.5s6.3 1.9 7 5.5"/>'),
   clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
   expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
@@ -490,11 +492,12 @@ function usageChip(state) {
   return `<span class="sum usage" title="${esc(all.map(usageTip).join('\n\n'))}">${all.map((u) => `<span>${esc(u.label)}</span>${limitNums(fullest(u))}`).join('<i>·</i>')}</span>`
 }
 
-// The account an agent runs on: its provider's on its own computer. An agent on a linked computer runs on that
+// The account an agent runs on: its provider's on its own computer, or one you added there (Accounts). An agent on a linked computer runs on that
 // computer's account, which reports its limits to us with the rest of that computer's state (Clique.linkedUsage).
 function usageOf(a, state) {
   const all = a.home ? state.computers?.links?.find((l) => l.slug === a.home)?.usage : state.usage
-  const u = all?.[a.provider]
+  // (a.usage: whose limits it counts against, its provider's own sign-in or one of your accounts: core/accounts.js)
+  const u = all?.[a.usage ?? a.provider]
   return u?.windows?.length ? u : null
 }
 
@@ -1099,6 +1102,89 @@ function renderMarkdown(src) {
   return html.replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[i])
 }
 
+// Steps written in a run, as a question often comes (an agent's question is one line, with no room for a list): "Sign-in
+// setup. (1) Open the console. (2) Create a project. Where are you?" is the words before, each step, and the closing
+// question on its own. The numbers count up from 1, as "(1)", "1)" or "1.", two or more of them, after a lead-in that
+// has ended. null for anything else, and the words stay as written: "Should I (1) rebase or (2) merge?" is one
+// sentence, "options (1) and (2)" names things, and "PR no. 1. Then no. 2." ends two sentences with a number.
+// (The phone has its own copy, mobile/src/ui/md.ts; both are tested against shared/ask-steps.json.)
+const RUN_MARKS = [/(?<=^|\s)\((\d{1,2})\)(?=\s+\S)/g, /(?<=^|\s)(\d{1,2})\)(?=\s+\S)/g, /(?<=^|[.:;!?]["')\]]?\s)(\d{1,2})\.(?=\s+\S)/g]
+const RUN_JOINS = /^(and|or|andor|nor|to|through|vs|versus|then|plus|&|и|или|либо|und|oder|y|o|u|e|et|ou)?$/iu
+const RUN_ENDS = /[.:;!?…—–-]["'”’)\]*_]*$/ // a sentence or a lead-in has ended here
+function runInList(text) {
+  const line = String(text ?? '')
+  const probe = line.replace(/`[^`]*`/g, (code) => 'x'.repeat(code.length)) // a number inside `code` is code
+  // a ")" that closes a bracket, as in "(see step 2)" or "(1 of 2)", is not the ")" of a step's "2)"
+  const closes = new Set()
+  for (let i = 0, open = 0; i < probe.length; i++) {
+    if (probe[i] === '(') open++
+    else if (probe[i] === ')' && open) {
+      open--
+      closes.add(i)
+    }
+  }
+  let best = null
+  for (const [form, mark] of RUN_MARKS.entries()) {
+    const all = [...probe.matchAll(mark)].map((m) => ({ n: Number(m[1]), at: m.index, end: m.index + m[0].length })).filter((m) => form !== 1 || !closes.has(m.end - 1))
+    let found = null
+    for (const first of all.filter((m) => m.n === 1)) {
+      const before = line.slice(0, first.at).trim()
+      // "1." only after a colon or a dash: after a full stop, the "1." of "PR no. 1." would read as a step
+      if (before && !(form === 2 ? /[:—–-]["'”’)\]*_]*$/ : RUN_ENDS).test(before)) continue
+      const upFrom = (ended) => {
+        const run = [first]
+        for (const m of all) if (m.at > run[run.length - 1].at && m.n === run.length + 1 && (!ended || RUN_ENDS.test(probe.slice(0, m.at).trimEnd()))) run.push(m)
+        return run
+      }
+      // a step may name the next one, "(1) Create it; skip (2) if you have one. (2) Enable billing.": the numbers that
+      // follow a finished sentence are the steps, when they count as far
+      const [ended, any] = [upFrom(true), upFrom(false)]
+      const run = ended.length >= any.length ? ended : any
+      const items = run.map((m, k) => line.slice(m.end, run[k + 1]?.at ?? line.length).trim())
+      if (run.length < 2 || items.some((x) => RUN_JOINS.test(x.replace(/[^\p{L}\p{N}&]+/gu, '')))) continue
+      // of two that count as far, the first is the list: what comes after it talks about its steps
+      if (run.length > (found?.items.length ?? 0)) found = { before, items, after: '', at: first.at }
+    }
+    // written two ways, "1) Read: (1) intro (2) body. 2) Reply.", the list that starts first holds the other
+    if (found && found.at < (best?.at ?? Infinity)) best = found
+  }
+  if (!best) return null
+  // the questions the steps lead up to are not the last step's
+  const items = [...best.items]
+  let after = ''
+  for (let m; (m = items[items.length - 1].match(/^([\s\S]*[.!?…]["'”’)\]*_]*)\s+([*_"'“‘(¿¡]*\p{Lu}(?:[^.!?]|[.!?](?=\S))*\?[*_"'”’)]*)$/u)); ) {
+    items[items.length - 1] = m[1]
+    after = after ? `${m[2]} ${after}` : m[2]
+  }
+  return { before: best.before, items, after }
+}
+
+// A question with steps written in a run somewhere in it, as what to show, line by line: [{ text }, { steps }, { text }].
+// null when it has none, and the question is shown as it always was. Code and a list its agent wrote are left alone.
+function askBlocks(text) {
+  const blocks = []
+  let fenced = false
+  let found = false
+  for (const line of String(text ?? '').split('\n')) {
+    const fence = (line.match(/```|~~~/g) ?? []).length
+    if (fence % 2) fenced = !fenced
+    const run = fenced || fence || /^\s*[-*+•]\s/.test(line) ? null : runInList(line)
+    if (run && !/^\d{1,3}[.)]\s/.test(run.before)) {
+      found = true
+      blocks.push(...[run.before && { text: run.before }, { steps: run.items }, run.after && { text: run.after }].filter(Boolean))
+    } else if (line.trim()) blocks.push({ text: line.trim() })
+  }
+  return found ? blocks : null
+}
+// ...and those as HTML: plain words, nothing in them read as Markdown ("*.md and *.json" stays as asked)
+const askHTML = (blocks) => blocks.map((b) => (b.steps ? `<ol>${b.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : `<p>${esc(b.text)}</p>`)).join('')
+// A question's words where it stands in full: as they always were, or with its steps as a list. after: a line that
+// follows them ("And 2 more questions.").
+const askWords = (text, after = '') => {
+  const blocks = askBlocks(text)
+  return blocks ? askHTML(after ? [...blocks, { text: after }] : blocks) : esc(after ? `${text} ${after}` : text)
+}
+
 // One line of a message, for "replying to" quotes.
 const snippet = (text) => String(text ?? '').replace(/```canvas\n([\s\S]*?)```/g, (_, board) => `[canvas${typeof canvasTitle === 'function' && canvasTitle(board) ? `: ${canvasTitle(board)}` : ''}]`).replace(/```[\s\S]*?```/g, '[code]').replace(/^[\s|:-]*-[\s|:-]*$/gm, '').replace(/[*_`#>~|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90)
 
@@ -1408,7 +1494,7 @@ function mountThread(el, { onClose, onSeen, onAgent, onCard } = {}) {
     const hintText = who ? `Reply to ${familyOf(who)}, in the thread` : 'Reply in the thread'
     if (ta.placeholder !== hintText) ta.placeholder = hintText
     reply.classList.toggle('hidden', !who)
-    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.paused, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length, reactsSig(e)]), agents().map((a) => [a.name, a.avatar]).length])
+    const next = JSON.stringify([lines.map((e) => [e.id, e.queued, e.held, e.paused, e.dropped, e.answer ? 1 : 0, e.asks, open.has(e.id), echoes(e.id).length, reactsSig(e), filesSig(e)]), agents().map((a) => [a.name, a.avatar]).length])
     if (next !== drawn || force) {
       drawn = next
       const top = list.scrollTop
@@ -1637,6 +1723,8 @@ function reactionGroups(list) {
 }
 // what the redraw keys take in, so a reaction that lands (or goes) redraws the message it's on
 const reactsSig = (e) => (e.reactions?.length ? e.reactions.map((r) => `${r.by}${r.emoji}${r.said ? 1 : ''}`).join('') : '')
+// ...and its files: whether each can be shown here (one on a linked computer that couldn't send it, now can: ui/files.js)
+const filesSig = (e) => (e.files?.length ? e.files.map((f) => (f.path ? 'f' : 'a')).join('') : '')
 function reactsHTML(e, agent) {
   const groups = reactionGroups(e.reactions)
   if (!groups.length) return ''
@@ -1894,7 +1982,7 @@ function askCard(e, draft = {}, { queue = false } = {}) {
     return `<div class="ask-card${q.questions.length === 1 ? ' one' : ''}" data-ask="${e.id}">${q.questions.map((x, qi) => `
       <div class="ask-q">
         <div class="ask-head">${x.header ? `<span class="ask-chip">${esc(x.header)}</span>` : ''}${x.multiSelect ? '<span class="ask-multi">pick any</span>' : ''}</div>
-        <div class="ask-question">${esc(x.question)}</div>
+        <div class="ask-question ask-words">${askWords(x.question)}</div>
         <div class="ask-options">${x.options.map((o) => `<button class="ask-option ${picked(qi, o.label) ? 'on' : ''}" data-pick="${qi}" data-label="${esc(o.label)}"><b>${esc(o.label)}</b>${o.description ? `<span>${esc(o.description)}</span>` : ''}</button>`).join('')}</div>
         <input class="ask-other" data-other="${qi}" value="${esc(draft.other?.[qi] ?? '')}" placeholder="Something else" spellcheck="false">
       </div>`).join('')}
@@ -1972,7 +2060,8 @@ function sayLine({ agent, ask }) {
   if (!q) return agent.activity ? `I need you in my terminal. I was ${esc(lowerFirst(activityWords(agent.activity)))}.` : 'I need you in my terminal.'
   if (q.type === 'question') {
     const first = q.questions?.[0]?.question ?? 'I have a question for you.'
-    return esc(q.questions?.length > 1 ? `${first} And ${plural(q.questions.length - 1, 'more question')}.` : first)
+    // (steps written in a run are said as the list they are, and the line about the rest stands after them: askWords)
+    return askWords(first, q.questions?.length > 1 ? `And ${plural(q.questions.length - 1, 'more question')}.` : '')
   }
   if (q.type === 'plan') return 'I have a plan. Can I go ahead?'
   if (q.say) return esc(q.say) // an agent tool says it in its own words: "Can I add a #design channel?"
@@ -1994,7 +2083,7 @@ function needsHTML(needs, expanded, drafts = new Map()) {
     const term = ask?.ask?.app || ask?.ask?.spend ? '' : `<button class="icon nq-term" data-needs-term="${esc(a.name)}" title="${esc(`Answer in ${displayName(a)}'s terminal`)}">${ICONS.terminal}</button>`
     const since = n.since || Date.now()
     const who = `<div class="nq-who"><b>${nameHTML(a)}</b><span class="nq-verb">${verb} · <span class="nq-ago" data-since="${since}">${ago(since)}</span></span>${ask && ask.id !== expanded ? '' : term}</div>`
-    const say = `<div class="nq-say">${sayLine(n)}</div>`
+    const say = `<div class="nq-say${ask?.ask?.type === 'question' ? ' ask-words' : ''}">${sayLine(n)}</div>`
     if (ask && ask.id === expanded) return `<article class="nq-item open" data-need="${esc(ask.id)}">${face}<div class="nq-main">${who}${say}${askCard(ask, drafts.get(ask.id), { queue: true })}</div></article>`
     const go = ask
       ? `<button class="btn nq-go" data-needs-open="${esc(ask.id)}">Answer</button>`
@@ -2019,7 +2108,8 @@ function askSummary(q, a) {
   if (a.stale) return `${mark('', 'dash')}<span>No longer waiting</span>${what}`
   if (a.by === 'terminal') return `${mark('', 'keyboard')}<span>${a.handedOver ? 'Handed to its terminal' : 'Answered in the terminal'}</span>${what}`
   if (a.by === 'cli') return `${mark('no', 'close')}<span>Claude Code said no${a.why ? ` (${esc(a.why)})` : ''}</span>${what}`
-  if (q.type === 'question') return Object.entries(a.answers ?? {}).map(([k, v]) => `<div class="ask-answer">${mark('ok', 'check')}<span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')
+  // the question as it was asked (its steps still a list: askBlocks), and your answer right after its last words
+  if (q.type === 'question') return Object.entries(a.answers ?? {}).map(([k, v]) => `<div class="ask-answer">${mark('ok', 'check')}<div class="ask-asked ask-words">${askHTML(askBlocks(k) ?? [{ text: k }])}<b>${esc(v)}</b></div></div>`).join('')
   if (q.type === 'plan') return a.allow ? `${mark('ok', 'check')}<span>Plan approved</span>` : `${mark('', 'undo')}<span>Keep planning${a.note ? `: “${esc(a.note)}”` : ''}</span>`
   if (q.trust) return a.allow ? `${mark('ok', 'check')}<span>Trusted</span>${what}` : `${mark('no', 'close')}<span>Not trusted</span>${what}`
   if (a.failed) return `${mark('no', 'close')}<span>Allowed, but it didn't work: ${esc(a.failed)}</span>${what}`
@@ -2695,7 +2785,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       const view = feedView(feed, agents, open, limit, drafts, { reads, divider: words.length ? null : divider, only: only(), here: talkingTo, queued: !inline, face, rows: inline, channels, channel: convo ? null : channel, threads, threadSeen: (id) => readTo?.[id] })
       shown = new Map(view.items.map((e) => [e.id, e]))
       // (a line others joined, sameEvents, counts them; a usage line turns to "reset" once its window has)
-      let next = view.items.map((e) => e.id + (e.sig ?? '') + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.paused ? 'p' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '') + reactsSig(e)).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
+      let next = view.items.map((e) => e.id + (e.sig ?? '') + (e.queued ? 'q' : '') + (e.held ? 'h' : '') + (e.paused ? 'p' : '') + (e.dropped ? 'd' : '') + (e.answer ? 'a' : '') + (isUnread(e, reads) ? 'u' : '') + (e.ids?.length ?? '') + (e.limit?.resetsAt <= Date.now() ? 'r' : '') + reactsSig(e) + filesSig(e)).join() + JSON.stringify(agents.map((a) => [a.name, a.avatar])) + divider + words.join(' ') + JSON.stringify(channels.map((c) => [c.id, c.name, c.brief])) + new Date().toDateString()
       const asks = new Map(view.items.filter((e) => e.kind === 'ask' && !e.answer).map((e) => [e.from, e.id]))
       // in a conversation, only its agent (and its clones) at work
       // searching, who's at work right now isn't part of the results
@@ -2763,6 +2853,10 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
 // slashes) and \\server\share\a.png (the server as the URL's host). Every folder's name is escaped (spaces, #, %).
 function fileURL(p) {
   const s = String(p ?? '').replace(/^\\\\[?.]\\UNC\\/i, '\\\\').replace(/^\\\\[?.]\\(?=[A-Za-z]:)/, '') // \\?\C:\… is C:\…, \\?\UNC\… is \\…
+  // One of a linked computer's files (they're kept in CLIque's cache of them): through clique-file://, which brings it
+  // from its computer as it's shown or played, so it never shows as broken while it's on its way (core/linkfiles.js).
+  const cache = typeof clique !== 'undefined' && clique.cache
+  if (cache && (s.startsWith(`${cache}/`) || s.startsWith(`${cache}\\`))) return `clique-file://f/?p=${encodeURIComponent(s)}`
   const enc = (parts) => parts.map(encodeURIComponent).join('/')
   const unc = /^[\\/]{2}([^\\/]+)[\\/](.*)$/.exec(s)
   if (unc) return `file://${unc[1]}/${enc(unc[2].split(/[\\/]/))}`
@@ -3051,6 +3145,30 @@ function mountInk(field, { agents, strict = () => true }) {
   return { paint }
 }
 
+// Going from one conversation's message box to another's (mountComposer swapKeys). A draft: { text, images, reply,
+// follow }. mine: what the box holds as you leave. there: what you'd left where you're going, if anything.
+// Looking elsewhere (the sidebar, a face on a message), yours waits where you wrote it and the one there comes back.
+// move: you changed who it's for on the To line, so what you wrote goes there with you, its images too, under
+// anything you'd left there. The message it answered stays behind: that's part of the conversation you left.
+// everyone: where you're going is everyone's chat (a channel, on Auto or Task). There, the thread you were in decides
+// who gets what you send next. A message that moves in is for who the To line says, so it leaves that thread, as
+// picking Auto does when you're already there. (In an agent's conversation a waiting quote only quotes: it stays.)
+// Returns { box, behind, moved }: what the box holds now, what waits where you were (null: nothing), and whether
+// what you wrote came along.
+function draftSwap(mine, there, { move = false, everyone = false } = {}) {
+  const moved = move && Boolean(mine.text.trim() || mine.images.length)
+  const waiting = there?.text?.trim() ? `${there.text.replace(/\s+$/, '')}\n` : ''
+  const thread = !(moved && everyone)
+  const box = {
+    text: moved ? `${waiting}${mine.text}` : there?.text ?? '',
+    images: [...(there?.images ?? []), ...(moved ? mine.images : [])],
+    reply: (thread && there?.reply) || null,
+    follow: (thread && there?.follow) || null,
+  }
+  const behind = moved ? { text: '', images: [], reply: mine.reply, follow: mine.follow } : mine
+  return { box, behind: behind.text.trim() || behind.images.length || behind.reply ? behind : null, moved }
+}
+
 // onTarget(target): who it's aimed at changed (an agent's name opens your conversation with it; see isConvo).
 // onDictate: the dictation hotkey is about to start, so the box should be on screen.
 // onLater(button, draft): the clock beside Send was pressed (ui/schedules.js): what the box holds, to send later or on
@@ -3216,7 +3334,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
       ...on.map((a) => ({ label: displayName(a), icon: avatarHTML(a, { size: 18, mood: 'still' }), act: a.name, hint: `${statusText(a)}${a.unread ? ` · ${plural(a.unread, 'new reply', 'new replies')}` : ''}` })),
     ], (to) => {
       if (draftKey(to) === draftKey(target)) stopReply()
-      setTarget(to)
+      setTarget(to, { move: true }) // the message you're writing is for them now: it goes to their conversation with you
       ta.focus()
     })
   }
@@ -3286,26 +3404,33 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
   // Each conversation keeps its own draft: what you typed, its images, and what you were replying to. Going to
   // another one puts yours aside and brings back the one you left there. (Auto and Task are both everyone's.)
   // carry: you pressed Reply on its message, so what you're typing comes along, unless it has a draft of its own.
+  // move: you changed who it's for on the To line (the picker, the Task switch), so the message goes where it's going:
+  // what you wrote and its images are in the box there, under anything you'd left there (draftSwap). Not one that's
+  // on its way already (sent, or being filed as a task, and not back yet): that one stays where it was sent from, as
+  // when you look elsewhere, or it would still be in the box once it has gone.
   // Each channel keeps its own too, in its workspace.
   const drafts = new Map() // 'all', 'workspace#channel' or an agent's name -> { text, images, reply, follow }
   const draftKey = (t) => (isConvo(t) ? t : channel ? `${channel.ws ?? ''}#${channel.id}` : 'all')
-  const swapDraft = (next, carry) => swapKeys(draftKey(target), draftKey(next), carry)
-  const swapKeys = (mineKey, nextKey, carry) => {
+  let going = 0 // messages on their way (see submit)
+  const swapDraft = (next, how) => swapKeys(draftKey(target), draftKey(next), { ...how, everyone: !isConvo(next) })
+  const swapKeys = (mineKey, nextKey, { carry = false, move = false, everyone = false } = {}) => {
     if (voice?.busy()) return // dictating: the words keep coming into the box
     const mine = { text: ta.value, images: attach.get(), reply, follow }
     const there = drafts.get(nextKey)
     drafts.delete(nextKey)
     if (carry && !there) return void ((reply = null), (follow = null))
-    if (mine.text.trim() || mine.images.length || mine.reply) drafts.set(mineKey, mine)
-    ta.value = there?.text ?? ''
-    attach.set(there?.images ?? [])
-    reply = there?.reply ?? null
-    follow = there?.follow ?? null
-    if (hint.classList.contains('error')) say('') // that was about the draft you put aside
+    const { box, behind, moved } = draftSwap(mine, there, { move: move && !going, everyone })
+    if (behind) drafts.set(mineKey, behind)
+    ta.value = box.text // (the same text keeps the cursor where it was)
+    attach.set(box.images)
+    reply = box.reply
+    follow = box.follow
+    if (hint.classList.contains('error')) say('') // that was about the message where it was
     autosize()
+    if (moved && box.text !== mine.text) ta.scrollTop = ta.scrollHeight // under a draft that waited: its end, where the cursor is
   }
-  const setTarget = (name, { carry = false } = {}) => {
-    if (draftKey(name) !== draftKey(target)) swapDraft(name, carry)
+  const setTarget = (name, how) => {
+    if (draftKey(name) !== draftKey(target)) swapDraft(name, how)
     target = name
     // Task is a mode of everyone's chat: next time it opens on everyone's
     store.set('clique.target', name === 'task' ? 'auto' : name)
@@ -3321,6 +3446,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     const to = target === 'auto' ? undefined : target
     const sentAt = Date.now()
     const sentFrom = draftKey(target) // you may be in another conversation by the time it's sent
+    going += 1 // (until it's back: the To line doesn't take a message along that has gone already)
     try {
       const kind = kindIn(text)
       const talking = isConvo(target)
@@ -3347,6 +3473,8 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
       onSent?.()
     } catch (e) {
       say(errorLine(e), true)
+    } finally {
+      going -= 1
     }
   }
 
@@ -3360,7 +3488,7 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
     else {
       // the one you're in leaves the thread; another conversation keeps it for when you're back
       if (draftKey(picked.dataset.to) === draftKey(target)) stopReply()
-      setTarget(picked.dataset.to)
+      setTarget(picked.dataset.to, { move: true }) // Task, from an agent's conversation: what you wrote there is the task
     }
     tip.classList.remove('on')
     ta.focus()
@@ -3405,6 +3533,18 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
   const ink = mountInk(ta, { agents: () => agents, strict: () => !el.classList.contains('task-mode') })
   // @name opens the clique list; in task mode a mention assigns the task
   const mentions = mountMentions(ta, { agents: () => agents, box: el.querySelector('.input'), place: popups, heading: () => (el.classList.contains('task-mode') ? 'Assign to' : 'Mention: they get it too') })
+  // The box is as tall as its text at the width it has now. A conversation that opens with a terminal beside it is
+  // narrower than the channel, so a message that came along from there (or waited here) wraps onto more lines.
+  // (On the next frame: resizing the field from here would call its other watchers again within this one.)
+  // Hidden (another place is open, the floating chat is closed), it has no width and nothing to fit to: a draft that
+  // came back meanwhile is fitted once it's on screen again, whatever width that is.
+  let fitted = 0
+  new ResizeObserver(() => {
+    const w = ta.clientWidth
+    if (w === fitted) return
+    fitted = w
+    if (w) requestAnimationFrame(autosize)
+  }).observe(ta)
   ta.addEventListener('keydown', (e) => {
     if (voice?.key(e)) return
     if (e.key === 'Escape' && !e.isComposing && stopReply()) return void (e.preventDefault(), e.stopPropagation())
@@ -3425,14 +3565,18 @@ function mountComposer(el, { dropZone = el, onSend, onTarget, onDictate, onLater
   el.querySelector('.later')?.addEventListener('click', (e) => {
     const talking = isConvo(target)
     const from = draftKey(target)
+    const held = { text: ta.value.trim(), images: attach.get() }
     onLater(e.currentTarget, {
-      text: ta.value.trim(),
-      images: attach.get(),
+      ...held,
       to: reply && !talking ? reply.to.join(',') : target === 'auto' || target === 'task' ? '' : target,
       channel: !talking && channel ? channel.id : null,
-      // scheduled: the box is empty again (unless you've moved on to another conversation: then it's that draft that goes)
+      // scheduled: the box is empty again. If you've moved on to another conversation, it's that draft that goes, and
+      // the box too when the message came along with you (the To line)
       clear: () => {
-        if (draftKey(target) !== from) return void drafts.delete(from)
+        if (draftKey(target) !== from) {
+          drafts.delete(from)
+          if (ta.value.trim() !== held.text || attach.get().join('\n') !== held.images.join('\n')) return
+        }
         ta.value = ''
         attach.set([])
         autosize()

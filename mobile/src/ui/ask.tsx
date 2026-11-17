@@ -3,14 +3,15 @@
 // Answered, a card folds into a line saying what happened. The buttons are thumb-sized and full width; the one you'd
 // most likely press is the brand's.
 import * as Haptics from 'expo-haptics'
-import { useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useMemo, useState } from 'react'
+import { ActivityIndicator, ScrollView, type StyleProp, StyleSheet, Text, TextInput, type TextStyle, View } from 'react-native'
 
 import type { Answer, FeedEntry, PermissionAsk, PlanAsk, QuestionAsk, Reply } from '@/net/types'
 
 import { displayName, reasonOf } from './format'
 import { Icon, type IconName } from './icon'
 import { Markdown } from './markdown'
+import { askBlocks } from './md'
 import { Button, Press } from './parts'
 import { fonts, type Theme } from './theme'
 
@@ -205,6 +206,35 @@ function Choice({ t, label, description, onPress, busy, disabled, on, role }: { 
   )
 }
 
+// A question's own words, where it stands in full. Steps written in a run (md.ts askBlocks) are set out as a numbered
+// list in regular weight, between what leads in and the question itself; any other question is the one line it always
+// was. more: a line that follows them ("And 2 more.").
+export function AskWords({ t, text, more, style }: { t: Theme; text: string; more?: string; style: StyleProp<TextStyle> }) {
+  const parts = useMemo(() => askBlocks(text), [text])
+  if (!parts) return <Text style={[style, { color: t.fg }]}>{more ? `${text} ${more}` : text}</Text>
+  return (
+    <View style={styles.words}>
+      {parts.map((b, i) =>
+        'steps' in b ? (
+          <View key={i} style={styles.steps}>
+            {b.steps.map((step, n) => (
+              <View key={n} style={styles.step}>
+                <Text style={[style, styles.stepNumber, { color: t.fg2 }]}>{n + 1}.</Text>
+                <Text style={[style, styles.stepText, { color: t.fg }]}>{step}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text key={i} style={[style, { color: t.fg }]}>
+            {b.text}
+          </Text>
+        ),
+      )}
+      {more ? <Text style={[style, { color: t.fg }]}>{more}</Text> : null}
+    </View>
+  )
+}
+
 function QuestionCard(props: AskProps & { ask: QuestionAsk }) {
   const { t, e, ask, compact, disabled } = props
   const [draft, setDraft] = useDraft(e.id)
@@ -233,7 +263,7 @@ function QuestionCard(props: AskProps & { ask: QuestionAsk }) {
             </Text>
           ) : null}
           {/* the creature already says a lone question in its own words */}
-          {direct && props.voiced ? null : <Text style={[styles.qtext, { color: t.fg }]}>{q.question}</Text>}
+          {direct && props.voiced ? null : <AskWords t={t} text={q.question} style={styles.qtext} />}
           <View style={styles.options}>
             {q.options.map((o) =>
               direct ? (
@@ -382,6 +412,11 @@ const styles = StyleSheet.create({
   question: { gap: 8 },
   qhead: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
   qtext: { fontSize: 17, lineHeight: 22, fontWeight: '600' },
+  words: { gap: 8 },
+  steps: { gap: 5 },
+  step: { flexDirection: 'row' },
+  stepNumber: { minWidth: 24, fontWeight: '400', fontVariant: ['tabular-nums'] },
+  stepText: { flex: 1, fontWeight: '400' },
   options: { gap: 8 },
   choice: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 50, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, borderWidth: 1.5 },
   choiceText: { flex: 1, gap: 2 },

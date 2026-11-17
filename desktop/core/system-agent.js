@@ -24,7 +24,7 @@ export const SYSTEM_AGENT_AVATAR = { body: 'bean', color: 'pink', eyes: 'sparkle
 export const SYSTEM_AGENT_AREA = 'Runs the clique: takes what you ask and gets it to the right teammate'
 
 // What you can choose for him. The rest is who he is.
-export const SYSTEM_AGENT_CHOICES = new Set(['off', 'provider', 'cli', 'model', 'effort', 'tier', 'contextLimit', 'onContextLimit'])
+export const SYSTEM_AGENT_CHOICES = new Set(['off', 'provider', 'cli', 'model', 'effort', 'tier', 'contextLimit', 'onContextLimit', 'account']) // (account: which sign-in it runs on, core/accounts.js)
 
 export const SYSTEM_AGENT_PROMPT = `You're Q, CLIque's own agent: the queue in its name (CLI agent queue). You run this clique. People tell you what they want, you get it to whoever should do it, and you tell them how it went. Think of a great producer: calm, quick, always knows who's on what.
 

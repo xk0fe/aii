@@ -177,6 +177,7 @@ Open **Computers** on two of your machines and they find each other. Click **Lin
 ### Spend less
 
 - **Usage limits** for your Claude and Codex accounts on every computer, with the pace they're heading at and a heads-up before you run out.
+- **More than one account** for a provider: add a work Claude subscription beside your own, sign in once in your browser, and pick which agents run on which. Each account has its own limits and its own usage, and an agent takes its conversation along when you move it.
 - **Usage**, by the things you work with: the workspace you're in or everything, on this computer, a linked one or all of them added up. Tokens over time split by workspace, agent, provider or computer, a calendar of days for each provider, and who used it, where and on which models. Click any row to see only that. It's read from Claude Code's and Codex's own logs on each computer, so it covers what you ran outside CLIque too.
 - **What it costs**, per agent and per task.
 - **Token savers**: six switches that cut what a clique spends, such as starting fresh after a long break and showing agents only the notes they haven't read. Each one measures what it saved.

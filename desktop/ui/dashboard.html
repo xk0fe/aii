@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; media-src 'self' file:; frame-src clique-sandbox:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: clique-file:; media-src 'self' file: clique-file:; frame-src clique-sandbox:">
   <title>CLIque</title>
   <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
   <link rel="stylesheet" href="common.css">
@@ -550,6 +550,34 @@
     .lt-changed { display: flex; align-items: center; gap: 8px; width: fit-content; margin: 10px 2px 0; font-size: 13px; cursor: pointer; }
     .lt-changed.unseen { visibility: hidden; }
     .lt-changed input { margin: 0; accent-color: var(--accent); }
+    /* Accounts (ui/accounts.js): a group per provider, a row per sign-in: what it is and who's signed in, its limits
+       now and its agents (or what it needs from you), and more. A row keeps its height whatever state it's in. */
+    dialog.accounts-sheet { width: 600px; }
+    dialog.sheet .ac-body { min-height: 180px; padding-top: 2px; }
+    .ac-group + .ac-group { margin-top: 18px; }
+    .ac-group .section-label { align-items: center; min-height: 24px; margin-bottom: 6px; }
+    .ac-group .section-label .grow { flex: 1; }
+    .ac-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 28px; gap: 12px; align-items: center; min-height: 56px; padding: 9px 8px 9px 14px; }
+    .ac-main { display: grid; gap: 2px; min-width: 0; }
+    .ac-main b { font-size: 13px; font-weight: 600; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ac-main b small { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--fg3); }
+    .ac-sub { font-size: 12px; line-height: 16px; color: var(--fg2); overflow-wrap: anywhere; text-wrap: pretty; }
+    .ac-quiet { color: var(--fg3); }
+    .ac-need { color: var(--needs-ink); font-weight: 500; }
+    .ac-wait { color: var(--fg); }
+    .ac-side { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--fg2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ac-lim { cursor: help; }
+    .ac-lim i { margin: 0 6px; font-style: normal; color: var(--fg3); }
+    .ac-lim b { font-weight: 500; }
+    .ac-lim .warm { color: var(--ctx-warm); }
+    .ac-lim .hot { color: var(--ctx-hot); }
+    .ac-agents { min-width: 56px; text-align: right; color: var(--fg3); }
+    .ac-menu { width: 28px; height: 28px; padding: 0; }
+    .ac-form { grid-template-columns: minmax(0, 1fr) auto auto; }
+    .ac-form .field { height: 30px; padding: 0 10px; font: inherit; }
+    .ac-code { display: flex; gap: 6px; margin-top: 6px; }
+    .ac-code .field { flex: 1; min-width: 0; height: 26px; padding: 0 8px; font: inherit; font-size: 12px; }
+    .ac-foot-note { font-size: 12px; color: var(--fg2); text-wrap: pretty; }
     /* The list: who it's for, the words, its rule, and what happens next; the switch pauses it. */
     dialog.sched-sheet { width: 560px; }
     dialog.sheet .sc-body { min-height: 120px; padding-top: 2px; }
@@ -856,6 +884,8 @@
   <!-- Scheduled messages (ui/schedules.js): Send later, and the list of what's set up -->
   <dialog id="later" class="sheet later-sheet"></dialog>
   <dialog id="scheduled" class="sheet sched-sheet"></dialog>
+  <!-- Accounts (ui/accounts.js): each provider's sign-ins -->
+  <dialog id="accounts" class="sheet accounts-sheet"></dialog>
 
   <dialog id="import" class="sheet">
     <h2 class="sheet-title"><span class="h-icon"></span>Import agents</h2>
@@ -880,6 +910,7 @@
   <script src="setup.js"></script>
   <script src="tour.js"></script>
   <script src="schedules.js"></script>
+  <script src="accounts.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>

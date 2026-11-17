@@ -1,7 +1,7 @@
 // Full-screen view, laid out like a group chat: the sidebar (the workspace, its places, and a conversation with each
 // agent) and what's open: a channel (#general or one you made), one agent's conversation with its terminal docked beside it,
 // Agents, Tasks, Terminals or Usage.
-/* global stopNow, mountSchedules, mountUsage, shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon, channelOf, pauseMenu, notifyTime, notifyClock, notifyHeld */
+/* global stopNow, mountSchedules, mountAccounts, mountUsage, shownName, mountTour, pageHead, headTitle, mountSearch, glide, reduceMotion, EASE, DUR, isUnread, mountWorkspaces, shortPath, pathParts, keys, keysIn, commandKey, workspaceKey, ON_WINDOWS, THIS_COMPUTER, upFirst, notify, oops, errorReason, errorLine, burst, wsColor, wsTile, wsLabel, statusClass, displayName, contextRing, ctxLevel, mountTasks, clique, live, store, morph, modeMarks, modeChips, powerSwitch, statusText, brainShort, brainLabel, brainWords, cliqueGroups, grouped, segmented, celebrate, agentColor, markSVG, mountFeed, mountComposer, mountCollection, avatarHTML, esc, plural, popMenu, ICONS, svg, Terminal, FitAddon, needsYou, needText, clonesOf, cloneTag, runningSubs, blockedOn, activityWords, isConvo, familyOf, nameHTML, hasWorkspaces, paceWarning, usageTip, usageLine, usageByComputer, resetsText, modelName, PRODUCT_NAME, mountSetup, faceStack, computerIcon, channelOf, pauseMenu, notifyTime, notifyClock, notifyHeld */
 
 const $ = (s) => document.querySelector(s)
 const THEME = {
@@ -43,7 +43,10 @@ function openThread(id, at) {
 const composer = mountComposer($('.compose'), { dropZone: $('.chat'), onSend: () => feed.toLatest(), onTarget: (to) => targetChanged(to), onDictate: () => place === 'chat' || place === 'dm' || goPlace('chat'), onLater: (button, held) => schedules.pick(button, held) })
 // Scheduled messages (ui/schedules.js): the clock beside Send, the Send later sheet, and the list.
 const schedules = mountSchedules({ later: $('#later'), list: $('#scheduled'), getState: () => state, push: async (next) => (push ??= await ready)(next) })
+// Accounts (ui/accounts.js): each provider's sign-ins, from the ⋯ menu, the limits' popover and an agent's sheet.
+const accounts = mountAccounts({ sheet: $('#accounts'), getState: () => state })
 const collection = mountCollection($('.collection'), {
+  onAccounts: () => accounts.open(),
   headIn: $('.heads'),
   onTerminal: (name) => select(name), onImport: () => importPack(), onMove: (name, home) => moveSheet(name, home),
   onWorkspace: () => workspaces.settings(),
@@ -719,6 +722,7 @@ $('.side-more').addEventListener('click', (e) => {
     '-',
     { label: 'Computers…', icon: ICONS.computers, act: 'computers', hint: away ? `${away} offline` : c.links.length ? `${c.links.length + 1} linked` : '' },
     { label: 'Claude Code and Codex…', icon: ICONS.terminal, act: 'setup' },
+    { label: 'Accounts…', icon: ICONS.user, act: 'accounts', hint: accountsHint() },
     ...(state.workspace ? [{ label: 'Take the tour', icon: ICONS.sparkles, act: 'tour', hint: 'Q shows you around' }] : []),
     ...(ON_WINDOWS ? [] : [{ label: 'Permissions…', icon: ICONS.shield, act: 'permissions' }]),
     ...appItems(state),
@@ -737,6 +741,7 @@ $('.side-more').addEventListener('click', (e) => {
     if (act === 'scheduled') schedules.openList()
     if (act === 'computers') openComputers()
     if (act === 'setup') setup.open()
+    if (act === 'accounts') accounts.open()
     if (act === 'tour') startTour()
     if (act === 'permissions') clique.call('openPermissions').catch((err) => oops('Couldn’t open that', err))
     if (act.startsWith('theme:')) clique.call('theme', act.slice(6)).catch((err) => oops('Couldn’t change the theme', err))
@@ -1916,7 +1921,7 @@ function drawUsePop() {
       return `<div class="up-row">${usageLine({ provider: u.provider, home: m.here ? null : m.key, homeName: m.name }, state)}<small class="${warn ? 'warn' : ''}">${esc(warn || u.windows.map((w) => `${w.pct}% ${resetsText(w.resetsAt)}`).join(' · '))}</small></div>`
     })
     return `<div class="up-group" data-key="${esc(m.key)}">${head}${rows.join('')}</div>`
-  }).join('') + `<button class="up-more" data-place="usage">Usage by day${ICONS.chevron}</button>`)
+  }).join('') + `<button class="up-more" data-place="usage">Usage by day${ICONS.chevron}</button><button class="up-more" data-open="accounts">Accounts${ICONS.chevron}</button>`)
   placeUsePop()
 }
 // Over the usage line, which grows a row per computer: placed again on every redraw, not only when it opens.
@@ -1931,10 +1936,17 @@ usePop.addEventListener('beforetoggle', (e) => {
 })
 // Under the limits: the Usage view, where every day is
 usePop.addEventListener('click', (e) => {
+  if (e.target.closest('[data-open=accounts]')) return void (usePop.hidePopover(), accounts.open())
   if (!e.target.closest('[data-place=usage]')) return
   usePop.hidePopover()
   goPlace('usage')
 })
+// The ⋯ menu's word beside Accounts: how many you've added, or that one needs signing in.
+function accountsHint() {
+  const added = (state.accounts ?? []).filter((a) => !a.own)
+  const out = added.filter((a) => a.signedIn === false && !a.signing).length
+  return out ? `${out} not signed in` : added.length ? `${added.length} added` : ''
+}
 
 function addAgent() {
   if (!state.workspace) return workspaces.create() // the menu bar's New agent, say: it needs somewhere to work first
@@ -1950,9 +1962,9 @@ function handleFocus(arg) {
   // a file from the floating chat, to look at closer: this window has the room (ui/files.js)
   else if (arg?.startsWith('file:')) {
     try {
-      const { files, i } = JSON.parse(arg.slice(5))
+      const { files, i, from } = JSON.parse(arg.slice(5))
       fxRemember('elsewhere', files)
-      fxView('elsewhere', i)
+      fxView('elsewhere', i, null, from ?? null) // (from: where a recording was, playing there)
     } catch {}
   }
   else if (arg) select(arg)
@@ -1977,6 +1989,7 @@ const ready = live((next) => {
   if (toolsDialog.open) drawTools()
   if (notifyDialog.open) drawNotify()
   schedules.render()
+  accounts.render()
   drawFoot(state)
   drawUpdate(state)
   // Terminals only for agents that have one running; the sidebar lists everyone so off agents are one click from coming

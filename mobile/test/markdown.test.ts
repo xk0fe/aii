@@ -1,6 +1,22 @@
 // Reading agents' replies on the phone: the Markdown they write, parsed the way the chat draws it.
-import { blocks, codeText } from '@/ui/md'
+import fs from 'node:fs'
+import path from 'node:path'
+
+import { askBlocks, blocks, codeText, runInList, type AskBlock, type Run } from '@/ui/md'
 import { makeDemo } from '@/demo/fixture'
+
+// A question whose steps came written in a run, "(1) … (2) …": the cases both apps share (the desktop's copy is
+// tested in desktop/test/ask-steps.test.js).
+const steps = JSON.parse(fs.readFileSync(path.join(__dirname, '../../shared/ask-steps.json'), 'utf8')) as { runs: { name: string; text: string; run: Run | null }[]; blocks: { name: string; text: string; blocks: AskBlock[] | null }[] }
+
+describe('steps in a run', () => {
+  test.each(steps.runs.map((c) => [c.name, c] as const))('%s', (_, c) => expect(runInList(c.text)).toEqual(c.run))
+  test.each(steps.blocks.map((c) => [c.name, c] as const))('set out: %s', (_, c) => expect(askBlocks(c.text)).toEqual(c.blocks))
+
+  test('a question without steps has nothing to set out: the card shows it as the line it always was', () => {
+    for (const text of ['Should the empty cart show suggestions?', 'Should I also format *.md and *.json files?', '1. Which region?', 'Should I (1) rebase onto main, (2) merge main in, or (3) leave it?']) expect(askBlocks(text)).toBeNull()
+  })
+})
 
 describe('blocks', () => {
   test('a plan: a heading, numbered steps with code, a table, a checklist, a code block, a quote', () => {

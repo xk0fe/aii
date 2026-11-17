@@ -2,8 +2,8 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const listen = (channel) => (fn) => ipcRenderer.on(channel, (_e, ...args) => fn(...args))
-// main.js passes these to every page (webPreferences.additionalArguments): --clique-home=<your home folder>, and --clique-dev
-// when CLIque runs unpackaged (npm run dev).
+// main.js passes these to every page (webPreferences.additionalArguments): --clique-home=<your home folder>,
+// --clique-cache=<where linked computers' files are kept>, and --clique-dev when CLIque runs unpackaged (npm run dev).
 const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
 
 contextBridge.exposeInMainWorld('clique', {
@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('clique', {
   // paths; your home folder shows as ~.
   platform: process.platform,
   home: arg('clique-home') ?? '',
+  // Where linked computers' files are kept here: one in there is loaded through clique-file:// (ui/common.js fileURL),
+  // which brings it from its computer as it's shown or played (core/linkfiles.js).
+  cache: arg('clique-cache') ?? '',
   // Running from source: the developer's extras (Open config.json) show.
   dev: process.argv.includes('--clique-dev'),
   // Runs one of the `actions` in main.js and returns its result (or throws its error).
@@ -39,6 +42,9 @@ contextBridge.exposeInMainWorld('clique', {
   onFocus: listen('focus'),
   onToggle: listen('toggle'),
   onImport: listen('import'),
+  // How much of a linked computer's file is here, while one is being brought: { path, have, size }. Or that one a page
+  // asked for can't be had: { path, why, computer } (core/linkfiles.js).
+  onFile: listen('file'),
   // Dictation: microphone audio out (16 kHz Float32 chunks), what it heard back (see core/voice.js).
   voiceAudio: (id, samples) => ipcRenderer.send('voice-audio', id, samples),
   onVoice: listen('voice'),
