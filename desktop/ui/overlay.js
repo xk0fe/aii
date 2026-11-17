@@ -326,7 +326,7 @@ function tellLooking() {
   const to = composer.target()
   // (the message box shows no chat: what comes in while it's up still notifies)
   const view = !state || !isOpen() || isQuick() ? null
-    : { ws: state.workspace?.id ?? '', agent: isConvo(to) ? familyOf(to) : null, sees: isConvo(to) ? [] : needsYou(state).filter((n) => n.ask).map((n) => n.agent.name), tasks: false }
+    : { ws: state.workspace?.id ?? '', agent: isConvo(to) ? familyOf(to) : null, sees: needsYou(state).filter((n) => n.ask).map((n) => n.agent.name), tasks: false } // (Needs you is over the message box in a conversation too)
   const said = JSON.stringify(view)
   if (said === lookingSaid) return
   lookingSaid = said

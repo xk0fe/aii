@@ -13,10 +13,9 @@ const THEME = {
 const terms = new Map() // name -> { tile, head, term, fit, ready }
 let booted = false // the composer says who it's aimed at as it mounts, before what that opens exists
 // The chat: a channel's messages, or your conversation with one agent (in every channel). What it's aimed at is the composer's
-// target: an agent's name is that agent's conversation (see isConvo). Questions are cards in the conversation,
-// answered where they are (inline), not in a queue above it.
+// target: an agent's name is that agent's conversation (see isConvo). What needs you is docked above the message box, one
+// at a time (Needs you, as in the floating chat), not cards in the conversation.
 const feed = mountFeed($('.feed'), {
-  inline: true,
   face: 36,
   onAgent: (name) => select(name),
   onConvo: (name) => openDM(name),
@@ -140,7 +139,6 @@ $('.side-more').innerHTML = ICONS.more
 $('#link .h-icon').outerHTML = ICONS.computers
 $('#link [data-link-add]').innerHTML = `${ICONS.link}Link with a code…`
 $('#import .h-icon').outerHTML = ICONS.import
-const DOWN = svg('<path d="M12 5v14M5 12l7 7 7-7"/>', 'stroke-width="2.4"')
 // the page's own hints in this computer's keys (⌘F is Ctrl+F on Windows)
 for (const el of document.querySelectorAll('[title]')) el.title = keysIn(el.title)
 
@@ -212,7 +210,8 @@ function tellLooking() {
   const view = {
     ws: state.workspace?.id ?? '',
     agent: place === 'dm' ? dmAgent()?.name ?? null : null,
-    sees: place === 'chat' ? needsYou(state).filter((n) => n.ask && channelOf(n.ask, channelsNow()) === chan).map((n) => n.agent.name) : [],
+    // (Needs you is over the message box in a channel and in a conversation, whichever channel it was asked in)
+    sees: place === 'chat' || place === 'dm' ? needsYou(state).filter((n) => n.ask).map((n) => n.agent.name) : [],
     tasks: place === 'tasks',
   }
   const said = JSON.stringify(view)
@@ -277,40 +276,29 @@ function drawHead() {
   morph(chatHeadEl.querySelector('.ph-title'), title)
   morph(chatHeadEl.querySelector('.ph-acts'), acts)
 }
-// A channel: its name and its brief's first line (#general without one: who it reaches and where they work), what's
-// waiting on you anywhere (a click goes to the oldest), who's in it (a click: who works here, or the channel's members),
-// and its menu.
+// A channel: its name, and its menu (its brief, who's in it, its folder). Its brief and who it reaches are in the name's
+// tooltip; what's waiting on you is docked over the message box (Needs you), and who's in it is in the menu.
 function chatHead() {
-  const needs = needsYou(state)
   const c = openChannel()
-  const everyone = state.agents.filter((a) => !a.cloneOf)
-  const members = c.members ? everyone.filter((a) => c.members.includes(a.name)) : everyone
-  const faces = [...members.filter((a) => a.on), ...members.filter((a) => !a.on)]
-  const who = `Everyone in ${wsLabel(state.workspace)}`
   const folder = state.workspace?.folder
-  const brief = c.brief.split('\n').find((l) => l.trim())?.trim()
-  const sub = brief ? esc(brief) : c.id === 'general' ? `${esc(who)} · ${folder ? esc(tildePath(folder)) : systemAgentOf(state.agents) ? `${esc(displayName(systemAgentOf(state.agents)))} gets it to the right agent` : 'Auto picks who answers'}` : c.members ? esc(nameList(members.map((a) => a.seed ?? a.name))) : esc(who)
-  const tip = c.brief || (folder ? `Its agents work in ${folder}, unless one has a folder of its own here` : 'Each agent works in its own folder')
-  return [headTitle({ glyph: '#', title: esc(c.name), sub, tip }),
-    `${needs.length ? `<button class="mh-needs" data-head="needs" title="${esc(`${needs.map((x) => `${displayName(x.agent)}: ${needText(x)}`).join('\n')}\n\nClick for the oldest`)}">${needs.length} waiting on you${DOWN}</button>` : ''}
-      ${members.length ? `<button class="mh-faces" data-head="members" aria-haspopup="dialog" title="${esc(c.members ? `In #${c.name}: ${plural(members.length, 'agent')}. Click to change` : `Who works here: ${plural(members.length, 'agent')}, ${faces.filter((a) => a.on).length} on`)}">${faces.slice(0, 5).map((a) => avatarHTML(a, { size: 24, mood: 'still' })).join('')}<span>${members.length}</span></button>` : ''}
-      ${folder && FOLDER_APP ? `<button class="btn" data-head="folder" title="${esc(`${OPEN_FOLDER}: ${tildePath(folder)}`)}">${ICONS.folder}<span>${OPEN_FOLDER}</span></button>` : ''}
-      <button class="icon" data-head="channel" title="Channel: its brief, name and members" aria-label="Channel menu" aria-haspopup="menu">${ICONS.more}</button>`]
+  const tip = [c.brief || `Everyone in ${wsLabel(state.workspace)}`, folder && `Its agents work in ${tildePath(folder)}, unless one has a folder of its own here`].filter(Boolean).join('\n\n')
+  return [headTitle({ glyph: '#', title: `<span title="${esc(tip)}">${esc(c.name)}</span>` }),
+    `<button class="icon" data-head="channel" title="Channel: its brief, who's in it, its folder" aria-label="Channel menu" aria-haspopup="menu">${ICONS.more}</button>`]
 }
-// An agent: its creature and name, what it is and its brain in one line (with its clones or helpers), then its
-// switches (YOLO, Fast, on/off), its terminal, its profile (the sheet) and everything else (⋯).
+// An agent: its creature and name, and its job (Off when it's off), then its terminal, its profile (the sheet: brain,
+// YOLO, folder, instructions, look) and everything else (⋯: on and off, a new conversation, moving it). How it is, its
+// brain, its modes, its clones and helpers are in the name's tooltip.
 function dmHead(a) {
   const clones = clonesOf(state.agents, a).filter((c) => c.on)
   const helpers = runningSubs(a).length
-  const meta = [a.area, brainWords(a, state.providers, { short: true }), clones.length ? plural(clones.length, 'clone') : helpers ? plural(helpers, 'helper') : ''].filter(Boolean)
+  const tip = [a.area, upFirst(statusText(a)), brainLabel(a, state.providers), a.yolo && 'YOLO: skips every permission prompt', clones.length ? plural(clones.length, 'clone') : helpers ? plural(helpers, 'helper') : ''].filter(Boolean).join('\n')
   const canDock = family(a.name).length > 0 || a.status === 'resting'
-  return [headTitle({ glyph: avatarHTML(a, { size: 28 }), title: nameHTML({ ...a, cloneOf: null }), sub: esc(meta.join(' · ')), tip: [statusText(a), brainLabel(a, state.providers)].join('\n') }),
-    `${modeChips(a)}
-      <label class="mh-power" title="${esc(a.on ? 'On: turn it off (it stays off after restarts)' : 'Off: turn it on (it picks up its session)')}">${powerSwitch(a)}<span>${a.on ? 'On' : 'Off'}</span></label>
-      <button class="btn" data-head="terminal" aria-pressed="${docked()}" ${canDock ? '' : 'disabled'} title="${canDock ? (docked() ? 'Put its terminal away' : 'Show its terminal beside the conversation') : `${esc(a.seed ?? a.name)} is off: no terminal`}">${ICONS.terminal}<span>Terminal</span></button>
-      <button class="btn" data-head="profile" title="Its brain, folder, rules, instructions and look">${ICONS.edit}<span>Profile</span></button>
-      <button class="icon" data-head="menu" title="More" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`]
+  return [headTitle({ glyph: avatarHTML(a, { size: 28 }), title: `<span title="${esc(tip)}">${nameHTML({ ...a, cloneOf: null })}</span>`, sub: esc(a.on ? a.area ?? '' : 'Off') }),
+    `<button class="btn" data-head="terminal" aria-pressed="${docked()}" ${canDock ? '' : 'disabled'} title="${canDock ? (docked() ? 'Put its terminal away' : 'Show its terminal beside the conversation') : `${esc(a.seed ?? a.name)} is off: no terminal`}">${ICONS.terminal}<span>Terminal</span></button>
+      <button class="btn" data-head="profile" title="Its brain, YOLO, folder, rules, instructions and look">${ICONS.edit}<span>Profile</span></button>
+      <button class="icon" data-head="menu" title="On and off, a new conversation, moving it" aria-label="More" aria-haspopup="menu">${ICONS.more}</button>`]
 }
+
 chatHeadEl.addEventListener('click', (e) => {
   if (e.target.closest('.ph-glyph')) return dmAgent() && place === 'dm' && edit(dmAgent().name) // its creature: its profile
   const b = e.target.closest('[data-head], [data-place]')
@@ -320,7 +308,7 @@ chatHeadEl.addEventListener('click', (e) => {
   const act = b.dataset.head
   if (act === 'needs') return answerOldest()
   if (act === 'members') return place === 'chat' && openChannel().members ? channelSheet(openChannel().id) : openMembers(b)
-  if (act === 'channel') return channelMenu(openChannel().id, b)
+  if (act === 'channel') return channelMenu(openChannel().id, b, { head: true })
   if (act === 'folder') return openFolder(state.workspace)
   if (!a) return
   if (act === 'terminal') {
@@ -368,7 +356,8 @@ function drawChannels() {
     const needs = asks.filter((n) => channelOf(n.ask, list) === c.id).length
     const on = place === 'chat' && c.id === chan
     const tip = [`#${c.name}`, c.brief && (c.brief.length > 240 ? `${c.brief.slice(0, 240)}…` : c.brief), needs && `${plural(needs, 'question')} for you`, unread && plural(unread, 'new reply', 'new replies')].filter(Boolean).join('\n')
-    return `<button class="nv ch${unread || needs ? ' fresh' : ''}" data-channel="${esc(c.id)}" role="listitem"${on ? ' aria-current="page"' : ''} title="${esc(tip)}"><span class="hash" aria-hidden="true">#</span><span class="ch-name">${esc(c.name)}</span><i class="nv-n">${needs ? `<span class="need-badge">${needs}</span>` : unread ? (unread > 9 ? '9+' : unread) : ''}</i></button>`
+    // new replies make its name bold; its questions for you are in Needs you and on who asked them, not counted here too
+    return `<button class="nv ch${unread ? ' fresh' : ''}" data-channel="${esc(c.id)}" role="listitem"${on ? ' aria-current="page"' : ''} title="${esc(tip)}"><span class="hash" aria-hidden="true">#</span><span class="ch-name">${esc(c.name)}</span></button>`
   }))
 }
 $('.channels').addEventListener('click', (e) => {
@@ -383,15 +372,23 @@ $('.channels').addEventListener('contextmenu', (e) => {
 })
 $('.chan-sec [data-act=new-channel]').addEventListener('click', () => channelSheet(null))
 
-function channelMenu(id, at) {
+// head: opened from the channel's header, so it also has who's in it and its folder (the header shows only its name)
+function channelMenu(id, at, { head = false } = {}) {
   const c = channelsNow().find((x) => x.id === id)
   if (!c) return
+  const everyone = state.agents.filter((a) => !a.cloneOf)
+  const members = c.members ? everyone.filter((a) => c.members.includes(a.name)) : everyone
+  const folder = state.workspace?.folder
   popMenu(at, [
     { head: `#${c.name}` },
     { label: c.id === 'general' ? (c.brief ? 'Edit its brief…' : 'Give it a brief…') : 'Edit channel…', icon: ICONS.edit, act: 'edit' },
+    ...(head ? [{ label: c.members ? 'Members…' : 'Who works here…', icon: ICONS.computers, act: 'members', hint: plural(members.length, 'agent') }] : []),
+    ...(head && folder && FOLDER_APP ? [{ label: OPEN_FOLDER, icon: ICONS.folder, act: 'folder', hint: tildePath(folder) }] : []),
     ...(c.id === 'general' ? [] : ['-', { label: `Delete #${c.name}…`, icon: ICONS.trash, act: 'remove', danger: true }]),
   ], (act) => {
     if (act === 'edit') channelSheet(id)
+    if (act === 'members') return c.members ? channelSheet(id) : openMembers(at)
+    if (act === 'folder') openFolder(state.workspace)
     if (act === 'remove') removeChannel(c)
   })
 }
@@ -628,8 +625,8 @@ function answerOldest() {
   const n = needsYou(state)[0]
   if (!n) return
   if (!n.ask) return select(n.agent.name)
-  if (place !== 'chat' || channelOf(n.ask, channelsNow()) !== chan) setChannel(channelOf(n.ask, channelsNow()))
-  requestAnimationFrame(() => feed.jump(n.ask.id))
+  if (place !== 'chat' && place !== 'dm') goPlace('chat')
+  requestAnimationFrame(() => feed.jump(n.ask.id)) // (it opens in Needs you, over the message box)
 }
 
 // ---- searching the messages: the channel's, or the conversation's ------------------------------------------------------
@@ -1558,17 +1555,15 @@ function doingWord(a) {
   }
 }
 
-// One line: its creature, its name (YOLO, how many clones), then what needs you from it and its clones (berry), new
-// replies (a quiet count), or how it is.
+// One line: its creature and its name. What needs you from it (and its clones) is a berry dot; new replies make its name
+// bold. How it is, what it's doing, its brain and its modes are in its tooltip: the row says only what you'd act on.
 function dmRow(a, { selected = false, clones = [], needs = 0, drag = false }) {
   const unread = [a, ...clones].reduce((n, x) => n + (x.unread ?? 0), 0)
-  const tip = [`${a.seed ?? a.name}${a.area ? ` · ${a.area}` : ''}`, upFirst(statusText(a)), brainLabel(a, state.providers), clones.length ? `${plural(clones.length, 'clone')} at work` : '', a.queue ? `${a.queue} queued` : ''].filter(Boolean).join('\n')
-  const end = needs ? `<i class="need-badge" title="${esc(`${needs} waiting on you`)}">${needs}</i>`
-    : unread ? `<i class="dm-new" title="${esc(plural(unread, 'new reply', 'new replies'))}">${unread > 9 ? '9+' : unread}</i>`
-    : `<span class="dm-word">${esc(doingWord(a))}</span>`
+  const tip = [`${a.seed ?? a.name}${a.area ? ` · ${a.area}` : ''}`, upFirst(doingWord(a)), brainLabel(a, state.providers), a.yolo ? 'YOLO: skips every permission prompt' : '', clones.length ? `${plural(clones.length, 'clone')} at work` : '', a.queue ? `${a.queue} queued` : '', needs ? `${needs} waiting on you` : '', unread ? plural(unread, 'new reply', 'new replies') : ''].filter(Boolean).join('\n')
+  const end = needs ? '<i class="dm-dot needs" aria-label="needs you"></i>' : ''
   return `<div class="dm ${a.on ? a.status : 'off'}${selected ? ' on' : ''}${needs ? ' needs' : ''}${unread ? ' fresh' : ''}" data-agent="${esc(a.name)}" role="button" tabindex="0" ${drag && !a.system ? 'draggable="true"' : ''} title="${esc(tip)}" style="--c:${agentColor(a)}">
     <span class="dm-av">${avatarHTML(a, { size: 26 })}</span>
-    <span class="dm-name"><b>${esc(shownName(a.seed ?? a.name))}</b>${a.yolo ? '<i class="mark-yolo" title="YOLO: skips every permission prompt">YOLO</i>' : ''}${clones.length ? `<span class="dm-clones">+${clones.length}</span>` : ''}</span>
+    <span class="dm-name"><b>${esc(shownName(a.seed ?? a.name))}</b>${clones.length ? `<span class="dm-clones">+${clones.length}</span>` : ''}</span>
     <span class="dm-end">${end}</span>
   </div>`
 }
@@ -1585,10 +1580,11 @@ function dmParts(state, { folds = new Set(), selected, filter = '', drag = false
   const parts = groups.map((g) => {
     const agents = g.agents.filter(match)
     if ((q || !headed) && !agents.length) return null
-    const folded = headed && !q && folds.has(`group:${g.key}`)
+    const folded = headed && !g.here && !q && folds.has(`group:${g.key}`)
     const waiting = agents.reduce((n, a) => n + (needs.get(a.name) ?? 0), 0)
-    const head = headed
-      ? `<div class="cg-label" data-fold="group:${esc(g.key)}" title="${esc(g.here ? `${g.name}: ${THIS_COMPUTER}` : `${g.name}: ${g.online ? 'linked' : 'unreachable, it reconnects on its own'}`)}"><span class="chev">${ICONS.chevron}</span><span>${esc(g.name)}</span>${g.online ? '' : '<span class="cg-tag">· offline</span>'}${folded && waiting ? `<span class="grow"></span><i class="need-badge">${waiting}</i>` : ''}</div>`
+    // (this computer's agents come first and need no label; another computer's say where they are)
+    const head = headed && !g.here
+      ? `<div class="cg-label" data-fold="group:${esc(g.key)}" title="${esc(`${g.name}: ${g.online ? 'linked' : 'unreachable, it reconnects on its own'}`)}"><span class="chev">${ICONS.chevron}</span><span>On ${esc(g.name)}</span>${g.online ? '' : '<span class="cg-tag">· offline</span>'}${folded && waiting ? '<span class="grow"></span><i class="dm-dot needs"></i>' : ''}</div>`
       : ''
     const rows = [...agents.filter((a) => a.on), ...agents.filter((a) => !a.on)].map((a) => dmRow(a, { selected: a.name === selected, clones: g.clones.filter((c) => c.cloneOf === a.name && c.on), needs: needs.get(a.name) ?? 0, drag: drag && headed }))
     const empty = !agents.length ? [`<div class="roster-none">${g.online ? 'No agents here yet' : 'No agents'}</div>`] : []
@@ -1879,7 +1875,9 @@ function drawFoot(state) {
   const away = c.links.filter((l) => !l.online)
   $('.side-more').classList.toggle('warn', away.length > 0)
   $('.side-more').title = `Autopilot, staying awake, Computers, Claude Code and Codex, theme${away.length ? `\n${away.map((l) => l.name).join(', ')} can't be reached` : ''}`
-  const machines = usageByComputer(state)
+  // only what's close to a limit (80% of a window, or running out before it resets at this pace): the rest is in Usage
+  const near = (u) => fullestPct(u) >= 80 || Boolean(paceWarning(u))
+  const machines = usageByComputer(state).filter((m) => m.accounts.some(near)).map((m) => ({ ...m, accounts: m.accounts.filter(near) }))
   const use = $('.use-line')
   use.classList.toggle('none', !machines.length)
   const each = machines.length > 1 || machines.some((m) => !m.here)
