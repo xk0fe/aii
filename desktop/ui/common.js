@@ -71,6 +71,8 @@ function markSVG(viewBox = '0 0 24 24', { split = false } = {}) {
 
 const ICONS = {
   mark: markSVG(),
+  // an account: who's signed in (ui/accounts.js)
+  user: svg('<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.7-3.6 3.5-5.5 7-5.5s6.3 1.9 7 5.5"/>'),
   clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
   expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
@@ -488,11 +490,12 @@ function usageChip(state) {
   return `<span class="sum usage" title="${esc(all.map(usageTip).join('\n\n'))}">${all.map((u) => `<span>${esc(u.label)}</span>${limitNums(fullest(u))}`).join('<i>·</i>')}</span>`
 }
 
-// The account an agent runs on: its provider's on its own computer. An agent on a linked computer runs on that
+// The account an agent runs on: its provider's on its own computer, or one you added there (Accounts). An agent on a linked computer runs on that
 // computer's account, which reports its limits to us with the rest of that computer's state (Clique.linkedUsage).
 function usageOf(a, state) {
   const all = a.home ? state.computers?.links?.find((l) => l.slug === a.home)?.usage : state.usage
-  const u = all?.[a.provider]
+  // (a.usage: whose limits it counts against, its provider's own sign-in or one of your accounts: core/accounts.js)
+  const u = all?.[a.usage ?? a.provider]
   return u?.windows?.length ? u : null
 }
 

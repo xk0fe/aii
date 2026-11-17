@@ -200,7 +200,7 @@ test('a session one workspace wrote down and another only counted the spend of i
 
 test('what a linked computer asks for: this computer\'s rows and workspaces, and nothing of the computers linked to it', () => {
   const said = clique.serve('usageHistory', [], null, { name: 'Laptop' })
-  assert.deepEqual(Object.keys(said).sort(), ['at', 'cols', 'faces', 'first', 'providers', 'reading', 'rows', 'spaces'])
+  assert.deepEqual(Object.keys(said).sort(), ['accounts', 'at', 'cols', 'faces', 'first', 'providers', 'reading', 'rows', 'spaces'])
   assert.equal(said.rows.length, me().rows.length)
   assert.deepEqual(Object.keys(said.spaces).sort(), ['studio:docs', 'studio:shop'])
 })

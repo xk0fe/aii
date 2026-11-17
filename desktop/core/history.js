@@ -214,11 +214,11 @@ function whoOf(fd, file, cli) {
 // One log, read from where the last look stopped when it only grew since (the bytes before that spot are the same),
 // from its start otherwise. prev: what the index has for it. taken(id): a response another log of its session has
 // counted. skip: how many of its first bytes it brought from another computer (not counted here). -> its entry.
-export function readLog(file, { cli, pin = null, size, mtime }, prev = null, { taken, skip = 0 } = {}) {
+export function readLog(file, { cli, pin = null, acct = '', size, mtime }, prev = null, { taken, skip = 0 } = {}) {
   const fd = fs.openSync(file, 'r')
   try {
     const on = prev && prev.cli === cli && prev.offset > 0 && size >= prev.offset && markAt(fd, prev.offset) === prev.mark
-    const e = on ? { ...prev, days: structuredClone(prev.days) } : { cli, ...(pin && { pin }), who: null, ...(sessionOf(file) && { sub: true }), days: {} }
+    const e = on ? { ...prev, days: structuredClone(prev.days) } : { cli, ...(pin && { pin }), ...(acct && { acct }), who: null, ...(sessionOf(file) && { sub: true }), days: {} }
     if (!e.who) e.who = whoOf(fd, file, cli) // until it has a name: a log's first lines can be written after a first look
     e.offset = cli === 'codex' ? readCodex(fd, on ? prev.offset : 0, e, skip) : readClaude(fd, on ? prev.offset : 0, e, taken, skip)
     e.mark = markAt(fd, e.offset)
@@ -252,7 +252,7 @@ function logsUnder(root) {
       else if (x.name.endsWith('.jsonl')) {
         try {
           const st = fs.statSync(file)
-          if (st.isFile()) out.push({ file, cli: root.cli, pin: root.provider ?? null, size: st.size, mtime: Math.round(st.mtimeMs) })
+          if (st.isFile()) out.push({ file, cli: root.cli, pin: root.provider ?? null, acct: root.account ?? '', size: st.size, mtime: Math.round(st.mtimeMs) })
         } catch {}
       }
     }
@@ -292,8 +292,11 @@ function sourceOf(index, file, e) {
 // A log that's gone (Claude Code cleaned it up): its days are kept, added up with the others of its kind. A kept day:
 // its models, and under each model that led a log's day, [messages, sessions]. own: the workspace that ran its session
 // and the agent it ran as ([workspace, name], see placer), kept with it: the log's name was the only other way to say.
+// Its account (the folder it was in, core/accounts.js) is kept too. The key: [cli, via, pin, who, dir, workspace, account],
+// as far as it has them (a log outside CLIque on your own sign-in: the first five).
 function keep(index, e, own) {
-  const k = (index.kept[JSON.stringify([e.cli, e.via ?? '', e.pin ?? '', (own?.[1] || e.who) ?? '', e.dir ?? '', ...(own ? [own[0]] : [])])] ??= {})
+  const tail = e.acct ? [own ? own[0] : null, e.acct] : own ? [own[0]] : []
+  const k = (index.kept[JSON.stringify([e.cli, e.via ?? '', e.pin ?? '', (own?.[1] || e.who) ?? '', e.dir ?? '', ...tail])] ??= {})
   const lead = leadOf(e)
   for (const [day, d] of Object.entries(e.days)) {
     const into = (k[day] ??= { models: {}, lead: {} })
@@ -304,8 +307,8 @@ function keep(index, e, own) {
   }
 }
 
-// Bring the index up to date. roots: [{ dir, cli: 'claude' | 'codex', provider? }] (provider: a folder that's one of
-// your own providers', whatever its model is called). Newest logs first, so the days nearest today fill in first.
+// Bring the index up to date. roots: [{ dir, cli: 'claude' | 'codex', provider?, account? }] (provider: a folder that's
+// one of your own providers', whatever its model is called; account: the folder of one of your accounts). Newest logs first, so the days nearest today fill in first.
 // onProgress({ done, total, files }): bytes read of the bytes to read; given often, and once more at the end.
 // owners: { session id: [workspace, name] }, the sessions CLIque's workspaces ran (see placer): a log that goes keeps its.
 // arrived: { path: bytes }, the logs that came with an agent moved from another computer, and how long each was then:
@@ -336,7 +339,14 @@ export function scan(index, roots, { onProgress, owners = {}, arrived = {} } = {
     if (found.has(file)) continue
     const moved = byId.get(logId({ file, cli: e.cli }))
     if (!moved || index.files[moved.file] || !gone(file)) continue
-    index.files[moved.file] = e
+    if ((moved.acct ?? '') === (e.acct ?? '') && (moved.pin ?? null) === (e.pin ?? null)) index.files[moved.file] = e
+    else {
+      // to another account's folder (its agent changed account, and its conversation went along): what it used so far
+      // stays the account's it was used on, and it's read on from where it was as the new one's
+      keep(index, sourceOf(index, file, e), owners[sessionId(file, e.cli)])
+      const { pin, acct, ...rest } = e
+      index.files[moved.file] = { ...rest, ...(moved.pin && { pin: moved.pin }), ...(moved.acct && { acct: moved.acct }), days: {} }
+    }
     delete index.files[file]
   }
 
@@ -443,26 +453,27 @@ export function placer({ owners = {}, agents = [] } = {}) {
 //   day 'YYYY-MM-DD' · ws: the workspace it ran in ('' outside CLIque, UNKNOWN when it can't be told) · who: the agent
 //   ('' outside CLIque) · provider · model · dir: the folder the session worked in ('' when its log doesn't say) ·
 //   tokens (all four kinds) · input · output · cached (read from the cache) · written (to it) · replies · messages ·
-//   sessions · cost (at list prices)
+//   sessions · cost (at list prices) · account: the account it ran on ('' the provider's own sign-in)
 // owners, agents: who ran what (placer). providers: config's (providerOf).
 // -> { first, cols, rows }. The same whether a log is still there or its days are kept: it doesn't change when a log goes.
-export const COLS = ['day', 'ws', 'who', 'provider', 'model', 'dir', 'tokens', 'input', 'output', 'cached', 'written', 'replies', 'messages', 'sessions', 'cost']
+export const COLS = ['day', 'ws', 'who', 'provider', 'model', 'dir', 'tokens', 'input', 'output', 'cached', 'written', 'replies', 'messages', 'sessions', 'cost', 'account']
 export function summarize(index, { owners, agents, providers = {} } = {}) {
   const place = placer({ owners, agents })
   const rows = new Map()
   let first = null
-  const rowOf = (day, at, provider, model, dir) => {
+  const rowOf = (day, at, provider, model, dir, acct) => {
     if (!first || day < first) first = day
-    const key = [day, at.ws, at.who, provider, model, dir].join('\u0000')
+    const key = [day, at.ws, at.who, provider, model, dir, acct].join('\u0000')
     let r = rows.get(key)
-    if (!r) rows.set(key, (r = [day, at.ws, at.who, provider, model, dir, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
+    if (!r) rows.set(key, (r = [day, at.ws, at.who, provider, model, dir, 0, 0, 0, 0, 0, 0, 0, 0, 0, acct]))
     return r
   }
   // a source's day: its tokens to each model's provider, then what `led` says of its messages and sessions
   const add = (src, at, day, models, led) => {
     const dir = src.dir ?? ''
+    const acct = src.acct ?? ''
     for (const [model, [n, input, output, read, write, cost]] of Object.entries(models)) {
-      const r = rowOf(day, at, providerOf({ ...src, model }, providers), model, dir)
+      const r = rowOf(day, at, providerOf({ ...src, model }, providers), model, dir, acct)
       r[6] += input + output + read + write
       r[7] += input
       r[8] += output
@@ -473,7 +484,7 @@ export function summarize(index, { owners, agents, providers = {} } = {}) {
     }
     for (const [model, [messages, sessions]] of led) {
       if (!messages && !sessions) continue
-      const r = rowOf(day, at, providerOf({ ...src, model }, providers), model, dir)
+      const r = rowOf(day, at, providerOf({ ...src, model }, providers), model, dir, acct)
       r[12] += messages
       r[13] += sessions
     }
@@ -485,13 +496,13 @@ export function summarize(index, { owners, agents, providers = {} } = {}) {
     for (const [day, d] of Object.entries(e.days ?? {})) add(src, at, day, d.models ?? {}, [[lead(d), [d.m ?? 0, e.sub ? 0 : 1]]])
   }
   for (const [key, days] of Object.entries(index?.kept ?? {})) {
-    const [cli, via, pin, who, dir, ws] = JSON.parse(key)
+    const [cli, via, pin, who, dir, ws, acct] = JSON.parse(key)
     // (kept with the workspace that ran it, or placed by its name as a log still there would be)
     const at = typeof ws === 'string' ? { ws, who: base(who ?? '') } : place({ who, dir })
-    for (const [day, d] of Object.entries(days)) add({ cli, via, pin, who, dir }, at, day, d.models ?? {}, Object.entries(d.lead ?? {}))
+    for (const [day, d] of Object.entries(days)) add({ cli, via, pin, who, dir, acct: typeof acct === 'string' ? acct : '' }, at, day, d.models ?? {}, Object.entries(d.lead ?? {}))
   }
   // in one order whatever order the logs were read in: by day, then by what each row is of
-  const of = [0, 1, 2, 3, 4, 5]
+  const of = [0, 1, 2, 3, 4, 5, 15]
   const order = (x, y) => {
     for (const i of of) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1
     return 0

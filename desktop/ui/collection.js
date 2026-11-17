@@ -8,7 +8,7 @@
 const LIGHT = new Set(['yellow', 'lime', 'mint', 'sky', 'peach'])
 const pad = (n) => String(n).padStart(3, '0')
 const slug = (s) => String(s ?? '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
-const FIELDS = ['name', 'area', 'prompt', 'images', 'provider', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'contextLimit', 'onContextLimit', 'clones']
+const FIELDS = ['name', 'area', 'prompt', 'images', 'provider', 'model', 'effort', 'tier', 'cwd', 'args', 'yolo', 'contextLimit', 'onContextLimit', 'clones', 'account']
 // How many clones an agent may run at once (core/hub.js MAX_CLONES).
 const CLONES = [1, 2, 3, 4, 5]
 // Context limits offered as one tap (only those below the model's window, at most four); any other can be typed.
@@ -27,7 +27,7 @@ const TABS = [
 ]
 // at work: what it's doing says more than its status. Waiting on a teammate, the status says it (who it waits on).
 const atWork = (a) => (a?.status === 'working' && !a.waitingOn?.length) || a?.status === 'waiting'
-function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, onWorkspace, onRenamed }) {
+function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, onWorkspace, onRenamed, onAccounts }) {
   // the header: in the dashboard's row of place headers (common.js pageHead), like every place's
   headIn.insertAdjacentHTML('beforeend', pageHead({
     id: 'clique', glyph: markSVG('0 4 24 18'), title: 'Agents',
@@ -463,11 +463,11 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     if (!force && editing && name !== editing && dirty() && !confirm('Discard your changes?')) return
     const a = name && agentNamed(name)
     original = a
-      ? { name: a.seed ?? a.name, home: a.home ?? '', area: a.area ?? '', prompt: a.prompt ?? '', images: a.images ?? [], provider: a.provider ?? 'claude', model: a.model ?? '', effort: a.effort ?? '', tier: a.tier ?? '', cwd: a.cwd ?? '', args: a.args ?? '', yolo: a.yolo, on: a.on, avatar: avatarOf(a), contextLimit: a.contextLimit ?? '', onContextLimit: a.onContextLimit ?? 'fresh', clones: a.clones || '' }
+      ? { name: a.seed ?? a.name, home: a.home ?? '', area: a.area ?? '', prompt: a.prompt ?? '', images: a.images ?? [], provider: a.provider ?? 'claude', model: a.model ?? '', effort: a.effort ?? '', tier: a.tier ?? '', cwd: a.cwd ?? '', args: a.args ?? '', yolo: a.yolo, on: a.on, avatar: avatarOf(a), contextLimit: a.contextLimit ?? '', onContextLimit: a.onContextLimit ?? 'fresh', clones: a.clones || '', account: a.account ?? '' }
       : null
     draft = original
       ? structuredClone(original)
-      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('clique.yolo') === '1', on: true, avatar: randomAvatar(), contextLimit: '', onContextLimit: 'fresh', clones: '', shared: '' }
+      : { name: '', home: '', area: '', prompt: '', images: [], provider: 'claude', model: '', effort: '', tier: '', cwd: '', args: '', yolo: store.get('clique.yolo') === '1', on: true, avatar: randomAvatar(), contextLimit: '', onContextLimit: 'fresh', clones: '', shared: '', account: '' }
     if (home !== undefined && !a) draft.home = home
     editing = a ? a.name : ':new'
     stage = !a && !force
@@ -890,9 +890,21 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     const efforts = effortsFor(draft)
     card.querySelector('.brain').innerHTML =
       row('Model', modelControl(), { cls: 'model-row' }) +
-      row('Effort', efforts.length ? effortChoices(efforts) : '<em>set by the model</em>', { cls: 'effort-row' })
+      row('Effort', efforts.length ? effortChoices(efforts) : '<em>set by the model</em>', { cls: 'effort-row' }) +
+      accountRow()
     drawPicks(card.querySelector('.brain'))
     drawBehaviour()
+  }
+
+  // Which sign-in it runs on, once its provider has more than its default one (Accounts): each has its own usage limits.
+  // An agent on a linked computer runs on that computer's accounts, which are picked there.
+  function accountRow() {
+    if (draft.home) return ''
+    const mine = (state.accounts ?? []).filter((x) => x.provider === draft.provider)
+    if (mine.length < 2) return ''
+    if (!mine.some((x) => x.id === draft.account)) draft.account = '' // (an account that's gone: its default)
+    const tip = (x) => [x.own ? `${providerOf(draft.provider).label}'s own sign-in` : x.name, x.email, x.plan, x.signedIn === false && 'not signed in'].filter(Boolean).join(' · ')
+    return row('Account', `${choices('account', mine.map((x) => `<button type="button" data-v="${esc(x.id)}" title="${esc(tip(x))}">${x.own ? 'Default' : esc(x.name)}</button>`).join(''), { fill: false })}<button type="button" class="btn sm plain ed-accounts" data-act="accounts" title="Add an account, or see who's signed in">Accounts…</button>`, { cls: 'account-row' })
   }
 
   function modelControl() {
@@ -928,7 +940,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
       if (act === 'provider') return openAddProvider()
       const pick = choices[Number(act)]
       if (!pick) return
-      if (pick.provider !== draft.provider) Object.assign(draft, { provider: pick.provider, effort: '', tier: '' })
+      if (pick.provider !== draft.provider) Object.assign(draft, { provider: pick.provider, effort: '', tier: '', account: '' }) // (an account is one provider's)
       draft.model = pick.model
       if (!effortsFor(draft).includes(draft.effort)) draft.effort = ''
       drawBrain()
@@ -1156,6 +1168,7 @@ function mountCollection(root, { headIn = root, onTerminal, onImport, onMove, on
     if (act === 'back') close()
     if (act === 'advanced') setAdvanced(!advOpen)
     if (act === 'model') modelMenu(e.target.closest('[data-act]'))
+    if (act === 'accounts') onAccounts?.()
     if (act === 'shuffle') {
       draft.avatar = randomAvatar()
       drawLook()

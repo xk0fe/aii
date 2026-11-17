@@ -1072,6 +1072,90 @@ const SHOTS = {
     await save(big, `usage-three-computers-${theme}`)
     big.destroy()
   },
+  // Accounts (ui/accounts.js): each provider's sign-ins in their sheet (the default one and a Work account, each with
+  // its own limits), adding one (its name, then its sign-in under way, then who it is), an account's menu, the account
+  // picked in an agent's Profile, the limits popover with an account's row, and Usage split by account.
+  async accounts(theme) {
+    const win = await dashboard(theme, 'chat', { height: 900, fixture: 'accounts' })
+    await js(win, click('.side-more'))
+    await sleep(350)
+    await save(win, `accounts-menu-${theme}`)
+    await js(win, `document.querySelector('.menu [data-menu-act=accounts]').click()`)
+    await sleep(600)
+    await save(win, `accounts-${theme}`)
+    await js(win, `window.__cliqueSignIn = 'wait'`)
+    await js(win, click('#accounts [data-ac-new=codex]'))
+    await js(win, `const i = document.querySelector('#accounts [data-ac-add] input'); i.value = 'Personal'; i.dispatchEvent(new Event('input', { bubbles: true }))`)
+    await sleep(300)
+    await save(win, `accounts-adding-${theme}`)
+    await js(win, `document.querySelector('#accounts [data-ac-add]').requestSubmit()`)
+    await sleep(700)
+    await save(win, `accounts-signing-${theme}`)
+    await js(win, `window.clique.call('account', 'code', { key: 'codex@codex-personal', text: 'x' })`)
+    await sleep(500)
+    await save(win, `accounts-signed-in-${theme}`)
+    await js(win, click('#accounts .ac-row[data-ac="claude@claude-work"] [data-ac-menu]'))
+    await sleep(350)
+    await save(win, `accounts-row-menu-${theme}`)
+    await js(win, `document.querySelector('.menu [data-menu-act=signout]').click()`)
+    await sleep(500)
+    await save(win, `accounts-signed-out-${theme}`)
+    win.destroy()
+    // an agent's Profile: which account it runs on, under its model
+    const sheet = await dashboard(theme, 'chat', { height: 900, fixture: 'accounts' })
+    await js(sheet, click('[data-agent="Milo"]'))
+    await sleep(600)
+    await js(sheet, click('[data-head=profile]'))
+    await sleep(900)
+    await save(sheet, `accounts-agent-${theme}`)
+    sheet.destroy()
+    // the limits popover: a row per account
+    const foot = await dashboard(theme, 'chat', { height: 640, fixture: 'accounts' })
+    await js(foot, click('.use-line'))
+    await sleep(400)
+    await save(foot, `accounts-limits-${theme}`)
+    foot.destroy()
+    // Usage, everything, split by account
+    const usage = await dashboard(theme, 'usage', { height: 1010, fixture: 'accounts', reset: ['clique.usage.range', 'clique.usage.scope', 'clique.usage.by.here', 'clique.usage.by.all'] })
+    await js(usage, click('.us-scope [data-scope=all]'))
+    await sleep(400)
+    await js(usage, click('.us-by [data-by=account]'))
+    await sleep(600)
+    await save(usage, `accounts-usage-${theme}`)
+    usage.destroy()
+  },
+  // Accounts in motion: the ⋯ menu to Accounts, Add account for Claude, its name typed, the sign-in under way and then
+  // through; then Milo's Profile, where the new account is one click.
+  async accountsGif() {
+    const win = await dashboard('light', 'chat', { width: 1240, height: 860, fixture: 'accounts' })
+    await sleep(900)
+    await record(win, 'accounts', {
+      clip: { x: 0, y: 0, width: 1240, height: 860 }, ms: 15000, width: 1000,
+      during: async () => {
+        let at = { x: 620, y: 520 }
+        const go = async (sel, ms = 550, rest = 800) => {
+          at = await glide(win, at, await center(win, sel), ms)
+          await tap(win, at)
+          await sleep(rest)
+        }
+        await sleep(500)
+        await go('.side-more', 650, 700)
+        await go('.menu [data-menu-act=accounts]', 450, 1300)
+        await go('#accounts [data-ac-new=claude]', 550, 500)
+        for (const ch of 'Personal') {
+          await js(win, `const i = document.querySelector('#accounts [data-ac-add] input'); i.value += ${JSON.stringify(ch)}; i.dispatchEvent(new Event('input', { bubbles: true }))`)
+          await sleep(70)
+        }
+        await sleep(400)
+        await go('#accounts [data-ac-add] button[type=submit]', 450, 2900) // the sign-in goes through on its own, as it does once you've signed in in the browser
+        await go('#accounts [data-close].btn', 550, 600)
+        await go('[data-agent="Milo"]', 600, 900)
+        await go('[data-head=profile]', 600, 1200)
+        await go('.account-row [data-pick=account] button[data-v=claude-personal]', 600, 1500)
+      },
+    })
+    win.destroy()
+  },
   // Usage in motion: in from the sidebar to the workspace on screen, over to Everything, one computer alone and back,
   // a click on a workspace's row (everything narrows to it), the chart split by agent, and a day picked in a calendar.
   async usageGif() {

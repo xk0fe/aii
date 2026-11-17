@@ -391,7 +391,7 @@ if (BIG) COMPUTERS.links[1].usage = { claude: { label: 'Claude', at: now - 3 * 6
 // Weekends are light, a week in August is off, and the numbers are the same every time (a seeded draw), so two shots
 // match. ?fixture=usage-reading: the first look at the logs, a third of the way through. ?fixture=big: the Laptop too,
 // off, with what it last said.
-const USAGE_COLS = ['day', 'ws', 'who', 'provider', 'model', 'dir', 'tokens', 'input', 'output', 'cached', 'written', 'replies', 'messages', 'sessions', 'cost']
+const USAGE_COLS = ['day', 'ws', 'who', 'provider', 'model', 'dir', 'tokens', 'input', 'output', 'cached', 'written', 'replies', 'messages', 'sessions', 'cost', 'account']
 function usageHistory() {
   let seed = 20261116
   const rnd = () => {
@@ -423,7 +423,9 @@ function usageHistory() {
         const model = (s.models.find((m) => (at -= m[1]) < 0) ?? s.models[0])[0]
         const price = s.provider === 'claude' ? 0.354e-6 : 0
         const messages = Math.max(1, Math.round(tokens / 3.2e6 + dice * 3))
-        rows.push([key(d), s.ws, s.who, s.provider, model, s.dir, tokens, Math.round(tokens * 0.012), Math.round(tokens * 0.004), Math.round(tokens * 0.964), price ? Math.round(tokens * 0.02) : 0, Math.round(tokens / 3.3e5) + 1, messages, Math.max(1, Math.round(messages / 3.2)), tokens * price])
+        // (?fixture=accounts: an agent given an account runs on it for its last `on` days, and on the default one before)
+        const account = s.account && i <= s.on ? s.account : ''
+        rows.push([key(d), s.ws, s.who, s.provider, model, s.dir, tokens, Math.round(tokens * 0.012), Math.round(tokens * 0.004), Math.round(tokens * 0.964), price ? Math.round(tokens * 0.02) : 0, Math.round(tokens / 3.3e5) + 1, messages, Math.max(1, Math.round(messages / 3.2)), tokens * price, account])
       }
     }
     return rows
@@ -438,13 +440,13 @@ function usageHistory() {
   const hosted = WORKSPACES.some((w) => w.id === 'storefront-2') // (?fixture=workspaces: the linked computer's Storefront shows here, Ada and Theo in it)
   const mine = rowsOf([
     { ws: SF, who: 'Ada', provider: 'claude', models: claude, dir: here(`${P}/storefront`), base: 1.5e7, grow: 1.6, since: SPAN, skip: 0.12 },
-    { ws: SF, who: 'Milo', provider: 'claude', models: sonnet, dir: here(`${P}/storefront-web`), base: 1.0e7, grow: 1.4, since: 330, skip: 0.2 },
+    { ws: SF, who: 'Milo', provider: 'claude', models: sonnet, dir: here(`${P}/storefront-web`), base: 1.0e7, grow: 1.4, since: 330, skip: 0.2, ...(FIXTURE === 'accounts' && { account: 'claude-work', on: 75 }) },
     { ws: SF, who: 'Iris', provider: 'claude', models: claude, dir: here(`${P}/storefront`), base: 4e6, grow: 1, since: 250, skip: 0.45 },
     { ws: SF, who: 'Theo', provider: 'codex', models: codex, dir: here(`${P}/storefront/e2e`), base: 9e6, grow: 0.7, since: 197, skip: 0.25 },
     { ws: SF, who: 'June', provider: 'codex', models: codex, dir: here(`${P}/storefront`), base: 2e6, grow: 0.5, since: 150, skip: 0.6 },
     { ws: DOCS, who: 'June', provider: 'codex', models: codex, dir: here(`${P}/docs-site`), base: 5e6, grow: 0.9, since: 180, skip: 0.3 },
     { ws: DOCS, who: 'Iris', provider: 'claude', models: claude, dir: here(`${P}/docs-site`), base: 2.5e6, grow: 1.2, since: 120, skip: 0.5 },
-    { ws: DOCS, who: 'Milo', provider: 'claude', models: sonnet, dir: here(`${P}/docs-site/theme`), base: 1.5e6, grow: 1, since: 90, skip: 0.6 },
+    { ws: DOCS, who: 'Milo', provider: 'claude', models: sonnet, dir: here(`${P}/docs-site/theme`), base: 1.5e6, grow: 1, since: 90, skip: 0.6, ...(FIXTURE === 'accounts' && { account: 'claude-work', on: 75 }) },
     ...(hosted ? [{ ws: THEIR_SF, who: 'Ada', provider: 'claude', models: claude, dir: here(`${P}/shop`), base: 2e6, grow: 1, since: 60, skip: 0.5 }, { ws: THEIR_SF, who: 'Theo', provider: 'codex', models: codex, dir: here(`${P}/shop`), base: 1.2e6, grow: 1, since: 45, skip: 0.6 }] : []),
     { ws: '', who: '', provider: 'claude', models: claude, dir: here(`${P}/storefront`), base: 7e6, grow: 0.4, since: SPAN, skip: 0.35 },
     { ws: '', who: '', provider: 'claude', models: claude, dir: here('/Users/you/notes'), base: 1.5e6, grow: 0.2, since: 300, skip: 0.6 },
@@ -462,7 +464,7 @@ function usageHistory() {
   const labels = { claude: 'Claude', codex: 'Codex' }
   const reading = FIXTURE === 'usage-reading'
   const computers = [
-    { slug: HERE.slug, name: HERE.name, here: true, online: true, at: reading ? 0 : now - 40000, reading: reading ? { done: 3.4e8, total: 1.01e9, files: 640 } : null, first: firstOf(mine), cols: USAGE_COLS, rows: mine, providers: labels, faces: { [SF]: looks(['Ada', 'Milo', 'Iris', 'Theo', 'June']), [DOCS]: looks(['June', 'Iris', 'Milo']) } },
+    { slug: HERE.slug, name: HERE.name, here: true, online: true, at: reading ? 0 : now - 40000, reading: reading ? { done: 3.4e8, total: 1.01e9, files: 640 } : null, first: firstOf(mine), cols: USAGE_COLS, rows: mine, providers: labels, faces: { [SF]: looks(['Ada', 'Milo', 'Iris', 'Theo', 'June']), [DOCS]: looks(['June', 'Iris', 'Milo']) }, accounts: FIXTURE === 'accounts' ? { 'claude-work': { name: 'Work', provider: 'claude' } } : {} },
     { slug: LINK.slug, name: LINK.name, online: true, got: now - 95000, at: now - 4 * min, reading: null, first: firstOf(theirs), cols: USAGE_COLS, rows: theirs, providers: labels, faces: { [SF]: looks(['Rex', 'Noor']) } },
   ]
   if (BIG) {
@@ -895,6 +897,81 @@ window.__cliqueNotify = (patch, held = 0) => {
   window.__cliqueEmit('state', state)
 }
 window.__cliqueLooking = null // what the page last said it has open (clique.looking)
+// Accounts (core/accounts.js, as Clique.accountsView gives them): each provider that signs you in, with its default
+// account. ?fixture=accounts: a Work account on Claude that Milo runs on, with its own limits and its own usage; and
+// clique.call('account', …) acted out: adding one starts a sign-in that goes through a moment later
+// (window.__cliqueSignIn = 'wait' leaves it waiting, 'fail' makes it fail).
+const HAS_ACCOUNTS = FIXTURE === 'accounts'
+const ACCOUNTS = [
+  { key: 'claude', id: '', provider: 'claude', cli: 'claude', label: 'Claude', name: '', own: true, agents: 3, signedIn: true, email: 'you@example.com', plan: 'Max 20x' },
+  ...(HAS_ACCOUNTS ? [{ key: 'claude@claude-work', id: 'claude-work', provider: 'claude', cli: 'claude', label: 'Claude', name: 'Work', agents: 1, signedIn: true, email: 'you@studio.example', plan: 'Team' }] : []),
+  { key: 'codex', id: '', provider: 'codex', cli: 'codex', label: 'Codex', name: '', own: true, agents: 2, signedIn: true, email: 'you@example.com', plan: 'Plus' },
+]
+state.accounts = ACCOUNTS
+// (state.agents holds copies of the agents for the workspace on screen: both say which account)
+for (const a of [...AGENTS, ...state.agents]) if (!a.home) a.usage = a.provider
+if (HAS_ACCOUNTS) {
+  for (const a of [...AGENTS, ...state.agents].filter((x) => x.name === 'Milo')) Object.assign(a, { account: 'claude-work', usage: 'claude@claude-work' })
+  ACCOUNTS[0].agents = 2
+  USAGE['claude@claude-work'] = { label: 'Claude · Work', at: now, windows: [{ id: 'five_hour', pct: 22, resetsAt: now + 200 * min, pace: { projected: 48, runsOut: null } }, { id: 'seven_day', pct: 83, resetsAt: now + 1.1 * day, pace: { projected: 97, runsOut: null } }] }
+}
+function accountAction(op, arg = {}) {
+  const find = (key) => ACCOUNTS.find((a) => a.key === key)
+  const byId = (id) => ACCOUNTS.find((a) => a.id === id && !a.own)
+  const start = (a) => {
+    Object.assign(a, { signing: { link: null, since: Date.now() } })
+    delete a.problem
+    setTimeout(() => (a.signing && (a.signing.link = 'https://claude.com/cai/oauth/authorize?code=true&client_id=demo'), emit()), 250)
+    if (window.__cliqueSignIn === 'wait') return
+    setTimeout(() => {
+      if (!a.signing) return
+      delete a.signing
+      if (window.__cliqueSignIn === 'fail') Object.assign(a, { signedIn: false, problem: 'Login failed: the browser was closed' })
+      else Object.assign(a, { signedIn: true, email: `you@${a.name ? a.name.toLowerCase().replace(/[^a-z]/g, '') : 'example'}.example`, plan: a.provider === 'codex' ? 'Plus' : 'Pro' })
+      emit()
+    }, 1600)
+  }
+  if (op === 'add') {
+    const name = String(arg.name ?? '').trim()
+    if (ACCOUNTS.some((a) => a.provider === arg.provider && a.name.toLowerCase() === name.toLowerCase())) throw new Error(`there's an account called ${name} already`)
+    const id = `${arg.provider}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+    const own = ACCOUNTS.find((a) => a.provider === arg.provider && a.own)
+    const at = ACCOUNTS.findLastIndex((a) => a.provider === arg.provider)
+    const made = { key: `${arg.provider}@${id}`, id, provider: arg.provider, cli: own.cli, label: own.label, name, agents: 0 }
+    ACCOUNTS.splice(at + 1, 0, made)
+    start(made)
+    emit()
+    return id
+  }
+  if (op === 'signIn') start(arg.id ? byId(arg.id) : ACCOUNTS.find((a) => a.provider === arg.provider && a.own))
+  if (op === 'cancel' && find(arg.key)) (delete find(arg.key).signing, find(arg.key).signedIn ??= false)
+  if (op === 'code' && find(arg.key)?.signing) (delete find(arg.key).signing, Object.assign(find(arg.key), { signedIn: true, email: 'you@code.example', plan: 'Pro' }))
+  if (op === 'signOut') Object.assign(byId(arg.id), { signedIn: false, email: undefined, plan: undefined })
+  if (op === 'rename') {
+    const a = byId(arg.id)
+    if (ACCOUNTS.some((x) => x !== a && x.provider === a.provider && x.name.toLowerCase() === String(arg.name).toLowerCase())) throw new Error(`there's an account called ${arg.name} already`)
+    a.name = arg.name
+    if (USAGE[a.key]) USAGE[a.key].label = `${a.label} · ${a.name}`
+  }
+  if (op === 'move') {
+    const from = ACCOUNTS.find((a) => a.provider === arg.provider && a.id === (arg.from ?? ''))
+    const to = ACCOUNTS.find((a) => a.provider === arg.provider && a.id === (arg.to ?? ''))
+    const moved = AGENTS.filter((a) => !a.home && a.provider === arg.provider && (a.account ?? '') === from.id)
+    for (const a of [...AGENTS, ...state.agents].filter((x) => !x.home && x.provider === arg.provider && (x.account ?? '') === from.id)) Object.assign(a, { account: to.id || undefined, usage: to.key })
+    to.agents += from.agents
+    from.agents = 0
+    emit()
+    return moved.length
+  }
+  if (op === 'remove') {
+    const a = byId(arg.id)
+    if (a.agents) throw new Error(`${a.agents === 1 ? '@Milo still runs' : `${a.agents} agents still run`} on ${a.name}: move ${a.agents === 1 ? 'it' : 'them'} to another account first, and let ${a.agents === 1 ? 'it' : 'them'} finish what ${a.agents === 1 ? "it's" : "they're"} on`)
+    ACCOUNTS.splice(ACCOUNTS.indexOf(a), 1)
+    delete USAGE[a.key]
+  }
+  emit()
+  return undefined
+}
 window.__cliqueHistory = usageHistory() // what the Usage view asks for (a shot can swap it: nothing yet, a first look)
 // ?cache=<folder>: where a linked computer's files are kept, for a script that serves them for real (scripts/files-probe.mjs,
 // core/linkfiles.js). What the chat asks about a file, and opening one, then goes to that script ('files' over IPC), and
@@ -936,6 +1013,7 @@ window.clique = {
       return { stopped: stopped.map((a) => a.name), dropped }
     }
     if (action === 'history') return window.__cliqueHistory
+    if (action === 'account') return accountAction(...args)
     // the permissions flow: ?fixture=<a step>:<its state> shows that one first (ui/permissions.js)
     if (action === 'permissions') {
       const [id, state] = (FIXTURE ?? 'notifications:ask').split(':')
