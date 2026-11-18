@@ -15,7 +15,7 @@ const { CONFIG, ATTACHMENTS } = await import('../core/hub.js')
 const { Clique, CACHE } = await import('../core/clique.js')
 const { serve } = await import('../core/server.js')
 const { agentKey } = await import('../core/keys.js') // each agent shows the server its own key
-const { phoneState } = await import('../core/remote.js')
+const { phoneState, image: phoneImage } = await import('../core/remote.js')
 const { ATTACHMENT_DAYS } = await import('../core/keep.js')
 const A = await import('../core/attachments.js')
 const SB = await import('../core/sandbox.js')
@@ -368,14 +368,15 @@ test("past the store's size the oldest of what agents attached goes: never what 
 
 // ---- phones and linked computers ----------------------------------------------------------------------------------
 
-test('a phone hears what the files are, never where they are; an older phone reads it in the text', () => {
-  const files = [{ path: '/Users/you/.clique/attachments/x-a.png', name: 'a.png', kind: 'image', type: 'image/png', size: 2048, w: 10, h: 20 }, { path: '/Users/you/.clique/attachments/x-b.mp4', name: 'b.mp4', kind: 'video', type: 'video/mp4', size: 50e6, w: 1280, h: 720, dur: 12 }]
-  const state = { feed: [{ id: 'a', kind: 'reply', from: 'iris', text: 'Look.', files }, { id: 'b', kind: 'reply', from: 'iris', text: '', files: [files[1]] }, { id: 'c', kind: 'msg', from: 'you', text: 'plain' }], agents: [], providers: {}, computers: { me: { slug: 'm', name: 'M' }, links: [] } }
+test('a phone hears what the files are, and where a picture it can show is, never any other file; an older phone reads it in the text', () => {
+  const files = [{ path: '/Users/you/.clique/attachments/x-a.png', name: 'a.png', kind: 'image', type: 'image/png', size: 2048, w: 10, h: 20 }, { path: '/Users/you/.clique/attachments/x-b.mp4', name: 'b.mp4', kind: 'video', type: 'video/mp4', size: 50e6, w: 1280, h: 720, dur: 12 }, { path: '/Users/you/.clique/attachments/x-huge.png', name: 'huge.png', kind: 'image', type: 'image/png', size: A.FETCH_MAX + 1, w: 9000, h: 9000 }]
+  const state = { feed: [{ id: 'a', kind: 'reply', from: 'iris', text: 'Look.', files: files.slice(0, 2) }, { id: 'b', kind: 'reply', from: 'iris', text: '', files: [files[1]] }, { id: 'c', kind: 'msg', from: 'you', text: 'plain' }, { id: 'd', kind: 'reply', from: 'iris', text: '', files: [files[2]] }], agents: [], providers: {}, computers: { me: { slug: 'm', name: 'M' }, links: [] } }
   const feed = phoneState(state).feed
-  assert.deepEqual(feed[0], { id: 'a', kind: 'reply', from: 'iris', text: 'Look.\n\nAttached 2 files (on the computer)', caption: 'Look.', files: [{ name: 'a.png', kind: 'image', size: 2048, w: 10, h: 20 }, { name: 'b.mp4', kind: 'video', size: 50e6, w: 1280, h: 720, dur: 12 }] })
+  assert.deepEqual(feed[0], { id: 'a', kind: 'reply', from: 'iris', text: 'Look.\n\nAttached 2 files (on the computer)', caption: 'Look.', files: [{ name: 'a.png', kind: 'image', size: 2048, w: 10, h: 20, path: '/Users/you/.clique/attachments/x-a.png' }, { name: 'b.mp4', kind: 'video', size: 50e6, w: 1280, h: 720, dur: 12 }] })
   assert.deepEqual([feed[1].text, feed[1].caption], ['Attached b.mp4 (on the computer)', ''])
   assert.equal(feed[2], state.feed[2])
-  assert.ok(!JSON.stringify(feed).includes('.clique'))
+  assert.equal(feed[3].files[0].path, undefined, 'a picture too big for the image call stays where it is')
+  assert.deepEqual(JSON.stringify(feed).match(/[^"]*\.clique[^"]*/g), ['/Users/you/.clique/attachments/x-a.png'])
   // nothing to do when no message has files: the same list
   const plain = { ...state, feed: [state.feed[2]] }
   assert.equal(phoneState(plain).feed, plain.feed)
@@ -610,4 +611,22 @@ test('a page in the sandbox, in Electron as the app makes its windows: every way
   assert.match(out, /Every way out was shut\.\s*$/)
   assert.ok(!/^FAIL/m.test(out), out)
   assert.ok(out.split('\n').filter((l) => l.startsWith('ok')).length >= 55, out)
+})
+
+test("a phone fetches a picture by its path: CLIque's own pictures only, and a linked computer's brought here first", async () => {
+  fs.mkdirSync(ATTACHMENTS, { recursive: true })
+  const mine = path.join(ATTACHMENTS, '2026-11-17-0a1b2c3d-shot.png')
+  fs.writeFileSync(mine, png(4, 3))
+  assert.deepEqual(Buffer.from(await phoneImage(mine)), png(4, 3))
+  const video = path.join(ATTACHMENTS, '2026-11-17-0a1b2c3d-run.mp4')
+  fs.writeFileSync(video, 'not a picture')
+  await assert.rejects(phoneImage(video), /isn't an image a phone can show/)
+  const elsewhere = path.join(os.tmpdir(), 'clique-attach-outside.png')
+  fs.writeFileSync(elsewhere, png(4, 3))
+  await assert.rejects(phoneImage(elsewhere), /isn't an image from CLIque/)
+  // a linked computer's picture, not here yet: fetched whole, then sent
+  const theirs = path.join(CACHE, 'studio', 'f00dfeed.png')
+  const files = { theirs: new Map([[theirs, { slug: 'studio', hostPath: '/x/shot.png' }]]), whole: async (f) => (fs.mkdirSync(path.dirname(f), { recursive: true }), fs.writeFileSync(f, png(8, 6)), f) }
+  assert.deepEqual(Buffer.from(await phoneImage(theirs, files)), png(8, 6))
+  fs.rmSync(elsewhere, { force: true })
 })

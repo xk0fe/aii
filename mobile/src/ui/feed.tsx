@@ -16,6 +16,7 @@ import { Creature } from './creature'
 import { clock, dayLabel, displayName, fileLine, plural, sameDay } from './format'
 import { Icon } from './icon'
 import { Markdown } from './markdown'
+import { drawable, nameOfPath, OnComputer, Picture } from './picture'
 import { stacks } from './stack'
 import { Button, Faces, Press } from './parts'
 import { Reactions } from './reactions'
@@ -168,7 +169,7 @@ function Between({ e, c, tone }: { e: FeedEntry; c: FeedCtx; tone?: 'dropped' })
   )
 }
 
-// What an agent said to you: plain, like anyone's message.
+// What an agent said to you: plain, like anyone's message, with what it attached under it.
 function Body({ e, c }: { e: FeedEntry; c: FeedCtx }) {
   // (with files, `text` also names them for a phone from before files: `caption` is what was said)
   const text = e.files?.length ? e.caption ?? '' : e.text ?? ''
@@ -176,25 +177,37 @@ function Body({ e, c }: { e: FeedEntry; c: FeedCtx }) {
     <>
       {text ? <Markdown text={text} t={c.t} color={c.t.fg} size={TEXT} mention={mentionInk(c)} /> : null}
       {e.files?.length ? <Files files={e.files} t={c.t} /> : null}
+      {e.images?.length ? <Sent paths={e.images} t={c.t} /> : null}
     </>
   )
 }
 
-// What an agent attached (`clique attach`): pictures, a recording, a page, any file. They're kept on the computer and
-// looked at there (a recording can be tens of megabytes: it never comes down this connection), so the phone says what
-// each one is and where to open it.
+// What an agent attached (`clique attach`): a picture shows here (the computer says where it is: ui/picture.tsx); a
+// recording, a page or any other file is a card that says what it is, and that it's on the computer (a recording can
+// be tens of megabytes: it never comes down this connection).
 function Files({ files, t }: { files: FeedFile[]; t: Theme }) {
   return (
-    <View style={styles.files} accessibilityLabel={`${plural(files.length, 'file')} attached, on the computer`}>
-      {files.map((f, i) => (
-        <View key={i} style={[styles.file, { borderColor: t.line, backgroundColor: t.fill }]}>
-          <Icon name="mac" size={18} color={t.fg2} />
-          <View style={styles.fileWhat}>
-            <Text style={[styles.fileName, { color: t.fg }]} numberOfLines={1} ellipsizeMode="middle">{f.name}</Text>
-            <Text style={[styles.fileLine, { color: t.fg2 }]} numberOfLines={1}>{fileLine(f)} · open it on the computer</Text>
-          </View>
-        </View>
-      ))}
+    <View style={styles.files} accessibilityLabel={plural(files.length, 'file')}>
+      {files.map((f, i) =>
+        f.kind === 'image' && f.path && drawable(f.name) ? (
+          <Picture key={i} p={{ path: f.path, name: f.name, w: f.w, h: f.h, size: f.size }} t={t} />
+        ) : (
+          <OnComputer key={i} name={f.name} line={fileLine(f)} t={t} />
+        ),
+      )}
+    </View>
+  )
+}
+
+// What you attached to a message on the computer (a screenshot, a document): kept there, by its path. A picture shows
+// here; anything else is a card.
+function Sent({ paths, t }: { paths: string[]; t: Theme }) {
+  return (
+    <View style={styles.files}>
+      {paths.map((p, i) => {
+        const name = nameOfPath(p)
+        return drawable(name) ? <Picture key={i} p={{ path: p, name }} t={t} /> : <OnComputer key={i} name={name} line={fileLine({ name, kind: 'file', size: 0 }).replace(/ · 0 B$/, '')} t={t} />
+      })}
     </View>
   )
 }
@@ -205,7 +218,8 @@ function AskLine({ e, c }: { e: FeedEntry; c: FeedCtx }) {
   const ask = typeof e.ask === 'object' ? e.ask : null
   if (!ask) return null
   if (e.answer) return <AskSummary t={t} e={e} plain />
-  const title = ask.type === 'permission' ? (ask.title ?? 'Use a tool') : ask.type === 'plan' ? 'A plan to approve' : (ask.questions[0]?.question ?? 'A question')
+  // (its terminal's own question, or a stop: the line it says, not the whole screen)
+  const title = ask.type === 'permission' ? (ask.title ?? 'Use a tool') : ask.type === 'plan' ? 'A plan to approve' : (ask.screen || ask.stuck ? ask.say ?? ask.title : undefined) ?? (ask.questions[0]?.question ?? 'A question')
   const sub = ask.type === 'permission' ? (ask.code ?? '').split('\n')[0] : ask.type === 'question' ? ask.questions[0]?.options.map((o) => o.label).join(' · ') : ''
   return (
     <Press onPress={() => c.onAsk(e.id)} style={styles.askLine} accessibilityRole="button" accessibilityLabel={`Answer ${displayName(e.from).base}`}>
@@ -440,7 +454,10 @@ function Entry({ e, c, cont, quote }: { e: FeedEntry; c: FeedCtx; cont: boolean;
             </Text>
           </View>
         ) : (
-          <Markdown text={e.text ?? ''} t={t} color={t.fg} size={TEXT} mention={mentionInk(c)} />
+          <>
+            {e.text ? <Markdown text={e.text} t={t} color={t.fg} size={TEXT} mention={mentionInk(c)} /> : null}
+            {e.images?.length ? <Sent paths={e.images} t={t} /> : null}
+          </>
         )}
       </Row>
     )
@@ -536,8 +553,4 @@ const styles = StyleSheet.create({
   heldText: { fontSize: 12.5 },
   subs: { fontSize: 12.5, marginTop: 6 },
   files: { gap: 6, marginTop: 6 },
-  file: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
-  fileWhat: { flex: 1, minWidth: 0 },
-  fileName: { fontSize: 15, fontWeight: '600' },
-  fileLine: { fontSize: 12.5, marginTop: 1 },
 })

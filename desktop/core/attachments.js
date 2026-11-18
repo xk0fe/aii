@@ -392,11 +392,13 @@ export function makeRoom(dir, { max = STORE_MAX, keep = [] } = {}) {
 // a piece at a time.
 export const travels = (f) => (f.kind === 'image' || f.kind === 'html') && f.size <= FETCH_MAX
 
-// A message with files, as a phone gets it (shared/PROTOCOL.md): what each file is, never where it is or what's in it.
-// `text` also says what's attached, in words, for a phone from before files; `caption` is the message alone.
+// A message with files, as a phone gets it (shared/PROTOCOL.md): what each file is, never what's in it. A picture a phone
+// can show also says where it is, for the `image` call to fetch (which gives nothing but CLIque's own pictures); any
+// other file stays where it is, on the computer. `text` also says what's attached, in words, for a phone from before
+// files; `caption` is the message alone.
 export function forPhone(e) {
   if (!e.files?.length) return e
-  const files = e.files.map(({ name, kind, size, w, h, dur }) => ({ name, kind, size, ...(w && h && { w, h }), ...(dur && { dur }) }))
+  const files = e.files.map(({ name, kind, size, w, h, dur, path: at }) => ({ name, kind, size, ...(w && h && { w, h }), ...(dur && { dur }), ...(kind === 'image' && size <= FETCH_MAX && at && { path: at }) }))
   const said = `Attached ${files.length === 1 ? files[0].name : `${files.length} files`} (on the computer)`
   return { ...e, files, caption: e.text ?? '', text: e.text ? `${e.text}\n\n${said}` : said }
 }

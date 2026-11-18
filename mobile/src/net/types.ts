@@ -58,7 +58,11 @@ export type ChannelEdit = { name?: string; brief?: string; members?: string[] | 
 // spend: the spend check-in (desktop/core/hub.js checkIn): allow is Keep going, and no is Stop
 export type PermissionAsk = { type: 'permission'; tool?: string; title?: string; code?: string; detail?: string; always?: { i: number; label: string }[]; alert?: string; app?: boolean; say?: string; trust?: boolean; spend?: { provider?: string; unit?: string; who?: string[]; used?: number; at?: number } }
 export type Question = { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string }[] }
-export type QuestionAsk = { type: 'question'; questions: Question[]; alert?: string }
+// screen: what a CLI asks in its terminal, read off its screen (desktop/core/hub.js screenCard): one question, the screen's
+// own words, its choices (picked there for you); snapshot: no menu on it, so what the screen shows, and any text you type
+// goes into it. stuck: an agent stopped on an API error ('api') or a model's limit ('limit'), with Continue and Leave it.
+// title and say: the card's title, and what the creature says.
+export type QuestionAsk = { type: 'question'; questions: Question[]; alert?: string; screen?: boolean; snapshot?: boolean; stuck?: 'api' | 'limit'; title?: string; say?: string }
 export type PlanAsk = { type: 'plan'; plan: string; alert?: string }
 export type Ask = PermissionAsk | QuestionAsk | PlanAsk
 
@@ -188,5 +192,6 @@ export type MacRecord = {
   pairedAt: number
 }
 
-// A file an agent attached to a message (`clique attach`): its name, what it is, how big. Never the file itself.
-export type FeedFile = { name: string; kind: 'image' | 'video' | 'html' | 'file'; size: number; w?: number; h?: number; dur?: number }
+// A file an agent attached to a message (`clique attach`): its name, what it is, how big. Never the file itself: a
+// picture the phone can show says where it is on the computer (path), for the `image` call.
+export type FeedFile = { name: string; kind: 'image' | 'video' | 'html' | 'file'; size: number; w?: number; h?: number; dur?: number; path?: string }

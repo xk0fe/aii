@@ -311,6 +311,11 @@ export class DemoClient implements CliqueLink {
   }
 
   // Stop, as the Mac does it: their turns end, they stay on, and one line says who you stopped
+  // The demo clique attaches no pictures of its own, and has no computer to fetch one from.
+  async image(_path: string): Promise<Uint8Array> {
+    throw new Error('the demo clique has no pictures')
+  }
+
   async stopAgents(names: string[], opts?: { channel?: string }) {
     const id = this.ws
     const stopped = this.space(id).state.agents.filter((a) => names.includes(a.name) && a.canStop).map((a) => a.name)

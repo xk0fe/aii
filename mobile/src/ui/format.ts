@@ -200,7 +200,9 @@ export function reasonOf(ask: unknown): string {
 }
 export function voiceOf(ask: unknown): Said {
   if (typeof ask !== 'object' || !ask) return [{ text: "I'm waiting for you in my terminal." }]
-  const q = ask as { type?: string; tool?: string; title?: string; code?: string; detail?: string; say?: string; questions?: { question: string }[] }
+  const q = ask as { type?: string; tool?: string; title?: string; code?: string; detail?: string; say?: string; questions?: { question: string }[]; screen?: boolean; stuck?: string }
+  // its terminal's own question, or a stop: in a line of its own (the card has the rest)
+  if (q.type === 'question' && (q.screen || q.stuck) && q.say) return [{ text: q.say }]
   if (q.type === 'question') {
     const qs = q.questions ?? []
     // (the line about the rest is a part of its own: after steps set out as a list it stands under them, ask.tsx AskWords)

@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 
 import { session } from '@/state/session'
+import { PictureHost } from '@/ui/picture'
 import { useTheme } from '@/ui/theme'
 
 // The splash stays up until the paired Macs are read from secure storage, so the first screen is the right one.
@@ -32,6 +33,7 @@ export default function Root() {
             <Stack.Screen name="workspaces" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />
             <Stack.Screen name="channel" options={{ ...sheet, sheetAllowedDetents: [0.9, 1] }} />
           </Stack>
+          <PictureHost />
         </ThemeProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
