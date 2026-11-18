@@ -265,7 +265,13 @@ test("Claude's permission notification is dropped even when it beats the card", 
   assert.equal(hub.feed.length, before)
   assert.equal(alerts.length, 0)
   hub.onHook('june', { hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'Claude is waiting for your input' })
+  await new Promise((r) => setTimeout(r, 700)) // (once what it's drawing has settled)
   assert.equal(alerts.length, 1, 'other notifications still need you')
+  // with a card that shows what its terminal does, answered in the chat (core/screen.js)
+  const shown = hub.feed.findLast((e) => e.kind === 'ask' && e.from === 'june')
+  assert.equal(shown.ask.screen, true)
+  assert.equal(shown.ask.snapshot, true)
+  assert.equal(shown.ask.alert, 'Claude is waiting for your input')
 })
 
 test('a question waiting for hours stays answerable after 200 newer entries', { timeout: 5000 }, async () => {

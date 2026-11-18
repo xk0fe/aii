@@ -388,6 +388,20 @@ const HOMES = { '': HOME, [LINK.slug]: LINK.home, laptop: '/Users/you' }
 // ahead of her queue; when Ada tried to ask June back, CLIque had her answer first. Earlier: Milo's question came back
 // answered, three hand-offs for Milo went in as one turn, Iris left a file to Milo, who was editing it, and a
 // declined task went straight to its next owner.
+// What agents ask in their terminals, as cards (core/hub.js screenCard, stuckCard): Theo's Codex asking to run a command
+// once its card had waited, read off its screen, and Ada stopped at a usage limit (fixture=terminal-asks)
+if (FIXTURE === 'terminal-asks') {
+  FEED.push(
+    { id: 'ta1', kind: 'ask', from: 'Theo', to: 'you', cli: 'codex', ts: t(9), ask: { type: 'question', screen: true, title: 'Would you like to run the following command?', say: 'Do you approve running `npx playwright test` outside the sandbox?', alert: 'asks in its terminal: Would you like to run the following command?',
+      questions: [{ question: 'Would you like to run the following command?\n\nReason: Do you approve running `npx playwright test` outside the sandbox?\n\n$ npx playwright test checkout --project=webkit', header: '', multiSelect: false,
+        options: [{ label: 'Yes, proceed' }, { label: "Yes, and don't ask again for commands that start with `npx playwright test`" }, { label: 'No, and tell Codex what to do differently' }] }] } },
+    { id: 'ta2', kind: 'ask', from: 'Ada', to: 'you', cli: 'clique', ts: t(8), ask: { type: 'question', stuck: 'api', title: "Stopped on an API error (rate_limit): You've hit your session limit · resets 9:10pm.", say: 'An API error stopped me. How should I go on?', alert: "stopped on an API error (rate_limit): You've hit your session limit · resets 9:10pm",
+      questions: [{ question: "Stopped on an API error (rate_limit): You've hit your session limit · resets 9:10pm.", header: '', multiSelect: false,
+        options: [{ label: 'Continue', description: 'CLIque types "continue" for it, and it picks up where it stopped' }, { label: 'Leave it', description: "Its turn ends here, and what's waiting for it goes in" }] }] } },
+  )
+  FEED.sort((a, b) => a.ts - b.ts)
+}
+
 if (FIXTURE === 'row') {
   const agent = (n) => AGENTS.find((a) => a.name === n)
   Object.assign(agent('June'), { status: 'working', since: t(1.4), activity: 'Bash · clique ask Ada', waitingOn: [{ name: 'Ada', since: t(0.8), id: 'q1', text: 'Which coupon codes can stack in 1.2?' }] })

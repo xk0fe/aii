@@ -27,6 +27,9 @@ const NO_FILE = {
   'qrcode-generator': { file: 'dist/qrcode.js', copyright: /Copyright \(c\) 2009 Kazuhiko Arase/ },
   // MIT, said only in its package.json, by its author (it comes with electron-updater)
   'lazy-val': { declared: 'Vladimir Krivosheev' },
+  // MIT, built from the same repository as @xterm/xterm, whose LICENSE is that repository's (core/screen.js reads screens
+  // with it)
+  '@xterm/headless': { sameAs: '@xterm/xterm' },
 }
 
 // What isn't in the app though it's a dependency: CLIque's own clique-shared, and node-addon-api, which only builds node-pty
@@ -102,6 +105,12 @@ function npmSections() {
       const pkg = json(path.join(p.dir, 'package.json'))
       if (pkg.license !== 'MIT' || (pkg.author?.name ?? pkg.author) !== NO_FILE[p.name].declared) throw new Error(`${p.name}: its package.json no longer says MIT, by ${NO_FILE[p.name].declared}`)
       texts = [mit(`Copyright (c) ${NO_FILE[p.name].declared}`)]
+    } else if (!texts.length && NO_FILE[p.name]?.sameAs) {
+      const pkg = json(path.join(p.dir, 'package.json'))
+      const other = locate(root, NO_FILE[p.name].sameAs)
+      const theirs = other && json(path.join(other, 'package.json'))
+      if (pkg.license !== 'MIT' || theirs?.license !== 'MIT' || !pkg.repository || theirs.repository !== pkg.repository) throw new Error(`${p.name}: it no longer comes from ${NO_FILE[p.name].sameAs}'s repository under MIT`)
+      texts = licenseTexts(other)
     } else if (!texts.length && NO_FILE[p.name]) {
       const head = fs.readFileSync(path.join(p.dir, NO_FILE[p.name].file), 'utf8').slice(0, 2000)
       const line = head.match(NO_FILE[p.name].copyright)?.[0]

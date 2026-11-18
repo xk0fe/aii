@@ -98,7 +98,10 @@ test('Enter is pressed again for minutes, and only then does CLIque call for hel
   assert.equal(enters(), 7)
   assert.equal(alerts().length, 0)
   wait(61000)
-  assert.equal(alerts().length, 1)
+  // a card in the chat with what its terminal shows, and Enter, Esc or a line to type into it (core/hub.js screenAsk)
+  const card = hub.feed.findLast((e) => e.kind === 'ask' && e.from === 'noor')
+  assert.match(card.ask.title, /^Didn't pick up the last message/)
+  assert.equal(card.ask.snapshot, true)
   assert.equal(noor().status, 'waiting')
 })
 

@@ -900,6 +900,8 @@ button.tag.go:hover, button.tag.go:focus-visible { background: var(--btn-hover);
 .ask-title svg { flex: none; width: 16px; height: 16px; color: var(--needs-ink); }
 .ask-code { margin: 8px 0 0; padding: 6px 12px; border-radius: var(--r-control); background: var(--code-bg); font: 12px/20px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 11em; overflow: auto; }
 .ask-detail { margin-top: 8px; color: var(--fg2); font-size: 13px; }
+/* what a CLI asks in its terminal, as its screen has it (core/screen.js): its lines as they stand there */
+.ask-screen { margin: 6px 0 10px; padding: 8px 12px; border-radius: var(--r-control); background: var(--code-bg); font: 12px/18px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16em; overflow: auto; }
 .ask-path { font: 12px/18px var(--mono); overflow-wrap: anywhere; }
 .ask-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .ask-actions .btn { padding: 0 12px; }

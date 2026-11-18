@@ -100,7 +100,8 @@ const modelArg = (name) => {
   const args = runner.starts.findLast((s) => s.n === name)?.args ?? []
   return args.includes('--model') ? args[args.indexOf('--model') + 1] : null
 }
-const events = (name) => hub.feed.filter((e) => e.kind === 'event' && e.from === name).map((e) => e.text)
+// what the chat says of it: its lines, and the card of one stopped for you to say how it goes on (Hub.stuckCard)
+const events = (name) => hub.feed.filter((e) => (e.kind === 'event' || (e.kind === 'ask' && e.ask?.stuck)) && e.from === name).map((e) => (e.kind === 'ask' ? e.ask.alert : e.text))
 const editConfig = (f) => {
   const data = JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
   f(data)
@@ -295,8 +296,8 @@ test('tell: it stops and tells you; give it another model and it goes on with th
   start({ onModelOut: 'tell' })
   fableOut()
   assert.equal(noor.status, 'waiting')
-  assert.match(events('noor').at(-1), /^ran out of Fable \(it resets .*\)\. Give it another model and it goes on with that/)
-  assert.equal(hub.feed.at(-1).alert, true)
+  assert.match(events('noor').at(-1), /^ran out of Fable \(it resets .*\)\. Give it another model and it goes on with that, or continue once Fable is back$/)
+  assert.equal(hub.feed.at(-1).ask.stuck, 'limit', 'a card in the chat: Continue, or Leave it')
   assert.equal(modelArg('noor'), 'fable')
   // you pick Opus for it, as from its settings
   const data = JSON.parse(fs.readFileSync(CONFIG, 'utf8'))

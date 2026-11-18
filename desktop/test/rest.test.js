@@ -45,8 +45,9 @@ beforeEach(() => {
 })
 afterEach(() => {
   clearInterval(hub.stallTimer)
+  clearInterval(hub.screenWatch)
   hub.cfg.off('change', hub.onConfig)
-  for (const a of hub.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'reapTimer']) clearTimeout(a[t])
+  for (const a of hub.agents.values()) for (const t of ['ack', 'timer', 'readyTimer', 'reapTimer', 'screenTimer']) clearTimeout(a[t])
   for (const t of ['statsTimer', 'convoTimer', 'lookTimer']) clearTimeout(hub[t])
   fs.unwatchFile(CONFIG)
 })
@@ -345,7 +346,7 @@ test('the resume question holds the message back, and it goes in once you have a
   screen('ada', ASK)
   const a = agent('ada')
   assert.equal(a.status, 'waiting')
-  assert.match(hub.feed.at(-1).text, /about 18% of your 5-hour limit\. Answer in its terminal/)
+  assert.equal(a.resumeAsk, true) // (its card in the chat: test/screen-asks.test.js)
   a.holdUntil = 0
   hub.pump(a)
   assert.equal(runner.typed.length, 0, 'nothing typed into the question')
