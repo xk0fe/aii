@@ -778,6 +778,8 @@ function needsYou(state) {
 function needText({ agent, ask }) {
   const q = ask?.ask
   if (!q) return agent.activity ? `Waiting in its terminal · ${activityWords(agent.activity)}` : 'Waiting in its terminal'
+  if (q.screen) return q.snapshot ? q.title || 'Waiting in its terminal' : `Asks in its terminal: ${q.say || q.title}`
+  if (q.stuck) return q.stuck === 'limit' ? 'Its model ran out' : 'Stopped on an API error'
   if (q.type === 'question') return q.questions?.[0]?.question ?? 'Has a question'
   if (q.type === 'plan') return 'Wants you to approve a plan'
   if (q.trust) return `Asks to trust its folder, ${shortPath(q.detail)}`
@@ -2029,6 +2031,21 @@ function askCard(e, draft = {}, { queue = false } = {}) {
   const elsewhere = q.app ? '' : e.cli === 'codex' && !q.trust
     ? `<button class="ask-elsewhere" data-answer="terminal" title="${name} shows its own prompt once you hand it over">Answer in its terminal instead</button>`
     : queue ? '' : '<span class="ask-elsewhere">or answer in its terminal</span>'
+  // What its CLI asks in its terminal, read off its screen (core/hub.js screenCard): the question as it stands there and
+  // its choices, a tap each (CLIque picks it in the terminal for you); with no menu up, what its terminal shows, with
+  // Enter, Esc and a line to type into it. Stopped on an error or a limit (stuck): the ways on. Answered here only.
+  if (q.screen || q.stuck) {
+    const x = q.questions?.[0] ?? { question: '', options: [] }
+    const said = q.screen ? `<pre class="ask-screen">${esc(x.question)}</pre>` : `<div class="ask-detail ask-stuck">${esc(x.question)}</div>`
+    return `<div class="ask-card one${q.screen ? ' screen' : ''}" data-ask="${e.id}">
+      <div class="ask-q">
+        ${q.screen ? `<div class="ask-head"><span class="ask-chip">${q.snapshot ? 'Its terminal' : 'In its terminal'}</span></div>` : ''}${said}
+        <div class="ask-options">${x.options.map((o, oi) => `<button class="ask-option" data-pick="0" data-label="${esc(o.label)}">${key(oi)}<b>${esc(o.label)}</b>${o.description ? `<span>${esc(o.description)}</span>` : ''}</button>`).join('')}</div>
+        ${q.snapshot ? `<input class="ask-other" data-other="0" value="${esc(draft.other?.[0] ?? '')}" placeholder="Or type something into it, then Enter" spellcheck="false">` : ''}
+      </div>
+      <div class="ask-error"></div>
+    </div>`
+  }
   if (q.type === 'question') {
     const picked = (qi, label) => [].concat(draft.picks?.[qi] ?? []).includes(label)
     const ready = q.questions.every((x, qi) => draft.other?.[qi]?.trim() || [].concat(draft.picks?.[qi] ?? []).length)
@@ -2112,6 +2129,7 @@ const checkInSays = (state, id) => {
 function sayLine({ agent, ask }) {
   const q = ask?.ask
   if (!q) return agent.activity ? `I need you in my terminal. I was ${esc(lowerFirst(activityWords(agent.activity)))}.` : 'I need you in my terminal.'
+  if (q.screen || q.stuck) return esc(q.say || q.title || 'My terminal asks something.')
   if (q.type === 'question') {
     const first = q.questions?.[0]?.question ?? 'I have a question for you.'
     // (steps written in a run are said as the list they are, and the line about the rest stands after them: askWords)
@@ -2133,7 +2151,7 @@ function needsHTML(needs, expanded, drafts = new Map()) {
   const n = needs[i]
   const { agent: a, ask } = n
   const type = ask?.ask?.type
-  const verb = ask ? (ask.ask?.spend ? 'checks in' : NEED_VERBS[type] ?? 'needs your OK') : 'is waiting in its terminal'
+  const verb = ask ? (ask.ask?.spend ? 'checks in' : ask.ask?.stuck ? 'is stopped' : NEED_VERBS[type] ?? 'needs your OK') : 'is waiting in its terminal'
   const face = `<span class="nq-face">${avatarHTML(a, { size: 52, mood: 'waiting', pose: type === 'question' ? 'question' : 'sign', poseMin: 48 })}</span>`
   const since = n.since || Date.now()
   const step = needs.length > 1
@@ -2147,7 +2165,7 @@ function needsHTML(needs, expanded, drafts = new Map()) {
 
 // An answered card, in one line or two.
 function askSummary(q, a) {
-  const what = q.type === 'question' ? '' : `<span class="ask-what">${esc(q.type === 'plan' ? 'the plan' : q.trust ? shortPath(q.detail) : q.title ?? '')}</span>`
+  const what = q.type === 'question' && !q.screen ? '' : `<span class="ask-what">${esc(q.type === 'plan' ? 'the plan' : q.trust ? shortPath(q.detail) : q.title ?? '')}</span>`
   const mark = (cls, icon) => `<span class="ask-mark ${cls}">${ICONS[icon]}</span>`
   if (q.spend) {
     const at = meterText(q.spend.unit, a.used ?? q.spend.used ?? 0)
@@ -2160,6 +2178,12 @@ function askSummary(q, a) {
   if (a.stale) return `${mark('', 'dash')}<span>No longer waiting</span>${what}`
   if (a.by === 'terminal') return `${mark('', 'keyboard')}<span>${a.handedOver ? 'Handed to its terminal' : 'Answered in the terminal'}</span>${what}`
   if (a.by === 'cli') return `${mark('no', 'close')}<span>Claude Code said no${a.why ? ` (${esc(a.why)})` : ''}</span>${what}`
+  // a choice picked in its terminal for you, a key pressed there, or what you typed into it; the way on after a stop
+  if (q.screen || q.stuck) {
+    const said = String(Object.values(a.answers ?? {})[0] ?? '')
+    const typed = q.snapshot && said !== 'Press Enter' && said !== 'Press Esc'
+    return `${mark('ok', 'check')}<span>${typed ? `Typed “${esc(said)}”` : esc(said)}</span>${what}`
+  }
   // the question as it was asked (its steps still a list: askBlocks), and your answer right after its last words
   if (q.type === 'question') return Object.entries(a.answers ?? {}).map(([k, v]) => `<div class="ask-answer">${mark('ok', 'check')}<div class="ask-asked ask-words">${askHTML(askBlocks(k) ?? [{ text: k }])}<b>${esc(v)}</b></div></div>`).join('')
   if (q.type === 'plan') return a.allow ? `${mark('ok', 'check')}<span>Plan approved</span>` : `${mark('', 'undo')}<span>Keep planning${a.note ? `: “${esc(a.note)}”` : ''}</span>`

@@ -17,6 +17,7 @@ import { Schedules, inRepo } from './schedules.js'
 import { addSpan, addStep, addFile, addCheck, addShare, addHelper, renameWho, inFolder, isCheck } from './tasktime.js'
 import { fromStatusLine, fromCodexLog, codexLog, againstLimit, tokens as tokenCount, limitsFrom, codexLimitsFrom, limitName, spentFrom, codexSpent } from './context.js'
 import { callResult } from './transcript.js'
+import { screenOf, dialogOf, keyToward, screenTail } from './screen.js'
 import { asksSomething, echoOf, familyOf as familyName, forClients, gistOf, inThread, nothingNew, stampAll, threadDigest, threadFields } from './threads.js'
 import { processes, tree, noteworthy, readGroups, readSpans, leftovers, exempt, gitBash, prefixWorks, stop as stopProcesses, summary } from './procs.js'
 import { Config } from './config.js'
@@ -142,6 +143,20 @@ const TRUST_SETTLE = 1500
 const PICK_SETTLE = 300 // (Claude Code ignores keys for 150 ms after it draws)
 const PICK_WAIT = 1000
 const PICK_KEYS = 4
+// Questions in an agent's terminal that no hook brings (see screenTick): looked for every SCREEN_LOOK, in a terminal
+// that has drawn nothing for SCREEN_QUIET while its agent is at work, starting or waiting on you; looked at again
+// SCREEN_SETTLE after it draws while one is up; a Notification hook's dialog is drawn by NOTE_LOOK after it.
+const SCREEN_LOOK = 2500
+const SCREEN_QUIET = 4000
+const SCREEN_SETTLE = 700
+const NOTE_LOOK = 600
+// A menu answered from the chat is still on screen until its CLI redraws: no card for it again this soon.
+const SCREEN_DONE = 10000
+// What a card for a terminal with no menu on it offers (screenAsk with force), besides a line to type into it
+const SCREEN_KEYS = [
+  { label: 'Press Enter', description: 'As if you pressed it in its terminal' },
+  { label: 'Press Esc', description: 'Backs out of what it shows' },
+]
 const CONTINUE = 'continue'
 // An account's usage limits: crossing these (percent of a window) is said once each, in the chat and as a notification.
 // At NEAR_LIMIT of its 5-hour or weekly window, routing prefers agents on other providers among equal area matches.
@@ -297,6 +312,7 @@ export class Hub extends EventEmitter {
     this.runner.dispose?.()
     clearInterval(this.stallTimer)
     clearInterval(this.threadTimer)
+    clearInterval(this.screenWatch)
     clearTimeout(this.modelsTimer)
     if (this.statsTimer) this.saveStats()
     this.saveTaskTime()
@@ -374,6 +390,8 @@ export class Hub extends EventEmitter {
     this.stallTimer.unref?.()
     this.threadTimer = setInterval(() => this.threadTick(), THREAD_LOOK)
     this.threadTimer.unref?.()
+    this.screenWatch = setInterval(() => this.screenTick(), SCREEN_LOOK)
+    this.screenWatch.unref?.()
     // the agents' logs don't say which workspace they worked in: one workspace counts what came before (the first to
     // start on a computer where none has yet)
     if (!this.spend.lookedBack && !this.others().some((h) => h.spend.lookedBack || h.lookingBack)) {
@@ -840,6 +858,8 @@ export class Hub extends EventEmitter {
     a.background = 0 // nor does anything else it ran
     a.subPending = []
     clearTimeout(a.readyTimer)
+    clearTimeout(a.screenTimer) // (what was on the last one's screen went with it: forgetAsks closed its card)
+    this.stopScreenPick(a)
     if (fresh) this.saveSession(a.name, null)
     if (fresh) this.setCarry(a, null) // (a "continue" is for the conversation a limit cut short, not a new one)
     else this.restoreCarry(a) // (one renamed, say, keeps what it was owed)
@@ -1013,9 +1033,7 @@ export class Hub extends EventEmitter {
     const run = a.run
     a.startTimer = setTimeout(() => {
       if (this.agents.get(a.name) !== a || a.run !== run || a.status !== 'starting' || a.trustAsk || a.resumeAsk || !this.runner.running(a.name)) return
-      const text = `hasn't started after ${spanOf(START_QUIET)}: its terminal may be asking something. Answer there: messages for it wait until then`
-      this.post({ kind: 'event', from: a.name, text, alert: true })
-      this.emit('alert', a, text)
+      this.screenAsk(a, { force: true, why: `hasn't started after ${spanOf(START_QUIET)}, and messages for it wait. Its terminal shows this` })
     }, START_QUIET)
     a.startTimer.unref?.()
   }
@@ -1027,6 +1045,8 @@ export class Hub extends EventEmitter {
   // queue meanwhile. While it's up the screen is still read: answering from the chat picks by what's selected there.
   onOutput(name, data) {
     const a = this.agents.get(name)
+    if (a?.screenPick) this.screenPickSoon(a)
+    else if (a?.screenAsk) this.screenSoon(a) // its question may have gone: answered in its terminal
     if (a?.resumeWatch) this.watchResume(a, data)
     if (!a?.trust) return
     a.boot = (a.boot + data).slice(-6000)
@@ -1058,12 +1078,14 @@ export class Hub extends EventEmitter {
       a.expect = null
     }
     const share = flat(watch.screen).match(/about(\d+)%of/)?.[1]
-    this.needsYou(a, `asks before resuming its long conversation: it would use ${share ? `about ${share}%` : 'a good part'} of your 5-hour limit. Answer in its terminal: messages wait until then`)
+    this.setStatus(a, 'waiting') // (nothing goes in meanwhile: its card comes once the question is drawn)
+    this.screenSoon(a, NOTE_LOOK, { force: true, why: `asks before resuming its long conversation: it would use ${share ? `about ${share}%` : 'a good part'} of your 5-hour limit. Messages wait until you answer` })
   }
 
   // Answered in its terminal: on it goes, and what's queued goes in.
   resumeAnswered(a) {
     Object.assign(a, { resumeAsk: null, resumeWatch: null })
+    this.screenClose(a)
     hold(a, 1500)
     this.setStatus(a, a.upAt ? 'idle' : 'starting')
   }
@@ -1132,7 +1154,7 @@ export class Hub extends EventEmitter {
     const key = trustKey(screen, a.trust, p.want)
     if (!key || p.keys >= PICK_KEYS) {
       this.stopPick(a, { by: 'terminal', handedOver: true })
-      return this.needsYou(a, `asks whether to trust its folder, and CLIque couldn't answer it for you. Answer in its terminal: messages wait until then`)
+      return this.screenAsk(a, { force: true, why: 'asks whether to trust its folder. Messages wait until you answer' })
     }
     p.keys += 1
     p.due = Date.now() + PICK_WAIT
@@ -1154,6 +1176,7 @@ export class Hub extends EventEmitter {
   trustAnswered(a) {
     const no = trustSelected(flat(a.boot), a.trust) === 'no'
     Object.assign(a, { trustAsk: false, trustNo: no, boot: '' })
+    this.screenClose(a)
     for (const [id, q] of this.asks) if (q.trust && q.name === a.name) this.settle(id, '', { by: 'terminal' }, true)
     this.setStatus(a, 'starting')
     this.readyIn(a)
@@ -1164,6 +1187,255 @@ export class Hub extends EventEmitter {
     this.stopPick(a, { stale: true })
     a.trustAsk = false
     for (const [id, q] of this.asks) if (q.trust && q.name === a.name) this.settle(id, '', { stale: true }, true)
+  }
+
+  // ---- questions in its terminal (core/screen.js) -----------------------------------------------------------------
+  // What a CLI asks that no hook brings to CLIque: a menu of its own (Claude Code's "Resume this conversation?", "Session
+  // paused", an MCP server to approve, a question a newer version asks before it starts; Codex's own approval once its
+  // hook has stopped waiting), or anything else it sits waiting on. CLIque reads it off the agent's screen and makes it a
+  // card in the chat: the question as the CLI put it, and its choices. The one you pick, CLIque picks in its terminal for
+  // you, an arrow key at a time until the screen shows it selected, then Enter. Answered in the terminal instead, or gone
+  // by itself, the card says so. CLIque looks when the terminal of an agent at work, starting or waiting on you has gone
+  // still (screenTick), when a hook says something is up (Notification), and whenever it knows the agent waits on
+  // something it can't see (screenAsk with force: it hasn't started, a message didn't go in).
+
+  screenLines(a) {
+    return screenOf(this.runner.buffer?.(a.name) ?? {})
+  }
+
+  // Each agent whose terminal has drawn nothing for SCREEN_QUIET while it's at work, starting, or waiting on you with
+  // no card, is looked at once per still screen. Not while a card of CLIque's is up for it (its own dialog is that
+  // card's: a permission prompt), its trust question is being answered, it's being stopped, or you're typing there.
+  screenTick(now = Date.now()) {
+    for (const a of this.agents.values()) {
+      if (!['working', 'starting', 'waiting'].includes(a.status) || !this.runner.running(a.name)) continue
+      if (a.screenAsk || a.screenPick || a.trustAsk || a.trustPick || a.stopping || a.retrying || now - (a.typedAt ?? 0) < SCREEN_QUIET) continue
+      if ([...this.asks.values()].some((q) => q.name === a.name && !q.spend)) continue
+      const quiet = this.runner.quietFor?.(a.name) ?? 0
+      if (quiet < SCREEN_QUIET) continue
+      const still = Math.round((now - quiet) / 1000) // when it last drew: one look per still screen
+      if (a.screenSeen === still) continue
+      a.screenSeen = still
+      this.screenAsk(a)
+    }
+  }
+
+  // Look at its screen in a moment, once what it's drawing has settled (a hook that says a dialog is up comes as it
+  // draws it).
+  // force (see screenAsk) holds only while it's still waiting by then: answered in its terminal meanwhile, or moved on,
+  // there's nothing to show.
+  screenSoon(a, ms = SCREEN_SETTLE, opts = {}) {
+    clearTimeout(a.screenTimer)
+    a.screenTimer = setTimeout(() => this.agents.get(a.name) === a && this.screenAsk(a, { ...opts, force: opts.force && a.status === 'waiting' }), ms)
+    a.screenTimer.unref?.()
+  }
+
+  // Its screen, looked at: a menu there becomes a card (or stays the one it is), and the card of one that went closes
+  // (answered in its terminal). force: it's waiting on something whatever the screen shows, so with no menu there the
+  // card shows what is, with Enter, Esc and a line to type into it. why: what CLIque knows of it, for that card.
+  // -> whether a card is up for it now
+  screenAsk(a, { force = false, why = '' } = {}) {
+    if (!this.runner.running(a.name) || a.screenPick) return false
+    const lines = this.screenLines(a)
+    const d = dialogOf(lines)
+    const open = a.screenAsk && this.asks.get(a.screenAsk.id)
+    if (d && open?.screen.key === d.key) return true
+    if (!d && open?.screen.snapshot) return true // (that one stays until you answer it, or the agent moves on)
+    const fresh = d && !(a.screenDone?.key === d.key && Date.now() - a.screenDone.at < SCREEN_DONE)
+    // the question it had went: answered in its terminal. Another one in its place keeps it waiting (nothing goes in
+    // between the two), and it goes back to what it was doing once that's answered too.
+    if (open && fresh) this.screenClose(a)
+    else if (open) this.screenGone(a)
+    if (fresh) return this.screenCard(a, d, why, open?.screen.was)
+    if (d || !force) return false
+    return this.screenCard(a, { snapshot: true, title: why ? sentence(why) : 'Waiting in its terminal', text: screenTail(lines), options: SCREEN_KEYS, key: 'snapshot' }, why)
+  }
+
+  screenCard(a, d, why = '', was = a.status === 'waiting' ? 'working' : a.status) {
+    const cli = this.providerOf(a)?.cli ?? 'claude'
+    const question = d.text || d.title || 'It asks something in its terminal'
+    const options = d.options.map(({ label, description }) => ({ label, ...(description && { description }) }))
+    // what it says, in a line: the menu's own question, the last one in it ("Do you want to proceed?", Codex's "Reason: Do
+    // you approve running … outside the sandbox?" without its label), else its title
+    const asked = question.split('\n').findLast((l) => /\?$/.test(l))?.replace(/^[A-Z][a-z]+: (?=\S)/, '')
+    const say = d.snapshot ? 'I need you in my terminal. This is what it shows.' : clip(asked ?? d.title, 200)
+    const ask = { type: 'question', screen: true, ...(d.snapshot && { snapshot: true }), title: d.title, say, questions: [{ question, header: '', multiSelect: false, options }], alert: d.snapshot ? why || 'is waiting in its terminal' : `asks in its terminal: ${clip(d.title, 120)}` }
+    const e = this.post({ kind: 'ask', from: a.name, to: 'you', ask, cli, ...(a.current && { re: a.current }) })
+    // was: what it was doing before it stopped on this, to go back to once it's answered (one that came while it was
+    // waiting on you anyway: it was at work)
+    this.asks.set(e.id, { name: a.name, cli, input: {}, entry: e, screen: { key: d.key, options: d.options, snapshot: Boolean(d.snapshot), was }, resolve() {} })
+    a.screenAsk = { id: e.id }
+    this.record(a.name, { waits: 1 })
+    this.emit('alert', a, ask.alert)
+    this.setStatus(a, 'waiting')
+    return true
+  }
+
+  // Its card's question isn't on its screen any more: answered in its terminal, or it went by itself. answer: what the
+  // card says became of it.
+  screenGone(a, answer = { by: 'terminal' }) {
+    const id = a.screenAsk?.id
+    const q = id && this.asks.get(id)
+    a.screenAsk = null
+    if (!q) return
+    this.settle(id, '', answer, true)
+    this.screenBack(a, q)
+  }
+
+  // A question CLIque holds the agent for (its trust question, the one about resuming) was answered in its terminal: a
+  // card it had from the screen closes with it.
+  screenClose(a) {
+    const id = a.screenAsk?.id
+    clearTimeout(a.screenTimer)
+    this.stopScreenPick(a)
+    a.screenAsk = null
+    if (id) this.settle(id, '', { by: 'terminal' }, true)
+  }
+
+  // ...so it goes back to what it was doing, unless something else of its still waits on you.
+  screenBack(a, q) {
+    if (a.status !== 'waiting' || this.asking(a.name) || a.trustAsk || a.resumeAsk) return
+    hold(a, ANSWER_SETTLE)
+    const was = q.screen.was === 'waiting' ? 'working' : q.screen.was
+    this.setStatus(a, was)
+    if (was === 'starting') this.readyIn(a) // (a CLI that doesn't say when it's up counts as up a while after this)
+  }
+
+  // Your answer from the chat (or a phone). A choice of its menu: picked in its terminal (stepScreen). On a card that
+  // shows what its terminal does, Enter or Esc goes in as the key, anything else as you'd type it, with Enter after.
+  answerScreen(id, q, reply) {
+    const a = this.agents.get(q.name)
+    if (reply.terminal) throw new Error('this one is answered here, in the chat')
+    if (!a || !this.runner.running(a.name)) {
+      if (a?.screenAsk?.id === id) a.screenAsk = null
+      this.settle(id, '', { stale: true }, true)
+      throw new Error(`${q.name} isn't running any more`)
+    }
+    const question = q.entry.ask.questions[0].question
+    const v = reply.answers?.[question]
+    const text = String((Array.isArray(v) ? v[0] : v) ?? '').trim()
+    if (!text) throw new Error('pick an answer first')
+    if (q.screen.snapshot) {
+      const key = { 'Press Enter': '\r', 'Press Esc': ESC }[text]
+      if (key) this.runner.write(a.name, key)
+      else this.runner.submit(a.name, text)
+      a.typedAt = Date.now() // (as you'd type it there: see afterStop)
+      this.screenGone(a, { by: 'you', answers: { [question]: text } })
+      // ...and as it would there, it answers the question CLIque was holding the agent for (see input)
+      if (a.trustAsk && key !== ESC) return this.trustAnswered(a)
+      if (a.resumeAsk) return this.resumeAnswered(a)
+      return this.screenSoon(a, SCREEN_SETTLE * 2) // a question that comes next gets its card
+    }
+    const want = q.screen.options.findIndex((o) => o.label === text)
+    if (want < 0) throw new Error(`pick one of its choices: that's all its terminal takes here`)
+    if (a.screenPick) throw new Error('CLIque is picking that answer in its terminal already')
+    a.screenPick = { id, want, text, question, key: q.screen.key, keys: 0, due: 0 }
+    this.stepScreen(a)
+  }
+
+  // One step of picking it: Enter once the screen shows your choice selected, else the arrow toward it. Its menu gone or
+  // changed meanwhile: it was answered in its terminal, and the screen is looked at again.
+  stepScreen(a) {
+    const p = a.screenPick
+    if (!p) return
+    clearTimeout(p.timer)
+    const q = this.asks.get(p.id)
+    if (!q || !this.runner.running(a.name)) return this.stopScreenPick(a)
+    const d = dialogOf(this.screenLines(a))
+    if (!d || d.key !== p.key) {
+      this.stopScreenPick(a)
+      return this.screenAsk(a)
+    }
+    const key = keyToward(d, p.want)
+    if (!key) {
+      this.stopScreenPick(a)
+      this.runner.write(a.name, '\r')
+      a.screenDone = { key: p.key, at: Date.now() }
+      a.screenAsk = null
+      this.settle(p.id, '', { by: 'you', answers: { [p.question]: p.text } }, true)
+      return this.screenAnswered(a, q)
+    }
+    if (p.keys >= d.options.length + PICK_KEYS) {
+      // the selection doesn't move: the card stays up for another try, and the chat says so
+      this.stopScreenPick(a)
+      return this.post({ kind: 'event', from: a.name, text: `didn't take “${clip(p.text, 80)}” from the chat: the selection in its terminal didn't move to it. Try again`, alert: true })
+    }
+    p.keys += 1
+    p.due = Date.now() + PICK_WAIT
+    this.runner.write(a.name, key)
+    p.timer = setTimeout(() => this.stepScreen(a), PICK_WAIT) // in case it doesn't redraw
+  }
+
+  // Its screen changed while CLIque picks: look again once it has settled, no later than PICK_WAIT after the last key.
+  screenPickSoon(a) {
+    const p = a.screenPick
+    if (!p.due) return
+    clearTimeout(p.timer)
+    p.timer = setTimeout(() => this.stepScreen(a), Math.max(0, Math.min(PICK_SETTLE, p.due - Date.now())))
+  }
+
+  stopScreenPick(a) {
+    clearTimeout(a.screenPick?.timer)
+    a.screenPick = null
+  }
+
+  // Enter went in on your choice. A question CLIque was holding the agent for (its trust question, or the one about
+  // resuming) is answered; otherwise it goes back to what it was doing. A question that comes right after gets its card.
+  screenAnswered(a, q) {
+    if (a.trustAsk) return this.trustAnswered(a)
+    if (a.resumeAsk) return this.resumeAnswered(a)
+    this.screenBack(a, q)
+    this.screenSoon(a, SCREEN_SETTLE * 2)
+  }
+
+  // Its CLI has moved on (a hook says so: a prompt taken, a step done, its turn over): what a card of its said it was
+  // waiting for isn't, any more.
+  movedOn(a) {
+    if (a.screenAsk && !a.screenPick && !a.trustAsk && !a.resumeAsk) this.screenGone(a)
+    for (const [id, q] of this.asks) if (q.stuck && q.name === a.name) this.settle(id, '', { by: 'terminal' }, true)
+  }
+
+  // ---- stopped, and yours to say how it goes on ---------------------------------------------------------------------
+  // An API error that doesn't pass, or a model that ran out: its turn is cut short and nothing else goes in until you
+  // say. A card with the ways on: Continue types "continue" for it, as you would; Leave it ends the turn there, and what
+  // waits for it goes in. Typing in its terminal, or giving it another model, does as ever (the card closes).
+  stuckCard(a, kind, text) {
+    const options = [
+      { label: 'Continue', description: kind === 'limit' ? 'Once its model is back: CLIque types "continue" for it' : 'CLIque types "continue" for it, and it picks up where it stopped' },
+      { label: 'Leave it', description: "Its turn ends here, and what's waiting for it goes in" },
+    ]
+    const question = `${sentence(text)}.`
+    const say = kind === 'limit' ? 'My model ran out. How should I go on?' : 'An API error stopped me. How should I go on?'
+    const ask = { type: 'question', stuck: kind, title: question, say, questions: [{ question, header: '', multiSelect: false, options }], alert: text }
+    const e = this.post({ kind: 'ask', from: a.name, to: 'you', ask, cli: 'clique', ...(a.current && { re: a.current }) })
+    this.asks.set(e.id, { name: a.name, cli: 'clique', input: {}, entry: e, stuck: kind, resolve() {} })
+    this.record(a.name, { waits: 1 })
+    this.emit('alert', a, text)
+    this.setStatus(a, 'waiting')
+  }
+
+  answerStuck(id, q, reply) {
+    const a = this.agents.get(q.name)
+    const question = q.entry.ask.questions[0].question
+    const v = reply.answers?.[question]
+    const text = String((Array.isArray(v) ? v[0] : v) ?? '').trim()
+    if (text !== 'Continue' && text !== 'Leave it') throw new Error('pick Continue or Leave it')
+    if (!a || !this.runner.running(a.name)) {
+      this.settle(id, '', { stale: true }, true)
+      throw new Error(`${q.name} isn't running any more`)
+    }
+    this.settle(id, '', { by: 'you', answers: { [question]: text } }, true)
+    if (text === 'Continue') {
+      a.retrying = true
+      a.apiRetries = 0
+      this.setStatus(a, 'working')
+      return this.resumeTurn(a)
+    }
+    a.outWait = null
+    a.replyDue = false
+    this.settleCalls(a, null, 'was stopped before it answered')
+    hold(a, 600)
+    this.setStatus(a, 'idle')
   }
 
   restart(name, fresh = false) {
@@ -2301,6 +2573,9 @@ export class Hub extends EventEmitter {
     this.noteGroups(a)
     // when its conversation last went to the API (its cache lasts from then: see coldFor). A sub-agent's steps don't count.
     if (!e.agent_id && ['UserPromptSubmit', 'PostToolUse', 'Stop', 'StopFailure'].includes(e.hook_event_name)) (this.convoOf(a).lastAt = a.hookAt), this.saveConvos()
+    // a card for what it was stuck on (a menu in its terminal, a stop) closes: it's past that now
+    // (not SessionStart: a question can come up after it, and stay)
+    if (!e.agent_id && ['UserPromptSubmit', 'PostToolUse', 'Stop', 'StopFailure'].includes(e.hook_event_name)) this.movedOn(a)
     if ((a.stopping || a.halted) && !e.agent_id && this.afterStop(a, e)) return // you stopped it: see interrupt
     if (e.hook_event_name === 'SessionStart' || e.hook_event_name === 'UserPromptSubmit') {
       // past any trust question: one still up was answered after all (a late redraw can bring its card back)
@@ -2331,6 +2606,8 @@ export class Hub extends EventEmitter {
           return this.setStatus(a, 'idle')
         }
         a.upAt = Date.now()
+        // up, with a question of its CLI's still on its screen (its card in the chat): free once that's answered
+        if (a.screenAsk && this.asks.get(a.screenAsk.id)?.screen.was === 'starting') this.asks.get(a.screenAsk.id).screen.was = 'idle'
         if (a.status !== 'starting') return
         hold(a, 2000) // the prompt box isn't ready the moment the session starts
         return this.setStatus(a, 'idle')
@@ -2415,12 +2692,17 @@ export class Hub extends EventEmitter {
         this.record(name, { tools: 1 })
         this.readCodexContext(a, e)
         return this.setStatus(a, 'working')
-      case 'Notification':
+      case 'Notification': {
         // Permission prompts come with a card in the chat (see ask), which alerts on its own; both hooks fire at
-        // the same moment, so this one may even arrive first.
-        if (e.notification_type === 'permission_prompt' || this.asking(name) || a.retrying) return
-        if (a.status === 'working') this.needsYou(a, e.message || 'needs your input')
-        return
+        // the same moment, so this one may even arrive first. Any other is a dialog of its own ("Session paused", an
+        // MCP server's question, a sandboxed command asking for the network…), or it sits waiting with none: once it's
+        // drawn, what its screen shows becomes a card. Only "waiting for your input" of one that's free is nothing.
+        if (['permission_prompt', 'auth_success'].includes(e.notification_type) || this.asking(name) || a.retrying) return
+        const stuck = a.status === 'working'
+        if (e.notification_type === 'idle_prompt' && !stuck) return
+        if (stuck) this.setStatus(a, 'waiting') // (it says it waits on you: nothing goes in, and its card comes once it's drawn)
+        return this.screenSoon(a, NOTE_LOOK, { force: stuck, why: String(e.message || 'needs your input') })
+      }
       case 'Interrupt':
         clearTimeout(a.retryTimer)
         a.retrying = false
@@ -2505,7 +2787,8 @@ export class Hub extends EventEmitter {
     if (!PASSING_ERRORS.has(error) || tries >= API_RETRY.length) {
       a.apiRetries = 0
       const said = gist(e.last_assistant_message, 160).replace(/[.\s]+$/, '')
-      return this.needsYou(a, `stopped on an API error (${error})${said ? `: ${said}` : ''}. Type "continue" in its terminal once that's sorted`)
+      const sign = /auth|login|oauth|credential/i.test(error) ? `. Sign it in again under Accounts first` : ''
+      return this.stuckCard(a, 'api', `stopped on an API error (${error})${said ? `: ${said}` : ''}${sign}`)
     }
     const ms = API_RETRY[tries]
     a.apiRetries = tries + 1
@@ -2603,7 +2886,7 @@ export class Hub extends EventEmitter {
     a.outTurn = { id: a.current, models: [...(a.outTurn?.id === a.current ? a.outTurn.models : []), out.model] }
     const own = this.familyOf(a)
     const stand = !again && how === 'switch' && this.standInOf(a)
-    if (again) this.stopAtLimit(a, out, `ran out of ${out.name} again (${when}), though it was moved off it: something in its work still asks for ${out.name}, a sub-agent set to it, say. Give that another model, or type "continue" in its terminal once ${out.name} is back`)
+    if (again) this.stopAtLimit(a, out, `ran out of ${out.name} again (${when}), though it was moved off it: something in its work still asks for ${out.name}, a sub-agent set to it, say. Give that another model, or continue once ${out.name} is back`)
     else if (own && own !== out.model && how !== 'tell') {
       // its own model isn't the one that ran out (it was switched in its terminal, or a sub-agent ran on it): back to its own
       this.post({ kind: 'event', from: a.name, text: `ran out of ${out.name} (${when}), so it goes on with its own model, ${upFirst(own)}` })
@@ -2615,7 +2898,7 @@ export class Hub extends EventEmitter {
     } else if (how === 'wait' && resets) this.waitForReset(a, out.model, out.name, until)
     else {
       const other = how === 'switch' && own === out.model ? `No other ${this.providerOf(a)?.label ?? ''} model is left to go on with. ` : ''
-      this.stopAtLimit(a, out, `ran out of ${out.name} (${when}). ${other}Give it another model and it goes on with that, or type "continue" in its terminal once ${out.name} is back`)
+      this.stopAtLimit(a, out, `ran out of ${out.name} (${when}). ${other}Give it another model and it goes on with that, or continue once ${out.name} is back`)
     }
     this.modelsChanged()
   }
@@ -2623,7 +2906,7 @@ export class Hub extends EventEmitter {
   // It stops there, and it's yours (tell, or nothing else to do): giving it another model carries its turn on.
   stopAtLimit(a, out, text) {
     a.outWait = { model: out.model }
-    this.needsYou(a, text)
+    this.stuckCard(a, 'limit', text)
   }
 
   // Its turn is over until its model resets, when CLIque types "continue" for it. Whoever asked it something hears so now
@@ -2827,6 +3110,7 @@ export class Hub extends EventEmitter {
     } catch {
       return '' // something we can't show: the agent asks in its terminal as usual
     }
+    if (a.screenAsk && !input.agent_id) this.screenClose(a) // (what was on its screen gave way to this)
     const e = this.post({ kind: 'ask', from: name, to: 'you', ask, cli, ...(a.current && { re: a.current }) })
     this.record(name, { waits: 1 })
     this.emit('alert', a, ask.alert)
@@ -2854,6 +3138,8 @@ export class Hub extends EventEmitter {
     if (q.plan) return this.answerTool(id, q, reply)
     if (q.trust) return this.answerTrust(id, q, reply)
     if (q.spend) return this.answerCheckIn(q, reply)
+    if (q.screen) return this.answerScreen(id, q, reply)
+    if (q.stuck) return this.answerStuck(id, q, reply)
     if (reply.terminal) return this.settle(id, '', { by: 'terminal', handedOver: true }, true)
     const { output, answer } = decide(q.entry.ask, q.input, q.cli, reply)
     this.settle(id, JSON.stringify(output), { by: 'you', ...answer })
@@ -2867,6 +3153,8 @@ export class Hub extends EventEmitter {
     q.resolve(output)
     this.amend(q.entry, { answer: { ...answer, at: Date.now() } })
     const a = this.agents.get(q.name)
+    if (a?.screenAsk?.id === id) a.screenAsk = null
+    if (a?.screenPick?.id === id) this.stopScreenPick(a)
     if (a?.status === 'waiting' && !stillWaiting && !this.asking(q.name)) {
       hold(a, ANSWER_SETTLE) // what waits to go into its turn (steer) goes once its terminal has taken the question down
       this.setStatus(a, 'working')
@@ -3339,7 +3627,7 @@ export class Hub extends EventEmitter {
       // still at it after three tries: it's working, and the chat says so rather than show it free
       a.stopping = null
       a.halted = null
-      this.post({ kind: 'event', from: a.name, text: "didn't stop when asked. Press Esc in its terminal", alert: true })
+      this.post({ kind: 'event', from: a.name, text: "didn't stop when asked. Press Stop again", alert: true })
       this.emit('alert', a, "didn't stop when asked")
       return this.setStatus(a, 'working')
     }
@@ -3389,7 +3677,7 @@ export class Hub extends EventEmitter {
         if (tries > 2 * STOP_PRESSES) {
           clearTimeout(a.stopTimer)
           Object.assign(a, { stopping: null, halted: null })
-          this.post({ kind: 'event', from: a.name, text: "started again after you stopped it, and didn't stop when asked. Press Esc in its terminal", alert: true })
+          this.post({ kind: 'event', from: a.name, text: "started again after you stopped it, and didn't stop when asked. Press Stop again", alert: true })
           this.emit('alert', a, "didn't stop when asked")
           return false
         }
@@ -3499,6 +3787,7 @@ export class Hub extends EventEmitter {
     if (typed(data)) a.typedAt = Date.now()
     if (typed(data) && !a.stopping) a.halted = null // you're at its terminal yourself: what you start there runs
     if (typed(data)) this.stopPick(a, { by: 'terminal' }) // you're answering its trust question yourself
+    if (typed(data)) this.stopScreenPick(a) // ...or the question a card has from its screen
     hold(a, 3000)
     this.runner.write(name, data)
     if (a.resumeAsk && (data.includes('\r') || data === '\x1b')) return this.resumeAnswered(a)
@@ -4476,7 +4765,7 @@ export class Hub extends EventEmitter {
     a.ack = setTimeout(() => {
       if (a.status !== 'working') return
       if (a.holdUntil > Date.now()) return this.awaitPickup(a, waits) // you're typing in its terminal: don't send your line
-      if (!rest.length) return this.needsYou(a, "didn't pick up the last message, check its terminal")
+      if (!rest.length) return this.screenAsk(a, { force: true, why: "didn't pick up the last message. Its terminal shows this" })
       this.runner.write(a.name, '\r')
       this.awaitPickup(a, rest)
     }, ms)
@@ -5664,6 +5953,7 @@ export function paceOf(w, samples = [], now = Date.now()) {
 
 // A model as the chat names it: opus → Opus (one with a version, gpt-6-luna, as written).
 const upFirst = (m) => (/^[a-z]+$/.test(m) ? m[0].toUpperCase() + m.slice(1) : m)
+const sentence = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1)
 // When a usage window resets, as the chat says it: "at 15:00" today, "Thu at 09:00" later in the week.
 const resetsWhen = (ms) => {
   const d = new Date(ms)

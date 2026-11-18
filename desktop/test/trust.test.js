@@ -225,10 +225,13 @@ test("a screen that never shows the answer: no Enter, and the question goes back
   for (let i = 0; i < 5; i++) mock.timers.tick(1000) // it never redraws
   assert.deepEqual(runner.keys, [DOWN, DOWN, DOWN, DOWN])
   assert.equal(june.status, 'waiting')
-  assert.match(alerts.at(-1), /couldn't answer it for you\. Answer in its terminal/)
-  // so you do
+  // the question as its screen has it, a card in the chat
+  assert.match(alerts.at(-1), /^june: asks in its terminal: Accessing workspace:/)
+  assert.deepEqual(card('june').ask.questions[0].options, [{ label: 'No, exit' }, { label: 'Yes, I trust this folder' }])
+  // answered in its terminal instead
   hub.input('june', '\r')
   assert.equal(june.status, 'starting')
+  assert.equal(card('june').answer.by, 'terminal')
 })
 
 test('typing in its terminal while CLIque picks: you answer it, CLIque stops', () => {
@@ -354,8 +357,9 @@ test('steady output while it picks (Codex animates for half a minute): it still 
   hub.answer(card('june').id, { allow: true })
   for (let i = 0; i < 100; i++) runner.draw('june', '\x1b]0;⠋ claude\x07'), mock.timers.tick(100) // never quiet for 300 ms
   assert.deepEqual(runner.keys, [DOWN, DOWN, DOWN, DOWN], 'no Enter: its screen never showed "Yes"')
-  assert.equal(card('june').answer.by, 'terminal', 'the card says it went back to the terminal, not "Trusted"')
-  assert.match(alerts.at(-1), /couldn't answer it for you/)
+  const trust = hub.feed.find((e) => e.kind === 'ask' && e.ask.trust)
+  assert.equal(trust.answer.by, 'terminal', 'the card says it went back to the terminal, not "Trusted"')
+  assert.match(alerts.at(-1), /asks in its terminal: Accessing workspace:/, 'and its question is a card of its own')
 })
 
 test('an answer it doesn\'t name selected ("No, continue without these permissions"): it moves to "Yes" all the same', () => {
@@ -366,23 +370,50 @@ test('an answer it doesn\'t name selected ("No, continue without these permissio
   assert.deepEqual(runner.keys, [DOWN])
 })
 
-test('a question CLIque doesn\'t know keeps it from starting (2.1.326 about an added folder): a minute on, the chat says to look at its terminal, once', () => {
+test('a question CLIque doesn\'t know keeps it from starting (2.1.326 about an added folder): a minute on, it is a card in the chat, once', () => {
   const june = launch('june')
   hub.send({ to: 'june', text: 'fix the login page' })
   runner.draw('june', CLAUDE_ADD_DIR)
-  assert.equal(june.trustAsk, false, 'not its trust question: no card')
+  assert.equal(june.trustAsk, false, 'not its trust question: no trust card')
   mock.timers.tick(59000)
   assert.deepEqual(alerts, [])
   mock.timers.tick(1000)
-  assert.deepEqual(alerts, ["june: hasn't started after 1 minute: its terminal may be asking something. Answer there: messages for it wait until then"])
-  assert.equal(hub.feed.at(-1).alert, true, 'and in the chat')
-  assert.equal(june.status, 'starting', 'still starting, so it comes up as ever once that is answered')
+  // (with CLIque running, its screen is looked at every few seconds, so this comes long before: test/screen-asks.test.js)
+  assert.deepEqual(alerts, ['june: asks in its terminal: Adding a new directory:'])
+  const ask = card('june').ask
+  assert.equal(ask.screen, true)
+  assert.deepEqual(ask.questions[0].options, [{ label: 'No, exit' }, { label: 'Yes, add it' }])
+  assert.match(ask.questions[0].question, /^Adding a new directory:\n\/Users\/me\/\.clique\/attachments\nThis session hasn't worked here before/)
+  assert.equal(june.status, 'waiting')
   mock.timers.tick(30 * 60000)
   assert.equal(alerts.length, 1, 'said once')
   // answered in its terminal: it comes up, and the message that waited goes in
   hub.onHook('june', { hook_event_name: 'SessionStart', source: 'startup' })
-  mock.timers.tick(3000)
+  runner.draw('june', '\x1b[2J\x1b[H Claude Code\r\n\r\n❯ ')
+  for (let i = 0; i < 3; i++) mock.timers.tick(1000) // (its screen is looked at again once it's still, then the message waits a moment)
+  assert.equal(card('june').answer.by, 'terminal')
   assert.equal(june.status, 'working')
+  assert.match(runner.typed.join('\n'), /fix the login page/)
+})
+
+test('...and answered from the chat: CLIque picks it in its terminal, and it starts as ever', () => {
+  const june = launch('june')
+  hub.send({ to: 'june', text: 'fix the login page' })
+  runner.draw('june', CLAUDE_ADD_DIR)
+  mock.timers.tick(60000)
+  const ask = card('june').ask
+  hub.answer(card('june').id, { answers: { [ask.questions[0].question]: 'Yes, add it' } })
+  assert.deepEqual(runner.keys, [DOWN])
+  runner.draw('june', '\x1b[2A\r  No,\x1b[1Cexit\r\n\x1b[36m❯\x1b[1CYes,\x1b[1Cadd\x1b[1Cit\x1b[0m')
+  mock.timers.tick(300)
+  assert.deepEqual(runner.keys, [DOWN, '\r'])
+  assert.deepEqual(card('june').answer.answers, { [ask.questions[0].question]: 'Yes, add it' })
+  assert.equal(june.status, 'starting')
+  mock.timers.tick(1500)
+  assert.equal(hub.feed.filter((e) => e.kind === 'ask').length, 1, 'no second card for it while its CLI takes it down')
+  assert.deepEqual(runner.typed, [], 'nothing typed yet')
+  hub.onHook('june', { hook_event_name: 'SessionStart', source: 'startup' })
+  mock.timers.tick(3000)
   assert.match(runner.typed.join('\n'), /fix the login page/)
 })
 

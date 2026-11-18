@@ -111,8 +111,10 @@ test('the turn ends right after the denial: the card still says what happened', 
 
 test("an API error ends the turn: same, no stale card", () => {
   ask()
+  const mine = card()
   hub.onHook('june', { hook_event_name: 'StopFailure', error: 'rate_limit' })
-  assert.equal(card().answer.stale, true)
+  assert.equal(mine.answer.stale, true)
+  assert.equal(card().ask.stuck, 'api', 'and the stop is a card of its own: Continue, or Leave it')
 })
 
 test("Codex isn't watched: it waits on its hook, so it can't move on without an answer", () => {
