@@ -17,7 +17,8 @@ let booted = false // the composer says who it's aimed at as it mounts, before w
 // at a time (Needs you, as in the floating chat), not cards in the conversation.
 const feed = mountFeed($('.feed'), {
   face: 36,
-  onAgent: (name) => select(name),
+  onAgent: (name) => openDM(name),
+  onTerminal: (name) => select(name),
   onConvo: (name) => openDM(name),
   onLeave: () => composer.setTarget('auto'),
   onChannel: (id) => setChannel(id, { go: false }),
@@ -51,7 +52,7 @@ const collection = mountCollection($('.collection'), {
   onWorkspace: () => workspaces.settings(),
   onRenamed: (from, to) => renamed(from, to),
 })
-const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onTerminal: (name) => select(name) })
+const tasks = mountTasks($('.tasks-view'), { headIn: $('.heads'), onAgent: (name) => (openDM(name), composer.focus()), onTerminal: (name) => select(name) })
 // What Claude Code and Codex used on this computer, day by day (ui/usage.js)
 const usage = mountUsage($('.usage-view'), { headIn: $('.heads') })
 const workspaces = mountWorkspaces({ button: $('.ws-switch'), banner: $('.ws-banner'), dock: $('.ws-dock'), dialog: $('#ws'), onSwitch: (id, opts) => switchTo(id, opts), onSwitched: (next) => switched(next), onMembers: (at) => openMembers(at) })
@@ -99,6 +100,9 @@ let lastDm = null // the agent whose conversation was open last, and when you le
 let left = null
 let selected = null // the terminal picked in Terminals
 let dockPick = null // the terminal picked in a conversation's dock: the agent's own, or one of its clones'
+// A conversation opens without its terminal: what an agent needs from you comes to the chat. Its terminal is docked
+// beside it only once you ask for it there (the header's Terminal, Open terminal), until you put it away or leave.
+let dockShown = false
 let state = { agents: [], providers: {}, feed: [] }
 // the roster's folds: computers you folded away
 const folds = new Set((() => {
@@ -152,12 +156,11 @@ function dockName() {
   const fam = family(composer.target())
   return [dockPick, composer.target(), familyOf(composer.target())].find((n) => n && fam.includes(n)) ?? fam[0] ?? null
 }
-const dockOn = () => store.get('clique.dock') !== '0'
 const restingHere = () => {
   const a = place === 'dm' ? dmAgent() : null
   return a?.status === 'resting' && !family(a.name).length ? a : null
 }
-const docked = () => place === 'dm' && dockOn() && Boolean(dockName() || restingHere())
+const docked = () => place === 'dm' && dockShown && Boolean(dockName() || restingHere())
 
 // Open a place, or the conversation the composer's aimed at ('dm'). Views that are hidden skip their redraws: the one
 // coming into view catches up first, still hidden.
@@ -231,6 +234,7 @@ function targetChanged(to) {
   closeSearch() // the search was the last conversation's
   if (place === 'dm' && !isConvo(to)) left = { name: lastDm, at: Date.now() }
   dockPick = null
+  dockShown = false // (openDM docks it again, when that's what was asked for)
   if (isConvo(to)) showPlace('dm')
   else if (place === 'dm') showPlace('chat')
   else drawHead()
@@ -254,13 +258,12 @@ function followRename() {
 
 // Your conversation with an agent. terminal: with its terminal docked beside it (and that one picked, for a clone).
 function openDM(name, { terminal = false } = {}) {
-  if (terminal) store.set('clique.dock', '1')
-  if (composer.target() !== name) composer.setTarget(name)
-  else showPlace('dm')
-  if (terminal && terms.has(name)) {
-    dockPick = name
-    showPlace('dm')
-  }
+  const moving = composer.target() !== name
+  if (moving) composer.setTarget(name) // targetChanged opens it, its terminal put away
+  if (moving && !terminal) return
+  if (terminal) dockShown = true
+  if (terminal && terms.has(name)) dockPick = name
+  showPlace('dm')
 }
 
 // ---- the header: the channel, or who you're talking to -----------------------------------------------------------
@@ -309,8 +312,9 @@ chatHeadEl.addEventListener('click', (e) => {
   if (act === 'folder') return openFolder(state.workspace)
   if (!a) return
   if (act === 'terminal') {
-    store.set('clique.dock', docked() ? '0' : '1')
+    dockShown = !docked()
     showPlace('dm')
+    if (dockShown) terms.get(dockName())?.term.focus()
   }
   if (act === 'profile') edit(a.name)
   if (act === 'menu') agentMenu(a.name, b)
@@ -330,7 +334,7 @@ function syncChannel() {
   const next = channelsNow().some((c) => c.id === kept) ? kept : 'general'
   if (next !== chan && booted) (closeSearch(), threadPane.close()) // the search and the thread were the last channel's
   chan = next
-  feed.setChannel(chan)
+  feed.setChannel(chan, state.workspace?.id ?? '')
   composer.setChannel({ ...openChannel(), ws: state.workspace?.id }) // each workspace's channels keep their own drafts
 }
 // Open a channel. go: as a place from the sidebar (the composer back to everyone's); otherwise only the chat changes,
@@ -678,7 +682,7 @@ $('.dock-bar').addEventListener('click', (e) => {
   }
   const act = e.target.closest('[data-dock-act]')?.dataset.dockAct
   if (act === 'close') {
-    store.set('clique.dock', '0')
+    dockShown = false
     showPlace('dm')
   }
   if (act === 'expand') {
@@ -1350,7 +1354,7 @@ const tileActs = (a) => `
 function answerTile(name) {
   const ask = needsYou(state).find((x) => x.agent.name === name)?.ask
   if (!ask) return select(name)
-  openDM(name, { terminal: true }) // a clone asking: its tab in the dock
+  openDM(name)
   requestAnimationFrame(() => feed.jump(ask.id))
 }
 
@@ -1982,7 +1986,18 @@ function handleFocus(arg) {
       fxView('elsewhere', i, null, from ?? null) // (from: where a recording was, playing there)
     } catch {}
   }
-  else if (arg) select(arg)
+  else if (arg?.startsWith('term:')) select(arg.slice(5))
+  else if (arg) openAgent(arg)
+}
+
+// An agent from the menu bar, a notification or the floating chat: your conversation with it, at the question it's
+// waiting on you with. One asking in its terminal, where no card can answer it: its terminal, beside the conversation.
+function openAgent(name) {
+  const n = needsYou(state).find((x) => x.agent.name === name)
+  if (n && !n.ask) return select(name)
+  openDM(state.agents.some((a) => a.name === name) ? name : familyOf(name))
+  if (n?.ask) requestAnimationFrame(() => feed.jump(n.ask.id))
+  else composer.focus()
 }
 
 function openTask(key) {

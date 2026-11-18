@@ -2286,8 +2286,9 @@ function subsUsed(e, open) {
     <div class="subs-list">${e.subs.map((s) => `<div class="subs-item ${s.running ? 'running' : ''}"><span class="sub-kind">${esc(subType(s.type))}</span><span class="sub-job">${esc(s.description || 'sub-agent')}</span><span class="sub-meta">${s.tools ? `${plural(s.tools, 'step')} · ` : ''}${duration(s.ms)}${s.running ? ' · working' : ''}</span></div>`).join('')}</div></details>`
 }
 
-// onAgent: an agent's line under the feed (who's at work) was clicked, for its terminal. onConvo: an agent's face
-// or name in a message was, for your conversation with it. onLeave: a jump goes to a message outside the
+// onAgent: an agent's line under the feed (who's at work) was clicked, for your conversation with it. onTerminal: Open
+// its terminal, for one waiting on you there. onConvo: an agent's face or name in a message was, for your conversation
+// with it. onLeave: a jump goes to a message outside the
 // conversation on screen, or the agent you're talking to was clicked again, so the chat goes back to everyone's.
 // ---- searching the chat ----
 // What a feed entry says, for a search: its words, its task's title, a question's options, a command it asked to run,
@@ -2327,7 +2328,7 @@ function markWords(root, words) {
 // onFound: a search result was clicked, so the search is over and the chat shows that message where it was.
 // welcome(): what everyone's chat shows while it has no messages at all (the dashboard's first steps), or nothing.
 // onChannel(id): a jump to a message in another channel (the dashboard opens that channel).
-function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply, onThread, onTicket = (key) => clique.call('dashboard', `task:${key}`), onFound, welcome, limit = 200, inline = false, face = 28, headSays = false } = {}) {
+function mountFeed(el, { onAgent, onTerminal = onAgent, onConvo = onAgent, onLeave, onChannel, onReply, onThread, onTicket = (key) => clique.call('dashboard', `task:${key}`), onFound, welcome, limit = 200, inline = false, face = 28, headSays = false } = {}) {
   const open = new Set()
   const seen = new Set()
   const reacted = new Set() // `${id}|${by}|${emoji}`: the reactions already drawn, so only a new one pops
@@ -2351,6 +2352,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
   let aim = null // the message to show once a conversation opens (the one you pressed Reply on)
   let words = [] // a search: only the messages with every one of these words, the words marked
   let channel = null // the channel shown (its id), outside a conversation; null: every channel at once (the floating chat)
+  let space = null // ...and the workspace it's in (each workspace has its own #general)
   let channels = [] // the workspace's channels: { id, name, brief, members }
   // what's shown: the conversation's messages in every channel, or else the channel's
   const inView = (e) => (convo ? inConvo(e, convo) : !channel || channelOf(e, channels) === channel)
@@ -2369,12 +2371,13 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
   // A smooth glide fires scroll events on the way down; judge where you are once it (or your own scroll) ends.
   // So does a jump to a quoted message: near the bottom its first steps would otherwise count as "at the end".
   el.addEventListener('scroll', () => gliding || jumpTo || settle(), { passive: true })
-  // your own scrolling takes over from a jump
-  el.addEventListener('wheel', () => (jumpTo = null), { passive: true })
+  // your own scrolling takes over from a jump, and from a channel opening where you were (spots)
+  el.addEventListener('wheel', () => ((jumpTo = null), (settling = 0)), { passive: true })
   el.addEventListener('scrollend', () => {
     gliding = false
     jumpTo = null
     settle()
+    keepSpot()
   })
   // Needs you sits last, docked above the message box while the messages scroll over it: one question at a time, the
   // oldest first, its card answered right there through the same handlers as the feed's.
@@ -2437,23 +2440,49 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
   }
   latest.querySelector('button').addEventListener('click', toLatest)
   latest.querySelector('button').addEventListener('mousedown', (ev) => ev.preventDefault()) // keep focus in the message box
+  // measured in layout pixels: the floating panel opens from 94% scale, and its rects are scaled with it
+  const scaleOf = () => el.getBoundingClientRect().height / el.offsetHeight || 1
   // The messages at the top of what you're reading, and how far each sits from the feed's top edge. A few, in
   // case the first one is gone after the re-render (the oldest drop off as new ones come in).
   const readingAt = () => {
     const top = el.getBoundingClientRect().top
+    const scale = scaleOf()
     const at = []
     for (const it of list.children) {
       if (!it.id) continue
       const r = it.getBoundingClientRect()
-      if (r.bottom > top) at.push({ id: it.id, y: r.top - top })
+      if (r.bottom > top) at.push({ id: it.id, y: (r.top - top) / scale })
       if (at.length === 4) break
     }
     return at
   }
+  // -> whether one of them is still there to keep in its place
   const keepReading = (at) => {
     const it = at.map((x) => ({ ...x, el: document.getElementById(x.id) })).find((x) => x.el && list.contains(x.el))
-    const by = it ? it.el.getBoundingClientRect().top - el.getBoundingClientRect().top - it.y : 0
+    const by = it ? (it.el.getBoundingClientRect().top - el.getBoundingClientRect().top) / scaleOf() - it.y : 0
     if (Math.abs(by) >= 0.5) el.scrollTop += by
+    return Boolean(it)
+  }
+  // Where you are in each channel, so coming back to one (from another channel, a conversation or another place) is
+  // coming back there: at its end, with the last message you'd seen in it, or else the messages you were reading,
+  // where they sat. Kept as you scroll and as you leave; not while it's off screen, a search, or on its way to a quote.
+  // Just after one opens there, its own scrolling isn't where you are: the layout around it may still be changing (a
+  // conversation's terminal leaving the side as you come back), and the dashboard aims again once it has.
+  const spots = new Map() // `${workspace}#${channel}` -> { end: element id | null } or { at: readingAt() }
+  const spotKey = () => (!convo && channel ? `${space}#${channel}` : null)
+  let settling = 0 // until then
+  const keepSpot = () => {
+    const k = spotKey()
+    if (!k || !last || words.length || jumpTo || Date.now() < settling || !showing()) return
+    let end = list.lastElementChild
+    while (end && !end.id) end = end.previousElementSibling
+    spots.set(k, pinned ? { end: end?.id ?? null } : { at: readingAt() })
+  }
+  // the first reply you haven't read; after `after` (the last one you'd seen) when that's still there
+  const firstUnread = (after) => {
+    const all = [...list.querySelectorAll('.item.unread')]
+    const from = after && document.getElementById(after)
+    return from && list.contains(from) ? all.find((u) => from.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_FOLLOWING) : all[0]
   }
   const glideTo = (target) => {
     clearTimeout(jumpTimer)
@@ -2527,7 +2556,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     const opener = ev.target.closest('[data-needs-open]')
     if (opener) return showNeeds(opener.dataset.needsOpen)
     const term = ev.target.closest('[data-needs-term]')
-    if (term) return onAgent?.(term.dataset.needsTerm)
+    if (term) return onTerminal?.(term.dataset.needsTerm)
     const pointer = ev.target.closest('[data-needs]')
     if (pointer) return showNeeds(pointer.dataset.needs)
     const fold = ev.target.closest('[data-typing]')
@@ -2563,8 +2592,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     if (ans) return answerFrom(ans.closest('[data-ask]'), ans.dataset.answer, ans.dataset.i)
     const bug = ev.target.closest('[data-ticket]')
     if (bug && !ev.target.closest('.who')) return onTicket?.(bug.dataset.ticket)
-    // an agent at work (its line under the feed) opens its terminal; a face or name in a message, your
-    // conversation with it
+    // an agent at work (its line under the feed), a face or name in a message: your conversation with it
     const agent = ev.target.closest('[data-agent]')
     if (agent && agent.closest('.typing-list')) return onAgent?.(agent.dataset.agent)
     // (the clique itself, in its notices, isn't anyone to talk to). The one you're talking to, clicked again, lets
@@ -2745,18 +2773,22 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     return `<div class="empty empty-state small convo-empty">${avatarHTML(a, { size: 56 })}<b>You and ${esc(displayName(a))}</b><span>What you send here goes to ${n}${a.on ? '' : ` once it's back on`}. @mention someone to bring them in too.</span></div>`
   }
   // Where a conversation opens: at the message you pressed Reply on, else at its first reply you haven't read,
-  // else at the end. A chat that's hidden (the floating panel closed, the dashboard's put away) can't scroll, so it
-  // waits until it shows, and keeps aiming while it grows in (the panel's open animation, the column sliding out).
+  // else at the end. A channel you've been in opens where you were (spots): the messages you were reading, or its
+  // end, unless replies came in after the last one you'd seen there (the first of those). A chat that's hidden (the
+  // floating panel closed, the dashboard's put away) can't scroll, so it waits until it shows, and keeps aiming
+  // while it grows in (the panel's open animation, the column sliding out).
   let revealing = null // { id, until }
   const showing = () => Boolean(el.offsetParent) && el.clientWidth > 120 && getComputedStyle(el).visibility !== 'hidden'
   const reveal = (id = aim) => {
     if (!showing()) return void (revealing = { id, until: 0 })
     if (revealing && !revealing.until) revealing.until = Date.now() + 450
-    const it = (id && list.querySelector(`#m-${CSS.escape(id)}`)) || list.querySelector('.item.unread')
+    const spot = id ? null : spots.get(spotKey())
+    if (spot) settling = Date.now() + 450
+    if (spot?.at && keepReading(spot.at)) return void ((jumpTo = null), settle())
+    const it = (id && list.querySelector(`#m-${CSS.escape(id)}`)) || firstUnread(spot?.end)
     if (!it) return void ((pinned = true), pin(), settle())
     jumpTo = null
-    // measured in layout pixels: the floating panel opens from 94% scale, and its rects are scaled with it
-    const scale = el.getBoundingClientRect().height / el.offsetHeight || 1
+    const scale = scaleOf()
     const top = (it.getBoundingClientRect().top - el.getBoundingClientRect().top) / scale
     const room = el.clientHeight - over() // (Needs you covers the bottom of it)
     el.scrollTop += top - (id ? Math.max(40, (room - it.offsetHeight) / 2) : 40)
@@ -2829,11 +2861,13 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
       return words.length ? shown.size : 0
     },
     searching: () => words.length > 0,
-    // Show this channel's messages (outside a conversation). Like opening another chat: no "came in below" count,
-    // nothing popping in as new, at its first unread reply or its end.
-    setChannel(id) {
-      if (id === channel) return
+    // Show this channel's messages (outside a conversation), of workspace ws. Like opening another chat: no "came in
+    // below" count, nothing popping in as new, where you were in it, else at its first unread reply or its end.
+    setChannel(id, ws = space) {
+      if (id === channel) return void (space = ws)
+      keepSpot() // the one you're leaving
       channel = id
+      space = ws
       words = []
       key = ''
       divider = null
@@ -2853,6 +2887,7 @@ function mountFeed(el, { onAgent, onConvo = onAgent, onLeave, onChannel, onReply
     setConvo(target) {
       const next = isConvo(target) ? target : null
       if (next === talkingTo) return
+      keepSpot() // the channel you're leaving, if it's one
       const was = convo
       words = [] // another conversation: the search was this one's
       talkingTo = next
