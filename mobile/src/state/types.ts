@@ -24,4 +24,6 @@ export interface CliqueLink {
   agentAction(action: 'freshStart' | 'restart' | 'markIdle', name: string): Promise<unknown>
   // Stop: end the turn these agents are in. They stay on.
   stopAgents(names: string[], opts?: { channel?: string }): Promise<unknown>
+  // A picture from the chat, as bytes: one of CLIque's own (an agent attached it, or you sent it from the computer)
+  image(path: string): Promise<Uint8Array>
 }

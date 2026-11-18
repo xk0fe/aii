@@ -87,8 +87,11 @@ const real = (p) => {
 }
 const inside = (file, ...dirs) => dirs.some((dir) => real(dir) && file.startsWith(real(dir) + path.sep))
 
-// An image from the chat or a task: only from CLIque's attachments, or its cache of linked computers' images.
-function image(file) {
+// An image from the chat or a task: only from CLIque's attachments, or its cache of linked computers' images. One a
+// linked computer's agent attached that hasn't come here yet is fetched whole first (core/linkfiles.js), as the
+// computer's own chat does when it shows it.
+export async function image(file, files) {
+  if (files?.theirs?.has(path.resolve(String(file))) && !real(file)) await files.whole(path.resolve(String(file)))
   const at = real(file)
   if (!at) throw new Error('that image is gone')
   if (!inside(at, ATTACHMENTS, CACHE)) throw new Error("that isn't an image from CLIque")
@@ -368,7 +371,7 @@ class Session {
       markIdle: (ws, name) => clique.at(name, 'markIdle', [], hub(ws)),
       // Stop: end the turn these agents are in (one name or several). They stay on.
       stop: (ws, names, opts) => clique.stopTurns([].concat(names ?? []).map(String).slice(0, 50), { channel: opts?.channel == null ? undefined : String(opts.channel) }, hub(ws)),
-      image: (file) => image(file),
+      image: (file) => image(file, clique.files),
       saveImage: (name, type, bytes) => {
         if (!(bytes instanceof Uint8Array)) throw new Error('send the image as bytes')
         return saveImage(String(name ?? ''), type, bytes)

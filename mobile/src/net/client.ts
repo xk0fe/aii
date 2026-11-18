@@ -33,6 +33,8 @@ export type Timing = {
 }
 
 const TIMING: Timing = { handshake: 10_000, call: 20_000, probe: 6_000, backoff: [1000, 2000, 4000, 8000, 15000, 30000], tooMany: 61_000 }
+// How long a picture from the chat may take to come (see image)
+const IMAGE_WAIT = 90_000
 
 export type Deps = {
   WebSocket: new (url: string) => SocketLike
@@ -598,6 +600,11 @@ export class CliqueClient {
   // Stop: end the turn these agents are in (they stay on, and keep their conversations)
   stopAgents(names: string[], opts?: { channel?: string }) {
     return this.call('stop', this.here, names, opts ?? {})
+  }
+  // A picture from the chat (ui/picture.tsx): up to 20 MB, so it gets longer than a call to come, and one that's slow
+  // isn't taken for a computer gone (a linked computer's is fetched there first).
+  image(path: string) {
+    return this.callWithin<Uint8Array>(Math.max(this.t.call, IMAGE_WAIT), 'image', path)
   }
   // Not on screen yet in version 1, but typed as the Mac answers: what it printed so far and the size it was drawn
   // at, then `pty` pushes.

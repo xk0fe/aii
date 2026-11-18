@@ -38,7 +38,12 @@ export type AskProps = {
 }
 
 // "Milo needs your OK", "Iris has a question": the plain title kept for scanning, beside the creature's own words.
-export const askVerb = (e: FeedEntry) => ({ permission: 'needs your OK', question: 'has a question', plan: 'has a plan for you' })[typeof e.ask === 'object' ? e.ask.type : 'question'] ?? 'has a question'
+export const askVerb = (e: FeedEntry) => {
+  const ask = typeof e.ask === 'object' ? e.ask : null
+  if (ask?.type === 'question' && ask.stuck) return 'is stopped'
+  if (ask?.type === 'question' && ask.screen) return 'asks in its terminal'
+  return ({ permission: 'needs your OK', question: 'has a question', plan: 'has a plan for you' })[ask?.type ?? 'question'] ?? 'has a question'
+}
 export const askIcon = (type?: string): IconName => (type === 'plan' ? 'plan' : type === 'question' ? 'question' : 'permission')
 
 export function AskCard(props: AskProps) {
@@ -75,7 +80,8 @@ function Foot({ t, e, error, disabled, send, busy, compact }: { t: Theme; e: Fee
   if (compact) return error ? <Text style={[styles.error, { color: t.danger }]}>{error}</Text> : null
   // an agent tool's card (clique app) is answered only here: its terminal is just waiting
   if (e.cli === 'clique') return said ? <View style={styles.foot}>{said}</View> : null
-  const handOver = e.cli === 'codex' && !(typeof e.ask === 'object' && e.ask?.type === 'permission' && e.ask.trust)
+  // (a question read off its screen is its terminal's already)
+  const handOver = e.cli === 'codex' && !(typeof e.ask === 'object' && ((e.ask?.type === 'permission' && e.ask.trust) || (e.ask?.type === 'question' && e.ask.screen)))
   if (!said && !handOver) return null
   return (
     <View style={styles.foot}>
@@ -253,6 +259,36 @@ function QuestionCard(props: AskProps & { ask: QuestionAsk }) {
   // one question with one answer: a tap on a choice is the answer
   const direct = !compact && ask.questions.length === 1 && !ask.questions[0].multiSelect
   const name = displayName(e.from).base
+  // its terminal's own menu takes only its choices; what its screen shows (a snapshot) takes anything typed into it
+  const typed = !ask.screen && !ask.stuck ? true : Boolean(ask.snapshot)
+  if (ask.screen || ask.stuck) {
+    const q = ask.questions[0]
+    return (
+      <View style={styles.body}>
+        <View style={styles.question}>
+          {ask.screen ? <Text style={[styles.qhead, { color: t.fg2 }]}>{ask.snapshot ? 'What its terminal shows' : 'In its terminal'}</Text> : null}
+          {ask.screen ? (
+            <ScrollView style={[styles.plan, { backgroundColor: t.fill, maxHeight: compact ? 120 : 300 }]} contentContainerStyle={styles.planInner} nestedScrollEnabled>
+              <Text style={[styles.screen, { color: t.fg }]}>{q?.question}</Text>
+            </ScrollView>
+          ) : props.voiced && !compact ? (
+            <Text style={[styles.detail, { color: t.fg2 }]}>{q?.question}</Text>
+          ) : (
+            <AskWords t={t} text={q?.question ?? ''} style={styles.qtext} />
+          )}
+          <View style={styles.options}>
+            {(q?.options ?? []).map((o) => (
+              <Choice key={o.label} t={t} label={o.label} description={compact ? undefined : o.description} disabled={off} busy={busy === `pick:${o.label}`} onPress={() => send(`pick:${o.label}`, { answers: { [q.question]: [o.label] } })} />
+            ))}
+          </View>
+          {typed && !compact ? (
+            <Note t={t} value={other(0)} onChange={(v) => setDraft({ ...draft, other: { ...draft.other, 0: v } })} placeholder="Or type something into it" editable={!off} onSubmit={() => other(0).trim() && send('send', { answers: { [q.question]: [other(0).trim()] } })} />
+          ) : null}
+        </View>
+        <Foot t={t} e={e} error={error} disabled={disabled} send={send} busy={busy} compact={compact} />
+      </View>
+    )
+  }
   return (
     <View style={styles.body}>
       {ask.questions.map((q, qi) => (
@@ -368,7 +404,12 @@ export function AskSummary({ t, e, plain }: { t: Theme; e: FeedEntry; plain?: bo
       ? e.answer.allow ? { icon: 'check' as const, tone: 'ok' as const, text: 'Kept going' } : { icon: 'close' as const, tone: 'no' as const, text: 'Stopped' }
       : answerLine(ask.type, e.answer, what)
   const ink = line.tone === 'ok' ? t.workingInk : line.tone === 'no' ? t.danger : t.fg2
-  const questions = ask.type === 'question' ? Object.entries(e.answer.answers ?? {}) : []
+  const terminal = ask.type === 'question' && (ask.screen || ask.stuck)
+  const questions = ask.type === 'question' && !terminal ? Object.entries(e.answer.answers ?? {}) : []
+  if (terminal && e.answer.by === 'you') {
+    const said = String(Object.values(e.answer.answers ?? {})[0] ?? '')
+    line.text = ask.snapshot && said !== 'Press Enter' && said !== 'Press Esc' ? `Typed “${said}”` : said
+  }
   return (
     <View style={[styles.summary, plain ? styles.summaryPlain : { backgroundColor: t.fill }]}>
       <View style={[styles.mark, { backgroundColor: t.fill }]}>
@@ -386,6 +427,7 @@ export function AskSummary({ t, e, plain }: { t: Theme; e: FeedEntry; plain?: bo
         <Text style={[styles.summaryLine, styles.summaryText, { color: t.fg }]}>
           {line.text}
           {ask.type === 'permission' && line.tone !== 'ok' && what ? <Text style={{ color: t.fg2 }}>{`  ${what}`}</Text> : null}
+          {terminal && ask.screen && ask.title ? <Text style={{ color: t.fg2 }}>{`  ${ask.title}`}</Text> : null}
         </Text>
       )}
     </View>
@@ -425,6 +467,7 @@ const styles = StyleSheet.create({
   check: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   checkSquare: { borderRadius: 6 },
   preview: { fontSize: 15, lineHeight: 20 },
+  screen: { fontFamily: fonts.mono, fontSize: 13, lineHeight: 18 },
   previewHead: { fontWeight: '600' },
   plan: { borderRadius: 10, flexGrow: 0, overflow: 'hidden' },
   planInner: { padding: 12 },
