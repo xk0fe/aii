@@ -10,7 +10,7 @@ import path from 'node:path'
 process.env.CLIQUE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'clique-threads-'))
 const { Hub, CONFIG } = await import('../core/hub.js')
 const { Clique } = await import('../core/clique.js')
-const { gistOf, inThread, forClients, stampAll } = await import('../core/threads.js')
+const { gistOf, inThread, forClients, stampAll, threadDigest } = await import('../core/threads.js')
 const { keepFeed } = await import('../core/keep.js')
 
 class FakeRunner extends EventEmitter {
@@ -181,6 +181,41 @@ test('a thread that goes quiet with a teammate speaking last asks the agent you 
   const typed = runner.typed.length
   quiet()
   assert.equal(runner.typed.length, typed, 'its line was the last word: nothing more to ask')
+})
+
+// It can't open the chat to read the rest: what it's given is all it knows of the report. (Cut at 1500 characters, Q
+// told the user he'd only got the first part of an analyst's 4300-character summary.)
+test("a teammate's long report reaches the agent you asked whole, when it's asked for a closing line", () => {
+  ask()
+  turn('jeff', 'On it.', () => hub.send({ from: 'jeff', to: 'joseph', text: 'Analyse the tables.' }))
+  const report = `The analysis is done. ${'One finding after another. '.repeat(400)}The ranked proposals are at the very end.`
+  assert.ok(report.length > 10000)
+  turn('joseph', report)
+  quiet()
+  const prompt = runner.typed.at(-1)
+  assert.equal(prompt.n, 'jeff')
+  assert.ok(prompt.text.includes(report), 'the whole report, to its last line')
+  assert.doesNotMatch(prompt.text, /left out/)
+})
+
+test("every teammate's last reply stays whole however much was said after it, and the lines left out are counted", () => {
+  const long = (who) => `${who} reports: ${'detail '.repeat(900)}and that's the end of ${who}'s report.`
+  const rows = [
+    { kind: 'reply', from: 'joseph', text: 'Starting.' },
+    { kind: 'reply', from: 'joseph', text: long('joseph') },
+    ...Array.from({ length: 60 }, (_, i) => ({ kind: 'msg', from: 'david', to: 'joseph', text: `Question ${i}: ${'about the tables and the coupons and the cart, '.repeat(4)}` })),
+    { kind: 'reply', from: 'david', text: long('david') },
+  ]
+  const digest = threadDigest(rows)
+  assert.ok(digest.includes(`@joseph: ${long('joseph')}`), "joseph's report, though 60 lines came after it")
+  assert.ok(digest.includes(`@david: ${long('david')}`))
+  assert.ok(digest.indexOf("joseph's report") < digest.indexOf("david's report"), 'in the order they were said')
+  assert.match(digest, /@david to @joseph: Question 59/, 'the newest of the rest')
+  const left = Number(/^\((\d+) earlier lines left out\)$/m.exec(digest)?.[1])
+  assert.ok(left > 0, 'it says some were left out')
+  assert.equal(digest.split('\n').length - 1 + left, rows.length, 'every line is either there or counted')
+  // a short thread: everything, and no note
+  assert.equal(threadDigest(rows.slice(0, 2)), `@joseph: Starting.\n@joseph: ${long('joseph')}`)
 })
 
 test('"nothing new" adds no line: what the agent you asked last said comes out instead', () => {
