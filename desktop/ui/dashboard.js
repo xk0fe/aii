@@ -861,7 +861,7 @@ updateNote.addEventListener('click', (e) => {
   const u = state.app?.update
   if (act === 'notes') return u?.next?.notesUrl && clique.call('openUrl', u.next.notesUrl)
   // Not now and Later both put it away; Restart says which question (if any) you said yes to
-  const call = act === 'go' ? clique.call('update', 'restart', u?.asking?.text ?? null) : clique.call('update', 'later')
+  const call = act === 'go' ? clique.call('appUpdate', 'restart', u?.asking?.text ?? null) : clique.call('appUpdate', 'later')
   call.catch((err) => oops('Couldn’t do that', err))
 })
 
