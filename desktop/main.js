@@ -972,9 +972,11 @@ const actions = {
     return (await dialog.showOpenDialog(dash, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0]
   },
   quit: () => app.quit(),
-  // CLIque updating itself (core/updates.js): update('check') is Check for Updates…, update('restart', asked) Restart
-  // to update (asked: the question you said yes to, as the note showed it), update('later') puts the note away.
-  update: (op, arg) => {
+  // CLIque updating itself (core/updates.js): appUpdate('check') is Check for Updates…, appUpdate('restart', asked)
+  // Restart to update (asked: the question you said yes to, as the note showed it), appUpdate('later') puts the note
+  // away. (Not `update`: that's an agent's settings, above, and a second key of that name quietly replaced it, so no
+  // edit from the agent sheet got through: test/main-actions.test.js.)
+  appUpdate: (op, arg) => {
     const ops = { check: () => void checkForUpdates(), restart: () => restartToUpdate(arg), later: () => updates?.putOff() }
     if (!Object.hasOwn(ops, op)) throw new Error(`unknown update action "${op}"`)
     return ops[op]()

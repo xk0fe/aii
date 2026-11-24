@@ -117,24 +117,33 @@ export function forClients(feed, { rows = 200, inside = 200 } = {}) {
 }
 
 // What a thread's addressee is told when it's asked for a closing line: what was said since its last message. Each
-// agent's last reply whole (it may be the only report there is), the rest in a line, the newest kept if it runs long.
+// agent's last reply whole, however long: it may be the only report there is, and the addressee has no way to read
+// the rest. (Cut at 1500 characters, most reports lost their end, and Q told you he'd only seen the start of one.)
+// Everything else is a line each, the newest while they fit in DIGEST_MAX, and a note says how many earlier ones were
+// left out. (On real feeds the whole replies come to about 2.6k characters in a typical thread, 12k in the biggest.)
 const DIGEST_MAX = 6000
-const DIGEST_REPLY = 1500
 export function threadDigest(rows) {
   const lastOf = new Map()
   for (const e of rows) if (e.kind === 'reply' && !e.empty) lastOf.set(familyOf(e.from), e)
   const whole = new Set(lastOf.values())
-  const lines = rows.filter((e) => e.kind !== 'rule' && !e.echo && e.text).map((e) => {
-    const who = `@${e.from}${e.to && e.kind === 'msg' ? ` to @${e.to}` : ''}`
-    return `${who}: ${whole.has(e) ? String(e.text).slice(0, DIGEST_REPLY) : (e.gist ?? gistOf(e.text, e.from))}`
-  })
   const kept = []
   let size = 0
-  for (const line of lines.reverse()) {
-    if (kept.length && size + line.length > DIGEST_MAX) break
+  let left = 0
+  for (const e of rows.filter((x) => x.kind !== 'rule' && !x.echo && x.text).reverse()) {
+    const who = `@${e.from}${e.to && e.kind === 'msg' ? ` to @${e.to}` : ''}`
+    if (whole.has(e)) {
+      kept.unshift(`${who}: ${e.text}`)
+      continue
+    }
+    const line = `${who}: ${e.gist ?? gistOf(e.text, e.from)}`
+    if (left || size + line.length > DIGEST_MAX) {
+      left++
+      continue
+    }
     size += line.length
     kept.unshift(line)
   }
+  if (left) kept.unshift(`(${left} earlier ${left === 1 ? 'line' : 'lines'} left out)`)
   return kept.join('\n')
 }
 

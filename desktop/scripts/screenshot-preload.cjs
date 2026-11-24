@@ -1207,7 +1207,7 @@ window.clique = {
       emit()
     }
     if (action === 'workspace') return workspaceAction(...args)
-    if (action === 'update') return updateAction(...args)
+    if (action === 'appUpdate') return updateAction(...args)
     if (action === 'openAtLogin') {
       state.app.login.on = Boolean(args[0])
       emit()

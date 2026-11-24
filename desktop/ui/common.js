@@ -3996,8 +3996,8 @@ function experimentPick(act, state, on = null) {
 }
 function appPick(act, state) {
   if (act === 'app:login') clique.call('openAtLogin', !state.app.login.on).catch((err) => oops('Couldn’t change that', err))
-  if (act === 'app:check') clique.call('update', 'check').catch((err) => oops('Couldn’t check for updates', err))
-  if (act === 'app:restart') clique.call('update', 'restart', null).catch((err) => oops('Couldn’t restart', err))
+  if (act === 'app:check') clique.call('appUpdate', 'check').catch((err) => oops('Couldn’t check for updates', err))
+  if (act === 'app:restart') clique.call('appUpdate', 'restart', null).catch((err) => oops('Couldn’t restart', err))
 }
 
 // ---- notifications: when CLIque may interrupt you (core/notify.js; state.notify) -----------------------------------
